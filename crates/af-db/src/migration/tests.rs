@@ -16,7 +16,7 @@ use sea_orm::entity::prelude::{Json, TimeDateTimeWithTimeZone, TimeTime};
 use sea_orm::{
     ActiveModelBehavior, ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection,
     DbBackend, EntityTrait, IdenStatic, IntoActiveModel, Iterable, PaginatorTrait, QueryFilter,
-    Set, Statement,
+    QuerySelect, Set, Statement,
 };
 use sea_orm_migration::prelude::*;
 use url::Url;
@@ -1245,30 +1245,55 @@ async fn exercise_usage_per_call_migration_upgrade(
     .exec_without_returning(pool.connection())
     .await?;
 
-    // 当前仓储会写入第 57 号观测列，因此升级到第 59 号，同时给第 60 号安全迁移保留旧数据入口。
+    // 先升级到第 59 号并显式使用当时的列投影，避免当前仓储提前引用第 67 号企业归属列。
     Migrator::up(pool.connection(), Some(5)).await?;
-    let repository = UsageLogRepository::new(pool.clone());
-    let per_call_write = UsageLogWrite::new(
-        BillingReservationId::new([0xd2; 16])?,
-        principal,
-        UsageLogBillingMode::PerCall,
-        UsageLogUsage::new(0, 0, 0, 0, 0, 0, 0, 0)?,
-        UsageLogSource::Upstream,
-        UsageLogSemantics::Inclusive,
-        Quota::new(320_000)?,
-    )
-    .with_video_dimensions(Some(8), None)?;
-    assert_eq!(
-        repository.record(&per_call_write).await?,
-        UsageLogWriteOutcome::Applied
-    );
+    let per_call_event_id = BillingReservationId::new([0xd2; 16])?;
+    let per_call_key = BillingReservationKey::parse(&per_call_event_id.persistence_key())?;
+    usage_logs::Entity::insert(usage_logs::ActiveModel {
+        event_id: Set(per_call_key),
+        event_type: Set(1),
+        user_id: Set(principal.user_id().get()),
+        token_id: Set(principal.token_id().get()),
+        group_id: Set(principal.group_id().get()),
+        billing_mode: Set(3),
+        input_tokens: Set(0),
+        output_tokens: Set(0),
+        cache_read: Set(0),
+        cache_creation_5m: Set(0),
+        cache_creation_1h: Set(0),
+        reasoning_tokens: Set(0),
+        audio_input_tokens: Set(0),
+        audio_output_tokens: Set(0),
+        audio_duration_nanoseconds: Set(None),
+        video_duration_seconds: Set(Some(8)),
+        video_resolution: Set(None),
+        request_id: Set(None),
+        model: Set(None),
+        protocol: Set(None),
+        operation: Set(None),
+        is_stream: Set(None),
+        reasoning_effort: Set(None),
+        reasoning_budget_tokens: Set(None),
+        first_token_ms: Set(None),
+        duration_ms: Set(None),
+        usage_source: Set(1),
+        usage_semantics: Set(1),
+        quota: Set(320_000),
+        created_at: Set(TimeDateTimeWithTimeZone::now_utc()),
+        ..Default::default()
+    })
+    .exec_without_returning(pool.connection())
+    .await?;
     let ids = usage_logs::Entity::find()
+        .select_only()
+        .column(usage_logs::Column::Id)
         .filter(usage_logs::Column::UserId.eq(user.id))
+        .into_tuple::<i64>()
         .all(pool.connection())
         .await?;
     assert_eq!(ids.len(), 2);
-    let minimum_id = ids.iter().map(|record| record.id).min().unwrap_or_default();
-    let maximum_id = ids.iter().map(|record| record.id).max().unwrap_or_default();
+    let minimum_id = ids.iter().copied().min().unwrap_or_default();
+    let maximum_id = ids.iter().copied().max().unwrap_or_default();
     assert!(maximum_id > minimum_id, "迁移后自增主键必须继续递增");
 
     usage_logs::Entity::delete_many()
