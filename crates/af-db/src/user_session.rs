@@ -7,7 +7,7 @@ use argon2::{
 };
 use base64::Engine as _;
 use sea_orm::{
-    ConnectionTrait, DbErr, EntityTrait, QueryFilter, QueryResult,
+    ColumnTrait, ConnectionTrait, DbErr, EntityTrait, QueryFilter, QueryResult,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Alias, Expr, Query, SelectStatement},
 };
