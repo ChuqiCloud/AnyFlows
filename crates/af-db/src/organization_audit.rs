@@ -3,7 +3,7 @@ use std::{fmt, time::Duration};
 use af_domain::{MAX_ORGANIZATION_AUDIT_RETENTION_DAYS, OrganizationId, OrganizationRole, UserId};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DbErr, EntityTrait, QueryFilter, QueryOrder, QuerySelect, Set,
-    entity::prelude::TimeDateTimeWithTimeZone,
+    SqlErr, entity::prelude::TimeDateTimeWithTimeZone,
 };
 use serde_json::Value;
 use thiserror::Error;
@@ -662,8 +662,7 @@ fn valid_fingerprint(value: &str) -> bool {
 }
 
 fn is_unique_violation(error: &DbErr) -> bool {
-    matches!(error, DbErr::RecordNotInserted)
-        || error.to_string().to_ascii_lowercase().contains("unique")
+    matches!(error.sql_err(), Some(SqlErr::UniqueConstraintViolation(_)))
 }
 
 fn internal_error(error: OrganizationAuditRepositoryError) -> OrganizationAuditRepositoryError {
