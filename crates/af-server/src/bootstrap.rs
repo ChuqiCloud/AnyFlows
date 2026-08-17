@@ -818,6 +818,8 @@ impl Bootstrap<DatabaseReady> {
                 .map_err(BootstrapError::OrganizationInvitationCipher)?;
         let system_secret_cipher = SystemSecretCipher::new(self.config.credential_encryption())
             .map_err(BootstrapError::SystemSecret)?;
+        let session_authenticator =
+            session_authenticator.with_two_factor_cipher(system_secret_cipher.clone());
         let admin_credential_proxy_service = Arc::new(DatabaseAdminCredentialProxyService::new(
             credential_proxy_repository,
             system_secret_cipher.clone(),
@@ -944,10 +946,13 @@ impl Bootstrap<DatabaseReady> {
                 initial_setup: Arc::new(DatabaseInitialSetup::new(initial_setup_repository)),
                 registration_service: Arc::new(registration_service),
                 password_reset_service: Arc::new(password_reset_service),
-                user_profile_service: Arc::new(DatabaseUserProfileService::new(
-                    user_profile_repository,
-                    balance_alert_settings_repository,
-                )),
+                user_profile_service: Arc::new(
+                    DatabaseUserProfileService::new(
+                        user_profile_repository,
+                        balance_alert_settings_repository,
+                    )
+                    .with_system_secret_cipher(system_secret_cipher.clone()),
+                ),
                 user_wallet_service: Arc::new(DatabaseUserWalletService::new(
                     wallet_ledger_repository.clone(),
                 )),

@@ -1,16 +1,18 @@
 use std::{fmt, future::Future, pin::Pin};
 
+use af_account::SystemSecretCipher;
 use af_db::{
     BalanceAlertSettingsRecord, BalanceAlertSettingsRepository,
     BalanceAlertSettingsRepositoryError, UserNotificationPreferencesRecord,
     UserPasswordChangeOutcome, UserProfileLookupOutcome, UserProfileMutationOutcome,
     UserProfileRecord, UserProfileRepository, UserProfileRepositoryError,
+    UserTwoFactorMutationOutcome,
 };
 use af_domain::{Quota, UserId};
 use thiserror::Error;
 use zeroize::Zeroizing;
 
-use crate::{SessionPrincipal, SessionRole};
+use crate::{SessionPrincipal, SessionRole, TwoFactorEnrollment, two_factor};
 
 /// 个人资料用户名最大字节数。
 pub const MAX_USER_PROFILE_USERNAME_BYTES: usize = af_db::MAX_USER_PROFILE_USERNAME_BYTES;
@@ -239,6 +241,59 @@ impl fmt::Debug for UserPasswordChangeCommand {
     }
 }
 
+/// 当前用户的二次验证状态；不包含 secret、备份码或其他敏感材料。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UserTwoFactorStatus {
+    enabled: bool,
+}
+
+impl UserTwoFactorStatus {
+    /// 组合二次验证状态快照。
+    #[must_use]
+    pub const fn new(enabled: bool) -> Self {
+        Self { enabled }
+    }
+
+    /// 当前账户是否已启用 TOTP。
+    #[must_use]
+    pub const fn enabled(self) -> bool {
+        self.enabled
+    }
+}
+
+/// 启用 TOTP 所需的当前密码。
+pub struct UserTwoFactorEnableCommand {
+    current_password: Zeroizing<String>,
+}
+
+impl UserTwoFactorEnableCommand {
+    /// 校验当前密码输入边界并放入可清零容器。
+    pub fn new(current_password: String) -> Result<Self, UserProfileError> {
+        if current_password.is_empty()
+            || current_password.len() > 4_096
+            || current_password.chars().any(char::is_control)
+        {
+            return Err(UserProfileError::InvalidInput);
+        }
+        Ok(Self {
+            current_password: Zeroizing::new(current_password),
+        })
+    }
+
+    fn into_password(self) -> Zeroizing<String> {
+        self.current_password
+    }
+}
+
+impl fmt::Debug for UserTwoFactorEnableCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("UserTwoFactorEnableCommand(<redacted>)")
+    }
+}
+
+/// 停用 TOTP 与启用使用同一份当前密码边界。
+pub type UserTwoFactorDisableCommand = UserTwoFactorEnableCommand;
+
 /// 个人资料应用服务错误分类。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum UserProfileError {
@@ -251,6 +306,12 @@ pub enum UserProfileError {
     /// 当前密码错误。
     #[error("当前密码不正确")]
     CurrentPasswordInvalid,
+    /// TOTP 已经启用，必须先停用后重新绑定。
+    #[error("二次验证已经启用")]
+    TwoFactorAlreadyEnabled,
+    /// TOTP 尚未启用，不能重复停用。
+    #[error("二次验证尚未启用")]
+    TwoFactorNotEnabled,
     /// 用户名与其他有效账户冲突。
     #[error("个人资料用户名冲突")]
     Conflict,
@@ -274,6 +335,18 @@ pub type UserPasswordChangeFuture<'a> =
 /// 更新当前用户通知偏好的对象安全 Future。
 pub type UserNotificationUpdateFuture<'a> =
     Pin<Box<dyn Future<Output = Result<UserProfile, UserProfileError>> + Send + 'a>>;
+
+/// 读取二次验证状态的对象安全 Future。
+pub type UserTwoFactorReadFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<UserTwoFactorStatus, UserProfileError>> + Send + 'a>>;
+
+/// 启用二次验证并返回一次性入网材料的对象安全 Future。
+pub type UserTwoFactorEnableFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<TwoFactorEnrollment, UserProfileError>> + Send + 'a>>;
+
+/// 停用二次验证的对象安全 Future。
+pub type UserTwoFactorDisableFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<(), UserProfileError>> + Send + 'a>>;
 
 /// 普通用户自有资料与安全设置应用端口；所有方法只接受当前会话主体。
 pub trait UserProfileService: Send + Sync {
@@ -300,12 +373,36 @@ pub trait UserProfileService: Send + Sync {
         principal: SessionPrincipal,
         command: UserNotificationPreferencesCommand,
     ) -> UserNotificationUpdateFuture<'a>;
+
+    /// 读取当前用户的 TOTP 状态；默认实现保持旧测试适配器失败关闭。
+    fn get_two_factor<'a>(&'a self, _principal: SessionPrincipal) -> UserTwoFactorReadFuture<'a> {
+        Box::pin(async { Err(UserProfileError::Internal) })
+    }
+
+    /// 校验当前密码并启用 TOTP；默认实现保持旧测试适配器失败关闭。
+    fn enable_two_factor<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _command: UserTwoFactorEnableCommand,
+    ) -> UserTwoFactorEnableFuture<'a> {
+        Box::pin(async { Err(UserProfileError::Internal) })
+    }
+
+    /// 校验当前密码并停用 TOTP；默认实现保持旧测试适配器失败关闭。
+    fn disable_two_factor<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _command: UserTwoFactorDisableCommand,
+    ) -> UserTwoFactorDisableFuture<'a> {
+        Box::pin(async { Err(UserProfileError::Internal) })
+    }
 }
 
 /// 使用用户资料数据库仓储的生产应用服务。
 pub struct DatabaseUserProfileService {
     repository: UserProfileRepository,
     balance_alert_settings: BalanceAlertSettingsRepository,
+    system_secret_cipher: Option<SystemSecretCipher>,
 }
 
 impl DatabaseUserProfileService {
@@ -318,7 +415,15 @@ impl DatabaseUserProfileService {
         Self {
             repository,
             balance_alert_settings,
+            system_secret_cipher: None,
         }
+    }
+
+    /// 注入启动期已校验的系统密钥，用于 TOTP 配置加密。
+    #[must_use]
+    pub fn with_system_secret_cipher(mut self, cipher: SystemSecretCipher) -> Self {
+        self.system_secret_cipher = Some(cipher);
+        self
     }
 }
 
@@ -404,6 +509,76 @@ impl UserProfileService for DatabaseUserProfileService {
                 }
                 UserProfileMutationOutcome::NotFound => Err(UserProfileError::InvalidSession),
                 UserProfileMutationOutcome::Conflict => Err(UserProfileError::Internal),
+            }
+        })
+    }
+
+    fn get_two_factor<'a>(&'a self, principal: SessionPrincipal) -> UserTwoFactorReadFuture<'a> {
+        Box::pin(async move {
+            self.repository
+                .two_factor_enabled(principal.user_id())
+                .await
+                .map_err(map_repository_error)?
+                .map(UserTwoFactorStatus::new)
+                .ok_or(UserProfileError::InvalidSession)
+        })
+    }
+
+    fn enable_two_factor<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        command: UserTwoFactorEnableCommand,
+    ) -> UserTwoFactorEnableFuture<'a> {
+        Box::pin(async move {
+            let cipher = self
+                .system_secret_cipher
+                .as_ref()
+                .ok_or(UserProfileError::Internal)?;
+            let (encrypted, enrollment) =
+                two_factor::prepare_enrollment(cipher, principal.user_id())
+                    .map_err(|_| UserProfileError::Internal)?;
+            let current_password = command.into_password();
+            match self
+                .repository
+                .enable_two_factor(principal.user_id(), current_password.as_bytes(), encrypted)
+                .await
+                .map_err(map_repository_error)?
+            {
+                UserTwoFactorMutationOutcome::Updated => Ok(enrollment),
+                UserTwoFactorMutationOutcome::NotFound => Err(UserProfileError::InvalidSession),
+                UserTwoFactorMutationOutcome::Rejected => {
+                    Err(UserProfileError::CurrentPasswordInvalid)
+                }
+                UserTwoFactorMutationOutcome::AlreadyEnabled => {
+                    Err(UserProfileError::TwoFactorAlreadyEnabled)
+                }
+                UserTwoFactorMutationOutcome::NotEnabled => Err(UserProfileError::Internal),
+            }
+        })
+    }
+
+    fn disable_two_factor<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        command: UserTwoFactorDisableCommand,
+    ) -> UserTwoFactorDisableFuture<'a> {
+        Box::pin(async move {
+            let current_password = command.into_password();
+            match self
+                .repository
+                .disable_two_factor(principal.user_id(), current_password.as_bytes())
+                .await
+                .map_err(map_repository_error)?
+            {
+                UserTwoFactorMutationOutcome::Updated => Ok(()),
+                UserTwoFactorMutationOutcome::NotFound => Err(UserProfileError::InvalidSession),
+                UserTwoFactorMutationOutcome::Rejected => {
+                    Err(UserProfileError::CurrentPasswordInvalid)
+                }
+                UserTwoFactorMutationOutcome::NotEnabled => {
+                    Err(UserProfileError::TwoFactorNotEnabled)
+                }
+                UserTwoFactorMutationOutcome::AlreadyEnabled => Err(UserProfileError::Internal),
             }
         })
     }

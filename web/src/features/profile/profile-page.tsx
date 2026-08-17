@@ -4,11 +4,13 @@ import {
   CalendarClock,
   Check,
   CircleDollarSign,
+  Copy,
   KeyRound,
   LoaderCircle,
   Mail,
   RefreshCw,
   ShieldCheck,
+  ShieldOff,
   UserRound,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -23,13 +25,17 @@ import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { ApiError } from '@/lib/api'
-import type { UserProfileResponse } from '@/lib/api/generated/types.gen'
+import { copyText } from '@/lib/clipboard'
+import type { UserProfileResponse, UserTwoFactorEnrollmentResponse } from '@/lib/api/generated/types.gen'
 import { isValidProfilePassword, isValidProfileUsername } from './profile-form-model'
 import {
   useChangeUserPassword,
+  useDisableUserTwoFactor,
+  useEnableUserTwoFactor,
   useUpdateUserNotificationPreferences,
   useUpdateUserProfile,
   useUserProfile,
+  useUserTwoFactor,
 } from './profile-api'
 
 type ProfilePageProps = {
@@ -166,6 +172,120 @@ function PasswordCard({ onPasswordChanged }: ProfilePageProps) {
         </form>
       </CardContent>
     </Card>
+  )
+}
+
+type TwoFactorCopyTarget = 'secret' | 'uri' | 'backup'
+
+function TwoFactorCard() {
+  const { t } = useTranslation()
+  const statusQuery = useUserTwoFactor()
+  const enableMutation = useEnableUserTwoFactor()
+  const disableMutation = useDisableUserTwoFactor()
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [enrollment, setEnrollment] = useState<UserTwoFactorEnrollmentResponse>()
+  const [copied, setCopied] = useState<TwoFactorCopyTarget>()
+  const [copyFailed, setCopyFailed] = useState<TwoFactorCopyTarget>()
+
+  const enabled = statusQuery.data?.enabled === true
+  const mutation = enabled ? disableMutation : enableMutation
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!currentPassword || mutation.isPending) return
+    try {
+      if (enabled) {
+        await disableMutation.mutateAsync({ current_password: currentPassword })
+        setEnrollment(undefined)
+      } else {
+        const response = await enableMutation.mutateAsync({ current_password: currentPassword })
+        setEnrollment(response)
+      }
+      setCurrentPassword('')
+    } catch {
+      // 保留密码输入以便用户修正后重试，但不把密码写入持久化缓存。
+    }
+  }
+
+  const copy = async (target: TwoFactorCopyTarget, value: string) => {
+    const success = await copyText(value)
+    setCopied(success ? target : undefined)
+    setCopyFailed(success ? undefined : target)
+  }
+
+  return (
+    <Card className="overflow-hidden xl:col-span-2">
+      <CardHeader className="border-b border-[var(--hairline)] bg-surface-1/45">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex gap-3">
+            <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-success/10 text-success"><ShieldCheck className="size-4" aria-hidden="true" /></div>
+            <div><CardTitle className="text-base">{t('profile.twoFactor.title')}</CardTitle><CardDescription className="mt-1">{t('profile.twoFactor.subtitle')}</CardDescription></div>
+          </div>
+          {statusQuery.data ? <Badge className={enabled ? 'bg-success/10 text-success' : 'bg-surface-2 text-muted-foreground'}>{t(enabled ? 'profile.twoFactor.enabled' : 'profile.twoFactor.disabled')}</Badge> : null}
+        </div>
+      </CardHeader>
+      <CardContent className="p-5">
+        {statusQuery.isPending ? (
+          <div className="grid gap-3" role="status"><Skeleton className="h-4 w-48" /><Skeleton className="h-11 w-full" /></div>
+        ) : statusQuery.isError ? (
+          <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/20 bg-destructive/8 p-3 text-xs text-destructive">
+            <span>{t('profile.twoFactor.loadError')}</span>
+            <Button type="button" size="sm" variant="secondary" onClick={() => void statusQuery.refetch()}><RefreshCw aria-hidden="true" />{t('profile.actions.retry')}</Button>
+          </div>
+        ) : (
+          <div className="grid gap-5">
+            {enabled && enrollment ? <EnrollmentMaterials enrollment={enrollment} copied={copied} copyFailed={copyFailed} onCopy={copy} /> : null}
+            <div className="flex items-start gap-2 rounded-xl border border-info/20 bg-info/6 p-3 text-xs leading-5 text-muted-foreground">
+              {enabled ? <ShieldOff className="mt-0.5 size-3.5 shrink-0 text-info" aria-hidden="true" /> : <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-info" aria-hidden="true" />}
+              <span>{t(enabled ? 'profile.twoFactor.disableHint' : 'profile.twoFactor.enableHint')}</span>
+            </div>
+            <form className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end" onSubmit={submit} noValidate>
+              <div className="grid gap-2">
+                <Label htmlFor="profile-two-factor-password">{t('profile.twoFactor.currentPassword')}</Label>
+                <Input id="profile-two-factor-password" type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} aria-invalid={mutation.isError ? true : undefined} />
+              </div>
+              <Button type="submit" size="sm" variant={enabled ? 'secondary' : 'default'} disabled={!currentPassword || mutation.isPending}>
+                {mutation.isPending ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : null}
+                {mutation.isPending ? t('profile.twoFactor.working') : t(enabled ? 'profile.twoFactor.disable' : 'profile.twoFactor.enable')}
+              </Button>
+            </form>
+            {mutation.isError ? <p role="alert" className="text-xs text-destructive">{t(errorCode(mutation.error) === 'password_change_rejected' ? 'profile.errors.currentPassword' : errorCode(mutation.error) === 'two_factor_already_enabled' ? 'profile.twoFactor.alreadyEnabled' : 'profile.twoFactor.mutationError')}</p> : null}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function EnrollmentMaterials({ enrollment, copied, copyFailed, onCopy }: { enrollment: UserTwoFactorEnrollmentResponse; copied?: TwoFactorCopyTarget; copyFailed?: TwoFactorCopyTarget; onCopy: (target: TwoFactorCopyTarget, value: string) => Promise<void> }) {
+  const { t } = useTranslation()
+  return (
+    <div className="grid gap-4 rounded-xl border border-warning/25 bg-warning/6 p-4">
+      <div>
+        <p className="text-sm font-semibold text-warning">{t('profile.twoFactor.materialsTitle')}</p>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('profile.twoFactor.materialsHint')}</p>
+      </div>
+      <CopyField label={t('profile.twoFactor.secret')} value={enrollment.secret} target="secret" copied={copied === 'secret'} copyFailed={copyFailed === 'secret'} onCopy={onCopy} />
+      <CopyField label={t('profile.twoFactor.uri')} value={enrollment.otpauth_uri} target="uri" copied={copied === 'uri'} copyFailed={copyFailed === 'uri'} onCopy={onCopy} />
+      <div className="grid gap-2">
+        <div className="flex items-center justify-between gap-3"><Label>{t('profile.twoFactor.backupCodes')}</Label><Button type="button" size="sm" variant="secondary" onClick={() => void onCopy('backup', enrollment.backup_codes.join('\n'))}>{copied === 'backup' ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}{t(copied === 'backup' ? 'profile.twoFactor.copied' : 'profile.twoFactor.copyBackup')}</Button></div>
+        <div className="grid grid-cols-2 gap-2 rounded-lg border border-[var(--hairline)] bg-background/60 p-3 font-mono text-xs tabular-nums sm:grid-cols-5">{enrollment.backup_codes.map((code) => <code key={code}>{code}</code>)}</div>
+        {copyFailed === 'backup' ? <p role="alert" className="text-xs text-destructive">{t('profile.twoFactor.copyFailed')}</p> : null}
+      </div>
+    </div>
+  )
+}
+
+function CopyField({ label, value, target, copied, copyFailed, onCopy }: { label: string; value: string; target: TwoFactorCopyTarget; copied: boolean; copyFailed: boolean; onCopy: (target: TwoFactorCopyTarget, value: string) => Promise<void> }) {
+  const { t } = useTranslation()
+  return (
+    <div className="grid gap-2">
+      <Label>{label}</Label>
+      <div className="flex items-center gap-2">
+        <code className="min-w-0 flex-1 break-all rounded-lg border border-[var(--hairline)] bg-background/60 px-3 py-2 text-xs leading-5">{value}</code>
+        <Button type="button" size="icon-sm" variant="secondary" title={t(copied ? 'profile.twoFactor.copied' : 'profile.twoFactor.copy')} aria-label={t(copied ? 'profile.twoFactor.copied' : 'profile.twoFactor.copy')} onClick={() => void onCopy(target, value)}>{copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}</Button>
+      </div>
+      {copyFailed ? <p role="alert" className="text-xs text-destructive">{t('profile.twoFactor.copyFailed')}</p> : null}
+    </div>
   )
 }
 
@@ -322,7 +442,7 @@ export function ProfilePage({ onPasswordChanged }: ProfilePageProps) {
         <div><div className="mb-1 flex items-center gap-2 text-[0.6875rem] uppercase tracking-[0.18em] text-brand"><UserRound className="size-3.5" aria-hidden="true" />{roleLabel ?? t('profile.eyebrow')}</div><h2 className="text-lg font-semibold">{t('profile.title')}</h2><p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">{t('profile.subtitle')}</p></div>
         <Button type="button" size="sm" variant="secondary" disabled={profileQuery.isFetching} onClick={() => void profileQuery.refetch()}><RefreshCw className={profileQuery.isFetching ? 'animate-spin' : undefined} aria-hidden="true" />{t('profile.actions.refresh')}</Button>
       </header>
-      {profileQuery.isPending ? <ProfileLoading /> : profileQuery.isError || !profile ? <ErrorPanel onRetry={() => void profileQuery.refetch()} /> : <div className="grid gap-4 xl:grid-cols-2"><ProfileCard profile={profile} /><PasswordCard onPasswordChanged={onPasswordChanged} /><div className="xl:col-span-2"><NotificationsCard profile={profile} /></div></div>}
+      {profileQuery.isPending ? <ProfileLoading /> : profileQuery.isError || !profile ? <ErrorPanel onRetry={() => void profileQuery.refetch()} /> : <div className="grid gap-4 xl:grid-cols-2"><ProfileCard profile={profile} /><PasswordCard onPasswordChanged={onPasswordChanged} /><TwoFactorCard /><div className="xl:col-span-2"><NotificationsCard profile={profile} /></div></div>}
     </div>
   )
 }

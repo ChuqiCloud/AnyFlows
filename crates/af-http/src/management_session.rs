@@ -19,6 +19,8 @@ pub(crate) struct LoginRequest {
     pub(crate) username: String,
     #[schema(max_length = 4096, format = Password)]
     pub(crate) password: String,
+    #[schema(min_length = 6, max_length = 128, write_only)]
+    pub(crate) totp_code: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -67,15 +69,33 @@ pub(crate) async fn login_with_credentials(
     username: String,
     password: String,
 ) -> Result<Response, ManagementError> {
-    login_with_authenticator(
+    login_with_credentials_and_totp(state, username, password, None).await
+}
+
+/// 使用用户名密码和可选二次验证码完成认证。
+pub(crate) async fn login_with_credentials_and_totp(
+    state: &HttpState,
+    username: String,
+    password: String,
+    totp_code: Option<String>,
+) -> Result<Response, ManagementError> {
+    login_with_authenticator_and_totp(
         state.session_authenticator.as_ref(),
-        LoginCredentials::new(username, password),
+        LoginCredentials::new(username, password).with_totp_code(totp_code),
     )
     .await
 }
 
 /// 使用统一认证器签发登录会话，并确保原始凭据在调用结束后立即释放。
 pub(crate) async fn login_with_authenticator(
+    authenticator: &dyn af_admin::SessionAuthenticator,
+    credentials: LoginCredentials,
+) -> Result<Response, ManagementError> {
+    login_with_authenticator_and_totp(authenticator, credentials).await
+}
+
+/// 使用统一认证器签发登录会话，并保留二次验证码的清零边界。
+pub(crate) async fn login_with_authenticator_and_totp(
     authenticator: &dyn af_admin::SessionAuthenticator,
     credentials: LoginCredentials,
 ) -> Result<Response, ManagementError> {
@@ -130,6 +150,8 @@ fn session_user(principal: af_admin::SessionPrincipal) -> SessionUser {
 fn map_session_error(error: SessionAuthenticationError) -> ManagementError {
     match error {
         SessionAuthenticationError::InvalidCredentials => ManagementError::InvalidCredentials,
+        SessionAuthenticationError::TwoFactorRequired => ManagementError::TwoFactorRequired,
+        SessionAuthenticationError::TwoFactorInvalid => ManagementError::TwoFactorInvalid,
         SessionAuthenticationError::InvalidSession => ManagementError::InvalidSession,
         SessionAuthenticationError::Internal => ManagementError::Internal,
     }

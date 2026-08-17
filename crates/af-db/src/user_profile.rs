@@ -1,6 +1,7 @@
 use std::{fmt, time::Duration};
 
 use af_domain::{Quota, UserId};
+use base64::Engine as _;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, DbErr,
     EntityTrait, IntoActiveModel, QueryFilter, QuerySelect, Set, SqlErr, TransactionTrait,
@@ -12,7 +13,7 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 use zeroize::Zeroizing;
 
 use crate::{
-    DatabasePool,
+    DatabasePool, EncryptedCredentialEnvelope,
     entity::users,
     identity_secret::{IdentitySecretError, hash_password},
 };
@@ -160,6 +161,21 @@ pub enum UserPasswordChangeOutcome {
     Rejected,
 }
 
+/// 用户 TOTP 配置写入结果；配置密文只在仓储边界内出现。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UserTwoFactorMutationOutcome {
+    /// 已写入并递增会话版本。
+    Updated,
+    /// 用户不存在、被禁用或已软删除。
+    NotFound,
+    /// 当前密码错误或账户没有密码。
+    Rejected,
+    /// 启用状态已经存在。
+    AlreadyEnabled,
+    /// 启用状态不存在。
+    NotEnabled,
+}
+
 /// 用户资料仓储配置错误。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum UserProfileRepositoryConfigError {
@@ -272,6 +288,63 @@ impl UserProfileRepository {
             self.operation_timeout,
             self.change_password_inner(user_id, current_password, new_password),
         )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(record_internal_error(UserProfileRepositoryError::Timeout)),
+        }
+    }
+
+    /// 校验当前密码后写入 TOTP 密文，并撤销全部既有会话。
+    pub async fn enable_two_factor(
+        &self,
+        user_id: UserId,
+        current_password: &[u8],
+        encrypted_secret: EncryptedCredentialEnvelope,
+    ) -> Result<UserTwoFactorMutationOutcome, UserProfileRepositoryError> {
+        match timeout(
+            self.operation_timeout,
+            self.enable_two_factor_inner(user_id, current_password, encrypted_secret),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(record_internal_error(UserProfileRepositoryError::Timeout)),
+        }
+    }
+
+    /// 校验当前密码后移除 TOTP 密文和剩余备份码，并撤销全部既有会话。
+    pub async fn disable_two_factor(
+        &self,
+        user_id: UserId,
+        current_password: &[u8],
+    ) -> Result<UserTwoFactorMutationOutcome, UserProfileRepositoryError> {
+        match timeout(
+            self.operation_timeout,
+            self.disable_two_factor_inner(user_id, current_password),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(record_internal_error(UserProfileRepositoryError::Timeout)),
+        }
+    }
+
+    /// 读取当前用户是否已经配置 TOTP；不会读取或解密 secret。
+    pub async fn two_factor_enabled(
+        &self,
+        user_id: UserId,
+    ) -> Result<Option<bool>, UserProfileRepositoryError> {
+        match timeout(self.operation_timeout, async {
+            let model = users::Entity::find_by_id(user_id.get())
+                .filter(users::Column::Status.eq(1_i16))
+                .filter(users::Column::DeletedAt.is_null())
+                .one(self.pool.connection())
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(|_| record_internal_error(UserProfileRepositoryError::Query))?;
+            Ok::<_, UserProfileRepositoryError>(model.map(|model| model.totp_secret.is_some()))
+        })
         .await
         {
             Ok(result) => result,
@@ -408,6 +481,83 @@ impl UserProfileRepository {
         Ok(UserPasswordChangeOutcome::Updated(user_id))
     }
 
+    async fn enable_two_factor_inner(
+        &self,
+        user_id: UserId,
+        current_password: &[u8],
+        encrypted_secret: EncryptedCredentialEnvelope,
+    ) -> Result<UserTwoFactorMutationOutcome, UserProfileRepositoryError> {
+        let transaction = self.begin_transaction().await?;
+        let Some(existing) = lock_user(&transaction, user_id).await? else {
+            commit_transaction(transaction).await?;
+            return Ok(UserTwoFactorMutationOutcome::NotFound);
+        };
+        let Some(password_hash) = existing.password_hash.as_ref() else {
+            commit_transaction(transaction).await?;
+            return Ok(UserTwoFactorMutationOutcome::Rejected);
+        };
+        if !password_hash.verify(current_password) {
+            commit_transaction(transaction).await?;
+            return Ok(UserTwoFactorMutationOutcome::Rejected);
+        }
+        if existing.totp_secret.is_some() {
+            commit_transaction(transaction).await?;
+            return Ok(UserTwoFactorMutationOutcome::AlreadyEnabled);
+        }
+        let next_session_version = existing
+            .session_version
+            .checked_add(1)
+            .ok_or_else(|| record_internal_error(UserProfileRepositoryError::Invariant))?;
+        let mut active = existing.into_active_model();
+        active.totp_secret = Set(Some(encrypted_json(encrypted_secret)?));
+        active.session_version = Set(next_session_version);
+        active
+            .update(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_write_error)?;
+        commit_transaction(transaction).await?;
+        Ok(UserTwoFactorMutationOutcome::Updated)
+    }
+
+    async fn disable_two_factor_inner(
+        &self,
+        user_id: UserId,
+        current_password: &[u8],
+    ) -> Result<UserTwoFactorMutationOutcome, UserProfileRepositoryError> {
+        let transaction = self.begin_transaction().await?;
+        let Some(existing) = lock_user(&transaction, user_id).await? else {
+            commit_transaction(transaction).await?;
+            return Ok(UserTwoFactorMutationOutcome::NotFound);
+        };
+        let Some(password_hash) = existing.password_hash.as_ref() else {
+            commit_transaction(transaction).await?;
+            return Ok(UserTwoFactorMutationOutcome::Rejected);
+        };
+        if !password_hash.verify(current_password) {
+            commit_transaction(transaction).await?;
+            return Ok(UserTwoFactorMutationOutcome::Rejected);
+        }
+        if existing.totp_secret.is_none() {
+            commit_transaction(transaction).await?;
+            return Ok(UserTwoFactorMutationOutcome::NotEnabled);
+        }
+        let next_session_version = existing
+            .session_version
+            .checked_add(1)
+            .ok_or_else(|| record_internal_error(UserProfileRepositoryError::Invariant))?;
+        let mut active = existing.into_active_model();
+        active.totp_secret = Set(None);
+        active.session_version = Set(next_session_version);
+        active
+            .update(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_write_error)?;
+        commit_transaction(transaction).await?;
+        Ok(UserTwoFactorMutationOutcome::Updated)
+    }
+
     async fn begin_transaction(&self) -> Result<DatabaseTransaction, UserProfileRepositoryError> {
         self.pool
             .connection()
@@ -536,6 +686,19 @@ fn map_write_error(error: DbErr) -> UserProfileRepositoryError {
         return UserProfileRepositoryError::Conflict;
     }
     record_internal_error(UserProfileRepositoryError::Query)
+}
+
+fn encrypted_json(
+    envelope: EncryptedCredentialEnvelope,
+) -> Result<crate::entity::EncryptedJson, UserProfileRepositoryError> {
+    crate::entity::EncryptedJson::from_envelope(serde_json::json!({
+        "version": 1,
+        "algorithm": "xchacha20poly1305",
+        "key_id": envelope.key_id(),
+        "nonce": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(envelope.nonce()),
+        "ciphertext": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(envelope.ciphertext()),
+    }))
+    .map_err(|_| record_internal_error(UserProfileRepositoryError::Invariant))
 }
 
 fn record_internal_error(error: UserProfileRepositoryError) -> UserProfileRepositoryError {

@@ -546,7 +546,7 @@ pub use usage_log::{
 pub use user_profile::{
     MAX_USER_PROFILE_USERNAME_BYTES, UserNotificationPreferencesRecord, UserPasswordChangeOutcome,
     UserProfileLookupOutcome, UserProfileMutationOutcome, UserProfileRecord, UserProfileRepository,
-    UserProfileRepositoryConfigError, UserProfileRepositoryError,
+    UserProfileRepositoryConfigError, UserProfileRepositoryError, UserTwoFactorMutationOutcome,
 };
 pub use user_session::{
     UserSessionLookupByIdOutcome, UserSessionLookupOutcome, UserSessionRepository,

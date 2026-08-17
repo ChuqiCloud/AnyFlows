@@ -13,6 +13,10 @@ pub(crate) enum ManagementError {
     InvalidRequest,
     /// 用户名或密码不正确。
     InvalidCredentials,
+    /// 用户名密码正确，但需要输入 TOTP 或备份码。
+    TwoFactorRequired,
+    /// TOTP 或备份码校验失败。
+    TwoFactorInvalid,
     /// 用户名密码登录已被运营设置关闭。
     LoginDisabled,
     /// JWT 缺失、无效、过期或对应用户已失效。
@@ -111,6 +115,10 @@ pub(crate) enum ManagementError {
     PasswordResetRejected,
     /// 当前密码校验失败；不代表当前会话已经失效。
     PasswordChangeRejected,
+    /// 当前用户已经启用 TOTP。
+    TwoFactorAlreadyEnabled,
+    /// 当前用户尚未启用 TOTP。
+    TwoFactorNotEnabled,
     /// SMTP 设置尚未达到可投递状态。
     EmailNotConfigured,
     /// SMTP 连接、认证或投递失败，底层响应不会向外透传。
@@ -258,6 +266,20 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "invalid_credentials",
                     message: "Invalid credentials",
+                },
+            ),
+            Self::TwoFactorRequired => (
+                StatusCode::UNAUTHORIZED,
+                ManagementErrorBody {
+                    code: "two_factor_required",
+                    message: "Two-factor authentication required",
+                },
+            ),
+            Self::TwoFactorInvalid => (
+                StatusCode::UNAUTHORIZED,
+                ManagementErrorBody {
+                    code: "two_factor_invalid",
+                    message: "Invalid two-factor authentication code",
                 },
             ),
             Self::LoginDisabled => (
@@ -601,6 +623,20 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "password_change_rejected",
                     message: "Current password is incorrect",
+                },
+            ),
+            Self::TwoFactorAlreadyEnabled => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "two_factor_already_enabled",
+                    message: "Two-factor authentication is already enabled",
+                },
+            ),
+            Self::TwoFactorNotEnabled => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "two_factor_not_enabled",
+                    message: "Two-factor authentication is not enabled",
                 },
             ),
             Self::EmailNotConfigured => (

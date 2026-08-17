@@ -32,6 +32,8 @@ pub enum SystemSecretKind {
     OAuthLoginDiscordClientSecret,
     /// 用户登录 OAuth state 内携带的一次性随机材料封套。
     OAuthLoginState,
+    /// 用户 TOTP 配置；用户标识参与 AAD，禁止跨账户搬用。
+    TotpSecret(af_domain::UserId),
     /// 凭据专属代理认证密码；记录标识参与 AAD，禁止密文跨代理搬用。
     CredentialProxyPassword(af_domain::ProxyId),
 }
@@ -47,6 +49,7 @@ impl SystemSecretKind {
             Self::OAuthLoginGithubClientSecret => "oauth_login_github_client_secret",
             Self::OAuthLoginDiscordClientSecret => "oauth_login_discord_client_secret",
             Self::OAuthLoginState => "oauth_login_state",
+            Self::TotpSecret(_) => "totp_secret",
             Self::CredentialProxyPassword(_) => "credential_proxy_password",
         }
     }
@@ -232,6 +235,7 @@ fn system_secret_aad(kind: SystemSecretKind) -> Vec<u8> {
             "oauth_login_providers:discord".to_owned()
         }
         SystemSecretKind::OAuthLoginState => "oauth_login_state:v1".to_owned(),
+        SystemSecretKind::TotpSecret(user_id) => format!("users:{}:totp", user_id.get()),
         SystemSecretKind::CredentialProxyPassword(proxy_id) => {
             format!("proxies:{}", proxy_id.get())
         }

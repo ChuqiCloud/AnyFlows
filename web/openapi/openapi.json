@@ -2706,6 +2706,193 @@
         ]
       }
     },
+    "/api/account/two-factor": {
+      "get": {
+        "tags": [
+          "涓汉璧勬枡涓庡畨鍏?"
+        ],
+        "summary": "璇诲彇褰撳墠鐢ㄦ埛浜屾楠岃瘉鐘舵€?",
+        "operationId": "getUserTwoFactor",
+        "responses": {
+          "200": {
+            "description": "浜屾楠岃瘉鐘舵€?",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserTwoFactorStatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "浼氳瘽鏃犳晥",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "鏈嶅姟鍐呴儴閿欒",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "涓汉璧勬枡涓庡畨鍏?"
+        ],
+        "summary": "鍚敤褰撳墠鐢ㄦ埛 TOTP 浜屾楠岃瘉",
+        "operationId": "enableUserTwoFactor",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserTwoFactorPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "TOTP 鍏ョ綉鏉愭枡锛屼粎杩斿洖涓€娆?",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserTwoFactorEnrollmentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "璇锋眰姝ｆ枃鏃犳晥",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "浼氳瘽鏃犳晥",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "褰撳墠瀵嗙爜閿欒鎴栧凡缁忓惎鐢?",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "鏈嶅姟鍐呴儴閿欒",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "涓汉璧勬枡涓庡畨鍏?"
+        ],
+        "summary": "鍋滅敤褰撳墠鐢ㄦ埛 TOTP 浜屾楠岃瘉",
+        "operationId": "disableUserTwoFactor",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserTwoFactorPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "TOTP 宸插仠鐢紝鏃т細璇濆凡鎾ら攢"
+          },
+          "400": {
+            "description": "璇锋眰姝ｆ枃鏃犳晥",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "浼氳瘽鏃犳晥",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "褰撳墠瀵嗙爜閿欒鎴栧皻鏈惎鐢?",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "鏈嶅姟鍐呴儴閿欒",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/account/notifications": {
       "put": {
         "tags": [
@@ -22272,6 +22459,15 @@
             "type": "string",
             "format": "password",
             "maxLength": 4096
+          },
+          "totp_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "writeOnly": true,
+            "maxLength": 128,
+            "minLength": 6
           }
         },
         "additionalProperties": false
@@ -22324,6 +22520,8 @@
             "enum": [
               "invalid_request",
               "invalid_credentials",
+              "two_factor_required",
+              "two_factor_invalid",
               "password_login_disabled",
               "invalid_session",
               "forbidden",
@@ -22383,6 +22581,8 @@
               "invitation_rejected",
               "password_reset_rejected",
               "password_change_rejected",
+              "two_factor_already_enabled",
+              "two_factor_not_enabled",
               "email_not_configured",
               "email_delivery_failed",
               "group_conflict",
@@ -26066,6 +26266,66 @@
             "items": {
               "$ref": "#/components/schemas/UserInvitationRebateResponse"
             }
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserTwoFactorStatusResponse": {
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserTwoFactorPasswordRequest": {
+        "type": "object",
+        "required": [
+          "current_password"
+        ],
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "format": "password",
+            "writeOnly": true,
+            "maxLength": 4096,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserTwoFactorEnrollmentResponse": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "secret",
+          "otpauth_uri",
+          "backup_codes"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "secret": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 32
+          },
+          "otpauth_uri": {
+            "type": "string",
+            "format": "uri"
+          },
+          "backup_codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "minItems": 1
           }
         },
         "additionalProperties": false

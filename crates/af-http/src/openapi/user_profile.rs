@@ -9,6 +9,7 @@ use crate::{
     user_profile::{
         UserNotificationPreferencesRequest, UserNotificationPreferencesResponse,
         UserPasswordChangeRequest, UserProfileResponse, UserProfileUpdateRequest,
+        UserTwoFactorEnrollmentResponse, UserTwoFactorPasswordRequest, UserTwoFactorStatusResponse,
     },
 };
 
@@ -64,6 +65,57 @@ fn update_user_profile() {}
 fn change_user_password() {}
 
 #[utoipa::path(
+    get,
+    path = "/api/account/two-factor",
+    operation_id = "getUserTwoFactor",
+    tag = "个人资料与安全",
+    summary = "读取当前用户二次验证状态",
+    responses(
+        (status = 200, description = "二次验证状态", body = UserTwoFactorStatusResponse),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn get_user_two_factor() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/account/two-factor",
+    operation_id = "enableUserTwoFactor",
+    tag = "个人资料与安全",
+    summary = "启用当前用户 TOTP 二次验证",
+    request_body = UserTwoFactorPasswordRequest,
+    responses(
+        (status = 200, description = "TOTP 入网材料，仅返回一次", body = UserTwoFactorEnrollmentResponse),
+        (status = 400, description = "请求正文无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 409, description = "当前密码错误或已经启用", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn enable_user_two_factor() {}
+
+#[utoipa::path(
+    delete,
+    path = "/api/account/two-factor",
+    operation_id = "disableUserTwoFactor",
+    tag = "个人资料与安全",
+    summary = "停用当前用户 TOTP 二次验证",
+    request_body = UserTwoFactorPasswordRequest,
+    responses(
+        (status = 204, description = "TOTP 已停用，旧会话已撤销"),
+        (status = 400, description = "请求正文无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 409, description = "当前密码错误或尚未启用", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn disable_user_two_factor() {}
+
+#[utoipa::path(
     put,
     path = "/api/account/notifications",
     operation_id = "updateUserNotificationPreferences",
@@ -86,6 +138,9 @@ fn update_user_notification_preferences() {}
         get_user_profile,
         update_user_profile,
         change_user_password,
+        get_user_two_factor,
+        enable_user_two_factor,
+        disable_user_two_factor,
         update_user_notification_preferences
     ),
     components(schemas(
@@ -93,6 +148,9 @@ fn update_user_notification_preferences() {}
         UserNotificationPreferencesResponse,
         UserProfileUpdateRequest,
         UserPasswordChangeRequest,
+        UserTwoFactorStatusResponse,
+        UserTwoFactorPasswordRequest,
+        UserTwoFactorEnrollmentResponse,
         UserNotificationPreferencesRequest,
         ManagementErrorBody
     ))
