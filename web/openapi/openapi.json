@@ -21836,7 +21836,7 @@
               "null"
             ],
             "format": "double",
-            "default": 1,
+            "default": 1.0,
             "maximum": 4,
             "minimum": 0.25
           },
