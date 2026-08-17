@@ -26,10 +26,10 @@ export const publicTopupAmountBounds = { min: 50, max: 99_999_999 } as const
 export type TopupConfirmationPhase = 'succeeded' | 'processing' | 'failed'
 
 /** 读取并校验当前浏览器会话中尚未完成的充值尝试。 */
-export function readStoredTopupAttempt() {
+export function readStoredTopupAttempt(scope = 'personal') {
   try {
     return parseStoredTopupAttempt(
-      sessionStorage.getItem(topupAttemptStorageKey),
+      sessionStorage.getItem(topupStorageKey(scope)),
       publicTopupAmountBounds,
     )
   } catch {
@@ -38,18 +38,18 @@ export function readStoredTopupAttempt() {
 }
 
 /** 仅持久化金额、支付方式与幂等键，绝不保存支付会话密钥。 */
-export function storeTopupAttempt(attempt: TopupAttempt) {
+export function storeTopupAttempt(attempt: TopupAttempt, scope = 'personal') {
   try {
-    sessionStorage.setItem(topupAttemptStorageKey, JSON.stringify(attempt))
+    sessionStorage.setItem(topupStorageKey(scope), JSON.stringify(attempt))
   } catch {
     // 会话存储不可用时仍可完成当前页面内的幂等重试。
   }
 }
 
 /** 清理已到账或由用户明确放弃的浏览器侧充值尝试。 */
-export function clearStoredTopupAttempt() {
+export function clearStoredTopupAttempt(scope = 'personal') {
   try {
-    sessionStorage.removeItem(topupAttemptStorageKey)
+    sessionStorage.removeItem(topupStorageKey(scope))
   } catch {
     // 存储清理失败不影响服务端订单终态。
   }
@@ -95,12 +95,16 @@ export function usePaymentRedirectStatus() {
 }
 
 /** 返回支付完成后回到本人钱包的固定地址。 */
-export function topupReturnUrl() {
+export function topupReturnUrl(hash = '#/console/wallet') {
   const url = new URL(window.location.href)
   for (const parameter of stripeReturnParameters) url.searchParams.delete(parameter)
   for (const parameter of epayReturnParameters) url.searchParams.delete(parameter)
-  url.hash = '#/console/wallet'
+  url.hash = hash
   return url.toString()
+}
+
+function topupStorageKey(scope: string) {
+  return scope === 'personal' ? topupAttemptStorageKey : `${topupAttemptStorageKey}.${scope}`
 }
 
 /** 合并普通查询串和 hash 查询串，兼容聚合支付网关的返回地址拼接方式。 */

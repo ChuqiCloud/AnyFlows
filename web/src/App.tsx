@@ -26,6 +26,11 @@ import { NetworkSettingsPage } from '@/features/network-settings/network-setting
 import { OrganizationActivityPage } from '@/features/organization-activity/organization-activity-page'
 import { OrganizationApiKeyPage } from '@/features/organization-api-keys/organization-api-key-page'
 import { OrganizationBudgetPage } from '@/features/organization-budgets/organization-budget-page'
+import { OrganizationMemberPage } from '@/features/organization-members/organization-member-page'
+import { OrganizationOverviewPage } from '@/features/organization-console/organization-overview-page'
+import { OrganizationSettingsPage } from '@/features/organization-console/organization-settings-page'
+import { OrganizationWalletPage } from '@/features/organization-wallet/organization-wallet-page'
+import { OrganizationWorkspaceProvider } from '@/features/organization-console/organization-workspace-context'
 import { PaymentSettingsPage } from '@/features/payment-settings/payment-settings-page'
 import { PublicModelPage } from '@/features/models/public-model-page'
 import { PlaygroundPage } from '@/features/playground/playground-page'
@@ -161,6 +166,14 @@ function ManagementEntry({
                   ? 'organizationActivity.title'
                 : view === 'organization-budgets'
                   ? 'organizationBudgets.title'
+                : view === 'organization-members'
+                  ? 'organizationConsole.members.title'
+                : view === 'organization-overview'
+                  ? 'organizationConsole.overview.title'
+                : view === 'organization-settings'
+                  ? 'organizationConsole.settings.title'
+                : view === 'organization-wallet'
+                  ? 'organizationConsole.wallet.title'
               : view === 'wallet'
                 ? 'wallet.title'
               : view === 'invitations'
@@ -220,6 +233,14 @@ function ManagementEntry({
                   ? <OrganizationActivityPage />
                 : view === 'organization-budgets'
                   ? <OrganizationBudgetPage />
+                : view === 'organization-members'
+                  ? <OrganizationMemberPage />
+                : view === 'organization-overview'
+                  ? <OrganizationOverviewPage />
+                : view === 'organization-settings'
+                  ? <OrganizationSettingsPage />
+                : view === 'organization-wallet'
+                  ? <OrganizationWalletPage />
               : view === 'wallet'
                 ? <WalletPage />
               : view === 'invitations'
@@ -244,6 +265,10 @@ function ManagementEntry({
     && view !== 'organization-api-keys'
     && view !== 'organization-activity'
     && view !== 'organization-budgets'
+    && view !== 'organization-members'
+    && view !== 'organization-overview'
+    && view !== 'organization-settings'
+    && view !== 'organization-wallet'
     && view !== 'wallet'
     && view !== 'subscriptions'
     && view !== 'invitations'
@@ -260,9 +285,11 @@ function ManagementEntry({
       onUserHomeRequired={onUserHomeRequired}
     >
       {(session) => (
-        <AppShell title={t(titleKey)} currentUser={session.user} onLogout={onLogout}>
-          {content(session.user.role === 'admin')}
-        </AppShell>
+        <OrganizationWorkspaceProvider enterpriseView={view.startsWith('organization-')}>
+          <AppShell title={t(titleKey)} currentUser={session.user} onLogout={onLogout}>
+            {content(session.user.role === 'admin')}
+          </AppShell>
+        </OrganizationWorkspaceProvider>
       )}
     </SessionBoundary>
   )

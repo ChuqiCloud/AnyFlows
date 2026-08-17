@@ -111,15 +111,18 @@ test('同一作用域的新版本必须晚于上一版本生效', () => {
 })
 
 test('页面按权限门控预算查询并在切换时释放组织缓存', async () => {
-  const [pageSource, apiSource] = await Promise.all([
+  const [pageSource, apiSource, workspaceSource] = await Promise.all([
     readFile(new URL('../src/features/organization-budgets/organization-budget-page.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/features/organization-budgets/organization-budget-api.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/features/organization-console/organization-workspace-context.tsx', import.meta.url), 'utf8'),
   ])
   assert.match(pageSource, /permissions\.includes\(BUDGET_PERMISSION\)/)
   assert.match(pageSource, /useOrganizationBudgets\(organizationId, canManage\)/)
-  assert.match(pageSource, /key=\{selectedId\}/)
+  assert.match(pageSource, /useOrganizationWorkspace/)
+  assert.match(pageSource, /key=\{workspace\.selectedId\}/)
   assert.match(apiSource, /await queryClient\.cancelQueries/)
   assert.match(apiSource, /queryClient\.removeQueries/)
+  assert.match(workspaceSource, /clearOrganizationWorkspaceCache/)
 })
 
 test('企业预算中英文文案与移动端无宽表格实现完整', async () => {

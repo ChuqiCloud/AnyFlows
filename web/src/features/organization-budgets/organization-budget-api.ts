@@ -19,8 +19,8 @@ import type {
 export const organizationDirectoryQueryKey = ['organization-directory'] as const
 const organizationQueryRoot = ['organization'] as const
 
-function organizationQueryKey(organizationId: number, resource: string) {
-  return [...organizationQueryRoot, organizationId, resource] as const
+export function organizationQueryKey(organizationId: number, ...resources: readonly unknown[]) {
+  return [...organizationQueryRoot, organizationId, ...resources] as const
 }
 
 /** 读取当前账号可进入的企业空间，不把平台管理员身份当作企业成员。 */
@@ -35,9 +35,10 @@ export function useOrganizationDirectory() {
 }
 
 /** 先读取服务端权限投影，预算查询和编辑都依赖该结果。 */
-export function useOrganizationOverview(organizationId: number) {
+export function useOrganizationOverview(organizationId: number, enabled = true) {
   return useQuery({
     queryKey: organizationQueryKey(organizationId, 'overview'),
+    enabled,
     queryFn: async ({ signal }) => {
       const { data } = await getOrganizationOverview({
         client: apiClient,

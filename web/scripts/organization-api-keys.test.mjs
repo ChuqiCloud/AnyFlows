@@ -53,15 +53,17 @@ test('企业 Key 表单复用基础策略并闭合多窗口限制', () => {
 })
 
 test('页面按服务端权限分离本人管理和管理员脱敏目录', async () => {
-  const [pageSource, apiSource, tableSource] = await Promise.all([
+  const [pageSource, apiSource, tableSource, workspaceSource] = await Promise.all([
     readFile(new URL('../src/features/organization-api-keys/organization-api-key-page.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/features/organization-api-keys/organization-api-key-api.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/features/organization-api-keys/organization-api-key-table.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/features/organization-console/organization-workspace-context.tsx', import.meta.url), 'utf8'),
   ])
   assert.match(pageSource, /organization\.keys\.manage_self/)
   assert.match(pageSource, /organization\.keys\.read_all/)
-  assert.match(pageSource, /clearOrganizationWorkspaceCache/)
-  assert.match(pageSource, /key=\{selectedId\}/)
+  assert.match(pageSource, /useOrganizationWorkspace/)
+  assert.match(pageSource, /key=\{workspace\.selectedId\}/)
+  assert.match(workspaceSource, /clearOrganizationWorkspaceCache/)
   assert.match(apiSource, /listOrganizationTokens/)
   assert.match(apiSource, /listOrganizationTokenDirectory/)
   assert.match(apiSource, /disableOwnOrganizationToken/)

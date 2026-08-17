@@ -41,6 +41,10 @@
     "organizationApiKeys": "Organization API keys",
     "organizationBudgets": "Organization budgets",
     "organizationActivity": "Organization logs & audit",
+    "organizationOverview": "Organization overview",
+    "organizationMembers": "Members and teams",
+    "organizationWallet": "Organization wallet",
+    "organizationSettings": "Organization settings",
     "wallet": "My wallet",
     "subscriptions": "My subscriptions",
     "invitations": "Invitations",
@@ -73,7 +77,9 @@
     "expand": "Expand sidebar",
     "home": "Back to home",
     "balanceUnavailable": "Balance unavailable",
-    "balanceValue": "Available balance: {{value}} quota"
+    "balanceValue": "Available balance: {{value}} quota",
+    "organizationBalanceUnavailable": "Organization balance unavailable",
+    "organizationBalanceValue": "Organization available balance: {{value}} quota"
   },
   "dashboard": {
     "title": "Operations overview",
@@ -3284,6 +3290,15 @@
     "eyebrow": "Invitations and rebates",
     "title": "Invitation center",
     "subtitle": "Share your personal link and review confirmed invitation rebates.",
+    "organization": {
+      "title": "Accept an organization invitation",
+      "subtitle": "Organizations use the same sign-in account. Paste the one-time token from an organization administrator to join.",
+      "token": "Organization invitation token",
+      "accept": "Accept invitation",
+      "invalid": "Enter a complete, valid organization invitation token.",
+      "accepted": "You joined organization #{{organizationId}}. The workspace directory has been refreshed.",
+      "error": "The invitation could not be accepted. Confirm that your signed-in email matches the invitation or ask an administrator to resend it."
+    },
     "share": {
       "title": "Your invitation",
       "subtitle": "The code is generated randomly and is ready to share.",
@@ -4060,6 +4075,286 @@
       "usageBody": "The usage-log service is temporarily unavailable. Keep the current scope and filters, then retry.",
       "auditTitle": "Organization management audit could not be loaded",
       "auditBody": "The audit service is temporarily unavailable. Keep the current filters, then retry."
+    }
+  },
+  "organizationConsole": {
+    "eyebrow": "Organization workspace",
+    "workspace": {
+      "label": "Current workspace",
+      "personal": "Personal workspace"
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Try again",
+      "cancel": "Cancel",
+      "save": "Save",
+      "edit": "Edit",
+      "copy": "Copy",
+      "done": "Done",
+      "loadMore": "Load more",
+      "loadingMore": "Loading"
+    },
+    "common": {
+      "restricted": "Restricted",
+      "unlimited": "Not set",
+      "allowed": "Allowed",
+      "denied": "Not granted"
+    },
+    "empty": {
+      "title": "No organizations are available",
+      "body": "This account has not joined an organization. Organizations appear here after an invitation is accepted."
+    },
+    "errors": {
+      "directoryTitle": "Organization directory could not be loaded",
+      "directoryBody": "The service did not return this account's organization memberships. Try again shortly.",
+      "overviewTitle": "Organization context could not be loaded",
+      "overviewBody": "The role, entitlement, and permission projection for this organization is unavailable.",
+      "listTitle": "Organization directory data could not be loaded",
+      "listBody": "Members, teams, or invitations are temporarily unavailable. Existing server state is unaffected.",
+      "conflict": "The data changed concurrently. Refresh and submit against the latest version.",
+      "mutation": "The operation did not return a reliable result. Keep the current input, refresh the facts, and retry."
+    },
+    "roles": {
+      "owner": "Owner",
+      "admin": "Admin",
+      "billing": "Billing",
+      "member": "Member",
+      "viewer": "Viewer"
+    },
+    "memberStatus": {
+      "active": "Active",
+      "suspended": "Suspended",
+      "removed": "Removed"
+    },
+    "teamStatus": {
+      "active": "Active",
+      "disabled": "Disabled"
+    },
+    "invitationStatus": {
+      "pending": "Pending",
+      "accepted": "Accepted",
+      "revoked": "Revoked",
+      "expired": "Expired"
+    },
+    "entitlement": {
+      "active": "Active",
+      "grace": "Grace period",
+      "read_only": "Read only",
+      "suspended": "Suspended",
+      "closed": "Closed"
+    },
+    "entitlementHint": {
+      "active": "The current entitlement allows all purchased organization capabilities.",
+      "grace": "Existing resources remain available with limits, but new members, teams, and API keys are blocked.",
+      "read_only": "Console, logs, and ledgers remain readable while new organization calls and ordinary writes are stopped.",
+      "suspended": "Organization spending and ordinary management writes are suspended for billing or compliance risk.",
+      "closed": "The organization is closed and only retained audit facts remain available."
+    },
+    "permissions": {
+      "organization": {
+        "profile": { "write": "Edit organization profile" },
+        "ownership": { "transfer": "Transfer organization ownership" },
+        "members": { "manage": "Manage members and invitations" },
+        "teams": { "manage": "Manage teams" },
+        "wallet": { "read": "Read organization wallet", "manage": "Top up and adjust wallet" },
+        "budgets": { "manage": "Manage organization budgets" },
+        "keys": { "read_all": "Read all organization keys", "manage_self": "Manage own organization keys" },
+        "usage_logs": { "read_all": "Read all usage logs", "read_self": "Read own usage logs" },
+        "audit": { "read": "Read management audit" }
+      }
+    },
+    "overview": {
+      "title": "Organization overview",
+      "subtitle": "Review this organization's funding, budgets, seats, traffic, and commercial entitlement state.",
+      "metrics": {
+        "label": "Organization metrics",
+        "balance": "Available balance",
+        "budget": "Organization budget remaining",
+        "requests": "Requests in current log scope",
+        "seats": "Active seats",
+        "balanceHint": "Available only to this organization and never copied to a personal wallet.",
+        "budgetHint": "Remaining quota in the current organization-level budget window.",
+        "requestsHint": "Calculated from the redacted aggregate allowed by the current role.",
+        "seatsHint": "{{count}} seats remain available.",
+        "permissionHint": "The current role cannot read this metric."
+      },
+      "capacity": {
+        "title": "Entitled capacity",
+        "subtitle": "The server enforces these commercial limits; the client only renders the live projection.",
+        "seats": "Member seats",
+        "teams": "Teams",
+        "keys": "Organization key limit",
+        "value": "{{used}} / {{limit}}",
+        "limitOnly": "Limit {{limit}}"
+      },
+      "links": {
+        "members": "Members and teams",
+        "keys": "Organization API keys",
+        "wallet": "Organization wallet and ledger",
+        "budgets": "Layered budgets",
+        "activity": "Usage logs and audit",
+        "settings": "Organization settings"
+      }
+    },
+    "members": {
+      "title": "Members and teams",
+      "subtitle": "Manage roles, state, team assignment, and invitations within this organization without affecting personal or other organization workspaces.",
+      "summary": { "seats": "Active seats", "teams": "Active teams", "role": "My organization role" },
+      "tabs": { "label": "Member management view", "members": "Members", "teams": "Teams", "invitations": "Invitations" },
+      "memberLabel": "User #{{id}}",
+      "membershipLabel": "Membership #{{id}}",
+      "teamLabel": "Team #{{id}}",
+      "noTeam": "No team assigned",
+      "fields": { "member": "Member", "role": "Role", "status": "Status", "team": "Primary team" },
+      "list": {
+        "title": "Member directory",
+        "subtitle": "Stable cursors load organization members. Owners can only change through ownership transfer.",
+        "emptyTitle": "No organization members yet",
+        "emptyBody": "Members appear here after an invitation is accepted."
+      },
+      "editor": {
+        "title": "Edit organization member",
+        "description": "Change the role, state, and team for user #{{userId}} inside {{organization}}.",
+        "removedWarning": "Removing this membership disables its {{organization}} capabilities and organization keys while retaining historical billing, usage, and audit facts.",
+        "ownerHint": "Owners cannot be edited here. Use ownership transfer in organization settings."
+      }
+    },
+    "teams": {
+      "disabledByEntitlement": "Team management is disabled by the current commercial entitlement. Existing teams remain read only.",
+      "noDescription": "No team description",
+      "actions": { "create": "Create team", "disable": "Disable team" },
+      "list": {
+        "title": "Team directory",
+        "subtitle": "Teams are organization budget groups and remain separate from platform billing groups.",
+        "emptyTitle": "No teams yet",
+        "emptyBody": "Create teams and assign members when the entitlement allows it."
+      },
+      "fields": { "name": "Team name", "description": "Team description" },
+      "validation": { "name": "The team name is required, cannot have surrounding whitespace, and must be at most 160 bytes." },
+      "editor": {
+        "createTitle": "Create organization team",
+        "editTitle": "Edit organization team",
+        "description": "This team belongs only to {{organization}} and never creates or changes a platform group."
+      },
+      "disable": {
+        "title": "Disable team",
+        "body": "Disable “{{team}}” in {{organization}}? The server rejects this while active members remain assigned."
+      }
+    },
+    "invitations": {
+      "actions": { "invite": "Invite member", "send": "Send invitation", "batch": "Batch invitations", "resend": "Resend", "revoke": "Revoke" },
+      "fields": { "email": "Invitee email", "expiresAt": "Expiration", "expiresHint": "Leave blank for the server default. Entered values use the browser's local time." },
+      "validation": "Enter a valid email and a future expiration time.",
+      "list": {
+        "title": "Organization invitations",
+        "subtitle": "The directory shows redacted invitation facts and never returns plaintext emails or tokens.",
+        "emptyTitle": "No organization invitations yet",
+        "emptyBody": "Single and batch invitations appear here after creation.",
+        "expires": "Expires {{time}}"
+      },
+      "editor": { "title": "Invite organization member", "description": "Create a one-time email invitation for {{organization}}." },
+      "issued": {
+        "title": "Invitation token issued",
+        "body": "This is the one-time plaintext token for joining {{organization}}. It cannot be read again after closing.",
+        "hint": "Send it through a trusted channel. The invitee signs in and pastes it in the Invitation center."
+      },
+      "batch": {
+        "title": "Invite members in batch",
+        "description": "Enter email, role, and team as structured rows for {{organization}}, up to 200 items.",
+        "rows": "Structured invitation rows",
+        "count": "{{count}} rows",
+        "add": "Add row",
+        "remove": "Remove row",
+        "validation": "Every row needs a valid email, with 1 to 200 total rows.",
+        "preview": "Preview",
+        "submit": "Submit batch",
+        "ready": "Ready",
+        "blocked": "Needs action",
+        "previewReady": "All rows passed server preview. {{count}} seats remain available.",
+        "previewBlocked": "Some rows cannot be submitted. {{count}} seats remain available."
+      },
+      "issues": {
+        "invalid_email": "Invalid email",
+        "invalid_expiration": "Invalid expiration",
+        "duplicate_email": "Duplicate email in batch",
+        "existing_member": "Already an organization member",
+        "pending_invitation": "A pending invitation already exists",
+        "invalid_team": "Team is unavailable",
+        "seat_unavailable": "No seat is available"
+      },
+      "revoke": { "title": "Revoke organization invitation", "body": "Revoke this pending invitation for {{organization}}?" }
+    },
+    "wallet": {
+      "title": "Organization wallet and ledger",
+      "subtitle": "Review organization balance, in-flight reservations, lifetime usage, and append-only funding facts. Organization spending never falls back to a personal wallet.",
+      "restricted": { "title": "Wallet read permission is required", "body": "The current organization role cannot read balances or ledger entries. Server-side funding limits remain enforced." },
+      "summary": {
+        "label": "Organization wallet state",
+        "balance": "Available balance",
+        "balanceHint": "Available for new organization reservations",
+        "used": "Lifetime usage",
+        "usedHint": "Organization quota already settled",
+        "frozen": "In flight",
+        "frozenHint": "Reserved quota awaiting final settlement"
+      },
+      "topup": { "title": "Organization online top-up", "description": "Create an isolated top-up order for {{organization}}. Funds never enter a personal wallet." },
+      "adjustment": {
+        "title": "Organization wallet adjustment",
+        "subtitle": "Apply an audited balance delta through an append-only event.",
+        "direction": "Adjustment direction",
+        "increase": "Increase balance",
+        "decrease": "Decrease balance",
+        "amount": "Quota amount",
+        "reason": "Adjustment reason",
+        "preview": "Balance after adjustment",
+        "submit": "Submit adjustment",
+        "applied": "The adjustment was written to the organization wallet and append-only ledger.",
+        "replayed": "The same event already exists; the existing adjustment result was returned.",
+        "validation": { "amount": "Enter a positive safe integer.", "reason": "The reason is required, cannot have surrounding whitespace or control characters, and is limited to 500 bytes." },
+        "previewState": { "empty": "Waiting for input", "insufficient": "Insufficient balance", "overflow": "Would overflow", "ready": "Ready" }
+      },
+      "ledger": {
+        "title": "Organization funding ledger",
+        "subtitle": "Append-only organization balance facts in descending ledger ID order.",
+        "emptyTitle": "No ledger entries yet",
+        "emptyBody": "Opening balances, adjustments, top-ups, and usage settlements create entries here.",
+        "balanceAfter": "Balance {{value}}",
+        "systemActor": "System",
+        "actor": "Actor #{{id}}"
+      },
+      "entryType": { "opening_balance": "Opening balance", "admin_adjustment": "Manual adjustment", "topup": "Top-up", "usage_settlement": "Usage settlement" },
+      "entryReason": { "opening_balance": "Organization opening balance", "admin_adjustment": "Organization wallet adjustment", "topup": "Organization top-up", "usage_settlement": "Organization usage settlement" },
+      "errors": {
+        "summaryTitle": "Organization wallet could not be loaded",
+        "summaryBody": "The service did not return a reliable balance state. Try again shortly.",
+        "ledgerTitle": "Organization ledger could not be loaded",
+        "ledgerBody": "Ledger history is temporarily unavailable. Existing server funding facts are unaffected.",
+        "more": "Earlier ledger entries could not be loaded.",
+        "wallet_insufficient_quota": "The organization balance is insufficient for this debit.",
+        "wallet_overflow": "The adjusted balance would exceed the safe integer limit.",
+        "wallet_outcome_unknown": "The result cannot be confirmed yet. Retry with the same event key.",
+        "wallet_event_conflict": "The event key is already bound to a different adjustment fact.",
+        "unknown": "The organization wallet operation failed. Refresh the facts and retry."
+      }
+    },
+    "settings": {
+      "title": "Organization settings",
+      "subtitle": "Review organization identity, commercial entitlement, and fixed-role permissions, and transfer ownership where the server supports it.",
+      "identity": { "title": "Organization identity", "subtitle": "The current API exposes a read-only identity projection.", "name": "Organization name", "slug": "Organization slug", "organizationId": "Organization ID", "role": "My role" },
+      "entitlement": { "title": "Commercial entitlement", "subtitle": "The server enforces entitlement state and capacity.", "seats": "Seats", "teams": "Teams", "keys": "Organization key limit", "audit": "Audit retention", "days": "{{count}} days" },
+      "permissions": { "title": "Current role permissions", "subtitle": "Fixed roles map only to stable organization permission codes and cannot grant platform permissions." },
+      "ownership": {
+        "title": "Transfer ownership",
+        "subtitle": "The transaction promotes the new owner before demoting the current owner.",
+        "target": "New organization owner",
+        "select": "Select an active member",
+        "action": "Transfer ownership",
+        "ownerOnly": "Only the current owner can transfer organization ownership.",
+        "confirmTitle": "Confirm ownership transfer",
+        "confirmBody": "Transfer {{organization}} ownership to user #{{userId}}? Your role will be demoted after completion.",
+        "confirm": "Confirm transfer"
+      },
+      "unavailable": { "title": "Profile editing and closure are not available yet", "body": "The backend does not currently expose organization rename or closure APIs, so this page does not render forms that would always fail." }
     }
   },
   "wallet": {

@@ -1,4 +1,3 @@
-import { useQueryClient } from '@tanstack/react-query'
 import {
   Building2,
   KeyRound,
@@ -9,21 +8,18 @@ import {
   UsersRound,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { DataTablePagination } from '@/components/data-table/data-table-pagination'
 import { useCursorPagination } from '@/components/data-table/use-table-pagination'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { IssuedApiKeyDialog } from '@/features/api-keys/issued-api-key-dialog'
-import {
-  clearOrganizationWorkspaceCache,
-  useOrganizationDirectory,
-  useOrganizationOverview,
-} from '@/features/organization-budgets/organization-budget-api'
+import { useOrganizationOverview } from '@/features/organization-budgets/organization-budget-api'
+import { useOrganizationWorkspace } from '@/features/organization-console/organization-workspace-context'
+import { OrganizationMobileWorkspaceSelect } from '@/features/organization-console/organization-workspace-switcher'
 import type {
   IssuedOrganizationTokenResponse,
   OrganizationOverviewResponse,
@@ -50,34 +46,7 @@ type WorkspaceMode = 'directory' | 'self'
 /** 企业 Key 入口；企业切换会清理旧查询、游标、表单和一次性密钥状态。 */
 export function OrganizationApiKeyPage() {
   const { t } = useTranslation()
-  const queryClient = useQueryClient()
-  const organizationsQuery = useOrganizationDirectory()
-  const [selectedId, setSelectedId] = useState<number>()
-  const [switching, setSwitching] = useState(false)
-  const organizations = useMemo(() => organizationsQuery.data ?? [], [organizationsQuery.data])
-
-  useEffect(() => {
-    if (organizations.length === 0) {
-      setSelectedId(undefined)
-      return
-    }
-    if (selectedId === undefined) {
-      setSelectedId(organizations[0].id)
-      return
-    }
-    if (!organizations.some((organization) => organization.id === selectedId)) {
-      void clearOrganizationWorkspaceCache(queryClient, selectedId)
-      setSelectedId(organizations[0].id)
-    }
-  }, [organizations, queryClient, selectedId])
-
-  const selectOrganization = async (nextId: number) => {
-    if (nextId === selectedId || switching) return
-    setSwitching(true)
-    if (selectedId !== undefined) await clearOrganizationWorkspaceCache(queryClient, selectedId)
-    setSelectedId(nextId)
-    setSwitching(false)
-  }
+  const workspace = useOrganizationWorkspace()
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -91,39 +60,23 @@ export function OrganizationApiKeyPage() {
           <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">{t('organizationApiKeys.subtitle')}</p>
         </div>
 
-        {organizations.length > 0 ? (
-          <div className="w-full min-w-0 sm:w-72">
-            <label htmlFor="organization-api-key-workspace" className="mb-1.5 block text-[0.6875rem] font-medium text-muted-foreground">
-              {t('organizationApiKeys.workspace.label')}
-            </label>
-            <Select
-              id="organization-api-key-workspace"
-              value={selectedId ?? ''}
-              disabled={switching}
-              onChange={(event) => void selectOrganization(Number(event.target.value))}
-            >
-              {organizations.map((organization) => (
-                <option key={organization.id} value={organization.id}>{organization.name} ({organization.slug})</option>
-              ))}
-            </Select>
-          </div>
-        ) : null}
+        <OrganizationMobileWorkspaceSelect />
       </header>
 
-      {organizationsQuery.isPending ? (
+      {workspace.organizationsQuery.isPending ? (
         <OrganizationDirectoryLoading />
-      ) : organizationsQuery.isError && organizationsQuery.data === undefined ? (
+      ) : workspace.organizationsQuery.isError && workspace.organizationsQuery.data === undefined ? (
         <PageState
           title={t('organizationApiKeys.errors.directoryTitle')}
           body={t('organizationApiKeys.errors.directoryBody')}
-          action={<Button type="button" size="sm" variant="secondary" onClick={() => void organizationsQuery.refetch()}><RefreshCw aria-hidden="true" />{t('organizationApiKeys.actions.retry')}</Button>}
+          action={<Button type="button" size="sm" variant="secondary" onClick={() => void workspace.organizationsQuery.refetch()}><RefreshCw aria-hidden="true" />{t('organizationApiKeys.actions.retry')}</Button>}
         />
-      ) : organizations.length === 0 ? (
+      ) : workspace.organizations.length === 0 ? (
         <PageState icon={Building2} title={t('organizationApiKeys.workspace.emptyTitle')} body={t('organizationApiKeys.workspace.emptyBody')} />
-      ) : selectedId === undefined || switching ? (
+      ) : workspace.selectedId === undefined || workspace.switching ? (
         <OrganizationWorkspaceLoading />
       ) : (
-        <OrganizationApiKeyWorkspace key={selectedId} organizationId={selectedId} />
+        <OrganizationApiKeyWorkspace key={workspace.selectedId} organizationId={workspace.selectedId} />
       )}
     </div>
   )

@@ -19,9 +19,10 @@ export const userTopupConfigurationQueryKey = ['user-wallet', 'topup-configurati
 const bearerSecurity = [{ key: 'bearerAuth', scheme: 'bearer', type: 'http' }] as const
 
 /** 读取当前登录用户自己的钱包摘要，并周期校正顶栏余额。 */
-export function useUserWalletSummary() {
+export function useUserWalletSummary(enabled = true) {
   return useQuery({
     queryKey: userWalletSummaryQueryKey,
+    enabled,
     queryFn: async ({ signal }) => {
       const { data } = await getUserWallet({ client: apiClient, signal })
       return data

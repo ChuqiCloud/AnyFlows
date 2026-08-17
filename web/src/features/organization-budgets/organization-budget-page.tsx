@@ -1,4 +1,3 @@
-import { useQueryClient } from '@tanstack/react-query'
 import {
   Building2,
   CircleCheck,
@@ -8,20 +7,19 @@ import {
   SlidersHorizontal,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useOrganizationWorkspace } from '@/features/organization-console/organization-workspace-context'
+import { OrganizationMobileWorkspaceSelect } from '@/features/organization-console/organization-workspace-switcher'
 import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import type { OrganizationOverviewResponse } from '@/lib/api/generated/types.gen'
 import {
-  clearOrganizationWorkspaceCache,
   organizationBudgetErrorStatus,
   useOrganizationBudgets,
-  useOrganizationDirectory,
   useOrganizationMemberCatalog,
   useOrganizationOverview,
   useOrganizationTeamCatalog,
@@ -34,36 +32,7 @@ const BUDGET_PERMISSION = 'organization.budgets.manage'
 /** 企业空间预算入口；选择器是唯一组织上下文来源，切换时彻底释放旧组织状态。 */
 export function OrganizationBudgetPage() {
   const { t } = useTranslation()
-  const queryClient = useQueryClient()
-  const organizationsQuery = useOrganizationDirectory()
-  const [selectedId, setSelectedId] = useState<number>()
-  const [switching, setSwitching] = useState(false)
-  const organizations = useMemo(() => organizationsQuery.data ?? [], [organizationsQuery.data])
-
-  useEffect(() => {
-    if (organizations.length === 0) {
-      setSelectedId(undefined)
-      return
-    }
-    if (selectedId === undefined) {
-      setSelectedId(organizations[0].id)
-      return
-    }
-    if (!organizations.some((organization) => organization.id === selectedId)) {
-      void clearOrganizationWorkspaceCache(queryClient, selectedId)
-      setSelectedId(organizations[0].id)
-    }
-  }, [organizations, queryClient, selectedId])
-
-  const selectOrganization = async (nextId: number) => {
-    if (nextId === selectedId || switching) return
-    setSwitching(true)
-    if (selectedId !== undefined) {
-      await clearOrganizationWorkspaceCache(queryClient, selectedId)
-    }
-    setSelectedId(nextId)
-    setSwitching(false)
-  }
+  const workspace = useOrganizationWorkspace()
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -79,50 +48,32 @@ export function OrganizationBudgetPage() {
           </p>
         </div>
 
-        {organizations.length > 0 ? (
-          <div className="w-full min-w-0 sm:w-72">
-            <label htmlFor="organization-budget-workspace" className="mb-1.5 block text-[0.6875rem] font-medium text-muted-foreground">
-              {t('organizationBudgets.workspace.label')}
-            </label>
-            <Select
-              id="organization-budget-workspace"
-              value={selectedId ?? ''}
-              disabled={switching}
-              onChange={(event) => void selectOrganization(Number(event.target.value))}
-            >
-              {organizations.map((organization) => (
-                <option key={organization.id} value={organization.id}>
-                  {organization.name} ({organization.slug})
-                </option>
-              ))}
-            </Select>
-          </div>
-        ) : null}
+        <OrganizationMobileWorkspaceSelect />
       </header>
 
-      {organizationsQuery.isPending ? (
+      {workspace.organizationsQuery.isPending ? (
         <OrganizationDirectoryLoading />
-      ) : organizationsQuery.isError && organizationsQuery.data === undefined ? (
+      ) : workspace.organizationsQuery.isError && workspace.organizationsQuery.data === undefined ? (
         <PageState
           title={t('organizationBudgets.errors.directoryTitle')}
           body={t('organizationBudgets.errors.directoryBody')}
           action={(
-            <Button type="button" size="sm" variant="secondary" onClick={() => void organizationsQuery.refetch()}>
+            <Button type="button" size="sm" variant="secondary" onClick={() => void workspace.organizationsQuery.refetch()}>
               <RefreshCw aria-hidden="true" />
               {t('organizationBudgets.actions.retry')}
             </Button>
           )}
         />
-      ) : organizations.length === 0 ? (
+      ) : workspace.organizations.length === 0 ? (
         <PageState
           icon={Building2}
           title={t('organizationBudgets.workspace.emptyTitle')}
           body={t('organizationBudgets.workspace.emptyBody')}
         />
-      ) : selectedId === undefined || switching ? (
+      ) : workspace.selectedId === undefined || workspace.switching ? (
         <OrganizationWorkspaceLoading />
       ) : (
-        <OrganizationBudgetWorkspace key={selectedId} organizationId={selectedId} />
+        <OrganizationBudgetWorkspace key={workspace.selectedId} organizationId={workspace.selectedId} />
       )}
     </div>
   )
