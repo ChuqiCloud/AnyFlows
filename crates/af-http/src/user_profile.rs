@@ -139,7 +139,6 @@ pub(crate) struct UserTwoFactorEnrollmentResponse {
     enabled: bool,
     #[schema(min_length = 32, max_length = 64)]
     secret: String,
-    #[schema(format = Uri)]
     otpauth_uri: String,
     #[schema(min_items = 1, max_items = 10)]
     backup_codes: Vec<String>,

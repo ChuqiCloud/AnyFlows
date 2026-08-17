@@ -22,7 +22,9 @@ use crate::{
     management_auth::{ManagementAuthenticationState, authenticate_management_session},
     management_authorization::authorize_management_admin,
     management_error::ManagementError,
-    management_session::{LoginRequest, login_with_authenticator_and_totp, no_store_json},
+    management_session::{
+        LoginRequest, login_with_authenticator, login_with_authenticator_and_totp, no_store_json,
+    },
 };
 
 #[derive(Clone)]

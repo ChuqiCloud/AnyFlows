@@ -26316,8 +26316,7 @@
             "minLength": 32
           },
           "otpauth_uri": {
-            "type": "string",
-            "format": "uri"
+            "type": "string"
           },
           "backup_codes": {
             "type": "array",
