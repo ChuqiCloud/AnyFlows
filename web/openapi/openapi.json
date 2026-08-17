@@ -26270,65 +26270,6 @@
         },
         "additionalProperties": false
       },
-      "UserTwoFactorStatusResponse": {
-        "type": "object",
-        "required": [
-          "enabled"
-        ],
-        "properties": {
-          "enabled": {
-            "type": "boolean"
-          }
-        },
-        "additionalProperties": false
-      },
-      "UserTwoFactorPasswordRequest": {
-        "type": "object",
-        "required": [
-          "current_password"
-        ],
-        "properties": {
-          "current_password": {
-            "type": "string",
-            "format": "password",
-            "writeOnly": true,
-            "maxLength": 4096,
-            "minLength": 1
-          }
-        },
-        "additionalProperties": false
-      },
-      "UserTwoFactorEnrollmentResponse": {
-        "type": "object",
-        "required": [
-          "enabled",
-          "secret",
-          "otpauth_uri",
-          "backup_codes"
-        ],
-        "properties": {
-          "enabled": {
-            "type": "boolean"
-          },
-          "secret": {
-            "type": "string",
-            "maxLength": 64,
-            "minLength": 32
-          },
-          "otpauth_uri": {
-            "type": "string"
-          },
-          "backup_codes": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 10,
-            "minItems": 1
-          }
-        },
-        "additionalProperties": false
-      },
       "UserNotificationPreferencesRequest": {
         "type": "object",
         "required": [
@@ -27110,6 +27051,65 @@
           }
         ],
         "description": "当前用户继续支付所需的闭合动作。"
+      },
+      "UserTwoFactorEnrollmentResponse": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "secret",
+          "otpauth_uri",
+          "backup_codes"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "secret": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 32
+          },
+          "otpauth_uri": {
+            "type": "string"
+          },
+          "backup_codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "minItems": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserTwoFactorPasswordRequest": {
+        "type": "object",
+        "required": [
+          "current_password"
+        ],
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "format": "password",
+            "writeOnly": true,
+            "maxLength": 4096,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserTwoFactorStatusResponse": {
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
       },
       "UserUsageLog": {
         "type": "object",
