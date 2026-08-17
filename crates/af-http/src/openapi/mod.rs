@@ -185,7 +185,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 122);
+        assert_eq!(document.paths.paths.len(), 123);
         let operation_count = document
             .paths
             .paths
@@ -206,7 +206,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 172);
+        assert_eq!(operation_count, 175);
         assert!(
             document
                 .components
@@ -405,6 +405,9 @@ mod tests {
             "listAdminWalletEntries",
             "listOrganizationWalletEntries",
             "adjustOrganizationWallet",
+            "disableUserTwoFactor",
+            "enableUserTwoFactor",
+            "getUserTwoFactor",
         ]
         .into_iter()
         .map(str::to_owned)
@@ -412,7 +415,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 327);
+        assert_eq!(schemas.len(), 330);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("ClientSimulationProfile"));
         assert!(schemas.contains_key("ClientSimulationResult"));
@@ -600,6 +603,9 @@ mod tests {
         assert!(schemas.contains_key("UserProfileUpdateRequest"));
         assert!(schemas.contains_key("UserPasswordChangeRequest"));
         assert!(schemas.contains_key("UserNotificationPreferencesRequest"));
+        assert!(schemas.contains_key("UserTwoFactorEnrollmentResponse"));
+        assert!(schemas.contains_key("UserTwoFactorPasswordRequest"));
+        assert!(schemas.contains_key("UserTwoFactorStatusResponse"));
         assert!(schemas.contains_key("UserInvitationSummaryResponse"));
         assert!(schemas.contains_key("UserInvitationRebateResponse"));
         assert!(schemas.contains_key("AdminAuthenticationSettings"));
