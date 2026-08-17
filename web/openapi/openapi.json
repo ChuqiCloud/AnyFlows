@@ -19406,8 +19406,7 @@
         "type": "object",
         "required": [
           "expected_version",
-          "enabled",
-          "clear_client_secret"
+          "enabled"
         ],
         "properties": {
           "expected_version": {

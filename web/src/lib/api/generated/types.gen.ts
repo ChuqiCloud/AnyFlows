@@ -723,7 +723,7 @@ export type AdminOAuthLoginProviderSettingsRequest = {
     enabled: boolean;
     client_id?: string | null;
     client_secret?: string | null;
-    clear_client_secret: boolean;
+    clear_client_secret?: boolean;
 };
 export type AdminOAuthManualCallbackRequest = {
     provider: AdminOAuthProvider;
