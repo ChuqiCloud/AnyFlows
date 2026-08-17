@@ -451,7 +451,14 @@ async fn due_refresh_candidates_are_bounded_stable_and_fail_closed() -> Result<(
         .update(fixture.pool.connection())
         .await?;
     let mut child_model = credential_model(&fixture, child).await?.into_active_model();
+    // 影子只保留调度字段，OAuth 生命周期和真实并发均由母凭据承担。
     child_model.parent_id = Set(Some(root.get()));
+    child_model.quota_dimension = Set(CredentialQuotaDimension::Spark.as_str().to_owned());
+    child_model.concurrency = Set(None);
+    child_model.oauth_provider = Set(None);
+    child_model.oauth_account_key = Set(None);
+    child_model.oauth_project_id = Set(None);
+    child_model.oauth_token_pending = Set(false);
     child_model.update(fixture.pool.connection()).await?;
     let mut disabled_channel_model = channels::Entity::find_by_id(disabled_channel.get())
         .one(fixture.pool.connection())
