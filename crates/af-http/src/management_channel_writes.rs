@@ -20,6 +20,11 @@ use crate::{
     management_error::ManagementError,
 };
 
+#[derive(Deserialize)]
+#[serde(transparent)]
+/// 渠道写接口要求显式提交的可空客户端仿真档案。
+struct NullableClientSimulationProfile(Option<af_domain::ClientSimulationProfile>);
+
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 #[schema(as = AdminChannelCreateRequest)]
@@ -58,6 +63,14 @@ pub(crate) struct AdminChannelCreateRequest {
     /// 外部账号池模式；省略时默认关闭。
     #[serde(default)]
     pool_mode: bool,
+    /// 可空固定仿真档案；null 表示关闭，启用时必须同时确认风险。
+    #[schema(
+        value_type = Option<crate::openapi::schema::ClientSimulationProfileSchema>,
+        required = true
+    )]
+    client_simulation_profile: NullableClientSimulationProfile,
+    /// 仅确认本次启用或换档案的合规风险，不作为持久化开关。
+    client_simulation_risk_accepted: bool,
     /// 仅 `OpenAI + openai_responses` 可开启；省略时默认关闭。
     #[serde(default)]
     responses_websocket_enabled: bool,
@@ -121,6 +134,14 @@ pub(crate) struct AdminChannelUpdateRequest {
     auto_ban_rules: Option<AdminChannelAutoBanRulesDto>,
     /// 省略或 null 表示保留原值。
     pool_mode: Option<bool>,
+    /// 必须显式提交；null 表示关闭，非空档案表示保持、启用或换档案。
+    #[schema(
+        value_type = Option<crate::openapi::schema::ClientSimulationProfileSchema>,
+        required = true
+    )]
+    client_simulation_profile: NullableClientSimulationProfile,
+    /// 首次启用或换档案必须为 true；保持或关闭时可为 false。
+    client_simulation_risk_accepted: bool,
     /// 省略或 null 表示保留原值。
     responses_websocket_enabled: Option<bool>,
     /// 与专属模型映射必须同时出现；均省略时保留原值。
@@ -236,6 +257,11 @@ impl AdminChannelCreateRequest {
         .with_auto_ban_rules(auto_ban_rules)
         .map_err(map_write_error)?
         .with_pool_mode(self.pool_mode)
+        .with_client_simulation_profile(
+            self.client_simulation_profile.0,
+            self.client_simulation_risk_accepted,
+        )
+        .map_err(map_write_error)?
         .with_responses_websocket_enabled(self.responses_websocket_enabled)
         .map_err(map_write_error)?
         .with_responses_compact_configuration(
@@ -266,6 +292,11 @@ impl AdminChannelUpdateRequest {
             self.header_override,
             self.settings,
             self.tag,
+        )
+        .map_err(map_write_error)?
+        .with_client_simulation_profile(
+            self.client_simulation_profile.0,
+            self.client_simulation_risk_accepted,
         )
         .map_err(map_write_error)?;
         let command = match self.auto_ban_rules {

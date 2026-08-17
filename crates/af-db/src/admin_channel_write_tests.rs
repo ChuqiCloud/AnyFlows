@@ -1,8 +1,8 @@
 use std::{error::Error, sync::Mutex, time::Duration};
 
 use af_domain::{
-    ChannelAutoBanRules, ChannelId, ChannelType, CredentialId, CredentialKind, Protocol,
-    ResponsesCompactMode, ResponsesCompactProbeResult, Status,
+    ChannelAutoBanRules, ChannelId, ChannelType, ClientSimulationProfile, CredentialId,
+    CredentialKind, Protocol, ResponsesCompactMode, ResponsesCompactProbeResult, Status,
 };
 use sea_orm::{ConnectionTrait, DbBackend, QueryResult, Statement};
 
@@ -464,6 +464,147 @@ async fn pool_mode_round_trip_preserves_unknown_sensitive_settings() -> Result<(
     let settings: serde_json::Value = serde_json::from_str(&settings)?;
     assert_eq!(settings["private_setting"], "private-setting-value");
     assert!(settings.get("pool_mode").is_none());
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn client_simulation_requires_risk_confirmation_only_when_profile_changes()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let create_record = |risk_accepted| {
+        AdminChannelWriteRecord::new(
+            "anthropic-simulation".to_owned(),
+            ChannelType::Anthropic,
+            Protocol::Anthropic,
+            Some("https://api.anthropic.com".to_owned()),
+            Some(af_domain::ChannelTimeout::new(60).unwrap()),
+            Status::Enabled,
+            10,
+            20,
+            true,
+            Vec::new(),
+            Vec::new(),
+            serde_json::json!({}),
+            serde_json::json!({}),
+            serde_json::json!({}),
+            serde_json::json!({
+                "private_setting": "private-setting-value",
+                "client_simulation_profile": "untrusted-raw-value"
+            }),
+            None,
+        )
+        .with_client_simulation_profile(
+            Some(ClientSimulationProfile::AnthropicCliHeadersV1),
+            risk_accepted,
+        )
+    };
+    assert_eq!(
+        fixture
+            .repository
+            .create_channel(create_record(false))
+            .await
+            .unwrap_err(),
+        AdminChannelWriteRepositoryError::InvalidInput
+    );
+
+    let created = fixture
+        .repository
+        .create_channel(create_record(true))
+        .await?;
+    assert_eq!(
+        created.client_simulation_profile(),
+        Some(ClientSimulationProfile::AnthropicCliHeadersV1)
+    );
+
+    let update_record = || {
+        AdminChannelWriteRecord::new_update(
+            "anthropic-simulation".to_owned(),
+            ChannelType::Anthropic,
+            Protocol::Anthropic,
+            Some("https://api.anthropic.com".to_owned()),
+            Some(af_domain::ChannelTimeout::new(60).unwrap()),
+            Status::Enabled,
+            10,
+            20,
+            true,
+            Vec::new(),
+            Vec::new(),
+            serde_json::json!({}),
+            serde_json::json!({}),
+            None,
+            None,
+            None,
+        )
+    };
+    let AdminChannelMutationOutcome::Mutated(preserved) = fixture
+        .repository
+        .update_channel(
+            created.channel_id(),
+            update_record().with_client_simulation_profile(
+                Some(ClientSimulationProfile::AnthropicCliHeadersV1),
+                false,
+            ),
+        )
+        .await?
+    else {
+        panic!("同一仿真档案必须允许普通更新");
+    };
+    assert_eq!(
+        preserved.client_simulation_profile(),
+        Some(ClientSimulationProfile::AnthropicCliHeadersV1)
+    );
+
+    let AdminChannelMutationOutcome::Mutated(disabled) = fixture
+        .repository
+        .update_channel(
+            created.channel_id(),
+            update_record().with_client_simulation_profile(None, false),
+        )
+        .await?
+    else {
+        panic!("关闭仿真档案必须成功");
+    };
+    assert_eq!(disabled.client_simulation_profile(), None);
+    assert_eq!(
+        fixture
+            .repository
+            .update_channel(
+                created.channel_id(),
+                update_record().with_client_simulation_profile(
+                    Some(ClientSimulationProfile::AnthropicCliHeadersV1),
+                    false,
+                ),
+            )
+            .await
+            .unwrap_err(),
+        AdminChannelWriteRepositoryError::InvalidInput
+    );
+    let AdminChannelMutationOutcome::Mutated(enabled_again) = fixture
+        .repository
+        .update_channel(
+            created.channel_id(),
+            update_record().with_client_simulation_profile(
+                Some(ClientSimulationProfile::AnthropicCliHeadersV1),
+                true,
+            ),
+        )
+        .await?
+    else {
+        panic!("确认风险后必须允许重新启用仿真档案");
+    };
+    assert_eq!(
+        enabled_again.client_simulation_profile(),
+        Some(ClientSimulationProfile::AnthropicCliHeadersV1)
+    );
+    let (_, settings) = channel_sensitive_fields(&fixture, created.channel_id()).await?;
+    let settings: serde_json::Value = serde_json::from_str(&settings)?;
+    assert_eq!(settings["private_setting"], "private-setting-value");
+    assert_eq!(
+        settings["client_simulation_profile"],
+        "anthropic_cli_headers_v1"
+    );
 
     fixture.pool.close().await?;
     Ok(())

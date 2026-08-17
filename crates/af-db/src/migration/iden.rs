@@ -1625,6 +1625,8 @@ pub(in crate::migration) mod debug_trace_attempts {
         UpstreamStatus,
         RetryDecision,
         ElapsedMs,
+        ClientSimulationProfile,
+        ClientSimulationResult,
         RequestMethod,
         RequestUrl,
         RequestHeadersJson,

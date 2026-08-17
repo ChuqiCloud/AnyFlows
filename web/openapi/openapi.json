@@ -14870,6 +14870,17 @@
             "type": "boolean",
             "description": "外部账号池模式开启时不维护渠道级本地故障状态。"
           },
+          "client_simulation_profile": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ClientSimulationProfile",
+                "description": "默认关闭的版本化客户端仿真档案。"
+              }
+            ]
+          },
           "responses_websocket_enabled": {
             "type": "boolean",
             "description": "是否显式允许该原生 Responses 渠道使用 WebSocket。"
@@ -15030,6 +15041,8 @@
           "weight",
           "priority",
           "auto_ban",
+          "client_simulation_profile",
+          "client_simulation_risk_accepted",
           "models",
           "group_ids",
           "model_mapping",
@@ -15122,6 +15135,21 @@
           "pool_mode": {
             "type": "boolean",
             "description": "外部账号池模式；省略时默认关闭。"
+          },
+          "client_simulation_profile": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ClientSimulationProfile",
+                "description": "可空固定仿真档案；null 表示关闭，启用时必须同时确认风险。"
+              }
+            ]
+          },
+          "client_simulation_risk_accepted": {
+            "type": "boolean",
+            "description": "仅确认本次启用或换档案的合规风险，不作为持久化开关。"
           },
           "responses_websocket_enabled": {
             "type": "boolean",
@@ -15321,6 +15349,8 @@
           "weight",
           "priority",
           "auto_ban",
+          "client_simulation_profile",
+          "client_simulation_risk_accepted",
           "models",
           "group_ids",
           "model_mapping",
@@ -15410,6 +15440,21 @@
               "null"
             ],
             "description": "省略或 null 表示保留原值。"
+          },
+          "client_simulation_profile": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ClientSimulationProfile",
+                "description": "必须显式提交；null 表示关闭，非空档案表示保持、启用或换档案。"
+              }
+            ]
+          },
+          "client_simulation_risk_accepted": {
+            "type": "boolean",
+            "description": "首次启用或换档案必须为 true；保持或关闭时可为 false。"
           },
           "responses_websocket_enabled": {
             "type": [
@@ -16725,6 +16770,26 @@
           "elapsed_ms": {
             "type": "integer",
             "format": "int64"
+          },
+          "client_simulation_profile": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ClientSimulationProfile"
+              }
+            ]
+          },
+          "client_simulation_result": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ClientSimulationResult"
+              }
+            ]
           },
           "request_method": {
             "type": [
@@ -21460,6 +21525,20 @@
         "enum": [
           "prefix",
           "suffix"
+        ]
+      },
+      "ClientSimulationProfile": {
+        "type": "string",
+        "enum": [
+          "anthropic_cli_headers_v1"
+        ]
+      },
+      "ClientSimulationResult": {
+        "type": "string",
+        "enum": [
+          "not_applied",
+          "applied",
+          "failed"
         ]
       },
       "IssuedAdminRedemptionBatch": {

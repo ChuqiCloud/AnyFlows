@@ -14,6 +14,7 @@ const messages = {
   invalidHeader: 'header',
   invalidParameter: 'parameter',
   invalidAutoBanRules: 'auto-ban-rules',
+  invalidClientSimulationRisk: 'client-simulation-risk',
   invalidRouting: 'routing',
   invalidTimeout: 'timeout',
   invalidUrl: 'url',
@@ -57,6 +58,54 @@ test('外部账号池模式按结构化字段提交且默认关闭', () => {
   const defaults = defaultChannelValues()
   assert.equal(defaults.poolMode, false)
   assert.equal(toCreateRequest({ ...defaults, name: 'Pool channel', poolMode: true }).pool_mode, true)
+})
+
+test('客户端仿真仅允许 Anthropic 并要求首次启用确认风险', () => {
+  const schema = buildChannelFormSchema('create', messages)
+  const enabled = {
+    ...defaultChannelValues(),
+    name: 'Anthropic simulation',
+    channelType: 'anthropic',
+    protocol: 'anthropic',
+    clientSimulationProfile: 'anthropic_cli_headers_v1',
+  }
+
+  assert.equal(schema.safeParse(enabled).success, false)
+  assert.equal(schema.safeParse({
+    ...enabled,
+    clientSimulationRiskAccepted: true,
+  }).success, true)
+  assert.equal(schema.safeParse({
+    ...enabled,
+    channelType: 'openai',
+    protocol: 'openai_chat',
+    clientSimulationRiskAccepted: true,
+  }).success, false)
+
+  const request = toCreateRequest({
+    ...enabled,
+    clientSimulationRiskAccepted: true,
+  })
+  assert.equal(request.client_simulation_profile, 'anthropic_cli_headers_v1')
+  assert.equal(request.client_simulation_risk_accepted, true)
+})
+
+test('已启用的同一仿真档案无需在每次更新时重复确认', () => {
+  const values = {
+    ...defaultChannelValues(),
+    name: 'Existing simulation',
+    channelType: 'anthropic',
+    protocol: 'anthropic',
+    clientSimulationProfile: 'anthropic_cli_headers_v1',
+  }
+  const schema = buildChannelFormSchema(
+    'update',
+    messages,
+    'anthropic_cli_headers_v1',
+  )
+
+  assert.equal(schema.safeParse(values).success, true)
+  assert.equal(schema.safeParse({ ...values, clientSimulationProfile: '' }).success, true)
 })
 
 test('自动停用规则只接受有界精确 5xx 状态码和关键词', () => {

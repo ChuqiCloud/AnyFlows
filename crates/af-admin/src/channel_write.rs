@@ -10,8 +10,8 @@ use af_db::{
     MAX_ADMIN_CHANNEL_MODELS, validate_channel_header_overrides,
 };
 use af_domain::{
-    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, CredentialId, CredentialKind,
-    GroupId, Protocol, ResponsesCompactMode, Status,
+    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ClientSimulationProfile,
+    CredentialId, CredentialKind, GroupId, Protocol, ResponsesCompactMode, Status,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -124,6 +124,21 @@ impl AdminChannelCreateCommand {
         self
     }
 
+    /// 创建时显式选择仿真档案；启用档案必须同时确认合规风险。
+    pub fn with_client_simulation_profile(
+        mut self,
+        profile: Option<ClientSimulationProfile>,
+        risk_accepted: bool,
+    ) -> Result<Self, AdminChannelWriteError> {
+        if profile.is_some() && !risk_accepted {
+            return Err(AdminChannelWriteError::InvalidInput);
+        }
+        self.fields = self
+            .fields
+            .with_client_simulation_profile(profile, risk_accepted)?;
+        Ok(self)
+    }
+
     /// 设置创建渠道时使用的自动禁用规则。
     pub fn with_auto_ban_rules(
         mut self,
@@ -224,6 +239,18 @@ impl AdminChannelUpdateCommand {
         self
     }
 
+    /// 更新仿真档案选择；仓储只在首次启用或换档案时消费风险确认。
+    pub fn with_client_simulation_profile(
+        mut self,
+        profile: Option<ClientSimulationProfile>,
+        risk_accepted: bool,
+    ) -> Result<Self, AdminChannelWriteError> {
+        self.fields = self
+            .fields
+            .with_client_simulation_profile(profile, risk_accepted)?;
+        Ok(self)
+    }
+
     /// 设置更新渠道时使用的自动禁用规则。
     pub fn with_auto_ban_rules(
         mut self,
@@ -257,6 +284,8 @@ struct AdminChannelWriteFields {
     header_override: Option<serde_json::Value>,
     settings: Option<serde_json::Value>,
     pool_mode: Option<bool>,
+    client_simulation_profile: Option<Option<ClientSimulationProfile>>,
+    client_simulation_risk_accepted: bool,
     responses_websocket_enabled: Option<bool>,
     responses_compact_mode: Option<ResponsesCompactMode>,
     responses_compact_model_mapping: Option<serde_json::Value>,
@@ -353,6 +382,8 @@ impl AdminChannelWriteFields {
             header_override,
             settings,
             pool_mode: require_sensitive_fields.then_some(false),
+            client_simulation_profile: require_sensitive_fields.then_some(None),
+            client_simulation_risk_accepted: false,
             responses_websocket_enabled: require_sensitive_fields.then_some(false),
             responses_compact_mode: None,
             responses_compact_model_mapping: None,
@@ -372,6 +403,21 @@ impl AdminChannelWriteFields {
             return Err(AdminChannelWriteError::InvalidInput);
         }
         self.responses_websocket_enabled = Some(enabled);
+        Ok(self)
+    }
+
+    fn with_client_simulation_profile(
+        mut self,
+        profile: Option<ClientSimulationProfile>,
+        risk_accepted: bool,
+    ) -> Result<Self, AdminChannelWriteError> {
+        if profile.is_some()
+            && (self.channel_type != ChannelType::Anthropic || self.protocol != Protocol::Anthropic)
+        {
+            return Err(AdminChannelWriteError::InvalidInput);
+        }
+        self.client_simulation_profile = Some(profile);
+        self.client_simulation_risk_accepted = risk_accepted;
         Ok(self)
     }
 
@@ -395,6 +441,8 @@ impl AdminChannelWriteFields {
 
     fn into_record(self) -> AdminChannelWriteRecord {
         let pool_mode = self.pool_mode;
+        let client_simulation_profile = self.client_simulation_profile;
+        let client_simulation_risk_accepted = self.client_simulation_risk_accepted;
         let responses_websocket_enabled = self.responses_websocket_enabled;
         let responses_compact_mode = self.responses_compact_mode;
         let responses_compact_model_mapping = self.responses_compact_model_mapping;
@@ -419,6 +467,12 @@ impl AdminChannelWriteFields {
         );
         let record = match pool_mode {
             Some(enabled) => record.with_pool_mode(enabled),
+            None => record,
+        };
+        let record = match client_simulation_profile {
+            Some(profile) => {
+                record.with_client_simulation_profile(profile, client_simulation_risk_accepted)
+            }
             None => record,
         };
         let record = match responses_websocket_enabled {
@@ -840,11 +894,14 @@ impl AdminChannelWriter for DatabaseAdminChannelWriter {
     ) -> AdminChannelCreateFuture<'a> {
         Box::pin(async move {
             require_admin(principal)?;
-            self.repository
+            let channel = self
+                .repository
                 .create_channel(command.into_record())
                 .await
                 .map(AdminChannel::from_record)
-                .map_err(map_repository_error)
+                .map_err(map_repository_error)?;
+            audit_client_simulation_write("create", principal, &channel);
+            Ok(channel)
         })
     }
 
@@ -863,7 +920,9 @@ impl AdminChannelWriter for DatabaseAdminChannelWriter {
                 .map_err(map_repository_error)?
             {
                 AdminChannelMutationOutcome::Mutated(record) => {
-                    Ok(AdminChannel::from_record(*record))
+                    let channel = AdminChannel::from_record(*record);
+                    audit_client_simulation_write("update", principal, &channel);
+                    Ok(channel)
                 }
                 AdminChannelMutationOutcome::NotFound => {
                     Err(AdminChannelWriteError::ChannelNotFound)
@@ -998,6 +1057,25 @@ fn require_admin(principal: SessionPrincipal) -> Result<(), AdminChannelWriteErr
     } else {
         Err(AdminChannelWriteError::Forbidden)
     }
+}
+
+/// 记录平台渠道写入后的闭合仿真状态，不展开任何敏感设置。
+fn audit_client_simulation_write(
+    operation: &'static str,
+    principal: SessionPrincipal,
+    channel: &AdminChannel,
+) {
+    tracing::info!(
+        target: "af_admin::channel_audit",
+        audit_event = "channel_client_simulation_write",
+        operation,
+        actor_user_id = principal.user_id().get(),
+        channel_id = channel.channel_id().get(),
+        client_simulation_profile = channel
+            .client_simulation_profile()
+            .map_or("disabled", af_domain::ClientSimulationProfile::as_str),
+        "管理员已写入渠道客户端仿真配置"
+    );
 }
 
 fn map_repository_error(error: AdminChannelWriteRepositoryError) -> AdminChannelWriteError {

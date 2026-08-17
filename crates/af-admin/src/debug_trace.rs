@@ -377,6 +377,8 @@ pub struct AdminDebugTraceAttempt {
     upstream_status: Option<i16>,
     retry_decision: bool,
     elapsed_ms: i64,
+    client_simulation_profile: Option<af_domain::ClientSimulationProfile>,
+    client_simulation_result: Option<af_domain::ClientSimulationResult>,
     request_method: Option<String>,
     request_url: Option<String>,
     response_status: Option<i16>,
@@ -398,6 +400,8 @@ impl AdminDebugTraceAttempt {
             upstream_status: record.upstream_status(),
             retry_decision: record.retry_decision(),
             elapsed_ms: record.elapsed_ms(),
+            client_simulation_profile: record.client_simulation_profile(),
+            client_simulation_result: record.client_simulation_result(),
             request_method: record.request_method().map(str::to_owned),
             request_url: record.request_url().map(str::to_owned),
             response_status: record.response_status(),
@@ -436,6 +440,14 @@ impl AdminDebugTraceAttempt {
     #[must_use]
     pub const fn elapsed_ms(&self) -> i64 {
         self.elapsed_ms
+    }
+    #[must_use]
+    pub const fn client_simulation_profile(&self) -> Option<af_domain::ClientSimulationProfile> {
+        self.client_simulation_profile
+    }
+    #[must_use]
+    pub const fn client_simulation_result(&self) -> Option<af_domain::ClientSimulationResult> {
+        self.client_simulation_result
     }
     #[must_use]
     pub fn request_method(&self) -> Option<&str> {

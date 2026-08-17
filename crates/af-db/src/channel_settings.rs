@@ -1,6 +1,7 @@
 use crate::scheduler_runtime::ChannelModelMappings;
 use af_domain::{
-    ChannelAutoBanRules, ChannelType, Protocol, ResponsesCompactMode, ResponsesCompactProbeResult,
+    ChannelAutoBanRules, ChannelType, ClientSimulationProfile, Protocol, ResponsesCompactMode,
+    ResponsesCompactProbeResult,
 };
 use serde_json::{Map, Value, json};
 
@@ -22,6 +23,8 @@ pub(crate) const RESPONSES_COMPACT_PROBE_HTTP_STATUS_KEY: &str =
 pub(crate) const AUTO_BAN_RULES_KEY: &str = "auto_ban_rules";
 /// 渠道 settings 中由管理与运行时共同维护的外部账号池模式键。
 pub(crate) const POOL_MODE_KEY: &str = "pool_mode";
+/// 渠道 settings 中显式选择的客户端仿真档案；缺失表示关闭。
+pub(crate) const CLIENT_SIMULATION_PROFILE_KEY: &str = "client_simulation_profile";
 
 const AUTO_BAN_STATUS_CODES_KEY: &str = "status_codes";
 const AUTO_BAN_KEYWORDS_KEY: &str = "keywords";
@@ -165,6 +168,18 @@ pub(crate) fn pool_mode(settings: &Value) -> Result<bool, ChannelSettingsError> 
     }
 }
 
+/// 从渠道 settings 读取可选客户端仿真档案；缺失表示默认关闭。
+pub(crate) fn client_simulation_profile(
+    settings: &Value,
+) -> Result<Option<ClientSimulationProfile>, ChannelSettingsError> {
+    let object = settings.as_object().ok_or(ChannelSettingsError)?;
+    match object.get(CLIENT_SIMULATION_PROFILE_KEY) {
+        None => Ok(None),
+        Some(Value::String(profile)) => profile.parse().map(Some).map_err(|_| ChannelSettingsError),
+        Some(_) => Err(ChannelSettingsError),
+    }
+}
+
 /// 从敏感 settings 中读取已验证的非敏感自动禁用规则；缺失表示空规则集。
 pub(crate) fn auto_ban_rules(
     settings: &Value,
@@ -201,6 +216,20 @@ pub(crate) fn validate_responses_websocket_capability(
     enabled: bool,
 ) -> Result<(), ChannelSettingsError> {
     if enabled && (channel_type != ChannelType::OpenAi || protocol != Protocol::OpenAiResponses) {
+        return Err(ChannelSettingsError);
+    }
+    Ok(())
+}
+
+/// 首版仿真档案只允许挂在原生 Anthropic 渠道；OAuth 凭据在运行时继续复验。
+pub(crate) fn validate_client_simulation_capability(
+    channel_type: ChannelType,
+    protocol: Protocol,
+    profile: Option<ClientSimulationProfile>,
+) -> Result<(), ChannelSettingsError> {
+    if profile.is_some()
+        && (channel_type != ChannelType::Anthropic || protocol != Protocol::Anthropic)
+    {
         return Err(ChannelSettingsError);
     }
     Ok(())
@@ -342,6 +371,26 @@ pub(crate) fn set_pool_mode(
         object.insert(POOL_MODE_KEY.to_owned(), Value::Bool(true));
     } else {
         object.remove(POOL_MODE_KEY);
+    }
+    Ok(())
+}
+
+/// 写入版本化仿真档案；关闭时移除键，保持默认路径无配置噪声。
+pub(crate) fn set_client_simulation_profile(
+    settings: &mut Value,
+    profile: Option<ClientSimulationProfile>,
+) -> Result<(), ChannelSettingsError> {
+    let object = settings.as_object_mut().ok_or(ChannelSettingsError)?;
+    match profile {
+        Some(profile) => {
+            object.insert(
+                CLIENT_SIMULATION_PROFILE_KEY.to_owned(),
+                Value::String(profile.as_str().to_owned()),
+            );
+        }
+        None => {
+            object.remove(CLIENT_SIMULATION_PROFILE_KEY);
+        }
     }
     Ok(())
 }
@@ -599,6 +648,66 @@ mod tests {
         assert!(!pool_mode(&json!({})).unwrap());
         assert!(pool_mode(&json!({"pool_mode": true})).unwrap());
         assert!(pool_mode(&json!({"pool_mode": "true"})).is_err());
+    }
+
+    #[test]
+    fn client_simulation_profile_defaults_off_and_preserves_unknown_settings() {
+        assert_eq!(client_simulation_profile(&json!({})).unwrap(), None);
+        let mut settings = json!({"private_extension": true});
+        set_client_simulation_profile(
+            &mut settings,
+            Some(ClientSimulationProfile::AnthropicCliHeadersV1),
+        )
+        .unwrap();
+        assert_eq!(
+            client_simulation_profile(&settings).unwrap(),
+            Some(ClientSimulationProfile::AnthropicCliHeadersV1)
+        );
+        assert_eq!(settings["private_extension"], true);
+        set_client_simulation_profile(&mut settings, None).unwrap();
+        assert_eq!(client_simulation_profile(&settings).unwrap(), None);
+        assert_eq!(settings["private_extension"], true);
+
+        for invalid in [
+            json!({"client_simulation_profile": null}),
+            json!({"client_simulation_profile": true}),
+            json!({"client_simulation_profile": "unknown"}),
+        ] {
+            assert!(client_simulation_profile(&invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn client_simulation_profile_is_limited_to_native_anthropic() {
+        let profile = Some(ClientSimulationProfile::AnthropicCliHeadersV1);
+        assert!(
+            validate_client_simulation_capability(
+                ChannelType::Anthropic,
+                Protocol::Anthropic,
+                profile,
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_client_simulation_capability(
+                ChannelType::OpenAi,
+                Protocol::Anthropic,
+                profile,
+            )
+            .is_err()
+        );
+        assert!(
+            validate_client_simulation_capability(
+                ChannelType::Anthropic,
+                Protocol::OpenAiChat,
+                profile,
+            )
+            .is_err()
+        );
+        assert!(
+            validate_client_simulation_capability(ChannelType::OpenAi, Protocol::OpenAiChat, None,)
+                .is_ok()
+        );
     }
 
     #[test]

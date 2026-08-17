@@ -307,6 +307,12 @@ impl DebugTraceRepository {
                 upstream_status: Set(attempt.upstream_status),
                 retry_decision: Set(attempt.retry_decision),
                 elapsed_ms: Set(attempt.elapsed_ms),
+                client_simulation_profile: Set(attempt
+                    .client_simulation_profile
+                    .map(|profile| profile.as_str().to_owned())),
+                client_simulation_result: Set(attempt
+                    .client_simulation_result
+                    .map(|result| result.as_str().to_owned())),
                 request_method: Set(request_method),
                 request_url: Set(request_url),
                 request_headers_json: Set(None),
@@ -595,6 +601,18 @@ fn attempt_from_model(
         .map(DebugTraceFailureKind::from_i16)
         .transpose()
         .map_err(map_write_error)?;
+    let client_simulation_profile = model
+        .client_simulation_profile
+        .as_deref()
+        .map(str::parse)
+        .transpose()
+        .map_err(|_| internal_error(DebugTraceRepositoryError::Invariant))?;
+    let client_simulation_result = model
+        .client_simulation_result
+        .as_deref()
+        .map(str::parse)
+        .transpose()
+        .map_err(|_| internal_error(DebugTraceRepositoryError::Invariant))?;
     let shape_valid = match outcome {
         DebugTraceAttemptOutcome::Succeeded => {
             failure_kind.is_none() && model.upstream_status.is_none() && !model.retry_decision
@@ -621,6 +639,7 @@ fn attempt_from_model(
         || model
             .response_status
             .is_some_and(|status| !(100..=599).contains(&status))
+        || client_simulation_profile.is_some() != client_simulation_result.is_some()
     {
         return Err(internal_error(DebugTraceRepositoryError::Invariant));
     }
@@ -633,6 +652,8 @@ fn attempt_from_model(
         upstream_status: model.upstream_status,
         retry_decision: model.retry_decision,
         elapsed_ms: model.elapsed_ms,
+        client_simulation_profile,
+        client_simulation_result,
         request_method: model.request_method,
         request_url: model.request_url,
         response_status: model.response_status,

@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
 use crate::{
-    ChannelType, CredentialKind, Operation, Protocol, PublicErrorCode, ResponsesCompactMode,
-    ResponsesCompactProbeResult, Role, Status,
+    ChannelType, ClientSimulationProfile, ClientSimulationResult, CredentialKind, Operation,
+    Protocol, PublicErrorCode, ResponsesCompactMode, ResponsesCompactProbeResult, Role, Status,
 };
 
 macro_rules! assert_string_enum_contract {
@@ -73,6 +73,23 @@ fn string_enums_have_unique_stable_parse_and_json_contracts() {
             (ResponsesCompactProbeResult::Unknown, "unknown"),
             (ResponsesCompactProbeResult::Supported, "supported"),
             (ResponsesCompactProbeResult::Unsupported, "unsupported"),
+        ]
+    );
+    assert_string_enum_contract!(
+        ClientSimulationProfile,
+        ClientSimulationProfile::ALL,
+        [(
+            ClientSimulationProfile::AnthropicCliHeadersV1,
+            "anthropic_cli_headers_v1"
+        )]
+    );
+    assert_string_enum_contract!(
+        ClientSimulationResult,
+        ClientSimulationResult::ALL,
+        [
+            (ClientSimulationResult::NotApplied, "not_applied"),
+            (ClientSimulationResult::Applied, "applied"),
+            (ClientSimulationResult::Failed, "failed"),
         ]
     );
     assert_string_enum_contract!(

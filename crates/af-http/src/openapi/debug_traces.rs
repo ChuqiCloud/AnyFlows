@@ -12,6 +12,7 @@ use crate::{
         AdminDebugTraceSnapshotScopeRequest, AdminDebugTraceSnapshotsResponse,
     },
     management_error::ManagementErrorBody,
+    openapi::schema::{ClientSimulationProfileSchema, ClientSimulationResultSchema},
 };
 
 #[utoipa::path(
@@ -133,6 +134,8 @@ fn read_admin_debug_trace_snapshots() {}
         AdminDebugTraceSnapshotRequest,
         AdminDebugTraceAttemptSnapshotResponse,
         AdminDebugTraceSnapshotsResponse,
+        ClientSimulationProfileSchema,
+        ClientSimulationResultSchema,
         ManagementErrorBody
     ))
 )]

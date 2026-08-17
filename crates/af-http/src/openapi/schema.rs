@@ -436,6 +436,22 @@ pub(crate) enum AdminChannelWriteProtocolSchema {
 
 #[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
 #[derive(ToSchema)]
+#[schema(as = ClientSimulationProfile, rename_all = "snake_case")]
+pub(crate) enum ClientSimulationProfileSchema {
+    AnthropicCliHeadersV1,
+}
+
+#[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
+#[derive(ToSchema)]
+#[schema(as = ClientSimulationResult, rename_all = "snake_case")]
+pub(crate) enum ClientSimulationResultSchema {
+    NotApplied,
+    Applied,
+    Failed,
+}
+
+#[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
+#[derive(ToSchema)]
 #[schema(as = ResponsesCompactMode, rename_all = "snake_case")]
 pub(crate) enum ResponsesCompactModeSchema {
     Auto,

@@ -617,6 +617,8 @@ async fn admin_can_create_update_and_delete_channels_and_credentials() {
         "priority": 20,
         "auto_ban": true,
         "pool_mode": true,
+        "client_simulation_profile": null,
+        "client_simulation_risk_accepted": false,
         "responses_websocket_enabled": false,
         "models": ["public"],
         "group_ids": [1],
@@ -646,6 +648,10 @@ async fn admin_can_create_update_and_delete_channels_and_credentials() {
     assert_eq!(created["id"], 90);
     assert_eq!(created["timeout_secs"], 60);
     assert_eq!(created["pool_mode"], false);
+    assert_eq!(
+        created["client_simulation_profile"],
+        serde_json::Value::Null
+    );
     assert_eq!(created["responses_websocket_enabled"], false);
     for secret in ["header-secret-canary", "settings-secret-canary"] {
         assert!(!created.to_string().contains(secret));
@@ -669,6 +675,46 @@ async fn admin_can_create_update_and_delete_channels_and_credentials() {
         .await
         .unwrap();
     assert_eq!(gemini_created.status(), StatusCode::CREATED);
+
+    let mut anthropic_body = channel_body.clone();
+    {
+        let anthropic_object = anthropic_body
+            .as_object_mut()
+            .expect("Anthropic 测试渠道正文必须是对象");
+        anthropic_object.insert("name".to_owned(), json!("anthropic-simulation"));
+        anthropic_object.insert("type".to_owned(), json!("anthropic"));
+        anthropic_object.insert("protocol".to_owned(), json!("anthropic"));
+        anthropic_object.insert(
+            "client_simulation_profile".to_owned(),
+            json!("anthropic_cli_headers_v1"),
+        );
+    }
+    let rejected_risk = app
+        .clone()
+        .oneshot(write_request(
+            "POST",
+            "/api/admin/channels",
+            ADMIN_TOKEN,
+            &anthropic_body,
+        ))
+        .await
+        .unwrap();
+    assert_error(rejected_risk, StatusCode::BAD_REQUEST, "invalid_request").await;
+    anthropic_body
+        .as_object_mut()
+        .expect("Anthropic 测试渠道正文必须是对象")
+        .insert("client_simulation_risk_accepted".to_owned(), json!(true));
+    let anthropic_created = app
+        .clone()
+        .oneshot(write_request(
+            "POST",
+            "/api/admin/channels",
+            ADMIN_TOKEN,
+            &anthropic_body,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(anthropic_created.status(), StatusCode::CREATED);
 
     for (field, invalid) in [
         ("param_override", json!({"messages": []})),
@@ -808,7 +854,7 @@ async fn admin_can_create_update_and_delete_channels_and_credentials() {
             .unwrap();
         assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
     }
-    assert_eq!(reader.calls.load(Ordering::Relaxed), 7);
+    assert_eq!(reader.calls.load(Ordering::Relaxed), 8);
 }
 
 #[tokio::test]

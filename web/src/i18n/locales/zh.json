@@ -184,7 +184,8 @@
       "timeout": "超时 {{value}} 秒",
       "inheritTimeout": "使用默认超时",
       "poolMode": "外部池",
-      "responsesWebsocket": "WebSocket"
+      "responsesWebsocket": "WebSocket",
+      "clientSimulation": "客户端仿真"
     },
     "probe": {
       "notTested": "尚未测试",
@@ -236,6 +237,9 @@
       "autoBanRulesHint": "仅匹配精确 5xx 状态码和上游结构化 type、code、status；空规则不会停用渠道。",
       "autoBanKeywordPlaceholder": "输入结构化错误关键词",
       "poolModeHint": "交由上游账号池处理渠道级故障；平台仍会隔离本地不可用凭据。",
+      "clientSimulationHint": "仅对 Anthropic OAuth Chat 候选应用固定、版本化的 HTTP 身份档案。",
+      "clientSimulationRisk": "该能力可能触及上游服务条款或风控策略。当前档案只修改 User-Agent 与 X-App，不修改正文、认证、模型、路由或计费事实。",
+      "clientSimulationRiskAccept": "我已评估并接受为该渠道启用此档案的合规风险。",
       "responsesWebsocketHint": "仅在请求提供稳定会话标识时复用连接；首事件前失败会回退一次 HTTP。",
       "responsesCompactModeHint": "自动模式只在真实测活确认支持后参与调度；强制开启仍只允许原生 Responses 渠道。",
       "responsesCompactModelMappingHint": "可选。普通模型映射完成后，仅对 Compact 请求追加这一层上游模型映射。",
@@ -267,6 +271,7 @@
       "autoBanStatusCodes": "HTTP 状态码",
       "autoBanKeywords": "结构化错误关键词",
       "poolMode": "外部账号池模式",
+      "clientSimulationProfile": "客户端仿真档案",
       "responsesWebsocket": "启用 Responses WebSocket",
       "responsesCompactMode": "上下文压缩能力",
       "responsesCompactModelMapping": "压缩专属模型映射",
@@ -292,7 +297,12 @@
       "timeout": "渠道超时必须是 1 到 900 秒的整数，或留空使用服务默认值。",
       "url": "请输入不含账号、查询串和片段的 HTTP(S) 地址。",
       "routing": "模型和分组必须同时设置或同时留空，且不能重复或超过容量限制。",
-      "autoBanRules": "自动停用规则必须是 500 到 599 的不重复状态码和有界关键词，合计不超过 64 条。"
+      "autoBanRules": "自动停用规则必须是 500 到 599 的不重复状态码和有界关键词，合计不超过 64 条。",
+      "clientSimulationRisk": "首次启用或切换客户端仿真档案前必须确认合规风险。"
+    },
+    "clientSimulation": {
+      "off": "关闭",
+      "anthropicCliHeadersV1": "Anthropic CLI Header v1"
     },
     "mapping": {
       "source": "客户端模型",
@@ -2182,6 +2192,16 @@
     "operation": {
       "chat": "对话生成",
       "responses": "Responses 生成"
+    },
+    "clientSimulation": {
+      "profile": {
+        "anthropic_cli_headers_v1": "Anthropic CLI 仿真"
+      },
+      "result": {
+        "not_applied": "未应用",
+        "applied": "已应用",
+        "failed": "应用失败"
+      }
     },
     "failure": {
       "auth_expired": "认证已过期",

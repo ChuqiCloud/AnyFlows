@@ -91,7 +91,8 @@ pub use openai_speech::{
 pub use rerank::{RelayRerankOutcome, RerankResponse, relay_rerank_with_report};
 pub use state_machine::{
     RelayAttemptFailure, RelayAttemptReport, RelayCandidate, RelayCandidateRequest,
-    RelayExecutionError, RelayRequest, RelayResponse, RelayState, RelayStateMachine,
+    RelayClientSimulationAttempt, RelayExecutionError, RelayRequest, RelayResponse, RelayState,
+    RelayStateMachine,
 };
 pub use video_task::{
     VideoTaskPollOutcome, VideoTaskSubmissionCandidate, VideoTaskSubmissionDisposition,

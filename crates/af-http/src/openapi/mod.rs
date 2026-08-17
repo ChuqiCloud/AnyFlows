@@ -400,8 +400,10 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 320);
+        assert_eq!(schemas.len(), 322);
         assert!(schemas.keys().is_sorted());
+        assert!(schemas.contains_key("ClientSimulationProfile"));
+        assert!(schemas.contains_key("ClientSimulationResult"));
         assert!(schemas.contains_key("OrganizationEntitlementResponse"));
         assert!(schemas.contains_key("OrganizationInvitationAcceptRequest"));
         assert!(schemas.contains_key("OrganizationInvitationResponse"));

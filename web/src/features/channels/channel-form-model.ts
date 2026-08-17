@@ -11,6 +11,7 @@ export type SensitiveEditMode = 'preserve' | 'replace' | 'clear'
 export type ChannelType = 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai'
 export type ChannelProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'anthropic' | 'gemini' | 'jina_rerank' | 'cohere_rerank' | 'xai_video'
 export type ResponsesCompactMode = 'auto' | 'force_on' | 'force_off'
+export type ClientSimulationProfile = '' | 'anthropic_cli_headers_v1'
 export const MAX_CHANNEL_TIMEOUT_SECONDS = 900
 
 export const channelParameterNames = [
@@ -49,6 +50,8 @@ export type ChannelFormValues = {
   autoBanStatusCodes: number[]
   autoBanKeywords: string[]
   poolMode: boolean
+  clientSimulationProfile: ClientSimulationProfile
+  clientSimulationRiskAccepted: boolean
   responsesWebsocketEnabled: boolean
   responsesCompactMode: ResponsesCompactMode
   responsesCompactModelMapping: KeyValueRow[]
@@ -67,6 +70,7 @@ type ValidationMessages = {
   invalidHeader: string
   invalidParameter: string
   invalidAutoBanRules: string
+  invalidClientSimulationRisk: string
   invalidRouting: string
   invalidTimeout: string
   invalidUrl: string
@@ -86,7 +90,11 @@ const parameterRowSchema = z.object({
 })
 
 /** 集中校验结构化编辑器与后端容量边界。 */
-export function buildChannelFormSchema(mode: ChannelEditorMode, messages: ValidationMessages) {
+export function buildChannelFormSchema(
+  mode: ChannelEditorMode,
+  messages: ValidationMessages,
+  existingClientSimulationProfile: ClientSimulationProfile = '',
+) {
   return z.object({
     name: z.string().trim().min(1, messages.invalidField).max(128, messages.invalidField),
     baseUrl: z.string().trim().max(2048, messages.invalidField),
@@ -101,6 +109,8 @@ export function buildChannelFormSchema(mode: ChannelEditorMode, messages: Valida
     autoBanStatusCodes: z.array(z.number()),
     autoBanKeywords: z.array(z.string()),
     poolMode: z.boolean(),
+    clientSimulationProfile: z.enum(['', 'anthropic_cli_headers_v1']),
+    clientSimulationRiskAccepted: z.boolean(),
     responsesWebsocketEnabled: z.boolean(),
     responsesCompactMode: z.enum(['auto', 'force_on', 'force_off']),
     responsesCompactModelMapping: z.array(keyValueRowSchema),
@@ -128,6 +138,19 @@ export function buildChannelFormSchema(mode: ChannelEditorMode, messages: Valida
           || values.protocol === 'openai_audio'
           || values.protocol === 'openai_speech'
     if (!protocolMatchesType) addIssue(context, 'protocol', messages.invalidField)
+    const nativeAnthropic = values.channelType === 'anthropic' && values.protocol === 'anthropic'
+    if (values.clientSimulationProfile && !nativeAnthropic) {
+      addIssue(context, 'clientSimulationProfile', messages.invalidField)
+    }
+    const clientSimulationChanged = values.clientSimulationProfile !== existingClientSimulationProfile
+    if (values.clientSimulationProfile && clientSimulationChanged
+      && !values.clientSimulationRiskAccepted) {
+      addIssue(
+        context,
+        'clientSimulationRiskAccepted',
+        messages.invalidClientSimulationRisk,
+      )
+    }
     if (values.responsesWebsocketEnabled
       && (values.channelType !== 'openai' || values.protocol !== 'openai_responses')) {
       addIssue(context, 'responsesWebsocketEnabled', messages.invalidField)
@@ -218,6 +241,8 @@ export function defaultChannelValues(channel?: AdminChannel): ChannelFormValues 
     autoBanStatusCodes: [...(channel?.auto_ban_rules?.status_codes ?? [])],
     autoBanKeywords: [...(channel?.auto_ban_rules?.keywords ?? [])],
     poolMode: channel?.pool_mode ?? false,
+    clientSimulationProfile: channel?.client_simulation_profile ?? '',
+    clientSimulationRiskAccepted: false,
     responsesWebsocketEnabled: channel?.responses_websocket_enabled ?? false,
     responsesCompactMode: channel?.responses_compact_mode ?? 'auto',
     responsesCompactModelMapping: stringMapRows(
@@ -281,6 +306,8 @@ function commonRequest(values: ChannelFormValues) {
       keywords: values.autoBanKeywords,
     },
     pool_mode: values.poolMode,
+    client_simulation_profile: values.clientSimulationProfile || null,
+    client_simulation_risk_accepted: values.clientSimulationRiskAccepted,
     responses_websocket_enabled: values.responsesWebsocketEnabled,
     responses_compact_mode: values.responsesCompactMode,
     responses_compact_model_mapping: stringRowsObject(values.responsesCompactModelMapping),

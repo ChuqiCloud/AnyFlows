@@ -1,5 +1,6 @@
 use std::{collections::BTreeSet, fmt};
 
+use af_domain::{ClientSimulationProfile, ClientSimulationResult};
 use thiserror::Error;
 use zeroize::Zeroize as _;
 
@@ -546,6 +547,8 @@ pub struct DebugTraceAttemptWrite {
     pub(super) upstream_status: Option<i16>,
     pub(super) retry_decision: bool,
     pub(super) elapsed_ms: i64,
+    pub(super) client_simulation_profile: Option<ClientSimulationProfile>,
+    pub(super) client_simulation_result: Option<ClientSimulationResult>,
     pub(super) diagnostic: Option<DebugTraceAttemptDiagnosticWrite>,
 }
 
@@ -630,8 +633,22 @@ impl DebugTraceAttemptWrite {
             upstream_status,
             retry_decision,
             elapsed_ms,
+            client_simulation_profile: None,
+            client_simulation_result: None,
             diagnostic: None,
         })
+    }
+
+    /// 附加闭合仿真档案和结果；档案 ID 已包含版本信息。
+    #[must_use]
+    pub const fn with_client_simulation(
+        mut self,
+        profile: ClientSimulationProfile,
+        result: ClientSimulationResult,
+    ) -> Self {
+        self.client_simulation_profile = Some(profile);
+        self.client_simulation_result = Some(result);
+        self
     }
 
     #[must_use]
@@ -785,6 +802,8 @@ pub struct DebugTraceAttemptRecord {
     pub(super) upstream_status: Option<i16>,
     pub(super) retry_decision: bool,
     pub(super) elapsed_ms: i64,
+    pub(super) client_simulation_profile: Option<ClientSimulationProfile>,
+    pub(super) client_simulation_result: Option<ClientSimulationResult>,
     pub(super) request_method: Option<String>,
     pub(super) request_url: Option<String>,
     pub(super) response_status: Option<i16>,
@@ -823,6 +842,14 @@ impl DebugTraceAttemptRecord {
     #[must_use]
     pub const fn elapsed_ms(&self) -> i64 {
         self.elapsed_ms
+    }
+    #[must_use]
+    pub const fn client_simulation_profile(&self) -> Option<ClientSimulationProfile> {
+        self.client_simulation_profile
+    }
+    #[must_use]
+    pub const fn client_simulation_result(&self) -> Option<ClientSimulationResult> {
+        self.client_simulation_result
     }
 
     #[must_use]

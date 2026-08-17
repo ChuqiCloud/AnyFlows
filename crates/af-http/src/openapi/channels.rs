@@ -13,7 +13,7 @@ use crate::{
     management_error::ManagementErrorBody,
     openapi::schema::{
         AdminChannelProtocolSchema, AdminChannelTypeSchema, AdminRoutingStatusSchema,
-        AdminRoutingWriteStatusSchema, ResponsesCompactModeSchema,
+        AdminRoutingWriteStatusSchema, ClientSimulationProfileSchema, ResponsesCompactModeSchema,
         ResponsesCompactProbeResultSchema,
     },
 };
@@ -148,6 +148,7 @@ fn probe_admin_channel() {}
         AdminChannelProtocolSchema,
         AdminRoutingStatusSchema,
         AdminRoutingWriteStatusSchema,
+        ClientSimulationProfileSchema,
         ResponsesCompactModeSchema,
         ResponsesCompactProbeResultSchema,
         AdminChannelResponse,

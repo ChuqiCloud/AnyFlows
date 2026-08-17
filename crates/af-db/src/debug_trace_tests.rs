@@ -1,5 +1,6 @@
 use std::{error::Error, sync::Arc, time::Duration};
 
+use af_domain::{ClientSimulationProfile, ClientSimulationResult};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter, Set,
     entity::prelude::{Json, TimeDateTimeWithTimeZone},
@@ -185,6 +186,60 @@ async fn storage_round_trip_preserves_order_filters_and_cursor() -> Result<(), B
             .await?,
         6
     );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn client_simulation_metadata_round_trips_and_corruption_fails_closed()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let trace = fixture
+        .repository
+        .insert(failed_trace(
+            &fixture,
+            "request-client-simulation",
+            "claude-opus-4-8",
+        )?)
+        .await?;
+
+    let detail = fixture.repository.detail(trace.id()).await?;
+    assert_eq!(detail.attempts().len(), 1);
+    assert_eq!(
+        detail.attempts()[0].client_simulation_profile(),
+        Some(ClientSimulationProfile::AnthropicCliHeadersV1)
+    );
+    assert_eq!(
+        detail.attempts()[0].client_simulation_result(),
+        Some(ClientSimulationResult::Failed)
+    );
+
+    assert!(
+        fixture
+            .pool
+            .connection()
+            .execute_unprepared(&format!(
+                "UPDATE debug_trace_attempts SET client_simulation_profile = 'unknown' WHERE trace_id = {}",
+                trace.id()
+            ))
+            .await
+            .is_err(),
+        "第 68 号迁移必须拒绝未知仿真档案"
+    );
+
+    fixture
+        .pool
+        .connection()
+        .execute_unprepared(&format!(
+            "UPDATE debug_trace_attempts SET client_simulation_result = NULL WHERE trace_id = {}",
+            trace.id()
+        ))
+        .await?;
+    assert_eq!(
+        fixture.repository.detail(trace.id()).await,
+        Err(DebugTraceRepositoryError::Invariant)
+    );
+
     fixture.pool.close().await?;
     Ok(())
 }
@@ -454,14 +509,20 @@ fn failed_trace(
         DebugTraceOperation::Chat,
         DebugTraceOutcome::Failed,
         50,
-        vec![DebugTraceAttemptWrite::failed(
-            0,
-            13,
-            23,
-            DebugTraceFailureKind::ServerError,
-            Some(503),
-            false,
-            50,
-        )?],
+        vec![
+            DebugTraceAttemptWrite::failed(
+                0,
+                13,
+                23,
+                DebugTraceFailureKind::ServerError,
+                Some(503),
+                false,
+                50,
+            )?
+            .with_client_simulation(
+                ClientSimulationProfile::AnthropicCliHeadersV1,
+                ClientSimulationResult::Failed,
+            ),
+        ],
     )
 }

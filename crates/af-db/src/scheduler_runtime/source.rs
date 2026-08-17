@@ -1,6 +1,7 @@
 use af_domain::{
-    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ConcurrencyLimit, CredentialKind,
-    Protocol, ProxyId, ResponsesCompactMode, ResponsesCompactProbeResult, Status,
+    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ClientSimulationProfile,
+    ConcurrencyLimit, CredentialKind, Protocol, ProxyId, ResponsesCompactMode,
+    ResponsesCompactProbeResult, Status,
 };
 use sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
 use thiserror::Error;
@@ -8,8 +9,9 @@ use thiserror::Error;
 use crate::{
     CredentialProxyScheme,
     channel_settings::{
-        auto_ban_rules, pool_mode, responses_compact_mode, responses_compact_model_mapping,
-        responses_compact_probe_result, responses_websocket_enabled,
+        auto_ban_rules, client_simulation_profile, pool_mode, responses_compact_mode,
+        responses_compact_model_mapping, responses_compact_probe_result,
+        responses_websocket_enabled, validate_client_simulation_capability,
         validate_responses_compact_capability, validate_responses_compact_model_mapping,
         validate_responses_compact_probe_result, validate_responses_websocket_capability,
     },
@@ -38,6 +40,7 @@ pub(super) struct SchedulerRuntimeChannelSource {
     headers: Vec<(String, String)>,
     auto_ban_rules: ChannelAutoBanRules,
     pool_mode: bool,
+    client_simulation_profile: Option<ClientSimulationProfile>,
     responses_websocket_enabled: bool,
     responses_compact_mode: ResponsesCompactMode,
     responses_compact_probe_result: ResponsesCompactProbeResult,
@@ -89,6 +92,10 @@ impl SchedulerRuntimeChannelSource {
         let auto_ban_rules =
             auto_ban_rules(&settings).map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         let pool_mode = pool_mode(&settings).map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        let client_simulation_profile = client_simulation_profile(&settings)
+            .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        validate_client_simulation_capability(channel_type, protocol, client_simulation_profile)
+            .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         let responses_websocket_enabled = responses_websocket_enabled(&settings)
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         validate_responses_websocket_capability(
@@ -128,6 +135,7 @@ impl SchedulerRuntimeChannelSource {
             headers,
             auto_ban_rules,
             pool_mode,
+            client_simulation_profile,
             responses_websocket_enabled,
             responses_compact_mode,
             responses_compact_probe_result,
@@ -183,6 +191,11 @@ impl SchedulerRuntimeChannelSource {
     /// 返回渠道是否跳过渠道级本地故障状态。
     pub(super) const fn pool_mode(&self) -> bool {
         self.pool_mode
+    }
+
+    /// 返回渠道显式选择的版本化客户端仿真档案。
+    pub(super) const fn client_simulation_profile(&self) -> Option<ClientSimulationProfile> {
+        self.client_simulation_profile
     }
 
     /// 返回渠道显式开启的 Responses WebSocket 能力。

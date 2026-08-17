@@ -1,11 +1,12 @@
 import { useEffect } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { LoaderCircle } from 'lucide-react'
+import { LoaderCircle, ShieldAlert } from 'lucide-react'
 import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
@@ -24,6 +25,7 @@ import {
   type ChannelEditorMode,
   type ChannelFormValues,
   type ChannelProtocol,
+  type ClientSimulationProfile,
   type ResponsesCompactMode,
   type ChannelType,
 } from './channel-form-model'
@@ -44,6 +46,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
   const { t, i18n } = useTranslation()
   const createMutation = useCreateAdminChannel()
   const updateMutation = useUpdateAdminChannel()
+  const existingClientSimulationProfile = channel?.client_simulation_profile ?? ''
   const schema = buildChannelFormSchema(mode, {
     duplicateKey: t('channels.validation.duplicateKey'),
     invalidEntries: t('channels.validation.entries'),
@@ -51,10 +54,11 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
     invalidHeader: t('channels.validation.header'),
     invalidParameter: t('channels.validation.parameter'),
     invalidAutoBanRules: t('channels.validation.autoBanRules'),
+    invalidClientSimulationRisk: t('channels.validation.clientSimulationRisk'),
     invalidRouting: t('channels.validation.routing'),
     invalidTimeout: t('channels.validation.timeout'),
     invalidUrl: t('channels.validation.url'),
-  })
+  }, existingClientSimulationProfile)
   const form = useForm<ChannelFormValues>({
     defaultValues: defaultChannelValues(channel),
     resolver: zodResolver(schema),
@@ -70,6 +74,9 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
   const protocol = form.watch('protocol')
   const autoBan = form.watch('autoBan')
   const poolMode = form.watch('poolMode')
+  const clientSimulationProfile = form.watch('clientSimulationProfile')
+  const clientSimulationRiskRequired = clientSimulationProfile !== ''
+    && clientSimulationProfile !== existingClientSimulationProfile
   const removeUnsupportedParameters = (nextProtocol: ChannelProtocol) => {
     if (nextProtocol === 'openai_embeddings' || nextProtocol === 'openai_images' || nextProtocol === 'openai_audio' || nextProtocol === 'openai_speech' || nextProtocol === 'jina_rerank' || nextProtocol === 'cohere_rerank' || nextProtocol === 'xai_video') {
       form.setValue('paramOverride', [], { shouldDirty: true, shouldValidate: true })
@@ -90,6 +97,17 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
     form.setValue('responsesWebsocketEnabled', false, { shouldDirty: true })
     form.setValue('responsesCompactMode', 'auto', { shouldDirty: true })
     form.setValue('responsesCompactModelMapping', [], { shouldDirty: true })
+  }
+  const resetUnsupportedClientSimulation = (
+    nextType: ChannelType,
+    nextProtocol: ChannelProtocol,
+  ) => {
+    if (nextType === 'anthropic' && nextProtocol === 'anthropic') return
+    form.setValue('clientSimulationProfile', '', { shouldDirty: true, shouldValidate: true })
+    form.setValue('clientSimulationRiskAccepted', false, {
+      shouldDirty: true,
+      shouldValidate: true,
+    })
   }
   const onSubmit = form.handleSubmit(async (values) => {
     try {
@@ -165,6 +183,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                       shouldValidate: true,
                     })
                     resetUnsupportedResponsesOptions(nextType, nextProtocol)
+                    resetUnsupportedClientSimulation(nextType, nextProtocol)
                     removeUnsupportedParameters(nextProtocol)
                   }}
                 >
@@ -190,6 +209,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                     field.onChange(nextProtocol)
                     removeUnsupportedParameters(nextProtocol)
                     resetUnsupportedResponsesOptions(channelType, nextProtocol)
+                    resetUnsupportedClientSimulation(channelType, nextProtocol)
                   }}
                 >
                   {channelType === 'anthropic' ? (
@@ -262,6 +282,60 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                 })}
               />
             </ChannelFormField>
+          ) : null}
+          {channelType === 'anthropic' && protocol === 'anthropic' ? (
+            <div className="grid gap-3 border-l-2 border-warning/30 pl-3">
+              <ChannelFormField
+                id="channel-client-simulation-profile"
+                label={t('channels.fields.clientSimulationProfile')}
+                hint={t('channels.form.clientSimulationHint')}
+                error={form.formState.errors.clientSimulationProfile?.message}
+              >
+                <Controller control={form.control} name="clientSimulationProfile" render={({ field }) => (
+                  <Select
+                    id="channel-client-simulation-profile"
+                    value={field.value}
+                    onChange={(event) => {
+                      field.onChange(event.target.value as ClientSimulationProfile)
+                      form.setValue('clientSimulationRiskAccepted', false, {
+                        shouldDirty: true,
+                        shouldValidate: true,
+                      })
+                    }}
+                  >
+                    <option value="">{t('channels.clientSimulation.off')}</option>
+                    <option value="anthropic_cli_headers_v1">
+                      {t('channels.clientSimulation.anthropicCliHeadersV1')}
+                    </option>
+                  </Select>
+                )} />
+              </ChannelFormField>
+              {clientSimulationProfile ? (
+                <div className="flex items-start gap-2 text-xs text-warning">
+                  <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                  <div className="grid gap-2">
+                    <p className="leading-5">{t('channels.form.clientSimulationRisk')}</p>
+                    {clientSimulationRiskRequired ? (
+                      <label className="flex items-start gap-2 text-foreground">
+                        <Controller control={form.control} name="clientSimulationRiskAccepted" render={({ field }) => (
+                          <Checkbox
+                            checked={field.value}
+                            aria-invalid={!!form.formState.errors.clientSimulationRiskAccepted}
+                            onCheckedChange={(checked) => field.onChange(checked === true)}
+                          />
+                        )} />
+                        <span>{t('channels.form.clientSimulationRiskAccept')}</span>
+                      </label>
+                    ) : null}
+                    {form.formState.errors.clientSimulationRiskAccepted?.message ? (
+                      <p role="alert" className="text-destructive">
+                        {form.formState.errors.clientSimulationRiskAccepted.message}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+            </div>
           ) : null}
           {channelType === 'openai' && protocol === 'openai_responses' ? (
             <div className="grid gap-4 border-l-2 border-primary/20 pl-3">

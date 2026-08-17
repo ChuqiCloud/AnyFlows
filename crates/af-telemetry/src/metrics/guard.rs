@@ -10,8 +10,9 @@ use crate::MetricLabelError;
 
 use super::{
     BILLING_FLUSH_LAG, BILLING_FLUSH_LAG_DESCRIPTION, CHANNEL_HEALTH, CHANNEL_HEALTH_DESCRIPTION,
-    CONCURRENCY_SLOTS, CONCURRENCY_SLOTS_DESCRIPTION, FIRST_TOKEN_DESCRIPTION, FIRST_TOKEN_SECONDS,
-    OTHER_LABEL, QUOTA_CONSUMED_DESCRIPTION, QUOTA_CONSUMED_TOTAL, REQUEST_DURATION_DESCRIPTION,
+    CLIENT_SIMULATION_ATTEMPTS_DESCRIPTION, CLIENT_SIMULATION_ATTEMPTS_TOTAL, CONCURRENCY_SLOTS,
+    CONCURRENCY_SLOTS_DESCRIPTION, FIRST_TOKEN_DESCRIPTION, FIRST_TOKEN_SECONDS, OTHER_LABEL,
+    QUOTA_CONSUMED_DESCRIPTION, QUOTA_CONSUMED_TOTAL, REQUEST_DURATION_DESCRIPTION,
     REQUEST_DURATION_SECONDS, REQUESTS_DESCRIPTION, REQUESTS_TOTAL, UPSTREAM_ERRORS_DESCRIPTION,
     UPSTREAM_ERRORS_TOTAL,
 };
@@ -22,6 +23,7 @@ const CHANNEL_LABELS: &[&str] = &["channel"];
 const UPSTREAM_ERROR_LABELS: &[&str] = &["channel", "type"];
 const GROUP_LABELS: &[&str] = &["group"];
 const CONCURRENCY_LABELS: &[&str] = &["level"];
+const CLIENT_SIMULATION_LABELS: &[&str] = &["profile", "result"];
 const NO_LABELS: &[&str] = &[];
 const METRICS_CALLSITE: &str = super::METRICS_CALLSITE;
 const ENUM_LABEL_MAX_BYTES: usize = 32;
@@ -104,6 +106,13 @@ const METRIC_CONTRACTS: &[MetricContract] = &[
         labels: NO_LABELS,
         unit: Some(Unit::Seconds),
         description: BILLING_FLUSH_LAG_DESCRIPTION,
+    },
+    MetricContract {
+        name: CLIENT_SIMULATION_ATTEMPTS_TOTAL,
+        kind: MetricKind::Counter,
+        labels: CLIENT_SIMULATION_LABELS,
+        unit: Some(Unit::Count),
+        description: CLIENT_SIMULATION_ATTEMPTS_DESCRIPTION,
     },
 ];
 
@@ -397,6 +406,8 @@ fn allowed_label_value(key: &str, value: &str, registries: &LabelRegistries) -> 
                 | "other"
         ),
         "level" => matches!(value, "account" | "user" | "token"),
+        "profile" => matches!(value, "anthropic_cli_headers_v1"),
+        "result" => matches!(value, "not_applied" | "applied" | "failed"),
         _ => false,
     }
 }
