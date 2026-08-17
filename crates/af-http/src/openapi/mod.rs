@@ -751,7 +751,10 @@ mod tests {
             serde_json::json!(["global", "spark"])
         );
         assert_eq!(create["properties"]["parent_id"]["example"], 41);
-        assert_eq!(create["properties"]["quota_dimension"]["example"], "global");
+        assert_eq!(
+            create["properties"]["quota_dimension"]["$ref"],
+            "#/components/schemas/AdminCredentialQuotaDimension"
+        );
         assert!(
             create["properties"]["secret"]["oneOf"]
                 .as_array()

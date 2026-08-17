@@ -287,7 +287,7 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
       - name: Run tests
-        run: cargo nextest run --workspace --all-features --locked
+        run: cargo nextest run --workspace --all-features --locked --no-fail-fast
 
       - name: Run documentation tests
         run: cargo test --workspace --all-features --doc --locked
