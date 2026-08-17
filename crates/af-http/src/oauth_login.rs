@@ -262,18 +262,13 @@ fn oauth_state_cookie_material(authorization_url: &str) -> Result<(String, bool)
     let mut state = None;
     let mut redirect_uri = None;
     for (name, value) in authorization_url.query_pairs() {
-        match name.as_ref() {
-            "state" => {
-                if state.replace(value.into_owned()).is_some() {
-                    return Err(ManagementError::Internal);
-                }
-            }
-            "redirect_uri" => {
-                if redirect_uri.replace(value.into_owned()).is_some() {
-                    return Err(ManagementError::Internal);
-                }
-            }
-            _ => {}
+        let duplicate = match name.as_ref() {
+            "state" => state.replace(value.into_owned()).is_some(),
+            "redirect_uri" => redirect_uri.replace(value.into_owned()).is_some(),
+            _ => false,
+        };
+        if duplicate {
+            return Err(ManagementError::Internal);
         }
     }
     let state = state
@@ -330,10 +325,8 @@ fn oauth_state_cookie_matches(headers: &HeaderMap, state: &str) -> bool {
             let Some((name, value)) = pair.trim().split_once('=') else {
                 continue;
             };
-            if name == OAUTH_STATE_COOKIE {
-                if actual.replace(value).is_some() {
-                    return false;
-                }
+            if name == OAUTH_STATE_COOKIE && actual.replace(value).is_some() {
+                return false;
             }
         }
     }
