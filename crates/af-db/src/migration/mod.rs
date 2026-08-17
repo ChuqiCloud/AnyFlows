@@ -72,6 +72,7 @@ mod m20260816_000063_create_organization_invitations;
 mod m20260816_000064_create_organization_wallets;
 mod m20260816_000065_create_organization_budgets;
 mod m20260817_000066_add_organization_tokens;
+mod m20260817_000067_create_organization_activity;
 mod schema;
 
 #[cfg(test)]
@@ -181,6 +182,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260816_000064_create_organization_wallets::Migration),
             Box::new(m20260816_000065_create_organization_budgets::Migration),
             Box::new(m20260817_000066_add_organization_tokens::Migration),
+            Box::new(m20260817_000067_create_organization_activity::Migration),
         ]
     }
 }

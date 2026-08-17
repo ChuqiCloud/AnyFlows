@@ -23,6 +23,7 @@ import { LandingPage } from '@/features/landing/landing-page'
 import { ModelPage } from '@/features/models/model-page'
 import { ModelManagementPage } from '@/features/model-management/model-management-page'
 import { NetworkSettingsPage } from '@/features/network-settings/network-settings-page'
+import { OrganizationActivityPage } from '@/features/organization-activity/organization-activity-page'
 import { OrganizationApiKeyPage } from '@/features/organization-api-keys/organization-api-key-page'
 import { OrganizationBudgetPage } from '@/features/organization-budgets/organization-budget-page'
 import { PaymentSettingsPage } from '@/features/payment-settings/payment-settings-page'
@@ -156,6 +157,8 @@ function ManagementEntry({
               ? 'apiKeys.title'
               : view === 'organization-api-keys'
                 ? 'organizationApiKeys.title'
+                : view === 'organization-activity'
+                  ? 'organizationActivity.title'
                 : view === 'organization-budgets'
                   ? 'organizationBudgets.title'
               : view === 'wallet'
@@ -211,8 +214,10 @@ function ManagementEntry({
                 ? <UserPage />
             : view === 'api-keys'
               ? <ApiKeyPage />
-              : view === 'organization-api-keys'
+            : view === 'organization-api-keys'
                 ? <OrganizationApiKeyPage />
+                : view === 'organization-activity'
+                  ? <OrganizationActivityPage />
                 : view === 'organization-budgets'
                   ? <OrganizationBudgetPage />
               : view === 'wallet'
@@ -237,6 +242,7 @@ function ManagementEntry({
 
   const requireAdmin = view !== 'api-keys'
     && view !== 'organization-api-keys'
+    && view !== 'organization-activity'
     && view !== 'organization-budgets'
     && view !== 'wallet'
     && view !== 'subscriptions'

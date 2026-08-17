@@ -14008,6 +14008,561 @@
           }
         ]
       }
+    },
+    "/api/organizations/{organization_id}/usage-logs": {
+      "get": {
+        "tags": [
+          "企业活动"
+        ],
+        "summary": "按企业角色读取调用日志",
+        "operationId": "listOrganizationUsageLogs",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业内部标识",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "description": "读取范围：organization、self 或 summary；默认 self",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "description": "上一页末尾日志标识",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "返回数量",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "角色裁剪后的企业调用日志",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationUsageLogListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "企业标识、范围或分页参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前企业角色无权读取该范围",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "企业不存在或无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{organization_id}/audit-logs": {
+      "get": {
+        "tags": [
+          "企业活动"
+        ],
+        "summary": "读取企业管理审计",
+        "operationId": "listOrganizationAuditLogs",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业内部标识",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "description": "上一页末尾审计标识",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "返回数量",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "actor_user_id",
+            "in": "query",
+            "description": "按操作者筛选",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "operation",
+            "in": "query",
+            "description": "按稳定操作码筛选",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 96
+            }
+          },
+          {
+            "name": "target_type",
+            "in": "query",
+            "description": "按目标类型筛选",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 32
+            }
+          },
+          {
+            "name": "outcome",
+            "in": "query",
+            "description": "按 succeeded、denied 或 failed 筛选",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "按角色脱敏后的管理审计",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationAuditLogListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "企业标识或筛选参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前企业角色无权读取审计",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "企业不存在或无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/platform/organizations/{organization_id}/usage-logs": {
+      "get": {
+        "tags": [
+          "平台企业活动"
+        ],
+        "summary": "平台管理员跨企业读取调用日志",
+        "operationId": "listPlatformOrganizationUsageLogs",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "目标企业内部标识",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "x-anyflows-platform-reason",
+            "in": "header",
+            "description": "跨企业访问理由",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 255,
+              "minLength": 1
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "description": "上一页末尾日志标识",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "返回数量",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "企业完整调用日志；访问已进入平台代理审计",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationUsageLogListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "企业标识、理由或分页参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "不是平台管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "企业不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/platform/organizations/{organization_id}/audit-logs": {
+      "get": {
+        "tags": [
+          "平台企业活动"
+        ],
+        "summary": "平台管理员跨企业读取管理审计",
+        "operationId": "listPlatformOrganizationAuditLogs",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "目标企业内部标识",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "x-anyflows-platform-reason",
+            "in": "header",
+            "description": "跨企业访问理由",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 255,
+              "minLength": 1
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "description": "上一页末尾审计标识",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "返回数量",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "actor_user_id",
+            "in": "query",
+            "description": "按操作者筛选",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "operation",
+            "in": "query",
+            "description": "按稳定操作码筛选",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 96
+            }
+          },
+          {
+            "name": "target_type",
+            "in": "query",
+            "description": "按目标类型筛选",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 32
+            }
+          },
+          {
+            "name": "outcome",
+            "in": "query",
+            "description": "按 succeeded、denied 或 failed 筛选",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "企业管理审计；本次访问也已进入平台代理审计",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationAuditLogListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "企业标识、理由或筛选参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "不是平台管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "企业不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -19946,6 +20501,8 @@
           "username",
           "token_id",
           "group_id",
+          "organization_id",
+          "organization_team_id",
           "billing_mode",
           "input_tokens",
           "output_tokens",
@@ -20002,6 +20559,22 @@
           },
           "group_id": {
             "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "organization_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "organization_team_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64",
             "minimum": 1
           },
@@ -21463,6 +22036,127 @@
           }
         },
         "additionalProperties": false
+      },
+      "OrganizationAuditLogListResponse": {
+        "type": "object",
+        "required": [
+          "logs",
+          "next_cursor"
+        ],
+        "properties": {
+          "logs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrganizationAuditLogResponse"
+            },
+            "maxItems": 100
+          },
+          "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationAuditLogResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "actor_user_id",
+          "actor_username",
+          "actor_role",
+          "permission_code",
+          "operation",
+          "target_type",
+          "target_identifier",
+          "outcome",
+          "platform_proxy",
+          "platform_reason",
+          "request_id",
+          "client_fingerprint",
+          "change_summary",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "actor_user_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "actor_username": {
+            "type": "string"
+          },
+          "actor_role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "permission_code": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "target_type": {
+            "type": "string"
+          },
+          "target_identifier": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/OrganizationAuditOutcomeResponse"
+          },
+          "platform_proxy": {
+            "type": "boolean"
+          },
+          "platform_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "client_fingerprint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "change_summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationAuditOutcomeResponse": {
+        "type": "string",
+        "enum": [
+          "succeeded",
+          "denied",
+          "failed"
+        ]
       },
       "OrganizationBudgetAllocationResponse": {
         "type": "object",
@@ -23215,6 +23909,116 @@
             }
           }
         ]
+      },
+      "OrganizationUsageLogListResponse": {
+        "type": "object",
+        "required": [
+          "scope",
+          "logs",
+          "summaries",
+          "next_cursor"
+        ],
+        "properties": {
+          "scope": {
+            "type": "string"
+          },
+          "logs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminUsageLog"
+            },
+            "maxItems": 100
+          },
+          "summaries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrganizationUsageLogSummaryResponse"
+            },
+            "maxItems": 100
+          },
+          "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationUsageLogSummaryResponse": {
+        "type": "object",
+        "required": [
+          "model",
+          "protocol",
+          "operation",
+          "request_count",
+          "input_tokens",
+          "output_tokens",
+          "reasoning_tokens",
+          "quota",
+          "duration_ms"
+        ],
+        "properties": {
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "protocol": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/UsageLogProtocol"
+              }
+            ]
+          },
+          "operation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/UsageLogOperation"
+              }
+            ]
+          },
+          "request_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "input_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "output_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "reasoning_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "quota": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "duration_ms": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
       },
       "OrganizationWalletAdjustmentRequest": {
         "type": "object",
@@ -25937,6 +26741,12 @@
     },
     {
       "name": "企业 API Key"
+    },
+    {
+      "name": "企业活动"
+    },
+    {
+      "name": "平台企业活动"
     },
     {
       "name": "余额预警"

@@ -28,6 +28,8 @@ use af_http::{
 use serde_json::{Value, json};
 use tower::ServiceExt as _;
 
+use organization_activity_support::test_organization_activity_service;
+
 const OWNER_TOKEN: &str = "organization-token-owner";
 const ADMIN_TOKEN: &str = "organization-token-admin";
 const BILLING_TOKEN: &str = "organization-token-billing";
@@ -387,7 +389,12 @@ async fn fixture() -> Result<Fixture, Box<dyn std::error::Error>> {
         member_id: member.user_id(),
     });
     Ok(Fixture {
-        app: build_organization_token_router(authorization, token_service, sessions),
+        app: build_organization_token_router(
+            authorization,
+            token_service,
+            test_organization_activity_service(),
+            sessions,
+        ),
         pool,
         organization_id: organization.id(),
         other_organization_id: other_organization.id(),
@@ -526,3 +533,4 @@ fn now_u64() -> u64 {
         .unwrap()
         .as_secs()
 }
+mod organization_activity_support;

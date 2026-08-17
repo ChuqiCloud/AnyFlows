@@ -5,8 +5,9 @@ use std::time::Duration;
 
 use af_domain::{
     BillingReservationId, ChannelId, CredentialKind, GatewayPrincipal, GroupId,
-    OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationMembershipStatus,
-    OrganizationRole, Quota, QuotaDelta, SubscriptionCycle, SubscriptionWindow, TokenId,
+    OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationGatewayPrincipal,
+    OrganizationId, OrganizationMembershipId, OrganizationMembershipStatus, OrganizationRole,
+    OrganizationTeamId, Quota, QuotaDelta, SubscriptionCycle, SubscriptionWindow, TokenId,
     TrustedClientIp, UserId,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -15,7 +16,7 @@ use sea_orm::entity::prelude::{Json, TimeDateTimeWithTimeZone, TimeTime};
 use sea_orm::{
     ActiveModelBehavior, ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection,
     DbBackend, EntityTrait, IdenStatic, IntoActiveModel, Iterable, PaginatorTrait, QueryFilter,
-    Set, Statement,
+    QuerySelect, Set, Statement,
 };
 use sea_orm_migration::prelude::*;
 use url::Url;
@@ -31,14 +32,14 @@ use crate::entity::{
     billing_token_window_reservations, channel_groups, channel_models, channels, credentials,
     debug_trace_attempts, debug_trace_snapshot_access_audits, debug_trace_snapshots, debug_traces,
     email_settings, group_model_ratios, groups, invite_rebate_events, model_prices,
-    model_sync_items, model_sync_runs, models, options, organization_budget_policies,
-    organization_budget_windows, organization_entitlements, organization_invitations,
-    organization_memberships, organization_teams, organization_wallet_ledger_entries,
-    organization_wallets, organizations, payment_settings, playground_conversations,
-    playground_shares, redemption_batches, redemption_codes, registration_rate_limits,
-    scheduler_outbox_events, site_settings, subscription_balance_alert_events, subscription_plans,
-    tokens, topup_orders, topup_payment_events, usage_logs, user_subscriptions, users,
-    wallet_ledger_entries,
+    model_sync_items, model_sync_runs, models, options, organization_audit_logs,
+    organization_budget_policies, organization_budget_windows, organization_entitlements,
+    organization_invitations, organization_memberships, organization_teams,
+    organization_wallet_ledger_entries, organization_wallets, organizations, payment_settings,
+    playground_conversations, playground_shares, redemption_batches, redemption_codes,
+    registration_rate_limits, scheduler_outbox_events, site_settings,
+    subscription_balance_alert_events, subscription_plans, tokens, topup_orders,
+    topup_payment_events, usage_logs, user_subscriptions, users, wallet_ledger_entries,
 };
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
@@ -47,7 +48,9 @@ use crate::{
     BillingBatchRepository, BillingBatchWrite, BillingBatchWriteOutcome, ChannelBillingWrite,
     DatabaseOptions, EmailPasswordUpdate, EmailSettingsRepository, EmailSettingsWriteRecord,
     EmailTlsMode, EncryptedCredentialEnvelope, GroupPricingRepository, ModelPriceBillingMode,
-    ModelPriceRepository, OrganizationCreate, OrganizationEntitlementWrite,
+    ModelPriceRepository, OrganizationAuditOutcome, OrganizationAuditQuery,
+    OrganizationAuditRepository, OrganizationAuditRepositoryError, OrganizationAuditWrite,
+    OrganizationAuditWriteOutcome, OrganizationCreate, OrganizationEntitlementWrite,
     OrganizationMembershipChange, OrganizationMembershipCreate, OrganizationRepository,
     OrganizationRepositoryError, OrganizationTeamCreate, PlaygroundConversationRepository,
     PlaygroundConversationWrite, PlaygroundShareRepository, PlaygroundShareWrite, PoolOptions,
@@ -64,7 +67,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 66;
+const EXPECTED_MIGRATION_COUNT: usize = 67;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -83,7 +86,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 63] = [
+const CORE_TABLES: [&str; 64] = [
     "groups",
     "users",
     "channels",
@@ -147,6 +150,7 @@ const CORE_TABLES: [&str; 63] = [
     "organization_budget_policies",
     "organization_budget_windows",
     "billing_organization_reservations",
+    "organization_audit_logs",
 ];
 
 struct SlowMigrator;
@@ -978,7 +982,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 7);
+    assert_eq!(pending_migrations.len(), 8);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -1007,6 +1011,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
         pending_migrations[6].name(),
         "m20260817_000066_add_organization_tokens"
     );
+    assert_eq!(
+        pending_migrations[7].name(),
+        "m20260817_000067_create_organization_activity"
+    );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
     assert_legacy_debug_trace_snapshot_cleared(&pool, legacy_debug_trace_id).await?;
@@ -1024,26 +1032,43 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
         EXPECTED_MIGRATION_COUNT
     );
 
+    eprintln!("迁移冒烟阶段：更新时间行为");
     assert_updated_at_behaviors(pool.connection()).await?;
+    eprintln!("迁移冒烟阶段：余额预警迁移");
     exercise_balance_alert_migration(pool.connection()).await?;
+    eprintln!("迁移冒烟阶段：调度发件箱仓储");
     exercise_scheduler_outbox_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：令牌鉴权仓储");
     exercise_token_auth_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：额度仓储");
     exercise_quota_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：批量计费仓储");
     exercise_billing_batch_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：模型价格仓储");
     exercise_model_price_repository(&pool).await?;
     // Expression 降级保护由独立测试覆盖；全量回滚前清理业务测试行以允许迁移降级。
     model_prices::Entity::delete_many()
         .exec(pool.connection())
         .await?;
+    eprintln!("迁移冒烟阶段：用量日志仓储");
     exercise_usage_log_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：试炼场分享仓储");
     exercise_playground_share_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：试炼场会话仓储");
     exercise_playground_conversation_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：注册仓储");
     exercise_registration_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：认证挑战仓储");
     exercise_auth_challenge_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：站点设置仓储");
     exercise_site_settings_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：邮件设置仓储");
     exercise_email_settings_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：管理看板仓储");
     exercise_admin_dashboard_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：核心结构校验");
     exercise_core_schema(pool.connection()).await?;
+    eprintln!("迁移冒烟阶段：企业仓储");
     exercise_organization_repository(&pool).await?;
 
     Migrator::down(pool.connection(), None).await?;
@@ -1220,30 +1245,55 @@ async fn exercise_usage_per_call_migration_upgrade(
     .exec_without_returning(pool.connection())
     .await?;
 
-    // 当前仓储会写入第 57 号观测列，因此升级到第 59 号，同时给第 60 号安全迁移保留旧数据入口。
+    // 先升级到第 59 号并显式使用当时的列投影，避免当前仓储提前引用第 67 号企业归属列。
     Migrator::up(pool.connection(), Some(5)).await?;
-    let repository = UsageLogRepository::new(pool.clone());
-    let per_call_write = UsageLogWrite::new(
-        BillingReservationId::new([0xd2; 16])?,
-        principal,
-        UsageLogBillingMode::PerCall,
-        UsageLogUsage::new(0, 0, 0, 0, 0, 0, 0, 0)?,
-        UsageLogSource::Upstream,
-        UsageLogSemantics::Inclusive,
-        Quota::new(320_000)?,
-    )
-    .with_video_dimensions(Some(8), None)?;
-    assert_eq!(
-        repository.record(&per_call_write).await?,
-        UsageLogWriteOutcome::Applied
-    );
+    let per_call_event_id = BillingReservationId::new([0xd2; 16])?;
+    let per_call_key = BillingReservationKey::parse(&per_call_event_id.persistence_key())?;
+    usage_logs::Entity::insert(usage_logs::ActiveModel {
+        event_id: Set(per_call_key),
+        event_type: Set(1),
+        user_id: Set(principal.user_id().get()),
+        token_id: Set(principal.token_id().get()),
+        group_id: Set(principal.group_id().get()),
+        billing_mode: Set(3),
+        input_tokens: Set(0),
+        output_tokens: Set(0),
+        cache_read: Set(0),
+        cache_creation_5m: Set(0),
+        cache_creation_1h: Set(0),
+        reasoning_tokens: Set(0),
+        audio_input_tokens: Set(0),
+        audio_output_tokens: Set(0),
+        audio_duration_nanoseconds: Set(None),
+        video_duration_seconds: Set(Some(8)),
+        video_resolution: Set(None),
+        request_id: Set(None),
+        model: Set(None),
+        protocol: Set(None),
+        operation: Set(None),
+        is_stream: Set(None),
+        reasoning_effort: Set(None),
+        reasoning_budget_tokens: Set(None),
+        first_token_ms: Set(None),
+        duration_ms: Set(None),
+        usage_source: Set(1),
+        usage_semantics: Set(1),
+        quota: Set(320_000),
+        created_at: Set(TimeDateTimeWithTimeZone::now_utc()),
+        ..Default::default()
+    })
+    .exec_without_returning(pool.connection())
+    .await?;
     let ids = usage_logs::Entity::find()
+        .select_only()
+        .column(usage_logs::Column::Id)
         .filter(usage_logs::Column::UserId.eq(user.id))
+        .into_tuple::<i64>()
         .all(pool.connection())
         .await?;
     assert_eq!(ids.len(), 2);
-    let minimum_id = ids.iter().map(|record| record.id).min().unwrap_or_default();
-    let maximum_id = ids.iter().map(|record| record.id).max().unwrap_or_default();
+    let minimum_id = ids.iter().copied().min().unwrap_or_default();
+    let maximum_id = ids.iter().copied().max().unwrap_or_default();
     assert!(maximum_id > minimum_id, "迁移后自增主键必须继续递增");
 
     usage_logs::Entity::delete_many()
@@ -2434,6 +2484,8 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         "organization_entitlements",
     )
     .await?;
+    assert_entity_columns::<organization_audit_logs::Column>(&manager, "organization_audit_logs")
+        .await?;
     assert_entity_columns::<organization_invitations::Column>(&manager, "organization_invitations")
         .await?;
     assert_entity_columns::<organization_wallets::Column>(&manager, "organization_wallets").await?;
@@ -2460,6 +2512,7 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     assert_entity_columns::<channels::Column>(&manager, "channels").await?;
     assert_entity_columns::<credentials::Column>(&manager, "credentials").await?;
     assert_entity_columns::<tokens::Column>(&manager, "tokens").await?;
+    assert_entity_columns::<usage_logs::Column>(&manager, "usage_logs").await?;
     assert_entity_columns::<channel_models::Column>(&manager, "channel_models").await?;
     assert_entity_columns::<channel_groups::Column>(&manager, "channel_groups").await?;
     assert_entity_columns::<abilities::Column>(&manager, "abilities").await?;
@@ -2708,6 +2761,24 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
             "billing_reservations",
             "idx_billing_reservations_organization_status",
         ),
+        ("usage_logs", "idx_usage_logs_organization_id"),
+        ("usage_logs", "idx_usage_logs_organization_user_id"),
+        ("usage_logs", "idx_usage_logs_organization_team_id"),
+        ("organization_audit_logs", "uq_org_audit_request_operation"),
+        ("organization_audit_logs", "idx_org_audit_organization_id"),
+        (
+            "organization_audit_logs",
+            "idx_org_audit_organization_actor_id",
+        ),
+        (
+            "organization_audit_logs",
+            "idx_org_audit_organization_operation_id",
+        ),
+        (
+            "organization_audit_logs",
+            "idx_org_audit_organization_created",
+        ),
+        ("organization_audit_logs", "idx_org_audit_platform_id"),
     ] {
         assert!(
             manager.has_index(table, index).await?,
@@ -2819,7 +2890,7 @@ async fn exercise_organization_repository(pool: &DatabasePool) -> Result<(), Box
     invalid_shape.organization_id = Set(Some(organization.id().get()));
     assert!(invalid_shape.insert(pool.connection()).await.is_err());
 
-    let (_, other_owner_membership) = repository
+    let (other_organization, other_owner_membership) = repository
         .create(OrganizationCreate::new(
             "Other Organization Smoke".to_owned(),
             "other-organization-smoke".to_owned(),
@@ -2828,6 +2899,25 @@ async fn exercise_organization_repository(pool: &DatabasePool) -> Result<(), Box
         ))
         .await?
         .into_parts();
+    let other_team = repository
+        .create_team(
+            other_organization.id(),
+            OrganizationTeamCreate::new("Other Smoke Team".to_owned(), None),
+        )
+        .await?;
+    exercise_organization_activity_repository(
+        pool,
+        organization.id(),
+        membership.id(),
+        team.id(),
+        other_organization.id(),
+        other_team.id(),
+        owner_user_id,
+        member_user_id,
+        TokenId::new(enterprise_token.id)?,
+        GroupId::new(group.id)?,
+    )
+    .await?;
     let cross_scope_hash = "f2".repeat(32);
     let mut cross_scope = token_active_model(
         owner.id,
@@ -2868,6 +2958,266 @@ async fn exercise_organization_repository(pool: &DatabasePool) -> Result<(), Box
     repository
         .disable_team(organization.id(), team.id(), team.version())
         .await?;
+    Ok(())
+}
+
+/// 在三方言实库中闭合企业用量归属、审计追加、筛选分页与保留期清理。
+#[allow(
+    clippy::too_many_arguments,
+    reason = "参数逐一对应已创建的企业测试主体"
+)]
+async fn exercise_organization_activity_repository(
+    pool: &DatabasePool,
+    organization_id: OrganizationId,
+    membership_id: OrganizationMembershipId,
+    team_id: OrganizationTeamId,
+    other_organization_id: OrganizationId,
+    other_team_id: OrganizationTeamId,
+    owner_user_id: UserId,
+    member_user_id: UserId,
+    token_id: TokenId,
+    group_id: GroupId,
+) -> Result<(), Box<dyn Error>> {
+    let usage_repository = UsageLogRepository::new(pool.clone());
+    let enterprise_principal = GatewayPrincipal::organization(
+        token_id,
+        member_user_id,
+        group_id,
+        OrganizationGatewayPrincipal::new(organization_id, membership_id, Some(team_id)),
+    );
+    let usage_write = UsageLogWrite::new(
+        BillingReservationId::new([0xe1; 16])?,
+        enterprise_principal,
+        UsageLogBillingMode::PerToken,
+        UsageLogUsage::new(12, 3, 0, 0, 0, 1, 0, 0)?,
+        UsageLogSource::Upstream,
+        UsageLogSemantics::Inclusive,
+        Quota::new(15)?,
+    );
+    assert_eq!(
+        usage_repository.record(&usage_write).await?,
+        UsageLogWriteOutcome::Applied
+    );
+    let stored_usage = usage_logs::Entity::find()
+        .filter(usage_logs::Column::OrganizationId.eq(organization_id.get()))
+        .one(pool.connection())
+        .await?
+        .expect("企业用量事实必须写入组织归属");
+    assert_eq!(stored_usage.user_id, member_user_id.get());
+    assert_eq!(stored_usage.organization_team_id, Some(team_id.get()));
+
+    let cross_team_principal = GatewayPrincipal::organization(
+        token_id,
+        member_user_id,
+        group_id,
+        OrganizationGatewayPrincipal::new(organization_id, membership_id, Some(other_team_id)),
+    );
+    let cross_team_write = UsageLogWrite::new(
+        BillingReservationId::new([0xe2; 16])?,
+        cross_team_principal,
+        UsageLogBillingMode::PerToken,
+        UsageLogUsage::new(1, 1, 0, 0, 0, 0, 0, 0)?,
+        UsageLogSource::Upstream,
+        UsageLogSemantics::Inclusive,
+        Quota::new(2)?,
+    );
+    assert_eq!(
+        usage_repository.record(&cross_team_write).await,
+        Err(UsageLogRepositoryError::OutcomeUnknown)
+    );
+    assert_eq!(
+        usage_logs::Entity::find()
+            .filter(usage_logs::Column::OrganizationId.eq(organization_id.get()))
+            .count(pool.connection())
+            .await?,
+        1
+    );
+
+    let audit_repository = OrganizationAuditRepository::new(pool.clone());
+    let succeeded = OrganizationAuditWrite::new(
+        organization_id,
+        owner_user_id,
+        Some(OrganizationRole::Owner),
+        "organization.teams.manage".to_owned(),
+        "organization.team.create".to_owned(),
+        "team".to_owned(),
+        team_id.get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        None,
+        "audit-request-success".to_owned(),
+        [0x11; 32],
+        Some(r#"{"name":"Smoke Team"}"#.to_owned()),
+    )?;
+    assert_eq!(
+        audit_repository.record(&succeeded).await?,
+        OrganizationAuditWriteOutcome::Applied
+    );
+    assert_eq!(
+        audit_repository.record(&succeeded).await?,
+        OrganizationAuditWriteOutcome::Existing
+    );
+    let conflicting = OrganizationAuditWrite::new(
+        organization_id,
+        owner_user_id,
+        Some(OrganizationRole::Owner),
+        "organization.teams.manage".to_owned(),
+        "organization.team.create".to_owned(),
+        "team".to_owned(),
+        "conflicting-target".to_owned(),
+        OrganizationAuditOutcome::Succeeded,
+        None,
+        "audit-request-success".to_owned(),
+        [0x11; 32],
+        Some(r#"{"name":"Smoke Team"}"#.to_owned()),
+    )?;
+    assert_eq!(
+        audit_repository.record(&conflicting).await,
+        Err(OrganizationAuditRepositoryError::Conflict)
+    );
+
+    for (request_id, operation, outcome, fingerprint) in [
+        (
+            "audit-request-failed",
+            "organization.member.update",
+            OrganizationAuditOutcome::Failed,
+            [0x22; 32],
+        ),
+        (
+            "audit-request-denied",
+            "organization.member.disable",
+            OrganizationAuditOutcome::Denied,
+            [0x33; 32],
+        ),
+    ] {
+        let write = OrganizationAuditWrite::new(
+            organization_id,
+            member_user_id,
+            Some(OrganizationRole::Member),
+            "organization.members.manage".to_owned(),
+            operation.to_owned(),
+            "membership".to_owned(),
+            membership_id.get().to_string(),
+            outcome,
+            None,
+            request_id.to_owned(),
+            fingerprint,
+            None,
+        )?;
+        assert_eq!(
+            audit_repository.record(&write).await?,
+            OrganizationAuditWriteOutcome::Applied
+        );
+    }
+    let platform_write = OrganizationAuditWrite::new(
+        organization_id,
+        owner_user_id,
+        None,
+        "platform.organizations.read".to_owned(),
+        "organization.audit.list".to_owned(),
+        "organization".to_owned(),
+        organization_id.get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        Some("企业支持工单核查".to_owned()),
+        "audit-request-platform".to_owned(),
+        [0x44; 32],
+        None,
+    )?;
+    assert_eq!(
+        audit_repository.record(&platform_write).await?,
+        OrganizationAuditWriteOutcome::Applied
+    );
+    let other_write = OrganizationAuditWrite::new(
+        other_organization_id,
+        owner_user_id,
+        Some(OrganizationRole::Owner),
+        "organization.audit.read".to_owned(),
+        "organization.audit.list".to_owned(),
+        "organization".to_owned(),
+        other_organization_id.get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        None,
+        "audit-request-other".to_owned(),
+        [0x55; 32],
+        None,
+    )?;
+    assert_eq!(
+        audit_repository.record(&other_write).await?,
+        OrganizationAuditWriteOutcome::Applied
+    );
+
+    let (first_page, next_cursor) = audit_repository
+        .list(
+            organization_id,
+            &OrganizationAuditQuery::new(None, 2, None, None, None, None)?,
+        )
+        .await?
+        .into_parts();
+    assert_eq!(first_page.len(), 2);
+    let (second_page, final_cursor) = audit_repository
+        .list(
+            organization_id,
+            &OrganizationAuditQuery::new(next_cursor, 2, None, None, None, None)?,
+        )
+        .await?
+        .into_parts();
+    assert_eq!(second_page.len(), 2);
+    assert_eq!(final_cursor, None);
+
+    let (denied_records, denied_cursor) = audit_repository
+        .list(
+            organization_id,
+            &OrganizationAuditQuery::new(
+                None,
+                10,
+                Some(member_user_id),
+                None,
+                Some("membership".to_owned()),
+                Some(OrganizationAuditOutcome::Denied),
+            )?,
+        )
+        .await?
+        .into_parts();
+    assert_eq!(denied_records.len(), 1);
+    assert_eq!(denied_records[0].request_id(), "audit-request-denied");
+    assert_eq!(denied_cursor, None);
+
+    let stored_audit = organization_audit_logs::Entity::find()
+        .filter(organization_audit_logs::Column::OrganizationId.eq(organization_id.get()))
+        .filter(organization_audit_logs::Column::RequestId.eq("audit-request-success"))
+        .one(pool.connection())
+        .await?
+        .expect("企业审计事实必须存在");
+    let mut forbidden_update = stored_audit.into_active_model();
+    forbidden_update.outcome = Set(OrganizationAuditOutcome::Failed as i16);
+    assert!(forbidden_update.update(pool.connection()).await.is_err());
+
+    assert_eq!(audit_repository.retention_days(organization_id).await?, 90);
+    let cutoff = TimeDateTimeWithTimeZone::now_utc()
+        .unix_timestamp()
+        .checked_add(60)
+        .ok_or("审计清理截止时间溢出")?;
+    assert_eq!(
+        audit_repository
+            .prune_before(organization_id, cutoff)
+            .await?,
+        4
+    );
+    let (remaining, _) = audit_repository
+        .list(
+            organization_id,
+            &OrganizationAuditQuery::new(None, 10, None, None, None, None)?,
+        )
+        .await?
+        .into_parts();
+    assert!(remaining.is_empty());
+    let (other_remaining, _) = audit_repository
+        .list(
+            other_organization_id,
+            &OrganizationAuditQuery::new(None, 10, None, None, None, None)?,
+        )
+        .await?
+        .into_parts();
+    assert_eq!(other_remaining.len(), 1);
     Ok(())
 }
 

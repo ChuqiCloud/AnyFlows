@@ -40,6 +40,7 @@
     "apiKeys": "我的 API Key",
     "organizationApiKeys": "企业 API Key",
     "organizationBudgets": "企业预算",
+    "organizationActivity": "企业日志与审计",
     "wallet": "我的钱包",
     "subscriptions": "我的订阅",
     "invitations": "邀请中心",
@@ -4086,6 +4087,109 @@
           "body": "服务没有返回可靠结果，请保留当前输入并稍后重试。"
         }
       }
+    }
+  },
+  "organizationActivity": {
+    "eyebrow": "企业空间",
+    "title": "企业日志与审计",
+    "subtitle": "按企业角色查看调用明细、脱敏聚合和管理审计。企业调用始终使用企业钱包与预算，不回退个人资金来源。",
+    "workspace": {
+      "label": "当前企业",
+      "emptyTitle": "还没有可用的企业空间",
+      "emptyBody": "当前账号尚未加入任何活动企业。加入企业后，这里会显示角色允许查看的调用日志与管理审计。"
+    },
+    "permission": {
+      "title": "当前角色不能查看企业活动",
+      "body": "企业角色没有调用日志或管理审计读取权限。角色变化后请重新进入企业空间。"
+    },
+    "summary": {
+      "membership": "成员关系",
+      "role": "当前角色",
+      "retention": "审计保留期",
+      "days": "{{count}} 天"
+    },
+    "tabs": {
+      "label": "企业活动视图",
+      "usage": "调用日志",
+      "audit": "管理审计"
+    },
+    "actions": {
+      "refresh": "刷新",
+      "reset": "重置",
+      "retry": "重试",
+      "apply": "应用筛选"
+    },
+    "filters": {
+      "label": "当前页筛选",
+      "auditLabel": "服务端审计筛选",
+      "visible": "显示 {{visible}} / {{count}} 条"
+    },
+    "usage": {
+      "scopeLabel": "调用日志读取范围",
+      "scopes": {
+        "organization": "企业全部明细",
+        "self": "我的调用",
+        "summary": "企业脱敏聚合"
+      },
+      "summaryLabel": "企业调用脱敏聚合",
+      "emptyTitle": "当前范围还没有调用记录",
+      "emptyBody": "企业请求完成结算后，会按当前角色允许的范围显示在这里。",
+      "emptyFilteredTitle": "没有符合筛选条件的调用",
+      "emptyFilteredBody": "重置模型或协议筛选后查看当前页的其他记录。",
+      "columns": {
+        "call": "模型与操作",
+        "requests": "请求数",
+        "tokens": "Token",
+        "duration": "平均耗时",
+        "quota": "额度消耗"
+      }
+    },
+    "audit": {
+      "loaded": "本页 {{count}} 条",
+      "privacy": "只展示脱敏事实；原始 Header、IP、请求正文和凭据不会进入审计存储。",
+      "platform": "平台代操作",
+      "platformRole": "平台管理员",
+      "redacted": "已隐藏",
+      "listLabel": "企业管理审计列表",
+      "filters": {
+        "actor": "操作者",
+        "actorPlaceholder": "操作者用户 ID",
+        "operation": "动作",
+        "operationPlaceholder": "精确动作码",
+        "target": "目标",
+        "targetPlaceholder": "目标类型",
+        "outcome": "结果",
+        "allOutcomes": "全部结果",
+        "actorInvalid": "操作者必须是正整数用户 ID。"
+      },
+      "outcomes": {
+        "succeeded": "成功",
+        "denied": "已拒绝",
+        "failed": "失败"
+      },
+      "columns": {
+        "time": "时间",
+        "actor": "操作者",
+        "action": "动作与权限",
+        "target": "目标",
+        "outcome": "结果"
+      },
+      "emptyTitle": "还没有管理审计记录",
+      "emptyBody": "企业管理操作、权限拒绝和已授权执行失败会以只追加事实记录在这里。",
+      "emptyFilteredTitle": "没有符合筛选条件的审计",
+      "emptyFilteredBody": "调整动作、操作者、目标或结果后重新应用筛选。"
+    },
+    "errors": {
+      "directoryTitle": "无法加载企业目录",
+      "directoryBody": "服务没有返回当前账号的企业成员关系，请稍后重试。",
+      "overviewTitle": "无法加载企业上下文",
+      "overviewBody": "当前企业的角色、授权和权限投影暂时不可用。",
+      "forbiddenTitle": "企业活动访问被拒绝",
+      "forbiddenBody": "成员关系可能已停用、角色发生变化，或当前范围不再被允许。",
+      "usageTitle": "无法加载企业调用日志",
+      "usageBody": "调用日志服务暂时不可用，请保留当前范围和筛选后重试。",
+      "auditTitle": "无法加载企业管理审计",
+      "auditBody": "审计服务暂时不可用，请保留当前筛选后重试。"
     }
   },
   "wallet": {

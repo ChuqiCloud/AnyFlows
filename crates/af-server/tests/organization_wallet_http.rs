@@ -27,6 +27,8 @@ use af_http::{
 use serde_json::{Value, json};
 use tower::ServiceExt as _;
 
+use organization_activity_support::test_organization_activity_service;
+
 const OWNER_TOKEN: &str = "organization-wallet-owner";
 const BILLING_TOKEN: &str = "organization-wallet-billing";
 const MEMBER_TOKEN: &str = "organization-wallet-member";
@@ -272,7 +274,13 @@ async fn sqlite_wallet_router()
         member_id: member.user_id(),
     });
     Ok((
-        build_organization_wallet_router(authorization, wallet, None, sessions),
+        build_organization_wallet_router(
+            authorization,
+            wallet,
+            None,
+            test_organization_activity_service(),
+            sessions,
+        ),
         pool,
         organization.id(),
     ))
@@ -349,3 +357,4 @@ fn now_u64() -> u64 {
         .unwrap()
         .as_secs()
 }
+mod organization_activity_support;

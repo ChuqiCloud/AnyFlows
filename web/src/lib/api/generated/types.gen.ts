@@ -961,6 +961,8 @@ export type AdminUsageLog = {
     username: string;
     token_id: number;
     group_id: number;
+    organization_id: number | null;
+    organization_team_id: number | null;
     billing_mode: AdminUsageLogBillingMode;
     input_tokens: number;
     output_tokens: number;
@@ -1188,6 +1190,28 @@ export type ModelCatalogTokenPrices = {
     cache_creation_5m: string;
     cache_creation_1h: string;
 };
+export type OrganizationAuditLogListResponse = {
+    logs: Array<OrganizationAuditLogResponse>;
+    next_cursor: number | null;
+};
+export type OrganizationAuditLogResponse = {
+    id: number;
+    actor_user_id: number;
+    actor_username: string;
+    actor_role: string | null;
+    permission_code: string;
+    operation: string;
+    target_type: string;
+    target_identifier: string | null;
+    outcome: OrganizationAuditOutcomeResponse;
+    platform_proxy: boolean;
+    platform_reason: string | null;
+    request_id: string;
+    client_fingerprint: string | null;
+    change_summary: string | null;
+    created_at: number;
+};
+export type OrganizationAuditOutcomeResponse = 'succeeded' | 'denied' | 'failed';
 export type OrganizationBudgetAllocationResponse = {
     policy_id: number;
     window_id: number;
@@ -1501,6 +1525,23 @@ export type OrganizationTopupPaymentSessionResponse = {
 } | {
     redirect_url: string;
     kind: 'redirect';
+};
+export type OrganizationUsageLogListResponse = {
+    scope: string;
+    logs: Array<AdminUsageLog>;
+    summaries: Array<OrganizationUsageLogSummaryResponse>;
+    next_cursor: number | null;
+};
+export type OrganizationUsageLogSummaryResponse = {
+    model: string | null;
+    protocol: null | UsageLogProtocol;
+    operation: null | UsageLogOperation;
+    request_count: number;
+    input_tokens: number;
+    output_tokens: number;
+    reasoning_tokens: number;
+    quota: number;
+    duration_ms: number;
 };
 export type OrganizationWalletAdjustmentRequest = {
     event_id: string;
@@ -5261,3 +5302,110 @@ export type DisableOrganizationTokenResponses = {
     200: OrganizationTokenResponse;
 };
 export type DisableOrganizationTokenResponse = DisableOrganizationTokenResponses[keyof DisableOrganizationTokenResponses];
+export type ListOrganizationUsageLogsData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        scope?: string;
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/organizations/{organization_id}/usage-logs';
+};
+export type ListOrganizationUsageLogsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationUsageLogsError = ListOrganizationUsageLogsErrors[keyof ListOrganizationUsageLogsErrors];
+export type ListOrganizationUsageLogsResponses = {
+    200: OrganizationUsageLogListResponse;
+};
+export type ListOrganizationUsageLogsResponse = ListOrganizationUsageLogsResponses[keyof ListOrganizationUsageLogsResponses];
+export type ListOrganizationAuditLogsData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        before?: number;
+        limit?: number;
+        actor_user_id?: number;
+        operation?: string;
+        target_type?: string;
+        outcome?: string;
+    };
+    url: '/api/organizations/{organization_id}/audit-logs';
+};
+export type ListOrganizationAuditLogsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationAuditLogsError = ListOrganizationAuditLogsErrors[keyof ListOrganizationAuditLogsErrors];
+export type ListOrganizationAuditLogsResponses = {
+    200: OrganizationAuditLogListResponse;
+};
+export type ListOrganizationAuditLogsResponse = ListOrganizationAuditLogsResponses[keyof ListOrganizationAuditLogsResponses];
+export type ListPlatformOrganizationUsageLogsData = {
+    body?: never;
+    headers: {
+        'x-anyflows-platform-reason': string;
+    };
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/platform/organizations/{organization_id}/usage-logs';
+};
+export type ListPlatformOrganizationUsageLogsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListPlatformOrganizationUsageLogsError = ListPlatformOrganizationUsageLogsErrors[keyof ListPlatformOrganizationUsageLogsErrors];
+export type ListPlatformOrganizationUsageLogsResponses = {
+    200: OrganizationUsageLogListResponse;
+};
+export type ListPlatformOrganizationUsageLogsResponse = ListPlatformOrganizationUsageLogsResponses[keyof ListPlatformOrganizationUsageLogsResponses];
+export type ListPlatformOrganizationAuditLogsData = {
+    body?: never;
+    headers: {
+        'x-anyflows-platform-reason': string;
+    };
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        before?: number;
+        limit?: number;
+        actor_user_id?: number;
+        operation?: string;
+        target_type?: string;
+        outcome?: string;
+    };
+    url: '/api/platform/organizations/{organization_id}/audit-logs';
+};
+export type ListPlatformOrganizationAuditLogsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListPlatformOrganizationAuditLogsError = ListPlatformOrganizationAuditLogsErrors[keyof ListPlatformOrganizationAuditLogsErrors];
+export type ListPlatformOrganizationAuditLogsResponses = {
+    200: OrganizationAuditLogListResponse;
+};
+export type ListPlatformOrganizationAuditLogsResponse = ListPlatformOrganizationAuditLogsResponses[keyof ListPlatformOrganizationAuditLogsResponses];

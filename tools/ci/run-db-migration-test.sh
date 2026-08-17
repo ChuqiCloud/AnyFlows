@@ -117,7 +117,7 @@ if [[ -z "${database_url}" ]]; then
                 --env MYSQL_PASSWORD="${TEST_PASSWORD}" \
                 --env MYSQL_ROOT_PASSWORD="root_ci" \
                 --env MYSQL_DATABASE="${TEST_DATABASE}" \
-                "${MYSQL_IMAGE}" >/dev/null
+                "${MYSQL_IMAGE}" --log-bin-trust-function-creators=1 >/dev/null
             wait_for_mysql
             database_url="mysql://${TEST_USER}:${TEST_PASSWORD}@mysql:3306/${TEST_DATABASE}?timezone=%2B08:00"
             ;;

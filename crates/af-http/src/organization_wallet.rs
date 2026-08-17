@@ -1,16 +1,18 @@
 use std::sync::Arc;
 
 use af_admin::{
-    OrganizationAuthorizationError, OrganizationAuthorizationService, OrganizationContext,
-    OrganizationWalletAdjustmentCommand, OrganizationWalletEntry,
-    OrganizationWalletLedgerEntryType, OrganizationWalletListQuery, OrganizationWalletPage,
-    OrganizationWalletService, OrganizationWalletServiceError, OrganizationWalletSummary,
-    SessionAuthentication, SessionAuthenticator, UserTopupOrderCreateCommand, UserTopupService,
+    OrganizationActivityService, OrganizationAuditOutcome, OrganizationAuthorizationError,
+    OrganizationAuthorizationService, OrganizationContext, OrganizationWalletAdjustmentCommand,
+    OrganizationWalletEntry, OrganizationWalletLedgerEntryType, OrganizationWalletListQuery,
+    OrganizationWalletPage, OrganizationWalletService, OrganizationWalletServiceError,
+    OrganizationWalletSummary, SessionAuthentication, SessionAuthenticator,
+    UserTopupOrderCreateCommand, UserTopupService,
 };
 use af_billing::PaymentCheckoutAction;
 use af_domain::{
     OrganizationId, OrganizationPermission, QuotaDelta, TopupOrderStatus, WalletEventId,
 };
+use af_telemetry::RequestId;
 use axum::{
     Extension, Json, Router,
     extract::{Path, RawQuery, State, rejection::JsonRejection},
@@ -18,13 +20,18 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use http::{HeaderValue, StatusCode, header::CACHE_CONTROL};
+use http::{HeaderMap, HeaderValue, StatusCode, header::CACHE_CONTROL};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use utoipa::ToSchema;
 
 use crate::{
     management_auth::{ManagementAuthenticationState, authenticate_management_session},
     management_error::ManagementError,
+    middleware::ensure_request_id,
+    organization_activity::{
+        audit_organization_action_result, authorize_organization_action, record_organization_action,
+    },
     wallet_query::parse_wallet_list_query,
 };
 
@@ -33,6 +40,7 @@ struct OrganizationWalletHttpState {
     authorization_service: Arc<dyn OrganizationAuthorizationService>,
     wallet_service: Arc<dyn OrganizationWalletService>,
     topup_service: Option<Arc<dyn UserTopupService>>,
+    activity_service: Arc<dyn OrganizationActivityService>,
 }
 
 /// 构建企业钱包、账本、受审计调账和企业充值入口。
@@ -40,6 +48,7 @@ pub fn build_organization_wallet_router(
     authorization_service: Arc<dyn OrganizationAuthorizationService>,
     wallet_service: Arc<dyn OrganizationWalletService>,
     topup_service: Option<Arc<dyn UserTopupService>>,
+    activity_service: Arc<dyn OrganizationActivityService>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
 ) -> Router {
     let authentication = middleware::from_fn_with_state(
@@ -64,10 +73,12 @@ pub fn build_organization_wallet_router(
             post(create_organization_topup),
         )
         .route_layer(authentication)
+        .layer(middleware::from_fn(ensure_request_id))
         .with_state(OrganizationWalletHttpState {
             authorization_service,
             wallet_service,
             topup_service,
+            activity_service,
         })
 }
 
@@ -262,29 +273,89 @@ async fn list_organization_wallet_entries(
 async fn adjust_organization_wallet(
     State(state): State<OrganizationWalletHttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
     Path(organization_id): Path<i64>,
+    headers: HeaderMap,
     request: Result<Json<OrganizationWalletAdjustmentRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
-    let context = authorize(
-        &state,
+    let organization_id = parse_organization_id(organization_id)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
         &authentication,
         organization_id,
         OrganizationPermission::WalletManage,
+        &request_id,
+        &headers,
+        "organization.wallet.adjust",
+        "wallet_event",
+        "new".to_owned(),
     )
     .await?;
-    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
-    let command = OrganizationWalletAdjustmentCommand::new(
-        WalletEventId::from_persistence_key(&request.event_id)
-            .map_err(|_| ManagementError::InvalidRequest)?,
-        QuotaDelta::new(request.quota_delta).map_err(|_| ManagementError::InvalidRequest)?,
-        request.reason,
+    let Json(request) = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::WalletManage,
+        "organization.wallet.adjust",
+        "wallet_event",
+        "new".to_owned(),
+        request.map_err(|_| ManagementError::InvalidRequest),
     )
-    .map_err(map_wallet_error)?;
-    let adjustment = state
-        .wallet_service
-        .adjust(context, command)
-        .await
-        .map_err(map_wallet_error)?;
+    .await?;
+    let event_id = WalletEventId::from_persistence_key(&request.event_id)
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    let command = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::WalletManage,
+        "organization.wallet.adjust",
+        "wallet_event",
+        event_id.persistence_key(),
+        OrganizationWalletAdjustmentCommand::new(
+            event_id,
+            QuotaDelta::new(request.quota_delta).map_err(|_| ManagementError::InvalidRequest)?,
+            request.reason,
+        )
+        .map_err(map_wallet_error),
+    )
+    .await?;
+    let adjustment = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::WalletManage,
+        "organization.wallet.adjust",
+        "wallet_event",
+        event_id.persistence_key(),
+        state
+            .wallet_service
+            .adjust(context.clone(), command)
+            .await
+            .map_err(map_wallet_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::WalletManage.code(),
+        "organization.wallet.adjust",
+        "wallet_event",
+        adjustment.entry().event_id().persistence_key(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({
+            "quota_delta": adjustment.entry().quota_delta().units(),
+            "balance_after": adjustment.entry().balance_after().units(),
+            "replayed": adjustment.replayed(),
+        })),
+    )
+    .await?;
     let status = if adjustment.replayed() {
         StatusCode::OK
     } else {
@@ -302,37 +373,97 @@ async fn adjust_organization_wallet(
 async fn create_organization_topup(
     State(state): State<OrganizationWalletHttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
     Path(organization_id): Path<i64>,
+    headers: HeaderMap,
     request: Result<Json<OrganizationTopupOrderCreateRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
     let organization_id = parse_organization_id(organization_id)?;
-    authorize_id(
-        &state,
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
         &authentication,
         organization_id,
         OrganizationPermission::WalletManage,
+        &request_id,
+        &headers,
+        "organization.topup.create",
+        "topup_order",
+        "new".to_owned(),
     )
     .await?;
     let service = state
         .topup_service
         .as_ref()
         .ok_or(ManagementError::TopupUnavailable)?;
-    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
-    let command = UserTopupOrderCreateCommand::new_for_organization(
-        organization_id,
-        &request.idempotency_key,
-        request.provider,
-        request.payment_method,
-        request.amount_minor,
+    let Json(request) = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::WalletManage,
+        "organization.topup.create",
+        "topup_order",
+        "new".to_owned(),
+        request.map_err(|_| ManagementError::InvalidRequest),
     )
-    .map_err(map_topup_error)?;
-    let order = service
-        .create(authentication.principal(), command)
-        .await
-        .map_err(map_topup_error)?;
-    if order.organization_id() != Some(organization_id) {
-        return Err(ManagementError::Internal);
-    }
+    .await?;
+    let command = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::WalletManage,
+        "organization.topup.create",
+        "topup_order",
+        "new".to_owned(),
+        UserTopupOrderCreateCommand::new_for_organization(
+            organization_id,
+            &request.idempotency_key,
+            request.provider,
+            request.payment_method,
+            request.amount_minor,
+        )
+        .map_err(map_topup_error),
+    )
+    .await?;
+    let order = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::WalletManage,
+        "organization.topup.create",
+        "topup_order",
+        "new".to_owned(),
+        service
+            .create(authentication.principal(), command)
+            .await
+            .map_err(map_topup_error)
+            .and_then(|order| {
+                (order.organization_id() == Some(organization_id))
+                    .then_some(order)
+                    .ok_or(ManagementError::Internal)
+            }),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::WalletManage.code(),
+        "organization.topup.create",
+        "topup_order",
+        order.order_id().persistence_key(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({
+            "amount_minor": order.amount_minor(),
+            "replayed": order.replayed(),
+            "version": order.version(),
+        })),
+    )
+    .await?;
     let status = if order.replayed() {
         StatusCode::OK
     } else {

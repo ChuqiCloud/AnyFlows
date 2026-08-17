@@ -32,6 +32,8 @@ use af_http::{
 use serde_json::{Value, json};
 use tower::ServiceExt as _;
 
+use organization_activity_support::test_organization_activity_service;
+
 const OWNER_TOKEN: &str = "organization-owner-token";
 const VIEWER_TOKEN: &str = "organization-viewer-token";
 const ADMIN_TOKEN: &str = "organization-admin-token";
@@ -208,6 +210,7 @@ async fn sqlite_organization_router()
         authorization_service,
         Some(invitation_service),
         Some(management_service),
+        test_organization_activity_service(),
         sessions,
     );
     Ok((router, pool, organization.id()))
@@ -720,6 +723,7 @@ async fn acceptance_maps_all_rejection_facts_to_one_public_error() {
         Arc::new(NoOrganizations),
         Some(Arc::new(RejectionInvitations)),
         None,
+        test_organization_activity_service(),
         sessions,
     );
     for token in ["not-found", "conflict", "expired", "email-mismatch"] {
@@ -748,7 +752,13 @@ async fn organization_directory_remains_available_without_invitation_service() {
         viewer_id: UserId::new(2).unwrap(),
         admin_id: UserId::new(3).unwrap(),
     });
-    let app = build_organization_router(Arc::new(NoOrganizations), None, None, sessions);
+    let app = build_organization_router(
+        Arc::new(NoOrganizations),
+        None,
+        None,
+        test_organization_activity_service(),
+        sessions,
+    );
     let response = app
         .oneshot(authenticated_request(
             "/api/account/organizations",
@@ -823,3 +833,4 @@ fn now_u64() -> u64 {
         .unwrap()
         .as_secs()
 }
+mod organization_activity_support;

@@ -46,6 +46,8 @@ async fn snapshot_uses_half_open_window_and_excludes_deleted_channels() -> Resul
             user_id: Set(1),
             token_id: Set(1),
             group_id: Set(1),
+            organization_id: Set(None),
+            organization_team_id: Set(None),
             billing_mode: Set(billing_mode),
             input_tokens: Set(1),
             output_tokens: Set(1),

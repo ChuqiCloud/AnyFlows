@@ -56,6 +56,7 @@ mod openai_responses_compact;
 mod openai_speech;
 mod openapi;
 mod operations;
+mod organization_activity;
 mod organization_budget;
 mod organization_tokens;
 mod organization_wallet;
@@ -111,6 +112,7 @@ pub use openapi::openapi_document;
 pub use operations::{
     HEALTH_PATH, READINESS_PATH, ReadinessFuture, ReadinessHandle, ReadinessProbe,
 };
+pub use organization_activity::build_organization_activity_router;
 pub use organization_budget::build_organization_budget_router;
 pub use organization_tokens::build_organization_token_router;
 pub use organization_wallet::build_organization_wallet_router;

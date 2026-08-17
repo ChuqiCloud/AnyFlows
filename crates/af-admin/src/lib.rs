@@ -25,6 +25,7 @@ mod model_price;
 mod model_sync;
 mod network_settings;
 mod organization;
+mod organization_activity;
 mod organization_budget;
 mod organization_invitation;
 mod organization_management;
@@ -62,6 +63,7 @@ mod user_write;
 mod wallet;
 
 pub use af_account::PlainCredentialSecret as AdminCredentialSecret;
+pub use af_db::OrganizationAuditOutcome;
 pub use af_db::{
     CredentialProxyScheme, DatabaseTimestamp, NetworkSettingsMode,
     OrganizationBillingReservationRecord, OrganizationBillingReservationStatus,
@@ -191,6 +193,14 @@ pub use organization::{
     DatabaseOrganizationAuthorizationService, OrganizationAccessFuture, OrganizationAccessSummary,
     OrganizationAuthorizationError, OrganizationAuthorizationService, OrganizationContext,
     OrganizationEntitlementSummary, OrganizationListFuture,
+};
+pub use organization_activity::{
+    DatabaseOrganizationActivityService, OrganizationActivityError, OrganizationActivityService,
+    OrganizationActivityServiceConfigError, OrganizationAuditChangeSummary,
+    OrganizationAuditListFuture, OrganizationAuditListQuery, OrganizationAuditLog,
+    OrganizationAuditPage, OrganizationAuditRecordFuture, OrganizationAuditRequestContext,
+    OrganizationUsageLogFuture, OrganizationUsageLogPage, OrganizationUsageLogRows,
+    OrganizationUsageLogScope, OrganizationUsageLogSummary,
 };
 pub use organization_budget::{
     DatabaseOrganizationBudgetService, OrganizationBudgetPoliciesFuture,
