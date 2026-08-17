@@ -23,6 +23,7 @@ pub(crate) struct CredentialAttemptTarget {
 
 impl CredentialAttemptTarget {
     /// 校验凭据标识并收敛非敏感 OAuth 恢复能力后构造候选反馈目标。
+    #[cfg(test)]
     pub(crate) fn new(
         channel_id: ChannelId,
         credential_id: i64,
@@ -87,6 +88,7 @@ impl CredentialAttemptTarget {
     }
 
     /// 返回持久化认证故障和解密能力所属的母凭据。
+    #[cfg(test)]
     pub(crate) const fn secret_owner_id(&self) -> CredentialId {
         self.secret_owner_id
     }

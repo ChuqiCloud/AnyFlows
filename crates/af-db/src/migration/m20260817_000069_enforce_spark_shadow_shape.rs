@@ -17,11 +17,20 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        if manager.get_database_backend() == DbBackend::MySql {
+            // MySQL 触发器负责同步唯一投影，因此必须先创建投影列和索引。
+            create_active_shadow_index(manager).await?;
+            return create_shape_guard(manager).await;
+        }
         create_shape_guard(manager).await?;
         create_active_shadow_index(manager).await
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        if manager.get_database_backend() == DbBackend::MySql {
+            drop_shape_guard(manager).await?;
+            return drop_active_shadow_index(manager).await;
+        }
         drop_active_shadow_index(manager).await?;
         drop_shape_guard(manager).await
     }
@@ -68,14 +77,18 @@ async fn create_shape_guard(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
         DbBackend::MySql => {
             for statement in [
                 "CREATE TRIGGER trg_credentials_spark_shape_insert BEFORE INSERT ON credentials FOR EACH ROW \
-                 BEGIN IF NEW.deleted_at IS NULL AND NOT (\
+                 BEGIN SET NEW._active_spark_parent = CASE \
+                 WHEN NEW.deleted_at IS NULL AND NEW.quota_dimension = 'spark' THEN NEW.parent_id ELSE NULL END; \
+                 IF NEW.deleted_at IS NULL AND NOT (\
                  (NEW.parent_id IS NULL AND NEW.quota_dimension = 'global') OR \
                  (NEW.parent_id IS NOT NULL AND NEW.quota_dimension = 'spark' AND NEW.kind = 'oauth' AND \
                  NEW.concurrency IS NULL AND NEW.proxy_id IS NULL AND NEW.oauth_provider IS NULL AND NEW.oauth_account_key IS NULL AND \
                  NEW.oauth_project_id IS NULL AND NEW.oauth_token_pending = FALSE)) \
                  THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'invalid Spark shadow shape'; END IF; END",
                 "CREATE TRIGGER trg_credentials_spark_shape_update BEFORE UPDATE ON credentials FOR EACH ROW \
-                 BEGIN IF NEW.deleted_at IS NULL AND NOT (\
+                 BEGIN SET NEW._active_spark_parent = CASE \
+                 WHEN NEW.deleted_at IS NULL AND NEW.quota_dimension = 'spark' THEN NEW.parent_id ELSE NULL END; \
+                 IF NEW.deleted_at IS NULL AND NOT (\
                  (NEW.parent_id IS NULL AND NEW.quota_dimension = 'global') OR \
                  (NEW.parent_id IS NOT NULL AND NEW.quota_dimension = 'spark' AND NEW.kind = 'oauth' AND \
                  NEW.concurrency IS NULL AND NEW.proxy_id IS NULL AND NEW.oauth_provider IS NULL AND NEW.oauth_account_key IS NULL AND \
@@ -94,15 +107,19 @@ async fn create_shape_guard(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
 
 async fn create_active_shadow_index(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
     if manager.get_database_backend() == DbBackend::MySql {
-        manager
-            .get_connection()
-            .execute_unprepared(
-                "ALTER TABLE `credentials` \
-                 ADD COLUMN `_active_spark_parent` BIGINT GENERATED ALWAYS AS \
-                 (CASE WHEN `deleted_at` IS NULL AND `quota_dimension` = 'spark' THEN `parent_id` ELSE NULL END) STORED, \
-                 ADD UNIQUE INDEX `uq_credentials_active_spark_parent` (`_active_spark_parent`)",
-            )
-            .await?;
+        // 组合 ALTER 会让 InnoDB 重建带自引用外键的表并报 1215；拆分后新增列可走即时 DDL。
+        for statement in [
+            "ALTER TABLE `credentials` ADD COLUMN `_active_spark_parent` BIGINT NULL",
+            "UPDATE `credentials` SET `_active_spark_parent` = CASE \
+             WHEN `deleted_at` IS NULL AND `quota_dimension` = 'spark' THEN `parent_id` ELSE NULL END",
+            "CREATE UNIQUE INDEX `uq_credentials_active_spark_parent` \
+             ON `credentials` (`_active_spark_parent`)",
+        ] {
+            manager
+                .get_connection()
+                .execute_unprepared(statement)
+                .await?;
+        }
         return Ok(());
     }
     manager
@@ -122,13 +139,15 @@ async fn create_active_shadow_index(manager: &SchemaManager<'_>) -> Result<(), D
 
 async fn drop_active_shadow_index(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
     if manager.get_database_backend() == DbBackend::MySql {
-        manager
-            .get_connection()
-            .execute_unprepared(
-                "ALTER TABLE `credentials` DROP INDEX `uq_credentials_active_spark_parent`, \
-                 DROP COLUMN `_active_spark_parent`",
-            )
-            .await?;
+        for statement in [
+            "DROP INDEX `uq_credentials_active_spark_parent` ON `credentials`",
+            "ALTER TABLE `credentials` DROP COLUMN `_active_spark_parent`",
+        ] {
+            manager
+                .get_connection()
+                .execute_unprepared(statement)
+                .await?;
+        }
         return Ok(());
     }
     manager

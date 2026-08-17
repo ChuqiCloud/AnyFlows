@@ -305,13 +305,12 @@ async fn spark_shadow_shape_migration_preserves_legacy_rows_and_guards_new_write
     let channel = channel_active_model("spark-shadow-shape")
         .insert(pool.connection())
         .await?;
-    let mut parent = credential_active_model(channel.id, "spark-parent");
-    parent.kind = Set(CredentialKind::Oauth.as_str().to_owned());
-    let parent = parent.insert(pool.connection()).await?;
+    let parent = oauth_credential_active_model(channel.id, "spark-parent")
+        .insert(pool.connection())
+        .await?;
 
     // 旧脚手架可能留下 parent + global 密文，迁移只能保留并阻止继续写入。
-    let mut legacy = credential_active_model(channel.id, "legacy-shadow-ciphertext");
-    legacy.kind = Set(CredentialKind::Oauth.as_str().to_owned());
+    let mut legacy = oauth_credential_active_model(channel.id, "legacy-shadow-ciphertext");
     legacy.parent_id = Set(Some(parent.id));
     let legacy = legacy.insert(pool.connection()).await?;
 
@@ -328,8 +327,7 @@ async fn spark_shadow_shape_migration_preserves_legacy_rows_and_guards_new_write
         .expect("旧脚手架行必须保留供管理员删除重建");
     assert_eq!(preserved.quota_dimension, "global");
 
-    let mut rejected = credential_active_model(channel.id, "new-invalid-shadow");
-    rejected.kind = Set(CredentialKind::Oauth.as_str().to_owned());
+    let mut rejected = oauth_credential_active_model(channel.id, "new-invalid-shadow");
     rejected.parent_id = Set(Some(parent.id));
     assert!(rejected.insert(pool.connection()).await.is_err());
 
@@ -337,14 +335,7 @@ async fn spark_shadow_shape_migration_preserves_legacy_rows_and_guards_new_write
     deleted_legacy.deleted_at = Set(Some(historical_audit_time()));
     deleted_legacy.update(pool.connection()).await?;
 
-    let mut shadow = credential_active_model(channel.id, "spark-shadow-reference");
-    shadow.kind = Set(CredentialKind::Oauth.as_str().to_owned());
-    shadow.parent_id = Set(Some(parent.id));
-    shadow.quota_dimension = Set("spark".to_owned());
-    shadow.oauth_provider = Set(None);
-    shadow.oauth_account_key = Set(None);
-    shadow.oauth_project_id = Set(None);
-    shadow.oauth_token_pending = Set(false);
+    let shadow = spark_shadow_active_model(channel.id, parent.id, "spark-shadow-reference");
     shadow.clone().insert(pool.connection()).await?;
     assert!(shadow.insert(pool.connection()).await.is_err());
 
@@ -3594,7 +3585,7 @@ async fn exercise_core_schema(connection: &DatabaseConnection) -> Result<(), DbE
     let channel = channel_active_model("primary").insert(connection).await?;
     assert_eq!(channel.status, 2);
     assert_debug_redacted(&channel, "https://api.example.com");
-    let credential = credential_active_model(channel.id, "credential-ciphertext")
+    let credential = oauth_credential_active_model(channel.id, "credential-ciphertext")
         .insert(connection)
         .await?;
     assert_eq!(credential.status, 2);
@@ -3602,19 +3593,17 @@ async fn exercise_core_schema(connection: &DatabaseConnection) -> Result<(), DbE
     assert_eq!(credential.oauth_revision, 0);
     assert_debug_redacted(&credential, "credential-ciphertext");
 
-    let mut child_credential = credential_active_model(channel.id, "child-ciphertext");
-    child_credential.parent_id = Set(Some(credential.id));
+    let child_credential = spark_shadow_active_model(channel.id, credential.id, "child-ciphertext");
     child_credential.insert(connection).await?;
 
     let mut self_parent = credential.clone().into_active_model();
     self_parent.parent_id = Set(Some(credential.id));
     assert!(self_parent.update(connection).await.is_err());
 
-    let direct_parent = credential_active_model(channel.id, "direct-parent")
+    let direct_parent = oauth_credential_active_model(channel.id, "direct-parent")
         .insert(connection)
         .await?;
-    let mut direct_child = credential_active_model(channel.id, "direct-child");
-    direct_child.parent_id = Set(Some(direct_parent.id));
+    let direct_child = spark_shadow_active_model(channel.id, direct_parent.id, "direct-child");
     let direct_child = direct_child.insert(connection).await?;
     credentials::Entity::delete_by_id(direct_parent.id)
         .exec(connection)
@@ -3720,9 +3709,14 @@ async fn exercise_core_schema(connection: &DatabaseConnection) -> Result<(), DbE
     assert_foreign_key_actions(connection, group.id).await?;
 
     let cascade_channel = channel_active_model("cascade").insert(connection).await?;
-    let mut cross_channel_child =
-        credential_active_model(cascade_channel.id, "cross-channel-child");
-    cross_channel_child.parent_id = Set(Some(credential.id));
+    let cross_channel_parent = oauth_credential_active_model(channel.id, "cross-channel-parent")
+        .insert(connection)
+        .await?;
+    let cross_channel_child = spark_shadow_active_model(
+        cascade_channel.id,
+        cross_channel_parent.id,
+        "cross-channel-child",
+    );
     assert!(cross_channel_child.insert(connection).await.is_err());
     let raw_cross_channel_child =
         credential_active_model(cascade_channel.id, "raw-cross-channel-child")
@@ -3733,7 +3727,9 @@ async fn exercise_core_schema(connection: &DatabaseConnection) -> Result<(), DbE
             connection,
             Query::update()
                 .table(credentials::Entity)
-                .value(credentials::Column::ParentId, credential.id)
+                .value(credentials::Column::Kind, CredentialKind::Oauth.as_str())
+                .value(credentials::Column::ParentId, cross_channel_parent.id)
+                .value(credentials::Column::QuotaDimension, "spark")
                 .and_where(Expr::col(credentials::Column::Id).eq(raw_cross_channel_child.id))
                 .to_owned(),
         )
@@ -3743,11 +3739,14 @@ async fn exercise_core_schema(connection: &DatabaseConnection) -> Result<(), DbE
     credentials::Entity::delete_by_id(raw_cross_channel_child.id)
         .exec(connection)
         .await?;
-    let cascade_parent = credential_active_model(cascade_channel.id, "cascade-ciphertext")
+    credentials::Entity::delete_by_id(cross_channel_parent.id)
+        .exec(connection)
+        .await?;
+    let cascade_parent = oauth_credential_active_model(cascade_channel.id, "cascade-ciphertext")
         .insert(connection)
         .await?;
-    let mut cascade_child = credential_active_model(cascade_channel.id, "cascade-child");
-    cascade_child.parent_id = Set(Some(cascade_parent.id));
+    let cascade_child =
+        spark_shadow_active_model(cascade_channel.id, cascade_parent.id, "cascade-child");
     cascade_child.insert(connection).await?;
     channel_models::ActiveModel {
         channel_id: Set(cascade_channel.id),
@@ -4078,8 +4077,7 @@ async fn assert_persistence_constraints(
     invalid_quota_dimension.quota_dimension = Set("unknown".to_owned());
     assert!(invalid_quota_dimension.insert(connection).await.is_err());
 
-    let mut missing_parent = credential_active_model(channel_id, "missing-parent");
-    missing_parent.parent_id = Set(Some(i64::MAX));
+    let missing_parent = spark_shadow_active_model(channel_id, i64::MAX, "missing-parent");
     assert!(missing_parent.insert(connection).await.is_err());
 
     if connection.get_database_backend() != DbBackend::MySql {
@@ -4088,7 +4086,9 @@ async fn assert_persistence_constraints(
                 connection,
                 Query::update()
                     .table(credentials::Entity)
+                    .value(credentials::Column::Kind, CredentialKind::Oauth.as_str())
                     .value(credentials::Column::ParentId, credential_id)
+                    .value(credentials::Column::QuotaDimension, "spark")
                     .and_where(Expr::col(credentials::Column::Id).eq(credential_id))
                     .to_owned(),
             )
@@ -4790,6 +4790,29 @@ fn credential_active_model(channel_id: i64, marker: &str) -> credentials::Active
         secret: Set(EncryptedJson::from_envelope(encrypted_envelope(marker)).unwrap()),
         ..Default::default()
     }
+}
+
+fn oauth_credential_active_model(channel_id: i64, marker: &str) -> credentials::ActiveModel {
+    let mut credential = credential_active_model(channel_id, marker);
+    credential.kind = Set(CredentialKind::Oauth.as_str().to_owned());
+    credential
+}
+
+fn spark_shadow_active_model(
+    channel_id: i64,
+    parent_id: i64,
+    marker: &str,
+) -> credentials::ActiveModel {
+    let mut shadow = oauth_credential_active_model(channel_id, marker);
+    shadow.parent_id = Set(Some(parent_id));
+    shadow.quota_dimension = Set("spark".to_owned());
+    shadow.concurrency = Set(None);
+    shadow.proxy_id = Set(None);
+    shadow.oauth_provider = Set(None);
+    shadow.oauth_account_key = Set(None);
+    shadow.oauth_project_id = Set(None);
+    shadow.oauth_token_pending = Set(false);
+    shadow
 }
 
 fn token_active_model(
