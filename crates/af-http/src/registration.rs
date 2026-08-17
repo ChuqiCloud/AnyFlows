@@ -22,7 +22,9 @@ use crate::{
     management_auth::{ManagementAuthenticationState, authenticate_management_session},
     management_authorization::authorize_management_admin,
     management_error::ManagementError,
-    management_session::{LoginRequest, login_with_authenticator, no_store_json},
+    management_session::{
+        LoginRequest, login_with_authenticator, login_with_authenticator_and_totp, no_store_json,
+    },
 };
 
 #[derive(Clone)]
@@ -222,9 +224,10 @@ async fn login(
         return Err(ManagementError::LoginDisabled);
     }
     let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
-    login_with_authenticator(
+    login_with_authenticator_and_totp(
         state.session_authenticator.as_ref(),
-        af_admin::LoginCredentials::new(request.username, request.password),
+        af_admin::LoginCredentials::new(request.username, request.password)
+            .with_totp_code(request.totp_code),
     )
     .await
 }

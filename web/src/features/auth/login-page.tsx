@@ -12,7 +12,7 @@ import {
   RefreshCw,
   UserRoundPlus,
 } from 'lucide-react'
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -25,7 +25,7 @@ import { establishManagementSession } from '@/features/auth/session-query'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
 import { apiClient, ApiError } from '@/lib/api'
 import { loginManagementSession } from '@/lib/api/generated/sdk.gen'
-import type { LoginRequest } from '@/lib/api/generated/types.gen'
+import type { LoginRequestWritable } from '@/lib/api/generated/types.gen'
 
 export type LoginNotice = 'sessionExpired' | 'setupComplete' | 'passwordResetSuccess' | 'passwordChanged'
 
@@ -34,13 +34,15 @@ type LoginPageProps = {
   onAuthenticated: () => void
 }
 
-type LoginError = LoginNotice | 'invalidCredentials' | 'passwordLoginDisabled' | 'unavailable'
+type LoginError = LoginNotice | 'invalidCredentials' | 'twoFactorRequired' | 'twoFactorInvalid' | 'passwordLoginDisabled' | 'unavailable'
 
 function classifyLoginError(error: unknown): LoginError {
   if (error instanceof ApiError) {
     const code = errorCode(error.details)
     // 兼容网关将管理错误包裹到 error 字段后的响应，避免把可解释的认证失败误报为服务不可用。
     if (code === 'password_login_disabled') return 'passwordLoginDisabled'
+    if (code === 'two_factor_required') return 'twoFactorRequired'
+    if (code === 'two_factor_invalid') return 'twoFactorInvalid'
     if (code === 'invalid_credentials') return 'invalidCredentials'
     if (error.status === 400 || error.status === 401) return 'invalidCredentials'
   }
@@ -52,13 +54,15 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
   const { t } = useTranslation()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [twoFactorCode, setTwoFactorCode] = useState('')
+  const [twoFactorRequired, setTwoFactorRequired] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [loginError, setLoginError] = useState<LoginError>()
   const [noticeDismissed, setNoticeDismissed] = useState(false)
   const siteQuery = usePublicSiteSettings()
 
   const loginMutation = useMutation({
-    mutationFn: async (body: LoginRequest) => {
+    mutationFn: async (body: LoginRequestWritable) => {
       const { data } = await loginManagementSession({ body, client: apiClient })
       return data
     },
@@ -69,13 +73,26 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
     event.preventDefault()
     setLoginError(undefined)
     try {
-      const response = await loginMutation.mutateAsync({ username, password })
+      const response = await loginMutation.mutateAsync({
+        username,
+        password,
+        ...(twoFactorRequired && twoFactorCode.trim() ? { totp_code: twoFactorCode.trim() } : {}),
+      })
       establishManagementSession(response)
       onAuthenticated()
     } catch (error) {
-      setLoginError(classifyLoginError(error))
+      const classified = classifyLoginError(error)
+      setLoginError(classified)
+      if (classified === 'twoFactorRequired') {
+        setTwoFactorRequired(true)
+        window.requestAnimationFrame(() => document.getElementById('management-two-factor')?.focus())
+      }
     }
   }
+
+  useEffect(() => {
+    if (twoFactorRequired) document.getElementById('management-two-factor')?.focus()
+  }, [twoFactorRequired])
 
   async function handleOAuthLogin(provider: OAuthLoginProvider) {
     setLoginError(undefined)
@@ -100,6 +117,7 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
   const registrationAvailable = passwordLoginEnabled && registrationEnabled
   const visibleError = loginError ?? (noticeDismissed ? undefined : notice)
   const hasFieldError = visibleError === 'invalidCredentials'
+  const hasTwoFactorError = visibleError === 'twoFactorRequired' || visibleError === 'twoFactorInvalid'
   const isSuccessNotice = visibleError === 'passwordResetSuccess' || visibleError === 'passwordChanged'
   const passwordToggleLabel = showPassword
     ? t('auth.login.hidePassword')
@@ -265,9 +283,36 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                   </div>
                 </div>
 
+                {twoFactorRequired ? (
+                  <div className="grid gap-2">
+                    <label htmlFor="management-two-factor" className="text-sm font-medium">{t('auth.login.twoFactorCode')}</label>
+                    <Input
+                      id="management-two-factor"
+                      name="totp_code"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      required
+                      className="h-11 px-3 font-mono tracking-[0.16em]"
+                      placeholder={t('auth.login.twoFactorCodePlaceholder')}
+                      value={twoFactorCode}
+                      aria-invalid={hasTwoFactorError ? true : undefined}
+                      aria-describedby={visibleError ? 'login-error' : undefined}
+                      onChange={(event) => {
+                        setTwoFactorCode(event.target.value)
+                        setLoginError(undefined)
+                      }}
+                    />
+                    <p className="text-[0.6875rem] leading-4 text-muted-foreground">{t('auth.login.twoFactorCodeHint')}</p>
+                  </div>
+                ) : null}
+
                 <Button type="submit" size="lg" className="w-full" disabled={loginMutation.isPending}>
                   {loginMutation.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}
-                  {loginMutation.isPending ? t('auth.login.submitting') : t('auth.login.submit')}
+                  {loginMutation.isPending
+                    ? t('auth.login.submitting')
+                    : twoFactorRequired
+                      ? t('auth.login.verifyTwoFactor')
+                      : t('auth.login.submit')}
                 </Button>
                 <p className="text-center text-sm">
                   <a href="#/forgot-password" className="font-medium text-info underline-offset-4 hover:underline">

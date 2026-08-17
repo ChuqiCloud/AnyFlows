@@ -2706,6 +2706,193 @@
         ]
       }
     },
+    "/api/account/two-factor": {
+      "get": {
+        "tags": [
+          "个人资料与安全"
+        ],
+        "summary": "读取当前用户二次验证状态",
+        "operationId": "getUserTwoFactor",
+        "responses": {
+          "200": {
+            "description": "二次验证状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserTwoFactorStatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "个人资料与安全"
+        ],
+        "summary": "启用当前用户 TOTP 二次验证",
+        "operationId": "enableUserTwoFactor",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserTwoFactorPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "TOTP 入网材料，仅返回一次",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserTwoFactorEnrollmentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求正文无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "当前密码错误或已经启用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "个人资料与安全"
+        ],
+        "summary": "停用当前用户 TOTP 二次验证",
+        "operationId": "disableUserTwoFactor",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserTwoFactorPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "TOTP 已停用，旧会话已撤销"
+          },
+          "400": {
+            "description": "请求正文无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "当前密码错误或尚未启用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/account/notifications": {
       "put": {
         "tags": [
@@ -22272,6 +22459,15 @@
             "type": "string",
             "format": "password",
             "maxLength": 4096
+          },
+          "totp_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "writeOnly": true,
+            "maxLength": 128,
+            "minLength": 6
           }
         },
         "additionalProperties": false
@@ -22324,6 +22520,8 @@
             "enum": [
               "invalid_request",
               "invalid_credentials",
+              "two_factor_required",
+              "two_factor_invalid",
               "password_login_disabled",
               "invalid_session",
               "forbidden",
@@ -22383,6 +22581,8 @@
               "invitation_rejected",
               "password_reset_rejected",
               "password_change_rejected",
+              "two_factor_already_enabled",
+              "two_factor_not_enabled",
               "email_not_configured",
               "email_delivery_failed",
               "group_conflict",
@@ -26851,6 +27051,65 @@
           }
         ],
         "description": "当前用户继续支付所需的闭合动作。"
+      },
+      "UserTwoFactorEnrollmentResponse": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "secret",
+          "otpauth_uri",
+          "backup_codes"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "secret": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 32
+          },
+          "otpauth_uri": {
+            "type": "string"
+          },
+          "backup_codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "minItems": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserTwoFactorPasswordRequest": {
+        "type": "object",
+        "required": [
+          "current_password"
+        ],
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "format": "password",
+            "writeOnly": true,
+            "maxLength": 4096,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserTwoFactorStatusResponse": {
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
       },
       "UserUsageLog": {
         "type": "object",

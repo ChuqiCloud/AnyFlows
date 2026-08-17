@@ -638,6 +638,8 @@ pub(crate) enum BearerTokenTypeSchema {
 pub(crate) enum ManagementErrorCodeSchema {
     InvalidRequest,
     InvalidCredentials,
+    TwoFactorRequired,
+    TwoFactorInvalid,
     PasswordLoginDisabled,
     InvalidSession,
     Forbidden,
@@ -697,6 +699,8 @@ pub(crate) enum ManagementErrorCodeSchema {
     InvitationRejected,
     PasswordResetRejected,
     PasswordChangeRejected,
+    TwoFactorAlreadyEnabled,
+    TwoFactorNotEnabled,
     EmailNotConfigured,
     EmailDeliveryFailed,
     GroupConflict,

@@ -1158,7 +1158,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'password_login_disabled' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'site_settings_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'token_outcome_unknown' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_login_settings_conflict' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'organization_not_found' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'topup_unavailable' | 'topup_provider_rejected' | 'topup_order_conflict' | 'topup_order_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'subscription_plan_not_found' | 'subscription_plan_disabled' | 'subscription_not_found' | 'subscription_transition_invalid' | 'subscription_in_use' | 'subscription_conflict' | 'subscription_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'debug_trace_not_found' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_expression_invalid' | 'model_price_expression_preview_invalid' | 'model_price_expression_evaluation_failed' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'two_factor_required' | 'two_factor_invalid' | 'password_login_disabled' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'site_settings_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'token_outcome_unknown' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_login_settings_conflict' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'organization_not_found' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'topup_unavailable' | 'topup_provider_rejected' | 'topup_order_conflict' | 'topup_order_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'subscription_plan_not_found' | 'subscription_plan_disabled' | 'subscription_not_found' | 'subscription_transition_invalid' | 'subscription_in_use' | 'subscription_conflict' | 'subscription_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'two_factor_already_enabled' | 'two_factor_not_enabled' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'debug_trace_not_found' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_expression_invalid' | 'model_price_expression_preview_invalid' | 'model_price_expression_evaluation_failed' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
     message: string;
 };
 export type ModelCatalogBillingMode = 'per_token' | 'free';
@@ -1935,6 +1935,18 @@ export type UserTopupPaymentSession = {
     redirect_url: string;
     kind: 'redirect';
 };
+export type UserTwoFactorEnrollmentResponse = {
+    enabled: boolean;
+    secret: string;
+    otpauth_uri: string;
+    backup_codes: Array<string>;
+};
+export type UserTwoFactorPasswordRequest = {
+    current_password: string;
+};
+export type UserTwoFactorStatusResponse = {
+    enabled: boolean;
+};
 export type UserUsageLog = {
     id: number;
     token_id: number;
@@ -2211,6 +2223,11 @@ export type AdminPaymentSettingsRequestWritable = {
     epay_wxpay_enabled: boolean;
     epay_quota_per_cny: number;
 };
+export type LoginRequestWritable = {
+    username: string;
+    password: string;
+    totp_code?: string | null;
+};
 export type OrganizationTopupOrderResponseWritable = {
     order_id: string;
     provider: string;
@@ -2265,7 +2282,7 @@ export type UserTopupPaymentSessionWritable = {
     kind: 'redirect';
 };
 export type LoginManagementSessionData = {
-    body: LoginRequest;
+    body: LoginRequestWritable;
     path?: never;
     query?: never;
     url: '/api/auth/login';
@@ -2859,6 +2876,55 @@ export type ChangeUserPasswordResponses = {
     204: void;
 };
 export type ChangeUserPasswordResponse = ChangeUserPasswordResponses[keyof ChangeUserPasswordResponses];
+export type DisableUserTwoFactorData = {
+    body: UserTwoFactorPasswordRequest;
+    path?: never;
+    query?: never;
+    url: '/api/account/two-factor';
+};
+export type DisableUserTwoFactorErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type DisableUserTwoFactorError = DisableUserTwoFactorErrors[keyof DisableUserTwoFactorErrors];
+export type DisableUserTwoFactorResponses = {
+    204: void;
+};
+export type DisableUserTwoFactorResponse = DisableUserTwoFactorResponses[keyof DisableUserTwoFactorResponses];
+export type GetUserTwoFactorData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/account/two-factor';
+};
+export type GetUserTwoFactorErrors = {
+    401: ManagementError;
+    500: ManagementError;
+};
+export type GetUserTwoFactorError = GetUserTwoFactorErrors[keyof GetUserTwoFactorErrors];
+export type GetUserTwoFactorResponses = {
+    200: UserTwoFactorStatusResponse;
+};
+export type GetUserTwoFactorResponse = GetUserTwoFactorResponses[keyof GetUserTwoFactorResponses];
+export type EnableUserTwoFactorData = {
+    body: UserTwoFactorPasswordRequest;
+    path?: never;
+    query?: never;
+    url: '/api/account/two-factor';
+};
+export type EnableUserTwoFactorErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type EnableUserTwoFactorError = EnableUserTwoFactorErrors[keyof EnableUserTwoFactorErrors];
+export type EnableUserTwoFactorResponses = {
+    200: UserTwoFactorEnrollmentResponse;
+};
+export type EnableUserTwoFactorResponse = EnableUserTwoFactorResponses[keyof EnableUserTwoFactorResponses];
 export type UpdateUserNotificationPreferencesData = {
     body: UserNotificationPreferencesRequest;
     path?: never;

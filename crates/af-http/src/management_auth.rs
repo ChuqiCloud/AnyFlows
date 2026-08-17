@@ -64,6 +64,10 @@ async fn authenticate_present_session(
         Err(SessionAuthenticationError::InvalidCredentials) => {
             ManagementError::InvalidSession.into_response()
         }
+        Err(SessionAuthenticationError::TwoFactorRequired)
+        | Err(SessionAuthenticationError::TwoFactorInvalid) => {
+            ManagementError::InvalidSession.into_response()
+        }
         Err(SessionAuthenticationError::Internal) => ManagementError::Internal.into_response(),
     }
 }

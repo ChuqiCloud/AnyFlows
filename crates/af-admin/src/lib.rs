@@ -54,6 +54,7 @@ mod subscription;
 mod token_auth;
 mod token_read;
 mod token_write;
+mod two_factor;
 mod usage_log_read;
 mod user_profile;
 mod user_read;
@@ -350,6 +351,7 @@ pub use token_write::{
     DatabaseAdminTokenWriter, IssuedAdminToken, MAX_ADMIN_TOKEN_IP_ALLOWLIST_COUNT,
     MAX_ADMIN_TOKEN_IP_ALLOWLIST_ITEM_BYTES, MAX_ADMIN_TOKEN_IP_ALLOWLIST_TEXT_BYTES,
 };
+pub use two_factor::TwoFactorEnrollment;
 pub use usage_log_read::{
     AdminUsageLog, AdminUsageLogBillingMode, AdminUsageLogListFuture, AdminUsageLogListQuery,
     AdminUsageLogPage, AdminUsageLogReadError, AdminUsageLogReader, AdminUsageLogSemantics,
@@ -363,6 +365,8 @@ pub use user_profile::{
     UserNotificationPreferencesCommand, UserNotificationUpdateFuture, UserPasswordChangeCommand,
     UserPasswordChangeFuture, UserProfile, UserProfileError, UserProfileReadFuture,
     UserProfileService, UserProfileUpdateCommand, UserProfileUpdateFuture,
+    UserTwoFactorDisableCommand, UserTwoFactorDisableFuture, UserTwoFactorEnableCommand,
+    UserTwoFactorEnableFuture, UserTwoFactorReadFuture, UserTwoFactorStatus,
 };
 pub use user_read::{
     AdminUser, AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserPage,

@@ -3,7 +3,8 @@ use std::sync::Arc;
 use af_admin::{
     SessionAuthentication, SessionAuthenticator, UserNotificationPreferences,
     UserNotificationPreferencesCommand, UserPasswordChangeCommand, UserProfile, UserProfileError,
-    UserProfileService, UserProfileUpdateCommand,
+    UserProfileService, UserProfileUpdateCommand, UserTwoFactorDisableCommand,
+    UserTwoFactorEnableCommand,
 };
 use af_domain::Quota;
 use axum::{
@@ -49,6 +50,12 @@ pub(crate) fn build_user_profile_router(
     Router::new()
         .route("/api/account/profile", get(get_profile).put(update_profile))
         .route("/api/account/password", put(change_password))
+        .route(
+            "/api/account/two-factor",
+            get(get_two_factor)
+                .post(enable_two_factor)
+                .delete(disable_two_factor),
+        )
         .route("/api/account/notifications", put(update_notifications))
         .layer(DefaultBodyLimit::max(16 * 1024))
         .layer(RequestBodyLimitLayer::new(16 * 1024))
@@ -110,6 +117,33 @@ pub(crate) struct UserPasswordChangeRequest {
     new_password: String,
 }
 
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = UserTwoFactorStatusResponse)]
+pub(crate) struct UserTwoFactorStatusResponse {
+    enabled: bool,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = UserTwoFactorPasswordRequest)]
+pub(crate) struct UserTwoFactorPasswordRequest {
+    #[schema(min_length = 1, max_length = 4096, format = Password, write_only)]
+    current_password: String,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = UserTwoFactorEnrollmentResponse)]
+pub(crate) struct UserTwoFactorEnrollmentResponse {
+    enabled: bool,
+    #[schema(min_length = 32, max_length = 64)]
+    secret: String,
+    otpauth_uri: String,
+    #[schema(min_items = 1, max_items = 10)]
+    backup_codes: Vec<String>,
+}
+
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 #[schema(as = UserNotificationPreferencesRequest)]
@@ -161,6 +195,60 @@ pub(crate) async fn change_password(
     state
         .service
         .change_password(authentication.principal(), command)
+        .await
+        .map_err(map_profile_error)?;
+    Ok(no_store_empty(StatusCode::NO_CONTENT))
+}
+
+/// 返回当前账户是否启用了 TOTP，不读取 secret 或备份码。
+pub(crate) async fn get_two_factor(
+    State(state): State<UserProfileHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+) -> Result<Response, ManagementError> {
+    let status = state
+        .service
+        .get_two_factor(authentication.principal())
+        .await
+        .map_err(map_profile_error)?;
+    Ok(no_store_json(UserTwoFactorStatusResponse {
+        enabled: status.enabled(),
+    }))
+}
+
+/// 校验当前密码并启用 TOTP；secret 和备份码只在本次响应返回。
+pub(crate) async fn enable_two_factor(
+    State(state): State<UserProfileHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    request: Result<Json<UserTwoFactorPasswordRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let command =
+        UserTwoFactorEnableCommand::new(request.current_password).map_err(map_profile_error)?;
+    let enrollment = state
+        .service
+        .enable_two_factor(authentication.principal(), command)
+        .await
+        .map_err(map_profile_error)?;
+    Ok(no_store_json(UserTwoFactorEnrollmentResponse {
+        enabled: true,
+        secret: enrollment.secret().to_owned(),
+        otpauth_uri: enrollment.otpauth_uri().to_owned(),
+        backup_codes: enrollment.backup_codes().to_vec(),
+    }))
+}
+
+/// 校验当前密码并停用 TOTP，同时让所有既有会话失效。
+pub(crate) async fn disable_two_factor(
+    State(state): State<UserProfileHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    request: Result<Json<UserTwoFactorPasswordRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let command =
+        UserTwoFactorDisableCommand::new(request.current_password).map_err(map_profile_error)?;
+    state
+        .service
+        .disable_two_factor(authentication.principal(), command)
         .await
         .map_err(map_profile_error)?;
     Ok(no_store_empty(StatusCode::NO_CONTENT))
@@ -227,6 +315,8 @@ fn map_profile_error(error: UserProfileError) -> ManagementError {
         UserProfileError::InvalidInput => ManagementError::InvalidRequest,
         UserProfileError::InvalidSession => ManagementError::InvalidSession,
         UserProfileError::CurrentPasswordInvalid => ManagementError::PasswordChangeRejected,
+        UserProfileError::TwoFactorAlreadyEnabled => ManagementError::TwoFactorAlreadyEnabled,
+        UserProfileError::TwoFactorNotEnabled => ManagementError::TwoFactorNotEnabled,
         UserProfileError::Conflict => ManagementError::UserConflict,
         UserProfileError::Internal => ManagementError::Internal,
     }

@@ -5,8 +5,9 @@ use argon2::{
     Argon2,
     password_hash::{PasswordHash, PasswordVerifier},
 };
+use base64::Engine as _;
 use sea_orm::{
-    ConnectionTrait, DbErr, QueryResult,
+    ColumnTrait, ConnectionTrait, DbErr, EntityTrait, QueryFilter, QueryResult,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Alias, Expr, Query, SelectStatement},
 };
@@ -16,18 +17,20 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 use zeroize::Zeroizing;
 
 use crate::{DatabasePool, entity::users};
+use crate::{EncryptedCredentialEnvelope, entity::EncryptedJson};
 
 const DUMMY_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
 
 /// 登录查询完成后的用户状态；角色仍由管理域转换为稳定会话角色。
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum UserSessionLookupOutcome {
     /// 用户名、密码、状态和软删除均已通过校验。
     Authenticated {
         user_id: UserId,
         role: i16,
         session_version: i64,
+        totp_secret: Option<EncryptedCredentialEnvelope>,
     },
     /// 用户不存在、密码错误、禁用、删除或没有密码。
     Rejected,
@@ -42,6 +45,7 @@ pub enum UserSessionLookupByIdOutcome {
         role: i16,
         group_id: GroupId,
         session_version: i64,
+        totp_enabled: bool,
     },
     /// 用户不存在、禁用或已软删除。
     Rejected,
@@ -127,7 +131,30 @@ impl UserSessionRepository {
             user_id,
             role,
             session_version,
+            totp_secret: row
+                .totp_secret
+                .map(envelope_from_json)
+                .transpose()
+                .map_err(|_| record_internal_error(UserSessionRepositoryError::Invariant))?,
         })
+    }
+
+    /// 以预期旧封套为并发边界，原子消费一个备份码后的新封套。
+    pub async fn consume_totp_backup_code(
+        &self,
+        user_id: UserId,
+        expected: EncryptedCredentialEnvelope,
+        replacement: EncryptedCredentialEnvelope,
+    ) -> Result<bool, UserSessionRepositoryError> {
+        match timeout(
+            self.lookup_timeout,
+            self.consume_totp_backup_code_inner(user_id, expected, replacement),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(record_internal_error(UserSessionRepositoryError::Timeout)),
+        }
     }
 
     /// 按 JWT 中的稳定用户 ID 回查当前状态，使禁用和软删除立即撤销现有会话。
@@ -191,7 +218,34 @@ impl UserSessionRepository {
             role,
             group_id,
             session_version,
+            totp_enabled: row.totp_secret.is_some(),
         })
+    }
+
+    async fn consume_totp_backup_code_inner(
+        &self,
+        user_id: UserId,
+        expected: EncryptedCredentialEnvelope,
+        replacement: EncryptedCredentialEnvelope,
+    ) -> Result<bool, UserSessionRepositoryError> {
+        // 备份码消费必须把旧封套放入 WHERE，多个并发登录只有一个请求能写入新封套。
+        let expected_json = encrypted_json(expected)?;
+        let replacement_json = encrypted_json(replacement)?;
+        let result = users::Entity::update_many()
+            .filter(users::Column::Id.eq(user_id.get()))
+            .filter(users::Column::Status.eq(1_i16))
+            .filter(users::Column::DeletedAt.is_null())
+            .filter(users::Column::TotpSecret.eq(expected_json))
+            .col_expr(users::Column::TotpSecret, Expr::value(replacement_json))
+            .exec(self.pool.connection())
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| record_internal_error(UserSessionRepositoryError::Query))?;
+        match result.rows_affected {
+            0 => Ok(false),
+            1 => Ok(true),
+            _ => Err(record_internal_error(UserSessionRepositoryError::Invariant)),
+        }
     }
 }
 
@@ -230,6 +284,10 @@ fn login_query(username: &str) -> SelectStatement {
             Expr::col((users::Entity, users::Column::SessionVersion)),
             Alias::new("user_session_version"),
         )
+        .expr_as(
+            Expr::col((users::Entity, users::Column::TotpSecret)),
+            Alias::new("user_totp_secret"),
+        )
         .from(users::Entity)
         .and_where(Expr::col((users::Entity, users::Column::Username)).eq(username))
         // 软删除用户名可被重新使用，登录查询只能命中当前有效身份行。
@@ -264,6 +322,10 @@ fn session_query(user_id: UserId) -> SelectStatement {
             Expr::col((users::Entity, users::Column::SessionVersion)),
             Alias::new("user_session_version"),
         )
+        .expr_as(
+            Expr::col((users::Entity, users::Column::TotpSecret)),
+            Alias::new("user_totp_secret"),
+        )
         .from(users::Entity)
         .and_where(Expr::col((users::Entity, users::Column::Id)).eq(user_id.get()))
         .limit(2)
@@ -277,6 +339,7 @@ struct LoginUserRow {
     deleted_at: Option<TimeDateTimeWithTimeZone>,
     password_hash: Option<crate::entity::PasswordHash>,
     session_version: i64,
+    totp_secret: Option<EncryptedJson>,
 }
 
 impl LoginUserRow {
@@ -288,6 +351,7 @@ impl LoginUserRow {
             deleted_at: result.try_get("", "user_deleted_at")?,
             password_hash: result.try_get("", "user_password_hash")?,
             session_version: result.try_get("", "user_session_version")?,
+            totp_secret: result.try_get("", "user_totp_secret")?,
         })
     }
 }
@@ -299,6 +363,7 @@ struct SessionUserRow {
     status: i16,
     deleted_at: Option<TimeDateTimeWithTimeZone>,
     session_version: i64,
+    totp_secret: Option<EncryptedJson>,
 }
 
 impl SessionUserRow {
@@ -310,6 +375,7 @@ impl SessionUserRow {
             status: result.try_get("", "user_status")?,
             deleted_at: result.try_get("", "user_deleted_at")?,
             session_version: result.try_get("", "user_session_version")?,
+            totp_secret: result.try_get("", "user_totp_secret")?,
         })
     }
 }
@@ -319,6 +385,29 @@ fn valid_role(role: i16) -> Result<i16, UserSessionRepositoryError> {
         0 | 1 => Ok(role),
         _ => Err(record_internal_error(UserSessionRepositoryError::Invariant)),
     }
+}
+
+fn encrypted_json(
+    envelope: EncryptedCredentialEnvelope,
+) -> Result<EncryptedJson, UserSessionRepositoryError> {
+    EncryptedJson::from_envelope(serde_json::json!({
+        "version": 1,
+        "algorithm": "xchacha20poly1305",
+        "key_id": envelope.key_id(),
+        "nonce": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(envelope.nonce()),
+        "ciphertext": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(envelope.ciphertext()),
+    }))
+    .map_err(|_| record_internal_error(UserSessionRepositoryError::Invariant))
+}
+
+fn envelope_from_json(
+    encrypted: EncryptedJson,
+) -> Result<EncryptedCredentialEnvelope, UserSessionRepositoryError> {
+    let (key_id, nonce, ciphertext) = encrypted
+        .envelope_parts()
+        .map_err(|_| record_internal_error(UserSessionRepositoryError::Invariant))?;
+    EncryptedCredentialEnvelope::new(key_id, nonce, ciphertext)
+        .map_err(|_| record_internal_error(UserSessionRepositoryError::Invariant))
 }
 
 fn valid_status(status: i16) -> Result<bool, UserSessionRepositoryError> {

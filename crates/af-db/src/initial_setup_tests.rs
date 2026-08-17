@@ -60,6 +60,7 @@ async fn setup_creates_login_ready_admin_and_canonical_group() -> Result<(), Box
             user_id,
             role: 1,
             session_version: 1,
+            totp_secret: None,
         }
     );
     pool.close().await?;
