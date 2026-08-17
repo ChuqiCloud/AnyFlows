@@ -225,11 +225,14 @@ fn normalize_backup_code(code: &str) -> Option<String> {
         .filter(|byte| *byte != b'-' && !byte.is_ascii_whitespace())
         .map(|byte| byte.to_ascii_uppercase() as char)
         .collect();
-    (8..=32).contains(&normalized.len())
-        && normalized
+    if !(8..=32).contains(&normalized.len())
+        || !normalized
             .bytes()
             .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
-            .then_some(normalized)
+    {
+        return None;
+    }
+    Some(normalized)
 }
 
 fn hash_backup_code(code: &str) -> String {
