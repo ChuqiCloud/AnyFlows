@@ -2,7 +2,7 @@ use std::{future::Future, sync::Arc, time::Duration};
 
 use af_account::{
     CredentialDecryptionError, CredentialDecryptor, CredentialEncryptionError, CredentialEncryptor,
-    DiagnosticSnapshotCipher, GitHubLoginClient, OAuthProviderProfile, OAuthRefreshSupervisor,
+    DiagnosticSnapshotCipher, OAuthLoginClient, OAuthProviderProfile, OAuthRefreshSupervisor,
     OrganizationInvitationCipher, PlainSystemSecret, SystemSecretCipher, SystemSecretError,
     SystemSecretKind,
 };
@@ -1068,7 +1068,7 @@ impl Bootstrap<AuthenticationReady> {
                 oauth_login_repository,
                 self.stage.site_settings_repository.clone(),
                 self.stage.system_secret_cipher.clone(),
-                GitHubLoginClient::new(upstream_clients.clone()),
+                OAuthLoginClient::new(upstream_clients.clone()),
             ));
         let oauth_runtime = initialize_oauth_runtime(
             &self.config,

@@ -98,18 +98,20 @@ impl OAuthLoginService for FakeOAuthLoginService {
         })
     }
 
-    fn admin_settings(
-        &self,
+    fn admin_settings<'a>(
+        &'a self,
         _principal: SessionPrincipal,
-    ) -> OAuthLoginServiceFuture<'_, AdminOAuthLoginProviderSettings> {
+        _provider: &'a str,
+    ) -> OAuthLoginServiceFuture<'a, AdminOAuthLoginProviderSettings> {
         Box::pin(async { Err(OAuthLoginError::Internal) })
     }
 
-    fn update_admin_settings(
-        &self,
+    fn update_admin_settings<'a>(
+        &'a self,
         _principal: SessionPrincipal,
+        _provider: &'a str,
         _command: AdminOAuthLoginProviderSettingsCommand,
-    ) -> OAuthLoginServiceFuture<'_, AdminOAuthLoginProviderSettings> {
+    ) -> OAuthLoginServiceFuture<'a, AdminOAuthLoginProviderSettings> {
         Box::pin(async { Err(OAuthLoginError::Internal) })
     }
 }
@@ -182,6 +184,55 @@ async fn start_and_exchange_use_no_store_json_and_existing_session_shape() {
     assert_eq!(body["access_token"], "oauth.session.token");
     assert_eq!(body["user"]["id"], 42);
     assert_eq!(body["user"]["role"], "user");
+}
+
+#[tokio::test]
+async fn discord_routes_use_a_provider_specific_callback_cookie_path() {
+    let service = Arc::new(FakeOAuthLoginService::new());
+    let app = router(Arc::clone(&service));
+    let start = app
+        .clone()
+        .oneshot(
+            Request::post("/api/auth/oauth/discord/start")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(start.status(), StatusCode::OK);
+    assert!(
+        start.headers()[SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .contains("Path=/api/auth/oauth/discord/callback")
+    );
+    let cookie = start.headers()[SET_COOKIE]
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned();
+    let callback = app
+        .oneshot(
+            Request::get("/api/auth/oauth/discord/callback?state=opaque&code=code")
+                .header(COOKIE, cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(callback.status(), StatusCode::SEE_OTHER);
+    assert!(
+        callback.headers()[SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .contains("Path=/api/auth/oauth/discord/callback")
+    );
+    assert_eq!(
+        service.calls.lock().unwrap().as_slice(),
+        ["begin", "complete"]
+    );
 }
 
 #[tokio::test]

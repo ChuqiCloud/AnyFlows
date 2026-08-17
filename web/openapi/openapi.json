@@ -3939,6 +3939,47 @@
         }
       }
     },
+    "/api/auth/oauth/discord/start": {
+      "post": {
+        "tags": [
+          "OAuth 登录"
+        ],
+        "summary": "启动 Discord OAuth 登录",
+        "operationId": "startDiscordOAuthLogin",
+        "responses": {
+          "200": {
+            "description": "服务端构造的 Discord 授权地址",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthLoginStartResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Discord OAuth 登录尚未完整配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/oauth/github/callback": {
       "get": {
         "tags": [
@@ -3969,6 +4010,59 @@
             "name": "error",
             "in": "query",
             "description": "GitHub 拒绝分类",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "303": {
+            "description": "跳转到前端单次票据交换页"
+          },
+          "500": {
+            "description": "无法构造安全回调地址",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/oauth/discord/callback": {
+      "get": {
+        "tags": [
+          "OAuth 登录"
+        ],
+        "summary": "接收 Discord OAuth 回调",
+        "operationId": "completeDiscordOAuthLogin",
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "description": "服务端生成的一次性 state",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "description": "Discord 授权码",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "description": "Discord 拒绝分类",
             "required": false,
             "schema": {
               "type": "string"
@@ -4114,6 +4208,146 @@
         ],
         "summary": "覆盖 GitHub OAuth 登录设置",
         "operationId": "updateAdminGitHubOAuthLoginSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminOAuthLoginProviderSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "更新后的脱敏设置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOAuthLoginProviderSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "配置组合无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "设置版本冲突或回调基址未配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/authentication-settings/oauth/discord": {
+      "get": {
+        "tags": [
+          "OAuth 登录"
+        ],
+        "summary": "读取 Discord OAuth 登录设置",
+        "operationId": "getAdminDiscordOAuthLoginSettings",
+        "responses": {
+          "200": {
+            "description": "脱敏后的 Discord OAuth App 设置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOAuthLoginProviderSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "OAuth 登录"
+        ],
+        "summary": "覆盖 Discord OAuth 登录设置",
+        "operationId": "updateAdminDiscordOAuthLoginSettings",
         "requestBody": {
           "content": {
             "application/json": {

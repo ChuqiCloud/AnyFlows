@@ -2726,8 +2726,14 @@
       "disabledTitle": "Password sign-in is disabled",
       "disabledBody": "This site does not currently accept username and password sign-in. You can still browse the model catalog as a guest.",
       "retry": "Check again",
-      "github": "Continue with GitHub",
-      "oauthStarting": "Opening GitHub",
+      "oauth": {
+        "github": "Continue with GitHub",
+        "discord": "Continue with Discord"
+      },
+      "oauthStarting": {
+        "github": "Opening GitHub",
+        "discord": "Opening Discord"
+      },
       "orPassword": "or use a password"
     },
     "oauthCallback": {
@@ -2909,6 +2915,30 @@
         "save": "GitHub OAuth settings could not be saved. Refresh and review the version.",
         "publicBaseUrl": "Save a public base URL before enabling GitHub sign-in so a stable callback URL can be generated.",
         "incomplete": "GitHub sign-in requires a callback URL, Client ID, and configured Client Secret."
+      },
+      "github": {
+        "title": "GitHub OAuth sign-in",
+        "enabled": "Enable GitHub sign-in",
+        "callbackHint": "Enter this exact value as the Authorization callback URL in the GitHub OAuth App.",
+        "version": "GitHub OAuth configuration version {{version}}",
+        "errors": {
+          "load": "GitHub OAuth sign-in settings could not be loaded",
+          "save": "GitHub OAuth settings could not be saved. Refresh and review the version.",
+          "publicBaseUrl": "Save a public base URL before enabling GitHub sign-in so a stable callback URL can be generated.",
+          "incomplete": "GitHub sign-in requires a callback URL, Client ID, and configured Client Secret."
+        }
+      },
+      "discord": {
+        "title": "Discord OAuth sign-in",
+        "enabled": "Enable Discord sign-in",
+        "callbackHint": "Enter this exact value in the Redirects list of the Discord Developer Portal application.",
+        "version": "Discord OAuth configuration version {{version}}",
+        "errors": {
+          "load": "Discord OAuth sign-in settings could not be loaded",
+          "save": "Discord OAuth settings could not be saved. Refresh and review the version.",
+          "publicBaseUrl": "Save a public base URL before enabling Discord sign-in so a stable callback URL can be generated.",
+          "incomplete": "Discord sign-in requires a callback URL, Client ID, and configured Client Secret."
+        }
       }
     },
     "fields": {

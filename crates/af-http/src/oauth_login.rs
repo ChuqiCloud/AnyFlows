@@ -29,8 +29,10 @@ use crate::{
 };
 
 const GITHUB_PROVIDER: &str = "github";
+const DISCORD_PROVIDER: &str = "discord";
 const OAUTH_STATE_COOKIE: &str = "af_oauth_login_state";
-const OAUTH_CALLBACK_PATH: &str = "/api/auth/oauth/github/callback";
+const GITHUB_CALLBACK_PATH: &str = "/api/auth/oauth/github/callback";
+const DISCORD_CALLBACK_PATH: &str = "/api/auth/oauth/discord/callback";
 const OAUTH_STATE_COOKIE_MAX_AGE_SECONDS: u64 = 10 * 60;
 const OAUTH_STATE_COOKIE_DOMAIN: &str = "oauth-login-browser-state-v1";
 
@@ -103,7 +105,7 @@ pub(crate) struct AdminOAuthLoginProviderSettingsRequest {
     clear_client_secret: bool,
 }
 
-/// 构建 GitHub 用户登录 OAuth 的公开、回调和管理员设置路由。
+/// 构建内置用户登录 OAuth 的公开、回调和管理员设置路由。
 pub(crate) fn build_oauth_login_router(
     service: Arc<dyn OAuthLoginService>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
@@ -118,6 +120,11 @@ pub(crate) fn build_oauth_login_router(
             "/api/auth/oauth/github/callback",
             get(complete_github_login),
         )
+        .route("/api/auth/oauth/discord/start", post(start_discord_login))
+        .route(
+            "/api/auth/oauth/discord/callback",
+            get(complete_discord_login),
+        )
         .route("/api/auth/oauth/exchange", post(exchange_oauth_ticket))
         .route(
             "/api/admin/authentication-settings/oauth/github",
@@ -125,6 +132,16 @@ pub(crate) fn build_oauth_login_router(
                 .put(update_admin_github_settings)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(authentication),
+        )
+        .route(
+            "/api/admin/authentication-settings/oauth/discord",
+            get(get_admin_discord_settings)
+                .put(update_admin_discord_settings)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(middleware::from_fn_with_state(
+                    ManagementAuthenticationState::new(Arc::clone(&session_authenticator)),
+                    authenticate_management_session,
+                )),
         )
         .with_state(OAuthLoginHttpState {
             service,
@@ -135,18 +152,33 @@ pub(crate) fn build_oauth_login_router(
 async fn start_github_login(
     State(state): State<OAuthLoginHttpState>,
 ) -> Result<Response, ManagementError> {
+    start_login(state, GITHUB_PROVIDER, GITHUB_CALLBACK_PATH).await
+}
+
+async fn start_discord_login(
+    State(state): State<OAuthLoginHttpState>,
+) -> Result<Response, ManagementError> {
+    start_login(state, DISCORD_PROVIDER, DISCORD_CALLBACK_PATH).await
+}
+
+async fn start_login(
+    state: OAuthLoginHttpState,
+    provider: &str,
+    callback_path: &str,
+) -> Result<Response, ManagementError> {
     let started = state
         .service
-        .begin(GITHUB_PROVIDER)
+        .begin(provider)
         .await
         .map_err(map_oauth_login_error)?;
     let (state_digest, secure) = oauth_state_cookie_material(started.authorization_url())?;
     let mut response = no_store_json(OAuthLoginStartResponse {
         authorization_url: started.authorization_url().to_owned(),
     });
-    response
-        .headers_mut()
-        .insert(SET_COOKIE, oauth_state_set_cookie(&state_digest, secure)?);
+    response.headers_mut().insert(
+        SET_COOKIE,
+        oauth_state_set_cookie(&state_digest, secure, callback_path)?,
+    );
     Ok(response)
 }
 
@@ -156,21 +188,50 @@ async fn complete_github_login(
     headers: HeaderMap,
     RawQuery(raw_query): RawQuery,
 ) -> Response {
+    complete_login(
+        state,
+        headers,
+        raw_query,
+        GITHUB_PROVIDER,
+        GITHUB_CALLBACK_PATH,
+    )
+    .await
+}
+
+async fn complete_discord_login(
+    State(state): State<OAuthLoginHttpState>,
+    headers: HeaderMap,
+    RawQuery(raw_query): RawQuery,
+) -> Response {
+    complete_login(
+        state,
+        headers,
+        raw_query,
+        DISCORD_PROVIDER,
+        DISCORD_CALLBACK_PATH,
+    )
+    .await
+}
+
+async fn complete_login(
+    state: OAuthLoginHttpState,
+    headers: HeaderMap,
+    raw_query: Option<String>,
+    provider: &str,
+    callback_path: &str,
+) -> Response {
     let result = match parse_oauth_callback_query(raw_query.as_deref()) {
         Ok(query) => match (query.state, query.code, query.error) {
             (Some(state_value), Some(code), None)
                 if oauth_state_cookie_matches(&headers, &state_value) =>
             {
-                state
-                    .service
-                    .complete(GITHUB_PROVIDER, state_value, code)
-                    .await
+                state.service.complete(provider, state_value, code).await
             }
             (Some(state_value), None, Some(error))
                 if valid_provider_error(&error)
                     && oauth_state_cookie_matches(&headers, &state_value) =>
             {
-                state.service.cancel(GITHUB_PROVIDER, state_value).await
+                state.service.cancel(provider, state_value).await
             }
             _ => Err(OAuthLoginError::Rejected),
         },
@@ -186,7 +247,7 @@ async fn complete_github_login(
         }
         Err(error) => map_oauth_login_error(error).into_response(),
     };
-    harden_oauth_callback_response(&mut response);
+    harden_oauth_callback_response(&mut response, callback_path);
     response
 }
 
@@ -207,9 +268,24 @@ async fn get_admin_github_settings(
     State(state): State<OAuthLoginHttpState>,
     Extension(authentication): Extension<af_admin::SessionAuthentication>,
 ) -> Result<Response, ManagementError> {
+    get_admin_settings(state, authentication, GITHUB_PROVIDER).await
+}
+
+async fn get_admin_discord_settings(
+    State(state): State<OAuthLoginHttpState>,
+    Extension(authentication): Extension<af_admin::SessionAuthentication>,
+) -> Result<Response, ManagementError> {
+    get_admin_settings(state, authentication, DISCORD_PROVIDER).await
+}
+
+async fn get_admin_settings(
+    state: OAuthLoginHttpState,
+    authentication: af_admin::SessionAuthentication,
+    provider: &str,
+) -> Result<Response, ManagementError> {
     let settings = state
         .service
-        .admin_settings(authentication.principal())
+        .admin_settings(authentication.principal(), provider)
         .await
         .map_err(map_oauth_login_error)?;
     Ok(no_store_json(
@@ -222,6 +298,23 @@ async fn update_admin_github_settings(
     Extension(authentication): Extension<af_admin::SessionAuthentication>,
     request: Result<Json<AdminOAuthLoginProviderSettingsRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
+    update_admin_settings(state, authentication, request, GITHUB_PROVIDER).await
+}
+
+async fn update_admin_discord_settings(
+    State(state): State<OAuthLoginHttpState>,
+    Extension(authentication): Extension<af_admin::SessionAuthentication>,
+    request: Result<Json<AdminOAuthLoginProviderSettingsRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    update_admin_settings(state, authentication, request, DISCORD_PROVIDER).await
+}
+
+async fn update_admin_settings(
+    state: OAuthLoginHttpState,
+    authentication: af_admin::SessionAuthentication,
+    request: Result<Json<AdminOAuthLoginProviderSettingsRequest>, JsonRejection>,
+    provider: &str,
+) -> Result<Response, ManagementError> {
     let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
     let command = AdminOAuthLoginProviderSettingsCommand::new(
         request.expected_version,
@@ -233,7 +326,7 @@ async fn update_admin_github_settings(
     .map_err(map_oauth_login_error)?;
     let settings = state
         .service
-        .update_admin_settings(authentication.principal(), command)
+        .update_admin_settings(authentication.principal(), provider, command)
         .await
         .map_err(map_oauth_login_error)?;
     Ok(no_store_json(
@@ -284,7 +377,7 @@ fn oauth_state_cookie_material(authorization_url: &str) -> Result<(String, bool)
     Ok((oauth_state_cookie_digest(&state), secure))
 }
 
-/// 仅提取 GitHub 回调必需字段；重复字段拒绝，Provider 附加诊断字段忽略。
+/// 仅提取回调必需字段；重复字段拒绝，Provider 附加诊断字段忽略。
 fn parse_oauth_callback_query(
     raw_query: Option<&str>,
 ) -> Result<OAuthLoginCallbackQuery, OAuthLoginError> {
@@ -305,10 +398,14 @@ fn parse_oauth_callback_query(
     Ok(OAuthLoginCallbackQuery { state, code, error })
 }
 
-fn oauth_state_set_cookie(digest: &str, secure: bool) -> Result<HeaderValue, ManagementError> {
+fn oauth_state_set_cookie(
+    digest: &str,
+    secure: bool,
+    callback_path: &str,
+) -> Result<HeaderValue, ManagementError> {
     let secure_attribute = if secure { "; Secure" } else { "" };
     HeaderValue::from_str(&format!(
-        "{OAUTH_STATE_COOKIE}={digest}; Path={OAUTH_CALLBACK_PATH}; Max-Age={OAUTH_STATE_COOKIE_MAX_AGE_SECONDS}; HttpOnly; SameSite=Lax{secure_attribute}"
+        "{OAUTH_STATE_COOKIE}={digest}; Path={callback_path}; Max-Age={OAUTH_STATE_COOKIE_MAX_AGE_SECONDS}; HttpOnly; SameSite=Lax{secure_attribute}"
     ))
     .map_err(|_| ManagementError::Internal)
 }
@@ -360,7 +457,7 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
         == 0
 }
 
-fn harden_oauth_callback_response(response: &mut Response) {
+fn harden_oauth_callback_response(response: &mut Response, callback_path: &str) {
     response
         .headers_mut()
         .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
@@ -370,9 +467,9 @@ fn harden_oauth_callback_response(response: &mut Response) {
     );
     response.headers_mut().insert(
         SET_COOKIE,
-        HeaderValue::from_static(
-            "af_oauth_login_state=; Path=/api/auth/oauth/github/callback; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax",
-        ),
+        HeaderValue::from_str(&format!(
+            "{OAUTH_STATE_COOKIE}=; Path={callback_path}; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax"
+        )).unwrap_or_else(|_| HeaderValue::from_static("af_oauth_login_state=; Max-Age=0")),
     );
 }
 

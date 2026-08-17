@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAdminGroupCatalog } from '@/features/groups/group-api'
 import { AuthenticationSettingsForm } from './authentication-settings-form'
+import { DiscordOAuthSettings } from './discord-oauth-settings'
 import { GitHubOAuthSettings } from './github-oauth-settings'
 import { useAdminAuthenticationSettings } from './authentication-settings-api'
 
@@ -70,6 +71,7 @@ export function AuthenticationSettingsPage() {
         <>
           <AuthenticationSettingsForm settings={settingsQuery.data} groups={groupsQuery.data} />
           <GitHubOAuthSettings />
+          <DiscordOAuthSettings />
         </>
       ) : null}
     </div>

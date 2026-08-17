@@ -386,9 +386,9 @@ pub use oauth_credential::{
     OAuthExpirationProjectionCandidateRecord, OAuthRefreshCandidateRecord,
 };
 pub use oauth_login::{
-    OAUTH_LOGIN_GITHUB_PROVIDER, OAuthIdentityCompletion, OAuthLoginProviderRecord,
-    OAuthLoginProviderWriteRecord, OAuthLoginRepository, OAuthLoginRepositoryError,
-    OAuthLoginSecretUpdate, OAuthLoginStateClaim,
+    OAUTH_LOGIN_DISCORD_PROVIDER, OAUTH_LOGIN_GITHUB_PROVIDER, OAuthIdentityCompletion,
+    OAuthLoginProviderRecord, OAuthLoginProviderWriteRecord, OAuthLoginRepository,
+    OAuthLoginRepositoryError, OAuthLoginSecretUpdate, OAuthLoginStateClaim,
 };
 pub use options::{DatabaseDialect, DatabaseOptions, PoolOptions};
 pub use organization::{

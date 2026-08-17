@@ -1,0 +1,225 @@
+import { Check, Copy, GitFork, LoaderCircle, MessageCircle, RefreshCw, ShieldAlert } from 'lucide-react'
+import { type FormEvent, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
+import {
+  type OAuthLoginProvider,
+  useAdminOAuthLoginSettings,
+  useUpdateAdminOAuthLoginSettings,
+} from '@/features/auth/oauth-login-api'
+
+type SecretAction = 'keep' | 'replace' | 'clear'
+
+type OAuthProviderSettingsProps = {
+  provider: OAuthLoginProvider
+}
+
+/** 管理内置 OAuth App，密钥只支持保留、轮换和显式清除。 */
+export function OAuthProviderSettings({ provider }: OAuthProviderSettingsProps) {
+  const { t } = useTranslation()
+  const baseKey = `authenticationSettings.oauth.${provider}`
+  const Icon = provider === 'github' ? GitFork : MessageCircle
+  const settingsQuery = useAdminOAuthLoginSettings(provider)
+  const mutation = useUpdateAdminOAuthLoginSettings(provider)
+  const settings = settingsQuery.data
+  const [enabled, setEnabled] = useState(false)
+  const [clientId, setClientId] = useState('')
+  const [secretAction, setSecretAction] = useState<SecretAction>('keep')
+  const [clientSecret, setClientSecret] = useState('')
+  const [validationError, setValidationError] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    if (!settings) return
+    setEnabled(settings.enabled)
+    setClientId(settings.client_id ?? '')
+    setSecretAction('keep')
+    setClientSecret('')
+    setValidationError(false)
+  }, [settings])
+
+  if (settingsQuery.isPending) {
+    return <Skeleton className="h-64 w-full rounded-xl" />
+  }
+  if (settingsQuery.isError || !settings) {
+    return (
+      <div role="alert" className="rounded-xl border border-destructive/25 bg-destructive/8 p-4">
+        <h3 className="text-sm font-semibold text-destructive">{t(`${baseKey}.errors.load`)}</h3>
+        <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => void settingsQuery.refetch()}>
+          <RefreshCw aria-hidden="true" />{t('authenticationSettings.actions.retry')}
+        </Button>
+      </div>
+    )
+  }
+  const currentSettings = settings
+  const configuredSecret = secretAction === 'keep'
+    ? currentSettings.client_secret_configured
+    : secretAction === 'replace'
+      ? clientSecret.length > 0
+      : false
+  const configurationComplete = Boolean(currentSettings.callback_url && clientId.trim() && configuredSecret)
+  const dirty = enabled !== currentSettings.enabled
+    || clientId !== (currentSettings.client_id ?? '')
+    || secretAction !== 'keep'
+    || clientSecret.length > 0
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (enabled && !configurationComplete) {
+      setValidationError(true)
+      return
+    }
+    setValidationError(false)
+    try {
+      await mutation.mutateAsync({
+        expected_version: currentSettings.version,
+        enabled,
+        client_id: clientId.trim() || null,
+        client_secret: secretAction === 'replace' ? clientSecret : null,
+        clear_client_secret: secretAction === 'clear',
+      })
+    } catch {
+      // 保留当前输入，密钥错误只使用稳定通用文案，不回显底层诊断。
+    }
+  }
+
+  async function copyCallback() {
+    if (!currentSettings.callback_url) return
+    try {
+      await navigator.clipboard.writeText(currentSettings.callback_url)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1_500)
+    } catch {
+      setCopied(false)
+    }
+  }
+
+  return (
+    <form onSubmit={(event) => void submit(event)} className="overflow-hidden rounded-xl border border-[var(--hairline)] bg-surface-1/45 shadow-[var(--shadow-subtle)]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--hairline)] px-4 py-3.5">
+        <div className="flex items-center gap-2">
+          <Icon className="size-4" aria-hidden="true" />
+          <h3 className="text-sm font-semibold">{t(`${baseKey}.title`)}</h3>
+          <Badge className={enabled ? 'border-success/25 bg-success/10 text-success' : undefined}>
+            {t(enabled ? 'authenticationSettings.status.enabled' : 'authenticationSettings.status.disabled')}
+          </Badge>
+        </div>
+        <Switch
+          checked={enabled}
+          disabled={mutation.isPending}
+          aria-label={t(`${baseKey}.enabled`)}
+          onCheckedChange={(checked) => {
+            setEnabled(checked)
+            setValidationError(false)
+          }}
+        />
+      </div>
+
+      <div className="grid gap-5 px-4 py-5 md:grid-cols-2">
+        <div className="grid content-start gap-1.5 md:col-span-2">
+          <Label htmlFor={`${provider}-oauth-callback`}>{t('authenticationSettings.oauth.callback')}</Label>
+          <div className="flex gap-2">
+            <Input
+              id={`${provider}-oauth-callback`}
+              value={currentSettings.callback_url ?? t('authenticationSettings.oauth.callbackMissing')}
+              readOnly
+              className="font-mono text-xs"
+            />
+            <Button
+              type="button"
+              size="icon"
+              variant="secondary"
+              disabled={!currentSettings.callback_url}
+              aria-label={t('authenticationSettings.oauth.copyCallback')}
+              title={t('authenticationSettings.oauth.copyCallback')}
+              onClick={() => void copyCallback()}
+            >
+              {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+            </Button>
+          </div>
+          <p className="text-[0.6875rem] leading-4 text-muted-foreground">{t(`${baseKey}.callbackHint`)}</p>
+        </div>
+
+        <div className="grid content-start gap-1.5">
+          <Label htmlFor={`${provider}-oauth-client-id`}>{t('authenticationSettings.oauth.clientId')}</Label>
+          <Input
+            id={`${provider}-oauth-client-id`}
+            value={clientId}
+            maxLength={255}
+            autoComplete="off"
+            onChange={(event) => {
+              setClientId(event.target.value)
+              setValidationError(false)
+            }}
+          />
+        </div>
+
+        <div className="grid content-start gap-1.5">
+          <Label htmlFor={`${provider}-oauth-secret-action`}>{t('authenticationSettings.oauth.clientSecret')}</Label>
+          <Select
+            id={`${provider}-oauth-secret-action`}
+            value={secretAction}
+            onChange={(event) => {
+              setSecretAction(event.target.value as SecretAction)
+              setClientSecret('')
+              setValidationError(false)
+            }}
+          >
+            <option value="keep">{t('authenticationSettings.oauth.secret.keep')}</option>
+            <option value="replace">{t('authenticationSettings.oauth.secret.replace')}</option>
+            <option value="clear">{t('authenticationSettings.oauth.secret.clear')}</option>
+          </Select>
+          <p className="text-[0.6875rem] leading-4 text-muted-foreground">
+            {t(currentSettings.client_secret_configured
+              ? 'authenticationSettings.oauth.secret.configured'
+              : 'authenticationSettings.oauth.secret.missing')}
+          </p>
+        </div>
+
+        {secretAction === 'replace' ? (
+          <div className="grid content-start gap-1.5 md:col-span-2">
+            <Label htmlFor={`${provider}-oauth-client-secret`}>{t('authenticationSettings.oauth.newSecret')}</Label>
+            <Input
+              id={`${provider}-oauth-client-secret`}
+              type="password"
+              value={clientSecret}
+              maxLength={4096}
+              autoComplete="new-password"
+              onChange={(event) => {
+                setClientSecret(event.target.value)
+                setValidationError(false)
+              }}
+            />
+          </div>
+        ) : null}
+      </div>
+
+      {!currentSettings.callback_url || validationError ? (
+        <div className="mx-4 mb-4 flex items-start gap-2.5 rounded-lg border border-warning/25 bg-warning/8 p-3 text-xs leading-5">
+          <ShieldAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+          <span>{t(!currentSettings.callback_url
+            ? `${baseKey}.errors.publicBaseUrl`
+            : `${baseKey}.errors.incomplete`)}</span>
+        </div>
+      ) : null}
+
+      <div className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-t border-[var(--hairline)] bg-surface-2/25 px-4 py-3">
+        <span className={mutation.isError ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'} role={mutation.isError ? 'alert' : undefined}>
+          {mutation.isError
+            ? t(`${baseKey}.errors.save`)
+            : t(`${baseKey}.version`, { version: currentSettings.version })}
+        </span>
+        <Button type="submit" disabled={!dirty || mutation.isPending}>
+          {mutation.isPending ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : null}
+          {t(mutation.isPending ? 'authenticationSettings.actions.saving' : 'authenticationSettings.actions.save')}
+        </Button>
+      </div>
+    </form>
+  )
+}

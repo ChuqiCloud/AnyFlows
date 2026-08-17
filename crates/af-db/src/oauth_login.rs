@@ -23,6 +23,7 @@ use crate::{
 };
 
 pub const OAUTH_LOGIN_GITHUB_PROVIDER: &str = "github";
+pub const OAUTH_LOGIN_DISCORD_PROVIDER: &str = "discord";
 const AUTHENTICATION_SETTINGS_ID: i16 = 1;
 const ACTIVE_USER_STATUS: i16 = 1;
 
@@ -777,7 +778,7 @@ fn normalize_client_id(
 }
 
 fn validate_provider(provider: &str) -> Result<(), OAuthLoginRepositoryError> {
-    if provider == OAUTH_LOGIN_GITHUB_PROVIDER {
+    if provider == OAUTH_LOGIN_GITHUB_PROVIDER || provider == OAUTH_LOGIN_DISCORD_PROVIDER {
         Ok(())
     } else {
         Err(OAuthLoginRepositoryError::InvalidInput)

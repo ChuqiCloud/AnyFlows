@@ -32,12 +32,12 @@ use crate::entity::{
     billing_token_window_reservations, channel_groups, channel_models, channels, credentials,
     debug_trace_attempts, debug_trace_snapshot_access_audits, debug_trace_snapshots, debug_traces,
     email_settings, group_model_ratios, groups, invite_rebate_events, model_prices,
-    model_sync_items, model_sync_runs, models, options, organization_audit_logs,
-    organization_budget_policies, organization_budget_windows, organization_entitlements,
-    organization_invitations, organization_memberships, organization_teams,
-    organization_wallet_ledger_entries, organization_wallets, organizations, payment_settings,
-    playground_conversations, playground_shares, redemption_batches, redemption_codes,
-    registration_rate_limits, scheduler_outbox_events, site_settings,
+    model_sync_items, model_sync_runs, models, oauth_login_providers, options,
+    organization_audit_logs, organization_budget_policies, organization_budget_windows,
+    organization_entitlements, organization_invitations, organization_memberships,
+    organization_teams, organization_wallet_ledger_entries, organization_wallets, organizations,
+    payment_settings, playground_conversations, playground_shares, redemption_batches,
+    redemption_codes, registration_rate_limits, scheduler_outbox_events, site_settings,
     subscription_balance_alert_events, subscription_plans, tokens, topup_orders,
     topup_payment_events, usage_logs, user_subscriptions, users, wallet_ledger_entries,
 };
@@ -67,7 +67,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 70;
+const EXPECTED_MIGRATION_COUNT: usize = 71;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -222,6 +222,15 @@ async fn standard_startup_installs_oauth_login_schema_and_indexes() -> Result<()
     ] {
         assert!(manager.has_index(table, index).await?, "缺少索引 {index}");
     }
+    let providers = oauth_login_providers::Entity::find()
+        .all(pool.connection())
+        .await?;
+    let mut provider_names = providers
+        .iter()
+        .map(|provider| provider.provider.as_str())
+        .collect::<Vec<_>>();
+    provider_names.sort_unstable();
+    assert_eq!(provider_names, ["discord", "github"]);
     pool.close().await?;
     Ok(())
 }
@@ -1070,7 +1079,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 11);
+    assert_eq!(pending_migrations.len(), 12);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -1114,6 +1123,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[10].name(),
         "m20260817_000070_create_oauth_login"
+    );
+    assert_eq!(
+        pending_migrations[11].name(),
+        "m20260818_000071_seed_discord_oauth_login"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;

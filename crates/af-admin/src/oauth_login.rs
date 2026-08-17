@@ -1,13 +1,13 @@
 use std::{fmt, future::Future, pin::Pin};
 
 use af_account::{
-    GitHubLoginClient, GitHubLoginClientError, PlainSystemSecret, SystemSecretCipher,
-    SystemSecretKind,
+    LoginOAuthProvider, OAuthLoginClient, OAuthLoginClientError, PlainSystemSecret,
+    SystemSecretCipher, SystemSecretKind,
 };
 use af_db::{
-    EncryptedCredentialEnvelope, OAUTH_LOGIN_GITHUB_PROVIDER, OAuthIdentityCompletion,
-    OAuthLoginProviderRecord, OAuthLoginProviderWriteRecord, OAuthLoginRepository,
-    OAuthLoginRepositoryError, OAuthLoginSecretUpdate, SiteSettingsRepository,
+    EncryptedCredentialEnvelope, OAuthIdentityCompletion, OAuthLoginProviderRecord,
+    OAuthLoginProviderWriteRecord, OAuthLoginRepository, OAuthLoginRepositoryError,
+    OAuthLoginSecretUpdate, SiteSettingsRepository,
 };
 use af_domain::UserId;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -18,7 +18,6 @@ use zeroize::{Zeroize as _, Zeroizing};
 
 use crate::{SessionPrincipal, SessionRole};
 
-const GITHUB_AUTHORIZATION_URL: &str = "https://github.com/login/oauth/authorize";
 const STATE_TTL_SECONDS: u64 = 10 * 60;
 const TICKET_TTL_SECONDS: u64 = 2 * 60;
 
@@ -47,7 +46,7 @@ impl PublicOAuthLoginProvider {
     }
 }
 
-/// 管理员可见的 GitHub OAuth App 配置，密钥仅投影配置事实。
+/// 管理员可见的内置 OAuth App 配置，密钥仅投影配置事实。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdminOAuthLoginProviderSettings {
     enabled: bool,
@@ -94,7 +93,7 @@ impl AdminOAuthLoginProviderSettings {
     }
 }
 
-/// 管理员完整保存 GitHub OAuth App 设置的命令。
+/// 管理员完整保存内置 OAuth App 设置的命令。
 pub struct AdminOAuthLoginProviderSettingsCommand {
     expected_version: i64,
     enabled: bool,
@@ -135,13 +134,14 @@ impl AdminOAuthLoginProviderSettingsCommand {
     fn into_record(
         self,
         cipher: &SystemSecretCipher,
+        provider: LoginOAuthProvider,
     ) -> Result<OAuthLoginProviderWriteRecord, OAuthLoginError> {
         let secret = if self.clear_client_secret {
             OAuthLoginSecretUpdate::Clear
         } else if let Some(secret) = self.client_secret.as_ref() {
             OAuthLoginSecretUpdate::Replace(
                 cipher
-                    .encrypt(SystemSecretKind::OAuthLoginGithubClientSecret, secret)
+                    .encrypt(client_secret_kind(provider), secret)
                     .map_err(|_| OAuthLoginError::Internal)?,
             )
         } else {
@@ -257,24 +257,26 @@ pub trait OAuthLoginService: Send + Sync {
 
     fn exchange_ticket(&self, ticket: String) -> OAuthLoginServiceFuture<'_, UserId>;
 
-    fn admin_settings(
-        &self,
+    fn admin_settings<'a>(
+        &'a self,
         principal: SessionPrincipal,
-    ) -> OAuthLoginServiceFuture<'_, AdminOAuthLoginProviderSettings>;
+        provider: &'a str,
+    ) -> OAuthLoginServiceFuture<'a, AdminOAuthLoginProviderSettings>;
 
-    fn update_admin_settings(
-        &self,
+    fn update_admin_settings<'a>(
+        &'a self,
         principal: SessionPrincipal,
+        provider: &'a str,
         command: AdminOAuthLoginProviderSettingsCommand,
-    ) -> OAuthLoginServiceFuture<'_, AdminOAuthLoginProviderSettings>;
+    ) -> OAuthLoginServiceFuture<'a, AdminOAuthLoginProviderSettings>;
 }
 
-/// 使用数据库单次事务、系统密钥和受控 HTTP Client 的 GitHub 首个适配器。
+/// 使用数据库单次事务、系统密钥和受控 HTTP Client 的内置 OAuth 适配器。
 pub struct DatabaseOAuthLoginService {
     repository: OAuthLoginRepository,
     site_settings: SiteSettingsRepository,
     cipher: SystemSecretCipher,
-    github_client: GitHubLoginClient,
+    oauth_client: OAuthLoginClient,
 }
 
 impl DatabaseOAuthLoginService {
@@ -283,42 +285,45 @@ impl DatabaseOAuthLoginService {
         repository: OAuthLoginRepository,
         site_settings: SiteSettingsRepository,
         cipher: SystemSecretCipher,
-        github_client: GitHubLoginClient,
+        oauth_client: OAuthLoginClient,
     ) -> Self {
         Self {
             repository,
             site_settings,
             cipher,
-            github_client,
+            oauth_client,
         }
     }
 
     async fn public_providers_inner(
         &self,
     ) -> Result<Vec<PublicOAuthLoginProvider>, OAuthLoginError> {
-        let provider = self
-            .repository
-            .provider(OAUTH_LOGIN_GITHUB_PROVIDER)
-            .await
-            .map_err(map_repository_error)?;
-        if !provider.available() {
-            return Ok(Vec::new());
+        let mut providers = Vec::new();
+        for profile in LoginOAuthProvider::ALL {
+            let provider = self
+                .repository
+                .provider(profile.id())
+                .await
+                .map_err(map_repository_error)?;
+            if provider.available() {
+                match self.redirect_uri(profile).await {
+                    Ok(_) => providers.push(PublicOAuthLoginProvider::new(
+                        profile.id(),
+                        profile.display_name(),
+                    )),
+                    Err(OAuthLoginError::Unavailable) => {}
+                    Err(error) => return Err(error),
+                }
+            }
         }
-        match self.redirect_uri().await {
-            Ok(_) => Ok(vec![PublicOAuthLoginProvider {
-                id: OAUTH_LOGIN_GITHUB_PROVIDER,
-                display_name: "GitHub",
-            }]),
-            Err(OAuthLoginError::Unavailable) => Ok(Vec::new()),
-            Err(error) => Err(error),
-        }
+        Ok(providers)
     }
 
     async fn begin_inner(&self, provider: &str) -> Result<OAuthLoginStart, OAuthLoginError> {
-        require_github(provider)?;
-        let settings = self.available_provider().await?;
+        let profile = require_provider(provider)?;
+        let settings = self.available_provider(profile).await?;
         let client_id = settings.client_id().ok_or(OAuthLoginError::Unavailable)?;
-        let redirect_uri = self.redirect_uri().await?;
+        let redirect_uri = self.redirect_uri(profile).await?;
         let verifier = random_token()?;
         let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
         let verifier_secret =
@@ -342,13 +347,22 @@ impl DatabaseOAuthLoginService {
             .map_err(map_repository_error)?;
 
         let mut url =
-            Url::parse(GITHUB_AUTHORIZATION_URL).map_err(|_| OAuthLoginError::Internal)?;
+            Url::parse(profile.authorization_url()).map_err(|_| OAuthLoginError::Internal)?;
         url.query_pairs_mut()
             .append_pair("client_id", client_id)
             .append_pair("redirect_uri", &redirect_uri)
-            .append_pair("state", &state)
-            .append_pair("code_challenge", &challenge)
-            .append_pair("code_challenge_method", "S256");
+            .append_pair("state", &state);
+        if matches!(profile, LoginOAuthProvider::Discord) {
+            url.query_pairs_mut()
+                .append_pair("response_type", "code")
+                .append_pair("scope", "identify");
+        }
+        // Discord 官方授权码文档未声明 PKCE；GitHub 继续强制 S256。
+        if profile.uses_pkce() {
+            url.query_pairs_mut()
+                .append_pair("code_challenge", &challenge)
+                .append_pair("code_challenge_method", "S256");
+        }
         Ok(OAuthLoginStart {
             authorization_url: url.into(),
         })
@@ -360,7 +374,7 @@ impl DatabaseOAuthLoginService {
         state: String,
         code: String,
     ) -> Result<OAuthLoginCallbackResult, OAuthLoginError> {
-        require_github(provider)?;
+        let profile = require_provider(provider)?;
         validate_state(&state)?;
         let code = Zeroizing::new(code);
         validate_code(code.as_str())?;
@@ -375,28 +389,29 @@ impl DatabaseOAuthLoginService {
             .cipher
             .decrypt(SystemSecretKind::OAuthLoginState, &envelope)
             .map_err(|_| OAuthLoginError::Rejected)?;
-        let settings = self.available_provider().await?;
+        let settings = self.available_provider(profile).await?;
         let client_id = settings.client_id().ok_or(OAuthLoginError::Unavailable)?;
-        let client_secret = self.decrypt_client_secret(&settings)?;
-        let redirect_uri = self.redirect_uri().await?;
+        let client_secret = self.decrypt_client_secret(profile, &settings)?;
+        let redirect_uri = self.redirect_uri(profile).await?;
         let identity = self
-            .github_client
+            .oauth_client
             .exchange_identity(
+                profile,
                 client_id,
                 &client_secret,
                 code.as_str(),
-                verifier.expose_secret(),
+                profile.uses_pkce().then_some(verifier.expose_secret()),
                 &redirect_uri,
             )
             .await
-            .map_err(map_github_client_error)?;
+            .map_err(map_oauth_client_error)?;
         drop(client_secret);
         drop(verifier);
         let ticket = random_token()?;
         let ticket_expires_at = now
             .checked_add(TICKET_TTL_SECONDS)
             .ok_or(OAuthLoginError::Internal)?;
-        let local_username = local_username(identity.login(), identity.subject());
+        let local_username = local_username(profile, identity.username(), identity.subject());
         match self
             .repository
             .complete_identity(
@@ -424,7 +439,7 @@ impl DatabaseOAuthLoginService {
         provider: &str,
         state: String,
     ) -> Result<OAuthLoginCallbackResult, OAuthLoginError> {
-        require_github(provider)?;
+        require_provider(provider)?;
         validate_state(&state)?;
         self.repository
             .claim_state(
@@ -459,15 +474,17 @@ impl DatabaseOAuthLoginService {
     async fn admin_settings_inner(
         &self,
         principal: SessionPrincipal,
+        provider: &str,
     ) -> Result<AdminOAuthLoginProviderSettings, OAuthLoginError> {
         require_admin(principal)?;
-        let callback_url = match self.redirect_uri().await {
+        let profile = require_provider(provider)?;
+        let callback_url = match self.redirect_uri(profile).await {
             Ok(callback_url) => Some(callback_url),
             Err(OAuthLoginError::Unavailable) => None,
             Err(error) => return Err(error),
         };
         self.repository
-            .provider(OAUTH_LOGIN_GITHUB_PROVIDER)
+            .provider(profile.id())
             .await
             .map(|record| AdminOAuthLoginProviderSettings::from_record(record, callback_url))
             .map_err(map_repository_error)
@@ -476,26 +493,31 @@ impl DatabaseOAuthLoginService {
     async fn update_admin_settings_inner(
         &self,
         principal: SessionPrincipal,
+        provider: &str,
         command: AdminOAuthLoginProviderSettingsCommand,
     ) -> Result<AdminOAuthLoginProviderSettings, OAuthLoginError> {
         require_admin(principal)?;
-        let callback_url = match self.redirect_uri().await {
+        let profile = require_provider(provider)?;
+        let callback_url = match self.redirect_uri(profile).await {
             Ok(callback_url) => Some(callback_url),
             Err(OAuthLoginError::Unavailable) if !command.enabled => None,
             Err(error) => return Err(error),
         };
-        let write = command.into_record(&self.cipher)?;
+        let write = command.into_record(&self.cipher, profile)?;
         self.repository
-            .update_provider(OAUTH_LOGIN_GITHUB_PROVIDER, write)
+            .update_provider(profile.id(), write)
             .await
             .map(|record| AdminOAuthLoginProviderSettings::from_record(record, callback_url))
             .map_err(map_repository_error)
     }
 
-    async fn available_provider(&self) -> Result<OAuthLoginProviderRecord, OAuthLoginError> {
+    async fn available_provider(
+        &self,
+        profile: LoginOAuthProvider,
+    ) -> Result<OAuthLoginProviderRecord, OAuthLoginError> {
         let provider = self
             .repository
-            .provider(OAUTH_LOGIN_GITHUB_PROVIDER)
+            .provider(profile.id())
             .await
             .map_err(map_repository_error)?;
         if provider.available() {
@@ -507,11 +529,12 @@ impl DatabaseOAuthLoginService {
 
     fn decrypt_client_secret(
         &self,
+        profile: LoginOAuthProvider,
         provider: &OAuthLoginProviderRecord,
     ) -> Result<af_account::DecryptedSystemSecret, OAuthLoginError> {
         self.cipher
             .decrypt(
-                SystemSecretKind::OAuthLoginGithubClientSecret,
+                client_secret_kind(profile),
                 provider
                     .client_secret()
                     .ok_or(OAuthLoginError::Unavailable)?,
@@ -519,7 +542,7 @@ impl DatabaseOAuthLoginService {
             .map_err(|_| OAuthLoginError::Internal)
     }
 
-    async fn redirect_uri(&self) -> Result<String, OAuthLoginError> {
+    async fn redirect_uri(&self, profile: LoginOAuthProvider) -> Result<String, OAuthLoginError> {
         let settings = self
             .site_settings
             .settings()
@@ -529,7 +552,7 @@ impl DatabaseOAuthLoginService {
             .public_base_url()
             .ok_or(OAuthLoginError::Unavailable)?;
         let base = Url::parse(base).map_err(|_| OAuthLoginError::Internal)?;
-        base.join("/api/auth/oauth/github/callback")
+        base.join(&format!("/api/auth/oauth/{}/callback", profile.id()))
             .map(String::from)
             .map_err(|_| OAuthLoginError::Internal)
     }
@@ -597,19 +620,21 @@ impl OAuthLoginService for DatabaseOAuthLoginService {
         Box::pin(self.exchange_ticket_inner(ticket))
     }
 
-    fn admin_settings(
-        &self,
+    fn admin_settings<'a>(
+        &'a self,
         principal: SessionPrincipal,
-    ) -> OAuthLoginServiceFuture<'_, AdminOAuthLoginProviderSettings> {
-        Box::pin(self.admin_settings_inner(principal))
+        provider: &'a str,
+    ) -> OAuthLoginServiceFuture<'a, AdminOAuthLoginProviderSettings> {
+        Box::pin(self.admin_settings_inner(principal, provider))
     }
 
-    fn update_admin_settings(
-        &self,
+    fn update_admin_settings<'a>(
+        &'a self,
         principal: SessionPrincipal,
+        provider: &'a str,
         command: AdminOAuthLoginProviderSettingsCommand,
-    ) -> OAuthLoginServiceFuture<'_, AdminOAuthLoginProviderSettings> {
-        Box::pin(self.update_admin_settings_inner(principal, command))
+    ) -> OAuthLoginServiceFuture<'a, AdminOAuthLoginProviderSettings> {
+        Box::pin(self.update_admin_settings_inner(principal, provider, command))
     }
 }
 
@@ -684,7 +709,7 @@ fn random_token() -> Result<Zeroizing<String>, OAuthLoginError> {
     Ok(token)
 }
 
-fn local_username(login: &str, subject: &str) -> String {
+fn local_username(profile: LoginOAuthProvider, login: &str, subject: &str) -> String {
     let normalized: String = login
         .chars()
         .filter(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
@@ -692,7 +717,8 @@ fn local_username(login: &str, subject: &str) -> String {
         .collect();
     let suffix = digest("oauth-login-username-v1", subject);
     format!(
-        "gh_{}_{suffix}",
+        "{}_{}_{suffix}",
+        profile.username_prefix(),
         if normalized.is_empty() {
             "user"
         } else {
@@ -757,11 +783,14 @@ fn normalize_client_id(client_id: Option<String>) -> Result<Option<String>, OAut
     }
 }
 
-fn require_github(provider: &str) -> Result<(), OAuthLoginError> {
-    if provider == OAUTH_LOGIN_GITHUB_PROVIDER {
-        Ok(())
-    } else {
-        Err(OAuthLoginError::InvalidInput)
+fn require_provider(provider: &str) -> Result<LoginOAuthProvider, OAuthLoginError> {
+    LoginOAuthProvider::from_id(provider).ok_or(OAuthLoginError::InvalidInput)
+}
+
+fn client_secret_kind(provider: LoginOAuthProvider) -> SystemSecretKind {
+    match provider {
+        LoginOAuthProvider::GitHub => SystemSecretKind::OAuthLoginGithubClientSecret,
+        LoginOAuthProvider::Discord => SystemSecretKind::OAuthLoginDiscordClientSecret,
     }
 }
 
@@ -793,10 +822,10 @@ fn map_repository_error(error: OAuthLoginRepositoryError) -> OAuthLoginError {
     }
 }
 
-fn map_github_client_error(error: GitHubLoginClientError) -> OAuthLoginError {
+fn map_oauth_client_error(error: OAuthLoginClientError) -> OAuthLoginError {
     match error {
-        GitHubLoginClientError::ClientUnavailable => OAuthLoginError::Internal,
-        GitHubLoginClientError::ProviderUnavailable => OAuthLoginError::ProviderUnavailable,
+        OAuthLoginClientError::ClientUnavailable => OAuthLoginError::Internal,
+        OAuthLoginClientError::ProviderUnavailable => OAuthLoginError::ProviderUnavailable,
     }
 }
 
@@ -845,10 +874,22 @@ mod tests {
             validate_state("https://attacker.invalid"),
             Err(OAuthLoginError::Rejected)
         );
-        let username = local_username("octocat", "583231");
+        let username = local_username(LoginOAuthProvider::GitHub, "octocat", "583231");
         assert!(username.starts_with("gh_octocat_"));
         assert!(username.len() <= 64);
         assert!(!username.contains("583231"));
+        let discord_username = local_username(
+            LoginOAuthProvider::Discord,
+            "discord_user",
+            "80351110224678912",
+        );
+        assert!(discord_username.starts_with("dc_discord_user_"));
+        assert!(discord_username.len() <= 64);
+        assert_eq!(require_provider("discord"), Ok(LoginOAuthProvider::Discord));
+        assert_eq!(
+            require_provider("custom"),
+            Err(OAuthLoginError::InvalidInput)
+        );
     }
 
     #[test]
