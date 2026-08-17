@@ -184,7 +184,8 @@
       "timeout": "Timeout {{value}}s",
       "inheritTimeout": "Service default",
       "poolMode": "External pool",
-      "responsesWebsocket": "WebSocket"
+      "responsesWebsocket": "WebSocket",
+      "clientSimulation": "Client simulation"
     },
     "probe": {
       "notTested": "Not tested",
@@ -236,6 +237,9 @@
       "autoBanRulesHint": "Matches exact 5xx statuses and structured upstream type, code, or status fields. Empty rules never disable a channel.",
       "autoBanKeywordPlaceholder": "Enter a structured error keyword",
       "poolModeHint": "Delegates channel-level failures to the upstream account pool while still isolating unusable local credentials.",
+      "clientSimulationHint": "Applies a fixed, versioned HTTP identity profile only to Anthropic OAuth Chat candidates.",
+      "clientSimulationRisk": "This capability may interact with upstream terms or risk controls. The current profile changes only User-Agent and X-App, not the body, authentication, model, routing, or billing facts.",
+      "clientSimulationRiskAccept": "I have reviewed and accept the compliance risk of enabling this profile for the channel.",
       "responsesWebsocketHint": "Reuses a connection only when the request has a stable session identifier. Failures before the first event fall back to HTTP once.",
       "responsesCompactModeHint": "Auto mode routes only after a real probe confirms support. Force-on is still limited to native Responses channels.",
       "responsesCompactModelMappingHint": "Optional. Applies a Compact-only upstream model mapping after the normal model mapping.",
@@ -267,6 +271,7 @@
       "autoBanStatusCodes": "HTTP status codes",
       "autoBanKeywords": "Structured error keywords",
       "poolMode": "External account pool mode",
+      "clientSimulationProfile": "Client simulation profile",
       "responsesWebsocket": "Enable Responses WebSocket",
       "responsesCompactMode": "Context compaction capability",
       "responsesCompactModelMapping": "Compact model mapping",
@@ -292,7 +297,12 @@
       "timeout": "Enter an integer from 1 to 900 seconds, or leave it blank to use the service default.",
       "url": "Enter an HTTP(S) URL without credentials, a query string, or a fragment.",
       "routing": "Models and groups must both be set or both be empty, with no duplicates or capacity overflow.",
-      "autoBanRules": "Rules must use unique statuses from 500 to 599 and bounded keywords, with no more than 64 entries in total."
+      "autoBanRules": "Rules must use unique statuses from 500 to 599 and bounded keywords, with no more than 64 entries in total.",
+      "clientSimulationRisk": "Confirm the compliance risk before enabling or changing the client simulation profile."
+    },
+    "clientSimulation": {
+      "off": "Off",
+      "anthropicCliHeadersV1": "Anthropic CLI Headers v1"
     },
     "mapping": {
       "source": "Client model",
@@ -2104,6 +2114,16 @@
     "operation": {
       "chat": "Chat generation",
       "responses": "Responses generation"
+    },
+    "clientSimulation": {
+      "profile": {
+        "anthropic_cli_headers_v1": "Anthropic CLI simulation"
+      },
+      "result": {
+        "not_applied": "Not applied",
+        "applied": "Applied",
+        "failed": "Application failed"
+      }
     },
     "failure": {
       "auth_expired": "Authentication expired",

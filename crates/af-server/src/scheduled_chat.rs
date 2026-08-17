@@ -30,9 +30,10 @@ use crate::{
 };
 use af_account::{CredentialDecryptor, SystemSecretCipher, SystemSecretKind};
 use af_adapter::{
-    AdaptorSettings, AnthropicAdaptorSettings, CohereAdaptorSettings, GeminiAdaptorSettings,
-    HeaderMap, HeaderName, HeaderValue, JinaAdaptorSettings, OpenAiAdaptorSettings, RelayContext,
-    ResponsesWebSocketPoolKey, TransportDispatcher, get_adaptor,
+    AdaptorSettings, AnthropicAdaptorSettings, BuiltInClientSimulation, CohereAdaptorSettings,
+    GeminiAdaptorSettings, HeaderMap, HeaderName, HeaderValue, JinaAdaptorSettings,
+    OpenAiAdaptorSettings, RelayContext, ResponsesWebSocketPoolKey, TransportDispatcher,
+    get_adaptor,
 };
 use af_db::{
     AdminGroupLookupOutcome, AdminGroupRepository, ChannelStateRepository,
@@ -54,6 +55,7 @@ use af_scheduler::{
     ChannelRoutingHealth, IndexedRoutePlan, IndexedWeightedScheduler,
     IndexedWeightedSchedulerError, RouteWaitKind, StickyRouteOutcome, StickyWaitPolicy,
 };
+use af_telemetry::record_client_simulation_attempt;
 
 mod audio;
 mod compact;
@@ -358,6 +360,10 @@ impl ScheduledChatService {
                     RelayCandidate::new(adaptor.clone(), context.clone(), credential)
                         .with_header_overrides(headers.clone())
                         .with_channel_group(target.channel_id());
+                if let Some(profile) = target.client_simulation_profile() {
+                    relay_candidate = relay_candidate
+                        .with_client_simulation(Arc::new(BuiltInClientSimulation::new(profile)));
+                }
                 if let Some(concurrency) = &self.concurrency {
                     relay_candidate = relay_candidate.with_attempt_gate(concurrency.account_gate(
                         credential_id,
@@ -993,6 +999,7 @@ impl PlannedChatExecution for ScheduledChatExecution {
                 }
                 _ => return Err(AfError::InvalidRequest),
             };
+            record_client_simulation_metrics(&report);
             if let Some(capture) = debug_trace {
                 capture.submit(
                     &report,
@@ -1060,6 +1067,21 @@ impl PlannedChatExecution for ScheduledChatExecution {
                 }
             }
         })
+    }
+}
+
+/// 只把 Relay 生成的闭合档案和结果写入低基数指标。
+fn record_client_simulation_metrics(report: &af_relay::RelayAttemptReport) {
+    for failure in report.failures() {
+        if let Some(client_simulation) = failure.client_simulation() {
+            record_client_simulation_attempt(
+                client_simulation.profile(),
+                client_simulation.result(),
+            );
+        }
+    }
+    if let Some(client_simulation) = report.successful_client_simulation() {
+        record_client_simulation_attempt(client_simulation.profile(), client_simulation.result());
     }
 }
 

@@ -57,6 +57,7 @@ export type AdminChannel = {
     auto_ban: boolean;
     auto_ban_rules: AdminChannelAutoBanRules;
     pool_mode: boolean;
+    client_simulation_profile?: null | ClientSimulationProfile;
     responses_websocket_enabled: boolean;
     responses_compact_mode: ResponsesCompactMode;
     responses_compact_model_mapping: {
@@ -96,6 +97,8 @@ export type AdminChannelCreateRequest = {
     auto_ban: boolean;
     auto_ban_rules?: AdminChannelAutoBanRules;
     pool_mode?: boolean;
+    client_simulation_profile: null | ClientSimulationProfile;
+    client_simulation_risk_accepted: boolean;
     responses_websocket_enabled?: boolean;
     responses_compact_mode?: ResponsesCompactMode;
     responses_compact_model_mapping?: {
@@ -137,6 +140,8 @@ export type AdminChannelUpdateRequest = {
     auto_ban: boolean;
     auto_ban_rules?: null | AdminChannelAutoBanRules;
     pool_mode?: boolean | null;
+    client_simulation_profile: null | ClientSimulationProfile;
+    client_simulation_risk_accepted: boolean;
     responses_websocket_enabled?: boolean | null;
     responses_compact_mode?: null | ResponsesCompactMode;
     responses_compact_model_mapping?: {
@@ -322,6 +327,8 @@ export type AdminDebugTraceAttempt = {
     upstream_status?: number | null;
     retry_decision: boolean;
     elapsed_ms: number;
+    client_simulation_profile?: null | ClientSimulationProfile;
+    client_simulation_result?: null | ClientSimulationResult;
     request_method?: string | null;
     request_url?: string | null;
     response_status?: number | null;
@@ -1106,6 +1113,8 @@ export type BalanceDisplaySettings = {
     fraction_digits: number;
 };
 export type BalanceDisplaySymbolPosition = 'prefix' | 'suffix';
+export type ClientSimulationProfile = 'anthropic_cli_headers_v1';
+export type ClientSimulationResult = 'not_applied' | 'applied' | 'failed';
 export type IssuedAdminRedemptionBatch = {
     batch: AdminRedemptionBatch;
     codes: Array<string>;
@@ -2007,6 +2016,8 @@ export type AdminChannelCreateRequestWritable = {
     auto_ban: boolean;
     auto_ban_rules?: AdminChannelAutoBanRules;
     pool_mode?: boolean;
+    client_simulation_profile: null | ClientSimulationProfile;
+    client_simulation_risk_accepted: boolean;
     responses_websocket_enabled?: boolean;
     responses_compact_mode?: ResponsesCompactMode;
     responses_compact_model_mapping?: {
@@ -2043,6 +2054,8 @@ export type AdminChannelUpdateRequestWritable = {
     auto_ban: boolean;
     auto_ban_rules?: null | AdminChannelAutoBanRules;
     pool_mode?: boolean | null;
+    client_simulation_profile: null | ClientSimulationProfile;
+    client_simulation_risk_accepted: boolean;
     responses_websocket_enabled?: boolean | null;
     responses_compact_mode?: null | ResponsesCompactMode;
     responses_compact_model_mapping?: {

@@ -17,6 +17,10 @@ pub struct Model {
     pub retry_decision: bool,
     pub elapsed_ms: i64,
     #[sea_orm(column_type = "Text", nullable)]
+    pub client_simulation_profile: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub client_simulation_result: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
     pub request_method: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub request_url: Option<String>,

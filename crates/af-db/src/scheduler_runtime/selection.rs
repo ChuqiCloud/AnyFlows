@@ -65,6 +65,8 @@ fn try_runtime_target(
             channel_type,
             ChannelType::Jina | ChannelType::Cohere | ChannelType::Xai
         ) && credential_kind != CredentialKind::ApiKey)
+            || (channel.client_simulation_profile().is_some()
+                && credential_kind != CredentialKind::Oauth)
         {
             continue;
         }
@@ -103,6 +105,7 @@ fn try_runtime_target(
     .map(|target| target.with_timeout(channel.timeout()))
     .map(|target| target.with_auto_ban_rules(channel.auto_ban_rules().clone()))
     .map(|target| target.with_pool_mode(channel.pool_mode()))
+    .and_then(|target| target.with_client_simulation_profile(channel.client_simulation_profile()))
     .and_then(|target| {
         target.with_responses_websocket_enabled(channel.responses_websocket_enabled())
     })

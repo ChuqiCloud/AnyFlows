@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 af-config = { path = "../af-config", version = "0.1.0" }
+af-domain = { path = "../af-domain", version = "0.1.0" }
 metrics.workspace = true
 metrics-exporter-prometheus.workspace = true
 serde_json.workspace = true

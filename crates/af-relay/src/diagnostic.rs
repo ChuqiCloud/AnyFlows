@@ -118,7 +118,7 @@ impl RelayDiagnosticSnapshot {
             .iter()
             .map(|(name, value)| {
                 let name = name.as_str().to_ascii_lowercase();
-                let value = if is_sensitive_name(&name) {
+                let value = if is_sensitive_header_name(&name) {
                     REDACTED_VALUE.to_owned()
                 } else {
                     value
@@ -441,6 +441,11 @@ fn is_sensitive_name(name: &str) -> bool {
         || normalized.ends_with("_api_key")
 }
 
+fn is_sensitive_header_name(name: &str) -> bool {
+    let normalized = name.to_ascii_lowercase();
+    matches!(normalized.as_str(), "user-agent" | "x-app") || is_sensitive_name(&normalized)
+}
+
 fn redact_inline_secrets(value: &str) -> String {
     let mut redacted = value.to_owned();
     for marker in ["Bearer ", "Basic ", "sk-"] {
@@ -498,6 +503,26 @@ mod tests {
         let body = input.body_json(MAX_SAFE_BODY_BYTES);
         assert!(!body.contains("body-secret-canary"));
         assert!(body.contains(REDACTED_VALUE));
+    }
+
+    #[test]
+    fn client_simulation_identity_headers_never_survive_capture() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            HeaderName::from_static("user-agent"),
+            HeaderValue::from_static("claude-cli/2.1.114 (external, sdk-cli)"),
+        );
+        headers.insert(
+            HeaderName::from_static("x-app"),
+            HeaderValue::from_static("cli"),
+        );
+
+        let snapshot = RelayDiagnosticSnapshot::headers(&headers);
+
+        assert!(!snapshot.json().contains("claude-cli/2.1.114"));
+        assert!(!snapshot.json().contains("sdk-cli"));
+        assert!(!snapshot.json().contains("\"cli\""));
+        assert_eq!(snapshot.json().matches(REDACTED_VALUE).count(), 2);
     }
 
     #[test]

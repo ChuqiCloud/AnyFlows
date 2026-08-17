@@ -7,10 +7,14 @@ use std::{
 };
 
 use af_adapter::{
-    Adaptor, AdaptorTarget, Bytes, Credential, HeaderMap, Method, Operation, RelayContext,
-    ResponseMode, TransportDispatcher, UpstreamRequest, UpstreamResponse,
+    Adaptor, AdaptorTarget, Bytes, ClientSimulationContext, ClientSimulationMiddleware, Credential,
+    HeaderMap, Method, Operation, RelayContext, ResponseMode, TransportDispatcher, UpstreamRequest,
+    UpstreamResponse, apply_client_simulation,
 };
-use af_domain::{ChannelId, MAX_MODEL_NAME_BYTES, UpstreamError, UpstreamServerStatus};
+use af_domain::{
+    ChannelId, ClientSimulationProfile, ClientSimulationResult, MAX_MODEL_NAME_BYTES,
+    UpstreamError, UpstreamServerStatus,
+};
 use af_protocol::{StructuredErrorEvidence, extract_structured_error_evidence};
 use thiserror::Error;
 
@@ -27,6 +31,7 @@ pub struct RelayCandidate {
     credential: Credential,
     request: Option<RelayCandidateRequest>,
     header_overrides: HeaderMap,
+    client_simulation: Option<Arc<dyn ClientSimulationMiddleware>>,
     channel_group: Option<ChannelId>,
     transport: TransportDispatcher,
     attempt_gate: Option<Arc<dyn RelayAttemptGate>>,
@@ -42,6 +47,7 @@ impl RelayCandidate {
             credential,
             request: None,
             header_overrides: HeaderMap::new(),
+            client_simulation: None,
             channel_group: None,
             transport: TransportDispatcher::http(),
             attempt_gate: None,
@@ -59,6 +65,16 @@ impl RelayCandidate {
     #[must_use]
     pub fn with_header_overrides(mut self, header_overrides: HeaderMap) -> Self {
         self.header_overrides = header_overrides;
+        self
+    }
+
+    /// 显式装配受控客户端仿真中间件；默认候选始终不启用。
+    #[must_use]
+    pub fn with_client_simulation(
+        mut self,
+        client_simulation: Arc<dyn ClientSimulationMiddleware>,
+    ) -> Self {
+        self.client_simulation = Some(client_simulation);
         self
     }
 
@@ -93,6 +109,13 @@ impl fmt::Debug for RelayCandidate {
             .field("credential", &self.credential)
             .field("has_candidate_request", &self.request.is_some())
             .field("header_override_count", &self.header_overrides.len())
+            .field(
+                "client_simulation_profile",
+                &self
+                    .client_simulation
+                    .as_ref()
+                    .map(|middleware| middleware.profile()),
+            )
             .field("has_channel_group", &self.channel_group.is_some())
             .field("transport", &self.transport)
             .field("has_attempt_gate", &self.attempt_gate.is_some())
@@ -153,6 +176,7 @@ pub struct RelayAttemptFailure {
     evidence: Option<StructuredErrorEvidence>,
     elapsed: Duration,
     diagnostic: Option<RelayAttemptDiagnostic>,
+    client_simulation: Option<RelayClientSimulationAttempt>,
 }
 
 impl RelayAttemptFailure {
@@ -164,6 +188,7 @@ impl RelayAttemptFailure {
             evidence: None,
             elapsed,
             diagnostic: None,
+            client_simulation: None,
         }
     }
 
@@ -181,11 +206,20 @@ impl RelayAttemptFailure {
             evidence,
             elapsed,
             diagnostic: None,
+            client_simulation: None,
         }
     }
 
     fn with_diagnostic(mut self, diagnostic: Option<RelayAttemptDiagnostic>) -> Self {
         self.diagnostic = diagnostic;
+        self
+    }
+
+    fn with_client_simulation(
+        mut self,
+        client_simulation: Option<RelayClientSimulationAttempt>,
+    ) -> Self {
+        self.client_simulation = client_simulation;
         self
     }
 
@@ -224,6 +258,37 @@ impl RelayAttemptFailure {
     pub const fn diagnostic(&self) -> Option<&RelayAttemptDiagnostic> {
         self.diagnostic.as_ref()
     }
+
+    /// 返回当前候选的闭合仿真档案和应用结果；未配置时为空。
+    #[must_use]
+    pub const fn client_simulation(&self) -> Option<RelayClientSimulationAttempt> {
+        self.client_simulation
+    }
+}
+
+/// 单个候选的脱敏客户端仿真元数据。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RelayClientSimulationAttempt {
+    profile: ClientSimulationProfile,
+    result: ClientSimulationResult,
+}
+
+impl RelayClientSimulationAttempt {
+    const fn new(profile: ClientSimulationProfile, result: ClientSimulationResult) -> Self {
+        Self { profile, result }
+    }
+
+    /// 返回包含版本的闭合档案 ID。
+    #[must_use]
+    pub const fn profile(self) -> ClientSimulationProfile {
+        self.profile
+    }
+
+    /// 返回本次候选实际取得的闭合应用结果。
+    #[must_use]
+    pub const fn result(self) -> ClientSimulationResult {
+        self.result
+    }
 }
 
 /// 一次转发执行产生的脱敏候选报告。
@@ -232,6 +297,7 @@ pub struct RelayAttemptReport {
     successful_candidate_index: Option<usize>,
     successful_elapsed: Option<Duration>,
     successful_diagnostic: Option<RelayAttemptDiagnostic>,
+    successful_client_simulation: Option<RelayClientSimulationAttempt>,
     failures: Vec<RelayAttemptFailure>,
 }
 
@@ -245,6 +311,7 @@ impl RelayAttemptReport {
             successful_candidate_index: Some(successful_candidate_index),
             successful_elapsed: Some(successful_elapsed),
             successful_diagnostic: None,
+            successful_client_simulation: None,
             failures,
         }
     }
@@ -254,12 +321,21 @@ impl RelayAttemptReport {
             successful_candidate_index: None,
             successful_elapsed: None,
             successful_diagnostic: None,
+            successful_client_simulation: None,
             failures,
         }
     }
 
     fn with_successful_diagnostic(mut self, diagnostic: Option<RelayAttemptDiagnostic>) -> Self {
         self.successful_diagnostic = diagnostic;
+        self
+    }
+
+    fn with_successful_client_simulation(
+        mut self,
+        client_simulation: Option<RelayClientSimulationAttempt>,
+    ) -> Self {
+        self.successful_client_simulation = client_simulation;
         self
     }
 
@@ -287,6 +363,12 @@ impl RelayAttemptReport {
         self.successful_diagnostic.as_ref()
     }
 
+    /// 返回最终成功候选的闭合仿真元数据；未配置时为空。
+    #[must_use]
+    pub const fn successful_client_simulation(&self) -> Option<RelayClientSimulationAttempt> {
+        self.successful_client_simulation
+    }
+
     /// 把已经取得 HTTP 成功、但未通过协议验证的候选改记为失败。
     pub(crate) fn reject_success(&mut self, error: UpstreamError) {
         if let Some(candidate_index) = self.successful_candidate_index.take() {
@@ -296,7 +378,8 @@ impl RelayAttemptReport {
                 .expect("成功候选索引与耗时必须同时存在");
             self.failures.push(
                 RelayAttemptFailure::new(candidate_index, error, elapsed)
-                    .with_diagnostic(self.successful_diagnostic.take()),
+                    .with_diagnostic(self.successful_diagnostic.take())
+                    .with_client_simulation(self.successful_client_simulation.take()),
             );
         }
     }
@@ -546,6 +629,12 @@ impl RelayStateMachine {
         let mut index = 0;
         while let Some(candidate) = self.candidates.get(index) {
             let attempt_started_at = Instant::now();
+            let mut client_simulation = candidate.client_simulation.as_ref().map(|middleware| {
+                RelayClientSimulationAttempt::new(
+                    middleware.profile(),
+                    ClientSimulationResult::NotApplied,
+                )
+            });
             let candidate_model = candidate
                 .request
                 .as_ref()
@@ -557,11 +646,10 @@ impl RelayStateMachine {
                     .any(|model| model == candidate_model)
             {
                 let error = UpstreamError::ModelUnsupported;
-                failures.push(RelayAttemptFailure::new(
-                    index,
-                    error,
-                    attempt_started_at.elapsed(),
-                ));
+                failures.push(
+                    RelayAttemptFailure::new(index, error, attempt_started_at.elapsed())
+                        .with_client_simulation(client_simulation),
+                );
                 last_error = Some(RelayError::Upstream(error));
                 index = self.next_candidate_index(index, error);
                 continue;
@@ -612,6 +700,46 @@ impl RelayStateMachine {
                     ));
                 }
             };
+            let upstream_request = match candidate.client_simulation.as_ref() {
+                Some(middleware) => match apply_client_simulation(
+                    middleware.as_ref(),
+                    ClientSimulationContext::new(
+                        candidate.adaptor.channel_type(),
+                        candidate.adaptor.default_protocol(),
+                        request.operation,
+                        candidate.credential.kind(),
+                    ),
+                    upstream_request,
+                ) {
+                    Ok(request) => {
+                        client_simulation = Some(RelayClientSimulationAttempt::new(
+                            middleware.profile(),
+                            ClientSimulationResult::Applied,
+                        ));
+                        request
+                    }
+                    Err(_error) => {
+                        client_simulation = Some(RelayClientSimulationAttempt::new(
+                            middleware.profile(),
+                            ClientSimulationResult::Failed,
+                        ));
+                        failures.push(
+                            RelayAttemptFailure::new(
+                                index,
+                                UpstreamError::ProtocolError,
+                                attempt_started_at.elapsed(),
+                            )
+                            .with_client_simulation(client_simulation),
+                        );
+                        // 仿真档案是显式配置，应用失败不得静默退回未仿真请求或其他候选。
+                        return Err(RelayExecutionError::new(
+                            RelayError::Upstream(UpstreamError::ProtocolError),
+                            failures,
+                        ));
+                    }
+                },
+                None => upstream_request,
+            };
             let upstream_request = match candidate
                 .adaptor
                 .finalize_request(upstream_request, &candidate.credential, &candidate.context)
@@ -619,6 +747,16 @@ impl RelayStateMachine {
             {
                 Ok(request) => request,
                 Err(error) => {
+                    if client_simulation.is_some() {
+                        failures.push(
+                            RelayAttemptFailure::new(
+                                index,
+                                UpstreamError::ProtocolError,
+                                attempt_started_at.elapsed(),
+                            )
+                            .with_client_simulation(client_simulation),
+                        );
+                    }
                     last_error = Some(RelayError::Adaptor(error));
                     index = self.next_channel_index(index);
                     continue;
@@ -655,7 +793,8 @@ impl RelayStateMachine {
                     let mapped = map_adaptor_error(error);
                     failures.push(
                         RelayAttemptFailure::new(index, mapped, attempt_started_at.elapsed())
-                            .with_diagnostic(diagnostic),
+                            .with_diagnostic(diagnostic)
+                            .with_client_simulation(client_simulation),
                     );
                     last_error = Some(RelayError::Upstream(mapped));
                     if is_retryable(mapped) {
@@ -700,7 +839,8 @@ impl RelayStateMachine {
                         attempt_started_at.elapsed(),
                         failures,
                     )
-                    .with_successful_diagnostic(diagnostic),
+                    .with_successful_diagnostic(diagnostic)
+                    .with_successful_client_simulation(client_simulation),
                     permit,
                 });
             }
@@ -714,7 +854,8 @@ impl RelayStateMachine {
                     let mapped = map_adaptor_error(error);
                     failures.push(
                         RelayAttemptFailure::new(index, mapped, attempt_started_at.elapsed())
-                            .with_diagnostic(diagnostic),
+                            .with_diagnostic(diagnostic)
+                            .with_client_simulation(client_simulation),
                     );
                     last_error = Some(RelayError::Upstream(mapped));
                     if is_retryable(mapped) {
@@ -742,7 +883,8 @@ impl RelayStateMachine {
                     evidence,
                     attempt_started_at.elapsed(),
                 )
-                .with_diagnostic(diagnostic),
+                .with_diagnostic(diagnostic)
+                .with_client_simulation(client_simulation),
             );
             last_error = Some(RelayError::Upstream(classified));
             if is_retryable(classified) {
@@ -842,4 +984,26 @@ pub(crate) const fn is_credential_scoped(error: UpstreamError) -> bool {
             }
             | UpstreamError::QuotaExhausted
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejecting_protocol_success_retains_client_simulation_metadata() {
+        let simulation = Some(RelayClientSimulationAttempt::new(
+            ClientSimulationProfile::AnthropicCliHeadersV1,
+            ClientSimulationResult::Applied,
+        ));
+        let mut report = RelayAttemptReport::succeeded(2, Duration::from_millis(7), Vec::new())
+            .with_successful_client_simulation(simulation);
+
+        report.reject_success(UpstreamError::ProtocolError);
+
+        assert_eq!(report.successful_client_simulation(), None);
+        assert_eq!(report.failures().len(), 1);
+        assert_eq!(report.failures()[0].client_simulation(), simulation);
+        assert_eq!(report.failures()[0].error(), UpstreamError::ProtocolError);
+    }
 }

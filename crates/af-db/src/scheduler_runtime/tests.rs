@@ -3,8 +3,8 @@ mod support;
 use std::{error::Error, time::Duration};
 
 use af_domain::{
-    ChannelId, ChannelType, CredentialKind, GroupId, Protocol, ResponsesCompactMode,
-    ResponsesCompactProbeResult, Status,
+    ChannelId, ChannelType, ClientSimulationProfile, CredentialKind, GroupId, Protocol,
+    ResponsesCompactMode, ResponsesCompactProbeResult, Status,
 };
 use sea_orm::{ActiveModelTrait, Set};
 
@@ -150,16 +150,18 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
     .insert(pool.connection())
     .await?;
 
-    let anthropic_channel = runtime_channel(
+    let mut anthropic_channel = runtime_channel(
         "anthropic-channel",
         Status::Enabled,
         ChannelType::Anthropic.as_str(),
         Protocol::Anthropic.as_str(),
         "https://anthropic-channel-canary.example.com",
         [],
-    )
-    .insert(pool.connection())
-    .await?;
+    );
+    anthropic_channel.settings = Set(SensitiveJson::from(serde_json::json!({
+        "client_simulation_profile": "anthropic_cli_headers_v1"
+    })));
+    let anthropic_channel = anthropic_channel.insert(pool.connection()).await?;
     attach(anthropic_channel.id, group.id, "gpt-runtime-canary")
         .insert(pool.connection())
         .await?;
@@ -181,6 +183,18 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
         None,
         "anthropic-channel-key",
         0x55,
+        false,
+    )
+    .insert(pool.connection())
+    .await?;
+    runtime_credential(
+        anthropic_channel.id,
+        CredentialKind::Oauth,
+        20,
+        true,
+        None,
+        "anthropic-oauth-key",
+        0x56,
         false,
     )
     .insert(pool.connection())
@@ -329,7 +343,12 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
     assert_eq!(anthropic_record.target().protocol(), Protocol::Anthropic);
     assert_eq!(
         anthropic_record.target().credential_kind(),
-        CredentialKind::ApiKey
+        CredentialKind::Oauth
+    );
+    assert_eq!(anthropic_record.target().credentials().len(), 1);
+    assert_eq!(
+        anthropic_record.target().client_simulation_profile(),
+        Some(ClientSimulationProfile::AnthropicCliHeadersV1)
     );
 
     let responses_record = records
@@ -377,6 +396,7 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
         "selected-key-id-canary",
         "anthropic-channel-canary",
         "anthropic-channel-key",
+        "anthropic-oauth-key",
         "gpt-responses-upstream-canary",
         "gpt-compact-upstream-canary",
     ] {
@@ -467,6 +487,43 @@ fn anthropic_runtime_target_accepts_messages_pair_and_rejects_mismatch() {
             vec![credential],
             Vec::new(),
         )
+        .is_err()
+    );
+    let oauth = SchedulerRuntimeCredentialRecord::with_scheduling(
+        2,
+        CredentialKind::Oauth,
+        EncryptedCredentialEnvelope::new("runtime-test-key", [0x43; 24], vec![0x25; 16]).unwrap(),
+        false,
+        0,
+        10,
+    )
+    .unwrap();
+    let target = SchedulerRuntimeTargetRecord::new_pool(
+        ChannelId::new(2).unwrap(),
+        ChannelType::Anthropic,
+        Protocol::Anthropic,
+        None,
+        vec![oauth],
+        Vec::new(),
+    )
+    .unwrap()
+    .with_client_simulation_profile(Some(ClientSimulationProfile::AnthropicCliHeadersV1))
+    .unwrap();
+    assert_eq!(
+        target.client_simulation_profile(),
+        Some(ClientSimulationProfile::AnthropicCliHeadersV1)
+    );
+    assert!(
+        SchedulerRuntimeTargetRecord::new_pool(
+            ChannelId::new(3).unwrap(),
+            ChannelType::Anthropic,
+            Protocol::Anthropic,
+            None,
+            vec![runtime_credential_record(3)],
+            Vec::new(),
+        )
+        .unwrap()
+        .with_client_simulation_profile(Some(ClientSimulationProfile::AnthropicCliHeadersV1,))
         .is_err()
     );
 }

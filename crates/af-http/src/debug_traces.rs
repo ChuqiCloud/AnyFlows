@@ -92,6 +92,12 @@ pub(crate) struct AdminDebugTraceAttemptResponse {
     upstream_status: Option<i16>,
     retry_decision: bool,
     elapsed_ms: i64,
+    #[schema(
+        value_type = Option<crate::openapi::schema::ClientSimulationProfileSchema>
+    )]
+    client_simulation_profile: Option<String>,
+    #[schema(value_type = Option<crate::openapi::schema::ClientSimulationResultSchema>)]
+    client_simulation_result: Option<String>,
     request_method: Option<String>,
     request_url: Option<String>,
     response_status: Option<i16>,
@@ -348,6 +354,12 @@ impl AdminDebugTraceAttemptResponse {
             upstream_status: attempt.upstream_status(),
             retry_decision: attempt.retry_decision(),
             elapsed_ms: attempt.elapsed_ms(),
+            client_simulation_profile: attempt
+                .client_simulation_profile()
+                .map(|profile| profile.as_str().to_owned()),
+            client_simulation_result: attempt
+                .client_simulation_result()
+                .map(|result| result.as_str().to_owned()),
             request_method: attempt.request_method().map(str::to_owned),
             request_url: attempt.request_url().map(str::to_owned),
             response_status: attempt.response_status(),
@@ -529,5 +541,40 @@ fn map_error(error: AdminDebugTraceError) -> ManagementError {
         AdminDebugTraceError::Forbidden => ManagementError::Forbidden,
         AdminDebugTraceError::NotFound => ManagementError::DebugTraceNotFound,
         AdminDebugTraceError::Internal => ManagementError::Internal,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn attempt_response_serializes_closed_client_simulation_metadata() {
+        let response = AdminDebugTraceAttemptResponse {
+            candidate_index: 0,
+            channel_id: 11,
+            credential_id: 21,
+            outcome: "failed".to_owned(),
+            failure_kind: Some("protocol_error".to_owned()),
+            upstream_status: None,
+            retry_decision: false,
+            elapsed_ms: 7,
+            client_simulation_profile: Some("anthropic_cli_headers_v1".to_owned()),
+            client_simulation_result: Some("failed".to_owned()),
+            request_method: None,
+            request_url: None,
+            response_status: None,
+            response_streamed: false,
+        };
+
+        let value = serde_json::to_value(response).unwrap();
+
+        assert_eq!(
+            value["client_simulation_profile"],
+            json!("anthropic_cli_headers_v1")
+        );
+        assert_eq!(value["client_simulation_result"], json!("failed"));
     }
 }

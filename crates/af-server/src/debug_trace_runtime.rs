@@ -334,6 +334,10 @@ fn trace_attempts(
             elapsed_millis(failure.elapsed()),
         )
         .ok()?;
+        if let Some(client_simulation) = failure.client_simulation() {
+            attempt = attempt
+                .with_client_simulation(client_simulation.profile(), client_simulation.result());
+        }
         if let Some(diagnostic) = failure.diagnostic() {
             attempt = attempt.with_diagnostic(map_attempt_diagnostic(diagnostic)?);
         }
@@ -348,6 +352,10 @@ fn trace_attempts(
             elapsed_millis(report.successful_elapsed()?),
         )
         .ok()?;
+        if let Some(client_simulation) = report.successful_client_simulation() {
+            attempt = attempt
+                .with_client_simulation(client_simulation.profile(), client_simulation.result());
+        }
         if let Some(diagnostic) = report.successful_diagnostic() {
             attempt = attempt.with_diagnostic(map_attempt_diagnostic(diagnostic)?);
         }

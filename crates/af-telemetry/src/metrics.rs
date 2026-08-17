@@ -1,6 +1,7 @@
 use std::{fmt, sync::Arc, time::Duration};
 
 use ::metrics::Unit;
+use af_domain::{ClientSimulationProfile, ClientSimulationResult};
 use metrics_exporter_prometheus::{Matcher, PrometheusBuilder, PrometheusHandle as ExporterHandle};
 
 use crate::{MetricLabelError, TelemetryError};
@@ -34,6 +35,8 @@ pub const QUOTA_CONSUMED_TOTAL: &str = "quota_consumed_total";
 pub const CONCURRENCY_SLOTS: &str = "concurrency_slots";
 /// 批量计费落盘滞后，单位为秒。
 pub const BILLING_FLUSH_LAG: &str = "billing_flush_lag";
+/// 按闭合档案和结果累计的客户端仿真 Attempt。
+pub const CLIENT_SIMULATION_ATTEMPTS_TOTAL: &str = "client_simulation_attempts_total";
 
 const REQUESTS_DESCRIPTION: &str = "AnyFlows 请求总数。";
 const REQUEST_DURATION_DESCRIPTION: &str = "AnyFlows 请求总耗时。";
@@ -43,6 +46,7 @@ const UPSTREAM_ERRORS_DESCRIPTION: &str = "AnyFlows 分类后的上游错误总�
 const QUOTA_CONSUMED_DESCRIPTION: &str = "AnyFlows 已结算的整数 quota 消耗。";
 const CONCURRENCY_SLOTS_DESCRIPTION: &str = "AnyFlows 各级并发槽位占用量。";
 const BILLING_FLUSH_LAG_DESCRIPTION: &str = "AnyFlows 批量计费落盘滞后。";
+const CLIENT_SIMULATION_ATTEMPTS_DESCRIPTION: &str = "AnyFlows 客户端仿真 Attempt 总数。";
 
 const METRICS_CALLSITE: &str = module_path!();
 const OTHER_LABEL: &str = "other";
@@ -169,6 +173,19 @@ impl MetricsHandle {
     pub fn run_upkeep(&self) {
         self.exporter.run_upkeep();
     }
+}
+
+/// 记录一次配置了闭合档案的客户端仿真 Attempt。
+pub fn record_client_simulation_attempt(
+    profile: ClientSimulationProfile,
+    result: ClientSimulationResult,
+) {
+    ::metrics::counter!(
+        CLIENT_SIMULATION_ATTEMPTS_TOTAL,
+        "profile" => profile.as_str(),
+        "result" => result.as_str()
+    )
+    .increment(1);
 }
 
 macro_rules! registered_label {
@@ -368,5 +385,10 @@ pub(crate) fn describe_metric_families() {
         BILLING_FLUSH_LAG,
         Unit::Seconds,
         BILLING_FLUSH_LAG_DESCRIPTION
+    );
+    ::metrics::describe_counter!(
+        CLIENT_SIMULATION_ATTEMPTS_TOTAL,
+        Unit::Count,
+        CLIENT_SIMULATION_ATTEMPTS_DESCRIPTION
     );
 }

@@ -79,6 +79,11 @@ function RoutingBadges({ channel }: { channel: AdminChannel }) {
       {channel.responses_websocket_enabled ? (
         <Badge className="border-transparent bg-brand/10 text-brand">{t('channels.values.responsesWebsocket')}</Badge>
       ) : null}
+      {channel.client_simulation_profile ? (
+        <Badge className="border-transparent bg-warning/10 text-warning">
+          {t('channels.values.clientSimulation')}
+        </Badge>
+      ) : null}
     </div>
   )
 }

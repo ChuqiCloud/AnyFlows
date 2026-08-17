@@ -4,8 +4,9 @@ use std::{
 };
 
 use af_domain::{
-    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ConcurrencyLimit, CredentialKind,
-    Protocol, ProxyId, ResponsesCompactMode, ResponsesCompactProbeResult,
+    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ClientSimulationProfile,
+    ConcurrencyLimit, CredentialKind, Protocol, ProxyId, ResponsesCompactMode,
+    ResponsesCompactProbeResult,
 };
 use sea_orm::entity::prelude::Json;
 use sha2::{Digest, Sha256};
@@ -379,6 +380,7 @@ pub struct SchedulerRuntimeTargetRecord {
     headers: Vec<SchedulerRuntimeHeader>,
     auto_ban_rules: ChannelAutoBanRules,
     pool_mode: bool,
+    client_simulation_profile: Option<ClientSimulationProfile>,
     responses_websocket_enabled: bool,
     responses_compact_mode: ResponsesCompactMode,
     responses_compact_probe_result: ResponsesCompactProbeResult,
@@ -522,6 +524,7 @@ impl SchedulerRuntimeTargetRecord {
             headers,
             auto_ban_rules: ChannelAutoBanRules::default(),
             pool_mode: false,
+            client_simulation_profile: None,
             responses_websocket_enabled: false,
             responses_compact_mode: ResponsesCompactMode::Auto,
             responses_compact_probe_result: ResponsesCompactProbeResult::Unknown,
@@ -578,6 +581,25 @@ impl SchedulerRuntimeTargetRecord {
     pub fn with_pool_mode(mut self, enabled: bool) -> Self {
         self.pool_mode = enabled;
         self
+    }
+
+    /// 显式设置客户端仿真档案，并保证快照内只保留适用的 OAuth 凭据。
+    pub fn with_client_simulation_profile(
+        mut self,
+        profile: Option<ClientSimulationProfile>,
+    ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
+        if profile.is_some()
+            && (self.channel_type != ChannelType::Anthropic
+                || self.protocol != Protocol::Anthropic
+                || self
+                    .credentials
+                    .iter()
+                    .any(|credential| credential.credential_kind() != CredentialKind::Oauth))
+        {
+            return Err(SchedulerRuntimeTargetRecordError);
+        }
+        self.client_simulation_profile = profile;
+        Ok(self)
     }
 
     /// 显式设置原生 Responses WebSocket 能力。
@@ -641,6 +663,12 @@ impl SchedulerRuntimeTargetRecord {
     #[must_use]
     pub const fn pool_mode(&self) -> bool {
         self.pool_mode
+    }
+
+    /// 返回目标显式选择的版本化客户端仿真档案。
+    #[must_use]
+    pub const fn client_simulation_profile(&self) -> Option<ClientSimulationProfile> {
+        self.client_simulation_profile
     }
 
     /// 返回渠道是否显式允许使用原生 Responses WebSocket。
@@ -788,6 +816,7 @@ impl fmt::Debug for SchedulerRuntimeTargetRecord {
             .field("header_count", &self.headers.len())
             .field("auto_ban_rules", &self.auto_ban_rules)
             .field("pool_mode", &self.pool_mode)
+            .field("client_simulation_profile", &self.client_simulation_profile)
             .field(
                 "responses_websocket_enabled",
                 &self.responses_websocket_enabled,
