@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Eye,
   EyeOff,
+  Github,
   LoaderCircle,
   LockKeyhole,
   RefreshCw,
@@ -18,6 +19,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { AuthCapabilityCard, AuthCapabilitySkeleton } from '@/features/auth/auth-capability-card'
 import { AuthPageShell } from '@/features/auth/auth-page-shell'
+import { beginGitHubOAuthLogin } from '@/features/auth/oauth-login-api'
 import { establishManagementSession } from '@/features/auth/session-query'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
 import { apiClient, ApiError } from '@/lib/api'
@@ -60,6 +62,7 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
       return data
     },
   })
+  const oauthMutation = useMutation({ mutationFn: beginGitHubOAuthLogin })
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -73,11 +76,24 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
     }
   }
 
+  async function handleGitHubLogin() {
+    setLoginError(undefined)
+    try {
+      const response = await oauthMutation.mutateAsync()
+      window.location.assign(response.authorization_url)
+    } catch {
+      setLoginError('unavailable')
+    }
+  }
+
   const site = siteQuery.data
   const siteName = site?.site_name ?? t('brand.name')
   const heroTitle = site?.brand.tagline ?? t('auth.login.heroTitle')
   const heroBody = site?.brand.description ?? t('auth.login.heroBody')
   const passwordLoginEnabled = site?.authentication.password_login_enabled ?? false
+  const githubLoginEnabled = site?.authentication.oauth_providers?.some(
+    (provider) => provider.id === 'github',
+  ) ?? false
   const registrationEnabled = site?.authentication.registration_enabled ?? false
   const registrationAvailable = passwordLoginEnabled && registrationEnabled
   const visibleError = loginError ?? (noticeDismissed ? undefined : notice)
@@ -115,7 +131,7 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
               </div>
             )}
           />
-        ) : !passwordLoginEnabled ? (
+        ) : !passwordLoginEnabled && !githubLoginEnabled ? (
           <AuthCapabilityCard
             icon={<LockKeyhole className="size-5" aria-hidden="true" />}
             title={t('auth.login.disabledTitle')}
@@ -138,6 +154,48 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
 
             <CardContent className="px-6 pb-6 sm:px-7 sm:pb-7">
               <form className="grid gap-5" onSubmit={handleSubmit}>
+                {githubLoginEnabled ? (
+                  <Button
+                    type="button"
+                    size="lg"
+                    variant="secondary"
+                    className="w-full"
+                    disabled={oauthMutation.isPending}
+                    onClick={() => void handleGitHubLogin()}
+                  >
+                    {oauthMutation.isPending
+                      ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+                      : <Github className="size-4" aria-hidden="true" />}
+                    {oauthMutation.isPending ? t('auth.login.oauthStarting') : t('auth.login.github')}
+                  </Button>
+                ) : null}
+
+                {githubLoginEnabled && passwordLoginEnabled ? (
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground" aria-hidden="true">
+                    <span className="h-px flex-1 bg-[var(--hairline)]" />
+                    <span>{t('auth.login.orPassword')}</span>
+                    <span className="h-px flex-1 bg-[var(--hairline)]" />
+                  </div>
+                ) : null}
+
+                {visibleError ? (
+                  <div
+                    id="login-error"
+                    role="alert"
+                    aria-live="polite"
+                    className={isSuccessNotice
+                      ? 'flex gap-2.5 rounded-lg border border-success/20 bg-success/8 px-3 py-2.5 text-sm leading-5 text-success'
+                      : 'flex gap-2.5 rounded-lg border border-destructive/20 bg-destructive/8 px-3 py-2.5 text-sm leading-5 text-destructive'}
+                  >
+                    {isSuccessNotice
+                      ? <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                      : <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}
+                    <span>{t(`auth.errors.${visibleError}`)}</span>
+                  </div>
+                ) : null}
+
+                {passwordLoginEnabled ? (
+                  <>
                 <div className="grid gap-2">
                   <label htmlFor="management-username" className="text-sm font-medium">{t('auth.login.username')}</label>
                   <Input
@@ -196,22 +254,6 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                   </div>
                 </div>
 
-                {visibleError ? (
-                  <div
-                    id="login-error"
-                    role="alert"
-                    aria-live="polite"
-                    className={isSuccessNotice
-                      ? 'flex gap-2.5 rounded-lg border border-success/20 bg-success/8 px-3 py-2.5 text-sm leading-5 text-success'
-                      : 'flex gap-2.5 rounded-lg border border-destructive/20 bg-destructive/8 px-3 py-2.5 text-sm leading-5 text-destructive'}
-                  >
-                    {isSuccessNotice
-                      ? <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                      : <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}
-                    <span>{t(`auth.errors.${visibleError}`)}</span>
-                  </div>
-                ) : null}
-
                 <Button type="submit" size="lg" className="w-full" disabled={loginMutation.isPending}>
                   {loginMutation.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}
                   {loginMutation.isPending ? t('auth.login.submitting') : t('auth.login.submit')}
@@ -221,6 +263,8 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                     {t('auth.login.forgotPassword')}
                   </a>
                 </p>
+                  </>
+                ) : null}
                 {registrationAvailable ? (
                   <p className="text-center text-sm text-muted-foreground">
                     {t('auth.login.noAccount')}{' '}

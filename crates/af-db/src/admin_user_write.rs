@@ -480,7 +480,7 @@ async fn begin_transaction(
         .map_err(|_| record_internal_error(AdminUserRepositoryError::Query))
 }
 
-async fn create_user_in_transaction(
+pub(crate) async fn create_user_in_transaction(
     transaction: &DatabaseTransaction,
     record: AdminUserCreateRecord,
 ) -> Result<AdminUserRecord, AdminUserRepositoryError> {

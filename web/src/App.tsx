@@ -6,6 +6,7 @@ import { AppShell } from '@/components/layout/app-shell'
 import { AuthenticationSettingsPage } from '@/features/authentication-settings/authentication-settings-page'
 import { ForgotPasswordPage } from '@/features/auth/forgot-password-page'
 import { LoginPage, type LoginNotice } from '@/features/auth/login-page'
+import { OAuthCallbackPage } from '@/features/auth/oauth-callback-page'
 import { ResetPasswordPage } from '@/features/auth/reset-password-page'
 import { SessionBoundary } from '@/features/auth/session-boundary'
 import { endManagementSession } from '@/features/auth/session-query'
@@ -73,7 +74,7 @@ function useHashRoute(): [AppRoute, (hash: string) => void] {
 }
 
 type ManagementEntryProps = {
-  view: Exclude<AppView, 'landing' | 'public-models' | 'register' | 'share' | 'forgot-password' | 'reset-password'>
+  view: Exclude<AppView, 'landing' | 'public-models' | 'register' | 'share' | 'forgot-password' | 'reset-password' | 'oauth-callback'>
   credentialChannelId?: number
   loginNotice?: LoginNotice
   onAuthenticated: () => void
@@ -347,6 +348,9 @@ export default function App() {
   }
   if (view === 'reset-password') {
     return <ResetPasswordPage token={route.resetToken} onCompleted={openPasswordResetSuccess} />
+  }
+  if (view === 'oauth-callback') {
+    return <OAuthCallbackPage onAuthenticated={openConsole} />
   }
   if (view === 'share') {
     return <PublicPlaygroundSharePage key={route.shareToken ?? 'invalid'} token={route.shareToken} />

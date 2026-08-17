@@ -3898,6 +3898,301 @@
         ]
       }
     },
+    "/api/auth/oauth/github/start": {
+      "post": {
+        "tags": [
+          "OAuth ??"
+        ],
+        "summary": "?? GitHub OAuth ??",
+        "operationId": "startGitHubOAuthLogin",
+        "responses": {
+          "200": {
+            "description": "?????? GitHub ????",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthLoginStartResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "GitHub OAuth ????????",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "??????",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/oauth/github/callback": {
+      "get": {
+        "tags": [
+          "OAuth ??"
+        ],
+        "summary": "?? GitHub OAuth ??",
+        "operationId": "completeGitHubOAuthLogin",
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "description": "????????? state",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "description": "GitHub ???",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "description": "GitHub ????",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "303": {
+            "description": "????????????"
+          },
+          "500": {
+            "description": "??????????",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/oauth/exchange": {
+      "post": {
+        "tags": [
+          "OAuth ??"
+        ],
+        "summary": "????? OAuth ????",
+        "operationId": "exchangeOAuthLoginTicket",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthLoginExchangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "?? bearer ????",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "??????",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "???????????",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "??????",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/authentication-settings/oauth/github": {
+      "get": {
+        "tags": [
+          "OAuth ??"
+        ],
+        "summary": "?? GitHub OAuth ????",
+        "operationId": "getAdminGitHubOAuthLoginSettings",
+        "responses": {
+          "200": {
+            "description": "???? GitHub OAuth App ??",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOAuthLoginProviderSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "??????",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "?????????",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "??????",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "OAuth ??"
+        ],
+        "summary": "?? GitHub OAuth ????",
+        "operationId": "updateAdminGitHubOAuthLoginSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminOAuthLoginProviderSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "????????",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOAuthLoginProviderSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "??????",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "??????",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "?????????",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "??????????????",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "??????",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/account/organizations": {
       "get": {
         "tags": [
@@ -19070,6 +19365,80 @@
           "connected"
         ]
       },
+      "AdminOAuthLoginProviderSettings": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "client_secret_configured",
+          "version"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "client_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "client_secret_configured": {
+            "type": "boolean"
+          },
+          "callback_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "maxLength": 4096
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminOAuthLoginProviderSettingsRequest": {
+        "type": "object",
+        "required": [
+          "expected_version",
+          "enabled",
+          "clear_client_secret"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "client_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "client_secret": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "password",
+            "maxLength": 4096
+          },
+          "clear_client_secret": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "AdminOAuthManualCallbackRequest": {
         "type": "object",
         "description": "远程管理场景提交的完整 loopback callback URL。",
@@ -21468,7 +21837,7 @@
               "null"
             ],
             "format": "double",
-            "default": 1.0,
+            "default": 1,
             "maximum": 4,
             "minimum": 0.25
           },
@@ -21736,6 +22105,7 @@
               "credential_not_found",
               "probe_unavailable",
               "oauth_provider_not_configured",
+              "oauth_login_settings_conflict",
               "oauth_credential_provider_mismatch",
               "oauth_authorization_capacity_exceeded",
               "oauth_authorization_not_found",
@@ -22142,6 +22512,33 @@
             "type": "string",
             "maxLength": 64,
             "pattern": "^[0-9]+(?:\\.[0-9]+)?$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OAuthLoginExchangeRequest": {
+        "type": "object",
+        "required": [
+          "ticket"
+        ],
+        "properties": {
+          "ticket": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OAuthLoginStartResponse": {
+        "type": "object",
+        "required": [
+          "authorization_url"
+        ],
+        "properties": {
+          "authorization_url": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 4096
           }
         },
         "additionalProperties": false
@@ -24641,7 +25038,8 @@
         "required": [
           "password_login_enabled",
           "registration_enabled",
-          "registration_email_required"
+          "registration_email_required",
+          "oauth_providers"
         ],
         "properties": {
           "password_login_enabled": {
@@ -24652,6 +25050,12 @@
           },
           "registration_email_required": {
             "type": "boolean"
+          },
+          "oauth_providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicOAuthLoginProvider"
+            }
           }
         },
         "additionalProperties": false
@@ -24680,6 +25084,24 @@
               "null"
             ],
             "maxLength": 500
+          }
+        },
+        "additionalProperties": false
+      },
+      "PublicOAuthLoginProvider": {
+        "type": "object",
+        "required": [
+          "id",
+          "display_name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 64
           }
         },
         "additionalProperties": false
@@ -26791,6 +27213,9 @@
     }
   },
   "tags": [
+    {
+      "name": "OAuth ??"
+    },
     {
       "name": "公开注册"
     },

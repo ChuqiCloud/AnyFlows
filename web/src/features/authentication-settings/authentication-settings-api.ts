@@ -40,6 +40,7 @@ export function useUpdateAdminAuthenticationSettings() {
           ? {
               ...current,
               authentication: {
+                ...current.authentication,
                 password_login_enabled: settings.password_login_enabled,
                 registration_enabled: settings.registration_enabled,
                 registration_email_required: settings.email_required,

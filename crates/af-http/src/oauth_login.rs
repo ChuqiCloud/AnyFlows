@@ -1,0 +1,376 @@
+use std::sync::Arc;
+
+use af_admin::{
+    AdminOAuthLoginProviderSettings, AdminOAuthLoginProviderSettingsCommand, OAuthLoginError,
+    OAuthLoginService, SessionAuthenticator,
+};
+use axum::{
+    Extension, Json, Router,
+    body::Body,
+    extract::{Query, State, rejection::JsonRejection, rejection::QueryRejection},
+    middleware,
+    response::{IntoResponse, Response},
+    routing::{get, post},
+};
+use http::{
+    HeaderMap, HeaderName, HeaderValue, StatusCode,
+    header::{CACHE_CONTROL, COOKIE, LOCATION, SET_COOKIE},
+};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest as _, Sha256};
+use url::Url;
+use utoipa::ToSchema;
+
+use crate::{
+    management_auth::{ManagementAuthenticationState, authenticate_management_session},
+    management_authorization::authorize_management_admin,
+    management_error::ManagementError,
+    management_session::{issue_session_for_user, no_store_json},
+};
+
+const GITHUB_PROVIDER: &str = "github";
+const OAUTH_STATE_COOKIE: &str = "af_oauth_login_state";
+const OAUTH_CALLBACK_PATH: &str = "/api/auth/oauth/github/callback";
+const OAUTH_STATE_COOKIE_MAX_AGE_SECONDS: u64 = 10 * 60;
+const OAUTH_STATE_COOKIE_DOMAIN: &str = "oauth-login-browser-state-v1";
+
+#[derive(Clone)]
+struct OAuthLoginHttpState {
+    service: Arc<dyn OAuthLoginService>,
+    session_authenticator: Arc<dyn SessionAuthenticator>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = OAuthLoginStartResponse)]
+pub(crate) struct OAuthLoginStartResponse {
+    #[schema(format = "uri", max_length = 4096)]
+    authorization_url: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = OAuthLoginExchangeRequest)]
+pub(crate) struct OAuthLoginExchangeRequest {
+    #[schema(pattern = r"^[A-Za-z0-9_-]{43}$")]
+    ticket: String,
+}
+
+#[derive(Deserialize)]
+struct OAuthLoginCallbackQuery {
+    state: Option<String>,
+    code: Option<String>,
+    error: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminOAuthLoginProviderSettings)]
+pub(crate) struct AdminOAuthLoginProviderSettingsResponse {
+    enabled: bool,
+    #[schema(max_length = 255)]
+    client_id: Option<String>,
+    client_secret_configured: bool,
+    #[schema(format = "uri", max_length = 4096)]
+    callback_url: Option<String>,
+    #[schema(minimum = 1)]
+    version: i64,
+}
+
+impl From<AdminOAuthLoginProviderSettings> for AdminOAuthLoginProviderSettingsResponse {
+    fn from(settings: AdminOAuthLoginProviderSettings) -> Self {
+        Self {
+            enabled: settings.enabled(),
+            client_id: settings.client_id().map(str::to_owned),
+            client_secret_configured: settings.client_secret_configured(),
+            callback_url: settings.callback_url().map(str::to_owned),
+            version: settings.version(),
+        }
+    }
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminOAuthLoginProviderSettingsRequest)]
+pub(crate) struct AdminOAuthLoginProviderSettingsRequest {
+    #[schema(minimum = 1)]
+    expected_version: i64,
+    enabled: bool,
+    #[schema(max_length = 255)]
+    client_id: Option<String>,
+    #[schema(max_length = 4096, format = Password)]
+    client_secret: Option<String>,
+    #[serde(default)]
+    clear_client_secret: bool,
+}
+
+/// 构建 GitHub 用户登录 OAuth 的公开、回调和管理员设置路由。
+pub(crate) fn build_oauth_login_router(
+    service: Arc<dyn OAuthLoginService>,
+    session_authenticator: Arc<dyn SessionAuthenticator>,
+) -> Router {
+    let authentication = middleware::from_fn_with_state(
+        ManagementAuthenticationState::new(Arc::clone(&session_authenticator)),
+        authenticate_management_session,
+    );
+    Router::new()
+        .route("/api/auth/oauth/github/start", post(start_github_login))
+        .route(
+            "/api/auth/oauth/github/callback",
+            get(complete_github_login),
+        )
+        .route("/api/auth/oauth/exchange", post(exchange_oauth_ticket))
+        .route(
+            "/api/admin/authentication-settings/oauth/github",
+            get(get_admin_github_settings)
+                .put(update_admin_github_settings)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(authentication),
+        )
+        .with_state(OAuthLoginHttpState {
+            service,
+            session_authenticator,
+        })
+}
+
+async fn start_github_login(
+    State(state): State<OAuthLoginHttpState>,
+) -> Result<Response, ManagementError> {
+    let started = state
+        .service
+        .begin(GITHUB_PROVIDER)
+        .await
+        .map_err(map_oauth_login_error)?;
+    let (state_digest, secure) = oauth_state_cookie_material(started.authorization_url())?;
+    let mut response = no_store_json(OAuthLoginStartResponse {
+        authorization_url: started.authorization_url().to_owned(),
+    });
+    response
+        .headers_mut()
+        .insert(SET_COOKIE, oauth_state_set_cookie(&state_digest, secure)?);
+    Ok(response)
+}
+
+/// 外部回调始终使用 303 且禁止 Referer，避免 code/state 进入后续前端请求。
+async fn complete_github_login(
+    State(state): State<OAuthLoginHttpState>,
+    headers: HeaderMap,
+    query: Result<Query<OAuthLoginCallbackQuery>, QueryRejection>,
+) -> Response {
+    let result = match query {
+        Ok(Query(query)) => match (query.state, query.code, query.error) {
+            (Some(state_value), Some(code), None)
+                if oauth_state_cookie_matches(&headers, &state_value) =>
+            {
+                state
+                    .service
+                    .complete(GITHUB_PROVIDER, state_value, code)
+                    .await
+            }
+            (Some(state_value), None, Some(error))
+                if valid_provider_error(&error)
+                    && oauth_state_cookie_matches(&headers, &state_value) =>
+            {
+                state.service.cancel(GITHUB_PROVIDER, state_value).await
+            }
+            _ => Err(OAuthLoginError::Rejected),
+        },
+        Err(_) => Err(OAuthLoginError::Rejected),
+    };
+    let callback = match result {
+        Ok(callback) => Ok(callback),
+        Err(_) => state.service.callback_failure().await,
+    };
+    let mut response = match callback {
+        Ok(callback) => {
+            redirect_no_store(callback.redirect_url()).unwrap_or_else(|error| error.into_response())
+        }
+        Err(error) => map_oauth_login_error(error).into_response(),
+    };
+    harden_oauth_callback_response(&mut response);
+    response
+}
+
+async fn exchange_oauth_ticket(
+    State(state): State<OAuthLoginHttpState>,
+    request: Result<Json<OAuthLoginExchangeRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let user_id = state
+        .service
+        .exchange_ticket(request.ticket)
+        .await
+        .map_err(map_oauth_login_error)?;
+    issue_session_for_user(state.session_authenticator.as_ref(), user_id).await
+}
+
+async fn get_admin_github_settings(
+    State(state): State<OAuthLoginHttpState>,
+    Extension(authentication): Extension<af_admin::SessionAuthentication>,
+) -> Result<Response, ManagementError> {
+    let settings = state
+        .service
+        .admin_settings(authentication.principal())
+        .await
+        .map_err(map_oauth_login_error)?;
+    Ok(no_store_json(
+        AdminOAuthLoginProviderSettingsResponse::from(settings),
+    ))
+}
+
+async fn update_admin_github_settings(
+    State(state): State<OAuthLoginHttpState>,
+    Extension(authentication): Extension<af_admin::SessionAuthentication>,
+    request: Result<Json<AdminOAuthLoginProviderSettingsRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let command = AdminOAuthLoginProviderSettingsCommand::new(
+        request.expected_version,
+        request.enabled,
+        request.client_id,
+        request.client_secret,
+        request.clear_client_secret,
+    )
+    .map_err(map_oauth_login_error)?;
+    let settings = state
+        .service
+        .update_admin_settings(authentication.principal(), command)
+        .await
+        .map_err(map_oauth_login_error)?;
+    Ok(no_store_json(
+        AdminOAuthLoginProviderSettingsResponse::from(settings),
+    ))
+}
+
+fn redirect_no_store(target: &str) -> Result<Response, ManagementError> {
+    let location = HeaderValue::from_str(target).map_err(|_| ManagementError::Internal)?;
+    let mut response = Response::new(Body::empty());
+    *response.status_mut() = StatusCode::SEE_OTHER;
+    response.headers_mut().insert(LOCATION, location);
+    response
+        .headers_mut()
+        .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response.headers_mut().insert(
+        HeaderName::from_static("referrer-policy"),
+        HeaderValue::from_static("no-referrer"),
+    );
+    Ok(response)
+}
+
+/// 授权 URL 由受信服务构造；HTTP 边界仍闭合校验绑定 Cookie 所需字段。
+fn oauth_state_cookie_material(authorization_url: &str) -> Result<(String, bool), ManagementError> {
+    let authorization_url = Url::parse(authorization_url).map_err(|_| ManagementError::Internal)?;
+    let mut state = None;
+    let mut redirect_uri = None;
+    for (name, value) in authorization_url.query_pairs() {
+        match name.as_ref() {
+            "state" if state.replace(value.into_owned()).is_some() => {
+                return Err(ManagementError::Internal);
+            }
+            "redirect_uri" if redirect_uri.replace(value.into_owned()).is_some() => {
+                return Err(ManagementError::Internal);
+            }
+            _ => {}
+        }
+    }
+    let state = state
+        .filter(|value| !value.is_empty() && value.len() <= 4_096)
+        .ok_or(ManagementError::Internal)?;
+    let redirect_uri = Url::parse(&redirect_uri.ok_or(ManagementError::Internal)?)
+        .map_err(|_| ManagementError::Internal)?;
+    let secure = match redirect_uri.scheme() {
+        "https" => true,
+        "http" => false,
+        _ => return Err(ManagementError::Internal),
+    };
+    Ok((oauth_state_cookie_digest(&state), secure))
+}
+
+fn oauth_state_set_cookie(digest: &str, secure: bool) -> Result<HeaderValue, ManagementError> {
+    let secure_attribute = if secure { "; Secure" } else { "" };
+    HeaderValue::from_str(&format!(
+        "{OAUTH_STATE_COOKIE}={digest}; Path={OAUTH_CALLBACK_PATH}; Max-Age={OAUTH_STATE_COOKIE_MAX_AGE_SECONDS}; HttpOnly; SameSite=Lax{secure_attribute}"
+    ))
+    .map_err(|_| ManagementError::Internal)
+}
+
+/// Cookie 只保存 state 摘要；重复同名 Cookie 一律拒绝，避免解析歧义。
+fn oauth_state_cookie_matches(headers: &HeaderMap, state: &str) -> bool {
+    let expected = oauth_state_cookie_digest(state);
+    let mut actual = None;
+    for header in headers.get_all(COOKIE) {
+        let Ok(header) = header.to_str() else {
+            return false;
+        };
+        for pair in header.split(';') {
+            let Some((name, value)) = pair.trim().split_once('=') else {
+                continue;
+            };
+            if name == OAUTH_STATE_COOKIE {
+                if actual.replace(value).is_some() {
+                    return false;
+                }
+            }
+        }
+    }
+    actual.is_some_and(|actual| constant_time_eq(actual.as_bytes(), expected.as_bytes()))
+}
+
+fn oauth_state_cookie_digest(state: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(OAUTH_STATE_COOKIE_DOMAIN.as_bytes());
+    hasher.update([0]);
+    hasher.update(state.as_bytes());
+    let bytes = hasher.finalize();
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(64);
+    for byte in bytes {
+        output.push(char::from(HEX[usize::from(byte >> 4)]));
+        output.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    output
+}
+
+fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+    left.iter()
+        .zip(right)
+        .fold(0_u8, |difference, (left, right)| {
+            difference | (left ^ right)
+        })
+        == 0
+}
+
+fn harden_oauth_callback_response(response: &mut Response) {
+    response
+        .headers_mut()
+        .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response.headers_mut().insert(
+        HeaderName::from_static("referrer-policy"),
+        HeaderValue::from_static("no-referrer"),
+    );
+    response.headers_mut().insert(
+        SET_COOKIE,
+        HeaderValue::from_static(
+            "af_oauth_login_state=; Path=/api/auth/oauth/github/callback; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax",
+        ),
+    );
+}
+
+fn valid_provider_error(error: &str) -> bool {
+    !error.is_empty() && error.len() <= 256 && !error.chars().any(char::is_control)
+}
+
+fn map_oauth_login_error(error: OAuthLoginError) -> ManagementError {
+    match error {
+        OAuthLoginError::InvalidInput => ManagementError::InvalidRequest,
+        OAuthLoginError::Forbidden => ManagementError::Forbidden,
+        OAuthLoginError::Unavailable => ManagementError::OauthProviderNotConfigured,
+        OAuthLoginError::Rejected => ManagementError::OauthAuthorizationDenied,
+        OAuthLoginError::ConcurrentUpdate => ManagementError::OauthLoginSettingsConflict,
+        OAuthLoginError::ProviderUnavailable => ManagementError::OauthUnavailable,
+        OAuthLoginError::Internal => ManagementError::Internal,
+    }
+}

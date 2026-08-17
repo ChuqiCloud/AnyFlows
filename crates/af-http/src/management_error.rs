@@ -191,6 +191,8 @@ pub(crate) enum ManagementError {
     ProbeUnavailable,
     /// 请求的上游 OAuth provider 未在启动配置中启用。
     OauthProviderNotConfigured,
+    /// 用户登录 OAuth Provider 设置已被其他管理员更新。
+    OauthLoginSettingsConflict,
     /// 目标 OAuth 凭据已经绑定其他 provider。
     OauthCredentialProviderMismatch,
     /// 单实例待完成 OAuth 授权已达到容量上限。
@@ -879,6 +881,13 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "oauth_provider_not_configured",
                     message: "OAuth provider not configured",
+                },
+            ),
+            Self::OauthLoginSettingsConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "oauth_login_settings_conflict",
+                    message: "OAuth login settings changed",
                 },
             ),
             Self::OauthCredentialProviderMismatch => (

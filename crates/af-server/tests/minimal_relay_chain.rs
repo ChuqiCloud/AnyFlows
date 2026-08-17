@@ -1926,6 +1926,7 @@ async fn start_server(
         Arc::new(RejectSubscriptions),
         Arc::new(RejectUserInvitations),
         Arc::new(RejectSiteSettings),
+        None,
         Arc::new(RejectAdminEmailSettings),
         Arc::new(RejectAdminNetworkSettings),
         Arc::new(RejectAdminPaymentSettings),

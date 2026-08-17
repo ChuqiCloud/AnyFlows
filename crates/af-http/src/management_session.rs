@@ -1,4 +1,5 @@
 use af_admin::{IssuedSession, LoginCredentials, SessionAuthenticationError};
+use af_domain::UserId;
 use axum::{
     Json,
     extract::{Extension, State},
@@ -81,6 +82,18 @@ pub(crate) async fn login_with_authenticator(
     let result = authenticator.login(&credentials).await;
     drop(credentials);
     let session = result.map_err(map_session_error)?;
+    Ok(no_store_json(login_response(session)))
+}
+
+/// 为已经通过外部身份校验的用户签发现有 bearer 会话响应。
+pub(crate) async fn issue_session_for_user(
+    authenticator: &dyn af_admin::SessionAuthenticator,
+    user_id: UserId,
+) -> Result<Response, ManagementError> {
+    let session = authenticator
+        .issue_for_user(user_id)
+        .await
+        .map_err(map_session_error)?;
     Ok(no_store_json(login_response(session)))
 }
 

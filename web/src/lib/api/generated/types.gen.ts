@@ -711,6 +711,20 @@ export type AdminOAuthCompletionResponse = {
     status: AdminOAuthCompletionStatus;
 };
 export type AdminOAuthCompletionStatus = 'connected';
+export type AdminOAuthLoginProviderSettings = {
+    enabled: boolean;
+    client_id?: string | null;
+    client_secret_configured: boolean;
+    callback_url?: string | null;
+    version: number;
+};
+export type AdminOAuthLoginProviderSettingsRequest = {
+    expected_version: number;
+    enabled: boolean;
+    client_id?: string | null;
+    client_secret?: string | null;
+    clear_client_secret: boolean;
+};
 export type AdminOAuthManualCallbackRequest = {
     provider: AdminOAuthProvider;
 };
@@ -1144,7 +1158,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'password_login_disabled' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'site_settings_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'token_outcome_unknown' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'organization_not_found' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'topup_unavailable' | 'topup_provider_rejected' | 'topup_order_conflict' | 'topup_order_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'subscription_plan_not_found' | 'subscription_plan_disabled' | 'subscription_not_found' | 'subscription_transition_invalid' | 'subscription_in_use' | 'subscription_conflict' | 'subscription_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'debug_trace_not_found' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_expression_invalid' | 'model_price_expression_preview_invalid' | 'model_price_expression_evaluation_failed' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'password_login_disabled' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'site_settings_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'token_outcome_unknown' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_login_settings_conflict' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'organization_not_found' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'topup_unavailable' | 'topup_provider_rejected' | 'topup_order_conflict' | 'topup_order_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'subscription_plan_not_found' | 'subscription_plan_disabled' | 'subscription_not_found' | 'subscription_transition_invalid' | 'subscription_in_use' | 'subscription_conflict' | 'subscription_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'debug_trace_not_found' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_expression_invalid' | 'model_price_expression_preview_invalid' | 'model_price_expression_evaluation_failed' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
     message: string;
 };
 export type ModelCatalogBillingMode = 'per_token' | 'free';
@@ -1199,6 +1213,12 @@ export type ModelCatalogTokenPrices = {
     cache_read: string;
     cache_creation_5m: string;
     cache_creation_1h: string;
+};
+export type OAuthLoginExchangeRequest = {
+    ticket: string;
+};
+export type OAuthLoginStartResponse = {
+    authorization_url: string;
 };
 export type OrganizationAuditLogListResponse = {
     logs: Array<OrganizationAuditLogResponse>;
@@ -1646,11 +1666,16 @@ export type PublicAuthenticationCapabilities = {
     password_login_enabled: boolean;
     registration_enabled: boolean;
     registration_email_required: boolean;
+    oauth_providers: Array<PublicOAuthLoginProvider>;
 };
 export type PublicBrandSettings = {
     logo_url?: string | null;
     tagline?: string | null;
     description?: string | null;
+};
+export type PublicOAuthLoginProvider = {
+    id: string;
+    display_name: string;
 };
 export type PublicSiteSettings = {
     site_name: string;
@@ -3114,6 +3139,85 @@ export type CompleteAdminOAuthManualCallbackResponses = {
     200: AdminOAuthCompletionResponse;
 };
 export type CompleteAdminOAuthManualCallbackResponse = CompleteAdminOAuthManualCallbackResponses[keyof CompleteAdminOAuthManualCallbackResponses];
+export type StartGitHubOAuthLoginData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/auth/oauth/github/start';
+};
+export type StartGitHubOAuthLoginErrors = {
+    409: ManagementError;
+    500: ManagementError;
+};
+export type StartGitHubOAuthLoginError = StartGitHubOAuthLoginErrors[keyof StartGitHubOAuthLoginErrors];
+export type StartGitHubOAuthLoginResponses = {
+    200: OAuthLoginStartResponse;
+};
+export type StartGitHubOAuthLoginResponse = StartGitHubOAuthLoginResponses[keyof StartGitHubOAuthLoginResponses];
+export type CompleteGitHubOAuthLoginData = {
+    body?: never;
+    path?: never;
+    query?: {
+        state?: string;
+        code?: string;
+        error?: string;
+    };
+    url: '/api/auth/oauth/github/callback';
+};
+export type CompleteGitHubOAuthLoginErrors = {
+    500: ManagementError;
+};
+export type CompleteGitHubOAuthLoginError = CompleteGitHubOAuthLoginErrors[keyof CompleteGitHubOAuthLoginErrors];
+export type ExchangeOAuthLoginTicketData = {
+    body: OAuthLoginExchangeRequest;
+    path?: never;
+    query?: never;
+    url: '/api/auth/oauth/exchange';
+};
+export type ExchangeOAuthLoginTicketErrors = {
+    400: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type ExchangeOAuthLoginTicketError = ExchangeOAuthLoginTicketErrors[keyof ExchangeOAuthLoginTicketErrors];
+export type ExchangeOAuthLoginTicketResponses = {
+    200: LoginResponse;
+};
+export type ExchangeOAuthLoginTicketResponse = ExchangeOAuthLoginTicketResponses[keyof ExchangeOAuthLoginTicketResponses];
+export type GetAdminGitHubOAuthLoginSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/github';
+};
+export type GetAdminGitHubOAuthLoginSettingsErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminGitHubOAuthLoginSettingsError = GetAdminGitHubOAuthLoginSettingsErrors[keyof GetAdminGitHubOAuthLoginSettingsErrors];
+export type GetAdminGitHubOAuthLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type GetAdminGitHubOAuthLoginSettingsResponse = GetAdminGitHubOAuthLoginSettingsResponses[keyof GetAdminGitHubOAuthLoginSettingsResponses];
+export type UpdateAdminGitHubOAuthLoginSettingsData = {
+    body: AdminOAuthLoginProviderSettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/github';
+};
+export type UpdateAdminGitHubOAuthLoginSettingsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminGitHubOAuthLoginSettingsError = UpdateAdminGitHubOAuthLoginSettingsErrors[keyof UpdateAdminGitHubOAuthLoginSettingsErrors];
+export type UpdateAdminGitHubOAuthLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type UpdateAdminGitHubOAuthLoginSettingsResponse = UpdateAdminGitHubOAuthLoginSettingsResponses[keyof UpdateAdminGitHubOAuthLoginSettingsResponses];
 export type ListAccountOrganizationsData = {
     body?: never;
     path?: never;

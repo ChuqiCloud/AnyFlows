@@ -48,6 +48,7 @@ mod middleware;
 mod model_catalog;
 mod network_settings;
 mod oauth_connections;
+mod oauth_login;
 mod openai_audio;
 mod openai_embeddings;
 mod openai_images;
@@ -158,6 +159,8 @@ mod management_wallet_tests;
 mod network_settings_tests;
 #[cfg(test)]
 mod oauth_connections_tests;
+#[cfg(test)]
+mod oauth_login_tests;
 #[cfg(test)]
 mod operations_tests;
 #[cfg(test)]

@@ -2725,7 +2725,19 @@
       "capabilityUnavailableBody": "The service did not return a reliable authentication state, so the password form remains closed.",
       "disabledTitle": "Password sign-in is disabled",
       "disabledBody": "This site does not currently accept username and password sign-in. You can still browse the model catalog as a guest.",
-      "retry": "Check again"
+      "retry": "Check again",
+      "github": "Continue with GitHub",
+      "oauthStarting": "Opening GitHub",
+      "orPassword": "or use a password"
+    },
+    "oauthCallback": {
+      "title": "Completing sign-in",
+      "exchanging": "Securely exchanging the one-time login ticket.",
+      "succeeded": "Sign-in is complete. Opening the console.",
+      "cancelled": "You cancelled GitHub authorization. Return to try again.",
+      "failed": "This authorization could not be completed. Start a new sign-in.",
+      "wait": "Keep this page open",
+      "retry": "Return to sign in"
     },
     "errors": {
       "invalidCredentials": "The username or password is incorrect.",
@@ -2874,6 +2886,31 @@
       "title": "Registration rate protection",
       "description": "A keyed client IP fingerprint enforces a cross-instance fixed window without storing raw IP addresses."
     },
+    "oauth": {
+      "title": "GitHub OAuth sign-in",
+      "enabled": "Enable GitHub sign-in",
+      "callback": "Authorization callback URL",
+      "callbackMissing": "Configure the public base URL in site settings first",
+      "callbackHint": "Enter this exact value as the Authorization callback URL in the GitHub OAuth App.",
+      "copyCallback": "Copy callback URL",
+      "clientId": "Client ID",
+      "clientSecret": "Client Secret action",
+      "newSecret": "New Client Secret",
+      "version": "GitHub OAuth configuration version {{version}}",
+      "secret": {
+        "keep": "Keep the current secret",
+        "replace": "Rotate the secret",
+        "clear": "Clear the secret",
+        "configured": "The secret is encrypted and will not be displayed.",
+        "missing": "No secret is configured."
+      },
+      "errors": {
+        "load": "GitHub OAuth sign-in settings could not be loaded",
+        "save": "GitHub OAuth settings could not be saved. Refresh and review the version.",
+        "publicBaseUrl": "Save a public base URL before enabling GitHub sign-in so a stable callback URL can be generated.",
+        "incomplete": "GitHub sign-in requires a callback URL, Client ID, and configured Client Secret."
+      }
+    },
     "fields": {
       "defaultGroup": "Default group",
       "initialQuota": "Initial quota",
@@ -2919,7 +2956,7 @@
     },
     "warning": {
       "title": "Confirm another entry point before disabling passwords",
-      "description": "OAuth sign-in is not available in this version. After existing sessions expire, an operator must restore the database switch before users can sign in again."
+      "description": "Confirm that at least one OAuth sign-in method is configured and working. Otherwise, an operator must restore password sign-in after existing sessions expire."
     }
   },
   "billingSettings": {

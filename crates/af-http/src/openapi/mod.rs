@@ -15,6 +15,7 @@ mod model_sync;
 mod models;
 mod network_settings;
 mod oauth_connections;
+mod oauth_login;
 mod organization_activity;
 mod organization_budget;
 mod organization_tokens;
@@ -73,6 +74,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(network_settings::document());
     document.merge(payment_settings::document());
     document.merge(oauth_connections::document());
+    document.merge(oauth_login::document());
     document.merge(organizations::document());
     document.merge(balance_alert_settings::document());
     document.merge(site_settings::document());
@@ -118,6 +120,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("网络与代理"),
         Tag::new("支付设置"),
         Tag::new("OAuth 连接"),
+        Tag::new("OAuth 登录"),
         Tag::new("企业钱包"),
         Tag::new("企业预算"),
         Tag::new("企业 API Key"),
@@ -182,7 +185,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 115);
+        assert_eq!(document.paths.paths.len(), 119);
         let operation_count = document
             .paths
             .paths
@@ -203,7 +206,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 163);
+        assert_eq!(operation_count, 168);
         assert!(
             document
                 .components
@@ -248,6 +251,11 @@ mod tests {
             "createAdminToken",
             "createAdminUser",
             "beginAdminOAuthAuthorization",
+            "startGitHubOAuthLogin",
+            "completeGitHubOAuthLogin",
+            "exchangeOAuthLoginTicket",
+            "getAdminGitHubOAuthLoginSettings",
+            "updateAdminGitHubOAuthLoginSettings",
             "confirmPasswordReset",
             "completeAdminOAuthManualCallback",
             "getUserProfile",
@@ -400,7 +408,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 322);
+        assert_eq!(schemas.len(), 327);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("ClientSimulationProfile"));
         assert!(schemas.contains_key("ClientSimulationResult"));

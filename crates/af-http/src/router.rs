@@ -7,11 +7,11 @@ use af_admin::{
     AdminModelSyncService, AdminModelWriter, AdminNetworkSettingsService,
     AdminPaymentSettingsService, AdminRouteReader, AdminRouteWriter, AdminTokenReader,
     AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, AdminWalletService,
-    InitialSetup, ModelCatalogReader, OrganizationActivityService, OrganizationBudgetService,
-    OrganizationTokenService, OrganizationWalletService, PasswordResetService,
-    PlaygroundConversationService, PlaygroundShareService, RedemptionService, RegistrationService,
-    SessionAuthenticator, SiteSettingsService, SubscriptionService, TokenAuthenticator,
-    UserInvitationService, UserTopupService, UserWalletService,
+    InitialSetup, ModelCatalogReader, OAuthLoginService, OrganizationActivityService,
+    OrganizationBudgetService, OrganizationTokenService, OrganizationWalletService,
+    PasswordResetService, PlaygroundConversationService, PlaygroundShareService, RedemptionService,
+    RegistrationService, SessionAuthenticator, SiteSettingsService, SubscriptionService,
+    TokenAuthenticator, UserInvitationService, UserTopupService, UserWalletService,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -83,6 +83,7 @@ use crate::middleware::{
 use crate::model_catalog::{list_model_providers, list_models};
 use crate::network_settings::build_network_settings_router;
 use crate::oauth_connections::{AdminOAuthConnectionService, build_admin_oauth_connection_router};
+use crate::oauth_login::build_oauth_login_router;
 use crate::openai_audio::openai_audio_transcription;
 use crate::openai_embeddings::openai_embeddings;
 use crate::openai_images::openai_images;
@@ -175,6 +176,7 @@ pub fn build_router(
     subscription_service: Arc<dyn SubscriptionService>,
     user_invitation_service: Arc<dyn UserInvitationService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
+    oauth_login_service: Option<Arc<dyn OAuthLoginService>>,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
     admin_network_settings_service: Arc<dyn AdminNetworkSettingsService>,
     admin_payment_settings_service: Arc<dyn AdminPaymentSettingsService>,
@@ -465,8 +467,12 @@ pub fn build_router(
     let site_settings_routes = build_site_settings_router(
         site_settings_service,
         registration_service,
+        oauth_login_service.clone(),
         Arc::clone(&http_state.session_authenticator),
     );
+    let oauth_login_routes = oauth_login_service.map(|service| {
+        build_oauth_login_router(service, Arc::clone(&http_state.session_authenticator))
+    });
     let email_settings_routes = build_email_settings_router(
         admin_email_settings_service,
         Arc::clone(&http_state.session_authenticator),
@@ -715,6 +721,10 @@ pub fn build_router(
         .merge(payment_settings_routes)
         .merge(credential_proxy_routes)
         .merge(balance_alert_settings_routes);
+    let management_routes = match oauth_login_routes {
+        Some(routes) => management_routes.merge(routes),
+        None => management_routes,
+    };
     let management_routes = management_routes.merge(debug_trace_routes);
     let management_routes = match (
         http_state.organization_authorization_service.clone(),
