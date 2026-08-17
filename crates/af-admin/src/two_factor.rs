@@ -321,10 +321,10 @@ mod tests {
     #[test]
     fn backup_code_hash_is_normalized_and_constant_time_checked() {
         let digest = hash_backup_code("ABCDEFGH");
-        assert!(
-            constant_time_equal(digest.as_bytes(), hash_backup_code("abcdefgh").as_bytes())
-                == false
-        );
+        assert!(!constant_time_equal(
+            digest.as_bytes(),
+            hash_backup_code("abcdefgh").as_bytes()
+        ));
         assert_eq!(
             normalize_backup_code("abcd-efgh"),
             Some("ABCDEFGH".to_owned())

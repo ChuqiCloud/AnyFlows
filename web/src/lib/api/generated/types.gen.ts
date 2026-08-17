@@ -1808,18 +1808,6 @@ export type UserInvitationSummaryResponse = {
     historical_rebate_quota: number;
     recent_rebates: Array<UserInvitationRebateResponse>;
 };
-export type UserTwoFactorStatusResponse = {
-    enabled: boolean;
-};
-export type UserTwoFactorPasswordRequest = {
-    current_password: string;
-};
-export type UserTwoFactorEnrollmentResponse = {
-    enabled: boolean;
-    secret: string;
-    otpauth_uri: string;
-    backup_codes: Array<string>;
-};
 export type UserNotificationPreferencesRequest = {
     email_product_updates: boolean;
     email_usage_alerts: boolean;
@@ -1946,6 +1934,18 @@ export type UserTopupPaymentSession = {
 } | {
     redirect_url: string;
     kind: 'redirect';
+};
+export type UserTwoFactorEnrollmentResponse = {
+    enabled: boolean;
+    secret: string;
+    otpauth_uri: string;
+    backup_codes: Array<string>;
+};
+export type UserTwoFactorPasswordRequest = {
+    current_password: string;
+};
+export type UserTwoFactorStatusResponse = {
+    enabled: boolean;
 };
 export type UserUsageLog = {
     id: number;
