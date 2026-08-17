@@ -1387,9 +1387,12 @@ mod tests {
         )
         .unwrap();
         let (record, mode) = shadow.into_parts();
-        assert_eq!(record.kind, CredentialKind::Oauth);
-        assert_eq!(record.parent_id, Some(parent_id));
-        assert_eq!(record.quota_dimension, AdminCredentialQuotaDimension::Spark);
+        assert_eq!(record.kind(), CredentialKind::Oauth);
+        assert_eq!(record.parent_id(), Some(parent_id));
+        assert_eq!(
+            record.quota_dimension(),
+            AdminCredentialQuotaDimension::Spark
+        );
         assert!(matches!(mode, AdminCredentialCreateMode::SparkShadow));
 
         assert!(

@@ -15918,8 +15918,7 @@
           },
           "quota_dimension": {
             "$ref": "#/components/schemas/AdminCredentialQuotaDimension",
-            "description": "普通凭据固定为 global；Spark 影子固定为 spark。",
-            "example": "global"
+            "description": "普通凭据固定为 global；Spark 影子固定为 spark。"
           },
           "proxy_id": {
             "type": [
@@ -16412,8 +16411,7 @@
           },
           "quota_dimension": {
             "$ref": "#/components/schemas/AdminCredentialQuotaDimension",
-            "description": "额度维度创建后不可修改；普通凭据为 global，Spark 影子为 spark。",
-            "example": "global"
+            "description": "额度维度创建后不可修改；普通凭据为 global，Spark 影子为 spark。"
           },
           "proxy_id": {
             "type": [
@@ -16552,8 +16550,7 @@
           },
           "quota_dimension": {
             "$ref": "#/components/schemas/AdminCredentialQuotaDimension",
-            "description": "普通凭据固定为 global；Spark 影子固定为 spark，创建后不可修改。",
-            "example": "global"
+            "description": "普通凭据固定为 global；Spark 影子固定为 spark，创建后不可修改。"
           },
           "proxy_id": {
             "type": [

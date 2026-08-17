@@ -305,6 +305,18 @@ impl AdminCredentialWriteRecord {
         self.kind
     }
 
+    /// 返回创建时固定的母凭据；普通凭据没有母级。
+    #[must_use]
+    pub const fn parent_id(&self) -> Option<CredentialId> {
+        self.parent_id
+    }
+
+    /// 返回创建时固定的额度维度。
+    #[must_use]
+    pub const fn quota_dimension(&self) -> CredentialQuotaDimension {
+        self.quota_dimension
+    }
+
     /// 设置创建阶段的 OAuth 待授权标记；普通更新不得使用该字段覆盖数据库状态。
     #[must_use]
     pub fn with_oauth_token_pending(mut self, pending: bool) -> Self {
