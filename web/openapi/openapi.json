@@ -2709,13 +2709,13 @@
     "/api/account/two-factor": {
       "get": {
         "tags": [
-          "涓汉璧勬枡涓庡畨鍏?"
+          "个人资料与安全"
         ],
-        "summary": "璇诲彇褰撳墠鐢ㄦ埛浜屾楠岃瘉鐘舵€?",
+        "summary": "读取当前用户二次验证状态",
         "operationId": "getUserTwoFactor",
         "responses": {
           "200": {
-            "description": "浜屾楠岃瘉鐘舵€?",
+            "description": "二次验证状态",
             "content": {
               "application/json": {
                 "schema": {
@@ -2725,7 +2725,7 @@
             }
           },
           "401": {
-            "description": "浼氳瘽鏃犳晥",
+            "description": "会话无效",
             "content": {
               "application/json": {
                 "schema": {
@@ -2735,7 +2735,7 @@
             }
           },
           "500": {
-            "description": "鏈嶅姟鍐呴儴閿欒",
+            "description": "服务内部错误",
             "content": {
               "application/json": {
                 "schema": {
@@ -2753,9 +2753,9 @@
       },
       "post": {
         "tags": [
-          "涓汉璧勬枡涓庡畨鍏?"
+          "个人资料与安全"
         ],
-        "summary": "鍚敤褰撳墠鐢ㄦ埛 TOTP 浜屾楠岃瘉",
+        "summary": "启用当前用户 TOTP 二次验证",
         "operationId": "enableUserTwoFactor",
         "requestBody": {
           "content": {
@@ -2769,7 +2769,7 @@
         },
         "responses": {
           "200": {
-            "description": "TOTP 鍏ョ綉鏉愭枡锛屼粎杩斿洖涓€娆?",
+            "description": "TOTP 入网材料，仅返回一次",
             "content": {
               "application/json": {
                 "schema": {
@@ -2779,7 +2779,7 @@
             }
           },
           "400": {
-            "description": "璇锋眰姝ｆ枃鏃犳晥",
+            "description": "请求正文无效",
             "content": {
               "application/json": {
                 "schema": {
@@ -2789,7 +2789,7 @@
             }
           },
           "401": {
-            "description": "浼氳瘽鏃犳晥",
+            "description": "会话无效",
             "content": {
               "application/json": {
                 "schema": {
@@ -2799,7 +2799,7 @@
             }
           },
           "409": {
-            "description": "褰撳墠瀵嗙爜閿欒鎴栧凡缁忓惎鐢?",
+            "description": "当前密码错误或已经启用",
             "content": {
               "application/json": {
                 "schema": {
@@ -2809,7 +2809,7 @@
             }
           },
           "500": {
-            "description": "鏈嶅姟鍐呴儴閿欒",
+            "description": "服务内部错误",
             "content": {
               "application/json": {
                 "schema": {
@@ -2827,9 +2827,9 @@
       },
       "delete": {
         "tags": [
-          "涓汉璧勬枡涓庡畨鍏?"
+          "个人资料与安全"
         ],
-        "summary": "鍋滅敤褰撳墠鐢ㄦ埛 TOTP 浜屾楠岃瘉",
+        "summary": "停用当前用户 TOTP 二次验证",
         "operationId": "disableUserTwoFactor",
         "requestBody": {
           "content": {
@@ -2843,10 +2843,10 @@
         },
         "responses": {
           "204": {
-            "description": "TOTP 宸插仠鐢紝鏃т細璇濆凡鎾ら攢"
+            "description": "TOTP 已停用，旧会话已撤销"
           },
           "400": {
-            "description": "璇锋眰姝ｆ枃鏃犳晥",
+            "description": "请求正文无效",
             "content": {
               "application/json": {
                 "schema": {
@@ -2856,7 +2856,7 @@
             }
           },
           "401": {
-            "description": "浼氳瘽鏃犳晥",
+            "description": "会话无效",
             "content": {
               "application/json": {
                 "schema": {
@@ -2866,7 +2866,7 @@
             }
           },
           "409": {
-            "description": "褰撳墠瀵嗙爜閿欒鎴栧皻鏈惎鐢?",
+            "description": "当前密码错误或尚未启用",
             "content": {
               "application/json": {
                 "schema": {
@@ -2876,7 +2876,7 @@
             }
           },
           "500": {
-            "description": "鏈嶅姟鍐呴儴閿欒",
+            "description": "服务内部错误",
             "content": {
               "application/json": {
                 "schema": {
