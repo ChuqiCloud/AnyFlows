@@ -3901,13 +3901,13 @@
     "/api/auth/oauth/github/start": {
       "post": {
         "tags": [
-          "OAuth ??"
+          "OAuth 登录"
         ],
-        "summary": "?? GitHub OAuth ??",
+        "summary": "启动 GitHub OAuth 登录",
         "operationId": "startGitHubOAuthLogin",
         "responses": {
           "200": {
-            "description": "?????? GitHub ????",
+            "description": "服务端构造的 GitHub 授权地址",
             "content": {
               "application/json": {
                 "schema": {
@@ -3917,7 +3917,7 @@
             }
           },
           "409": {
-            "description": "GitHub OAuth ????????",
+            "description": "GitHub OAuth 登录尚未完整配置",
             "content": {
               "application/json": {
                 "schema": {
@@ -3927,7 +3927,7 @@
             }
           },
           "500": {
-            "description": "??????",
+            "description": "服务内部错误",
             "content": {
               "application/json": {
                 "schema": {
@@ -3942,15 +3942,15 @@
     "/api/auth/oauth/github/callback": {
       "get": {
         "tags": [
-          "OAuth ??"
+          "OAuth 登录"
         ],
-        "summary": "?? GitHub OAuth ??",
+        "summary": "接收 GitHub OAuth 回调",
         "operationId": "completeGitHubOAuthLogin",
         "parameters": [
           {
             "name": "state",
             "in": "query",
-            "description": "????????? state",
+            "description": "服务端生成的一次性 state",
             "required": false,
             "schema": {
               "type": "string"
@@ -3959,7 +3959,7 @@
           {
             "name": "code",
             "in": "query",
-            "description": "GitHub ???",
+            "description": "GitHub 授权码",
             "required": false,
             "schema": {
               "type": "string"
@@ -3968,7 +3968,7 @@
           {
             "name": "error",
             "in": "query",
-            "description": "GitHub ????",
+            "description": "GitHub 拒绝分类",
             "required": false,
             "schema": {
               "type": "string"
@@ -3977,10 +3977,10 @@
         ],
         "responses": {
           "303": {
-            "description": "????????????"
+            "description": "跳转到前端单次票据交换页"
           },
           "500": {
-            "description": "??????????",
+            "description": "无法构造安全回调地址",
             "content": {
               "application/json": {
                 "schema": {
@@ -3995,9 +3995,9 @@
     "/api/auth/oauth/exchange": {
       "post": {
         "tags": [
-          "OAuth ??"
+          "OAuth 登录"
         ],
-        "summary": "????? OAuth ????",
+        "summary": "交换一次性 OAuth 登录票据",
         "operationId": "exchangeOAuthLoginTicket",
         "requestBody": {
           "content": {
@@ -4011,7 +4011,7 @@
         },
         "responses": {
           "200": {
-            "description": "?? bearer ????",
+            "description": "现有 bearer 登录会话",
             "content": {
               "application/json": {
                 "schema": {
@@ -4021,7 +4021,7 @@
             }
           },
           "400": {
-            "description": "??????",
+            "description": "票据格式无效",
             "content": {
               "application/json": {
                 "schema": {
@@ -4031,7 +4031,7 @@
             }
           },
           "409": {
-            "description": "???????????",
+            "description": "票据无效、过期或已消费",
             "content": {
               "application/json": {
                 "schema": {
@@ -4041,7 +4041,7 @@
             }
           },
           "500": {
-            "description": "??????",
+            "description": "服务内部错误",
             "content": {
               "application/json": {
                 "schema": {
@@ -4056,13 +4056,13 @@
     "/api/admin/authentication-settings/oauth/github": {
       "get": {
         "tags": [
-          "OAuth ??"
+          "OAuth 登录"
         ],
-        "summary": "?? GitHub OAuth ????",
+        "summary": "读取 GitHub OAuth 登录设置",
         "operationId": "getAdminGitHubOAuthLoginSettings",
         "responses": {
           "200": {
-            "description": "???? GitHub OAuth App ??",
+            "description": "脱敏后的 GitHub OAuth App 设置",
             "content": {
               "application/json": {
                 "schema": {
@@ -4072,7 +4072,7 @@
             }
           },
           "401": {
-            "description": "??????",
+            "description": "登录会话无效",
             "content": {
               "application/json": {
                 "schema": {
@@ -4082,7 +4082,7 @@
             }
           },
           "403": {
-            "description": "?????????",
+            "description": "当前用户不是管理员",
             "content": {
               "application/json": {
                 "schema": {
@@ -4092,7 +4092,7 @@
             }
           },
           "500": {
-            "description": "??????",
+            "description": "服务内部错误",
             "content": {
               "application/json": {
                 "schema": {
@@ -4110,9 +4110,9 @@
       },
       "put": {
         "tags": [
-          "OAuth ??"
+          "OAuth 登录"
         ],
-        "summary": "?? GitHub OAuth ????",
+        "summary": "覆盖 GitHub OAuth 登录设置",
         "operationId": "updateAdminGitHubOAuthLoginSettings",
         "requestBody": {
           "content": {
@@ -4126,7 +4126,7 @@
         },
         "responses": {
           "200": {
-            "description": "????????",
+            "description": "更新后的脱敏设置",
             "content": {
               "application/json": {
                 "schema": {
@@ -4136,7 +4136,7 @@
             }
           },
           "400": {
-            "description": "??????",
+            "description": "配置组合无效",
             "content": {
               "application/json": {
                 "schema": {
@@ -4146,7 +4146,7 @@
             }
           },
           "401": {
-            "description": "??????",
+            "description": "登录会话无效",
             "content": {
               "application/json": {
                 "schema": {
@@ -4156,7 +4156,7 @@
             }
           },
           "403": {
-            "description": "?????????",
+            "description": "当前用户不是管理员",
             "content": {
               "application/json": {
                 "schema": {
@@ -4166,7 +4166,7 @@
             }
           },
           "409": {
-            "description": "??????????????",
+            "description": "设置版本冲突或回调基址未配置",
             "content": {
               "application/json": {
                 "schema": {
@@ -4176,7 +4176,7 @@
             }
           },
           "500": {
-            "description": "??????",
+            "description": "服务内部错误",
             "content": {
               "application/json": {
                 "schema": {
@@ -27214,7 +27214,7 @@
   },
   "tags": [
     {
-      "name": "OAuth ??"
+      "name": "OAuth 登录"
     },
     {
       "name": "公开注册"
