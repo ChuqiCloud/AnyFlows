@@ -152,23 +152,14 @@ impl OAuthLoginClient {
             .http_clients
             .get(Some(PROVIDER_REQUEST_TIMEOUT))
             .map_err(|_| OAuthLoginClientError::ClientUnavailable)?;
-        let mut serializer = url::form_urlencoded::Serializer::new(String::new());
-        serializer
-            .append_pair("client_id", client_id)
-            .append_pair("client_secret", client_secret.expose_secret())
-            .append_pair("code", code)
-            .append_pair("redirect_uri", redirect_uri);
-        if matches!(provider, LoginOAuthProvider::Discord) {
-            serializer.append_pair("grant_type", "authorization_code");
-        }
-        if let Some(verifier) = verifier {
-            serializer.append_pair("code_verifier", verifier);
-        }
-        let request_body = Zeroizing::new(serializer.finish());
-        // Bytes 持有可清零 owner，确保传输共享引用全部释放后再擦除表单材料。
-        let request_body = Body::from(Bytes::from_owner(Zeroizing::new(
-            request_body.as_bytes().to_vec(),
-        )));
+        let request_body = token_request_body(
+            provider,
+            client_id,
+            client_secret.expose_secret(),
+            code,
+            verifier,
+            redirect_uri,
+        );
         let token_bytes = execute_json(
             &client,
             Method::POST,
@@ -194,6 +185,34 @@ impl OAuthLoginClient {
             execute_json(&client, Method::GET, provider.user_url(), headers, None).await?;
         parse_identity(provider, &user_bytes)
     }
+}
+
+/// 在异步边界外构造表单，避免 URL 编码器的非 `Sync` 类型进入请求 Future。
+fn token_request_body(
+    provider: LoginOAuthProvider,
+    client_id: &str,
+    client_secret: &str,
+    code: &str,
+    verifier: Option<&str>,
+    redirect_uri: &str,
+) -> Body {
+    let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+    serializer
+        .append_pair("client_id", client_id)
+        .append_pair("client_secret", client_secret)
+        .append_pair("code", code)
+        .append_pair("redirect_uri", redirect_uri);
+    if matches!(provider, LoginOAuthProvider::Discord) {
+        serializer.append_pair("grant_type", "authorization_code");
+    }
+    if let Some(verifier) = verifier {
+        serializer.append_pair("code_verifier", verifier);
+    }
+    let request_body = Zeroizing::new(serializer.finish());
+    // Bytes 持有可清零 owner，确保传输共享引用全部释放后再擦除表单材料。
+    Body::from(Bytes::from_owner(Zeroizing::new(
+        request_body.as_bytes().to_vec(),
+    )))
 }
 
 impl fmt::Debug for OAuthLoginClient {
