@@ -433,6 +433,14 @@ impl UsageLogRepository {
             .store(true, Ordering::Release);
     }
 
+    /// 仅供迁移冒烟在正常仓储路径失败后输出底层数据库约束分类。
+    #[cfg(test)]
+    pub(crate) async fn diagnose_record_failure(&self, write: &UsageLogWrite) -> Result<(), DbErr> {
+        let model = usage_log_active_model(write)
+            .map_err(|_| DbErr::Custom("用量日志诊断模型无效".to_owned()))?;
+        model.insert(self.pool.connection()).await.map(|_| ())
+    }
+
     fn finish_operation(
         &self,
         result: Result<UsageLogWriteOutcome, UsageLogRepositoryError>,
@@ -455,48 +463,7 @@ impl UsageLogRepository {
         &self,
         write: &UsageLogWrite,
     ) -> Result<UsageLogWriteOutcome, UsageLogRepositoryError> {
-        let event_key = event_key(write)?;
-        let usage = write.usage;
-        let organization = write.principal.organization_principal();
-        let model = usage_logs::ActiveModel {
-            event_id: Set(event_key),
-            event_type: Set(CONSUME_EVENT_TYPE),
-            user_id: Set(write.principal.user_id().get()),
-            token_id: Set(write.principal.token_id().get()),
-            group_id: Set(write.principal.group_id().get()),
-            organization_id: Set(organization.map(|value| value.organization_id().get())),
-            organization_team_id: Set(organization
-                .and_then(|value| value.team_id())
-                .map(|value| value.get())),
-            billing_mode: Set(write.billing_mode.database_value()),
-            input_tokens: Set(usage.input_tokens),
-            output_tokens: Set(usage.output_tokens),
-            cache_read: Set(usage.cache_read),
-            cache_creation_5m: Set(usage.cache_creation_5m),
-            cache_creation_1h: Set(usage.cache_creation_1h),
-            reasoning_tokens: Set(usage.reasoning_tokens),
-            audio_input_tokens: Set(usage.audio_input_tokens),
-            audio_output_tokens: Set(usage.audio_output_tokens),
-            audio_duration_nanoseconds: Set(write.audio_duration_nanoseconds),
-            video_duration_seconds: Set(write.video_duration_seconds),
-            video_resolution: Set(write
-                .video_resolution
-                .map(UsageLogVideoResolution::database_value)),
-            request_id: Set(write.request_id.clone()),
-            model: Set(write.model.clone()),
-            protocol: Set(write.protocol.map(protocol_database_value)),
-            operation: Set(write.operation.map(operation_database_value)),
-            is_stream: Set(write.is_stream),
-            reasoning_effort: Set(write.reasoning_effort),
-            reasoning_budget_tokens: Set(write.reasoning_budget_tokens),
-            first_token_ms: Set(write.first_token_ms),
-            duration_ms: Set(write.duration_ms),
-            usage_source: Set(write.source.database_value()),
-            usage_semantics: Set(write.semantics.database_value()),
-            quota: Set(write.quota.units()),
-            created_at: Set(TimeDateTimeWithTimeZone::now_utc()),
-            ..Default::default()
-        };
+        let model = usage_log_active_model(write)?;
         match model.insert(self.pool.connection()).await {
             Ok(_) => Ok(UsageLogWriteOutcome::Applied),
             Err(error) if is_unique_violation(&error) => self.classify_existing(write).await,
@@ -521,6 +488,53 @@ impl UsageLogRepository {
             Err(UsageLogRepositoryError::Conflict)
         }
     }
+}
+
+fn usage_log_active_model(
+    write: &UsageLogWrite,
+) -> Result<usage_logs::ActiveModel, UsageLogRepositoryError> {
+    let event_key = event_key(write)?;
+    let usage = write.usage;
+    let organization = write.principal.organization_principal();
+    Ok(usage_logs::ActiveModel {
+        event_id: Set(event_key),
+        event_type: Set(CONSUME_EVENT_TYPE),
+        user_id: Set(write.principal.user_id().get()),
+        token_id: Set(write.principal.token_id().get()),
+        group_id: Set(write.principal.group_id().get()),
+        organization_id: Set(organization.map(|value| value.organization_id().get())),
+        organization_team_id: Set(organization
+            .and_then(|value| value.team_id())
+            .map(|value| value.get())),
+        billing_mode: Set(write.billing_mode.database_value()),
+        input_tokens: Set(usage.input_tokens),
+        output_tokens: Set(usage.output_tokens),
+        cache_read: Set(usage.cache_read),
+        cache_creation_5m: Set(usage.cache_creation_5m),
+        cache_creation_1h: Set(usage.cache_creation_1h),
+        reasoning_tokens: Set(usage.reasoning_tokens),
+        audio_input_tokens: Set(usage.audio_input_tokens),
+        audio_output_tokens: Set(usage.audio_output_tokens),
+        audio_duration_nanoseconds: Set(write.audio_duration_nanoseconds),
+        video_duration_seconds: Set(write.video_duration_seconds),
+        video_resolution: Set(write
+            .video_resolution
+            .map(UsageLogVideoResolution::database_value)),
+        request_id: Set(write.request_id.clone()),
+        model: Set(write.model.clone()),
+        protocol: Set(write.protocol.map(protocol_database_value)),
+        operation: Set(write.operation.map(operation_database_value)),
+        is_stream: Set(write.is_stream),
+        reasoning_effort: Set(write.reasoning_effort),
+        reasoning_budget_tokens: Set(write.reasoning_budget_tokens),
+        first_token_ms: Set(write.first_token_ms),
+        duration_ms: Set(write.duration_ms),
+        usage_source: Set(write.source.database_value()),
+        usage_semantics: Set(write.semantics.database_value()),
+        quota: Set(write.quota.units()),
+        created_at: Set(TimeDateTimeWithTimeZone::now_utc()),
+        ..Default::default()
+    })
 }
 
 impl fmt::Debug for UsageLogRepository {

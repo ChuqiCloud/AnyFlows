@@ -844,7 +844,7 @@ where
     let valid_organization = match (organization_id, organization_team_id) {
         (None, None) => true,
         (Some(organization_id), team_id) => {
-            organization_id > 0 && team_id.map_or(true, |team_id| team_id > 0)
+            organization_id > 0 && team_id.is_none_or(|team_id| team_id > 0)
         }
         (None, Some(_)) => false,
     };

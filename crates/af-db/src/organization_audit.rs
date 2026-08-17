@@ -87,15 +87,14 @@ impl OrganizationAuditWrite {
         if let Some(reason) = platform_reason.as_deref() {
             validate_text(reason, 255)?;
         }
-        if let Some(summary) = change_summary.as_deref() {
-            if summary.len() > 2_048
+        if let Some(summary) = change_summary.as_deref()
+            && (summary.len() > 2_048
                 || serde_json::from_str::<Value>(summary)
                     .ok()
                     .and_then(|value| value.as_object().map(|_| ()))
-                    .is_none()
-            {
-                return Err(OrganizationAuditWriteError::InvalidChangeSummary);
-            }
+                    .is_none())
+        {
+            return Err(OrganizationAuditWriteError::InvalidChangeSummary);
         }
         if (actor_role.is_none()) != platform_reason.is_some() {
             return Err(OrganizationAuditWriteError::InvalidActorShape);
