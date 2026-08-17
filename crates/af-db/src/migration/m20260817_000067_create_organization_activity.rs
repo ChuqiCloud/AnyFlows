@@ -66,6 +66,8 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         schema::drop_organization_audit_storage(manager).await?;
+        // MySQL 的外键会占用匹配索引，必须先解除引用再删除索引。
+        drop_usage_references(manager).await?;
         for index in [
             USAGE_ORGANIZATION_TEAM_INDEX,
             USAGE_ORGANIZATION_USER_INDEX,
@@ -80,7 +82,6 @@ impl MigrationTrait for Migration {
                 )
                 .await?;
         }
-        drop_usage_references(manager).await?;
         drop_usage_shape(manager).await?;
         drop_column(manager, usage_logs::Column::OrganizationTeamId).await?;
         drop_column(manager, usage_logs::Column::OrganizationId).await
