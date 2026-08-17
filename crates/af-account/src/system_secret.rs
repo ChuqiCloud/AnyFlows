@@ -26,6 +26,10 @@ pub enum SystemSecretKind {
     StripeWebhookSecret,
     /// 易支付商户密钥。
     EpayMerchantKey,
+    /// GitHub 用户登录 OAuth App 的 Client Secret。
+    OAuthLoginGithubClientSecret,
+    /// 用户登录 OAuth state 内携带的 PKCE verifier 封套。
+    OAuthLoginState,
     /// 凭据专属代理认证密码；记录标识参与 AAD，禁止密文跨代理搬用。
     CredentialProxyPassword(af_domain::ProxyId),
 }
@@ -38,6 +42,8 @@ impl SystemSecretKind {
             Self::StripeSecretKey => "stripe_secret_key",
             Self::StripeWebhookSecret => "stripe_webhook_secret",
             Self::EpayMerchantKey => "epay_merchant_key",
+            Self::OAuthLoginGithubClientSecret => "oauth_login_github_client_secret",
+            Self::OAuthLoginState => "oauth_login_state",
             Self::CredentialProxyPassword(_) => "credential_proxy_password",
         }
     }
@@ -218,6 +224,8 @@ fn system_secret_aad(kind: SystemSecretKind) -> Vec<u8> {
         SystemSecretKind::StripeSecretKey
         | SystemSecretKind::StripeWebhookSecret
         | SystemSecretKind::EpayMerchantKey => "payment_settings:1".to_owned(),
+        SystemSecretKind::OAuthLoginGithubClientSecret => "oauth_login_providers:github".to_owned(),
+        SystemSecretKind::OAuthLoginState => "oauth_login_state:v1".to_owned(),
         SystemSecretKind::CredentialProxyPassword(proxy_id) => {
             format!("proxies:{}", proxy_id.get())
         }
@@ -329,6 +337,14 @@ mod tests {
             system_secret_aad(SystemSecretKind::EpayMerchantKey),
             b"anyflows:system-secret:v1:record=payment_settings:1:kind=epay_merchant_key"
         );
+        assert_eq!(
+            system_secret_aad(SystemSecretKind::OAuthLoginGithubClientSecret),
+            b"anyflows:system-secret:v1:record=oauth_login_providers:github:kind=oauth_login_github_client_secret"
+        );
+        assert_eq!(
+            system_secret_aad(SystemSecretKind::OAuthLoginState),
+            b"anyflows:system-secret:v1:record=oauth_login_state:v1:kind=oauth_login_state"
+        );
     }
 
     #[test]
@@ -344,6 +360,8 @@ mod tests {
             SystemSecretKind::EpayMerchantKey,
             SystemSecretKind::ProxyPassword,
             SystemSecretKind::SmtpPassword,
+            SystemSecretKind::OAuthLoginGithubClientSecret,
+            SystemSecretKind::OAuthLoginState,
         ] {
             assert_eq!(
                 cipher.decrypt(wrong_kind, &envelope).unwrap_err(),

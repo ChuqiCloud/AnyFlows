@@ -51,6 +51,8 @@ pub(crate) mod model_sync_items;
 pub(crate) mod model_sync_runs;
 pub(crate) mod models;
 pub(crate) mod network_settings;
+pub(crate) mod oauth_login_providers;
+pub(crate) mod oauth_login_transactions;
 pub(crate) mod options;
 pub(crate) mod organization_audit_logs;
 pub(crate) mod organization_budget_policies;
@@ -79,6 +81,7 @@ pub(crate) mod tokens;
 pub(crate) mod topup_orders;
 pub(crate) mod topup_payment_events;
 pub(crate) mod usage_logs;
+pub(crate) mod user_oauth_identities;
 pub(crate) mod user_subscriptions;
 pub(crate) mod users;
 pub(crate) mod wallet_ledger_entries;
@@ -1582,6 +1585,8 @@ impl_updated_at_behavior!(
     model_prices::ActiveModel => validate_model_price,
     models::ActiveModel => validate_default,
     network_settings::ActiveModel => validate_default,
+    oauth_login_providers::ActiveModel => validate_default,
+    oauth_login_transactions::ActiveModel => validate_default,
     options::ActiveModel => validate_default,
     organizations::ActiveModel => validate_organization,
     organization_teams::ActiveModel => validate_organization_team,
@@ -1591,6 +1596,7 @@ impl_updated_at_behavior!(
     site_settings::ActiveModel => validate_default,
     tokens::ActiveModel => validate_default,
     topup_orders::ActiveModel => validate_topup_order,
+    user_oauth_identities::ActiveModel => validate_default,
     users::ActiveModel => validate_user,
 );
 

@@ -2,7 +2,7 @@ use std::{future::Future, sync::Arc, time::Duration};
 
 use af_account::{
     CredentialDecryptionError, CredentialDecryptor, CredentialEncryptionError, CredentialEncryptor,
-    DiagnosticSnapshotCipher, OAuthProviderProfile, OAuthRefreshSupervisor,
+    DiagnosticSnapshotCipher, GitHubLoginClient, OAuthProviderProfile, OAuthRefreshSupervisor,
     OrganizationInvitationCipher, PlainSystemSecret, SystemSecretCipher, SystemSecretError,
     SystemSecretKind,
 };
@@ -20,14 +20,15 @@ use af_admin::{
     DatabaseAdminPaymentSettingsService, DatabaseAdminRouteReader, DatabaseAdminRouteWriter,
     DatabaseAdminTokenReader, DatabaseAdminTokenWriter, DatabaseAdminUsageLogReader,
     DatabaseAdminUserReader, DatabaseAdminUserWriter, DatabaseAdminWalletService,
-    DatabaseInitialSetup, DatabaseOrganizationActivityService, DatabaseOrganizationBudgetService,
-    DatabaseOrganizationTokenService, DatabaseOrganizationWalletService,
-    DatabasePasswordResetService, DatabasePlaygroundConversationService,
-    DatabasePlaygroundShareService, DatabaseRedemptionService, DatabaseRegistrationService,
-    DatabaseSessionAuthenticator, DatabaseSiteSettingsService, DatabaseSubscriptionService,
-    DatabaseTokenAuthenticator, DatabaseUserInvitationService, DatabaseUserProfileService,
-    DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery, InitialSetup,
-    ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
+    DatabaseInitialSetup, DatabaseOAuthLoginService, DatabaseOrganizationActivityService,
+    DatabaseOrganizationBudgetService, DatabaseOrganizationTokenService,
+    DatabaseOrganizationWalletService, DatabasePasswordResetService,
+    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
+    DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
+    DatabaseSiteSettingsService, DatabaseSubscriptionService, DatabaseTokenAuthenticator,
+    DatabaseUserInvitationService, DatabaseUserProfileService, DatabaseUserTokenService,
+    DatabaseUserWalletService, EmailDelivery, InitialSetup, ModelCatalogReader,
+    NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError, OAuthLoginService,
     OrganizationActivityService, OrganizationActivityServiceConfigError, OrganizationBudgetService,
     OrganizationTokenService, OrganizationWalletService, PasswordResetService,
     PasswordResetServiceConfigError, PlaygroundConversationService, PlaygroundShareService,
@@ -69,8 +70,9 @@ use af_db::{
     DebugTraceSnapshotCipherError, EmailSettingsRepository, EmailSettingsRepositoryConfigError,
     InitialSetupRepository, InitialSetupRepositoryConfigError, MigrationOptions,
     ModelPriceRepository, ModelSyncRepository, NetworkSettingsMode, NetworkSettingsRecord,
-    NetworkSettingsRepository, NetworkSettingsRepositoryConfigError, OrganizationAuditRepository,
-    OrganizationBudgetRepository, OrganizationBudgetRepositoryConfigError, OrganizationRepository,
+    NetworkSettingsRepository, NetworkSettingsRepositoryConfigError, OAuthLoginRepository,
+    OAuthLoginRepositoryError, OrganizationAuditRepository, OrganizationBudgetRepository,
+    OrganizationBudgetRepositoryConfigError, OrganizationRepository,
     OrganizationRepositoryConfigError, OrganizationTokenRepository,
     OrganizationTokenRepositoryConfigError, OrganizationWalletRepository,
     OrganizationWalletRepositoryConfigError, PasswordResetRepository,
@@ -223,6 +225,7 @@ pub struct AuthenticationReady {
 pub struct RelayReady {
     infrastructure: AuthenticationReady,
     upstream_clients: HttpClientProvider,
+    oauth_login_service: Arc<dyn OAuthLoginService>,
     admin_network_settings_service: Arc<DatabaseAdminNetworkSettingsService>,
     admin_oauth_connection_service: Arc<dyn AdminOAuthConnectionService>,
     oauth_loopback_servers: Vec<PreparedOAuthLoopbackServer>,
@@ -247,6 +250,7 @@ pub struct BillingReady {
     refund_signal_queue: RefundSignalQueue,
     refund_signal_consumer: RefundSignalConsumer,
     upstream_clients: HttpClientProvider,
+    oauth_login_service: Arc<dyn OAuthLoginService>,
     admin_network_settings_service: Arc<DatabaseAdminNetworkSettingsService>,
     admin_oauth_connection_service: Arc<dyn AdminOAuthConnectionService>,
     oauth_loopback_servers: Vec<PreparedOAuthLoopbackServer>,
@@ -287,6 +291,7 @@ pub struct Supervised {
     admin_payment_settings_service: Arc<dyn af_admin::AdminPaymentSettingsService>,
     admin_network_settings_service: Arc<DatabaseAdminNetworkSettingsService>,
     admin_oauth_connection_service: Arc<dyn AdminOAuthConnectionService>,
+    oauth_login_service: Arc<dyn OAuthLoginService>,
     admin_channel_probe: Arc<dyn AdminChannelProbe>,
     debug_trace_repository: DebugTraceRepository,
     debug_trace_runtime: DebugTraceRuntime,
@@ -368,6 +373,9 @@ pub enum BootstrapError {
     /// 用户会话仓储的启动参数无效。
     #[error("用户会话启动参数无效")]
     SessionRepository(#[source] UserSessionRepositoryConfigError),
+    /// 用户登录 OAuth 仓储的启动参数无效。
+    #[error("用户登录 OAuth 仓储启动参数无效")]
+    OAuthLoginRepository(#[source] OAuthLoginRepositoryError),
     /// 管理会话 JWT 的启动配置无效或缺失。
     #[error("管理会话启动配置无效")]
     SessionAuthentication(#[source] SessionAuthenticatorConfigError),
@@ -1050,6 +1058,18 @@ impl Bootstrap<AuthenticationReady> {
             self.stage.system_secret_cipher.clone(),
             runtime,
         ));
+        let oauth_login_repository = OAuthLoginRepository::new(
+            self.stage.infrastructure.database.clone(),
+            Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::OAuthLoginRepository)?;
+        let oauth_login_service: Arc<dyn OAuthLoginService> =
+            Arc::new(DatabaseOAuthLoginService::new(
+                oauth_login_repository,
+                self.stage.site_settings_repository.clone(),
+                self.stage.system_secret_cipher.clone(),
+                GitHubLoginClient::new(upstream_clients.clone()),
+            ));
         let oauth_runtime = initialize_oauth_runtime(
             &self.config,
             self.stage.infrastructure.database.clone(),
@@ -1070,6 +1090,7 @@ impl Bootstrap<AuthenticationReady> {
             stage: RelayReady {
                 infrastructure: stage,
                 upstream_clients,
+                oauth_login_service,
                 admin_network_settings_service,
                 admin_oauth_connection_service: oauth_runtime.admin_connection_service,
                 oauth_loopback_servers: oauth_runtime.loopback_servers,
@@ -1481,6 +1502,7 @@ impl Bootstrap<RelayReady> {
                 refund_signal_queue,
                 refund_signal_consumer,
                 upstream_clients: stage.upstream_clients,
+                oauth_login_service: stage.oauth_login_service,
                 admin_network_settings_service: stage.admin_network_settings_service,
                 admin_oauth_connection_service: stage.admin_oauth_connection_service,
                 oauth_loopback_servers: stage.oauth_loopback_servers,
@@ -1530,6 +1552,7 @@ impl Bootstrap<BillingReady> {
             refund_signal_queue,
             refund_signal_consumer,
             upstream_clients,
+            oauth_login_service,
             admin_network_settings_service,
             admin_oauth_connection_service,
             oauth_loopback_servers,
@@ -1673,6 +1696,7 @@ impl Bootstrap<BillingReady> {
                 admin_payment_settings_service,
                 admin_network_settings_service,
                 admin_oauth_connection_service,
+                oauth_login_service,
                 admin_channel_probe,
                 debug_trace_repository,
                 debug_trace_runtime,
@@ -1918,6 +1942,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.subscription_service),
             Arc::clone(&self.stage.infrastructure.user_invitation_service),
             Arc::clone(&self.stage.infrastructure.site_settings_service),
+            Some(Arc::clone(&self.stage.oauth_login_service)),
             Arc::clone(&self.stage.infrastructure.admin_email_settings_service),
             self.stage.admin_network_settings_service.clone(),
             Arc::clone(&self.stage.admin_payment_settings_service),
@@ -2058,6 +2083,7 @@ impl Bootstrap<ListenerReady> {
             admin_payment_settings_service: _,
             admin_network_settings_service: _,
             admin_oauth_connection_service: _,
+            oauth_login_service: _,
             admin_channel_probe: _,
             debug_trace_repository: _,
             debug_trace_runtime: _,

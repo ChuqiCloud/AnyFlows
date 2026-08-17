@@ -24,6 +24,7 @@ mod model_metadata_write;
 mod model_price;
 mod model_sync;
 mod network_settings;
+mod oauth_login;
 mod organization;
 mod organization_activity;
 mod organization_budget;
@@ -188,6 +189,11 @@ pub use network_settings::{
     AdminNetworkSettingsReadFuture, AdminNetworkSettingsService, AdminNetworkSettingsUpdateFuture,
     DatabaseAdminNetworkSettingsService, NetworkSettingsApplyFuture, NetworkSettingsRuntimeApplier,
     NetworkSettingsRuntimeError,
+};
+pub use oauth_login::{
+    AdminOAuthLoginProviderSettings, AdminOAuthLoginProviderSettingsCommand,
+    DatabaseOAuthLoginService, OAuthLoginCallbackResult, OAuthLoginError, OAuthLoginService,
+    OAuthLoginServiceFuture, OAuthLoginStart, PublicOAuthLoginProvider,
 };
 pub use organization::{
     DatabaseOrganizationAuthorizationService, OrganizationAccessFuture, OrganizationAccessSummary,

@@ -258,6 +258,11 @@ pub trait SessionAuthenticator: Send + Sync {
     /// 校验用户名密码并签发新会话。
     fn login<'a>(&'a self, credentials: &'a LoginCredentials) -> SessionLoginFuture<'a>;
 
+    /// 为已经通过其他认证方式解析出的有效用户签发统一会话。
+    fn issue_for_user(&self, _user_id: UserId) -> SessionLoginFuture<'_> {
+        Box::pin(async { Err(SessionAuthenticationError::Internal) })
+    }
+
     /// 校验 JWT 并回查当前用户状态。
     fn authenticate<'a>(&'a self, token: &'a str) -> SessionAuthenticationFuture<'a>;
 }
@@ -357,6 +362,31 @@ impl SessionAuthenticator for DatabaseSessionAuthenticator {
                 }
                 UserSessionLookupByIdOutcome::Rejected => {
                     Err(SessionAuthenticationError::InvalidSession)
+                }
+            }
+        })
+    }
+
+    fn issue_for_user(&self, user_id: UserId) -> SessionLoginFuture<'_> {
+        Box::pin(async move {
+            match self
+                .repository
+                .lookup_by_id(user_id)
+                .await
+                .map_err(map_repository_error)?
+            {
+                UserSessionLookupByIdOutcome::Authenticated {
+                    user_id,
+                    role,
+                    session_version,
+                    ..
+                } => {
+                    let principal =
+                        SessionPrincipal::new(user_id, SessionRole::from_database(role)?);
+                    self.codec.issue(principal, session_version)
+                }
+                UserSessionLookupByIdOutcome::Rejected => {
+                    Err(SessionAuthenticationError::InvalidCredentials)
                 }
             }
         })

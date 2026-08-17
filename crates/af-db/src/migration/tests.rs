@@ -67,7 +67,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 69;
+const EXPECTED_MIGRATION_COUNT: usize = 70;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -180,6 +180,48 @@ async fn standard_startup_installs_core_schema() -> Result<(), Box<dyn Error>> {
 
     assert!(manager.has_table("seaql_migrations").await?);
     assert!(manager.has_table("users").await?);
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn standard_startup_installs_oauth_login_schema_and_indexes() -> Result<(), Box<dyn Error>> {
+    let database_options = DatabaseOptions::new("sqlite::memory:")?;
+    let pool = crate::connect_and_migrate(&database_options, MigrationOptions::default()).await?;
+    let manager = SchemaManager::new(pool.connection());
+
+    for table in [
+        "oauth_login_providers",
+        "user_oauth_identities",
+        "oauth_login_transactions",
+    ] {
+        assert!(manager.has_table(table).await?, "缺少数据表 {table}");
+    }
+    for (table, index) in [
+        ("user_oauth_identities", "uq_user_oauth_identities_subject"),
+        (
+            "user_oauth_identities",
+            "uq_user_oauth_identities_user_provider",
+        ),
+        (
+            "oauth_login_transactions",
+            "uq_oauth_login_transactions_state",
+        ),
+        (
+            "oauth_login_transactions",
+            "uq_oauth_login_transactions_ticket",
+        ),
+        (
+            "oauth_login_transactions",
+            "idx_oauth_login_transactions_expires",
+        ),
+        (
+            "oauth_login_transactions",
+            "idx_oauth_login_transactions_ticket_expires",
+        ),
+    ] {
+        assert!(manager.has_index(table, index).await?, "缺少索引 {index}");
+    }
     pool.close().await?;
     Ok(())
 }
@@ -1028,7 +1070,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 10);
+    assert_eq!(pending_migrations.len(), 11);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -1068,6 +1110,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[9].name(),
         "m20260817_000069_enforce_spark_shadow_shape"
+    );
+    assert_eq!(
+        pending_migrations[10].name(),
+        "m20260817_000070_create_oauth_login"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;

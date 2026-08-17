@@ -652,6 +652,7 @@ pub(crate) enum ManagementErrorCodeSchema {
     CredentialNotFound,
     ProbeUnavailable,
     OauthProviderNotConfigured,
+    OauthLoginSettingsConflict,
     OauthCredentialProviderMismatch,
     OauthAuthorizationCapacityExceeded,
     OauthAuthorizationNotFound,

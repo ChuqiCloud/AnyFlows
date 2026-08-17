@@ -9,7 +9,7 @@ use crate::{
         AdminBrandSettingsRequest, AdminSiteSettingsRequest, AdminSiteSettingsResponse,
         BalanceDisplayModeDto, BalanceDisplaySettingsDto, BalanceDisplaySymbolPositionDto,
         PublicAuthenticationCapabilitiesResponse, PublicBrandSettingsResponse,
-        PublicSiteSettingsResponse,
+        PublicOAuthLoginProviderResponse, PublicSiteSettingsResponse,
     },
 };
 
@@ -70,6 +70,7 @@ fn update_admin_site_settings() {}
     ),
     components(schemas(
         PublicBrandSettingsResponse,
+        PublicOAuthLoginProviderResponse,
         PublicAuthenticationCapabilitiesResponse,
         BalanceDisplayModeDto,
         BalanceDisplaySymbolPositionDto,

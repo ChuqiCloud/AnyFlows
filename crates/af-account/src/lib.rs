@@ -4,6 +4,7 @@ mod credential_decryption;
 mod credential_encryption;
 mod credential_secret;
 mod diagnostic_snapshot;
+mod login_oauth;
 mod oauth;
 mod organization_invitation;
 mod system_secret;
@@ -21,6 +22,7 @@ pub use credential_secret::{
     MAX_GOOGLE_SERVICE_ACCOUNT_EMAIL_BYTES, PlainCredentialSecret,
 };
 pub use diagnostic_snapshot::DiagnosticSnapshotCipher;
+pub use login_oauth::{GitHubLoginClient, GitHubLoginClientError, GitHubLoginIdentity};
 pub use oauth::{
     DEFAULT_MAX_OAUTH_REFRESH_FLIGHTS, DEFAULT_MAX_PENDING_OAUTH_AUTHORIZATIONS,
     DEFAULT_OAUTH_AUTHORIZATION_SESSION_TTL, DEFAULT_OAUTH_REFRESH_RESULT_RETENTION,

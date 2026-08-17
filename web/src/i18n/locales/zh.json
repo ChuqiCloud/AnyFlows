@@ -2802,7 +2802,19 @@
       "capabilityUnavailableBody": "服务没有返回可靠的认证能力状态。为保护账户入口，当前不会展示密码表单。",
       "disabledTitle": "密码登录已关闭",
       "disabledBody": "当前站点不接受用户名密码登录，你仍可以游客身份查看模型广场。",
-      "retry": "重新检查"
+      "retry": "重新检查",
+      "github": "使用 GitHub 继续",
+      "oauthStarting": "正在前往 GitHub",
+      "orPassword": "或使用密码"
+    },
+    "oauthCallback": {
+      "title": "正在完成登录",
+      "exchanging": "正在安全交换一次性登录票据。",
+      "succeeded": "登录已完成，正在进入控制台。",
+      "cancelled": "你已取消 GitHub 授权，可以返回重新尝试。",
+      "failed": "本次授权无法完成，请重新发起登录。",
+      "wait": "请保持此页面打开",
+      "retry": "返回登录页"
     },
     "errors": {
       "invalidCredentials": "用户名或密码不正确。",
@@ -2951,6 +2963,31 @@
       "title": "注册频率保护",
       "description": "按带密钥的客户端 IP 指纹执行跨实例固定窗口限流，数据库不保存原始 IP。"
     },
+    "oauth": {
+      "title": "GitHub OAuth 登录",
+      "enabled": "启用 GitHub 登录",
+      "callback": "Authorization callback URL",
+      "callbackMissing": "请先在站点设置中配置公开基址",
+      "callbackHint": "将此地址完整填写到 GitHub OAuth App 的 Authorization callback URL。",
+      "copyCallback": "复制回调地址",
+      "clientId": "Client ID",
+      "clientSecret": "Client Secret 操作",
+      "newSecret": "新的 Client Secret",
+      "version": "GitHub OAuth 配置版本 {{version}}",
+      "secret": {
+        "keep": "保留现有密钥",
+        "replace": "轮换密钥",
+        "clear": "清除密钥",
+        "configured": "密钥已加密配置，管理端不会回显。",
+        "missing": "尚未配置密钥。"
+      },
+      "errors": {
+        "load": "无法读取 GitHub OAuth 登录设置",
+        "save": "GitHub OAuth 设置保存失败，请刷新后核对版本。",
+        "publicBaseUrl": "启用前必须先保存站点公开基址，以生成稳定回调地址。",
+        "incomplete": "启用 GitHub 登录需要回调地址、Client ID 和已配置的 Client Secret。"
+      }
+    },
     "fields": {
       "defaultGroup": "默认分组",
       "initialQuota": "初始额度",
@@ -2996,7 +3033,7 @@
     },
     "warning": {
       "title": "关闭密码登录前确认其他入口",
-      "description": "当前版本尚未提供 OAuth 登录。关闭后，现有会话过期的用户需要由运维恢复数据库开关才能再次登录。"
+      "description": "关闭前请确认至少一个 OAuth 登录入口已经配置并可用；否则现有会话过期后，需要由运维恢复密码登录。"
     }
   },
   "billingSettings": {

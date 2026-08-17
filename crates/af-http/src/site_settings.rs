@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use af_admin::{
     AdminSiteSettings, BalanceDisplayMode, BalanceDisplayPolicy, BalanceSymbolPosition,
-    PublicSiteSettings, RegistrationError, RegistrationService, SessionAuthenticator,
-    SiteSettingsCommand, SiteSettingsError, SiteSettingsService,
+    OAuthLoginError, OAuthLoginService, PublicOAuthLoginProvider, PublicSiteSettings,
+    RegistrationError, RegistrationService, SessionAuthenticator, SiteSettingsCommand,
+    SiteSettingsError, SiteSettingsService,
 };
 use axum::{
     Extension, Json, Router,
@@ -26,6 +27,7 @@ use crate::{
 struct SiteSettingsHttpState {
     site_service: Arc<dyn SiteSettingsService>,
     registration_service: Arc<dyn RegistrationService>,
+    oauth_login_service: Option<Arc<dyn OAuthLoginService>>,
 }
 
 #[derive(Clone, Serialize, ToSchema)]
@@ -40,13 +42,33 @@ pub(crate) struct PublicBrandSettingsResponse {
     description: Option<String>,
 }
 
-#[derive(Clone, Copy, Serialize, ToSchema)]
+#[derive(Clone, Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 #[schema(as = PublicAuthenticationCapabilities)]
 pub(crate) struct PublicAuthenticationCapabilitiesResponse {
     password_login_enabled: bool,
     registration_enabled: bool,
     registration_email_required: bool,
+    oauth_providers: Vec<PublicOAuthLoginProviderResponse>,
+}
+
+#[derive(Clone, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = PublicOAuthLoginProvider)]
+pub(crate) struct PublicOAuthLoginProviderResponse {
+    #[schema(max_length = 32)]
+    id: String,
+    #[schema(max_length = 64)]
+    display_name: String,
+}
+
+impl From<PublicOAuthLoginProvider> for PublicOAuthLoginProviderResponse {
+    fn from(provider: PublicOAuthLoginProvider) -> Self {
+        Self {
+            id: provider.id().to_owned(),
+            display_name: provider.display_name().to_owned(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Deserialize, Serialize, ToSchema)]
@@ -196,6 +218,7 @@ pub(crate) struct AdminBrandSettingsRequest {
 pub(crate) fn build_site_settings_router(
     site_service: Arc<dyn SiteSettingsService>,
     registration_service: Arc<dyn RegistrationService>,
+    oauth_login_service: Option<Arc<dyn OAuthLoginService>>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
 ) -> Router {
     let authentication = middleware::from_fn_with_state(
@@ -214,6 +237,7 @@ pub(crate) fn build_site_settings_router(
         .with_state(SiteSettingsHttpState {
             site_service,
             registration_service,
+            oauth_login_service,
         })
 }
 
@@ -221,13 +245,25 @@ pub(crate) fn build_site_settings_router(
 async fn get_public_site_settings(
     State(state): State<SiteSettingsHttpState>,
 ) -> Result<Response, ManagementError> {
-    let (site, authentication) = tokio::join!(
+    let oauth_providers = async {
+        match state.oauth_login_service.as_ref() {
+            Some(service) => service.public_providers().await,
+            None => Ok(Vec::new()),
+        }
+    };
+    let (site, authentication, oauth_providers) = tokio::join!(
         state.site_service.public_settings(),
-        state.registration_service.status()
+        state.registration_service.status(),
+        oauth_providers,
     );
     let site = site.map_err(map_site_settings_error)?;
     let authentication = authentication.map_err(map_registration_error)?;
-    Ok(no_store_json(public_response(site, authentication)))
+    let oauth_providers = oauth_providers.map_err(map_oauth_login_error)?;
+    Ok(no_store_json(public_response(
+        site,
+        authentication,
+        oauth_providers,
+    )))
 }
 
 async fn get_admin_site_settings(
@@ -272,6 +308,7 @@ async fn update_admin_site_settings(
 fn public_response(
     site: PublicSiteSettings,
     authentication: af_admin::RegistrationStatus,
+    oauth_providers: Vec<PublicOAuthLoginProvider>,
 ) -> PublicSiteSettingsResponse {
     PublicSiteSettingsResponse {
         site_name: site.site_name().to_owned(),
@@ -286,7 +323,23 @@ fn public_response(
             password_login_enabled: authentication.password_login_enabled(),
             registration_enabled: authentication.enabled(),
             registration_email_required: authentication.email_required(),
+            oauth_providers: oauth_providers
+                .into_iter()
+                .map(PublicOAuthLoginProviderResponse::from)
+                .collect(),
         },
+    }
+}
+
+fn map_oauth_login_error(error: OAuthLoginError) -> ManagementError {
+    match error {
+        OAuthLoginError::InvalidInput => ManagementError::InvalidRequest,
+        OAuthLoginError::Forbidden => ManagementError::Forbidden,
+        OAuthLoginError::Unavailable => ManagementError::OauthProviderNotConfigured,
+        OAuthLoginError::Rejected => ManagementError::OauthAuthorizationDenied,
+        OAuthLoginError::ConcurrentUpdate => ManagementError::OauthLoginSettingsConflict,
+        OAuthLoginError::ProviderUnavailable => ManagementError::OauthUnavailable,
+        OAuthLoginError::Internal => ManagementError::Internal,
     }
 }
 

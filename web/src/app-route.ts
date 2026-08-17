@@ -13,6 +13,7 @@ export type AppView =
   | 'models'
   | 'model-settings'
   | 'network-settings'
+  | 'oauth-callback'
   | 'organization-api-keys'
   | 'organization-activity'
   | 'organization-budgets'
@@ -131,6 +132,9 @@ export function routeFromHash(hash: string): AppRoute {
       : { view: 'register' }
   }
   if (hash.startsWith('#/forgot-password')) return { view: 'forgot-password' }
+  if (hash === '#/oauth/callback' || hash.startsWith('#/oauth/callback?')) {
+    return { view: 'oauth-callback' }
+  }
   if (hash.startsWith('#/login')) return { view: 'login' }
   if (hash.startsWith('#/setup')) return { view: 'setup' }
   return { view: 'landing' }

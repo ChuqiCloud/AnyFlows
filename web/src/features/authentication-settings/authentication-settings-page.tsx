@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAdminGroupCatalog } from '@/features/groups/group-api'
 import { AuthenticationSettingsForm } from './authentication-settings-form'
+import { GitHubOAuthSettings } from './github-oauth-settings'
 import { useAdminAuthenticationSettings } from './authentication-settings-api'
 
 /** 呈现管理员认证设置，并在策略或分组目录不可靠时禁止编辑。 */
@@ -66,7 +67,10 @@ export function AuthenticationSettingsPage() {
           </Button>
         </div>
       ) : settingsQuery.data && groupsQuery.data ? (
-        <AuthenticationSettingsForm settings={settingsQuery.data} groups={groupsQuery.data} />
+        <>
+          <AuthenticationSettingsForm settings={settingsQuery.data} groups={groupsQuery.data} />
+          <GitHubOAuthSettings />
+        </>
       ) : null}
     </div>
   )

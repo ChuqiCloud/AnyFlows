@@ -105,6 +105,9 @@ mod network_settings_tests;
 mod oauth_credential;
 #[cfg(test)]
 mod oauth_credential_tests;
+mod oauth_login;
+#[cfg(test)]
+mod oauth_login_tests;
 mod options;
 mod organization;
 mod organization_audit;
@@ -381,6 +384,11 @@ pub use oauth_credential::{
     OAuthCredentialRefreshFailureUpdateOutcome, OAuthCredentialRefreshUpdateOutcome,
     OAuthCredentialRepository, OAuthCredentialRepositoryError, OAuthCredentialTokenUpdateOutcome,
     OAuthExpirationProjectionCandidateRecord, OAuthRefreshCandidateRecord,
+};
+pub use oauth_login::{
+    OAUTH_LOGIN_GITHUB_PROVIDER, OAuthIdentityCompletion, OAuthLoginProviderRecord,
+    OAuthLoginProviderWriteRecord, OAuthLoginRepository, OAuthLoginRepositoryError,
+    OAuthLoginSecretUpdate, OAuthLoginStateClaim,
 };
 pub use options::{DatabaseDialect, DatabaseOptions, PoolOptions};
 pub use organization::{

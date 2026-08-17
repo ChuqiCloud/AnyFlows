@@ -142,7 +142,7 @@ fn router(service: Arc<FakeSiteSettingsService>) -> axum::Router {
     let site_service: Arc<dyn SiteSettingsService> = service;
     let registration_service: Arc<dyn RegistrationService> = Arc::new(FakeRegistrationService);
     let authenticator: Arc<dyn SessionAuthenticator> = Arc::new(FakeSessionAuthenticator);
-    build_site_settings_router(site_service, registration_service, authenticator)
+    build_site_settings_router(site_service, registration_service, None, authenticator)
 }
 
 #[tokio::test]
@@ -167,6 +167,7 @@ async fn public_projection_exposes_only_brand_and_authentication_capabilities() 
     );
     assert_eq!(body["authentication"]["password_login_enabled"], true);
     assert_eq!(body["authentication"]["registration_enabled"], true);
+    assert_eq!(body["authentication"]["oauth_providers"], json!([]));
     assert!(body.get("version").is_none());
     assert!(body.get("default_group_id").is_none());
 }
