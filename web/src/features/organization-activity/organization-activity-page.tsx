@@ -1,19 +1,17 @@
-import { useQueryClient } from '@tanstack/react-query'
 import { Activity, Building2, RefreshCw, ScrollText, ShieldCheck, ShieldX } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
-  clearOrganizationWorkspaceCache,
   organizationBudgetErrorStatus,
-  useOrganizationDirectory,
   useOrganizationOverview,
 } from '@/features/organization-budgets/organization-budget-api'
+import { useOrganizationWorkspace } from '@/features/organization-console/organization-workspace-context'
+import { OrganizationMobileWorkspaceSelect } from '@/features/organization-console/organization-workspace-switcher'
 import type { OrganizationOverviewResponse } from '@/lib/api/generated/types.gen'
 import type { OrganizationUsageScope } from './organization-activity-api'
 import { OrganizationAuditPanel } from './organization-audit-panel'
@@ -28,34 +26,7 @@ type ActivityTab = 'audit' | 'usage'
 /** 企业活动入口；企业切换会取消旧请求并通过 keyed workspace 清空页签、筛选和游标。 */
 export function OrganizationActivityPage() {
   const { t } = useTranslation()
-  const queryClient = useQueryClient()
-  const organizationsQuery = useOrganizationDirectory()
-  const [selectedId, setSelectedId] = useState<number>()
-  const [switching, setSwitching] = useState(false)
-  const organizations = useMemo(() => organizationsQuery.data ?? [], [organizationsQuery.data])
-
-  useEffect(() => {
-    if (organizations.length === 0) {
-      setSelectedId(undefined)
-      return
-    }
-    if (selectedId === undefined) {
-      setSelectedId(organizations[0].id)
-      return
-    }
-    if (!organizations.some((organization) => organization.id === selectedId)) {
-      void clearOrganizationWorkspaceCache(queryClient, selectedId)
-      setSelectedId(organizations[0].id)
-    }
-  }, [organizations, queryClient, selectedId])
-
-  const selectOrganization = async (nextId: number) => {
-    if (nextId === selectedId || switching) return
-    setSwitching(true)
-    if (selectedId !== undefined) await clearOrganizationWorkspaceCache(queryClient, selectedId)
-    setSelectedId(nextId)
-    setSwitching(false)
-  }
+  const workspace = useOrganizationWorkspace()
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -69,39 +40,23 @@ export function OrganizationActivityPage() {
           <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">{t('organizationActivity.subtitle')}</p>
         </div>
 
-        {organizations.length > 0 ? (
-          <div className="w-full min-w-0 sm:w-72">
-            <label htmlFor="organization-activity-workspace" className="mb-1.5 block text-[0.6875rem] font-medium text-muted-foreground">
-              {t('organizationActivity.workspace.label')}
-            </label>
-            <Select
-              id="organization-activity-workspace"
-              value={selectedId ?? ''}
-              disabled={switching}
-              onChange={(event) => void selectOrganization(Number(event.target.value))}
-            >
-              {organizations.map((organization) => (
-                <option key={organization.id} value={organization.id}>{organization.name} ({organization.slug})</option>
-              ))}
-            </Select>
-          </div>
-        ) : null}
+        <OrganizationMobileWorkspaceSelect />
       </header>
 
-      {organizationsQuery.isPending ? (
+      {workspace.organizationsQuery.isPending ? (
         <OrganizationDirectoryLoading />
-      ) : organizationsQuery.isError && organizationsQuery.data === undefined ? (
+      ) : workspace.organizationsQuery.isError && workspace.organizationsQuery.data === undefined ? (
         <PageState
           title={t('organizationActivity.errors.directoryTitle')}
           body={t('organizationActivity.errors.directoryBody')}
-          action={<Button type="button" size="sm" variant="secondary" onClick={() => void organizationsQuery.refetch()}><RefreshCw aria-hidden="true" />{t('organizationActivity.actions.retry')}</Button>}
+          action={<Button type="button" size="sm" variant="secondary" onClick={() => void workspace.organizationsQuery.refetch()}><RefreshCw aria-hidden="true" />{t('organizationActivity.actions.retry')}</Button>}
         />
-      ) : organizations.length === 0 ? (
+      ) : workspace.organizations.length === 0 ? (
         <PageState icon={Building2} title={t('organizationActivity.workspace.emptyTitle')} body={t('organizationActivity.workspace.emptyBody')} />
-      ) : selectedId === undefined || switching ? (
+      ) : workspace.selectedId === undefined || workspace.switching ? (
         <OrganizationWorkspaceLoading />
       ) : (
-        <OrganizationActivityWorkspace key={selectedId} organizationId={selectedId} />
+        <OrganizationActivityWorkspace key={workspace.selectedId} organizationId={workspace.selectedId} />
       )}
     </div>
   )

@@ -19,8 +19,95 @@ env:
   RUST_BACKTRACE: "1"
 
 jobs:
+  changes:
+    name: Detect changed components
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      frontend: ${{ steps.paths.outputs.frontend }}
+      rust: ${{ steps.paths.outputs.rust }}
+      database: ${{ steps.paths.outputs.database }}
+      redis: ${{ steps.paths.outputs.redis }}
+    steps:
+      - name: Configure external Gitea checkout endpoint
+        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+
+      - name: Detect changed paths
+        id: paths
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_AFTER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          emit_all() {
+            {
+              echo "frontend=true"
+              echo "rust=true"
+              echo "database=true"
+              echo "redis=true"
+            } >> "$GITHUB_OUTPUT"
+          }
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            emit_all
+            exit 0
+          fi
+
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            base_sha="$PR_BASE_SHA"
+            head_sha="$PR_HEAD_SHA"
+          else
+            base_sha="$PUSH_BEFORE_SHA"
+            head_sha="$PUSH_AFTER_SHA"
+          fi
+
+          if [[ -z "$base_sha" || -z "$head_sha" || "$base_sha" =~ ^0+$ ]]; then
+            emit_all
+            exit 0
+          fi
+
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$base_sha" "$head_sha"
+          git diff --name-only "$base_sha" "$head_sha" > changed-files.txt
+          cat changed-files.txt
+
+          if grep -qx '.github/workflows/ci.yml' changed-files.txt; then
+            emit_all
+            exit 0
+          fi
+
+          matches() {
+            if grep -Eq "$1" changed-files.txt; then
+              echo true
+            else
+              echo false
+            fi
+          }
+
+          {
+            echo "frontend=$(matches '^(web/)')"
+            echo "rust=$(matches '^(crates/|tools/|\.cargo/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|rustfmt\.toml$|clippy\.toml$|deny\.toml$)')"
+            echo "database=$(matches '^(crates/af-db/|tools/ci/run-db-migration-test\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
+            echo "redis=$(matches '^(crates/af-cache/|tools/ci/run-cache-redis-test\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
+          } >> "$GITHUB_OUTPUT"
+
   release-package:
     name: Linux amd64 release package
+    needs: changes
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -88,6 +175,8 @@ jobs:
 
   frontend-quality:
     name: Frontend quality gates
+    needs: changes
+    if: ${{ needs.changes.outputs.frontend == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -126,6 +215,8 @@ jobs:
 
   rust-quality:
     name: Rust quality gates
+    needs: changes
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -206,6 +297,8 @@ jobs:
 
   msrv:
     name: Minimum supported Rust version
+    needs: changes
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -265,6 +358,8 @@ jobs:
 
   sqlite-migration:
     name: SQLite migration smoke test
+    needs: changes
+    if: ${{ needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -320,6 +415,8 @@ jobs:
 
   postgres-migration:
     name: PostgreSQL migration smoke test
+    needs: changes
+    if: ${{ needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -398,6 +495,8 @@ jobs:
 
   mysql-migration:
     name: MySQL migration smoke test
+    needs: changes
+    if: ${{ needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -477,6 +576,8 @@ jobs:
 
   cache-redis:
     name: Redis cache smoke test
+    needs: changes
+    if: ${{ needs.changes.outputs.redis == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:

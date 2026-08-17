@@ -24,8 +24,10 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
-import type { UserTopupMethod, UserTopupOrder } from '@/features/payment-settings/payment-settings-types'
+import type { UserTopupMethod, UserTopupPayment } from '@/features/payment-settings/payment-settings-types'
 import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
+import { organizationQueryKey } from '@/features/organization-budgets/organization-budget-api'
+import { useCreateOrganizationTopupOrder } from '@/features/organization-wallet/organization-wallet-api'
 import {
   createTopupAttempt,
   topupAmountInput,
@@ -56,20 +58,40 @@ import { TopupLoading, TopupState, TopupUnavailable } from './wallet-topup-state
 
 const presetAmounts = [500, 1_000, 2_500, 5_000] as const
 
+type TopupOrderView = {
+  amount_minor: number
+  order_id: string
+  payment?: UserTopupPayment | null
+  quota_amount: number
+  status: 'canceled' | 'created' | 'expired' | 'failed' | 'paid' | 'pending'
+}
+
 /** 组合支付方式选择、幂等恢复、Stripe 内嵌支付与易支付跳转流程。 */
-export function WalletTopupPanel() {
+export function WalletTopupPanel({
+  organizationId,
+  title,
+  description,
+}: {
+  organizationId?: number
+  title?: string
+  description?: string
+} = {}) {
   const { i18n, t } = useTranslation()
   const queryClient = useQueryClient()
   const configurationQuery = useUserTopupConfiguration()
-  const orderMutation = useCreateUserTopupOrder()
+  const userOrderMutation = useCreateUserTopupOrder()
+  const organizationOrderMutation = useCreateOrganizationTopupOrder(organizationId ?? 0)
+  const orderMutation = organizationId === undefined ? userOrderMutation : organizationOrderMutation
   const { formatQuota } = useBalanceDisplay()
   const createOrRecoverOrder = orderMutation.mutateAsync
   const resetOrderMutation = orderMutation.reset
-  const [restoredAttempt] = useState(readStoredTopupAttempt)
+  const topupScope = organizationId === undefined ? 'personal' : `organization:${organizationId}`
+  const returnHash = organizationId === undefined ? '#/console/wallet' : '#/console/organization-wallet'
+  const [restoredAttempt] = useState(() => readStoredTopupAttempt(topupScope))
   const [attempt, setAttempt] = useState<TopupAttempt | undefined>(restoredAttempt)
   const [selectedMethodKey, setSelectedMethodKey] = useState(() => restoredAttempt ? attemptMethodKey(restoredAttempt) : '')
   const [amountInput, setAmountInput] = useState(() => restoredAttempt ? topupAmountInput(restoredAttempt.amountMinor) : '10.00')
-  const [order, setOrder] = useState<UserTopupOrder>()
+  const [order, setOrder] = useState<TopupOrderView>()
   const [confirmation, setConfirmation] = useState<TopupConfirmationPhase>()
   const redirectStatus = usePaymentRedirectStatus()
   const redirectRecoveryStarted = useRef(false)
@@ -90,12 +112,12 @@ export function WalletTopupPanel() {
     : null, [selectedMethod])
 
   const resetAttempt = useCallback(() => {
-    clearStoredTopupAttempt()
+    clearStoredTopupAttempt(topupScope)
     setAttempt(undefined)
     setOrder(undefined)
     setConfirmation(undefined)
     resetOrderMutation()
-  }, [resetOrderMutation])
+  }, [resetOrderMutation, topupScope])
 
   useEffect(() => {
     if (methods.length === 0) return
@@ -108,16 +130,21 @@ export function WalletTopupPanel() {
     setSelectedMethodKey((current) => methods.some((method) => methodKey(method) === current) ? current : methodKey(methods[0]))
   }, [methods, resetAttempt, restoredAttempt])
 
-  const applyOrder = useCallback(async (nextOrder: UserTopupOrder) => {
+  const applyOrder = useCallback(async (nextOrder: TopupOrderView) => {
     setOrder(nextOrder)
     if (nextOrder.status !== 'paid') return
 
-    clearStoredTopupAttempt()
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: userWalletSummaryQueryKey }),
-      queryClient.invalidateQueries({ queryKey: userWalletEntriesQueryKey }),
-    ])
-  }, [queryClient])
+    clearStoredTopupAttempt(topupScope)
+    await (organizationId === undefined
+      ? Promise.all([
+          queryClient.invalidateQueries({ queryKey: userWalletSummaryQueryKey }),
+          queryClient.invalidateQueries({ queryKey: userWalletEntriesQueryKey }),
+        ])
+      : Promise.all([
+          queryClient.invalidateQueries({ queryKey: organizationQueryKey(organizationId, 'wallet', 'summary') }),
+          queryClient.invalidateQueries({ queryKey: organizationQueryKey(organizationId, 'wallet', 'entries') }),
+        ]))
+  }, [organizationId, queryClient, topupScope])
 
   const submitAttempt = useCallback(async (currentAttempt: TopupAttempt) => {
     resetOrderMutation()
@@ -140,7 +167,7 @@ export function WalletTopupPanel() {
   const startTopup = () => {
     if (amountMinor === undefined || !selectedMethod) return
     const nextAttempt = createTopupAttempt(amountMinor, selectedMethod.provider, selectedMethod.payment_method)
-    storeTopupAttempt(nextAttempt)
+    storeTopupAttempt(nextAttempt, topupScope)
     setAttempt(nextAttempt)
     setOrder(undefined)
     setConfirmation(undefined)
@@ -192,7 +219,7 @@ export function WalletTopupPanel() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--hairline)] bg-surface-1/45 px-4 py-3.5">
           <div className="flex min-w-0 items-center gap-3">
             <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand/10 text-brand"><CircleDollarSign className="size-4" aria-hidden="true" /></span>
-            <div className="min-w-0"><h3 className="text-sm font-semibold">{t('wallet.topup.title')}</h3><p className="mt-0.5 text-xs text-muted-foreground">{t('wallet.topup.description')}</p></div>
+            <div className="min-w-0"><h3 className="text-sm font-semibold">{title ?? t('wallet.topup.title')}</h3><p className="mt-0.5 text-xs text-muted-foreground">{description ?? t('wallet.topup.description')}</p></div>
           </div>
           <Badge className="gap-1.5 bg-surface-2 text-muted-foreground">{paymentMethodIcon(selectedMethod)}{t(`wallet.topup.methods.${selectedMethod.payment_method}`)} · {selectedMethod.currency}</Badge>
         </div>
@@ -226,7 +253,7 @@ export function WalletTopupPanel() {
           <section className="min-w-0 p-4">
             {order?.status === 'paid' ? <TopupState icon={CheckCircle2} tone="success" title={t('wallet.topup.states.paidTitle')} body={t('wallet.topup.states.paidBody', { amount: formatQuota(order.quota_amount) })} action={<Button type="button" size="sm" variant="secondary" onClick={resetAttempt}>{t('wallet.topup.actions.done')}</Button>} />
               : confirmation === 'succeeded' || confirmation === 'processing' ? <TopupState icon={Clock3} tone="warning" title={t(confirmation === 'succeeded' ? 'wallet.topup.states.confirmedTitle' : 'wallet.topup.states.processingTitle')} body={t('wallet.topup.states.confirmedBody')} action={<Button type="button" size="sm" variant="secondary" disabled={orderMutation.isPending} onClick={retryAttempt}><RefreshCw className={orderMutation.isPending ? 'animate-spin' : undefined} aria-hidden="true" />{t('wallet.topup.actions.refreshStatus')}</Button>} />
-              : activePayment?.kind === 'stripe' && stripe ? <Elements key={activePayment.payment_intent_id} stripe={stripe} options={{ appearance, clientSecret: activePayment.client_secret, locale: locale === 'zh-CN' ? 'zh' : 'en' }}><WalletStripePaymentForm amountLabel={amountLabel} returnUrl={topupReturnUrl()} onConfirmed={paymentConfirmed} /></Elements>
+              : activePayment?.kind === 'stripe' && stripe ? <Elements key={activePayment.payment_intent_id} stripe={stripe} options={{ appearance, clientSecret: activePayment.client_secret, locale: locale === 'zh-CN' ? 'zh' : 'en' }}><WalletStripePaymentForm amountLabel={amountLabel} returnUrl={topupReturnUrl(returnHash)} onConfirmed={paymentConfirmed} /></Elements>
               : activePayment?.kind === 'redirect' && redirectUrl ? <TopupState icon={ExternalLink} tone="brand" title={t('wallet.topup.states.redirectTitle')} body={t('wallet.topup.states.redirectBody')} action={<Button type="button" size="sm" onClick={() => window.location.assign(redirectUrl)}><ExternalLink aria-hidden="true" />{t('wallet.topup.actions.openPayment')}</Button>} />
               : order && ['failed', 'canceled', 'expired'].includes(order.status) ? <TopupState icon={AlertTriangle} tone="destructive" title={t(`wallet.topup.states.${order.status}Title`)} body={t(`wallet.topup.states.${order.status}Body`)} action={<Button type="button" size="sm" variant="secondary" onClick={resetAttempt}>{t('wallet.topup.actions.newAttempt')}</Button>} />
               : orderMutation.isError ? <TopupState icon={AlertTriangle} tone="destructive" title={t('wallet.topup.states.errorTitle')} body={t(`wallet.topup.errors.${topupErrorKey(apiErrorCode(orderMutation.error))}`)} action={<Button type="button" size="sm" variant="secondary" onClick={retryAttempt}><RefreshCw aria-hidden="true" />{t('wallet.topup.actions.retrySame')}</Button>} />

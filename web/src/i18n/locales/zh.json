@@ -41,6 +41,10 @@
     "organizationApiKeys": "企业 API Key",
     "organizationBudgets": "企业预算",
     "organizationActivity": "企业日志与审计",
+    "organizationOverview": "企业概览",
+    "organizationMembers": "成员与团队",
+    "organizationWallet": "企业钱包",
+    "organizationSettings": "企业设置",
     "wallet": "我的钱包",
     "subscriptions": "我的订阅",
     "invitations": "邀请中心",
@@ -73,7 +77,9 @@
     "expand": "展开侧边栏",
     "home": "返回首页",
     "balanceUnavailable": "余额暂时不可用",
-    "balanceValue": "可用余额 {{value}} 额度"
+    "balanceValue": "可用余额 {{value}} 额度",
+    "organizationBalanceUnavailable": "企业余额暂时不可用",
+    "organizationBalanceValue": "企业可用余额 {{value}} 额度"
   },
   "dashboard": {
     "title": "运行概览",
@@ -3361,6 +3367,15 @@
     "eyebrow": "邀请与返利",
     "title": "邀请中心",
     "subtitle": "分享你的专属链接，并查看已经确认到账的邀请返利。",
+    "organization": {
+      "title": "接受企业邀请",
+      "subtitle": "企业使用同一登录账号。粘贴企业管理员提供的一次性邀请令牌即可加入。",
+      "token": "企业邀请令牌",
+      "accept": "接受邀请",
+      "invalid": "请输入完整且格式正确的企业邀请令牌。",
+      "accepted": "已加入企业 #{{organizationId}}，企业工作空间目录已刷新。",
+      "error": "邀请无法接受。请确认当前登录邮箱与邀请邮箱一致，或联系企业管理员重发。"
+    },
     "share": {
       "title": "专属邀请",
       "subtitle": "邀请码由系统随机生成，可随时复制分享。",
@@ -4190,6 +4205,286 @@
       "usageBody": "调用日志服务暂时不可用，请保留当前范围和筛选后重试。",
       "auditTitle": "无法加载企业管理审计",
       "auditBody": "审计服务暂时不可用，请保留当前筛选后重试。"
+    }
+  },
+  "organizationConsole": {
+    "eyebrow": "企业工作空间",
+    "workspace": {
+      "label": "当前工作空间",
+      "personal": "个人空间"
+    },
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试",
+      "cancel": "取消",
+      "save": "保存",
+      "edit": "编辑",
+      "copy": "复制",
+      "done": "完成",
+      "loadMore": "加载更多",
+      "loadingMore": "正在加载"
+    },
+    "common": {
+      "restricted": "无权查看",
+      "unlimited": "未设置",
+      "allowed": "允许",
+      "denied": "未授权"
+    },
+    "empty": {
+      "title": "还没有可进入的企业",
+      "body": "当前账号尚未加入企业。接受企业邀请后，企业工作空间会出现在这里。"
+    },
+    "errors": {
+      "directoryTitle": "无法读取企业目录",
+      "directoryBody": "服务没有返回当前账号的企业成员关系，请稍后重试。",
+      "overviewTitle": "无法读取企业上下文",
+      "overviewBody": "当前企业的角色、授权和权限投影暂时不可用。",
+      "listTitle": "无法读取企业目录数据",
+      "listBody": "成员、团队或邀请列表暂时不可用，服务端现有状态不受影响。",
+      "conflict": "数据已被其他操作更新。请刷新后按最新版本重新提交。",
+      "mutation": "操作没有返回可靠结果。请保留当前内容，刷新事实后再重试。"
+    },
+    "roles": {
+      "owner": "所有者",
+      "admin": "管理员",
+      "billing": "财务",
+      "member": "成员",
+      "viewer": "观察者"
+    },
+    "memberStatus": {
+      "active": "活动",
+      "suspended": "已停用",
+      "removed": "已移除"
+    },
+    "teamStatus": {
+      "active": "活动",
+      "disabled": "已停用"
+    },
+    "invitationStatus": {
+      "pending": "待接受",
+      "accepted": "已接受",
+      "revoked": "已撤销",
+      "expired": "已过期"
+    },
+    "entitlement": {
+      "active": "授权有效",
+      "grace": "宽限期",
+      "read_only": "只读",
+      "suspended": "已暂停",
+      "closed": "已关闭"
+    },
+    "entitlementHint": {
+      "active": "当前授权允许使用已购买的企业能力。",
+      "grace": "已有资源可继续受限使用，但不能新增成员、团队或 API Key。",
+      "read_only": "保留控制台、日志和账本读取，新的企业调用与普通写入已停止。",
+      "suspended": "企业消费和普通管理写入已因计费或合规风险暂停。",
+      "closed": "企业已关闭，仅按保留策略提供审计事实。"
+    },
+    "permissions": {
+      "organization": {
+        "profile": { "write": "修改企业资料" },
+        "ownership": { "transfer": "转移企业所有权" },
+        "members": { "manage": "管理成员与邀请" },
+        "teams": { "manage": "管理团队" },
+        "wallet": { "read": "查看企业钱包", "manage": "充值与调账" },
+        "budgets": { "manage": "管理企业预算" },
+        "keys": { "read_all": "查看全部企业 Key", "manage_self": "管理本人企业 Key" },
+        "usage_logs": { "read_all": "查看全部调用日志", "read_self": "查看本人调用日志" },
+        "audit": { "read": "查看管理审计" }
+      }
+    },
+    "overview": {
+      "title": "企业概览",
+      "subtitle": "核对当前企业的资金、预算、席位、调用与商业授权状态。",
+      "metrics": {
+        "label": "企业关键指标",
+        "balance": "可用余额",
+        "budget": "企业预算剩余",
+        "requests": "当前日志范围请求",
+        "seats": "活动席位",
+        "balanceHint": "仅用于当前企业请求，不会复制到个人钱包。",
+        "budgetHint": "当前企业层预算窗口的剩余额度。",
+        "requestsHint": "按当前角色允许的脱敏汇总计算。",
+        "seatsHint": "还可使用 {{count}} 个席位。",
+        "permissionHint": "当前角色没有读取该指标的权限。"
+      },
+      "capacity": {
+        "title": "授权容量",
+        "subtitle": "容量由服务端商业授权强制执行，前端只展示真实投影。",
+        "seats": "成员席位",
+        "teams": "团队数量",
+        "keys": "企业 Key 上限",
+        "value": "{{used}} / {{limit}}",
+        "limitOnly": "上限 {{limit}}"
+      },
+      "links": {
+        "members": "成员与团队",
+        "keys": "企业 API Key",
+        "wallet": "企业钱包与账本",
+        "budgets": "分层预算",
+        "activity": "调用日志与审计",
+        "settings": "企业设置"
+      }
+    },
+    "members": {
+      "title": "成员与团队",
+      "subtitle": "按企业范围管理成员角色、状态、团队归属和邀请，不影响个人空间或其他企业。",
+      "summary": { "seats": "活动席位", "teams": "活动团队", "role": "我的企业角色" },
+      "tabs": { "label": "成员管理视图", "members": "成员", "teams": "团队", "invitations": "邀请" },
+      "memberLabel": "用户 #{{id}}",
+      "membershipLabel": "成员关系 #{{id}}",
+      "teamLabel": "团队 #{{id}}",
+      "noTeam": "未分配团队",
+      "fields": { "member": "成员", "role": "角色", "status": "状态", "team": "主团队" },
+      "list": {
+        "title": "成员目录",
+        "subtitle": "稳定游标加载当前企业成员；Owner 只能通过所有权转移变更。",
+        "emptyTitle": "还没有企业成员",
+        "emptyBody": "发出邀请并由用户接受后，成员会出现在这里。"
+      },
+      "editor": {
+        "title": "编辑企业成员",
+        "description": "在 {{organization}} 内修改用户 #{{userId}} 的角色、状态和团队归属。",
+        "removedWarning": "移除后将停用该成员在 {{organization}} 的企业能力和企业 Key，但保留历史账务、用量与审计。",
+        "ownerHint": "Owner 不允许普通编辑。请在企业设置中执行所有权转移。"
+      }
+    },
+    "teams": {
+      "disabledByEntitlement": "当前商业授权未开启团队管理，现有团队只读保留。",
+      "noDescription": "没有团队说明",
+      "actions": { "create": "新建团队", "disable": "停用团队" },
+      "list": {
+        "title": "团队目录",
+        "subtitle": "团队是企业内预算策略组，与平台计费分组严格隔离。",
+        "emptyTitle": "还没有团队",
+        "emptyBody": "授权允许时可创建团队并分配成员。"
+      },
+      "fields": { "name": "团队名称", "description": "团队说明" },
+      "validation": { "name": "团队名称不能为空、不能有首尾空白，且不能超过 160 字节。" },
+      "editor": {
+        "createTitle": "新建企业团队",
+        "editTitle": "编辑企业团队",
+        "description": "团队只属于 {{organization}}，不会创建或修改平台分组。"
+      },
+      "disable": {
+        "title": "停用团队",
+        "body": "确定停用 {{organization}} 中的“{{team}}”吗？仍有活动成员时服务端会拒绝。"
+      }
+    },
+    "invitations": {
+      "actions": { "invite": "发出邀请", "send": "发送邀请", "batch": "批量邀请", "resend": "重新发送", "revoke": "撤销邀请" },
+      "fields": { "email": "受邀邮箱", "expiresAt": "过期时间", "expiresHint": "留空使用服务端默认期限；填写时按浏览器本地时间提交。" },
+      "validation": "请填写有效邮箱和未来的过期时间。",
+      "list": {
+        "title": "企业邀请",
+        "subtitle": "列表只展示脱敏邀请事实，不返回邮箱明文或令牌。",
+        "emptyTitle": "还没有企业邀请",
+        "emptyBody": "发出单个或批量邀请后，状态会显示在这里。",
+        "expires": "{{time}} 过期"
+      },
+      "editor": { "title": "邀请企业成员", "description": "为 {{organization}} 创建一次性邮箱邀请。" },
+      "issued": {
+        "title": "邀请令牌已签发",
+        "body": "这是加入 {{organization}} 的一次性明文令牌，关闭后无法再次读取。",
+        "hint": "请通过受信渠道交给受邀用户。对方登录后在“邀请中心”粘贴接受。"
+      },
+      "batch": {
+        "title": "批量邀请成员",
+        "description": "为 {{organization}} 逐行填写邮箱、角色和团队，最多 200 项。",
+        "rows": "结构化邀请行",
+        "count": "当前 {{count}} 行",
+        "add": "添加一行",
+        "remove": "移除该行",
+        "validation": "每一行都必须有有效邮箱，且总数为 1 至 200。",
+        "preview": "预览",
+        "submit": "提交批次",
+        "ready": "可提交",
+        "blocked": "需处理",
+        "previewReady": "全部行已通过服务端预览，当前还有 {{count}} 个可用席位。",
+        "previewBlocked": "部分行不可提交，当前还有 {{count}} 个可用席位。"
+      },
+      "issues": {
+        "invalid_email": "邮箱无效",
+        "invalid_expiration": "过期时间无效",
+        "duplicate_email": "批次内邮箱重复",
+        "existing_member": "已是企业成员",
+        "pending_invitation": "已有待接受邀请",
+        "invalid_team": "团队不可用",
+        "seat_unavailable": "可用席位不足"
+      },
+      "revoke": { "title": "撤销企业邀请", "body": "确定撤销 {{organization}} 的这条待接受邀请吗？" }
+    },
+    "wallet": {
+      "title": "企业钱包与账本",
+      "subtitle": "核对企业可用余额、在途冻结、累计使用和只追加资金事实。企业消费不会回退个人钱包。",
+      "restricted": { "title": "没有钱包读取权限", "body": "当前企业角色不能读取余额或账本。资金约束仍由服务端执行。" },
+      "summary": {
+        "label": "企业钱包状态",
+        "balance": "可用余额",
+        "balanceHint": "可供新企业请求预扣",
+        "used": "累计使用",
+        "usedHint": "已经完成结算的企业额度",
+        "frozen": "在途冻结",
+        "frozenHint": "等待最终结算的预扣额度"
+      },
+      "topup": { "title": "企业在线充值", "description": "为 {{organization}} 创建独立企业充值订单，不会进入个人钱包。" },
+      "adjustment": {
+        "title": "企业钱包调账",
+        "subtitle": "使用只追加事件对企业余额做受审计增量调整。",
+        "direction": "调账方向",
+        "increase": "增加额度",
+        "decrease": "扣减额度",
+        "amount": "额度数量",
+        "reason": "调账原因",
+        "preview": "调整后余额",
+        "submit": "提交调账",
+        "applied": "调账已写入企业钱包和只追加账本。",
+        "replayed": "相同事件已存在，本次返回既有调账结果。",
+        "validation": { "amount": "请输入大于零的安全整数。", "reason": "原因不能为空、不能有首尾空白或控制字符，最多 500 字节。" },
+        "previewState": { "empty": "等待输入", "insufficient": "余额不足", "overflow": "将超过上限", "ready": "可提交" }
+      },
+      "ledger": {
+        "title": "企业资金账本",
+        "subtitle": "按账本 ID 倒序展示不可变企业余额事实。",
+        "emptyTitle": "还没有账本记录",
+        "emptyBody": "企业出现初始余额、调账、充值或用量结算后会生成记录。",
+        "balanceAfter": "余额 {{value}}",
+        "systemActor": "系统",
+        "actor": "操作者 #{{id}}"
+      },
+      "entryType": { "opening_balance": "期初余额", "admin_adjustment": "人工调账", "topup": "充值到账", "usage_settlement": "用量结算" },
+      "entryReason": { "opening_balance": "企业期初余额", "admin_adjustment": "企业钱包调账", "topup": "企业充值到账", "usage_settlement": "企业用量结算" },
+      "errors": {
+        "summaryTitle": "无法读取企业钱包",
+        "summaryBody": "服务没有返回可靠余额状态，请稍后重试。",
+        "ledgerTitle": "无法读取企业账本",
+        "ledgerBody": "账本历史暂时不可用，现有服务端资金事实不受影响。",
+        "more": "更早的账本记录加载失败。",
+        "wallet_insufficient_quota": "企业余额不足，不能完成扣减。",
+        "wallet_overflow": "调整后余额会超过安全整数上限。",
+        "wallet_outcome_unknown": "暂时无法确认调账结果，请使用同一事件键重试。",
+        "wallet_event_conflict": "事件键已经绑定到不同调账事实。",
+        "unknown": "企业钱包操作失败，请刷新事实后重试。"
+      }
+    },
+    "settings": {
+      "title": "企业设置",
+      "subtitle": "查看企业资料、商业授权和固定角色权限，并在服务端支持的范围内转移所有权。",
+      "identity": { "title": "企业资料", "subtitle": "当前接口只提供只读资料投影。", "name": "企业名称", "slug": "企业标识", "organizationId": "企业 ID", "role": "我的角色" },
+      "entitlement": { "title": "商业授权", "subtitle": "授权状态与容量由服务端强制执行。", "seats": "席位", "teams": "团队", "keys": "企业 Key 上限", "audit": "审计保留", "days": "{{count}} 天" },
+      "permissions": { "title": "当前角色权限", "subtitle": "固定角色只映射稳定权限码，不能授予平台权限。" },
+      "ownership": {
+        "title": "转移所有权",
+        "subtitle": "先提升新的 Owner，再在同一事务中降级当前 Owner。",
+        "target": "新的企业所有者",
+        "select": "选择活动成员",
+        "action": "转移所有权",
+        "ownerOnly": "只有当前 Owner 可以执行所有权转移。",
+        "confirmTitle": "确认转移企业所有权",
+        "confirmBody": "确定将 {{organization}} 的所有权转移给用户 #{{userId}} 吗？完成后你的角色将被降级。",
+        "confirm": "确认转移"
+      },
+      "unavailable": { "title": "资料修改与关闭尚未开放", "body": "后端当前没有企业改名或关闭接口，因此本页不渲染必然失败的提交表单。" }
     }
   },
   "wallet": {

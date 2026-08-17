@@ -10,14 +10,18 @@ test('企业活动路由进入独立工作空间视图', () => {
 })
 
 test('页面按企业权限裁剪调用范围与审计页签', async () => {
-  const pageSource = await readFile(new URL('../src/features/organization-activity/organization-activity-page.tsx', import.meta.url), 'utf8')
+  const [pageSource, workspaceSource] = await Promise.all([
+    readFile(new URL('../src/features/organization-activity/organization-activity-page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/features/organization-console/organization-workspace-context.tsx', import.meta.url), 'utf8'),
+  ])
   assert.match(pageSource, /organization\.usage_logs\.read_all/)
   assert.match(pageSource, /organization\.usage_logs\.read_self/)
   assert.match(pageSource, /organization\.audit\.read/)
   assert.match(pageSource, /overview\.role === 'viewer'/)
   assert.match(pageSource, /\['summary', 'self'\]/)
-  assert.match(pageSource, /clearOrganizationWorkspaceCache/)
-  assert.match(pageSource, /key=\{selectedId\}/)
+  assert.match(pageSource, /useOrganizationWorkspace/)
+  assert.match(pageSource, /key=\{workspace\.selectedId\}/)
+  assert.match(workspaceSource, /clearOrganizationWorkspaceCache/)
   assert.match(pageSource, /hidden=\{activeTab !== 'usage'\}/)
   assert.match(pageSource, /hidden=\{activeTab !== 'audit'\}/)
 })

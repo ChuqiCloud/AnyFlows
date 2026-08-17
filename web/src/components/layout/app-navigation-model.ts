@@ -7,6 +7,10 @@ export type NavKey =
   | 'organizationApiKeys'
   | 'organizationActivity'
   | 'organizationBudgets'
+  | 'organizationMembers'
+  | 'organizationOverview'
+  | 'organizationSettings'
+  | 'organizationWallet'
   | 'wallet'
   | 'subscriptions'
   | 'invitations'
@@ -34,7 +38,7 @@ export type AdminSectionKey = 'personal' | 'organization' | 'operations' | 'gate
 
 export const userNavigationGroups = [
   { key: 'use', items: ['models', 'playground', 'videoTasks'] },
-  { key: 'organization', items: ['organizationApiKeys', 'organizationBudgets', 'organizationActivity'] },
+  { key: 'organization', items: ['organizationOverview', 'organizationMembers', 'organizationApiKeys', 'organizationBudgets', 'organizationWallet', 'organizationActivity', 'organizationSettings'] },
   { key: 'account', items: ['apiKeys', 'wallet', 'usage', 'subscriptions', 'invitations', 'profile'] },
 ] as const satisfies ReadonlyArray<{ key: 'use' | 'organization' | 'account'; items: readonly NavKey[] }>
 
@@ -42,7 +46,7 @@ export const adminWorkspaceItems = ['overview', 'usage', 'models', 'playground',
 
 export const adminNavigationSections = [
   { key: 'personal', items: ['apiKeys', 'wallet', 'subscriptions', 'invitations', 'profile'] },
-  { key: 'organization', items: ['organizationApiKeys', 'organizationBudgets', 'organizationActivity'] },
+  { key: 'organization', items: ['organizationOverview', 'organizationMembers', 'organizationApiKeys', 'organizationBudgets', 'organizationWallet', 'organizationActivity', 'organizationSettings'] },
   { key: 'operations', items: ['users', 'subscriptionManagement', 'redemptionCodes', 'paymentSettings', 'billingSettings'] },
   { key: 'gateway', items: ['modelSettings', 'groupSettings', 'channels', 'credentials', 'credentialProxies', 'routes'] },
   { key: 'platform', items: ['siteSettings', 'authenticationSettings', 'emailSettings', 'networkSettings', 'keys'] },
@@ -67,6 +71,10 @@ export const activeKeyByView: Readonly<Record<string, NavKey>> = {
   'organization-api-keys': 'organizationApiKeys',
   'organization-activity': 'organizationActivity',
   'organization-budgets': 'organizationBudgets',
+  'organization-members': 'organizationMembers',
+  'organization-overview': 'organizationOverview',
+  'organization-settings': 'organizationSettings',
+  'organization-wallet': 'organizationWallet',
   wallet: 'wallet',
   subscriptions: 'subscriptions',
   invitations: 'invitations',
