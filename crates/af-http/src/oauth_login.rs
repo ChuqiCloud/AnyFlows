@@ -7,7 +7,7 @@ use af_admin::{
 use axum::{
     Extension, Json, Router,
     body::Body,
-    extract::{Query, State, rejection::JsonRejection, rejection::QueryRejection},
+    extract::{RawQuery, State, rejection::JsonRejection},
     middleware,
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -56,7 +56,6 @@ pub(crate) struct OAuthLoginExchangeRequest {
     ticket: String,
 }
 
-#[derive(Deserialize)]
 struct OAuthLoginCallbackQuery {
     state: Option<String>,
     code: Option<String>,
@@ -155,10 +154,10 @@ async fn start_github_login(
 async fn complete_github_login(
     State(state): State<OAuthLoginHttpState>,
     headers: HeaderMap,
-    query: Result<Query<OAuthLoginCallbackQuery>, QueryRejection>,
+    RawQuery(raw_query): RawQuery,
 ) -> Response {
-    let result = match query {
-        Ok(Query(query)) => match (query.state, query.code, query.error) {
+    let result = match parse_oauth_callback_query(raw_query.as_deref()) {
+        Ok(query) => match (query.state, query.code, query.error) {
             (Some(state_value), Some(code), None)
                 if oauth_state_cookie_matches(&headers, &state_value) =>
             {
@@ -264,11 +263,15 @@ fn oauth_state_cookie_material(authorization_url: &str) -> Result<(String, bool)
     let mut redirect_uri = None;
     for (name, value) in authorization_url.query_pairs() {
         match name.as_ref() {
-            "state" if state.replace(value.into_owned()).is_some() => {
-                return Err(ManagementError::Internal);
+            "state" => {
+                if state.replace(value.into_owned()).is_some() {
+                    return Err(ManagementError::Internal);
+                }
             }
-            "redirect_uri" if redirect_uri.replace(value.into_owned()).is_some() => {
-                return Err(ManagementError::Internal);
+            "redirect_uri" => {
+                if redirect_uri.replace(value.into_owned()).is_some() {
+                    return Err(ManagementError::Internal);
+                }
             }
             _ => {}
         }
@@ -284,6 +287,27 @@ fn oauth_state_cookie_material(authorization_url: &str) -> Result<(String, bool)
         _ => return Err(ManagementError::Internal),
     };
     Ok((oauth_state_cookie_digest(&state), secure))
+}
+
+/// 仅提取 GitHub 回调必需字段；重复字段拒绝，Provider 附加诊断字段忽略。
+fn parse_oauth_callback_query(
+    raw_query: Option<&str>,
+) -> Result<OAuthLoginCallbackQuery, OAuthLoginError> {
+    let mut state = None;
+    let mut code = None;
+    let mut error = None;
+    for (name, value) in url::form_urlencoded::parse(raw_query.unwrap_or_default().as_bytes()) {
+        let slot = match name.as_ref() {
+            "state" => &mut state,
+            "code" => &mut code,
+            "error" => &mut error,
+            _ => continue,
+        };
+        if slot.replace(value.into_owned()).is_some() {
+            return Err(OAuthLoginError::Rejected);
+        }
+    }
+    Ok(OAuthLoginCallbackQuery { state, code, error })
 }
 
 fn oauth_state_set_cookie(digest: &str, secure: bool) -> Result<HeaderValue, ManagementError> {

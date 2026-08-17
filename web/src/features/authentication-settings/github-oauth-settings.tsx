@@ -1,4 +1,4 @@
-import { Check, Copy, Github, LoaderCircle, RefreshCw, ShieldAlert } from 'lucide-react'
+import { Check, Copy, GitFork, LoaderCircle, RefreshCw, ShieldAlert } from 'lucide-react'
 import { type FormEvent, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -51,15 +51,16 @@ export function GitHubOAuthSettings() {
       </div>
     )
   }
+  const currentSettings = settings
 
   const configuredSecret = secretAction === 'keep'
-    ? settings.client_secret_configured
+    ? currentSettings.client_secret_configured
     : secretAction === 'replace'
       ? clientSecret.length > 0
       : false
-  const configurationComplete = Boolean(settings.callback_url && clientId.trim() && configuredSecret)
-  const dirty = enabled !== settings.enabled
-    || clientId !== (settings.client_id ?? '')
+  const configurationComplete = Boolean(currentSettings.callback_url && clientId.trim() && configuredSecret)
+  const dirty = enabled !== currentSettings.enabled
+    || clientId !== (currentSettings.client_id ?? '')
     || secretAction !== 'keep'
     || clientSecret.length > 0
 
@@ -72,7 +73,7 @@ export function GitHubOAuthSettings() {
     setValidationError(false)
     try {
       await mutation.mutateAsync({
-        expected_version: settings.version,
+        expected_version: currentSettings.version,
         enabled,
         client_id: clientId.trim() || null,
         client_secret: secretAction === 'replace' ? clientSecret : null,
@@ -84,9 +85,9 @@ export function GitHubOAuthSettings() {
   }
 
   async function copyCallback() {
-    if (!settings.callback_url) return
+    if (!currentSettings.callback_url) return
     try {
-      await navigator.clipboard.writeText(settings.callback_url)
+      await navigator.clipboard.writeText(currentSettings.callback_url)
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1_500)
     } catch {
@@ -98,7 +99,7 @@ export function GitHubOAuthSettings() {
     <form onSubmit={(event) => void submit(event)} className="overflow-hidden rounded-xl border border-[var(--hairline)] bg-surface-1/45 shadow-[var(--shadow-subtle)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--hairline)] px-4 py-3.5">
         <div className="flex items-center gap-2">
-          <Github className="size-4" aria-hidden="true" />
+          <GitFork className="size-4" aria-hidden="true" />
           <h3 className="text-sm font-semibold">{t('authenticationSettings.oauth.title')}</h3>
           <Badge className={enabled ? 'border-success/25 bg-success/10 text-success' : undefined}>
             {t(enabled ? 'authenticationSettings.status.enabled' : 'authenticationSettings.status.disabled')}
@@ -121,7 +122,7 @@ export function GitHubOAuthSettings() {
           <div className="flex gap-2">
             <Input
               id="github-oauth-callback"
-              value={settings.callback_url ?? t('authenticationSettings.oauth.callbackMissing')}
+              value={currentSettings.callback_url ?? t('authenticationSettings.oauth.callbackMissing')}
               readOnly
               className="font-mono text-xs"
             />
@@ -129,7 +130,7 @@ export function GitHubOAuthSettings() {
               type="button"
               size="icon"
               variant="secondary"
-              disabled={!settings.callback_url}
+              disabled={!currentSettings.callback_url}
               aria-label={t('authenticationSettings.oauth.copyCallback')}
               title={t('authenticationSettings.oauth.copyCallback')}
               onClick={() => void copyCallback()}
@@ -170,7 +171,7 @@ export function GitHubOAuthSettings() {
             <option value="clear">{t('authenticationSettings.oauth.secret.clear')}</option>
           </Select>
           <p className="text-[0.6875rem] leading-4 text-muted-foreground">
-            {t(settings.client_secret_configured
+            {t(currentSettings.client_secret_configured
               ? 'authenticationSettings.oauth.secret.configured'
               : 'authenticationSettings.oauth.secret.missing')}
           </p>
@@ -194,10 +195,10 @@ export function GitHubOAuthSettings() {
         ) : null}
       </div>
 
-      {!settings.callback_url || validationError ? (
+      {!currentSettings.callback_url || validationError ? (
         <div className="mx-4 mb-4 flex items-start gap-2.5 rounded-lg border border-warning/25 bg-warning/8 p-3 text-xs leading-5">
           <ShieldAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
-          <span>{t(!settings.callback_url
+          <span>{t(!currentSettings.callback_url
             ? 'authenticationSettings.oauth.errors.publicBaseUrl'
             : 'authenticationSettings.oauth.errors.incomplete')}</span>
         </div>
@@ -207,7 +208,7 @@ export function GitHubOAuthSettings() {
         <span className={mutation.isError ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'} role={mutation.isError ? 'alert' : undefined}>
           {mutation.isError
             ? t('authenticationSettings.oauth.errors.save')
-            : t('authenticationSettings.oauth.version', { version: settings.version })}
+            : t('authenticationSettings.oauth.version', { version: currentSettings.version })}
         </span>
         <Button type="submit" disabled={!dirty || mutation.isPending}>
           {mutation.isPending ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : null}

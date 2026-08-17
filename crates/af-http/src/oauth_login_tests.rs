@@ -287,6 +287,34 @@ async fn callback_rejects_missing_or_mismatched_browser_state_cookie() {
     );
 }
 
+#[tokio::test]
+async fn callback_rejects_duplicate_security_parameters() {
+    let service = Arc::new(FakeOAuthLoginService::new());
+    let app = router(Arc::clone(&service));
+    let cookie = begin_cookie(&app).await;
+    let response = app
+        .oneshot(
+            Request::get("/api/auth/oauth/github/callback?state=opaque&state=opaque&code=code")
+                .header(COOKIE, cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert!(
+        response.headers()[LOCATION]
+            .to_str()
+            .unwrap()
+            .ends_with("error=failed")
+    );
+    assert_eq!(
+        service.calls.lock().unwrap().as_slice(),
+        ["begin", "failure"]
+    );
+}
+
 fn router(service: Arc<FakeOAuthLoginService>) -> axum::Router {
     let service: Arc<dyn OAuthLoginService> = service;
     build_oauth_login_router(service, Arc::new(FakeSessionAuthenticator))

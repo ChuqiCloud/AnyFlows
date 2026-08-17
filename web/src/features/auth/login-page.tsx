@@ -5,7 +5,7 @@ import {
   CheckCircle2,
   Eye,
   EyeOff,
-  Github,
+  GitFork,
   LoaderCircle,
   LockKeyhole,
   RefreshCw,
@@ -165,7 +165,7 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                   >
                     {oauthMutation.isPending
                       ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
-                      : <Github className="size-4" aria-hidden="true" />}
+                      : <GitFork className="size-4" aria-hidden="true" />}
                     {oauthMutation.isPending ? t('auth.login.oauthStarting') : t('auth.login.github')}
                   </Button>
                 ) : null}
