@@ -28,7 +28,9 @@ pub enum SystemSecretKind {
     EpayMerchantKey,
     /// GitHub 用户登录 OAuth App 的 Client Secret。
     OAuthLoginGithubClientSecret,
-    /// 用户登录 OAuth state 内携带的 PKCE verifier 封套。
+    /// Discord 用户登录 OAuth App 的 Client Secret。
+    OAuthLoginDiscordClientSecret,
+    /// 用户登录 OAuth state 内携带的一次性随机材料封套。
     OAuthLoginState,
     /// 凭据专属代理认证密码；记录标识参与 AAD，禁止密文跨代理搬用。
     CredentialProxyPassword(af_domain::ProxyId),
@@ -43,6 +45,7 @@ impl SystemSecretKind {
             Self::StripeWebhookSecret => "stripe_webhook_secret",
             Self::EpayMerchantKey => "epay_merchant_key",
             Self::OAuthLoginGithubClientSecret => "oauth_login_github_client_secret",
+            Self::OAuthLoginDiscordClientSecret => "oauth_login_discord_client_secret",
             Self::OAuthLoginState => "oauth_login_state",
             Self::CredentialProxyPassword(_) => "credential_proxy_password",
         }
@@ -225,6 +228,9 @@ fn system_secret_aad(kind: SystemSecretKind) -> Vec<u8> {
         | SystemSecretKind::StripeWebhookSecret
         | SystemSecretKind::EpayMerchantKey => "payment_settings:1".to_owned(),
         SystemSecretKind::OAuthLoginGithubClientSecret => "oauth_login_providers:github".to_owned(),
+        SystemSecretKind::OAuthLoginDiscordClientSecret => {
+            "oauth_login_providers:discord".to_owned()
+        }
         SystemSecretKind::OAuthLoginState => "oauth_login_state:v1".to_owned(),
         SystemSecretKind::CredentialProxyPassword(proxy_id) => {
             format!("proxies:{}", proxy_id.get())
@@ -342,6 +348,10 @@ mod tests {
             b"anyflows:system-secret:v1:record=oauth_login_providers:github:kind=oauth_login_github_client_secret"
         );
         assert_eq!(
+            system_secret_aad(SystemSecretKind::OAuthLoginDiscordClientSecret),
+            b"anyflows:system-secret:v1:record=oauth_login_providers:discord:kind=oauth_login_discord_client_secret"
+        );
+        assert_eq!(
             system_secret_aad(SystemSecretKind::OAuthLoginState),
             b"anyflows:system-secret:v1:record=oauth_login_state:v1:kind=oauth_login_state"
         );
@@ -361,6 +371,7 @@ mod tests {
             SystemSecretKind::ProxyPassword,
             SystemSecretKind::SmtpPassword,
             SystemSecretKind::OAuthLoginGithubClientSecret,
+            SystemSecretKind::OAuthLoginDiscordClientSecret,
             SystemSecretKind::OAuthLoginState,
         ] {
             assert_eq!(

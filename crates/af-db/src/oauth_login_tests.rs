@@ -4,9 +4,9 @@ use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, JsonValue, Set};
 
 use super::{
     CREDENTIAL_ENVELOPE_NONCE_BYTES, DatabaseOptions, EncryptedCredentialEnvelope,
-    MigrationOptions, OAUTH_LOGIN_GITHUB_PROVIDER, OAuthIdentityCompletion,
-    OAuthLoginProviderWriteRecord, OAuthLoginRepository, OAuthLoginRepositoryError,
-    OAuthLoginSecretUpdate,
+    MigrationOptions, OAUTH_LOGIN_DISCORD_PROVIDER, OAUTH_LOGIN_GITHUB_PROVIDER,
+    OAuthIdentityCompletion, OAuthLoginProviderWriteRecord, OAuthLoginRepository,
+    OAuthLoginRepositoryError, OAuthLoginSecretUpdate,
 };
 use crate::entity::{authentication_settings, groups, users};
 
@@ -34,6 +34,12 @@ async fn provider_settings_use_version_cas_and_never_require_plaintext_reads()
         .await?;
     assert!(!initial.available());
     assert!(!initial.client_secret_configured());
+    let discord = fixture
+        .repository
+        .provider(OAUTH_LOGIN_DISCORD_PROVIDER)
+        .await?;
+    assert!(!discord.available());
+    assert_eq!(discord.version(), 1);
 
     let saved = fixture
         .repository
@@ -50,6 +56,14 @@ async fn provider_settings_use_version_cas_and_never_require_plaintext_reads()
     assert!(saved.available());
     assert!(saved.client_secret_configured());
     assert_eq!(saved.version(), initial.version() + 1);
+    assert_eq!(
+        fixture
+            .repository
+            .provider(OAUTH_LOGIN_DISCORD_PROVIDER)
+            .await?
+            .version(),
+        discord.version()
+    );
     let debug = format!("{saved:?}");
     assert!(!debug.contains("github-client-id"));
     assert!(!debug.contains("oauth-test-key"));

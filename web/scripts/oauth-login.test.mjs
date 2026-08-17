@@ -28,6 +28,17 @@ test('登录页只消费公开 Provider 投影并请求服务端授权地址', (
     'utf8',
   )
   assert.match(source, /authentication\.oauth_providers/)
-  assert.match(source, /beginGitHubOAuthLogin/)
+  assert.match(source, /beginOAuthLogin/)
+  assert.match(source, /provider\.id === 'discord'/)
   assert.doesNotMatch(source, /github\.com\/login\/oauth\/authorize/)
+})
+
+test('OAuth 管理设置按 Provider 分开渲染并保持独立查询键', () => {
+  const source = readFileSync(
+    new URL('../src/features/authentication-settings/oauth-provider-settings.tsx', import.meta.url),
+    'utf8',
+  )
+  assert.match(source, /useAdminOAuthLoginSettings\(provider\)/)
+  assert.match(source, /useUpdateAdminOAuthLoginSettings\(provider\)/)
+  assert.match(source, /authenticationSettings\.oauth\.\$\{provider\}/)
 })

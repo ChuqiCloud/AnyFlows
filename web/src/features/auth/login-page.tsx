@@ -8,6 +8,7 @@ import {
   GitFork,
   LoaderCircle,
   LockKeyhole,
+  MessageCircle,
   RefreshCw,
   UserRoundPlus,
 } from 'lucide-react'
@@ -19,7 +20,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { AuthCapabilityCard, AuthCapabilitySkeleton } from '@/features/auth/auth-capability-card'
 import { AuthPageShell } from '@/features/auth/auth-page-shell'
-import { beginGitHubOAuthLogin } from '@/features/auth/oauth-login-api'
+import { beginOAuthLogin, type OAuthLoginProvider } from '@/features/auth/oauth-login-api'
 import { establishManagementSession } from '@/features/auth/session-query'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
 import { apiClient, ApiError } from '@/lib/api'
@@ -62,7 +63,7 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
       return data
     },
   })
-  const oauthMutation = useMutation({ mutationFn: beginGitHubOAuthLogin })
+  const oauthMutation = useMutation({ mutationFn: beginOAuthLogin })
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -76,10 +77,10 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
     }
   }
 
-  async function handleGitHubLogin() {
+  async function handleOAuthLogin(provider: OAuthLoginProvider) {
     setLoginError(undefined)
     try {
-      const response = await oauthMutation.mutateAsync()
+      const response = await oauthMutation.mutateAsync(provider)
       window.location.assign(response.authorization_url)
     } catch {
       setLoginError('unavailable')
@@ -91,9 +92,10 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
   const heroTitle = site?.brand.tagline ?? t('auth.login.heroTitle')
   const heroBody = site?.brand.description ?? t('auth.login.heroBody')
   const passwordLoginEnabled = site?.authentication.password_login_enabled ?? false
-  const githubLoginEnabled = site?.authentication.oauth_providers?.some(
-    (provider) => provider.id === 'github',
-  ) ?? false
+  const oauthProviders = site?.authentication.oauth_providers?.filter(
+    (provider) => provider.id === 'github' || provider.id === 'discord',
+  ) ?? []
+  const oauthLoginEnabled = oauthProviders.length > 0
   const registrationEnabled = site?.authentication.registration_enabled ?? false
   const registrationAvailable = passwordLoginEnabled && registrationEnabled
   const visibleError = loginError ?? (noticeDismissed ? undefined : notice)
@@ -131,7 +133,7 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
               </div>
             )}
           />
-        ) : !passwordLoginEnabled && !githubLoginEnabled ? (
+        ) : !passwordLoginEnabled && !oauthLoginEnabled ? (
           <AuthCapabilityCard
             icon={<LockKeyhole className="size-5" aria-hidden="true" />}
             title={t('auth.login.disabledTitle')}
@@ -154,23 +156,32 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
 
             <CardContent className="px-6 pb-6 sm:px-7 sm:pb-7">
               <form className="grid gap-5" onSubmit={handleSubmit}>
-                {githubLoginEnabled ? (
-                  <Button
-                    type="button"
-                    size="lg"
-                    variant="secondary"
-                    className="w-full"
-                    disabled={oauthMutation.isPending}
-                    onClick={() => void handleGitHubLogin()}
-                  >
-                    {oauthMutation.isPending
-                      ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
-                      : <GitFork className="size-4" aria-hidden="true" />}
-                    {oauthMutation.isPending ? t('auth.login.oauthStarting') : t('auth.login.github')}
-                  </Button>
-                ) : null}
+                {oauthProviders.map((provider) => {
+                  const providerId = provider.id as OAuthLoginProvider
+                  const isStarting = oauthMutation.isPending && oauthMutation.variables === providerId
+                  return (
+                    <Button
+                      key={provider.id}
+                      type="button"
+                      size="lg"
+                      variant="secondary"
+                      className="w-full"
+                      disabled={oauthMutation.isPending}
+                      onClick={() => void handleOAuthLogin(providerId)}
+                    >
+                      {isStarting
+                        ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+                        : provider.id === 'github'
+                          ? <GitFork className="size-4" aria-hidden="true" />
+                          : <MessageCircle className="size-4" aria-hidden="true" />}
+                      {isStarting
+                        ? t(`auth.login.oauthStarting.${provider.id}`)
+                        : t(`auth.login.oauth.${provider.id}`)}
+                    </Button>
+                  )
+                })}
 
-                {githubLoginEnabled && passwordLoginEnabled ? (
+                {oauthLoginEnabled && passwordLoginEnabled ? (
                   <div className="flex items-center gap-3 text-xs text-muted-foreground" aria-hidden="true">
                     <span className="h-px flex-1 bg-[var(--hairline)]" />
                     <span>{t('auth.login.orPassword')}</span>

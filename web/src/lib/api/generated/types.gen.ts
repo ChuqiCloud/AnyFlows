@@ -3154,6 +3154,21 @@ export type StartGitHubOAuthLoginResponses = {
     200: OAuthLoginStartResponse;
 };
 export type StartGitHubOAuthLoginResponse = StartGitHubOAuthLoginResponses[keyof StartGitHubOAuthLoginResponses];
+export type StartDiscordOAuthLoginData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/auth/oauth/discord/start';
+};
+export type StartDiscordOAuthLoginErrors = {
+    409: ManagementError;
+    500: ManagementError;
+};
+export type StartDiscordOAuthLoginError = StartDiscordOAuthLoginErrors[keyof StartDiscordOAuthLoginErrors];
+export type StartDiscordOAuthLoginResponses = {
+    200: OAuthLoginStartResponse;
+};
+export type StartDiscordOAuthLoginResponse = StartDiscordOAuthLoginResponses[keyof StartDiscordOAuthLoginResponses];
 export type CompleteGitHubOAuthLoginData = {
     body?: never;
     path?: never;
@@ -3168,6 +3183,20 @@ export type CompleteGitHubOAuthLoginErrors = {
     500: ManagementError;
 };
 export type CompleteGitHubOAuthLoginError = CompleteGitHubOAuthLoginErrors[keyof CompleteGitHubOAuthLoginErrors];
+export type CompleteDiscordOAuthLoginData = {
+    body?: never;
+    path?: never;
+    query?: {
+        state?: string;
+        code?: string;
+        error?: string;
+    };
+    url: '/api/auth/oauth/discord/callback';
+};
+export type CompleteDiscordOAuthLoginErrors = {
+    500: ManagementError;
+};
+export type CompleteDiscordOAuthLoginError = CompleteDiscordOAuthLoginErrors[keyof CompleteDiscordOAuthLoginErrors];
 export type ExchangeOAuthLoginTicketData = {
     body: OAuthLoginExchangeRequest;
     path?: never;
@@ -3218,6 +3247,40 @@ export type UpdateAdminGitHubOAuthLoginSettingsResponses = {
     200: AdminOAuthLoginProviderSettings;
 };
 export type UpdateAdminGitHubOAuthLoginSettingsResponse = UpdateAdminGitHubOAuthLoginSettingsResponses[keyof UpdateAdminGitHubOAuthLoginSettingsResponses];
+export type GetAdminDiscordOAuthLoginSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/discord';
+};
+export type GetAdminDiscordOAuthLoginSettingsErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminDiscordOAuthLoginSettingsError = GetAdminDiscordOAuthLoginSettingsErrors[keyof GetAdminDiscordOAuthLoginSettingsErrors];
+export type GetAdminDiscordOAuthLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type GetAdminDiscordOAuthLoginSettingsResponse = GetAdminDiscordOAuthLoginSettingsResponses[keyof GetAdminDiscordOAuthLoginSettingsResponses];
+export type UpdateAdminDiscordOAuthLoginSettingsData = {
+    body: AdminOAuthLoginProviderSettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/discord';
+};
+export type UpdateAdminDiscordOAuthLoginSettingsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminDiscordOAuthLoginSettingsError = UpdateAdminDiscordOAuthLoginSettingsErrors[keyof UpdateAdminDiscordOAuthLoginSettingsErrors];
+export type UpdateAdminDiscordOAuthLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type UpdateAdminDiscordOAuthLoginSettingsResponse = UpdateAdminDiscordOAuthLoginSettingsResponses[keyof UpdateAdminDiscordOAuthLoginSettingsResponses];
 export type ListAccountOrganizationsData = {
     body?: never;
     path?: never;

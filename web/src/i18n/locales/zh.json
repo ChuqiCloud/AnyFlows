@@ -2803,8 +2803,14 @@
       "disabledTitle": "密码登录已关闭",
       "disabledBody": "当前站点不接受用户名密码登录，你仍可以游客身份查看模型广场。",
       "retry": "重新检查",
-      "github": "使用 GitHub 继续",
-      "oauthStarting": "正在前往 GitHub",
+      "oauth": {
+        "github": "使用 GitHub 继续",
+        "discord": "使用 Discord 继续"
+      },
+      "oauthStarting": {
+        "github": "正在前往 GitHub",
+        "discord": "正在前往 Discord"
+      },
       "orPassword": "或使用密码"
     },
     "oauthCallback": {
@@ -2986,6 +2992,30 @@
         "save": "GitHub OAuth 设置保存失败，请刷新后核对版本。",
         "publicBaseUrl": "启用前必须先保存站点公开基址，以生成稳定回调地址。",
         "incomplete": "启用 GitHub 登录需要回调地址、Client ID 和已配置的 Client Secret。"
+      },
+      "github": {
+        "title": "GitHub OAuth 登录",
+        "enabled": "启用 GitHub 登录",
+        "callbackHint": "将此地址完整填写到 GitHub OAuth App 的 Authorization callback URL。",
+        "version": "GitHub OAuth 配置版本 {{version}}",
+        "errors": {
+          "load": "无法读取 GitHub OAuth 登录设置",
+          "save": "GitHub OAuth 设置保存失败，请刷新后核对版本。",
+          "publicBaseUrl": "启用前必须先保存站点公开基址，以生成稳定回调地址。",
+          "incomplete": "启用 GitHub 登录需要回调地址、Client ID 和已配置的 Client Secret。"
+        }
+      },
+      "discord": {
+        "title": "Discord OAuth 登录",
+        "enabled": "启用 Discord 登录",
+        "callbackHint": "将此地址完整填写到 Discord Developer Portal 应用的 Redirects 列表。",
+        "version": "Discord OAuth 配置版本 {{version}}",
+        "errors": {
+          "load": "无法读取 Discord OAuth 登录设置",
+          "save": "Discord OAuth 设置保存失败，请刷新后核对版本。",
+          "publicBaseUrl": "启用前必须先保存站点公开基址，以生成稳定回调地址。",
+          "incomplete": "启用 Discord 登录需要回调地址、Client ID 和已配置的 Client Secret。"
+        }
       }
     },
     "fields": {
