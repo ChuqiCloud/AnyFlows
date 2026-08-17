@@ -1232,7 +1232,7 @@ fn spark_shadow_record(parent_id: CredentialId) -> AdminCredentialWriteRecord {
         Some(1),
         10,
         20,
-        Some(2),
+        None,
         Some(1_000_000),
         Some(900_000),
         true,
