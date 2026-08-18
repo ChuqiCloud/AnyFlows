@@ -32,14 +32,17 @@ impl CloudflareTurnstileVerifier {
     }
 
     async fn verify_inner(&self, token: &str, client_ip: TrustedClientIp) -> TurnstileVerification {
-        let mut body = form_urlencoded::Serializer::new(String::new());
-        body.append_pair(
-            "secret",
-            std::str::from_utf8(&self.secret_key).unwrap_or_default(),
-        );
-        body.append_pair("response", token);
-        body.append_pair("remoteip", &client_ip.as_ip().to_string());
-        let body = body.finish();
+        let body = {
+            // Serializer 不是 Send，必须在进入网络等待前显式销毁。
+            let mut serializer = form_urlencoded::Serializer::new(String::new());
+            serializer.append_pair(
+                "secret",
+                std::str::from_utf8(&self.secret_key).unwrap_or_default(),
+            );
+            serializer.append_pair("response", token);
+            serializer.append_pair("remoteip", &client_ip.as_ip().to_string());
+            serializer.finish()
+        };
 
         let client = match self.clients.get(Some(self.request_timeout)) {
             Ok(client) => client,

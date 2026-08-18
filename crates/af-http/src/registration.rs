@@ -324,6 +324,8 @@ mod tests {
         atomic::{AtomicUsize, Ordering},
     };
 
+    use crate::TurnstileVerificationFuture;
+
     use super::*;
 
     struct FakeTurnstileVerifier {
