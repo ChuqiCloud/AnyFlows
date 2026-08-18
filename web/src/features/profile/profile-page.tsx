@@ -86,16 +86,19 @@ function bufferToBase64Url(value: ArrayBuffer): string {
 
 /** 把服务端 JSON 中的 Base64URL 字段恢复成 WebAuthn API 所需的二进制值。 */
 function toCreationOptions(response: UserPasskeyRegistrationOptionsResponse): PublicKeyCredentialCreationOptions {
-  const root = isRecord(response.options) && isRecord(response.options.publicKey)
-    ? response.options.publicKey
-    : response.options
-  const options = { ...root }
+  const value = response.options
+  const root = isRecord(value) && isRecord(value.publicKey)
+    ? value.publicKey
+    : isRecord(value)
+      ? value
+      : {}
+  const options: Record<string, unknown> = { ...root }
   if (typeof options.challenge === 'string') options.challenge = base64UrlToBuffer(options.challenge)
   if (isRecord(options.user) && typeof options.user.id === 'string') {
     options.user = { ...options.user, id: base64UrlToBuffer(options.user.id) }
   }
   if (Array.isArray(options.excludeCredentials)) {
-    options.excludeCredentials = options.excludeCredentials.map((credential) => (
+    options.excludeCredentials = options.excludeCredentials.map((credential: unknown) => (
       isRecord(credential) && typeof credential.id === 'string'
         ? { ...credential, id: base64UrlToBuffer(credential.id) }
         : credential
