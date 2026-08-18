@@ -209,7 +209,7 @@ impl SessionAuthenticator for FakeSessionAuthenticator {
 fn router(service: Arc<FakeRegistrationService>) -> axum::Router {
     let service_port: Arc<dyn RegistrationService> = service;
     let authenticator: Arc<dyn SessionAuthenticator> = Arc::new(FakeSessionAuthenticator);
-    build_registration_router(service_port, authenticator, &ServerConfig::default()).layer(
+    build_registration_router(service_port, authenticator, &ServerConfig::default(), None).layer(
         axum::Extension(ConnectInfo(SocketAddr::new(
             "192.0.2.10".parse().unwrap(),
             43123,

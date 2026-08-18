@@ -72,6 +72,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Turnstile ???????",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
           }
         }
       }
@@ -332,6 +342,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Turnstile ???????",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
           }
         }
       }
@@ -406,6 +426,16 @@
           },
           "500": {
             "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Turnstile ???????",
             "content": {
               "application/json": {
                 "schema": {
@@ -22704,7 +22734,7 @@
               "null"
             ],
             "format": "double",
-            "default": 1.0,
+            "default": 1,
             "maximum": 4,
             "minimum": 0.25
           },
@@ -22915,6 +22945,11 @@
             "writeOnly": true,
             "maxLength": 128,
             "minLength": 6
+          },
+          "turnstile_token": {
+            "type": "string",
+            "writeOnly": true,
+            "maxLength": 2048
           }
         },
         "additionalProperties": false
@@ -22970,6 +23005,8 @@
               "two_factor_required",
               "two_factor_invalid",
               "password_login_disabled",
+              "turnstile_rejected",
+              "turnstile_unavailable",
               "invalid_session",
               "forbidden",
               "setup_conflict",
@@ -25956,7 +25993,8 @@
           "password_login_enabled",
           "registration_enabled",
           "registration_email_required",
-          "oauth_providers"
+          "oauth_providers",
+          "turnstile_site_key"
         ],
         "properties": {
           "password_login_enabled": {
@@ -25973,6 +26011,13 @@
             "items": {
               "$ref": "#/components/schemas/PublicOAuthLoginProvider"
             }
+          },
+          "turnstile_site_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 256
           }
         },
         "additionalProperties": false
@@ -26068,6 +26113,11 @@
             "format": "email",
             "maxLength": 320,
             "minLength": 3
+          },
+          "turnstile_token": {
+            "type": "string",
+            "writeOnly": true,
+            "maxLength": 2048
           }
         },
         "additionalProperties": false
@@ -26138,6 +26188,11 @@
             "maxLength": 25,
             "minLength": 25,
             "pattern": "^af-[A-Za-z0-9_-]{22}$"
+          },
+          "turnstile_token": {
+            "type": "string",
+            "writeOnly": true,
+            "maxLength": 2048
           }
         },
         "additionalProperties": false

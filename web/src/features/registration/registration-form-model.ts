@@ -70,13 +70,14 @@ export function buildRegistrationFormSchema(
   )
 }
 
-export function toRegistrationRequest(values: RegistrationFormValues): RegistrationRequestWritable {
+export function toRegistrationRequest(values: RegistrationFormValues, turnstileToken?: string): RegistrationRequestWritable {
   return {
     username: values.username,
     email: values.email || null,
     verification_code: values.verificationCode || null,
     invite_code: values.inviteCode || null,
     password: values.password,
+    ...(turnstileToken ? { turnstile_token: turnstileToken } : {}),
   }
 }
 

@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { establishManagementSession } from '@/features/auth/session-query'
+import { TurnstileWidget } from '@/features/auth/turnstile-widget'
 import { ApiError } from '@/lib/api'
 import {
   useRegisterUser,
@@ -31,6 +32,7 @@ import {
 
 type RegistrationFormProps = {
   emailRequired: boolean
+  turnstileSiteKey: string | null
   initialInviteCode?: string
   onAuthenticated: () => void
 }
@@ -41,6 +43,9 @@ type RegistrationSubmitError =
   | 'invalidInput'
   | 'invitationRejected'
   | 'verificationRejected'
+  | 'turnstileRequired'
+  | 'turnstileRejected'
+  | 'turnstileUnavailable'
   | 'rateLimited'
   | 'unavailable'
 
@@ -49,6 +54,9 @@ type RegistrationVerificationError =
   | 'emailNotConfigured'
   | 'emailDeliveryFailed'
   | 'invalidInput'
+  | 'turnstileRequired'
+  | 'turnstileRejected'
+  | 'turnstileUnavailable'
   | 'rateLimited'
   | 'unavailable'
 
@@ -57,6 +65,7 @@ const verificationCooldownStorageKey = 'anyflows.registration.verification.nextS
 /** 提交公开注册并只接受服务端签发的统一登录会话。 */
 export function RegistrationForm({
   emailRequired,
+  turnstileSiteKey,
   initialInviteCode,
   onAuthenticated,
 }: RegistrationFormProps) {
@@ -66,6 +75,8 @@ export function RegistrationForm({
   const [verificationError, setVerificationError] = useState<RegistrationVerificationError>()
   const [verificationNotice, setVerificationNotice] = useState(false)
   const [nextSendAt, setNextSendAt] = useState(readVerificationCooldown)
+  const [turnstileToken, setTurnstileToken] = useState('')
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0)
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
   const mutation = useRegisterUser()
   const sendVerificationMutation = useSendRegistrationEmailVerification()
@@ -113,8 +124,15 @@ export function RegistrationForm({
     setVerificationError(undefined)
     setVerificationNotice(false)
     if (cooldownSeconds > 0 || !(await form.trigger('email'))) return
+    if (turnstileSiteKey && !turnstileToken) {
+      setVerificationError('turnstileRequired')
+      return
+    }
     try {
-      const response = await sendVerificationMutation.mutateAsync({ email: form.getValues('email') })
+      const response = await sendVerificationMutation.mutateAsync({
+        email: form.getValues('email'),
+        ...(turnstileToken ? { turnstile_token: turnstileToken } : {}),
+      })
       setNextSendAt(response.next_send_at)
       setNow(Math.floor(Date.now() / 1000))
       writeVerificationCooldown(response.next_send_at)
@@ -129,13 +147,22 @@ export function RegistrationForm({
           writeVerificationCooldown(serverBoundary)
         }
       }
+    } finally {
+      if (turnstileToken) {
+        setTurnstileToken('')
+        setTurnstileResetKey((value) => value + 1)
+      }
     }
   }
 
   const onSubmit = form.handleSubmit(async (values) => {
     setSubmitError(undefined)
+    if (turnstileSiteKey && !turnstileToken) {
+      setSubmitError('turnstileRequired')
+      return
+    }
     try {
-      const response = await mutation.mutateAsync(toRegistrationRequest(values))
+      const response = await mutation.mutateAsync(toRegistrationRequest(values, turnstileToken))
       if (response.user.role !== 'user') {
         setSubmitError('unavailable')
         return
@@ -144,6 +171,11 @@ export function RegistrationForm({
       onAuthenticated()
     } catch (error) {
       setSubmitError(classifyRegistrationError(error))
+    } finally {
+      if (turnstileToken) {
+        setTurnstileToken('')
+        setTurnstileResetKey((value) => value + 1)
+      }
     }
   })
 
@@ -221,6 +253,14 @@ export function RegistrationForm({
               </p>
             )}
           </div>
+
+          {turnstileSiteKey ? (
+            <TurnstileWidget
+              siteKey={turnstileSiteKey}
+              resetKey={turnstileResetKey}
+              onToken={setTurnstileToken}
+            />
+          ) : null}
 
           {hasEmail ? (
             <div className="grid gap-1.5">
@@ -425,6 +465,8 @@ function classifyRegistrationError(error: unknown): RegistrationSubmitError {
   const code = errorCode(error.details)
   if (code === 'registration_rejected') return 'verificationRejected'
   if (code === 'invitation_rejected') return 'invitationRejected'
+  if (code === 'turnstile_rejected') return 'turnstileRejected'
+  if (code === 'turnstile_unavailable') return 'turnstileUnavailable'
   if (error.status === 409 || code === 'user_conflict') return 'conflict'
   if (code === 'registration_disabled') return 'disabled'
   if (error.status === 429 || code === 'registration_rate_limited') return 'rateLimited'
@@ -438,6 +480,8 @@ function classifyVerificationError(error: unknown): RegistrationVerificationErro
   if (code === 'registration_disabled') return 'disabled'
   if (code === 'email_not_configured') return 'emailNotConfigured'
   if (code === 'email_delivery_failed') return 'emailDeliveryFailed'
+  if (code === 'turnstile_rejected') return 'turnstileRejected'
+  if (code === 'turnstile_unavailable') return 'turnstileUnavailable'
   if (error.status === 429 || code === 'registration_rate_limited') return 'rateLimited'
   if (error.status === 400) return 'invalidInput'
   return 'unavailable'

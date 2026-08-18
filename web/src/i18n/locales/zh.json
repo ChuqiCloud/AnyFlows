@@ -2839,6 +2839,9 @@
       "passwordResetSuccess": "密码已更新，请使用新密码登录。",
       "passwordChanged": "密码已修改，旧会话已失效，请使用新密码登录。",
       "passwordLoginDisabled": "密码登录刚刚被关闭，请使用站点当前开放的认证方式。",
+      "turnstileRequired": "请先完成安全验证。",
+      "turnstileRejected": "安全验证已过期或未通过，请重试。",
+      "turnstileUnavailable": "安全验证服务暂时不可用，请稍后重试。",
       "passkeyCancelled": "Passkey 验证已取消。",
       "passkeyUnsupported": "当前浏览器不支持 Passkey，请使用其他登录方式。",
       "unavailable": "暂时无法连接服务，请稍后重试。"
@@ -3473,6 +3476,9 @@
       "invalidInput": "注册信息不符合服务端要求，请检查后重试。",
       "invitationRejected": "邀请码不存在或已失效，请检查后重试。",
       "verificationRejected": "验证码无效或注册未完成，请检查信息后重试。",
+      "turnstileRequired": "请先完成安全验证，再创建账户。",
+      "turnstileRejected": "安全验证已过期或未通过，请重试。",
+      "turnstileUnavailable": "安全验证服务暂时不可用，请稍后重试。",
       "rateLimited": "当前网络的注册尝试过于频繁，请稍后再试。",
       "unavailable": "暂时无法创建账户，请稍后重试。"
     },
@@ -3481,6 +3487,9 @@
       "emailNotConfigured": "站点尚未配置邮件投递，请稍后再试或联系管理员。",
       "emailDeliveryFailed": "验证码暂时未能投递，请稍后重试。",
       "invalidInput": "请先填写有效邮箱地址。",
+      "turnstileRequired": "请先完成安全验证，再请求验证码。",
+      "turnstileRejected": "安全验证已过期或未通过，请重试。",
+      "turnstileUnavailable": "安全验证服务暂时不可用，请稍后重试。",
       "rateLimited": "验证码刚刚发送过，请等待倒计时结束后再试。",
       "unavailable": "验证码服务暂时不可用，请稍后重试。"
     },

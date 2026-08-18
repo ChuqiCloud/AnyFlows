@@ -2762,6 +2762,9 @@
       "passwordResetSuccess": "Your password was updated. Sign in with the new password.",
       "passwordChanged": "Your password changed and older sessions were revoked. Sign in again with the new password.",
       "passwordLoginDisabled": "Password sign-in was just disabled. Use an authentication method currently offered by this site.",
+      "turnstileRequired": "Complete the security check before continuing.",
+      "turnstileRejected": "The security check expired or was rejected. Try again.",
+      "turnstileUnavailable": "The security check is temporarily unavailable. Try again shortly.",
       "passkeyCancelled": "Passkey verification was cancelled.",
       "passkeyUnsupported": "This browser does not support Passkey. Use another sign-in method.",
       "unavailable": "The service is unavailable. Try again shortly."
@@ -3396,6 +3399,9 @@
       "invalidInput": "The server rejected these registration details. Check them and try again.",
       "invitationRejected": "That invitation code is invalid or no longer available.",
       "verificationRejected": "The code is invalid or the registration could not be completed. Check the details and try again.",
+      "turnstileRequired": "Complete the security check before creating your account.",
+      "turnstileRejected": "The security check expired or was rejected. Try again.",
+      "turnstileUnavailable": "The security check is temporarily unavailable. Try again shortly.",
       "rateLimited": "There have been too many registration attempts from this network. Try again later.",
       "unavailable": "An account could not be created. Try again shortly."
     },
@@ -3404,6 +3410,9 @@
       "emailNotConfigured": "Email delivery is not configured yet. Try again later or contact the site administrator.",
       "emailDeliveryFailed": "The code could not be delivered. Try again shortly.",
       "invalidInput": "Enter a valid email address first.",
+      "turnstileRequired": "Complete the security check before requesting a code.",
+      "turnstileRejected": "The security check expired or was rejected. Try again.",
+      "turnstileUnavailable": "The security check is temporarily unavailable. Try again shortly.",
       "rateLimited": "A code was sent recently. Wait for the countdown before trying again.",
       "unavailable": "The verification service is temporarily unavailable. Try again shortly."
     },

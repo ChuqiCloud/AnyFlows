@@ -29,6 +29,14 @@ pub const DEFAULT_AUTH_SESSION_TTL_SECS: u64 = 3_600;
 pub const MAX_AUTH_SESSION_TTL_SECS: u64 = 86_400;
 /// 管理会话签名密钥要求的随机字节数。
 pub const AUTH_SESSION_SIGNING_KEY_BYTES: usize = 32;
+/// Turnstile 服务端验证请求的默认硬超时。
+pub const DEFAULT_TURNSTILE_TIMEOUT_SECS: u64 = 5;
+/// Turnstile 服务端验证请求允许的最大硬超时。
+pub const MAX_TURNSTILE_TIMEOUT_SECS: u64 = 30;
+/// Turnstile site key 允许的最大 ASCII 字节数。
+pub const MAX_TURNSTILE_SITE_KEY_BYTES: usize = 256;
+/// Turnstile secret key 允许的最大 ASCII 字节数。
+pub const MAX_TURNSTILE_SECRET_KEY_BYTES: usize = 4 * 1_024;
 /// 计费 WAL 批量落库的默认周期。
 pub const DEFAULT_BILLING_FLUSH_INTERVAL_SECS: u64 = 5;
 /// 计费 WAL 单次启动恢复或关闭收尾的默认截止时间。
@@ -700,6 +708,54 @@ impl Default for AuthSettings {
     }
 }
 
+/// 登录与注册使用的 Turnstile 启动期配置。
+///
+/// 只有同时提供 site key 与 secret key 时才启用；任意半配置都会在启动期拒绝，
+/// 避免前端显示挑战但服务端无法完成验证。
+#[derive(Clone, Debug, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct TurnstileSettings {
+    site_key: Option<String>,
+    secret_key: Option<SecretString>,
+    timeout_secs: u64,
+}
+
+impl TurnstileSettings {
+    /// 返回公开给浏览器的 site key；未配置时 Turnstile 关闭。
+    #[must_use]
+    pub fn site_key(&self) -> Option<&str> {
+        self.site_key.as_deref()
+    }
+
+    /// 返回仅供服务端验证使用的 Turnstile secret key。
+    #[must_use]
+    pub fn secret_key(&self) -> Option<&SecretString> {
+        self.secret_key.as_ref()
+    }
+
+    /// 返回服务端验证请求的硬超时。
+    #[must_use]
+    pub const fn timeout_secs(&self) -> u64 {
+        self.timeout_secs
+    }
+
+    /// 返回是否已完成成对配置。
+    #[must_use]
+    pub const fn enabled(&self) -> bool {
+        self.site_key.is_some() && self.secret_key.is_some()
+    }
+}
+
+impl Default for TurnstileSettings {
+    fn default() -> Self {
+        Self {
+            site_key: None,
+            secret_key: None,
+            timeout_secs: DEFAULT_TURNSTILE_TIMEOUT_SECS,
+        }
+    }
+}
+
 /// 只使用公共客户端标识的 OAuth provider 配置。
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -971,6 +1027,8 @@ pub struct AppConfig {
     #[serde(default)]
     auth: AuthSettings,
     #[serde(default)]
+    turnstile: TurnstileSettings,
+    #[serde(default)]
     oauth: OAuthSettings,
     #[serde(default)]
     openai_upstream: Option<OpenAiUpstreamConfig>,
@@ -1037,6 +1095,12 @@ impl AppConfig {
     #[must_use]
     pub const fn auth(&self) -> &AuthSettings {
         &self.auth
+    }
+
+    /// 返回登录与注册使用的 Turnstile 启动配置。
+    #[must_use]
+    pub const fn turnstile(&self) -> &TurnstileSettings {
+        &self.turnstile
     }
 
     /// 返回上游订阅账号 OAuth 启动配置。
@@ -1108,6 +1172,7 @@ impl AppConfig {
                 field: "database.url",
             });
         }
+        validate_turnstile_settings(&self.turnstile)?;
         if self.database.migration_timeout_secs == Some(0) {
             return Err(ConfigError::NonPositive {
                 field: "database.migration_timeout_secs",
@@ -1599,6 +1664,53 @@ fn validate_proxy_settings(settings: &HttpClientSettings) -> Result<(), ConfigEr
         return Err(ConfigError::InvalidField {
             field: "http_client.trust_proxy_dns",
         });
+    }
+    Ok(())
+}
+
+fn validate_turnstile_settings(settings: &TurnstileSettings) -> Result<(), ConfigError> {
+    if settings.timeout_secs == 0 {
+        return Err(ConfigError::NonPositive {
+            field: "turnstile.timeout_secs",
+        });
+    }
+    if settings.timeout_secs > MAX_TURNSTILE_TIMEOUT_SECS {
+        return Err(ConfigError::OutOfRange {
+            field: "turnstile.timeout_secs",
+        });
+    }
+    match (settings.site_key.as_deref(), settings.secret_key.as_ref()) {
+        (None, None) => Ok(()),
+        (Some(site_key), Some(secret_key)) => {
+            validate_turnstile_text(site_key, "turnstile.site_key", MAX_TURNSTILE_SITE_KEY_BYTES)?;
+            validate_turnstile_text(
+                secret_key.expose(),
+                "turnstile.secret_key",
+                MAX_TURNSTILE_SECRET_KEY_BYTES,
+            )
+        }
+        (None, Some(_)) => Err(ConfigError::InvalidField {
+            field: "turnstile.site_key",
+        }),
+        (Some(_), None) => Err(ConfigError::InvalidField {
+            field: "turnstile.secret_key",
+        }),
+    }
+}
+
+fn validate_turnstile_text(
+    value: &str,
+    field: &'static str,
+    max_bytes: usize,
+) -> Result<(), ConfigError> {
+    if value.is_empty() {
+        return Err(ConfigError::EmptyValue { field });
+    }
+    if value.len() > max_bytes
+        || value.trim() != value
+        || !value.bytes().all(|byte| (0x21..=0x7e).contains(&byte))
+    {
+        return Err(ConfigError::InvalidField { field });
     }
     Ok(())
 }
