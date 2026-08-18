@@ -151,7 +151,6 @@ pub struct DatabasePasskeyAuthenticationService {
 
 impl DatabasePasskeyAuthenticationService {
     /// 绑定启动期校验过的 Passkey 运行时和认证策略。
-    #[must_use]
     pub fn new(
         repository: PasskeyRepository,
         cipher: SystemSecretCipher,
