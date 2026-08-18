@@ -1080,15 +1080,15 @@ async fn passkey_authentication_migration_preserves_legacy_counter() -> Result<(
     )
     .insert(pool.connection())
     .await?;
-    passkeys::ActiveModel {
+    passkeys::Entity::insert(passkeys::ActiveModel {
         user_id: Set(user.id),
         credential_id: Set("bGVnYWN5LWNlZGF0".to_owned()),
         credential_id_digest: Set("a".repeat(64)),
         passkey: Set(serde_json::json!({"cred": {"counter": 37}})),
         display_name: Set("旧 Passkey".to_owned()),
         ..Default::default()
-    }
-    .insert(pool.connection())
+    })
+    .exec_without_returning(pool.connection())
     .await?;
 
     Migrator::up(pool.connection(), Some(73)).await?;
