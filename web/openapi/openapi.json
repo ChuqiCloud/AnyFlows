@@ -26668,10 +26668,7 @@
           "challenge_digest"
         ],
         "properties": {
-          "options": {
-            "type": "object",
-            "additionalProperties": true
-          },
+          "options": {},
           "challenge_digest": {
             "type": "string",
             "maxLength": 64,
@@ -26687,10 +26684,7 @@
           "display_name"
         ],
         "properties": {
-          "credential": {
-            "type": "object",
-            "additionalProperties": true
-          },
+          "credential": {},
           "display_name": {
             "type": "string",
             "maxLength": 128,
