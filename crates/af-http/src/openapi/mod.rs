@@ -476,7 +476,7 @@ mod tests {
         assert!(schemas.contains_key("OrganizationAuditLogResponse"));
         assert!(schemas.contains_key("OrganizationAuditOutcomeResponse"));
         assert!(schemas.contains_key("PlatformAuditLogListResponse"));
-        assert!(schemas.contains_key("PlatformAuditLogResponse"));
+        assert!(schemas.contains_key("PlatformAuditLog"));
         assert!(schemas.contains_key("PlatformAuditOutcome"));
         assert!(schemas.contains_key("OrganizationUsageLogListResponse"));
         assert!(schemas.contains_key("OrganizationUsageLogSummaryResponse"));
