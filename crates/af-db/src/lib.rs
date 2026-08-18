@@ -125,6 +125,7 @@ mod password_reset;
 mod payment_settings;
 #[cfg(test)]
 mod payment_settings_tests;
+mod platform_audit;
 mod playground_conversation;
 #[cfg(test)]
 mod playground_conversation_tests;
@@ -452,6 +453,11 @@ pub use payment_settings::{
     PaymentSecretUpdate, PaymentSettingsRecord, PaymentSettingsRepository,
     PaymentSettingsRepositoryConfigError, PaymentSettingsRepositoryError,
     PaymentSettingsWriteRecord,
+};
+pub use platform_audit::{
+    MAX_PLATFORM_AUDIT_PAGE_SIZE, PlatformAuditOutcome, PlatformAuditPageRecord,
+    PlatformAuditQuery, PlatformAuditRecord, PlatformAuditRepository, PlatformAuditRepositoryError,
+    PlatformAuditWrite, PlatformAuditWriteError, PlatformAuditWriteOutcome,
 };
 pub use playground_conversation::{
     MAX_PLAYGROUND_CONVERSATIONS_PER_USER, PlaygroundConversationDeleteOutcome,

@@ -1921,6 +1921,37 @@ pub(in crate::migration) mod organization_audit_logs {
     }
 }
 
+pub(in crate::migration) mod platform_audit_logs {
+    use super::DeriveIden;
+
+    /// `platform_audit_logs` 平台管理审计表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "platform_audit_logs")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 平台管理审计的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OperatorUserId,
+        PermissionCode,
+        Route,
+        Operation,
+        Resource,
+        ResourceId,
+        Outcome,
+        BeforeValue,
+        AfterValue,
+        AuditInfo,
+        RequestId,
+        CreatedAt,
+    }
+}
+
 pub(in crate::migration) mod organization_memberships {
     use super::DeriveIden;
 

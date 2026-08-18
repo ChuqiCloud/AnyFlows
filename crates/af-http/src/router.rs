@@ -9,10 +9,10 @@ use af_admin::{
     AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, AdminWalletService,
     InitialSetup, ModelCatalogReader, OAuthLoginService, OrganizationActivityService,
     OrganizationBudgetService, OrganizationTokenService, OrganizationWalletService,
-    PasskeyAuthenticationService, PasswordResetService, PlaygroundConversationService,
-    PlaygroundShareService, RedemptionService, RegistrationService, SessionAuthenticator,
-    SiteSettingsService, SubscriptionService, TokenAuthenticator, UserInvitationService,
-    UserTopupService, UserWalletService,
+    PasskeyAuthenticationService, PasswordResetService, PlatformAuditService,
+    PlaygroundConversationService, PlaygroundShareService, RedemptionService, RegistrationService,
+    SessionAuthenticator, SiteSettingsService, SubscriptionService, TokenAuthenticator,
+    UserInvitationService, UserTopupService, UserWalletService,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -79,7 +79,7 @@ use crate::management_users::{
 use crate::management_wallet::{adjust_admin_wallet, list_admin_wallet_entries};
 use crate::middleware::{
     AllowedOrigins, LogHttpResponse, MakeHttpSpan, assign_request_id, enforce_allowed_origin,
-    request_id_header,
+    ensure_request_id, request_id_header,
 };
 use crate::model_catalog::{list_model_providers, list_models};
 use crate::network_settings::build_network_settings_router;
@@ -100,6 +100,7 @@ use crate::organizations::build_organization_router;
 use crate::passkey_auth::build_passkey_authentication_router;
 use crate::password_reset::build_password_reset_router;
 use crate::payment_settings::build_payment_settings_router;
+use crate::platform_audit::build_platform_audit_router;
 use crate::playground_conversations::build_playground_conversation_router;
 use crate::playground_shares::build_playground_share_router;
 use crate::redemption::build_redemption_router;
@@ -210,6 +211,7 @@ pub fn build_router(
     payment_webhook_routes: Option<Router>,
     organization_invitation_service: Option<Arc<dyn af_admin::OrganizationInvitationService>>,
     organization_management_service: Option<Arc<dyn af_admin::OrganizationManagementService>>,
+    platform_audit_service: Option<Arc<dyn PlatformAuditService>>,
 ) -> HttpRouter {
     let openai_authentication = middleware::from_fn_with_state(
         AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config),
@@ -271,6 +273,7 @@ pub fn build_router(
     .with_admin_dashboard_reader(admin_dashboard_reader)
     .with_admin_usage_log_reader(admin_usage_log_reader)
     .with_admin_wallet_service(admin_wallet_service)
+    .with_platform_audit_service(platform_audit_service.clone())
     .with_organization_authorization_service(organization_authorization_service)
     .with_organization_invitation_service(organization_invitation_service)
     .with_organization_management_service(organization_management_service);
@@ -508,6 +511,14 @@ pub fn build_router(
     let oauth_connection_routes = admin_oauth_connection_service.map(|service| {
         build_admin_oauth_connection_router(service, Arc::clone(&http_state.session_authenticator))
     });
+    let admin_user_collection_routes = get(list_admin_users)
+        .route_layer(middleware::from_fn(ensure_request_id))
+        .route_layer(user_collection_authentication.clone())
+        .merge(
+            post(create_admin_user)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(user_collection_authentication),
+        );
     let management_routes = Router::new()
         .route("/api/setup/status", get(setup_status))
         .route("/api/setup", post(initialize_setup))
@@ -523,13 +534,7 @@ pub fn build_router(
             "/api/model-providers",
             get(list_model_providers).route_layer(model_catalog_authentication),
         )
-        .route(
-            "/api/admin/users",
-            get(list_admin_users)
-                .post(create_admin_user)
-                .route_layer(middleware::from_fn(authorize_management_admin))
-                .route_layer(user_collection_authentication),
-        )
+        .route("/api/admin/users", admin_user_collection_routes)
         .route(
             "/api/admin/users/{id}",
             get(get_admin_user)
@@ -805,6 +810,13 @@ pub fn build_router(
     };
     let management_routes = match oauth_connection_routes {
         Some(routes) => management_routes.merge(routes),
+        None => management_routes,
+    };
+    let management_routes = match platform_audit_service {
+        Some(service) => management_routes.merge(build_platform_audit_router(
+            service,
+            Arc::clone(&http_state.session_authenticator),
+        )),
         None => management_routes,
     };
     HttpRouter::new(build_router_with_routes_and_frontend(

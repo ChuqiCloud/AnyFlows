@@ -38,6 +38,7 @@ mod password_reset;
 mod payment_settings;
 #[cfg(test)]
 mod payment_settings_tests;
+mod platform_rbac;
 mod playground_conversation;
 mod playground_share;
 mod playground_share_snapshot;
@@ -67,7 +68,6 @@ mod user_write;
 mod wallet;
 
 pub use af_account::PlainCredentialSecret as AdminCredentialSecret;
-pub use af_db::OrganizationAuditOutcome;
 pub use af_db::{
     CredentialProxyScheme, DatabaseTimestamp, NetworkSettingsMode,
     OrganizationBillingReservationRecord, OrganizationBillingReservationStatus,
@@ -75,6 +75,7 @@ pub use af_db::{
     OrganizationBudgetWindowRecord, OrganizationInvitationRecord, OrganizationMembershipRecord,
     OrganizationTeamRecord, OrganizationWalletLedgerEntryType,
 };
+pub use af_db::{OrganizationAuditOutcome, PlatformAuditOutcome};
 pub use api_key::{
     ApiKeyDigest, ApiKeyGenerationError, ApiKeyParseError, ApiKeyPrefix, IssuedApiKey,
     PresentedApiKey,
@@ -271,6 +272,12 @@ pub use payment_settings::{
     AdminPaymentSettingsReadFuture, AdminPaymentSettingsService, AdminPaymentSettingsUpdateFuture,
     DatabaseAdminPaymentSettingsService, PaymentSettingsApplyFuture, PaymentSettingsRuntimeApplier,
     PaymentSettingsRuntimeError,
+};
+pub use platform_rbac::{
+    DEFAULT_PLATFORM_AUDIT_PAGE_SIZE, DatabasePlatformAuditService, PlatformAuditEntry,
+    PlatformAuditError, PlatformAuditListFuture, PlatformAuditListQuery, PlatformAuditLog,
+    PlatformAuditPage, PlatformAuditRecordFuture, PlatformAuditScope, PlatformAuditService,
+    PlatformPolicy,
 };
 pub use playground_conversation::{
     DatabasePlaygroundConversationService, PlaygroundConversation,

@@ -68,6 +68,7 @@ pub(crate) mod passkey_authentication_challenges;
 pub(crate) mod passkey_registration_challenges;
 pub(crate) mod passkeys;
 pub(crate) mod payment_settings;
+pub(crate) mod platform_audit_logs;
 pub(crate) mod playground_conversations;
 pub(crate) mod playground_shares;
 pub(crate) mod proxies;
@@ -932,6 +933,60 @@ where
             .is_some_and(|value| value.len() > 2_048)
     {
         return Err(DbErr::Custom("企业管理审计状态无效".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_platform_audit_log<C>(
+    model: &platform_audit_logs::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    // 平台审计只追加，JSON 字段只接受受限对象，避免把任意正文写入审计库。
+    if !insert {
+        return Err(DbErr::Custom("平台管理审计不允许更新".to_owned()));
+    }
+    let valid_text = |value: Option<&String>, max_length: usize| {
+        value.is_some_and(|value| {
+            !value.is_empty()
+                && value.len() <= max_length
+                && value.trim() == value
+                && !value.chars().any(char::is_control)
+        })
+    };
+    let valid_json = |value: Option<&String>| {
+        value.is_none_or(|value| {
+            value.len() <= 2_048
+                && serde_json::from_str::<serde_json::Value>(value)
+                    .ok()
+                    .is_some_and(|value| value.is_object())
+        })
+    };
+    if !matches!(model.operator_user_id.try_as_ref(), Some(value) if *value > 0)
+        || !valid_text(model.permission_code.try_as_ref(), 96)
+        || !valid_text(model.route.try_as_ref(), 128)
+        || !valid_text(model.operation.try_as_ref(), 96)
+        || !valid_text(model.resource.try_as_ref(), 64)
+        || model
+            .resource_id
+            .try_as_ref()
+            .and_then(Option::as_ref)
+            .is_some_and(|value| {
+                value.is_empty()
+                    || value.len() > 128
+                    || value.trim() != value
+                    || value.chars().any(char::is_control)
+            })
+        || !matches!(model.outcome.try_as_ref(), Some(1..=3))
+        || !valid_json(model.before_value.try_as_ref().and_then(Option::as_ref))
+        || !valid_json(model.after_value.try_as_ref().and_then(Option::as_ref))
+        || !valid_json(model.audit_info.try_as_ref().and_then(Option::as_ref))
+        || !valid_text(model.request_id.try_as_ref(), 128)
+    {
+        return Err(DbErr::Custom("平台管理审计状态无效".to_owned()));
     }
     Ok(())
 }
@@ -2082,6 +2137,17 @@ impl ActiveModelBehavior for organization_audit_logs::ActiveModel {
         C: ConnectionTrait,
     {
         validate_organization_audit_log(&self, database, insert).await?;
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for platform_audit_logs::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_platform_audit_log(&self, database, insert).await?;
         Ok(self)
     }
 }
