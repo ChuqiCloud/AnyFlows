@@ -101,6 +101,23 @@ allow = ["MPL-2.0"]
 crate = "tiny-keccak"
 allow = ["CC0-1.0"]
 
+# WebAuthn 依赖使用 MPL-2.0；仅对其自身依赖文件适用，不扩散到本项目代码。
+[[licenses.exceptions]]
+crate = "webauthn-rs"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+crate = "webauthn-rs-core"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+crate = "webauthn-rs-proto"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+crate = "webauthn-attestation-ca"
+allow = ["MPL-2.0"]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
