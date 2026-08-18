@@ -5,13 +5,6 @@ on:
     branches: [master, develop]
   pull_request:
     branches: [master, develop]
-  workflow_dispatch:
-    inputs:
-      generate_api:
-        description: Generate and commit OpenAPI artifacts
-        required: false
-        default: "false"
-
 
 permissions:
   contents: read
@@ -25,77 +18,6 @@ env:
   RUST_BACKTRACE: "1"
 
 jobs:
-  generate-api-artifacts:
-    name: Generate API artifacts
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.generate_api == 'true' }}
-    permissions:
-      contents: write
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - name: Configure external Gitea checkout endpoint
-        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
-
-      - name: Check out repository
-        shell: bash
-        env:
-          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
-          CHECKOUT_SHA: ${{ github.sha }}
-          CHECKOUT_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
-          git init .
-          git remote add origin "$CHECKOUT_REPOSITORY_URL"
-          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
-          git checkout --detach FETCH_HEAD
-
-      - name: Ensure Rust toolchain manager
-        shell: bash
-        run: |
-          if ! command -v rustup >/dev/null 2>&1; then
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
-          fi
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.cargo/bin:$PATH"
-          rustup --version
-
-      - name: Install pinned Rust toolchain
-        shell: bash
-        run: |
-          toolchain="$(sed -n 's/^channel = \"\(.*\)\"/\1/p' rust-toolchain.toml)"
-          test -n "$toolchain"
-          rustup toolchain install "$toolchain" --profile minimal
-
-      - name: Install frontend dependencies
-        shell: bash
-        run: |
-          corepack enable
-          corepack pnpm@10.33.0 --dir web install --frozen-lockfile
-
-      - name: Generate and commit API artifacts
-        shell: bash
-        env:
-          PUSH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          cargo run --locked --package xtask -- openapi export
-          corepack pnpm@10.33.0 --dir web exec openapi-ts --no-log-file
-          node web/scripts/normalize-generated-api.mjs
-          git config user.name "gitea-actions[bot]"
-          git config user.email "gitea-actions[bot]@noreply.acmecloud.cn"
-          git add web/openapi/openapi.json web/src/lib/api/generated
-          if git diff --cached --quiet; then
-            exit 0
-          fi
-          git commit -m "chore: 同步 OpenAPI 与生成客户端"
-          auth="$(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 -w0)"
-          git -c http.extraheader="AUTHORIZATION: basic $auth" push origin "HEAD:${GITHUB_REF_NAME}"
-
   changes:
     name: Detect changed components
     runs-on: ubuntu-24.04
