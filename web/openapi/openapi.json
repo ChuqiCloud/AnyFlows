@@ -3118,6 +3118,75 @@
       }
     },
     "/api/account/passkeys/{id}": {
+      "delete": {
+        "tags": [
+          "个人资料与安全"
+        ],
+        "summary": "撤销 Passkey",
+        "operationId": "revokeUserPasskey",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Passkey 内部 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserPasskeyRevokeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Passkey 已撤销"
+          },
+          "400": {
+            "description": "请求正文无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "密码或二次验证无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
       "patch": {
         "tags": [
           "个人资料与安全"
@@ -3169,75 +3238,6 @@
           },
           "401": {
             "description": "会话无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "服务内部错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      },
-      "delete": {
-        "tags": [
-          "个人资料与安全"
-        ],
-        "summary": "撤销 Passkey",
-        "operationId": "revokeUserPasskey",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Passkey 内部 ID",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UserPasskeyRevokeRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "Passkey 已撤销"
-          },
-          "400": {
-            "description": "请求正文无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "密码或二次验证无效",
             "content": {
               "application/json": {
                 "schema": {
