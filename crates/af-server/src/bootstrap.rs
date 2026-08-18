@@ -994,7 +994,7 @@ impl Bootstrap<DatabaseReady> {
                     balance_alert_settings_repository,
                     passkey_repository,
                     system_secret_cipher.clone(),
-                    &self.config,
+                    &config,
                 )),
                 user_wallet_service: Arc::new(DatabaseUserWalletService::new(
                     wallet_ledger_repository.clone(),
