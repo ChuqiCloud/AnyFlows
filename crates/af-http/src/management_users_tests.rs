@@ -1,6 +1,6 @@
 use std::sync::{
     Arc,
-    atomic::{AtomicUsize, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
 use af_admin::{
@@ -13,9 +13,11 @@ use af_admin::{
     AdminUser, AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture,
     AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserPage, AdminUserReadError,
     AdminUserReader, AdminUserStatus, AdminUserUpdateCommand, AdminUserUpdateFuture,
-    AdminUserWriteError, AdminUserWriter, LoginCredentials, SessionAuthentication,
-    SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
-    SessionLoginFuture, SessionPrincipal, SessionRole,
+    AdminUserWriteError, AdminUserWriter, LoginCredentials, PlatformAuditEntry, PlatformAuditError,
+    PlatformAuditListFuture, PlatformAuditListQuery, PlatformAuditRecordFuture, PlatformAuditScope,
+    PlatformAuditService, SessionAuthentication, SessionAuthenticationError,
+    SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, SessionPrincipal,
+    SessionRole,
 };
 use af_domain::{AfError, GatewayPrincipal, GroupId, TokenId, UserId};
 use af_protocol::CanonicalRequestEnvelope;
@@ -40,6 +42,7 @@ use crate::{
     management_users::{
         create_admin_user, delete_admin_user, get_admin_user, list_admin_users, update_admin_user,
     },
+    middleware::ensure_request_id,
 };
 
 const ADMIN_TOKEN: &str = "admin-token";
@@ -192,6 +195,8 @@ struct FakeAdminUserReader {
     create_calls: AtomicUsize,
     update_calls: AtomicUsize,
     delete_calls: AtomicUsize,
+    audit_calls: AtomicUsize,
+    audit_fails: AtomicBool,
 }
 
 impl FakeAdminUserReader {
@@ -202,7 +207,32 @@ impl FakeAdminUserReader {
             create_calls: AtomicUsize::new(0),
             update_calls: AtomicUsize::new(0),
             delete_calls: AtomicUsize::new(0),
+            audit_calls: AtomicUsize::new(0),
+            audit_fails: AtomicBool::new(false),
         }
+    }
+}
+
+impl PlatformAuditService for FakeAdminUserReader {
+    fn record<'a>(&'a self, _entry: PlatformAuditEntry) -> PlatformAuditRecordFuture<'a> {
+        self.audit_calls.fetch_add(1, Ordering::Relaxed);
+        let fails = self.audit_fails.load(Ordering::Relaxed);
+        Box::pin(async move {
+            if fails {
+                Err(PlatformAuditError::Internal)
+            } else {
+                Ok(())
+            }
+        })
+    }
+
+    fn list<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _scope: PlatformAuditScope,
+        _query: PlatformAuditListQuery,
+    ) -> PlatformAuditListFuture<'a> {
+        Box::pin(async { Err(PlatformAuditError::Internal) })
     }
 }
 
@@ -327,7 +357,8 @@ impl AdminUserWriter for FakeAdminUserReader {
 fn router(reader: Arc<FakeAdminUserReader>) -> Router {
     let session_authenticator: Arc<dyn SessionAuthenticator> = Arc::new(FakeSessionAuthenticator);
     let admin_user_reader: Arc<dyn AdminUserReader> = reader.clone();
-    let admin_user_writer: Arc<dyn AdminUserWriter> = reader;
+    let admin_user_writer: Arc<dyn AdminUserWriter> = reader.clone();
+    let platform_audit_service: Arc<dyn PlatformAuditService> = reader;
     let admin_groups = Arc::new(UnusedAdminGroupReader);
     let admin_tokens = Arc::new(UnusedAdminTokenReader);
     let collection_authentication = middleware::from_fn_with_state(
@@ -338,14 +369,16 @@ fn router(reader: Arc<FakeAdminUserReader>) -> Router {
         ManagementAuthenticationState::new(Arc::clone(&session_authenticator)),
         authenticate_management_session,
     );
-    Router::new()
-        .route(
-            "/api/admin/users",
-            get(list_admin_users)
-                .post(create_admin_user)
+    let collection_routes = get(list_admin_users)
+        .route_layer(middleware::from_fn(ensure_request_id))
+        .route_layer(collection_authentication.clone())
+        .merge(
+            axum::routing::post(create_admin_user)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(collection_authentication),
-        )
+        );
+    Router::new()
+        .route("/api/admin/users", collection_routes)
         .route(
             "/api/admin/users/{id}",
             get(get_admin_user)
@@ -354,16 +387,19 @@ fn router(reader: Arc<FakeAdminUserReader>) -> Router {
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(item_authentication),
         )
-        .with_state(HttpState::new(
-            Arc::new(UnusedChatService),
-            session_authenticator,
-            admin_groups.clone(),
-            admin_groups,
-            admin_tokens.clone(),
-            admin_tokens,
-            admin_user_reader,
-            admin_user_writer,
-        ))
+        .with_state(
+            HttpState::new(
+                Arc::new(UnusedChatService),
+                session_authenticator,
+                admin_groups.clone(),
+                admin_groups,
+                admin_tokens.clone(),
+                admin_tokens,
+                admin_user_reader,
+                admin_user_writer,
+            )
+            .with_platform_audit_service(Some(platform_audit_service)),
+        )
 }
 
 #[tokio::test]
@@ -418,6 +454,7 @@ async fn admin_can_read_user_list_and_detail_with_no_store_responses() {
     );
     assert_eq!(reader.list_calls.load(Ordering::Relaxed), 1);
     assert_eq!(reader.get_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(reader.audit_calls.load(Ordering::Relaxed), 1);
 }
 
 #[tokio::test]
@@ -519,6 +556,27 @@ async fn non_admin_and_invalid_requests_do_not_reach_user_service() {
     assert_eq!(reader.create_calls.load(Ordering::Relaxed), 0);
     assert_eq!(reader.update_calls.load(Ordering::Relaxed), 0);
     assert_eq!(reader.delete_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(reader.audit_calls.load(Ordering::Relaxed), 2);
+}
+
+#[tokio::test]
+async fn audit_persistence_failure_closes_the_user_directory_response() {
+    let reader = Arc::new(FakeAdminUserReader::new());
+    reader.audit_fails.store(true, Ordering::Relaxed);
+    let app = router(Arc::clone(&reader));
+
+    let response = app
+        .oneshot(authorized_request("GET", "/api/admin/users", ADMIN_TOKEN))
+        .await
+        .unwrap();
+    assert_management_error(
+        response,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "internal_error",
+    )
+    .await;
+    assert_eq!(reader.list_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(reader.audit_calls.load(Ordering::Relaxed), 1);
 }
 
 #[tokio::test]

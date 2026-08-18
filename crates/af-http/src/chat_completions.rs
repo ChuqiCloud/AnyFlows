@@ -4,8 +4,8 @@ use af_admin::{
     AdminChannelReader, AdminChannelWriter, AdminGroupReader, AdminGroupWriter,
     AdminModelPriceService, AdminModelReader, AdminModelSyncService, AdminModelWriter,
     AdminRouteReader, AdminRouteWriter, AdminTokenReader, AdminTokenWriter, AdminUsageLogReader,
-    AdminUserReader, AdminUserWriter, AdminWalletService, InitialSetup, SessionAuthenticator,
-    TokenAuthentication,
+    AdminUserReader, AdminUserWriter, AdminWalletService, InitialSetup, PlatformAuditService,
+    SessionAuthenticator, TokenAuthentication,
 };
 use af_analytics::AdminDashboardReader;
 use af_domain::{AfError, Protocol, TokenModelPolicy};
@@ -62,6 +62,7 @@ pub(crate) struct HttpState {
     pub(crate) admin_user_reader: Arc<dyn AdminUserReader>,
     pub(crate) admin_user_writer: Arc<dyn AdminUserWriter>,
     pub(crate) admin_wallet_service: Option<Arc<dyn AdminWalletService>>,
+    pub(crate) platform_audit_service: Option<Arc<dyn PlatformAuditService>>,
     pub(crate) organization_authorization_service:
         Option<Arc<dyn af_admin::OrganizationAuthorizationService>>,
     pub(crate) organization_invitation_service:
@@ -112,6 +113,7 @@ impl HttpState {
             admin_user_reader,
             admin_user_writer,
             admin_wallet_service: None,
+            platform_audit_service: None,
             organization_authorization_service: None,
             organization_invitation_service: None,
             organization_management_service: None,
@@ -197,6 +199,15 @@ impl HttpState {
         service: Option<Arc<dyn AdminWalletService>>,
     ) -> Self {
         self.admin_wallet_service = service;
+        self
+    }
+
+    /// 注入平台权限与只追加管理审计服务。
+    pub(crate) fn with_platform_audit_service(
+        mut self,
+        service: Option<Arc<dyn PlatformAuditService>>,
+    ) -> Self {
+        self.platform_audit_service = service;
         self
     }
 

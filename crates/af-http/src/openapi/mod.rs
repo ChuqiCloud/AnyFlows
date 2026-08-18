@@ -25,6 +25,7 @@ mod passkey_auth;
 mod password_reset;
 mod payment_settings;
 mod payment_webhook;
+mod platform_audit;
 mod playground_conversations;
 mod playground_shares;
 mod redemptions;
@@ -103,6 +104,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(organization_tokens::document());
     document.merge(organization_activity::document());
     document.merge(passkey_auth::document());
+    document.merge(platform_audit::document());
 
     document.tags = Some(vec![
         Tag::new("公开注册"),
@@ -129,6 +131,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("企业 API Key"),
         Tag::new("企业活动"),
         Tag::new("平台企业活动"),
+        Tag::new("平台管理审计"),
         Tag::new("余额预警"),
         Tag::new("管理会话"),
         Tag::new("首次安装"),
@@ -188,7 +191,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 129);
+        assert_eq!(document.paths.paths.len(), 131);
         let operation_count = document
             .paths
             .paths
@@ -209,7 +212,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 182);
+        assert_eq!(operation_count, 184);
         assert!(
             document
                 .components
@@ -360,11 +363,13 @@ mod tests {
             "listMissingAdminModels",
             "listAdminTokens",
             "listAdminUsageLogs",
+            "listAdminPlatformAuditLogs",
             "listOrganizationUsageLogs",
             "listOrganizationAuditLogs",
             "listPlatformOrganizationUsageLogs",
             "listPlatformOrganizationAuditLogs",
             "listUserUsageLogs",
+            "listSelfPlatformAuditLogs",
             "listAdminUsers",
             "listModels",
             "listModelProviders",
@@ -425,7 +430,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 339);
+        assert_eq!(schemas.len(), 342);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("ClientSimulationProfile"));
         assert!(schemas.contains_key("ClientSimulationResult"));
@@ -470,6 +475,9 @@ mod tests {
         assert!(schemas.contains_key("OrganizationAuditLogListResponse"));
         assert!(schemas.contains_key("OrganizationAuditLogResponse"));
         assert!(schemas.contains_key("OrganizationAuditOutcomeResponse"));
+        assert!(schemas.contains_key("PlatformAuditLogListResponse"));
+        assert!(schemas.contains_key("PlatformAuditLog"));
+        assert!(schemas.contains_key("PlatformAuditOutcome"));
         assert!(schemas.contains_key("OrganizationUsageLogListResponse"));
         assert!(schemas.contains_key("OrganizationUsageLogSummaryResponse"));
         assert!(schemas.contains_key("OrganizationTopupOrderCreateRequest"));

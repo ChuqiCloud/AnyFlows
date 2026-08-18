@@ -4,11 +4,11 @@ use af_db::{
     AdminUserLookupOutcome, AdminUserRecord, AdminUserRepository, AdminUserRepositoryError,
     MAX_ADMIN_USER_PAGE_SIZE,
 };
-use af_domain::{GroupId, UserId};
+use af_domain::{GroupId, PlatformPermission, UserId};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{SessionPrincipal, SessionRole};
+use crate::{PlatformPolicy, SessionPrincipal, SessionRole};
 
 /// 管理用户列表默认页大小。
 pub const DEFAULT_ADMIN_USER_PAGE_SIZE: usize = 50;
@@ -316,7 +316,8 @@ impl AdminUserReader for DatabaseAdminUserReader {
         query: AdminUserListQuery,
     ) -> AdminUserListFuture<'a> {
         Box::pin(async move {
-            require_admin(principal)?;
+            PlatformPolicy::authorize(principal, PlatformPermission::UserDirectoryReadAll)
+                .map_err(|_| AdminUserReadError::Forbidden)?;
             let page = self
                 .repository
                 .list(query.after(), query.limit())

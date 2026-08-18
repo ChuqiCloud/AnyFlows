@@ -79,6 +79,7 @@ mod m20260817_000070_create_oauth_login;
 mod m20260818_000071_seed_discord_oauth_login;
 mod m20260818_000072_create_passkeys;
 mod m20260818_000073_add_passkey_authentication_state;
+mod m20260819_000074_create_platform_audit;
 mod schema;
 
 #[cfg(test)]
@@ -195,6 +196,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260818_000071_seed_discord_oauth_login::Migration),
             Box::new(m20260818_000072_create_passkeys::Migration),
             Box::new(m20260818_000073_add_passkey_authentication_state::Migration),
+            Box::new(m20260819_000074_create_platform_audit::Migration),
         ]
     }
 }

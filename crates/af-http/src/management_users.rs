@@ -1,8 +1,10 @@
 use af_admin::{
     AdminUser, AdminUserCreateCommand, AdminUserListQuery, AdminUserPage, AdminUserReadError,
-    AdminUserUpdateCommand, AdminUserWriteError,
+    AdminUserUpdateCommand, AdminUserWriteError, PlatformAuditEntry, PlatformAuditOutcome,
+    PlatformAuditService, PlatformPolicy,
 };
-use af_domain::{GroupId, UserId};
+use af_domain::{GroupId, PlatformPermission, UserId};
+use af_telemetry::RequestId;
 use axum::{
     Json,
     extract::{Extension, Path, RawQuery, State, rejection::JsonRejection},
@@ -10,6 +12,7 @@ use axum::{
 };
 use http::{HeaderValue, StatusCode, header::CACHE_CONTROL};
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 use utoipa::ToSchema;
 
 use crate::{chat_completions::HttpState, management_error::ManagementError};
@@ -116,14 +119,100 @@ pub(crate) async fn list_admin_users(
     State(state): State<HttpState>,
     RawQuery(raw_query): RawQuery,
     Extension(authentication): Extension<af_admin::SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
 ) -> Result<Response, ManagementError> {
-    let query = parse_list_query(raw_query.as_deref())?;
-    let page = state
-        .admin_user_reader
-        .list(authentication.principal(), query)
-        .await
-        .map_err(map_read_error)?;
+    let principal = authentication.principal();
+    let audit_service = state
+        .platform_audit_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    if !PlatformPolicy::allows(principal, PlatformPermission::UserDirectoryReadAll) {
+        record_user_directory_audit(
+            audit_service,
+            principal,
+            &request_id,
+            PlatformAuditOutcome::Denied,
+            json!({"reason": "forbidden"}),
+        )
+        .await?;
+        return Err(ManagementError::Forbidden);
+    }
+    let query = match parse_list_query(raw_query.as_deref()) {
+        Ok(query) => query,
+        Err(error) => {
+            record_user_directory_audit(
+                audit_service,
+                principal,
+                &request_id,
+                PlatformAuditOutcome::Failed,
+                json!({"reason": "invalid_pagination"}),
+            )
+            .await?;
+            return Err(error);
+        }
+    };
+    let page = match state.admin_user_reader.list(principal, query).await {
+        Ok(page) => page,
+        Err(error) => {
+            record_user_directory_audit(
+                audit_service,
+                principal,
+                &request_id,
+                PlatformAuditOutcome::Failed,
+                json!({"reason": read_error_code(error)}),
+            )
+            .await?;
+            return Err(map_read_error(error));
+        }
+    };
+    record_user_directory_audit(
+        audit_service,
+        principal,
+        &request_id,
+        PlatformAuditOutcome::Succeeded,
+        json!({
+            "after": query.after().map(UserId::get),
+            "limit": query.limit(),
+        }),
+    )
+    .await?;
     Ok(no_store_json(AdminUserListResponse::from_page(page)))
+}
+
+async fn record_user_directory_audit(
+    service: &std::sync::Arc<dyn PlatformAuditService>,
+    principal: af_admin::SessionPrincipal,
+    request_id: &RequestId,
+    outcome: PlatformAuditOutcome,
+    audit_info: Value,
+) -> Result<(), ManagementError> {
+    let entry = PlatformAuditEntry::new(
+        principal,
+        PlatformPermission::UserDirectoryReadAll,
+        "/api/admin/users",
+        "platform.user_directory.list",
+        "user_directory",
+        None,
+        outcome,
+        None,
+        None,
+        Some(audit_info),
+        request_id.as_str(),
+    )
+    .map_err(|_| ManagementError::Internal)?;
+    service
+        .record(entry)
+        .await
+        .map_err(|_| ManagementError::Internal)
+}
+
+const fn read_error_code(error: AdminUserReadError) -> &'static str {
+    match error {
+        AdminUserReadError::InvalidPagination => "invalid_pagination",
+        AdminUserReadError::Forbidden => "forbidden",
+        AdminUserReadError::NotFound => "not_found",
+        AdminUserReadError::Internal => "internal",
+    }
 }
 
 /// 返回单个未软删除用户的非敏感管理快照。

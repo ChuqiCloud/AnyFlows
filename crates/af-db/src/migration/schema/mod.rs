@@ -27,6 +27,7 @@ mod organization_entitlement;
 mod organization_invitation;
 mod organization_wallet;
 mod payment;
+mod platform_audit;
 mod playground;
 mod playground_conversation;
 mod pricing;
@@ -59,6 +60,7 @@ pub(super) use indexes::{
     create_groups_indexes, create_tokens_indexes, create_users_indexes,
 };
 pub(super) use invite_rebate::create_invite_rebate_events;
+pub(super) use platform_audit::{create_platform_audit_storage, drop_platform_audit_storage};
 pub(super) use routes::{create_route_channels, create_routes};
 pub(super) use routing::{
     create_abilities, create_channel_groups, create_channel_models, create_channels,

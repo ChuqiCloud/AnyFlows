@@ -1625,6 +1625,33 @@ export type PasswordResetRequest = {
 export type PasswordResetRequestResponse = {
     accepted: boolean;
 };
+export type PlatformAuditLog = {
+    id: number;
+    operator_user_id: number;
+    operator_username: string | null;
+    permission_code: string;
+    route: string;
+    operation: string;
+    resource: string;
+    resource_id: string | null;
+    outcome: PlatformAuditOutcome;
+    before_value: {
+        [key: string]: unknown;
+    } | null;
+    after_value: {
+        [key: string]: unknown;
+    } | null;
+    audit_info: {
+        [key: string]: unknown;
+    } | null;
+    request_id: string;
+    created_at: number;
+};
+export type PlatformAuditLogListResponse = {
+    logs: Array<PlatformAuditLog>;
+    next_cursor: number | null;
+};
+export type PlatformAuditOutcome = 'succeeded' | 'denied' | 'failed';
 export type PlaygroundConversationListResponse = {
     conversations: Array<PlaygroundConversationSummary>;
 };
@@ -5816,3 +5843,42 @@ export type FinishPasskeyAuthenticationResponses = {
     200: LoginResponse;
 };
 export type FinishPasskeyAuthenticationResponse = FinishPasskeyAuthenticationResponses[keyof FinishPasskeyAuthenticationResponses];
+export type ListAdminPlatformAuditLogsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/admin/audit-logs';
+};
+export type ListAdminPlatformAuditLogsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminPlatformAuditLogsError = ListAdminPlatformAuditLogsErrors[keyof ListAdminPlatformAuditLogsErrors];
+export type ListAdminPlatformAuditLogsResponses = {
+    200: PlatformAuditLogListResponse;
+};
+export type ListAdminPlatformAuditLogsResponse = ListAdminPlatformAuditLogsResponses[keyof ListAdminPlatformAuditLogsResponses];
+export type ListSelfPlatformAuditLogsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/account/audit-logs';
+};
+export type ListSelfPlatformAuditLogsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    500: ManagementError;
+};
+export type ListSelfPlatformAuditLogsError = ListSelfPlatformAuditLogsErrors[keyof ListSelfPlatformAuditLogsErrors];
+export type ListSelfPlatformAuditLogsResponses = {
+    200: PlatformAuditLogListResponse;
+};
+export type ListSelfPlatformAuditLogsResponse = ListSelfPlatformAuditLogsResponses[keyof ListSelfPlatformAuditLogsResponses];

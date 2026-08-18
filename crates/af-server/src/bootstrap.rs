@@ -23,20 +23,21 @@ use af_admin::{
     DatabaseInitialSetup, DatabaseOAuthLoginService, DatabaseOrganizationActivityService,
     DatabaseOrganizationBudgetService, DatabaseOrganizationTokenService,
     DatabaseOrganizationWalletService, DatabasePasskeyAuthenticationService,
-    DatabasePasswordResetService, DatabasePlaygroundConversationService,
-    DatabasePlaygroundShareService, DatabaseRedemptionService, DatabaseRegistrationService,
-    DatabaseSessionAuthenticator, DatabaseSiteSettingsService, DatabaseSubscriptionService,
-    DatabaseTokenAuthenticator, DatabaseUserInvitationService, DatabaseUserProfileService,
-    DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery, InitialSetup,
-    ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
-    OAuthLoginService, OrganizationActivityService, OrganizationActivityServiceConfigError,
-    OrganizationBudgetService, OrganizationTokenService, OrganizationWalletService,
-    PasskeyAuthenticationService, PasskeyAuthenticationServiceConfigError, PasswordResetService,
-    PasswordResetServiceConfigError, PlaygroundConversationService, PlaygroundShareService,
-    RedemptionService, RegistrationService, RegistrationServiceConfigError,
-    RuntimeRefreshingAdminGroupWriter, SessionAuthenticator, SessionAuthenticatorConfigError,
-    SiteSettingsService, SubscriptionService, TokenAuthenticator, UserInvitationService,
-    UserProfileService, UserTokenService, UserTopupService, UserWalletService,
+    DatabasePasswordResetService, DatabasePlatformAuditService,
+    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
+    DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
+    DatabaseSiteSettingsService, DatabaseSubscriptionService, DatabaseTokenAuthenticator,
+    DatabaseUserInvitationService, DatabaseUserProfileService, DatabaseUserTokenService,
+    DatabaseUserWalletService, EmailDelivery, InitialSetup, ModelCatalogReader,
+    NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError, OAuthLoginService,
+    OrganizationActivityService, OrganizationActivityServiceConfigError, OrganizationBudgetService,
+    OrganizationTokenService, OrganizationWalletService, PasskeyAuthenticationService,
+    PasskeyAuthenticationServiceConfigError, PasswordResetService, PasswordResetServiceConfigError,
+    PlatformAuditService, PlaygroundConversationService, PlaygroundShareService, RedemptionService,
+    RegistrationService, RegistrationServiceConfigError, RuntimeRefreshingAdminGroupWriter,
+    SessionAuthenticator, SessionAuthenticatorConfigError, SiteSettingsService,
+    SubscriptionService, TokenAuthenticator, UserInvitationService, UserProfileService,
+    UserTokenService, UserTopupService, UserWalletService,
 };
 use af_analytics::{AdminDashboardReader, DatabaseAdminDashboardReader};
 use af_billing::{
@@ -79,7 +80,7 @@ use af_db::{
     OrganizationWalletRepositoryConfigError, PasskeyRepository, PasswordResetRepository,
     PasswordResetRepositoryConfigError, PaymentSecretUpdate, PaymentSettingsRepository,
     PaymentSettingsRepositoryConfigError, PaymentSettingsRepositoryError,
-    PaymentSettingsWriteRecord, PlaygroundConversationRepository,
+    PaymentSettingsWriteRecord, PlatformAuditRepository, PlaygroundConversationRepository,
     PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
     PlaygroundShareRepositoryConfigError, QuotaRepository, RedemptionRepository,
     RedemptionRepositoryConfigError, RegistrationRepository, RegistrationRepositoryConfigError,
@@ -190,6 +191,7 @@ pub struct AuthenticationReady {
     organization_budget_service: Arc<dyn OrganizationBudgetService>,
     organization_token_service: Arc<dyn OrganizationTokenService>,
     organization_activity_service: Arc<dyn OrganizationActivityService>,
+    platform_audit_service: Arc<dyn PlatformAuditService>,
     redemption_service: Arc<dyn RedemptionService>,
     subscription_service: Arc<dyn SubscriptionService>,
     subscription_repository: SubscriptionRepository,
@@ -999,6 +1001,10 @@ impl Bootstrap<DatabaseReady> {
             )
             .map_err(BootstrapError::OrganizationActivityService)?,
         );
+        let platform_audit_service: Arc<dyn PlatformAuditService> =
+            Arc::new(DatabasePlatformAuditService::new(
+                PlatformAuditRepository::new(self.stage.database.clone()),
+            ));
         let admin_dashboard_repository = AdminDashboardRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -1059,6 +1065,7 @@ impl Bootstrap<DatabaseReady> {
                     organization_token_repository,
                 )),
                 organization_activity_service,
+                platform_audit_service,
                 redemption_service: Arc::new(DatabaseRedemptionService::new(redemption_repository)),
                 subscription_service: Arc::new(DatabaseSubscriptionService::new(
                     subscription_repository.clone(),
@@ -2093,6 +2100,9 @@ impl Bootstrap<Supervised> {
             )),
             Some(Arc::clone(
                 &self.stage.infrastructure.organization_management_service,
+            )),
+            Some(Arc::clone(
+                &self.stage.infrastructure.platform_audit_service,
             )),
         );
         let Bootstrap {

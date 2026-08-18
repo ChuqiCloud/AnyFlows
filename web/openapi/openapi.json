@@ -15756,6 +15756,178 @@
           }
         }
       }
+    },
+    "/api/admin/audit-logs": {
+      "get": {
+        "tags": [
+          "平台管理审计"
+        ],
+        "summary": "读取全站平台管理审计",
+        "operationId": "listAdminPlatformAuditLogs",
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "description": "上一页末尾的审计 ID",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "每页数量，默认 50",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "完整平台管理审计",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformAuditLogListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "分页参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要平台审计读取权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/account/audit-logs": {
+      "get": {
+        "tags": [
+          "平台管理审计"
+        ],
+        "summary": "读取当前用户自己的裁剪平台审计",
+        "operationId": "listSelfPlatformAuditLogs",
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "description": "上一页末尾的审计 ID",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "每页数量，默认 50",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "仅当前用户记录；操作者名、前后值和 audit_info 均已裁剪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformAuditLogListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "分页参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -25718,6 +25890,137 @@
         },
         "additionalProperties": false
       },
+      "PlatformAuditLog": {
+        "type": "object",
+        "required": [
+          "id",
+          "operator_user_id",
+          "operator_username",
+          "permission_code",
+          "route",
+          "operation",
+          "resource",
+          "resource_id",
+          "outcome",
+          "before_value",
+          "after_value",
+          "audit_info",
+          "request_id",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "operator_user_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "operator_username": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "permission_code": {
+            "type": "string",
+            "maxLength": 96,
+            "minLength": 1
+          },
+          "route": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "operation": {
+            "type": "string",
+            "maxLength": 96,
+            "minLength": 1
+          },
+          "resource": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "resource_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/PlatformAuditOutcome"
+          },
+          "before_value": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "after_value": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "audit_info": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PlatformAuditLogListResponse": {
+        "type": "object",
+        "required": [
+          "logs",
+          "next_cursor"
+        ],
+        "properties": {
+          "logs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlatformAuditLog"
+            },
+            "maxItems": 100
+          },
+          "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "PlatformAuditOutcome": {
+        "type": "string",
+        "enum": [
+          "succeeded",
+          "denied",
+          "failed"
+        ]
+      },
       "PlaygroundConversationListResponse": {
         "type": "object",
         "description": "当前用户的全部有界历史摘要。",
@@ -28449,6 +28752,9 @@
     },
     {
       "name": "平台企业活动"
+    },
+    {
+      "name": "平台管理审计"
     },
     {
       "name": "余额预警"

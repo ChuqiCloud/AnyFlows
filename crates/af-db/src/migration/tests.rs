@@ -37,8 +37,8 @@ use crate::entity::{
     organization_entitlements, organization_invitations, organization_memberships,
     organization_teams, organization_wallet_ledger_entries, organization_wallets, organizations,
     passkey_authentication_challenges, passkey_registration_challenges, passkeys, payment_settings,
-    playground_conversations, playground_shares, redemption_batches, redemption_codes,
-    registration_rate_limits, scheduler_outbox_events, site_settings,
+    platform_audit_logs, playground_conversations, playground_shares, redemption_batches,
+    redemption_codes, registration_rate_limits, scheduler_outbox_events, site_settings,
     subscription_balance_alert_events, subscription_plans, tokens, topup_orders,
     topup_payment_events, usage_logs, user_subscriptions, users, wallet_ledger_entries,
 };
@@ -55,6 +55,8 @@ use crate::{
     OrganizationAuditWrite, OrganizationAuditWriteOutcome, OrganizationCreate,
     OrganizationEntitlementWrite, OrganizationMembershipChange, OrganizationMembershipCreate,
     OrganizationRepository, OrganizationRepositoryError, OrganizationTeamCreate,
+    PlatformAuditOutcome, PlatformAuditQuery, PlatformAuditRepository,
+    PlatformAuditRepositoryError, PlatformAuditWrite, PlatformAuditWriteOutcome,
     PlaygroundConversationRepository, PlaygroundConversationWrite, PlaygroundShareRepository,
     PlaygroundShareWrite, PoolOptions, QuotaMutationOutcome, QuotaRepository,
     QuotaReservationStatus, RegistrationAttemptOutcome, RegistrationPolicyWriteRecord,
@@ -70,7 +72,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 73;
+const EXPECTED_MIGRATION_COUNT: usize = 74;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -89,7 +91,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 67] = [
+const CORE_TABLES: [&str; 68] = [
     "groups",
     "users",
     "passkeys",
@@ -157,6 +159,7 @@ const CORE_TABLES: [&str; 67] = [
     "organization_budget_windows",
     "billing_organization_reservations",
     "organization_audit_logs",
+    "platform_audit_logs",
 ];
 
 struct SlowMigrator;
@@ -1124,7 +1127,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 14);
+    assert_eq!(pending_migrations.len(), 15);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -1180,6 +1183,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[13].name(),
         "m20260818_000073_add_passkey_authentication_state"
+    );
+    assert_eq!(
+        pending_migrations[14].name(),
+        "m20260819_000074_create_platform_audit"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
@@ -2696,6 +2703,7 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     .await?;
     assert_entity_columns::<organization_audit_logs::Column>(&manager, "organization_audit_logs")
         .await?;
+    assert_entity_columns::<platform_audit_logs::Column>(&manager, "platform_audit_logs").await?;
     assert_entity_columns::<organization_invitations::Column>(&manager, "organization_invitations")
         .await?;
     assert_entity_columns::<organization_wallets::Column>(&manager, "organization_wallets").await?;
@@ -3009,6 +3017,10 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
             "idx_org_audit_organization_created",
         ),
         ("organization_audit_logs", "idx_org_audit_platform_id"),
+        ("platform_audit_logs", "uq_platform_audit_request_action"),
+        ("platform_audit_logs", "idx_platform_audit_operator_id"),
+        ("platform_audit_logs", "idx_platform_audit_route_id"),
+        ("platform_audit_logs", "idx_platform_audit_created_id"),
     ] {
         assert!(
             manager.has_index(table, index).await?,
@@ -3148,6 +3160,7 @@ async fn exercise_organization_repository(pool: &DatabasePool) -> Result<(), Box
         GroupId::new(group.id)?,
     )
     .await?;
+    exercise_platform_audit_repository(pool, owner_user_id, member_user_id).await?;
     let cross_scope_hash = "f2".repeat(32);
     let mut cross_scope = token_active_model(
         owner.id,
@@ -3188,6 +3201,110 @@ async fn exercise_organization_repository(pool: &DatabasePool) -> Result<(), Box
     repository
         .disable_team(organization.id(), team.id(), team.version())
         .await?;
+    Ok(())
+}
+
+/// 在当前方言上验证平台审计的幂等追加、稳定分页和更新保护。
+async fn exercise_platform_audit_repository(
+    pool: &DatabasePool,
+    owner_user_id: UserId,
+    member_user_id: UserId,
+) -> Result<(), Box<dyn Error>> {
+    let repository = PlatformAuditRepository::new(pool.clone());
+    let succeeded = PlatformAuditWrite::new(
+        owner_user_id,
+        "platform.user_directory.read_all".to_owned(),
+        "/api/admin/users".to_owned(),
+        "platform.user_directory.list".to_owned(),
+        "user_directory".to_owned(),
+        None,
+        PlatformAuditOutcome::Succeeded,
+        None,
+        None,
+        Some(r#"{"after":null,"limit":2}"#.to_owned()),
+        "platform-audit-success".to_owned(),
+    )?;
+    assert_eq!(
+        repository.record(&succeeded).await?,
+        PlatformAuditWriteOutcome::Applied
+    );
+    assert_eq!(
+        repository.record(&succeeded).await?,
+        PlatformAuditWriteOutcome::Existing
+    );
+    let conflicting = PlatformAuditWrite::new(
+        owner_user_id,
+        "platform.user_directory.read_all".to_owned(),
+        "/api/admin/users".to_owned(),
+        "platform.user_directory.list".to_owned(),
+        "user_directory".to_owned(),
+        None,
+        PlatformAuditOutcome::Succeeded,
+        None,
+        None,
+        Some(r#"{"after":null,"limit":10}"#.to_owned()),
+        "platform-audit-success".to_owned(),
+    )?;
+    assert_eq!(
+        repository.record(&conflicting).await,
+        Err(PlatformAuditRepositoryError::Conflict)
+    );
+    for (user_id, request_id, outcome) in [
+        (
+            member_user_id,
+            "platform-audit-denied",
+            PlatformAuditOutcome::Denied,
+        ),
+        (
+            owner_user_id,
+            "platform-audit-failed",
+            PlatformAuditOutcome::Failed,
+        ),
+    ] {
+        let write = PlatformAuditWrite::new(
+            user_id,
+            "platform.user_directory.read_all".to_owned(),
+            "/api/admin/users".to_owned(),
+            "platform.user_directory.list".to_owned(),
+            "user_directory".to_owned(),
+            None,
+            outcome,
+            None,
+            None,
+            None,
+            request_id.to_owned(),
+        )?;
+        assert_eq!(
+            repository.record(&write).await?,
+            PlatformAuditWriteOutcome::Applied
+        );
+    }
+    let (first_page, next_cursor) = repository
+        .list(&PlatformAuditQuery::new(None, 2, None)?)
+        .await?
+        .into_parts();
+    assert_eq!(first_page.len(), 2);
+    assert!(next_cursor.is_some());
+    let (second_page, final_cursor) = repository
+        .list(&PlatformAuditQuery::new(next_cursor, 2, None)?)
+        .await?
+        .into_parts();
+    assert_eq!(second_page.len(), 1);
+    assert_eq!(final_cursor, None);
+    let (owner_records, owner_cursor) = repository
+        .list(&PlatformAuditQuery::new(None, 10, Some(owner_user_id))?)
+        .await?
+        .into_parts();
+    assert_eq!(owner_records.len(), 2);
+    assert_eq!(owner_cursor, None);
+    let stored = platform_audit_logs::Entity::find()
+        .filter(platform_audit_logs::Column::RequestId.eq("platform-audit-success"))
+        .one(pool.connection())
+        .await?
+        .expect("平台审计事实必须存在");
+    let mut forbidden_update = stored.into_active_model();
+    forbidden_update.outcome = Set(PlatformAuditOutcome::Failed as i16);
+    assert!(forbidden_update.update(pool.connection()).await.is_err());
     Ok(())
 }
 

@@ -242,6 +242,10 @@ impl OrganizationPermission {
 /// 平台域权限；平台管理员权限不能伪装成企业角色权限。
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum PlatformPermission {
+    /// 读取平台用户目录。
+    UserDirectoryReadAll,
+    /// 读取全站平台管理审计。
+    PlatformAuditReadAll,
     /// 跨企业读取企业目录。
     OrganizationsReadAll,
     /// 跨企业读取企业调用日志。
@@ -255,6 +259,8 @@ impl PlatformPermission {
     #[must_use]
     pub const fn code(self) -> &'static str {
         match self {
+            Self::UserDirectoryReadAll => "platform.user_directory.read_all",
+            Self::PlatformAuditReadAll => "platform.audit.read_all",
             Self::OrganizationsReadAll => "platform.organizations.read_all",
             Self::OrganizationUsageLogsReadAll => "platform.organization_usage_logs.read_all",
             Self::OrganizationAuditReadAll => "platform.organization_audit.read_all",
