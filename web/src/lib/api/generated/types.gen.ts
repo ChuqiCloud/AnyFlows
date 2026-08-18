@@ -1845,7 +1845,7 @@ export type UserPasskeyResponse = {
 };
 export type UserPasskeyRevokeRequest = {
     current_password: string;
-    totp_code: string | null;
+    totp_code?: string | null;
 };
 export type UserPasswordChangeRequest = {
     current_password: string;

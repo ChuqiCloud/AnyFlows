@@ -26751,8 +26751,7 @@
       "UserPasskeyRevokeRequest": {
         "type": "object",
         "required": [
-          "current_password",
-          "totp_code"
+          "current_password"
         ],
         "properties": {
           "current_password": {
