@@ -2262,7 +2262,7 @@ export type LoginRequestWritable = {
     username: string;
     password: string;
     totp_code?: string | null;
-    turnstile_token?: string;
+    turnstile_token?: string | null;
 };
 export type OrganizationTopupOrderResponseWritable = {
     order_id: string;
@@ -2286,7 +2286,7 @@ export type OrganizationTopupPaymentSessionResponseWritable = {
 };
 export type RegistrationEmailVerificationRequestWritable = {
     email: string;
-    turnstile_token?: string;
+    turnstile_token?: string | null;
 };
 export type RegistrationRequestWritable = {
     username: string;
@@ -2294,7 +2294,7 @@ export type RegistrationRequestWritable = {
     password: string;
     verification_code?: string | null;
     invite_code?: string | null;
-    turnstile_token?: string;
+    turnstile_token?: string | null;
 };
 export type ResponsesCompactInputWritable = string | Array<ResponsesCompactItemWritable>;
 export type ResponsesCompactItemWritable = unknown;
