@@ -139,12 +139,12 @@ fn update_user_notification_preferences() {}
     get,
     path = "/api/account/passkeys",
     operation_id = "listUserPasskeys",
-    tag = "涓汉璧勬枡涓庡畨鍏",
-    summary = "璇诲彇褰撳墠鐢ㄦ埛 Passkey 鐩綍",
+    tag = "个人资料与安全",
+    summary = "读取当前用户 Passkey 目录",
     responses(
-        (status = 200, description = "Passkey 鐩綍", body = UserPasskeyListResponse),
-        (status = 401, description = "浼氳瘽鏃犳晥", body = ManagementErrorBody),
-        (status = 500, description = "鏈嶅姟鍐呴儴閿欒", body = ManagementErrorBody)
+        (status = 200, description = "Passkey 目录", body = UserPasskeyListResponse),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
     ),
     security(("bearerAuth" = []))
 )]
@@ -154,12 +154,12 @@ fn list_user_passkeys() {}
     post,
     path = "/api/account/passkeys/registration/options",
     operation_id = "startUserPasskeyRegistration",
-    tag = "涓汉璧勬枡涓庡畨鍏",
-    summary = "鍒涘缓 Passkey 娉ㄥ唽閫夐」",
+    tag = "个人资料与安全",
+    summary = "创建 Passkey 注册选项",
     responses(
-        (status = 200, description = "WebAuthn 娉ㄥ唽閫夐」", body = UserPasskeyRegistrationOptionsResponse),
-        (status = 401, description = "浼氳瘽鏃犳晥", body = ManagementErrorBody),
-        (status = 500, description = "鏈嶅姟鍐呴儴閿欒", body = ManagementErrorBody)
+        (status = 200, description = "WebAuthn 注册选项", body = UserPasskeyRegistrationOptionsResponse),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
     ),
     security(("bearerAuth" = []))
 )]
@@ -169,14 +169,14 @@ fn start_user_passkey_registration() {}
     post,
     path = "/api/account/passkeys/registration/verify",
     operation_id = "finishUserPasskeyRegistration",
-    tag = "涓汉璧勬枡涓庡畨鍏",
-    summary = "楠岃瘉骞朵繚瀛?Passkey",
+    tag = "个人资料与安全",
+    summary = "验证并保存 Passkey",
     request_body = UserPasskeyRegistrationVerifyRequest,
     responses(
-        (status = 200, description = "Passkey 宸插垱寤", body = UserPasskeyResponse),
-        (status = 400, description = "璇锋眰姝ｆ枃鎴栭獙璇佹棤鏁", body = ManagementErrorBody),
-        (status = 401, description = "浼氳瘽鏃犳晥", body = ManagementErrorBody),
-        (status = 500, description = "鏈嶅姟鍐呴儴閿欒", body = ManagementErrorBody)
+        (status = 200, description = "Passkey 已创建", body = UserPasskeyResponse),
+        (status = 400, description = "请求正文或验证无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
     ),
     security(("bearerAuth" = []))
 )]
@@ -186,14 +186,14 @@ fn finish_user_passkey_registration() {}
     patch,
     path = "/api/account/passkeys/{id}",
     operation_id = "renameUserPasskey",
-    tag = "涓汉璧勬枡涓庡畨鍏",
-    params(("id" = i64, Path, description = "Passkey 鍐呴儴 ID")),
+    tag = "个人资料与安全",
+    params(("id" = i64, Path, description = "Passkey 内部 ID")),
     request_body = UserPasskeyRenameRequest,
     responses(
-        (status = 200, description = "Passkey 宸查噸鍛藉悕", body = UserPasskeyResponse),
-        (status = 400, description = "璇锋眰姝ｆ枃鏃犳晥", body = ManagementErrorBody),
-        (status = 401, description = "浼氳瘽鏃犳晥", body = ManagementErrorBody),
-        (status = 500, description = "鏈嶅姟鍐呴儴閿欒", body = ManagementErrorBody)
+        (status = 200, description = "Passkey 已重命名", body = UserPasskeyResponse),
+        (status = 400, description = "请求正文无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
     ),
     security(("bearerAuth" = []))
 )]
@@ -203,14 +203,14 @@ fn rename_user_passkey() {}
     delete,
     path = "/api/account/passkeys/{id}",
     operation_id = "revokeUserPasskey",
-    tag = "涓汉璧勬枡涓庡畨鍏",
-    params(("id" = i64, Path, description = "Passkey 鍐呴儴 ID")),
+    tag = "个人资料与安全",
+    params(("id" = i64, Path, description = "Passkey 内部 ID")),
     request_body = UserPasskeyRevokeRequest,
     responses(
-        (status = 204, description = "Passkey 宸茶鎾ら攢"),
-        (status = 400, description = "璇锋眰姝ｆ枃鏃犳晥", body = ManagementErrorBody),
-        (status = 401, description = "瀵嗙爜鎴栦簩娆￠獙璇佹棤鏁", body = ManagementErrorBody),
-        (status = 500, description = "鏈嶅姟鍐呴儴閿欒", body = ManagementErrorBody)
+        (status = 204, description = "Passkey 已被撤销"),
+        (status = 400, description = "请求正文无效", body = ManagementErrorBody),
+        (status = 401, description = "密码或二次验证无效", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
     ),
     security(("bearerAuth" = []))
 )]
