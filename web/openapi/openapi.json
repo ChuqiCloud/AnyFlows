@@ -74,7 +74,7 @@
             }
           },
           "503": {
-            "description": "Turnstile ???????",
+            "description": "Turnstile 验证服务不可用",
             "content": {
               "application/json": {
                 "schema": {
@@ -344,7 +344,7 @@
             }
           },
           "503": {
-            "description": "Turnstile ???????",
+            "description": "Turnstile 验证服务不可用",
             "content": {
               "application/json": {
                 "schema": {
@@ -435,7 +435,7 @@
             }
           },
           "503": {
-            "description": "Turnstile ???????",
+            "description": "Turnstile 验证服务不可用",
             "content": {
               "application/json": {
                 "schema": {
