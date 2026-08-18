@@ -1826,15 +1826,11 @@ export type UserPasskeyListResponse = {
     items: Array<UserPasskeyResponse>;
 };
 export type UserPasskeyRegistrationOptionsResponse = {
-    options: {
-        [key: string]: unknown;
-    };
+    options: unknown;
     challenge_digest: string;
 };
 export type UserPasskeyRegistrationVerifyRequest = {
-    credential: {
-        [key: string]: unknown;
-    };
+    credential: unknown;
     display_name: string;
 };
 export type UserPasskeyRenameRequest = {
