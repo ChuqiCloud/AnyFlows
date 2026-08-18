@@ -25996,8 +25996,7 @@
           "password_login_enabled",
           "registration_enabled",
           "registration_email_required",
-          "oauth_providers",
-          "turnstile_site_key"
+          "oauth_providers"
         ],
         "properties": {
           "password_login_enabled": {

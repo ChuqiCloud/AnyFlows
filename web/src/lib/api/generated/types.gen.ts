@@ -1676,7 +1676,7 @@ export type PublicAuthenticationCapabilities = {
     registration_enabled: boolean;
     registration_email_required: boolean;
     oauth_providers: Array<PublicOAuthLoginProvider>;
-    turnstile_site_key: string | null;
+    turnstile_site_key?: string | null;
 };
 export type PublicBrandSettings = {
     logo_url?: string | null;
