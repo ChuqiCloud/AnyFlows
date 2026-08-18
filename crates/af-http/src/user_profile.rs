@@ -176,7 +176,9 @@ pub(crate) struct UserPasskeyResponse {
     #[schema(min_length = 1, max_length = 128)]
     display_name: String,
     created_at: i64,
+    #[schema(required = true)]
     last_used_at: Option<i64>,
+    #[schema(required = true)]
     revoked_at: Option<i64>,
 }
 
