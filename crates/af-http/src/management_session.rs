@@ -21,6 +21,8 @@ pub(crate) struct LoginRequest {
     pub(crate) password: String,
     #[schema(min_length = 6, max_length = 128, write_only)]
     pub(crate) totp_code: Option<String>,
+    #[schema(max_length = 2048, write_only)]
+    pub(crate) turnstile_token: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]

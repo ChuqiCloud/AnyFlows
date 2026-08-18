@@ -80,6 +80,7 @@ mod site_settings;
 mod speech_service;
 mod streaming;
 mod subscriptions;
+mod turnstile;
 mod user_profile;
 mod user_tokens;
 mod user_topups;
@@ -126,6 +127,7 @@ pub use responses_compact_service::{ResponsesCompactService, ResponsesCompactSer
 pub use router::{DEFAULT_REQUEST_BODY_LIMIT_BYTES, HttpRouter, build_router};
 pub use serve::{HttpListener, ServeError, ServeOutcome, serve_with_graceful_shutdown};
 pub use speech_service::{SpeechService, SpeechServiceFuture};
+pub use turnstile::{TurnstileVerification, TurnstileVerificationFuture, TurnstileVerifier};
 pub use video_task_service::{
     VideoTaskListCursor, VideoTaskListFuture, VideoTaskListItem, VideoTaskPage, VideoTaskService,
     VideoTaskServiceFuture, VideoTaskSnapshot,

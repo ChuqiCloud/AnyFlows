@@ -41,6 +41,7 @@ mod supervisor;
 #[cfg(test)]
 mod test_database;
 mod token_request_admission;
+mod turnstile;
 mod utc_time;
 mod video_task_service;
 

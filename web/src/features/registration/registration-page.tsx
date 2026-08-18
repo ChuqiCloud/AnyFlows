@@ -51,6 +51,7 @@ export function RegistrationPage({ inviteCode, onAuthenticated }: RegistrationPa
         ) : registrationAvailable ? (
           <RegistrationForm
             emailRequired={registrationEmailRequired}
+            turnstileSiteKey={site?.authentication.turnstile_site_key ?? null}
             initialInviteCode={inviteCode}
             onAuthenticated={onAuthenticated}
           />

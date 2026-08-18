@@ -72,6 +72,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Turnstile 验证服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
           }
         }
       }
@@ -332,6 +342,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Turnstile 验证服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
           }
         }
       }
@@ -406,6 +426,16 @@
           },
           "500": {
             "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Turnstile 验证服务不可用",
             "content": {
               "application/json": {
                 "schema": {
@@ -23087,6 +23117,14 @@
             "writeOnly": true,
             "maxLength": 128,
             "minLength": 6
+          },
+          "turnstile_token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "writeOnly": true,
+            "maxLength": 2048
           }
         },
         "additionalProperties": false
@@ -23142,6 +23180,8 @@
               "two_factor_required",
               "two_factor_invalid",
               "password_login_disabled",
+              "turnstile_rejected",
+              "turnstile_unavailable",
               "invalid_session",
               "forbidden",
               "setup_conflict",
@@ -26276,6 +26316,13 @@
             "items": {
               "$ref": "#/components/schemas/PublicOAuthLoginProvider"
             }
+          },
+          "turnstile_site_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 256
           }
         },
         "additionalProperties": false
@@ -26371,6 +26418,14 @@
             "format": "email",
             "maxLength": 320,
             "minLength": 3
+          },
+          "turnstile_token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "writeOnly": true,
+            "maxLength": 2048
           }
         },
         "additionalProperties": false
@@ -26441,6 +26496,14 @@
             "maxLength": 25,
             "minLength": 25,
             "pattern": "^af-[A-Za-z0-9_-]{22}$"
+          },
+          "turnstile_token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "writeOnly": true,
+            "maxLength": 2048
           }
         },
         "additionalProperties": false

@@ -23,6 +23,12 @@ impl TrustedClientIp {
         Self(normalize_ip(address))
     }
 
+    /// 返回仅供受控上游安全验证请求使用的规范 IP 地址。
+    #[must_use]
+    pub const fn as_ip(self) -> IpAddr {
+        self.0
+    }
+
     /// 返回白名单匹配所需的规范地址。
     #[must_use]
     pub(crate) const fn get(self) -> IpAddr {

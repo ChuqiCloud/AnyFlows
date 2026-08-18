@@ -19,6 +19,10 @@ pub(crate) enum ManagementError {
     TwoFactorInvalid,
     /// 用户名密码登录已被运营设置关闭。
     LoginDisabled,
+    /// Turnstile token 无效、过期或缺失。
+    TurnstileRejected,
+    /// Turnstile 上游验证不可用，服务端失败关闭认证入口。
+    TurnstileUnavailable,
     /// JWT 缺失、无效、过期或对应用户已失效。
     InvalidSession,
     /// 当前会话没有访问该管理端点的角色权限。
@@ -287,6 +291,20 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "password_login_disabled",
                     message: "Password login disabled",
+                },
+            ),
+            Self::TurnstileRejected => (
+                StatusCode::FORBIDDEN,
+                ManagementErrorBody {
+                    code: "turnstile_rejected",
+                    message: "Turnstile verification rejected",
+                },
+            ),
+            Self::TurnstileUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "turnstile_unavailable",
+                    message: "Turnstile verification unavailable",
                 },
             ),
             Self::InvalidSession => (
