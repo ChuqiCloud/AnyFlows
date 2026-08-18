@@ -10,6 +10,8 @@ pub struct Model {
     pub user_id: i64,
     #[sea_orm(column_type = "String(StringLen::N(2048))")]
     pub credential_id: String,
+    #[sea_orm(column_type = "String(StringLen::N(64))")]
+    pub credential_id_digest: String,
     #[sea_orm(column_type = "JsonBinary")]
     pub passkey: Json,
     #[sea_orm(column_type = "String(StringLen::N(128))")]

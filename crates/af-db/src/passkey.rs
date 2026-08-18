@@ -7,6 +7,7 @@ use sea_orm::{
     IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, Set, SqlErr, TransactionTrait,
     sea_query::{Expr, LockType},
 };
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
@@ -381,9 +382,11 @@ impl PasskeyRepository {
             .with_subscriber(NoSubscriber::default())
             .await
             .map_err(map_write_error)?;
+        let credential_id_digest = credential_id_digest(&credential_id);
         let created = passkeys::ActiveModel {
             user_id: Set(user_id.get()),
             credential_id: Set(credential_id),
+            credential_id_digest: Set(credential_id_digest),
             passkey: Set(passkey),
             display_name: Set(display_name),
             created_at: Set(now),
@@ -677,6 +680,17 @@ fn validate_credential_id(value: &str) -> Result<(), PasskeyRepositoryError> {
         return Err(record_internal_error(PasskeyRepositoryError::Invariant));
     }
     Ok(())
+}
+
+fn credential_id_digest(value: &str) -> String {
+    let digest = Sha256::digest(value.as_bytes());
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        output.push(char::from(HEX[usize::from(byte >> 4)]));
+        output.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    output
 }
 
 fn validate_digest(value: &str) -> Result<(), PasskeyRepositoryError> {

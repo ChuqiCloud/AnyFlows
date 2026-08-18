@@ -2713,6 +2713,12 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         ("users", "uq_users_active_username"),
         ("users", "uq_users_active_email"),
         ("users", "uq_users_aff_code"),
+        ("passkeys", "uq_passkeys_credential_id_digest"),
+        ("passkeys", "idx_passkeys_user_active"),
+        (
+            "passkey_registration_challenges",
+            "idx_passkey_registration_challenges_user_state",
+        ),
         ("groups", "uq_groups_active_name"),
         ("tokens", "uq_tokens_key_hash"),
         ("credentials", "idx_credentials_channel_status_schedulable"),

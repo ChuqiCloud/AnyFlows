@@ -46,6 +46,11 @@ async fn create_passkeys(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
                         .not_null(),
                 )
                 .col(
+                    ColumnDef::new(passkeys::Column::CredentialIdDigest)
+                        .char_len(64)
+                        .not_null(),
+                )
+                .col(
                     ColumnDef::new(passkeys::Column::Passkey)
                         .json_binary()
                         .not_null(),
@@ -72,9 +77,9 @@ async fn create_passkeys(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
     manager
         .create_index(
             Index::create()
-                .name("uq_passkeys_credential_id")
+                .name("uq_passkeys_credential_id_digest")
                 .table(passkeys::Entity)
-                .col(passkeys::Column::CredentialId)
+                .col(passkeys::Column::CredentialIdDigest)
                 .unique()
                 .to_owned(),
         )

@@ -234,7 +234,7 @@ pub(crate) async fn list_passkeys(
         .await
         .map_err(map_profile_error)?
         .into_iter()
-        .map(UserPasskeyResponse::from_passkey)
+        .map(|passkey| UserPasskeyResponse::from_passkey(&passkey))
         .collect();
     Ok(no_store_json(UserPasskeyListResponse { items }))
 }
