@@ -638,7 +638,7 @@ fn record_from_model(model: passkeys::Model) -> Result<PasskeyRecord, PasskeyRep
     if model.id <= 0
         || model.user_id <= 0
         || !valid_display_name(&model.display_name)
-        || !valid_credential_id(&model.credential_id)
+        || validate_credential_id(&model.credential_id).is_err()
     {
         return Err(record_internal_error(PasskeyRepositoryError::Invariant));
     }
