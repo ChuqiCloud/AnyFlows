@@ -180,6 +180,8 @@ pub fn build_router(
     user_invitation_service: Arc<dyn UserInvitationService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
     oauth_login_service: Option<Arc<dyn OAuthLoginService>>,
+    turnstile_verifier: Option<Arc<dyn crate::TurnstileVerifier>>,
+    turnstile_site_key: Option<&str>,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
     admin_network_settings_service: Arc<dyn AdminNetworkSettingsService>,
     admin_payment_settings_service: Arc<dyn AdminPaymentSettingsService>,
@@ -441,6 +443,7 @@ pub fn build_router(
         Arc::clone(&registration_service),
         Arc::clone(&http_state.session_authenticator),
         config,
+        turnstile_verifier,
     );
     let passkey_authentication_routes = build_passkey_authentication_router(
         passkey_authentication_service,
@@ -476,6 +479,7 @@ pub fn build_router(
         site_settings_service,
         registration_service,
         oauth_login_service.clone(),
+        turnstile_site_key,
         Arc::clone(&http_state.session_authenticator),
     );
     let oauth_login_routes = oauth_login_service.map(|service| {

@@ -28,6 +28,7 @@ import {
   supportsPasskeyAuthentication,
 } from '@/features/auth/passkey-login-api'
 import { establishManagementSession } from '@/features/auth/session-query'
+import { TurnstileWidget } from '@/features/auth/turnstile-widget'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
 import { apiClient, ApiError } from '@/lib/api'
 import { loginManagementSession } from '@/lib/api/generated/sdk.gen'
@@ -40,7 +41,7 @@ type LoginPageProps = {
   onAuthenticated: () => void
 }
 
-type LoginError = LoginNotice | 'invalidCredentials' | 'twoFactorRequired' | 'twoFactorInvalid' | 'passwordLoginDisabled' | 'passkeyCancelled' | 'passkeyUnsupported' | 'unavailable'
+type LoginError = LoginNotice | 'invalidCredentials' | 'twoFactorRequired' | 'twoFactorInvalid' | 'passwordLoginDisabled' | 'turnstileRequired' | 'turnstileRejected' | 'turnstileUnavailable' | 'passkeyCancelled' | 'passkeyUnsupported' | 'unavailable'
 
 function classifyLoginError(error: unknown): LoginError {
   if (error instanceof ApiError) {
@@ -50,6 +51,8 @@ function classifyLoginError(error: unknown): LoginError {
     if (code === 'two_factor_required') return 'twoFactorRequired'
     if (code === 'two_factor_invalid') return 'twoFactorInvalid'
     if (code === 'invalid_credentials') return 'invalidCredentials'
+    if (code === 'turnstile_rejected') return 'turnstileRejected'
+    if (code === 'turnstile_unavailable') return 'turnstileUnavailable'
     if (error.status === 400 || error.status === 401) return 'invalidCredentials'
   }
   return 'unavailable'
@@ -63,6 +66,8 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
   const [twoFactorCode, setTwoFactorCode] = useState('')
   const [twoFactorRequired, setTwoFactorRequired] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [turnstileToken, setTurnstileToken] = useState('')
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0)
   const [loginError, setLoginError] = useState<LoginError>()
   const [noticeDismissed, setNoticeDismissed] = useState(false)
   const siteQuery = usePublicSiteSettings()
@@ -79,10 +84,16 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setLoginError(undefined)
+    const turnstileSiteKey = siteQuery.data?.authentication.turnstile_site_key
+    if (turnstileSiteKey && !turnstileToken) {
+      setLoginError('turnstileRequired')
+      return
+    }
     try {
       const response = await loginMutation.mutateAsync({
         username,
         password,
+        ...(turnstileToken ? { turnstile_token: turnstileToken } : {}),
         ...(twoFactorRequired && twoFactorCode.trim() ? { totp_code: twoFactorCode.trim() } : {}),
       })
       establishManagementSession(response)
@@ -93,6 +104,11 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
       if (classified === 'twoFactorRequired') {
         setTwoFactorRequired(true)
         window.requestAnimationFrame(() => document.getElementById('management-two-factor')?.focus())
+      }
+    } finally {
+      if (turnstileToken) {
+        setTurnstileToken('')
+        setTurnstileResetKey((value) => value + 1)
       }
     }
   }
@@ -143,6 +159,7 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
   const oauthLoginEnabled = oauthProviders.length > 0
   const registrationEnabled = site?.authentication.registration_enabled ?? false
   const registrationAvailable = passwordLoginEnabled && registrationEnabled
+  const turnstileSiteKey = site?.authentication.turnstile_site_key ?? null
   const passkeySupported = passwordLoginEnabled && supportsPasskeyAuthentication()
   const visibleError = loginError ?? (noticeDismissed ? undefined : notice)
   const hasFieldError = visibleError === 'invalidCredentials'
@@ -254,26 +271,33 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
 
                 {passwordLoginEnabled ? (
                   <>
-                <div className="grid gap-2">
-                  <label htmlFor="management-username" className="text-sm font-medium">{t('auth.login.username')}</label>
-                  <Input
-                    id="management-username"
-                    name="username"
-                    autoComplete="username"
-                    autoFocus
-                    required
-                    className="h-11 px-3"
-                    placeholder={t('auth.login.usernamePlaceholder')}
-                    value={username}
-                    aria-invalid={hasFieldError ? true : undefined}
-                    aria-describedby={visibleError ? 'login-error' : undefined}
-                    onChange={(event) => {
-                      setUsername(event.target.value)
-                      setLoginError(undefined)
-                      setNoticeDismissed(true)
-                    }}
-                  />
-                </div>
+                    {turnstileSiteKey ? (
+                      <TurnstileWidget
+                        siteKey={turnstileSiteKey}
+                        resetKey={turnstileResetKey}
+                        onToken={setTurnstileToken}
+                      />
+                    ) : null}
+                    <div className="grid gap-2">
+                      <label htmlFor="management-username" className="text-sm font-medium">{t('auth.login.username')}</label>
+                      <Input
+                        id="management-username"
+                        name="username"
+                        autoComplete="username"
+                        autoFocus
+                        required
+                        className="h-11 px-3"
+                        placeholder={t('auth.login.usernamePlaceholder')}
+                        value={username}
+                        aria-invalid={hasFieldError ? true : undefined}
+                        aria-describedby={visibleError ? 'login-error' : undefined}
+                        onChange={(event) => {
+                          setUsername(event.target.value)
+                          setLoginError(undefined)
+                          setNoticeDismissed(true)
+                        }}
+                      />
+                    </div>
 
                 {passkeySupported ? (
                   <>

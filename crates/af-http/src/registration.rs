@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::{
+    TurnstileVerification, TurnstileVerifier,
     client_ip::{ClientIpResolutionError, ClientIpResolver},
     management_auth::{ManagementAuthenticationState, authenticate_management_session},
     management_authorization::authorize_management_admin,
@@ -31,6 +32,7 @@ use crate::{
 struct RegistrationHttpState {
     service: Arc<dyn RegistrationService>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
+    turnstile_verifier: Option<Arc<dyn TurnstileVerifier>>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -56,6 +58,8 @@ pub(crate) struct RegistrationRequest {
     verification_code: Option<String>,
     #[schema(min_length = 25, max_length = 25, pattern = "^af-[A-Za-z0-9_-]{22}$")]
     invite_code: Option<String>,
+    #[schema(max_length = 2048, write_only)]
+    turnstile_token: Option<String>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -64,6 +68,8 @@ pub(crate) struct RegistrationRequest {
 pub(crate) struct RegistrationEmailVerificationRequest {
     #[schema(min_length = 3, max_length = 320, format = Email)]
     email: String,
+    #[schema(max_length = 2048, write_only)]
+    turnstile_token: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -137,10 +143,12 @@ pub(crate) fn build_registration_router(
     service: Arc<dyn RegistrationService>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
     server_config: &ServerConfig,
+    turnstile_verifier: Option<Arc<dyn TurnstileVerifier>>,
 ) -> Router {
     let state = RegistrationHttpState {
         service,
         session_authenticator: Arc::clone(&session_authenticator),
+        turnstile_verifier,
     };
     let registration_ip = middleware::from_fn_with_state(
         ClientIpResolver::from_config(server_config),
@@ -152,7 +160,10 @@ pub(crate) fn build_registration_router(
     );
 
     Router::new()
-        .route("/api/auth/login", post(login))
+        .route(
+            "/api/auth/login",
+            post(login).route_layer(registration_ip.clone()),
+        )
         .route("/api/registration/status", get(registration_status))
         .route(
             "/api/registration/email-verification",
@@ -179,6 +190,12 @@ async fn send_email_verification(
     request: Result<Json<RegistrationEmailVerificationRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
     let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    verify_turnstile(
+        state.turnstile_verifier.as_deref(),
+        request.turnstile_token,
+        client_ip,
+    )
+    .await?;
     let command =
         RegistrationEmailVerificationCommand::new(request.email).map_err(map_registration_error)?;
     let issued = state
@@ -213,6 +230,7 @@ async fn registration_status(
 /// 在用户名密码能力开启时校验凭据并签发统一会话。
 async fn login(
     State(state): State<RegistrationHttpState>,
+    Extension(client_ip): Extension<TrustedClientIp>,
     request: Result<Json<LoginRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
     let status = state
@@ -224,6 +242,12 @@ async fn login(
         return Err(ManagementError::LoginDisabled);
     }
     let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    verify_turnstile(
+        state.turnstile_verifier.as_deref(),
+        request.turnstile_token,
+        client_ip,
+    )
+    .await?;
     login_with_authenticator_and_totp(
         state.session_authenticator.as_ref(),
         af_admin::LoginCredentials::new(request.username, request.password)
@@ -239,6 +263,12 @@ async fn register(
     request: Result<Json<RegistrationRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
     let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    verify_turnstile(
+        state.turnstile_verifier.as_deref(),
+        request.turnstile_token,
+        client_ip,
+    )
+    .await?;
     let command = RegistrationCommand::new(
         request.username,
         request.email,
@@ -264,6 +294,27 @@ async fn register(
     })?;
     *response.status_mut() = StatusCode::CREATED;
     Ok(response)
+}
+
+async fn verify_turnstile(
+    verifier: Option<&dyn TurnstileVerifier>,
+    token: Option<String>,
+    client_ip: TrustedClientIp,
+) -> Result<(), ManagementError> {
+    let Some(verifier) = verifier else {
+        return Ok(());
+    };
+    let Some(token) = token else {
+        return Err(ManagementError::TurnstileRejected);
+    };
+    if token.is_empty() || token.len() > 2_048 || token.chars().any(char::is_control) {
+        return Err(ManagementError::TurnstileRejected);
+    }
+    match verifier.verify(&token, client_ip).await {
+        TurnstileVerification::Passed => Ok(()),
+        TurnstileVerification::Rejected => Err(ManagementError::TurnstileRejected),
+        TurnstileVerification::Unavailable => Err(ManagementError::TurnstileUnavailable),
+    }
 }
 
 /// 返回管理员完整注册策略。
@@ -352,5 +403,87 @@ fn map_registration_error(error: RegistrationError) -> ManagementError {
         RegistrationError::EmailNotConfigured => ManagementError::EmailNotConfigured,
         RegistrationError::EmailDeliveryFailed => ManagementError::EmailDeliveryFailed,
         RegistrationError::Internal => ManagementError::Internal,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    use crate::TurnstileVerificationFuture;
+
+    use super::*;
+
+    struct FakeTurnstileVerifier {
+        result: TurnstileVerification,
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl TurnstileVerifier for FakeTurnstileVerifier {
+        fn verify<'a>(
+            &'a self,
+            _token: &'a str,
+            _client_ip: TrustedClientIp,
+        ) -> TurnstileVerificationFuture<'a> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            let result = self.result;
+            Box::pin(async move { result })
+        }
+    }
+
+    fn client_ip() -> TrustedClientIp {
+        TrustedClientIp::new("192.0.2.10".parse().expect("测试 IP 必须有效"))
+    }
+
+    #[tokio::test]
+    async fn turnstile_is_disabled_without_a_verifier() {
+        assert_eq!(verify_turnstile(None, None, client_ip()).await, Ok(()));
+    }
+
+    #[tokio::test]
+    async fn turnstile_maps_missing_rejected_and_unavailable_tokens() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let rejected = FakeTurnstileVerifier {
+            result: TurnstileVerification::Rejected,
+            calls: Arc::clone(&calls),
+        };
+        assert_eq!(
+            verify_turnstile(Some(&rejected), None, client_ip()).await,
+            Err(ManagementError::TurnstileRejected)
+        );
+        assert_eq!(
+            verify_turnstile(Some(&rejected), Some("token".to_owned()), client_ip()).await,
+            Err(ManagementError::TurnstileRejected)
+        );
+        let unavailable = FakeTurnstileVerifier {
+            result: TurnstileVerification::Unavailable,
+            calls: Arc::clone(&calls),
+        };
+        assert_eq!(
+            verify_turnstile(Some(&unavailable), Some("token".to_owned()), client_ip()).await,
+            Err(ManagementError::TurnstileUnavailable)
+        );
+        assert_eq!(calls.load(Ordering::Relaxed), 2);
+    }
+
+    #[tokio::test]
+    async fn turnstile_passes_valid_tokens_and_rejects_invalid_shape() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let verifier = FakeTurnstileVerifier {
+            result: TurnstileVerification::Passed,
+            calls: Arc::clone(&calls),
+        };
+        assert_eq!(
+            verify_turnstile(Some(&verifier), Some("token".to_owned()), client_ip()).await,
+            Ok(())
+        );
+        assert_eq!(
+            verify_turnstile(Some(&verifier), Some("\u{0000}".to_owned()), client_ip()).await,
+            Err(ManagementError::TurnstileRejected)
+        );
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
     }
 }

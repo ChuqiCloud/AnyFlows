@@ -98,7 +98,7 @@ use af_http::{
     AdminChannelProbe, AdminOAuthConnectionService, AudioService, ChatService, EmbeddingService,
     HttpListener, HttpRouter, ImageService, PaymentWebhookProcessorRegistry, QueryApiKeyPolicy,
     ReadinessHandle, RerankService, ResponsesCompactService, ServeError, ServeOutcome,
-    SpeechService, VideoTaskService, build_payment_webhook_router, build_router,
+    SpeechService, TurnstileVerifier, VideoTaskService, build_payment_webhook_router, build_router,
     serve_with_graceful_shutdown,
 };
 use af_httpclient::{
@@ -148,6 +148,7 @@ use crate::{
     smtp_delivery::SmtpEmailDelivery,
     system_shutdown_signal,
     token_request_admission::TokenRequestAdmissionAuthenticator,
+    turnstile::CloudflareTurnstileVerifier,
     video_task_service::DatabaseVideoTaskService,
 };
 
@@ -224,6 +225,7 @@ pub struct AuthenticationReady {
     admin_user_writer: Arc<dyn AdminUserWriter>,
     admin_wallet_service: Arc<dyn AdminWalletService>,
     query_api_key_policy: QueryApiKeyPolicy,
+    turnstile_verifier: Option<Arc<dyn TurnstileVerifier>>,
 }
 
 /// 生产转发共用的受控 HTTP Client 已完成安全配置与装配。
@@ -1134,6 +1136,7 @@ impl Bootstrap<DatabaseReady> {
                     wallet_ledger_repository,
                 )),
                 query_api_key_policy,
+                turnstile_verifier: None,
             },
         })
     }
@@ -1142,49 +1145,56 @@ impl Bootstrap<DatabaseReady> {
 impl Bootstrap<AuthenticationReady> {
     /// 使用启动配置建立生产转发共用的受控 HTTP Client。
     pub fn init_relay(self) -> Result<Bootstrap<RelayReady>, BootstrapError> {
-        let (startup_config, max_cached_clients) = build_http_client_parts(&self.config)?;
+        let Bootstrap {
+            config,
+            shutdown_timeout,
+            shutdown,
+            stage: mut authentication,
+        } = self;
+        let (startup_config, max_cached_clients) = build_http_client_parts(&config)?;
         let upstream_clients = HttpClientProvider::new(startup_config.clone(), max_cached_clients)
             .map_err(BootstrapError::HttpClient)?;
+        authentication.turnstile_verifier = config.turnstile().secret_key().map(|secret| {
+            Arc::new(CloudflareTurnstileVerifier::new(
+                secret,
+                upstream_clients.clone(),
+                Duration::from_secs(config.turnstile().timeout_secs()),
+            )) as Arc<dyn TurnstileVerifier>
+        });
         let runtime = Arc::new(HttpClientNetworkSettingsApplier::new(
             upstream_clients.clone(),
             startup_config,
         ));
         let admin_network_settings_service = Arc::new(DatabaseAdminNetworkSettingsService::new(
-            self.stage.network_settings_repository.clone(),
-            self.stage.system_secret_cipher.clone(),
+            authentication.network_settings_repository.clone(),
+            authentication.system_secret_cipher.clone(),
             runtime,
         ));
         let oauth_login_repository = OAuthLoginRepository::new(
-            self.stage.infrastructure.database.clone(),
-            Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+            authentication.infrastructure.database.clone(),
+            Duration::from_secs(config.auth().lookup_timeout_secs()),
         )
         .map_err(BootstrapError::OAuthLoginRepository)?;
         let oauth_login_service: Arc<dyn OAuthLoginService> =
             Arc::new(DatabaseOAuthLoginService::new(
                 oauth_login_repository,
-                self.stage.site_settings_repository.clone(),
-                self.stage.system_secret_cipher.clone(),
+                authentication.site_settings_repository.clone(),
+                authentication.system_secret_cipher.clone(),
                 OAuthLoginClient::new(upstream_clients.clone()),
             ));
         let oauth_runtime = initialize_oauth_runtime(
-            &self.config,
-            self.stage.infrastructure.database.clone(),
-            Arc::clone(&self.stage.admin_channel_reader),
+            &config,
+            authentication.infrastructure.database.clone(),
+            Arc::clone(&authentication.admin_channel_reader),
             upstream_clients.clone(),
         )
         .map_err(BootstrapError::OAuthRuntime)?;
-        let Bootstrap {
-            config,
-            shutdown_timeout,
-            shutdown,
-            stage,
-        } = self;
         Ok(Bootstrap {
             config,
             shutdown_timeout,
             shutdown,
             stage: RelayReady {
-                infrastructure: stage,
+                infrastructure: authentication,
                 upstream_clients,
                 oauth_login_service,
                 admin_network_settings_service,
@@ -2043,6 +2053,8 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.user_invitation_service),
             Arc::clone(&self.stage.infrastructure.site_settings_service),
             Some(Arc::clone(&self.stage.oauth_login_service)),
+            self.stage.infrastructure.turnstile_verifier.clone(),
+            self.config.turnstile().site_key(),
             Arc::clone(&self.stage.infrastructure.admin_email_settings_service),
             self.stage.admin_network_settings_service.clone(),
             Arc::clone(&self.stage.admin_payment_settings_service),

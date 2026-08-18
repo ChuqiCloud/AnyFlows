@@ -28,6 +28,7 @@ struct SiteSettingsHttpState {
     site_service: Arc<dyn SiteSettingsService>,
     registration_service: Arc<dyn RegistrationService>,
     oauth_login_service: Option<Arc<dyn OAuthLoginService>>,
+    turnstile_site_key: Option<String>,
 }
 
 #[derive(Clone, Serialize, ToSchema)]
@@ -50,6 +51,8 @@ pub(crate) struct PublicAuthenticationCapabilitiesResponse {
     registration_enabled: bool,
     registration_email_required: bool,
     oauth_providers: Vec<PublicOAuthLoginProviderResponse>,
+    #[schema(max_length = 256)]
+    turnstile_site_key: Option<String>,
 }
 
 #[derive(Clone, Serialize, ToSchema)]
@@ -219,6 +222,7 @@ pub(crate) fn build_site_settings_router(
     site_service: Arc<dyn SiteSettingsService>,
     registration_service: Arc<dyn RegistrationService>,
     oauth_login_service: Option<Arc<dyn OAuthLoginService>>,
+    turnstile_site_key: Option<&str>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
 ) -> Router {
     let authentication = middleware::from_fn_with_state(
@@ -238,6 +242,7 @@ pub(crate) fn build_site_settings_router(
             site_service,
             registration_service,
             oauth_login_service,
+            turnstile_site_key: turnstile_site_key.map(str::to_owned),
         })
 }
 
@@ -263,6 +268,7 @@ async fn get_public_site_settings(
         site,
         authentication,
         oauth_providers,
+        state.turnstile_site_key,
     )))
 }
 
@@ -309,6 +315,7 @@ fn public_response(
     site: PublicSiteSettings,
     authentication: af_admin::RegistrationStatus,
     oauth_providers: Vec<PublicOAuthLoginProvider>,
+    turnstile_site_key: Option<String>,
 ) -> PublicSiteSettingsResponse {
     PublicSiteSettingsResponse {
         site_name: site.site_name().to_owned(),
@@ -327,6 +334,7 @@ fn public_response(
                 .into_iter()
                 .map(PublicOAuthLoginProviderResponse::from)
                 .collect(),
+            turnstile_site_key,
         },
     }
 }

@@ -37,6 +37,7 @@ struct ConfigDefaults {
     credential_encryption: CredentialEncryptionDefaults,
     redis: RedisDefaults,
     auth: AuthDefaults,
+    turnstile: TurnstileDefaults,
     oauth: OAuthDefaults,
     http_client: HttpClientDefaults,
 }
@@ -66,6 +67,23 @@ struct AuthDefaults {
     lookup_timeout_secs: u64,
     session_signing_key: Option<String>,
     session_ttl_secs: u64,
+}
+
+#[derive(Serialize)]
+struct TurnstileDefaults {
+    site_key: Option<String>,
+    secret_key: Option<String>,
+    timeout_secs: u64,
+}
+
+impl Default for TurnstileDefaults {
+    fn default() -> Self {
+        Self {
+            site_key: None,
+            secret_key: None,
+            timeout_secs: crate::DEFAULT_TURNSTILE_TIMEOUT_SECS,
+        }
+    }
 }
 
 impl Default for AuthDefaults {
@@ -264,6 +282,10 @@ fn known_field(path: &str) -> Option<&'static str> {
         "auth.lookup_timeout_secs" => "auth.lookup_timeout_secs",
         "auth.session_signing_key" => "auth.session_signing_key",
         "auth.session_ttl_secs" => "auth.session_ttl_secs",
+        "turnstile" => "turnstile",
+        "turnstile.site_key" => "turnstile.site_key",
+        "turnstile.secret_key" => "turnstile.secret_key",
+        "turnstile.timeout_secs" => "turnstile.timeout_secs",
         "oauth" => "oauth",
         "oauth.max_pending_authorizations" => "oauth.max_pending_authorizations",
         "oauth.session_ttl_secs" => "oauth.session_ttl_secs",
@@ -386,6 +408,10 @@ mod tests {
             assert_eq!(config.auth().lookup_timeout_secs(), 2);
             assert!(config.auth().session_signing_key().is_none());
             assert_eq!(config.auth().session_ttl_secs(), 3_600);
+            assert!(!config.turnstile().enabled());
+            assert!(config.turnstile().site_key().is_none());
+            assert!(config.turnstile().secret_key().is_none());
+            assert_eq!(config.turnstile().timeout_secs(), 5);
             assert_eq!(config.oauth().max_pending_authorizations(), 256);
             assert_eq!(config.oauth().session_ttl_secs(), 600);
             assert!(config.oauth().refresh_enabled());
@@ -425,6 +451,47 @@ mod tests {
                         field: "server.bind"
                     }
                 );
+            }
+        });
+    }
+
+    #[test]
+    fn turnstile_requires_complete_bounded_startup_credentials() {
+        with_clean_env(|_| {
+            let valid = temp_file(
+                "[database]\nurl = 'sqlite::memory:'\n[turnstile]\nsite_key = 'site-key'\nsecret_key = 'secret-key'\ntimeout_secs = 7\n",
+            );
+            let config = load_from(&valid).unwrap();
+            let _ = fs::remove_file(valid);
+            assert!(config.turnstile().enabled());
+            assert_eq!(config.turnstile().site_key(), Some("site-key"));
+            assert_eq!(
+                config.turnstile().secret_key().unwrap().expose(),
+                "secret-key"
+            );
+            assert_eq!(config.turnstile().timeout_secs(), 7);
+            let debug = format!("{:?}", config.turnstile());
+            assert!(!debug.contains("secret-key"));
+
+            for (field, turnstile) in [
+                ("turnstile.secret_key", "site_key = 'site-key'"),
+                ("turnstile.site_key", "secret_key = 'secret-key'"),
+                (
+                    "turnstile.timeout_secs",
+                    "site_key = 'site-key'\nsecret_key = 'secret-key'\ntimeout_secs = 0",
+                ),
+            ] {
+                let path = temp_file(&format!(
+                    "[database]\nurl = 'sqlite::memory:'\n[turnstile]\n{turnstile}\n"
+                ));
+                let error = load_from(&path).unwrap_err();
+                let _ = fs::remove_file(path);
+                assert!(matches!(
+                    error,
+                    ConfigError::InvalidField { field: actual }
+                        | ConfigError::NonPositive { field: actual }
+                        if actual == field
+                ));
             }
         });
     }

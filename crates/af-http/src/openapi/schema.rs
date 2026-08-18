@@ -641,6 +641,8 @@ pub(crate) enum ManagementErrorCodeSchema {
     TwoFactorRequired,
     TwoFactorInvalid,
     PasswordLoginDisabled,
+    TurnstileRejected,
+    TurnstileUnavailable,
     InvalidSession,
     Forbidden,
     SetupConflict,
