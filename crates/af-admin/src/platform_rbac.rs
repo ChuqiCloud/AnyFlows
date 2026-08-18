@@ -365,6 +365,8 @@ fn map_repository_error(error: PlatformAuditRepositoryError) -> PlatformAuditErr
 
 #[cfg(test)]
 mod tests {
+    use af_db::MAX_PLATFORM_AUDIT_PAGE_SIZE;
+
     use super::*;
 
     #[test]
