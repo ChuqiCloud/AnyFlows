@@ -1,8 +1,8 @@
 use std::{fmt, future::Future, pin::Pin};
 
 use af_db::{
-    MAX_PLATFORM_AUDIT_PAGE_SIZE, PlatformAuditOutcome, PlatformAuditQuery, PlatformAuditRecord,
-    PlatformAuditRepository, PlatformAuditRepositoryError, PlatformAuditWrite,
+    PlatformAuditOutcome, PlatformAuditQuery, PlatformAuditRecord, PlatformAuditRepository,
+    PlatformAuditRepositoryError, PlatformAuditWrite,
 };
 use af_domain::{PlatformPermission, UserId};
 use serde_json::Value;
