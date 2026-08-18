@@ -185,7 +185,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 123);
+        assert_eq!(document.paths.paths.len(), 127);
         let operation_count = document
             .paths
             .paths
@@ -206,7 +206,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 175);
+        assert_eq!(operation_count, 180);
         assert!(
             document
                 .components
@@ -408,6 +408,11 @@ mod tests {
             "disableUserTwoFactor",
             "enableUserTwoFactor",
             "getUserTwoFactor",
+            "listUserPasskeys",
+            "startUserPasskeyRegistration",
+            "finishUserPasskeyRegistration",
+            "renameUserPasskey",
+            "revokeUserPasskey",
         ]
         .into_iter()
         .map(str::to_owned)
@@ -606,6 +611,12 @@ mod tests {
         assert!(schemas.contains_key("UserTwoFactorEnrollmentResponse"));
         assert!(schemas.contains_key("UserTwoFactorPasswordRequest"));
         assert!(schemas.contains_key("UserTwoFactorStatusResponse"));
+        assert!(schemas.contains_key("UserPasskeyListResponse"));
+        assert!(schemas.contains_key("UserPasskeyRegistrationOptionsResponse"));
+        assert!(schemas.contains_key("UserPasskeyRegistrationVerifyRequest"));
+        assert!(schemas.contains_key("UserPasskeyRenameRequest"));
+        assert!(schemas.contains_key("UserPasskeyResponse"));
+        assert!(schemas.contains_key("UserPasskeyRevokeRequest"));
         assert!(schemas.contains_key("UserInvitationSummaryResponse"));
         assert!(schemas.contains_key("UserInvitationRebateResponse"));
         assert!(schemas.contains_key("AdminAuthenticationSettings"));
