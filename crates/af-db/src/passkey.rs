@@ -14,7 +14,10 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
     DatabasePool, EncryptedCredentialEnvelope,
-    entity::{EncryptedJson, passkey_registration_challenges, passkeys, users},
+    entity::{
+        EncryptedJson, passkey_authentication_challenges, passkey_registration_challenges,
+        passkeys, users,
+    },
 };
 
 const MAX_DISPLAY_NAME_BYTES: usize = 128;
@@ -67,6 +70,73 @@ impl PasskeyRecord {
 #[derive(Debug)]
 pub struct PasskeyRegistrationChallenge {
     state: EncryptedCredentialEnvelope,
+}
+
+/// 用户名查找得到的 Passkey 登录目标；仅返回活动凭证和会话版本快照。
+#[derive(Debug)]
+pub struct PasskeyAuthenticationTarget {
+    user_id: UserId,
+    session_version: i64,
+    credentials: Vec<serde_json::Value>,
+}
+
+impl PasskeyAuthenticationTarget {
+    /// 返回登录目标用户。
+    #[must_use]
+    pub const fn user_id(&self) -> UserId {
+        self.user_id
+    }
+
+    /// 返回创建挑战时的会话版本。
+    #[must_use]
+    pub const fn session_version(&self) -> i64 {
+        self.session_version
+    }
+
+    /// 返回供 WebAuthn 校验的活动凭证 JSON。
+    #[must_use]
+    pub fn credentials(&self) -> &[serde_json::Value] {
+        &self.credentials
+    }
+}
+
+/// Passkey 登录挑战的解密前元数据。
+#[derive(Debug)]
+pub struct PasskeyAuthenticationChallenge {
+    user_id: UserId,
+    session_version: i64,
+    state: EncryptedCredentialEnvelope,
+}
+
+impl PasskeyAuthenticationChallenge {
+    /// 返回挑战绑定的用户。
+    #[must_use]
+    pub const fn user_id(&self) -> UserId {
+        self.user_id
+    }
+
+    /// 返回挑战绑定的会话版本。
+    #[must_use]
+    pub const fn session_version(&self) -> i64 {
+        self.session_version
+    }
+
+    /// 返回待解密的 WebAuthn 状态封套。
+    #[must_use]
+    pub fn state(&self) -> &EncryptedCredentialEnvelope {
+        &self.state
+    }
+}
+
+/// 登录挑战消费结果；异常凭证会在同一事务内进入终态。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PasskeyAuthenticationOutcome {
+    /// 凭证计数通过校验并已更新。
+    Authenticated,
+    /// 挑战或凭证状态不再允许登录。
+    Rejected,
+    /// 正数计数回退，凭证已标记异常并拒绝本次登录。
+    AnomalyDetected,
 }
 
 impl PasskeyRegistrationChallenge {
@@ -139,6 +209,7 @@ impl PasskeyRepository {
             let models = passkeys::Entity::find()
                 .filter(passkeys::Column::UserId.eq(user_id.get()))
                 .filter(passkeys::Column::RevokedAt.is_null())
+                .filter(passkeys::Column::AnomalyAt.is_null())
                 .all(self.pool.connection())
                 .with_subscriber(NoSubscriber::default())
                 .await
@@ -151,6 +222,97 @@ impl PasskeyRepository {
                 })
                 .collect()
         })
+        .await
+    }
+
+    /// 按用户名查找可用于免密登录的活动凭证；未知、停用、TOTP 强制和空目录统一为空。
+    pub async fn authentication_target(
+        &self,
+        username: &str,
+    ) -> Result<Option<PasskeyAuthenticationTarget>, PasskeyRepositoryError> {
+        self.run(self.authentication_target_inner(username.to_owned()))
+            .await
+    }
+
+    /// 按用户 ID 读取当前仍可验证的凭证，供登录完成阶段避免信任客户端标识。
+    pub async fn authentication_target_for_user(
+        &self,
+        user_id: UserId,
+    ) -> Result<Option<PasskeyAuthenticationTarget>, PasskeyRepositoryError> {
+        self.run(self.authentication_target_for_user_inner(user_id))
+            .await
+    }
+
+    /// 原子替换用户未消费的 Passkey 登录挑战。
+    pub async fn replace_authentication_challenge(
+        &self,
+        user_id: UserId,
+        session_version: i64,
+        challenge_digest: String,
+        state: EncryptedCredentialEnvelope,
+        expires_at: crate::DatabaseTimestamp,
+        created_at: crate::DatabaseTimestamp,
+    ) -> Result<(), PasskeyRepositoryError> {
+        self.run(self.replace_authentication_challenge_inner(
+            user_id,
+            session_version,
+            challenge_digest,
+            state,
+            expires_at,
+            created_at,
+        ))
+        .await
+    }
+
+    /// 读取未消费且未过期的 Passkey 登录挑战。
+    pub async fn load_authentication_challenge(
+        &self,
+        challenge_digest: &str,
+        now: crate::DatabaseTimestamp,
+    ) -> Result<PasskeyAuthenticationChallenge, PasskeyRepositoryError> {
+        self.run(self.load_authentication_challenge_inner(challenge_digest, now))
+            .await
+    }
+
+    /// 在事务内消费挑战、检查会话版本与凭证状态，并更新计数和最近使用时间。
+    pub async fn consume_authentication_challenge(
+        &self,
+        challenge_digest: &str,
+        user_id: UserId,
+        session_version: i64,
+        credential_id: String,
+        passkey: serde_json::Value,
+        observed_sign_count: i64,
+        now: crate::DatabaseTimestamp,
+    ) -> Result<PasskeyAuthenticationOutcome, PasskeyRepositoryError> {
+        self.run(self.consume_authentication_challenge_inner(
+            challenge_digest,
+            user_id,
+            session_version,
+            credential_id,
+            passkey,
+            observed_sign_count,
+            now,
+        ))
+        .await
+    }
+
+    /// 在签名已通过 WebAuthn 校验但计数回退时消费挑战并标记凭证异常。
+    pub async fn consume_authentication_anomaly(
+        &self,
+        challenge_digest: &str,
+        user_id: UserId,
+        session_version: i64,
+        credential_id: String,
+        now: crate::DatabaseTimestamp,
+    ) -> Result<PasskeyAuthenticationOutcome, PasskeyRepositoryError> {
+        self.run(self.consume_authentication_anomaly_inner(
+            challenge_digest,
+            user_id,
+            session_version,
+            credential_id,
+            now,
+        ))
         .await
     }
 
@@ -192,6 +354,7 @@ impl PasskeyRepository {
         credential_id: String,
         passkey: serde_json::Value,
         display_name: String,
+        sign_count: i64,
         now: crate::DatabaseTimestamp,
     ) -> Result<PasskeyRecord, PasskeyRepositoryError> {
         self.run(self.consume_registration_challenge_inner(
@@ -200,6 +363,7 @@ impl PasskeyRepository {
             credential_id,
             passkey,
             display_name,
+            sign_count,
             now,
         ))
         .await
@@ -276,6 +440,318 @@ impl PasskeyRepository {
         models.into_iter().map(record_from_model).collect()
     }
 
+    async fn authentication_target_inner(
+        &self,
+        username: String,
+    ) -> Result<Option<PasskeyAuthenticationTarget>, PasskeyRepositoryError> {
+        if !valid_username(&username) {
+            return Ok(None);
+        }
+        let Some(user) = users::Entity::find()
+            .filter(users::Column::Username.eq(username))
+            .filter(users::Column::Status.eq(1_i16))
+            .filter(users::Column::DeletedAt.is_null())
+            .filter(users::Column::TotpSecret.is_null())
+            .one(self.pool.connection())
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| record_internal_error(PasskeyRepositoryError::Query))?
+        else {
+            return Ok(None);
+        };
+        if user.session_version < 1 {
+            return Err(record_internal_error(PasskeyRepositoryError::Invariant));
+        }
+        self.authentication_target_from_user(user).await
+    }
+
+    async fn authentication_target_for_user_inner(
+        &self,
+        user_id: UserId,
+    ) -> Result<Option<PasskeyAuthenticationTarget>, PasskeyRepositoryError> {
+        let Some(user) = users::Entity::find_by_id(user_id.get())
+            .filter(users::Column::Status.eq(1_i16))
+            .filter(users::Column::DeletedAt.is_null())
+            .filter(users::Column::TotpSecret.is_null())
+            .one(self.pool.connection())
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| record_internal_error(PasskeyRepositoryError::Query))?
+        else {
+            return Ok(None);
+        };
+        self.authentication_target_from_user(user).await
+    }
+
+    async fn authentication_target_from_user(
+        &self,
+        user: users::Model,
+    ) -> Result<Option<PasskeyAuthenticationTarget>, PasskeyRepositoryError> {
+        if user.session_version < 1 {
+            return Err(record_internal_error(PasskeyRepositoryError::Invariant));
+        }
+        let models = passkeys::Entity::find()
+            .filter(passkeys::Column::UserId.eq(user.id))
+            .filter(passkeys::Column::RevokedAt.is_null())
+            .filter(passkeys::Column::AnomalyAt.is_null())
+            .order_by_asc(passkeys::Column::Id)
+            .all(self.pool.connection())
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| record_internal_error(PasskeyRepositoryError::Query))?;
+        if models.is_empty() {
+            return Ok(None);
+        }
+        let credentials = models
+            .into_iter()
+            .map(|model| {
+                validate_credential_id(&model.credential_id)?;
+                if model.sign_count < 0 || !model.passkey.is_object() {
+                    return Err(record_internal_error(PasskeyRepositoryError::Invariant));
+                }
+                Ok(model.passkey)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Some(PasskeyAuthenticationTarget {
+            user_id: UserId::new(user.id)
+                .map_err(|_| record_internal_error(PasskeyRepositoryError::Invariant))?,
+            session_version: user.session_version,
+            credentials,
+        }))
+    }
+
+    async fn replace_authentication_challenge_inner(
+        &self,
+        user_id: UserId,
+        session_version: i64,
+        challenge_digest: String,
+        state: EncryptedCredentialEnvelope,
+        expires_at: crate::DatabaseTimestamp,
+        created_at: crate::DatabaseTimestamp,
+    ) -> Result<(), PasskeyRepositoryError> {
+        validate_digest(&challenge_digest)?;
+        if session_version < 1 || expires_at <= created_at {
+            return Err(record_internal_error(PasskeyRepositoryError::Invariant));
+        }
+        let transaction = self.begin_transaction().await?;
+        let Some(user) = lock_user(&transaction, user_id).await? else {
+            rollback_transaction(transaction).await?;
+            return Err(PasskeyRepositoryError::NotFound);
+        };
+        if user.session_version != session_version || user.totp_secret.is_some() {
+            rollback_transaction(transaction).await?;
+            return Err(PasskeyRepositoryError::Conflict);
+        }
+        passkey_authentication_challenges::Entity::delete_many()
+            .filter(passkey_authentication_challenges::Column::UserId.eq(user_id.get()))
+            .filter(passkey_authentication_challenges::Column::ConsumedAt.is_null())
+            .exec(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| record_internal_error(PasskeyRepositoryError::Query))?;
+        let active = passkey_authentication_challenges::ActiveModel {
+            user_id: Set(user_id.get()),
+            challenge_digest: Set(challenge_digest),
+            authentication_state: Set(encrypted_json(state)?),
+            session_version: Set(session_version),
+            expires_at: Set(expires_at),
+            consumed_at: Set(None),
+            created_at: Set(created_at),
+            ..Default::default()
+        };
+        active
+            .insert(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_write_error)?;
+        commit_transaction(transaction).await
+    }
+
+    async fn load_authentication_challenge_inner(
+        &self,
+        challenge_digest: &str,
+        now: crate::DatabaseTimestamp,
+    ) -> Result<PasskeyAuthenticationChallenge, PasskeyRepositoryError> {
+        validate_digest(challenge_digest)?;
+        let Some(model) = passkey_authentication_challenges::Entity::find()
+            .filter(passkey_authentication_challenges::Column::ChallengeDigest.eq(challenge_digest))
+            .filter(passkey_authentication_challenges::Column::ConsumedAt.is_null())
+            .one(self.pool.connection())
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| record_internal_error(PasskeyRepositoryError::Query))?
+        else {
+            return Err(PasskeyRepositoryError::NotFound);
+        };
+        if model.expires_at <= now {
+            return Err(PasskeyRepositoryError::Expired);
+        }
+        let user_id = UserId::new(model.user_id)
+            .map_err(|_| record_internal_error(PasskeyRepositoryError::Invariant))?;
+        if model.session_version < 1 {
+            return Err(record_internal_error(PasskeyRepositoryError::Invariant));
+        }
+        Ok(PasskeyAuthenticationChallenge {
+            user_id,
+            session_version: model.session_version,
+            state: envelope_from_json(model.authentication_state)?,
+        })
+    }
+
+    async fn consume_authentication_challenge_inner(
+        &self,
+        challenge_digest: &str,
+        user_id: UserId,
+        session_version: i64,
+        credential_id: String,
+        passkey: serde_json::Value,
+        observed_sign_count: i64,
+        now: crate::DatabaseTimestamp,
+    ) -> Result<PasskeyAuthenticationOutcome, PasskeyRepositoryError> {
+        validate_digest(challenge_digest)?;
+        validate_credential_id(&credential_id)?;
+        if session_version < 1 || observed_sign_count < 0 || !passkey.is_object() {
+            return Err(record_internal_error(PasskeyRepositoryError::Invariant));
+        }
+        let transaction = self.begin_transaction().await?;
+        let Some(user) = lock_user_any(&transaction, user_id).await? else {
+            rollback_transaction(transaction).await?;
+            return Ok(PasskeyAuthenticationOutcome::Rejected);
+        };
+        let Some(challenge) = lock_authentication_challenge(&transaction, challenge_digest).await?
+        else {
+            rollback_transaction(transaction).await?;
+            return Err(PasskeyRepositoryError::NotFound);
+        };
+        if challenge.consumed_at.is_some() {
+            rollback_transaction(transaction).await?;
+            return Err(PasskeyRepositoryError::Consumed);
+        }
+        if challenge.expires_at <= now {
+            rollback_transaction(transaction).await?;
+            return Err(PasskeyRepositoryError::Expired);
+        }
+        let challenge_user_id = challenge.user_id;
+        let challenge_session_version = challenge.session_version;
+        let mut consumed = challenge.into_active_model();
+        consumed.consumed_at = Set(Some(now));
+        consumed
+            .update(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_write_error)?;
+        let valid_version = challenge_user_id == user_id.get()
+            && challenge_session_version == session_version
+            && user.session_version == session_version
+            && user.status == 1
+            && user.deleted_at.is_none()
+            && user.totp_secret.is_none();
+        let Some(credential) =
+            lock_passkey_by_digest(&transaction, user_id, &credential_id_digest(&credential_id))
+                .await?
+        else {
+            commit_transaction(transaction).await?;
+            return Ok(PasskeyAuthenticationOutcome::Rejected);
+        };
+        if !valid_version || credential.revoked_at.is_some() || credential.anomaly_at.is_some() {
+            commit_transaction(transaction).await?;
+            return Ok(PasskeyAuthenticationOutcome::Rejected);
+        }
+        if credential.sign_count > 0 && observed_sign_count <= credential.sign_count {
+            let mut anomaly = credential.into_active_model();
+            anomaly.anomaly_at = Set(Some(now));
+            anomaly
+                .update(&transaction)
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(map_write_error)?;
+            commit_transaction(transaction).await?;
+            return Ok(PasskeyAuthenticationOutcome::AnomalyDetected);
+        }
+        let mut updated = credential.into_active_model();
+        updated.passkey = Set(passkey);
+        updated.sign_count = Set(observed_sign_count);
+        updated.last_used_at = Set(Some(now));
+        updated
+            .update(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_write_error)?;
+        commit_transaction(transaction).await?;
+        Ok(PasskeyAuthenticationOutcome::Authenticated)
+    }
+
+    async fn consume_authentication_anomaly_inner(
+        &self,
+        challenge_digest: &str,
+        user_id: UserId,
+        session_version: i64,
+        credential_id: String,
+        now: crate::DatabaseTimestamp,
+    ) -> Result<PasskeyAuthenticationOutcome, PasskeyRepositoryError> {
+        validate_digest(challenge_digest)?;
+        validate_credential_id(&credential_id)?;
+        if session_version < 1 {
+            return Err(record_internal_error(PasskeyRepositoryError::Invariant));
+        }
+        let transaction = self.begin_transaction().await?;
+        // 所有认证消费统一按用户、挑战、凭证加锁，避免成功与异常路径形成反向锁序。
+        let Some(user) = lock_user_any(&transaction, user_id).await? else {
+            rollback_transaction(transaction).await?;
+            return Ok(PasskeyAuthenticationOutcome::Rejected);
+        };
+        let Some(challenge) = lock_authentication_challenge(&transaction, challenge_digest).await?
+        else {
+            rollback_transaction(transaction).await?;
+            return Err(PasskeyRepositoryError::NotFound);
+        };
+        if challenge.consumed_at.is_some() {
+            rollback_transaction(transaction).await?;
+            return Err(PasskeyRepositoryError::Consumed);
+        }
+        if challenge.expires_at <= now {
+            rollback_transaction(transaction).await?;
+            return Err(PasskeyRepositoryError::Expired);
+        }
+        let challenge_user_id = challenge.user_id;
+        let challenge_session_version = challenge.session_version;
+        let mut consumed = challenge.into_active_model();
+        consumed.consumed_at = Set(Some(now));
+        consumed
+            .update(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_write_error)?;
+
+        // 账户状态也要消耗挑战，避免停用后重新启用时复用旧的有效响应。
+        let valid_version = challenge_user_id == user_id.get()
+            && challenge_session_version == session_version
+            && user.session_version == session_version
+            && user.status == 1
+            && user.deleted_at.is_none()
+            && user.totp_secret.is_none();
+        let Some(credential) =
+            lock_passkey_by_digest(&transaction, user_id, &credential_id_digest(&credential_id))
+                .await?
+        else {
+            commit_transaction(transaction).await?;
+            return Ok(PasskeyAuthenticationOutcome::Rejected);
+        };
+        if !valid_version || credential.revoked_at.is_some() || credential.anomaly_at.is_some() {
+            commit_transaction(transaction).await?;
+            return Ok(PasskeyAuthenticationOutcome::Rejected);
+        }
+        let mut anomaly = credential.into_active_model();
+        anomaly.anomaly_at = Set(Some(now));
+        anomaly
+            .update(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_write_error)?;
+        commit_transaction(transaction).await?;
+        Ok(PasskeyAuthenticationOutcome::AnomalyDetected)
+    }
+
     async fn replace_registration_challenge_inner(
         &self,
         user_id: UserId,
@@ -350,12 +826,13 @@ impl PasskeyRepository {
         credential_id: String,
         passkey: serde_json::Value,
         display_name: String,
+        sign_count: i64,
         now: crate::DatabaseTimestamp,
     ) -> Result<PasskeyRecord, PasskeyRepositoryError> {
         validate_digest(challenge_digest)?;
         validate_credential_id(&credential_id)?;
         validate_display_name(&display_name)?;
-        if !passkey.is_object() {
+        if sign_count < 0 || !passkey.is_object() {
             return Err(record_internal_error(PasskeyRepositoryError::Invariant));
         }
         let transaction = self.begin_transaction().await?;
@@ -392,6 +869,8 @@ impl PasskeyRepository {
             created_at: Set(now),
             last_used_at: Set(None),
             revoked_at: Set(None),
+            sign_count: Set(sign_count),
+            anomaly_at: Set(None),
             ..Default::default()
         };
         let saved = created
@@ -602,6 +1081,21 @@ async fn lock_user(
         .map_err(|_| record_internal_error(PasskeyRepositoryError::Query))
 }
 
+async fn lock_user_any(
+    transaction: &DatabaseTransaction,
+    user_id: UserId,
+) -> Result<Option<users::Model>, PasskeyRepositoryError> {
+    let mut query = users::Entity::find_by_id(user_id.get());
+    if transaction.get_database_backend() != DbBackend::Sqlite {
+        query = query.lock(LockType::Update);
+    }
+    query
+        .one(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(|_| record_internal_error(PasskeyRepositoryError::Query))
+}
+
 async fn lock_passkey(
     transaction: &DatabaseTransaction,
     user_id: UserId,
@@ -637,11 +1131,46 @@ async fn lock_challenge(
         .map_err(|_| record_internal_error(PasskeyRepositoryError::Query))
 }
 
+async fn lock_authentication_challenge(
+    transaction: &DatabaseTransaction,
+    challenge_digest: &str,
+) -> Result<Option<passkey_authentication_challenges::Model>, PasskeyRepositoryError> {
+    let mut query = passkey_authentication_challenges::Entity::find()
+        .filter(passkey_authentication_challenges::Column::ChallengeDigest.eq(challenge_digest));
+    if transaction.get_database_backend() != DbBackend::Sqlite {
+        query = query.lock(LockType::Update);
+    }
+    query
+        .one(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(|_| record_internal_error(PasskeyRepositoryError::Query))
+}
+
+async fn lock_passkey_by_digest(
+    transaction: &DatabaseTransaction,
+    user_id: UserId,
+    credential_id_digest: &str,
+) -> Result<Option<passkeys::Model>, PasskeyRepositoryError> {
+    let mut query = passkeys::Entity::find()
+        .filter(passkeys::Column::UserId.eq(user_id.get()))
+        .filter(passkeys::Column::CredentialIdDigest.eq(credential_id_digest));
+    if transaction.get_database_backend() != DbBackend::Sqlite {
+        query = query.lock(LockType::Update);
+    }
+    query
+        .one(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(|_| record_internal_error(PasskeyRepositoryError::Query))
+}
+
 fn record_from_model(model: passkeys::Model) -> Result<PasskeyRecord, PasskeyRepositoryError> {
     if model.id <= 0
         || model.user_id <= 0
         || !valid_display_name(&model.display_name)
         || validate_credential_id(&model.credential_id).is_err()
+        || model.sign_count < 0
     {
         return Err(record_internal_error(PasskeyRepositoryError::Invariant));
     }
@@ -652,6 +1181,13 @@ fn record_from_model(model: passkeys::Model) -> Result<PasskeyRecord, PasskeyRep
         last_used_at: model.last_used_at,
         revoked_at: model.revoked_at,
     })
+}
+
+fn valid_username(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && value.trim() == value
+        && !value.chars().any(char::is_control)
 }
 
 fn validate_display_name(value: &str) -> Result<(), PasskeyRepositoryError> {

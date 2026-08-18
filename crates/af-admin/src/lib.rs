@@ -33,6 +33,7 @@ mod organization_management;
 mod organization_token;
 mod organization_wallet;
 mod passkey;
+mod passkey_auth;
 mod password_reset;
 mod payment_settings;
 #[cfg(test)]
@@ -252,6 +253,11 @@ pub use organization_wallet::{
 pub use passkey::{
     PasskeyRegistrationCommand, PasskeyRegistrationOptions, PasskeyRenameCommand,
     PasskeyRevokeCommand, UserPasskey,
+};
+pub use passkey_auth::{
+    DatabasePasskeyAuthenticationService, PasskeyAuthenticationCommand, PasskeyAuthenticationError,
+    PasskeyAuthenticationFuture, PasskeyAuthenticationOptions, PasskeyAuthenticationOptionsFuture,
+    PasskeyAuthenticationService, PasskeyAuthenticationServiceConfigError,
 };
 pub use password_reset::{
     DatabasePasswordResetService, MAX_PASSWORD_RESET_PASSWORD_BYTES,

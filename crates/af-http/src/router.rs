@@ -9,9 +9,10 @@ use af_admin::{
     AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, AdminWalletService,
     InitialSetup, ModelCatalogReader, OAuthLoginService, OrganizationActivityService,
     OrganizationBudgetService, OrganizationTokenService, OrganizationWalletService,
-    PasswordResetService, PlaygroundConversationService, PlaygroundShareService, RedemptionService,
-    RegistrationService, SessionAuthenticator, SiteSettingsService, SubscriptionService,
-    TokenAuthenticator, UserInvitationService, UserTopupService, UserWalletService,
+    PasskeyAuthenticationService, PasswordResetService, PlaygroundConversationService,
+    PlaygroundShareService, RedemptionService, RegistrationService, SessionAuthenticator,
+    SiteSettingsService, SubscriptionService, TokenAuthenticator, UserInvitationService,
+    UserTopupService, UserWalletService,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -96,6 +97,7 @@ use crate::organization_budget::build_organization_budget_router;
 use crate::organization_tokens::build_organization_token_router;
 use crate::organization_wallet::build_organization_wallet_router;
 use crate::organizations::build_organization_router;
+use crate::passkey_auth::build_passkey_authentication_router;
 use crate::password_reset::build_password_reset_router;
 use crate::payment_settings::build_payment_settings_router;
 use crate::playground_conversations::build_playground_conversation_router;
@@ -163,6 +165,7 @@ pub fn build_router(
     user_token_service: Arc<dyn af_admin::UserTokenService>,
     initial_setup: Arc<dyn InitialSetup>,
     registration_service: Arc<dyn RegistrationService>,
+    passkey_authentication_service: Option<Arc<dyn PasskeyAuthenticationService>>,
     password_reset_service: Arc<dyn PasswordResetService>,
     user_profile_service: Arc<dyn af_admin::UserProfileService>,
     user_wallet_service: Arc<dyn UserWalletService>,
@@ -439,6 +442,11 @@ pub fn build_router(
         Arc::clone(&http_state.session_authenticator),
         config,
     );
+    let passkey_authentication_routes = build_passkey_authentication_router(
+        passkey_authentication_service,
+        Arc::clone(&http_state.session_authenticator),
+        config,
+    );
     let password_reset_routes = build_password_reset_router(password_reset_service, config);
     let user_profile_routes = build_user_profile_router(
         user_profile_service,
@@ -708,6 +716,7 @@ pub fn build_router(
         .merge(playground_conversation_routes)
         .merge(user_token_routes)
         .merge(registration_routes)
+        .merge(passkey_authentication_routes)
         .merge(password_reset_routes)
         .merge(user_profile_routes)
         .merge(user_wallet_routes)

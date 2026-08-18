@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Eye,
   EyeOff,
+  Fingerprint,
   GitFork,
   LoaderCircle,
   LockKeyhole,
@@ -21,6 +22,11 @@ import { Input } from '@/components/ui/input'
 import { AuthCapabilityCard, AuthCapabilitySkeleton } from '@/features/auth/auth-capability-card'
 import { AuthPageShell } from '@/features/auth/auth-page-shell'
 import { beginOAuthLogin, type OAuthLoginProvider } from '@/features/auth/oauth-login-api'
+import {
+  authenticateWithPasskey,
+  PasskeyClientError,
+  supportsPasskeyAuthentication,
+} from '@/features/auth/passkey-login-api'
 import { establishManagementSession } from '@/features/auth/session-query'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
 import { apiClient, ApiError } from '@/lib/api'
@@ -34,7 +40,7 @@ type LoginPageProps = {
   onAuthenticated: () => void
 }
 
-type LoginError = LoginNotice | 'invalidCredentials' | 'twoFactorRequired' | 'twoFactorInvalid' | 'passwordLoginDisabled' | 'unavailable'
+type LoginError = LoginNotice | 'invalidCredentials' | 'twoFactorRequired' | 'twoFactorInvalid' | 'passwordLoginDisabled' | 'passkeyCancelled' | 'passkeyUnsupported' | 'unavailable'
 
 function classifyLoginError(error: unknown): LoginError {
   if (error instanceof ApiError) {
@@ -68,6 +74,7 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
     },
   })
   const oauthMutation = useMutation({ mutationFn: beginOAuthLogin })
+  const passkeyMutation = useMutation({ mutationFn: authenticateWithPasskey })
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -104,6 +111,27 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
     }
   }
 
+  async function handlePasskeyLogin() {
+    setLoginError(undefined)
+    const normalizedUsername = username.trim()
+    if (!normalizedUsername) {
+      setLoginError('invalidCredentials')
+      document.getElementById('management-username')?.focus()
+      return
+    }
+    try {
+      const response = await passkeyMutation.mutateAsync(normalizedUsername)
+      establishManagementSession(response)
+      onAuthenticated()
+    } catch (error) {
+      if (error instanceof PasskeyClientError) {
+        setLoginError(error.code === 'cancelled' ? 'passkeyCancelled' : error.code === 'unsupported' ? 'passkeyUnsupported' : 'invalidCredentials')
+      } else {
+        setLoginError(classifyLoginError(error))
+      }
+    }
+  }
+
   const site = siteQuery.data
   const siteName = site?.site_name ?? t('brand.name')
   const heroTitle = site?.brand.tagline ?? t('auth.login.heroTitle')
@@ -115,6 +143,7 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
   const oauthLoginEnabled = oauthProviders.length > 0
   const registrationEnabled = site?.authentication.registration_enabled ?? false
   const registrationAvailable = passwordLoginEnabled && registrationEnabled
+  const passkeySupported = passwordLoginEnabled && supportsPasskeyAuthentication()
   const visibleError = loginError ?? (noticeDismissed ? undefined : notice)
   const hasFieldError = visibleError === 'invalidCredentials'
   const hasTwoFactorError = visibleError === 'twoFactorRequired' || visibleError === 'twoFactorInvalid'
@@ -184,7 +213,7 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                       size="lg"
                       variant="secondary"
                       className="w-full"
-                      disabled={oauthMutation.isPending}
+                      disabled={oauthMutation.isPending || passkeyMutation.isPending}
                       onClick={() => void handleOAuthLogin(providerId)}
                     >
                       {isStarting
@@ -202,7 +231,7 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                 {oauthLoginEnabled && passwordLoginEnabled ? (
                   <div className="flex items-center gap-3 text-xs text-muted-foreground" aria-hidden="true">
                     <span className="h-px flex-1 bg-[var(--hairline)]" />
-                    <span>{t('auth.login.orPassword')}</span>
+                    <span>{t(passkeySupported ? 'auth.login.orAccount' : 'auth.login.orPassword')}</span>
                     <span className="h-px flex-1 bg-[var(--hairline)]" />
                   </div>
                 ) : null}
@@ -245,6 +274,31 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                     }}
                   />
                 </div>
+
+                {passkeySupported ? (
+                  <>
+                    <Button
+                      type="button"
+                      size="lg"
+                      variant="secondary"
+                      className="w-full"
+                      disabled={passkeyMutation.isPending || oauthMutation.isPending || !username.trim()}
+                      onClick={() => void handlePasskeyLogin()}
+                    >
+                      {passkeyMutation.isPending
+                        ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+                        : <Fingerprint className="size-4" aria-hidden="true" />}
+                      {passkeyMutation.isPending
+                        ? t('auth.login.passkeyVerifying')
+                        : t('auth.login.passkey')}
+                    </Button>
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground" aria-hidden="true">
+                      <span className="h-px flex-1 bg-[var(--hairline)]" />
+                      <span>{t('auth.login.orPassword')}</span>
+                      <span className="h-px flex-1 bg-[var(--hairline)]" />
+                    </div>
+                  </>
+                ) : null}
 
                 <div className="grid gap-2">
                   <label htmlFor="management-password" className="text-sm font-medium">{t('auth.login.password')}</label>
@@ -306,7 +360,7 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                   </div>
                 ) : null}
 
-                <Button type="submit" size="lg" className="w-full" disabled={loginMutation.isPending}>
+                <Button type="submit" size="lg" className="w-full" disabled={loginMutation.isPending || passkeyMutation.isPending}>
                   {loginMutation.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}
                   {loginMutation.isPending
                     ? t('auth.login.submitting')

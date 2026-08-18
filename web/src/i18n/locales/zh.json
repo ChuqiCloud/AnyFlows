@@ -2815,7 +2815,10 @@
         "github": "正在前往 GitHub",
         "discord": "正在前往 Discord"
       },
-      "orPassword": "或使用密码"
+      "orPassword": "或使用密码",
+      "orAccount": "或使用账户认证",
+      "passkey": "使用 Passkey 登录",
+      "passkeyVerifying": "正在验证 Passkey"
     },
     "oauthCallback": {
       "title": "正在完成登录",
@@ -2836,6 +2839,8 @@
       "passwordResetSuccess": "密码已更新，请使用新密码登录。",
       "passwordChanged": "密码已修改，旧会话已失效，请使用新密码登录。",
       "passwordLoginDisabled": "密码登录刚刚被关闭，请使用站点当前开放的认证方式。",
+      "passkeyCancelled": "Passkey 验证已取消。",
+      "passkeyUnsupported": "当前浏览器不支持 Passkey，请使用其他登录方式。",
       "unavailable": "暂时无法连接服务，请稍后重试。"
     },
     "session": {

@@ -13,7 +13,7 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use webauthn_rs::prelude::{
-    CredentialID, PasskeyRegistration, RegisterPublicKeyCredential, Uuid, Webauthn,
+    Credential, CredentialID, PasskeyRegistration, RegisterPublicKeyCredential, Uuid, Webauthn,
 };
 use zeroize::Zeroizing;
 
@@ -808,6 +808,7 @@ impl UserProfileService for DatabaseUserProfileService {
             let passkey = webauthn
                 .finish_passkey_registration(&credential, &state)
                 .map_err(|_| UserProfileError::PasskeyRegistrationRejected)?;
+            let sign_count = i64::from(Credential::from(passkey.clone()).counter);
             let credential_id = URL_SAFE_NO_PAD.encode(passkey.cred_id().as_ref());
             let passkey_json = serde_json::to_value(passkey)
                 .map_err(|_| UserProfileError::PasskeyRegistrationRejected)?;
@@ -818,6 +819,7 @@ impl UserProfileService for DatabaseUserProfileService {
                     credential_id,
                     passkey_json,
                     display_name,
+                    sign_count,
                     af_db::DatabaseTimestamp::now_utc(),
                 )
                 .await

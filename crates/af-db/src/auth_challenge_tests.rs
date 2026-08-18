@@ -251,6 +251,28 @@ async fn password_reset_is_bound_to_an_existing_target_user() -> Result<(), Box<
         ),
         Err(AuthChallengeInputError::InvalidTarget)
     ));
+    assert!(matches!(
+        AuthChallengeIssue::new(
+            AuthChallengePurpose::PasskeyAuthentication,
+            SUBJECT,
+            FIRST_SECRET,
+            None,
+            4_000,
+            600,
+            60,
+            3,
+        ),
+        Err(AuthChallengeInputError::InvalidTarget)
+    ));
+    assert!(matches!(
+        AuthChallengeConsume::new(
+            AuthChallengePurpose::PasskeyAuthentication,
+            SUBJECT,
+            FIRST_SECRET,
+            4_000,
+        ),
+        Err(AuthChallengeInputError::InvalidTarget)
+    ));
 
     repository
         .issue(AuthChallengeIssue::new(

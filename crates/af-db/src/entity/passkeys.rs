@@ -19,6 +19,8 @@ pub struct Model {
     pub created_at: TimeDateTimeWithTimeZone,
     pub last_used_at: Option<TimeDateTimeWithTimeZone>,
     pub revoked_at: Option<TimeDateTimeWithTimeZone>,
+    pub sign_count: i64,
+    pub anomaly_at: Option<TimeDateTimeWithTimeZone>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

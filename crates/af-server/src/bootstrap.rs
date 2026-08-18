@@ -22,15 +22,16 @@ use af_admin::{
     DatabaseAdminUserReader, DatabaseAdminUserWriter, DatabaseAdminWalletService,
     DatabaseInitialSetup, DatabaseOAuthLoginService, DatabaseOrganizationActivityService,
     DatabaseOrganizationBudgetService, DatabaseOrganizationTokenService,
-    DatabaseOrganizationWalletService, DatabasePasswordResetService,
-    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
-    DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
-    DatabaseSiteSettingsService, DatabaseSubscriptionService, DatabaseTokenAuthenticator,
-    DatabaseUserInvitationService, DatabaseUserProfileService, DatabaseUserTokenService,
-    DatabaseUserWalletService, EmailDelivery, InitialSetup, ModelCatalogReader,
-    NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError, OAuthLoginService,
-    OrganizationActivityService, OrganizationActivityServiceConfigError, OrganizationBudgetService,
-    OrganizationTokenService, OrganizationWalletService, PasswordResetService,
+    DatabaseOrganizationWalletService, DatabasePasskeyAuthenticationService,
+    DatabasePasswordResetService, DatabasePlaygroundConversationService,
+    DatabasePlaygroundShareService, DatabaseRedemptionService, DatabaseRegistrationService,
+    DatabaseSessionAuthenticator, DatabaseSiteSettingsService, DatabaseSubscriptionService,
+    DatabaseTokenAuthenticator, DatabaseUserInvitationService, DatabaseUserProfileService,
+    DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery, InitialSetup,
+    ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
+    OAuthLoginService, OrganizationActivityService, OrganizationActivityServiceConfigError,
+    OrganizationBudgetService, OrganizationTokenService, OrganizationWalletService,
+    PasskeyAuthenticationService, PasskeyAuthenticationServiceConfigError, PasswordResetService,
     PasswordResetServiceConfigError, PlaygroundConversationService, PlaygroundShareService,
     RedemptionService, RegistrationService, RegistrationServiceConfigError,
     RuntimeRefreshingAdminGroupWriter, SessionAuthenticator, SessionAuthenticatorConfigError,
@@ -82,16 +83,16 @@ use af_db::{
     PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
     PlaygroundShareRepositoryConfigError, QuotaRepository, RedemptionRepository,
     RedemptionRepositoryConfigError, RegistrationRepository, RegistrationRepositoryConfigError,
-    SiteSettingsRepository, SiteSettingsRepositoryConfigError, SmartRouteRuntimeRepository,
-    SmartRouteRuntimeRepositoryConfigError, SubscriptionBalanceAlertRepository,
-    SubscriptionBalanceAlertRepositoryConfigError, SubscriptionRepository,
-    SubscriptionRepositoryConfigError, TokenAuthRepository, TokenAuthRepositoryConfigError,
-    TokenRequestAdmissionRepository, TokenRequestAdmissionRepositoryConfigError, TopupRepository,
-    TopupRepositoryConfigError, UsageLogRepository, UserInvitationRepository,
-    UserInvitationRepositoryConfigError, UserProfileRepository, UserProfileRepositoryConfigError,
-    UserSessionRepository, UserSessionRepositoryConfigError, UserTokenRepository,
-    UserTokenRepositoryConfigError, WalletLedgerRepository, WalletLedgerRepositoryConfigError,
-    connect_and_migrate,
+    SiteSettingsRepository, SiteSettingsRepositoryConfigError, SiteSettingsRepositoryError,
+    SmartRouteRuntimeRepository, SmartRouteRuntimeRepositoryConfigError,
+    SubscriptionBalanceAlertRepository, SubscriptionBalanceAlertRepositoryConfigError,
+    SubscriptionRepository, SubscriptionRepositoryConfigError, TokenAuthRepository,
+    TokenAuthRepositoryConfigError, TokenRequestAdmissionRepository,
+    TokenRequestAdmissionRepositoryConfigError, TopupRepository, TopupRepositoryConfigError,
+    UsageLogRepository, UserInvitationRepository, UserInvitationRepositoryConfigError,
+    UserProfileRepository, UserProfileRepositoryConfigError, UserSessionRepository,
+    UserSessionRepositoryConfigError, UserTokenRepository, UserTokenRepositoryConfigError,
+    WalletLedgerRepository, WalletLedgerRepositoryConfigError, connect_and_migrate,
 };
 use af_http::{
     AdminChannelProbe, AdminOAuthConnectionService, AudioService, ChatService, EmbeddingService,
@@ -170,6 +171,7 @@ pub struct TelemetryReady {
 pub struct DatabaseReady {
     _telemetry: TelemetryReady,
     database: DatabasePool,
+    passkey_public_base_url: Option<String>,
 }
 
 /// 已使用数据库连接池装配令牌认证服务。
@@ -179,6 +181,7 @@ pub struct AuthenticationReady {
     session_authenticator: Arc<dyn SessionAuthenticator>,
     initial_setup: Arc<dyn InitialSetup>,
     registration_service: Arc<dyn RegistrationService>,
+    passkey_authentication_service: Option<Arc<dyn PasskeyAuthenticationService>>,
     password_reset_service: Arc<dyn PasswordResetService>,
     user_profile_service: Arc<dyn UserProfileService>,
     user_wallet_service: Arc<dyn UserWalletService>,
@@ -408,6 +411,12 @@ pub enum BootstrapError {
     /// 站点设置仓储的启动参数无效。
     #[error("站点设置仓储启动参数无效")]
     SiteSettingsRepository(#[source] SiteSettingsRepositoryConfigError),
+    /// 启动期读取站点公开地址失败。
+    #[error("读取站点公开地址失败")]
+    SiteSettingsRead(#[source] SiteSettingsRepositoryError),
+    /// Passkey 登录的限流派生密钥缺失或无效。
+    #[error("Passkey 登录服务启动配置无效")]
+    PasskeyAuthenticationService(#[source] PasskeyAuthenticationServiceConfigError),
     /// SMTP 设置仓储的启动参数无效。
     #[error("SMTP 设置仓储启动参数无效")]
     EmailSettingsRepository(#[source] EmailSettingsRepositoryConfigError),
@@ -607,36 +616,44 @@ fn build_user_profile_service(
     balance_alert_settings: BalanceAlertSettingsRepository,
     passkey_repository: PasskeyRepository,
     system_secret_cipher: SystemSecretCipher,
-    config: &AppConfig,
+    public_base_url: Option<&str>,
 ) -> DatabaseUserProfileService {
     let service = DatabaseUserProfileService::new(repository, balance_alert_settings)
         .with_system_secret_cipher(system_secret_cipher);
-    let Some(webauthn) = build_passkey_runtime(config) else {
+    let Some(webauthn) = build_passkey_runtime(public_base_url) else {
         return service;
     };
     service.with_passkey_runtime(passkey_repository, webauthn)
 }
 
-/// 仅从受信任的 CORS Origin 派生 WebAuthn 配置；没有 HTTPS Origin 时保持失败关闭。
-fn build_passkey_runtime(config: &AppConfig) -> Option<Webauthn> {
-    let origins = config.server().cors_allowed_origins();
-    let first_origin = origins.first()?;
-    let first = Url::parse(first_origin.as_str()).ok()?;
-    if first.scheme() != "https" {
+/// 仅从数据库中的站点公开地址派生唯一 WebAuthn RP/Origin。
+fn build_passkey_runtime(public_base_url: Option<&str>) -> Option<Webauthn> {
+    let (rp_id, origin) = passkey_origin(public_base_url)?;
+    WebauthnBuilder::new(&rp_id, &origin)
+        .ok()?
+        .rp_name("AnyFlows")
+        .build()
+        .ok()
+}
+
+fn passkey_origin(public_base_url: Option<&str>) -> Option<(String, Url)> {
+    let mut origin = Url::parse(public_base_url?).ok()?;
+    if !origin.username().is_empty()
+        || origin.password().is_some()
+        || origin.query().is_some()
+        || origin.fragment().is_some()
+    {
         return None;
     }
-    let rp_id = first.domain()?;
-    let mut builder = WebauthnBuilder::new(rp_id, &first)
-        .ok()?
-        .rp_name("AnyFlows");
-    for configured in origins.iter().skip(1) {
-        let origin = Url::parse(configured.as_str()).ok()?;
-        if origin.scheme() != "https" || origin.domain().is_none() {
-            return None;
-        }
-        builder = builder.append_allowed_origin(&origin);
+    let rp_id = origin.domain()?.to_owned();
+    let allowed_transport = origin.scheme() == "https"
+        || (origin.scheme() == "http" && rp_id.eq_ignore_ascii_case("localhost"));
+    if !allowed_transport {
+        return None;
     }
-    builder.build().ok()
+    // 品牌页面可以配置路径，但 WebAuthn 只信任规范化后的 Origin。
+    origin.set_path("");
+    Some((rp_id, origin))
 }
 
 impl Bootstrap<Configured> {
@@ -671,6 +688,17 @@ impl Bootstrap<TelemetryReady> {
         let database = connect_and_migrate(&database_options, migration_options)
             .await
             .map_err(BootstrapError::Database)?;
+        let site_settings_repository = SiteSettingsRepository::new(
+            database.clone(),
+            Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::SiteSettingsRepository)?;
+        let passkey_public_base_url = site_settings_repository
+            .settings()
+            .await
+            .map_err(BootstrapError::SiteSettingsRead)?
+            .public_base_url()
+            .map(str::to_owned);
         let Bootstrap {
             config,
             shutdown_timeout,
@@ -684,6 +712,7 @@ impl Bootstrap<TelemetryReady> {
             stage: DatabaseReady {
                 _telemetry: stage,
                 database,
+                passkey_public_base_url,
             },
         })
     }
@@ -895,13 +924,30 @@ impl Bootstrap<DatabaseReady> {
             registration_repository,
             admin_user_repository.clone(),
             auth_challenge_repository,
-            auth_challenge_rate_limit_repository,
+            auth_challenge_rate_limit_repository.clone(),
             email_settings_repository.clone(),
             system_secret_cipher.clone(),
             Arc::clone(&smtp_delivery),
             auth.session_signing_key().map(|key| key.expose()),
         )
         .map_err(BootstrapError::RegistrationService)?;
+        let registration_service: Arc<dyn RegistrationService> = Arc::new(registration_service);
+        // Passkey 登录与注册只复用数据库公开地址派生的唯一 Origin。
+        let passkey_authentication_service =
+            build_passkey_runtime(self.stage.passkey_public_base_url.as_deref())
+                .map(|webauthn| {
+                    DatabasePasskeyAuthenticationService::new(
+                        passkey_repository.clone(),
+                        system_secret_cipher.clone(),
+                        webauthn,
+                        Arc::clone(&registration_service),
+                        auth_challenge_rate_limit_repository,
+                        auth.session_signing_key().map(|key| key.expose()),
+                    )
+                    .map(|service| Arc::new(service) as Arc<dyn PasskeyAuthenticationService>)
+                })
+                .transpose()
+                .map_err(BootstrapError::PasskeyAuthenticationService)?;
         let admin_email_settings_service = DatabaseAdminEmailSettingsService::new(
             email_settings_repository,
             system_secret_cipher.clone(),
@@ -980,7 +1026,7 @@ impl Bootstrap<DatabaseReady> {
             balance_alert_settings_repository,
             passkey_repository,
             system_secret_cipher.clone(),
-            &config,
+            stage.passkey_public_base_url.as_deref(),
         ));
         Ok(Bootstrap {
             config,
@@ -994,7 +1040,8 @@ impl Bootstrap<DatabaseReady> {
                 )),
                 session_authenticator: Arc::new(session_authenticator),
                 initial_setup: Arc::new(DatabaseInitialSetup::new(initial_setup_repository)),
-                registration_service: Arc::new(registration_service),
+                registration_service,
+                passkey_authentication_service,
                 password_reset_service: Arc::new(password_reset_service),
                 user_profile_service,
                 user_wallet_service: Arc::new(DatabaseUserWalletService::new(
@@ -1968,6 +2015,10 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.user_token_service),
             Arc::clone(&self.stage.infrastructure.initial_setup),
             Arc::clone(&self.stage.infrastructure.registration_service),
+            self.stage
+                .infrastructure
+                .passkey_authentication_service
+                .clone(),
             Arc::clone(&self.stage.infrastructure.password_reset_service),
             Arc::clone(&self.stage.infrastructure.user_profile_service),
             Arc::clone(&self.stage.infrastructure.user_wallet_service),
@@ -2618,6 +2669,33 @@ mod tests {
         assert!(
             BootstrapError::Supervisor(SupervisorError::ForceStopTimeout).requires_immediate_exit()
         );
+    }
+
+    #[test]
+    fn passkey_origin_uses_the_single_database_public_address() {
+        let (rp_id, origin) = passkey_origin(Some("https://console.example/account")).unwrap();
+        assert_eq!(rp_id, "console.example");
+        assert_eq!(origin.as_str(), "https://console.example/");
+        assert!(build_passkey_runtime(Some("https://console.example/account")).is_some());
+
+        let (rp_id, origin) = passkey_origin(Some("http://localhost:5185/preview")).unwrap();
+        assert_eq!(rp_id, "localhost");
+        assert_eq!(origin.as_str(), "http://localhost:5185/");
+        assert!(build_passkey_runtime(Some("http://localhost:5185/preview")).is_some());
+    }
+
+    #[test]
+    fn passkey_origin_rejects_insecure_or_non_domain_public_addresses() {
+        for value in [
+            None,
+            Some("http://console.example"),
+            Some("http://127.0.0.1:5185"),
+            Some("https://127.0.0.1"),
+            Some("https://console.example/?source=untrusted"),
+        ] {
+            assert!(passkey_origin(value).is_none(), "不应接受 {value:?}");
+            assert!(build_passkey_runtime(value).is_none(), "不应启用 {value:?}");
+        }
     }
 
     #[tokio::test]

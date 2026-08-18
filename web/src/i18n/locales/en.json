@@ -2738,7 +2738,10 @@
         "github": "Opening GitHub",
         "discord": "Opening Discord"
       },
-      "orPassword": "or use a password"
+      "orPassword": "or use a password",
+      "orAccount": "or use account sign-in",
+      "passkey": "Sign in with Passkey",
+      "passkeyVerifying": "Verifying Passkey"
     },
     "oauthCallback": {
       "title": "Completing sign-in",
@@ -2759,6 +2762,8 @@
       "passwordResetSuccess": "Your password was updated. Sign in with the new password.",
       "passwordChanged": "Your password changed and older sessions were revoked. Sign in again with the new password.",
       "passwordLoginDisabled": "Password sign-in was just disabled. Use an authentication method currently offered by this site.",
+      "passkeyCancelled": "Passkey verification was cancelled.",
+      "passkeyUnsupported": "This browser does not support Passkey. Use another sign-in method.",
       "unavailable": "The service is unavailable. Try again shortly."
     },
     "session": {

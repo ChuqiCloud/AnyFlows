@@ -15584,6 +15584,148 @@
           }
         ]
       }
+    },
+    "/api/auth/passkey/options": {
+      "post": {
+        "tags": [
+          "Passkey 登录"
+        ],
+        "summary": "创建 Passkey 登录挑战",
+        "operationId": "startPasskeyAuthentication",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyAuthenticationOptionsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "WebAuthn 登录选项",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyAuthenticationOptionsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求正文无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Passkey 登录失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "密码登录策略已关闭",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/passkey/verify": {
+      "post": {
+        "tags": [
+          "Passkey 登录"
+        ],
+        "summary": "验证 Passkey 并签发会话",
+        "operationId": "finishPasskeyAuthentication",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyAuthenticationVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "登录成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求正文无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Passkey 登录失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "密码登录策略已关闭",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -28118,6 +28260,40 @@
           "expired",
           "failed"
         ]
+      },
+      "PasskeyAuthenticationOptionsRequest": {
+        "type": "object",
+        "required": [
+          "username"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "PasskeyAuthenticationOptionsResponse": {
+        "type": "object",
+        "required": [
+          "options"
+        ],
+        "properties": {
+          "options": {}
+        },
+        "additionalProperties": false
+      },
+      "PasskeyAuthenticationVerifyRequest": {
+        "type": "object",
+        "required": [
+          "credential"
+        ],
+        "properties": {
+          "credential": {}
+        },
+        "additionalProperties": false
       }
     },
     "securitySchemes": {
@@ -28189,6 +28365,9 @@
     },
     {
       "name": "OAuth 登录"
+    },
+    {
+      "name": "Passkey 登录"
     },
     {
       "name": "企业钱包"
