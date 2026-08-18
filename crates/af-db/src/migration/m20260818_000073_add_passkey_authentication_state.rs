@@ -1,4 +1,4 @@
-use sea_orm::{ConnectionTrait, TryGetable};
+use sea_orm::ConnectionTrait;
 use sea_orm_migration::prelude::*;
 
 use super::{
@@ -195,7 +195,7 @@ fn legacy_passkey_sign_count(passkey: &serde_json::Value) -> Result<i64, DbErr> 
         .and_then(serde_json::Value::as_object)
         .and_then(|credential| credential.get("counter"))
         .and_then(serde_json::Value::as_u64)
-        .and_then(|counter| i64::try_from(counter).ok())
+        .and_then(|counter| <i64 as std::convert::TryFrom<u64>>::try_from(counter).ok())
         .ok_or_else(|| DbErr::Custom("Passkey 凭证计数缺失或无效，拒绝迁移".to_owned()))?;
     Ok(sign_count)
 }
