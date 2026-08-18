@@ -118,6 +118,10 @@ allow = ["MPL-2.0"]
 crate = "webauthn-attestation-ca"
 allow = ["MPL-2.0"]
 
+[[licenses.exceptions]]
+crate = "base64urlsafedata"
+allow = ["MPL-2.0"]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
