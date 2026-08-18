@@ -77,6 +77,7 @@ mod m20260817_000068_add_client_simulation_observability;
 mod m20260817_000069_enforce_spark_shadow_shape;
 mod m20260817_000070_create_oauth_login;
 mod m20260818_000071_seed_discord_oauth_login;
+mod m20260818_000072_create_passkeys;
 mod schema;
 
 #[cfg(test)]
@@ -191,6 +192,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260817_000069_enforce_spark_shadow_shape::Migration),
             Box::new(m20260817_000070_create_oauth_login::Migration),
             Box::new(m20260818_000071_seed_discord_oauth_login::Migration),
+            Box::new(m20260818_000072_create_passkeys::Migration),
         ]
     }
 }

@@ -8,8 +8,11 @@ use crate::{
     management_error::ManagementErrorBody,
     user_profile::{
         UserNotificationPreferencesRequest, UserNotificationPreferencesResponse,
-        UserPasswordChangeRequest, UserProfileResponse, UserProfileUpdateRequest,
-        UserTwoFactorEnrollmentResponse, UserTwoFactorPasswordRequest, UserTwoFactorStatusResponse,
+        UserPasskeyListResponse, UserPasskeyRegistrationOptionsResponse,
+        UserPasskeyRegistrationVerifyRequest, UserPasskeyRenameRequest, UserPasskeyResponse,
+        UserPasskeyRevokeRequest, UserPasswordChangeRequest, UserProfileResponse,
+        UserProfileUpdateRequest, UserTwoFactorEnrollmentResponse, UserTwoFactorPasswordRequest,
+        UserTwoFactorStatusResponse,
     },
 };
 
@@ -132,6 +135,89 @@ fn disable_user_two_factor() {}
 )]
 fn update_user_notification_preferences() {}
 
+#[utoipa::path(
+    get,
+    path = "/api/account/passkeys",
+    operation_id = "listUserPasskeys",
+    tag = "个人资料与安全",
+    summary = "读取当前用户 Passkey 目录",
+    responses(
+        (status = 200, description = "Passkey 目录", body = UserPasskeyListResponse),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn list_user_passkeys() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/account/passkeys/registration/options",
+    operation_id = "startUserPasskeyRegistration",
+    tag = "个人资料与安全",
+    summary = "创建 Passkey 注册选项",
+    responses(
+        (status = 200, description = "WebAuthn 注册选项", body = UserPasskeyRegistrationOptionsResponse),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn start_user_passkey_registration() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/account/passkeys/registration/verify",
+    operation_id = "finishUserPasskeyRegistration",
+    tag = "个人资料与安全",
+    summary = "验证并保存 Passkey",
+    request_body = UserPasskeyRegistrationVerifyRequest,
+    responses(
+        (status = 200, description = "Passkey 已创建", body = UserPasskeyResponse),
+        (status = 400, description = "请求正文或验证无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn finish_user_passkey_registration() {}
+
+#[utoipa::path(
+    patch,
+    path = "/api/account/passkeys/{id}",
+    operation_id = "renameUserPasskey",
+    tag = "个人资料与安全",
+    summary = "修改 Passkey 展示名称",
+    params(("id" = i64, Path, description = "Passkey 内部 ID")),
+    request_body = UserPasskeyRenameRequest,
+    responses(
+        (status = 200, description = "Passkey 已重命名", body = UserPasskeyResponse),
+        (status = 400, description = "请求正文无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn rename_user_passkey() {}
+
+#[utoipa::path(
+    delete,
+    path = "/api/account/passkeys/{id}",
+    operation_id = "revokeUserPasskey",
+    tag = "个人资料与安全",
+    summary = "撤销 Passkey",
+    params(("id" = i64, Path, description = "Passkey 内部 ID")),
+    request_body = UserPasskeyRevokeRequest,
+    responses(
+        (status = 204, description = "Passkey 已撤销"),
+        (status = 400, description = "请求正文无效", body = ManagementErrorBody),
+        (status = 401, description = "密码或二次验证无效", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn revoke_user_passkey() {}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -141,7 +227,12 @@ fn update_user_notification_preferences() {}
         get_user_two_factor,
         enable_user_two_factor,
         disable_user_two_factor,
-        update_user_notification_preferences
+        update_user_notification_preferences,
+        list_user_passkeys,
+        start_user_passkey_registration,
+        finish_user_passkey_registration,
+        rename_user_passkey,
+        revoke_user_passkey
     ),
     components(schemas(
         UserProfileResponse,
@@ -152,6 +243,12 @@ fn update_user_notification_preferences() {}
         UserTwoFactorPasswordRequest,
         UserTwoFactorEnrollmentResponse,
         UserNotificationPreferencesRequest,
+        UserPasskeyResponse,
+        UserPasskeyListResponse,
+        UserPasskeyRegistrationOptionsResponse,
+        UserPasskeyRegistrationVerifyRequest,
+        UserPasskeyRenameRequest,
+        UserPasskeyRevokeRequest,
         ManagementErrorBody
     ))
 )]

@@ -5,13 +5,17 @@ import {
   Check,
   CircleDollarSign,
   Copy,
+  Fingerprint,
   KeyRound,
   LoaderCircle,
   Mail,
+  Pencil,
   RefreshCw,
   ShieldCheck,
   ShieldOff,
+  Trash2,
   UserRound,
+  X,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -26,14 +30,24 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { ApiError } from '@/lib/api'
 import { copyText } from '@/lib/clipboard'
-import type { UserProfileResponse, UserTwoFactorEnrollmentResponse } from '@/lib/api/generated/types.gen'
+import type {
+  UserPasskeyRegistrationOptionsResponse,
+  UserPasskeyResponse,
+  UserProfileResponse,
+  UserTwoFactorEnrollmentResponse,
+} from '@/lib/api/generated/types.gen'
 import { isValidProfilePassword, isValidProfileUsername } from './profile-form-model'
 import {
   useChangeUserPassword,
   useDisableUserTwoFactor,
   useEnableUserTwoFactor,
+  useFinishUserPasskeyRegistration,
+  useRenameUserPasskey,
+  useRevokeUserPasskey,
+  useStartUserPasskeyRegistration,
   useUpdateUserNotificationPreferences,
   useUpdateUserProfile,
+  useUserPasskeys,
   useUserProfile,
   useUserTwoFactor,
 } from './profile-api'
@@ -48,6 +62,75 @@ function errorCode(error: unknown) {
   }
   const details = error.details as Record<string, unknown>
   return typeof details.code === 'string' ? details.code : undefined
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function base64UrlToBuffer(value: string): ArrayBuffer {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/')
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
+  const decoded = atob(padded)
+  const bytes = new Uint8Array(decoded.length)
+  for (let index = 0; index < decoded.length; index += 1) bytes[index] = decoded.charCodeAt(index)
+  return bytes.buffer
+}
+
+function bufferToBase64Url(value: ArrayBuffer): string {
+  const bytes = new Uint8Array(value)
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/u, '')
+}
+
+/** 把服务端 JSON 中的 Base64URL 字段恢复成 WebAuthn API 所需的二进制值。 */
+function toCreationOptions(response: UserPasskeyRegistrationOptionsResponse): PublicKeyCredentialCreationOptions {
+  const value = response.options
+  const root = isRecord(value) && isRecord(value.publicKey)
+    ? value.publicKey
+    : isRecord(value)
+      ? value
+      : {}
+  const options: Record<string, unknown> = { ...root }
+  if (typeof options.challenge === 'string') options.challenge = base64UrlToBuffer(options.challenge)
+  if (isRecord(options.user) && typeof options.user.id === 'string') {
+    options.user = { ...options.user, id: base64UrlToBuffer(options.user.id) }
+  }
+  if (Array.isArray(options.excludeCredentials)) {
+    options.excludeCredentials = options.excludeCredentials.map((credential: unknown) => (
+      isRecord(credential) && typeof credential.id === 'string'
+        ? { ...credential, id: base64UrlToBuffer(credential.id) }
+        : credential
+    ))
+  }
+  return options as unknown as PublicKeyCredentialCreationOptions
+}
+
+function serializeRegistrationCredential(credential: PublicKeyCredential): Record<string, unknown> {
+  const response = credential.response
+  if (!(response instanceof AuthenticatorAttestationResponse)) throw new Error('invalid-credential')
+  return {
+    id: credential.id,
+    rawId: bufferToBase64Url(credential.rawId),
+    type: credential.type,
+    response: {
+      clientDataJSON: bufferToBase64Url(response.clientDataJSON),
+      attestationObject: bufferToBase64Url(response.attestationObject),
+      ...(typeof response.getTransports === 'function' ? { transports: response.getTransports() } : {}),
+    },
+  }
+}
+
+function supportsPasskeys() {
+  return typeof window !== 'undefined'
+    && 'PublicKeyCredential' in window
+    && typeof navigator.credentials?.create === 'function'
+}
+
+function formatPasskeyTimestamp(timestamp: number | null) {
+  if (timestamp === null) return undefined
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(timestamp * 1000))
 }
 
 function ProfileLoading() {
@@ -289,6 +372,247 @@ function CopyField({ label, value, target, copied, copyFailed, onCopy }: { label
   )
 }
 
+type PasskeyLocalError = 'unsupported' | 'cancelled' | 'invalid_credential' | 'request' | 'invalid_name'
+
+function PasskeyCard({ onPasswordChanged }: ProfilePageProps) {
+  const { t } = useTranslation()
+  const passkeysQuery = useUserPasskeys()
+  const twoFactorQuery = useUserTwoFactor()
+  const startMutation = useStartUserPasskeyRegistration()
+  const finishMutation = useFinishUserPasskeyRegistration()
+  const renameMutation = useRenameUserPasskey()
+  const revokeMutation = useRevokeUserPasskey()
+  const [displayName, setDisplayName] = useState('')
+  const [registrationError, setRegistrationError] = useState<PasskeyLocalError>()
+  const [registrationSuccess, setRegistrationSuccess] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editingName, setEditingName] = useState('')
+  const [renameErrorId, setRenameErrorId] = useState<number | null>(null)
+  const [revokeId, setRevokeId] = useState<number | null>(null)
+  const [revokePassword, setRevokePassword] = useState('')
+  const [revokeCode, setRevokeCode] = useState('')
+
+  const registrationPending = startMutation.isPending || finishMutation.isPending
+  const submitRegistration = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const name = displayName.trim()
+    setRegistrationError(undefined)
+    setRegistrationSuccess(false)
+    startMutation.reset()
+    finishMutation.reset()
+    if (!name) {
+      setRegistrationError('invalid_name')
+      return
+    }
+    if (!supportsPasskeys()) {
+      setRegistrationError('unsupported')
+      return
+    }
+    try {
+      const response = await startMutation.mutateAsync()
+      const credential = await navigator.credentials.create({ publicKey: toCreationOptions(response) })
+      if (!(credential instanceof PublicKeyCredential)) throw new Error('invalid-credential')
+      await finishMutation.mutateAsync({
+        display_name: name,
+        credential: serializeRegistrationCredential(credential),
+      })
+      setDisplayName('')
+      setRegistrationSuccess(true)
+    } catch (error) {
+      if (error instanceof DOMException && (error.name === 'AbortError' || error.name === 'NotAllowedError')) {
+        setRegistrationError('cancelled')
+      } else if (error instanceof Error && error.message === 'invalid-credential') {
+        setRegistrationError('invalid_credential')
+      } else if (!startMutation.error && !finishMutation.error) {
+        setRegistrationError('request')
+      }
+    }
+  }
+
+  const beginRename = (item: UserPasskeyResponse) => {
+    renameMutation.reset()
+    setRenameErrorId(null)
+    setEditingId(item.id)
+    setEditingName(item.display_name)
+  }
+
+  const submitRename = async (event: FormEvent<HTMLFormElement>, id: number) => {
+    event.preventDefault()
+    const name = editingName.trim()
+    if (!name) {
+      setRenameErrorId(id)
+      return
+    }
+    try {
+      await renameMutation.mutateAsync({ id, display_name: name })
+      setEditingId(null)
+      setEditingName('')
+      setRenameErrorId(null)
+    } catch {
+      setRenameErrorId(id)
+    }
+  }
+
+  const beginRevoke = (id: number) => {
+    revokeMutation.reset()
+    setRevokeId(id)
+    setRevokePassword('')
+    setRevokeCode('')
+  }
+
+  const cancelRevoke = () => {
+    revokeMutation.reset()
+    setRevokeId(null)
+    setRevokePassword('')
+    setRevokeCode('')
+  }
+
+  const submitRevoke = async (event: FormEvent<HTMLFormElement>, id: number) => {
+    event.preventDefault()
+    if (!revokePassword || revokeMutation.isPending) return
+    try {
+      await revokeMutation.mutateAsync({
+        id,
+        current_password: revokePassword,
+        totp_code: revokeCode.trim() || null,
+      })
+      onPasswordChanged()
+    } catch {
+      // 保留输入内容，让用户可以修正当前密码或二次验证码后重试。
+    }
+  }
+
+  const registrationCode = errorCode(finishMutation.error) ?? errorCode(startMutation.error)
+  const registrationErrorKey = registrationError === 'unsupported'
+    ? 'profile.passkeys.errors.unsupported'
+    : registrationError === 'cancelled'
+      ? 'profile.passkeys.errors.cancelled'
+      : registrationError === 'invalid_credential'
+        ? 'profile.passkeys.errors.invalidCredential'
+        : registrationError === 'invalid_name'
+          ? 'profile.passkeys.errors.invalidName'
+          : registrationError === 'request'
+            ? 'profile.passkeys.errors.registration'
+            : registrationCode
+              ? 'profile.passkeys.errors.registration'
+              : undefined
+  const revokeCodeValue = errorCode(revokeMutation.error)
+  const revokeErrorKey = revokeCodeValue === 'password_change_rejected'
+    ? 'profile.passkeys.errors.currentPassword'
+    : revokeCodeValue === 'two_factor_required'
+      ? 'profile.passkeys.errors.twoFactorRequired'
+      : revokeCodeValue === 'two_factor_invalid'
+        ? 'profile.passkeys.errors.twoFactorInvalid'
+        : revokeMutation.isError
+          ? 'profile.passkeys.errors.revoke'
+          : undefined
+  const items = passkeysQuery.data?.items ?? []
+
+  return (
+    <Card className="overflow-hidden xl:col-span-2">
+      <CardHeader className="border-b border-[var(--hairline)] bg-surface-1/45">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex gap-3">
+            <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-brand/10 text-brand"><Fingerprint className="size-4" aria-hidden="true" /></div>
+            <div><CardTitle className="text-base">{t('profile.passkeys.title')}</CardTitle><CardDescription className="mt-1">{t('profile.passkeys.subtitle')}</CardDescription></div>
+          </div>
+          {passkeysQuery.data ? <Badge className="bg-info/10 text-info">{t('profile.passkeys.count', { count: items.length })}</Badge> : null}
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-5 p-5">
+        <form className="grid gap-3 rounded-xl border border-info/20 bg-info/6 p-4" onSubmit={submitRegistration} noValidate>
+          <div>
+            <p className="text-sm font-semibold">{t('profile.passkeys.addTitle')}</p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('profile.passkeys.addHint')}</p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+            <div className="grid gap-2">
+              <Label htmlFor="profile-passkey-name">{t('profile.passkeys.displayName')}</Label>
+              <Input id="profile-passkey-name" value={displayName} maxLength={128} placeholder={t('profile.passkeys.displayNamePlaceholder')} onChange={(event) => setDisplayName(event.target.value)} />
+            </div>
+            <Button type="submit" size="sm" disabled={registrationPending}>
+              {registrationPending ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <Fingerprint aria-hidden="true" />}
+              {registrationPending ? t('profile.passkeys.registering') : t('profile.passkeys.register')}
+            </Button>
+          </div>
+          {registrationErrorKey ? <p role="alert" className="text-xs text-destructive">{t(registrationErrorKey)}</p> : null}
+          {registrationSuccess ? <p role="status" className="flex items-center gap-1.5 text-xs text-success"><Check className="size-3.5" aria-hidden="true" />{t('profile.passkeys.registered')}</p> : null}
+        </form>
+
+        {passkeysQuery.isPending ? (
+          <div className="grid gap-3" role="status"><Skeleton className="h-14 w-full" /><Skeleton className="h-14 w-full" /></div>
+        ) : passkeysQuery.isError ? (
+          <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/20 bg-destructive/8 p-3 text-xs text-destructive">
+            <span>{t('profile.passkeys.loadError')}</span>
+            <Button type="button" size="sm" variant="secondary" onClick={() => void passkeysQuery.refetch()}><RefreshCw aria-hidden="true" />{t('profile.actions.retry')}</Button>
+          </div>
+        ) : items.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-[var(--hairline)] bg-surface-1/35 p-5 text-center">
+            <p className="text-sm font-medium">{t('profile.passkeys.emptyTitle')}</p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('profile.passkeys.emptyBody')}</p>
+          </div>
+        ) : (
+          <div className="grid gap-3">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground"><Fingerprint className="size-3.5 text-brand" aria-hidden="true" />{t('profile.passkeys.listTitle')}</div>
+            <div className="divide-y divide-[var(--hairline)] rounded-xl border border-[var(--hairline)]">
+              {items.map((item) => {
+                const revoked = item.revoked_at !== null
+                const createdAt = formatPasskeyTimestamp(item.created_at)
+                const lastUsedAt = formatPasskeyTimestamp(item.last_used_at)
+                return (
+                  <div key={item.id} className="grid gap-3 p-4 first:rounded-t-xl last:rounded-b-xl">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        {editingId === item.id ? (
+                          <form className="flex max-w-xl items-center gap-2" onSubmit={(event) => void submitRename(event, item.id)}>
+                            <Input value={editingName} maxLength={128} autoFocus onChange={(event) => setEditingName(event.target.value)} aria-label={t('profile.passkeys.displayName')} />
+                            <Button type="submit" size="icon-sm" variant="secondary" title={t('profile.passkeys.saveName')} aria-label={t('profile.passkeys.saveName')} disabled={renameMutation.isPending}><Check aria-hidden="true" /></Button>
+                            <Button type="button" size="icon-sm" variant="ghost" title={t('profile.passkeys.cancel')} aria-label={t('profile.passkeys.cancel')} onClick={() => { setEditingId(null); setRenameErrorId(null) }}><X aria-hidden="true" /></Button>
+                          </form>
+                        ) : (
+                          <>
+                            <p className="truncate text-sm font-medium">{item.display_name}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {createdAt ? t('profile.passkeys.createdAt', { value: createdAt }) : null}
+                              {lastUsedAt ? <span className="ml-2">{t('profile.passkeys.lastUsedAt', { value: lastUsedAt })}</span> : <span className="ml-2">{t('profile.passkeys.neverUsed')}</span>}
+                            </p>
+                          </>
+                        )}
+                        {renameErrorId === item.id ? <p role="alert" className="mt-2 text-xs text-destructive">{renameMutation.isError ? t('profile.passkeys.errors.rename') : t('profile.passkeys.errors.invalidName')}</p> : null}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {revoked ? <Badge className="bg-destructive/10 text-destructive">{t('profile.passkeys.revoked')}</Badge> : null}
+                        {!revoked && editingId !== item.id ? <>
+                          <Button type="button" size="icon-sm" variant="ghost" title={t('profile.passkeys.rename')} aria-label={t('profile.passkeys.rename')} onClick={() => beginRename(item)}><Pencil aria-hidden="true" /></Button>
+                          <Button type="button" size="sm" variant="secondary" onClick={() => beginRevoke(item.id)}><Trash2 aria-hidden="true" />{t('profile.passkeys.revoke')}</Button>
+                        </> : null}
+                      </div>
+                    </div>
+                    {revokeId === item.id ? (
+                      <form className="grid gap-3 rounded-lg border border-warning/25 bg-warning/6 p-3" onSubmit={(event) => void submitRevoke(event, item.id)} noValidate>
+                        <div>
+                          <p className="text-sm font-medium text-warning">{t('profile.passkeys.revokeConfirmTitle')}</p>
+                          <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('profile.passkeys.revokeConfirmBody')}</p>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="grid gap-2"><Label htmlFor={`profile-passkey-password-${item.id}`}>{t('profile.passkeys.currentPassword')}</Label><Input id={`profile-passkey-password-${item.id}`} type="password" autoComplete="current-password" value={revokePassword} onChange={(event) => setRevokePassword(event.target.value)} /></div>
+                          <div className="grid gap-2"><Label htmlFor={`profile-passkey-code-${item.id}`}>{t('profile.passkeys.twoFactorCode')}</Label><Input id={`profile-passkey-code-${item.id}`} inputMode="numeric" autoComplete="one-time-code" value={revokeCode} onChange={(event) => setRevokeCode(event.target.value)} placeholder={twoFactorQuery.data?.enabled ? t('profile.passkeys.twoFactorRequiredPlaceholder') : t('profile.passkeys.twoFactorOptionalPlaceholder')} /><p className="text-[0.6875rem] leading-4 text-muted-foreground">{t(twoFactorQuery.data?.enabled ? 'profile.passkeys.twoFactorRequiredHint' : 'profile.passkeys.twoFactorOptionalHint')}</p></div>
+                        </div>
+                        {revokeErrorKey ? <p role="alert" className="text-xs text-destructive">{t(revokeErrorKey)}</p> : null}
+                        <div className="flex flex-wrap justify-end gap-2"><Button type="button" size="sm" variant="ghost" onClick={cancelRevoke}>{t('profile.passkeys.cancel')}</Button><Button type="submit" size="sm" variant="destructive" disabled={!revokePassword || revokeMutation.isPending}>{revokeMutation.isPending ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <Trash2 aria-hidden="true" />}{revokeMutation.isPending ? t('profile.passkeys.revoking') : t('profile.passkeys.confirmRevoke')}</Button></div>
+                      </form>
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 function NotificationsCard({ profile }: { profile: UserProfileResponse }) {
   const { t } = useTranslation()
   const mutation = useUpdateUserNotificationPreferences()
@@ -442,7 +766,7 @@ export function ProfilePage({ onPasswordChanged }: ProfilePageProps) {
         <div><div className="mb-1 flex items-center gap-2 text-[0.6875rem] uppercase tracking-[0.18em] text-brand"><UserRound className="size-3.5" aria-hidden="true" />{roleLabel ?? t('profile.eyebrow')}</div><h2 className="text-lg font-semibold">{t('profile.title')}</h2><p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">{t('profile.subtitle')}</p></div>
         <Button type="button" size="sm" variant="secondary" disabled={profileQuery.isFetching} onClick={() => void profileQuery.refetch()}><RefreshCw className={profileQuery.isFetching ? 'animate-spin' : undefined} aria-hidden="true" />{t('profile.actions.refresh')}</Button>
       </header>
-      {profileQuery.isPending ? <ProfileLoading /> : profileQuery.isError || !profile ? <ErrorPanel onRetry={() => void profileQuery.refetch()} /> : <div className="grid gap-4 xl:grid-cols-2"><ProfileCard profile={profile} /><PasswordCard onPasswordChanged={onPasswordChanged} /><TwoFactorCard /><div className="xl:col-span-2"><NotificationsCard profile={profile} /></div></div>}
+      {profileQuery.isPending ? <ProfileLoading /> : profileQuery.isError || !profile ? <ErrorPanel onRetry={() => void profileQuery.refetch()} /> : <div className="grid gap-4 xl:grid-cols-2"><ProfileCard profile={profile} /><PasswordCard onPasswordChanged={onPasswordChanged} /><TwoFactorCard /><PasskeyCard onPasswordChanged={onPasswordChanged} /><div className="xl:col-span-2"><NotificationsCard profile={profile} /></div></div>}
     </div>
   )
 }

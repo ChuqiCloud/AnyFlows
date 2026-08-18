@@ -1,18 +1,27 @@
-use std::{fmt, future::Future, pin::Pin};
+use std::{fmt, future::Future, pin::Pin, time::Duration};
 
-use af_account::SystemSecretCipher;
+use af_account::{PlainSystemSecret, SystemSecretCipher, SystemSecretKind};
 use af_db::{
     BalanceAlertSettingsRecord, BalanceAlertSettingsRepository,
-    BalanceAlertSettingsRepositoryError, UserNotificationPreferencesRecord,
-    UserPasswordChangeOutcome, UserProfileLookupOutcome, UserProfileMutationOutcome,
-    UserProfileRecord, UserProfileRepository, UserProfileRepositoryError,
-    UserTwoFactorMutationOutcome,
+    BalanceAlertSettingsRepositoryError, PasskeyRepository, PasskeyRepositoryError,
+    PasskeyRevokeOutcome, UserNotificationPreferencesRecord, UserPasswordChangeOutcome,
+    UserProfileLookupOutcome, UserProfileMutationOutcome, UserProfileRecord, UserProfileRepository,
+    UserProfileRepositoryError, UserTwoFactorMutationOutcome,
 };
 use af_domain::{Quota, UserId};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use sha2::{Digest, Sha256};
 use thiserror::Error;
+use webauthn_rs::prelude::{
+    CredentialID, PasskeyRegistration, RegisterPublicKeyCredential, Uuid, Webauthn,
+};
 use zeroize::Zeroizing;
 
-use crate::{SessionPrincipal, SessionRole, TwoFactorEnrollment, two_factor};
+use crate::{
+    PasskeyRegistrationCommand, PasskeyRegistrationOptions, PasskeyRenameCommand,
+    PasskeyRevokeCommand, SessionPrincipal, SessionRole, TwoFactorEnrollment, UserPasskey,
+    two_factor,
+};
 
 /// 个人资料用户名最大字节数。
 pub const MAX_USER_PROFILE_USERNAME_BYTES: usize = af_db::MAX_USER_PROFILE_USERNAME_BYTES;
@@ -312,6 +321,18 @@ pub enum UserProfileError {
     /// TOTP 尚未启用，不能重复停用。
     #[error("二次验证尚未启用")]
     TwoFactorNotEnabled,
+    /// Passkey 撤销要求账户当前的二次验证因素。
+    #[error("Passkey 撤销需要二次验证")]
+    TwoFactorRequired,
+    /// Passkey 注册或撤销时的二次验证码无效。
+    #[error("Passkey 二次验证无效")]
+    TwoFactorInvalid,
+    /// WebAuthn 注册状态或浏览器响应验证失败。
+    #[error("Passkey 注册验证失败")]
+    PasskeyRegistrationRejected,
+    /// Passkey 不存在或已经撤销。
+    #[error("Passkey 不存在")]
+    PasskeyNotFound,
     /// 用户名与其他有效账户冲突。
     #[error("个人资料用户名冲突")]
     Conflict,
@@ -346,6 +367,26 @@ pub type UserTwoFactorEnableFuture<'a> =
 
 /// 停用二次验证的对象安全 Future。
 pub type UserTwoFactorDisableFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<(), UserProfileError>> + Send + 'a>>;
+
+/// 当前用户 Passkey 目录查询 Future。
+pub type UserPasskeyListFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Vec<UserPasskey>, UserProfileError>> + Send + 'a>>;
+
+/// Passkey 注册选项 Future。
+pub type UserPasskeyRegistrationOptionsFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<PasskeyRegistrationOptions, UserProfileError>> + Send + 'a>>;
+
+/// Passkey 注册完成 Future。
+pub type UserPasskeyRegistrationFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<UserPasskey, UserProfileError>> + Send + 'a>>;
+
+/// Passkey 重命名 Future。
+pub type UserPasskeyRenameFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<UserPasskey, UserProfileError>> + Send + 'a>>;
+
+/// Passkey 撤销 Future。
+pub type UserPasskeyRevokeFuture<'a> =
     Pin<Box<dyn Future<Output = Result<(), UserProfileError>> + Send + 'a>>;
 
 /// 普通用户自有资料与安全设置应用端口；所有方法只接受当前会话主体。
@@ -396,6 +437,48 @@ pub trait UserProfileService: Send + Sync {
     ) -> UserTwoFactorDisableFuture<'a> {
         Box::pin(async { Err(UserProfileError::Internal) })
     }
+
+    /// 查询当前用户 Passkey 脱敏目录。
+    fn list_passkeys<'a>(&'a self, _principal: SessionPrincipal) -> UserPasskeyListFuture<'a> {
+        Box::pin(async { Err(UserProfileError::Internal) })
+    }
+
+    /// 创建当前用户的 WebAuthn 注册选项。
+    fn start_passkey_registration<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+    ) -> UserPasskeyRegistrationOptionsFuture<'a> {
+        Box::pin(async { Err(UserProfileError::Internal) })
+    }
+
+    /// 验证浏览器注册响应并保存凭证。
+    fn finish_passkey_registration<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _command: PasskeyRegistrationCommand,
+    ) -> UserPasskeyRegistrationFuture<'a> {
+        Box::pin(async { Err(UserProfileError::Internal) })
+    }
+
+    /// 修改当前用户凭证的展示名称。
+    fn rename_passkey<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _passkey_id: i64,
+        _command: PasskeyRenameCommand,
+    ) -> UserPasskeyRenameFuture<'a> {
+        Box::pin(async { Err(UserProfileError::Internal) })
+    }
+
+    /// 通过密码和必要的 TOTP/备份码撤销当前用户凭证。
+    fn revoke_passkey<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _passkey_id: i64,
+        _command: PasskeyRevokeCommand,
+    ) -> UserPasskeyRevokeFuture<'a> {
+        Box::pin(async { Err(UserProfileError::Internal) })
+    }
 }
 
 /// 使用用户资料数据库仓储的生产应用服务。
@@ -403,6 +486,8 @@ pub struct DatabaseUserProfileService {
     repository: UserProfileRepository,
     balance_alert_settings: BalanceAlertSettingsRepository,
     system_secret_cipher: Option<SystemSecretCipher>,
+    passkey_repository: Option<PasskeyRepository>,
+    webauthn: Option<Webauthn>,
 }
 
 impl DatabaseUserProfileService {
@@ -416,6 +501,8 @@ impl DatabaseUserProfileService {
             repository,
             balance_alert_settings,
             system_secret_cipher: None,
+            passkey_repository: None,
+            webauthn: None,
         }
     }
 
@@ -423,6 +510,18 @@ impl DatabaseUserProfileService {
     #[must_use]
     pub fn with_system_secret_cipher(mut self, cipher: SystemSecretCipher) -> Self {
         self.system_secret_cipher = Some(cipher);
+        self
+    }
+
+    /// 注入 Passkey 仓储和已由可信 Origin 构造的 WebAuthn 运行时。
+    #[must_use]
+    pub fn with_passkey_runtime(
+        mut self,
+        repository: PasskeyRepository,
+        webauthn: Webauthn,
+    ) -> Self {
+        self.passkey_repository = Some(repository);
+        self.webauthn = Some(webauthn);
         self
     }
 }
@@ -582,6 +681,242 @@ impl UserProfileService for DatabaseUserProfileService {
             }
         })
     }
+
+    fn list_passkeys<'a>(&'a self, principal: SessionPrincipal) -> UserPasskeyListFuture<'a> {
+        Box::pin(async move {
+            let repository = self
+                .passkey_repository
+                .as_ref()
+                .ok_or(UserProfileError::Internal)?;
+            repository
+                .list(principal.user_id())
+                .await
+                .map_err(map_passkey_repository_error)
+                .map(|records| records.into_iter().map(passkey_from_record).collect())
+        })
+    }
+
+    fn start_passkey_registration<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+    ) -> UserPasskeyRegistrationOptionsFuture<'a> {
+        Box::pin(async move {
+            let repository = self
+                .passkey_repository
+                .as_ref()
+                .ok_or(UserProfileError::Internal)?;
+            let webauthn = self.webauthn.as_ref().ok_or(UserProfileError::Internal)?;
+            let cipher = self
+                .system_secret_cipher
+                .as_ref()
+                .ok_or(UserProfileError::Internal)?;
+            let profile = match self
+                .repository
+                .get(principal.user_id())
+                .await
+                .map_err(map_repository_error)?
+            {
+                UserProfileLookupOutcome::Found(profile) => profile,
+                UserProfileLookupOutcome::NotFound => return Err(UserProfileError::InvalidSession),
+            };
+            let exclude_credentials = repository
+                .active_credential_ids(principal.user_id())
+                .await
+                .map_err(map_passkey_repository_error)?
+                .into_iter()
+                .map(|value| {
+                    URL_SAFE_NO_PAD
+                        .decode(value)
+                        .map(CredentialID::from)
+                        .map_err(|_| UserProfileError::Internal)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let (creation_options, state) = webauthn
+                .start_passkey_registration(
+                    passkey_user_uuid(principal.user_id()),
+                    profile.username(),
+                    profile.username(),
+                    Some(exclude_credentials),
+                )
+                .map_err(|_| UserProfileError::PasskeyRegistrationRejected)?;
+            let serialized_state = serde_json::to_string(&state)
+                .map_err(|_| UserProfileError::PasskeyRegistrationRejected)?;
+            let plaintext = PlainSystemSecret::new(serialized_state)
+                .map_err(|_| UserProfileError::PasskeyRegistrationRejected)?;
+            let encrypted = cipher
+                .encrypt(
+                    SystemSecretKind::PasskeyRegistrationState(principal.user_id()),
+                    &plaintext,
+                )
+                .map_err(|_| UserProfileError::Internal)?;
+            let now = af_db::DatabaseTimestamp::now_utc();
+            let challenge_digest = challenge_digest(creation_options.public_key.challenge.as_ref());
+            repository
+                .replace_registration_challenge(
+                    principal.user_id(),
+                    challenge_digest.clone(),
+                    encrypted,
+                    now + Duration::from_secs(5 * 60),
+                    now,
+                )
+                .await
+                .map_err(map_passkey_repository_error)?;
+            let options = serde_json::to_value(creation_options)
+                .map_err(|_| UserProfileError::PasskeyRegistrationRejected)?;
+            Ok(PasskeyRegistrationOptions::new(options, challenge_digest))
+        })
+    }
+
+    fn finish_passkey_registration<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        command: PasskeyRegistrationCommand,
+    ) -> UserPasskeyRegistrationFuture<'a> {
+        Box::pin(async move {
+            let repository = self
+                .passkey_repository
+                .as_ref()
+                .ok_or(UserProfileError::Internal)?;
+            let webauthn = self.webauthn.as_ref().ok_or(UserProfileError::Internal)?;
+            let cipher = self
+                .system_secret_cipher
+                .as_ref()
+                .ok_or(UserProfileError::Internal)?;
+            let (credential_json, display_name) = command.into_parts();
+            let credential: RegisterPublicKeyCredential =
+                serde_json::from_value(credential_json)
+                    .map_err(|_| UserProfileError::PasskeyRegistrationRejected)?;
+            let digest =
+                registration_response_digest(credential.response.client_data_json.as_ref())
+                    .ok_or(UserProfileError::PasskeyRegistrationRejected)?;
+            let challenge = repository
+                .load_registration_challenge(
+                    principal.user_id(),
+                    &digest,
+                    af_db::DatabaseTimestamp::now_utc(),
+                )
+                .await
+                .map_err(map_passkey_repository_error)?;
+            let plaintext = cipher
+                .decrypt(
+                    SystemSecretKind::PasskeyRegistrationState(principal.user_id()),
+                    challenge.state(),
+                )
+                .map_err(|_| UserProfileError::PasskeyRegistrationRejected)?;
+            let state: PasskeyRegistration = serde_json::from_str(plaintext.expose_secret())
+                .map_err(|_| UserProfileError::PasskeyRegistrationRejected)?;
+            let passkey = webauthn
+                .finish_passkey_registration(&credential, &state)
+                .map_err(|_| UserProfileError::PasskeyRegistrationRejected)?;
+            let credential_id = URL_SAFE_NO_PAD.encode(passkey.cred_id().as_ref());
+            let passkey_json = serde_json::to_value(passkey)
+                .map_err(|_| UserProfileError::PasskeyRegistrationRejected)?;
+            let record = repository
+                .consume_registration_challenge(
+                    principal.user_id(),
+                    &digest,
+                    credential_id,
+                    passkey_json,
+                    display_name,
+                    af_db::DatabaseTimestamp::now_utc(),
+                )
+                .await
+                .map_err(map_passkey_repository_error)?;
+            Ok(passkey_from_record(record))
+        })
+    }
+
+    fn rename_passkey<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        passkey_id: i64,
+        command: PasskeyRenameCommand,
+    ) -> UserPasskeyRenameFuture<'a> {
+        Box::pin(async move {
+            let repository = self
+                .passkey_repository
+                .as_ref()
+                .ok_or(UserProfileError::Internal)?;
+            repository
+                .rename(principal.user_id(), passkey_id, command.into_display_name())
+                .await
+                .map_err(map_passkey_repository_error)?
+                .map(passkey_from_record)
+                .ok_or(UserProfileError::PasskeyNotFound)
+        })
+    }
+
+    fn revoke_passkey<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        passkey_id: i64,
+        command: PasskeyRevokeCommand,
+    ) -> UserPasskeyRevokeFuture<'a> {
+        Box::pin(async move {
+            let repository = self
+                .passkey_repository
+                .as_ref()
+                .ok_or(UserProfileError::Internal)?;
+            let (current_password, totp_code) = command.into_parts();
+            let factors = repository
+                .security_factors(principal.user_id())
+                .await
+                .map_err(map_passkey_repository_error)?
+                .ok_or(UserProfileError::InvalidSession)?;
+            if factors.totp_secret().is_some() {
+                let code = totp_code.ok_or(UserProfileError::TwoFactorRequired)?;
+                let cipher = self
+                    .system_secret_cipher
+                    .as_ref()
+                    .ok_or(UserProfileError::Internal)?;
+                match two_factor::verify_login_code(
+                    cipher,
+                    principal.user_id(),
+                    factors.totp_secret().ok_or(UserProfileError::Internal)?,
+                    code.as_str(),
+                    unix_now_seconds(),
+                )
+                .map_err(|_| UserProfileError::TwoFactorInvalid)?
+                {
+                    two_factor::LoginFactorResult::Totp => {}
+                    two_factor::LoginFactorResult::Backup { replacement } => {
+                        let consumed = repository
+                            .consume_totp_backup_code(
+                                principal.user_id(),
+                                factors
+                                    .totp_secret()
+                                    .ok_or(UserProfileError::Internal)?
+                                    .clone(),
+                                replacement,
+                            )
+                            .await
+                            .map_err(map_passkey_repository_error)?;
+                        if !consumed {
+                            return Err(UserProfileError::TwoFactorInvalid);
+                        }
+                    }
+                }
+            }
+            match repository
+                .revoke(
+                    principal.user_id(),
+                    passkey_id,
+                    current_password.as_bytes(),
+                    af_db::DatabaseTimestamp::now_utc(),
+                )
+                .await
+                .map_err(map_passkey_repository_error)?
+            {
+                PasskeyRevokeOutcome::Revoked => Ok(()),
+                PasskeyRevokeOutcome::NotFound | PasskeyRevokeOutcome::AlreadyRevoked => {
+                    Err(UserProfileError::PasskeyNotFound)
+                }
+                PasskeyRevokeOutcome::PasswordRejected => {
+                    Err(UserProfileError::CurrentPasswordInvalid)
+                }
+            }
+        })
+    }
 }
 
 impl DatabaseUserProfileService {
@@ -591,6 +926,55 @@ impl DatabaseUserProfileService {
             .await
             .map_err(map_balance_alert_settings_error)
     }
+}
+
+fn passkey_from_record(record: af_db::PasskeyRecord) -> UserPasskey {
+    UserPasskey::new(
+        record.id(),
+        record.display_name().to_owned(),
+        record.created_at().unix_timestamp(),
+        record.last_used_at().map(|value| value.unix_timestamp()),
+        record.revoked_at().map(|value| value.unix_timestamp()),
+    )
+}
+
+fn map_passkey_repository_error(error: PasskeyRepositoryError) -> UserProfileError {
+    match error {
+        PasskeyRepositoryError::NotFound
+        | PasskeyRepositoryError::Expired
+        | PasskeyRepositoryError::Consumed
+        | PasskeyRepositoryError::Conflict
+        | PasskeyRepositoryError::InvalidConfiguration
+        | PasskeyRepositoryError::Query
+        | PasskeyRepositoryError::Timeout
+        | PasskeyRepositoryError::Invariant => UserProfileError::Internal,
+    }
+}
+
+fn passkey_user_uuid(user_id: UserId) -> Uuid {
+    let digest = Sha256::digest(format!("anyflows:passkey:user:{}", user_id.get()).as_bytes());
+    Uuid::from_bytes(digest[..16].try_into().expect("SHA-256 截取必须为 16 字节"))
+}
+
+fn challenge_digest(challenge: &[u8]) -> String {
+    Sha256::digest(challenge)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn registration_response_digest(client_data_json: &[u8]) -> Option<String> {
+    let client_data: serde_json::Value = serde_json::from_slice(client_data_json).ok()?;
+    if client_data.get("type")?.as_str()? != "webauthn.create" {
+        return None;
+    }
+    let challenge = client_data.get("challenge")?.as_str()?;
+    let challenge = URL_SAFE_NO_PAD.decode(challenge).ok()?;
+    Some(challenge_digest(&challenge))
+}
+
+fn unix_now_seconds() -> u64 {
+    u64::try_from(af_db::DatabaseTimestamp::now_utc().unix_timestamp()).unwrap_or_default()
 }
 
 impl fmt::Debug for DatabaseUserProfileService {

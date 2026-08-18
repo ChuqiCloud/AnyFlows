@@ -36,10 +36,11 @@ use crate::entity::{
     organization_audit_logs, organization_budget_policies, organization_budget_windows,
     organization_entitlements, organization_invitations, organization_memberships,
     organization_teams, organization_wallet_ledger_entries, organization_wallets, organizations,
-    payment_settings, playground_conversations, playground_shares, redemption_batches,
-    redemption_codes, registration_rate_limits, scheduler_outbox_events, site_settings,
-    subscription_balance_alert_events, subscription_plans, tokens, topup_orders,
-    topup_payment_events, usage_logs, user_subscriptions, users, wallet_ledger_entries,
+    passkey_registration_challenges, passkeys, payment_settings, playground_conversations,
+    playground_shares, redemption_batches, redemption_codes, registration_rate_limits,
+    scheduler_outbox_events, site_settings, subscription_balance_alert_events, subscription_plans,
+    tokens, topup_orders, topup_payment_events, usage_logs, user_subscriptions, users,
+    wallet_ledger_entries,
 };
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
@@ -67,7 +68,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 71;
+const EXPECTED_MIGRATION_COUNT: usize = 72;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -86,9 +87,11 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 64] = [
+const CORE_TABLES: [&str; 66] = [
     "groups",
     "users",
+    "passkeys",
+    "passkey_registration_challenges",
     "channels",
     "credentials",
     "tokens",
@@ -1079,7 +1082,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 12);
+    assert_eq!(pending_migrations.len(), 13);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -1127,6 +1130,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[11].name(),
         "m20260818_000071_seed_discord_oauth_login"
+    );
+    assert_eq!(
+        pending_migrations[12].name(),
+        "m20260818_000072_create_passkeys"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
@@ -2590,6 +2597,12 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
 
     assert_entity_columns::<groups::Column>(&manager, "groups").await?;
     assert_entity_columns::<users::Column>(&manager, "users").await?;
+    assert_entity_columns::<passkeys::Column>(&manager, "passkeys").await?;
+    assert_entity_columns::<passkey_registration_challenges::Column>(
+        &manager,
+        "passkey_registration_challenges",
+    )
+    .await?;
     assert_entity_columns::<organizations::Column>(&manager, "organizations").await?;
     assert_entity_columns::<organization_teams::Column>(&manager, "organization_teams").await?;
     assert_entity_columns::<organization_memberships::Column>(&manager, "organization_memberships")
@@ -2700,6 +2713,12 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         ("users", "uq_users_active_username"),
         ("users", "uq_users_active_email"),
         ("users", "uq_users_aff_code"),
+        ("passkeys", "uq_passkeys_credential_id_digest"),
+        ("passkeys", "idx_passkeys_user_active"),
+        (
+            "passkey_registration_challenges",
+            "idx_passkey_registration_challenges_user_state",
+        ),
         ("groups", "uq_groups_active_name"),
         ("tokens", "uq_tokens_key_hash"),
         ("credentials", "idx_credentials_channel_status_schedulable"),

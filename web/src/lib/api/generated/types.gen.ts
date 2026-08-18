@@ -1822,6 +1822,31 @@ export type UserNotificationPreferencesResponse = {
     subscription_alert_enabled: boolean;
     subscription_remaining_percent: number;
 };
+export type UserPasskeyListResponse = {
+    items: Array<UserPasskeyResponse>;
+};
+export type UserPasskeyRegistrationOptionsResponse = {
+    options: unknown;
+    challenge_digest: string;
+};
+export type UserPasskeyRegistrationVerifyRequest = {
+    credential: unknown;
+    display_name: string;
+};
+export type UserPasskeyRenameRequest = {
+    display_name: string;
+};
+export type UserPasskeyResponse = {
+    id: number;
+    display_name: string;
+    created_at: number;
+    last_used_at: number | null;
+    revoked_at: number | null;
+};
+export type UserPasskeyRevokeRequest = {
+    current_password: string;
+    totp_code?: string | null;
+};
 export type UserPasswordChangeRequest = {
     current_password: string;
     new_password: string;
@@ -2941,6 +2966,88 @@ export type UpdateUserNotificationPreferencesResponses = {
     200: UserProfileResponse;
 };
 export type UpdateUserNotificationPreferencesResponse = UpdateUserNotificationPreferencesResponses[keyof UpdateUserNotificationPreferencesResponses];
+export type ListUserPasskeysData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/account/passkeys';
+};
+export type ListUserPasskeysErrors = {
+    401: ManagementError;
+    500: ManagementError;
+};
+export type ListUserPasskeysError = ListUserPasskeysErrors[keyof ListUserPasskeysErrors];
+export type ListUserPasskeysResponses = {
+    200: UserPasskeyListResponse;
+};
+export type ListUserPasskeysResponse = ListUserPasskeysResponses[keyof ListUserPasskeysResponses];
+export type StartUserPasskeyRegistrationData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/account/passkeys/registration/options';
+};
+export type StartUserPasskeyRegistrationErrors = {
+    401: ManagementError;
+    500: ManagementError;
+};
+export type StartUserPasskeyRegistrationError = StartUserPasskeyRegistrationErrors[keyof StartUserPasskeyRegistrationErrors];
+export type StartUserPasskeyRegistrationResponses = {
+    200: UserPasskeyRegistrationOptionsResponse;
+};
+export type StartUserPasskeyRegistrationResponse = StartUserPasskeyRegistrationResponses[keyof StartUserPasskeyRegistrationResponses];
+export type FinishUserPasskeyRegistrationData = {
+    body: UserPasskeyRegistrationVerifyRequest;
+    path?: never;
+    query?: never;
+    url: '/api/account/passkeys/registration/verify';
+};
+export type FinishUserPasskeyRegistrationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    500: ManagementError;
+};
+export type FinishUserPasskeyRegistrationError = FinishUserPasskeyRegistrationErrors[keyof FinishUserPasskeyRegistrationErrors];
+export type FinishUserPasskeyRegistrationResponses = {
+    200: UserPasskeyResponse;
+};
+export type FinishUserPasskeyRegistrationResponse = FinishUserPasskeyRegistrationResponses[keyof FinishUserPasskeyRegistrationResponses];
+export type RevokeUserPasskeyData = {
+    body: UserPasskeyRevokeRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/account/passkeys/{id}';
+};
+export type RevokeUserPasskeyErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    500: ManagementError;
+};
+export type RevokeUserPasskeyError = RevokeUserPasskeyErrors[keyof RevokeUserPasskeyErrors];
+export type RevokeUserPasskeyResponses = {
+    204: void;
+};
+export type RevokeUserPasskeyResponse = RevokeUserPasskeyResponses[keyof RevokeUserPasskeyResponses];
+export type RenameUserPasskeyData = {
+    body: UserPasskeyRenameRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/account/passkeys/{id}';
+};
+export type RenameUserPasskeyErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    500: ManagementError;
+};
+export type RenameUserPasskeyError = RenameUserPasskeyErrors[keyof RenameUserPasskeyErrors];
+export type RenameUserPasskeyResponses = {
+    200: UserPasskeyResponse;
+};
+export type RenameUserPasskeyResponse = RenameUserPasskeyResponses[keyof RenameUserPasskeyResponses];
 export type GetUserWalletData = {
     body?: never;
     path?: never;

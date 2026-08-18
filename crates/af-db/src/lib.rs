@@ -118,6 +118,7 @@ mod organization_budget_tests;
 mod organization_tests;
 mod organization_token;
 mod organization_wallet;
+mod passkey;
 mod password_reset;
 mod payment_settings;
 #[cfg(test)]
@@ -435,6 +436,10 @@ pub use organization_wallet::{
     OrganizationWalletLedgerEntryType, OrganizationWalletLedgerListOutcome,
     OrganizationWalletLedgerPageRecord, OrganizationWalletRepository,
     OrganizationWalletRepositoryConfigError,
+};
+pub use passkey::{
+    PasskeyRecord, PasskeyRegistrationChallenge, PasskeyRepository, PasskeyRepositoryError,
+    PasskeyRevokeOutcome, PasskeySecurityFactors,
 };
 pub use password_reset::{
     PasswordResetOutcome, PasswordResetRepository, PasswordResetRepositoryConfigError,
