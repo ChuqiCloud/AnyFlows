@@ -975,6 +975,13 @@ impl Bootstrap<DatabaseReady> {
         } = self;
         let database_authenticator: Arc<dyn TokenAuthenticator> =
             Arc::new(DatabaseTokenAuthenticator::new(repository));
+        let user_profile_service = Arc::new(build_user_profile_service(
+            user_profile_repository,
+            balance_alert_settings_repository,
+            passkey_repository,
+            system_secret_cipher.clone(),
+            &config,
+        ));
         Ok(Bootstrap {
             config,
             shutdown_timeout,
@@ -989,13 +996,7 @@ impl Bootstrap<DatabaseReady> {
                 initial_setup: Arc::new(DatabaseInitialSetup::new(initial_setup_repository)),
                 registration_service: Arc::new(registration_service),
                 password_reset_service: Arc::new(password_reset_service),
-                user_profile_service: Arc::new(build_user_profile_service(
-                    user_profile_repository,
-                    balance_alert_settings_repository,
-                    passkey_repository,
-                    system_secret_cipher.clone(),
-                    &config,
-                )),
+                user_profile_service,
                 user_wallet_service: Arc::new(DatabaseUserWalletService::new(
                     wallet_ledger_repository.clone(),
                 )),
