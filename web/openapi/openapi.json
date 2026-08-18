@@ -2959,6 +2959,311 @@
         ]
       }
     },
+    "/api/account/passkeys": {
+      "get": {
+        "tags": [
+          "个人资料与安全"
+        ],
+        "summary": "读取当前用户 Passkey 目录",
+        "operationId": "listUserPasskeys",
+        "responses": {
+          "200": {
+            "description": "Passkey 目录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPasskeyListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/account/passkeys/registration/options": {
+      "post": {
+        "tags": [
+          "个人资料与安全"
+        ],
+        "summary": "创建 Passkey 注册选项",
+        "operationId": "startUserPasskeyRegistration",
+        "responses": {
+          "200": {
+            "description": "WebAuthn 注册选项",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPasskeyRegistrationOptionsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/account/passkeys/registration/verify": {
+      "post": {
+        "tags": [
+          "个人资料与安全"
+        ],
+        "summary": "验证并保存 Passkey",
+        "operationId": "finishUserPasskeyRegistration",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserPasskeyRegistrationVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Passkey 已创建",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPasskeyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求正文或验证无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/account/passkeys/{id}": {
+      "patch": {
+        "tags": [
+          "个人资料与安全"
+        ],
+        "summary": "修改 Passkey 展示名称",
+        "operationId": "renameUserPasskey",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Passkey 内部 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserPasskeyRenameRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Passkey 已重命名",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPasskeyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求正文无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "个人资料与安全"
+        ],
+        "summary": "撤销 Passkey",
+        "operationId": "revokeUserPasskey",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Passkey 内部 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserPasskeyRevokeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Passkey 已撤销"
+          },
+          "400": {
+            "description": "请求正文无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "密码或二次验证无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/account/wallet": {
       "get": {
         "tags": [
@@ -22257,7 +22562,7 @@
               "null"
             ],
             "format": "double",
-            "default": 1.0,
+            "default": 1,
             "maximum": 4,
             "minimum": 0.25
           },
@@ -26337,6 +26642,139 @@
             "format": "int32",
             "maximum": 99,
             "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserPasskeyListResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserPasskeyResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserPasskeyRegistrationOptionsResponse": {
+        "type": "object",
+        "required": [
+          "options",
+          "challenge_digest"
+        ],
+        "properties": {
+          "options": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "challenge_digest": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserPasskeyRegistrationVerifyRequest": {
+        "type": "object",
+        "required": [
+          "credential",
+          "display_name"
+        ],
+        "properties": {
+          "credential": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserPasskeyRenameRequest": {
+        "type": "object",
+        "required": [
+          "display_name"
+        ],
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserPasskeyResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "display_name",
+          "created_at",
+          "last_used_at",
+          "revoked_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "last_used_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "revoked_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserPasskeyRevokeRequest": {
+        "type": "object",
+        "required": [
+          "current_password",
+          "totp_code"
+        ],
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "format": "password",
+            "writeOnly": true,
+            "maxLength": 4096,
+            "minLength": 1
+          },
+          "totp_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "writeOnly": true,
+            "maxLength": 128
           }
         },
         "additionalProperties": false

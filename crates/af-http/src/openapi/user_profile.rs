@@ -8,8 +8,11 @@ use crate::{
     management_error::ManagementErrorBody,
     user_profile::{
         UserNotificationPreferencesRequest, UserNotificationPreferencesResponse,
-        UserPasswordChangeRequest, UserProfileResponse, UserProfileUpdateRequest,
-        UserTwoFactorEnrollmentResponse, UserTwoFactorPasswordRequest, UserTwoFactorStatusResponse,
+        UserPasskeyListResponse, UserPasskeyRegistrationOptionsResponse,
+        UserPasskeyRegistrationVerifyRequest, UserPasskeyRenameRequest, UserPasskeyResponse,
+        UserPasskeyRevokeRequest, UserPasswordChangeRequest, UserProfileResponse,
+        UserProfileUpdateRequest, UserTwoFactorEnrollmentResponse, UserTwoFactorPasswordRequest,
+        UserTwoFactorStatusResponse,
     },
 };
 
@@ -132,6 +135,87 @@ fn disable_user_two_factor() {}
 )]
 fn update_user_notification_preferences() {}
 
+#[utoipa::path(
+    get,
+    path = "/api/account/passkeys",
+    operation_id = "listUserPasskeys",
+    tag = "涓汉璧勬枡涓庡畨鍏",
+    summary = "璇诲彇褰撳墠鐢ㄦ埛 Passkey 鐩綍",
+    responses(
+        (status = 200, description = "Passkey 鐩綍", body = UserPasskeyListResponse),
+        (status = 401, description = "浼氳瘽鏃犳晥", body = ManagementErrorBody),
+        (status = 500, description = "鏈嶅姟鍐呴儴閿欒", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn list_user_passkeys() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/account/passkeys/registration/options",
+    operation_id = "startUserPasskeyRegistration",
+    tag = "涓汉璧勬枡涓庡畨鍏",
+    summary = "鍒涘缓 Passkey 娉ㄥ唽閫夐」",
+    responses(
+        (status = 200, description = "WebAuthn 娉ㄥ唽閫夐」", body = UserPasskeyRegistrationOptionsResponse),
+        (status = 401, description = "浼氳瘽鏃犳晥", body = ManagementErrorBody),
+        (status = 500, description = "鏈嶅姟鍐呴儴閿欒", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn start_user_passkey_registration() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/account/passkeys/registration/verify",
+    operation_id = "finishUserPasskeyRegistration",
+    tag = "涓汉璧勬枡涓庡畨鍏",
+    summary = "楠岃瘉骞朵繚瀛?Passkey",
+    request_body = UserPasskeyRegistrationVerifyRequest,
+    responses(
+        (status = 200, description = "Passkey 宸插垱寤", body = UserPasskeyResponse),
+        (status = 400, description = "璇锋眰姝ｆ枃鎴栭獙璇佹棤鏁", body = ManagementErrorBody),
+        (status = 401, description = "浼氳瘽鏃犳晥", body = ManagementErrorBody),
+        (status = 500, description = "鏈嶅姟鍐呴儴閿欒", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn finish_user_passkey_registration() {}
+
+#[utoipa::path(
+    patch,
+    path = "/api/account/passkeys/{id}",
+    operation_id = "renameUserPasskey",
+    tag = "涓汉璧勬枡涓庡畨鍏",
+    params(("id" = i64, Path, description = "Passkey 鍐呴儴 ID")),
+    request_body = UserPasskeyRenameRequest,
+    responses(
+        (status = 200, description = "Passkey 宸查噸鍛藉悕", body = UserPasskeyResponse),
+        (status = 400, description = "璇锋眰姝ｆ枃鏃犳晥", body = ManagementErrorBody),
+        (status = 401, description = "浼氳瘽鏃犳晥", body = ManagementErrorBody),
+        (status = 500, description = "鏈嶅姟鍐呴儴閿欒", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn rename_user_passkey() {}
+
+#[utoipa::path(
+    delete,
+    path = "/api/account/passkeys/{id}",
+    operation_id = "revokeUserPasskey",
+    tag = "涓汉璧勬枡涓庡畨鍏",
+    params(("id" = i64, Path, description = "Passkey 鍐呴儴 ID")),
+    request_body = UserPasskeyRevokeRequest,
+    responses(
+        (status = 204, description = "Passkey 宸茶鎾ら攢"),
+        (status = 400, description = "璇锋眰姝ｆ枃鏃犳晥", body = ManagementErrorBody),
+        (status = 401, description = "瀵嗙爜鎴栦簩娆￠獙璇佹棤鏁", body = ManagementErrorBody),
+        (status = 500, description = "鏈嶅姟鍐呴儴閿欒", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn revoke_user_passkey() {}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -141,7 +225,12 @@ fn update_user_notification_preferences() {}
         get_user_two_factor,
         enable_user_two_factor,
         disable_user_two_factor,
-        update_user_notification_preferences
+        update_user_notification_preferences,
+        list_user_passkeys,
+        start_user_passkey_registration,
+        finish_user_passkey_registration,
+        rename_user_passkey,
+        revoke_user_passkey
     ),
     components(schemas(
         UserProfileResponse,
@@ -152,6 +241,12 @@ fn update_user_notification_preferences() {}
         UserTwoFactorPasswordRequest,
         UserTwoFactorEnrollmentResponse,
         UserNotificationPreferencesRequest,
+        UserPasskeyResponse,
+        UserPasskeyListResponse,
+        UserPasskeyRegistrationOptionsResponse,
+        UserPasskeyRegistrationVerifyRequest,
+        UserPasskeyRenameRequest,
+        UserPasskeyRevokeRequest,
         ManagementErrorBody
     ))
 )]

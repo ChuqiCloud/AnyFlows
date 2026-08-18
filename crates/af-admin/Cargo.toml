@@ -23,6 +23,7 @@ thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 url.workspace = true
+webauthn-rs.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]

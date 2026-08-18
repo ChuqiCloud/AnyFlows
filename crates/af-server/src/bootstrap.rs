@@ -75,7 +75,7 @@ use af_db::{
     OrganizationBudgetRepositoryConfigError, OrganizationRepository,
     OrganizationRepositoryConfigError, OrganizationTokenRepository,
     OrganizationTokenRepositoryConfigError, OrganizationWalletRepository,
-    OrganizationWalletRepositoryConfigError, PasswordResetRepository,
+    OrganizationWalletRepositoryConfigError, PasskeyRepository, PasswordResetRepository,
     PasswordResetRepositoryConfigError, PaymentSecretUpdate, PaymentSettingsRepository,
     PaymentSettingsRepositoryConfigError, PaymentSettingsRepositoryError,
     PaymentSettingsWriteRecord, PlaygroundConversationRepository,
@@ -113,6 +113,8 @@ use af_scheduler::{
 };
 use af_telemetry::{MetricsHandle, TelemetryError, TracingHandle, init_metrics, init_tracing};
 use thiserror::Error;
+use url::Url;
+use webauthn_rs::prelude::{Webauthn, WebauthnBuilder};
 
 use crate::readiness::DatabaseReadinessProbe;
 use crate::{
@@ -600,6 +602,43 @@ impl BootstrapError {
     }
 }
 
+fn build_user_profile_service(
+    repository: UserProfileRepository,
+    balance_alert_settings: BalanceAlertSettingsRepository,
+    passkey_repository: PasskeyRepository,
+    system_secret_cipher: SystemSecretCipher,
+    config: &AppConfig,
+) -> DatabaseUserProfileService {
+    let service = DatabaseUserProfileService::new(repository, balance_alert_settings)
+        .with_system_secret_cipher(system_secret_cipher);
+    let Some(webauthn) = build_passkey_runtime(config) else {
+        return service;
+    };
+    service.with_passkey_runtime(passkey_repository, webauthn)
+}
+
+/// 仅从受信任的 CORS Origin 派生 WebAuthn 配置；没有 HTTPS Origin 时保持失败关闭。
+fn build_passkey_runtime(config: &AppConfig) -> Option<Webauthn> {
+    let origins = config.server().cors_allowed_origins();
+    let first_origin = origins.first()?;
+    let first = Url::parse(first_origin.as_str()).ok()?;
+    if first.scheme() != "https" {
+        return None;
+    }
+    let rp_id = first.domain()?;
+    let mut builder = WebauthnBuilder::new(rp_id, &first)
+        .ok()?
+        .rp_name("AnyFlows");
+    for configured in origins.iter().skip(1) {
+        let origin = Url::parse(configured.as_str()).ok()?;
+        if origin.scheme() != "https" || origin.domain().is_none() {
+            return None;
+        }
+        builder = builder.append_allowed_origin(&origin);
+    }
+    builder.build().ok()
+}
+
 impl Bootstrap<Configured> {
     /// 从已加载配置创建第一阶段；仍会重新校验，避免嵌入式调用绕过约束。
     pub fn new(config: AppConfig) -> Result<Self, BootstrapError> {
@@ -780,6 +819,10 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::UserProfileRepository)?;
+        let passkey_repository = PasskeyRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        );
         let user_invitation_repository = UserInvitationRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -946,13 +989,13 @@ impl Bootstrap<DatabaseReady> {
                 initial_setup: Arc::new(DatabaseInitialSetup::new(initial_setup_repository)),
                 registration_service: Arc::new(registration_service),
                 password_reset_service: Arc::new(password_reset_service),
-                user_profile_service: Arc::new(
-                    DatabaseUserProfileService::new(
-                        user_profile_repository,
-                        balance_alert_settings_repository,
-                    )
-                    .with_system_secret_cipher(system_secret_cipher.clone()),
-                ),
+                user_profile_service: Arc::new(build_user_profile_service(
+                    user_profile_repository,
+                    balance_alert_settings_repository,
+                    passkey_repository,
+                    system_secret_cipher.clone(),
+                    &self.config,
+                )),
                 user_wallet_service: Arc::new(DatabaseUserWalletService::new(
                     wallet_ledger_repository.clone(),
                 )),

@@ -32,6 +32,7 @@ mod organization_invitation;
 mod organization_management;
 mod organization_token;
 mod organization_wallet;
+mod passkey;
 mod password_reset;
 mod payment_settings;
 #[cfg(test)]
@@ -248,6 +249,10 @@ pub use organization_wallet::{
     OrganizationWalletListQuery, OrganizationWalletPage, OrganizationWalletService,
     OrganizationWalletServiceError, OrganizationWalletSummary, OrganizationWalletSummaryFuture,
 };
+pub use passkey::{
+    PasskeyRegistrationCommand, PasskeyRegistrationOptions, PasskeyRenameCommand,
+    PasskeyRevokeCommand, UserPasskey,
+};
 pub use password_reset::{
     DatabasePasswordResetService, MAX_PASSWORD_RESET_PASSWORD_BYTES,
     MIN_PASSWORD_RESET_PASSWORD_BYTES, PasswordResetConfirmCommand, PasswordResetConfirmFuture,
@@ -362,11 +367,13 @@ pub use usage_log_read::{
 pub use user_profile::{
     DatabaseUserProfileService, MAX_USER_PROFILE_PASSWORD_BYTES, MAX_USER_PROFILE_USERNAME_BYTES,
     MIN_USER_PROFILE_PASSWORD_BYTES, UserNotificationPreferences,
-    UserNotificationPreferencesCommand, UserNotificationUpdateFuture, UserPasswordChangeCommand,
-    UserPasswordChangeFuture, UserProfile, UserProfileError, UserProfileReadFuture,
-    UserProfileService, UserProfileUpdateCommand, UserProfileUpdateFuture,
-    UserTwoFactorDisableCommand, UserTwoFactorDisableFuture, UserTwoFactorEnableCommand,
-    UserTwoFactorEnableFuture, UserTwoFactorReadFuture, UserTwoFactorStatus,
+    UserNotificationPreferencesCommand, UserNotificationUpdateFuture, UserPasskeyListFuture,
+    UserPasskeyRegistrationFuture, UserPasskeyRegistrationOptionsFuture, UserPasskeyRenameFuture,
+    UserPasskeyRevokeFuture, UserPasswordChangeCommand, UserPasswordChangeFuture, UserProfile,
+    UserProfileError, UserProfileReadFuture, UserProfileService, UserProfileUpdateCommand,
+    UserProfileUpdateFuture, UserTwoFactorDisableCommand, UserTwoFactorDisableFuture,
+    UserTwoFactorEnableCommand, UserTwoFactorEnableFuture, UserTwoFactorReadFuture,
+    UserTwoFactorStatus,
 };
 pub use user_read::{
     AdminUser, AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserPage,

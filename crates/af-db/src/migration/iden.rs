@@ -227,6 +227,53 @@ pub(in crate::migration) mod oauth_login_providers {
     }
 }
 
+pub(in crate::migration) mod passkeys {
+    use super::DeriveIden;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "passkeys")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        UserId,
+        CredentialId,
+        Passkey,
+        DisplayName,
+        CreatedAt,
+        LastUsedAt,
+        RevokedAt,
+    }
+}
+
+pub(in crate::migration) mod passkey_registration_challenges {
+    use super::DeriveIden;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "passkey_registration_challenges")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        UserId,
+        ChallengeDigest,
+        RegistrationState,
+        ExpiresAt,
+        ConsumedAt,
+        CreatedAt,
+    }
+}
+
 pub(in crate::migration) mod user_oauth_identities {
     use super::DeriveIden;
 
