@@ -317,88 +317,6 @@ async fn verify_turnstile(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    };
-
-    use crate::TurnstileVerificationFuture;
-
-    use super::*;
-
-    struct FakeTurnstileVerifier {
-        result: TurnstileVerification,
-        calls: Arc<AtomicUsize>,
-    }
-
-    impl TurnstileVerifier for FakeTurnstileVerifier {
-        fn verify<'a>(
-            &'a self,
-            _token: &'a str,
-            _client_ip: TrustedClientIp,
-        ) -> TurnstileVerificationFuture<'a> {
-            self.calls.fetch_add(1, Ordering::Relaxed);
-            let result = self.result;
-            Box::pin(async move { result })
-        }
-    }
-
-    fn client_ip() -> TrustedClientIp {
-        TrustedClientIp::new("192.0.2.10".parse().expect("测试 IP 必须有效"))
-    }
-
-    #[tokio::test]
-    async fn turnstile_is_disabled_without_a_verifier() {
-        assert_eq!(verify_turnstile(None, None, client_ip()).await, Ok(()));
-    }
-
-    #[tokio::test]
-    async fn turnstile_maps_missing_rejected_and_unavailable_tokens() {
-        let calls = Arc::new(AtomicUsize::new(0));
-        let rejected = FakeTurnstileVerifier {
-            result: TurnstileVerification::Rejected,
-            calls: Arc::clone(&calls),
-        };
-        assert_eq!(
-            verify_turnstile(Some(&rejected), None, client_ip()).await,
-            Err(ManagementError::TurnstileRejected)
-        );
-        assert_eq!(
-            verify_turnstile(Some(&rejected), Some("token".to_owned()), client_ip()).await,
-            Err(ManagementError::TurnstileRejected)
-        );
-        let unavailable = FakeTurnstileVerifier {
-            result: TurnstileVerification::Unavailable,
-            calls: Arc::clone(&calls),
-        };
-        assert_eq!(
-            verify_turnstile(Some(&unavailable), Some("token".to_owned()), client_ip()).await,
-            Err(ManagementError::TurnstileUnavailable)
-        );
-        assert_eq!(calls.load(Ordering::Relaxed), 2);
-    }
-
-    #[tokio::test]
-    async fn turnstile_passes_valid_tokens_and_rejects_invalid_shape() {
-        let calls = Arc::new(AtomicUsize::new(0));
-        let verifier = FakeTurnstileVerifier {
-            result: TurnstileVerification::Passed,
-            calls: Arc::clone(&calls),
-        };
-        assert_eq!(
-            verify_turnstile(Some(&verifier), Some("token".to_owned()), client_ip()).await,
-            Ok(())
-        );
-        assert_eq!(
-            verify_turnstile(Some(&verifier), Some("\u{0000}".to_owned()), client_ip()).await,
-            Err(ManagementError::TurnstileRejected)
-        );
-        assert_eq!(calls.load(Ordering::Relaxed), 1);
-    }
-}
-
 /// 返回管理员完整注册策略。
 async fn get_authentication_settings(
     State(state): State<RegistrationHttpState>,
@@ -485,5 +403,87 @@ fn map_registration_error(error: RegistrationError) -> ManagementError {
         RegistrationError::EmailNotConfigured => ManagementError::EmailNotConfigured,
         RegistrationError::EmailDeliveryFailed => ManagementError::EmailDeliveryFailed,
         RegistrationError::Internal => ManagementError::Internal,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    use crate::TurnstileVerificationFuture;
+
+    use super::*;
+
+    struct FakeTurnstileVerifier {
+        result: TurnstileVerification,
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl TurnstileVerifier for FakeTurnstileVerifier {
+        fn verify<'a>(
+            &'a self,
+            _token: &'a str,
+            _client_ip: TrustedClientIp,
+        ) -> TurnstileVerificationFuture<'a> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            let result = self.result;
+            Box::pin(async move { result })
+        }
+    }
+
+    fn client_ip() -> TrustedClientIp {
+        TrustedClientIp::new("192.0.2.10".parse().expect("测试 IP 必须有效"))
+    }
+
+    #[tokio::test]
+    async fn turnstile_is_disabled_without_a_verifier() {
+        assert_eq!(verify_turnstile(None, None, client_ip()).await, Ok(()));
+    }
+
+    #[tokio::test]
+    async fn turnstile_maps_missing_rejected_and_unavailable_tokens() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let rejected = FakeTurnstileVerifier {
+            result: TurnstileVerification::Rejected,
+            calls: Arc::clone(&calls),
+        };
+        assert_eq!(
+            verify_turnstile(Some(&rejected), None, client_ip()).await,
+            Err(ManagementError::TurnstileRejected)
+        );
+        assert_eq!(
+            verify_turnstile(Some(&rejected), Some("token".to_owned()), client_ip()).await,
+            Err(ManagementError::TurnstileRejected)
+        );
+        let unavailable = FakeTurnstileVerifier {
+            result: TurnstileVerification::Unavailable,
+            calls: Arc::clone(&calls),
+        };
+        assert_eq!(
+            verify_turnstile(Some(&unavailable), Some("token".to_owned()), client_ip()).await,
+            Err(ManagementError::TurnstileUnavailable)
+        );
+        assert_eq!(calls.load(Ordering::Relaxed), 2);
+    }
+
+    #[tokio::test]
+    async fn turnstile_passes_valid_tokens_and_rejects_invalid_shape() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let verifier = FakeTurnstileVerifier {
+            result: TurnstileVerification::Passed,
+            calls: Arc::clone(&calls),
+        };
+        assert_eq!(
+            verify_turnstile(Some(&verifier), Some("token".to_owned()), client_ip()).await,
+            Ok(())
+        );
+        assert_eq!(
+            verify_turnstile(Some(&verifier), Some("\u{0000}".to_owned()), client_ip()).await,
+            Err(ManagementError::TurnstileRejected)
+        );
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
     }
 }
