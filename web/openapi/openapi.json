@@ -22947,7 +22947,10 @@
             "minLength": 6
           },
           "turnstile_token": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "writeOnly": true,
             "maxLength": 2048
           }
@@ -26115,7 +26118,10 @@
             "minLength": 3
           },
           "turnstile_token": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "writeOnly": true,
             "maxLength": 2048
           }
@@ -26190,7 +26196,10 @@
             "pattern": "^af-[A-Za-z0-9_-]{22}$"
           },
           "turnstile_token": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "writeOnly": true,
             "maxLength": 2048
           }
