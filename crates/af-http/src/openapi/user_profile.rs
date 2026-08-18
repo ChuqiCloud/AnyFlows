@@ -187,6 +187,7 @@ fn finish_user_passkey_registration() {}
     path = "/api/account/passkeys/{id}",
     operation_id = "renameUserPasskey",
     tag = "个人资料与安全",
+    summary = "修改 Passkey 展示名称",
     params(("id" = i64, Path, description = "Passkey 内部 ID")),
     request_body = UserPasskeyRenameRequest,
     responses(
@@ -204,10 +205,11 @@ fn rename_user_passkey() {}
     path = "/api/account/passkeys/{id}",
     operation_id = "revokeUserPasskey",
     tag = "个人资料与安全",
+    summary = "撤销 Passkey",
     params(("id" = i64, Path, description = "Passkey 内部 ID")),
     request_body = UserPasskeyRevokeRequest,
     responses(
-        (status = 204, description = "Passkey 已被撤销"),
+        (status = 204, description = "Passkey 已撤销"),
         (status = 400, description = "请求正文无效", body = ManagementErrorBody),
         (status = 401, description = "密码或二次验证无效", body = ManagementErrorBody),
         (status = 500, description = "服务内部错误", body = ManagementErrorBody)
