@@ -64,6 +64,7 @@ pub(crate) mod organization_teams;
 pub(crate) mod organization_wallet_ledger_entries;
 pub(crate) mod organization_wallets;
 pub(crate) mod organizations;
+pub(crate) mod passkey_authentication_challenges;
 pub(crate) mod passkey_registration_challenges;
 pub(crate) mod passkeys;
 pub(crate) mod payment_settings;

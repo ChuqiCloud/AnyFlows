@@ -21,6 +21,7 @@ mod organization_budget;
 mod organization_tokens;
 mod organization_wallet;
 mod organizations;
+mod passkey_auth;
 mod password_reset;
 mod payment_settings;
 mod payment_webhook;
@@ -101,6 +102,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(organization_budget::document());
     document.merge(organization_tokens::document());
     document.merge(organization_activity::document());
+    document.merge(passkey_auth::document());
 
     document.tags = Some(vec![
         Tag::new("公开注册"),
@@ -121,6 +123,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("支付设置"),
         Tag::new("OAuth 连接"),
         Tag::new("OAuth 登录"),
+        Tag::new("Passkey 登录"),
         Tag::new("企业钱包"),
         Tag::new("企业预算"),
         Tag::new("企业 API Key"),
@@ -185,7 +188,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 127);
+        assert_eq!(document.paths.paths.len(), 129);
         let operation_count = document
             .paths
             .paths
@@ -206,7 +209,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 180);
+        assert_eq!(operation_count, 182);
         assert!(
             document
                 .components
@@ -371,6 +374,8 @@ mod tests {
             "listUserWalletEntries",
             "listCurrentUserSubscriptions",
             "loginManagementSession",
+            "startPasskeyAuthentication",
+            "finishPasskeyAuthentication",
             "probeAdminChannel",
             "previewAdminLiteLlmModelPrices",
             "previewAdminModelPrices",
@@ -420,10 +425,13 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 336);
+        assert_eq!(schemas.len(), 339);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("ClientSimulationProfile"));
         assert!(schemas.contains_key("ClientSimulationResult"));
+        assert!(schemas.contains_key("PasskeyAuthenticationOptionsRequest"));
+        assert!(schemas.contains_key("PasskeyAuthenticationOptionsResponse"));
+        assert!(schemas.contains_key("PasskeyAuthenticationVerifyRequest"));
         assert!(schemas.contains_key("OrganizationEntitlementResponse"));
         assert!(schemas.contains_key("OrganizationInvitationAcceptRequest"));
         assert!(schemas.contains_key("OrganizationInvitationResponse"));

@@ -46,7 +46,9 @@ pub(super) use async_task::create_async_tasks;
 pub(super) use async_task_billing::create_async_task_billings;
 pub(super) use async_task_submission::create_async_task_submission_claims;
 pub(super) use auth_challenge::{create_auth_challenge_indexes, create_auth_challenges};
-pub(super) use auth_challenge_rate_limit::create_auth_challenge_rate_limits;
+pub(super) use auth_challenge_rate_limit::{
+    create_auth_challenge_rate_limits, rebuild_auth_challenge_rate_limits_for_passkey,
+};
 pub(super) use balance_alert::create_balance_alert_storage;
 pub(super) use debug_trace::create_debug_trace_storage;
 pub(super) use email::create_email_settings;

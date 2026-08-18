@@ -36,6 +36,8 @@ pub enum SystemSecretKind {
     TotpSecret(af_domain::UserId),
     /// Passkey 注册状态；用户标识参与 AAD，禁止跨账户搬用。
     PasskeyRegistrationState(af_domain::UserId),
+    /// Passkey 登录状态；用户标识参与 AAD，禁止跨账户搬运密文。
+    PasskeyAuthenticationState(af_domain::UserId),
     /// 凭据专属代理认证密码；记录标识参与 AAD，禁止密文跨代理搬用。
     CredentialProxyPassword(af_domain::ProxyId),
 }
@@ -53,6 +55,7 @@ impl SystemSecretKind {
             Self::OAuthLoginState => "oauth_login_state",
             Self::TotpSecret(_) => "totp_secret",
             Self::PasskeyRegistrationState(_) => "passkey_registration_state",
+            Self::PasskeyAuthenticationState(_) => "passkey_authentication_state",
             Self::CredentialProxyPassword(_) => "credential_proxy_password",
         }
     }
@@ -241,6 +244,9 @@ fn system_secret_aad(kind: SystemSecretKind) -> Vec<u8> {
         SystemSecretKind::TotpSecret(user_id) => format!("users:{}:totp", user_id.get()),
         SystemSecretKind::PasskeyRegistrationState(user_id) => {
             format!("passkey_registration_challenges:user:{}", user_id.get())
+        }
+        SystemSecretKind::PasskeyAuthenticationState(user_id) => {
+            format!("passkey_authentication_challenges:user:{}", user_id.get())
         }
         SystemSecretKind::CredentialProxyPassword(proxy_id) => {
             format!("proxies:{}", proxy_id.get())

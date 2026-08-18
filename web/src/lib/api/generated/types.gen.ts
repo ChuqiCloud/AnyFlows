@@ -1606,6 +1606,15 @@ export type OrganizationWalletSummaryResponse = {
     frozen_quota: number;
     version: number;
 };
+export type PasskeyAuthenticationOptionsRequest = {
+    username: string;
+};
+export type PasskeyAuthenticationOptionsResponse = {
+    options: unknown;
+};
+export type PasskeyAuthenticationVerifyRequest = {
+    credential: unknown;
+};
 export type PasswordResetConfirmRequest = {
     token: string;
     password: string;
@@ -5763,3 +5772,37 @@ export type ListPlatformOrganizationAuditLogsResponses = {
     200: OrganizationAuditLogListResponse;
 };
 export type ListPlatformOrganizationAuditLogsResponse = ListPlatformOrganizationAuditLogsResponses[keyof ListPlatformOrganizationAuditLogsResponses];
+export type StartPasskeyAuthenticationData = {
+    body: PasskeyAuthenticationOptionsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/auth/passkey/options';
+};
+export type StartPasskeyAuthenticationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type StartPasskeyAuthenticationError = StartPasskeyAuthenticationErrors[keyof StartPasskeyAuthenticationErrors];
+export type StartPasskeyAuthenticationResponses = {
+    200: PasskeyAuthenticationOptionsResponse;
+};
+export type StartPasskeyAuthenticationResponse = StartPasskeyAuthenticationResponses[keyof StartPasskeyAuthenticationResponses];
+export type FinishPasskeyAuthenticationData = {
+    body: PasskeyAuthenticationVerifyRequest;
+    path?: never;
+    query?: never;
+    url: '/api/auth/passkey/verify';
+};
+export type FinishPasskeyAuthenticationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type FinishPasskeyAuthenticationError = FinishPasskeyAuthenticationErrors[keyof FinishPasskeyAuthenticationErrors];
+export type FinishPasskeyAuthenticationResponses = {
+    200: LoginResponse;
+};
+export type FinishPasskeyAuthenticationResponse = FinishPasskeyAuthenticationResponses[keyof FinishPasskeyAuthenticationResponses];

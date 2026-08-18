@@ -36,39 +36,41 @@ use crate::entity::{
     organization_audit_logs, organization_budget_policies, organization_budget_windows,
     organization_entitlements, organization_invitations, organization_memberships,
     organization_teams, organization_wallet_ledger_entries, organization_wallets, organizations,
-    passkey_registration_challenges, passkeys, payment_settings, playground_conversations,
-    playground_shares, redemption_batches, redemption_codes, registration_rate_limits,
-    scheduler_outbox_events, site_settings, subscription_balance_alert_events, subscription_plans,
-    tokens, topup_orders, topup_payment_events, usage_logs, user_subscriptions, users,
-    wallet_ledger_entries,
+    passkey_authentication_challenges, passkey_registration_challenges, passkeys, payment_settings,
+    playground_conversations, playground_shares, redemption_batches, redemption_codes,
+    registration_rate_limits, scheduler_outbox_events, site_settings,
+    subscription_balance_alert_events, subscription_plans, tokens, topup_orders,
+    topup_payment_events, usage_logs, user_subscriptions, users, wallet_ledger_entries,
 };
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
-    AuthChallengeIssue, AuthChallengeIssueOutcome, AuthChallengePurpose, AuthChallengeRepository,
-    BalanceDisplayModeRecord, BalanceDisplayPolicyRecord, BalanceSymbolPositionRecord,
-    BillingBatchRepository, BillingBatchWrite, BillingBatchWriteOutcome, ChannelBillingWrite,
-    DatabaseOptions, EmailPasswordUpdate, EmailSettingsRepository, EmailSettingsWriteRecord,
-    EmailTlsMode, EncryptedCredentialEnvelope, GroupPricingRepository, ModelPriceBillingMode,
-    ModelPriceRepository, OrganizationAuditOutcome, OrganizationAuditQuery,
-    OrganizationAuditRepository, OrganizationAuditRepositoryError, OrganizationAuditWrite,
-    OrganizationAuditWriteOutcome, OrganizationCreate, OrganizationEntitlementWrite,
-    OrganizationMembershipChange, OrganizationMembershipCreate, OrganizationRepository,
-    OrganizationRepositoryError, OrganizationTeamCreate, PlaygroundConversationRepository,
-    PlaygroundConversationWrite, PlaygroundShareRepository, PlaygroundShareWrite, PoolOptions,
-    QuotaMutationOutcome, QuotaRepository, QuotaReservationStatus, RegistrationAttemptOutcome,
-    RegistrationPolicyWriteRecord, RegistrationRepository, SchedulerCatalogSubject,
-    SchedulerOutboxClaimOutcome, SchedulerOutboxCompletionOutcome, SchedulerOutboxRepository,
-    SiteSettingsRepository, SiteSettingsWriteRecord, TokenAuthLookup, TokenAuthLookupOutcome,
-    TokenAuthRepository, TokenBillingWrite, UsageLogBillingMode, UsageLogRepository,
-    UsageLogRepositoryError, UsageLogSemantics, UsageLogSource, UsageLogUsage,
-    UsageLogVideoResolution, UsageLogWrite, UsageLogWriteOutcome, UserBillingWrite, connect,
+    AuthChallengeIssue, AuthChallengeIssueOutcome, AuthChallengePurpose,
+    AuthChallengeRateLimitClaim, AuthChallengeRateLimitOutcome, AuthChallengeRateLimitRepository,
+    AuthChallengeRepository, BalanceDisplayModeRecord, BalanceDisplayPolicyRecord,
+    BalanceSymbolPositionRecord, BillingBatchRepository, BillingBatchWrite,
+    BillingBatchWriteOutcome, ChannelBillingWrite, DatabaseOptions, EmailPasswordUpdate,
+    EmailSettingsRepository, EmailSettingsWriteRecord, EmailTlsMode, EncryptedCredentialEnvelope,
+    GroupPricingRepository, ModelPriceBillingMode, ModelPriceRepository, OrganizationAuditOutcome,
+    OrganizationAuditQuery, OrganizationAuditRepository, OrganizationAuditRepositoryError,
+    OrganizationAuditWrite, OrganizationAuditWriteOutcome, OrganizationCreate,
+    OrganizationEntitlementWrite, OrganizationMembershipChange, OrganizationMembershipCreate,
+    OrganizationRepository, OrganizationRepositoryError, OrganizationTeamCreate,
+    PlaygroundConversationRepository, PlaygroundConversationWrite, PlaygroundShareRepository,
+    PlaygroundShareWrite, PoolOptions, QuotaMutationOutcome, QuotaRepository,
+    QuotaReservationStatus, RegistrationAttemptOutcome, RegistrationPolicyWriteRecord,
+    RegistrationRepository, SchedulerCatalogSubject, SchedulerOutboxClaimOutcome,
+    SchedulerOutboxCompletionOutcome, SchedulerOutboxRepository, SiteSettingsRepository,
+    SiteSettingsWriteRecord, TokenAuthLookup, TokenAuthLookupOutcome, TokenAuthRepository,
+    TokenBillingWrite, UsageLogBillingMode, UsageLogRepository, UsageLogRepositoryError,
+    UsageLogSemantics, UsageLogSource, UsageLogUsage, UsageLogVideoResolution, UsageLogWrite,
+    UsageLogWriteOutcome, UserBillingWrite, connect,
 };
 
 const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 72;
+const EXPECTED_MIGRATION_COUNT: usize = 73;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -87,11 +89,12 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 66] = [
+const CORE_TABLES: [&str; 67] = [
     "groups",
     "users",
     "passkeys",
     "passkey_registration_challenges",
+    "passkey_authentication_challenges",
     "channels",
     "credentials",
     "tokens",
@@ -1062,6 +1065,45 @@ async fn generated_active_models_redact_sensitive_payloads() {
 }
 
 #[tokio::test]
+async fn passkey_authentication_migration_preserves_legacy_counter() -> Result<(), Box<dyn Error>> {
+    let pool = connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
+    Migrator::up(pool.connection(), Some(72)).await?;
+
+    let group = group_active_model("passkey-migration-group", "Passkey 迁移分组")
+        .insert(pool.connection())
+        .await?;
+    let user = user_active_model(
+        group.id,
+        "passkey-migration-user",
+        "passkey-migration@example.com",
+        "invite-passkey-migration",
+    )
+    .insert(pool.connection())
+    .await?;
+    passkeys::Entity::insert(passkeys::ActiveModel {
+        user_id: Set(user.id),
+        credential_id: Set("bGVnYWN5LWNlZGF0".to_owned()),
+        credential_id_digest: Set("a".repeat(64)),
+        passkey: Set(serde_json::json!({"cred": {"counter": 37}})),
+        display_name: Set("旧 Passkey".to_owned()),
+        ..Default::default()
+    })
+    .exec_without_returning(pool.connection())
+    .await?;
+
+    Migrator::up(pool.connection(), Some(73)).await?;
+    let migrated = passkeys::Entity::find()
+        .filter(passkeys::Column::UserId.eq(user.id))
+        .one(pool.connection())
+        .await?
+        .expect("旧 Passkey 必须保留");
+    assert_eq!(migrated.sign_count, 37);
+    assert_eq!(migrated.anomaly_at, None);
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 #[ignore = "仅由显式启用的隔离数据库迁移流水线执行"]
 async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     let database_url = test_database_url();
@@ -1082,7 +1124,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 13);
+    assert_eq!(pending_migrations.len(), 14);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -1135,6 +1177,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
         pending_migrations[12].name(),
         "m20260818_000072_create_passkeys"
     );
+    assert_eq!(
+        pending_migrations[13].name(),
+        "m20260818_000073_add_passkey_authentication_state"
+    );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
     assert_legacy_debug_trace_snapshot_cleared(&pool, legacy_debug_trace_id).await?;
@@ -1180,6 +1226,8 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     exercise_registration_repository(&pool).await?;
     eprintln!("迁移冒烟阶段：认证挑战仓储");
     exercise_auth_challenge_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：Passkey 登录限流仓储");
+    exercise_passkey_rate_limit_repository(&pool).await?;
     eprintln!("迁移冒烟阶段：站点设置仓储");
     exercise_site_settings_repository(&pool).await?;
     eprintln!("迁移冒烟阶段：邮件设置仓储");
@@ -2487,6 +2535,35 @@ async fn exercise_auth_challenge_repository(pool: &DatabasePool) -> Result<(), B
     Ok(())
 }
 
+/// 在三方言真实事务中验证 Passkey 主体与客户端双作用域原子限流。
+async fn exercise_passkey_rate_limit_repository(pool: &DatabasePool) -> Result<(), Box<dyn Error>> {
+    let repository = AuthChallengeRateLimitRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let claim = || {
+        AuthChallengeRateLimitClaim::new(
+            AuthChallengePurpose::PasskeyAuthentication,
+            [0x7a; 32],
+            [0x7b; 32],
+            10_020,
+            1,
+            60,
+        )
+    };
+    assert_eq!(
+        repository.claim(claim()?).await?,
+        AuthChallengeRateLimitOutcome::Allowed
+    );
+    assert_eq!(
+        repository.claim(claim()?).await?,
+        AuthChallengeRateLimitOutcome::RateLimited {
+            retry_after_seconds: 60
+        }
+    );
+    auth_challenge_rate_limits::Entity::delete_many()
+        .exec(pool.connection())
+        .await?;
+    Ok(())
+}
+
 /// 在三方言真实事务中验证站点固定记录和单调版本。
 async fn exercise_site_settings_repository(pool: &DatabasePool) -> Result<(), Box<dyn Error>> {
     let repository = SiteSettingsRepository::new(pool.clone(), Duration::from_secs(5))?;
@@ -2598,6 +2675,11 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     assert_entity_columns::<groups::Column>(&manager, "groups").await?;
     assert_entity_columns::<users::Column>(&manager, "users").await?;
     assert_entity_columns::<passkeys::Column>(&manager, "passkeys").await?;
+    assert_entity_columns::<passkey_authentication_challenges::Column>(
+        &manager,
+        "passkey_authentication_challenges",
+    )
+    .await?;
     assert_entity_columns::<passkey_registration_challenges::Column>(
         &manager,
         "passkey_registration_challenges",
@@ -2718,6 +2800,18 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         (
             "passkey_registration_challenges",
             "idx_passkey_registration_challenges_user_state",
+        ),
+        (
+            "passkey_authentication_challenges",
+            "uq_passkey_authentication_challenges_digest",
+        ),
+        (
+            "passkey_authentication_challenges",
+            "idx_passkey_authentication_challenges_user_state",
+        ),
+        (
+            "passkey_authentication_challenges",
+            "idx_passkey_authentication_challenges_expires_at",
         ),
         ("groups", "uq_groups_active_name"),
         ("tokens", "uq_tokens_key_hash"),

@@ -62,6 +62,7 @@ mod organization_budget;
 mod organization_tokens;
 mod organization_wallet;
 mod organizations;
+mod passkey_auth;
 mod password_reset;
 mod payment_settings;
 mod payment_webhook;
@@ -163,6 +164,8 @@ mod oauth_connections_tests;
 mod oauth_login_tests;
 #[cfg(test)]
 mod operations_tests;
+#[cfg(test)]
+mod passkey_auth_tests;
 #[cfg(test)]
 mod password_reset_tests;
 #[cfg(test)]
