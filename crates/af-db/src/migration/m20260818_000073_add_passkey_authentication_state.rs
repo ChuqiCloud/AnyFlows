@@ -6,12 +6,6 @@ use super::{
     schema::{self, auto_id, nullable_timestamp, table, timestamp},
 };
 
-#[derive(DeriveIden)]
-enum PasskeyColumn {
-    SignCount,
-    AnomalyAt,
-}
-
 /// 扩展 Passkey 计数并创建一次性登录挑战存储。
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -25,13 +19,20 @@ impl MigrationTrait for Migration {
                 Table::alter()
                     .table(passkeys::Entity)
                     .add_column(
-                        ColumnDef::new(PasskeyColumn::SignCount)
+                        ColumnDef::new(passkeys::Column::SignCount)
                             .big_integer()
                             .not_null()
                             .default(0_i64)
-                            .check(Expr::col(PasskeyColumn::SignCount).gte(0_i64)),
+                            .check(Expr::col(passkeys::Column::SignCount).gte(0_i64)),
                     )
-                    .add_column(nullable_timestamp(manager, PasskeyColumn::AnomalyAt))
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(passkeys::Entity)
+                    .add_column(nullable_timestamp(manager, passkeys::Column::AnomalyAt))
                     .to_owned(),
             )
             .await?;
@@ -127,20 +128,6 @@ impl MigrationTrait for Migration {
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        for name in [
-            "idx_passkey_authentication_challenges_expires_at",
-            "idx_passkey_authentication_challenges_user_state",
-            "uq_passkey_authentication_challenges_digest",
-        ] {
-            manager
-                .drop_index(
-                    Index::drop()
-                        .name(name)
-                        .table(passkey_authentication_challenges::Entity)
-                        .to_owned(),
-                )
-                .await?;
-        }
         manager
             .drop_table(
                 Table::drop()
@@ -152,8 +139,15 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(passkeys::Entity)
-                    .drop_column(PasskeyColumn::AnomalyAt)
-                    .drop_column(PasskeyColumn::SignCount)
+                    .drop_column(passkeys::Column::AnomalyAt)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(passkeys::Entity)
+                    .drop_column(passkeys::Column::SignCount)
                     .to_owned(),
             )
             .await?;

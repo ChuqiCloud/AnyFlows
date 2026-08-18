@@ -25591,6 +25591,40 @@
         },
         "additionalProperties": false
       },
+      "PasskeyAuthenticationOptionsRequest": {
+        "type": "object",
+        "required": [
+          "username"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "PasskeyAuthenticationOptionsResponse": {
+        "type": "object",
+        "required": [
+          "options"
+        ],
+        "properties": {
+          "options": {}
+        },
+        "additionalProperties": false
+      },
+      "PasskeyAuthenticationVerifyRequest": {
+        "type": "object",
+        "required": [
+          "credential"
+        ],
+        "properties": {
+          "credential": {}
+        },
+        "additionalProperties": false
+      },
       "PasswordResetConfirmRequest": {
         "type": "object",
         "required": [
@@ -28260,40 +28294,6 @@
           "expired",
           "failed"
         ]
-      },
-      "PasskeyAuthenticationOptionsRequest": {
-        "type": "object",
-        "required": [
-          "username"
-        ],
-        "properties": {
-          "username": {
-            "type": "string",
-            "maxLength": 64,
-            "minLength": 1
-          }
-        },
-        "additionalProperties": false
-      },
-      "PasskeyAuthenticationOptionsResponse": {
-        "type": "object",
-        "required": [
-          "options"
-        ],
-        "properties": {
-          "options": {}
-        },
-        "additionalProperties": false
-      },
-      "PasskeyAuthenticationVerifyRequest": {
-        "type": "object",
-        "required": [
-          "credential"
-        ],
-        "properties": {
-          "credential": {}
-        },
-        "additionalProperties": false
       }
     },
     "securitySchemes": {

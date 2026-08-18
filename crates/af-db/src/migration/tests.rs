@@ -1099,7 +1099,7 @@ async fn passkey_authentication_migration_preserves_legacy_counter() -> Result<(
         .expect("旧 Passkey 必须保留");
     assert_eq!(migrated.sign_count, 37);
     assert_eq!(migrated.anomaly_at, None);
-    pool.close().await;
+    pool.close().await?;
     Ok(())
 }
 

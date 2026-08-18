@@ -1606,6 +1606,15 @@ export type OrganizationWalletSummaryResponse = {
     frozen_quota: number;
     version: number;
 };
+export type PasskeyAuthenticationOptionsRequest = {
+    username: string;
+};
+export type PasskeyAuthenticationOptionsResponse = {
+    options: unknown;
+};
+export type PasskeyAuthenticationVerifyRequest = {
+    credential: unknown;
+};
 export type PasswordResetConfirmRequest = {
     token: string;
     password: string;
@@ -2067,15 +2076,6 @@ export type VideoTaskListResponse = {
     next_cursor: string | null;
 };
 export type VideoTaskStatus = 'pending' | 'done' | 'expired' | 'failed';
-export type PasskeyAuthenticationOptionsRequest = {
-    username: string;
-};
-export type PasskeyAuthenticationOptionsResponse = {
-    options: unknown;
-};
-export type PasskeyAuthenticationVerifyRequest = {
-    credential: unknown;
-};
 export type AdminChannelCreateRequestWritable = {
     name: string;
     type: 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
