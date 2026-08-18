@@ -243,6 +243,7 @@ pub(in crate::migration) mod passkeys {
         Id,
         UserId,
         CredentialId,
+        CredentialIdDigest,
         Passkey,
         DisplayName,
         CreatedAt,
