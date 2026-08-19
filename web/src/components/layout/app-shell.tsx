@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { CircleUserRound, LogOut, Search, ShieldCheck, WalletCards } from 'lucide-react'
+import { BellRing, CircleUserRound, LogOut, Search, ShieldCheck, WalletCards } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { AppNavigation } from '@/components/layout/app-navigation'
@@ -128,6 +128,18 @@ export function AppShell({ title, children, currentUser, onLogout }: AppShellPro
                 </a>
               </TooltipTrigger>
               <TooltipContent side="bottom">{balanceLabel}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <a
+                  href="#/console/profile?section=notifications"
+                  className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none"
+                  aria-label={t('shell.notifications')}
+                >
+                  <BellRing className="size-3.5" aria-hidden="true" />
+                </a>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{t('shell.notifications')}</TooltipContent>
             </Tooltip>
             <button
               type="button"

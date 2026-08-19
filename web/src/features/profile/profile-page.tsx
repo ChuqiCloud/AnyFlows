@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BellRing,
   CalendarClock,
@@ -53,6 +53,7 @@ import {
 } from './profile-api'
 
 type ProfilePageProps = {
+  section?: 'notifications'
   onPasswordChanged: () => void
 }
 
@@ -754,11 +755,23 @@ function PreferenceRow({ id, title, description, checked, onCheckedChange }: { i
 }
 
 /** 组合当前用户的资料、密码和通知偏好设置，并保持敏感输入只存在于内存。 */
-export function ProfilePage({ onPasswordChanged }: ProfilePageProps) {
+export function ProfilePage({ section, onPasswordChanged }: ProfilePageProps) {
   const { t } = useTranslation()
   const profileQuery = useUserProfile()
+  const notificationsRef = useRef<HTMLDivElement>(null)
   const profile = profileQuery.data
   const roleLabel = useMemo(() => profile ? t(`auth.account.${profile.role}`) : undefined, [profile, t])
+
+  useEffect(() => {
+    if (section !== 'notifications' || !profile || profileQuery.isPending) return
+    const frame = requestAnimationFrame(() => {
+      const target = notificationsRef.current
+      if (!target) return
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      target.focus({ preventScroll: true })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [profile, profileQuery.isPending, section])
 
   return (
     <div className="flex flex-col gap-4">
@@ -766,7 +779,7 @@ export function ProfilePage({ onPasswordChanged }: ProfilePageProps) {
         <div><div className="mb-1 flex items-center gap-2 text-[0.6875rem] uppercase tracking-[0.18em] text-brand"><UserRound className="size-3.5" aria-hidden="true" />{roleLabel ?? t('profile.eyebrow')}</div><h2 className="text-lg font-semibold">{t('profile.title')}</h2><p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">{t('profile.subtitle')}</p></div>
         <Button type="button" size="sm" variant="secondary" disabled={profileQuery.isFetching} onClick={() => void profileQuery.refetch()}><RefreshCw className={profileQuery.isFetching ? 'animate-spin' : undefined} aria-hidden="true" />{t('profile.actions.refresh')}</Button>
       </header>
-      {profileQuery.isPending ? <ProfileLoading /> : profileQuery.isError || !profile ? <ErrorPanel onRetry={() => void profileQuery.refetch()} /> : <div className="grid gap-4 xl:grid-cols-2"><ProfileCard profile={profile} /><PasswordCard onPasswordChanged={onPasswordChanged} /><TwoFactorCard /><PasskeyCard onPasswordChanged={onPasswordChanged} /><div className="xl:col-span-2"><NotificationsCard profile={profile} /></div></div>}
+      {profileQuery.isPending ? <ProfileLoading /> : profileQuery.isError || !profile ? <ErrorPanel onRetry={() => void profileQuery.refetch()} /> : <div className="grid gap-4 xl:grid-cols-2"><ProfileCard profile={profile} /><PasswordCard onPasswordChanged={onPasswordChanged} /><TwoFactorCard /><PasskeyCard onPasswordChanged={onPasswordChanged} /><div ref={notificationsRef} id="profile-notifications" tabIndex={-1} className="scroll-mt-16 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring/60 xl:col-span-2"><NotificationsCard profile={profile} /></div></div>}
     </div>
   )
 }
