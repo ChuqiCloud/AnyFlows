@@ -248,6 +248,10 @@ impl PlannedEmbeddingExecution for ScheduledEmbeddingExecution {
             let (result, report) = relay_openai_embeddings_with_report(&machine, request)
                 .await
                 .into_parts();
+            let successful_channel_id = report
+                .successful_candidate_index()
+                .and_then(|index| attempt_targets.get(index))
+                .map(CredentialAttemptTarget::channel_id);
             let ((), (), ()) = tokio::join!(
                 persist_credential_feedback(
                     &credential_states,
@@ -266,7 +270,11 @@ impl PlannedEmbeddingExecution for ScheduledEmbeddingExecution {
             if let Some(permit) = user_permit {
                 permit.release().await;
             }
-            result
+            result.and_then(|response| {
+                successful_channel_id
+                    .map(|channel_id| crate::RoutedExecution::new(response, channel_id))
+                    .ok_or(AfError::Internal)
+            })
         })
     }
 }

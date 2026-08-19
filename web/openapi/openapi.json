@@ -6858,7 +6858,7 @@
         "operationId": "getAdminDashboard",
         "responses": {
           "200": {
-            "description": "最近 24 小时用量和当前渠道状态",
+            "description": "最近 24 小时用量、请求终态和当前渠道状态",
             "content": {
               "application/json": {
                 "schema": {
@@ -17955,6 +17955,77 @@
           }
         }
       },
+      "AdminDashboardChannelFlow": {
+        "type": "object",
+        "description": "管理看板窗口内一条入口协议到最终成功渠道流向。",
+        "required": [
+          "protocol",
+          "channel_id",
+          "channel_name",
+          "request_count"
+        ],
+        "properties": {
+          "protocol": {
+            "$ref": "#/components/schemas/AdminChannelProtocol"
+          },
+          "channel_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "channel_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "request_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminDashboardFailure": {
+        "type": "object",
+        "description": "管理看板窗口内一个失败分类的请求数。",
+        "required": [
+          "kind",
+          "request_count"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/AdminDashboardFailureKind"
+          },
+          "request_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminDashboardFailureKind": {
+        "type": "string",
+        "description": "管理看板公开的闭合失败分类。",
+        "enum": [
+          "invalid_request",
+          "model_not_allowed",
+          "insufficient_quota",
+          "quota_limited",
+          "concurrency_limited",
+          "outcome_unknown",
+          "upstream_rate_limited",
+          "upstream_overloaded",
+          "upstream_authentication",
+          "upstream_quota",
+          "upstream_model",
+          "upstream_protocol",
+          "upstream_server",
+          "upstream_network",
+          "internal"
+        ]
+      },
       "AdminDashboardHourlyPoint": {
         "type": "object",
         "description": "管理看板单个一小时用量分桶。",
@@ -18065,6 +18136,12 @@
           "enabled_channel_count",
           "disabled_channel_count",
           "auto_disabled_channel_count",
+          "outcome_request_count",
+          "successful_request_count",
+          "failed_request_count",
+          "other_success_count",
+          "failures",
+          "channel_flows",
           "hourly",
           "performance"
         ],
@@ -18130,6 +18207,42 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          },
+          "outcome_request_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "已写入终态事实的同步模型请求数，与用量请求数不要求相等。",
+            "minimum": 0
+          },
+          "successful_request_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "failed_request_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "other_success_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "未进入前十二条可见渠道流向的成功请求数。",
+            "minimum": 0
+          },
+          "failures": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminDashboardFailure"
+            },
+            "description": "按闭合错误分类聚合的失败请求。"
+          },
+          "channel_flows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminDashboardChannelFlow"
+            },
+            "description": "请求量最高的十二条入口协议到最终成功渠道流向。"
           },
           "hourly": {
             "type": "array",

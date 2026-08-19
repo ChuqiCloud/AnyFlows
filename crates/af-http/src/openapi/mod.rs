@@ -430,8 +430,11 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 344);
+        assert_eq!(schemas.len(), 347);
         assert!(schemas.keys().is_sorted());
+        assert!(schemas.contains_key("AdminDashboardChannelFlow"));
+        assert!(schemas.contains_key("AdminDashboardFailure"));
+        assert!(schemas.contains_key("AdminDashboardFailureKind"));
         assert!(schemas.contains_key("AdminDashboardHourlyPoint"));
         assert!(schemas.contains_key("AdminDashboardPerformance"));
         assert!(schemas.contains_key("ClientSimulationProfile"));

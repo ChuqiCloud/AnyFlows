@@ -22,8 +22,13 @@ const MEDIUM_QUALITY_PIXELS_PER_TOKEN: u64 = 512;
 const LOW_QUALITY_PIXELS_PER_TOKEN: u64 = 2_048;
 
 /// 已固定路由计划的一次 Images 异步执行结果。
-pub type PlannedImageExecutionFuture =
-    Pin<Box<dyn Future<Output = Result<ImageResponse, AfError>> + Send + 'static>>;
+pub type PlannedImageExecutionFuture = Pin<
+    Box<
+        dyn Future<Output = Result<crate::RoutedExecution<ImageResponse>, AfError>>
+            + Send
+            + 'static,
+    >,
+>;
 
 /// 在计费前完成候选与目标分组装配的 Images 请求级计划。
 pub trait PlannedImageExecution: Send {
@@ -58,6 +63,7 @@ pub struct BillingImageService {
     refund: Option<Arc<dyn RefundSignalPort>>,
     settlement: Option<Arc<dyn BillingSettlementPort>>,
     usage: Arc<dyn UsageRecordPort>,
+    request_outcomes: Option<crate::RequestOutcomeRuntime>,
 }
 
 impl BillingImageService {
@@ -78,7 +84,15 @@ impl BillingImageService {
             refund,
             settlement,
             usage,
+            request_outcomes: None,
         }
+    }
+
+    /// 注入同步模型请求终态的只追加观测运行时。
+    #[must_use]
+    pub fn with_request_outcomes(mut self, runtime: crate::RequestOutcomeRuntime) -> Self {
+        self.request_outcomes = Some(runtime);
+        self
     }
 
     async fn call(
@@ -88,6 +102,28 @@ impl BillingImageService {
         request: CanonicalImageGenerationRequest,
         request_id: &str,
     ) -> Result<ImageResponse, AfError> {
+        let outcome = crate::RequestOutcomeContext::new(
+            request_id,
+            af_domain::Protocol::OpenAiImages,
+            af_domain::Operation::Image,
+            request.model(),
+        );
+        outcome
+            .finish(
+                self.request_outcomes.as_ref(),
+                self.call_billed(principal, user_concurrency, request, request_id)
+                    .await,
+            )
+            .await
+    }
+
+    async fn call_billed(
+        &self,
+        principal: &GatewayPrincipal,
+        user_concurrency: Option<ConcurrencyLimit>,
+        request: CanonicalImageGenerationRequest,
+        request_id: &str,
+    ) -> Result<crate::RoutedExecution<ImageResponse>, AfError> {
         let upper_bound = image_usage_upper_bound(&request)?;
         let model = request.model().to_owned();
         let planned = self
@@ -108,7 +144,9 @@ impl BillingImageService {
         let reservation_id = new_reservation_id()?;
         let mut lifecycle = start_lifecycle(self, plan, *principal, reservation_id).await?;
 
-        let response = planned.execute().await?;
+        let routed = planned.execute().await?;
+        let channel_id = routed.channel_id();
+        let response = routed.into_value();
         let (body, upstream_usage) = response.into_parts();
         let settlement_usage = match upstream_usage {
             Some(usage) if usage_within_upper_bound(&usage, &upper_bound)? => usage,
@@ -119,7 +157,10 @@ impl BillingImageService {
         let _ = complete_with_retries(&mut lifecycle, settlement_usage)
             .await
             .map_err(map_lifecycle_error)?;
-        Ok(ImageResponse::new(body, upstream_usage))
+        Ok(crate::RoutedExecution::new(
+            ImageResponse::new(body, upstream_usage),
+            channel_id,
+        ))
     }
 }
 
@@ -387,9 +428,9 @@ mod tests {
                 if !self.succeed {
                     return Err(AfError::Internal);
                 }
-                Ok(ImageResponse::new(
-                    Bytes::from_static(b"{}"),
-                    self.response_usage,
+                Ok(crate::RoutedExecution::new(
+                    ImageResponse::new(Bytes::from_static(b"{}"), self.response_usage),
+                    af_domain::ChannelId::new(1).unwrap(),
                 ))
             })
         }

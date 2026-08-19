@@ -17,6 +17,7 @@ use crate::{
         AdminDashboardHourlyRecord, AdminDashboardObservabilityRecord,
         AdminDashboardPerformanceRecord, append_observability_expressions, decode_observability,
     },
+    admin_dashboard_outcomes::{AdminDashboardOutcomeRecord, query_outcomes},
     entity::{channels, usage_logs},
 };
 
@@ -34,6 +35,7 @@ pub struct AdminDashboardRecord {
     disabled_channel_count: i64,
     auto_disabled_channel_count: i64,
     observability: AdminDashboardObservabilityRecord,
+    outcomes: AdminDashboardOutcomeRecord,
 }
 
 impl AdminDashboardRecord {
@@ -108,6 +110,42 @@ impl AdminDashboardRecord {
     pub const fn performance(&self) -> AdminDashboardPerformanceRecord {
         self.observability.performance()
     }
+
+    /// 返回窗口内已经进入终态观测的同步模型请求数。
+    #[must_use]
+    pub const fn outcome_request_count(&self) -> i64 {
+        self.outcomes.request_count()
+    }
+
+    /// 返回窗口内成功完成的同步模型请求数。
+    #[must_use]
+    pub const fn successful_request_count(&self) -> i64 {
+        self.outcomes.successful_request_count()
+    }
+
+    /// 返回窗口内失败完成的同步模型请求数。
+    #[must_use]
+    pub const fn failed_request_count(&self) -> i64 {
+        self.outcomes.failed_request_count()
+    }
+
+    /// 返回未进入前十二条可见流向的成功请求数。
+    #[must_use]
+    pub const fn other_success_count(&self) -> i64 {
+        self.outcomes.other_success_count()
+    }
+
+    /// 返回按闭合错误分类聚合的失败请求。
+    #[must_use]
+    pub fn failures(&self) -> &[crate::AdminDashboardFailureRecord] {
+        self.outcomes.failures()
+    }
+
+    /// 返回请求量最高的协议到渠道流向。
+    #[must_use]
+    pub fn channel_flows(&self) -> &[crate::AdminDashboardChannelFlowRecord] {
+        self.outcomes.channel_flows()
+    }
 }
 
 /// 管理看板仓储构造错误。
@@ -172,7 +210,8 @@ impl AdminDashboardRepository {
         let operation = async {
             let (usage, observability) = self.query_usage(period_start, period_end).await?;
             let channels = self.query_channels().await?;
-            AdminDashboardRecord::try_from_rows(usage, channels, observability)
+            let outcomes = query_outcomes(&self.pool, period_start, period_end).await?;
+            AdminDashboardRecord::try_from_rows(usage, channels, observability, outcomes)
         }
         .with_subscriber(NoSubscriber::default());
 
@@ -286,6 +325,7 @@ impl AdminDashboardRecord {
         usage: UsageAggregateRow,
         channels: ChannelAggregateRow,
         observability: AdminDashboardObservabilityRecord,
+        outcomes: AdminDashboardOutcomeRecord,
     ) -> Result<Self, AdminDashboardRepositoryError> {
         let usage_values = [
             usage.request_count,
@@ -335,6 +375,7 @@ impl AdminDashboardRecord {
             disabled_channel_count: channels.disabled_channel_count,
             auto_disabled_channel_count: channels.auto_disabled_channel_count,
             observability,
+            outcomes,
         })
     }
 }
@@ -428,7 +469,7 @@ fn conditional_channel_count(status: Status) -> sea_orm::sea_query::SimpleExpr {
     .into()
 }
 
-async fn query_one(
+pub(crate) async fn query_one(
     connection: &sea_orm::DatabaseConnection,
     statement: SelectStatement,
 ) -> Result<QueryResult, AdminDashboardRepositoryError> {
@@ -438,6 +479,17 @@ async fn query_one(
         .await
         .map_err(|_| record_internal_error(AdminDashboardRepositoryError::Query))?
         .ok_or_else(|| record_internal_error(AdminDashboardRepositoryError::Invariant))
+}
+
+pub(crate) async fn query_all(
+    connection: &sea_orm::DatabaseConnection,
+    statement: SelectStatement,
+) -> Result<Vec<QueryResult>, AdminDashboardRepositoryError> {
+    let backend = connection.get_database_backend();
+    connection
+        .query_all(backend.build(&statement))
+        .await
+        .map_err(|_| record_internal_error(AdminDashboardRepositoryError::Query))
 }
 
 pub(crate) fn get_count(
@@ -522,6 +574,7 @@ mod tests {
                 usage,
                 channels,
                 AdminDashboardObservabilityRecord::empty(),
+                AdminDashboardOutcomeRecord::empty(),
             ),
             Err(AdminDashboardRepositoryError::Invariant)
         );

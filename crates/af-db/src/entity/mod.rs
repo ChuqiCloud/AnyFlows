@@ -75,6 +75,7 @@ pub(crate) mod proxies;
 pub(crate) mod redemption_batches;
 pub(crate) mod redemption_codes;
 pub(crate) mod registration_rate_limits;
+pub(crate) mod request_outcome_logs;
 pub(crate) mod route_channels;
 pub(crate) mod routes;
 pub(crate) mod scheduler_outbox_events;
@@ -2150,6 +2151,43 @@ impl ActiveModelBehavior for platform_audit_logs::ActiveModel {
         validate_platform_audit_log(&self, database, insert).await?;
         Ok(self)
     }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for request_outcome_logs::ActiveModel {
+    async fn before_save<C>(self, _database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        if !insert {
+            return Err(DbErr::Custom("请求终态事实只允许追加".to_owned()));
+        }
+        let request_id = self.request_id.try_as_ref().map(String::as_str);
+        let protocol = self.protocol.try_as_ref().map(String::as_str);
+        let operation = self.operation.try_as_ref().map(String::as_str);
+        let model = self.model.try_as_ref().map(String::as_str);
+        let outcome = self.outcome.try_as_ref().copied();
+        let error_kind = self.error_kind.try_as_ref().and_then(Option::as_deref);
+        if request_id.is_none_or(|value| !valid_request_outcome_text(value, 128))
+            || protocol.is_none_or(|value| value.parse::<af_domain::Protocol>().is_err())
+            || operation.is_none_or(|value| value.parse::<af_domain::Operation>().is_err())
+            || model.is_none_or(|value| !valid_request_outcome_text(value, 255))
+            || self.duration_ms.try_as_ref().is_none_or(|value| *value < 0)
+            || self.created_at.try_as_ref().is_none()
+            || !matches!((outcome, error_kind), (Some(1), None) | (Some(2), Some(_)))
+            || error_kind.is_some_and(|value| value.parse::<crate::RequestFailureKind>().is_err())
+        {
+            return Err(DbErr::Custom("请求终态事实字段无效".to_owned()));
+        }
+        Ok(self)
+    }
+}
+
+fn valid_request_outcome_text(value: &str, max_bytes: usize) -> bool {
+    !value.is_empty()
+        && value.len() <= max_bytes
+        && value.trim() == value
+        && !value.chars().any(char::is_control)
 }
 
 #[async_trait::async_trait]

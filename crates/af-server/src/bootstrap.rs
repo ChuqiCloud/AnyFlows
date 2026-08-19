@@ -84,16 +84,17 @@ use af_db::{
     PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
     PlaygroundShareRepositoryConfigError, QuotaRepository, RedemptionRepository,
     RedemptionRepositoryConfigError, RegistrationRepository, RegistrationRepositoryConfigError,
-    SiteSettingsRepository, SiteSettingsRepositoryConfigError, SiteSettingsRepositoryError,
-    SmartRouteRuntimeRepository, SmartRouteRuntimeRepositoryConfigError,
-    SubscriptionBalanceAlertRepository, SubscriptionBalanceAlertRepositoryConfigError,
-    SubscriptionRepository, SubscriptionRepositoryConfigError, TokenAuthRepository,
-    TokenAuthRepositoryConfigError, TokenRequestAdmissionRepository,
-    TokenRequestAdmissionRepositoryConfigError, TopupRepository, TopupRepositoryConfigError,
-    UsageLogRepository, UserInvitationRepository, UserInvitationRepositoryConfigError,
-    UserProfileRepository, UserProfileRepositoryConfigError, UserSessionRepository,
-    UserSessionRepositoryConfigError, UserTokenRepository, UserTokenRepositoryConfigError,
-    WalletLedgerRepository, WalletLedgerRepositoryConfigError, connect_and_migrate,
+    RequestOutcomeRepository, SiteSettingsRepository, SiteSettingsRepositoryConfigError,
+    SiteSettingsRepositoryError, SmartRouteRuntimeRepository,
+    SmartRouteRuntimeRepositoryConfigError, SubscriptionBalanceAlertRepository,
+    SubscriptionBalanceAlertRepositoryConfigError, SubscriptionRepository,
+    SubscriptionRepositoryConfigError, TokenAuthRepository, TokenAuthRepositoryConfigError,
+    TokenRequestAdmissionRepository, TokenRequestAdmissionRepositoryConfigError, TopupRepository,
+    TopupRepositoryConfigError, UsageLogRepository, UserInvitationRepository,
+    UserInvitationRepositoryConfigError, UserProfileRepository, UserProfileRepositoryConfigError,
+    UserSessionRepository, UserSessionRepositoryConfigError, UserTokenRepository,
+    UserTokenRepositoryConfigError, WalletLedgerRepository, WalletLedgerRepositoryConfigError,
+    connect_and_migrate,
 };
 use af_http::{
     AdminChannelProbe, AdminOAuthConnectionService, AudioService, ChatService, EmbeddingService,
@@ -123,9 +124,9 @@ use crate::{
     AudioRoutePlanner, BackgroundTaskSupervisor, BillingAudioService, BillingChatService,
     BillingEmbeddingService, BillingFlushReport, BillingImageService, BillingRerankService,
     BillingResponsesCompactService, BillingRuntime, BillingRuntimeError, BillingSpeechService,
-    ChatRoutePlanner, EmbeddingRoutePlanner, ImageRoutePlanner, RerankRoutePlanner,
-    ResponsesCompactRoutePlanner, ShutdownController, SpeechRoutePlanner, SupervisorError,
-    SupervisorShutdown,
+    ChatRoutePlanner, EmbeddingRoutePlanner, ImageRoutePlanner, RequestOutcomeRuntime,
+    RerankRoutePlanner, ResponsesCompactRoutePlanner, ShutdownController, SpeechRoutePlanner,
+    SupervisorError, SupervisorShutdown,
     balance_alert_runtime::BalanceAlertRuntime,
     channel_probe::{BoundedAdminChannelProbe, DatabaseChannelProbe},
     concurrency_runtime::{ConcurrencyCleanupWorker, ConcurrencyReleaseWorker, ConcurrencyRuntime},
@@ -1497,6 +1498,9 @@ impl Bootstrap<RelayReady> {
             BILLING_QUEUE_RETRY_DELAY,
         )
         .map_err(BootstrapError::UsageRecordConsumer)?;
+        let request_outcomes = RequestOutcomeRuntime::new(RequestOutcomeRepository::new(
+            self.stage.infrastructure.infrastructure.database.clone(),
+        ));
         let refund_signal_consumer = RefundSignalConsumer::new(
             refund_signal_receiver,
             refund_sink,
@@ -1524,63 +1528,83 @@ impl Bootstrap<RelayReady> {
                 ),
             ),
         ));
-        let embedding: Arc<dyn EmbeddingService> = Arc::new(BillingEmbeddingService::new(
-            embedding_route_planner,
-            pricing_source.clone(),
-            Some(precharge_port.clone()),
-            Some(refund_port.clone()),
-            Some(settlement_port.clone()),
-            usage_port.clone(),
-        ));
-        let image: Arc<dyn ImageService> = Arc::new(BillingImageService::new(
-            image_route_planner,
-            pricing_source.clone(),
-            Some(precharge_port.clone()),
-            Some(refund_port.clone()),
-            Some(settlement_port.clone()),
-            usage_port.clone(),
-        ));
-        let rerank: Arc<dyn RerankService> = Arc::new(BillingRerankService::new(
-            rerank_route_planner,
-            pricing_source.clone(),
-            Some(precharge_port.clone()),
-            Some(refund_port.clone()),
-            Some(settlement_port.clone()),
-            usage_port.clone(),
-        ));
-        let audio: Arc<dyn AudioService> = Arc::new(BillingAudioService::new(
-            audio_route_planner,
-            pricing_source.clone(),
-            Some(precharge_port.clone()),
-            Some(refund_port.clone()),
-            Some(settlement_port.clone()),
-            usage_port.clone(),
-        ));
-        let speech: Arc<dyn SpeechService> = Arc::new(BillingSpeechService::new(
-            speech_route_planner,
-            pricing_source.clone(),
-            Some(precharge_port.clone()),
-            Some(refund_port.clone()),
-            Some(settlement_port.clone()),
-            usage_port.clone(),
-        ));
-        let responses_compact: Arc<dyn ResponsesCompactService> =
-            Arc::new(BillingResponsesCompactService::new(
+        let embedding: Arc<dyn EmbeddingService> = Arc::new(
+            BillingEmbeddingService::new(
+                embedding_route_planner,
+                pricing_source.clone(),
+                Some(precharge_port.clone()),
+                Some(refund_port.clone()),
+                Some(settlement_port.clone()),
+                usage_port.clone(),
+            )
+            .with_request_outcomes(request_outcomes.clone()),
+        );
+        let image: Arc<dyn ImageService> = Arc::new(
+            BillingImageService::new(
+                image_route_planner,
+                pricing_source.clone(),
+                Some(precharge_port.clone()),
+                Some(refund_port.clone()),
+                Some(settlement_port.clone()),
+                usage_port.clone(),
+            )
+            .with_request_outcomes(request_outcomes.clone()),
+        );
+        let rerank: Arc<dyn RerankService> = Arc::new(
+            BillingRerankService::new(
+                rerank_route_planner,
+                pricing_source.clone(),
+                Some(precharge_port.clone()),
+                Some(refund_port.clone()),
+                Some(settlement_port.clone()),
+                usage_port.clone(),
+            )
+            .with_request_outcomes(request_outcomes.clone()),
+        );
+        let audio: Arc<dyn AudioService> = Arc::new(
+            BillingAudioService::new(
+                audio_route_planner,
+                pricing_source.clone(),
+                Some(precharge_port.clone()),
+                Some(refund_port.clone()),
+                Some(settlement_port.clone()),
+                usage_port.clone(),
+            )
+            .with_request_outcomes(request_outcomes.clone()),
+        );
+        let speech: Arc<dyn SpeechService> = Arc::new(
+            BillingSpeechService::new(
+                speech_route_planner,
+                pricing_source.clone(),
+                Some(precharge_port.clone()),
+                Some(refund_port.clone()),
+                Some(settlement_port.clone()),
+                usage_port.clone(),
+            )
+            .with_request_outcomes(request_outcomes.clone()),
+        );
+        let responses_compact: Arc<dyn ResponsesCompactService> = Arc::new(
+            BillingResponsesCompactService::new(
                 responses_compact_route_planner,
                 pricing_source.clone(),
                 Some(precharge_port.clone()),
                 Some(refund_port.clone()),
                 Some(settlement_port.clone()),
                 usage_port.clone(),
-            ));
-        let chat: Arc<dyn ChatService> = Arc::new(BillingChatService::new(
-            route_planner,
-            pricing_source,
-            Some(precharge_port),
-            Some(refund_port),
-            Some(settlement_port),
-            usage_port,
-        ));
+            )
+            .with_request_outcomes(request_outcomes.clone()),
+        );
+        let chat: Arc<dyn ChatService> = Arc::new(
+            BillingChatService::new(
+                route_planner,
+                pricing_source,
+                Some(precharge_port),
+                Some(refund_port),
+                Some(settlement_port),
+                usage_port,
+            )
+            .with_request_outcomes(request_outcomes),
+        );
         let Bootstrap {
             config,
             shutdown_timeout,
