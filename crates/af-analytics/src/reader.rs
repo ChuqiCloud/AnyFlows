@@ -286,7 +286,7 @@ fn valid_performance_sample(
         }
 }
 
-fn checked_sum(values: impl Iterator<Item = i64>) -> Result<i64, AdminDashboardReadError> {
+fn checked_sum(mut values: impl Iterator<Item = i64>) -> Result<i64, AdminDashboardReadError> {
     values.try_fold(0_i64, |total, value| {
         total
             .checked_add(value)
