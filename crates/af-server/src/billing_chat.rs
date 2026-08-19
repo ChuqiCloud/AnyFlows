@@ -632,7 +632,7 @@ mod tests {
         ModelPriceCache, ModelPriceSource, ModelPriceSourceFuture, ModelPriceSourceRecord,
         PricingRatio, RefundSignalOutcome, RequestPricingSnapshot, TokenPrices, UsageRecordOutcome,
     };
-    use af_db::{DatabaseOptions, MigrationOptions, RequestOutcomeRepository};
+    use af_db::RequestOutcomeRepository;
     use af_domain::{
         ChannelId, GroupId, Operation, Quota, QuotaWindowRetryAfter, Role, TokenId, UserId,
     };
@@ -645,6 +645,7 @@ mod tests {
     use sea_orm::{ConnectionTrait, Statement};
 
     use super::*;
+    use crate::test_database::SqliteTestDatabase;
 
     #[test]
     fn recoverable_window_precharge_maps_to_downstream_rate_limit() {
@@ -657,14 +658,19 @@ mod tests {
 
     #[tokio::test]
     async fn stream_outcome_guard_records_each_terminal_path_once() {
-        let pool = af_db::connect_and_migrate(
-            &DatabaseOptions::new("sqlite::memory:").unwrap(),
-            MigrationOptions::default(),
-        )
-        .await
-        .unwrap();
-        let runtime =
-            crate::RequestOutcomeRuntime::new(RequestOutcomeRepository::new(pool.clone()));
+        let database = SqliteTestDatabase::new("stream-outcome").await;
+        let backend = database.seed().get_database_backend();
+        database
+            .seed()
+            .execute(Statement::from_string(
+                backend,
+                "INSERT INTO channels (id, name, \"type\", protocol, model_mapping, param_override, header_override, settings) VALUES (1, '流式终态测试渠道', 'openai', 'openai_chat', '{}', '{}', '{}', '{}')",
+            ))
+            .await
+            .unwrap();
+        let runtime = crate::RequestOutcomeRuntime::new(RequestOutcomeRepository::new(
+            database.pool().clone(),
+        ));
 
         StreamRequestOutcomeGuard::new(stream_outcome(&runtime, "request-stream-success"))
             .record_success()
@@ -677,11 +683,10 @@ mod tests {
             "request-stream-interrupted",
         )));
 
-        let backend = pool.connection().get_database_backend();
         let rows = tokio::time::timeout(Duration::from_secs(1), async {
             loop {
-                let rows = pool
-                    .connection()
+                let rows = database
+                    .seed()
                     .query_all(Statement::from_string(
                         backend,
                         "SELECT request_id, outcome, error_kind FROM request_outcome_logs ORDER BY request_id",
@@ -722,7 +727,7 @@ mod tests {
                 ("request-stream-success".to_owned(), 1, None),
             ]
         );
-        pool.close().await.unwrap();
+        database.close().await;
     }
 
     fn stream_outcome(
