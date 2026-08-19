@@ -4917,7 +4917,7 @@
         "login": "Sign in",
         "models": "Browse models"
       },
-      "secondary": "Read the docs"
+      "secondary": "View FAQ"
     },
     "providers": "Providers already supported",
     "feature": {
@@ -4964,7 +4964,7 @@
       "heading": "Ready to collapse your model traffic?",
       "body": "A single binary with the frontend embedded. One command to serve.",
       "cta": "Get started",
-      "secondary": "Read the docs"
+      "secondary": "View FAQ"
     },
     "console": {
       "eyebrow": "Drop-in compatible",
@@ -4976,6 +4976,37 @@
       "latency": "Latency",
       "tokens": "Tokens in/out",
       "route": "Route"
+    },
+    "faq": {
+      "eyebrow": "FAQ",
+      "heading": "A few useful answers before you start",
+      "subheading": "Understand the deployment, protocol, routing, and billing boundaries before choosing an entry point.",
+      "items": {
+        "whatIsAnyFlows": {
+          "question": "What is AnyFlows?",
+          "answer": "AnyFlows is a self-hostable large-model API aggregation gateway that turns different providers and relay channels into one observable entry point."
+        },
+        "whichProtocols": {
+          "question": "Which protocols and model capabilities are supported?",
+          "answer": "The delivered protocol paths include OpenAI Chat, Anthropic Messages, Gemini, and OpenAI Responses, alongside image, audio, Embedding, and Rerank capabilities. The actual surface depends on the configured channels and their capability probes."
+        },
+        "howRoutingWorks": {
+          "question": "How does a request choose an upstream channel?",
+          "answer": "The gateway builds candidates from channel weight, priority, capabilities, and runtime state, then follows the failure policy to try other available candidates. Each request's routing facts can be reviewed in the management dashboard."
+        },
+        "howBillingWorks": {
+          "question": "How is billing calculated?",
+          "answer": "Billing is reserved and settled at request scope, with per-token, per-call, and free modes. Multipliers and prices are fixed in a request snapshot so configuration changes cannot shift an in-flight ledger entry."
+        },
+        "canSelfHost": {
+          "question": "Can I deploy it on my own server?",
+          "answer": "Yes. AnyFlows ships as a single binary with the frontend embedded; the database, cache, and upstreams are configured for the deployment environment. Production deployments should still use HTTPS, strong secrets, and least-privilege access."
+        },
+        "whereToStart": {
+          "question": "Where should I start?",
+          "answer": "Browse the model catalog first. When registration is enabled, create an account, configure a channel in the console, and issue an API key for the unified endpoint. Administrators can disable public registration and use invitations instead."
+        }
+      }
     },
     "footer": { "copyright": "AnyFlows · Open-source LLM gateway" }
   },

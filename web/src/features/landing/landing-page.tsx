@@ -1,5 +1,6 @@
 import {
   ArrowRight,
+  ChevronDown,
   Gauge,
   KeyRound,
   Layers,
@@ -40,6 +41,16 @@ const secondaryFeatures = [
   { key: 'streaming', icon: Zap },
   { key: 'pool', icon: Radio },
   { key: 'observability', icon: ShieldCheck },
+] as const
+
+/** 公开 FAQ 只解释当前产品已经交付的能力，不承诺未落地的运营功能。 */
+const faqItems = [
+  'whatIsAnyFlows',
+  'whichProtocols',
+  'howRoutingWorks',
+  'howBillingWorks',
+  'canSelfHost',
+  'whereToStart',
 ] as const
 
 export function LandingPage() {
@@ -141,8 +152,10 @@ export function LandingPage() {
                 {t(`landing.hero.cta.${accountCtaKey}`)}
                 <ArrowRight className="size-4" aria-hidden="true" />
               </Button>
-              <Button variant="secondary" size="lg">
-                {t('landing.hero.secondary')}
+              <Button variant="secondary" size="lg" asChild>
+                <a href="#faq">
+                  {t('landing.hero.secondary')}
+                </a>
               </Button>
             </div>
 
@@ -301,6 +314,36 @@ export function LandingPage() {
           </div>
         </section>
 
+        <section id="faq" className="mx-auto max-w-[1120px] scroll-mt-20 px-6 py-32">
+          <InView className="mx-auto max-w-2xl text-center">
+            <p className="text-xs font-medium tracking-normal text-brand uppercase">
+              {t('landing.faq.eyebrow')}
+            </p>
+            <h2 className="mt-5 text-[clamp(1.875rem,4.5vw,3rem)] leading-[1.1] font-semibold tracking-normal">
+              {t('landing.faq.heading')}
+            </h2>
+            <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-muted-foreground">
+              {t('landing.faq.subheading')}
+            </p>
+          </InView>
+
+          <InView delay={120} className="mx-auto mt-16 max-w-3xl">
+            <div className="border-y border-[var(--hairline)]">
+              {faqItems.map((item) => (
+                <details key={item} className="group border-b border-[var(--hairline)] last:border-b-0">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-6 py-5 text-left text-base font-medium focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+                    <span>{t(`landing.faq.items.${item}.question`)}</span>
+                    <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-open:rotate-180" aria-hidden="true" />
+                  </summary>
+                  <p className="max-w-2xl pb-5 pr-10 text-sm leading-6 text-muted-foreground">
+                    {t(`landing.faq.items.${item}.answer`)}
+                  </p>
+                </details>
+              ))}
+            </div>
+          </InView>
+        </section>
+
         {/* 收尾 CTA：与 hero 呼应，但用极光而非粒子，避免两处动效等量齐观 */}
         <section className="relative isolate overflow-hidden border-t border-[var(--hairline)] px-6 py-36">
           <div
@@ -325,8 +368,10 @@ export function LandingPage() {
                 {t(`landing.hero.cta.${accountCtaKey}`)}
                 <ArrowRight className="size-4" aria-hidden="true" />
               </Button>
-              <Button variant="secondary" size="lg">
-                {t('landing.closing.secondary')}
+              <Button variant="secondary" size="lg" asChild>
+                <a href="#faq">
+                  {t('landing.closing.secondary')}
+                </a>
               </Button>
             </div>
           </InView>
