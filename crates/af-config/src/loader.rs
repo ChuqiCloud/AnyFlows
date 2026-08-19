@@ -277,6 +277,13 @@ fn known_field(path: &str) -> Option<&'static str> {
         "redis" => "redis",
         "redis.url" => "redis.url",
         "redis.request_rate_limit_namespace" => "redis.request_rate_limit_namespace",
+        "clickhouse_analytics" => "clickhouse_analytics",
+        "clickhouse_analytics.endpoint" => "clickhouse_analytics.endpoint",
+        "clickhouse_analytics.query" => "clickhouse_analytics.query",
+        "clickhouse_analytics.username" => "clickhouse_analytics.username",
+        "clickhouse_analytics.password" => "clickhouse_analytics.password",
+        "clickhouse_analytics.timeout_secs" => "clickhouse_analytics.timeout_secs",
+        "clickhouse_analytics.max_response_bytes" => "clickhouse_analytics.max_response_bytes",
         "auth" => "auth",
         "auth.allow_query_api_key" => "auth.allow_query_api_key",
         "auth.lookup_timeout_secs" => "auth.lookup_timeout_secs",
@@ -404,6 +411,7 @@ mod tests {
             assert_eq!(config.channel_probe().probe_timeout_secs(), 10);
             assert!(!config.credential_encryption().is_configured());
             assert!(config.redis().url().is_none());
+            assert!(config.clickhouse_analytics().is_none());
             assert!(!config.auth().allow_query_api_key());
             assert_eq!(config.auth().lookup_timeout_secs(), 2);
             assert!(config.auth().session_signing_key().is_none());
@@ -492,6 +500,163 @@ mod tests {
                         | ConfigError::NonPositive { field: actual }
                         if actual == field
                 ));
+            }
+        });
+    }
+
+    #[test]
+    fn clickhouse_analytics_is_optional_complete_bounded_and_redacted() {
+        with_clean_env(|_| {
+            let valid = temp_file(
+                "[database]\nurl = 'sqlite::memory:'\n[clickhouse_analytics]\nendpoint = 'https://clickhouse.example:8443/'\nquery = 'SELECT {period_start:Int64}, {period_end:Int64}'\nusername = 'dashboard-reader'\npassword = 'dashboard-secret'\ntimeout_secs = 7\nmax_response_bytes = 65536\n",
+            );
+            let config = load_from(&valid).unwrap();
+            let _ = fs::remove_file(valid);
+            let settings = config.clickhouse_analytics().unwrap();
+            assert_eq!(
+                settings.endpoint().expose(),
+                "https://clickhouse.example:8443/"
+            );
+            assert_eq!(
+                settings.query().expose(),
+                "SELECT {period_start:Int64}, {period_end:Int64}"
+            );
+            assert_eq!(settings.username().expose(), "dashboard-reader");
+            assert_eq!(settings.password().expose(), "dashboard-secret");
+            assert_eq!(settings.timeout_secs(), 7);
+            assert_eq!(settings.max_response_bytes(), 65_536);
+            let debug = format!("{settings:?}");
+            for secret in [
+                "clickhouse.example",
+                "period_start",
+                "dashboard-reader",
+                "dashboard-secret",
+            ] {
+                assert!(!debug.contains(secret));
+            }
+
+            for field in ["endpoint", "query", "username", "password"] {
+                let values = [
+                    ("endpoint", "endpoint = 'https://clickhouse.example'"),
+                    (
+                        "query",
+                        "query = 'SELECT {period_start:Int64}, {period_end:Int64}'",
+                    ),
+                    ("username", "username = 'dashboard-reader'"),
+                    ("password", "password = 'dashboard-secret'"),
+                ]
+                .into_iter()
+                .filter_map(|(name, value)| (name != field).then_some(value))
+                .collect::<Vec<_>>()
+                .join("\n");
+                let path = raw_temp_file(&format!(
+                    "[database]\nurl = 'sqlite::memory:'\n[clickhouse_analytics]\n{values}\n"
+                ));
+                let error = load_from(&path).unwrap_err();
+                let _ = fs::remove_file(path);
+                assert_eq!(
+                    error,
+                    ConfigError::InvalidField {
+                        field: match field {
+                            "endpoint" => "clickhouse_analytics.endpoint",
+                            "query" => "clickhouse_analytics.query",
+                            "username" => "clickhouse_analytics.username",
+                            "password" => "clickhouse_analytics.password",
+                            _ => unreachable!(),
+                        }
+                    }
+                );
+            }
+
+            for (field, override_value, expected) in [
+                (
+                    "clickhouse_analytics.timeout_secs",
+                    "timeout_secs = 0",
+                    ConfigError::NonPositive {
+                        field: "clickhouse_analytics.timeout_secs",
+                    },
+                ),
+                (
+                    "clickhouse_analytics.timeout_secs",
+                    "timeout_secs = 301",
+                    ConfigError::OutOfRange {
+                        field: "clickhouse_analytics.timeout_secs",
+                    },
+                ),
+                (
+                    "clickhouse_analytics.max_response_bytes",
+                    "max_response_bytes = 0",
+                    ConfigError::NonPositive {
+                        field: "clickhouse_analytics.max_response_bytes",
+                    },
+                ),
+                (
+                    "clickhouse_analytics.max_response_bytes",
+                    "max_response_bytes = 4194305",
+                    ConfigError::OutOfRange {
+                        field: "clickhouse_analytics.max_response_bytes",
+                    },
+                ),
+            ] {
+                let path = temp_file(&format!(
+                    "[database]\nurl = 'sqlite::memory:'\n[clickhouse_analytics]\nendpoint = 'https://clickhouse.example'\nquery = 'SELECT {{period_start:Int64}}, {{period_end:Int64}}'\nusername = 'dashboard-reader'\npassword = 'dashboard-secret'\n{override_value}\n"
+                ));
+                let error = load_from(&path).unwrap_err();
+                let _ = fs::remove_file(path);
+                assert_eq!(error, expected, "{field}");
+            }
+        });
+    }
+
+    #[test]
+    fn clickhouse_analytics_rejects_invalid_values_without_echoing_them() {
+        with_clean_env(|_| {
+            for (field, override_value, canary) in [
+                (
+                    "clickhouse_analytics.endpoint",
+                    "endpoint = 'https://user:endpoint-canary@clickhouse.example'",
+                    "endpoint-canary",
+                ),
+                (
+                    "clickhouse_analytics.query",
+                    "query = 'SELECT query-canary; DROP TABLE usage_logs'",
+                    "query-canary",
+                ),
+                (
+                    "clickhouse_analytics.username",
+                    "username = ' username-canary '",
+                    "username-canary",
+                ),
+                (
+                    "clickhouse_analytics.password",
+                    "password = '密码-password-canary'",
+                    "password-canary",
+                ),
+            ] {
+                let defaults = [
+                    ("endpoint", "endpoint = 'https://clickhouse.example'"),
+                    (
+                        "query",
+                        "query = 'SELECT {period_start:Int64}, {period_end:Int64}'",
+                    ),
+                    ("username", "username = 'dashboard-reader'"),
+                    ("password", "password = 'dashboard-secret'"),
+                ];
+                let overridden_name = field.rsplit('.').next().unwrap();
+                let values = defaults
+                    .into_iter()
+                    .filter_map(|(name, value)| (name != overridden_name).then_some(value))
+                    .chain(std::iter::once(override_value))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let path = raw_temp_file(&format!(
+                    "[database]\nurl = 'sqlite::memory:'\n[clickhouse_analytics]\n{values}\n"
+                ));
+                let error = load_from(&path).unwrap_err();
+                let rendered = format!("{error:?}\n{error}");
+                let _ = fs::remove_file(path);
+                assert_eq!(error, ConfigError::InvalidField { field });
+                assert!(!rendered.contains(canary));
             }
         });
     }

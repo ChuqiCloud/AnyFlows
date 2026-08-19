@@ -39,7 +39,10 @@ use af_admin::{
     SiteSettingsService, SubscriptionService, TokenAuthenticator, UserInvitationService,
     UserProfileService, UserTokenService, UserTopupService, UserWalletService,
 };
-use af_analytics::{AdminDashboardReader, StorageAdminDashboardReader};
+use af_analytics::{
+    AdminDashboardChannelStorage, AdminDashboardReader, SplitAdminDashboardStorage,
+    StorageAdminDashboardReader,
+};
 use af_billing::{
     BillingPrechargePort, BillingSettlementPort, CachedRequestPricingSnapshotSource,
     DatabaseUsageRecordSink, GroupPricingCache, GroupPricingCacheError, ModelPriceCache,
@@ -217,6 +220,7 @@ pub struct AuthenticationReady {
     admin_channel_reader: Arc<dyn AdminChannelReader>,
     admin_channel_writer: Arc<dyn AdminChannelWriter>,
     admin_dashboard_reader: Arc<dyn AdminDashboardReader>,
+    admin_dashboard_channel_storage: Arc<dyn AdminDashboardChannelStorage>,
     admin_group_reader: Arc<dyn AdminGroupReader>,
     admin_group_writer: Arc<dyn AdminGroupWriter>,
     admin_route_reader: Arc<dyn AdminRouteReader>,
@@ -517,6 +521,11 @@ pub enum BootstrapError {
     /// 管理看板聚合仓储的启动参数无效。
     #[error("管理看板仓储启动参数无效")]
     AdminDashboardRepository(#[source] AdminDashboardRepositoryConfigError),
+    /// ClickHouse 管理看板分析读取配置无法安全装配。
+    #[error("ClickHouse 管理看板分析读取配置无效")]
+    ClickHouseAdminDashboardConfig(
+        #[source] crate::admin_dashboard_storage::ClickHouseAdminDashboardConfigError,
+    ),
     /// 管理员渠道仓储的启动参数无效。
     #[error("管理员渠道仓储启动参数无效")]
     AdminChannelRepository(#[source] AdminChannelRepositoryConfigError),
@@ -1023,6 +1032,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::AdminDashboardRepository)?;
+        let admin_dashboard_channel_storage: Arc<dyn AdminDashboardChannelStorage> = Arc::new(
+            crate::admin_dashboard_storage::DatabaseAdminDashboardChannelStorage::new(
+                admin_dashboard_repository.clone(),
+            ),
+        );
         let credential_encryptor = CredentialEncryptor::new(self.config.credential_encryption())
             .map_err(BootstrapError::CredentialEncryption)?;
         let query_api_key_policy = if auth.allow_query_api_key() {
@@ -1134,6 +1148,7 @@ impl Bootstrap<DatabaseReady> {
                         admin_dashboard_repository,
                     ),
                 ))),
+                admin_dashboard_channel_storage,
                 admin_group_reader: Arc::new(DatabaseAdminGroupReader::new(
                     admin_group_repository.clone(),
                 )),
@@ -1179,6 +1194,30 @@ impl Bootstrap<AuthenticationReady> {
         let (startup_config, max_cached_clients) = build_http_client_parts(&config)?;
         let upstream_clients = HttpClientProvider::new(startup_config.clone(), max_cached_clients)
             .map_err(BootstrapError::HttpClient)?;
+        if let Some(settings) = config.clickhouse_analytics() {
+            let clickhouse_config =
+                crate::admin_dashboard_storage::ClickHouseAdminDashboardConfig::new(
+                    settings.endpoint().expose(),
+                    settings.query().expose(),
+                    settings.username().clone(),
+                    settings.password().clone(),
+                    Duration::from_secs(settings.timeout_secs()),
+                    settings.max_response_bytes(),
+                )
+                .map_err(BootstrapError::ClickHouseAdminDashboardConfig)?;
+            let storage = SplitAdminDashboardStorage::new(
+                Arc::new(
+                    crate::admin_dashboard_storage::ClickHouseAdminDashboardStorage::new(
+                        clickhouse_config,
+                        upstream_clients.clone(),
+                    ),
+                ),
+                Arc::clone(&authentication.admin_dashboard_channel_storage),
+            );
+            authentication.admin_dashboard_reader =
+                Arc::new(StorageAdminDashboardReader::new(Arc::new(storage)));
+            tracing::info!("已启用 ClickHouse 管理看板分析事实读取");
+        }
         authentication.turnstile_verifier = config.turnstile().secret_key().map(|secret| {
             Arc::new(CloudflareTurnstileVerifier::new(
                 secret,
