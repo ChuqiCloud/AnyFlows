@@ -27532,8 +27532,7 @@
       "UserNotificationListResponse": {
         "type": "object",
         "required": [
-          "entries",
-          "next_cursor"
+          "entries"
         ],
         "properties": {
           "entries": {

@@ -1901,7 +1901,7 @@ export type UserNotification = {
 };
 export type UserNotificationListResponse = {
     entries: Array<UserNotification>;
-    next_cursor: string | null;
+    next_cursor?: string | null;
 };
 export type UserNotificationPreferencesRequest = {
     email_product_updates: boolean;
