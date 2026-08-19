@@ -4,7 +4,10 @@ set -Eeuo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/container-test-runner.sh"
 
 readonly REDIS_IMAGE="docker.io/library/redis:8.2.7-bookworm@sha256:d30960f73a599496d8b2802c97758bab6b1cd421fd06337f837779c47a57e1f3"
-readonly SMOKE_TEST_NAME="redis_hybrid_cache_smoke"
+readonly CACHE_SMOKE_TEST_NAMES=(
+    "redis_hybrid_cache_smoke"
+    "redis_request_rate_limit_multi_instance_capacity"
+)
 readonly HTTP_SMOKE_TEST_TARGET="token_auth_chain"
 readonly HTTP_SMOKE_TEST_NAME="redis_rpm_admission_is_shared_across_http_instances"
 
@@ -44,32 +47,39 @@ wait_for_redis() {
     return 1
 }
 
-run_smoke_test() {
+run_cache_smoke_tests() {
     local test_list=""
     local test_binary=""
     local runner_name=""
+    local test_name=""
 
     test_list="$(cargo test --locked --package af-cache --test redis_integration -- --list)"
-    if ! grep --fixed-strings --line-regexp --quiet "${SMOKE_TEST_NAME}: test" <<<"${test_list}"; then
-        echo "未发现必需的 Redis 缓存冒烟测试：${SMOKE_TEST_NAME}" >&2
-        return 1
-    fi
+    for test_name in "${CACHE_SMOKE_TEST_NAMES[@]}"; do
+        if ! grep --fixed-strings --line-regexp --quiet "${test_name}: test" <<<"${test_list}"; then
+            echo "未发现必需的 Redis 缓存冒烟测试：${test_name}" >&2
+            return 1
+        fi
+    done
 
     if [[ -n "${network_name}" ]]; then
         test_binary="$(ci_build_test_binary af-cache test redis_integration)"
-        runner_name="anyflows-redis-cache-test-${BASHPID}"
-        runner_names+=("${runner_name}")
-        ci_run_test_binary "${network_name}" "${runner_name}" "${test_binary}" \
-            "AF_TEST_REDIS_URL=${redis_url}" \
-            "AF_REQUIRE_LIVE_REDIS=1" \
-            -- "${SMOKE_TEST_NAME}" --exact --include-ignored
+        for test_name in "${CACHE_SMOKE_TEST_NAMES[@]}"; do
+            runner_name="anyflows-redis-cache-test-${BASHPID}-${test_name}"
+            runner_names+=("${runner_name}")
+            ci_run_test_binary "${network_name}" "${runner_name}" "${test_binary}" \
+                "AF_TEST_REDIS_URL=${redis_url}" \
+                "AF_REQUIRE_LIVE_REDIS=1" \
+                -- "${test_name}" --exact --include-ignored
+        done
         return
     fi
 
-    AF_TEST_REDIS_URL="${redis_url}" \
-        AF_REQUIRE_LIVE_REDIS=1 \
-        cargo test --locked --package af-cache --test redis_integration \
-            "${SMOKE_TEST_NAME}" -- --exact --include-ignored
+    for test_name in "${CACHE_SMOKE_TEST_NAMES[@]}"; do
+        AF_TEST_REDIS_URL="${redis_url}" \
+            AF_REQUIRE_LIVE_REDIS=1 \
+            cargo test --locked --package af-cache --test redis_integration \
+                "${test_name}" -- --exact --include-ignored
+    done
 }
 
 run_http_smoke_test() {
@@ -120,5 +130,5 @@ case "${redis_url}" in
         ;;
 esac
 
-run_smoke_test
+run_cache_smoke_tests
 run_http_smoke_test
