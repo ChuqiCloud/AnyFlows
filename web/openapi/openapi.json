@@ -2935,6 +2935,7 @@
             "name": "before",
             "in": "query",
             "description": "occurred_at:id 复合游标",
+            "required": false,
             "schema": {
               "type": [
                 "string",
@@ -2946,6 +2947,7 @@
             "name": "limit",
             "in": "query",
             "description": "每页数量，默认 25",
+            "required": false,
             "schema": {
               "type": "integer",
               "format": "int32",
