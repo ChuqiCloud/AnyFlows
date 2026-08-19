@@ -64,7 +64,7 @@ enum BilledChatExecution {
         body: Box<dyn GenerationStream>,
         usage: OpenAiChatUsageHandle,
         channel_id: ChannelId,
-        completion: BillingStreamCompletionHook,
+        completion: Box<BillingStreamCompletionHook>,
     },
 }
 
@@ -177,7 +177,7 @@ impl BillingChatService {
                     channel_id,
                 });
                 Ok(ChatResponse::Stream {
-                    body: body.with_completion_hook(Box::new(completion)),
+                    body: body.with_completion_hook(completion),
                     usage,
                 })
             }
@@ -292,13 +292,13 @@ impl BillingChatService {
                 })
             }
             ChatResponse::Stream { body, usage } => {
-                let completion = BillingStreamCompletionHook {
+                let completion = Box::new(BillingStreamCompletionHook {
                     lifecycle: Some(lifecycle),
                     context: observation_context,
                     started_at,
                     first_token: started_at.elapsed(),
                     outcome: None,
-                };
+                });
                 Ok(BilledChatExecution::Stream {
                     body,
                     usage,
