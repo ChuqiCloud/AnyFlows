@@ -1038,8 +1038,7 @@ impl PlannedChatExecution for ScheduledChatExecution {
             let successful_channel_id = report
                 .successful_candidate_index()
                 .and_then(|index| attempt_targets.get(index))
-                .map(CredentialAttemptTarget::channel_id)
-                .map(af_domain::ChannelId::get);
+                .map(CredentialAttemptTarget::channel_id);
             let ((), (), (), ()) = tokio::join!(
                 persist_credential_feedback(
                     &credential_states,
@@ -1060,7 +1059,7 @@ impl PlannedChatExecution for ScheduledChatExecution {
                 && let (Some(store), Some(scope), Some(channel_id)) = (
                     sticky_sessions.as_ref(),
                     session_scope.as_ref(),
-                    successful_channel_id,
+                    successful_channel_id.map(af_domain::ChannelId::get),
                 )
                 && let Err(error) = store.bind(scope.as_str(), channel_id).await
             {
@@ -1075,7 +1074,14 @@ impl PlannedChatExecution for ScheduledChatExecution {
                     if let Some(permit) = user_permit {
                         permit.release().await;
                     }
-                    Ok(ChatResponse::Full { body, usage })
+                    successful_channel_id
+                        .map(|channel_id| {
+                            crate::RoutedExecution::new(
+                                ChatResponse::Full { body, usage },
+                                channel_id,
+                            )
+                        })
+                        .ok_or(AfError::Internal)
                 }
                 Ok(ChatResponse::Stream { body, usage }) => {
                     let body = match user_permit {
@@ -1084,7 +1090,14 @@ impl PlannedChatExecution for ScheduledChatExecution {
                         }
                         None => body,
                     };
-                    Ok(ChatResponse::Stream { body, usage })
+                    successful_channel_id
+                        .map(|channel_id| {
+                            crate::RoutedExecution::new(
+                                ChatResponse::Stream { body, usage },
+                                channel_id,
+                            )
+                        })
+                        .ok_or(AfError::Internal)
                 }
                 Err(error) => {
                     if let Some(permit) = user_permit {

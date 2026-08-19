@@ -1,6 +1,7 @@
 use af_admin::{PlatformPolicy, SessionAuthentication};
 use af_analytics::{
-    AdminDashboard, AdminDashboardAccess, AdminDashboardHourlyPoint, AdminDashboardPerformance,
+    AdminDashboard, AdminDashboardAccess, AdminDashboardChannelFlow, AdminDashboardFailure,
+    AdminDashboardFailureKind, AdminDashboardHourlyPoint, AdminDashboardPerformance,
     AdminDashboardReadError,
 };
 use af_domain::PlatformPermission;
@@ -46,6 +47,20 @@ pub(crate) struct AdminDashboardResponse {
     disabled_channel_count: i64,
     #[schema(minimum = 0)]
     auto_disabled_channel_count: i64,
+    /// 已写入终态事实的同步模型请求数，与用量请求数不要求相等。
+    #[schema(minimum = 0)]
+    outcome_request_count: i64,
+    #[schema(minimum = 0)]
+    successful_request_count: i64,
+    #[schema(minimum = 0)]
+    failed_request_count: i64,
+    /// 未进入前十二条可见渠道流向的成功请求数。
+    #[schema(minimum = 0)]
+    other_success_count: i64,
+    /// 按闭合错误分类聚合的失败请求。
+    failures: Vec<AdminDashboardFailureResponse>,
+    /// 请求量最高的十二条入口协议到最终成功渠道流向。
+    channel_flows: Vec<AdminDashboardChannelFlowResponse>,
     /// 覆盖整个统计窗口的连续一小时用量分桶。
     hourly: Vec<AdminDashboardHourlyPointResponse>,
     /// 只基于真实持久化耗时样本生成的性能健康摘要。
@@ -90,6 +105,53 @@ pub(crate) struct AdminDashboardPerformanceResponse {
     slow_request_threshold_ms: i64,
 }
 
+/// 管理看板公开的闭合失败分类。
+#[derive(Clone, Copy, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[schema(as = AdminDashboardFailureKind)]
+pub(crate) enum AdminDashboardFailureKindResponse {
+    InvalidRequest,
+    ModelNotAllowed,
+    InsufficientQuota,
+    QuotaLimited,
+    ConcurrencyLimited,
+    OutcomeUnknown,
+    UpstreamRateLimited,
+    UpstreamOverloaded,
+    UpstreamAuthentication,
+    UpstreamQuota,
+    UpstreamModel,
+    UpstreamProtocol,
+    UpstreamServer,
+    UpstreamNetwork,
+    Internal,
+}
+
+/// 管理看板窗口内一个失败分类的请求数。
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminDashboardFailure)]
+pub(crate) struct AdminDashboardFailureResponse {
+    kind: AdminDashboardFailureKindResponse,
+    #[schema(minimum = 1)]
+    request_count: i64,
+}
+
+/// 管理看板窗口内一条入口协议到最终成功渠道流向。
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminDashboardChannelFlow)]
+pub(crate) struct AdminDashboardChannelFlowResponse {
+    #[schema(value_type = crate::openapi::schema::AdminChannelProtocolSchema)]
+    protocol: String,
+    #[schema(minimum = 1)]
+    channel_id: i64,
+    #[schema(min_length = 1, max_length = 128)]
+    channel_name: String,
+    #[schema(minimum = 1)]
+    request_count: i64,
+}
+
 /// 返回管理员可见的最近 24 小时看板快照。
 pub(crate) async fn get_admin_dashboard(
     State(state): State<HttpState>,
@@ -128,6 +190,21 @@ impl AdminDashboardResponse {
             enabled_channel_count: dashboard.enabled_channel_count(),
             disabled_channel_count: dashboard.disabled_channel_count(),
             auto_disabled_channel_count: dashboard.auto_disabled_channel_count(),
+            outcome_request_count: dashboard.outcome_request_count(),
+            successful_request_count: dashboard.successful_request_count(),
+            failed_request_count: dashboard.failed_request_count(),
+            other_success_count: dashboard.other_success_count(),
+            failures: dashboard
+                .failures()
+                .iter()
+                .copied()
+                .map(AdminDashboardFailureResponse::from_failure)
+                .collect(),
+            channel_flows: dashboard
+                .channel_flows()
+                .iter()
+                .map(AdminDashboardChannelFlowResponse::from_flow)
+                .collect(),
             hourly: dashboard
                 .hourly()
                 .iter()
@@ -137,6 +214,48 @@ impl AdminDashboardResponse {
             performance: AdminDashboardPerformanceResponse::from_performance(
                 dashboard.performance(),
             ),
+        }
+    }
+}
+
+impl AdminDashboardFailureKindResponse {
+    const fn from_kind(kind: AdminDashboardFailureKind) -> Self {
+        match kind {
+            AdminDashboardFailureKind::InvalidRequest => Self::InvalidRequest,
+            AdminDashboardFailureKind::ModelNotAllowed => Self::ModelNotAllowed,
+            AdminDashboardFailureKind::InsufficientQuota => Self::InsufficientQuota,
+            AdminDashboardFailureKind::QuotaLimited => Self::QuotaLimited,
+            AdminDashboardFailureKind::ConcurrencyLimited => Self::ConcurrencyLimited,
+            AdminDashboardFailureKind::OutcomeUnknown => Self::OutcomeUnknown,
+            AdminDashboardFailureKind::UpstreamRateLimited => Self::UpstreamRateLimited,
+            AdminDashboardFailureKind::UpstreamOverloaded => Self::UpstreamOverloaded,
+            AdminDashboardFailureKind::UpstreamAuthentication => Self::UpstreamAuthentication,
+            AdminDashboardFailureKind::UpstreamQuota => Self::UpstreamQuota,
+            AdminDashboardFailureKind::UpstreamModel => Self::UpstreamModel,
+            AdminDashboardFailureKind::UpstreamProtocol => Self::UpstreamProtocol,
+            AdminDashboardFailureKind::UpstreamServer => Self::UpstreamServer,
+            AdminDashboardFailureKind::UpstreamNetwork => Self::UpstreamNetwork,
+            AdminDashboardFailureKind::Internal => Self::Internal,
+        }
+    }
+}
+
+impl AdminDashboardFailureResponse {
+    fn from_failure(failure: AdminDashboardFailure) -> Self {
+        Self {
+            kind: AdminDashboardFailureKindResponse::from_kind(failure.kind()),
+            request_count: failure.request_count(),
+        }
+    }
+}
+
+impl AdminDashboardChannelFlowResponse {
+    fn from_flow(flow: &AdminDashboardChannelFlow) -> Self {
+        Self {
+            protocol: flow.protocol().as_str().to_owned(),
+            channel_id: flow.channel_id().get(),
+            channel_name: flow.channel_name().to_owned(),
+            request_count: flow.request_count(),
         }
     }
 }

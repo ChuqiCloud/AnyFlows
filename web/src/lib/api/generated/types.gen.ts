@@ -288,6 +288,17 @@ export type AdminCredentialWriteFields = {
     oauth_account_key: string | null;
     oauth_project_id: string | null;
 };
+export type AdminDashboardChannelFlow = {
+    protocol: AdminChannelProtocol;
+    channel_id: number;
+    channel_name: string;
+    request_count: number;
+};
+export type AdminDashboardFailure = {
+    kind: AdminDashboardFailureKind;
+    request_count: number;
+};
+export type AdminDashboardFailureKind = 'invalid_request' | 'model_not_allowed' | 'insufficient_quota' | 'quota_limited' | 'concurrency_limited' | 'outcome_unknown' | 'upstream_rate_limited' | 'upstream_overloaded' | 'upstream_authentication' | 'upstream_quota' | 'upstream_model' | 'upstream_protocol' | 'upstream_server' | 'upstream_network' | 'internal';
 export type AdminDashboardHourlyPoint = {
     period_start: number;
     period_end: number;
@@ -317,6 +328,12 @@ export type AdminDashboardResponse = {
     enabled_channel_count: number;
     disabled_channel_count: number;
     auto_disabled_channel_count: number;
+    outcome_request_count: number;
+    successful_request_count: number;
+    failed_request_count: number;
+    other_success_count: number;
+    failures: Array<AdminDashboardFailure>;
+    channel_flows: Array<AdminDashboardChannelFlow>;
     hourly: Array<AdminDashboardHourlyPoint>;
     performance: AdminDashboardPerformance;
 };

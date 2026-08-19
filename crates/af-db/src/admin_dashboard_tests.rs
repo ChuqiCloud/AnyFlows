@@ -6,7 +6,7 @@ use super::{
     AdminDashboardRepository, AdminDashboardRepositoryConfigError, AdminDashboardRepositoryError,
     DatabaseOptions, MigrationOptions,
 };
-use crate::entity::{HeaderOverrides, SensitiveJson, channels, usage_logs};
+use crate::entity::{HeaderOverrides, SensitiveJson, channels, request_outcome_logs, usage_logs};
 
 #[tokio::test]
 async fn snapshot_uses_half_open_window_and_excludes_deleted_channels() -> Result<(), Box<dyn Error>>
@@ -122,6 +122,34 @@ async fn snapshot_uses_half_open_window_and_excludes_deleted_channels() -> Resul
         .insert(pool.connection())
         .await?;
     }
+    for (id, created_at, protocol, outcome, error_kind, channel_id) in [
+        (1, start, "openai_chat", 1_i16, None, Some(1_i64)),
+        (2, start, "openai_responses", 1, None, Some(1)),
+        (
+            3,
+            TimeDateTimeWithTimeZone::from_unix_timestamp(1_500)?,
+            "openai_chat",
+            2,
+            Some("upstream_network"),
+            None,
+        ),
+        (4, end, "openai_chat", 1, None, Some(1)),
+    ] {
+        request_outcome_logs::ActiveModel {
+            id: Set(id),
+            request_id: Set(format!("dashboard-outcome-{id}")),
+            protocol: Set(protocol.to_owned()),
+            operation: Set("chat".to_owned()),
+            model: Set("gpt-test".to_owned()),
+            outcome: Set(outcome),
+            error_kind: Set(error_kind.map(str::to_owned)),
+            channel_id: Set(channel_id),
+            duration_ms: Set(10),
+            created_at: Set(created_at),
+        }
+        .insert(pool.connection())
+        .await?;
+    }
 
     let repository = AdminDashboardRepository::new(pool.clone(), Duration::from_secs(2))?;
     let snapshot = repository.snapshot(1_000, 87_400).await?;
@@ -152,6 +180,17 @@ async fn snapshot_uses_half_open_window_and_excludes_deleted_channels() -> Resul
     assert_eq!(performance.duration_sample_count(), 2);
     assert_eq!(performance.average_duration_ms(), Some(8_500));
     assert_eq!(performance.slow_request_count(), 1);
+    assert_eq!(snapshot.outcome_request_count(), 3);
+    assert_eq!(snapshot.successful_request_count(), 2);
+    assert_eq!(snapshot.failed_request_count(), 1);
+    assert_eq!(snapshot.other_success_count(), 0);
+    assert_eq!(snapshot.failures().len(), 1);
+    assert_eq!(
+        snapshot.failures()[0].kind(),
+        crate::RequestFailureKind::UpstreamNetwork
+    );
+    assert_eq!(snapshot.channel_flows().len(), 2);
+    assert_eq!(snapshot.channel_flows()[0].request_count(), 1);
 
     pool.close().await?;
     Ok(())

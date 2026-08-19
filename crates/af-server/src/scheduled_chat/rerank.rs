@@ -260,6 +260,10 @@ impl PlannedRerankExecution for ScheduledRerankExecution {
                 relay_rerank_with_report(&machine, request, &candidate_protocols)
                     .await
                     .into_parts();
+            let successful_channel_id = report
+                .successful_candidate_index()
+                .and_then(|index| attempt_targets.get(index))
+                .map(CredentialAttemptTarget::channel_id);
             let ((), (), ()) = tokio::join!(
                 persist_credential_feedback(
                     &credential_states,
@@ -278,7 +282,11 @@ impl PlannedRerankExecution for ScheduledRerankExecution {
             if let Some(permit) = user_permit {
                 permit.release().await;
             }
-            result
+            result.and_then(|response| {
+                successful_channel_id
+                    .map(|channel_id| crate::RoutedExecution::new(response, channel_id))
+                    .ok_or(AfError::Internal)
+            })
         })
     }
 }

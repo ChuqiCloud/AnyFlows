@@ -29,6 +29,7 @@ mod model_price_source;
 mod oauth_connection;
 mod payment_runtime;
 mod readiness;
+mod request_outcome_runtime;
 mod request_rate_limit;
 mod responses_websocket_runtime;
 mod scheduled_chat;
@@ -80,6 +81,7 @@ pub use bootstrap::{
     ListenerReady, RelayReady, RouterReady, ShutdownReport, Supervised, TelemetryReady, run,
 };
 pub use oauth_connection::OAuthRuntimeConfigError;
+pub use request_outcome_runtime::{RequestOutcomeContext, RequestOutcomeRuntime, RoutedExecution};
 pub use scheduled_chat::{
     BoundVideoTaskSubmission, VideoTaskBinding, VideoTaskPollFuture, VideoTaskRuntime,
     VideoTaskSubmissionFuture, VideoTaskSubmissionRuntimeError,

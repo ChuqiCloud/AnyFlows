@@ -34,6 +34,7 @@ mod pricing;
 mod proxy;
 mod redemption;
 mod registration;
+mod request_outcome;
 mod routes;
 mod routing;
 mod scheduler;
@@ -164,6 +165,7 @@ pub(super) use proxy::{
 };
 pub(super) use redemption::create_redemption_storage;
 pub(super) use registration::create_registration_rate_limits;
+pub(super) use request_outcome::{create_request_outcome_storage, drop_request_outcome_storage};
 pub(super) use site::{create_authentication_settings, create_site_settings};
 pub(super) use subscription::create_subscription_storage;
 pub(super) use subscription_alert::create_subscription_balance_alert_storage;

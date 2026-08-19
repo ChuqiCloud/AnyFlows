@@ -10,6 +10,7 @@ import { useAdminDashboard } from './dashboard-api'
 import { DashboardChannelStatus } from './dashboard-channel-status'
 import { DashboardComposition } from './dashboard-composition'
 import { DashboardPerformance } from './dashboard-performance'
+import { DashboardOutcomes } from './dashboard-outcomes'
 import { DashboardSummary } from './dashboard-summary'
 import { DashboardTrend } from './dashboard-trend'
 
@@ -114,6 +115,7 @@ export function DashboardPage() {
             <DashboardComposition dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} />
             <DashboardChannelStatus dashboard={dashboard} formatNumber={formatNumber} />
           </section>
+          <DashboardOutcomes dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} />
         </>
       ) : null}
     </div>

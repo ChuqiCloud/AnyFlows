@@ -18,8 +18,13 @@ use crate::billing_chat::{
 };
 
 /// 已固定路由计划的一次 Responses Compact 异步执行结果。
-pub type PlannedResponsesCompactExecutionFuture =
-    Pin<Box<dyn Future<Output = Result<ResponsesCompactionResponse, AfError>> + Send + 'static>>;
+pub type PlannedResponsesCompactExecutionFuture = Pin<
+    Box<
+        dyn Future<Output = Result<crate::RoutedExecution<ResponsesCompactionResponse>, AfError>>
+            + Send
+            + 'static,
+    >,
+>;
 
 /// 在计费前完成专用候选与目标分组装配的请求级计划。
 pub trait PlannedResponsesCompactExecution: Send {
@@ -57,6 +62,7 @@ pub struct BillingResponsesCompactService {
     refund: Option<Arc<dyn RefundSignalPort>>,
     settlement: Option<Arc<dyn BillingSettlementPort>>,
     usage: Arc<dyn UsageRecordPort>,
+    request_outcomes: Option<crate::RequestOutcomeRuntime>,
 }
 
 impl BillingResponsesCompactService {
@@ -77,7 +83,15 @@ impl BillingResponsesCompactService {
             refund,
             settlement,
             usage,
+            request_outcomes: None,
         }
+    }
+
+    /// 注入同步模型请求终态的只追加观测运行时。
+    #[must_use]
+    pub fn with_request_outcomes(mut self, runtime: crate::RequestOutcomeRuntime) -> Self {
+        self.request_outcomes = Some(runtime);
+        self
     }
 
     async fn call(
@@ -87,6 +101,28 @@ impl BillingResponsesCompactService {
         request: CanonicalResponsesCompactionRequest,
         request_id: &str,
     ) -> Result<ResponsesCompactionResponse, AfError> {
+        let outcome = crate::RequestOutcomeContext::new(
+            request_id,
+            af_domain::Protocol::OpenAiResponses,
+            af_domain::Operation::ResponsesCompact,
+            request.model(),
+        );
+        outcome
+            .finish(
+                self.request_outcomes.as_ref(),
+                self.call_billed(principal, user_concurrency, request, request_id)
+                    .await,
+            )
+            .await
+    }
+
+    async fn call_billed(
+        &self,
+        principal: &GatewayPrincipal,
+        user_concurrency: Option<ConcurrencyLimit>,
+        request: CanonicalResponsesCompactionRequest,
+        request_id: &str,
+    ) -> Result<crate::RoutedExecution<ResponsesCompactionResponse>, AfError> {
         let upper_bound = compact_usage_upper_bound(&request)?;
         let model = request.model().to_owned();
         let planned = self
@@ -107,7 +143,9 @@ impl BillingResponsesCompactService {
         let reservation_id = new_reservation_id()?;
         let mut lifecycle = start_lifecycle(self, plan, *principal, reservation_id).await?;
 
-        let response = planned.execute().await?;
+        let routed = planned.execute().await?;
+        let channel_id = routed.channel_id();
+        let response = routed.into_value();
         let (body, compact_usage) = response.into_parts();
         let usage = normalize_compact_usage(compact_usage)?;
         if !usage_within_upper_bound(&usage, &upper_bound)? {
@@ -116,7 +154,10 @@ impl BillingResponsesCompactService {
         let _ = complete_with_retries(&mut lifecycle, usage)
             .await
             .map_err(map_lifecycle_error)?;
-        Ok(ResponsesCompactionResponse::new(body, compact_usage))
+        Ok(crate::RoutedExecution::new(
+            ResponsesCompactionResponse::new(body, compact_usage),
+            channel_id,
+        ))
     }
 }
 
@@ -408,9 +449,12 @@ mod tests {
                 if !self.succeed {
                     return Err(AfError::Internal);
                 }
-                Ok(ResponsesCompactionResponse::new(
-                    Bytes::from_static(b"{}"),
-                    self.response_usage,
+                Ok(crate::RoutedExecution::new(
+                    ResponsesCompactionResponse::new(
+                        Bytes::from_static(b"{}"),
+                        self.response_usage,
+                    ),
+                    af_domain::ChannelId::new(1).unwrap(),
                 ))
             })
         }

@@ -15,6 +15,7 @@ mod admin_channel_write_tests;
 mod admin_credential;
 mod admin_dashboard;
 mod admin_dashboard_observability;
+mod admin_dashboard_outcomes;
 #[cfg(test)]
 mod admin_dashboard_tests;
 mod admin_group;
@@ -144,6 +145,9 @@ mod redemption;
 mod registration;
 #[cfg(test)]
 mod registration_tests;
+mod request_outcome;
+#[cfg(test)]
+mod request_outcome_tests;
 mod scheduler_ability;
 #[cfg(test)]
 mod scheduler_ability_tests;
@@ -201,6 +205,9 @@ pub use admin_dashboard::{
 pub use admin_dashboard_observability::{
     ADMIN_DASHBOARD_BUCKET_COUNT, ADMIN_DASHBOARD_BUCKET_SECONDS, AdminDashboardHourlyRecord,
     AdminDashboardPerformanceRecord, SLOW_FIRST_TOKEN_THRESHOLD_MS, SLOW_REQUEST_THRESHOLD_MS,
+};
+pub use admin_dashboard_outcomes::{
+    AdminDashboardChannelFlowRecord, AdminDashboardFailureRecord, MAX_DASHBOARD_CHANNEL_FLOWS,
 };
 pub use admin_group::{
     AdminGroupLookupOutcome, AdminGroupPageRecord, AdminGroupPeakRecord, AdminGroupRecord,
@@ -498,6 +505,10 @@ pub use registration::{
     MIN_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS, RegistrationAttemptOutcome,
     RegistrationPolicyRecord, RegistrationPolicyWriteRecord, RegistrationRepository,
     RegistrationRepositoryConfigError, RegistrationRepositoryError, RegistrationStatusRecord,
+};
+pub use request_outcome::{
+    RequestFailureKind, RequestOutcomeRepository, RequestOutcomeRepositoryError,
+    RequestOutcomeWrite, RequestOutcomeWriteError, RequestOutcomeWriteOutcome,
 };
 pub use scheduler_ability::{
     MAX_SCHEDULER_ABILITY_ENTRIES, MAX_SCHEDULER_ABILITY_SNAPSHOT_ENTRIES, SchedulerAbilityRecord,

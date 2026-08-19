@@ -26,8 +26,13 @@ const SPEECH_AUDIO_TOKENS_PER_MINUTE: u64 = 1_250;
 const NANOSECONDS_PER_MINUTE: u64 = 60 * 1_000_000_000;
 
 /// 已固定路由计划的一次 Speech 异步执行结果。
-pub type PlannedSpeechExecutionFuture =
-    Pin<Box<dyn Future<Output = Result<SpeechResponse, AfError>> + Send + 'static>>;
+pub type PlannedSpeechExecutionFuture = Pin<
+    Box<
+        dyn Future<Output = Result<crate::RoutedExecution<SpeechResponse>, AfError>>
+            + Send
+            + 'static,
+    >,
+>;
 
 /// 在计费前完成候选与目标分组装配的 Speech 请求级计划。
 pub trait PlannedSpeechExecution: Send {
@@ -62,6 +67,7 @@ pub struct BillingSpeechService {
     refund: Option<Arc<dyn RefundSignalPort>>,
     settlement: Option<Arc<dyn BillingSettlementPort>>,
     usage: Arc<dyn UsageRecordPort>,
+    request_outcomes: Option<crate::RequestOutcomeRuntime>,
 }
 
 impl BillingSpeechService {
@@ -82,7 +88,15 @@ impl BillingSpeechService {
             refund,
             settlement,
             usage,
+            request_outcomes: None,
         }
+    }
+
+    /// 注入同步模型请求终态的只追加观测运行时。
+    #[must_use]
+    pub fn with_request_outcomes(mut self, runtime: crate::RequestOutcomeRuntime) -> Self {
+        self.request_outcomes = Some(runtime);
+        self
     }
 
     async fn call(
@@ -92,6 +106,28 @@ impl BillingSpeechService {
         request: CanonicalAudioSpeechRequest,
         request_id: &str,
     ) -> Result<SpeechResponse, AfError> {
+        let outcome = crate::RequestOutcomeContext::new(
+            request_id,
+            af_domain::Protocol::OpenAiSpeech,
+            af_domain::Operation::Audio,
+            request.model(),
+        );
+        outcome
+            .finish(
+                self.request_outcomes.as_ref(),
+                self.call_billed(principal, user_concurrency, request, request_id)
+                    .await,
+            )
+            .await
+    }
+
+    async fn call_billed(
+        &self,
+        principal: &GatewayPrincipal,
+        user_concurrency: Option<ConcurrencyLimit>,
+        request: CanonicalAudioSpeechRequest,
+        request_id: &str,
+    ) -> Result<crate::RoutedExecution<SpeechResponse>, AfError> {
         let upper_bound = speech_usage_upper_bound(&request)?;
         let model = request.model().to_owned();
         let billing_request = request.clone();
@@ -113,7 +149,9 @@ impl BillingSpeechService {
         let reservation_id = new_reservation_id()?;
         let mut lifecycle = start_lifecycle(self, plan, *principal, reservation_id).await?;
 
-        let response = planned.execute().await?;
+        let routed = planned.execute().await?;
+        let channel_id = routed.channel_id();
+        let response = routed.into_value();
         let (body, output_format) = response.into_parts();
         let duration = match probe_speech_duration(&body, output_format).await {
             Ok(duration) => duration,
@@ -141,7 +179,10 @@ impl BillingSpeechService {
         let _ = complete_with_dimensions_retries(&mut lifecycle, actual, dimensions)
             .await
             .map_err(map_lifecycle_error)?;
-        Ok(SpeechResponse::new(body, output_format))
+        Ok(crate::RoutedExecution::new(
+            SpeechResponse::new(body, output_format),
+            channel_id,
+        ))
     }
 }
 

@@ -10,8 +10,9 @@ use std::{
 
 use af_db::{
     AdminDashboardRecord, AdminDashboardRepository, AdminDashboardRepositoryError,
-    SLOW_FIRST_TOKEN_THRESHOLD_MS, SLOW_REQUEST_THRESHOLD_MS,
+    RequestFailureKind, SLOW_FIRST_TOKEN_THRESHOLD_MS, SLOW_REQUEST_THRESHOLD_MS,
 };
+use af_domain::{ChannelId, Protocol};
 use thiserror::Error;
 
 /// 管理看板固定使用最近 24 小时的持久化用量窗口。
@@ -41,8 +42,107 @@ pub struct AdminDashboard {
     enabled_channel_count: i64,
     disabled_channel_count: i64,
     auto_disabled_channel_count: i64,
+    outcome_request_count: i64,
+    successful_request_count: i64,
+    failed_request_count: i64,
+    other_success_count: i64,
+    failures: Vec<AdminDashboardFailure>,
+    channel_flows: Vec<AdminDashboardChannelFlow>,
     hourly: Vec<AdminDashboardHourlyPoint>,
     performance: AdminDashboardPerformance,
+}
+
+/// 管理看板公开的闭合失败分类。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AdminDashboardFailureKind {
+    InvalidRequest,
+    ModelNotAllowed,
+    InsufficientQuota,
+    QuotaLimited,
+    ConcurrencyLimited,
+    OutcomeUnknown,
+    UpstreamRateLimited,
+    UpstreamOverloaded,
+    UpstreamAuthentication,
+    UpstreamQuota,
+    UpstreamModel,
+    UpstreamProtocol,
+    UpstreamServer,
+    UpstreamNetwork,
+    Internal,
+}
+
+impl From<RequestFailureKind> for AdminDashboardFailureKind {
+    fn from(value: RequestFailureKind) -> Self {
+        match value {
+            RequestFailureKind::InvalidRequest => Self::InvalidRequest,
+            RequestFailureKind::ModelNotAllowed => Self::ModelNotAllowed,
+            RequestFailureKind::InsufficientQuota => Self::InsufficientQuota,
+            RequestFailureKind::QuotaLimited => Self::QuotaLimited,
+            RequestFailureKind::ConcurrencyLimited => Self::ConcurrencyLimited,
+            RequestFailureKind::OutcomeUnknown => Self::OutcomeUnknown,
+            RequestFailureKind::UpstreamRateLimited => Self::UpstreamRateLimited,
+            RequestFailureKind::UpstreamOverloaded => Self::UpstreamOverloaded,
+            RequestFailureKind::UpstreamAuthentication => Self::UpstreamAuthentication,
+            RequestFailureKind::UpstreamQuota => Self::UpstreamQuota,
+            RequestFailureKind::UpstreamModel => Self::UpstreamModel,
+            RequestFailureKind::UpstreamProtocol => Self::UpstreamProtocol,
+            RequestFailureKind::UpstreamServer => Self::UpstreamServer,
+            RequestFailureKind::UpstreamNetwork => Self::UpstreamNetwork,
+            RequestFailureKind::Internal => Self::Internal,
+            _ => Self::Internal,
+        }
+    }
+}
+
+/// 管理看板窗口内一个失败分类的请求数。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AdminDashboardFailure {
+    kind: AdminDashboardFailureKind,
+    request_count: i64,
+}
+
+impl AdminDashboardFailure {
+    #[must_use]
+    pub const fn kind(self) -> AdminDashboardFailureKind {
+        self.kind
+    }
+
+    #[must_use]
+    pub const fn request_count(self) -> i64 {
+        self.request_count
+    }
+}
+
+/// 管理看板窗口内从入口协议到最终成功渠道的流向。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminDashboardChannelFlow {
+    protocol: Protocol,
+    channel_id: ChannelId,
+    channel_name: String,
+    request_count: i64,
+}
+
+impl AdminDashboardChannelFlow {
+    #[must_use]
+    pub const fn protocol(&self) -> Protocol {
+        self.protocol
+    }
+
+    #[must_use]
+    pub const fn channel_id(&self) -> ChannelId {
+        self.channel_id
+    }
+
+    #[must_use]
+    pub fn channel_name(&self) -> &str {
+        &self.channel_name
+    }
+
+    #[must_use]
+    pub const fn request_count(&self) -> i64 {
+        self.request_count
+    }
 }
 
 /// 管理看板单个连续一小时分桶。
@@ -204,6 +304,42 @@ impl AdminDashboard {
         self.auto_disabled_channel_count
     }
 
+    /// 返回窗口内已经写入终态事实的同步模型请求数。
+    #[must_use]
+    pub const fn outcome_request_count(&self) -> i64 {
+        self.outcome_request_count
+    }
+
+    /// 返回窗口内成功完成的同步模型请求数。
+    #[must_use]
+    pub const fn successful_request_count(&self) -> i64 {
+        self.successful_request_count
+    }
+
+    /// 返回窗口内失败完成的同步模型请求数。
+    #[must_use]
+    pub const fn failed_request_count(&self) -> i64 {
+        self.failed_request_count
+    }
+
+    /// 返回未进入前十二条可见流向的成功请求数。
+    #[must_use]
+    pub const fn other_success_count(&self) -> i64 {
+        self.other_success_count
+    }
+
+    /// 返回窗口内按闭合分类聚合的失败请求。
+    #[must_use]
+    pub fn failures(&self) -> &[AdminDashboardFailure] {
+        &self.failures
+    }
+
+    /// 返回请求量最高的协议到渠道成功流向。
+    #[must_use]
+    pub fn channel_flows(&self) -> &[AdminDashboardChannelFlow] {
+        &self.channel_flows
+    }
+
     /// 返回覆盖完整窗口的连续一小时分桶。
     #[must_use]
     pub fn hourly(&self) -> &[AdminDashboardHourlyPoint] {
@@ -231,6 +367,29 @@ impl AdminDashboard {
             enabled_channel_count: record.enabled_channel_count(),
             disabled_channel_count: record.disabled_channel_count(),
             auto_disabled_channel_count: record.auto_disabled_channel_count(),
+            outcome_request_count: record.outcome_request_count(),
+            successful_request_count: record.successful_request_count(),
+            failed_request_count: record.failed_request_count(),
+            other_success_count: record.other_success_count(),
+            failures: record
+                .failures()
+                .iter()
+                .copied()
+                .map(|failure| AdminDashboardFailure {
+                    kind: failure.kind().into(),
+                    request_count: failure.request_count(),
+                })
+                .collect(),
+            channel_flows: record
+                .channel_flows()
+                .iter()
+                .map(|flow| AdminDashboardChannelFlow {
+                    protocol: flow.protocol(),
+                    channel_id: flow.channel_id(),
+                    channel_name: flow.channel_name().to_owned(),
+                    request_count: flow.request_count(),
+                })
+                .collect(),
             hourly: record
                 .hourly()
                 .iter()
@@ -397,6 +556,12 @@ mod tests {
         assert_eq!(dashboard.period_start(), 7);
         assert_eq!(dashboard.period_end(), ADMIN_DASHBOARD_PERIOD_SECONDS + 7);
         assert_eq!(dashboard.request_count(), 0);
+        assert_eq!(dashboard.outcome_request_count(), 0);
+        assert_eq!(dashboard.successful_request_count(), 0);
+        assert_eq!(dashboard.failed_request_count(), 0);
+        assert_eq!(dashboard.other_success_count(), 0);
+        assert!(dashboard.failures().is_empty());
+        assert!(dashboard.channel_flows().is_empty());
         pool.close().await.unwrap();
     }
 }

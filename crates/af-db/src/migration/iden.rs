@@ -1952,6 +1952,34 @@ pub(in crate::migration) mod platform_audit_logs {
     }
 }
 
+pub(in crate::migration) mod request_outcome_logs {
+    use super::DeriveIden;
+
+    /// `request_outcome_logs` 请求终态事实表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "request_outcome_logs")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 请求终态事实的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        RequestId,
+        Protocol,
+        Operation,
+        Model,
+        Outcome,
+        ErrorKind,
+        ChannelId,
+        DurationMs,
+        CreatedAt,
+    }
+}
+
 pub(in crate::migration) mod organization_memberships {
     use super::DeriveIden;
 
