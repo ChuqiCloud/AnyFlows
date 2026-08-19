@@ -10,9 +10,12 @@ pub use reader::{
     StorageAdminDashboardReader,
 };
 pub use storage::{
-    AdminDashboardChannelSnapshot, AdminDashboardOutcomeSnapshot, AdminDashboardStorage,
-    AdminDashboardStorageError, AdminDashboardStorageFuture, AdminDashboardStorageSnapshot,
-    AdminDashboardUsageSnapshot,
+    AdminDashboardAnalyticsSnapshot, AdminDashboardAnalyticsStorage,
+    AdminDashboardAnalyticsStorageFuture, AdminDashboardChannelSnapshot,
+    AdminDashboardChannelStorage, AdminDashboardChannelStorageFuture,
+    AdminDashboardOutcomeSnapshot, AdminDashboardStorage, AdminDashboardStorageError,
+    AdminDashboardStorageFuture, AdminDashboardStorageSnapshot, AdminDashboardUsageSnapshot,
+    SplitAdminDashboardStorage,
 };
 
 /// 管理看板固定使用最近 24 小时的持久化用量窗口。

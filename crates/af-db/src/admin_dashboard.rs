@@ -223,6 +223,21 @@ impl AdminDashboardRepository {
         }
     }
 
+    /// 只读取事务主库中当前未删除渠道的闭合状态计数。
+    pub async fn channel_snapshot(
+        &self,
+    ) -> Result<AdminDashboardChannelRecord, AdminDashboardRepositoryError> {
+        let operation = self
+            .query_channels()
+            .with_subscriber(NoSubscriber::default());
+        match timeout(self.lookup_timeout, operation).await {
+            Ok(result) => result.and_then(AdminDashboardChannelRecord::validate),
+            Err(_) => Err(record_internal_error(
+                AdminDashboardRepositoryError::Timeout,
+            )),
+        }
+    }
+
     async fn query_usage(
         &self,
         period_start: TimeDateTimeWithTimeZone,
@@ -249,11 +264,13 @@ impl AdminDashboardRepository {
         })
     }
 
-    async fn query_channels(&self) -> Result<ChannelAggregateRow, AdminDashboardRepositoryError> {
+    async fn query_channels(
+        &self,
+    ) -> Result<AdminDashboardChannelRecord, AdminDashboardRepositoryError> {
         let backend = self.pool.connection().get_database_backend();
         query_one(self.pool.connection(), channel_query())
             .await
-            .and_then(|result| ChannelAggregateRow::try_from_query_result(result, backend))
+            .and_then(|result| AdminDashboardChannelRecord::try_from_query_result(result, backend))
     }
 }
 
@@ -295,14 +312,32 @@ impl UsageAggregateRow {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct ChannelAggregateRow {
+pub struct AdminDashboardChannelRecord {
     channel_count: i64,
     enabled_channel_count: i64,
     disabled_channel_count: i64,
     auto_disabled_channel_count: i64,
 }
 
-impl ChannelAggregateRow {
+impl AdminDashboardChannelRecord {
+    /// 返回当前启用的未删除渠道数。
+    #[must_use]
+    pub const fn enabled_channel_count(self) -> i64 {
+        self.enabled_channel_count
+    }
+
+    /// 返回当前人工停用的未删除渠道数。
+    #[must_use]
+    pub const fn disabled_channel_count(self) -> i64 {
+        self.disabled_channel_count
+    }
+
+    /// 返回当前自动停用的未删除渠道数。
+    #[must_use]
+    pub const fn auto_disabled_channel_count(self) -> i64 {
+        self.auto_disabled_channel_count
+    }
+
     fn try_from_query_result(
         result: QueryResult,
         backend: DbBackend,
@@ -318,12 +353,34 @@ impl ChannelAggregateRow {
             )?,
         })
     }
+
+    fn validate(self) -> Result<Self, AdminDashboardRepositoryError> {
+        let status_count = self
+            .enabled_channel_count
+            .checked_add(self.disabled_channel_count)
+            .and_then(|count| count.checked_add(self.auto_disabled_channel_count));
+        if [
+            self.channel_count,
+            self.enabled_channel_count,
+            self.disabled_channel_count,
+            self.auto_disabled_channel_count,
+        ]
+        .into_iter()
+        .any(|value| value < 0)
+            || status_count != Some(self.channel_count)
+        {
+            return Err(record_internal_error(
+                AdminDashboardRepositoryError::Invariant,
+            ));
+        }
+        Ok(self)
+    }
 }
 
 impl AdminDashboardRecord {
     fn try_from_rows(
         usage: UsageAggregateRow,
-        channels: ChannelAggregateRow,
+        channels: AdminDashboardChannelRecord,
         observability: AdminDashboardObservabilityRecord,
         outcomes: AdminDashboardOutcomeRecord,
     ) -> Result<Self, AdminDashboardRepositoryError> {
@@ -336,12 +393,7 @@ impl AdminDashboardRecord {
             usage.per_call_request_count,
             usage.free_request_count,
         ];
-        let channel_values = [
-            channels.channel_count,
-            channels.enabled_channel_count,
-            channels.disabled_channel_count,
-            channels.auto_disabled_channel_count,
-        ];
+        let channels = channels.validate()?;
         let source_count = usage
             .upstream_usage_count
             .checked_add(usage.estimated_usage_count);
@@ -349,15 +401,9 @@ impl AdminDashboardRecord {
             .per_token_request_count
             .checked_add(usage.per_call_request_count)
             .and_then(|count| count.checked_add(usage.free_request_count));
-        let status_count = channels
-            .enabled_channel_count
-            .checked_add(channels.disabled_channel_count)
-            .and_then(|count| count.checked_add(channels.auto_disabled_channel_count));
         if usage_values.into_iter().any(|value| value < 0)
-            || channel_values.into_iter().any(|value| value < 0)
             || source_count != Some(usage.request_count)
             || billing_count != Some(usage.request_count)
-            || status_count != Some(channels.channel_count)
         {
             return Err(record_internal_error(
                 AdminDashboardRepositoryError::Invariant,

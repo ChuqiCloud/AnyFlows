@@ -200,8 +200,8 @@ pub use admin_credential::{
     AdminCredentialRecord,
 };
 pub use admin_dashboard::{
-    AdminDashboardRecord, AdminDashboardRepository, AdminDashboardRepositoryConfigError,
-    AdminDashboardRepositoryError,
+    AdminDashboardChannelRecord, AdminDashboardRecord, AdminDashboardRepository,
+    AdminDashboardRepositoryConfigError, AdminDashboardRepositoryError,
 };
 pub use admin_dashboard_observability::{
     ADMIN_DASHBOARD_BUCKET_COUNT, ADMIN_DASHBOARD_BUCKET_SECONDS, AdminDashboardHourlyRecord,
