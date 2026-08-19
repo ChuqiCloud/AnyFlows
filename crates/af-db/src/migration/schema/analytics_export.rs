@@ -137,7 +137,7 @@ fn event_state_shape() -> SimpleExpr {
             Condition::all()
                 .add(status.clone().eq(2_i16))
                 .add(attempts.clone().gt(0_i16))
-                .add(lease.is_not_null())
+                .add(lease.clone().is_not_null())
                 .add(published.clone().is_null()),
         )
         .add(
