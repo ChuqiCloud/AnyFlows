@@ -1,8 +1,9 @@
-import { CheckCircle2, GitBranch, TriangleAlert } from 'lucide-react'
+import { CheckCircle2, CircleHelp, GitBranch, TriangleAlert, type LucideIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import type { AdminDashboardResponse } from '@/lib/api/generated/types.gen'
+import { getDashboardAvailabilityMetrics } from './dashboard-availability-metrics'
 import { DashboardFlowMap } from './dashboard-flow-map'
 
 type DashboardOutcomesProps = {
@@ -11,14 +12,9 @@ type DashboardOutcomesProps = {
   formatPercent: (value: number) => string
 }
 
-function ratio(count: number, total: number) {
-  return total > 0 ? count / total : null
-}
-
 export function DashboardOutcomes({ dashboard, formatNumber, formatPercent }: DashboardOutcomesProps) {
   const { t } = useTranslation()
-  const successRate = ratio(dashboard.successful_request_count, dashboard.outcome_request_count)
-  const failureRate = ratio(dashboard.failed_request_count, dashboard.outcome_request_count)
+  const metrics = getDashboardAvailabilityMetrics(dashboard)
 
   return (
     <section className="grid gap-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]" aria-label={t('dashboard.outcomes.label')}>
@@ -28,7 +24,7 @@ export function DashboardOutcomes({ dashboard, formatNumber, formatPercent }: Da
           <CardDescription className="mt-1 text-xs">{t('dashboard.outcomes.subtitle')}</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 px-4 py-4">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <OutcomeMetric
               icon={GitBranch}
               label={t('dashboard.outcomes.sampleCount')}
@@ -38,14 +34,20 @@ export function DashboardOutcomes({ dashboard, formatNumber, formatPercent }: Da
             <OutcomeMetric
               icon={CheckCircle2}
               label={t('dashboard.outcomes.successRate')}
-              value={successRate === null ? '--' : formatPercent(successRate)}
+              value={metrics.successRate === null ? '--' : formatPercent(metrics.successRate)}
               hint={t('dashboard.outcomes.successHint', { count: formatNumber(dashboard.successful_request_count) })}
             />
             <OutcomeMetric
               icon={TriangleAlert}
               label={t('dashboard.outcomes.failureRate')}
-              value={failureRate === null ? '--' : formatPercent(failureRate)}
-              hint={t('dashboard.outcomes.failureHint', { count: formatNumber(dashboard.failed_request_count) })}
+              value={metrics.failureRate === null ? '--' : formatPercent(metrics.failureRate)}
+              hint={t('dashboard.outcomes.failureHint', { count: formatNumber(metrics.confirmedFailureCount) })}
+            />
+            <OutcomeMetric
+              icon={CircleHelp}
+              label={t('dashboard.outcomes.unknownCount')}
+              value={formatNumber(metrics.unknownRequestCount)}
+              hint={t('dashboard.outcomes.unknownHint')}
             />
           </div>
 
@@ -61,7 +63,9 @@ export function DashboardOutcomes({ dashboard, formatNumber, formatPercent }: Da
               ) : (
                 <div className="grid gap-2">
                   {dashboard.failures.map((failure) => {
-                    const share = ratio(failure.request_count, dashboard.failed_request_count)
+                    const share = dashboard.failed_request_count > 0
+                      ? failure.request_count / dashboard.failed_request_count
+                      : null
                     return (
                       <div key={failure.kind} className="grid gap-1.5">
                         <div className="flex items-center justify-between gap-3 text-xs">
@@ -100,7 +104,7 @@ function OutcomeMetric({
   value,
   hint,
 }: {
-  icon: typeof GitBranch
+  icon: LucideIcon
   label: string
   value: string
   hint: string
