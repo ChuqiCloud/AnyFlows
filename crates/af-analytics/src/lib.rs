@@ -1,19 +1,19 @@
 //! 用量记录、聚合与分析投影。
 
-use std::{
-    fmt,
-    future::Future,
-    pin::Pin,
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
-};
-
-use af_db::{
-    AdminDashboardRecord, AdminDashboardRepository, AdminDashboardRepositoryError,
-    RequestFailureKind, SLOW_FIRST_TOKEN_THRESHOLD_MS, SLOW_REQUEST_THRESHOLD_MS,
-};
 use af_domain::{ChannelId, Protocol};
-use thiserror::Error;
+
+mod reader;
+mod storage;
+
+pub use reader::{
+    AdminDashboardReadError, AdminDashboardReadFuture, AdminDashboardReader,
+    StorageAdminDashboardReader,
+};
+pub use storage::{
+    AdminDashboardChannelSnapshot, AdminDashboardOutcomeSnapshot, AdminDashboardStorage,
+    AdminDashboardStorageError, AdminDashboardStorageFuture, AdminDashboardStorageSnapshot,
+    AdminDashboardUsageSnapshot,
+};
 
 /// 管理看板固定使用最近 24 小时的持久化用量窗口。
 pub const ADMIN_DASHBOARD_PERIOD_SECONDS: i64 = 24 * 60 * 60;
@@ -72,29 +72,6 @@ pub enum AdminDashboardFailureKind {
     Internal,
 }
 
-impl From<RequestFailureKind> for AdminDashboardFailureKind {
-    fn from(value: RequestFailureKind) -> Self {
-        match value {
-            RequestFailureKind::InvalidRequest => Self::InvalidRequest,
-            RequestFailureKind::ModelNotAllowed => Self::ModelNotAllowed,
-            RequestFailureKind::InsufficientQuota => Self::InsufficientQuota,
-            RequestFailureKind::QuotaLimited => Self::QuotaLimited,
-            RequestFailureKind::ConcurrencyLimited => Self::ConcurrencyLimited,
-            RequestFailureKind::OutcomeUnknown => Self::OutcomeUnknown,
-            RequestFailureKind::UpstreamRateLimited => Self::UpstreamRateLimited,
-            RequestFailureKind::UpstreamOverloaded => Self::UpstreamOverloaded,
-            RequestFailureKind::UpstreamAuthentication => Self::UpstreamAuthentication,
-            RequestFailureKind::UpstreamQuota => Self::UpstreamQuota,
-            RequestFailureKind::UpstreamModel => Self::UpstreamModel,
-            RequestFailureKind::UpstreamProtocol => Self::UpstreamProtocol,
-            RequestFailureKind::UpstreamServer => Self::UpstreamServer,
-            RequestFailureKind::UpstreamNetwork => Self::UpstreamNetwork,
-            RequestFailureKind::Internal => Self::Internal,
-            _ => Self::Internal,
-        }
-    }
-}
-
 /// 管理看板窗口内一个失败分类的请求数。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AdminDashboardFailure {
@@ -103,6 +80,15 @@ pub struct AdminDashboardFailure {
 }
 
 impl AdminDashboardFailure {
+    /// 构造分析存储返回的闭合失败分类。
+    #[must_use]
+    pub const fn new(kind: AdminDashboardFailureKind, request_count: i64) -> Self {
+        Self {
+            kind,
+            request_count,
+        }
+    }
+
     #[must_use]
     pub const fn kind(self) -> AdminDashboardFailureKind {
         self.kind
@@ -124,6 +110,22 @@ pub struct AdminDashboardChannelFlow {
 }
 
 impl AdminDashboardChannelFlow {
+    /// 构造一个协议到渠道的成功流向聚合。
+    #[must_use]
+    pub fn new(
+        protocol: Protocol,
+        channel_id: ChannelId,
+        channel_name: String,
+        request_count: i64,
+    ) -> Self {
+        Self {
+            protocol,
+            channel_id,
+            channel_name,
+            request_count,
+        }
+    }
+
     #[must_use]
     pub const fn protocol(&self) -> Protocol {
         self.protocol
@@ -155,6 +157,22 @@ pub struct AdminDashboardHourlyPoint {
 }
 
 impl AdminDashboardHourlyPoint {
+    /// 构造一个连续小时分桶。
+    #[must_use]
+    pub const fn new(
+        period_start: i64,
+        period_end: i64,
+        request_count: i64,
+        quota_consumed: i64,
+    ) -> Self {
+        Self {
+            period_start,
+            period_end,
+            request_count,
+            quota_consumed,
+        }
+    }
+
     #[must_use]
     pub const fn period_start(self) -> i64 {
         self.period_start
@@ -190,6 +208,31 @@ pub struct AdminDashboardPerformance {
 }
 
 impl AdminDashboardPerformance {
+    /// 构造真实耗时样本摘要。
+    #[must_use]
+    #[allow(clippy::too_many_arguments, reason = "参数与性能快照字段一一对应")]
+    pub const fn new(
+        first_token_sample_count: i64,
+        average_first_token_ms: Option<i64>,
+        slow_first_token_count: i64,
+        slow_first_token_threshold_ms: i64,
+        duration_sample_count: i64,
+        average_duration_ms: Option<i64>,
+        slow_request_count: i64,
+        slow_request_threshold_ms: i64,
+    ) -> Self {
+        Self {
+            first_token_sample_count,
+            average_first_token_ms,
+            slow_first_token_count,
+            slow_first_token_threshold_ms,
+            duration_sample_count,
+            average_duration_ms,
+            slow_request_count,
+            slow_request_threshold_ms,
+        }
+    }
+
     #[must_use]
     pub const fn first_token_sample_count(self) -> i64 {
         self.first_token_sample_count
@@ -350,218 +393,5 @@ impl AdminDashboard {
     #[must_use]
     pub const fn performance(&self) -> AdminDashboardPerformance {
         self.performance
-    }
-
-    fn from_record(period_start: i64, period_end: i64, record: AdminDashboardRecord) -> Self {
-        let performance = record.performance();
-        Self {
-            period_start,
-            period_end,
-            request_count: record.request_count(),
-            quota_consumed: record.quota_consumed(),
-            upstream_usage_count: record.upstream_usage_count(),
-            estimated_usage_count: record.estimated_usage_count(),
-            per_token_request_count: record.per_token_request_count(),
-            per_call_request_count: record.per_call_request_count(),
-            free_request_count: record.free_request_count(),
-            enabled_channel_count: record.enabled_channel_count(),
-            disabled_channel_count: record.disabled_channel_count(),
-            auto_disabled_channel_count: record.auto_disabled_channel_count(),
-            outcome_request_count: record.outcome_request_count(),
-            successful_request_count: record.successful_request_count(),
-            failed_request_count: record.failed_request_count(),
-            other_success_count: record.other_success_count(),
-            failures: record
-                .failures()
-                .iter()
-                .copied()
-                .map(|failure| AdminDashboardFailure {
-                    kind: failure.kind().into(),
-                    request_count: failure.request_count(),
-                })
-                .collect(),
-            channel_flows: record
-                .channel_flows()
-                .iter()
-                .map(|flow| AdminDashboardChannelFlow {
-                    protocol: flow.protocol(),
-                    channel_id: flow.channel_id(),
-                    channel_name: flow.channel_name().to_owned(),
-                    request_count: flow.request_count(),
-                })
-                .collect(),
-            hourly: record
-                .hourly()
-                .iter()
-                .copied()
-                .map(|bucket| AdminDashboardHourlyPoint {
-                    period_start: bucket.period_start(),
-                    period_end: bucket.period_end(),
-                    request_count: bucket.request_count(),
-                    quota_consumed: bucket.quota_consumed(),
-                })
-                .collect(),
-            performance: AdminDashboardPerformance {
-                first_token_sample_count: performance.first_token_sample_count(),
-                average_first_token_ms: performance.average_first_token_ms(),
-                slow_first_token_count: performance.slow_first_token_count(),
-                slow_first_token_threshold_ms: SLOW_FIRST_TOKEN_THRESHOLD_MS,
-                duration_sample_count: performance.duration_sample_count(),
-                average_duration_ms: performance.average_duration_ms(),
-                slow_request_count: performance.slow_request_count(),
-                slow_request_threshold_ms: SLOW_REQUEST_THRESHOLD_MS,
-            },
-        }
-    }
-}
-
-/// 管理看板读取错误，不向边界层泄露数据库和统计细节。
-#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
-pub enum AdminDashboardReadError {
-    /// 当前会话不是管理员。
-    #[error("需要管理员权限")]
-    Forbidden,
-    /// 时钟、数据库查询或持久化不变量校验失败。
-    #[error("管理看板读取失败")]
-    Internal,
-}
-
-/// 管理看板异步读取结果。
-pub type AdminDashboardReadFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<AdminDashboard, AdminDashboardReadError>> + Send + 'a>>;
-
-/// 管理看板应用层只读端口。
-pub trait AdminDashboardReader: Send + Sync {
-    /// 校验管理员权限并读取最近 24 小时的真实快照。
-    fn read(&self, access: AdminDashboardAccess) -> AdminDashboardReadFuture<'_>;
-}
-
-type DashboardClock = Arc<dyn Fn() -> Result<i64, AdminDashboardReadError> + Send + Sync>;
-
-/// 使用数据库聚合仓储的管理看板读取服务。
-#[derive(Clone)]
-pub struct DatabaseAdminDashboardReader {
-    repository: AdminDashboardRepository,
-    clock: DashboardClock,
-}
-
-impl DatabaseAdminDashboardReader {
-    /// 使用系统 UTC 时钟和真实聚合仓储构造读取服务。
-    #[must_use]
-    pub fn new(repository: AdminDashboardRepository) -> Self {
-        Self {
-            repository,
-            clock: Arc::new(system_unix_seconds),
-        }
-    }
-
-    #[cfg(test)]
-    fn with_clock(repository: AdminDashboardRepository, clock: DashboardClock) -> Self {
-        Self { repository, clock }
-    }
-}
-
-impl AdminDashboardReader for DatabaseAdminDashboardReader {
-    fn read(&self, access: AdminDashboardAccess) -> AdminDashboardReadFuture<'_> {
-        Box::pin(async move {
-            require_admin(access)?;
-            let period_end = (self.clock)()?;
-            let (period_start, period_end) = period_ending_at(period_end)?;
-            let record = self
-                .repository
-                .snapshot(period_start, period_end)
-                .await
-                .map_err(map_repository_error)?;
-            Ok(AdminDashboard::from_record(
-                period_start,
-                period_end,
-                record,
-            ))
-        })
-    }
-}
-
-impl fmt::Debug for DatabaseAdminDashboardReader {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("DatabaseAdminDashboardReader(<redacted>)")
-    }
-}
-
-fn require_admin(access: AdminDashboardAccess) -> Result<(), AdminDashboardReadError> {
-    if access == AdminDashboardAccess::Admin {
-        Ok(())
-    } else {
-        Err(AdminDashboardReadError::Forbidden)
-    }
-}
-
-fn period_ending_at(period_end: i64) -> Result<(i64, i64), AdminDashboardReadError> {
-    let period_start = period_end
-        .checked_sub(ADMIN_DASHBOARD_PERIOD_SECONDS)
-        .filter(|start| *start >= 0)
-        .ok_or(AdminDashboardReadError::Internal)?;
-    Ok((period_start, period_end))
-}
-
-fn system_unix_seconds() -> Result<i64, AdminDashboardReadError> {
-    let elapsed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|_| AdminDashboardReadError::Internal)?;
-    i64::try_from(elapsed.as_secs()).map_err(|_| AdminDashboardReadError::Internal)
-}
-
-fn map_repository_error(_: AdminDashboardRepositoryError) -> AdminDashboardReadError {
-    AdminDashboardReadError::Internal
-}
-
-#[cfg(test)]
-mod tests {
-    use std::time::Duration;
-
-    use af_db::{AdminDashboardRepository, DatabaseOptions};
-
-    use super::*;
-
-    #[test]
-    fn access_and_period_boundaries_fail_closed() {
-        assert_eq!(
-            require_admin(AdminDashboardAccess::User),
-            Err(AdminDashboardReadError::Forbidden)
-        );
-        assert_eq!(
-            period_ending_at(ADMIN_DASHBOARD_PERIOD_SECONDS - 1),
-            Err(AdminDashboardReadError::Internal)
-        );
-        assert_eq!(
-            period_ending_at(ADMIN_DASHBOARD_PERIOD_SECONDS),
-            Ok((0, ADMIN_DASHBOARD_PERIOD_SECONDS))
-        );
-    }
-
-    #[tokio::test]
-    async fn injected_clock_keeps_the_window_deterministic() {
-        let pool = af_db::connect_and_migrate(
-            &DatabaseOptions::new("sqlite::memory:").unwrap(),
-            af_db::MigrationOptions::default(),
-        )
-        .await
-        .unwrap();
-        let repository =
-            AdminDashboardRepository::new(pool.clone(), Duration::from_secs(2)).unwrap();
-        let reader = DatabaseAdminDashboardReader::with_clock(
-            repository,
-            Arc::new(|| Ok(ADMIN_DASHBOARD_PERIOD_SECONDS + 7)),
-        );
-        let dashboard = reader.read(AdminDashboardAccess::Admin).await.unwrap();
-        assert_eq!(dashboard.period_start(), 7);
-        assert_eq!(dashboard.period_end(), ADMIN_DASHBOARD_PERIOD_SECONDS + 7);
-        assert_eq!(dashboard.request_count(), 0);
-        assert_eq!(dashboard.outcome_request_count(), 0);
-        assert_eq!(dashboard.successful_request_count(), 0);
-        assert_eq!(dashboard.failed_request_count(), 0);
-        assert_eq!(dashboard.other_success_count(), 0);
-        assert!(dashboard.failures().is_empty());
-        assert!(dashboard.channel_flows().is_empty());
-        pool.close().await.unwrap();
     }
 }

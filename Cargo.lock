@@ -91,7 +91,6 @@ dependencies = [
 name = "af-analytics"
 version = "0.1.0"
 dependencies = [
- "af-db",
  "af-domain",
  "thiserror 2.0.20",
  "tokio",
