@@ -92,6 +92,7 @@ name = "af-analytics"
 version = "0.1.0"
 dependencies = [
  "af-domain",
+ "futures-util",
  "thiserror 2.0.20",
  "tokio",
 ]
