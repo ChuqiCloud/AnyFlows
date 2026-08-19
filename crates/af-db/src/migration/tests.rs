@@ -1967,8 +1967,11 @@ async fn exercise_admin_dashboard_repository(pool: &DatabasePool) -> Result<(), 
         .unix_timestamp()
         .checked_add(1)
         .ok_or_else(|| std::io::Error::other("管理看板冒烟时间溢出"))?;
+    let period_start = period_end
+        .checked_sub(24 * 60 * 60)
+        .ok_or_else(|| std::io::Error::other("管理看板冒烟窗口下溢"))?;
     let dashboard = AdminDashboardRepository::new(pool.clone(), Duration::from_secs(2))?
-        .snapshot(0, period_end)
+        .snapshot(period_start, period_end)
         .await?;
     assert_eq!(dashboard.request_count(), 0);
     assert_eq!(dashboard.quota_consumed(), 0);
@@ -1976,6 +1979,9 @@ async fn exercise_admin_dashboard_repository(pool: &DatabasePool) -> Result<(), 
     assert_eq!(dashboard.estimated_usage_count(), 0);
     assert_eq!(dashboard.per_token_request_count(), 0);
     assert_eq!(dashboard.free_request_count(), 0);
+    assert_eq!(dashboard.hourly().len(), 24);
+    assert_eq!(dashboard.performance().first_token_sample_count(), 0);
+    assert_eq!(dashboard.performance().average_first_token_ms(), None);
     Ok(())
 }
 

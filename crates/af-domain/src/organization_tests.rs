@@ -71,6 +71,10 @@ fn organization_roles_use_the_fixed_permission_matrix() {
         "organization.budgets.manage"
     );
     assert_eq!(
+        PlatformPermission::DashboardReadAll.code(),
+        "platform.dashboard.read_all"
+    );
+    assert_eq!(
         PlatformPermission::OrganizationsReadAll.code(),
         "platform.organizations.read_all"
     );

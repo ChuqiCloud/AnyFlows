@@ -14,6 +14,7 @@ mod admin_channel_write;
 mod admin_channel_write_tests;
 mod admin_credential;
 mod admin_dashboard;
+mod admin_dashboard_observability;
 #[cfg(test)]
 mod admin_dashboard_tests;
 mod admin_group;
@@ -196,6 +197,10 @@ pub use admin_credential::{
 pub use admin_dashboard::{
     AdminDashboardRecord, AdminDashboardRepository, AdminDashboardRepositoryConfigError,
     AdminDashboardRepositoryError,
+};
+pub use admin_dashboard_observability::{
+    ADMIN_DASHBOARD_BUCKET_COUNT, ADMIN_DASHBOARD_BUCKET_SECONDS, AdminDashboardHourlyRecord,
+    AdminDashboardPerformanceRecord, SLOW_FIRST_TOKEN_THRESHOLD_MS, SLOW_REQUEST_THRESHOLD_MS,
 };
 pub use admin_group::{
     AdminGroupLookupOutcome, AdminGroupPageRecord, AdminGroupPeakRecord, AdminGroupRecord,

@@ -101,6 +101,24 @@
         "empty": "No request sample yet"
       }
     },
+    "trend": {
+      "title": "24-hour trend",
+      "subtitle": "Each column is a persisted one-hour server window",
+      "legend": "Trend chart legend",
+      "requests": "Requests",
+      "quota": "Quota",
+      "chartLabel": "Requests and quota over the last 24 hours",
+      "point": "{{time}}: {{requests}} requests, {{quota}}"
+    },
+    "performance": {
+      "title": "Performance health",
+      "subtitle": "Missing timing data stays unsampled instead of becoming zero",
+      "firstToken": "Average first token",
+      "duration": "Average duration",
+      "coverage": "{{rate}} coverage · {{count}} samples",
+      "slow": "≥ {{threshold}}: {{count}}",
+      "noSamples": "No request samples"
+    },
     "composition": {
       "title": "Request composition",
       "subtitle": "Every count comes from the same set of confirmed usage facts",

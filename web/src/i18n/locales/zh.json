@@ -101,6 +101,24 @@
         "empty": "暂无请求样本"
       }
     },
+    "trend": {
+      "title": "24 小时趋势",
+      "subtitle": "每列对应服务端持久化的一小时窗口",
+      "legend": "趋势图图例",
+      "requests": "请求",
+      "quota": "额度",
+      "chartLabel": "最近 24 小时请求与额度趋势",
+      "point": "{{time}}：{{requests}} 次请求，{{quota}}"
+    },
+    "performance": {
+      "title": "性能健康",
+      "subtitle": "缺失耗时保持无样本，不按零毫秒计算",
+      "firstToken": "平均首字耗时",
+      "duration": "平均总耗时",
+      "coverage": "覆盖 {{rate}} · {{count}} 个样本",
+      "slow": "≥ {{threshold}}：{{count}} 个",
+      "noSamples": "暂无请求样本"
+    },
     "composition": {
       "title": "请求构成",
       "subtitle": "所有计数均来自同一批已确认用量事实",

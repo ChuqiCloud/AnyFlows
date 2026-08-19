@@ -134,6 +134,30 @@ async fn admin_dashboard_uses_real_aggregates_and_role_boundary() {
     assert_eq!(body["enabled_channel_count"], 1);
     assert_eq!(body["disabled_channel_count"], 1);
     assert_eq!(body["auto_disabled_channel_count"], 1);
+    let hourly = body["hourly"].as_array().unwrap();
+    assert_eq!(hourly.len(), 24);
+    assert_eq!(
+        hourly
+            .iter()
+            .map(|bucket| bucket["request_count"].as_i64().unwrap())
+            .sum::<i64>(),
+        2
+    );
+    assert_eq!(
+        hourly
+            .iter()
+            .map(|bucket| bucket["quota_consumed"].as_i64().unwrap())
+            .sum::<i64>(),
+        120
+    );
+    assert_eq!(body["performance"]["first_token_sample_count"], 1);
+    assert_eq!(body["performance"]["average_first_token_ms"], 800);
+    assert_eq!(body["performance"]["slow_first_token_count"], 0);
+    assert_eq!(body["performance"]["slow_first_token_threshold_ms"], 2_000);
+    assert_eq!(body["performance"]["duration_sample_count"], 2);
+    assert_eq!(body["performance"]["average_duration_ms"], 8_000);
+    assert_eq!(body["performance"]["slow_request_count"], 1);
+    assert_eq!(body["performance"]["slow_request_threshold_ms"], 10_000);
     assert_eq!(
         body["period_end"].as_i64().unwrap() - body["period_start"].as_i64().unwrap(),
         86_400
@@ -214,10 +238,18 @@ async fn seed_dashboard(database_url: &str) {
     )).await.unwrap();
     // 与生产写入保持同一时间编码，避免 SQLite 文本日期格式混用导致午夜边界误判。
     let usage_time = TimeDateTimeWithTimeZone::now_utc().unix_timestamp();
-    for (id, age_seconds, source, billing_mode, quota) in [
-        (7_505_i64, 60 * 60_i64, 1_i16, 1_i16, 120_i64),
-        (7_506, 2 * 60 * 60, 2, 2, 0),
-        (7_507, 25 * 60 * 60, 1, 1, 999),
+    for (id, age_seconds, source, billing_mode, quota, first_token_ms, duration_ms) in [
+        (
+            7_505_i64,
+            60 * 60_i64,
+            1_i16,
+            1_i16,
+            120_i64,
+            Some(800_i64),
+            Some(4_000_i64),
+        ),
+        (7_506, 2 * 60 * 60, 2, 2, 0, None, Some(12_000)),
+        (7_507, 25 * 60 * 60, 1, 1, 999, Some(9_000), Some(30_000)),
     ] {
         let created_at = TimeDateTimeWithTimeZone::from_unix_timestamp(
             usage_time
@@ -227,12 +259,13 @@ async fn seed_dashboard(database_url: &str) {
         .expect("测试时间必须可转换为 UTC 时间");
         connection.execute(Statement::from_sql_and_values(
             DbBackend::Sqlite,
-            "INSERT INTO usage_logs (id, event_id, event_type, user_id, token_id, group_id, billing_mode, input_tokens, output_tokens, cache_read, cache_creation_5m, cache_creation_1h, reasoning_tokens, audio_input_tokens, audio_output_tokens, usage_source, usage_semantics, quota, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO usage_logs (id, event_id, event_type, user_id, token_id, group_id, billing_mode, input_tokens, output_tokens, cache_read, cache_creation_5m, cache_creation_1h, reasoning_tokens, audio_input_tokens, audio_output_tokens, first_token_ms, duration_ms, usage_source, usage_semantics, quota, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 id.into(), format!("{id:032x}").into(), 1_i16.into(), MEMBER_ID.into(),
                 TOKEN_ID.into(), GROUP_ID.into(), billing_mode.into(), 10_i64.into(), 2_i64.into(),
                 0_i64.into(), 0_i64.into(), 0_i64.into(), 0_i64.into(), 0_i64.into(),
-                0_i64.into(), source.into(), 1_i16.into(), quota.into(), created_at.into(),
+                0_i64.into(), first_token_ms.into(), duration_ms.into(), source.into(),
+                1_i16.into(), quota.into(), created_at.into(),
             ],
         )).await.unwrap();
     }

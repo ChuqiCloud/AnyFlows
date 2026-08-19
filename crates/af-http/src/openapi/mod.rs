@@ -430,8 +430,10 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 342);
+        assert_eq!(schemas.len(), 344);
         assert!(schemas.keys().is_sorted());
+        assert!(schemas.contains_key("AdminDashboardHourlyPoint"));
+        assert!(schemas.contains_key("AdminDashboardPerformance"));
         assert!(schemas.contains_key("ClientSimulationProfile"));
         assert!(schemas.contains_key("ClientSimulationResult"));
         assert!(schemas.contains_key("PasskeyAuthenticationOptionsRequest"));

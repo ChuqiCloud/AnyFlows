@@ -4,7 +4,13 @@
 
 use utoipa::OpenApi;
 
-use crate::{management_dashboard::AdminDashboardResponse, management_error::ManagementErrorBody};
+use crate::{
+    management_dashboard::{
+        AdminDashboardHourlyPointResponse, AdminDashboardPerformanceResponse,
+        AdminDashboardResponse,
+    },
+    management_error::ManagementErrorBody,
+};
 
 #[utoipa::path(
     get,
@@ -25,7 +31,12 @@ fn get_admin_dashboard() {}
 #[derive(OpenApi)]
 #[openapi(
     paths(get_admin_dashboard),
-    components(schemas(AdminDashboardResponse, ManagementErrorBody))
+    components(schemas(
+        AdminDashboardResponse,
+        AdminDashboardHourlyPointResponse,
+        AdminDashboardPerformanceResponse,
+        ManagementErrorBody
+    ))
 )]
 struct DashboardApi;
 

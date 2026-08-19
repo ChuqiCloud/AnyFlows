@@ -13,11 +13,15 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
     DatabasePool,
+    admin_dashboard_observability::{
+        AdminDashboardHourlyRecord, AdminDashboardObservabilityRecord,
+        AdminDashboardPerformanceRecord, append_observability_expressions, decode_observability,
+    },
     entity::{channels, usage_logs},
 };
 
 /// 管理看板使用的持久化聚合快照。
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdminDashboardRecord {
     request_count: i64,
     quota_consumed: i64,
@@ -29,67 +33,80 @@ pub struct AdminDashboardRecord {
     enabled_channel_count: i64,
     disabled_channel_count: i64,
     auto_disabled_channel_count: i64,
+    observability: AdminDashboardObservabilityRecord,
 }
 
 impl AdminDashboardRecord {
     /// 返回窗口内已经确认并落库的请求数。
     #[must_use]
-    pub const fn request_count(self) -> i64 {
+    pub const fn request_count(&self) -> i64 {
         self.request_count
     }
 
     /// 返回窗口内最终消耗的额度单位数。
     #[must_use]
-    pub const fn quota_consumed(self) -> i64 {
+    pub const fn quota_consumed(&self) -> i64 {
         self.quota_consumed
     }
 
     /// 返回由上游响应确认用量的请求数。
     #[must_use]
-    pub const fn upstream_usage_count(self) -> i64 {
+    pub const fn upstream_usage_count(&self) -> i64 {
         self.upstream_usage_count
     }
 
     /// 返回由本地估算用量的请求数。
     #[must_use]
-    pub const fn estimated_usage_count(self) -> i64 {
+    pub const fn estimated_usage_count(&self) -> i64 {
         self.estimated_usage_count
     }
 
     /// 返回按 token 计费的请求数。
     #[must_use]
-    pub const fn per_token_request_count(self) -> i64 {
+    pub const fn per_token_request_count(&self) -> i64 {
         self.per_token_request_count
     }
 
     /// 返回按次计费的请求数。
     #[must_use]
-    pub const fn per_call_request_count(self) -> i64 {
+    pub const fn per_call_request_count(&self) -> i64 {
         self.per_call_request_count
     }
 
     /// 返回免费请求数。
     #[must_use]
-    pub const fn free_request_count(self) -> i64 {
+    pub const fn free_request_count(&self) -> i64 {
         self.free_request_count
     }
 
     /// 返回当前启用的未删除渠道数。
     #[must_use]
-    pub const fn enabled_channel_count(self) -> i64 {
+    pub const fn enabled_channel_count(&self) -> i64 {
         self.enabled_channel_count
     }
 
     /// 返回当前手动禁用的未删除渠道数。
     #[must_use]
-    pub const fn disabled_channel_count(self) -> i64 {
+    pub const fn disabled_channel_count(&self) -> i64 {
         self.disabled_channel_count
     }
 
     /// 返回当前自动禁用的未删除渠道数。
     #[must_use]
-    pub const fn auto_disabled_channel_count(self) -> i64 {
+    pub const fn auto_disabled_channel_count(&self) -> i64 {
         self.auto_disabled_channel_count
+    }
+
+    /// 返回覆盖整个窗口且连续的一小时用量分桶。
+    #[must_use]
+    pub fn hourly(&self) -> &[AdminDashboardHourlyRecord] {
+        self.observability.hourly()
+    }
+
+    /// 返回只基于已持久化耗时样本计算的性能健康聚合。
+    #[must_use]
+    pub const fn performance(&self) -> AdminDashboardPerformanceRecord {
+        self.observability.performance()
     }
 }
 
@@ -107,7 +124,7 @@ pub enum AdminDashboardRepositoryError {
     /// 获取连接或执行聚合查询失败。
     #[error("管理看板数据库查询失败")]
     Query,
-    /// 两组聚合查询超过共同的硬截止时间。
+    /// 全部聚合查询超过共同的硬截止时间。
     #[error("管理看板数据库查询超时")]
     Timeout,
     /// 查询窗口或持久化聚合结果违反不变量。
@@ -153,9 +170,9 @@ impl AdminDashboardRepository {
         let period_end = TimeDateTimeWithTimeZone::from_unix_timestamp(period_end)
             .map_err(|_| record_internal_error(AdminDashboardRepositoryError::Invariant))?;
         let operation = async {
-            let usage = self.query_usage(period_start, period_end).await?;
+            let (usage, observability) = self.query_usage(period_start, period_end).await?;
             let channels = self.query_channels().await?;
-            AdminDashboardRecord::try_from_rows(usage, channels)
+            AdminDashboardRecord::try_from_rows(usage, channels, observability)
         }
         .with_subscriber(NoSubscriber::default());
 
@@ -171,14 +188,26 @@ impl AdminDashboardRepository {
         &self,
         period_start: TimeDateTimeWithTimeZone,
         period_end: TimeDateTimeWithTimeZone,
-    ) -> Result<UsageAggregateRow, AdminDashboardRepositoryError> {
+    ) -> Result<(UsageAggregateRow, AdminDashboardObservabilityRecord), AdminDashboardRepositoryError>
+    {
         let backend = self.pool.connection().get_database_backend();
         query_one(
             self.pool.connection(),
-            usage_query(period_start, period_end),
+            usage_query(period_start, period_end)?,
         )
         .await
-        .and_then(|result| UsageAggregateRow::try_from_query_result(result, backend))
+        .and_then(|result| {
+            let usage = UsageAggregateRow::try_from_query_result(&result, backend)?;
+            let observability = decode_observability(
+                &result,
+                backend,
+                period_start.unix_timestamp(),
+                period_end.unix_timestamp(),
+                usage.request_count,
+                usage.quota_consumed,
+            )?;
+            Ok((usage, observability))
+        })
     }
 
     async fn query_channels(&self) -> Result<ChannelAggregateRow, AdminDashboardRepositoryError> {
@@ -211,17 +240,17 @@ struct UsageAggregateRow {
 
 impl UsageAggregateRow {
     fn try_from_query_result(
-        result: QueryResult,
+        result: &QueryResult,
         backend: DbBackend,
     ) -> Result<Self, AdminDashboardRepositoryError> {
         Ok(Self {
-            request_count: get_count(&result, "request_count", backend)?,
-            quota_consumed: get_sum(&result, "quota_consumed", backend)?,
-            upstream_usage_count: get_count(&result, "upstream_usage_count", backend)?,
-            estimated_usage_count: get_count(&result, "estimated_usage_count", backend)?,
-            per_token_request_count: get_count(&result, "per_token_request_count", backend)?,
-            per_call_request_count: get_count(&result, "per_call_request_count", backend)?,
-            free_request_count: get_count(&result, "free_request_count", backend)?,
+            request_count: get_count(result, "request_count", backend)?,
+            quota_consumed: get_sum(result, "quota_consumed", backend)?,
+            upstream_usage_count: get_count(result, "upstream_usage_count", backend)?,
+            estimated_usage_count: get_count(result, "estimated_usage_count", backend)?,
+            per_token_request_count: get_count(result, "per_token_request_count", backend)?,
+            per_call_request_count: get_count(result, "per_call_request_count", backend)?,
+            free_request_count: get_count(result, "free_request_count", backend)?,
         })
     }
 }
@@ -256,6 +285,7 @@ impl AdminDashboardRecord {
     fn try_from_rows(
         usage: UsageAggregateRow,
         channels: ChannelAggregateRow,
+        observability: AdminDashboardObservabilityRecord,
     ) -> Result<Self, AdminDashboardRepositoryError> {
         let usage_values = [
             usage.request_count,
@@ -304,6 +334,7 @@ impl AdminDashboardRecord {
             enabled_channel_count: channels.enabled_channel_count,
             disabled_channel_count: channels.disabled_channel_count,
             auto_disabled_channel_count: channels.auto_disabled_channel_count,
+            observability,
         })
     }
 }
@@ -311,8 +342,9 @@ impl AdminDashboardRecord {
 fn usage_query(
     period_start: TimeDateTimeWithTimeZone,
     period_end: TimeDateTimeWithTimeZone,
-) -> SelectStatement {
-    Query::select()
+) -> Result<SelectStatement, AdminDashboardRepositoryError> {
+    let mut query = Query::select();
+    query
         .expr_as(
             Expr::col((usage_logs::Entity, usage_logs::Column::Id)).count(),
             Alias::new("request_count"),
@@ -340,12 +372,18 @@ fn usage_query(
         .expr_as(
             conditional_count(usage_logs::Column::BillingMode, 2_i16),
             Alias::new("free_request_count"),
-        )
+        );
+    append_observability_expressions(
+        &mut query,
+        period_start.unix_timestamp(),
+        period_end.unix_timestamp(),
+    )?;
+    Ok(query
         .from(usage_logs::Entity)
         .and_where(Expr::col((usage_logs::Entity, usage_logs::Column::EventType)).eq(1_i16))
         .and_where(Expr::col((usage_logs::Entity, usage_logs::Column::CreatedAt)).gte(period_start))
         .and_where(Expr::col((usage_logs::Entity, usage_logs::Column::CreatedAt)).lt(period_end))
-        .to_owned()
+        .to_owned())
 }
 
 fn channel_query() -> SelectStatement {
@@ -402,7 +440,7 @@ async fn query_one(
         .ok_or_else(|| record_internal_error(AdminDashboardRepositoryError::Invariant))
 }
 
-fn get_count(
+pub(crate) fn get_count(
     result: &QueryResult,
     column: &str,
     backend: DbBackend,
@@ -419,7 +457,7 @@ fn get_count(
     .ok_or_else(|| record_internal_error(AdminDashboardRepositoryError::Invariant))
 }
 
-fn get_sum(
+pub(crate) fn get_sum(
     result: &QueryResult,
     column: &str,
     backend: DbBackend,
@@ -442,7 +480,9 @@ fn get_sum(
 }
 
 /// 只记录闭合内部分类，避免任何聚合值或数据库细节进入日志。
-fn record_internal_error(error: AdminDashboardRepositoryError) -> AdminDashboardRepositoryError {
+pub(crate) fn record_internal_error(
+    error: AdminDashboardRepositoryError,
+) -> AdminDashboardRepositoryError {
     let error_kind = match error {
         AdminDashboardRepositoryError::Query => "admin_dashboard_query",
         AdminDashboardRepositoryError::Timeout => "admin_dashboard_timeout",
@@ -478,7 +518,11 @@ mod tests {
             auto_disabled_channel_count: 0,
         };
         assert_eq!(
-            AdminDashboardRecord::try_from_rows(usage, channels),
+            AdminDashboardRecord::try_from_rows(
+                usage,
+                channels,
+                AdminDashboardObservabilityRecord::empty(),
+            ),
             Err(AdminDashboardRepositoryError::Invariant)
         );
     }
@@ -488,7 +532,7 @@ mod tests {
         let start = TimeDateTimeWithTimeZone::from_unix_timestamp(1_000).unwrap();
         let end = TimeDateTimeWithTimeZone::from_unix_timestamp(2_000).unwrap();
         for backend in [DbBackend::Sqlite, DbBackend::Postgres, DbBackend::MySql] {
-            let usage = backend.build(&usage_query(start, end));
+            let usage = backend.build(&usage_query(start, end).unwrap());
             let channels = backend.build(&channel_query());
             assert!(!usage.sql.is_empty());
             assert!(!channels.sql.is_empty());

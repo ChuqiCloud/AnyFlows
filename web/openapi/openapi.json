@@ -17955,6 +17955,102 @@
           }
         }
       },
+      "AdminDashboardHourlyPoint": {
+        "type": "object",
+        "description": "管理看板单个一小时用量分桶。",
+        "required": [
+          "period_start",
+          "period_end",
+          "request_count",
+          "quota_consumed"
+        ],
+        "properties": {
+          "period_start": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "period_end": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "request_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "quota_consumed": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminDashboardPerformance": {
+        "type": "object",
+        "description": "管理看板窗口内真实耗时样本的健康摘要。",
+        "required": [
+          "first_token_sample_count",
+          "average_first_token_ms",
+          "slow_first_token_count",
+          "slow_first_token_threshold_ms",
+          "duration_sample_count",
+          "average_duration_ms",
+          "slow_request_count",
+          "slow_request_threshold_ms"
+        ],
+        "properties": {
+          "first_token_sample_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "average_first_token_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "slow_first_token_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "slow_first_token_threshold_ms": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "duration_sample_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "average_duration_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "slow_request_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "slow_request_threshold_ms": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
       "AdminDashboardResponse": {
         "type": "object",
         "description": "管理看板最近 24 小时的真实指标响应。",
@@ -17970,7 +18066,9 @@
           "free_request_count",
           "enabled_channel_count",
           "disabled_channel_count",
-          "auto_disabled_channel_count"
+          "auto_disabled_channel_count",
+          "hourly",
+          "performance"
         ],
         "properties": {
           "period_start": {
@@ -18034,6 +18132,17 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          },
+          "hourly": {
+            "type": "array",
+            "description": "覆盖整个统计窗口的连续一小时用量分桶。",
+            "items": {
+              "$ref": "#/components/schemas/AdminDashboardHourlyPoint"
+            }
+          },
+          "performance": {
+            "description": "只基于真实持久化耗时样本生成的性能健康摘要。",
+            "$ref": "#/components/schemas/AdminDashboardPerformance"
           }
         },
         "additionalProperties": false
