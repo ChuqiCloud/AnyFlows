@@ -5055,7 +5055,7 @@
         "login": "登录控制台",
         "models": "浏览模型"
       },
-      "secondary": "查看文档"
+      "secondary": "查看常见问题"
     },
     "providers": "已接入的模型厂商",
     "feature": {
@@ -5102,7 +5102,7 @@
       "heading": "准备好收敛你的模型流量了？",
       "body": "单二进制部署，前端内嵌，一条命令起服务。",
       "cta": "开始接入",
-      "secondary": "阅读文档"
+      "secondary": "查看常见问题"
     },
     "console": {
       "eyebrow": "即插即用",
@@ -5114,6 +5114,37 @@
       "latency": "延迟",
       "tokens": "token 入/出",
       "route": "路由"
+    },
+    "faq": {
+      "eyebrow": "常见问题",
+      "heading": "开始之前，先了解这些",
+      "subheading": "把部署、协议、选路和计费边界说清楚，再决定从哪里接入。",
+      "items": {
+        "whatIsAnyFlows": {
+          "question": "AnyFlows 是什么？",
+          "answer": "AnyFlows 是可自托管的大模型 API 聚合网关，把不同供应商和中转渠道收敛为一个可观测的入口。"
+        },
+        "whichProtocols": {
+          "question": "支持哪些协议和模型能力？",
+          "answer": "当前已交付 OpenAI Chat、Anthropic Messages、Gemini 和 OpenAI Responses 等协议路径，并覆盖图像、音频、Embedding 与 Rerank 等能力。实际可用范围仍以当前渠道配置和能力探测结果为准。"
+        },
+        "howRoutingWorks": {
+          "question": "请求会怎样选择上游渠道？",
+          "answer": "网关会按渠道配置的权重、优先级、能力和运行状态建立候选，并根据失败策略继续尝试可用候选；每次请求的选路事实都可以在管理看板中追溯。"
+        },
+        "howBillingWorks": {
+          "question": "计费是怎样计算的？",
+          "answer": "计费在请求级冻结和结算，支持按 Token、按次和免费等计费形态；倍率与价格会随请求快照固定，避免请求过程中配置变化造成账目漂移。"
+        },
+        "canSelfHost": {
+          "question": "可以部署在自己的服务器上吗？",
+          "answer": "可以。产品采用单二进制加内嵌前端的部署形态，数据库、缓存和外部上游按部署环境配置；生产环境仍应使用 HTTPS、强密钥和最小权限。"
+        },
+        "whereToStart": {
+          "question": "第一次使用应该从哪里开始？",
+          "answer": "先浏览模型广场确认公开能力；站点开放注册后创建账户，进入控制台配置渠道，再签发 API Key 指向统一端点。管理员也可以关闭公开注册并改用邀请流程。"
+        }
+      }
     },
     "footer": { "copyright": "AnyFlows · 开源大模型聚合网关" }
   },
