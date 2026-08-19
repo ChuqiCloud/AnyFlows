@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 af-domain = { path = "../af-domain", version = "0.1.0" }
+futures-util.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

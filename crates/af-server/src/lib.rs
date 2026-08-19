@@ -47,6 +47,12 @@ mod turnstile;
 mod utc_time;
 mod video_task_service;
 
+pub use admin_dashboard_storage::{
+    ClickHouseAdminDashboardConfig, ClickHouseAdminDashboardConfigError,
+    ClickHouseAdminDashboardStorage, DEFAULT_CLICKHOUSE_DASHBOARD_RESPONSE_BYTES,
+    DEFAULT_CLICKHOUSE_DASHBOARD_TIMEOUT, DatabaseAdminDashboardChannelStorage,
+    MAX_CLICKHOUSE_DASHBOARD_RESPONSE_BYTES, MAX_CLICKHOUSE_DASHBOARD_TIMEOUT,
+};
 pub use billing_audio::{
     AudioRoutePlanFuture, AudioRoutePlanner, BillingAudioService, PlannedAudioExecution,
     PlannedAudioExecutionFuture,

@@ -1,14 +1,24 @@
 use std::fmt;
 
 use af_analytics::{
-    AdminDashboardChannelFlow, AdminDashboardChannelSnapshot, AdminDashboardFailure,
-    AdminDashboardFailureKind, AdminDashboardHourlyPoint, AdminDashboardOutcomeSnapshot,
-    AdminDashboardPerformance, AdminDashboardStorage, AdminDashboardStorageError,
-    AdminDashboardStorageFuture, AdminDashboardStorageSnapshot, AdminDashboardUsageSnapshot,
+    AdminDashboardChannelFlow, AdminDashboardChannelSnapshot, AdminDashboardChannelStorage,
+    AdminDashboardChannelStorageFuture, AdminDashboardFailure, AdminDashboardFailureKind,
+    AdminDashboardHourlyPoint, AdminDashboardOutcomeSnapshot, AdminDashboardPerformance,
+    AdminDashboardStorage, AdminDashboardStorageError, AdminDashboardStorageFuture,
+    AdminDashboardStorageSnapshot, AdminDashboardUsageSnapshot,
 };
 use af_db::{
     AdminDashboardRecord, AdminDashboardRepository, AdminDashboardRepositoryError,
     RequestFailureKind, SLOW_FIRST_TOKEN_THRESHOLD_MS, SLOW_REQUEST_THRESHOLD_MS,
+};
+
+mod clickhouse;
+
+pub use clickhouse::{
+    ClickHouseAdminDashboardConfig, ClickHouseAdminDashboardConfigError,
+    ClickHouseAdminDashboardStorage, DEFAULT_CLICKHOUSE_DASHBOARD_RESPONSE_BYTES,
+    DEFAULT_CLICKHOUSE_DASHBOARD_TIMEOUT, MAX_CLICKHOUSE_DASHBOARD_RESPONSE_BYTES,
+    MAX_CLICKHOUSE_DASHBOARD_TIMEOUT,
 };
 
 /// 将当前事务数据库适配为分析读取存储端口。
@@ -41,6 +51,43 @@ impl AdminDashboardStorage for DatabaseAdminDashboardStorage {
 impl fmt::Debug for DatabaseAdminDashboardStorage {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("DatabaseAdminDashboardStorage(<redacted>)")
+    }
+}
+
+/// 仅向分离分析存储提供事务主库权威的当前渠道状态。
+#[derive(Clone)]
+pub struct DatabaseAdminDashboardChannelStorage {
+    repository: AdminDashboardRepository,
+}
+
+impl DatabaseAdminDashboardChannelStorage {
+    /// 包装共享主库看板仓储，但只开放当前渠道状态查询。
+    #[must_use]
+    pub const fn new(repository: AdminDashboardRepository) -> Self {
+        Self { repository }
+    }
+}
+
+impl AdminDashboardChannelStorage for DatabaseAdminDashboardChannelStorage {
+    fn channel_snapshot(&self) -> AdminDashboardChannelStorageFuture<'_> {
+        Box::pin(async move {
+            let channels = self
+                .repository
+                .channel_snapshot()
+                .await
+                .map_err(map_repository_error)?;
+            Ok(AdminDashboardChannelSnapshot::new(
+                channels.enabled_channel_count(),
+                channels.disabled_channel_count(),
+                channels.auto_disabled_channel_count(),
+            ))
+        })
+    }
+}
+
+impl fmt::Debug for DatabaseAdminDashboardChannelStorage {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("DatabaseAdminDashboardChannelStorage(<redacted>)")
     }
 }
 
@@ -169,6 +216,10 @@ mod tests {
         .unwrap();
         let repository =
             AdminDashboardRepository::new(pool.clone(), Duration::from_secs(2)).unwrap();
+        let channels = DatabaseAdminDashboardChannelStorage::new(repository.clone())
+            .channel_snapshot()
+            .await
+            .unwrap();
         let storage: Arc<dyn AdminDashboardStorage> =
             Arc::new(DatabaseAdminDashboardStorage::new(repository));
         let dashboard = StorageAdminDashboardReader::new(storage)
@@ -179,6 +230,7 @@ mod tests {
         assert_eq!(dashboard.request_count(), 0);
         assert_eq!(dashboard.outcome_request_count(), 0);
         assert_eq!(dashboard.hourly().len(), 24);
+        assert_eq!(channels, AdminDashboardChannelSnapshot::new(0, 0, 0));
         pool.close().await.unwrap();
     }
 }
