@@ -2937,10 +2937,7 @@
             "description": "occurred_at:id 复合游标",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {

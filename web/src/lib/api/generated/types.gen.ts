@@ -3058,7 +3058,7 @@ export type ListUserNotificationsData = {
     body?: never;
     path?: never;
     query?: {
-        before?: string | null;
+        before?: string;
         limit?: number;
     };
     url: '/api/account/notifications';

@@ -683,7 +683,7 @@ export const listUserNotificationsOptions = (options?: Options<ListUserNotificat
 });
 export const listUserNotificationsInfiniteQueryKey = (options?: Options<ListUserNotificationsData>): QueryKey<Options<ListUserNotificationsData>> => createQueryKey('listUserNotifications', options, true);
 export const listUserNotificationsInfiniteOptions = (options?: Options<ListUserNotificationsData>) => {
-    const opts = infiniteQueryOptions<ListUserNotificationsResponse, ListUserNotificationsError, InfiniteData<ListUserNotificationsResponse>, QueryKey<Options<ListUserNotificationsData>>, string | null | Pick<QueryKey<Options<ListUserNotificationsData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
+    const opts = infiniteQueryOptions<ListUserNotificationsResponse, ListUserNotificationsError, InfiniteData<ListUserNotificationsResponse>, QueryKey<Options<ListUserNotificationsData>>, string | Pick<QueryKey<Options<ListUserNotificationsData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
     // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
     {
         queryFn: async ({ pageParam, queryKey, signal }) => {
