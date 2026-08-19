@@ -14,8 +14,8 @@ function ratio(value: number, total: number) {
   return total > 0 ? value / total : null
 }
 
-function formatMilliseconds(value: number | null, formatNumber: (value: number) => string) {
-  if (value === null)
+function formatMilliseconds(value: number | null | undefined, formatNumber: (value: number) => string) {
+  if (value === null || value === undefined)
     return '--'
   return `${formatNumber(value)} ms`
 }

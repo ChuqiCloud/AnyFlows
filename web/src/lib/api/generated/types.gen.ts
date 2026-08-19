@@ -296,11 +296,11 @@ export type AdminDashboardHourlyPoint = {
 };
 export type AdminDashboardPerformance = {
     first_token_sample_count: number;
-    average_first_token_ms: number | null;
+    average_first_token_ms?: number | null;
     slow_first_token_count: number;
     slow_first_token_threshold_ms: number;
     duration_sample_count: number;
-    average_duration_ms: number | null;
+    average_duration_ms?: number | null;
     slow_request_count: number;
     slow_request_threshold_ms: number;
 };

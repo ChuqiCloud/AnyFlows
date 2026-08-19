@@ -17993,11 +17993,9 @@
         "description": "管理看板窗口内真实耗时样本的健康摘要。",
         "required": [
           "first_token_sample_count",
-          "average_first_token_ms",
           "slow_first_token_count",
           "slow_first_token_threshold_ms",
           "duration_sample_count",
-          "average_duration_ms",
           "slow_request_count",
           "slow_request_threshold_ms"
         ],
