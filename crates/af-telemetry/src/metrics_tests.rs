@@ -6,14 +6,19 @@ use crate::{
     ANALYTICS_EXPORT_BACKLOG, BILLING_FLUSH_LAG, CHANNEL_HEALTH, CLIENT_SIMULATION_ATTEMPTS_TOTAL,
     CONCURRENCY_SLOTS, FIRST_TOKEN_SECONDS, MetricClientSimulationProfile,
     MetricClientSimulationResult, MetricConcurrencyLevel, MetricLabelError, MetricProtocol,
-    MetricRequestStatus, MetricUpstreamErrorType, MetricsHandle, PROMETHEUS_CONTENT_TYPE,
-    PROMETHEUS_PATH, QUOTA_CONSUMED_TOTAL, REQUEST_DURATION_SECONDS, REQUESTS_TOTAL,
+    MetricRequestRateLimitFailure, MetricRequestRateLimitSubject, MetricRequestStatus,
+    MetricUpstreamErrorType, MetricsHandle, PROMETHEUS_CONTENT_TYPE, PROMETHEUS_PATH,
+    QUOTA_CONSUMED_TOTAL, REQUEST_DURATION_SECONDS, REQUEST_RATE_LIMIT_ADMISSIONS_TOTAL,
+    REQUEST_RATE_LIMIT_FAILURES_TOTAL, REQUEST_RATE_LIMIT_REJECTIONS_TOTAL,
+    REQUEST_RATE_LIMIT_RETRY_AFTER_SECONDS, REQUEST_RATE_LIMIT_RULES_PER_CHECK, REQUESTS_TOTAL,
     TelemetryError, UPSTREAM_ERRORS_TOTAL, init_metrics,
     metrics::{
         MAX_CHANNEL_LABELS, MAX_GROUP_LABELS, MAX_MODEL_LABELS, MAX_SERIES_PER_FAMILY,
         build_metrics_recorder, describe_metric_families,
     },
-    record_client_simulation_attempt, set_analytics_export_backlog,
+    record_client_simulation_attempt, record_request_rate_limit_admission,
+    record_request_rate_limit_check, record_request_rate_limit_failure,
+    record_request_rate_limit_rejection, set_analytics_export_backlog,
 };
 
 const GLOBAL_METRICS_INIT_CHILD: &str = "ANYFLOWS_METRICS_INIT_CHILD";
@@ -44,6 +49,13 @@ fn emit_sample_metrics(handle: &MetricsHandle) {
         MetricClientSimulationResult::Applied,
     );
     set_analytics_export_backlog(5);
+    record_request_rate_limit_check(2);
+    record_request_rate_limit_admission();
+    record_request_rate_limit_rejection(
+        MetricRequestRateLimitSubject::Group,
+        Duration::from_millis(1_500),
+    );
+    record_request_rate_limit_failure(MetricRequestRateLimitFailure::StoreProtocol);
 }
 
 fn metric_line<'a>(rendered: &'a str, prefix: &str) -> &'a str {
@@ -117,6 +129,31 @@ fn local_recorder_renders_fixed_metric_contract() {
             "gauge",
             "AnyFlows ClickHouse 事实投递积压数量。",
         ),
+        (
+            REQUEST_RATE_LIMIT_ADMISSIONS_TOTAL,
+            "counter",
+            "AnyFlows 有限请求速率策略成功准入总数。",
+        ),
+        (
+            REQUEST_RATE_LIMIT_REJECTIONS_TOTAL,
+            "counter",
+            "AnyFlows 请求速率限制拒绝总数。",
+        ),
+        (
+            REQUEST_RATE_LIMIT_FAILURES_TOTAL,
+            "counter",
+            "AnyFlows 请求速率限制失败关闭总数。",
+        ),
+        (
+            REQUEST_RATE_LIMIT_RULES_PER_CHECK,
+            "histogram",
+            "AnyFlows 单次请求速率限制检查的规则数量。",
+        ),
+        (
+            REQUEST_RATE_LIMIT_RETRY_AFTER_SECONDS,
+            "histogram",
+            "AnyFlows 请求速率限制拒绝后的等待时间。",
+        ),
     ] {
         assert!(
             rendered.contains(&format!("# HELP {name} {description}")),
@@ -155,6 +192,21 @@ fn local_recorder_renders_fixed_metric_contract() {
         metric_line(&rendered, "analytics_export_backlog "),
         "analytics_export_backlog 5"
     );
+    assert_eq!(
+        metric_line(&rendered, "request_rate_limit_admissions_total "),
+        "request_rate_limit_admissions_total 1"
+    );
+    let rejection = metric_line(&rendered, "request_rate_limit_rejections_total{");
+    assert!(rejection.contains("subject=\"group\""));
+    assert!(rejection.ends_with(" 1"));
+    let failure = metric_line(&rendered, "request_rate_limit_failures_total{");
+    assert!(failure.contains("reason=\"store_protocol\""));
+    assert!(failure.ends_with(" 1"));
+    assert!(rendered.contains("request_rate_limit_rules_per_check_bucket{"));
+    assert!(rendered.contains("request_rate_limit_rules_per_check_bucket{le=\"8\"} 1"));
+    assert!(rendered.contains("request_rate_limit_retry_after_seconds_bucket{"));
+    assert!(rendered.contains("subject=\"group\""));
+    assert!(rendered.contains("le=\"604800\""));
     let cloned_render = handle.clone().render();
     assert_eq!(sorted_lines(&rendered), sorted_lines(&cloned_render));
 }
@@ -272,6 +324,57 @@ fn recorder_rejects_unknown_families_labels_values_and_descriptions() {
         .collect::<Vec<_>>();
     assert_eq!(request_lines.len(), 1);
     assert!(request_lines[0].ends_with(" 2"));
+}
+
+#[test]
+fn rate_limit_metrics_accept_only_fixed_classifications() {
+    const SECRET_CANARY: &str = "rate-limit-subject-secret";
+    let (recorder, handle) = build_metrics_recorder();
+    ::metrics::with_local_recorder(&recorder, || {
+        describe_metric_families();
+        for subject in [
+            MetricRequestRateLimitSubject::User,
+            MetricRequestRateLimitSubject::Group,
+            MetricRequestRateLimitSubject::Token,
+        ] {
+            record_request_rate_limit_rejection(subject, Duration::from_secs(1));
+        }
+        for failure in [
+            MetricRequestRateLimitFailure::InvalidRule,
+            MetricRequestRateLimitFailure::StoreMissing,
+            MetricRequestRateLimitFailure::StoreUnavailable,
+            MetricRequestRateLimitFailure::StoreProtocol,
+            MetricRequestRateLimitFailure::StoreOther,
+            MetricRequestRateLimitFailure::InvalidRetryAfter,
+        ] {
+            record_request_rate_limit_failure(failure);
+        }
+    });
+    recorder.record_counter_from_trusted_test_callsite(
+        test_key(
+            REQUEST_RATE_LIMIT_REJECTIONS_TOTAL,
+            &[("subject", SECRET_CANARY)],
+        ),
+        1,
+    );
+    handle.run_upkeep();
+    let rendered = handle.render();
+
+    assert_eq!(
+        rendered
+            .lines()
+            .filter(|line| line.starts_with("request_rate_limit_rejections_total{"))
+            .count(),
+        3
+    );
+    assert_eq!(
+        rendered
+            .lines()
+            .filter(|line| line.starts_with("request_rate_limit_failures_total{"))
+            .count(),
+        6
+    );
+    assert!(!rendered.contains(SECRET_CANARY));
 }
 
 #[test]
