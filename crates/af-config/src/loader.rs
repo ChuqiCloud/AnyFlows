@@ -284,6 +284,17 @@ fn known_field(path: &str) -> Option<&'static str> {
         "clickhouse_analytics.password" => "clickhouse_analytics.password",
         "clickhouse_analytics.timeout_secs" => "clickhouse_analytics.timeout_secs",
         "clickhouse_analytics.max_response_bytes" => "clickhouse_analytics.max_response_bytes",
+        "clickhouse_export" => "clickhouse_export",
+        "clickhouse_export.endpoint" => "clickhouse_export.endpoint",
+        "clickhouse_export.usage_insert_query" => "clickhouse_export.usage_insert_query",
+        "clickhouse_export.outcome_insert_query" => "clickhouse_export.outcome_insert_query",
+        "clickhouse_export.username" => "clickhouse_export.username",
+        "clickhouse_export.password" => "clickhouse_export.password",
+        "clickhouse_export.batch_size" => "clickhouse_export.batch_size",
+        "clickhouse_export.interval_secs" => "clickhouse_export.interval_secs",
+        "clickhouse_export.timeout_secs" => "clickhouse_export.timeout_secs",
+        "clickhouse_export.max_request_bytes" => "clickhouse_export.max_request_bytes",
+        "clickhouse_export.backfill_batch_size" => "clickhouse_export.backfill_batch_size",
         "auth" => "auth",
         "auth.allow_query_api_key" => "auth.allow_query_api_key",
         "auth.lookup_timeout_secs" => "auth.lookup_timeout_secs",
@@ -412,6 +423,7 @@ mod tests {
             assert!(!config.credential_encryption().is_configured());
             assert!(config.redis().url().is_none());
             assert!(config.clickhouse_analytics().is_none());
+            assert!(config.clickhouse_export().is_none());
             assert!(!config.auth().allow_query_api_key());
             assert_eq!(config.auth().lookup_timeout_secs(), 2);
             assert!(config.auth().session_signing_key().is_none());
@@ -651,6 +663,189 @@ mod tests {
                     .join("\n");
                 let path = raw_temp_file(&format!(
                     "[database]\nurl = 'sqlite::memory:'\n[clickhouse_analytics]\n{values}\n"
+                ));
+                let error = load_from(&path).unwrap_err();
+                let rendered = format!("{error:?}\n{error}");
+                let _ = fs::remove_file(path);
+                assert_eq!(error, ConfigError::InvalidField { field });
+                assert!(!rendered.contains(canary));
+            }
+        });
+    }
+
+    #[test]
+    fn clickhouse_export_is_optional_complete_bounded_and_redacted() {
+        with_clean_env(|_| {
+            let valid = raw_temp_file(
+                "[database]\nurl = 'sqlite::memory:'\n[clickhouse_export]\nendpoint = 'https://clickhouse.example:8443'\nusage_insert_query = 'INSERT INTO usage_facts (fact_id)'\noutcome_insert_query = 'INSERT INTO outcome_facts (fact_id)'\nusername = 'export-writer'\npassword = 'export-secret'\nbatch_size = 12\ninterval_secs = 9\ntimeout_secs = 17\nmax_request_bytes = 65536\nbackfill_batch_size = 23\n",
+            );
+            let config = load_from(&valid).unwrap();
+            let _ = fs::remove_file(valid);
+            let settings = config.clickhouse_export().unwrap();
+            assert_eq!(
+                settings.endpoint().expose(),
+                "https://clickhouse.example:8443"
+            );
+            assert_eq!(
+                settings.usage_insert_query().expose(),
+                "INSERT INTO usage_facts (fact_id)"
+            );
+            assert_eq!(
+                settings.outcome_insert_query().expose(),
+                "INSERT INTO outcome_facts (fact_id)"
+            );
+            assert_eq!(settings.username().expose(), "export-writer");
+            assert_eq!(settings.password().expose(), "export-secret");
+            assert_eq!(settings.batch_size(), 12);
+            assert_eq!(settings.interval_secs(), 9);
+            assert_eq!(settings.timeout_secs(), 17);
+            assert_eq!(settings.max_request_bytes(), 65_536);
+            assert_eq!(settings.backfill_batch_size(), 23);
+
+            let debug = format!("{settings:?}");
+            for secret in [
+                "clickhouse.example",
+                "usage_facts",
+                "outcome_facts",
+                "export-writer",
+                "export-secret",
+            ] {
+                assert!(!debug.contains(secret));
+            }
+
+            for field in [
+                "endpoint",
+                "usage_insert_query",
+                "outcome_insert_query",
+                "username",
+                "password",
+            ] {
+                let values = [
+                    ("endpoint", "endpoint = 'https://clickhouse.example'"),
+                    (
+                        "usage_insert_query",
+                        "usage_insert_query = 'INSERT INTO usage_facts (fact_id)'",
+                    ),
+                    (
+                        "outcome_insert_query",
+                        "outcome_insert_query = 'INSERT INTO outcome_facts (fact_id)'",
+                    ),
+                    ("username", "username = 'export-writer'"),
+                    ("password", "password = 'export-secret'"),
+                ]
+                .into_iter()
+                .filter_map(|(name, value)| (name != field).then_some(value))
+                .collect::<Vec<_>>()
+                .join("\n");
+                let path = raw_temp_file(&format!(
+                    "[database]\nurl = 'sqlite::memory:'\n[clickhouse_export]\n{values}\n"
+                ));
+                let error = load_from(&path).unwrap_err();
+                let _ = fs::remove_file(path);
+                assert_eq!(
+                    error,
+                    ConfigError::InvalidField {
+                        field: match field {
+                            "endpoint" => "clickhouse_export.endpoint",
+                            "usage_insert_query" => "clickhouse_export.usage_insert_query",
+                            "outcome_insert_query" => "clickhouse_export.outcome_insert_query",
+                            "username" => "clickhouse_export.username",
+                            "password" => "clickhouse_export.password",
+                            _ => unreachable!(),
+                        }
+                    }
+                );
+            }
+
+            for (field, override_value, expected) in [
+                (
+                    "clickhouse_export.batch_size",
+                    "batch_size = 0",
+                    ConfigError::NonPositive {
+                        field: "clickhouse_export.batch_size",
+                    },
+                ),
+                (
+                    "clickhouse_export.interval_secs",
+                    "interval_secs = 3601",
+                    ConfigError::OutOfRange {
+                        field: "clickhouse_export.interval_secs",
+                    },
+                ),
+                (
+                    "clickhouse_export.timeout_secs",
+                    "timeout_secs = 0",
+                    ConfigError::NonPositive {
+                        field: "clickhouse_export.timeout_secs",
+                    },
+                ),
+                (
+                    "clickhouse_export.max_request_bytes",
+                    "max_request_bytes = 16777217",
+                    ConfigError::OutOfRange {
+                        field: "clickhouse_export.max_request_bytes",
+                    },
+                ),
+                (
+                    "clickhouse_export.backfill_batch_size",
+                    "backfill_batch_size = 257",
+                    ConfigError::OutOfRange {
+                        field: "clickhouse_export.backfill_batch_size",
+                    },
+                ),
+            ] {
+                let path = raw_temp_file(&format!(
+                    "[database]\nurl = 'sqlite::memory:'\n[clickhouse_export]\nendpoint = 'https://clickhouse.example'\nusage_insert_query = 'INSERT INTO usage_facts (fact_id)'\noutcome_insert_query = 'INSERT INTO outcome_facts (fact_id)'\nusername = 'export-writer'\npassword = 'export-secret'\n{override_value}\n"
+                ));
+                let error = load_from(&path).unwrap_err();
+                let _ = fs::remove_file(path);
+                assert_eq!(error, expected, "{field}");
+            }
+
+            for (field, override_value, canary) in [
+                (
+                    "clickhouse_export.endpoint",
+                    "endpoint = 'https://user:endpoint-canary@clickhouse.example'",
+                    "endpoint-canary",
+                ),
+                (
+                    "clickhouse_export.usage_insert_query",
+                    "usage_insert_query = 'INSERT INTO usage_facts (usage-query-canary); DROP TABLE usage_logs'",
+                    "usage-query-canary",
+                ),
+                (
+                    "clickhouse_export.username",
+                    "username = ' username-canary ' \n",
+                    "username-canary",
+                ),
+                (
+                    "clickhouse_export.password",
+                    "password = '密码-password-canary'",
+                    "password-canary",
+                ),
+            ] {
+                let defaults = [
+                    ("endpoint", "endpoint = 'https://clickhouse.example'"),
+                    (
+                        "usage_insert_query",
+                        "usage_insert_query = 'INSERT INTO usage_facts (fact_id)'",
+                    ),
+                    (
+                        "outcome_insert_query",
+                        "outcome_insert_query = 'INSERT INTO outcome_facts (fact_id)'",
+                    ),
+                    ("username", "username = 'export-writer'"),
+                    ("password", "password = 'export-secret'"),
+                ];
+                let overridden_name = field.rsplit('.').next().unwrap();
+                let values = defaults
+                    .into_iter()
+                    .filter_map(|(name, value)| (name != overridden_name).then_some(value))
+                    .chain(std::iter::once(override_value))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let path = raw_temp_file(&format!(
+                    "[database]\nurl = 'sqlite::memory:'\n[clickhouse_export]\n{values}\n"
                 ));
                 let error = load_from(&path).unwrap_err();
                 let rendered = format!("{error:?}\n{error}");

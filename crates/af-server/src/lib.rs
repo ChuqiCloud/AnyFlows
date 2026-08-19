@@ -2,6 +2,7 @@
 
 mod adaptor_credential;
 mod admin_dashboard_storage;
+mod analytics_export;
 mod audio_duration;
 mod auto_ban_feedback;
 mod balance_alert_runtime;

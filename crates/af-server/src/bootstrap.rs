@@ -64,19 +64,20 @@ use af_db::{
     AdminModelRepository, AdminModelRepositoryConfigError, AdminRouteRepository,
     AdminRouteRepositoryConfigError, AdminTokenRepository, AdminTokenRepositoryConfigError,
     AdminUsageLogRepository, AdminUsageLogRepositoryConfigError, AdminUserRepository,
-    AdminUserRepositoryConfigError, AsyncTaskBillingRepository, AsyncTaskRepository,
-    AsyncTaskSubmissionRepository, AuthChallengeRateLimitRepository,
-    AuthChallengeRateLimitRepositoryConfigError, AuthChallengeRepository,
-    AuthChallengeRepositoryConfigError, BalanceAlertRepository, BalanceAlertRepositoryConfigError,
-    BalanceAlertSettingsRepository, BalanceAlertSettingsRepositoryConfigError,
-    ChannelStateRepository, CredentialProxyRepository, CredentialProxyRepositoryConfigError,
-    CredentialStateRepository, DatabaseError, DatabaseOptions, DatabaseOptionsError, DatabasePool,
-    DebugTraceRepository, DebugTraceRepositoryConfigError, DebugTraceRepositoryError,
-    DebugTraceSnapshotCipherError, EmailSettingsRepository, EmailSettingsRepositoryConfigError,
-    InitialSetupRepository, InitialSetupRepositoryConfigError, MigrationOptions,
-    ModelPriceRepository, ModelSyncRepository, NetworkSettingsMode, NetworkSettingsRecord,
-    NetworkSettingsRepository, NetworkSettingsRepositoryConfigError, OAuthLoginRepository,
-    OAuthLoginRepositoryError, OrganizationAuditRepository, OrganizationBudgetRepository,
+    AdminUserRepositoryConfigError, AnalyticsExportRepository, AnalyticsExportRepositoryError,
+    AsyncTaskBillingRepository, AsyncTaskRepository, AsyncTaskSubmissionRepository,
+    AuthChallengeRateLimitRepository, AuthChallengeRateLimitRepositoryConfigError,
+    AuthChallengeRepository, AuthChallengeRepositoryConfigError, BalanceAlertRepository,
+    BalanceAlertRepositoryConfigError, BalanceAlertSettingsRepository,
+    BalanceAlertSettingsRepositoryConfigError, ChannelStateRepository, CredentialProxyRepository,
+    CredentialProxyRepositoryConfigError, CredentialStateRepository, DatabaseError,
+    DatabaseOptions, DatabaseOptionsError, DatabasePool, DebugTraceRepository,
+    DebugTraceRepositoryConfigError, DebugTraceRepositoryError, DebugTraceSnapshotCipherError,
+    EmailSettingsRepository, EmailSettingsRepositoryConfigError, InitialSetupRepository,
+    InitialSetupRepositoryConfigError, MigrationOptions, ModelPriceRepository, ModelSyncRepository,
+    NetworkSettingsMode, NetworkSettingsRecord, NetworkSettingsRepository,
+    NetworkSettingsRepositoryConfigError, OAuthLoginRepository, OAuthLoginRepositoryError,
+    OrganizationAuditRepository, OrganizationBudgetRepository,
     OrganizationBudgetRepositoryConfigError, OrganizationRepository,
     OrganizationRepositoryConfigError, OrganizationTokenRepository,
     OrganizationTokenRepositoryConfigError, OrganizationWalletRepository,
@@ -283,6 +284,7 @@ pub struct BillingReady {
     debug_trace_repository: DebugTraceRepository,
     debug_trace_runtime: DebugTraceRuntime,
     debug_trace_worker: DebugTraceWorker,
+    analytics_export_repository: Option<AnalyticsExportRepository>,
 }
 
 /// 后台任务监督域已经建立，周期 flush、订阅周期、渠道索引、渠道探活与可靠队列 worker 已注册。
@@ -526,6 +528,9 @@ pub enum BootstrapError {
     ClickHouseAdminDashboardConfig(
         #[source] crate::admin_dashboard_storage::ClickHouseAdminDashboardConfigError,
     ),
+    /// ClickHouse 事实投递 outbox 仓储的启动参数无效。
+    #[error("ClickHouse 事实投递 outbox 配置无效")]
+    AnalyticsExportRepository(#[source] AnalyticsExportRepositoryError),
     /// 管理员渠道仓储的启动参数无效。
     #[error("管理员渠道仓储启动参数无效")]
     AdminChannelRepository(#[source] AdminChannelRepositoryConfigError),
@@ -1545,18 +1550,48 @@ impl Bootstrap<RelayReady> {
         let refund_sink: Arc<dyn RefundSignalSink> = quota_repository.clone();
         let refund_port: Arc<dyn RefundSignalPort> = Arc::new(refund_signal_queue.clone());
         let usage_port: Arc<dyn UsageRecordPort> = Arc::new(usage_record_queue.clone());
-        let usage_record_sink: Arc<dyn UsageRecordSink> = Arc::new(DatabaseUsageRecordSink::new(
-            UsageLogRepository::new(self.stage.infrastructure.infrastructure.database.clone()),
-        ));
+        let task_operation_timeout = Duration::from_secs(self.config.auth().lookup_timeout_secs());
+        let analytics_export_repository = self
+            .config
+            .clickhouse_export()
+            .map(|_| {
+                AnalyticsExportRepository::new(
+                    self.stage.infrastructure.infrastructure.database.clone(),
+                    task_operation_timeout,
+                )
+                .map_err(BootstrapError::AnalyticsExportRepository)
+            })
+            .transpose()?;
+        let usage_repository =
+            UsageLogRepository::new(self.stage.infrastructure.infrastructure.database.clone());
+        let usage_repository =
+            analytics_export_repository
+                .as_ref()
+                .map_or(usage_repository.clone(), |repository| {
+                    usage_repository
+                        .clone()
+                        .with_analytics_export(repository.clone())
+                });
+        let usage_record_sink: Arc<dyn UsageRecordSink> =
+            Arc::new(DatabaseUsageRecordSink::new(usage_repository));
         let usage_record_consumer = UsageRecordConsumer::new(
             usage_record_receiver,
             Arc::clone(&usage_record_sink),
             BILLING_QUEUE_RETRY_DELAY,
         )
         .map_err(BootstrapError::UsageRecordConsumer)?;
-        let request_outcomes = RequestOutcomeRuntime::new(RequestOutcomeRepository::new(
+        let request_repository = RequestOutcomeRepository::new(
             self.stage.infrastructure.infrastructure.database.clone(),
-        ));
+        );
+        let request_repository =
+            analytics_export_repository
+                .as_ref()
+                .map_or(request_repository.clone(), |repository| {
+                    request_repository
+                        .clone()
+                        .with_analytics_export(repository.clone())
+                });
+        let request_outcomes = RequestOutcomeRuntime::new(request_repository);
         let refund_signal_consumer = RefundSignalConsumer::new(
             refund_signal_receiver,
             refund_sink,
@@ -1564,7 +1599,6 @@ impl Bootstrap<RelayReady> {
         )
         .map_err(BootstrapError::RefundSignalConsumer)?;
         let usage_record_worker_count = self.config.billing().usage_record_worker_count();
-        let task_operation_timeout = Duration::from_secs(self.config.auth().lookup_timeout_secs());
         let task_database = self.stage.infrastructure.infrastructure.database.clone();
         let video_task: Arc<dyn VideoTaskService> = Arc::new(DatabaseVideoTaskService::new(
             crate::scheduled_chat::PersistentVideoTaskCoordinator::new(
@@ -1712,6 +1746,7 @@ impl Bootstrap<RelayReady> {
                 debug_trace_repository,
                 debug_trace_runtime,
                 debug_trace_worker,
+                analytics_export_repository,
             },
         })
     }
@@ -1762,6 +1797,7 @@ impl Bootstrap<BillingReady> {
             debug_trace_repository,
             debug_trace_runtime,
             debug_trace_worker,
+            analytics_export_repository,
         } = stage;
         spawn_channel_index_refresh_task(
             &mut supervisor,
@@ -1795,6 +1831,23 @@ impl Bootstrap<BillingReady> {
                 worker.run(task_shutdown).await;
             }
         });
+        if let (Some(settings), Some(repository)) =
+            (config.clickhouse_export(), analytics_export_repository)
+        {
+            let runtime = crate::analytics_export::ClickHouseExportRuntime::new(
+                settings,
+                upstream_clients.clone(),
+                repository,
+            )
+            .expect("已校验的 ClickHouse 事实投递配置必须可装配");
+            supervisor.spawn("clickhouse-fact-export", move |task_shutdown| {
+                let runtime = runtime.clone();
+                async move {
+                    runtime.run_until(task_shutdown.cancelled()).await;
+                }
+            });
+            tracing::info!("已启用 ClickHouse 异步事实投递");
+        }
         supervisor.spawn("balance-alert", {
             let runtime = BalanceAlertRuntime::new(infrastructure.balance_alert_task.clone());
             move |task_shutdown| {

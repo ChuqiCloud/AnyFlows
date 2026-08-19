@@ -1619,6 +1619,35 @@ pub(in crate::migration) mod scheduler_outbox_events {
     }
 }
 
+pub(in crate::migration) mod analytics_export_outbox_events {
+    use super::DeriveIden;
+
+    /// ClickHouse 事实投递 outbox 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "analytics_export_outbox_events")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// ClickHouse 事实投递 outbox 的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        FactKind,
+        FactId,
+        Status,
+        AttemptCount,
+        NextAttemptAt,
+        LeaseExpiresAt,
+        PublishedAt,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
 pub(in crate::migration) mod routes {
     use super::DeriveIden;
 

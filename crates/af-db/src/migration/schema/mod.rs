@@ -1,6 +1,7 @@
 use sea_orm::DbBackend;
 use sea_orm_migration::prelude::*;
 
+mod analytics_export;
 mod async_task;
 mod async_task_billing;
 mod async_task_submission;
@@ -126,6 +127,7 @@ where
     }
     definition
 }
+pub(super) use analytics_export::create_analytics_export_outbox;
 pub(super) use billing::create_billing_reservations;
 pub(super) use billing_batch::create_billing_batch_checkpoints;
 pub(super) use billing_group_window::{

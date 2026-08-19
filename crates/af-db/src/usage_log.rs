@@ -8,7 +8,7 @@ use std::sync::{
 
 use af_domain::{BillingReservationId, GatewayPrincipal, Operation, Protocol, Quota};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DbErr, EntityTrait, QueryFilter, Set, SqlErr,
+    ActiveModelTrait, ColumnTrait, DbErr, EntityTrait, QueryFilter, Set, SqlErr, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
 };
 use thiserror::Error;
@@ -16,7 +16,7 @@ use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
-    DatabasePool,
+    AnalyticsExportFactKind, AnalyticsExportRepository, DatabasePool,
     entity::{BillingReservationKey, usage_logs},
 };
 
@@ -378,6 +378,7 @@ pub enum UsageLogRepositoryError {
 pub struct UsageLogRepository {
     pool: DatabasePool,
     operation_timeout: Duration,
+    analytics_export: Option<AnalyticsExportRepository>,
     #[cfg(test)]
     outcome_unknown_after_insert: Arc<AtomicBool>,
 }
@@ -389,6 +390,7 @@ impl UsageLogRepository {
         Self {
             pool,
             operation_timeout: DEFAULT_OPERATION_TIMEOUT,
+            analytics_export: None,
             #[cfg(test)]
             outcome_unknown_after_insert: Arc::new(AtomicBool::new(false)),
         }
@@ -405,9 +407,17 @@ impl UsageLogRepository {
         Ok(Self {
             pool,
             operation_timeout,
+            analytics_export: None,
             #[cfg(test)]
             outcome_unknown_after_insert: Arc::new(AtomicBool::new(false)),
         })
+    }
+
+    /// 开启事实 outbox；业务事实与投递指针会在同一数据库事务提交。
+    #[must_use]
+    pub fn with_analytics_export(mut self, repository: AnalyticsExportRepository) -> Self {
+        self.analytics_export = Some(repository);
+        self
     }
 
     /// 幂等追加一条用量事实；相同事实重放不会产生第二行。
@@ -456,10 +466,49 @@ impl UsageLogRepository {
         write: &UsageLogWrite,
     ) -> Result<UsageLogWriteOutcome, UsageLogRepositoryError> {
         let model = usage_log_active_model(write)?;
-        match model.insert(self.pool.connection()).await {
-            Ok(_) => Ok(UsageLogWriteOutcome::Applied),
-            Err(error) if is_unique_violation(&error) => self.classify_existing(write).await,
-            Err(_) => Err(UsageLogRepositoryError::OutcomeUnknown),
+        if self.analytics_export.is_some() {
+            let transaction = self
+                .pool
+                .connection()
+                .begin()
+                .await
+                .map_err(|_| UsageLogRepositoryError::OutcomeUnknown)?;
+            match model.insert(&transaction).await {
+                Ok(saved) => {
+                    let result = AnalyticsExportRepository::enqueue_in_transaction(
+                        &transaction,
+                        AnalyticsExportFactKind::UsageLog,
+                        saved.id,
+                        saved.created_at,
+                    )
+                    .await;
+                    match result {
+                        Ok(()) => transaction
+                            .commit()
+                            .await
+                            .map(|_| UsageLogWriteOutcome::Applied)
+                            .map_err(|_| UsageLogRepositoryError::OutcomeUnknown),
+                        Err(_) => {
+                            let _ = transaction.rollback().await;
+                            Err(UsageLogRepositoryError::OutcomeUnknown)
+                        }
+                    }
+                }
+                Err(error) if is_unique_violation(&error) => {
+                    let _ = transaction.rollback().await;
+                    self.classify_existing(write).await
+                }
+                Err(_) => {
+                    let _ = transaction.rollback().await;
+                    Err(UsageLogRepositoryError::OutcomeUnknown)
+                }
+            }
+        } else {
+            match model.insert(self.pool.connection()).await {
+                Ok(_) => Ok(UsageLogWriteOutcome::Applied),
+                Err(error) if is_unique_violation(&error) => self.classify_existing(write).await,
+                Err(_) => Err(UsageLogRepositoryError::OutcomeUnknown),
+            }
         }
     }
 
@@ -475,6 +524,12 @@ impl UsageLogRepository {
             .map_err(|_| UsageLogRepositoryError::Query)?
             .ok_or(UsageLogRepositoryError::Invariant)?;
         if matches_write(&existing, write) {
+            if let Some(exporter) = self.analytics_export.as_ref() {
+                exporter
+                    .ensure_pointer(AnalyticsExportFactKind::UsageLog, existing.id)
+                    .await
+                    .map_err(|_| UsageLogRepositoryError::OutcomeUnknown)?;
+            }
             Ok(UsageLogWriteOutcome::Existing)
         } else {
             Err(UsageLogRepositoryError::Conflict)

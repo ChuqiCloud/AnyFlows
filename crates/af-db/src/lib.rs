@@ -42,6 +42,9 @@ mod admin_user;
 #[cfg(test)]
 mod admin_user_tests;
 mod admin_user_write;
+mod analytics_export;
+#[cfg(test)]
+mod analytics_export_tests;
 mod async_task;
 mod auth;
 mod auth_challenge;
@@ -258,6 +261,10 @@ pub use admin_user::{
 pub use admin_user_write::{
     AdminUserCreateRecord, AdminUserDeleteOutcome, AdminUserMutationOutcome,
     AdminUserRegistrationCreateOutcome, AdminUserUpdateRecord, AdminUserVerifiedCreateOutcome,
+};
+pub use analytics_export::{
+    AnalyticsExportCompletionOutcome, AnalyticsExportFact, AnalyticsExportFactKind,
+    AnalyticsExportLease, AnalyticsExportRepository, AnalyticsExportRepositoryError,
 };
 pub use async_task::{
     AsyncTaskBillingAccept, AsyncTaskBillingClear, AsyncTaskBillingMark,
