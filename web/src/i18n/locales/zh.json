@@ -152,6 +152,15 @@
       "noFlows": "当前窗口没有已确认渠道流向。",
       "otherFlows": "其他成功流向",
       "channelId": "渠道 {{id}}",
+      "flowMap": {
+        "visible": "已展示 {{count}} 次请求",
+        "share": "占成功终态 {{rate}}",
+        "requests": "次请求",
+        "chartLabel": "协议到渠道请求流向图",
+        "chartTitle": "协议到渠道流向",
+        "chartDescription": "连线宽度表示各入口协议到最终渠道的成功请求数。",
+        "path": "{{protocol}} → {{channel}}：{{count}} 次请求"
+      },
       "protocols": {
         "openai_chat": "OpenAI Chat",
         "openai_responses": "OpenAI Responses",

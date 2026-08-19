@@ -152,6 +152,15 @@
       "noFlows": "No confirmed channel flow in this window.",
       "otherFlows": "Other successful flows",
       "channelId": "Channel {{id}}",
+      "flowMap": {
+        "visible": "{{count}} requests shown",
+        "share": "{{rate}} of successful outcomes",
+        "requests": "requests",
+        "chartLabel": "Protocol to channel request flow map",
+        "chartTitle": "Protocol to channel flow",
+        "chartDescription": "Line width represents the number of successful requests from each protocol to each final channel.",
+        "path": "{{protocol}} to {{channel}}: {{count}} requests"
+      },
       "protocols": {
         "openai_chat": "OpenAI Chat",
         "openai_responses": "OpenAI Responses",

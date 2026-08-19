@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import type { AdminDashboardResponse } from '@/lib/api/generated/types.gen'
+import { DashboardFlowMap } from './dashboard-flow-map'
 
 type DashboardOutcomesProps = {
   dashboard: AdminDashboardResponse
@@ -12,10 +13,6 @@ type DashboardOutcomesProps = {
 
 function ratio(count: number, total: number) {
   return total > 0 ? count / total : null
-}
-
-function protocolLabel(protocol: string, translate: (key: string) => string) {
-  return translate(`dashboard.outcomes.protocols.${protocol}`)
 }
 
 export function DashboardOutcomes({ dashboard, formatNumber, formatPercent }: DashboardOutcomesProps) {
@@ -91,31 +88,7 @@ export function DashboardOutcomes({ dashboard, formatNumber, formatPercent }: Da
           <CardTitle className="text-sm">{t('dashboard.outcomes.flowsTitle')}</CardTitle>
           <CardDescription className="mt-1 text-xs">{t('dashboard.outcomes.flowsSubtitle')}</CardDescription>
         </CardHeader>
-        <CardContent className="px-4 py-2">
-          {dashboard.channel_flows.length === 0 ? (
-            <div className="py-8 text-center text-xs text-muted-foreground">{t('dashboard.outcomes.noFlows')}</div>
-          ) : (
-            <div className="divide-y divide-[var(--hairline)]">
-              {dashboard.channel_flows.map((flow) => (
-                <div key={`${flow.protocol}-${flow.channel_id}`} className="grid min-h-12 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-2 text-xs">
-                  <div className="min-w-0">
-                    <div className="truncate font-medium">{flow.channel_name}</div>
-                    <div className="mt-0.5 truncate text-muted-foreground">
-                      {protocolLabel(flow.protocol, t)} · {t('dashboard.outcomes.channelId', { id: flow.channel_id })}
-                    </div>
-                  </div>
-                  <span className="tabular-nums text-muted-foreground">{formatNumber(flow.request_count)}</span>
-                </div>
-              ))}
-              {dashboard.other_success_count > 0 ? (
-                <div className="flex min-h-12 items-center justify-between gap-3 py-2 text-xs text-muted-foreground">
-                  <span>{t('dashboard.outcomes.otherFlows')}</span>
-                  <span className="tabular-nums">{formatNumber(dashboard.other_success_count)}</span>
-                </div>
-              ) : null}
-            </div>
-          )}
-        </CardContent>
+        <DashboardFlowMap dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} />
       </Card>
     </section>
   )
