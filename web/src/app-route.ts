@@ -49,6 +49,7 @@ export type AppRoute = {
   shareToken?: string
   resetToken?: string
   inviteCode?: string
+  profileSection?: 'notifications'
 }
 
 const shareRoutePrefix = '#/share/'
@@ -65,6 +66,14 @@ function positiveIntegerQuery(hash: string, key: string) {
   if (values.length !== 1 || !/^[1-9]\d*$/.test(values[0])) return undefined
   const value = Number(values[0])
   return Number.isSafeInteger(value) ? value : undefined
+}
+
+/** 只接受通知偏好深链，避免把任意查询值带入个人资料页面状态。 */
+function profileSectionQuery(hash: string): AppRoute['profileSection'] {
+  const queryStart = hash.indexOf('?')
+  if (queryStart < 0) return undefined
+  const values = new URLSearchParams(hash.slice(queryStart + 1)).getAll('section')
+  return values.length === 1 && values[0] === 'notifications' ? 'notifications' : undefined
 }
 
 /** 解析临时 hash 路由，并严格限制公开分享令牌的可接受格式。 */
@@ -116,7 +125,10 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash.startsWith('#/console/playground')) return { view: 'playground' }
   if (hash.startsWith('#/console/video-tasks')) return { view: 'video-tasks' }
   if (hash.startsWith('#/console/invitations')) return { view: 'invitations' }
-  if (hash.startsWith('#/console/profile')) return { view: 'profile' }
+  if (hash.startsWith('#/console/profile')) {
+    const section = profileSectionQuery(hash)
+    return section ? { view: 'profile', profileSection: section } : { view: 'profile' }
+  }
   if (hash.startsWith('#/console/tokens')) return { view: 'tokens' }
   if (hash.startsWith('#/console/usage-logs')) return { view: 'usage-logs' }
   if (hash.startsWith('#/console/users')) return { view: 'users' }

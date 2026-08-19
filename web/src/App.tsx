@@ -76,6 +76,7 @@ function useHashRoute(): [AppRoute, (hash: string) => void] {
 type ManagementEntryProps = {
   view: Exclude<AppView, 'landing' | 'public-models' | 'register' | 'share' | 'forgot-password' | 'reset-password' | 'oauth-callback'>
   credentialChannelId?: number
+  profileSection?: AppRoute['profileSection']
   loginNotice?: LoginNotice
   onAuthenticated: () => void
   onLoginRequired: (reason: 'required' | 'sessionExpired' | 'setupComplete') => void
@@ -88,6 +89,7 @@ type ManagementEntryProps = {
 function ManagementEntry({
   view,
   credentialChannelId,
+  profileSection,
   loginNotice,
   onAuthenticated,
   onLoginRequired,
@@ -253,7 +255,7 @@ function ManagementEntry({
                   : view === 'video-tasks'
                     ? <VideoTaskPage />
                   : view === 'profile'
-                    ? <ProfilePage onPasswordChanged={onPasswordChanged} />
+                    ? <ProfilePage section={profileSection} onPasswordChanged={onPasswordChanged} />
                     : view === 'tokens'
                       ? <TokenPage />
                       : view === 'usage-logs'
@@ -360,6 +362,7 @@ export default function App() {
     <ManagementEntry
       view={view}
       credentialChannelId={route.channelId}
+      profileSection={route.profileSection}
       loginNotice={loginNotice}
       onAuthenticated={openConsole}
       onLoginRequired={openLogin}

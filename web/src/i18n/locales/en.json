@@ -72,6 +72,7 @@
   },
   "shell": {
     "search": "Search",
+    "notifications": "Notification preferences",
     "version": "Development preview",
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",

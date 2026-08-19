@@ -72,6 +72,7 @@
   },
   "shell": {
     "search": "搜索",
+    "notifications": "通知偏好",
     "version": "开发预览版",
     "collapse": "收起侧边栏",
     "expand": "展开侧边栏",
