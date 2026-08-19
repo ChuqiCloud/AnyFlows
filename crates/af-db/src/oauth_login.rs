@@ -1,4 +1,4 @@
-use std::{fmt, time::Duration};
+use std::{fmt, net::IpAddr, time::Duration};
 
 use af_domain::{GroupId, UserId};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -12,6 +12,7 @@ use serde_json::json;
 use thiserror::Error;
 use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
+use url::Url;
 
 use crate::{
     AdminUserCreateRecord, DatabasePool, EncryptedCredentialEnvelope,
@@ -24,6 +25,9 @@ use crate::{
 
 pub const OAUTH_LOGIN_GITHUB_PROVIDER: &str = "github";
 pub const OAUTH_LOGIN_DISCORD_PROVIDER: &str = "discord";
+pub const OAUTH_LOGIN_OIDC_PROVIDER: &str = "oidc";
+pub const OAUTH_LOGIN_LINUXDO_PROVIDER: &str = "linuxdo";
+const LINUXDO_ISSUER: &str = "https://connect.linux.do";
 const AUTHENTICATION_SETTINGS_ID: i16 = 1;
 const ACTIVE_USER_STATUS: i16 = 1;
 
@@ -50,6 +54,7 @@ pub struct OAuthLoginProviderRecord {
     provider: String,
     enabled: bool,
     client_id: Option<String>,
+    issuer_url: Option<String>,
     client_secret: Option<EncryptedCredentialEnvelope>,
     version: i64,
 }
@@ -71,6 +76,11 @@ impl OAuthLoginProviderRecord {
     }
 
     #[must_use]
+    pub fn issuer_url(&self) -> Option<&str> {
+        self.issuer_url.as_deref()
+    }
+
+    #[must_use]
     pub const fn client_secret_configured(&self) -> bool {
         self.client_secret.is_some()
     }
@@ -87,7 +97,17 @@ impl OAuthLoginProviderRecord {
 
     #[must_use]
     pub fn available(&self) -> bool {
-        self.enabled && self.client_id.is_some() && self.client_secret.is_some()
+        self.enabled
+            && self.client_id.is_some()
+            && self.client_secret.is_some()
+            && match self.provider.as_str() {
+                OAUTH_LOGIN_OIDC_PROVIDER => self.issuer_url.is_some(),
+                OAUTH_LOGIN_LINUXDO_PROVIDER => self.issuer_url.as_deref() == Some(LINUXDO_ISSUER),
+                OAUTH_LOGIN_GITHUB_PROVIDER | OAUTH_LOGIN_DISCORD_PROVIDER => {
+                    self.issuer_url.is_none()
+                }
+                _ => false,
+            }
     }
 }
 
@@ -109,6 +129,7 @@ pub struct OAuthLoginProviderWriteRecord {
     expected_version: i64,
     enabled: bool,
     client_id: Option<String>,
+    issuer_url: Option<String>,
     client_secret: OAuthLoginSecretUpdate,
 }
 
@@ -118,12 +139,14 @@ impl OAuthLoginProviderWriteRecord {
         expected_version: i64,
         enabled: bool,
         client_id: Option<String>,
+        issuer_url: Option<String>,
         client_secret: OAuthLoginSecretUpdate,
     ) -> Self {
         Self {
             expected_version,
             enabled,
             client_id,
+            issuer_url,
             client_secret,
         }
     }
@@ -326,6 +349,8 @@ impl OAuthLoginRepository {
         validate_provider(provider)?;
         let current = self.provider_inner(provider).await?;
         let client_id = normalize_client_id(write.client_id)?;
+        let issuer_url = normalize_issuer_url(write.issuer_url)?;
+        validate_provider_issuer(provider, issuer_url.as_deref(), write.enabled)?;
         let secret = match write.client_secret {
             OAuthLoginSecretUpdate::Keep => current.client_secret,
             OAuthLoginSecretUpdate::Replace(envelope) => Some(envelope),
@@ -351,6 +376,10 @@ impl OAuthLoginRepository {
             .col_expr(
                 oauth_login_providers::Column::ClientId,
                 Expr::value(client_id),
+            )
+            .col_expr(
+                oauth_login_providers::Column::IssuerUrl,
+                Expr::value(issuer_url),
             )
             .col_expr(
                 oauth_login_providers::Column::ClientSecret,
@@ -724,6 +753,9 @@ fn provider_from_model(
     validate_provider(&model.provider)?;
     let client_id = normalize_client_id(model.client_id)?;
     let client_secret = model.client_secret.map(envelope_from_json).transpose()?;
+    let issuer_url = normalize_issuer_url(model.issuer_url)?;
+    validate_provider_issuer(&model.provider, issuer_url.as_deref(), model.enabled)
+        .map_err(|_| internal(OAuthLoginRepositoryError::Invariant))?;
     if model.version < 1 || (model.enabled && (client_id.is_none() || client_secret.is_none())) {
         return Err(internal(OAuthLoginRepositoryError::Invariant));
     }
@@ -731,6 +763,7 @@ fn provider_from_model(
         provider: model.provider,
         enabled: model.enabled,
         client_id,
+        issuer_url,
         client_secret,
         version: model.version,
     })
@@ -778,11 +811,77 @@ fn normalize_client_id(
 }
 
 fn validate_provider(provider: &str) -> Result<(), OAuthLoginRepositoryError> {
-    if provider == OAUTH_LOGIN_GITHUB_PROVIDER || provider == OAUTH_LOGIN_DISCORD_PROVIDER {
+    if [
+        OAUTH_LOGIN_GITHUB_PROVIDER,
+        OAUTH_LOGIN_DISCORD_PROVIDER,
+        OAUTH_LOGIN_OIDC_PROVIDER,
+        OAUTH_LOGIN_LINUXDO_PROVIDER,
+    ]
+    .contains(&provider)
+    {
         Ok(())
     } else {
         Err(OAuthLoginRepositoryError::InvalidInput)
     }
+}
+
+fn normalize_issuer_url(
+    issuer_url: Option<String>,
+) -> Result<Option<String>, OAuthLoginRepositoryError> {
+    let issuer_url = issuer_url.and_then(|value| {
+        let trimmed = value.trim().trim_end_matches('/').to_owned();
+        (!trimmed.is_empty()).then_some(trimmed)
+    });
+    if issuer_url.as_deref().is_some_and(|value| {
+        let Ok(url) = Url::parse(value) else {
+            return true;
+        };
+        value.len() > 2048
+            || url.scheme() != "https"
+            || url.host_str().is_none()
+            || url.username() != ""
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+            || url.port().is_some()
+            || value.chars().any(char::is_control)
+            || is_blocked_issuer_host(url.host_str().unwrap_or_default())
+    }) {
+        return Err(OAuthLoginRepositoryError::InvalidInput);
+    }
+    Ok(issuer_url)
+}
+
+fn validate_provider_issuer(
+    provider: &str,
+    issuer: Option<&str>,
+    enabled: bool,
+) -> Result<(), OAuthLoginRepositoryError> {
+    let valid = match provider {
+        OAUTH_LOGIN_OIDC_PROVIDER => issuer.is_some(),
+        OAUTH_LOGIN_LINUXDO_PROVIDER => issuer == Some(LINUXDO_ISSUER),
+        OAUTH_LOGIN_GITHUB_PROVIDER | OAUTH_LOGIN_DISCORD_PROVIDER => issuer.is_none(),
+        _ => false,
+    };
+    if enabled && !valid {
+        Err(OAuthLoginRepositoryError::InvalidInput)
+    } else if !enabled
+        && issuer.is_some()
+        && provider != OAUTH_LOGIN_OIDC_PROVIDER
+        && provider != OAUTH_LOGIN_LINUXDO_PROVIDER
+    {
+        Err(OAuthLoginRepositoryError::InvalidInput)
+    } else {
+        Ok(())
+    }
+}
+
+fn is_blocked_issuer_host(host: &str) -> bool {
+    let normalized = host.trim_end_matches('.').to_ascii_lowercase();
+    normalized == "localhost"
+        || normalized.ends_with(".localhost")
+        || normalized == "localhost.localdomain"
+        || normalized.parse::<IpAddr>().is_ok()
 }
 
 fn validate_subject(subject: &str) -> Result<(), OAuthLoginRepositoryError> {

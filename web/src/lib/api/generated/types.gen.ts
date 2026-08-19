@@ -752,6 +752,7 @@ export type AdminOAuthLoginProviderSettings = {
     client_secret_configured: boolean;
     callback_url?: string | null;
     version: number;
+    issuer_url?: string | null;
 };
 export type AdminOAuthLoginProviderSettingsRequest = {
     expected_version: number;
@@ -759,6 +760,7 @@ export type AdminOAuthLoginProviderSettingsRequest = {
     client_id?: string | null;
     client_secret?: string | null;
     clear_client_secret?: boolean;
+    issuer_url?: string | null;
 };
 export type AdminOAuthManualCallbackRequest = {
     provider: AdminOAuthProvider;
@@ -5959,3 +5961,129 @@ export type ListSelfPlatformAuditLogsResponses = {
     200: PlatformAuditLogListResponse;
 };
 export type ListSelfPlatformAuditLogsResponse = ListSelfPlatformAuditLogsResponses[keyof ListSelfPlatformAuditLogsResponses];
+export type StartOidcLoginData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/auth/oauth/oidc/start';
+};
+export type StartOidcLoginErrors = {
+    409: ManagementError;
+    500: ManagementError;
+};
+export type StartOidcLoginError = StartOidcLoginErrors[keyof StartOidcLoginErrors];
+export type StartOidcLoginResponses = {
+    200: OAuthLoginStartResponse;
+};
+export type StartOidcLoginResponse = StartOidcLoginResponses[keyof StartOidcLoginResponses];
+export type StartLinuxDoLoginData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/auth/oauth/linuxdo/start';
+};
+export type StartLinuxDoLoginErrors = {
+    409: ManagementError;
+    500: ManagementError;
+};
+export type StartLinuxDoLoginError = StartLinuxDoLoginErrors[keyof StartLinuxDoLoginErrors];
+export type StartLinuxDoLoginResponses = {
+    200: OAuthLoginStartResponse;
+};
+export type StartLinuxDoLoginResponse = StartLinuxDoLoginResponses[keyof StartLinuxDoLoginResponses];
+export type CompleteOidcLoginData = {
+    body?: never;
+    path?: never;
+    query?: {
+        state?: string;
+        code?: string;
+        error?: string;
+    };
+    url: '/api/auth/oauth/oidc/callback';
+};
+export type CompleteOidcLoginErrors = {
+    500: ManagementError;
+};
+export type CompleteOidcLoginError = CompleteOidcLoginErrors[keyof CompleteOidcLoginErrors];
+export type CompleteLinuxDoLoginData = {
+    body?: never;
+    path?: never;
+    query?: {
+        state?: string;
+        code?: string;
+        error?: string;
+    };
+    url: '/api/auth/oauth/linuxdo/callback';
+};
+export type CompleteLinuxDoLoginErrors = {
+    500: ManagementError;
+};
+export type CompleteLinuxDoLoginError = CompleteLinuxDoLoginErrors[keyof CompleteLinuxDoLoginErrors];
+export type GetAdminOidcLoginSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/oidc';
+};
+export type GetAdminOidcLoginSettingsErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminOidcLoginSettingsError = GetAdminOidcLoginSettingsErrors[keyof GetAdminOidcLoginSettingsErrors];
+export type GetAdminOidcLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type GetAdminOidcLoginSettingsResponse = GetAdminOidcLoginSettingsResponses[keyof GetAdminOidcLoginSettingsResponses];
+export type UpdateAdminOidcLoginSettingsData = {
+    body: AdminOAuthLoginProviderSettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/oidc';
+};
+export type UpdateAdminOidcLoginSettingsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminOidcLoginSettingsError = UpdateAdminOidcLoginSettingsErrors[keyof UpdateAdminOidcLoginSettingsErrors];
+export type UpdateAdminOidcLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type UpdateAdminOidcLoginSettingsResponse = UpdateAdminOidcLoginSettingsResponses[keyof UpdateAdminOidcLoginSettingsResponses];
+export type GetAdminLinuxDoLoginSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/linuxdo';
+};
+export type GetAdminLinuxDoLoginSettingsErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminLinuxDoLoginSettingsError = GetAdminLinuxDoLoginSettingsErrors[keyof GetAdminLinuxDoLoginSettingsErrors];
+export type GetAdminLinuxDoLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type GetAdminLinuxDoLoginSettingsResponse = GetAdminLinuxDoLoginSettingsResponses[keyof GetAdminLinuxDoLoginSettingsResponses];
+export type UpdateAdminLinuxDoLoginSettingsData = {
+    body: AdminOAuthLoginProviderSettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/linuxdo';
+};
+export type UpdateAdminLinuxDoLoginSettingsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminLinuxDoLoginSettingsError = UpdateAdminLinuxDoLoginSettingsErrors[keyof UpdateAdminLinuxDoLoginSettingsErrors];
+export type UpdateAdminLinuxDoLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type UpdateAdminLinuxDoLoginSettingsResponse = UpdateAdminLinuxDoLoginSettingsResponses[keyof UpdateAdminLinuxDoLoginSettingsResponses];

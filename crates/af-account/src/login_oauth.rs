@@ -1,7 +1,13 @@
-use std::{fmt, time::Duration};
+use std::{fmt, net::IpAddr, time::Duration};
 
 use af_httpclient::{Body, Bytes, HeaderMap, HeaderName, HeaderValue, HttpClientProvider, Method};
+use base64::{
+    Engine as _,
+    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
+};
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use serde::{Deserialize, Deserializer, de::Error as _};
+use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 use zeroize::{Zeroize as _, Zeroizing};
 
@@ -12,25 +18,35 @@ const GITHUB_USER_URL: &str = "https://api.github.com/user";
 const GITHUB_API_VERSION: &str = "2022-11-28";
 const DISCORD_TOKEN_URL: &str = "https://discord.com/api/oauth2/token";
 const DISCORD_USER_URL: &str = "https://discord.com/api/v10/users/@me";
+const LINUXDO_ISSUER: &str = "https://connect.linux.do";
+const LINUXDO_DISCOVERY_ISSUER: &str = "https://connect.linux.do/";
+const LINUXDO_AUTHORIZATION_URL: &str = "https://connect.linux.do/oauth2/authorize";
+const LINUXDO_TOKEN_URL: &str = "https://connect.linux.do/oauth2/token";
+const LINUXDO_USER_URL: &str = "https://connect.linux.do/api/user";
+const LINUXDO_JWKS_URL: &str = "https://connect.linux.do/.well-known/jwks.json";
 const PROVIDER_REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 const MAX_PROVIDER_RESPONSE_BYTES: usize = 64 * 1_024;
 const MAX_ACCESS_TOKEN_BYTES: usize = 4 * 1_024;
 
-/// 用户登录仅允许使用这些内置 OAuth Provider，不接受运行时端点覆盖。
+/// 用户登录仅允许使用受控 Provider；通用 OIDC 只接受管理员配置的 HTTPS issuer。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LoginOAuthProvider {
     GitHub,
     Discord,
+    Oidc,
+    LinuxDo,
 }
 
 impl LoginOAuthProvider {
-    pub const ALL: [Self; 2] = [Self::GitHub, Self::Discord];
+    pub const ALL: [Self; 4] = [Self::GitHub, Self::Discord, Self::Oidc, Self::LinuxDo];
 
     #[must_use]
     pub const fn id(self) -> &'static str {
         match self {
             Self::GitHub => "github",
             Self::Discord => "discord",
+            Self::Oidc => "oidc",
+            Self::LinuxDo => "linuxdo",
         }
     }
 
@@ -39,6 +55,8 @@ impl LoginOAuthProvider {
         match self {
             Self::GitHub => "GitHub",
             Self::Discord => "Discord",
+            Self::Oidc => "OIDC",
+            Self::LinuxDo => "LinuxDO",
         }
     }
 
@@ -47,12 +65,14 @@ impl LoginOAuthProvider {
         match self {
             Self::GitHub => "https://github.com/login/oauth/authorize",
             Self::Discord => "https://discord.com/oauth2/authorize",
+            Self::Oidc => "",
+            Self::LinuxDo => LINUXDO_AUTHORIZATION_URL,
         }
     }
 
     #[must_use]
     pub const fn uses_pkce(self) -> bool {
-        matches!(self, Self::GitHub)
+        matches!(self, Self::GitHub | Self::Oidc | Self::LinuxDo)
     }
 
     #[must_use]
@@ -60,6 +80,8 @@ impl LoginOAuthProvider {
         match self {
             Self::GitHub => "gh",
             Self::Discord => "dc",
+            Self::Oidc => "oidc",
+            Self::LinuxDo => "ld",
         }
     }
 
@@ -74,6 +96,8 @@ impl LoginOAuthProvider {
         match self {
             Self::GitHub => GITHUB_TOKEN_URL,
             Self::Discord => DISCORD_TOKEN_URL,
+            Self::Oidc => "",
+            Self::LinuxDo => LINUXDO_TOKEN_URL,
         }
     }
 
@@ -81,6 +105,21 @@ impl LoginOAuthProvider {
         match self {
             Self::GitHub => GITHUB_USER_URL,
             Self::Discord => DISCORD_USER_URL,
+            Self::Oidc => "",
+            Self::LinuxDo => LINUXDO_USER_URL,
+        }
+    }
+
+    #[must_use]
+    pub const fn is_oidc(self) -> bool {
+        matches!(self, Self::Oidc | Self::LinuxDo)
+    }
+
+    #[must_use]
+    pub const fn fixed_issuer(self) -> Option<&'static str> {
+        match self {
+            Self::LinuxDo => Some(LINUXDO_ISSUER),
+            _ => None,
         }
     }
 }
@@ -159,6 +198,7 @@ impl OAuthLoginClient {
             code,
             verifier,
             redirect_uri,
+            true,
         );
         let token_bytes = execute_json(
             &client,
@@ -185,6 +225,202 @@ impl OAuthLoginClient {
             execute_json(&client, Method::GET, provider.user_url(), headers, None).await?;
         parse_identity(provider, &user_bytes)
     }
+
+    /// 通过受控 discovery 交换 OIDC 授权码，并验证 RS256 ID Token 的关键声明。
+    pub async fn exchange_oidc_identity(
+        &self,
+        provider: LoginOAuthProvider,
+        issuer: &str,
+        client_id: &str,
+        client_secret: &DecryptedSystemSecret,
+        code: &str,
+        verifier: &str,
+        redirect_uri: &str,
+    ) -> Result<OAuthLoginIdentity, OAuthLoginClientError> {
+        if !provider.is_oidc() || issuer.is_empty() {
+            return Err(OAuthLoginClientError::ProviderUnavailable);
+        }
+        let discovery = if let Some(fixed) = provider.fixed_issuer() {
+            if issuer != fixed {
+                return Err(OAuthLoginClientError::ProviderUnavailable);
+            }
+            DiscoveryDocument::linuxdo()
+        } else {
+            self.fetch_discovery(issuer).await?
+        };
+        validate_issuer(issuer)?;
+        if !valid_discovery(&discovery, issuer) {
+            return Err(OAuthLoginClientError::ProviderUnavailable);
+        }
+        let client = self
+            .http_clients
+            .get(Some(PROVIDER_REQUEST_TIMEOUT))
+            .map_err(|_| OAuthLoginClientError::ClientUnavailable)?;
+        let client_authentication = discovery.client_authentication()?;
+        let request_body = token_request_body(
+            provider,
+            client_id,
+            client_secret.expose_secret(),
+            code,
+            Some(verifier),
+            redirect_uri,
+            client_authentication == OidcClientAuthentication::Post,
+        );
+        let mut headers = provider_headers(provider, true);
+        if client_authentication == OidcClientAuthentication::Basic {
+            insert_basic_client_auth(&mut headers, client_id, client_secret.expose_secret())?;
+        }
+        let token_bytes = execute_json(
+            &client,
+            Method::POST,
+            &discovery.token_endpoint,
+            headers,
+            Some(request_body),
+        )
+        .await?;
+        let response: OidcTokenResponse = serde_json::from_slice(&token_bytes)
+            .map_err(|_| OAuthLoginClientError::ProviderUnavailable)?;
+        if !response.token_type.eq_ignore_ascii_case("bearer") {
+            return Err(OAuthLoginClientError::ProviderUnavailable);
+        }
+        let access_token = response.access_token.into_zeroizing();
+        let id_token = Zeroizing::new(
+            response
+                .id_token
+                .ok_or(OAuthLoginClientError::ProviderUnavailable)?,
+        );
+        let jwks = self.fetch_jwks(&client, &discovery.jwks_uri).await?;
+        let header = jsonwebtoken::decode_header(&id_token)
+            .map_err(|_| OAuthLoginClientError::ProviderUnavailable)?;
+        if header.alg != Algorithm::RS256 {
+            return Err(OAuthLoginClientError::ProviderUnavailable);
+        }
+        let kid = header
+            .kid
+            .ok_or(OAuthLoginClientError::ProviderUnavailable)?;
+        let jwk = jwks
+            .find(&kid)
+            .ok_or(OAuthLoginClientError::ProviderUnavailable)?;
+        let mut validation = Validation::new(Algorithm::RS256);
+        // JWT 的 iss 必须匹配已经通过 discovery 校验的规范值，不能直接信任配置中的尾斜杠形式。
+        validation.set_issuer(std::slice::from_ref(&discovery.issuer));
+        validation.set_audience(&[client_id]);
+        let claims = decode::<OidcClaims>(
+            &id_token,
+            &DecodingKey::from_jwk(jwk).map_err(|_| OAuthLoginClientError::ProviderUnavailable)?,
+            &validation,
+        )
+        .map_err(|_| OAuthLoginClientError::ProviderUnavailable)?
+        .claims;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| OAuthLoginClientError::ProviderUnavailable)?
+            .as_secs();
+        if claims.exp <= now {
+            return Err(OAuthLoginClientError::ProviderUnavailable);
+        }
+        let expected_nonce = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+        if claims.nonce.as_deref() != Some(expected_nonce.as_str()) {
+            return Err(OAuthLoginClientError::ProviderUnavailable);
+        }
+        let subject = claims.sub;
+        let username = claims
+            .preferred_username
+            .or(claims.login)
+            .or(claims.name)
+            .unwrap_or_else(|| subject.clone());
+        validate_oidc_subject(&subject)?;
+        validate_oidc_username(&username)?;
+        let subject = oidc_subject_namespace(discovery.issuer.trim_end_matches('/'), &subject);
+        drop(access_token);
+        Ok(OAuthLoginIdentity { subject, username })
+    }
+
+    /// 构造 OIDC 授权地址；仅使用已校验的 discovery 元数据。
+    pub async fn oidc_authorization_url(
+        &self,
+        provider: LoginOAuthProvider,
+        issuer: &str,
+        client_id: &str,
+        redirect_uri: &str,
+        state: &str,
+        challenge: &str,
+    ) -> Result<String, OAuthLoginClientError> {
+        if !provider.is_oidc() {
+            return Err(OAuthLoginClientError::ProviderUnavailable);
+        }
+        let discovery = if let Some(fixed) = provider.fixed_issuer() {
+            if issuer != fixed {
+                return Err(OAuthLoginClientError::ProviderUnavailable);
+            }
+            DiscoveryDocument::linuxdo()
+        } else {
+            self.fetch_discovery(issuer).await?
+        };
+        validate_issuer(issuer)?;
+        if discovery.issuer.trim_end_matches('/') != issuer.trim_end_matches('/')
+            || !valid_endpoint(&discovery.authorization_endpoint)
+        {
+            return Err(OAuthLoginClientError::ProviderUnavailable);
+        }
+        let mut url = url::Url::parse(&discovery.authorization_endpoint)
+            .map_err(|_| OAuthLoginClientError::ProviderUnavailable)?;
+        url.query_pairs_mut()
+            .append_pair("client_id", client_id)
+            .append_pair("redirect_uri", redirect_uri)
+            .append_pair("response_type", "code")
+            .append_pair("scope", "openid profile email")
+            .append_pair("state", state)
+            .append_pair("nonce", challenge)
+            .append_pair("code_challenge", challenge)
+            .append_pair("code_challenge_method", "S256");
+        Ok(url.into())
+    }
+
+    async fn fetch_discovery(
+        &self,
+        issuer: &str,
+    ) -> Result<DiscoveryDocument, OAuthLoginClientError> {
+        validate_issuer(issuer)?;
+        let target = format!(
+            "{}/.well-known/openid-configuration",
+            issuer.trim_end_matches('/')
+        );
+        let client = self
+            .http_clients
+            .get(Some(PROVIDER_REQUEST_TIMEOUT))
+            .map_err(|_| OAuthLoginClientError::ClientUnavailable)?;
+        let bytes = execute_json(
+            &client,
+            Method::GET,
+            &target,
+            provider_headers(LoginOAuthProvider::Oidc, false),
+            None,
+        )
+        .await?;
+        let discovery: DiscoveryDocument = serde_json::from_slice(&bytes)
+            .map_err(|_| OAuthLoginClientError::ProviderUnavailable)?;
+        if !valid_discovery(&discovery, issuer) {
+            return Err(OAuthLoginClientError::ProviderUnavailable);
+        }
+        Ok(discovery)
+    }
+
+    async fn fetch_jwks(
+        &self,
+        client: &af_httpclient::PooledClient,
+        target: &str,
+    ) -> Result<jsonwebtoken::jwk::JwkSet, OAuthLoginClientError> {
+        let bytes = execute_json(
+            client,
+            Method::GET,
+            target,
+            provider_headers(LoginOAuthProvider::Oidc, false),
+            None,
+        )
+        .await?;
+        serde_json::from_slice(&bytes).map_err(|_| OAuthLoginClientError::ProviderUnavailable)
+    }
 }
 
 /// 在异步边界外构造表单，避免 URL 编码器的非 `Sync` 类型进入请求 Future。
@@ -195,24 +431,51 @@ fn token_request_body(
     code: &str,
     verifier: Option<&str>,
     redirect_uri: &str,
+    include_client_credentials: bool,
 ) -> Body {
+    let request_body = token_request_form(
+        provider,
+        client_id,
+        client_secret,
+        code,
+        verifier,
+        redirect_uri,
+        include_client_credentials,
+    );
+    // Bytes 持有可清零 owner，确保传输共享引用全部释放后再擦除表单材料。
+    Body::from(Bytes::from_owner(Zeroizing::new(
+        request_body.as_bytes().to_vec(),
+    )))
+}
+
+fn token_request_form(
+    provider: LoginOAuthProvider,
+    client_id: &str,
+    client_secret: &str,
+    code: &str,
+    verifier: Option<&str>,
+    redirect_uri: &str,
+    include_client_credentials: bool,
+) -> Zeroizing<String> {
     let mut serializer = url::form_urlencoded::Serializer::new(String::new());
     serializer
-        .append_pair("client_id", client_id)
-        .append_pair("client_secret", client_secret)
         .append_pair("code", code)
         .append_pair("redirect_uri", redirect_uri);
-    if matches!(provider, LoginOAuthProvider::Discord) {
+    if include_client_credentials {
+        serializer
+            .append_pair("client_id", client_id)
+            .append_pair("client_secret", client_secret);
+    }
+    if matches!(
+        provider,
+        LoginOAuthProvider::Discord | LoginOAuthProvider::Oidc | LoginOAuthProvider::LinuxDo
+    ) {
         serializer.append_pair("grant_type", "authorization_code");
     }
     if let Some(verifier) = verifier {
         serializer.append_pair("code_verifier", verifier);
     }
-    let request_body = Zeroizing::new(serializer.finish());
-    // Bytes 持有可清零 owner，确保传输共享引用全部释放后再擦除表单材料。
-    Body::from(Bytes::from_owner(Zeroizing::new(
-        request_body.as_bytes().to_vec(),
-    )))
+    Zeroizing::new(serializer.finish())
 }
 
 impl fmt::Debug for OAuthLoginClient {
@@ -225,6 +488,73 @@ impl fmt::Debug for OAuthLoginClient {
 struct OAuthTokenResponse {
     access_token: TokenSecret,
     token_type: String,
+}
+
+#[derive(Deserialize)]
+struct OidcTokenResponse {
+    access_token: TokenSecret,
+    token_type: String,
+    id_token: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct OidcClaims {
+    sub: String,
+    exp: u64,
+    nonce: Option<String>,
+    preferred_username: Option<String>,
+    login: Option<String>,
+    name: Option<String>,
+}
+
+#[derive(Clone, Deserialize)]
+struct DiscoveryDocument {
+    issuer: String,
+    authorization_endpoint: String,
+    token_endpoint: String,
+    jwks_uri: String,
+    code_challenge_methods_supported: Option<Vec<String>>,
+    response_types_supported: Vec<String>,
+    id_token_signing_alg_values_supported: Vec<String>,
+    token_endpoint_auth_methods_supported: Option<Vec<String>>,
+}
+
+impl DiscoveryDocument {
+    fn linuxdo() -> Self {
+        Self {
+            issuer: LINUXDO_DISCOVERY_ISSUER.to_owned(),
+            authorization_endpoint: LINUXDO_AUTHORIZATION_URL.to_owned(),
+            token_endpoint: LINUXDO_TOKEN_URL.to_owned(),
+            jwks_uri: LINUXDO_JWKS_URL.to_owned(),
+            code_challenge_methods_supported: Some(vec!["S256".to_owned()]),
+            response_types_supported: vec!["code".to_owned()],
+            id_token_signing_alg_values_supported: vec!["RS256".to_owned()],
+            token_endpoint_auth_methods_supported: Some(vec![
+                "client_secret_basic".to_owned(),
+                "client_secret_post".to_owned(),
+            ]),
+        }
+    }
+
+    fn client_authentication(&self) -> Result<OidcClientAuthentication, OAuthLoginClientError> {
+        let Some(methods) = self.token_endpoint_auth_methods_supported.as_deref() else {
+            // OIDC Discovery 省略该字段时默认使用 client_secret_basic。
+            return Ok(OidcClientAuthentication::Basic);
+        };
+        if methods.iter().any(|method| method == "client_secret_basic") {
+            Ok(OidcClientAuthentication::Basic)
+        } else if methods.iter().any(|method| method == "client_secret_post") {
+            Ok(OidcClientAuthentication::Post)
+        } else {
+            Err(OAuthLoginClientError::ProviderUnavailable)
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OidcClientAuthentication {
+    Basic,
+    Post,
 }
 
 #[derive(Deserialize)]
@@ -303,7 +633,70 @@ fn parse_identity(
                 username: user.username,
             })
         }
+        LoginOAuthProvider::Oidc | LoginOAuthProvider::LinuxDo => {
+            Err(OAuthLoginClientError::ProviderUnavailable)
+        }
     }
+}
+
+fn validate_issuer(value: &str) -> Result<url::Url, OAuthLoginClientError> {
+    let url = url::Url::parse(value).map_err(|_| OAuthLoginClientError::ProviderUnavailable)?;
+    if url.scheme() != "https"
+        || url.host_str().is_none()
+        || url.username() != ""
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || url.port().is_some()
+        || value.len() > 2_048
+        || value != value.trim_end_matches('/')
+        || value.chars().any(char::is_control)
+        || is_blocked_host(url.host_str().unwrap_or_default())
+    {
+        return Err(OAuthLoginClientError::ProviderUnavailable);
+    }
+    Ok(url)
+}
+
+fn valid_endpoint(value: &str) -> bool {
+    let Ok(url) = url::Url::parse(value) else {
+        return false;
+    };
+    url.scheme() == "https"
+        && url.host_str().is_some()
+        && url.username() == ""
+        && url.password().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none()
+        && url.port().is_none()
+        && !is_blocked_host(url.host_str().unwrap_or_default())
+}
+
+fn valid_discovery(discovery: &DiscoveryDocument, configured_issuer: &str) -> bool {
+    discovery.issuer.trim_end_matches('/') == configured_issuer.trim_end_matches('/')
+        && valid_endpoint(&discovery.authorization_endpoint)
+        && valid_endpoint(&discovery.token_endpoint)
+        && valid_endpoint(&discovery.jwks_uri)
+        && discovery
+            .code_challenge_methods_supported
+            .as_deref()
+            .is_some_and(|methods| methods.iter().any(|method| method == "S256"))
+        && discovery
+            .response_types_supported
+            .iter()
+            .any(|response_type| response_type == "code")
+        && discovery
+            .id_token_signing_alg_values_supported
+            .iter()
+            .any(|algorithm| algorithm == "RS256")
+}
+
+fn is_blocked_host(host: &str) -> bool {
+    let normalized = host.trim_end_matches('.').to_ascii_lowercase();
+    normalized == "localhost"
+        || normalized.ends_with(".localhost")
+        || normalized == "localhost.localdomain"
+        || normalized.parse::<IpAddr>().is_ok()
 }
 
 async fn execute_json(
@@ -341,6 +734,81 @@ async fn execute_json(
         bytes.extend_from_slice(&chunk);
     }
     Ok(bytes)
+}
+
+fn validate_oidc_subject(subject: &str) -> Result<(), OAuthLoginClientError> {
+    if !subject.is_empty()
+        && subject.len() <= 255
+        && subject.trim() == subject
+        && !subject.chars().any(char::is_control)
+    {
+        Ok(())
+    } else {
+        Err(OAuthLoginClientError::ProviderUnavailable)
+    }
+}
+
+/// 将外部 subject 绑定到 issuer 命名空间，避免不同企业 IdP 的相同 sub 错误合并。
+fn oidc_subject_namespace(issuer: &str, subject: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"oidc-subject-v1");
+    hasher.update([0]);
+    hasher.update(issuer.as_bytes());
+    hasher.update([0]);
+    hasher.update(subject.as_bytes());
+    let digest = hasher.finalize();
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        output.push(char::from(HEX[usize::from(byte >> 4)]));
+        output.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    output
+}
+
+fn validate_oidc_username(username: &str) -> Result<(), OAuthLoginClientError> {
+    if !username.is_empty()
+        && username.len() <= 128
+        && username.trim() == username
+        && !username.chars().any(char::is_control)
+    {
+        Ok(())
+    } else {
+        Err(OAuthLoginClientError::ProviderUnavailable)
+    }
+}
+
+fn insert_basic_client_auth(
+    headers: &mut HeaderMap,
+    client_id: &str,
+    client_secret: &str,
+) -> Result<(), OAuthLoginClientError> {
+    let client_id = encode_form_component(client_id);
+    let client_secret = encode_form_component(client_secret);
+    let mut credentials = Zeroizing::new(String::with_capacity(
+        client_id.len() + client_secret.len() + 1,
+    ));
+    credentials.push_str(client_id.as_str());
+    credentials.push(':');
+    credentials.push_str(client_secret.as_str());
+    let encoded = Zeroizing::new(STANDARD.encode(credentials.as_bytes()));
+    let mut authorization = Zeroizing::new(String::with_capacity(encoded.len() + 6));
+    authorization.push_str("Basic ");
+    authorization.push_str(encoded.as_str());
+    let mut value = HeaderValue::from_str(authorization.as_str())
+        .map_err(|_| OAuthLoginClientError::ProviderUnavailable)?;
+    value.set_sensitive(true);
+    headers.insert(HeaderName::from_static("authorization"), value);
+    Ok(())
+}
+
+fn encode_form_component(value: &str) -> Zeroizing<String> {
+    let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+    serializer.append_pair("", value);
+    let mut encoded = Zeroizing::new(serializer.finish());
+    debug_assert!(encoded.starts_with('='));
+    encoded.remove(0);
+    encoded
 }
 
 fn provider_headers(provider: LoginOAuthProvider, form: bool) -> HeaderMap {
@@ -453,5 +921,147 @@ mod tests {
             Some(LoginOAuthProvider::Discord)
         );
         assert_eq!(LoginOAuthProvider::from_id("custom"), None);
+    }
+
+    #[test]
+    fn oidc_subject_is_namespaced_by_issuer() {
+        let first = oidc_subject_namespace("https://idp.example.com", "same-subject");
+        let second = oidc_subject_namespace("https://other.example.com", "same-subject");
+        assert_eq!(first.len(), 64);
+        assert_ne!(first, second);
+        assert_eq!(
+            first,
+            oidc_subject_namespace("https://idp.example.com", "same-subject")
+        );
+        assert_eq!(
+            first,
+            oidc_subject_namespace(
+                "https://idp.example.com/".trim_end_matches('/'),
+                "same-subject"
+            )
+        );
+    }
+
+    #[test]
+    fn oidc_issuer_rejects_local_or_ambiguous_targets() {
+        assert!(validate_issuer("https://idp.example.com").is_ok());
+        assert!(validate_issuer("https://localhost").is_err());
+        assert!(validate_issuer("https://127.0.0.1").is_err());
+        assert!(validate_issuer("https://user@idp.example.com").is_err());
+        assert!(validate_issuer("https://idp.example.com?tenant=one").is_err());
+        assert!(validate_issuer("https://idp.example.com/").is_err());
+    }
+
+    #[test]
+    fn oidc_discovery_selects_supported_client_authentication() {
+        let mut discovery = DiscoveryDocument::linuxdo();
+        discovery.token_endpoint_auth_methods_supported = None;
+        assert_eq!(
+            discovery.client_authentication().unwrap(),
+            OidcClientAuthentication::Basic
+        );
+
+        discovery.token_endpoint_auth_methods_supported = Some(vec![
+            "client_secret_post".to_owned(),
+            "client_secret_basic".to_owned(),
+        ]);
+        assert_eq!(
+            discovery.client_authentication().unwrap(),
+            OidcClientAuthentication::Basic
+        );
+
+        discovery.token_endpoint_auth_methods_supported =
+            Some(vec!["client_secret_post".to_owned()]);
+        assert_eq!(
+            discovery.client_authentication().unwrap(),
+            OidcClientAuthentication::Post
+        );
+
+        discovery.token_endpoint_auth_methods_supported = Some(vec!["private_key_jwt".to_owned()]);
+        assert_eq!(
+            discovery.client_authentication(),
+            Err(OAuthLoginClientError::ProviderUnavailable)
+        );
+    }
+
+    #[test]
+    fn oidc_discovery_requires_pkce_code_flow_and_rs256() {
+        let mut discovery = DiscoveryDocument::linuxdo();
+        assert!(valid_discovery(&discovery, LINUXDO_ISSUER));
+
+        discovery.code_challenge_methods_supported = None;
+        assert!(!valid_discovery(&discovery, LINUXDO_ISSUER));
+        discovery.code_challenge_methods_supported = Some(vec!["S256".to_owned()]);
+
+        discovery.response_types_supported = vec!["id_token".to_owned()];
+        assert!(!valid_discovery(&discovery, LINUXDO_ISSUER));
+        discovery.response_types_supported = vec!["code".to_owned()];
+
+        discovery.id_token_signing_alg_values_supported = vec!["ES256".to_owned()];
+        assert!(!valid_discovery(&discovery, LINUXDO_ISSUER));
+    }
+
+    #[test]
+    fn authorization_code_forms_keep_provider_contracts() {
+        for provider in [
+            LoginOAuthProvider::Discord,
+            LoginOAuthProvider::Oidc,
+            LoginOAuthProvider::LinuxDo,
+        ] {
+            let form = token_request_form(
+                provider,
+                "client-id",
+                "client-secret",
+                "authorization-code",
+                Some("pkce-verifier"),
+                "https://app.example.com/callback",
+                true,
+            );
+            let values = url::form_urlencoded::parse(form.as_bytes())
+                .into_owned()
+                .collect::<std::collections::HashMap<_, _>>();
+            assert_eq!(
+                values.get("grant_type").map(String::as_str),
+                Some("authorization_code")
+            );
+            assert_eq!(
+                values.get("client_id").map(String::as_str),
+                Some("client-id")
+            );
+            assert_eq!(
+                values.get("client_secret").map(String::as_str),
+                Some("client-secret")
+            );
+        }
+
+        let form = token_request_form(
+            LoginOAuthProvider::Oidc,
+            "client-id",
+            "client-secret",
+            "authorization-code",
+            Some("pkce-verifier"),
+            "https://app.example.com/callback",
+            false,
+        );
+        let values = url::form_urlencoded::parse(form.as_bytes())
+            .into_owned()
+            .collect::<std::collections::HashMap<_, _>>();
+        assert!(!values.contains_key("client_id"));
+        assert!(!values.contains_key("client_secret"));
+    }
+
+    #[test]
+    fn oidc_basic_client_auth_encodes_credentials_and_marks_header_sensitive() {
+        let mut headers = HeaderMap::new();
+        insert_basic_client_auth(&mut headers, "client id", "secret/value").unwrap();
+        let authorization = headers.get("authorization").unwrap();
+        assert!(authorization.is_sensitive());
+        assert_eq!(
+            authorization.to_str().unwrap(),
+            format!(
+                "Basic {}",
+                STANDARD.encode("client+id:secret%2Fvalue".as_bytes())
+            )
+        );
     }
 }

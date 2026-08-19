@@ -193,7 +193,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 131);
+        assert_eq!(document.paths.paths.len(), 137);
         let operation_count = document
             .paths
             .paths
@@ -214,7 +214,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 185);
+        assert_eq!(operation_count, 193);
         assert!(
             document
                 .components
@@ -263,11 +263,19 @@ mod tests {
             "completeGitHubOAuthLogin",
             "startDiscordOAuthLogin",
             "completeDiscordOAuthLogin",
+            "startOidcLogin",
+            "completeOidcLogin",
+            "startLinuxDoLogin",
+            "completeLinuxDoLogin",
             "exchangeOAuthLoginTicket",
             "getAdminGitHubOAuthLoginSettings",
             "updateAdminGitHubOAuthLoginSettings",
             "getAdminDiscordOAuthLoginSettings",
             "updateAdminDiscordOAuthLoginSettings",
+            "getAdminOidcLoginSettings",
+            "updateAdminOidcLoginSettings",
+            "getAdminLinuxDoLoginSettings",
+            "updateAdminLinuxDoLoginSettings",
             "confirmPasswordReset",
             "completeAdminOAuthManualCallback",
             "getUserProfile",
