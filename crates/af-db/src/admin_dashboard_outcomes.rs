@@ -412,7 +412,9 @@ fn decode_channel_flow(
     })
 }
 
-fn checked_sum(values: impl Iterator<Item = i64>) -> Result<i64, AdminDashboardRepositoryError> {
+fn checked_sum(
+    mut values: impl Iterator<Item = i64>,
+) -> Result<i64, AdminDashboardRepositoryError> {
     values.try_fold(0_i64, |total, value| {
         total.checked_add(value).ok_or_else(invariant)
     })
