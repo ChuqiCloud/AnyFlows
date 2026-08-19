@@ -4,10 +4,11 @@ use af_domain::{Operation, Protocol};
 use sea_orm::{ConnectionTrait, EntityTrait, PaginatorTrait, Statement};
 
 use super::{
-    DatabaseOptions, MigrationOptions, RequestFailureKind, RequestOutcomeRepository,
-    RequestOutcomeRepositoryError, RequestOutcomeWrite, RequestOutcomeWriteOutcome,
+    AnalyticsExportRepository, DatabaseOptions, MigrationOptions, RequestFailureKind,
+    RequestOutcomeRepository, RequestOutcomeRepositoryError, RequestOutcomeWrite,
+    RequestOutcomeWriteOutcome,
 };
-use crate::entity::request_outcome_logs;
+use crate::entity::{analytics_export_outbox_events, request_outcome_logs};
 
 #[tokio::test]
 async fn repository_is_idempotent_and_rejects_conflicting_terminal_facts()
@@ -54,6 +55,64 @@ async fn repository_is_idempotent_and_rejects_conflicting_terminal_facts()
             .await?,
         1
     );
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn request_outcome_and_export_pointer_commit_together_and_replay_repairs_pointer()
+-> Result<(), Box<dyn Error>> {
+    let pool = crate::connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
+    let exporter = AnalyticsExportRepository::new(pool.clone(), Duration::from_secs(2))?;
+    let repository =
+        RequestOutcomeRepository::new(pool.clone()).with_analytics_export(exporter.clone());
+    let write = RequestOutcomeWrite::succeeded(
+        "request-outcome-export",
+        Protocol::OpenAiChat,
+        Operation::Chat,
+        "gpt-test",
+        None,
+        Duration::from_millis(17),
+    )?;
+
+    assert_eq!(
+        repository.record(&write).await?,
+        RequestOutcomeWriteOutcome::Applied
+    );
+    assert_eq!(
+        analytics_export_outbox_events::Entity::find()
+            .count(pool.connection())
+            .await?,
+        1
+    );
+    let lease = exporter
+        .claim_next_due()
+        .await?
+        .expect("应领取请求终态事实");
+    let fact = exporter.load_fact(&lease).await?;
+    let payload = fact.payload().to_string();
+    assert!(!payload.contains("request_id"));
+    assert!(!payload.contains("user_id"));
+    assert!(!payload.contains("token_id"));
+
+    analytics_export_outbox_events::Entity::delete_many()
+        .exec(pool.connection())
+        .await?;
+    assert_eq!(
+        repository.record(&write).await?,
+        RequestOutcomeWriteOutcome::Existing
+    );
+    assert_eq!(
+        analytics_export_outbox_events::Entity::find()
+            .count(pool.connection())
+            .await?,
+        1
+    );
+
     pool.close().await?;
     Ok(())
 }

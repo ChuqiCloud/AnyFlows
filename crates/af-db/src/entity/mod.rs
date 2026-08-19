@@ -19,6 +19,7 @@ use af_domain::{
 };
 
 pub(crate) mod abilities;
+pub(crate) mod analytics_export_outbox_events;
 pub(crate) mod async_task_billings;
 pub(crate) mod async_task_submission_claims;
 pub(crate) mod async_tasks;

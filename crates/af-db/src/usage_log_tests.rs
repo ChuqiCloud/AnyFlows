@@ -1,13 +1,13 @@
-use std::error::Error;
+use std::{error::Error, time::Duration};
 
 use af_domain::{BillingReservationId, GatewayPrincipal, GroupId, Quota, TokenId, UserId};
 use sea_orm::{ActiveModelTrait, EntityTrait, PaginatorTrait, Set, entity::prelude::Json};
 
 use crate::{
-    DatabaseOptions, MigrationOptions, UsageLogBillingMode, UsageLogRepository,
-    UsageLogRepositoryError, UsageLogSemantics, UsageLogSource, UsageLogUsage,
+    AnalyticsExportRepository, DatabaseOptions, MigrationOptions, UsageLogBillingMode,
+    UsageLogRepository, UsageLogRepositoryError, UsageLogSemantics, UsageLogSource, UsageLogUsage,
     UsageLogVideoResolution, UsageLogWrite, UsageLogWriteError, UsageLogWriteOutcome,
-    entity::{TokenHash, groups, tokens, usage_logs, users},
+    entity::{TokenHash, analytics_export_outbox_events, groups, tokens, usage_logs, users},
 };
 
 #[tokio::test]
@@ -38,6 +38,74 @@ async fn identical_usage_log_replay_is_idempotent_and_conflict_is_rejected()
         repository.record(&usage_write(principal, 1, 8)).await,
         Err(UsageLogRepositoryError::Conflict)
     );
+
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn usage_fact_and_export_pointer_commit_together_and_replay_repairs_pointer()
+-> Result<(), Box<dyn Error>> {
+    let pool = crate::connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
+    let principal = create_principal(&pool, 13).await?;
+    let exporter = AnalyticsExportRepository::new(pool.clone(), Duration::from_secs(2))?;
+    let repository = UsageLogRepository::new(pool.clone()).with_analytics_export(exporter.clone());
+    let write = usage_write(principal, 13, 7);
+
+    assert_eq!(
+        repository.record(&write).await?,
+        UsageLogWriteOutcome::Applied
+    );
+    assert_eq!(
+        analytics_export_outbox_events::Entity::find()
+            .count(pool.connection())
+            .await?,
+        1
+    );
+    let lease = exporter.claim_next_due().await?.expect("应领取用量事实");
+    let fact = exporter.load_fact(&lease).await?;
+    let payload = fact.payload().to_string();
+    assert!(!payload.contains("user_id"));
+    assert!(!payload.contains("token_id"));
+    assert!(!payload.contains("request_id"));
+
+    analytics_export_outbox_events::Entity::delete_many()
+        .exec(pool.connection())
+        .await?;
+    assert_eq!(
+        repository.record(&write).await?,
+        UsageLogWriteOutcome::Existing
+    );
+    assert_eq!(
+        analytics_export_outbox_events::Entity::find()
+            .count(pool.connection())
+            .await?,
+        1
+    );
+
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn historical_usage_fact_backfill_only_fills_missing_pointer() -> Result<(), Box<dyn Error>> {
+    let pool = crate::connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
+    let principal = create_principal(&pool, 14).await?;
+    let repository = UsageLogRepository::new(pool.clone());
+    repository.record(&usage_write(principal, 14, 7)).await?;
+    let exporter = AnalyticsExportRepository::new(pool.clone(), Duration::from_secs(2))?;
+
+    assert_eq!(exporter.backfill_missing(1).await?, 1);
+    assert_eq!(exporter.backfill_missing(1).await?, 0);
+    assert_eq!(exporter.backlog_count().await?, 1);
 
     pool.close().await?;
     Ok(())

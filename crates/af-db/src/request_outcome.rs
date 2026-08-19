@@ -1,12 +1,16 @@
 use std::{fmt, str::FromStr, time::Duration};
 
 use af_domain::{ChannelId, Operation, Protocol};
-use sea_orm::{ActiveModelTrait, ColumnTrait, DbErr, EntityTrait, QueryFilter, Set, SqlErr};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DbErr, EntityTrait, QueryFilter, Set, SqlErr, TransactionTrait,
+};
 use thiserror::Error;
 use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
-use crate::{DatabasePool, entity::request_outcome_logs};
+use crate::{
+    AnalyticsExportFactKind, AnalyticsExportRepository, DatabasePool, entity::request_outcome_logs,
+};
 
 const DEFAULT_OPERATION_TIMEOUT: Duration = Duration::from_secs(2);
 const MAX_REQUEST_ID_BYTES: usize = 128;
@@ -219,6 +223,7 @@ pub enum RequestOutcomeRepositoryError {
 pub struct RequestOutcomeRepository {
     pool: DatabasePool,
     operation_timeout: Duration,
+    analytics_export: Option<AnalyticsExportRepository>,
 }
 
 impl RequestOutcomeRepository {
@@ -228,7 +233,15 @@ impl RequestOutcomeRepository {
         Self {
             pool,
             operation_timeout: DEFAULT_OPERATION_TIMEOUT,
+            analytics_export: None,
         }
+    }
+
+    /// 开启事实 outbox；请求终态与投递指针会在同一数据库事务提交。
+    #[must_use]
+    pub fn with_analytics_export(mut self, repository: AnalyticsExportRepository) -> Self {
+        self.analytics_export = Some(repository);
+        self
     }
 
     /// 按网关请求标识幂等追加一条终态事实。
@@ -268,10 +281,49 @@ impl RequestOutcomeRepository {
             created_at: Set(sea_orm::entity::prelude::TimeDateTimeWithTimeZone::now_utc()),
             ..Default::default()
         };
-        match model.insert(self.pool.connection()).await {
-            Ok(_) => Ok(RequestOutcomeWriteOutcome::Applied),
-            Err(error) if is_unique_violation(&error) => self.classify_existing(write).await,
-            Err(_) => Err(internal_error(RequestOutcomeRepositoryError::Query)),
+        if self.analytics_export.is_some() {
+            let transaction = self
+                .pool
+                .connection()
+                .begin()
+                .await
+                .map_err(|_| internal_error(RequestOutcomeRepositoryError::Query))?;
+            match model.insert(&transaction).await {
+                Ok(saved) => {
+                    let result = AnalyticsExportRepository::enqueue_in_transaction(
+                        &transaction,
+                        AnalyticsExportFactKind::RequestOutcome,
+                        saved.id,
+                        saved.created_at,
+                    )
+                    .await;
+                    match result {
+                        Ok(()) => transaction
+                            .commit()
+                            .await
+                            .map(|_| RequestOutcomeWriteOutcome::Applied)
+                            .map_err(|_| internal_error(RequestOutcomeRepositoryError::Query)),
+                        Err(_) => {
+                            let _ = transaction.rollback().await;
+                            Err(internal_error(RequestOutcomeRepositoryError::Query))
+                        }
+                    }
+                }
+                Err(error) if is_unique_violation(&error) => {
+                    let _ = transaction.rollback().await;
+                    self.classify_existing(write).await
+                }
+                Err(_) => {
+                    let _ = transaction.rollback().await;
+                    Err(internal_error(RequestOutcomeRepositoryError::Query))
+                }
+            }
+        } else {
+            match model.insert(self.pool.connection()).await {
+                Ok(_) => Ok(RequestOutcomeWriteOutcome::Applied),
+                Err(error) if is_unique_violation(&error) => self.classify_existing(write).await,
+                Err(_) => Err(internal_error(RequestOutcomeRepositoryError::Query)),
+            }
         }
     }
 
@@ -286,6 +338,12 @@ impl RequestOutcomeRepository {
             .map_err(|_| internal_error(RequestOutcomeRepositoryError::Query))?
             .ok_or_else(|| internal_error(RequestOutcomeRepositoryError::Invariant))?;
         if matches_write(&existing, write) {
+            if let Some(exporter) = self.analytics_export.as_ref() {
+                exporter
+                    .ensure_pointer(AnalyticsExportFactKind::RequestOutcome, existing.id)
+                    .await
+                    .map_err(|_| internal_error(RequestOutcomeRepositoryError::Query))?;
+            }
             Ok(RequestOutcomeWriteOutcome::Existing)
         } else {
             Err(RequestOutcomeRepositoryError::Conflict)

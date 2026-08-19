@@ -26,8 +26,9 @@ use crate::entity::{
     BillingBatchFingerprint, BillingBatchWriterKey, BillingReservationKey, ChannelBaseUrl,
     EncryptedJson, HeaderOverrides, PasswordHash, PlaygroundConversationKey, SensitiveDecimal,
     SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist, WalletLedgerKey, abilities,
-    auth_challenge_rate_limits, auth_challenges, authentication_settings, balance_alert_events,
-    balance_alert_settings, billing_batch_checkpoints, billing_group_window_reservations,
+    analytics_export_outbox_events, auth_challenge_rate_limits, auth_challenges,
+    authentication_settings, balance_alert_events, balance_alert_settings,
+    billing_batch_checkpoints, billing_group_window_reservations,
     billing_organization_reservations, billing_reservations, billing_subscription_reservations,
     billing_token_window_reservations, channel_groups, channel_models, channels, credentials,
     debug_trace_attempts, debug_trace_snapshot_access_audits, debug_trace_snapshots, debug_traces,
@@ -73,7 +74,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 76;
+const EXPECTED_MIGRATION_COUNT: usize = 77;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -92,7 +93,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 70] = [
+const CORE_TABLES: [&str; 71] = [
     "groups",
     "users",
     "passkeys",
@@ -163,6 +164,7 @@ const CORE_TABLES: [&str; 70] = [
     "platform_audit_logs",
     "request_outcome_logs",
     "user_notification_events",
+    "analytics_export_outbox_events",
 ];
 
 struct SlowMigrator;
@@ -1198,6 +1200,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[16].name(),
         "m20260819_000076_create_user_notification_events"
+    );
+    assert_eq!(
+        pending_migrations[17].name(),
+        "m20260819_000077_create_analytics_export_outbox"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
@@ -2722,6 +2728,11 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         .await?;
     assert_entity_columns::<platform_audit_logs::Column>(&manager, "platform_audit_logs").await?;
     assert_entity_columns::<request_outcome_logs::Column>(&manager, "request_outcome_logs").await?;
+    assert_entity_columns::<analytics_export_outbox_events::Column>(
+        &manager,
+        "analytics_export_outbox_events",
+    )
+    .await?;
     assert_entity_columns::<user_notification_events::Column>(&manager, "user_notification_events")
         .await?;
     assert_entity_columns::<organization_invitations::Column>(&manager, "organization_invitations")
@@ -3064,6 +3075,18 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
             "idx_request_outcome_channel_created",
         ),
         ("request_outcome_logs", "idx_request_outcome_flow_created"),
+        (
+            "analytics_export_outbox_events",
+            "uq_analytics_export_outbox_fact",
+        ),
+        (
+            "analytics_export_outbox_events",
+            "idx_analytics_export_outbox_due",
+        ),
+        (
+            "analytics_export_outbox_events",
+            "idx_analytics_export_outbox_fact_cursor",
+        ),
     ] {
         assert!(
             manager.has_index(table, index).await?,

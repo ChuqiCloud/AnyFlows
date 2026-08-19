@@ -36,6 +36,8 @@ pub const CONCURRENCY_SLOTS: &str = "concurrency_slots";
 pub const BILLING_FLUSH_LAG: &str = "billing_flush_lag";
 /// 按闭合档案和结果累计的客户端仿真 Attempt。
 pub const CLIENT_SIMULATION_ATTEMPTS_TOTAL: &str = "client_simulation_attempts_total";
+/// 尚未完成 ClickHouse 投递的事实数量。
+pub const ANALYTICS_EXPORT_BACKLOG: &str = "analytics_export_backlog";
 
 const REQUESTS_DESCRIPTION: &str = "AnyFlows 请求总数。";
 const REQUEST_DURATION_DESCRIPTION: &str = "AnyFlows 请求总耗时。";
@@ -46,6 +48,7 @@ const QUOTA_CONSUMED_DESCRIPTION: &str = "AnyFlows 已结算的整数 quota 消�
 const CONCURRENCY_SLOTS_DESCRIPTION: &str = "AnyFlows 各级并发槽位占用量。";
 const BILLING_FLUSH_LAG_DESCRIPTION: &str = "AnyFlows 批量计费落盘滞后。";
 const CLIENT_SIMULATION_ATTEMPTS_DESCRIPTION: &str = "AnyFlows 客户端仿真 Attempt 总数。";
+const ANALYTICS_EXPORT_BACKLOG_DESCRIPTION: &str = "AnyFlows ClickHouse 事实投递积压数量。";
 
 const METRICS_CALLSITE: &str = module_path!();
 const OTHER_LABEL: &str = "other";
@@ -185,6 +188,11 @@ pub fn record_client_simulation_attempt(
         "result" => result.as_str()
     )
     .increment(1);
+}
+
+/// 设置尚未完成 ClickHouse 投递的事实数量。
+pub fn set_analytics_export_backlog(backlog: u64) {
+    ::metrics::gauge!(ANALYTICS_EXPORT_BACKLOG).set(backlog as f64);
 }
 
 macro_rules! registered_label {
@@ -421,5 +429,10 @@ pub(crate) fn describe_metric_families() {
         CLIENT_SIMULATION_ATTEMPTS_TOTAL,
         Unit::Count,
         CLIENT_SIMULATION_ATTEMPTS_DESCRIPTION
+    );
+    ::metrics::describe_gauge!(
+        ANALYTICS_EXPORT_BACKLOG,
+        Unit::Count,
+        ANALYTICS_EXPORT_BACKLOG_DESCRIPTION
     );
 }

@@ -143,6 +143,26 @@ pub const MAX_CLICKHOUSE_ANALYTICS_TIMEOUT_SECS: u64 = 300;
 pub const DEFAULT_CLICKHOUSE_ANALYTICS_RESPONSE_BYTES: usize = 1024 * 1024;
 /// ClickHouse 单行分析快照允许配置的最大响应体上限。
 pub const MAX_CLICKHOUSE_ANALYTICS_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+/// ClickHouse 异步事实投递的默认批量大小。
+pub const DEFAULT_CLICKHOUSE_EXPORT_BATCH_SIZE: usize = 64;
+/// ClickHouse 异步事实投递允许配置的最大批量大小。
+pub const MAX_CLICKHOUSE_EXPORT_BATCH_SIZE: usize = 256;
+/// ClickHouse 异步事实投递的默认扫描周期。
+pub const DEFAULT_CLICKHOUSE_EXPORT_INTERVAL_SECS: u64 = 5;
+/// ClickHouse 异步事实投递允许配置的最大扫描周期。
+pub const MAX_CLICKHOUSE_EXPORT_INTERVAL_SECS: u64 = 3_600;
+/// ClickHouse 异步事实投递的默认请求超时。
+pub const DEFAULT_CLICKHOUSE_EXPORT_TIMEOUT_SECS: u64 = 5;
+/// ClickHouse 异步事实投递允许配置的最大请求超时。
+pub const MAX_CLICKHOUSE_EXPORT_TIMEOUT_SECS: u64 = 300;
+/// ClickHouse 异步事实投递的默认请求体上限。
+pub const DEFAULT_CLICKHOUSE_EXPORT_REQUEST_BYTES: usize = 4 * 1024 * 1024;
+/// ClickHouse 异步事实投递允许配置的最大请求体上限。
+pub const MAX_CLICKHOUSE_EXPORT_REQUEST_BYTES: usize = 16 * 1024 * 1024;
+/// ClickHouse 历史事实单轮默认回填大小。
+pub const DEFAULT_CLICKHOUSE_EXPORT_BACKFILL_BATCH_SIZE: usize = 128;
+/// ClickHouse 历史事实单轮最大回填大小。
+pub const MAX_CLICKHOUSE_EXPORT_BACKFILL_BATCH_SIZE: usize = 256;
 const MAX_CLICKHOUSE_ANALYTICS_QUERY_BYTES: usize = 64 * 1024;
 const MAX_CLICKHOUSE_ANALYTICS_USERNAME_BYTES: usize = 256;
 const MAX_CLICKHOUSE_ANALYTICS_PASSWORD_BYTES: usize = 1024;
@@ -738,6 +758,114 @@ impl fmt::Debug for ClickHouseAnalyticsSettings {
     }
 }
 
+/// 可选的 ClickHouse 异步事实投递配置；与只读分析账号严格分离。
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClickHouseExportSettings {
+    endpoint: SecretString,
+    usage_insert_query: SecretString,
+    outcome_insert_query: SecretString,
+    username: SecretString,
+    password: SecretString,
+    #[serde(default = "default_clickhouse_export_batch_size")]
+    batch_size: usize,
+    #[serde(default = "default_clickhouse_export_interval_secs")]
+    interval_secs: u64,
+    #[serde(default = "default_clickhouse_export_timeout_secs")]
+    timeout_secs: u64,
+    #[serde(default = "default_clickhouse_export_request_bytes")]
+    max_request_bytes: usize,
+    #[serde(default = "default_clickhouse_export_backfill_batch_size")]
+    backfill_batch_size: usize,
+}
+
+impl ClickHouseExportSettings {
+    /// 返回事实投递端点。
+    #[must_use]
+    pub const fn endpoint(&self) -> &SecretString {
+        &self.endpoint
+    }
+    /// 返回用量事实 INSERT 查询。
+    #[must_use]
+    pub const fn usage_insert_query(&self) -> &SecretString {
+        &self.usage_insert_query
+    }
+    /// 返回请求终态事实 INSERT 查询。
+    #[must_use]
+    pub const fn outcome_insert_query(&self) -> &SecretString {
+        &self.outcome_insert_query
+    }
+    /// 返回独立的 ClickHouse 写入用户名。
+    #[must_use]
+    pub const fn username(&self) -> &SecretString {
+        &self.username
+    }
+    /// 返回独立的 ClickHouse 写入密码。
+    #[must_use]
+    pub const fn password(&self) -> &SecretString {
+        &self.password
+    }
+    /// 返回单轮投递批量大小。
+    #[must_use]
+    pub const fn batch_size(&self) -> usize {
+        self.batch_size
+    }
+    /// 返回后台扫描周期秒数。
+    #[must_use]
+    pub const fn interval_secs(&self) -> u64 {
+        self.interval_secs
+    }
+    /// 返回单次 ClickHouse 请求超时秒数。
+    #[must_use]
+    pub const fn timeout_secs(&self) -> u64 {
+        self.timeout_secs
+    }
+    /// 返回单次批量请求体硬上限。
+    #[must_use]
+    pub const fn max_request_bytes(&self) -> usize {
+        self.max_request_bytes
+    }
+    /// 返回历史事实单轮回填大小。
+    #[must_use]
+    pub const fn backfill_batch_size(&self) -> usize {
+        self.backfill_batch_size
+    }
+}
+
+impl fmt::Debug for ClickHouseExportSettings {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ClickHouseExportSettings")
+            .field("endpoint", &"<redacted>")
+            .field("usage_insert_query", &"<redacted>")
+            .field("outcome_insert_query", &"<redacted>")
+            .field("username", &"<redacted>")
+            .field("password", &"<redacted>")
+            .field("batch_size", &self.batch_size)
+            .field("interval_secs", &self.interval_secs)
+            .field("timeout_secs", &self.timeout_secs)
+            .field("max_request_bytes", &self.max_request_bytes)
+            .field("backfill_batch_size", &self.backfill_batch_size)
+            .finish()
+    }
+}
+
+const fn default_clickhouse_export_batch_size() -> usize {
+    DEFAULT_CLICKHOUSE_EXPORT_BATCH_SIZE
+}
+const fn default_clickhouse_export_interval_secs() -> u64 {
+    DEFAULT_CLICKHOUSE_EXPORT_INTERVAL_SECS
+}
+const fn default_clickhouse_export_timeout_secs() -> u64 {
+    DEFAULT_CLICKHOUSE_EXPORT_TIMEOUT_SECS
+}
+const fn default_clickhouse_export_request_bytes() -> usize {
+    DEFAULT_CLICKHOUSE_EXPORT_REQUEST_BYTES
+}
+const fn default_clickhouse_export_backfill_batch_size() -> usize {
+    DEFAULT_CLICKHOUSE_EXPORT_BACKFILL_BATCH_SIZE
+}
+
 const fn default_clickhouse_analytics_timeout_secs() -> u64 {
     DEFAULT_CLICKHOUSE_ANALYTICS_TIMEOUT_SECS
 }
@@ -1112,6 +1240,8 @@ pub struct AppConfig {
     #[serde(default)]
     clickhouse_analytics: Option<ClickHouseAnalyticsSettings>,
     #[serde(default)]
+    clickhouse_export: Option<ClickHouseExportSettings>,
+    #[serde(default)]
     auth: AuthSettings,
     #[serde(default)]
     turnstile: TurnstileSettings,
@@ -1182,6 +1312,12 @@ impl AppConfig {
     #[must_use]
     pub const fn clickhouse_analytics(&self) -> Option<&ClickHouseAnalyticsSettings> {
         self.clickhouse_analytics.as_ref()
+    }
+
+    /// 返回可选的 ClickHouse 异步事实投递配置；缺失时导出保持关闭。
+    #[must_use]
+    pub const fn clickhouse_export(&self) -> Option<&ClickHouseExportSettings> {
+        self.clickhouse_export.as_ref()
     }
 
     /// 返回下游 API Key 认证设置。
@@ -1472,6 +1608,9 @@ impl AppConfig {
         if let Some(settings) = self.clickhouse_analytics.as_ref() {
             validate_clickhouse_analytics(settings)?;
         }
+        if let Some(settings) = self.clickhouse_export.as_ref() {
+            validate_clickhouse_export(settings)?;
+        }
         if self.auth.lookup_timeout_secs == 0 {
             return Err(ConfigError::NonPositive {
                 field: "auth.lookup_timeout_secs",
@@ -1605,6 +1744,119 @@ fn validate_clickhouse_analytics(
         });
     }
     Ok(())
+}
+
+fn validate_clickhouse_export(settings: &ClickHouseExportSettings) -> Result<(), ConfigError> {
+    let endpoint = settings.endpoint.expose();
+    let parsed = Url::parse(endpoint).map_err(|_| ConfigError::InvalidField {
+        field: "clickhouse_export.endpoint",
+    })?;
+    if endpoint.trim() != endpoint
+        || !matches!(parsed.scheme(), "http" | "https")
+        || !parsed.has_host()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+        || parsed.port() == Some(0)
+    {
+        return Err(ConfigError::InvalidField {
+            field: "clickhouse_export.endpoint",
+        });
+    }
+
+    for (query, field) in [
+        (
+            &settings.usage_insert_query,
+            "clickhouse_export.usage_insert_query",
+        ),
+        (
+            &settings.outcome_insert_query,
+            "clickhouse_export.outcome_insert_query",
+        ),
+    ] {
+        let trimmed = query.expose().trim();
+        if trimmed.is_empty()
+            || trimmed.len() > MAX_CLICKHOUSE_ANALYTICS_QUERY_BYTES
+            || trimmed.contains(';')
+            || trimmed.chars().any(char::is_control)
+            || !is_clickhouse_insert_query(trimmed)
+        {
+            return Err(ConfigError::InvalidField { field });
+        }
+    }
+    validate_clickhouse_header_value(
+        settings.username.expose(),
+        MAX_CLICKHOUSE_ANALYTICS_USERNAME_BYTES,
+        false,
+        "clickhouse_export.username",
+    )?;
+    validate_clickhouse_header_value(
+        settings.password.expose(),
+        MAX_CLICKHOUSE_ANALYTICS_PASSWORD_BYTES,
+        true,
+        "clickhouse_export.password",
+    )?;
+    if settings.batch_size == 0 {
+        return Err(ConfigError::NonPositive {
+            field: "clickhouse_export.batch_size",
+        });
+    }
+    if settings.batch_size > MAX_CLICKHOUSE_EXPORT_BATCH_SIZE {
+        return Err(ConfigError::OutOfRange {
+            field: "clickhouse_export.batch_size",
+        });
+    }
+    if settings.interval_secs == 0 {
+        return Err(ConfigError::NonPositive {
+            field: "clickhouse_export.interval_secs",
+        });
+    }
+    if settings.interval_secs > MAX_CLICKHOUSE_EXPORT_INTERVAL_SECS {
+        return Err(ConfigError::OutOfRange {
+            field: "clickhouse_export.interval_secs",
+        });
+    }
+    if settings.timeout_secs == 0 {
+        return Err(ConfigError::NonPositive {
+            field: "clickhouse_export.timeout_secs",
+        });
+    }
+    if settings.timeout_secs > MAX_CLICKHOUSE_EXPORT_TIMEOUT_SECS {
+        return Err(ConfigError::OutOfRange {
+            field: "clickhouse_export.timeout_secs",
+        });
+    }
+    if settings.max_request_bytes == 0 {
+        return Err(ConfigError::NonPositive {
+            field: "clickhouse_export.max_request_bytes",
+        });
+    }
+    if settings.max_request_bytes > MAX_CLICKHOUSE_EXPORT_REQUEST_BYTES {
+        return Err(ConfigError::OutOfRange {
+            field: "clickhouse_export.max_request_bytes",
+        });
+    }
+    if settings.backfill_batch_size == 0 {
+        return Err(ConfigError::NonPositive {
+            field: "clickhouse_export.backfill_batch_size",
+        });
+    }
+    if settings.backfill_batch_size > MAX_CLICKHOUSE_EXPORT_BACKFILL_BATCH_SIZE {
+        return Err(ConfigError::OutOfRange {
+            field: "clickhouse_export.backfill_batch_size",
+        });
+    }
+    Ok(())
+}
+
+fn is_clickhouse_insert_query(query: &str) -> bool {
+    let mut words = query.split_ascii_whitespace();
+    matches!(
+        (words.next(), words.next()),
+        (Some(insert), Some(into))
+            if insert.eq_ignore_ascii_case("insert") && into.eq_ignore_ascii_case("into")
+    )
 }
 
 fn validate_clickhouse_header_value(
@@ -1963,5 +2215,22 @@ mod tests {
             .unwrap();
         let debug = format!("{origin:?}");
         assert!(!debug.contains("internal-console.example"));
+    }
+
+    #[test]
+    fn clickhouse_export_query_requires_insert_into_tokens() {
+        assert!(is_clickhouse_insert_query(
+            "INSERT INTO usage_facts (fact_id)"
+        ));
+        assert!(is_clickhouse_insert_query(
+            "insert\ninto outcome_facts (fact_id)"
+        ));
+        for query in [
+            "INSERT usage_facts (fact_id)",
+            "INSERTED INTO usage_facts (fact_id)",
+            "SELECT fact_id FROM usage_facts",
+        ] {
+            assert!(!is_clickhouse_insert_query(query));
+        }
     }
 }
