@@ -530,7 +530,7 @@ mod tests {
     #[test]
     fn generated_queries_remain_portable_across_supported_dialects() {
         let start = TimeDateTimeWithTimeZone::from_unix_timestamp(1_000).unwrap();
-        let end = TimeDateTimeWithTimeZone::from_unix_timestamp(2_000).unwrap();
+        let end = TimeDateTimeWithTimeZone::from_unix_timestamp(87_400).unwrap();
         for backend in [DbBackend::Sqlite, DbBackend::Postgres, DbBackend::MySql] {
             let usage = backend.build(&usage_query(start, end).unwrap());
             let channels = backend.build(&channel_query());
