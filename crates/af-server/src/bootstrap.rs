@@ -39,7 +39,7 @@ use af_admin::{
     SiteSettingsService, SubscriptionService, TokenAuthenticator, UserInvitationService,
     UserProfileService, UserTokenService, UserTopupService, UserWalletService,
 };
-use af_analytics::{AdminDashboardReader, DatabaseAdminDashboardReader};
+use af_analytics::{AdminDashboardReader, StorageAdminDashboardReader};
 use af_billing::{
     BillingPrechargePort, BillingSettlementPort, CachedRequestPricingSnapshotSource,
     DatabaseUsageRecordSink, GroupPricingCache, GroupPricingCacheError, ModelPriceCache,
@@ -1129,9 +1129,11 @@ impl Bootstrap<DatabaseReady> {
                     admin_channel_repository,
                     credential_encryptor,
                 )),
-                admin_dashboard_reader: Arc::new(DatabaseAdminDashboardReader::new(
-                    admin_dashboard_repository,
-                )),
+                admin_dashboard_reader: Arc::new(StorageAdminDashboardReader::new(Arc::new(
+                    crate::admin_dashboard_storage::DatabaseAdminDashboardStorage::new(
+                        admin_dashboard_repository,
+                    ),
+                ))),
                 admin_group_reader: Arc::new(DatabaseAdminGroupReader::new(
                     admin_group_repository.clone(),
                 )),
