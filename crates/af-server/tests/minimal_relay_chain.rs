@@ -56,7 +56,8 @@ use af_admin::{
     SessionLoginFuture, SessionPrincipal, SiteSettingsCommand, SiteSettingsError,
     SiteSettingsService, SubscriptionService, SubscriptionServiceError, TokenAuthentication,
     TokenAuthenticationFuture, TokenAuthenticator, UserInvitationError, UserInvitationReadFuture,
-    UserInvitationService, UserNotificationPreferencesCommand, UserNotificationUpdateFuture,
+    UserInvitationService, UserNotificationError, UserNotificationListFuture,
+    UserNotificationPreferencesCommand, UserNotificationService, UserNotificationUpdateFuture,
     UserPasswordChangeCommand, UserPasswordChangeFuture, UserProfileError, UserProfileReadFuture,
     UserProfileService, UserProfileUpdateCommand, UserProfileUpdateFuture, UserTokenCreateFuture,
     UserTokenDeleteFuture, UserTokenError, UserTokenGetFuture, UserTokenListFuture,
@@ -195,6 +196,7 @@ struct RejectRegistration;
 struct RejectPasswordReset;
 struct RejectUserProfile;
 struct RejectUserWallet;
+struct RejectUserNotifications;
 struct RejectRedemptions;
 struct RejectSubscriptions;
 struct RejectUserInvitations;
@@ -391,6 +393,16 @@ impl UserWalletService for RejectUserWallet {
         _query: UserWalletListQuery,
     ) -> UserWalletListFuture<'a> {
         Box::pin(async { Err(UserWalletError::Internal) })
+    }
+}
+
+impl UserNotificationService for RejectUserNotifications {
+    fn list<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _query: af_admin::UserNotificationListQuery,
+    ) -> UserNotificationListFuture<'a> {
+        Box::pin(async { Err(UserNotificationError::Internal) })
     }
 }
 
@@ -1917,6 +1929,7 @@ async fn start_server(
         Arc::new(RejectPasswordReset),
         Arc::new(RejectUserProfile),
         Arc::new(RejectUserWallet),
+        Arc::new(RejectUserNotifications),
         None,
         None,
         None,

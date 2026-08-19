@@ -10,7 +10,7 @@ use super::*;
 use crate::{
     DatabaseOptions, InitialSetupOutcome, InitialSetupRecord, InitialSetupRepository,
     MigrationOptions,
-    entity::{balance_alert_events, users},
+    entity::{balance_alert_events, user_notification_events, users},
 };
 
 async fn fixture() -> Result<(crate::DatabasePool, i64), Box<dyn Error>> {
@@ -82,6 +82,12 @@ async fn settings_and_event_queue_close_dedup_retry_and_success() -> Result<(), 
             .await?,
         BalanceAlertCompletionOutcome::Completed
     );
+    let retry_notification = user_notification_events::Entity::find()
+        .one(pool.connection())
+        .await?
+        .expect("余额通知事实必须存在");
+    assert_eq!(retry_notification.delivery_state, 1);
+    assert_eq!(retry_notification.delivery_attempts, 1);
     assert_eq!(
         queue.claim_next(settings, window, now).await?,
         BalanceAlertClaimOutcome::Empty
@@ -109,6 +115,12 @@ async fn settings_and_event_queue_close_dedup_retry_and_success() -> Result<(), 
     assert_eq!(event.status, 3);
     assert_eq!(event.attempt_count, 2);
     assert!(event.sent_at.is_some());
+    let accepted_notification = user_notification_events::Entity::find()
+        .one(pool.connection())
+        .await?
+        .expect("余额通知事实必须存在");
+    assert_eq!(accepted_notification.delivery_state, 2);
+    assert_eq!(accepted_notification.delivery_attempts, 2);
     pool.close().await?;
     Ok(())
 }

@@ -27,17 +27,17 @@ use af_admin::{
     DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
     DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
     DatabaseSiteSettingsService, DatabaseSubscriptionService, DatabaseTokenAuthenticator,
-    DatabaseUserInvitationService, DatabaseUserProfileService, DatabaseUserTokenService,
-    DatabaseUserWalletService, EmailDelivery, InitialSetup, ModelCatalogReader,
-    NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError, OAuthLoginService,
-    OrganizationActivityService, OrganizationActivityServiceConfigError, OrganizationBudgetService,
-    OrganizationTokenService, OrganizationWalletService, PasskeyAuthenticationService,
-    PasskeyAuthenticationServiceConfigError, PasswordResetService, PasswordResetServiceConfigError,
-    PlatformAuditService, PlaygroundConversationService, PlaygroundShareService, RedemptionService,
-    RegistrationService, RegistrationServiceConfigError, RuntimeRefreshingAdminGroupWriter,
-    SessionAuthenticator, SessionAuthenticatorConfigError, SiteSettingsService,
-    SubscriptionService, TokenAuthenticator, UserInvitationService, UserProfileService,
-    UserTokenService, UserTopupService, UserWalletService,
+    DatabaseUserInvitationService, DatabaseUserNotificationService, DatabaseUserProfileService,
+    DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery, InitialSetup,
+    ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
+    OAuthLoginService, OrganizationActivityService, OrganizationActivityServiceConfigError,
+    OrganizationBudgetService, OrganizationTokenService, OrganizationWalletService,
+    PasskeyAuthenticationService, PasskeyAuthenticationServiceConfigError, PasswordResetService,
+    PasswordResetServiceConfigError, PlatformAuditService, PlaygroundConversationService,
+    PlaygroundShareService, RedemptionService, RegistrationService, RegistrationServiceConfigError,
+    RuntimeRefreshingAdminGroupWriter, SessionAuthenticator, SessionAuthenticatorConfigError,
+    SiteSettingsService, SubscriptionService, TokenAuthenticator, UserInvitationService,
+    UserProfileService, UserTokenService, UserTopupService, UserWalletService,
 };
 use af_analytics::{AdminDashboardReader, DatabaseAdminDashboardReader};
 use af_billing::{
@@ -91,7 +91,8 @@ use af_db::{
     SubscriptionRepositoryConfigError, TokenAuthRepository, TokenAuthRepositoryConfigError,
     TokenRequestAdmissionRepository, TokenRequestAdmissionRepositoryConfigError, TopupRepository,
     TopupRepositoryConfigError, UsageLogRepository, UserInvitationRepository,
-    UserInvitationRepositoryConfigError, UserProfileRepository, UserProfileRepositoryConfigError,
+    UserInvitationRepositoryConfigError, UserNotificationRepository,
+    UserNotificationRepositoryConfigError, UserProfileRepository, UserProfileRepositoryConfigError,
     UserSessionRepository, UserSessionRepositoryConfigError, UserTokenRepository,
     UserTokenRepositoryConfigError, WalletLedgerRepository, WalletLedgerRepositoryConfigError,
     connect_and_migrate,
@@ -188,6 +189,7 @@ pub struct AuthenticationReady {
     password_reset_service: Arc<dyn PasswordResetService>,
     user_profile_service: Arc<dyn UserProfileService>,
     user_wallet_service: Arc<dyn UserWalletService>,
+    user_notification_service: Arc<dyn af_admin::UserNotificationService>,
     organization_wallet_service: Arc<dyn OrganizationWalletService>,
     organization_budget_service: Arc<dyn OrganizationBudgetService>,
     organization_token_service: Arc<dyn OrganizationTokenService>,
@@ -473,6 +475,9 @@ pub enum BootstrapError {
     /// 普通用户资料仓储的启动参数无效。
     #[error("用户资料仓储启动参数无效")]
     UserProfileRepository(#[source] UserProfileRepositoryConfigError),
+    /// 当前用户通知事实账本的启动参数无效。
+    #[error("用户通知事实账本仓储启动参数无效")]
+    UserNotificationRepository(#[source] UserNotificationRepositoryConfigError),
     /// 当前用户邀请读仓储的启动参数无效。
     #[error("用户邀请仓储启动参数无效")]
     UserInvitationRepository(#[source] UserInvitationRepositoryConfigError),
@@ -902,6 +907,13 @@ impl Bootstrap<DatabaseReady> {
             system_secret_cipher.clone(),
         ));
         let smtp_delivery: Arc<dyn EmailDelivery> = Arc::new(SmtpEmailDelivery);
+        let user_notification_repository = Arc::new(
+            UserNotificationRepository::new(
+                self.stage.database.clone(),
+                Duration::from_secs(auth.lookup_timeout_secs()),
+            )
+            .map_err(BootstrapError::UserNotificationRepository)?,
+        );
         let balance_alert_task = BalanceAlertTask::new(
             balance_alert_settings_repository.clone(),
             balance_alert_repository,
@@ -1055,6 +1067,9 @@ impl Bootstrap<DatabaseReady> {
                 user_profile_service,
                 user_wallet_service: Arc::new(DatabaseUserWalletService::new(
                     wallet_ledger_repository.clone(),
+                )),
+                user_notification_service: Arc::new(DatabaseUserNotificationService::new(
+                    user_notification_repository,
                 )),
                 organization_wallet_service: Arc::new(DatabaseOrganizationWalletService::new(
                     organization_wallet_repository,
@@ -2063,6 +2078,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.password_reset_service),
             Arc::clone(&self.stage.infrastructure.user_profile_service),
             Arc::clone(&self.stage.infrastructure.user_wallet_service),
+            Arc::clone(&self.stage.infrastructure.user_notification_service),
             Some(Arc::clone(
                 &self.stage.infrastructure.organization_authorization_service,
             )),

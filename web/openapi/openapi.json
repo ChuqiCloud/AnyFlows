@@ -2924,6 +2924,83 @@
       }
     },
     "/api/account/notifications": {
+      "get": {
+        "tags": [
+          "我的通知"
+        ],
+        "summary": "读取当前用户通知历史",
+        "operationId": "listUserNotifications",
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "description": "occurred_at:id 复合游标",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "每页数量，默认 25",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前用户通知事实",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserNotificationListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "分页参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
       "put": {
         "tags": [
           "个人资料与安全"
@@ -23828,6 +23905,28 @@
         },
         "additionalProperties": false
       },
+      "NotificationChannel": {
+        "type": "string",
+        "enum": [
+          "email"
+        ]
+      },
+      "NotificationDeliveryState": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "accepted",
+          "failed",
+          "canceled"
+        ]
+      },
+      "NotificationKind": {
+        "type": "string",
+        "enum": [
+          "balance_alert",
+          "subscription_balance_alert"
+        ]
+      },
       "OAuthLoginExchangeRequest": {
         "type": "object",
         "required": [
@@ -27336,6 +27435,117 @@
             "items": {
               "$ref": "#/components/schemas/UserInvitationRebateResponse"
             }
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserNotification": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "channel",
+          "template_version",
+          "occurred_at",
+          "delivery_state",
+          "delivery_attempts"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/NotificationKind"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/NotificationChannel"
+          },
+          "template_version": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "delivery_state": {
+            "$ref": "#/components/schemas/NotificationDeliveryState"
+          },
+          "delivery_attempts": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "observed_quota": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "threshold_quota": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "subscription_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "window_ends_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "quota_amount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "quota_used": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "threshold_percent": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserNotificationListResponse": {
+        "type": "object",
+        "required": [
+          "entries"
+        ],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserNotification"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "additionalProperties": false

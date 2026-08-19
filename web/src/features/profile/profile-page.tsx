@@ -33,6 +33,7 @@ import { copyText } from '@/lib/clipboard'
 import type {
   UserPasskeyRegistrationOptionsResponse,
   UserPasskeyResponse,
+  UserNotification,
   UserProfileResponse,
   UserTwoFactorEnrollmentResponse,
 } from '@/lib/api/generated/types.gen'
@@ -48,6 +49,7 @@ import {
   useUpdateUserNotificationPreferences,
   useUpdateUserProfile,
   useUserPasskeys,
+  useUserNotifications,
   useUserProfile,
   useUserTwoFactor,
 } from './profile-api'
@@ -748,6 +750,49 @@ function NotificationsCard({ profile }: { profile: UserProfileResponse }) {
   )
 }
 
+function NotificationHistoryCard() {
+  const { t, i18n } = useTranslation()
+  const query = useUserNotifications()
+  const formatTime = (value: number) => new Intl.DateTimeFormat(
+    i18n.resolvedLanguage?.startsWith('zh') ? 'zh-CN' : 'en-US',
+    { dateStyle: 'medium', timeStyle: 'short' },
+  ).format(new Date(value * 1000))
+  const entries = query.data?.pages.flatMap((page) => page.entries) ?? []
+
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader className="border-b border-[var(--hairline)] bg-surface-1/45">
+        <div className="flex gap-3">
+          <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-info/10 text-info"><BellRing className="size-4" aria-hidden="true" /></div>
+          <div>
+            <CardTitle className="text-base">{t('profile.notificationHistory.title')}</CardTitle>
+            <CardDescription className="mt-1">{t('profile.notificationHistory.subtitle')}</CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        {query.isPending ? <div className="grid gap-3 p-5"><Skeleton className="h-12" /><Skeleton className="h-12" /></div> : null}
+        {query.isError ? <div role="alert" className="flex items-center justify-between gap-3 p-5 text-xs text-destructive"><span>{t('profile.notificationHistory.loadError')}</span><Button type="button" size="sm" variant="secondary" onClick={() => void query.refetch()}>{t('profile.actions.retry')}</Button></div> : null}
+        {!query.isPending && !query.isError && entries.length === 0 ? <div className="p-5 text-xs text-muted-foreground">{t('profile.notificationHistory.empty')}</div> : null}
+        {entries.length > 0 ? <div className="divide-y divide-[var(--hairline)]">{entries.map((entry) => <NotificationHistoryRow key={entry.id} entry={entry} formatTime={formatTime} />)}</div> : null}
+        {query.isFetchNextPageError ? <div role="alert" className="flex items-center justify-between gap-3 border-t border-[var(--hairline)] p-4 text-xs text-destructive"><span>{t('profile.notificationHistory.olderLoadError')}</span><Button type="button" size="sm" variant="ghost" onClick={() => void query.fetchNextPage()}>{t('profile.actions.retry')}</Button></div> : null}
+        {query.hasNextPage && !query.isFetchNextPageError ? <div className="flex justify-center border-t border-[var(--hairline)] p-4"><Button type="button" size="sm" variant="secondary" disabled={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>{t(query.isFetchingNextPage ? 'profile.notificationHistory.loading' : 'profile.notificationHistory.loadOlder')}</Button></div> : null}
+      </CardContent>
+    </Card>
+  )
+}
+
+function NotificationHistoryRow({ entry, formatTime }: { entry: UserNotification; formatTime: (value: number) => string }) {
+  const { t } = useTranslation()
+  const title = t(`profile.notificationHistory.kind.${entry.kind}`)
+  const state = t(`profile.notificationHistory.state.${entry.delivery_state}`)
+  const detail = entry.kind === 'balance_alert'
+    ? t('profile.notificationHistory.balanceDetail', { observed: entry.observed_quota ?? '--', threshold: entry.threshold_quota ?? '--' })
+    : t('profile.notificationHistory.subscriptionDetail', { used: entry.quota_used ?? '--', amount: entry.quota_amount ?? '--', threshold: entry.threshold_percent ?? '--' })
+
+  return <article className="grid gap-2 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="text-sm font-medium">{title}</span><Badge className={entry.delivery_state === 'accepted' ? 'bg-success/10 text-success' : entry.delivery_state === 'failed' ? 'bg-destructive/10 text-destructive' : 'bg-warning/10 text-warning'}>{state}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{detail}</p><p className="mt-1 text-[0.6875rem] text-muted-foreground/75">{t('profile.notificationHistory.meta', { time: formatTime(entry.occurred_at), attempts: entry.delivery_attempts, id: entry.id })}</p></div><span className="text-[0.6875rem] text-muted-foreground">{t(`profile.notificationHistory.channel.${entry.channel}`)}</span></article>
+}
+
 function PreferenceRow({ id, title, description, checked, onCheckedChange }: { id: string; title: string; description: string; checked: boolean; onCheckedChange: (checked: boolean) => void }) {
   return (
     <div className="flex items-start gap-3 py-4 first:pt-0 last:pb-0"><div className="min-w-0 flex-1"><Label htmlFor={id} className="text-sm font-medium">{title}</Label><p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p></div><Switch id={id} checked={checked} onCheckedChange={onCheckedChange} aria-label={title} /></div>
@@ -779,7 +824,7 @@ export function ProfilePage({ section, onPasswordChanged }: ProfilePageProps) {
         <div><div className="mb-1 flex items-center gap-2 text-[0.6875rem] uppercase tracking-[0.18em] text-brand"><UserRound className="size-3.5" aria-hidden="true" />{roleLabel ?? t('profile.eyebrow')}</div><h2 className="text-lg font-semibold">{t('profile.title')}</h2><p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">{t('profile.subtitle')}</p></div>
         <Button type="button" size="sm" variant="secondary" disabled={profileQuery.isFetching} onClick={() => void profileQuery.refetch()}><RefreshCw className={profileQuery.isFetching ? 'animate-spin' : undefined} aria-hidden="true" />{t('profile.actions.refresh')}</Button>
       </header>
-      {profileQuery.isPending ? <ProfileLoading /> : profileQuery.isError || !profile ? <ErrorPanel onRetry={() => void profileQuery.refetch()} /> : <div className="grid gap-4 xl:grid-cols-2"><ProfileCard profile={profile} /><PasswordCard onPasswordChanged={onPasswordChanged} /><TwoFactorCard /><PasskeyCard onPasswordChanged={onPasswordChanged} /><div ref={notificationsRef} id="profile-notifications" tabIndex={-1} className="scroll-mt-16 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring/60 xl:col-span-2"><NotificationsCard profile={profile} /></div></div>}
+      {profileQuery.isPending ? <ProfileLoading /> : profileQuery.isError || !profile ? <ErrorPanel onRetry={() => void profileQuery.refetch()} /> : <div className="grid gap-4 xl:grid-cols-2"><ProfileCard profile={profile} /><PasswordCard onPasswordChanged={onPasswordChanged} /><TwoFactorCard /><PasskeyCard onPasswordChanged={onPasswordChanged} /><div ref={notificationsRef} id="profile-notifications" tabIndex={-1} className="scroll-mt-16 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring/60 xl:col-span-2"><NotificationsCard profile={profile} /></div><div className="xl:col-span-2"><NotificationHistoryCard /></div></div>}
     </div>
   )
 }

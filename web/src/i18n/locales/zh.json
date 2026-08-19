@@ -5026,6 +5026,31 @@
       "saved": "通知偏好已保存。",
       "footer": "设置只影响后续邮件，不会改变账户安全通知。"
     },
+    "notificationHistory": {
+      "title": "通知历史",
+      "subtitle": "展示余额和订阅预警的系统已知投递事实；SMTP 接受不代表已送达收件箱或已读。",
+      "loadError": "通知历史暂时无法加载。",
+      "olderLoadError": "更早的通知加载失败。",
+      "empty": "暂时没有通知事实。",
+      "loading": "正在加载",
+      "loadOlder": "加载更早记录",
+      "kind": {
+        "balance_alert": "余额预警",
+        "subscription_balance_alert": "订阅窗口预警"
+      },
+      "state": {
+        "queued": "排队中",
+        "accepted": "SMTP 已接受",
+        "failed": "失败",
+        "canceled": "已取消"
+      },
+      "channel": {
+        "email": "邮件"
+      },
+      "balanceDetail": "观测额度 {{observed}}，阈值 {{threshold}}",
+      "subscriptionDetail": "已用 {{used}} / {{amount}}，阈值 {{threshold}}%",
+      "meta": "{{time}} · 尝试 {{attempts}} 次 · #{{id}}"
+    },
     "actions": {
       "refresh": "刷新",
       "retry": "重试",

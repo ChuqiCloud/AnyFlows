@@ -1249,6 +1249,9 @@ export type ModelCatalogTokenPrices = {
     cache_creation_5m: string;
     cache_creation_1h: string;
 };
+export type NotificationChannel = 'email';
+export type NotificationDeliveryState = 'queued' | 'accepted' | 'failed' | 'canceled';
+export type NotificationKind = 'balance_alert' | 'subscription_balance_alert';
 export type OAuthLoginExchangeRequest = {
     ticket: string;
 };
@@ -1879,6 +1882,26 @@ export type UserInvitationSummaryResponse = {
     current_rebate_quota: number;
     historical_rebate_quota: number;
     recent_rebates: Array<UserInvitationRebateResponse>;
+};
+export type UserNotification = {
+    id: number;
+    kind: NotificationKind;
+    channel: NotificationChannel;
+    template_version: string;
+    occurred_at: number;
+    delivery_state: NotificationDeliveryState;
+    delivery_attempts: number;
+    observed_quota?: number | null;
+    threshold_quota?: number | null;
+    subscription_id?: string | null;
+    window_ends_at?: number | null;
+    quota_amount?: number | null;
+    quota_used?: number | null;
+    threshold_percent?: number | null;
+};
+export type UserNotificationListResponse = {
+    entries: Array<UserNotification>;
+    next_cursor?: string | null;
 };
 export type UserNotificationPreferencesRequest = {
     email_product_updates: boolean;
@@ -3031,6 +3054,25 @@ export type EnableUserTwoFactorResponses = {
     200: UserTwoFactorEnrollmentResponse;
 };
 export type EnableUserTwoFactorResponse = EnableUserTwoFactorResponses[keyof EnableUserTwoFactorResponses];
+export type ListUserNotificationsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before?: string;
+        limit?: number;
+    };
+    url: '/api/account/notifications';
+};
+export type ListUserNotificationsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    500: ManagementError;
+};
+export type ListUserNotificationsError = ListUserNotificationsErrors[keyof ListUserNotificationsErrors];
+export type ListUserNotificationsResponses = {
+    200: UserNotificationListResponse;
+};
+export type ListUserNotificationsResponse = ListUserNotificationsResponses[keyof ListUserNotificationsResponses];
 export type UpdateUserNotificationPreferencesData = {
     body: UserNotificationPreferencesRequest;
     path?: never;

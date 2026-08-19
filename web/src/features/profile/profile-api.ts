@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { apiClient } from '@/lib/api'
 import {
@@ -9,6 +9,7 @@ import {
   getUserProfile,
   getUserTwoFactor,
   listUserPasskeys,
+  listUserNotifications,
   renameUserPasskey,
   revokeUserPasskey,
   startUserPasskeyRegistration,
@@ -29,6 +30,7 @@ import type {
 export const userProfileQueryKey = ['user-profile'] as const
 export const userTwoFactorQueryKey = ['user-two-factor'] as const
 export const userPasskeysQueryKey = ['user-passkeys'] as const
+export const userNotificationsQueryKey = ['user-notifications'] as const
 
 /** 读取当前会话用户的个人资料与通知偏好。 */
 export function useUserProfile() {
@@ -161,5 +163,22 @@ export function useUpdateUserNotificationPreferences() {
       return data
     },
     onSuccess: (profile) => queryClient.setQueryData<UserProfileResponse>(userProfileQueryKey, profile),
+  })
+}
+
+/** 按稳定复合游标读取当前用户的通知事实历史。 */
+export function useUserNotifications() {
+  return useInfiniteQuery({
+    queryKey: userNotificationsQueryKey,
+    initialPageParam: undefined as string | undefined,
+    queryFn: async ({ pageParam, signal }) => {
+      const { data } = await listUserNotifications({
+        client: apiClient,
+        query: { before: pageParam, limit: 25 },
+        signal,
+      })
+      return data
+    },
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
   })
 }

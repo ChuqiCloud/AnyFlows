@@ -42,6 +42,7 @@ mod site;
 mod subscription;
 mod subscription_alert;
 mod usage;
+mod user_notification;
 mod wallet;
 
 pub(super) use async_task::create_async_tasks;
@@ -172,6 +173,7 @@ pub(super) use subscription_alert::create_subscription_balance_alert_storage;
 pub(super) use usage::{
     create_usage_logs, create_usage_logs_indexes, rebuild_usage_logs_for_per_call,
 };
+pub(super) use user_notification::create_user_notification_storage;
 pub(super) use wallet::create_wallet_ledger;
 pub(super) use wallet::rebuild_wallet_ledger_for_invite_rebate;
 pub(super) use wallet::rebuild_wallet_ledger_for_redemption;

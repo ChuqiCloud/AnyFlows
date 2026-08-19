@@ -12,7 +12,7 @@ use af_admin::{
     PasskeyAuthenticationService, PasswordResetService, PlatformAuditService,
     PlaygroundConversationService, PlaygroundShareService, RedemptionService, RegistrationService,
     SessionAuthenticator, SiteSettingsService, SubscriptionService, TokenAuthenticator,
-    UserInvitationService, UserTopupService, UserWalletService,
+    UserInvitationService, UserNotificationService, UserTopupService, UserWalletService,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -170,6 +170,7 @@ pub fn build_router(
     password_reset_service: Arc<dyn PasswordResetService>,
     user_profile_service: Arc<dyn af_admin::UserProfileService>,
     user_wallet_service: Arc<dyn UserWalletService>,
+    user_notification_service: Arc<dyn UserNotificationService>,
     organization_authorization_service: Option<Arc<dyn af_admin::OrganizationAuthorizationService>>,
     organization_activity_service: Option<Arc<dyn OrganizationActivityService>>,
     organization_wallet_service: Option<Arc<dyn OrganizationWalletService>>,
@@ -462,6 +463,10 @@ pub fn build_router(
         user_wallet_service,
         Arc::clone(&http_state.session_authenticator),
     );
+    let user_notification_routes = crate::user_notifications::build_user_notification_router(
+        user_notification_service,
+        Arc::clone(&http_state.session_authenticator),
+    );
     let user_topup_routes = build_user_topup_router(
         user_topup_service.clone(),
         Arc::clone(&http_state.session_authenticator),
@@ -729,6 +734,7 @@ pub fn build_router(
         .merge(password_reset_routes)
         .merge(user_profile_routes)
         .merge(user_wallet_routes)
+        .merge(user_notification_routes)
         .merge(user_topup_routes)
         .merge(redemption_routes)
         .merge(subscription_routes)

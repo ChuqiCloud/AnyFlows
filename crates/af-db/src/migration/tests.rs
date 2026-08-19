@@ -40,7 +40,8 @@ use crate::entity::{
     platform_audit_logs, playground_conversations, playground_shares, redemption_batches,
     redemption_codes, registration_rate_limits, request_outcome_logs, scheduler_outbox_events,
     site_settings, subscription_balance_alert_events, subscription_plans, tokens, topup_orders,
-    topup_payment_events, usage_logs, user_subscriptions, users, wallet_ledger_entries,
+    topup_payment_events, usage_logs, user_notification_events, user_subscriptions, users,
+    wallet_ledger_entries,
 };
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
@@ -72,7 +73,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 75;
+const EXPECTED_MIGRATION_COUNT: usize = 76;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -91,7 +92,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 69] = [
+const CORE_TABLES: [&str; 70] = [
     "groups",
     "users",
     "passkeys",
@@ -161,6 +162,7 @@ const CORE_TABLES: [&str; 69] = [
     "organization_audit_logs",
     "platform_audit_logs",
     "request_outcome_logs",
+    "user_notification_events",
 ];
 
 struct SlowMigrator;
@@ -1128,7 +1130,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 16);
+    assert_eq!(pending_migrations.len(), 17);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -1192,6 +1194,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[15].name(),
         "m20260819_000075_create_request_outcomes"
+    );
+    assert_eq!(
+        pending_migrations[16].name(),
+        "m20260819_000076_create_user_notification_events"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
@@ -2716,6 +2722,8 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         .await?;
     assert_entity_columns::<platform_audit_logs::Column>(&manager, "platform_audit_logs").await?;
     assert_entity_columns::<request_outcome_logs::Column>(&manager, "request_outcome_logs").await?;
+    assert_entity_columns::<user_notification_events::Column>(&manager, "user_notification_events")
+        .await?;
     assert_entity_columns::<organization_invitations::Column>(&manager, "organization_invitations")
         .await?;
     assert_entity_columns::<organization_wallets::Column>(&manager, "organization_wallets").await?;
@@ -2940,6 +2948,18 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         (
             "subscription_balance_alert_events",
             "idx_subscription_balance_alert_user_created",
+        ),
+        (
+            "user_notification_events",
+            "uq_user_notification_events_source",
+        ),
+        (
+            "user_notification_events",
+            "idx_user_notification_events_user_cursor",
+        ),
+        (
+            "user_notification_events",
+            "idx_user_notification_events_delivery",
         ),
         ("organizations", "uq_organizations_key"),
         ("organizations", "uq_organizations_slug"),

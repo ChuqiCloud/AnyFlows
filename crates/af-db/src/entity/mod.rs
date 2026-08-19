@@ -86,6 +86,7 @@ pub(crate) mod tokens;
 pub(crate) mod topup_orders;
 pub(crate) mod topup_payment_events;
 pub(crate) mod usage_logs;
+pub(crate) mod user_notification_events;
 pub(crate) mod user_oauth_identities;
 pub(crate) mod user_subscriptions;
 pub(crate) mod users;
@@ -1658,6 +1659,9 @@ impl_updated_at_behavior!(
     user_oauth_identities::ActiveModel => validate_default,
     users::ActiveModel => validate_user,
 );
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for user_notification_events::ActiveModel {}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for organization_entitlements::ActiveModel {

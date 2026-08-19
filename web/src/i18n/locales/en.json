@@ -4888,6 +4888,31 @@
       "saved": "Notification preferences saved.",
       "footer": "These settings affect future email only; security notifications remain enabled."
     },
+    "notificationHistory": {
+      "title": "Notification history",
+      "subtitle": "System-known delivery facts for balance and subscription alerts. SMTP acceptance does not prove inbox delivery or reading.",
+      "loadError": "Notification history is temporarily unavailable.",
+      "olderLoadError": "Older notifications could not be loaded.",
+      "empty": "No notification facts yet.",
+      "loading": "Loading",
+      "loadOlder": "Load older records",
+      "kind": {
+        "balance_alert": "Balance alert",
+        "subscription_balance_alert": "Subscription window alert"
+      },
+      "state": {
+        "queued": "Queued",
+        "accepted": "SMTP accepted",
+        "failed": "Failed",
+        "canceled": "Canceled"
+      },
+      "channel": {
+        "email": "Email"
+      },
+      "balanceDetail": "Observed quota {{observed}}, threshold {{threshold}}",
+      "subscriptionDetail": "Used {{used}} / {{amount}}, threshold {{threshold}}%",
+      "meta": "{{time}} · Attempts {{attempts}} · #{{id}}"
+    },
     "actions": {
       "refresh": "Refresh",
       "retry": "Try again",
