@@ -7,7 +7,10 @@ use af_analytics::{
     AdminDashboardFailureKind, AdminDashboardHourlyPoint, AdminDashboardOutcomeSnapshot,
     AdminDashboardPerformance, AdminDashboardStorageError, AdminDashboardUsageSnapshot,
 };
-use af_config::SecretString;
+use af_config::{
+    DEFAULT_CLICKHOUSE_ANALYTICS_RESPONSE_BYTES, DEFAULT_CLICKHOUSE_ANALYTICS_TIMEOUT_SECS,
+    MAX_CLICKHOUSE_ANALYTICS_RESPONSE_BYTES, MAX_CLICKHOUSE_ANALYTICS_TIMEOUT_SECS, SecretString,
+};
 use af_domain::{ChannelId, Protocol};
 use af_httpclient::{
     Body, HeaderMap, HeaderName, HeaderValue, HttpClientProvider, Method, StatusCode,
@@ -21,13 +24,16 @@ use af_db::{
 };
 
 /// ClickHouse 看板查询默认硬截止时间。
-pub const DEFAULT_CLICKHOUSE_DASHBOARD_TIMEOUT: Duration = Duration::from_secs(5);
+pub const DEFAULT_CLICKHOUSE_DASHBOARD_TIMEOUT: Duration =
+    Duration::from_secs(DEFAULT_CLICKHOUSE_ANALYTICS_TIMEOUT_SECS);
 /// ClickHouse 看板查询默认最大响应体。
-pub const DEFAULT_CLICKHOUSE_DASHBOARD_RESPONSE_BYTES: usize = 1024 * 1024;
+pub const DEFAULT_CLICKHOUSE_DASHBOARD_RESPONSE_BYTES: usize =
+    DEFAULT_CLICKHOUSE_ANALYTICS_RESPONSE_BYTES;
 /// 防止配置把管理请求变成无界长查询。
-pub const MAX_CLICKHOUSE_DASHBOARD_TIMEOUT: Duration = Duration::from_secs(300);
+pub const MAX_CLICKHOUSE_DASHBOARD_TIMEOUT: Duration =
+    Duration::from_secs(MAX_CLICKHOUSE_ANALYTICS_TIMEOUT_SECS);
 /// 单行快照的绝对响应体上限。
-pub const MAX_CLICKHOUSE_DASHBOARD_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+pub const MAX_CLICKHOUSE_DASHBOARD_RESPONSE_BYTES: usize = MAX_CLICKHOUSE_ANALYTICS_RESPONSE_BYTES;
 
 const MAX_CLICKHOUSE_QUERY_BYTES: usize = 64 * 1024;
 const MAX_CLICKHOUSE_USERNAME_BYTES: usize = 256;

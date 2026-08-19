@@ -135,6 +135,17 @@ pub const MAX_OAUTH_REFRESH_BEFORE_EXPIRY_SECS: u64 = 24 * 60 * 60;
 pub const MAX_OAUTH_REFRESH_BATCH_SIZE: usize = 256;
 /// OAuth 单实例刷新并发硬上限。
 pub const MAX_OAUTH_REFRESH_CONCURRENCY: usize = 64;
+/// ClickHouse 分析读取的默认查询超时。
+pub const DEFAULT_CLICKHOUSE_ANALYTICS_TIMEOUT_SECS: u64 = 5;
+/// ClickHouse 分析读取允许配置的最大查询超时。
+pub const MAX_CLICKHOUSE_ANALYTICS_TIMEOUT_SECS: u64 = 300;
+/// ClickHouse 单行分析快照的默认响应体上限。
+pub const DEFAULT_CLICKHOUSE_ANALYTICS_RESPONSE_BYTES: usize = 1024 * 1024;
+/// ClickHouse 单行分析快照允许配置的最大响应体上限。
+pub const MAX_CLICKHOUSE_ANALYTICS_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+const MAX_CLICKHOUSE_ANALYTICS_QUERY_BYTES: usize = 64 * 1024;
+const MAX_CLICKHOUSE_ANALYTICS_USERNAME_BYTES: usize = 256;
+const MAX_CLICKHOUSE_ANALYTICS_PASSWORD_BYTES: usize = 1024;
 
 /// 经过规范化的 HTTP(S) CORS Origin，不包含路径、凭据或通配语义。
 #[derive(Clone, Eq, Hash, PartialEq, Serialize)]
@@ -661,6 +672,80 @@ impl RedisSettings {
     }
 }
 
+/// 可选的 ClickHouse 管理看板分析读取配置；整个配置段缺失时保持主库读取。
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClickHouseAnalyticsSettings {
+    endpoint: SecretString,
+    query: SecretString,
+    username: SecretString,
+    password: SecretString,
+    #[serde(default = "default_clickhouse_analytics_timeout_secs")]
+    timeout_secs: u64,
+    #[serde(default = "default_clickhouse_analytics_response_bytes")]
+    max_response_bytes: usize,
+}
+
+impl ClickHouseAnalyticsSettings {
+    /// 返回仅供 ClickHouse HTTP 适配器使用的受保护端点。
+    #[must_use]
+    pub const fn endpoint(&self) -> &SecretString {
+        &self.endpoint
+    }
+
+    /// 返回固定的参数化分析查询；调用方不得记录其正文。
+    #[must_use]
+    pub const fn query(&self) -> &SecretString {
+        &self.query
+    }
+
+    /// 返回 ClickHouse 只读用户名称。
+    #[must_use]
+    pub const fn username(&self) -> &SecretString {
+        &self.username
+    }
+
+    /// 返回 ClickHouse 只读用户密码。
+    #[must_use]
+    pub const fn password(&self) -> &SecretString {
+        &self.password
+    }
+
+    /// 返回单次分析查询的硬超时秒数。
+    #[must_use]
+    pub const fn timeout_secs(&self) -> u64 {
+        self.timeout_secs
+    }
+
+    /// 返回单行分析快照允许读取的最大响应字节数。
+    #[must_use]
+    pub const fn max_response_bytes(&self) -> usize {
+        self.max_response_bytes
+    }
+}
+
+impl fmt::Debug for ClickHouseAnalyticsSettings {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ClickHouseAnalyticsSettings")
+            .field("endpoint", &"<redacted>")
+            .field("query", &"<redacted>")
+            .field("username", &"<redacted>")
+            .field("password", &"<redacted>")
+            .field("timeout_secs", &self.timeout_secs)
+            .field("max_response_bytes", &self.max_response_bytes)
+            .finish()
+    }
+}
+
+const fn default_clickhouse_analytics_timeout_secs() -> u64 {
+    DEFAULT_CLICKHOUSE_ANALYTICS_TIMEOUT_SECS
+}
+
+const fn default_clickhouse_analytics_response_bytes() -> usize {
+    DEFAULT_CLICKHOUSE_ANALYTICS_RESPONSE_BYTES
+}
+
 /// 下游 API Key 认证的静态设置。
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(default, deny_unknown_fields)]
@@ -1025,6 +1110,8 @@ pub struct AppConfig {
     #[serde(default)]
     redis: RedisSettings,
     #[serde(default)]
+    clickhouse_analytics: Option<ClickHouseAnalyticsSettings>,
+    #[serde(default)]
     auth: AuthSettings,
     #[serde(default)]
     turnstile: TurnstileSettings,
@@ -1089,6 +1176,12 @@ impl AppConfig {
     #[must_use]
     pub const fn redis(&self) -> &RedisSettings {
         &self.redis
+    }
+
+    /// 返回可选的 ClickHouse 分析事实源；缺失时继续使用事务主库。
+    #[must_use]
+    pub const fn clickhouse_analytics(&self) -> Option<&ClickHouseAnalyticsSettings> {
+        self.clickhouse_analytics.as_ref()
     }
 
     /// 返回下游 API Key 认证设置。
@@ -1376,6 +1469,9 @@ impl AppConfig {
         {
             return Err(ConfigError::EmptyValue { field: "redis.url" });
         }
+        if let Some(settings) = self.clickhouse_analytics.as_ref() {
+            validate_clickhouse_analytics(settings)?;
+        }
         if self.auth.lookup_timeout_secs == 0 {
             return Err(ConfigError::NonPositive {
                 field: "auth.lookup_timeout_secs",
@@ -1438,6 +1534,93 @@ impl AppConfig {
         validate_proxy_settings(&self.http_client)?;
         Ok(())
     }
+}
+
+fn validate_clickhouse_analytics(
+    settings: &ClickHouseAnalyticsSettings,
+) -> Result<(), ConfigError> {
+    let endpoint = settings.endpoint.expose();
+    let parsed = Url::parse(endpoint).map_err(|_| ConfigError::InvalidField {
+        field: "clickhouse_analytics.endpoint",
+    })?;
+    if endpoint.trim() != endpoint
+        || !matches!(parsed.scheme(), "http" | "https")
+        || !parsed.has_host()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+        || parsed.port() == Some(0)
+    {
+        return Err(ConfigError::InvalidField {
+            field: "clickhouse_analytics.endpoint",
+        });
+    }
+
+    let query = settings.query.expose();
+    let trimmed = query.trim();
+    if trimmed.is_empty()
+        || trimmed.len() > MAX_CLICKHOUSE_ANALYTICS_QUERY_BYTES
+        || trimmed.contains(';')
+        || trimmed
+            .chars()
+            .any(|character| character.is_control() && !matches!(character, '\n' | '\r' | '\t'))
+        || !trimmed.contains("{period_start:Int64}")
+        || !trimmed.contains("{period_end:Int64}")
+    {
+        return Err(ConfigError::InvalidField {
+            field: "clickhouse_analytics.query",
+        });
+    }
+    validate_clickhouse_header_value(
+        settings.username.expose(),
+        MAX_CLICKHOUSE_ANALYTICS_USERNAME_BYTES,
+        false,
+        "clickhouse_analytics.username",
+    )?;
+    validate_clickhouse_header_value(
+        settings.password.expose(),
+        MAX_CLICKHOUSE_ANALYTICS_PASSWORD_BYTES,
+        true,
+        "clickhouse_analytics.password",
+    )?;
+    if settings.timeout_secs == 0 {
+        return Err(ConfigError::NonPositive {
+            field: "clickhouse_analytics.timeout_secs",
+        });
+    }
+    if settings.timeout_secs > MAX_CLICKHOUSE_ANALYTICS_TIMEOUT_SECS {
+        return Err(ConfigError::OutOfRange {
+            field: "clickhouse_analytics.timeout_secs",
+        });
+    }
+    if settings.max_response_bytes == 0 {
+        return Err(ConfigError::NonPositive {
+            field: "clickhouse_analytics.max_response_bytes",
+        });
+    }
+    if settings.max_response_bytes > MAX_CLICKHOUSE_ANALYTICS_RESPONSE_BYTES {
+        return Err(ConfigError::OutOfRange {
+            field: "clickhouse_analytics.max_response_bytes",
+        });
+    }
+    Ok(())
+}
+
+fn validate_clickhouse_header_value(
+    value: &str,
+    max_bytes: usize,
+    allow_empty: bool,
+    field: &'static str,
+) -> Result<(), ConfigError> {
+    if (!allow_empty && value.is_empty())
+        || value.len() > max_bytes
+        || value.trim() != value
+        || !value.bytes().all(|byte| (0x20..=0x7e).contains(&byte))
+    {
+        return Err(ConfigError::InvalidField { field });
+    }
+    Ok(())
 }
 
 fn validate_oauth_settings(settings: &OAuthSettings) -> Result<(), ConfigError> {
