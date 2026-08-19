@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import type { AdminDashboardResponse } from '@/lib/api/generated/types.gen'
 import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import { useAdminDashboard } from './dashboard-api'
-import { DashboardChannelStatus } from './dashboard-channel-status'
+import { DashboardAvailability } from './dashboard-availability'
 import { DashboardComposition } from './dashboard-composition'
 import { DashboardPerformance } from './dashboard-performance'
 import { DashboardOutcomes } from './dashboard-outcomes'
@@ -113,7 +113,11 @@ export function DashboardPage() {
           </section>
           <section className="grid gap-3 xl:grid-cols-[minmax(0,1.55fr)_minmax(15rem,0.75fr)]">
             <DashboardComposition dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} />
-            <DashboardChannelStatus dashboard={dashboard} formatNumber={formatNumber} />
+            <DashboardAvailability
+              dashboard={dashboard}
+              formatNumber={formatNumber}
+              formatPercent={formatPercent}
+            />
           </section>
           <DashboardOutcomes dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} />
         </>
