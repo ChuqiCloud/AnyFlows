@@ -38,6 +38,16 @@ pub const BILLING_FLUSH_LAG: &str = "billing_flush_lag";
 pub const CLIENT_SIMULATION_ATTEMPTS_TOTAL: &str = "client_simulation_attempts_total";
 /// 尚未完成 ClickHouse 投递的事实数量。
 pub const ANALYTICS_EXPORT_BACKLOG: &str = "analytics_export_backlog";
+/// 有限请求速率策略成功准入的请求数。
+pub const REQUEST_RATE_LIMIT_ADMISSIONS_TOTAL: &str = "request_rate_limit_admissions_total";
+/// 被请求速率策略拒绝的请求数。
+pub const REQUEST_RATE_LIMIT_REJECTIONS_TOTAL: &str = "request_rate_limit_rejections_total";
+/// 请求速率限制失败关闭的请求数。
+pub const REQUEST_RATE_LIMIT_FAILURES_TOTAL: &str = "request_rate_limit_failures_total";
+/// 单次请求速率限制检查的规则数量。
+pub const REQUEST_RATE_LIMIT_RULES_PER_CHECK: &str = "request_rate_limit_rules_per_check";
+/// 请求被限流后需要等待的时间，单位为秒。
+pub const REQUEST_RATE_LIMIT_RETRY_AFTER_SECONDS: &str = "request_rate_limit_retry_after_seconds";
 
 const REQUESTS_DESCRIPTION: &str = "AnyFlows 请求总数。";
 const REQUEST_DURATION_DESCRIPTION: &str = "AnyFlows 请求总耗时。";
@@ -49,6 +59,11 @@ const CONCURRENCY_SLOTS_DESCRIPTION: &str = "AnyFlows 各级并发槽位占用�
 const BILLING_FLUSH_LAG_DESCRIPTION: &str = "AnyFlows 批量计费落盘滞后。";
 const CLIENT_SIMULATION_ATTEMPTS_DESCRIPTION: &str = "AnyFlows 客户端仿真 Attempt 总数。";
 const ANALYTICS_EXPORT_BACKLOG_DESCRIPTION: &str = "AnyFlows ClickHouse 事实投递积压数量。";
+const REQUEST_RATE_LIMIT_ADMISSIONS_DESCRIPTION: &str = "AnyFlows 有限请求速率策略成功准入总数。";
+const REQUEST_RATE_LIMIT_REJECTIONS_DESCRIPTION: &str = "AnyFlows 请求速率限制拒绝总数。";
+const REQUEST_RATE_LIMIT_FAILURES_DESCRIPTION: &str = "AnyFlows 请求速率限制失败关闭总数。";
+const REQUEST_RATE_LIMIT_RULES_DESCRIPTION: &str = "AnyFlows 单次请求速率限制检查的规则数量。";
+const REQUEST_RATE_LIMIT_RETRY_AFTER_DESCRIPTION: &str = "AnyFlows 请求速率限制拒绝后的等待时间。";
 
 const METRICS_CALLSITE: &str = module_path!();
 const OTHER_LABEL: &str = "other";
@@ -59,6 +74,11 @@ const REQUEST_DURATION_BUCKETS: &[f64] = &[
 ];
 const FIRST_TOKEN_BUCKETS: &[f64] = &[
     0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 30.0, 60.0,
+];
+const REQUEST_RATE_LIMIT_RULE_BUCKETS: &[f64] = &[1.0, 2.0, 4.0, 8.0];
+const REQUEST_RATE_LIMIT_RETRY_AFTER_BUCKETS: &[f64] = &[
+    0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 900.0, 3_600.0, 86_400.0,
+    604_800.0,
 ];
 
 /// Prometheus recorder 控制句柄；克隆值共享同一份指标快照。
@@ -195,6 +215,42 @@ pub fn set_analytics_export_backlog(backlog: u64) {
     ::metrics::gauge!(ANALYTICS_EXPORT_BACKLOG).set(backlog as f64);
 }
 
+/// 记录一次有限请求速率策略检查及其原子规则数量。
+pub fn record_request_rate_limit_check(rule_count: u32) {
+    ::metrics::histogram!(REQUEST_RATE_LIMIT_RULES_PER_CHECK).record(rule_count);
+}
+
+/// 记录一次有限请求速率策略成功准入。
+pub fn record_request_rate_limit_admission() {
+    ::metrics::counter!(REQUEST_RATE_LIMIT_ADMISSIONS_TOTAL).increment(1);
+}
+
+/// 记录一次限流拒绝及 Redis 服务端窗口剩余时间。
+pub fn record_request_rate_limit_rejection(
+    subject: MetricRequestRateLimitSubject,
+    retry_after: Duration,
+) {
+    ::metrics::counter!(
+        REQUEST_RATE_LIMIT_REJECTIONS_TOTAL,
+        "subject" => subject.as_str()
+    )
+    .increment(1);
+    ::metrics::histogram!(
+        REQUEST_RATE_LIMIT_RETRY_AFTER_SECONDS,
+        "subject" => subject.as_str()
+    )
+    .record(retry_after);
+}
+
+/// 记录一次限流基础设施或协议异常导致的失败关闭。
+pub fn record_request_rate_limit_failure(failure: MetricRequestRateLimitFailure) {
+    ::metrics::counter!(
+        REQUEST_RATE_LIMIT_FAILURES_TOTAL,
+        "reason" => failure.as_str()
+    )
+    .increment(1);
+}
+
 macro_rules! registered_label {
     ($(#[$meta:meta])* $name:ident) => {
         $(#[$meta])*
@@ -256,6 +312,48 @@ pub enum MetricClientSimulationResult {
     NotApplied,
     Applied,
     Failed,
+}
+
+/// 限流指标使用的固定业务主体类型，不携带主体标识。
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum MetricRequestRateLimitSubject {
+    User,
+    Group,
+    Token,
+}
+
+impl MetricRequestRateLimitSubject {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Group => "group",
+            Self::Token => "token",
+        }
+    }
+}
+
+/// 限流失败关闭的有限分类，不携带底层错误文本。
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum MetricRequestRateLimitFailure {
+    InvalidRule,
+    StoreMissing,
+    StoreUnavailable,
+    StoreProtocol,
+    StoreOther,
+    InvalidRetryAfter,
+}
+
+impl MetricRequestRateLimitFailure {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::InvalidRule => "invalid_rule",
+            Self::StoreMissing => "store_missing",
+            Self::StoreUnavailable => "store_unavailable",
+            Self::StoreProtocol => "store_protocol",
+            Self::StoreOther => "store_other",
+            Self::InvalidRetryAfter => "invalid_retry_after",
+        }
+    }
 }
 
 impl MetricClientSimulationResult {
@@ -384,6 +482,16 @@ fn prometheus_builder() -> PrometheusBuilder {
             FIRST_TOKEN_BUCKETS,
         )
         .expect("首字耗时 bucket 常量不得为空")
+        .set_buckets_for_metric(
+            Matcher::Full(REQUEST_RATE_LIMIT_RULES_PER_CHECK.to_owned()),
+            REQUEST_RATE_LIMIT_RULE_BUCKETS,
+        )
+        .expect("限流规则数量 bucket 常量不得为空")
+        .set_buckets_for_metric(
+            Matcher::Full(REQUEST_RATE_LIMIT_RETRY_AFTER_SECONDS.to_owned()),
+            REQUEST_RATE_LIMIT_RETRY_AFTER_BUCKETS,
+        )
+        .expect("限流等待时间 bucket 常量不得为空")
 }
 
 pub(crate) fn build_metrics_recorder() -> (GuardedRecorder, MetricsHandle) {
@@ -434,5 +542,30 @@ pub(crate) fn describe_metric_families() {
         ANALYTICS_EXPORT_BACKLOG,
         Unit::Count,
         ANALYTICS_EXPORT_BACKLOG_DESCRIPTION
+    );
+    ::metrics::describe_counter!(
+        REQUEST_RATE_LIMIT_ADMISSIONS_TOTAL,
+        Unit::Count,
+        REQUEST_RATE_LIMIT_ADMISSIONS_DESCRIPTION
+    );
+    ::metrics::describe_counter!(
+        REQUEST_RATE_LIMIT_REJECTIONS_TOTAL,
+        Unit::Count,
+        REQUEST_RATE_LIMIT_REJECTIONS_DESCRIPTION
+    );
+    ::metrics::describe_counter!(
+        REQUEST_RATE_LIMIT_FAILURES_TOTAL,
+        Unit::Count,
+        REQUEST_RATE_LIMIT_FAILURES_DESCRIPTION
+    );
+    ::metrics::describe_histogram!(
+        REQUEST_RATE_LIMIT_RULES_PER_CHECK,
+        Unit::Count,
+        REQUEST_RATE_LIMIT_RULES_DESCRIPTION
+    );
+    ::metrics::describe_histogram!(
+        REQUEST_RATE_LIMIT_RETRY_AFTER_SECONDS,
+        Unit::Seconds,
+        REQUEST_RATE_LIMIT_RETRY_AFTER_DESCRIPTION
     );
 }
