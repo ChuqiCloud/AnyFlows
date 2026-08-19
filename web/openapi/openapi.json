@@ -3003,9 +3003,9 @@
       },
       "put": {
         "tags": [
-          "Personal profile and security"
+          "个人资料与安全"
         ],
-        "summary": "Update current user notification preferences",
+        "summary": "更新当前用户通知偏好",
         "operationId": "updateUserNotificationPreferences",
         "requestBody": {
           "content": {
@@ -3019,7 +3019,7 @@
         },
         "responses": {
           "200": {
-            "description": "Updated notification preferences",
+            "description": "通知偏好已更新",
             "content": {
               "application/json": {
                 "schema": {
@@ -3029,7 +3029,7 @@
             }
           },
           "400": {
-            "description": "Invalid request body",
+            "description": "请求正文无效",
             "content": {
               "application/json": {
                 "schema": {
@@ -3039,7 +3039,7 @@
             }
           },
           "401": {
-            "description": "Invalid session",
+            "description": "会话无效",
             "content": {
               "application/json": {
                 "schema": {
@@ -3049,7 +3049,7 @@
             }
           },
           "500": {
-            "description": "Internal server error",
+            "description": "服务内部错误",
             "content": {
               "application/json": {
                 "schema": {
