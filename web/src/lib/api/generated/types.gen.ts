@@ -288,6 +288,22 @@ export type AdminCredentialWriteFields = {
     oauth_account_key: string | null;
     oauth_project_id: string | null;
 };
+export type AdminDashboardHourlyPoint = {
+    period_start: number;
+    period_end: number;
+    request_count: number;
+    quota_consumed: number;
+};
+export type AdminDashboardPerformance = {
+    first_token_sample_count: number;
+    average_first_token_ms?: number | null;
+    slow_first_token_count: number;
+    slow_first_token_threshold_ms: number;
+    duration_sample_count: number;
+    average_duration_ms?: number | null;
+    slow_request_count: number;
+    slow_request_threshold_ms: number;
+};
 export type AdminDashboardResponse = {
     period_start: number;
     period_end: number;
@@ -301,6 +317,8 @@ export type AdminDashboardResponse = {
     enabled_channel_count: number;
     disabled_channel_count: number;
     auto_disabled_channel_count: number;
+    hourly: Array<AdminDashboardHourlyPoint>;
+    performance: AdminDashboardPerformance;
 };
 export type AdminDebugTrace = {
     id: number;

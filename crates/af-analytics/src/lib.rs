@@ -8,7 +8,10 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use af_db::{AdminDashboardRecord, AdminDashboardRepository, AdminDashboardRepositoryError};
+use af_db::{
+    AdminDashboardRecord, AdminDashboardRepository, AdminDashboardRepositoryError,
+    SLOW_FIRST_TOKEN_THRESHOLD_MS, SLOW_REQUEST_THRESHOLD_MS,
+};
 use thiserror::Error;
 
 /// 管理看板固定使用最近 24 小时的持久化用量窗口。
@@ -24,7 +27,7 @@ pub enum AdminDashboardAccess {
 }
 
 /// 管理员看板公开的最近 24 小时快照。
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdminDashboard {
     period_start: i64,
     period_end: i64,
@@ -38,82 +41,183 @@ pub struct AdminDashboard {
     enabled_channel_count: i64,
     disabled_channel_count: i64,
     auto_disabled_channel_count: i64,
+    hourly: Vec<AdminDashboardHourlyPoint>,
+    performance: AdminDashboardPerformance,
 }
 
-impl AdminDashboard {
-    /// 返回统计窗口起点的 Unix 秒数。
+/// 管理看板单个连续一小时分桶。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AdminDashboardHourlyPoint {
+    period_start: i64,
+    period_end: i64,
+    request_count: i64,
+    quota_consumed: i64,
+}
+
+impl AdminDashboardHourlyPoint {
     #[must_use]
     pub const fn period_start(self) -> i64 {
         self.period_start
     }
 
-    /// 返回统计窗口终点的 Unix 秒数。
     #[must_use]
     pub const fn period_end(self) -> i64 {
         self.period_end
     }
 
-    /// 返回窗口内已经确认并落库的请求数。
     #[must_use]
     pub const fn request_count(self) -> i64 {
         self.request_count
     }
 
-    /// 返回窗口内最终消耗的额度单位数。
     #[must_use]
     pub const fn quota_consumed(self) -> i64 {
+        self.quota_consumed
+    }
+}
+
+/// 管理看板窗口内真实耗时样本的健康摘要。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AdminDashboardPerformance {
+    first_token_sample_count: i64,
+    average_first_token_ms: Option<i64>,
+    slow_first_token_count: i64,
+    slow_first_token_threshold_ms: i64,
+    duration_sample_count: i64,
+    average_duration_ms: Option<i64>,
+    slow_request_count: i64,
+    slow_request_threshold_ms: i64,
+}
+
+impl AdminDashboardPerformance {
+    #[must_use]
+    pub const fn first_token_sample_count(self) -> i64 {
+        self.first_token_sample_count
+    }
+
+    #[must_use]
+    pub const fn average_first_token_ms(self) -> Option<i64> {
+        self.average_first_token_ms
+    }
+
+    #[must_use]
+    pub const fn slow_first_token_count(self) -> i64 {
+        self.slow_first_token_count
+    }
+
+    #[must_use]
+    pub const fn slow_first_token_threshold_ms(self) -> i64 {
+        self.slow_first_token_threshold_ms
+    }
+
+    #[must_use]
+    pub const fn duration_sample_count(self) -> i64 {
+        self.duration_sample_count
+    }
+
+    #[must_use]
+    pub const fn average_duration_ms(self) -> Option<i64> {
+        self.average_duration_ms
+    }
+
+    #[must_use]
+    pub const fn slow_request_count(self) -> i64 {
+        self.slow_request_count
+    }
+
+    #[must_use]
+    pub const fn slow_request_threshold_ms(self) -> i64 {
+        self.slow_request_threshold_ms
+    }
+}
+
+impl AdminDashboard {
+    /// 返回统计窗口起点的 Unix 秒数。
+    #[must_use]
+    pub const fn period_start(&self) -> i64 {
+        self.period_start
+    }
+
+    /// 返回统计窗口终点的 Unix 秒数。
+    #[must_use]
+    pub const fn period_end(&self) -> i64 {
+        self.period_end
+    }
+
+    /// 返回窗口内已经确认并落库的请求数。
+    #[must_use]
+    pub const fn request_count(&self) -> i64 {
+        self.request_count
+    }
+
+    /// 返回窗口内最终消耗的额度单位数。
+    #[must_use]
+    pub const fn quota_consumed(&self) -> i64 {
         self.quota_consumed
     }
 
     /// 返回由上游响应确认用量的请求数。
     #[must_use]
-    pub const fn upstream_usage_count(self) -> i64 {
+    pub const fn upstream_usage_count(&self) -> i64 {
         self.upstream_usage_count
     }
 
     /// 返回由本地估算用量的请求数。
     #[must_use]
-    pub const fn estimated_usage_count(self) -> i64 {
+    pub const fn estimated_usage_count(&self) -> i64 {
         self.estimated_usage_count
     }
 
     /// 返回按 token 计费的请求数。
     #[must_use]
-    pub const fn per_token_request_count(self) -> i64 {
+    pub const fn per_token_request_count(&self) -> i64 {
         self.per_token_request_count
     }
 
     /// 返回按次计费的请求数。
     #[must_use]
-    pub const fn per_call_request_count(self) -> i64 {
+    pub const fn per_call_request_count(&self) -> i64 {
         self.per_call_request_count
     }
 
     /// 返回免费请求数。
     #[must_use]
-    pub const fn free_request_count(self) -> i64 {
+    pub const fn free_request_count(&self) -> i64 {
         self.free_request_count
     }
 
     /// 返回当前启用的未删除渠道数。
     #[must_use]
-    pub const fn enabled_channel_count(self) -> i64 {
+    pub const fn enabled_channel_count(&self) -> i64 {
         self.enabled_channel_count
     }
 
     /// 返回当前手动禁用的未删除渠道数。
     #[must_use]
-    pub const fn disabled_channel_count(self) -> i64 {
+    pub const fn disabled_channel_count(&self) -> i64 {
         self.disabled_channel_count
     }
 
     /// 返回当前自动禁用的未删除渠道数。
     #[must_use]
-    pub const fn auto_disabled_channel_count(self) -> i64 {
+    pub const fn auto_disabled_channel_count(&self) -> i64 {
         self.auto_disabled_channel_count
     }
 
+    /// 返回覆盖完整窗口的连续一小时分桶。
+    #[must_use]
+    pub fn hourly(&self) -> &[AdminDashboardHourlyPoint] {
+        &self.hourly
+    }
+
+    /// 返回窗口内真实耗时样本的健康摘要。
+    #[must_use]
+    pub const fn performance(&self) -> AdminDashboardPerformance {
+        self.performance
+    }
+
     fn from_record(period_start: i64, period_end: i64, record: AdminDashboardRecord) -> Self {
+        let performance = record.performance();
         Self {
             period_start,
             period_end,
@@ -127,6 +231,27 @@ impl AdminDashboard {
             enabled_channel_count: record.enabled_channel_count(),
             disabled_channel_count: record.disabled_channel_count(),
             auto_disabled_channel_count: record.auto_disabled_channel_count(),
+            hourly: record
+                .hourly()
+                .iter()
+                .copied()
+                .map(|bucket| AdminDashboardHourlyPoint {
+                    period_start: bucket.period_start(),
+                    period_end: bucket.period_end(),
+                    request_count: bucket.request_count(),
+                    quota_consumed: bucket.quota_consumed(),
+                })
+                .collect(),
+            performance: AdminDashboardPerformance {
+                first_token_sample_count: performance.first_token_sample_count(),
+                average_first_token_ms: performance.average_first_token_ms(),
+                slow_first_token_count: performance.slow_first_token_count(),
+                slow_first_token_threshold_ms: SLOW_FIRST_TOKEN_THRESHOLD_MS,
+                duration_sample_count: performance.duration_sample_count(),
+                average_duration_ms: performance.average_duration_ms(),
+                slow_request_count: performance.slow_request_count(),
+                slow_request_threshold_ms: SLOW_REQUEST_THRESHOLD_MS,
+            },
         }
     }
 }
