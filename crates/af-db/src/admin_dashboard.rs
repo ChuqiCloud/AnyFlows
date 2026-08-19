@@ -609,7 +609,7 @@ mod tests {
             per_call_request_count: 0,
             free_request_count: 1,
         };
-        let channels = ChannelAggregateRow {
+        let channels = AdminDashboardChannelRecord {
             channel_count: 1,
             enabled_channel_count: 1,
             disabled_channel_count: 0,
