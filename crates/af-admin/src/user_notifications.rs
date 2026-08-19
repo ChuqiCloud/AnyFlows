@@ -1,8 +1,11 @@
 use std::{fmt, future::Future, pin::Pin, sync::Arc};
 
 use af_db::{
-    NotificationChannel, NotificationDeliveryState, NotificationKind, UserNotificationCursor,
-    UserNotificationListOutcome, UserNotificationListQuery, UserNotificationPageRecord,
+    NotificationChannel as DatabaseNotificationChannel,
+    NotificationDeliveryState as DatabaseNotificationDeliveryState,
+    NotificationKind as DatabaseNotificationKind,
+    UserNotificationCursor as DatabaseUserNotificationCursor, UserNotificationListOutcome,
+    UserNotificationListQuery as DatabaseUserNotificationListQuery, UserNotificationPageRecord,
     UserNotificationRecord, UserNotificationRepository, UserNotificationRepositoryError,
 };
 use thiserror::Error;
@@ -10,6 +13,70 @@ use thiserror::Error;
 use crate::SessionPrincipal;
 
 pub const DEFAULT_USER_NOTIFICATION_PAGE_SIZE: usize = 25;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UserNotificationKind {
+    BalanceAlert,
+    SubscriptionBalanceAlert,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UserNotificationChannel {
+    Email,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UserNotificationDeliveryState {
+    Queued,
+    Accepted,
+    Failed,
+    Canceled,
+}
+
+/// 管理服务层公开的稳定复合游标，不向 HTTP 层泄漏数据库契约。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UserNotificationCursor {
+    occurred_at: i64,
+    id: i64,
+}
+
+impl UserNotificationCursor {
+    pub const fn new(occurred_at: i64, id: i64) -> Result<Self, UserNotificationError> {
+        if occurred_at <= 0 || id <= 0 {
+            return Err(UserNotificationError::InvalidInput);
+        }
+        Ok(Self { occurred_at, id })
+    }
+
+    #[must_use]
+    pub const fn occurred_at(self) -> i64 {
+        self.occurred_at
+    }
+
+    #[must_use]
+    pub const fn id(self) -> i64 {
+        self.id
+    }
+}
+
+/// 当前用户通知历史的管理服务查询参数。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UserNotificationListQuery {
+    before: Option<UserNotificationCursor>,
+    limit: usize,
+}
+
+impl UserNotificationListQuery {
+    pub fn new(
+        before: Option<UserNotificationCursor>,
+        limit: usize,
+    ) -> Result<Self, UserNotificationError> {
+        if !(1..=af_db::MAX_USER_NOTIFICATION_PAGE_SIZE).contains(&limit) {
+            return Err(UserNotificationError::InvalidInput);
+        }
+        Ok(Self { before, limit })
+    }
+}
 
 pub struct UserNotification {
     record: UserNotificationRecord,
@@ -24,12 +91,19 @@ impl UserNotification {
         self.record.id()
     }
     #[must_use]
-    pub const fn kind(&self) -> NotificationKind {
-        self.record.kind()
+    pub const fn kind(&self) -> UserNotificationKind {
+        match self.record.kind() {
+            DatabaseNotificationKind::BalanceAlert => UserNotificationKind::BalanceAlert,
+            DatabaseNotificationKind::SubscriptionBalanceAlert => {
+                UserNotificationKind::SubscriptionBalanceAlert
+            }
+        }
     }
     #[must_use]
-    pub const fn channel(&self) -> NotificationChannel {
-        self.record.channel()
+    pub const fn channel(&self) -> UserNotificationChannel {
+        match self.record.channel() {
+            DatabaseNotificationChannel::Email => UserNotificationChannel::Email,
+        }
     }
     #[must_use]
     pub fn template_version(&self) -> &str {
@@ -40,8 +114,13 @@ impl UserNotification {
         self.record.occurred_at()
     }
     #[must_use]
-    pub const fn delivery_state(&self) -> NotificationDeliveryState {
-        self.record.delivery_state()
+    pub const fn delivery_state(&self) -> UserNotificationDeliveryState {
+        match self.record.delivery_state() {
+            DatabaseNotificationDeliveryState::Queued => UserNotificationDeliveryState::Queued,
+            DatabaseNotificationDeliveryState::Accepted => UserNotificationDeliveryState::Accepted,
+            DatabaseNotificationDeliveryState::Failed => UserNotificationDeliveryState::Failed,
+            DatabaseNotificationDeliveryState::Canceled => UserNotificationDeliveryState::Canceled,
+        }
     }
     #[must_use]
     pub const fn delivery_attempts(&self) -> i16 {
@@ -90,7 +169,10 @@ pub struct UserNotificationPage {
 
 impl UserNotificationPage {
     fn from_record(page: UserNotificationPageRecord) -> Self {
-        let next_cursor = page.next_cursor();
+        let next_cursor = page.next_cursor().map(|cursor| UserNotificationCursor {
+            occurred_at: cursor.occurred_at(),
+            id: cursor.id(),
+        });
         Self {
             entries: page
                 .entries()
@@ -147,6 +229,13 @@ impl UserNotificationService for DatabaseUserNotificationService {
         query: UserNotificationListQuery,
     ) -> UserNotificationListFuture<'a> {
         Box::pin(async move {
+            let before = query
+                .before
+                .map(|cursor| DatabaseUserNotificationCursor::new(cursor.occurred_at, cursor.id))
+                .transpose()
+                .map_err(map_error)?;
+            let query =
+                DatabaseUserNotificationListQuery::new(before, query.limit).map_err(map_error)?;
             match self
                 .repository
                 .list(principal.user_id().get(), query)

@@ -400,7 +400,7 @@ impl UserNotificationService for RejectUserNotifications {
     fn list<'a>(
         &'a self,
         _principal: SessionPrincipal,
-        _query: af_db::UserNotificationListQuery,
+        _query: af_admin::UserNotificationListQuery,
     ) -> UserNotificationListFuture<'a> {
         Box::pin(async { Err(UserNotificationError::Internal) })
     }

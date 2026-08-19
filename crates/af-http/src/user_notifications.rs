@@ -2,11 +2,9 @@ use std::sync::Arc;
 
 use af_admin::{
     DEFAULT_USER_NOTIFICATION_PAGE_SIZE, SessionAuthentication, SessionAuthenticator,
-    UserNotification, UserNotificationError, UserNotificationPage, UserNotificationService,
-};
-use af_db::{
-    NotificationChannel, NotificationDeliveryState, NotificationKind, UserNotificationCursor,
-    UserNotificationListQuery,
+    UserNotification, UserNotificationChannel, UserNotificationCursor,
+    UserNotificationDeliveryState, UserNotificationError, UserNotificationKind,
+    UserNotificationListQuery, UserNotificationPage, UserNotificationService,
 };
 use axum::{
     Router,
@@ -204,21 +202,25 @@ impl UserNotificationResponse {
         Self {
             id: notification.id(),
             kind: match notification.kind() {
-                NotificationKind::BalanceAlert => NotificationKindResponse::BalanceAlert,
-                NotificationKind::SubscriptionBalanceAlert => {
+                UserNotificationKind::BalanceAlert => NotificationKindResponse::BalanceAlert,
+                UserNotificationKind::SubscriptionBalanceAlert => {
                     NotificationKindResponse::SubscriptionBalanceAlert
                 }
             },
             channel: match notification.channel() {
-                NotificationChannel::Email => NotificationChannelResponse::Email,
+                UserNotificationChannel::Email => NotificationChannelResponse::Email,
             },
             template_version: notification.template_version().to_owned(),
             occurred_at: notification.occurred_at(),
             delivery_state: match notification.delivery_state() {
-                NotificationDeliveryState::Queued => NotificationDeliveryStateResponse::Queued,
-                NotificationDeliveryState::Accepted => NotificationDeliveryStateResponse::Accepted,
-                NotificationDeliveryState::Failed => NotificationDeliveryStateResponse::Failed,
-                NotificationDeliveryState::Canceled => NotificationDeliveryStateResponse::Canceled,
+                UserNotificationDeliveryState::Queued => NotificationDeliveryStateResponse::Queued,
+                UserNotificationDeliveryState::Accepted => {
+                    NotificationDeliveryStateResponse::Accepted
+                }
+                UserNotificationDeliveryState::Failed => NotificationDeliveryStateResponse::Failed,
+                UserNotificationDeliveryState::Canceled => {
+                    NotificationDeliveryStateResponse::Canceled
+                }
             },
             delivery_attempts: notification.delivery_attempts(),
             observed_quota: notification.observed_quota(),
