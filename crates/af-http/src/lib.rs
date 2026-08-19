@@ -81,6 +81,7 @@ mod speech_service;
 mod streaming;
 mod subscriptions;
 mod turnstile;
+mod user_notifications;
 mod user_profile;
 mod user_tokens;
 mod user_topups;

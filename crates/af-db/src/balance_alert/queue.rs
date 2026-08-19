@@ -15,6 +15,9 @@ use super::BalanceAlertSettingsRecord;
 use crate::{
     DatabasePool,
     entity::{balance_alert_events, users},
+    notification::{
+        NotificationDeliveryState, NotificationKind, UserNotificationWrite, update_delivery_state,
+    },
 };
 
 const STATUS_PENDING: i16 = 1;
@@ -61,6 +64,7 @@ pub struct BalanceAlertDeliveryLease {
     threshold: Quota,
     attempt_count: i16,
     version: i64,
+    notification_source_key: String,
 }
 
 impl BalanceAlertDeliveryLease {
@@ -353,6 +357,20 @@ impl BalanceAlertRepository {
             .await
             .map_err(|_| BalanceAlertRepositoryError::Query)?;
         }
+        for (user_id, observed_quota, threshold_quota) in &candidates {
+            crate::notification::insert_queued(
+                &transaction,
+                &UserNotificationWrite::balance_alert(
+                    *user_id,
+                    window_started_at_epoch,
+                    *observed_quota,
+                    *threshold_quota,
+                    now,
+                ),
+            )
+            .await
+            .map_err(|_| BalanceAlertRepositoryError::Query)?;
+        }
         commit_transaction(transaction).await?;
         Ok(BalanceAlertEnqueueReport {
             eligible: candidates.len(),
@@ -467,6 +485,10 @@ impl BalanceAlertRepository {
                     .map_err(|_| BalanceAlertRepositoryError::Invariant)?,
                 attempt_count: event.attempt_count,
                 version: event.version,
+                notification_source_key: format!(
+                    "balance:{}:{}",
+                    event.user_id, event.window_started_at_epoch
+                ),
             };
             commit_transaction(transaction).await?;
             return Ok(BalanceAlertClaimOutcome::Claimed(lease));
@@ -479,57 +501,127 @@ impl BalanceAlertRepository {
         current_window_started_at_epoch: i64,
         now: TimeDateTimeWithTimeZone,
     ) -> Result<u64, BalanceAlertRepositoryError> {
-        let result = balance_alert_events::Entity::update_many()
-            .col_expr(
-                balance_alert_events::Column::Status,
-                Expr::value(STATUS_CANCELED),
-            )
-            .col_expr(
-                balance_alert_events::Column::LeaseExpiresAt,
-                Expr::value(Option::<TimeDateTimeWithTimeZone>::None),
-            )
-            .col_expr(
-                balance_alert_events::Column::Version,
-                Expr::col(balance_alert_events::Column::Version).add(1_i64),
-            )
-            .col_expr(balance_alert_events::Column::UpdatedAt, Expr::value(now))
+        let transaction = begin_transaction(&self.pool).await?;
+        let candidates = balance_alert_events::Entity::find()
             .filter(
                 balance_alert_events::Column::WindowStartedAtEpoch
                     .lt(current_window_started_at_epoch),
             )
             .filter(cancelable_condition(now))
-            .exec(self.pool.connection())
+            .all(&transaction)
             .with_subscriber(NoSubscriber::default())
             .await
             .map_err(|_| BalanceAlertRepositoryError::Query)?;
-        Ok(result.rows_affected)
+        let mut canceled = 0_u64;
+        for event in candidates {
+            let result = balance_alert_events::Entity::update_many()
+                .col_expr(
+                    balance_alert_events::Column::Status,
+                    Expr::value(STATUS_CANCELED),
+                )
+                .col_expr(
+                    balance_alert_events::Column::LeaseExpiresAt,
+                    Expr::value(Option::<TimeDateTimeWithTimeZone>::None),
+                )
+                .col_expr(
+                    balance_alert_events::Column::Version,
+                    Expr::value(
+                        event
+                            .version
+                            .checked_add(1)
+                            .ok_or(BalanceAlertRepositoryError::Invariant)?,
+                    ),
+                )
+                .col_expr(balance_alert_events::Column::UpdatedAt, Expr::value(now))
+                .filter(balance_alert_events::Column::Id.eq(event.id))
+                .filter(balance_alert_events::Column::Version.eq(event.version))
+                .filter(cancelable_condition(now))
+                .exec(&transaction)
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(|_| BalanceAlertRepositoryError::Query)?;
+            if result.rows_affected == 0 {
+                continue;
+            }
+            if result.rows_affected != 1 {
+                return Err(BalanceAlertRepositoryError::Invariant);
+            }
+            sync_notification_state(
+                &transaction,
+                &balance_notification_source_key(&event),
+                NotificationDeliveryState::Canceled,
+                event.attempt_count,
+                now,
+            )
+            .await?;
+            canceled = canceled
+                .checked_add(1)
+                .ok_or(BalanceAlertRepositoryError::Invariant)?;
+        }
+        commit_transaction(transaction).await?;
+        Ok(canceled)
     }
 
     async fn fail_exhausted_inner(
         &self,
         now: TimeDateTimeWithTimeZone,
     ) -> Result<u64, BalanceAlertRepositoryError> {
-        let result = balance_alert_events::Entity::update_many()
-            .col_expr(
-                balance_alert_events::Column::Status,
-                Expr::value(STATUS_FAILED),
-            )
-            .col_expr(
-                balance_alert_events::Column::LeaseExpiresAt,
-                Expr::value(Option::<TimeDateTimeWithTimeZone>::None),
-            )
-            .col_expr(
-                balance_alert_events::Column::Version,
-                Expr::col(balance_alert_events::Column::Version).add(1_i64),
-            )
-            .col_expr(balance_alert_events::Column::UpdatedAt, Expr::value(now))
+        let transaction = begin_transaction(&self.pool).await?;
+        let candidates = balance_alert_events::Entity::find()
             .filter(balance_alert_events::Column::AttemptCount.gte(MAX_BALANCE_ALERT_ATTEMPTS))
             .filter(cancelable_condition(now))
-            .exec(self.pool.connection())
+            .all(&transaction)
             .with_subscriber(NoSubscriber::default())
             .await
             .map_err(|_| BalanceAlertRepositoryError::Query)?;
-        Ok(result.rows_affected)
+        let mut failed = 0_u64;
+        for event in candidates {
+            let result = balance_alert_events::Entity::update_many()
+                .col_expr(
+                    balance_alert_events::Column::Status,
+                    Expr::value(STATUS_FAILED),
+                )
+                .col_expr(
+                    balance_alert_events::Column::LeaseExpiresAt,
+                    Expr::value(Option::<TimeDateTimeWithTimeZone>::None),
+                )
+                .col_expr(
+                    balance_alert_events::Column::Version,
+                    Expr::value(
+                        event
+                            .version
+                            .checked_add(1)
+                            .ok_or(BalanceAlertRepositoryError::Invariant)?,
+                    ),
+                )
+                .col_expr(balance_alert_events::Column::UpdatedAt, Expr::value(now))
+                .filter(balance_alert_events::Column::Id.eq(event.id))
+                .filter(balance_alert_events::Column::Version.eq(event.version))
+                .filter(cancelable_condition(now))
+                .exec(&transaction)
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(|_| BalanceAlertRepositoryError::Query)?;
+            if result.rows_affected == 0 {
+                continue;
+            }
+            if result.rows_affected != 1 {
+                return Err(BalanceAlertRepositoryError::Invariant);
+            }
+            sync_notification_state(
+                &transaction,
+                &balance_notification_source_key(&event),
+                NotificationDeliveryState::Failed,
+                event.attempt_count,
+                now,
+            )
+            .await?;
+            failed = failed
+                .checked_add(1)
+                .ok_or(BalanceAlertRepositoryError::Invariant)?;
+        }
+        commit_transaction(transaction).await?;
+        Ok(failed)
     }
 
     async fn mark_sent_inner(
@@ -541,6 +633,7 @@ impl BalanceAlertRepository {
             .version
             .checked_add(1)
             .ok_or(BalanceAlertRepositoryError::Invariant)?;
+        let transaction = begin_transaction(&self.pool).await?;
         let result = balance_alert_events::Entity::update_many()
             .col_expr(
                 balance_alert_events::Column::Status,
@@ -565,11 +658,28 @@ impl BalanceAlertRepository {
             .filter(balance_alert_events::Column::Id.eq(lease.event_id))
             .filter(balance_alert_events::Column::Status.eq(STATUS_SENDING))
             .filter(balance_alert_events::Column::Version.eq(lease.version))
-            .exec(self.pool.connection())
+            .exec(&transaction)
             .with_subscriber(NoSubscriber::default())
             .await
             .map_err(|_| BalanceAlertRepositoryError::Query)?;
-        completion_outcome(result.rows_affected)
+        match completion_outcome(result.rows_affected)? {
+            BalanceAlertCompletionOutcome::Stale => {
+                rollback_transaction(transaction).await?;
+                Ok(BalanceAlertCompletionOutcome::Stale)
+            }
+            BalanceAlertCompletionOutcome::Completed => {
+                sync_notification_state(
+                    &transaction,
+                    &lease.notification_source_key,
+                    NotificationDeliveryState::Accepted,
+                    lease.attempt_count,
+                    sent_at,
+                )
+                .await?;
+                commit_transaction(transaction).await?;
+                Ok(BalanceAlertCompletionOutcome::Completed)
+            }
+        }
     }
 
     async fn record_failure_inner(
@@ -593,6 +703,7 @@ impl BalanceAlertRepository {
             .version
             .checked_add(1)
             .ok_or(BalanceAlertRepositoryError::Invariant)?;
+        let transaction = begin_transaction(&self.pool).await?;
         let result = balance_alert_events::Entity::update_many()
             .col_expr(balance_alert_events::Column::Status, Expr::value(status))
             .col_expr(
@@ -618,11 +729,32 @@ impl BalanceAlertRepository {
             .filter(balance_alert_events::Column::Id.eq(lease.event_id))
             .filter(balance_alert_events::Column::Status.eq(STATUS_SENDING))
             .filter(balance_alert_events::Column::Version.eq(lease.version))
-            .exec(self.pool.connection())
+            .exec(&transaction)
             .with_subscriber(NoSubscriber::default())
             .await
             .map_err(|_| BalanceAlertRepositoryError::Query)?;
-        completion_outcome(result.rows_affected)
+        match completion_outcome(result.rows_affected)? {
+            BalanceAlertCompletionOutcome::Stale => {
+                rollback_transaction(transaction).await?;
+                Ok(BalanceAlertCompletionOutcome::Stale)
+            }
+            BalanceAlertCompletionOutcome::Completed => {
+                sync_notification_state(
+                    &transaction,
+                    &lease.notification_source_key,
+                    if terminal {
+                        NotificationDeliveryState::Failed
+                    } else {
+                        NotificationDeliveryState::Queued
+                    },
+                    lease.attempt_count,
+                    failed_at,
+                )
+                .await?;
+                commit_transaction(transaction).await?;
+                Ok(BalanceAlertCompletionOutcome::Completed)
+            }
+        }
     }
 }
 
@@ -694,10 +826,44 @@ async fn cancel_claimed(
         .await
         .map_err(|_| BalanceAlertRepositoryError::Query)?;
     if result.rows_affected == 1 {
+        sync_notification_state(
+            transaction,
+            &balance_notification_source_key(event),
+            NotificationDeliveryState::Canceled,
+            event.attempt_count,
+            now,
+        )
+        .await?;
         Ok(())
     } else {
         Err(BalanceAlertRepositoryError::Invariant)
     }
+}
+
+fn balance_notification_source_key(event: &balance_alert_events::Model) -> String {
+    format!(
+        "balance:{}:{}",
+        event.user_id, event.window_started_at_epoch
+    )
+}
+
+async fn sync_notification_state(
+    transaction: &DatabaseTransaction,
+    source_key: &str,
+    state: NotificationDeliveryState,
+    attempts: i16,
+    updated_at: TimeDateTimeWithTimeZone,
+) -> Result<(), BalanceAlertRepositoryError> {
+    update_delivery_state(
+        transaction,
+        NotificationKind::BalanceAlert,
+        source_key,
+        state,
+        attempts,
+        updated_at,
+    )
+    .await
+    .map_err(|_| BalanceAlertRepositoryError::Query)
 }
 
 fn retry_delay(attempt_count: i16) -> Result<Duration, BalanceAlertRepositoryError> {

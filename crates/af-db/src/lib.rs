@@ -104,6 +104,7 @@ mod model_sync_tests;
 mod network_settings;
 #[cfg(test)]
 mod network_settings_tests;
+mod notification;
 mod oauth_credential;
 #[cfg(test)]
 mod oauth_credential_tests;
@@ -393,6 +394,13 @@ pub use network_settings::{
     NetworkSettingsMode, NetworkSettingsRecord, NetworkSettingsRepository,
     NetworkSettingsRepositoryConfigError, NetworkSettingsRepositoryError,
     NetworkSettingsWriteRecord, ProxyPasswordUpdate,
+};
+pub use notification::{
+    MAX_USER_NOTIFICATION_PAGE_SIZE, NotificationChannel, NotificationDeliveryState,
+    NotificationKind, UserNotificationCursor, UserNotificationListOutcome,
+    UserNotificationListQuery, UserNotificationPageRecord, UserNotificationRecord,
+    UserNotificationRepository, UserNotificationRepositoryConfigError,
+    UserNotificationRepositoryError, UserNotificationSnapshot, UserNotificationWrite,
 };
 pub use oauth_credential::{
     MAX_OAUTH_REFRESH_CANDIDATES, OAuthCredentialExpirationProjectionUpdateOutcome,

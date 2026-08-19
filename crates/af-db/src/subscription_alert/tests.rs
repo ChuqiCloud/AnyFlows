@@ -10,8 +10,8 @@ use crate::{
     MigrationOptions,
     balance_alert::{BalanceAlertCompletionOutcome, BalanceAlertDeliveryFailureKind},
     entity::{
-        SensitiveString, subscription_balance_alert_events, subscription_plans, user_subscriptions,
-        users,
+        SensitiveString, subscription_balance_alert_events, subscription_plans,
+        user_notification_events, user_subscriptions, users,
     },
 };
 
@@ -118,6 +118,15 @@ async fn queue_deduplicates_each_subscription_window_and_revalidates_opt_out()
         repository.mark_sent(&first_lease, now).await?,
         BalanceAlertCompletionOutcome::Completed
     );
+    let accepted_notification = user_notification_events::Entity::find()
+        .one(pool.connection())
+        .await?
+        .expect("订阅通知事实必须存在");
+    assert_eq!(
+        accepted_notification.subscription_id.as_deref(),
+        Some("22222222222222222222222222222222")
+    );
+    assert_eq!(accepted_notification.delivery_state, 2);
 
     let mut user = users::Entity::find_by_id(user.id)
         .one(pool.connection())
@@ -135,6 +144,11 @@ async fn queue_deduplicates_each_subscription_window_and_revalidates_opt_out()
         .count(pool.connection())
         .await?;
     assert_eq!(canceled, 1);
+    let canceled_notification = user_notification_events::Entity::find()
+        .filter(user_notification_events::Column::DeliveryState.eq(4))
+        .count(pool.connection())
+        .await?;
+    assert_eq!(canceled_notification, 1);
     pool.close().await?;
     Ok(())
 }

@@ -59,6 +59,7 @@ mod token_read;
 mod token_write;
 mod two_factor;
 mod usage_log_read;
+mod user_notifications;
 mod user_profile;
 mod user_read;
 mod user_token;
@@ -376,6 +377,11 @@ pub use usage_log_read::{
     AdminUsageLogSource, AdminUsageLogUsage, AdminUsageLogVideoResolution,
     DEFAULT_ADMIN_USAGE_LOG_PAGE_SIZE, DatabaseAdminUsageLogReader, UsageLogOperation,
     UsageLogProtocol, UsageLogReasoningEffort,
+};
+pub use user_notifications::{
+    DEFAULT_USER_NOTIFICATION_PAGE_SIZE, DatabaseUserNotificationService, UserNotification,
+    UserNotificationError, UserNotificationListFuture, UserNotificationPage,
+    UserNotificationService,
 };
 pub use user_profile::{
     DatabaseUserProfileService, MAX_USER_PROFILE_PASSWORD_BYTES, MAX_USER_PROFILE_USERNAME_BYTES,

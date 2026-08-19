@@ -8,7 +8,8 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
     DatabasePool,
-    entity::{subscription_balance_alert_events, user_subscriptions, users},
+    entity::{SensitiveString, subscription_balance_alert_events, user_subscriptions, users},
+    notification::UserNotificationWrite,
 };
 
 use super::{
@@ -63,6 +64,7 @@ pub(super) async fn enqueue_due(
     let candidates = user_subscriptions::Entity::find()
         .select_only()
         .column(user_subscriptions::Column::Id)
+        .column(user_subscriptions::Column::SubscriptionKey)
         .column(user_subscriptions::Column::UserId)
         .column(user_subscriptions::Column::WindowStartedAt)
         .column(user_subscriptions::Column::WindowEndsAt)
@@ -85,6 +87,7 @@ pub(super) async fn enqueue_due(
         .limit(limit)
         .into_tuple::<(
             i64,
+            SensitiveString,
             i64,
             TimeDateTimeWithTimeZone,
             TimeDateTimeWithTimeZone,
@@ -97,6 +100,7 @@ pub(super) async fn enqueue_due(
         .map_err(|_| SubscriptionBalanceAlertRepositoryError::Query)?;
     for (
         user_subscription_id,
+        subscription_key,
         user_id,
         window_started_at,
         window_ends_at,
@@ -128,6 +132,22 @@ pub(super) async fn enqueue_due(
         .on_conflict(subscription_alert_on_conflict())
         .exec_without_returning(&transaction)
         .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(|_| SubscriptionBalanceAlertRepositoryError::Query)?;
+        crate::notification::insert_queued(
+            &transaction,
+            &UserNotificationWrite::subscription_balance_alert(
+                *user_id,
+                *user_subscription_id,
+                subscription_key.as_str().to_owned(),
+                *window_started_at,
+                *window_ends_at,
+                *quota_amount,
+                *observed_quota_used,
+                threshold_percent,
+                now,
+            ),
+        )
         .await
         .map_err(|_| SubscriptionBalanceAlertRepositoryError::Query)?;
     }

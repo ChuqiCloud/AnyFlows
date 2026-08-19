@@ -2239,3 +2239,38 @@ pub(in crate::migration) mod organization_wallet_ledger_entries {
         CreatedAt,
     }
 }
+
+pub(in crate::migration) mod user_notification_events {
+    use super::DeriveIden;
+
+    /// 用户通知事实账本的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "user_notification_events")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        UserId,
+        Kind,
+        Channel,
+        TemplateVersion,
+        OccurredAt,
+        DeliveryState,
+        DeliveryAttempts,
+        SourceKind,
+        SourceKey,
+        ObservedQuota,
+        ThresholdQuota,
+        SubscriptionId,
+        WindowEndsAt,
+        QuotaAmount,
+        QuotaUsed,
+        ThresholdPercent,
+        UpdatedAt,
+    }
+}

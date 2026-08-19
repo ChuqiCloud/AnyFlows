@@ -41,6 +41,7 @@ mod speech;
 mod subscriptions;
 mod tokens;
 mod usage_logs;
+mod user_notifications;
 mod user_profile;
 mod user_tokens;
 mod user_topups;
@@ -70,6 +71,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(password_reset::document());
     document.merge(user_profile::document());
     document.merge(user_wallet::document());
+    document.merge(user_notifications::document());
     document.merge(user_topups::document());
     document.merge(invitations::document());
     document.merge(email_settings::document());
@@ -212,7 +214,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 184);
+        assert_eq!(operation_count, 185);
         assert!(
             document
                 .components
@@ -304,6 +306,7 @@ mod tests {
             "updateUserProfile",
             "changeUserPassword",
             "updateUserNotificationPreferences",
+            "listUserNotifications",
             "createPlaygroundShare",
             "createUserToken",
             "createPlaygroundToken",
@@ -430,7 +433,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 347);
+        assert_eq!(schemas.len(), 352);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminDashboardChannelFlow"));
         assert!(schemas.contains_key("AdminDashboardFailure"));
@@ -629,6 +632,11 @@ mod tests {
         assert!(schemas.contains_key("UserProfileUpdateRequest"));
         assert!(schemas.contains_key("UserPasswordChangeRequest"));
         assert!(schemas.contains_key("UserNotificationPreferencesRequest"));
+        assert!(schemas.contains_key("NotificationKind"));
+        assert!(schemas.contains_key("NotificationChannel"));
+        assert!(schemas.contains_key("NotificationDeliveryState"));
+        assert!(schemas.contains_key("UserNotification"));
+        assert!(schemas.contains_key("UserNotificationListResponse"));
         assert!(schemas.contains_key("UserTwoFactorEnrollmentResponse"));
         assert!(schemas.contains_key("UserTwoFactorPasswordRequest"));
         assert!(schemas.contains_key("UserTwoFactorStatusResponse"));
