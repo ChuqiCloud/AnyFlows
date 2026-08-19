@@ -1249,6 +1249,9 @@ export type ModelCatalogTokenPrices = {
     cache_creation_5m: string;
     cache_creation_1h: string;
 };
+export type NotificationChannel = 'email';
+export type NotificationDeliveryState = 'queued' | 'accepted' | 'failed' | 'canceled';
+export type NotificationKind = 'balance_alert' | 'subscription_balance_alert';
 export type OAuthLoginExchangeRequest = {
     ticket: string;
 };
@@ -1880,6 +1883,26 @@ export type UserInvitationSummaryResponse = {
     historical_rebate_quota: number;
     recent_rebates: Array<UserInvitationRebateResponse>;
 };
+export type UserNotification = {
+    id: number;
+    kind: NotificationKind;
+    channel: NotificationChannel;
+    template_version: string;
+    occurred_at: number;
+    delivery_state: NotificationDeliveryState;
+    delivery_attempts: number;
+    observed_quota?: number | null;
+    threshold_quota?: number | null;
+    subscription_id?: string | null;
+    window_ends_at?: number | null;
+    quota_amount?: number | null;
+    quota_used?: number | null;
+    threshold_percent?: number | null;
+};
+export type UserNotificationListResponse = {
+    entries: Array<UserNotification>;
+    next_cursor: string | null;
+};
 export type UserNotificationPreferencesRequest = {
     email_product_updates: boolean;
     email_usage_alerts: boolean;
@@ -2139,29 +2162,6 @@ export type VideoTaskListResponse = {
     next_cursor: string | null;
 };
 export type VideoTaskStatus = 'pending' | 'done' | 'expired' | 'failed';
-export type NotificationKind = 'balance_alert' | 'subscription_balance_alert';
-export type NotificationChannel = 'email';
-export type NotificationDeliveryState = 'queued' | 'accepted' | 'failed' | 'canceled';
-export type UserNotification = {
-    id: number;
-    kind: NotificationKind;
-    channel: NotificationChannel;
-    template_version: string;
-    occurred_at: number;
-    delivery_state: NotificationDeliveryState;
-    delivery_attempts: number;
-    observed_quota?: number | null;
-    threshold_quota?: number | null;
-    subscription_id?: string | null;
-    window_ends_at?: number | null;
-    quota_amount?: number | null;
-    quota_used?: number | null;
-    threshold_percent?: number | null;
-};
-export type UserNotificationListResponse = {
-    entries: Array<UserNotification>;
-    next_cursor: string | null;
-};
 export type AdminChannelCreateRequestWritable = {
     name: string;
     type: 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
