@@ -18133,14 +18133,14 @@
           },
           "hourly": {
             "type": "array",
-            "description": "覆盖整个统计窗口的连续一小时用量分桶。",
             "items": {
               "$ref": "#/components/schemas/AdminDashboardHourlyPoint"
-            }
+            },
+            "description": "覆盖整个统计窗口的连续一小时用量分桶。"
           },
           "performance": {
-            "description": "只基于真实持久化耗时样本生成的性能健康摘要。",
-            "$ref": "#/components/schemas/AdminDashboardPerformance"
+            "$ref": "#/components/schemas/AdminDashboardPerformance",
+            "description": "只基于真实持久化耗时样本生成的性能健康摘要。"
           }
         },
         "additionalProperties": false
