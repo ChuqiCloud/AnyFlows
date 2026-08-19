@@ -118,6 +118,7 @@ impl UserNotificationWrite {
 
     /// 构造订阅窗口预警的稳定来源键和快照。
     #[must_use]
+    #[allow(clippy::too_many_arguments, reason = "字段与订阅通知事实一一对应")]
     pub fn subscription_balance_alert(
         user_id: i64,
         internal_subscription_id: i64,
