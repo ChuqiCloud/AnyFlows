@@ -21218,6 +21218,14 @@
             ],
             "maxLength": 255
           },
+          "issuer_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "maxLength": 2048
+          },
           "client_secret_configured": {
             "type": "boolean"
           },
@@ -21233,14 +21241,6 @@
             "type": "integer",
             "format": "int64",
             "minimum": 1
-          },
-          "issuer_url": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "uri",
-            "maxLength": 2048
           }
         },
         "additionalProperties": false
@@ -21267,6 +21267,14 @@
             ],
             "maxLength": 255
           },
+          "issuer_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "maxLength": 2048
+          },
           "client_secret": {
             "type": [
               "string",
@@ -21277,14 +21285,6 @@
           },
           "clear_client_secret": {
             "type": "boolean"
-          },
-          "issuer_url": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "uri",
-            "maxLength": 2048
           }
         },
         "additionalProperties": false
