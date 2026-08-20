@@ -347,9 +347,18 @@ jobs:
           echo "toolchain=$toolchain" >> "$GITHUB_OUTPUT"
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
-          shared-key: msrv
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: v1-rust-msrv-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'crates/**/Cargo.toml', 'tools/**/Cargo.toml') }}
+          restore-keys: |
+            v1-rust-msrv-${{ runner.os }}-
 
       - name: Check workspace with MSRV
         shell: bash
@@ -399,11 +408,6 @@ jobs:
           toolchain="$(sed -n 's/^channel = \"\(.*\)\"/\1/p' rust-toolchain.toml)"
           test -n "$toolchain"
           rustup toolchain install "$toolchain" --profile minimal
-
-      - name: Cache database test artifacts
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: database-sqlite
 
       - name: Run SQLite migration smoke test
         env:
@@ -470,11 +474,6 @@ jobs:
           toolchain="$(sed -n 's/^channel = \"\(.*\)\"/\1/p' rust-toolchain.toml)"
           test -n "$toolchain"
           rustup toolchain install "$toolchain" --profile minimal
-
-      - name: Cache database test artifacts
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: database-postgres
 
       - name: Run PostgreSQL migration smoke test on Gitea
         if: ${{ github.server_url != 'https://github.com' }}
@@ -552,11 +551,6 @@ jobs:
           test -n "$toolchain"
           rustup toolchain install "$toolchain" --profile minimal
 
-      - name: Cache database test artifacts
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: database-mysql
-
       - name: Run MySQL migration smoke test on Gitea
         if: ${{ github.server_url != 'https://github.com' }}
         env:
@@ -627,11 +621,6 @@ jobs:
           toolchain="$(sed -n 's/^channel = \"\(.*\)\"/\1/p' rust-toolchain.toml)"
           test -n "$toolchain"
           rustup toolchain install "$toolchain" --profile minimal
-
-      - name: Cache Redis test artifacts
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: cache-redis
 
       - name: Run Redis cache smoke test on Gitea
         if: ${{ github.server_url != 'https://github.com' }}

@@ -863,13 +863,11 @@ fn validate_provider_issuer(
         OAUTH_LOGIN_GITHUB_PROVIDER | OAUTH_LOGIN_DISCORD_PROVIDER => issuer.is_none(),
         _ => false,
     };
-    if enabled && !valid {
-        Err(OAuthLoginRepositoryError::InvalidInput)
-    } else if !enabled
+    let invalid_disabled_issuer = !enabled
         && issuer.is_some()
         && provider != OAUTH_LOGIN_OIDC_PROVIDER
-        && provider != OAUTH_LOGIN_LINUXDO_PROVIDER
-    {
+        && provider != OAUTH_LOGIN_LINUXDO_PROVIDER;
+    if (enabled && !valid) || invalid_disabled_issuer {
         Err(OAuthLoginRepositoryError::InvalidInput)
     } else {
         Ok(())

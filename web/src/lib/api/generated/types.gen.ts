@@ -749,18 +749,18 @@ export type AdminOAuthCompletionStatus = 'connected';
 export type AdminOAuthLoginProviderSettings = {
     enabled: boolean;
     client_id?: string | null;
+    issuer_url?: string | null;
     client_secret_configured: boolean;
     callback_url?: string | null;
     version: number;
-    issuer_url?: string | null;
 };
 export type AdminOAuthLoginProviderSettingsRequest = {
     expected_version: number;
     enabled: boolean;
     client_id?: string | null;
+    issuer_url?: string | null;
     client_secret?: string | null;
     clear_client_secret?: boolean;
-    issuer_url?: string | null;
 };
 export type AdminOAuthManualCallbackRequest = {
     provider: AdminOAuthProvider;
