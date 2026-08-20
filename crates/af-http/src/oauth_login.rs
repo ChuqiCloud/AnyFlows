@@ -30,9 +30,13 @@ use crate::{
 
 const GITHUB_PROVIDER: &str = "github";
 const DISCORD_PROVIDER: &str = "discord";
+const OIDC_PROVIDER: &str = "oidc";
+const LINUXDO_PROVIDER: &str = "linuxdo";
 const OAUTH_STATE_COOKIE: &str = "af_oauth_login_state";
 const GITHUB_CALLBACK_PATH: &str = "/api/auth/oauth/github/callback";
 const DISCORD_CALLBACK_PATH: &str = "/api/auth/oauth/discord/callback";
+const OIDC_CALLBACK_PATH: &str = "/api/auth/oauth/oidc/callback";
+const LINUXDO_CALLBACK_PATH: &str = "/api/auth/oauth/linuxdo/callback";
 const OAUTH_STATE_COOKIE_MAX_AGE_SECONDS: u64 = 10 * 60;
 const OAUTH_STATE_COOKIE_DOMAIN: &str = "oauth-login-browser-state-v1";
 
@@ -71,6 +75,8 @@ pub(crate) struct AdminOAuthLoginProviderSettingsResponse {
     enabled: bool,
     #[schema(max_length = 255)]
     client_id: Option<String>,
+    #[schema(format = "uri", max_length = 2048)]
+    issuer_url: Option<String>,
     client_secret_configured: bool,
     #[schema(format = "uri", max_length = 4096)]
     callback_url: Option<String>,
@@ -83,6 +89,7 @@ impl From<AdminOAuthLoginProviderSettings> for AdminOAuthLoginProviderSettingsRe
         Self {
             enabled: settings.enabled(),
             client_id: settings.client_id().map(str::to_owned),
+            issuer_url: settings.issuer_url().map(str::to_owned),
             client_secret_configured: settings.client_secret_configured(),
             callback_url: settings.callback_url().map(str::to_owned),
             version: settings.version(),
@@ -99,6 +106,8 @@ pub(crate) struct AdminOAuthLoginProviderSettingsRequest {
     enabled: bool,
     #[schema(max_length = 255)]
     client_id: Option<String>,
+    #[schema(format = "uri", max_length = 2048)]
+    issuer_url: Option<String>,
     #[schema(max_length = 4096, format = Password)]
     client_secret: Option<String>,
     #[serde(default)]
@@ -125,6 +134,13 @@ pub(crate) fn build_oauth_login_router(
             "/api/auth/oauth/discord/callback",
             get(complete_discord_login),
         )
+        .route("/api/auth/oauth/oidc/start", post(start_oidc_login))
+        .route("/api/auth/oauth/oidc/callback", get(complete_oidc_login))
+        .route("/api/auth/oauth/linuxdo/start", post(start_linuxdo_login))
+        .route(
+            "/api/auth/oauth/linuxdo/callback",
+            get(complete_linuxdo_login),
+        )
         .route("/api/auth/oauth/exchange", post(exchange_oauth_ticket))
         .route(
             "/api/admin/authentication-settings/oauth/github",
@@ -137,6 +153,26 @@ pub(crate) fn build_oauth_login_router(
             "/api/admin/authentication-settings/oauth/discord",
             get(get_admin_discord_settings)
                 .put(update_admin_discord_settings)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(middleware::from_fn_with_state(
+                    ManagementAuthenticationState::new(Arc::clone(&session_authenticator)),
+                    authenticate_management_session,
+                )),
+        )
+        .route(
+            "/api/admin/authentication-settings/oauth/oidc",
+            get(get_admin_oidc_settings)
+                .put(update_admin_oidc_settings)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(middleware::from_fn_with_state(
+                    ManagementAuthenticationState::new(Arc::clone(&session_authenticator)),
+                    authenticate_management_session,
+                )),
+        )
+        .route(
+            "/api/admin/authentication-settings/oauth/linuxdo",
+            get(get_admin_linuxdo_settings)
+                .put(update_admin_linuxdo_settings)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(middleware::from_fn_with_state(
                     ManagementAuthenticationState::new(Arc::clone(&session_authenticator)),
@@ -159,6 +195,18 @@ async fn start_discord_login(
     State(state): State<OAuthLoginHttpState>,
 ) -> Result<Response, ManagementError> {
     start_login(state, DISCORD_PROVIDER, DISCORD_CALLBACK_PATH).await
+}
+
+async fn start_oidc_login(
+    State(state): State<OAuthLoginHttpState>,
+) -> Result<Response, ManagementError> {
+    start_login(state, OIDC_PROVIDER, OIDC_CALLBACK_PATH).await
+}
+
+async fn start_linuxdo_login(
+    State(state): State<OAuthLoginHttpState>,
+) -> Result<Response, ManagementError> {
+    start_login(state, LINUXDO_PROVIDER, LINUXDO_CALLBACK_PATH).await
 }
 
 async fn start_login(
@@ -209,6 +257,29 @@ async fn complete_discord_login(
         raw_query,
         DISCORD_PROVIDER,
         DISCORD_CALLBACK_PATH,
+    )
+    .await
+}
+
+async fn complete_oidc_login(
+    State(state): State<OAuthLoginHttpState>,
+    headers: HeaderMap,
+    RawQuery(raw_query): RawQuery,
+) -> Response {
+    complete_login(state, headers, raw_query, OIDC_PROVIDER, OIDC_CALLBACK_PATH).await
+}
+
+async fn complete_linuxdo_login(
+    State(state): State<OAuthLoginHttpState>,
+    headers: HeaderMap,
+    RawQuery(raw_query): RawQuery,
+) -> Response {
+    complete_login(
+        state,
+        headers,
+        raw_query,
+        LINUXDO_PROVIDER,
+        LINUXDO_CALLBACK_PATH,
     )
     .await
 }
@@ -278,6 +349,20 @@ async fn get_admin_discord_settings(
     get_admin_settings(state, authentication, DISCORD_PROVIDER).await
 }
 
+async fn get_admin_oidc_settings(
+    State(state): State<OAuthLoginHttpState>,
+    Extension(authentication): Extension<af_admin::SessionAuthentication>,
+) -> Result<Response, ManagementError> {
+    get_admin_settings(state, authentication, OIDC_PROVIDER).await
+}
+
+async fn get_admin_linuxdo_settings(
+    State(state): State<OAuthLoginHttpState>,
+    Extension(authentication): Extension<af_admin::SessionAuthentication>,
+) -> Result<Response, ManagementError> {
+    get_admin_settings(state, authentication, LINUXDO_PROVIDER).await
+}
+
 async fn get_admin_settings(
     state: OAuthLoginHttpState,
     authentication: af_admin::SessionAuthentication,
@@ -309,6 +394,22 @@ async fn update_admin_discord_settings(
     update_admin_settings(state, authentication, request, DISCORD_PROVIDER).await
 }
 
+async fn update_admin_oidc_settings(
+    State(state): State<OAuthLoginHttpState>,
+    Extension(authentication): Extension<af_admin::SessionAuthentication>,
+    request: Result<Json<AdminOAuthLoginProviderSettingsRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    update_admin_settings(state, authentication, request, OIDC_PROVIDER).await
+}
+
+async fn update_admin_linuxdo_settings(
+    State(state): State<OAuthLoginHttpState>,
+    Extension(authentication): Extension<af_admin::SessionAuthentication>,
+    request: Result<Json<AdminOAuthLoginProviderSettingsRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    update_admin_settings(state, authentication, request, LINUXDO_PROVIDER).await
+}
+
 async fn update_admin_settings(
     state: OAuthLoginHttpState,
     authentication: af_admin::SessionAuthentication,
@@ -320,6 +421,7 @@ async fn update_admin_settings(
         request.expected_version,
         request.enabled,
         request.client_id,
+        request.issuer_url,
         request.client_secret,
         request.clear_client_secret,
     )

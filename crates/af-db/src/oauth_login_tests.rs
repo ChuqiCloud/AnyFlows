@@ -5,8 +5,9 @@ use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, JsonValue, Set};
 use super::{
     CREDENTIAL_ENVELOPE_NONCE_BYTES, DatabaseOptions, EncryptedCredentialEnvelope,
     MigrationOptions, OAUTH_LOGIN_DISCORD_PROVIDER, OAUTH_LOGIN_GITHUB_PROVIDER,
-    OAuthIdentityCompletion, OAuthLoginProviderWriteRecord, OAuthLoginRepository,
-    OAuthLoginRepositoryError, OAuthLoginSecretUpdate,
+    OAUTH_LOGIN_LINUXDO_PROVIDER, OAUTH_LOGIN_OIDC_PROVIDER, OAuthIdentityCompletion,
+    OAuthLoginProviderWriteRecord, OAuthLoginRepository, OAuthLoginRepositoryError,
+    OAuthLoginSecretUpdate,
 };
 use crate::entity::{authentication_settings, groups, users};
 
@@ -40,6 +41,35 @@ async fn provider_settings_use_version_cas_and_never_require_plaintext_reads()
         .await?;
     assert!(!discord.available());
     assert_eq!(discord.version(), 1);
+    let oidc = fixture
+        .repository
+        .provider(OAUTH_LOGIN_OIDC_PROVIDER)
+        .await?;
+    assert!(!oidc.available());
+    assert_eq!(oidc.issuer_url(), None);
+    let linuxdo = fixture
+        .repository
+        .provider(OAUTH_LOGIN_LINUXDO_PROVIDER)
+        .await?;
+    assert!(!linuxdo.available());
+    assert_eq!(linuxdo.issuer_url(), Some("https://connect.linux.do"));
+
+    assert_eq!(
+        fixture
+            .repository
+            .update_provider(
+                OAUTH_LOGIN_OIDC_PROVIDER,
+                OAuthLoginProviderWriteRecord::new(
+                    oidc.version(),
+                    true,
+                    Some("oidc-client-id".to_owned()),
+                    None,
+                    OAuthLoginSecretUpdate::Replace(test_envelope()?),
+                ),
+            )
+            .await,
+        Err(OAuthLoginRepositoryError::InvalidInput)
+    );
 
     let saved = fixture
         .repository
@@ -49,6 +79,7 @@ async fn provider_settings_use_version_cas_and_never_require_plaintext_reads()
                 initial.version(),
                 true,
                 Some("github-client-id".to_owned()),
+                None,
                 OAuthLoginSecretUpdate::Replace(test_envelope()?),
             ),
         )
@@ -76,6 +107,7 @@ async fn provider_settings_use_version_cas_and_never_require_plaintext_reads()
                 OAuthLoginProviderWriteRecord::new(
                     initial.version(),
                     false,
+                    None,
                     None,
                     OAuthLoginSecretUpdate::Clear,
                 ),

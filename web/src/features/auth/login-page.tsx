@@ -7,10 +7,12 @@ import {
   EyeOff,
   Fingerprint,
   GitFork,
+  Globe2,
   LoaderCircle,
   LockKeyhole,
   MessageCircle,
   RefreshCw,
+  ShieldCheck,
   UserRoundPlus,
 } from 'lucide-react'
 import { type FormEvent, useEffect, useState } from 'react'
@@ -153,9 +155,7 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
   const heroTitle = site?.brand.tagline ?? t('auth.login.heroTitle')
   const heroBody = site?.brand.description ?? t('auth.login.heroBody')
   const passwordLoginEnabled = site?.authentication.password_login_enabled ?? false
-  const oauthProviders = site?.authentication.oauth_providers?.filter(
-    (provider) => provider.id === 'github' || provider.id === 'discord',
-  ) ?? []
+  const oauthProviders = site?.authentication.oauth_providers ?? []
   const oauthLoginEnabled = oauthProviders.length > 0
   const registrationEnabled = site?.authentication.registration_enabled ?? false
   const registrationAvailable = passwordLoginEnabled && registrationEnabled
@@ -237,7 +237,11 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                         ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
                         : provider.id === 'github'
                           ? <GitFork className="size-4" aria-hidden="true" />
-                          : <MessageCircle className="size-4" aria-hidden="true" />}
+                          : provider.id === 'discord'
+                            ? <MessageCircle className="size-4" aria-hidden="true" />
+                            : provider.id === 'linuxdo'
+                              ? <Globe2 className="size-4" aria-hidden="true" />
+                              : <ShieldCheck className="size-4" aria-hidden="true" />}
                       {isStarting
                         ? t(`auth.login.oauthStarting.${provider.id}`)
                         : t(`auth.login.oauth.${provider.id}`)}

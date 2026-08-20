@@ -1,4 +1,4 @@
-import { Check, Copy, GitFork, LoaderCircle, MessageCircle, RefreshCw, ShieldAlert } from 'lucide-react'
+import { Check, Copy, GitFork, Globe2, LoaderCircle, MessageCircle, RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { type FormEvent, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -21,16 +21,24 @@ type OAuthProviderSettingsProps = {
   provider: OAuthLoginProvider
 }
 
+const providerIcons = {
+  github: GitFork,
+  discord: MessageCircle,
+  oidc: ShieldCheck,
+  linuxdo: Globe2,
+}
+
 /** 管理内置 OAuth App，密钥只支持保留、轮换和显式清除。 */
 export function OAuthProviderSettings({ provider }: OAuthProviderSettingsProps) {
   const { t } = useTranslation()
   const baseKey = `authenticationSettings.oauth.${provider}`
-  const Icon = provider === 'github' ? GitFork : MessageCircle
+  const Icon = providerIcons[provider]
   const settingsQuery = useAdminOAuthLoginSettings(provider)
   const mutation = useUpdateAdminOAuthLoginSettings(provider)
   const settings = settingsQuery.data
   const [enabled, setEnabled] = useState(false)
   const [clientId, setClientId] = useState('')
+  const [issuerUrl, setIssuerUrl] = useState('')
   const [secretAction, setSecretAction] = useState<SecretAction>('keep')
   const [clientSecret, setClientSecret] = useState('')
   const [validationError, setValidationError] = useState(false)
@@ -40,6 +48,7 @@ export function OAuthProviderSettings({ provider }: OAuthProviderSettingsProps) 
     if (!settings) return
     setEnabled(settings.enabled)
     setClientId(settings.client_id ?? '')
+    setIssuerUrl(settings.issuer_url ?? '')
     setSecretAction('keep')
     setClientSecret('')
     setValidationError(false)
@@ -64,9 +73,10 @@ export function OAuthProviderSettings({ provider }: OAuthProviderSettingsProps) 
     : secretAction === 'replace'
       ? clientSecret.length > 0
       : false
-  const configurationComplete = Boolean(currentSettings.callback_url && clientId.trim() && configuredSecret)
+  const configurationComplete = Boolean(currentSettings.callback_url && clientId.trim() && configuredSecret && (provider !== 'oidc' || issuerUrl.trim()))
   const dirty = enabled !== currentSettings.enabled
     || clientId !== (currentSettings.client_id ?? '')
+    || issuerUrl !== (currentSettings.issuer_url ?? '')
     || secretAction !== 'keep'
     || clientSecret.length > 0
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -81,6 +91,7 @@ export function OAuthProviderSettings({ provider }: OAuthProviderSettingsProps) 
         expected_version: currentSettings.version,
         enabled,
         client_id: clientId.trim() || null,
+        issuer_url: provider === 'oidc' ? issuerUrl.trim() || null : null,
         client_secret: secretAction === 'replace' ? clientSecret : null,
         clear_client_secret: secretAction === 'clear',
       })
@@ -159,6 +170,31 @@ export function OAuthProviderSettings({ provider }: OAuthProviderSettingsProps) 
             }}
           />
         </div>
+
+        {provider === 'oidc' ? (
+          <div className="grid content-start gap-1.5 md:col-span-2">
+            <Label htmlFor={`${provider}-oauth-issuer`}>{t('authenticationSettings.oauth.issuer')}</Label>
+            <Input
+              id={`${provider}-oauth-issuer`}
+              type="url"
+              value={issuerUrl}
+              maxLength={2048}
+              autoComplete="url"
+              placeholder="https://id.example.com"
+              onChange={(event) => {
+                setIssuerUrl(event.target.value)
+                setValidationError(false)
+              }}
+            />
+            <p className="text-[0.6875rem] leading-4 text-muted-foreground">{t(`${baseKey}.issuerHint`)}</p>
+          </div>
+        ) : provider === 'linuxdo' ? (
+          <div className="grid content-start gap-1.5 md:col-span-2">
+            <Label htmlFor={`${provider}-oauth-issuer`}>{t('authenticationSettings.oauth.issuer')}</Label>
+            <Input id={`${provider}-oauth-issuer`} value={currentSettings.issuer_url ?? 'https://connect.linux.do'} readOnly className="font-mono text-xs" />
+            <p className="text-[0.6875rem] leading-4 text-muted-foreground">{t(`${baseKey}.issuerHint`)}</p>
+          </div>
+        ) : null}
 
         <div className="grid content-start gap-1.5">
           <Label htmlFor={`${provider}-oauth-secret-action`}>{t('authenticationSettings.oauth.clientSecret')}</Label>

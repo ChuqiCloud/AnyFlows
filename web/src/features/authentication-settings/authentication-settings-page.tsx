@@ -7,6 +7,7 @@ import { useAdminGroupCatalog } from '@/features/groups/group-api'
 import { AuthenticationSettingsForm } from './authentication-settings-form'
 import { DiscordOAuthSettings } from './discord-oauth-settings'
 import { GitHubOAuthSettings } from './github-oauth-settings'
+import { OAuthProviderSettings } from './oauth-provider-settings'
 import { useAdminAuthenticationSettings } from './authentication-settings-api'
 
 /** 呈现管理员认证设置，并在策略或分组目录不可靠时禁止编辑。 */
@@ -72,6 +73,8 @@ export function AuthenticationSettingsPage() {
           <AuthenticationSettingsForm settings={settingsQuery.data} groups={groupsQuery.data} />
           <GitHubOAuthSettings />
           <DiscordOAuthSettings />
+          <OAuthProviderSettings provider="oidc" />
+          <OAuthProviderSettings provider="linuxdo" />
         </>
       ) : null}
     </div>

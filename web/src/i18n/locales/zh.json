@@ -93,9 +93,18 @@
     },
     "summary": {
       "label": "概览指标",
-      "requests": { "label": "请求", "hint": "最近 24 小时已确认" },
-      "quota": { "label": "消耗额度", "hint": "最终落库额度单位" },
-      "channels": { "label": "启用渠道", "hint": "全部 {{total}} 个未删除渠道" },
+      "requests": {
+        "label": "请求",
+        "hint": "最近 24 小时已确认"
+      },
+      "quota": {
+        "label": "消耗额度",
+        "hint": "最终落库额度单位"
+      },
+      "channels": {
+        "label": "启用渠道",
+        "hint": "全部 {{total}} 个未删除渠道"
+      },
       "confirmed": {
         "label": "上游确认率",
         "hint": "{{count}} 次由上游返回用量",
@@ -584,7 +593,10 @@
       "health": "运行统计",
       "actions": "操作"
     },
-    "status": { "enabled": "已启用", "disabled": "已停用" },
+    "status": {
+      "enabled": "已启用",
+      "disabled": "已停用"
+    },
     "mode": {
       "pattern": "模型匹配",
       "explicit_group": "显式分组",
@@ -746,7 +758,9 @@
       "disabled": "已停用",
       "autoDisabled": "自动停用"
     },
-    "values": { "unlimited": "不限" },
+    "values": {
+      "unlimited": "不限"
+    },
     "item": {
       "priorityWeight": "优先级 {{priority}}，权重 {{weight}}",
       "concurrency": "并发 {{value}}",
@@ -917,7 +931,10 @@
       "proxyLoadFailed": "专属代理目录读取失败，请稍后重试。",
       "optional": "留空表示不限"
     },
-    "state": { "unsaved": "有未保存修改", "synced": "已与服务端同步" },
+    "state": {
+      "unsaved": "有未保存修改",
+      "synced": "已与服务端同步"
+    },
     "actions": {
       "refresh": "刷新",
       "retry": "重试",
@@ -2907,11 +2924,15 @@
       "retry": "重新检查",
       "oauth": {
         "github": "使用 GitHub 继续",
-        "discord": "使用 Discord 继续"
+        "discord": "使用 Discord 继续",
+        "oidc": "使用企业 OIDC 继续",
+        "linuxdo": "使用 LinuxDO 继续"
       },
       "oauthStarting": {
         "github": "正在前往 GitHub",
-        "discord": "正在前往 Discord"
+        "discord": "正在前往 Discord",
+        "oidc": "正在前往企业 OIDC",
+        "linuxdo": "正在前往 LinuxDO"
       },
       "orPassword": "或使用密码",
       "orAccount": "或使用账户认证",
@@ -2922,15 +2943,15 @@
       "title": "正在完成登录",
       "exchanging": "正在安全交换一次性登录票据。",
       "succeeded": "登录已完成，正在进入控制台。",
-      "cancelled": "你已取消 GitHub 授权，可以返回重新尝试。",
+      "cancelled": "你已取消授权，可以返回重新尝试。",
       "failed": "本次授权无法完成，请重新发起登录。",
       "wait": "请保持此页面打开",
       "retry": "返回登录页"
     },
     "errors": {
-                   "invalidCredentials": "用户名或密码不正确。",
-                   "twoFactorRequired": "该账户已启用二次验证，请输入验证码。",
-                   "twoFactorInvalid": "二次验证码或备份码不正确，请重试。",
+      "invalidCredentials": "用户名或密码不正确。",
+      "twoFactorRequired": "该账户已启用二次验证，请输入验证码。",
+      "twoFactorInvalid": "二次验证码或备份码不正确，请重试。",
       "adminRequired": "该账户没有管理员权限。",
       "sessionExpired": "会话已过期，请重新登录。",
       "setupComplete": "系统已完成初始化，请使用管理员账户登录。",
@@ -3082,8 +3103,8 @@
       "description": "按带密钥的客户端 IP 指纹执行跨实例固定窗口限流，数据库不保存原始 IP。"
     },
     "oauth": {
-      "title": "GitHub OAuth 登录",
-      "enabled": "启用 GitHub 登录",
+      "title": "OAuth 登录",
+      "enabled": "启用此 OAuth 登录方式",
       "callback": "Authorization callback URL",
       "callbackMissing": "请先在站点设置中配置公开基址",
       "callbackHint": "将此地址完整填写到 GitHub OAuth App 的 Authorization callback URL。",
@@ -3127,6 +3148,34 @@
           "save": "Discord OAuth 设置保存失败，请刷新后核对版本。",
           "publicBaseUrl": "启用前必须先保存站点公开基址，以生成稳定回调地址。",
           "incomplete": "启用 Discord 登录需要回调地址、Client ID 和已配置的 Client Secret。"
+        }
+      },
+      "issuer": "Issuer 地址",
+      "issuerHint": "仅接受不含凭据、查询参数和端口的 HTTPS 地址，服务端会重新校验 OIDC discovery。",
+      "oidc": {
+        "title": "企业 OIDC 登录",
+        "enabled": "启用企业 OIDC 登录",
+        "callbackHint": "将此地址登记到企业身份平台的 OIDC 回调白名单。",
+        "issuerHint": "Issuer 必须是公开可访问的 HTTPS 地址，服务端会校验 discovery、Token 和 JWKS 端点。",
+        "version": "企业 OIDC 配置版本 {{version}}",
+        "errors": {
+          "load": "无法读取企业 OIDC 登录设置",
+          "save": "企业 OIDC 设置保存失败，请刷新后核对版本。",
+          "publicBaseUrl": "启用企业 OIDC 登录前必须先保存站点公开基址。",
+          "incomplete": "企业 OIDC 登录需要回调地址、Issuer、Client ID 和已配置的 Client Secret。"
+        }
+      },
+      "linuxdo": {
+        "title": "LinuxDO 登录",
+        "enabled": "启用 LinuxDO 登录",
+        "callbackHint": "将此地址登记到 LinuxDO 应用的回调白名单。",
+        "issuerHint": "LinuxDO 使用官方固定 Issuer，不能自定义网络目标。",
+        "version": "LinuxDO 配置版本 {{version}}",
+        "errors": {
+          "load": "无法读取 LinuxDO 登录设置",
+          "save": "LinuxDO 设置保存失败，请刷新后核对版本。",
+          "publicBaseUrl": "启用 LinuxDO 登录前必须先保存站点公开基址。",
+          "incomplete": "LinuxDO 登录需要回调地址、Client ID 和已配置的 Client Secret。"
         }
       }
     },
@@ -3360,8 +3409,15 @@
       "security": "安全策略",
       "actions": "操作"
     },
-    "status": { "enabled": "已启用", "disabled": "已停用" },
-    "security": { "auth": "账号认证", "noAuth": "无认证", "proxyDns": "代理 DNS" },
+    "status": {
+      "enabled": "已启用",
+      "disabled": "已停用"
+    },
+    "security": {
+      "auth": "账号认证",
+      "noAuth": "无认证",
+      "proxyDns": "代理 DNS"
+    },
     "fields": {
       "name": "代理名称",
       "scheme": "协议",
@@ -3385,8 +3441,14 @@
       "authDescription": "无认证代理可留空用户名和密码。",
       "authKeepHint": "密码留空会保留现有密文；清空用户名会同时清除认证。"
     },
-    "empty": { "title": "尚无专属代理", "body": "添加代理后即可在凭据编辑器中直接选择。" },
-    "delete": { "title": "删除专属代理", "description": "确认删除“{{name}}”？仍被凭据引用时服务端会拒绝。" },
+    "empty": {
+      "title": "尚无专属代理",
+      "body": "添加代理后即可在凭据编辑器中直接选择。"
+    },
+    "delete": {
+      "title": "删除专属代理",
+      "description": "确认删除“{{name}}”？仍被凭据引用时服务端会拒绝。"
+    },
     "actions": {
       "refresh": "刷新",
       "retry": "重试",
@@ -4017,7 +4079,10 @@
       "alipay": "支付宝",
       "wxpay": "微信支付"
     },
-    "status": { "enabled": "已启用", "disabled": "已停用" },
+    "status": {
+      "enabled": "已启用",
+      "disabled": "已停用"
+    },
     "secrets": {
       "configured": "已配置",
       "missing": "未配置",
@@ -4050,7 +4115,10 @@
       "epayPublicBaseUrl": "启用易支付前必须在站点设置中配置公开基址。",
       "epayQuota": "每人民币到账额度必须是正整数。"
     },
-    "units": { "seconds": "秒", "quota": "额度" },
+    "units": {
+      "seconds": "秒",
+      "quota": "额度"
+    },
     "actions": {
       "refresh": "刷新",
       "retry": "重试",
@@ -4523,15 +4591,36 @@
     },
     "permissions": {
       "organization": {
-        "profile": { "write": "修改企业资料" },
-        "ownership": { "transfer": "转移企业所有权" },
-        "members": { "manage": "管理成员与邀请" },
-        "teams": { "manage": "管理团队" },
-        "wallet": { "read": "查看企业钱包", "manage": "充值与调账" },
-        "budgets": { "manage": "管理企业预算" },
-        "keys": { "read_all": "查看全部企业 Key", "manage_self": "管理本人企业 Key" },
-        "usage_logs": { "read_all": "查看全部调用日志", "read_self": "查看本人调用日志" },
-        "audit": { "read": "查看管理审计" }
+        "profile": {
+          "write": "修改企业资料"
+        },
+        "ownership": {
+          "transfer": "转移企业所有权"
+        },
+        "members": {
+          "manage": "管理成员与邀请"
+        },
+        "teams": {
+          "manage": "管理团队"
+        },
+        "wallet": {
+          "read": "查看企业钱包",
+          "manage": "充值与调账"
+        },
+        "budgets": {
+          "manage": "管理企业预算"
+        },
+        "keys": {
+          "read_all": "查看全部企业 Key",
+          "manage_self": "管理本人企业 Key"
+        },
+        "usage_logs": {
+          "read_all": "查看全部调用日志",
+          "read_self": "查看本人调用日志"
+        },
+        "audit": {
+          "read": "查看管理审计"
+        }
       }
     },
     "overview": {
@@ -4570,13 +4659,27 @@
     "members": {
       "title": "成员与团队",
       "subtitle": "按企业范围管理成员角色、状态、团队归属和邀请，不影响个人空间或其他企业。",
-      "summary": { "seats": "活动席位", "teams": "活动团队", "role": "我的企业角色" },
-      "tabs": { "label": "成员管理视图", "members": "成员", "teams": "团队", "invitations": "邀请" },
+      "summary": {
+        "seats": "活动席位",
+        "teams": "活动团队",
+        "role": "我的企业角色"
+      },
+      "tabs": {
+        "label": "成员管理视图",
+        "members": "成员",
+        "teams": "团队",
+        "invitations": "邀请"
+      },
       "memberLabel": "用户 #{{id}}",
       "membershipLabel": "成员关系 #{{id}}",
       "teamLabel": "团队 #{{id}}",
       "noTeam": "未分配团队",
-      "fields": { "member": "成员", "role": "角色", "status": "状态", "team": "主团队" },
+      "fields": {
+        "member": "成员",
+        "role": "角色",
+        "status": "状态",
+        "team": "主团队"
+      },
       "list": {
         "title": "成员目录",
         "subtitle": "稳定游标加载当前企业成员；Owner 只能通过所有权转移变更。",
@@ -4593,15 +4696,23 @@
     "teams": {
       "disabledByEntitlement": "当前商业授权未开启团队管理，现有团队只读保留。",
       "noDescription": "没有团队说明",
-      "actions": { "create": "新建团队", "disable": "停用团队" },
+      "actions": {
+        "create": "新建团队",
+        "disable": "停用团队"
+      },
       "list": {
         "title": "团队目录",
         "subtitle": "团队是企业内预算策略组，与平台计费分组严格隔离。",
         "emptyTitle": "还没有团队",
         "emptyBody": "授权允许时可创建团队并分配成员。"
       },
-      "fields": { "name": "团队名称", "description": "团队说明" },
-      "validation": { "name": "团队名称不能为空、不能有首尾空白，且不能超过 160 字节。" },
+      "fields": {
+        "name": "团队名称",
+        "description": "团队说明"
+      },
+      "validation": {
+        "name": "团队名称不能为空、不能有首尾空白，且不能超过 160 字节。"
+      },
       "editor": {
         "createTitle": "新建企业团队",
         "editTitle": "编辑企业团队",
@@ -4613,8 +4724,18 @@
       }
     },
     "invitations": {
-      "actions": { "invite": "发出邀请", "send": "发送邀请", "batch": "批量邀请", "resend": "重新发送", "revoke": "撤销邀请" },
-      "fields": { "email": "受邀邮箱", "expiresAt": "过期时间", "expiresHint": "留空使用服务端默认期限；填写时按浏览器本地时间提交。" },
+      "actions": {
+        "invite": "发出邀请",
+        "send": "发送邀请",
+        "batch": "批量邀请",
+        "resend": "重新发送",
+        "revoke": "撤销邀请"
+      },
+      "fields": {
+        "email": "受邀邮箱",
+        "expiresAt": "过期时间",
+        "expiresHint": "留空使用服务端默认期限；填写时按浏览器本地时间提交。"
+      },
       "validation": "请填写有效邮箱和未来的过期时间。",
       "list": {
         "title": "企业邀请",
@@ -4623,7 +4744,10 @@
         "emptyBody": "发出单个或批量邀请后，状态会显示在这里。",
         "expires": "{{time}} 过期"
       },
-      "editor": { "title": "邀请企业成员", "description": "为 {{organization}} 创建一次性邮箱邀请。" },
+      "editor": {
+        "title": "邀请企业成员",
+        "description": "为 {{organization}} 创建一次性邮箱邀请。"
+      },
       "issued": {
         "title": "邀请令牌已签发",
         "body": "这是加入 {{organization}} 的一次性明文令牌，关闭后无法再次读取。",
@@ -4653,12 +4777,18 @@
         "invalid_team": "团队不可用",
         "seat_unavailable": "可用席位不足"
       },
-      "revoke": { "title": "撤销企业邀请", "body": "确定撤销 {{organization}} 的这条待接受邀请吗？" }
+      "revoke": {
+        "title": "撤销企业邀请",
+        "body": "确定撤销 {{organization}} 的这条待接受邀请吗？"
+      }
     },
     "wallet": {
       "title": "企业钱包与账本",
       "subtitle": "核对企业可用余额、在途冻结、累计使用和只追加资金事实。企业消费不会回退个人钱包。",
-      "restricted": { "title": "没有钱包读取权限", "body": "当前企业角色不能读取余额或账本。资金约束仍由服务端执行。" },
+      "restricted": {
+        "title": "没有钱包读取权限",
+        "body": "当前企业角色不能读取余额或账本。资金约束仍由服务端执行。"
+      },
       "summary": {
         "label": "企业钱包状态",
         "balance": "可用余额",
@@ -4668,7 +4798,10 @@
         "frozen": "在途冻结",
         "frozenHint": "等待最终结算的预扣额度"
       },
-      "topup": { "title": "企业在线充值", "description": "为 {{organization}} 创建独立企业充值订单，不会进入个人钱包。" },
+      "topup": {
+        "title": "企业在线充值",
+        "description": "为 {{organization}} 创建独立企业充值订单，不会进入个人钱包。"
+      },
       "adjustment": {
         "title": "企业钱包调账",
         "subtitle": "使用只追加事件对企业余额做受审计增量调整。",
@@ -4681,8 +4814,16 @@
         "submit": "提交调账",
         "applied": "调账已写入企业钱包和只追加账本。",
         "replayed": "相同事件已存在，本次返回既有调账结果。",
-        "validation": { "amount": "请输入大于零的安全整数。", "reason": "原因不能为空、不能有首尾空白或控制字符，最多 500 字节。" },
-        "previewState": { "empty": "等待输入", "insufficient": "余额不足", "overflow": "将超过上限", "ready": "可提交" }
+        "validation": {
+          "amount": "请输入大于零的安全整数。",
+          "reason": "原因不能为空、不能有首尾空白或控制字符，最多 500 字节。"
+        },
+        "previewState": {
+          "empty": "等待输入",
+          "insufficient": "余额不足",
+          "overflow": "将超过上限",
+          "ready": "可提交"
+        }
       },
       "ledger": {
         "title": "企业资金账本",
@@ -4693,8 +4834,18 @@
         "systemActor": "系统",
         "actor": "操作者 #{{id}}"
       },
-      "entryType": { "opening_balance": "期初余额", "admin_adjustment": "人工调账", "topup": "充值到账", "usage_settlement": "用量结算" },
-      "entryReason": { "opening_balance": "企业期初余额", "admin_adjustment": "企业钱包调账", "topup": "企业充值到账", "usage_settlement": "企业用量结算" },
+      "entryType": {
+        "opening_balance": "期初余额",
+        "admin_adjustment": "人工调账",
+        "topup": "充值到账",
+        "usage_settlement": "用量结算"
+      },
+      "entryReason": {
+        "opening_balance": "企业期初余额",
+        "admin_adjustment": "企业钱包调账",
+        "topup": "企业充值到账",
+        "usage_settlement": "企业用量结算"
+      },
       "errors": {
         "summaryTitle": "无法读取企业钱包",
         "summaryBody": "服务没有返回可靠余额状态，请稍后重试。",
@@ -4711,9 +4862,27 @@
     "settings": {
       "title": "企业设置",
       "subtitle": "查看企业资料、商业授权和固定角色权限，并在服务端支持的范围内转移所有权。",
-      "identity": { "title": "企业资料", "subtitle": "当前接口只提供只读资料投影。", "name": "企业名称", "slug": "企业标识", "organizationId": "企业 ID", "role": "我的角色" },
-      "entitlement": { "title": "商业授权", "subtitle": "授权状态与容量由服务端强制执行。", "seats": "席位", "teams": "团队", "keys": "企业 Key 上限", "audit": "审计保留", "days": "{{count}} 天" },
-      "permissions": { "title": "当前角色权限", "subtitle": "固定角色只映射稳定权限码，不能授予平台权限。" },
+      "identity": {
+        "title": "企业资料",
+        "subtitle": "当前接口只提供只读资料投影。",
+        "name": "企业名称",
+        "slug": "企业标识",
+        "organizationId": "企业 ID",
+        "role": "我的角色"
+      },
+      "entitlement": {
+        "title": "商业授权",
+        "subtitle": "授权状态与容量由服务端强制执行。",
+        "seats": "席位",
+        "teams": "团队",
+        "keys": "企业 Key 上限",
+        "audit": "审计保留",
+        "days": "{{count}} 天"
+      },
+      "permissions": {
+        "title": "当前角色权限",
+        "subtitle": "固定角色只映射稳定权限码，不能授予平台权限。"
+      },
       "ownership": {
         "title": "转移所有权",
         "subtitle": "先提升新的 Owner，再在同一事务中降级当前 Owner。",
@@ -4725,7 +4894,10 @@
         "confirmBody": "确定将 {{organization}} 的所有权转移给用户 #{{userId}} 吗？完成后你的角色将被降级。",
         "confirm": "确认转移"
       },
-      "unavailable": { "title": "资料修改与关闭尚未开放", "body": "后端当前没有企业改名或关闭接口，因此本页不渲染必然失败的提交表单。" }
+      "unavailable": {
+        "title": "资料修改与关闭尚未开放",
+        "body": "后端当前没有企业改名或关闭接口，因此本页不渲染必然失败的提交表单。"
+      }
     }
   },
   "wallet": {
@@ -5088,12 +5260,30 @@
       "eyebrow": "核心能力",
       "heading": "把复杂度留在网关内部",
       "subheading": "上游渠道的差异、故障与计价规则由 AnyFlows 吸收，你的应用只面对一个稳定接口。",
-      "routing": { "title": "智能路由", "body": "按权重、优先级与实时健康度选路，故障渠道自动降级并重试。" },
-      "billing": { "title": "精确计费", "body": "分组倍率、阶梯定价与表达式引擎，计价明细可逐条回溯。" },
-      "health": { "title": "渠道健康", "body": "持续测活与余额探测，异常渠道按规则自动禁用。" },
-      "streaming": { "title": "流式转发", "body": "SSE 全链路透传，首字延迟与吞吐逐请求可观测。" },
-      "pool": { "title": "账号池", "body": "凭据类型化管理，一号一代理绑定，支持影子账号灰度。" },
-      "observability": { "title": "可观测性", "body": "请求级候选尝试回放，完整记录降级原因与响应详情。" }
+      "routing": {
+        "title": "智能路由",
+        "body": "按权重、优先级与实时健康度选路，故障渠道自动降级并重试。"
+      },
+      "billing": {
+        "title": "精确计费",
+        "body": "分组倍率、阶梯定价与表达式引擎，计价明细可逐条回溯。"
+      },
+      "health": {
+        "title": "渠道健康",
+        "body": "持续测活与余额探测，异常渠道按规则自动禁用。"
+      },
+      "streaming": {
+        "title": "流式转发",
+        "body": "SSE 全链路透传，首字延迟与吞吐逐请求可观测。"
+      },
+      "pool": {
+        "title": "账号池",
+        "body": "凭据类型化管理，一号一代理绑定，支持影子账号灰度。"
+      },
+      "observability": {
+        "title": "可观测性",
+        "body": "请求级候选尝试回放，完整记录降级原因与响应详情。"
+      }
     },
     "modes": {
       "eyebrow": "三种形态",
@@ -5172,9 +5362,18 @@
         }
       }
     },
-    "footer": { "copyright": "AnyFlows · 开源大模型聚合网关" }
+    "footer": {
+      "copyright": "AnyFlows · 开源大模型聚合网关"
+    }
   },
-  "theme": { "toggle": "切换主题" },
-  "motion": { "enable": "开启动效", "disable": "关闭动效" },
-  "language": { "toggle": "切换语言" }
+  "theme": {
+    "toggle": "切换主题"
+  },
+  "motion": {
+    "enable": "开启动效",
+    "disable": "关闭动效"
+  },
+  "language": {
+    "toggle": "切换语言"
+  }
 }

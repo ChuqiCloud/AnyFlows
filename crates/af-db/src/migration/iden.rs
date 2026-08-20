@@ -220,6 +220,7 @@ pub(in crate::migration) mod oauth_login_providers {
         Provider,
         Enabled,
         ClientId,
+        IssuerUrl,
         ClientSecret,
         Version,
         CreatedAt,

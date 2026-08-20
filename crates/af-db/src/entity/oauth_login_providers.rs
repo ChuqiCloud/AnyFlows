@@ -16,6 +16,8 @@ pub struct Model {
     pub enabled: bool,
     #[sea_orm(column_type = "String(StringLen::N(255))", nullable)]
     pub client_id: Option<String>,
+    #[sea_orm(column_type = "String(StringLen::N(2048))", nullable)]
+    pub issuer_url: Option<String>,
     #[sea_orm(column_type = "JsonBinary", nullable)]
     pub client_secret: Option<EncryptedJson>,
     pub version: i64,

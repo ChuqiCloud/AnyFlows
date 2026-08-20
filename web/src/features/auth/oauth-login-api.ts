@@ -6,23 +6,52 @@ import {
   exchangeOAuthLoginTicket,
   getAdminDiscordOAuthLoginSettings,
   getAdminGitHubOAuthLoginSettings,
+  getAdminLinuxDoLoginSettings,
+  getAdminOidcLoginSettings,
   startDiscordOAuthLogin,
   startGitHubOAuthLogin,
+  startLinuxDoLogin,
+  startOidcLogin,
   updateAdminDiscordOAuthLoginSettings,
   updateAdminGitHubOAuthLoginSettings,
+  updateAdminLinuxDoLoginSettings,
+  updateAdminOidcLoginSettings,
 } from '@/lib/api/generated/sdk.gen'
 import type { AdminOAuthLoginProviderSettingsRequest } from '@/lib/api/generated/types.gen'
 
-export type OAuthLoginProvider = 'github' | 'discord'
+export type OAuthLoginProvider = 'github' | 'discord' | 'oidc' | 'linuxdo'
+
+const startOAuthLogin = {
+  github: () => startGitHubOAuthLogin({ client: apiClient }),
+  discord: () => startDiscordOAuthLogin({ client: apiClient }),
+  oidc: () => startOidcLogin({ client: apiClient }),
+  linuxdo: () => startLinuxDoLogin({ client: apiClient }),
+}
+
+const getAdminOAuthLoginSettings = {
+  github: (signal: AbortSignal) => getAdminGitHubOAuthLoginSettings({ client: apiClient, signal }),
+  discord: (signal: AbortSignal) => getAdminDiscordOAuthLoginSettings({ client: apiClient, signal }),
+  oidc: (signal: AbortSignal) => getAdminOidcLoginSettings({ client: apiClient, signal }),
+  linuxdo: (signal: AbortSignal) => getAdminLinuxDoLoginSettings({ client: apiClient, signal }),
+}
+
+const updateAdminOAuthLoginSettings = {
+  github: (body: AdminOAuthLoginProviderSettingsRequest) =>
+    updateAdminGitHubOAuthLoginSettings({ body, client: apiClient }),
+  discord: (body: AdminOAuthLoginProviderSettingsRequest) =>
+    updateAdminDiscordOAuthLoginSettings({ body, client: apiClient }),
+  oidc: (body: AdminOAuthLoginProviderSettingsRequest) =>
+    updateAdminOidcLoginSettings({ body, client: apiClient }),
+  linuxdo: (body: AdminOAuthLoginProviderSettingsRequest) =>
+    updateAdminLinuxDoLoginSettings({ body, client: apiClient }),
+}
 
 export const adminOAuthLoginSettingsQueryKey = (provider: OAuthLoginProvider) =>
   ['admin-oauth-login-settings', provider] as const
 
 /** 请求服务端生成的固定内置 Provider 授权地址，前端不拼接 OAuth 参数。 */
 export async function beginOAuthLogin(provider: OAuthLoginProvider) {
-  const { data } = provider === 'github'
-    ? await startGitHubOAuthLogin({ client: apiClient })
-    : await startDiscordOAuthLogin({ client: apiClient })
+  const { data } = await startOAuthLogin[provider]()
   return data
 }
 
@@ -40,9 +69,7 @@ export function useAdminOAuthLoginSettings(provider: OAuthLoginProvider) {
   return useQuery({
     queryKey: adminOAuthLoginSettingsQueryKey(provider),
     queryFn: async ({ signal }) => {
-      const { data } = provider === 'github'
-        ? await getAdminGitHubOAuthLoginSettings({ client: apiClient, signal })
-        : await getAdminDiscordOAuthLoginSettings({ client: apiClient, signal })
+      const { data } = await getAdminOAuthLoginSettings[provider](signal)
       return data
     },
   })
@@ -54,9 +81,7 @@ export function useUpdateAdminOAuthLoginSettings(provider: OAuthLoginProvider) {
 
   return useMutation({
     mutationFn: async (body: AdminOAuthLoginProviderSettingsRequest) => {
-      const { data } = provider === 'github'
-        ? await updateAdminGitHubOAuthLoginSettings({ body, client: apiClient })
-        : await updateAdminDiscordOAuthLoginSettings({ body, client: apiClient })
+      const { data } = await updateAdminOAuthLoginSettings[provider](body)
       return data
     },
     onSuccess: (settings) => {

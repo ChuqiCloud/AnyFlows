@@ -51,6 +51,7 @@ impl PublicOAuthLoginProvider {
 pub struct AdminOAuthLoginProviderSettings {
     enabled: bool,
     client_id: Option<String>,
+    issuer_url: Option<String>,
     client_secret_configured: bool,
     callback_url: Option<String>,
     version: i64,
@@ -61,6 +62,7 @@ impl AdminOAuthLoginProviderSettings {
         Self {
             enabled: record.enabled(),
             client_id: record.client_id().map(str::to_owned),
+            issuer_url: record.issuer_url().map(str::to_owned),
             client_secret_configured: record.client_secret_configured(),
             callback_url,
             version: record.version(),
@@ -75,6 +77,11 @@ impl AdminOAuthLoginProviderSettings {
     #[must_use]
     pub fn client_id(&self) -> Option<&str> {
         self.client_id.as_deref()
+    }
+
+    #[must_use]
+    pub fn issuer_url(&self) -> Option<&str> {
+        self.issuer_url.as_deref()
     }
 
     #[must_use]
@@ -98,6 +105,7 @@ pub struct AdminOAuthLoginProviderSettingsCommand {
     expected_version: i64,
     enabled: bool,
     client_id: Option<String>,
+    issuer_url: Option<String>,
     client_secret: Option<PlainSystemSecret>,
     clear_client_secret: bool,
 }
@@ -107,10 +115,12 @@ impl AdminOAuthLoginProviderSettingsCommand {
         expected_version: i64,
         enabled: bool,
         client_id: Option<String>,
+        issuer_url: Option<String>,
         client_secret: Option<String>,
         clear_client_secret: bool,
     ) -> Result<Self, OAuthLoginError> {
         let client_id = normalize_client_id(client_id)?;
+        let issuer_url = normalize_issuer_url(issuer_url)?;
         let client_secret = client_secret
             .and_then(|value| (!value.is_empty()).then_some(value))
             .map(PlainSystemSecret::new)
@@ -126,6 +136,7 @@ impl AdminOAuthLoginProviderSettingsCommand {
             expected_version,
             enabled,
             client_id,
+            issuer_url,
             client_secret,
             clear_client_secret,
         })
@@ -136,6 +147,7 @@ impl AdminOAuthLoginProviderSettingsCommand {
         cipher: &SystemSecretCipher,
         provider: LoginOAuthProvider,
     ) -> Result<OAuthLoginProviderWriteRecord, OAuthLoginError> {
+        validate_command_issuer(provider, self.issuer_url.as_deref(), self.enabled)?;
         let secret = if self.clear_client_secret {
             OAuthLoginSecretUpdate::Clear
         } else if let Some(secret) = self.client_secret.as_ref() {
@@ -151,6 +163,11 @@ impl AdminOAuthLoginProviderSettingsCommand {
             self.expected_version,
             self.enabled,
             self.client_id,
+            match provider {
+                LoginOAuthProvider::Oidc => self.issuer_url,
+                LoginOAuthProvider::LinuxDo => Some("https://connect.linux.do".to_owned()),
+                LoginOAuthProvider::GitHub | LoginOAuthProvider::Discord => None,
+            },
             secret,
         ))
     }
@@ -346,6 +363,22 @@ impl DatabaseOAuthLoginService {
             .await
             .map_err(map_repository_error)?;
 
+        if profile.is_oidc() {
+            let issuer = settings.issuer_url().ok_or(OAuthLoginError::Unavailable)?;
+            let authorization_url = self
+                .oauth_client
+                .oidc_authorization_url(
+                    profile,
+                    issuer,
+                    client_id,
+                    &redirect_uri,
+                    &state,
+                    &challenge,
+                )
+                .await
+                .map_err(map_oauth_client_error)?;
+            return Ok(OAuthLoginStart { authorization_url });
+        }
         let mut url =
             Url::parse(profile.authorization_url()).map_err(|_| OAuthLoginError::Internal)?;
         url.query_pairs_mut()
@@ -393,18 +426,33 @@ impl DatabaseOAuthLoginService {
         let client_id = settings.client_id().ok_or(OAuthLoginError::Unavailable)?;
         let client_secret = self.decrypt_client_secret(profile, &settings)?;
         let redirect_uri = self.redirect_uri(profile).await?;
-        let identity = self
-            .oauth_client
-            .exchange_identity(
-                profile,
-                client_id,
-                &client_secret,
-                code.as_str(),
-                profile.uses_pkce().then_some(verifier.expose_secret()),
-                &redirect_uri,
-            )
-            .await
-            .map_err(map_oauth_client_error)?;
+        let identity = if profile.is_oidc() {
+            let issuer = settings.issuer_url().ok_or(OAuthLoginError::Unavailable)?;
+            self.oauth_client
+                .exchange_oidc_identity(
+                    profile,
+                    issuer,
+                    client_id,
+                    &client_secret,
+                    code.as_str(),
+                    verifier.expose_secret(),
+                    &redirect_uri,
+                )
+                .await
+                .map_err(map_oauth_client_error)?
+        } else {
+            self.oauth_client
+                .exchange_identity(
+                    profile,
+                    client_id,
+                    &client_secret,
+                    code.as_str(),
+                    profile.uses_pkce().then_some(verifier.expose_secret()),
+                    &redirect_uri,
+                )
+                .await
+                .map_err(map_oauth_client_error)?
+        };
         drop(client_secret);
         drop(verifier);
         let ticket = random_token()?;
@@ -791,7 +839,61 @@ fn client_secret_kind(provider: LoginOAuthProvider) -> SystemSecretKind {
     match provider {
         LoginOAuthProvider::GitHub => SystemSecretKind::OAuthLoginGithubClientSecret,
         LoginOAuthProvider::Discord => SystemSecretKind::OAuthLoginDiscordClientSecret,
+        LoginOAuthProvider::Oidc => SystemSecretKind::OAuthLoginOidcClientSecret,
+        LoginOAuthProvider::LinuxDo => SystemSecretKind::OAuthLoginLinuxDoClientSecret,
     }
+}
+
+fn normalize_issuer_url(value: Option<String>) -> Result<Option<String>, OAuthLoginError> {
+    let value = value.and_then(|value| {
+        let value = value.trim().trim_end_matches('/').to_owned();
+        (!value.is_empty()).then_some(value)
+    });
+    if value.as_deref().is_some_and(|value| {
+        let Ok(url) = Url::parse(value) else {
+            return true;
+        };
+        value.len() > 2048
+            || url.scheme() != "https"
+            || url.host_str().is_none()
+            || url.username() != ""
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+            || url.port().is_some()
+            || value.chars().any(char::is_control)
+            || is_blocked_issuer_host(url.host_str().unwrap_or_default())
+    }) {
+        return Err(OAuthLoginError::InvalidInput);
+    }
+    Ok(value)
+}
+
+fn validate_command_issuer(
+    provider: LoginOAuthProvider,
+    issuer: Option<&str>,
+    enabled: bool,
+) -> Result<(), OAuthLoginError> {
+    let valid = match provider {
+        LoginOAuthProvider::Oidc => !enabled || issuer.is_some(),
+        LoginOAuthProvider::LinuxDo => {
+            issuer.is_none() || issuer == Some("https://connect.linux.do")
+        }
+        LoginOAuthProvider::GitHub | LoginOAuthProvider::Discord => issuer.is_none(),
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(OAuthLoginError::InvalidInput)
+    }
+}
+
+fn is_blocked_issuer_host(host: &str) -> bool {
+    let normalized = host.trim_end_matches('.').to_ascii_lowercase();
+    normalized == "localhost"
+        || normalized.ends_with(".localhost")
+        || normalized == "localhost.localdomain"
+        || normalized.parse::<std::net::IpAddr>().is_ok()
 }
 
 fn require_admin(principal: SessionPrincipal) -> Result<(), OAuthLoginError> {
@@ -840,6 +942,7 @@ mod tests {
                 1,
                 true,
                 Some("client-id".to_owned()),
+                None,
                 Some("secret-value".to_owned()),
                 true,
             )
@@ -847,13 +950,15 @@ mod tests {
             OAuthLoginError::InvalidInput
         );
         assert_eq!(
-            AdminOAuthLoginProviderSettingsCommand::new(1, true, None, None, false).unwrap_err(),
+            AdminOAuthLoginProviderSettingsCommand::new(1, true, None, None, None, false)
+                .unwrap_err(),
             OAuthLoginError::InvalidInput
         );
         let command = AdminOAuthLoginProviderSettingsCommand::new(
             1,
             false,
             Some("client-id".to_owned()),
+            None,
             Some("secret-value".to_owned()),
             false,
         )
@@ -861,6 +966,19 @@ mod tests {
         let debug = format!("{command:?}");
         assert!(!debug.contains("client-id"));
         assert!(!debug.contains("secret-value"));
+
+        assert_eq!(
+            validate_command_issuer(
+                LoginOAuthProvider::LinuxDo,
+                Some("https://attacker.example.com"),
+                false,
+            ),
+            Err(OAuthLoginError::InvalidInput)
+        );
+        assert_eq!(
+            validate_command_issuer(LoginOAuthProvider::Oidc, None, true),
+            Err(OAuthLoginError::InvalidInput)
+        );
     }
 
     #[test]
@@ -900,6 +1018,7 @@ mod tests {
         let settings = AdminOAuthLoginProviderSettings {
             enabled: true,
             client_id: Some("client-id".to_owned()),
+            issuer_url: None,
             client_secret_configured: true,
             callback_url: Some("https://example.com/api/auth/oauth/github/callback".to_owned()),
             version: 2,

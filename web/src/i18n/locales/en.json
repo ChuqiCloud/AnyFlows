@@ -93,9 +93,18 @@
     },
     "summary": {
       "label": "Summary metrics",
-      "requests": { "label": "Requests", "hint": "Confirmed in the last 24 hours" },
-      "quota": { "label": "Quota consumed", "hint": "Final persisted quota units" },
-      "channels": { "label": "Enabled channels", "hint": "{{total}} non-deleted channels total" },
+      "requests": {
+        "label": "Requests",
+        "hint": "Confirmed in the last 24 hours"
+      },
+      "quota": {
+        "label": "Quota consumed",
+        "hint": "Final persisted quota units"
+      },
+      "channels": {
+        "label": "Enabled channels",
+        "hint": "{{total}} non-deleted channels total"
+      },
       "confirmed": {
         "label": "Upstream confirmation",
         "hint": "{{count}} requests reported by upstreams",
@@ -584,7 +593,10 @@
       "health": "Runtime",
       "actions": "Actions"
     },
-    "status": { "enabled": "Enabled", "disabled": "Disabled" },
+    "status": {
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
     "mode": {
       "pattern": "Model pattern",
       "explicit_group": "Explicit group",
@@ -746,7 +758,9 @@
       "disabled": "Disabled",
       "autoDisabled": "Auto-disabled"
     },
-    "values": { "unlimited": "Unlimited" },
+    "values": {
+      "unlimited": "Unlimited"
+    },
     "item": {
       "priorityWeight": "Priority {{priority}}, weight {{weight}}",
       "concurrency": "Concurrency {{value}}",
@@ -917,7 +931,10 @@
       "proxyLoadFailed": "The dedicated proxy catalog could not be loaded.",
       "optional": "Leave empty for unlimited"
     },
-    "state": { "unsaved": "Unsaved changes", "synced": "Synced with server" },
+    "state": {
+      "unsaved": "Unsaved changes",
+      "synced": "Synced with server"
+    },
     "actions": {
       "refresh": "Refresh",
       "retry": "Try again",
@@ -2042,15 +2059,93 @@
       "billing": "Billing result"
     },
     "listLabel": "Settled request list",
-    "status": { "settled": "Settled", "settledOnly": "Settled only" },
-    "summary": { "label": "Current filtered results", "requests": "Settled requests", "tokens": "Total tokens", "averageFirstToken": "Average first token", "quota": "Total quota" },
-    "filters": { "label": "Filter this page", "model": "Model", "modelPlaceholder": "Search models on this page", "protocol": "Protocol", "allProtocols": "All protocols", "mode": "Response mode", "allModes": "All modes" },
-    "protocol": { "open_ai_chat": "Chat", "open_ai_responses": "Responses", "open_ai_embeddings": "Embeddings", "open_ai_images": "Images", "open_ai_audio": "Audio", "open_ai_speech": "Speech", "jina_rerank": "Jina Rerank", "cohere_rerank": "Cohere Rerank", "xai_video": "xAI Video", "anthropic": "Anthropic", "gemini": "Gemini" },
-    "operation": { "chat": "Chat", "responses": "Responses", "responses_compact": "Context compaction", "embedding": "Embedding", "image": "Image", "audio": "Audio", "rerank": "Rerank", "video": "Video", "count_tokens": "Token count" },
-    "reasoning": { "none": "Off", "minimal": "Minimal", "low": "Low", "medium": "Medium", "high": "High", "extra_high": "Extra high", "max": "Max" },
-    "details": { "request": "Request ID", "tokens": "Cache and reasoning tokens", "reasoning": "Reasoning effort / budget", "mode": "Billing / response mode", "principal": "Billing principal" },
-    "detailSections": { "request": "Request", "performance": "Performance", "tokens": "Token details", "billing": "Billing facts", "reasoning": "Reasoning", "principal": "Billing principal" },
-    "detailFields": { "responseMode": "Response mode", "protocol": "Inbound protocol", "operation": "Operation", "totalTokens": "Total tokens", "cacheRead": "Cache read", "cacheCreate5m": "Cache create 5m", "cacheCreate1h": "Cache create 1h", "cacheTotal": "Total cache", "reasoningTokens": "Reasoning tokens", "billingMode": "Billing mode", "usageSource": "Usage source", "usageSemantics": "Cache semantics", "reasoningEffort": "Reasoning effort", "reasoningBudget": "Reasoning budget", "user": "User", "token": "API key", "group": "Group" },
+    "status": {
+      "settled": "Settled",
+      "settledOnly": "Settled only"
+    },
+    "summary": {
+      "label": "Current filtered results",
+      "requests": "Settled requests",
+      "tokens": "Total tokens",
+      "averageFirstToken": "Average first token",
+      "quota": "Total quota"
+    },
+    "filters": {
+      "label": "Filter this page",
+      "model": "Model",
+      "modelPlaceholder": "Search models on this page",
+      "protocol": "Protocol",
+      "allProtocols": "All protocols",
+      "mode": "Response mode",
+      "allModes": "All modes"
+    },
+    "protocol": {
+      "open_ai_chat": "Chat",
+      "open_ai_responses": "Responses",
+      "open_ai_embeddings": "Embeddings",
+      "open_ai_images": "Images",
+      "open_ai_audio": "Audio",
+      "open_ai_speech": "Speech",
+      "jina_rerank": "Jina Rerank",
+      "cohere_rerank": "Cohere Rerank",
+      "xai_video": "xAI Video",
+      "anthropic": "Anthropic",
+      "gemini": "Gemini"
+    },
+    "operation": {
+      "chat": "Chat",
+      "responses": "Responses",
+      "responses_compact": "Context compaction",
+      "embedding": "Embedding",
+      "image": "Image",
+      "audio": "Audio",
+      "rerank": "Rerank",
+      "video": "Video",
+      "count_tokens": "Token count"
+    },
+    "reasoning": {
+      "none": "Off",
+      "minimal": "Minimal",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "extra_high": "Extra high",
+      "max": "Max"
+    },
+    "details": {
+      "request": "Request ID",
+      "tokens": "Cache and reasoning tokens",
+      "reasoning": "Reasoning effort / budget",
+      "mode": "Billing / response mode",
+      "principal": "Billing principal"
+    },
+    "detailSections": {
+      "request": "Request",
+      "performance": "Performance",
+      "tokens": "Token details",
+      "billing": "Billing facts",
+      "reasoning": "Reasoning",
+      "principal": "Billing principal"
+    },
+    "detailFields": {
+      "responseMode": "Response mode",
+      "protocol": "Inbound protocol",
+      "operation": "Operation",
+      "totalTokens": "Total tokens",
+      "cacheRead": "Cache read",
+      "cacheCreate5m": "Cache create 5m",
+      "cacheCreate1h": "Cache create 1h",
+      "cacheTotal": "Total cache",
+      "reasoningTokens": "Reasoning tokens",
+      "billingMode": "Billing mode",
+      "usageSource": "Usage source",
+      "usageSemantics": "Cache semantics",
+      "reasoningEffort": "Reasoning effort",
+      "reasoningBudget": "Reasoning budget",
+      "user": "User",
+      "token": "API key",
+      "group": "Group"
+    },
     "values": {
       "userTokenGroup": "User #{{user}} / API key #{{token}} / Group #{{group}}",
       "userTokenGroupCompact": "User #{{user}} · Key #{{token}} · Group #{{group}}",
@@ -2830,11 +2925,15 @@
       "retry": "Check again",
       "oauth": {
         "github": "Continue with GitHub",
-        "discord": "Continue with Discord"
+        "discord": "Continue with Discord",
+        "oidc": "Continue with enterprise OIDC",
+        "linuxdo": "Continue with LinuxDO"
       },
       "oauthStarting": {
         "github": "Opening GitHub",
-        "discord": "Opening Discord"
+        "discord": "Opening Discord",
+        "oidc": "Opening enterprise OIDC",
+        "linuxdo": "Opening LinuxDO"
       },
       "orPassword": "or use a password",
       "orAccount": "or use account sign-in",
@@ -2845,15 +2944,15 @@
       "title": "Completing sign-in",
       "exchanging": "Securely exchanging the one-time login ticket.",
       "succeeded": "Sign-in is complete. Opening the console.",
-      "cancelled": "You cancelled GitHub authorization. Return to try again.",
+      "cancelled": "You cancelled authorization. Return to try again.",
       "failed": "This authorization could not be completed. Start a new sign-in.",
       "wait": "Keep this page open",
       "retry": "Return to sign in"
     },
     "errors": {
-                   "invalidCredentials": "The username or password is incorrect.",
-                   "twoFactorRequired": "This account uses two-factor authentication. Enter a code to continue.",
-                   "twoFactorInvalid": "The authenticator or backup code is incorrect. Try again.",
+      "invalidCredentials": "The username or password is incorrect.",
+      "twoFactorRequired": "This account uses two-factor authentication. Enter a code to continue.",
+      "twoFactorInvalid": "The authenticator or backup code is incorrect. Try again.",
       "adminRequired": "This account does not have administrator access.",
       "sessionExpired": "Your session has expired. Sign in again.",
       "setupComplete": "Setup is complete. Sign in with an administrator account.",
@@ -3005,8 +3104,8 @@
       "description": "A keyed client IP fingerprint enforces a cross-instance fixed window without storing raw IP addresses."
     },
     "oauth": {
-      "title": "GitHub OAuth sign-in",
-      "enabled": "Enable GitHub sign-in",
+      "title": "OAuth sign-in",
+      "enabled": "Enable this OAuth sign-in",
       "callback": "Authorization callback URL",
       "callbackMissing": "Configure the public base URL in site settings first",
       "callbackHint": "Enter this exact value as the Authorization callback URL in the GitHub OAuth App.",
@@ -3050,6 +3149,34 @@
           "save": "Discord OAuth settings could not be saved. Refresh and review the version.",
           "publicBaseUrl": "Save a public base URL before enabling Discord sign-in so a stable callback URL can be generated.",
           "incomplete": "Discord sign-in requires a callback URL, Client ID, and configured Client Secret."
+        }
+      },
+      "issuer": "Issuer URL",
+      "issuerHint": "Only HTTPS issuers without credentials or query parameters are accepted. The server re-validates discovery metadata.",
+      "oidc": {
+        "title": "Enterprise OIDC sign-in",
+        "enabled": "Enable enterprise OIDC sign-in",
+        "callbackHint": "Register this URL in the enterprise identity platform's OIDC callback allowlist.",
+        "issuerHint": "The issuer must be a publicly reachable HTTPS URL. Discovery, token, and JWKS endpoints are validated server-side.",
+        "version": "Enterprise OIDC configuration version {{version}}",
+        "errors": {
+          "load": "Enterprise OIDC sign-in settings could not be loaded",
+          "save": "Enterprise OIDC settings could not be saved. Refresh and review the version.",
+          "publicBaseUrl": "Save a public base URL before enabling enterprise OIDC sign-in.",
+          "incomplete": "Enterprise OIDC sign-in requires a callback URL, issuer, Client ID, and configured Client Secret."
+        }
+      },
+      "linuxdo": {
+        "title": "LinuxDO sign-in",
+        "enabled": "Enable LinuxDO sign-in",
+        "callbackHint": "Register this URL in the LinuxDO application's callback allowlist.",
+        "issuerHint": "LinuxDO uses the official server-fixed issuer and cannot be customized.",
+        "version": "LinuxDO configuration version {{version}}",
+        "errors": {
+          "load": "LinuxDO sign-in settings could not be loaded",
+          "save": "LinuxDO settings could not be saved. Refresh and review the version.",
+          "publicBaseUrl": "Save a public base URL before enabling LinuxDO sign-in.",
+          "incomplete": "LinuxDO sign-in requires a callback URL, Client ID, and configured Client Secret."
         }
       }
     },
@@ -3283,8 +3410,15 @@
       "security": "Security",
       "actions": "Actions"
     },
-    "status": { "enabled": "Enabled", "disabled": "Disabled" },
-    "security": { "auth": "Authenticated", "noAuth": "No auth", "proxyDns": "Proxy DNS" },
+    "status": {
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
+    "security": {
+      "auth": "Authenticated",
+      "noAuth": "No auth",
+      "proxyDns": "Proxy DNS"
+    },
     "fields": {
       "name": "Proxy name",
       "scheme": "Protocol",
@@ -3308,8 +3442,14 @@
       "authDescription": "Leave username and password empty for an unauthenticated proxy.",
       "authKeepHint": "An empty password preserves the encrypted value. Clearing the username removes authentication."
     },
-    "empty": { "title": "No dedicated proxies", "body": "Add a proxy to make it selectable from the credential editor." },
-    "delete": { "title": "Delete dedicated proxy", "description": "Delete “{{name}}”? The server refuses while credentials still reference it." },
+    "empty": {
+      "title": "No dedicated proxies",
+      "body": "Add a proxy to make it selectable from the credential editor."
+    },
+    "delete": {
+      "title": "Delete dedicated proxy",
+      "description": "Delete “{{name}}”? The server refuses while credentials still reference it."
+    },
     "actions": {
       "refresh": "Refresh",
       "retry": "Try again",
@@ -3916,7 +4056,10 @@
     "title": "Payment settings",
     "subtitle": "Configure Stripe and Epay collection methods, wallet credit conversion, and fixed callback endpoints.",
     "loading": "Loading payment settings",
-    "stripe": { "title": "Stripe", "description": "Accept card payments with Payment Element and confirm credit through signed webhooks." },
+    "stripe": {
+      "title": "Stripe",
+      "description": "Accept card payments with Payment Element and confirm credit through signed webhooks."
+    },
     "epay": {
       "title": "Epay",
       "description": "Connect an Epay-compatible gateway and enable Alipay or WeChat Pay independently.",
@@ -3924,21 +4067,77 @@
       "publicBaseUrlHint": "Webhook and return URLs require a stable externally accessible address, not the current local preview URL."
     },
     "fields": {
-      "stripeEnabled": "Enable Stripe", "stripePublishableKey": "Publishable Key", "stripeSecretKey": "Secret Key", "stripeWebhookSecret": "Webhook Secret", "stripeTolerance": "Signature tolerance",
-      "epayEnabled": "Enable Epay", "epayGatewayUrl": "Gateway URL", "epayMerchantId": "Merchant PID", "epayMerchantKey": "Merchant PKey", "epayQuotaPerCny": "Quota per CNY", "alipay": "Alipay", "wxpay": "WeChat Pay"
+      "stripeEnabled": "Enable Stripe",
+      "stripePublishableKey": "Publishable Key",
+      "stripeSecretKey": "Secret Key",
+      "stripeWebhookSecret": "Webhook Secret",
+      "stripeTolerance": "Signature tolerance",
+      "epayEnabled": "Enable Epay",
+      "epayGatewayUrl": "Gateway URL",
+      "epayMerchantId": "Merchant PID",
+      "epayMerchantKey": "Merchant PKey",
+      "epayQuotaPerCny": "Quota per CNY",
+      "alipay": "Alipay",
+      "wxpay": "WeChat Pay"
     },
-    "status": { "enabled": "Enabled", "disabled": "Disabled" },
-    "secrets": { "configured": "Configured", "missing": "Not configured", "replacePlaceholder": "Enter a value to replace the stored secret", "createPlaceholder": "Enter a new secret", "clear": "Clear the stored secret when saving", "neverShown": "The plaintext is never shown again after saving." },
-    "callbacks": { "title": "Callback URLs", "description": "URLs are derived from the site public base URL, read-only, and excluded from the payment settings request.", "missingPublicBaseUrl": "Set the site public base URL to reveal the production callback URLs to enter in payment providers.", "stripe": "Stripe webhook", "epay": "Epay notification", "return": "Synchronous return" },
-    "security": { "title": "Secret handling", "description": "Read requests expose configured state only. Blank means keep; an explicit clear selection removes a stored secret." },
+    "status": {
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
+    "secrets": {
+      "configured": "Configured",
+      "missing": "Not configured",
+      "replacePlaceholder": "Enter a value to replace the stored secret",
+      "createPlaceholder": "Enter a new secret",
+      "clear": "Clear the stored secret when saving",
+      "neverShown": "The plaintext is never shown again after saving."
+    },
+    "callbacks": {
+      "title": "Callback URLs",
+      "description": "URLs are derived from the site public base URL, read-only, and excluded from the payment settings request.",
+      "missingPublicBaseUrl": "Set the site public base URL to reveal the production callback URLs to enter in payment providers.",
+      "stripe": "Stripe webhook",
+      "epay": "Epay notification",
+      "return": "Synchronous return"
+    },
+    "security": {
+      "title": "Secret handling",
+      "description": "Read requests expose configured state only. Blank means keep; an explicit clear selection removes a stored secret."
+    },
     "validation": {
-      "stripePublishableKey": "Enter a valid pk_test_ or pk_live_ publishable key.", "stripeSecretKey": "Enter a valid secret; replacement and clearing cannot be combined.", "stripeWebhookSecret": "Enter a valid webhook secret; replacement and clearing cannot be combined.", "stripeTolerance": "Signature tolerance must be an integer from 30 to 900 seconds.",
-      "epayGatewayUrl": "Enter an HTTPS gateway URL without credentials, query, or fragment.", "epayMerchantId": "Enter a merchant PID without spaces or control characters.", "epayMerchantKey": "Enter a valid merchant PKey; replacement and clearing cannot be combined.", "epayPaymentMethod": "Enable at least one payment method when Epay is active.", "epayPublicBaseUrl": "Set the public base URL in site settings before enabling Epay.", "epayQuota": "Quota per CNY must be a positive integer."
+      "stripePublishableKey": "Enter a valid pk_test_ or pk_live_ publishable key.",
+      "stripeSecretKey": "Enter a valid secret; replacement and clearing cannot be combined.",
+      "stripeWebhookSecret": "Enter a valid webhook secret; replacement and clearing cannot be combined.",
+      "stripeTolerance": "Signature tolerance must be an integer from 30 to 900 seconds.",
+      "epayGatewayUrl": "Enter an HTTPS gateway URL without credentials, query, or fragment.",
+      "epayMerchantId": "Enter a merchant PID without spaces or control characters.",
+      "epayMerchantKey": "Enter a valid merchant PKey; replacement and clearing cannot be combined.",
+      "epayPaymentMethod": "Enable at least one payment method when Epay is active.",
+      "epayPublicBaseUrl": "Set the public base URL in site settings before enabling Epay.",
+      "epayQuota": "Quota per CNY must be a positive integer."
     },
-    "units": { "seconds": "sec", "quota": "quota" },
-    "actions": { "refresh": "Refresh", "retry": "Try again", "save": "Save settings", "saving": "Saving", "copy": "Copy URL", "configureSite": "Open site settings" },
-    "state": { "saved": "Payment settings saved.", "unsaved": "There are unsaved changes.", "synced": "Synced with server version {{version}}." },
-    "errors": { "title": "Payment settings could not be loaded", "load": "The service did not return reliable payment configuration. Try again shortly.", "save": "Payment settings could not be saved. Check the fields or refresh and retry." }
+    "units": {
+      "seconds": "sec",
+      "quota": "quota"
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Try again",
+      "save": "Save settings",
+      "saving": "Saving",
+      "copy": "Copy URL",
+      "configureSite": "Open site settings"
+    },
+    "state": {
+      "saved": "Payment settings saved.",
+      "unsaved": "There are unsaved changes.",
+      "synced": "Synced with server version {{version}}."
+    },
+    "errors": {
+      "title": "Payment settings could not be loaded",
+      "load": "The service did not return reliable payment configuration. Try again shortly.",
+      "save": "Payment settings could not be saved. Check the fields or refresh and retry."
+    }
   },
   "organizationApiKeys": {
     "eyebrow": "Organization workspace",
@@ -4393,15 +4592,36 @@
     },
     "permissions": {
       "organization": {
-        "profile": { "write": "Edit organization profile" },
-        "ownership": { "transfer": "Transfer organization ownership" },
-        "members": { "manage": "Manage members and invitations" },
-        "teams": { "manage": "Manage teams" },
-        "wallet": { "read": "Read organization wallet", "manage": "Top up and adjust wallet" },
-        "budgets": { "manage": "Manage organization budgets" },
-        "keys": { "read_all": "Read all organization keys", "manage_self": "Manage own organization keys" },
-        "usage_logs": { "read_all": "Read all usage logs", "read_self": "Read own usage logs" },
-        "audit": { "read": "Read management audit" }
+        "profile": {
+          "write": "Edit organization profile"
+        },
+        "ownership": {
+          "transfer": "Transfer organization ownership"
+        },
+        "members": {
+          "manage": "Manage members and invitations"
+        },
+        "teams": {
+          "manage": "Manage teams"
+        },
+        "wallet": {
+          "read": "Read organization wallet",
+          "manage": "Top up and adjust wallet"
+        },
+        "budgets": {
+          "manage": "Manage organization budgets"
+        },
+        "keys": {
+          "read_all": "Read all organization keys",
+          "manage_self": "Manage own organization keys"
+        },
+        "usage_logs": {
+          "read_all": "Read all usage logs",
+          "read_self": "Read own usage logs"
+        },
+        "audit": {
+          "read": "Read management audit"
+        }
       }
     },
     "overview": {
@@ -4440,13 +4660,27 @@
     "members": {
       "title": "Members and teams",
       "subtitle": "Manage roles, state, team assignment, and invitations within this organization without affecting personal or other organization workspaces.",
-      "summary": { "seats": "Active seats", "teams": "Active teams", "role": "My organization role" },
-      "tabs": { "label": "Member management view", "members": "Members", "teams": "Teams", "invitations": "Invitations" },
+      "summary": {
+        "seats": "Active seats",
+        "teams": "Active teams",
+        "role": "My organization role"
+      },
+      "tabs": {
+        "label": "Member management view",
+        "members": "Members",
+        "teams": "Teams",
+        "invitations": "Invitations"
+      },
       "memberLabel": "User #{{id}}",
       "membershipLabel": "Membership #{{id}}",
       "teamLabel": "Team #{{id}}",
       "noTeam": "No team assigned",
-      "fields": { "member": "Member", "role": "Role", "status": "Status", "team": "Primary team" },
+      "fields": {
+        "member": "Member",
+        "role": "Role",
+        "status": "Status",
+        "team": "Primary team"
+      },
       "list": {
         "title": "Member directory",
         "subtitle": "Stable cursors load organization members. Owners can only change through ownership transfer.",
@@ -4463,15 +4697,23 @@
     "teams": {
       "disabledByEntitlement": "Team management is disabled by the current commercial entitlement. Existing teams remain read only.",
       "noDescription": "No team description",
-      "actions": { "create": "Create team", "disable": "Disable team" },
+      "actions": {
+        "create": "Create team",
+        "disable": "Disable team"
+      },
       "list": {
         "title": "Team directory",
         "subtitle": "Teams are organization budget groups and remain separate from platform billing groups.",
         "emptyTitle": "No teams yet",
         "emptyBody": "Create teams and assign members when the entitlement allows it."
       },
-      "fields": { "name": "Team name", "description": "Team description" },
-      "validation": { "name": "The team name is required, cannot have surrounding whitespace, and must be at most 160 bytes." },
+      "fields": {
+        "name": "Team name",
+        "description": "Team description"
+      },
+      "validation": {
+        "name": "The team name is required, cannot have surrounding whitespace, and must be at most 160 bytes."
+      },
       "editor": {
         "createTitle": "Create organization team",
         "editTitle": "Edit organization team",
@@ -4483,8 +4725,18 @@
       }
     },
     "invitations": {
-      "actions": { "invite": "Invite member", "send": "Send invitation", "batch": "Batch invitations", "resend": "Resend", "revoke": "Revoke" },
-      "fields": { "email": "Invitee email", "expiresAt": "Expiration", "expiresHint": "Leave blank for the server default. Entered values use the browser's local time." },
+      "actions": {
+        "invite": "Invite member",
+        "send": "Send invitation",
+        "batch": "Batch invitations",
+        "resend": "Resend",
+        "revoke": "Revoke"
+      },
+      "fields": {
+        "email": "Invitee email",
+        "expiresAt": "Expiration",
+        "expiresHint": "Leave blank for the server default. Entered values use the browser's local time."
+      },
       "validation": "Enter a valid email and a future expiration time.",
       "list": {
         "title": "Organization invitations",
@@ -4493,7 +4745,10 @@
         "emptyBody": "Single and batch invitations appear here after creation.",
         "expires": "Expires {{time}}"
       },
-      "editor": { "title": "Invite organization member", "description": "Create a one-time email invitation for {{organization}}." },
+      "editor": {
+        "title": "Invite organization member",
+        "description": "Create a one-time email invitation for {{organization}}."
+      },
       "issued": {
         "title": "Invitation token issued",
         "body": "This is the one-time plaintext token for joining {{organization}}. It cannot be read again after closing.",
@@ -4523,12 +4778,18 @@
         "invalid_team": "Team is unavailable",
         "seat_unavailable": "No seat is available"
       },
-      "revoke": { "title": "Revoke organization invitation", "body": "Revoke this pending invitation for {{organization}}?" }
+      "revoke": {
+        "title": "Revoke organization invitation",
+        "body": "Revoke this pending invitation for {{organization}}?"
+      }
     },
     "wallet": {
       "title": "Organization wallet and ledger",
       "subtitle": "Review organization balance, in-flight reservations, lifetime usage, and append-only funding facts. Organization spending never falls back to a personal wallet.",
-      "restricted": { "title": "Wallet read permission is required", "body": "The current organization role cannot read balances or ledger entries. Server-side funding limits remain enforced." },
+      "restricted": {
+        "title": "Wallet read permission is required",
+        "body": "The current organization role cannot read balances or ledger entries. Server-side funding limits remain enforced."
+      },
       "summary": {
         "label": "Organization wallet state",
         "balance": "Available balance",
@@ -4538,7 +4799,10 @@
         "frozen": "In flight",
         "frozenHint": "Reserved quota awaiting final settlement"
       },
-      "topup": { "title": "Organization online top-up", "description": "Create an isolated top-up order for {{organization}}. Funds never enter a personal wallet." },
+      "topup": {
+        "title": "Organization online top-up",
+        "description": "Create an isolated top-up order for {{organization}}. Funds never enter a personal wallet."
+      },
       "adjustment": {
         "title": "Organization wallet adjustment",
         "subtitle": "Apply an audited balance delta through an append-only event.",
@@ -4551,8 +4815,16 @@
         "submit": "Submit adjustment",
         "applied": "The adjustment was written to the organization wallet and append-only ledger.",
         "replayed": "The same event already exists; the existing adjustment result was returned.",
-        "validation": { "amount": "Enter a positive safe integer.", "reason": "The reason is required, cannot have surrounding whitespace or control characters, and is limited to 500 bytes." },
-        "previewState": { "empty": "Waiting for input", "insufficient": "Insufficient balance", "overflow": "Would overflow", "ready": "Ready" }
+        "validation": {
+          "amount": "Enter a positive safe integer.",
+          "reason": "The reason is required, cannot have surrounding whitespace or control characters, and is limited to 500 bytes."
+        },
+        "previewState": {
+          "empty": "Waiting for input",
+          "insufficient": "Insufficient balance",
+          "overflow": "Would overflow",
+          "ready": "Ready"
+        }
       },
       "ledger": {
         "title": "Organization funding ledger",
@@ -4563,8 +4835,18 @@
         "systemActor": "System",
         "actor": "Actor #{{id}}"
       },
-      "entryType": { "opening_balance": "Opening balance", "admin_adjustment": "Manual adjustment", "topup": "Top-up", "usage_settlement": "Usage settlement" },
-      "entryReason": { "opening_balance": "Organization opening balance", "admin_adjustment": "Organization wallet adjustment", "topup": "Organization top-up", "usage_settlement": "Organization usage settlement" },
+      "entryType": {
+        "opening_balance": "Opening balance",
+        "admin_adjustment": "Manual adjustment",
+        "topup": "Top-up",
+        "usage_settlement": "Usage settlement"
+      },
+      "entryReason": {
+        "opening_balance": "Organization opening balance",
+        "admin_adjustment": "Organization wallet adjustment",
+        "topup": "Organization top-up",
+        "usage_settlement": "Organization usage settlement"
+      },
       "errors": {
         "summaryTitle": "Organization wallet could not be loaded",
         "summaryBody": "The service did not return a reliable balance state. Try again shortly.",
@@ -4581,9 +4863,27 @@
     "settings": {
       "title": "Organization settings",
       "subtitle": "Review organization identity, commercial entitlement, and fixed-role permissions, and transfer ownership where the server supports it.",
-      "identity": { "title": "Organization identity", "subtitle": "The current API exposes a read-only identity projection.", "name": "Organization name", "slug": "Organization slug", "organizationId": "Organization ID", "role": "My role" },
-      "entitlement": { "title": "Commercial entitlement", "subtitle": "The server enforces entitlement state and capacity.", "seats": "Seats", "teams": "Teams", "keys": "Organization key limit", "audit": "Audit retention", "days": "{{count}} days" },
-      "permissions": { "title": "Current role permissions", "subtitle": "Fixed roles map only to stable organization permission codes and cannot grant platform permissions." },
+      "identity": {
+        "title": "Organization identity",
+        "subtitle": "The current API exposes a read-only identity projection.",
+        "name": "Organization name",
+        "slug": "Organization slug",
+        "organizationId": "Organization ID",
+        "role": "My role"
+      },
+      "entitlement": {
+        "title": "Commercial entitlement",
+        "subtitle": "The server enforces entitlement state and capacity.",
+        "seats": "Seats",
+        "teams": "Teams",
+        "keys": "Organization key limit",
+        "audit": "Audit retention",
+        "days": "{{count}} days"
+      },
+      "permissions": {
+        "title": "Current role permissions",
+        "subtitle": "Fixed roles map only to stable organization permission codes and cannot grant platform permissions."
+      },
       "ownership": {
         "title": "Transfer ownership",
         "subtitle": "The transaction promotes the new owner before demoting the current owner.",
@@ -4595,7 +4895,10 @@
         "confirmBody": "Transfer {{organization}} ownership to user #{{userId}}? Your role will be demoted after completion.",
         "confirm": "Confirm transfer"
       },
-      "unavailable": { "title": "Profile editing and closure are not available yet", "body": "The backend does not currently expose organization rename or closure APIs, so this page does not render forms that would always fail." }
+      "unavailable": {
+        "title": "Profile editing and closure are not available yet",
+        "body": "The backend does not currently expose organization rename or closure APIs, so this page does not render forms that would always fail."
+      }
     }
   },
   "wallet": {
@@ -4622,8 +4925,16 @@
     "topup": {
       "title": "Online top-up",
       "description": "Choose an available payment method to add quota to this account.",
-      "methods": { "label": "Payment method", "card": "Card", "alipay": "Alipay", "wxpay": "WeChat Pay" },
-      "providers": { "stripe": "Stripe", "epay": "Epay" },
+      "methods": {
+        "label": "Payment method",
+        "card": "Card",
+        "alipay": "Alipay",
+        "wxpay": "WeChat Pay"
+      },
+      "providers": {
+        "stripe": "Stripe",
+        "epay": "Epay"
+      },
       "unavailable": {
         "title": "Online top-up is unavailable",
         "retryable": "Payment configuration could not be loaded. Try again shortly.",
@@ -4950,12 +5261,30 @@
       "eyebrow": "Core capabilities",
       "heading": "Complexity stays inside the gateway",
       "subheading": "AnyFlows absorbs upstream differences, failures and pricing rules, so your application only ever talks to one stable interface.",
-      "routing": { "title": "Routing", "body": "Selects channels by weight, priority and live health, with automatic failover and retry." },
-      "billing": { "title": "Billing", "body": "Group multipliers, tiered pricing and an expression engine, with auditable line items." },
-      "health": { "title": "Health", "body": "Continuous liveness and balance probing, auto-disabling channels by rule." },
-      "streaming": { "title": "Streaming", "body": "End-to-end SSE passthrough with per-request TTFT and throughput visibility." },
-      "pool": { "title": "Account pool", "body": "Typed credential management, one proxy per account, shadow accounts for rollout." },
-      "observability": { "title": "Observability", "body": "Per-request candidate replay recording every fallback reason and response detail." }
+      "routing": {
+        "title": "Routing",
+        "body": "Selects channels by weight, priority and live health, with automatic failover and retry."
+      },
+      "billing": {
+        "title": "Billing",
+        "body": "Group multipliers, tiered pricing and an expression engine, with auditable line items."
+      },
+      "health": {
+        "title": "Health",
+        "body": "Continuous liveness and balance probing, auto-disabling channels by rule."
+      },
+      "streaming": {
+        "title": "Streaming",
+        "body": "End-to-end SSE passthrough with per-request TTFT and throughput visibility."
+      },
+      "pool": {
+        "title": "Account pool",
+        "body": "Typed credential management, one proxy per account, shadow accounts for rollout."
+      },
+      "observability": {
+        "title": "Observability",
+        "body": "Per-request candidate replay recording every fallback reason and response detail."
+      }
     },
     "modes": {
       "eyebrow": "Three shapes",
@@ -5034,9 +5363,18 @@
         }
       }
     },
-    "footer": { "copyright": "AnyFlows · Open-source LLM gateway" }
+    "footer": {
+      "copyright": "AnyFlows · Open-source LLM gateway"
+    }
   },
-  "theme": { "toggle": "Toggle theme" },
-  "motion": { "enable": "Enable motion", "disable": "Reduce motion" },
-  "language": { "toggle": "Switch language" }
+  "theme": {
+    "toggle": "Toggle theme"
+  },
+  "motion": {
+    "enable": "Enable motion",
+    "disable": "Reduce motion"
+  },
+  "language": {
+    "toggle": "Switch language"
+  }
 }
