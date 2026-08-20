@@ -1,4 +1,4 @@
-import { Check, Copy, GitFork, Globe2, LoaderCircle, MessageCircle, QrCode, RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-react'
+import { Check, Copy, GitFork, Globe2, LoaderCircle, MessageCircle, QrCode, RefreshCw, Send, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { type FormEvent, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -27,6 +27,7 @@ const providerIcons = {
   oidc: ShieldCheck,
   linuxdo: Globe2,
   wechat: QrCode,
+  telegram: Send,
 }
 
 /** 管理内置 OAuth App，密钥只支持保留、轮换和显式清除。 */
@@ -37,9 +38,9 @@ export function OAuthProviderSettings({ provider }: OAuthProviderSettingsProps) 
   const settingsQuery = useAdminOAuthLoginSettings(provider)
   const mutation = useUpdateAdminOAuthLoginSettings(provider)
   const settings = settingsQuery.data
-  const clientIdLabel = provider === 'wechat' ? t(`${baseKey}.clientId`) : t('authenticationSettings.oauth.clientId')
-  const clientSecretLabel = provider === 'wechat' ? t(`${baseKey}.clientSecret`) : t('authenticationSettings.oauth.clientSecret')
-  const newSecretLabel = provider === 'wechat' ? t(`${baseKey}.newSecret`) : t('authenticationSettings.oauth.newSecret')
+  const clientIdLabel = provider === 'wechat' || provider === 'telegram' ? t(`${baseKey}.clientId`) : t('authenticationSettings.oauth.clientId')
+  const clientSecretLabel = provider === 'wechat' || provider === 'telegram' ? t(`${baseKey}.clientSecret`) : t('authenticationSettings.oauth.clientSecret')
+  const newSecretLabel = provider === 'wechat' || provider === 'telegram' ? t(`${baseKey}.newSecret`) : t('authenticationSettings.oauth.newSecret')
   const [enabled, setEnabled] = useState(false)
   const [clientId, setClientId] = useState('')
   const [issuerUrl, setIssuerUrl] = useState('')

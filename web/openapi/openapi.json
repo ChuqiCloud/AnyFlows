@@ -16129,6 +16129,47 @@
         }
       }
     },
+    "/api/auth/oauth/telegram/start": {
+      "post": {
+        "tags": [
+          "OAuth 登录"
+        ],
+        "summary": "启动 Telegram 登录",
+        "operationId": "startTelegramLogin",
+        "responses": {
+          "200": {
+            "description": "服务端构造的 Telegram OIDC 授权地址",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthLoginStartResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Telegram 登录尚未完整配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/oauth/oidc/callback": {
       "get": {
         "tags": [
@@ -16256,6 +16297,59 @@
             "name": "code",
             "in": "query",
             "description": "微信授权码",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "303": {
+            "description": "跳转到前端单次票据交换页"
+          },
+          "500": {
+            "description": "无法构造安全回调地址",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/oauth/telegram/callback": {
+      "get": {
+        "tags": [
+          "OAuth 登录"
+        ],
+        "summary": "接收 Telegram OIDC 回调",
+        "operationId": "completeTelegramLogin",
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "description": "服务端生成的一次性 state",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "description": "Telegram 授权码",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "description": "Telegram 拒绝分类",
             "required": false,
             "schema": {
               "type": "string"
@@ -16620,6 +16714,146 @@
         ],
         "summary": "覆盖微信开放平台登录设置",
         "operationId": "updateAdminWeChatOAuthLoginSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminOAuthLoginProviderSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "更新后的脱敏设置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOAuthLoginProviderSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "配置组合无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "设置版本冲突或回调基址未配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/authentication-settings/oauth/telegram": {
+      "get": {
+        "tags": [
+          "OAuth 登录"
+        ],
+        "summary": "读取 Telegram 登录设置",
+        "operationId": "getAdminTelegramOAuthLoginSettings",
+        "responses": {
+          "200": {
+            "description": "脱敏后的 Telegram OIDC 设置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOAuthLoginProviderSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "OAuth 登录"
+        ],
+        "summary": "覆盖 Telegram 登录设置",
+        "operationId": "updateAdminTelegramOAuthLoginSettings",
         "requestBody": {
           "content": {
             "application/json": {

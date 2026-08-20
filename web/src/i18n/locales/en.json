@@ -2928,14 +2928,16 @@
         "discord": "Continue with Discord",
         "oidc": "Continue with enterprise OIDC",
         "linuxdo": "Continue with LinuxDO",
-        "wechat": "Continue with WeChat"
+        "wechat": "Continue with WeChat",
+        "telegram": "Continue with Telegram"
       },
       "oauthStarting": {
         "github": "Opening GitHub",
         "discord": "Opening Discord",
         "oidc": "Opening enterprise OIDC",
         "linuxdo": "Opening LinuxDO",
-        "wechat": "Opening WeChat QR sign-in"
+        "wechat": "Opening WeChat QR sign-in",
+        "telegram": "Opening Telegram"
       },
       "orPassword": "or use a password",
       "orAccount": "or use account sign-in",
@@ -3194,6 +3196,21 @@
           "save": "Unable to save WeChat settings. Refresh and verify the version.",
           "publicBaseUrl": "Save the public site base URL before enabling WeChat sign-in.",
           "incomplete": "WeChat sign-in requires a callback URL, AppID, and configured AppSecret."
+        }
+      },
+      "telegram": {
+        "title": "Telegram sign-in",
+        "enabled": "Enable Telegram sign-in",
+        "clientId": "Client ID",
+        "clientSecret": "Client Secret action",
+        "newSecret": "New Client Secret",
+        "callbackHint": "Register this URL in BotFather Allowed URLs and the OIDC callback allowlist.",
+        "version": "Telegram sign-in configuration version {{version}}",
+        "errors": {
+          "load": "Unable to load Telegram sign-in settings",
+          "save": "Unable to save Telegram settings. Refresh and verify the version.",
+          "publicBaseUrl": "Save the public site base URL before enabling Telegram sign-in.",
+          "incomplete": "Telegram sign-in requires a callback URL, Client ID, and configured Client Secret."
         }
       }
     },

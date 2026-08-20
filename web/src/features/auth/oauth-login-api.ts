@@ -9,20 +9,23 @@ import {
   getAdminLinuxDoLoginSettings,
   getAdminOidcLoginSettings,
   getAdminWeChatOAuthLoginSettings,
+  getAdminTelegramOAuthLoginSettings,
   startDiscordOAuthLogin,
   startGitHubOAuthLogin,
   startLinuxDoLogin,
   startOidcLogin,
   startWeChatOAuthLogin,
+  startTelegramLogin,
   updateAdminDiscordOAuthLoginSettings,
   updateAdminGitHubOAuthLoginSettings,
   updateAdminLinuxDoLoginSettings,
   updateAdminOidcLoginSettings,
   updateAdminWeChatOAuthLoginSettings,
+  updateAdminTelegramOAuthLoginSettings,
 } from '@/lib/api/generated/sdk.gen'
 import type { AdminOAuthLoginProviderSettingsRequest } from '@/lib/api/generated/types.gen'
 
-export type OAuthLoginProvider = 'github' | 'discord' | 'oidc' | 'linuxdo' | 'wechat'
+export type OAuthLoginProvider = 'github' | 'discord' | 'oidc' | 'linuxdo' | 'wechat' | 'telegram'
 
 const startOAuthLogin = {
   github: () => startGitHubOAuthLogin({ client: apiClient }),
@@ -30,6 +33,7 @@ const startOAuthLogin = {
   oidc: () => startOidcLogin({ client: apiClient }),
   linuxdo: () => startLinuxDoLogin({ client: apiClient }),
   wechat: () => startWeChatOAuthLogin({ client: apiClient }),
+  telegram: () => startTelegramLogin({ client: apiClient }),
 }
 
 const getAdminOAuthLoginSettings = {
@@ -38,6 +42,7 @@ const getAdminOAuthLoginSettings = {
   oidc: (signal: AbortSignal) => getAdminOidcLoginSettings({ client: apiClient, signal }),
   linuxdo: (signal: AbortSignal) => getAdminLinuxDoLoginSettings({ client: apiClient, signal }),
   wechat: (signal: AbortSignal) => getAdminWeChatOAuthLoginSettings({ client: apiClient, signal }),
+  telegram: (signal: AbortSignal) => getAdminTelegramOAuthLoginSettings({ client: apiClient, signal }),
 }
 
 const updateAdminOAuthLoginSettings = {
@@ -51,6 +56,8 @@ const updateAdminOAuthLoginSettings = {
     updateAdminLinuxDoLoginSettings({ body, client: apiClient }),
   wechat: (body: AdminOAuthLoginProviderSettingsRequest) =>
     updateAdminWeChatOAuthLoginSettings({ body, client: apiClient }),
+  telegram: (body: AdminOAuthLoginProviderSettingsRequest) =>
+    updateAdminTelegramOAuthLoginSettings({ body, client: apiClient }),
 }
 
 export const adminOAuthLoginSettingsQueryKey = (provider: OAuthLoginProvider) =>
