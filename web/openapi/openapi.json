@@ -4617,7 +4617,7 @@
         ],
         "responses": {
           "303": {
-            "description": "跳转到前端一次性票据交换页"
+            "description": "跳转到前端单次票据交换页"
           },
           "500": {
             "description": "无法构造安全回调地址",
@@ -16452,7 +16452,7 @@
         ],
         "responses": {
           "303": {
-            "description": "跳转到前端单次票据交换页"
+            "description": "跳转到前端一次性票据交换页"
           },
           "500": {
             "description": "无法构造安全回调地址",
