@@ -6,18 +6,11 @@ import {
   Eye,
   EyeOff,
   Fingerprint,
-  GitFork,
-  Globe2,
   LoaderCircle,
   LockKeyhole,
-  MessageCircle,
-  QrCode,
   RefreshCw,
-  Send,
-  ShieldCheck,
   UserRoundPlus,
 } from 'lucide-react'
-import GoogleIcon from '@lobehub/icons/es/Google/components/Color'
 import { type FormEvent, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -27,6 +20,7 @@ import { Input } from '@/components/ui/input'
 import { AuthCapabilityCard, AuthCapabilitySkeleton } from '@/features/auth/auth-capability-card'
 import { AuthPageShell } from '@/features/auth/auth-page-shell'
 import { beginOAuthLogin, type OAuthLoginProvider } from '@/features/auth/oauth-login-api'
+import { OAuthProviderIcon } from '@/features/auth/oauth-provider-icon'
 import {
   authenticateWithPasskey,
   PasskeyClientError,
@@ -238,19 +232,7 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                     >
                       {isStarting
                         ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
-                        : provider.id === 'github'
-                          ? <GitFork className="size-4" aria-hidden="true" />
-                          : provider.id === 'discord'
-                            ? <MessageCircle className="size-4" aria-hidden="true" />
-                            : provider.id === 'linuxdo'
-                              ? <Globe2 className="size-4" aria-hidden="true" />
-                              : provider.id === 'wechat'
-                                ? <QrCode className="size-4" aria-hidden="true" />
-                                : provider.id === 'telegram'
-                                  ? <Send className="size-4" aria-hidden="true" />
-                                  : provider.id === 'google'
-                                    ? <GoogleIcon size="1rem" aria-hidden="true" />
-                                  : <ShieldCheck className="size-4" aria-hidden="true" />}
+                        : <OAuthProviderIcon provider={providerId} />}
                       {isStarting
                         ? t(`auth.login.oauthStarting.${provider.id}`)
                         : t(`auth.login.oauth.${provider.id}`)}
