@@ -16093,11 +16093,11 @@
         "tags": [
           "OAuth 登录"
         ],
-        "summary": "?????????????",
+        "summary": "启动微信开放平台二维码登录",
         "operationId": "startWeChatOAuthLogin",
         "responses": {
           "200": {
-            "description": "??????????????",
+            "description": "服务端构造的微信官方授权地址",
             "content": {
               "application/json": {
                 "schema": {
@@ -16107,7 +16107,7 @@
             }
           },
           "409": {
-            "description": "??????????",
+            "description": "微信登录尚未完整配置",
             "content": {
               "application/json": {
                 "schema": {
@@ -16240,7 +16240,7 @@
         "tags": [
           "OAuth 登录"
         ],
-        "summary": "????????????",
+        "summary": "接收微信开放平台登录回调",
         "operationId": "completeWeChatOAuthLogin",
         "parameters": [
           {
@@ -16255,7 +16255,7 @@
           {
             "name": "code",
             "in": "query",
-            "description": "?????",
+            "description": "微信授权码",
             "required": false,
             "schema": {
               "type": "string"
@@ -16564,11 +16564,11 @@
         "tags": [
           "OAuth 登录"
         ],
-        "summary": "????????????",
+        "summary": "读取微信开放平台登录设置",
         "operationId": "getAdminWeChatOAuthLoginSettings",
         "responses": {
           "200": {
-            "description": "????????????",
+            "description": "脱敏后的微信开放平台设置",
             "content": {
               "application/json": {
                 "schema": {
@@ -16618,7 +16618,7 @@
         "tags": [
           "OAuth 登录"
         ],
-        "summary": "????????????",
+        "summary": "覆盖微信开放平台登录设置",
         "operationId": "updateAdminWeChatOAuthLoginSettings",
         "requestBody": {
           "content": {
