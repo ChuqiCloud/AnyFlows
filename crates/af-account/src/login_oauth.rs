@@ -27,6 +27,10 @@ const LINUXDO_JWKS_URL: &str = "https://connect.linux.do/.well-known/jwks.json";
 const WECHAT_AUTHORIZATION_URL: &str = "https://open.weixin.qq.com/connect/qrconnect";
 const WECHAT_TOKEN_URL: &str = "https://api.weixin.qq.com/sns/oauth2/access_token";
 const WECHAT_USER_URL: &str = "https://api.weixin.qq.com/sns/userinfo";
+const TELEGRAM_ISSUER: &str = "https://oauth.telegram.org";
+const TELEGRAM_AUTHORIZATION_URL: &str = "https://oauth.telegram.org/auth";
+const TELEGRAM_TOKEN_URL: &str = "https://oauth.telegram.org/token";
+const TELEGRAM_JWKS_URL: &str = "https://oauth.telegram.org/.well-known/jwks.json";
 const PROVIDER_REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 const MAX_PROVIDER_RESPONSE_BYTES: usize = 64 * 1_024;
 const MAX_ACCESS_TOKEN_BYTES: usize = 4 * 1_024;
@@ -39,15 +43,17 @@ pub enum LoginOAuthProvider {
     Oidc,
     LinuxDo,
     WeChat,
+    Telegram,
 }
 
 impl LoginOAuthProvider {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::GitHub,
         Self::Discord,
         Self::Oidc,
         Self::LinuxDo,
         Self::WeChat,
+        Self::Telegram,
     ];
 
     #[must_use]
@@ -58,6 +64,7 @@ impl LoginOAuthProvider {
             Self::Oidc => "oidc",
             Self::LinuxDo => "linuxdo",
             Self::WeChat => "wechat",
+            Self::Telegram => "telegram",
         }
     }
 
@@ -69,6 +76,7 @@ impl LoginOAuthProvider {
             Self::Oidc => "OIDC",
             Self::LinuxDo => "LinuxDO",
             Self::WeChat => "微信",
+            Self::Telegram => "Telegram",
         }
     }
 
@@ -80,12 +88,16 @@ impl LoginOAuthProvider {
             Self::Oidc => "",
             Self::LinuxDo => LINUXDO_AUTHORIZATION_URL,
             Self::WeChat => WECHAT_AUTHORIZATION_URL,
+            Self::Telegram => TELEGRAM_AUTHORIZATION_URL,
         }
     }
 
     #[must_use]
     pub const fn uses_pkce(self) -> bool {
-        matches!(self, Self::GitHub | Self::Oidc | Self::LinuxDo)
+        matches!(
+            self,
+            Self::GitHub | Self::Oidc | Self::LinuxDo | Self::Telegram
+        )
     }
 
     #[must_use]
@@ -96,6 +108,7 @@ impl LoginOAuthProvider {
             Self::Oidc => "oidc",
             Self::LinuxDo => "ld",
             Self::WeChat => "wx",
+            Self::Telegram => "tg",
         }
     }
 
@@ -113,6 +126,7 @@ impl LoginOAuthProvider {
             Self::Oidc => "",
             Self::LinuxDo => LINUXDO_TOKEN_URL,
             Self::WeChat => WECHAT_TOKEN_URL,
+            Self::Telegram => TELEGRAM_TOKEN_URL,
         }
     }
 
@@ -123,18 +137,20 @@ impl LoginOAuthProvider {
             Self::Oidc => "",
             Self::LinuxDo => LINUXDO_USER_URL,
             Self::WeChat => WECHAT_USER_URL,
+            Self::Telegram => "",
         }
     }
 
     #[must_use]
     pub const fn is_oidc(self) -> bool {
-        matches!(self, Self::Oidc | Self::LinuxDo)
+        matches!(self, Self::Oidc | Self::LinuxDo | Self::Telegram)
     }
 
     #[must_use]
     pub const fn fixed_issuer(self) -> Option<&'static str> {
         match self {
             Self::LinuxDo => Some(LINUXDO_ISSUER),
+            Self::Telegram => Some(TELEGRAM_ISSUER),
             _ => None,
         }
     }
@@ -313,14 +329,7 @@ impl OAuthLoginClient {
         if !provider.is_oidc() || issuer.is_empty() {
             return Err(OAuthLoginClientError::ProviderUnavailable);
         }
-        let discovery = if let Some(fixed) = provider.fixed_issuer() {
-            if issuer != fixed {
-                return Err(OAuthLoginClientError::ProviderUnavailable);
-            }
-            DiscoveryDocument::linuxdo()
-        } else {
-            self.fetch_discovery(issuer).await?
-        };
+        let discovery = self.oidc_discovery(provider, issuer).await?;
         validate_issuer(issuer)?;
         if !valid_discovery(&discovery, issuer) {
             return Err(OAuthLoginClientError::ProviderUnavailable);
@@ -397,13 +406,19 @@ impl OAuthLoginClient {
             return Err(OAuthLoginClientError::ProviderUnavailable);
         }
         let subject = claims.sub;
-        let username = claims
-            .preferred_username
-            .or(claims.login)
-            .or(claims.name)
-            .unwrap_or_else(|| subject.clone());
         validate_oidc_subject(&subject)?;
-        validate_oidc_username(&username)?;
+        let username = if provider == LoginOAuthProvider::Telegram {
+            validate_telegram_subject(&subject)?;
+            "telegram".to_owned()
+        } else {
+            let username = claims
+                .preferred_username
+                .or(claims.login)
+                .or(claims.name)
+                .unwrap_or_else(|| subject.clone());
+            validate_oidc_username(&username)?;
+            username
+        };
         let subject = oidc_subject_namespace(discovery.issuer.trim_end_matches('/'), &subject);
         drop(access_token);
         Ok(OAuthLoginIdentity { subject, username })
@@ -422,14 +437,7 @@ impl OAuthLoginClient {
         if !provider.is_oidc() {
             return Err(OAuthLoginClientError::ProviderUnavailable);
         }
-        let discovery = if let Some(fixed) = provider.fixed_issuer() {
-            if issuer != fixed {
-                return Err(OAuthLoginClientError::ProviderUnavailable);
-            }
-            DiscoveryDocument::linuxdo()
-        } else {
-            self.fetch_discovery(issuer).await?
-        };
+        let discovery = self.oidc_discovery(provider, issuer).await?;
         validate_issuer(issuer)?;
         if discovery.issuer.trim_end_matches('/') != issuer.trim_end_matches('/')
             || !valid_endpoint(&discovery.authorization_endpoint)
@@ -442,12 +450,42 @@ impl OAuthLoginClient {
             .append_pair("client_id", client_id)
             .append_pair("redirect_uri", redirect_uri)
             .append_pair("response_type", "code")
-            .append_pair("scope", "openid profile email")
+            .append_pair(
+                "scope",
+                if provider == LoginOAuthProvider::Telegram {
+                    "openid"
+                } else {
+                    "openid profile email"
+                },
+            )
             .append_pair("state", state)
             .append_pair("nonce", challenge)
             .append_pair("code_challenge", challenge)
             .append_pair("code_challenge_method", "S256");
         Ok(url.into())
+    }
+
+    async fn oidc_discovery(
+        &self,
+        provider: LoginOAuthProvider,
+        issuer: &str,
+    ) -> Result<DiscoveryDocument, OAuthLoginClientError> {
+        if !provider.is_oidc() {
+            return Err(OAuthLoginClientError::ProviderUnavailable);
+        }
+        if provider == LoginOAuthProvider::LinuxDo {
+            return (issuer == LINUXDO_ISSUER)
+                .then(DiscoveryDocument::linuxdo)
+                .ok_or(OAuthLoginClientError::ProviderUnavailable);
+        }
+        if provider == LoginOAuthProvider::Telegram && issuer != TELEGRAM_ISSUER {
+            return Err(OAuthLoginClientError::ProviderUnavailable);
+        }
+        let discovery = self.fetch_discovery(issuer).await?;
+        if provider == LoginOAuthProvider::Telegram && !valid_telegram_discovery(&discovery) {
+            return Err(OAuthLoginClientError::ProviderUnavailable);
+        }
+        Ok(discovery)
     }
 
     async fn fetch_discovery(
@@ -541,7 +579,10 @@ fn token_request_form(
     }
     if matches!(
         provider,
-        LoginOAuthProvider::Discord | LoginOAuthProvider::Oidc | LoginOAuthProvider::LinuxDo
+        LoginOAuthProvider::Discord
+            | LoginOAuthProvider::Oidc
+            | LoginOAuthProvider::LinuxDo
+            | LoginOAuthProvider::Telegram
     ) {
         serializer.append_pair("grant_type", "authorization_code");
     }
@@ -717,9 +758,10 @@ fn parse_identity(
                 username: user.username,
             })
         }
-        LoginOAuthProvider::Oidc | LoginOAuthProvider::LinuxDo | LoginOAuthProvider::WeChat => {
-            Err(OAuthLoginClientError::ProviderUnavailable)
-        }
+        LoginOAuthProvider::Oidc
+        | LoginOAuthProvider::LinuxDo
+        | LoginOAuthProvider::WeChat
+        | LoginOAuthProvider::Telegram => Err(OAuthLoginClientError::ProviderUnavailable),
     }
 }
 
@@ -773,6 +815,14 @@ fn valid_discovery(discovery: &DiscoveryDocument, configured_issuer: &str) -> bo
             .id_token_signing_alg_values_supported
             .iter()
             .any(|algorithm| algorithm == "RS256")
+}
+
+fn valid_telegram_discovery(discovery: &DiscoveryDocument) -> bool {
+    valid_discovery(discovery, TELEGRAM_ISSUER)
+        && discovery.issuer == TELEGRAM_ISSUER
+        && discovery.authorization_endpoint == TELEGRAM_AUTHORIZATION_URL
+        && discovery.token_endpoint == TELEGRAM_TOKEN_URL
+        && discovery.jwks_uri == TELEGRAM_JWKS_URL
 }
 
 fn is_blocked_host(host: &str) -> bool {
@@ -838,6 +888,18 @@ fn validate_wechat_openid(openid: &str) -> Result<(), OAuthLoginClientError> {
         && openid
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+    {
+        Ok(())
+    } else {
+        Err(OAuthLoginClientError::ProviderUnavailable)
+    }
+}
+
+fn validate_telegram_subject(subject: &str) -> Result<(), OAuthLoginClientError> {
+    if !subject.is_empty()
+        && subject.len() <= 20
+        && subject.bytes().all(|byte| byte.is_ascii_digit())
+        && subject.bytes().any(|byte| byte != b'0')
     {
         Ok(())
     } else {
@@ -1104,6 +1166,36 @@ mod tests {
     }
 
     #[test]
+    fn telegram_oidc_keeps_fixed_official_metadata_and_closed_subjects() {
+        let provider = LoginOAuthProvider::from_id("telegram").unwrap();
+        assert_eq!(provider, LoginOAuthProvider::Telegram);
+        assert_eq!(provider.fixed_issuer(), Some(TELEGRAM_ISSUER));
+        assert_eq!(provider.authorization_url(), TELEGRAM_AUTHORIZATION_URL);
+        assert_eq!(provider.token_url(), TELEGRAM_TOKEN_URL);
+        assert!(provider.uses_pkce());
+        assert!(provider.is_oidc());
+
+        let discovery = DiscoveryDocument {
+            issuer: TELEGRAM_ISSUER.to_owned(),
+            authorization_endpoint: TELEGRAM_AUTHORIZATION_URL.to_owned(),
+            token_endpoint: TELEGRAM_TOKEN_URL.to_owned(),
+            jwks_uri: TELEGRAM_JWKS_URL.to_owned(),
+            code_challenge_methods_supported: Some(vec!["plain".to_owned(), "S256".to_owned()]),
+            response_types_supported: vec!["code".to_owned()],
+            id_token_signing_alg_values_supported: vec!["RS256".to_owned(), "ES256".to_owned()],
+            token_endpoint_auth_methods_supported: Some(vec!["client_secret_basic".to_owned()]),
+        };
+        assert!(valid_telegram_discovery(&discovery));
+        let mut tampered = discovery.clone();
+        tampered.token_endpoint = "https://attacker.example.com/token".to_owned();
+        assert!(!valid_telegram_discovery(&tampered));
+
+        assert!(validate_telegram_subject("80351110224678912").is_ok());
+        assert!(validate_telegram_subject("0000").is_err());
+        assert!(validate_telegram_subject("telegram-user").is_err());
+    }
+
+    #[test]
     fn oidc_subject_is_namespaced_by_issuer() {
         let first = oidc_subject_namespace("https://idp.example.com", "same-subject");
         let second = oidc_subject_namespace("https://other.example.com", "same-subject");
@@ -1187,6 +1279,7 @@ mod tests {
             LoginOAuthProvider::Discord,
             LoginOAuthProvider::Oidc,
             LoginOAuthProvider::LinuxDo,
+            LoginOAuthProvider::Telegram,
         ] {
             let form = token_request_form(
                 provider,

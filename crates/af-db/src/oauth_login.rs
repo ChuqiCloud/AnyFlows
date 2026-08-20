@@ -28,7 +28,9 @@ pub const OAUTH_LOGIN_DISCORD_PROVIDER: &str = "discord";
 pub const OAUTH_LOGIN_OIDC_PROVIDER: &str = "oidc";
 pub const OAUTH_LOGIN_LINUXDO_PROVIDER: &str = "linuxdo";
 pub const OAUTH_LOGIN_WECHAT_PROVIDER: &str = "wechat";
+pub const OAUTH_LOGIN_TELEGRAM_PROVIDER: &str = "telegram";
 const LINUXDO_ISSUER: &str = "https://connect.linux.do";
+const TELEGRAM_ISSUER: &str = "https://oauth.telegram.org";
 const AUTHENTICATION_SETTINGS_ID: i16 = 1;
 const ACTIVE_USER_STATUS: i16 = 1;
 
@@ -104,6 +106,9 @@ impl OAuthLoginProviderRecord {
             && match self.provider.as_str() {
                 OAUTH_LOGIN_OIDC_PROVIDER => self.issuer_url.is_some(),
                 OAUTH_LOGIN_LINUXDO_PROVIDER => self.issuer_url.as_deref() == Some(LINUXDO_ISSUER),
+                OAUTH_LOGIN_TELEGRAM_PROVIDER => {
+                    self.issuer_url.as_deref() == Some(TELEGRAM_ISSUER)
+                }
                 OAUTH_LOGIN_GITHUB_PROVIDER
                 | OAUTH_LOGIN_DISCORD_PROVIDER
                 | OAUTH_LOGIN_WECHAT_PROVIDER => self.issuer_url.is_none(),
@@ -818,6 +823,7 @@ fn validate_provider(provider: &str) -> Result<(), OAuthLoginRepositoryError> {
         OAUTH_LOGIN_OIDC_PROVIDER,
         OAUTH_LOGIN_LINUXDO_PROVIDER,
         OAUTH_LOGIN_WECHAT_PROVIDER,
+        OAUTH_LOGIN_TELEGRAM_PROVIDER,
     ]
     .contains(&provider)
     {
@@ -862,6 +868,7 @@ fn validate_provider_issuer(
     let valid = match provider {
         OAUTH_LOGIN_OIDC_PROVIDER => issuer.is_some(),
         OAUTH_LOGIN_LINUXDO_PROVIDER => issuer == Some(LINUXDO_ISSUER),
+        OAUTH_LOGIN_TELEGRAM_PROVIDER => issuer == Some(TELEGRAM_ISSUER),
         OAUTH_LOGIN_GITHUB_PROVIDER
         | OAUTH_LOGIN_DISCORD_PROVIDER
         | OAUTH_LOGIN_WECHAT_PROVIDER => issuer.is_none(),
@@ -870,7 +877,8 @@ fn validate_provider_issuer(
     let invalid_disabled_issuer = !enabled
         && issuer.is_some()
         && provider != OAUTH_LOGIN_OIDC_PROVIDER
-        && provider != OAUTH_LOGIN_LINUXDO_PROVIDER;
+        && provider != OAUTH_LOGIN_LINUXDO_PROVIDER
+        && provider != OAUTH_LOGIN_TELEGRAM_PROVIDER;
     if (enabled && !valid) || invalid_disabled_issuer {
         Err(OAuthLoginRepositoryError::InvalidInput)
     } else {

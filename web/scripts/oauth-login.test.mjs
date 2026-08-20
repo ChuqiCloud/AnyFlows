@@ -30,7 +30,23 @@ test('登录页只消费公开 Provider 投影并请求服务端授权地址', (
   assert.match(source, /authentication\.oauth_providers/)
   assert.match(source, /beginOAuthLogin/)
   assert.match(source, /provider\.id === 'discord'/)
+  assert.match(source, /provider\.id === 'telegram'/)
   assert.doesNotMatch(source, /github\.com\/login\/oauth\/authorize/)
+})
+
+test('Telegram OAuth 使用生成客户端并接入管理员设置', () => {
+  const apiSource = readFileSync(
+    new URL('../src/features/auth/oauth-login-api.ts', import.meta.url),
+    'utf8',
+  )
+  const settingsSource = readFileSync(
+    new URL('../src/features/authentication-settings/authentication-settings-page.tsx', import.meta.url),
+    'utf8',
+  )
+  assert.match(apiSource, /telegram: \(\) => startTelegramLogin/)
+  assert.match(apiSource, /getAdminTelegramOAuthLoginSettings/)
+  assert.match(apiSource, /updateAdminTelegramOAuthLoginSettings/)
+  assert.match(settingsSource, /provider="telegram"/)
 })
 
 test('OAuth 管理设置按 Provider 分开渲染并保持独立查询键', () => {

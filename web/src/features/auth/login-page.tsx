@@ -13,6 +13,7 @@ import {
   MessageCircle,
   QrCode,
   RefreshCw,
+  Send,
   ShieldCheck,
   UserRoundPlus,
 } from 'lucide-react'
@@ -244,7 +245,9 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                               ? <Globe2 className="size-4" aria-hidden="true" />
                               : provider.id === 'wechat'
                                 ? <QrCode className="size-4" aria-hidden="true" />
-                                : <ShieldCheck className="size-4" aria-hidden="true" />}
+                                : provider.id === 'telegram'
+                                  ? <Send className="size-4" aria-hidden="true" />
+                                  : <ShieldCheck className="size-4" aria-hidden="true" />}
                       {isStarting
                         ? t(`auth.login.oauthStarting.${provider.id}`)
                         : t(`auth.login.oauth.${provider.id}`)}

@@ -76,6 +76,7 @@ export function AuthenticationSettingsPage() {
           <OAuthProviderSettings provider="oidc" />
           <OAuthProviderSettings provider="linuxdo" />
           <OAuthProviderSettings provider="wechat" />
+          <OAuthProviderSettings provider="telegram" />
         </>
       ) : null}
     </div>

@@ -6149,3 +6149,66 @@ export type UpdateAdminWeChatOAuthLoginSettingsResponses = {
     200: AdminOAuthLoginProviderSettings;
 };
 export type UpdateAdminWeChatOAuthLoginSettingsResponse = UpdateAdminWeChatOAuthLoginSettingsResponses[keyof UpdateAdminWeChatOAuthLoginSettingsResponses];
+export type GetAdminTelegramOAuthLoginSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/telegram';
+};
+export type GetAdminTelegramOAuthLoginSettingsErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminTelegramOAuthLoginSettingsError = GetAdminTelegramOAuthLoginSettingsErrors[keyof GetAdminTelegramOAuthLoginSettingsErrors];
+export type GetAdminTelegramOAuthLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type GetAdminTelegramOAuthLoginSettingsResponse = GetAdminTelegramOAuthLoginSettingsResponses[keyof GetAdminTelegramOAuthLoginSettingsResponses];
+export type UpdateAdminTelegramOAuthLoginSettingsData = {
+    body: AdminOAuthLoginProviderSettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/telegram';
+};
+export type UpdateAdminTelegramOAuthLoginSettingsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminTelegramOAuthLoginSettingsError = UpdateAdminTelegramOAuthLoginSettingsErrors[keyof UpdateAdminTelegramOAuthLoginSettingsErrors];
+export type UpdateAdminTelegramOAuthLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type UpdateAdminTelegramOAuthLoginSettingsResponse = UpdateAdminTelegramOAuthLoginSettingsResponses[keyof UpdateAdminTelegramOAuthLoginSettingsResponses];
+export type StartTelegramLoginData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/auth/oauth/telegram/start';
+};
+export type StartTelegramLoginErrors = {
+    409: ManagementError;
+    500: ManagementError;
+};
+export type StartTelegramLoginError = StartTelegramLoginErrors[keyof StartTelegramLoginErrors];
+export type StartTelegramLoginResponses = {
+    200: OAuthLoginStartResponse;
+};
+export type StartTelegramLoginResponse = StartTelegramLoginResponses[keyof StartTelegramLoginResponses];
+export type CompleteTelegramLoginData = {
+    body?: never;
+    path?: never;
+    query?: {
+        state?: string;
+        code?: string;
+        error?: string;
+    };
+    url: '/api/auth/oauth/telegram/callback';
+};
+export type CompleteTelegramLoginErrors = {
+    500: ManagementError;
+};
+export type CompleteTelegramLoginError = CompleteTelegramLoginErrors[keyof CompleteTelegramLoginErrors];

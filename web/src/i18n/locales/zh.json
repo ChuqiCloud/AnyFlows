@@ -2927,14 +2927,16 @@
         "discord": "使用 Discord 继续",
         "oidc": "使用企业 OIDC 继续",
         "linuxdo": "使用 LinuxDO 继续",
-        "wechat": "使用微信继续"
+        "wechat": "使用微信继续",
+        "telegram": "使用 Telegram 继续"
       },
       "oauthStarting": {
         "github": "正在前往 GitHub",
         "discord": "正在前往 Discord",
         "oidc": "正在前往企业 OIDC",
         "linuxdo": "正在前往 LinuxDO",
-        "wechat": "正在打开微信二维码登录"
+        "wechat": "正在打开微信二维码登录",
+        "telegram": "正在前往 Telegram"
       },
       "orPassword": "或使用密码",
       "orAccount": "或使用账户认证",
@@ -3193,6 +3195,21 @@
           "save": "微信登录设置保存失败，请刷新后核对版本。",
           "publicBaseUrl": "启用微信登录前必须先保存站点公开基址。",
           "incomplete": "微信登录需要回调地址、AppID 和已配置的 AppSecret。"
+        }
+      },
+      "telegram": {
+        "title": "Telegram 登录",
+        "enabled": "启用 Telegram 登录",
+        "clientId": "Client ID",
+        "clientSecret": "Client Secret 操作",
+        "newSecret": "新的 Client Secret",
+        "callbackHint": "将此地址登记到 Telegram BotFather 的 Allowed URLs / OIDC 回调白名单。",
+        "version": "Telegram 登录配置版本 {{version}}",
+        "errors": {
+          "load": "无法读取 Telegram 登录设置",
+          "save": "Telegram 登录设置保存失败，请刷新后核对版本。",
+          "publicBaseUrl": "启用 Telegram 登录前必须先保存站点公开基址。",
+          "incomplete": "Telegram 登录需要回调地址、Client ID 和已配置的 Client Secret。"
         }
       }
     },

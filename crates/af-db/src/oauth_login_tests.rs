@@ -5,9 +5,9 @@ use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, JsonValue, Set};
 use super::{
     CREDENTIAL_ENVELOPE_NONCE_BYTES, DatabaseOptions, EncryptedCredentialEnvelope,
     MigrationOptions, OAUTH_LOGIN_DISCORD_PROVIDER, OAUTH_LOGIN_GITHUB_PROVIDER,
-    OAUTH_LOGIN_LINUXDO_PROVIDER, OAUTH_LOGIN_OIDC_PROVIDER, OAUTH_LOGIN_WECHAT_PROVIDER,
-    OAuthIdentityCompletion, OAuthLoginProviderWriteRecord, OAuthLoginRepository,
-    OAuthLoginRepositoryError, OAuthLoginSecretUpdate,
+    OAUTH_LOGIN_LINUXDO_PROVIDER, OAUTH_LOGIN_OIDC_PROVIDER, OAUTH_LOGIN_TELEGRAM_PROVIDER,
+    OAUTH_LOGIN_WECHAT_PROVIDER, OAuthIdentityCompletion, OAuthLoginProviderWriteRecord,
+    OAuthLoginRepository, OAuthLoginRepositoryError, OAuthLoginSecretUpdate,
 };
 use crate::entity::{authentication_settings, groups, users};
 
@@ -59,6 +59,12 @@ async fn provider_settings_use_version_cas_and_never_require_plaintext_reads()
         .await?;
     assert!(!wechat.available());
     assert_eq!(wechat.issuer_url(), None);
+    let telegram = fixture
+        .repository
+        .provider(OAUTH_LOGIN_TELEGRAM_PROVIDER)
+        .await?;
+    assert!(!telegram.available());
+    assert_eq!(telegram.issuer_url(), Some("https://oauth.telegram.org"));
 
     assert_eq!(
         fixture
