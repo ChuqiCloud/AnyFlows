@@ -6021,6 +6021,21 @@ export type StartTelegramLoginResponses = {
     200: OAuthLoginStartResponse;
 };
 export type StartTelegramLoginResponse = StartTelegramLoginResponses[keyof StartTelegramLoginResponses];
+export type StartGoogleLoginData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/auth/oauth/google/start';
+};
+export type StartGoogleLoginErrors = {
+    409: ManagementError;
+    500: ManagementError;
+};
+export type StartGoogleLoginError = StartGoogleLoginErrors[keyof StartGoogleLoginErrors];
+export type StartGoogleLoginResponses = {
+    200: OAuthLoginStartResponse;
+};
+export type StartGoogleLoginResponse = StartGoogleLoginResponses[keyof StartGoogleLoginResponses];
 export type CompleteOidcLoginData = {
     body?: never;
     path?: never;
@@ -6076,6 +6091,20 @@ export type CompleteTelegramLoginErrors = {
     500: ManagementError;
 };
 export type CompleteTelegramLoginError = CompleteTelegramLoginErrors[keyof CompleteTelegramLoginErrors];
+export type CompleteGoogleLoginData = {
+    body?: never;
+    path?: never;
+    query?: {
+        state?: string;
+        code?: string;
+        error?: string;
+    };
+    url: '/api/auth/oauth/google/callback';
+};
+export type CompleteGoogleLoginErrors = {
+    500: ManagementError;
+};
+export type CompleteGoogleLoginError = CompleteGoogleLoginErrors[keyof CompleteGoogleLoginErrors];
 export type GetAdminOidcLoginSettingsData = {
     body?: never;
     path?: never;
@@ -6212,3 +6241,37 @@ export type UpdateAdminTelegramOAuthLoginSettingsResponses = {
     200: AdminOAuthLoginProviderSettings;
 };
 export type UpdateAdminTelegramOAuthLoginSettingsResponse = UpdateAdminTelegramOAuthLoginSettingsResponses[keyof UpdateAdminTelegramOAuthLoginSettingsResponses];
+export type GetAdminGoogleOAuthLoginSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/google';
+};
+export type GetAdminGoogleOAuthLoginSettingsErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminGoogleOAuthLoginSettingsError = GetAdminGoogleOAuthLoginSettingsErrors[keyof GetAdminGoogleOAuthLoginSettingsErrors];
+export type GetAdminGoogleOAuthLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type GetAdminGoogleOAuthLoginSettingsResponse = GetAdminGoogleOAuthLoginSettingsResponses[keyof GetAdminGoogleOAuthLoginSettingsResponses];
+export type UpdateAdminGoogleOAuthLoginSettingsData = {
+    body: AdminOAuthLoginProviderSettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/google';
+};
+export type UpdateAdminGoogleOAuthLoginSettingsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminGoogleOAuthLoginSettingsError = UpdateAdminGoogleOAuthLoginSettingsErrors[keyof UpdateAdminGoogleOAuthLoginSettingsErrors];
+export type UpdateAdminGoogleOAuthLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type UpdateAdminGoogleOAuthLoginSettingsResponse = UpdateAdminGoogleOAuthLoginSettingsResponses[keyof UpdateAdminGoogleOAuthLoginSettingsResponses];

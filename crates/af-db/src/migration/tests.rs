@@ -74,7 +74,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 80;
+const EXPECTED_MIGRATION_COUNT: usize = 81;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -246,7 +246,9 @@ async fn standard_startup_installs_oauth_login_schema_and_indexes() -> Result<()
     provider_names.sort_unstable();
     assert_eq!(
         provider_names,
-        ["discord", "github", "linuxdo", "oidc", "telegram", "wechat"]
+        [
+            "discord", "github", "google", "linuxdo", "oidc", "telegram", "wechat"
+        ]
     );
     let linuxdo = providers
         .iter()
@@ -277,6 +279,18 @@ async fn standard_startup_installs_oauth_login_schema_and_indexes() -> Result<()
     );
     assert_eq!(telegram.client_secret, None);
     assert_eq!(telegram.version, 1);
+    let google = providers
+        .iter()
+        .find(|provider| provider.provider == "google")
+        .expect("预置 Google Provider");
+    assert!(!google.enabled);
+    assert_eq!(google.client_id, None);
+    assert_eq!(
+        google.issuer_url.as_deref(),
+        Some("https://accounts.google.com")
+    );
+    assert_eq!(google.client_secret, None);
+    assert_eq!(google.version, 1);
     pool.close().await?;
     Ok(())
 }
@@ -1164,7 +1178,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 21);
+    assert_eq!(pending_migrations.len(), 22);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -1248,6 +1262,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[20].name(),
         "m20260820_000080_seed_telegram_oauth_login"
+    );
+    assert_eq!(
+        pending_migrations[21].name(),
+        "m20260820_000081_seed_google_oauth_login"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;

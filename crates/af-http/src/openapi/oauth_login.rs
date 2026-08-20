@@ -98,6 +98,20 @@ fn start_wechat_oauth_login() {}
 fn start_telegram_oauth_login() {}
 
 #[utoipa::path(
+    post,
+    path = "/api/auth/oauth/google/start",
+    operation_id = "startGoogleLogin",
+    tag = "OAuth 登录",
+    summary = "启动 Google OIDC 登录",
+    responses(
+        (status = 200, description = "服务端构造的 Google OIDC 授权地址", body = OAuthLoginStartResponse),
+        (status = 409, description = "Google 登录尚未完整配置", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    )
+)]
+fn start_google_oauth_login() {}
+
+#[utoipa::path(
     get,
     path = "/api/auth/oauth/github/callback",
     operation_id = "completeGitHubOAuthLogin",
@@ -203,6 +217,24 @@ fn complete_wechat_oauth_login() {}
     )
 )]
 fn complete_telegram_oauth_login() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/auth/oauth/google/callback",
+    operation_id = "completeGoogleLogin",
+    tag = "OAuth 登录",
+    summary = "接收 Google OIDC 回调",
+    params(
+        ("state" = Option<String>, Query, description = "服务端生成的一次性 state"),
+        ("code" = Option<String>, Query, description = "Google 授权码"),
+        ("error" = Option<String>, Query, description = "Google 拒绝分类")
+    ),
+    responses(
+        (status = 303, description = "跳转到前端一次性票据交换页"),
+        (status = 500, description = "无法构造安全回调地址", body = ManagementErrorBody)
+    )
+)]
+fn complete_google_oauth_login() {}
 
 #[utoipa::path(
     post,
@@ -315,6 +347,22 @@ fn get_admin_wechat_oauth_login_settings() {}
     security(("bearerAuth" = []))
 )]
 fn get_admin_telegram_oauth_login_settings() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/admin/authentication-settings/oauth/google",
+    operation_id = "getAdminGoogleOAuthLoginSettings",
+    tag = "OAuth 登录",
+    summary = "读取 Google OIDC 登录设置",
+    responses(
+        (status = 200, description = "脱敏后的 Google OIDC 设置", body = AdminOAuthLoginProviderSettingsResponse),
+        (status = 401, description = "登录会话无效", body = ManagementErrorBody),
+        (status = 403, description = "当前用户不是管理员", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn get_admin_google_oauth_login_settings() {}
 
 #[utoipa::path(
     put,
@@ -430,6 +478,25 @@ fn update_admin_wechat_oauth_login_settings() {}
 )]
 fn update_admin_telegram_oauth_login_settings() {}
 
+#[utoipa::path(
+    put,
+    path = "/api/admin/authentication-settings/oauth/google",
+    operation_id = "updateAdminGoogleOAuthLoginSettings",
+    tag = "OAuth 登录",
+    summary = "覆盖 Google OIDC 登录设置",
+    request_body = AdminOAuthLoginProviderSettingsRequest,
+    responses(
+        (status = 200, description = "更新后的脱敏设置", body = AdminOAuthLoginProviderSettingsResponse),
+        (status = 400, description = "配置组合无效", body = ManagementErrorBody),
+        (status = 401, description = "登录会话无效", body = ManagementErrorBody),
+        (status = 403, description = "当前用户不是管理员", body = ManagementErrorBody),
+        (status = 409, description = "设置版本冲突或回调基址未配置", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn update_admin_google_oauth_login_settings() {}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -460,10 +527,12 @@ struct OAuthLoginApi;
     start_linuxdo_oauth_login,
     start_wechat_oauth_login,
     start_telegram_oauth_login,
+    start_google_oauth_login,
     complete_oidc_oauth_login,
     complete_linuxdo_oauth_login,
     complete_wechat_oauth_login,
     complete_telegram_oauth_login,
+    complete_google_oauth_login,
     get_admin_oidc_oauth_login_settings,
     update_admin_oidc_oauth_login_settings,
     get_admin_linuxdo_oauth_login_settings,
@@ -471,7 +540,9 @@ struct OAuthLoginApi;
     get_admin_wechat_oauth_login_settings,
     update_admin_wechat_oauth_login_settings,
     get_admin_telegram_oauth_login_settings,
-    update_admin_telegram_oauth_login_settings
+    update_admin_telegram_oauth_login_settings,
+    get_admin_google_oauth_login_settings,
+    update_admin_google_oauth_login_settings
 ))]
 struct OidcOAuthLoginApi;
 

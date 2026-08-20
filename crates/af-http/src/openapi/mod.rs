@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 143);
+        assert_eq!(document.paths.paths.len(), 146);
         let operation_count = document
             .paths
             .paths
@@ -215,7 +215,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 201);
+        assert_eq!(operation_count, 205);
         assert!(
             document
                 .components
@@ -272,6 +272,8 @@ mod tests {
             "completeWeChatOAuthLogin",
             "startTelegramLogin",
             "completeTelegramLogin",
+            "startGoogleLogin",
+            "completeGoogleLogin",
             "exchangeOAuthLoginTicket",
             "getAdminGitHubOAuthLoginSettings",
             "updateAdminGitHubOAuthLoginSettings",
@@ -285,6 +287,8 @@ mod tests {
             "updateAdminWeChatOAuthLoginSettings",
             "getAdminTelegramOAuthLoginSettings",
             "updateAdminTelegramOAuthLoginSettings",
+            "getAdminGoogleOAuthLoginSettings",
+            "updateAdminGoogleOAuthLoginSettings",
             "confirmPasswordReset",
             "completeAdminOAuthManualCallback",
             "getUserProfile",

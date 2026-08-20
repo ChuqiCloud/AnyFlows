@@ -31,6 +31,10 @@ const TELEGRAM_ISSUER: &str = "https://oauth.telegram.org";
 const TELEGRAM_AUTHORIZATION_URL: &str = "https://oauth.telegram.org/auth";
 const TELEGRAM_TOKEN_URL: &str = "https://oauth.telegram.org/token";
 const TELEGRAM_JWKS_URL: &str = "https://oauth.telegram.org/.well-known/jwks.json";
+const GOOGLE_ISSUER: &str = "https://accounts.google.com";
+const GOOGLE_AUTHORIZATION_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
+const GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
+const GOOGLE_JWKS_URL: &str = "https://www.googleapis.com/oauth2/v3/certs";
 const PROVIDER_REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 const MAX_PROVIDER_RESPONSE_BYTES: usize = 64 * 1_024;
 const MAX_ACCESS_TOKEN_BYTES: usize = 4 * 1_024;
@@ -44,16 +48,18 @@ pub enum LoginOAuthProvider {
     LinuxDo,
     WeChat,
     Telegram,
+    Google,
 }
 
 impl LoginOAuthProvider {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::GitHub,
         Self::Discord,
         Self::Oidc,
         Self::LinuxDo,
         Self::WeChat,
         Self::Telegram,
+        Self::Google,
     ];
 
     #[must_use]
@@ -65,6 +71,7 @@ impl LoginOAuthProvider {
             Self::LinuxDo => "linuxdo",
             Self::WeChat => "wechat",
             Self::Telegram => "telegram",
+            Self::Google => "google",
         }
     }
 
@@ -77,6 +84,7 @@ impl LoginOAuthProvider {
             Self::LinuxDo => "LinuxDO",
             Self::WeChat => "微信",
             Self::Telegram => "Telegram",
+            Self::Google => "Google",
         }
     }
 
@@ -89,6 +97,7 @@ impl LoginOAuthProvider {
             Self::LinuxDo => LINUXDO_AUTHORIZATION_URL,
             Self::WeChat => WECHAT_AUTHORIZATION_URL,
             Self::Telegram => TELEGRAM_AUTHORIZATION_URL,
+            Self::Google => GOOGLE_AUTHORIZATION_URL,
         }
     }
 
@@ -96,7 +105,7 @@ impl LoginOAuthProvider {
     pub const fn uses_pkce(self) -> bool {
         matches!(
             self,
-            Self::GitHub | Self::Oidc | Self::LinuxDo | Self::Telegram
+            Self::GitHub | Self::Oidc | Self::LinuxDo | Self::Telegram | Self::Google
         )
     }
 
@@ -109,6 +118,7 @@ impl LoginOAuthProvider {
             Self::LinuxDo => "ld",
             Self::WeChat => "wx",
             Self::Telegram => "tg",
+            Self::Google => "gg",
         }
     }
 
@@ -127,6 +137,7 @@ impl LoginOAuthProvider {
             Self::LinuxDo => LINUXDO_TOKEN_URL,
             Self::WeChat => WECHAT_TOKEN_URL,
             Self::Telegram => TELEGRAM_TOKEN_URL,
+            Self::Google => GOOGLE_TOKEN_URL,
         }
     }
 
@@ -138,12 +149,16 @@ impl LoginOAuthProvider {
             Self::LinuxDo => LINUXDO_USER_URL,
             Self::WeChat => WECHAT_USER_URL,
             Self::Telegram => "",
+            Self::Google => "",
         }
     }
 
     #[must_use]
     pub const fn is_oidc(self) -> bool {
-        matches!(self, Self::Oidc | Self::LinuxDo | Self::Telegram)
+        matches!(
+            self,
+            Self::Oidc | Self::LinuxDo | Self::Telegram | Self::Google
+        )
     }
 
     #[must_use]
@@ -151,6 +166,7 @@ impl LoginOAuthProvider {
         match self {
             Self::LinuxDo => Some(LINUXDO_ISSUER),
             Self::Telegram => Some(TELEGRAM_ISSUER),
+            Self::Google => Some(GOOGLE_ISSUER),
             _ => None,
         }
     }
@@ -407,17 +423,24 @@ impl OAuthLoginClient {
         }
         let subject = claims.sub;
         validate_oidc_subject(&subject)?;
-        let username = if provider == LoginOAuthProvider::Telegram {
-            validate_telegram_subject(&subject)?;
-            "telegram".to_owned()
-        } else {
-            let username = claims
-                .preferred_username
-                .or(claims.login)
-                .or(claims.name)
-                .unwrap_or_else(|| subject.clone());
-            validate_oidc_username(&username)?;
-            username
+        let username = match provider {
+            LoginOAuthProvider::Telegram => {
+                validate_telegram_subject(&subject)?;
+                "telegram".to_owned()
+            }
+            LoginOAuthProvider::Google => {
+                validate_google_subject(&subject)?;
+                "google".to_owned()
+            }
+            _ => {
+                let username = claims
+                    .preferred_username
+                    .or(claims.login)
+                    .or(claims.name)
+                    .unwrap_or_else(|| subject.clone());
+                validate_oidc_username(&username)?;
+                username
+            }
         };
         let subject = oidc_subject_namespace(discovery.issuer.trim_end_matches('/'), &subject);
         drop(access_token);
@@ -452,7 +475,10 @@ impl OAuthLoginClient {
             .append_pair("response_type", "code")
             .append_pair(
                 "scope",
-                if provider == LoginOAuthProvider::Telegram {
+                if matches!(
+                    provider,
+                    LoginOAuthProvider::Telegram | LoginOAuthProvider::Google
+                ) {
                     "openid"
                 } else {
                     "openid profile email"
@@ -478,11 +504,20 @@ impl OAuthLoginClient {
                 .then(DiscoveryDocument::linuxdo)
                 .ok_or(OAuthLoginClientError::ProviderUnavailable);
         }
-        if provider == LoginOAuthProvider::Telegram && issuer != TELEGRAM_ISSUER {
-            return Err(OAuthLoginClientError::ProviderUnavailable);
+        match provider {
+            LoginOAuthProvider::Telegram if issuer != TELEGRAM_ISSUER => {
+                return Err(OAuthLoginClientError::ProviderUnavailable);
+            }
+            LoginOAuthProvider::Google if issuer != GOOGLE_ISSUER => {
+                return Err(OAuthLoginClientError::ProviderUnavailable);
+            }
+            _ => {}
         }
         let discovery = self.fetch_discovery(issuer).await?;
         if provider == LoginOAuthProvider::Telegram && !valid_telegram_discovery(&discovery) {
+            return Err(OAuthLoginClientError::ProviderUnavailable);
+        }
+        if provider == LoginOAuthProvider::Google && !valid_google_discovery(&discovery) {
             return Err(OAuthLoginClientError::ProviderUnavailable);
         }
         Ok(discovery)
@@ -583,6 +618,7 @@ fn token_request_form(
             | LoginOAuthProvider::Oidc
             | LoginOAuthProvider::LinuxDo
             | LoginOAuthProvider::Telegram
+            | LoginOAuthProvider::Google
     ) {
         serializer.append_pair("grant_type", "authorization_code");
     }
@@ -761,7 +797,8 @@ fn parse_identity(
         LoginOAuthProvider::Oidc
         | LoginOAuthProvider::LinuxDo
         | LoginOAuthProvider::WeChat
-        | LoginOAuthProvider::Telegram => Err(OAuthLoginClientError::ProviderUnavailable),
+        | LoginOAuthProvider::Telegram
+        | LoginOAuthProvider::Google => Err(OAuthLoginClientError::ProviderUnavailable),
     }
 }
 
@@ -823,6 +860,14 @@ fn valid_telegram_discovery(discovery: &DiscoveryDocument) -> bool {
         && discovery.authorization_endpoint == TELEGRAM_AUTHORIZATION_URL
         && discovery.token_endpoint == TELEGRAM_TOKEN_URL
         && discovery.jwks_uri == TELEGRAM_JWKS_URL
+}
+
+fn valid_google_discovery(discovery: &DiscoveryDocument) -> bool {
+    valid_discovery(discovery, GOOGLE_ISSUER)
+        && discovery.issuer == GOOGLE_ISSUER
+        && discovery.authorization_endpoint == GOOGLE_AUTHORIZATION_URL
+        && discovery.token_endpoint == GOOGLE_TOKEN_URL
+        && discovery.jwks_uri == GOOGLE_JWKS_URL
 }
 
 fn is_blocked_host(host: &str) -> bool {
@@ -900,6 +945,19 @@ fn validate_telegram_subject(subject: &str) -> Result<(), OAuthLoginClientError>
         && subject.len() <= 20
         && subject.bytes().all(|byte| byte.is_ascii_digit())
         && subject.bytes().any(|byte| byte != b'0')
+    {
+        Ok(())
+    } else {
+        Err(OAuthLoginClientError::ProviderUnavailable)
+    }
+}
+
+fn validate_google_subject(subject: &str) -> Result<(), OAuthLoginClientError> {
+    if !subject.is_empty()
+        && subject.len() <= 255
+        && subject.is_ascii()
+        && subject.trim() == subject
+        && !subject.bytes().any(|byte| byte.is_ascii_control())
     {
         Ok(())
     } else {
@@ -1196,6 +1254,41 @@ mod tests {
     }
 
     #[test]
+    fn google_oidc_keeps_fixed_official_metadata_and_stable_subjects() {
+        let provider = LoginOAuthProvider::from_id("google").unwrap();
+        assert_eq!(provider, LoginOAuthProvider::Google);
+        assert_eq!(provider.fixed_issuer(), Some(GOOGLE_ISSUER));
+        assert_eq!(provider.authorization_url(), GOOGLE_AUTHORIZATION_URL);
+        assert_eq!(provider.token_url(), GOOGLE_TOKEN_URL);
+        assert!(provider.uses_pkce());
+        assert!(provider.is_oidc());
+
+        let discovery = DiscoveryDocument {
+            issuer: GOOGLE_ISSUER.to_owned(),
+            authorization_endpoint: GOOGLE_AUTHORIZATION_URL.to_owned(),
+            token_endpoint: GOOGLE_TOKEN_URL.to_owned(),
+            jwks_uri: GOOGLE_JWKS_URL.to_owned(),
+            code_challenge_methods_supported: Some(vec!["plain".to_owned(), "S256".to_owned()]),
+            response_types_supported: vec!["code".to_owned()],
+            id_token_signing_alg_values_supported: vec!["RS256".to_owned()],
+            token_endpoint_auth_methods_supported: Some(vec![
+                "client_secret_post".to_owned(),
+                "client_secret_basic".to_owned(),
+            ]),
+        };
+        assert!(valid_google_discovery(&discovery));
+        let mut tampered = discovery.clone();
+        tampered.jwks_uri = "https://attacker.example.com/certs".to_owned();
+        assert!(!valid_google_discovery(&tampered));
+
+        assert!(validate_google_subject("110169484474386276334").is_ok());
+        assert!(validate_google_subject("").is_err());
+        assert!(validate_google_subject("google user").is_ok());
+        assert!(validate_google_subject("google\nuser").is_err());
+        assert!(validate_google_subject("谷歌用户").is_err());
+    }
+
+    #[test]
     fn oidc_subject_is_namespaced_by_issuer() {
         let first = oidc_subject_namespace("https://idp.example.com", "same-subject");
         let second = oidc_subject_namespace("https://other.example.com", "same-subject");
@@ -1280,6 +1373,7 @@ mod tests {
             LoginOAuthProvider::Oidc,
             LoginOAuthProvider::LinuxDo,
             LoginOAuthProvider::Telegram,
+            LoginOAuthProvider::Google,
         ] {
             let form = token_request_form(
                 provider,

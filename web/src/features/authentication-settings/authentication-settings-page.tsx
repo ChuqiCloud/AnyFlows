@@ -49,7 +49,7 @@ export function AuthenticationSettingsPage() {
 
       {pending ? (
         <div className="grid gap-0 border-y border-[var(--hairline)]" aria-label={t('authenticationSettings.loading')}>
-          {[0, 1, 2, 3, 4].map((item) => (
+          {[0, 1, 2, 3, 4, 5].map((item) => (
             <div key={item} className="grid gap-3 border-b border-[var(--hairline)] py-5 last:border-b-0 md:grid-cols-2">
               <div className="grid gap-2"><Skeleton className="h-4 w-32" /><Skeleton className="h-3 w-64 max-w-full" /></div>
               <Skeleton className="h-9 w-full" />
@@ -77,6 +77,7 @@ export function AuthenticationSettingsPage() {
           <OAuthProviderSettings provider="linuxdo" />
           <OAuthProviderSettings provider="wechat" />
           <OAuthProviderSettings provider="telegram" />
+          <OAuthProviderSettings provider="google" />
         </>
       ) : null}
     </div>

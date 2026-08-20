@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   UserRoundPlus,
 } from 'lucide-react'
+import GoogleIcon from '@lobehub/icons/es/Google/components/Color'
 import { type FormEvent, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -247,6 +248,8 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                                 ? <QrCode className="size-4" aria-hidden="true" />
                                 : provider.id === 'telegram'
                                   ? <Send className="size-4" aria-hidden="true" />
+                                  : provider.id === 'google'
+                                    ? <GoogleIcon size="1rem" aria-hidden="true" />
                                   : <ShieldCheck className="size-4" aria-hidden="true" />}
                       {isStarting
                         ? t(`auth.login.oauthStarting.${provider.id}`)

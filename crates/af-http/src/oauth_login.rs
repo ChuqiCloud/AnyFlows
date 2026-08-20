@@ -34,6 +34,7 @@ const OIDC_PROVIDER: &str = "oidc";
 const LINUXDO_PROVIDER: &str = "linuxdo";
 const WECHAT_PROVIDER: &str = "wechat";
 const TELEGRAM_PROVIDER: &str = "telegram";
+const GOOGLE_PROVIDER: &str = "google";
 const OAUTH_STATE_COOKIE: &str = "af_oauth_login_state";
 const GITHUB_CALLBACK_PATH: &str = "/api/auth/oauth/github/callback";
 const DISCORD_CALLBACK_PATH: &str = "/api/auth/oauth/discord/callback";
@@ -41,6 +42,7 @@ const OIDC_CALLBACK_PATH: &str = "/api/auth/oauth/oidc/callback";
 const LINUXDO_CALLBACK_PATH: &str = "/api/auth/oauth/linuxdo/callback";
 const WECHAT_CALLBACK_PATH: &str = "/api/auth/oauth/wechat/callback";
 const TELEGRAM_CALLBACK_PATH: &str = "/api/auth/oauth/telegram/callback";
+const GOOGLE_CALLBACK_PATH: &str = "/api/auth/oauth/google/callback";
 const OAUTH_STATE_COOKIE_MAX_AGE_SECONDS: u64 = 10 * 60;
 const OAUTH_STATE_COOKIE_DOMAIN: &str = "oauth-login-browser-state-v1";
 
@@ -155,6 +157,11 @@ pub(crate) fn build_oauth_login_router(
             "/api/auth/oauth/telegram/callback",
             get(complete_telegram_login),
         )
+        .route("/api/auth/oauth/google/start", post(start_google_login))
+        .route(
+            "/api/auth/oauth/google/callback",
+            get(complete_google_login),
+        )
         .route("/api/auth/oauth/exchange", post(exchange_oauth_ticket))
         .route(
             "/api/admin/authentication-settings/oauth/github",
@@ -213,6 +220,16 @@ pub(crate) fn build_oauth_login_router(
                     authenticate_management_session,
                 )),
         )
+        .route(
+            "/api/admin/authentication-settings/oauth/google",
+            get(get_admin_google_settings)
+                .put(update_admin_google_settings)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(middleware::from_fn_with_state(
+                    ManagementAuthenticationState::new(Arc::clone(&session_authenticator)),
+                    authenticate_management_session,
+                )),
+        )
         .with_state(OAuthLoginHttpState {
             service,
             session_authenticator,
@@ -253,6 +270,12 @@ async fn start_telegram_login(
     State(state): State<OAuthLoginHttpState>,
 ) -> Result<Response, ManagementError> {
     start_login(state, TELEGRAM_PROVIDER, TELEGRAM_CALLBACK_PATH).await
+}
+
+async fn start_google_login(
+    State(state): State<OAuthLoginHttpState>,
+) -> Result<Response, ManagementError> {
+    start_login(state, GOOGLE_PROVIDER, GOOGLE_CALLBACK_PATH).await
 }
 
 async fn start_login(
@@ -360,6 +383,21 @@ async fn complete_telegram_login(
     .await
 }
 
+async fn complete_google_login(
+    State(state): State<OAuthLoginHttpState>,
+    headers: HeaderMap,
+    RawQuery(raw_query): RawQuery,
+) -> Response {
+    complete_login(
+        state,
+        headers,
+        raw_query,
+        GOOGLE_PROVIDER,
+        GOOGLE_CALLBACK_PATH,
+    )
+    .await
+}
+
 async fn complete_login(
     state: OAuthLoginHttpState,
     headers: HeaderMap,
@@ -453,6 +491,13 @@ async fn get_admin_telegram_settings(
     get_admin_settings(state, authentication, TELEGRAM_PROVIDER).await
 }
 
+async fn get_admin_google_settings(
+    State(state): State<OAuthLoginHttpState>,
+    Extension(authentication): Extension<af_admin::SessionAuthentication>,
+) -> Result<Response, ManagementError> {
+    get_admin_settings(state, authentication, GOOGLE_PROVIDER).await
+}
+
 async fn get_admin_settings(
     state: OAuthLoginHttpState,
     authentication: af_admin::SessionAuthentication,
@@ -514,6 +559,14 @@ async fn update_admin_telegram_settings(
     request: Result<Json<AdminOAuthLoginProviderSettingsRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
     update_admin_settings(state, authentication, request, TELEGRAM_PROVIDER).await
+}
+
+async fn update_admin_google_settings(
+    State(state): State<OAuthLoginHttpState>,
+    Extension(authentication): Extension<af_admin::SessionAuthentication>,
+    request: Result<Json<AdminOAuthLoginProviderSettingsRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    update_admin_settings(state, authentication, request, GOOGLE_PROVIDER).await
 }
 
 async fn update_admin_settings(
