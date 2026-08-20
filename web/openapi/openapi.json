@@ -16011,7 +16011,7 @@
         "tags": [
           "OAuth 登录"
         ],
-        "summary": "启动 OIDC OAuth 登录",
+        "summary": "启动 OIDC 登录",
         "operationId": "startOidcLogin",
         "responses": {
           "200": {
@@ -16025,7 +16025,7 @@
             }
           },
           "409": {
-            "description": "OIDC OAuth 登录尚未完整配置",
+            "description": "OIDC 登录尚未完整配置",
             "content": {
               "application/json": {
                 "schema": {
@@ -16052,7 +16052,7 @@
         "tags": [
           "OAuth 登录"
         ],
-        "summary": "启动 LinuxDO OAuth 登录",
+        "summary": "启动 LinuxDO 登录",
         "operationId": "startLinuxDoLogin",
         "responses": {
           "200": {
@@ -16066,7 +16066,7 @@
             }
           },
           "409": {
-            "description": "LinuxDO OAuth 登录尚未完整配置",
+            "description": "LinuxDO 登录尚未完整配置",
             "content": {
               "application/json": {
                 "schema": {
@@ -16093,7 +16093,7 @@
         "tags": [
           "OAuth 登录"
         ],
-        "summary": "接收 OIDC OAuth 回调",
+        "summary": "接收 OIDC 回调",
         "operationId": "completeOidcLogin",
         "parameters": [
           {
@@ -16146,7 +16146,7 @@
         "tags": [
           "OAuth 登录"
         ],
-        "summary": "接收 LinuxDO OAuth 回调",
+        "summary": "接收 LinuxDO 回调",
         "operationId": "completeLinuxDoLogin",
         "parameters": [
           {
@@ -16199,11 +16199,11 @@
         "tags": [
           "OAuth 登录"
         ],
-        "summary": "读取 OIDC OAuth 登录设置",
+        "summary": "读取 OIDC 登录设置",
         "operationId": "getAdminOidcLoginSettings",
         "responses": {
           "200": {
-            "description": "脱敏后的 OIDC OAuth App 设置",
+            "description": "脱敏后的 OIDC 设置",
             "content": {
               "application/json": {
                 "schema": {
@@ -16253,7 +16253,7 @@
         "tags": [
           "OAuth 登录"
         ],
-        "summary": "覆盖 OIDC OAuth 登录设置",
+        "summary": "覆盖 OIDC 登录设置",
         "operationId": "updateAdminOidcLoginSettings",
         "requestBody": {
           "content": {
@@ -16339,11 +16339,11 @@
         "tags": [
           "OAuth 登录"
         ],
-        "summary": "读取 LinuxDO OAuth 登录设置",
+        "summary": "读取 LinuxDO 登录设置",
         "operationId": "getAdminLinuxDoLoginSettings",
         "responses": {
           "200": {
-            "description": "脱敏后的 LinuxDO OAuth App 设置",
+            "description": "脱敏后的 LinuxDO 设置",
             "content": {
               "application/json": {
                 "schema": {
@@ -16393,7 +16393,7 @@
         "tags": [
           "OAuth 登录"
         ],
-        "summary": "覆盖 LinuxDO OAuth 登录设置",
+        "summary": "覆盖 LinuxDO 登录设置",
         "operationId": "updateAdminLinuxDoLoginSettings",
         "requestBody": {
           "content": {
@@ -23687,7 +23687,7 @@
               "null"
             ],
             "format": "double",
-            "default": 1,
+            "default": 1.0,
             "maximum": 4,
             "minimum": 0.25
           },
