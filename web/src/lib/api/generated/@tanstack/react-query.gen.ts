@@ -3382,6 +3382,19 @@ export const startWeChatOAuthLoginMutation = (options?: Partial<Options<StartWeC
     };
     return mutationOptions;
 };
+export const startTelegramLoginMutation = (options?: Partial<Options<StartTelegramLoginData>>): UseMutationOptions<StartTelegramLoginResponse, StartTelegramLoginError, Options<StartTelegramLoginData>> => {
+    const mutationOptions: UseMutationOptions<StartTelegramLoginResponse, StartTelegramLoginError, Options<StartTelegramLoginData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await startTelegramLogin({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
 export const completeOidcLoginQueryKey = (options?: Options<CompleteOidcLoginData>) => createQueryKey('completeOidcLogin', options);
 export const completeOidcLoginOptions = (options?: Options<CompleteOidcLoginData>) => queryOptions<unknown, CompleteOidcLoginError, unknown, ReturnType<typeof completeOidcLoginQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -3420,6 +3433,19 @@ export const completeWeChatOAuthLoginOptions = (options?: Options<CompleteWeChat
         return data;
     },
     queryKey: completeWeChatOAuthLoginQueryKey(options)
+});
+export const completeTelegramLoginQueryKey = (options?: Options<CompleteTelegramLoginData>) => createQueryKey('completeTelegramLogin', options);
+export const completeTelegramLoginOptions = (options?: Options<CompleteTelegramLoginData>) => queryOptions<unknown, CompleteTelegramLoginError, unknown, ReturnType<typeof completeTelegramLoginQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await completeTelegramLogin({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: completeTelegramLoginQueryKey(options)
 });
 export const getAdminOidcLoginSettingsQueryKey = (options?: Options<GetAdminOidcLoginSettingsData>) => createQueryKey('getAdminOidcLoginSettings', options);
 export const getAdminOidcLoginSettingsOptions = (options?: Options<GetAdminOidcLoginSettingsData>) => queryOptions<GetAdminOidcLoginSettingsResponse, GetAdminOidcLoginSettingsError, GetAdminOidcLoginSettingsResponse, ReturnType<typeof getAdminOidcLoginSettingsQueryKey>>({
@@ -3525,29 +3551,3 @@ export const updateAdminTelegramOAuthLoginSettingsMutation = (options?: Partial<
     };
     return mutationOptions;
 };
-export const startTelegramLoginMutation = (options?: Partial<Options<StartTelegramLoginData>>): UseMutationOptions<StartTelegramLoginResponse, StartTelegramLoginError, Options<StartTelegramLoginData>> => {
-    const mutationOptions: UseMutationOptions<StartTelegramLoginResponse, StartTelegramLoginError, Options<StartTelegramLoginData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await startTelegramLogin({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
-export const completeTelegramLoginQueryKey = (options?: Options<CompleteTelegramLoginData>) => createQueryKey('completeTelegramLogin', options);
-export const completeTelegramLoginOptions = (options?: Options<CompleteTelegramLoginData>) => queryOptions<unknown, CompleteTelegramLoginError, unknown, ReturnType<typeof completeTelegramLoginQueryKey>>({
-    queryFn: async ({ queryKey, signal }) => {
-        const { data } = await completeTelegramLogin({
-            ...options,
-            ...queryKey[0],
-            signal,
-            throwOnError: true
-        });
-        return data;
-    },
-    queryKey: completeTelegramLoginQueryKey(options)
-});

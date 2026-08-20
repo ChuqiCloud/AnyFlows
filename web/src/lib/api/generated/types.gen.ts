@@ -6006,6 +6006,21 @@ export type StartWeChatOAuthLoginResponses = {
     200: OAuthLoginStartResponse;
 };
 export type StartWeChatOAuthLoginResponse = StartWeChatOAuthLoginResponses[keyof StartWeChatOAuthLoginResponses];
+export type StartTelegramLoginData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/auth/oauth/telegram/start';
+};
+export type StartTelegramLoginErrors = {
+    409: ManagementError;
+    500: ManagementError;
+};
+export type StartTelegramLoginError = StartTelegramLoginErrors[keyof StartTelegramLoginErrors];
+export type StartTelegramLoginResponses = {
+    200: OAuthLoginStartResponse;
+};
+export type StartTelegramLoginResponse = StartTelegramLoginResponses[keyof StartTelegramLoginResponses];
 export type CompleteOidcLoginData = {
     body?: never;
     path?: never;
@@ -6047,6 +6062,20 @@ export type CompleteWeChatOAuthLoginErrors = {
     500: ManagementError;
 };
 export type CompleteWeChatOAuthLoginError = CompleteWeChatOAuthLoginErrors[keyof CompleteWeChatOAuthLoginErrors];
+export type CompleteTelegramLoginData = {
+    body?: never;
+    path?: never;
+    query?: {
+        state?: string;
+        code?: string;
+        error?: string;
+    };
+    url: '/api/auth/oauth/telegram/callback';
+};
+export type CompleteTelegramLoginErrors = {
+    500: ManagementError;
+};
+export type CompleteTelegramLoginError = CompleteTelegramLoginErrors[keyof CompleteTelegramLoginErrors];
 export type GetAdminOidcLoginSettingsData = {
     body?: never;
     path?: never;
@@ -6183,32 +6212,3 @@ export type UpdateAdminTelegramOAuthLoginSettingsResponses = {
     200: AdminOAuthLoginProviderSettings;
 };
 export type UpdateAdminTelegramOAuthLoginSettingsResponse = UpdateAdminTelegramOAuthLoginSettingsResponses[keyof UpdateAdminTelegramOAuthLoginSettingsResponses];
-export type StartTelegramLoginData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/api/auth/oauth/telegram/start';
-};
-export type StartTelegramLoginErrors = {
-    409: ManagementError;
-    500: ManagementError;
-};
-export type StartTelegramLoginError = StartTelegramLoginErrors[keyof StartTelegramLoginErrors];
-export type StartTelegramLoginResponses = {
-    200: OAuthLoginStartResponse;
-};
-export type StartTelegramLoginResponse = StartTelegramLoginResponses[keyof StartTelegramLoginResponses];
-export type CompleteTelegramLoginData = {
-    body?: never;
-    path?: never;
-    query?: {
-        state?: string;
-        code?: string;
-        error?: string;
-    };
-    url: '/api/auth/oauth/telegram/callback';
-};
-export type CompleteTelegramLoginErrors = {
-    500: ManagementError;
-};
-export type CompleteTelegramLoginError = CompleteTelegramLoginErrors[keyof CompleteTelegramLoginErrors];
