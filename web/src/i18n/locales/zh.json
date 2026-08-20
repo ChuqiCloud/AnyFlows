@@ -2928,7 +2928,8 @@
         "oidc": "使用企业 OIDC 继续",
         "linuxdo": "使用 LinuxDO 继续",
         "wechat": "使用微信继续",
-        "telegram": "使用 Telegram 继续"
+        "telegram": "使用 Telegram 继续",
+        "google": "使用 Google 继续"
       },
       "oauthStarting": {
         "github": "正在前往 GitHub",
@@ -2936,7 +2937,8 @@
         "oidc": "正在前往企业 OIDC",
         "linuxdo": "正在前往 LinuxDO",
         "wechat": "正在打开微信二维码登录",
-        "telegram": "正在前往 Telegram"
+        "telegram": "正在前往 Telegram",
+        "google": "正在前往 Google"
       },
       "orPassword": "或使用密码",
       "orAccount": "或使用账户认证",
@@ -3210,6 +3212,22 @@
           "save": "Telegram 登录设置保存失败，请刷新后核对版本。",
           "publicBaseUrl": "启用 Telegram 登录前必须先保存站点公开基址。",
           "incomplete": "Telegram 登录需要回调地址、Client ID 和已配置的 Client Secret。"
+        }
+      },
+      "google": {
+        "title": "Google 登录",
+        "enabled": "启用 Google 登录",
+        "clientId": "OAuth Client ID",
+        "clientSecret": "OAuth Client Secret 操作",
+        "newSecret": "新的 OAuth Client Secret",
+        "callbackHint": "将此地址登记到 Google Cloud OAuth 客户端的授权重定向 URI。",
+        "issuerHint": "Google 使用官方固定 Issuer，不能自定义网络目标。",
+        "version": "Google 登录配置版本 {{version}}",
+        "errors": {
+          "load": "无法读取 Google 登录设置",
+          "save": "Google 登录设置保存失败，请刷新后核对版本。",
+          "publicBaseUrl": "启用 Google 登录前必须先保存站点公开基址。",
+          "incomplete": "Google 登录需要回调地址、Client ID 和已配置的 Client Secret。"
         }
       }
     },

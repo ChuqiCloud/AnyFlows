@@ -2929,7 +2929,8 @@
         "oidc": "Continue with enterprise OIDC",
         "linuxdo": "Continue with LinuxDO",
         "wechat": "Continue with WeChat",
-        "telegram": "Continue with Telegram"
+        "telegram": "Continue with Telegram",
+        "google": "Continue with Google"
       },
       "oauthStarting": {
         "github": "Opening GitHub",
@@ -2937,7 +2938,8 @@
         "oidc": "Opening enterprise OIDC",
         "linuxdo": "Opening LinuxDO",
         "wechat": "Opening WeChat QR sign-in",
-        "telegram": "Opening Telegram"
+        "telegram": "Opening Telegram",
+        "google": "Opening Google"
       },
       "orPassword": "or use a password",
       "orAccount": "or use account sign-in",
@@ -3211,6 +3213,22 @@
           "save": "Unable to save Telegram settings. Refresh and verify the version.",
           "publicBaseUrl": "Save the public site base URL before enabling Telegram sign-in.",
           "incomplete": "Telegram sign-in requires a callback URL, Client ID, and configured Client Secret."
+        }
+      },
+      "google": {
+        "title": "Google sign-in",
+        "enabled": "Enable Google sign-in",
+        "clientId": "OAuth Client ID",
+        "clientSecret": "OAuth Client Secret action",
+        "newSecret": "New OAuth Client Secret",
+        "callbackHint": "Register this URL as an authorized redirect URI for the Google Cloud OAuth client.",
+        "issuerHint": "Google uses the official server-fixed issuer and cannot be customized.",
+        "version": "Google sign-in configuration version {{version}}",
+        "errors": {
+          "load": "Unable to load Google sign-in settings",
+          "save": "Unable to save Google sign-in settings. Refresh and verify the version.",
+          "publicBaseUrl": "Save the public site base URL before enabling Google sign-in.",
+          "incomplete": "Google sign-in requires a callback URL, Client ID, and configured Client Secret."
         }
       }
     },

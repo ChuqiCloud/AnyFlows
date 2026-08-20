@@ -167,6 +167,7 @@ impl AdminOAuthLoginProviderSettingsCommand {
                 LoginOAuthProvider::Oidc => self.issuer_url,
                 LoginOAuthProvider::LinuxDo => Some("https://connect.linux.do".to_owned()),
                 LoginOAuthProvider::Telegram => Some("https://oauth.telegram.org".to_owned()),
+                LoginOAuthProvider::Google => Some("https://accounts.google.com".to_owned()),
                 LoginOAuthProvider::GitHub
                 | LoginOAuthProvider::Discord
                 | LoginOAuthProvider::WeChat => None,
@@ -835,6 +836,7 @@ fn client_secret_kind(provider: LoginOAuthProvider) -> SystemSecretKind {
         LoginOAuthProvider::LinuxDo => SystemSecretKind::OAuthLoginLinuxDoClientSecret,
         LoginOAuthProvider::WeChat => SystemSecretKind::OAuthLoginWechatClientSecret,
         LoginOAuthProvider::Telegram => SystemSecretKind::OAuthLoginTelegramClientSecret,
+        LoginOAuthProvider::Google => SystemSecretKind::OAuthLoginGoogleClientSecret,
     }
 }
 
@@ -875,6 +877,9 @@ fn validate_command_issuer(
         }
         LoginOAuthProvider::Telegram => {
             issuer.is_none() || issuer == Some("https://oauth.telegram.org")
+        }
+        LoginOAuthProvider::Google => {
+            issuer.is_none() || issuer == Some("https://accounts.google.com")
         }
         LoginOAuthProvider::GitHub | LoginOAuthProvider::Discord | LoginOAuthProvider::WeChat => {
             issuer.is_none()

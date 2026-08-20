@@ -236,6 +236,55 @@ async fn discord_routes_use_a_provider_specific_callback_cookie_path() {
 }
 
 #[tokio::test]
+async fn google_routes_use_a_provider_specific_callback_cookie_path() {
+    let service = Arc::new(FakeOAuthLoginService::new());
+    let app = router(Arc::clone(&service));
+    let start = app
+        .clone()
+        .oneshot(
+            Request::post("/api/auth/oauth/google/start")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(start.status(), StatusCode::OK);
+    assert!(
+        start.headers()[SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .contains("Path=/api/auth/oauth/google/callback")
+    );
+    let cookie = start.headers()[SET_COOKIE]
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned();
+    let callback = app
+        .oneshot(
+            Request::get("/api/auth/oauth/google/callback?state=opaque&code=code")
+                .header(COOKIE, cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(callback.status(), StatusCode::SEE_OTHER);
+    assert!(
+        callback.headers()[SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .contains("Path=/api/auth/oauth/google/callback")
+    );
+    assert_eq!(
+        service.calls.lock().unwrap().as_slice(),
+        ["begin", "complete"]
+    );
+}
+
+#[tokio::test]
 async fn callback_redirects_with_no_store_and_no_referrer_for_success_and_cancel() {
     let service = Arc::new(FakeOAuthLoginService::new());
     let app = router(Arc::clone(&service));

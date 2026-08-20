@@ -31,6 +31,7 @@ test('登录页只消费公开 Provider 投影并请求服务端授权地址', (
   assert.match(source, /beginOAuthLogin/)
   assert.match(source, /provider\.id === 'discord'/)
   assert.match(source, /provider\.id === 'telegram'/)
+  assert.match(source, /provider\.id === 'google'/)
   assert.doesNotMatch(source, /github\.com\/login\/oauth\/authorize/)
 })
 
@@ -47,6 +48,26 @@ test('Telegram OAuth 使用生成客户端并接入管理员设置', () => {
   assert.match(apiSource, /getAdminTelegramOAuthLoginSettings/)
   assert.match(apiSource, /updateAdminTelegramOAuthLoginSettings/)
   assert.match(settingsSource, /provider="telegram"/)
+})
+
+test('Google OAuth 使用生成客户端、固定设置页和官方入口', () => {
+  const apiSource = readFileSync(
+    new URL('../src/features/auth/oauth-login-api.ts', import.meta.url),
+    'utf8',
+  )
+  const settingsSource = readFileSync(
+    new URL('../src/features/authentication-settings/authentication-settings-page.tsx', import.meta.url),
+    'utf8',
+  )
+  const providerSettingsSource = readFileSync(
+    new URL('../src/features/authentication-settings/oauth-provider-settings.tsx', import.meta.url),
+    'utf8',
+  )
+  assert.match(apiSource, /google: \(\) => startGoogleLogin/)
+  assert.match(apiSource, /getAdminGoogleOAuthLoginSettings/)
+  assert.match(apiSource, /updateAdminGoogleOAuthLoginSettings/)
+  assert.match(settingsSource, /provider="google"/)
+  assert.match(providerSettingsSource, /https:\/\/accounts\.google\.com/)
 })
 
 test('OAuth 管理设置按 Provider 分开渲染并保持独立查询键', () => {

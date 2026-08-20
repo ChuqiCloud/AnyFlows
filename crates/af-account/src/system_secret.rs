@@ -38,6 +38,8 @@ pub enum SystemSecretKind {
     OAuthLoginWechatClientSecret,
     /// Telegram OIDC 应用的 Client Secret。
     OAuthLoginTelegramClientSecret,
+    /// Google OIDC 应用的 Client Secret。
+    OAuthLoginGoogleClientSecret,
     /// 用户登录 OAuth state 内携带的一次性随机材料封套。
     OAuthLoginState,
     /// 用户 TOTP 配置；用户标识参与 AAD，禁止跨账户搬用。
@@ -64,6 +66,7 @@ impl SystemSecretKind {
             Self::OAuthLoginLinuxDoClientSecret => "oauth_login_linuxdo_client_secret",
             Self::OAuthLoginWechatClientSecret => "oauth_login_wechat_client_secret",
             Self::OAuthLoginTelegramClientSecret => "oauth_login_telegram_client_secret",
+            Self::OAuthLoginGoogleClientSecret => "oauth_login_google_client_secret",
             Self::OAuthLoginState => "oauth_login_state",
             Self::TotpSecret(_) => "totp_secret",
             Self::PasskeyRegistrationState(_) => "passkey_registration_state",
@@ -260,6 +263,7 @@ fn system_secret_aad(kind: SystemSecretKind) -> Vec<u8> {
         SystemSecretKind::OAuthLoginTelegramClientSecret => {
             "oauth_login_providers:telegram".to_owned()
         }
+        SystemSecretKind::OAuthLoginGoogleClientSecret => "oauth_login_providers:google".to_owned(),
         SystemSecretKind::OAuthLoginState => "oauth_login_state:v1".to_owned(),
         SystemSecretKind::TotpSecret(user_id) => format!("users:{}:totp", user_id.get()),
         SystemSecretKind::PasskeyRegistrationState(user_id) => {
@@ -396,6 +400,10 @@ mod tests {
             b"anyflows:system-secret:v1:record=oauth_login_providers:telegram:kind=oauth_login_telegram_client_secret"
         );
         assert_eq!(
+            system_secret_aad(SystemSecretKind::OAuthLoginGoogleClientSecret),
+            b"anyflows:system-secret:v1:record=oauth_login_providers:google:kind=oauth_login_google_client_secret"
+        );
+        assert_eq!(
             system_secret_aad(SystemSecretKind::OAuthLoginState),
             b"anyflows:system-secret:v1:record=oauth_login_state:v1:kind=oauth_login_state"
         );
@@ -447,6 +455,7 @@ mod tests {
             SystemSecretKind::OAuthLoginDiscordClientSecret,
             SystemSecretKind::OAuthLoginWechatClientSecret,
             SystemSecretKind::OAuthLoginTelegramClientSecret,
+            SystemSecretKind::OAuthLoginGoogleClientSecret,
             SystemSecretKind::OAuthLoginState,
         ] {
             assert_eq!(
