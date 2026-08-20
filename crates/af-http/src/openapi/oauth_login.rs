@@ -308,15 +308,7 @@ fn update_admin_linuxdo_oauth_login_settings() {}
         get_admin_github_oauth_login_settings,
         update_admin_github_oauth_login_settings,
         get_admin_discord_oauth_login_settings,
-        update_admin_discord_oauth_login_settings,
-        start_oidc_oauth_login,
-        start_linuxdo_oauth_login,
-        complete_oidc_oauth_login,
-        complete_linuxdo_oauth_login,
-        get_admin_oidc_oauth_login_settings,
-        update_admin_oidc_oauth_login_settings,
-        get_admin_linuxdo_oauth_login_settings,
-        update_admin_linuxdo_oauth_login_settings
+        update_admin_discord_oauth_login_settings
     ),
     components(schemas(
         OAuthLoginStartResponse,
@@ -329,6 +321,24 @@ fn update_admin_linuxdo_oauth_login_settings() {}
 )]
 struct OAuthLoginApi;
 
+#[derive(OpenApi)]
+#[openapi(paths(
+    start_oidc_oauth_login,
+    start_linuxdo_oauth_login,
+    complete_oidc_oauth_login,
+    complete_linuxdo_oauth_login,
+    get_admin_oidc_oauth_login_settings,
+    update_admin_oidc_oauth_login_settings,
+    get_admin_linuxdo_oauth_login_settings,
+    update_admin_linuxdo_oauth_login_settings
+))]
+struct OidcOAuthLoginApi;
+
 pub(super) fn document() -> utoipa::openapi::OpenApi {
     OAuthLoginApi::openapi()
+}
+
+/// 构建需要在既有管理接口后保持稳定排序的 OIDC 登录文档。
+pub(super) fn oidc_document() -> utoipa::openapi::OpenApi {
+    OidcOAuthLoginApi::openapi()
 }

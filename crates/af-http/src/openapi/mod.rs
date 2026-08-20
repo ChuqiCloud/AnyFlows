@@ -107,6 +107,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(organization_activity::document());
     document.merge(passkey_auth::document());
     document.merge(platform_audit::document());
+    document.merge(oauth_login::oidc_document());
 
     document.tags = Some(vec![
         Tag::new("公开注册"),
