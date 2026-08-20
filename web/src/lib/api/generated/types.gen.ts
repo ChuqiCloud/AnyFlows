@@ -5991,6 +5991,21 @@ export type StartLinuxDoLoginResponses = {
     200: OAuthLoginStartResponse;
 };
 export type StartLinuxDoLoginResponse = StartLinuxDoLoginResponses[keyof StartLinuxDoLoginResponses];
+export type StartWeChatOAuthLoginData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/auth/oauth/wechat/start';
+};
+export type StartWeChatOAuthLoginErrors = {
+    409: ManagementError;
+    500: ManagementError;
+};
+export type StartWeChatOAuthLoginError = StartWeChatOAuthLoginErrors[keyof StartWeChatOAuthLoginErrors];
+export type StartWeChatOAuthLoginResponses = {
+    200: OAuthLoginStartResponse;
+};
+export type StartWeChatOAuthLoginResponse = StartWeChatOAuthLoginResponses[keyof StartWeChatOAuthLoginResponses];
 export type CompleteOidcLoginData = {
     body?: never;
     path?: never;
@@ -6019,6 +6034,19 @@ export type CompleteLinuxDoLoginErrors = {
     500: ManagementError;
 };
 export type CompleteLinuxDoLoginError = CompleteLinuxDoLoginErrors[keyof CompleteLinuxDoLoginErrors];
+export type CompleteWeChatOAuthLoginData = {
+    body?: never;
+    path?: never;
+    query?: {
+        state?: string;
+        code?: string;
+    };
+    url: '/api/auth/oauth/wechat/callback';
+};
+export type CompleteWeChatOAuthLoginErrors = {
+    500: ManagementError;
+};
+export type CompleteWeChatOAuthLoginError = CompleteWeChatOAuthLoginErrors[keyof CompleteWeChatOAuthLoginErrors];
 export type GetAdminOidcLoginSettingsData = {
     body?: never;
     path?: never;
@@ -6087,3 +6115,37 @@ export type UpdateAdminLinuxDoLoginSettingsResponses = {
     200: AdminOAuthLoginProviderSettings;
 };
 export type UpdateAdminLinuxDoLoginSettingsResponse = UpdateAdminLinuxDoLoginSettingsResponses[keyof UpdateAdminLinuxDoLoginSettingsResponses];
+export type GetAdminWeChatOAuthLoginSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/wechat';
+};
+export type GetAdminWeChatOAuthLoginSettingsErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminWeChatOAuthLoginSettingsError = GetAdminWeChatOAuthLoginSettingsErrors[keyof GetAdminWeChatOAuthLoginSettingsErrors];
+export type GetAdminWeChatOAuthLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type GetAdminWeChatOAuthLoginSettingsResponse = GetAdminWeChatOAuthLoginSettingsResponses[keyof GetAdminWeChatOAuthLoginSettingsResponses];
+export type UpdateAdminWeChatOAuthLoginSettingsData = {
+    body: AdminOAuthLoginProviderSettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/wechat';
+};
+export type UpdateAdminWeChatOAuthLoginSettingsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminWeChatOAuthLoginSettingsError = UpdateAdminWeChatOAuthLoginSettingsErrors[keyof UpdateAdminWeChatOAuthLoginSettingsErrors];
+export type UpdateAdminWeChatOAuthLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type UpdateAdminWeChatOAuthLoginSettingsResponse = UpdateAdminWeChatOAuthLoginSettingsResponses[keyof UpdateAdminWeChatOAuthLoginSettingsResponses];

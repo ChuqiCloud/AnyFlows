@@ -166,7 +166,9 @@ impl AdminOAuthLoginProviderSettingsCommand {
             match provider {
                 LoginOAuthProvider::Oidc => self.issuer_url,
                 LoginOAuthProvider::LinuxDo => Some("https://connect.linux.do".to_owned()),
-                LoginOAuthProvider::GitHub | LoginOAuthProvider::Discord => None,
+                LoginOAuthProvider::GitHub
+                | LoginOAuthProvider::Discord
+                | LoginOAuthProvider::WeChat => None,
             },
             secret,
         ))
@@ -379,25 +381,14 @@ impl DatabaseOAuthLoginService {
                 .map_err(map_oauth_client_error)?;
             return Ok(OAuthLoginStart { authorization_url });
         }
-        let mut url =
-            Url::parse(profile.authorization_url()).map_err(|_| OAuthLoginError::Internal)?;
-        url.query_pairs_mut()
-            .append_pair("client_id", client_id)
-            .append_pair("redirect_uri", &redirect_uri)
-            .append_pair("state", &state);
-        if matches!(profile, LoginOAuthProvider::Discord) {
-            url.query_pairs_mut()
-                .append_pair("response_type", "code")
-                .append_pair("scope", "identify");
-        }
-        // Discord 官方授权码文档未声明 PKCE；GitHub 继续强制 S256。
-        if profile.uses_pkce() {
-            url.query_pairs_mut()
-                .append_pair("code_challenge", &challenge)
-                .append_pair("code_challenge_method", "S256");
-        }
         Ok(OAuthLoginStart {
-            authorization_url: url.into(),
+            authorization_url: provider_authorization_url(
+                profile,
+                client_id,
+                &redirect_uri,
+                &state,
+                &challenge,
+            )?,
         })
     }
 
@@ -841,6 +832,7 @@ fn client_secret_kind(provider: LoginOAuthProvider) -> SystemSecretKind {
         LoginOAuthProvider::Discord => SystemSecretKind::OAuthLoginDiscordClientSecret,
         LoginOAuthProvider::Oidc => SystemSecretKind::OAuthLoginOidcClientSecret,
         LoginOAuthProvider::LinuxDo => SystemSecretKind::OAuthLoginLinuxDoClientSecret,
+        LoginOAuthProvider::WeChat => SystemSecretKind::OAuthLoginWechatClientSecret,
     }
 }
 
@@ -879,13 +871,51 @@ fn validate_command_issuer(
         LoginOAuthProvider::LinuxDo => {
             issuer.is_none() || issuer == Some("https://connect.linux.do")
         }
-        LoginOAuthProvider::GitHub | LoginOAuthProvider::Discord => issuer.is_none(),
+        LoginOAuthProvider::GitHub | LoginOAuthProvider::Discord | LoginOAuthProvider::WeChat => {
+            issuer.is_none()
+        }
     };
     if valid {
         Ok(())
     } else {
         Err(OAuthLoginError::InvalidInput)
     }
+}
+
+fn provider_authorization_url(
+    profile: LoginOAuthProvider,
+    client_id: &str,
+    redirect_uri: &str,
+    state: &str,
+    challenge: &str,
+) -> Result<String, OAuthLoginError> {
+    let mut url = Url::parse(profile.authorization_url()).map_err(|_| OAuthLoginError::Internal)?;
+    if profile == LoginOAuthProvider::WeChat {
+        url.query_pairs_mut()
+            .append_pair("appid", client_id)
+            .append_pair("redirect_uri", redirect_uri)
+            .append_pair("response_type", "code")
+            .append_pair("scope", "snsapi_login")
+            .append_pair("state", state);
+        url.set_fragment(Some("wechat_redirect"));
+    } else {
+        url.query_pairs_mut()
+            .append_pair("client_id", client_id)
+            .append_pair("redirect_uri", redirect_uri)
+            .append_pair("state", state);
+        if matches!(profile, LoginOAuthProvider::Discord) {
+            url.query_pairs_mut()
+                .append_pair("response_type", "code")
+                .append_pair("scope", "identify");
+        }
+    }
+    // Discord 官方授权码文档未声明 PKCE；GitHub 继续强制 S256。
+    if profile.uses_pkce() {
+        url.query_pairs_mut()
+            .append_pair("code_challenge", challenge)
+            .append_pair("code_challenge_method", "S256");
+    }
+    Ok(url.into())
 }
 
 fn is_blocked_issuer_host(host: &str) -> bool {
@@ -979,6 +1009,14 @@ mod tests {
             validate_command_issuer(LoginOAuthProvider::Oidc, None, true),
             Err(OAuthLoginError::InvalidInput)
         );
+        assert_eq!(
+            validate_command_issuer(
+                LoginOAuthProvider::WeChat,
+                Some("https://attacker.example.com"),
+                false,
+            ),
+            Err(OAuthLoginError::InvalidInput)
+        );
     }
 
     #[test]
@@ -1004,10 +1042,43 @@ mod tests {
         assert!(discord_username.starts_with("dc_discord_user_"));
         assert!(discord_username.len() <= 64);
         assert_eq!(require_provider("discord"), Ok(LoginOAuthProvider::Discord));
+        assert_eq!(require_provider("wechat"), Ok(LoginOAuthProvider::WeChat));
         assert_eq!(
             require_provider("custom"),
             Err(OAuthLoginError::InvalidInput)
         );
+    }
+
+    #[test]
+    fn wechat_authorization_url_uses_qr_login_contract() {
+        let authorization_url = provider_authorization_url(
+            LoginOAuthProvider::WeChat,
+            "wx-app-id",
+            "https://app.example.com/api/auth/oauth/wechat/callback",
+            "opaque-state",
+            "unused-challenge",
+        )
+        .unwrap();
+        let url = Url::parse(&authorization_url).unwrap();
+        let query = url
+            .query_pairs()
+            .into_owned()
+            .collect::<std::collections::HashMap<_, _>>();
+
+        assert_eq!(url.scheme(), "https");
+        assert_eq!(url.host_str(), Some("open.weixin.qq.com"));
+        assert_eq!(url.path(), "/connect/qrconnect");
+        assert_eq!(url.fragment(), Some("wechat_redirect"));
+        assert_eq!(query.len(), 5);
+        assert_eq!(query.get("appid").map(String::as_str), Some("wx-app-id"));
+        assert_eq!(
+            query.get("redirect_uri").map(String::as_str),
+            Some("https://app.example.com/api/auth/oauth/wechat/callback")
+        );
+        assert_eq!(query.get("response_type").map(String::as_str), Some("code"));
+        assert_eq!(query.get("scope").map(String::as_str), Some("snsapi_login"));
+        assert_eq!(query.get("state").map(String::as_str), Some("opaque-state"));
+        assert!(!query.contains_key("code_challenge"));
     }
 
     #[test]

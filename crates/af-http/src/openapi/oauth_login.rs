@@ -70,6 +70,20 @@ fn start_oidc_oauth_login() {}
 fn start_linuxdo_oauth_login() {}
 
 #[utoipa::path(
+    post,
+    path = "/api/auth/oauth/wechat/start",
+    operation_id = "startWeChatOAuthLogin",
+    tag = "OAuth 登录",
+    summary = "启动微信开放平台二维码登录",
+    responses(
+        (status = 200, description = "服务端构造的微信官方授权地址", body = OAuthLoginStartResponse),
+        (status = 409, description = "微信登录尚未完整配置", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    )
+)]
+fn start_wechat_oauth_login() {}
+
+#[utoipa::path(
     get,
     path = "/api/auth/oauth/github/callback",
     operation_id = "completeGitHubOAuthLogin",
@@ -140,6 +154,23 @@ fn complete_oidc_oauth_login() {}
     )
 )]
 fn complete_linuxdo_oauth_login() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/auth/oauth/wechat/callback",
+    operation_id = "completeWeChatOAuthLogin",
+    tag = "OAuth 登录",
+    summary = "接收微信开放平台登录回调",
+    params(
+        ("state" = Option<String>, Query, description = "服务端生成的一次性 state"),
+        ("code" = Option<String>, Query, description = "微信授权码")
+    ),
+    responses(
+        (status = 303, description = "跳转到前端单次票据交换页"),
+        (status = 500, description = "无法构造安全回调地址", body = ManagementErrorBody)
+    )
+)]
+fn complete_wechat_oauth_login() {}
 
 #[utoipa::path(
     post,
@@ -222,6 +253,22 @@ fn get_admin_oidc_oauth_login_settings() {}
 fn get_admin_linuxdo_oauth_login_settings() {}
 
 #[utoipa::path(
+    get,
+    path = "/api/admin/authentication-settings/oauth/wechat",
+    operation_id = "getAdminWeChatOAuthLoginSettings",
+    tag = "OAuth 登录",
+    summary = "读取微信开放平台登录设置",
+    responses(
+        (status = 200, description = "脱敏后的微信开放平台设置", body = AdminOAuthLoginProviderSettingsResponse),
+        (status = 401, description = "登录会话无效", body = ManagementErrorBody),
+        (status = 403, description = "当前用户不是管理员", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn get_admin_wechat_oauth_login_settings() {}
+
+#[utoipa::path(
     put,
     path = "/api/admin/authentication-settings/oauth/github",
     operation_id = "updateAdminGitHubOAuthLoginSettings",
@@ -297,6 +344,25 @@ fn update_admin_oidc_oauth_login_settings() {}
 )]
 fn update_admin_linuxdo_oauth_login_settings() {}
 
+#[utoipa::path(
+    put,
+    path = "/api/admin/authentication-settings/oauth/wechat",
+    operation_id = "updateAdminWeChatOAuthLoginSettings",
+    tag = "OAuth 登录",
+    summary = "覆盖微信开放平台登录设置",
+    request_body = AdminOAuthLoginProviderSettingsRequest,
+    responses(
+        (status = 200, description = "更新后的脱敏设置", body = AdminOAuthLoginProviderSettingsResponse),
+        (status = 400, description = "配置组合无效", body = ManagementErrorBody),
+        (status = 401, description = "登录会话无效", body = ManagementErrorBody),
+        (status = 403, description = "当前用户不是管理员", body = ManagementErrorBody),
+        (status = 409, description = "设置版本冲突或回调基址未配置", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn update_admin_wechat_oauth_login_settings() {}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -325,12 +391,16 @@ struct OAuthLoginApi;
 #[openapi(paths(
     start_oidc_oauth_login,
     start_linuxdo_oauth_login,
+    start_wechat_oauth_login,
     complete_oidc_oauth_login,
     complete_linuxdo_oauth_login,
+    complete_wechat_oauth_login,
     get_admin_oidc_oauth_login_settings,
     update_admin_oidc_oauth_login_settings,
     get_admin_linuxdo_oauth_login_settings,
-    update_admin_linuxdo_oauth_login_settings
+    update_admin_linuxdo_oauth_login_settings,
+    get_admin_wechat_oauth_login_settings,
+    update_admin_wechat_oauth_login_settings
 ))]
 struct OidcOAuthLoginApi;
 

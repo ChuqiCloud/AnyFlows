@@ -2927,13 +2927,15 @@
         "github": "Continue with GitHub",
         "discord": "Continue with Discord",
         "oidc": "Continue with enterprise OIDC",
-        "linuxdo": "Continue with LinuxDO"
+        "linuxdo": "Continue with LinuxDO",
+        "wechat": "Continue with WeChat"
       },
       "oauthStarting": {
         "github": "Opening GitHub",
         "discord": "Opening Discord",
         "oidc": "Opening enterprise OIDC",
-        "linuxdo": "Opening LinuxDO"
+        "linuxdo": "Opening LinuxDO",
+        "wechat": "Opening WeChat QR sign-in"
       },
       "orPassword": "or use a password",
       "orAccount": "or use account sign-in",
@@ -3177,6 +3179,21 @@
           "save": "LinuxDO settings could not be saved. Refresh and review the version.",
           "publicBaseUrl": "Save a public base URL before enabling LinuxDO sign-in.",
           "incomplete": "LinuxDO sign-in requires a callback URL, Client ID, and configured Client Secret."
+        }
+      },
+      "wechat": {
+        "title": "WeChat Open Platform sign-in",
+        "enabled": "Enable WeChat QR sign-in",
+        "clientId": "AppID",
+        "clientSecret": "AppSecret action",
+        "newSecret": "New AppSecret",
+        "callbackHint": "Register this URL for the website application in WeChat Open Platform.",
+        "version": "WeChat sign-in configuration version {{version}}",
+        "errors": {
+          "load": "Unable to load WeChat sign-in settings",
+          "save": "Unable to save WeChat settings. Refresh and verify the version.",
+          "publicBaseUrl": "Save the public site base URL before enabling WeChat sign-in.",
+          "incomplete": "WeChat sign-in requires a callback URL, AppID, and configured AppSecret."
         }
       }
     },

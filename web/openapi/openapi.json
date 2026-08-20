@@ -16088,6 +16088,47 @@
         }
       }
     },
+    "/api/auth/oauth/wechat/start": {
+      "post": {
+        "tags": [
+          "OAuth 登录"
+        ],
+        "summary": "?????????????",
+        "operationId": "startWeChatOAuthLogin",
+        "responses": {
+          "200": {
+            "description": "??????????????",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthLoginStartResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "??????????",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/oauth/oidc/callback": {
       "get": {
         "tags": [
@@ -16171,6 +16212,50 @@
             "name": "error",
             "in": "query",
             "description": "LinuxDO 拒绝分类",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "303": {
+            "description": "跳转到前端单次票据交换页"
+          },
+          "500": {
+            "description": "无法构造安全回调地址",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/oauth/wechat/callback": {
+      "get": {
+        "tags": [
+          "OAuth 登录"
+        ],
+        "summary": "????????????",
+        "operationId": "completeWeChatOAuthLogin",
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "description": "服务端生成的一次性 state",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "description": "?????",
             "required": false,
             "schema": {
               "type": "string"
@@ -16395,6 +16480,146 @@
         ],
         "summary": "覆盖 LinuxDO 登录设置",
         "operationId": "updateAdminLinuxDoLoginSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminOAuthLoginProviderSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "更新后的脱敏设置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOAuthLoginProviderSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "配置组合无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "设置版本冲突或回调基址未配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/authentication-settings/oauth/wechat": {
+      "get": {
+        "tags": [
+          "OAuth 登录"
+        ],
+        "summary": "????????????",
+        "operationId": "getAdminWeChatOAuthLoginSettings",
+        "responses": {
+          "200": {
+            "description": "????????????",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOAuthLoginProviderSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "OAuth 登录"
+        ],
+        "summary": "????????????",
+        "operationId": "updateAdminWeChatOAuthLoginSettings",
         "requestBody": {
           "content": {
             "application/json": {
@@ -23687,7 +23912,7 @@
               "null"
             ],
             "format": "double",
-            "default": 1.0,
+            "default": 1,
             "maximum": 4,
             "minimum": 0.25
           },

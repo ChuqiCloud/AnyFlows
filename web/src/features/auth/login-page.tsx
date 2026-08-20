@@ -11,6 +11,7 @@ import {
   LoaderCircle,
   LockKeyhole,
   MessageCircle,
+  QrCode,
   RefreshCw,
   ShieldCheck,
   UserRoundPlus,
@@ -241,7 +242,9 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                             ? <MessageCircle className="size-4" aria-hidden="true" />
                             : provider.id === 'linuxdo'
                               ? <Globe2 className="size-4" aria-hidden="true" />
-                              : <ShieldCheck className="size-4" aria-hidden="true" />}
+                              : provider.id === 'wechat'
+                                ? <QrCode className="size-4" aria-hidden="true" />
+                                : <ShieldCheck className="size-4" aria-hidden="true" />}
                       {isStarting
                         ? t(`auth.login.oauthStarting.${provider.id}`)
                         : t(`auth.login.oauth.${provider.id}`)}
