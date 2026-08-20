@@ -86,3 +86,13 @@ test('OAuth 管理设置按 Provider 分开渲染并保持独立查询键', () =
   assert.match(source, /aria-labelledby=\{`\$\{provider\}-oauth-title`\}/)
   assert.match(source, /disabled=\{mutation\.isPending\}/)
 })
+
+test('OAuth 管理设置将后端 404 显示为版本提示', () => {
+  const source = readFileSync(
+    new URL('../src/features/authentication-settings/oauth-provider-settings.tsx', import.meta.url),
+    'utf8',
+  )
+  assert.match(source, /error instanceof ApiError/)
+  assert.match(source, /status === 404/)
+  assert.match(source, /oauth\.errors\.unsupported/)
+})

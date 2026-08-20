@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
+import { ApiError } from '@/lib/api'
 import {
   type OAuthLoginProvider,
   useAdminOAuthLoginSettings,
@@ -55,9 +56,17 @@ export function OAuthProviderSettings({ provider }: OAuthProviderSettingsProps) 
     return <Skeleton className="h-64 w-full rounded-xl" />
   }
   if (settingsQuery.isError || !settings) {
+    const unsupported = settingsQuery.error instanceof ApiError && settingsQuery.error.status === 404
     return (
-      <div role="alert" className="rounded-xl border border-destructive/25 bg-destructive/8 p-4">
-        <h3 className="text-sm font-semibold text-destructive">{t(`${baseKey}.errors.load`)}</h3>
+      <div role="alert" className={`rounded-xl border p-4 ${unsupported ? 'border-warning/25 bg-warning/8' : 'border-destructive/25 bg-destructive/8'}`}>
+        <h3 className={`text-sm font-semibold ${unsupported ? 'text-warning' : 'text-destructive'}`}>
+          {t(unsupported ? 'authenticationSettings.oauth.errors.unsupportedTitle' : `${baseKey}.errors.load`)}
+        </h3>
+        {unsupported ? (
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            {t('authenticationSettings.oauth.errors.unsupported', { provider: t(`${baseKey}.title`) })}
+          </p>
+        ) : null}
         <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => void settingsQuery.refetch()}>
           <RefreshCw aria-hidden="true" />{t('authenticationSettings.actions.retry')}
         </Button>

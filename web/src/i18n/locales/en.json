@@ -3137,6 +3137,8 @@
       "errors": {
         "load": "GitHub OAuth sign-in settings could not be loaded",
         "save": "GitHub OAuth settings could not be saved. Refresh and review the version.",
+        "unsupportedTitle": "This sign-in method is not available on the current backend",
+        "unsupported": "{{provider}} returned HTTP 404. Update the backend service, then retry.",
         "publicBaseUrl": "Save a public base URL before enabling GitHub sign-in so a stable callback URL can be generated.",
         "incomplete": "GitHub sign-in requires a callback URL, Client ID, and configured Client Secret."
       },

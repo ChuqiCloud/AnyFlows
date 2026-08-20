@@ -3136,6 +3136,8 @@
       "errors": {
         "load": "无法读取 GitHub OAuth 登录设置",
         "save": "GitHub OAuth 设置保存失败，请刷新后核对版本。",
+        "unsupportedTitle": "当前后端尚未提供此登录方式",
+        "unsupported": "{{provider}} 接口返回 HTTP 404，请更新后端服务后再重试。",
         "publicBaseUrl": "启用前必须先保存站点公开基址，以生成稳定回调地址。",
         "incomplete": "启用 GitHub 登录需要回调地址、Client ID 和已配置的 Client Secret。"
       },
