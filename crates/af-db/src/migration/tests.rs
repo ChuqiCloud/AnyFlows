@@ -74,7 +74,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 78;
+const EXPECTED_MIGRATION_COUNT: usize = 79;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -244,7 +244,10 @@ async fn standard_startup_installs_oauth_login_schema_and_indexes() -> Result<()
         .map(|provider| provider.provider.as_str())
         .collect::<Vec<_>>();
     provider_names.sort_unstable();
-    assert_eq!(provider_names, ["discord", "github", "linuxdo", "oidc"]);
+    assert_eq!(
+        provider_names,
+        ["discord", "github", "linuxdo", "oidc", "wechat"]
+    );
     let linuxdo = providers
         .iter()
         .find(|provider| provider.provider == "linuxdo")
@@ -253,6 +256,15 @@ async fn standard_startup_installs_oauth_login_schema_and_indexes() -> Result<()
         linuxdo.issuer_url.as_deref(),
         Some("https://connect.linux.do/")
     );
+    let wechat = providers
+        .iter()
+        .find(|provider| provider.provider == "wechat")
+        .expect("应预置微信 Provider");
+    assert!(!wechat.enabled);
+    assert_eq!(wechat.client_id, None);
+    assert_eq!(wechat.issuer_url, None);
+    assert_eq!(wechat.client_secret, None);
+    assert_eq!(wechat.version, 1);
     pool.close().await?;
     Ok(())
 }
@@ -1140,7 +1152,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 19);
+    assert_eq!(pending_migrations.len(), 20);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -1216,6 +1228,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[18].name(),
         "m20260820_000078_extend_oauth_login_providers"
+    );
+    assert_eq!(
+        pending_migrations[19].name(),
+        "m20260820_000079_seed_wechat_oauth_login"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;

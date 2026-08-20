@@ -27,6 +27,7 @@ pub const OAUTH_LOGIN_GITHUB_PROVIDER: &str = "github";
 pub const OAUTH_LOGIN_DISCORD_PROVIDER: &str = "discord";
 pub const OAUTH_LOGIN_OIDC_PROVIDER: &str = "oidc";
 pub const OAUTH_LOGIN_LINUXDO_PROVIDER: &str = "linuxdo";
+pub const OAUTH_LOGIN_WECHAT_PROVIDER: &str = "wechat";
 const LINUXDO_ISSUER: &str = "https://connect.linux.do";
 const AUTHENTICATION_SETTINGS_ID: i16 = 1;
 const ACTIVE_USER_STATUS: i16 = 1;
@@ -103,9 +104,9 @@ impl OAuthLoginProviderRecord {
             && match self.provider.as_str() {
                 OAUTH_LOGIN_OIDC_PROVIDER => self.issuer_url.is_some(),
                 OAUTH_LOGIN_LINUXDO_PROVIDER => self.issuer_url.as_deref() == Some(LINUXDO_ISSUER),
-                OAUTH_LOGIN_GITHUB_PROVIDER | OAUTH_LOGIN_DISCORD_PROVIDER => {
-                    self.issuer_url.is_none()
-                }
+                OAUTH_LOGIN_GITHUB_PROVIDER
+                | OAUTH_LOGIN_DISCORD_PROVIDER
+                | OAUTH_LOGIN_WECHAT_PROVIDER => self.issuer_url.is_none(),
                 _ => false,
             }
     }
@@ -816,6 +817,7 @@ fn validate_provider(provider: &str) -> Result<(), OAuthLoginRepositoryError> {
         OAUTH_LOGIN_DISCORD_PROVIDER,
         OAUTH_LOGIN_OIDC_PROVIDER,
         OAUTH_LOGIN_LINUXDO_PROVIDER,
+        OAUTH_LOGIN_WECHAT_PROVIDER,
     ]
     .contains(&provider)
     {
@@ -860,7 +862,9 @@ fn validate_provider_issuer(
     let valid = match provider {
         OAUTH_LOGIN_OIDC_PROVIDER => issuer.is_some(),
         OAUTH_LOGIN_LINUXDO_PROVIDER => issuer == Some(LINUXDO_ISSUER),
-        OAUTH_LOGIN_GITHUB_PROVIDER | OAUTH_LOGIN_DISCORD_PROVIDER => issuer.is_none(),
+        OAUTH_LOGIN_GITHUB_PROVIDER
+        | OAUTH_LOGIN_DISCORD_PROVIDER
+        | OAUTH_LOGIN_WECHAT_PROVIDER => issuer.is_none(),
         _ => false,
     };
     let invalid_disabled_issuer = !enabled

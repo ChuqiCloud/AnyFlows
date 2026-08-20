@@ -24,6 +24,9 @@ const LINUXDO_AUTHORIZATION_URL: &str = "https://connect.linux.do/oauth2/authori
 const LINUXDO_TOKEN_URL: &str = "https://connect.linux.do/oauth2/token";
 const LINUXDO_USER_URL: &str = "https://connect.linux.do/api/user";
 const LINUXDO_JWKS_URL: &str = "https://connect.linux.do/.well-known/jwks.json";
+const WECHAT_AUTHORIZATION_URL: &str = "https://open.weixin.qq.com/connect/qrconnect";
+const WECHAT_TOKEN_URL: &str = "https://api.weixin.qq.com/sns/oauth2/access_token";
+const WECHAT_USER_URL: &str = "https://api.weixin.qq.com/sns/userinfo";
 const PROVIDER_REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 const MAX_PROVIDER_RESPONSE_BYTES: usize = 64 * 1_024;
 const MAX_ACCESS_TOKEN_BYTES: usize = 4 * 1_024;
@@ -35,10 +38,17 @@ pub enum LoginOAuthProvider {
     Discord,
     Oidc,
     LinuxDo,
+    WeChat,
 }
 
 impl LoginOAuthProvider {
-    pub const ALL: [Self; 4] = [Self::GitHub, Self::Discord, Self::Oidc, Self::LinuxDo];
+    pub const ALL: [Self; 5] = [
+        Self::GitHub,
+        Self::Discord,
+        Self::Oidc,
+        Self::LinuxDo,
+        Self::WeChat,
+    ];
 
     #[must_use]
     pub const fn id(self) -> &'static str {
@@ -47,6 +57,7 @@ impl LoginOAuthProvider {
             Self::Discord => "discord",
             Self::Oidc => "oidc",
             Self::LinuxDo => "linuxdo",
+            Self::WeChat => "wechat",
         }
     }
 
@@ -57,6 +68,7 @@ impl LoginOAuthProvider {
             Self::Discord => "Discord",
             Self::Oidc => "OIDC",
             Self::LinuxDo => "LinuxDO",
+            Self::WeChat => "微信",
         }
     }
 
@@ -67,6 +79,7 @@ impl LoginOAuthProvider {
             Self::Discord => "https://discord.com/oauth2/authorize",
             Self::Oidc => "",
             Self::LinuxDo => LINUXDO_AUTHORIZATION_URL,
+            Self::WeChat => WECHAT_AUTHORIZATION_URL,
         }
     }
 
@@ -82,6 +95,7 @@ impl LoginOAuthProvider {
             Self::Discord => "dc",
             Self::Oidc => "oidc",
             Self::LinuxDo => "ld",
+            Self::WeChat => "wx",
         }
     }
 
@@ -98,6 +112,7 @@ impl LoginOAuthProvider {
             Self::Discord => DISCORD_TOKEN_URL,
             Self::Oidc => "",
             Self::LinuxDo => LINUXDO_TOKEN_URL,
+            Self::WeChat => WECHAT_TOKEN_URL,
         }
     }
 
@@ -107,6 +122,7 @@ impl LoginOAuthProvider {
             Self::Discord => DISCORD_USER_URL,
             Self::Oidc => "",
             Self::LinuxDo => LINUXDO_USER_URL,
+            Self::WeChat => WECHAT_USER_URL,
         }
     }
 
@@ -187,6 +203,11 @@ impl OAuthLoginClient {
         if provider.uses_pkce() != verifier.is_some() {
             return Err(OAuthLoginClientError::ProviderUnavailable);
         }
+        if provider == LoginOAuthProvider::WeChat {
+            return self
+                .exchange_wechat_identity(client_id, client_secret, code)
+                .await;
+        }
         let client = self
             .http_clients
             .get(Some(PROVIDER_REQUEST_TIMEOUT))
@@ -224,6 +245,58 @@ impl OAuthLoginClient {
         let user_bytes =
             execute_json(&client, Method::GET, provider.user_url(), headers, None).await?;
         parse_identity(provider, &user_bytes)
+    }
+
+    /// 微信协议要求 AppSecret 与 access token 位于固定 HTTPS 查询参数中；临时 URL 用后立即清零。
+    async fn exchange_wechat_identity(
+        &self,
+        client_id: &str,
+        client_secret: &DecryptedSystemSecret,
+        code: &str,
+    ) -> Result<OAuthLoginIdentity, OAuthLoginClientError> {
+        let client = self
+            .http_clients
+            .get(Some(PROVIDER_REQUEST_TIMEOUT))
+            .map_err(|_| OAuthLoginClientError::ClientUnavailable)?;
+        let token_url = sensitive_query_url(
+            WECHAT_TOKEN_URL,
+            &[
+                ("appid", client_id),
+                ("secret", client_secret.expose_secret()),
+                ("code", code),
+                ("grant_type", "authorization_code"),
+            ],
+        )?;
+        let token_bytes = execute_json(
+            &client,
+            Method::GET,
+            token_url.as_str(),
+            provider_headers(LoginOAuthProvider::WeChat, false),
+            None,
+        )
+        .await?;
+        drop(token_url);
+        let token = parse_wechat_token(&token_bytes)?;
+        let access_token = token.access_token.into_zeroizing();
+        let user_url = sensitive_query_url(
+            WECHAT_USER_URL,
+            &[
+                ("access_token", access_token.as_str()),
+                ("openid", &token.openid),
+                ("lang", "zh_CN"),
+            ],
+        )?;
+        let user_bytes = execute_json(
+            &client,
+            Method::GET,
+            user_url.as_str(),
+            provider_headers(LoginOAuthProvider::WeChat, false),
+            None,
+        )
+        .await?;
+        drop(user_url);
+        drop(access_token);
+        parse_wechat_identity(&token.openid, &user_bytes)
     }
 
     /// 通过受控 discovery 交换 OIDC 授权码，并验证 RS256 ID Token 的关键声明。
@@ -569,6 +642,17 @@ struct DiscordUser {
     username: String,
 }
 
+#[derive(Deserialize)]
+struct WechatTokenResponse {
+    access_token: TokenSecret,
+    openid: String,
+}
+
+#[derive(Deserialize)]
+struct WechatUser {
+    openid: String,
+}
+
 struct TokenSecret(String);
 
 impl TokenSecret {
@@ -633,7 +717,7 @@ fn parse_identity(
                 username: user.username,
             })
         }
-        LoginOAuthProvider::Oidc | LoginOAuthProvider::LinuxDo => {
+        LoginOAuthProvider::Oidc | LoginOAuthProvider::LinuxDo | LoginOAuthProvider::WeChat => {
             Err(OAuthLoginClientError::ProviderUnavailable)
         }
     }
@@ -748,6 +832,43 @@ fn validate_oidc_subject(subject: &str) -> Result<(), OAuthLoginClientError> {
     }
 }
 
+fn validate_wechat_openid(openid: &str) -> Result<(), OAuthLoginClientError> {
+    if !openid.is_empty()
+        && openid.len() <= 128
+        && openid
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+    {
+        Ok(())
+    } else {
+        Err(OAuthLoginClientError::ProviderUnavailable)
+    }
+}
+
+fn parse_wechat_token(bytes: &[u8]) -> Result<WechatTokenResponse, OAuthLoginClientError> {
+    let token: WechatTokenResponse =
+        serde_json::from_slice(bytes).map_err(|_| OAuthLoginClientError::ProviderUnavailable)?;
+    validate_wechat_openid(&token.openid)?;
+    Ok(token)
+}
+
+fn parse_wechat_identity(
+    token_openid: &str,
+    bytes: &[u8],
+) -> Result<OAuthLoginIdentity, OAuthLoginClientError> {
+    validate_wechat_openid(token_openid)?;
+    let user: WechatUser =
+        serde_json::from_slice(bytes).map_err(|_| OAuthLoginClientError::ProviderUnavailable)?;
+    validate_wechat_openid(&user.openid)?;
+    if user.openid != token_openid {
+        return Err(OAuthLoginClientError::ProviderUnavailable);
+    }
+    Ok(OAuthLoginIdentity {
+        subject: user.openid,
+        username: "wechat".to_owned(),
+    })
+}
+
 /// 将外部 subject 绑定到 issuer 命名空间，避免不同企业 IdP 的相同 sub 错误合并。
 fn oidc_subject_namespace(issuer: &str, subject: &str) -> String {
     let mut hasher = Sha256::new();
@@ -809,6 +930,15 @@ fn encode_form_component(value: &str) -> Zeroizing<String> {
     debug_assert!(encoded.starts_with('='));
     encoded.remove(0);
     encoded
+}
+
+fn sensitive_query_url(
+    base: &str,
+    values: &[(&str, &str)],
+) -> Result<Zeroizing<String>, OAuthLoginClientError> {
+    let mut url = url::Url::parse(base).map_err(|_| OAuthLoginClientError::ProviderUnavailable)?;
+    url.query_pairs_mut().extend_pairs(values.iter().copied());
+    Ok(Zeroizing::new(url.into()))
 }
 
 fn provider_headers(provider: LoginOAuthProvider, form: bool) -> HeaderMap {
@@ -921,6 +1051,56 @@ mod tests {
             Some(LoginOAuthProvider::Discord)
         );
         assert_eq!(LoginOAuthProvider::from_id("custom"), None);
+    }
+
+    #[test]
+    fn wechat_provider_uses_only_fixed_official_endpoints() {
+        let provider = LoginOAuthProvider::from_id("wechat").unwrap();
+        assert_eq!(provider, LoginOAuthProvider::WeChat);
+        assert_eq!(
+            provider.authorization_url(),
+            "https://open.weixin.qq.com/connect/qrconnect"
+        );
+        assert_eq!(
+            provider.token_url(),
+            "https://api.weixin.qq.com/sns/oauth2/access_token"
+        );
+        assert_eq!(
+            provider.user_url(),
+            "https://api.weixin.qq.com/sns/userinfo"
+        );
+        assert!(!provider.uses_pkce());
+        assert!(!provider.is_oidc());
+    }
+
+    #[test]
+    fn wechat_responses_require_matching_closed_openids() {
+        let token = parse_wechat_token(
+            br#"{"access_token":"wechat-sensitive-token","openid":"oAbC_123-def"}"#,
+        )
+        .unwrap();
+        assert!(!format!("{:?}", token.access_token).contains("wechat-sensitive-token"));
+
+        let identity = parse_wechat_identity(
+            &token.openid,
+            r#"{"openid":"oAbC_123-def","nickname":"不可信昵称","unionid":"not-used"}"#.as_bytes(),
+        )
+        .unwrap();
+        assert_eq!(identity.subject(), "oAbC_123-def");
+        assert_eq!(identity.username(), "wechat");
+
+        assert_eq!(
+            parse_wechat_identity(&token.openid, br#"{"openid":"other-openid"}"#),
+            Err(OAuthLoginClientError::ProviderUnavailable)
+        );
+        assert_eq!(
+            parse_wechat_token(br#"{"access_token":"token","openid":"bad openid"}"#).err(),
+            Some(OAuthLoginClientError::ProviderUnavailable)
+        );
+        assert_eq!(
+            parse_wechat_token(br#"{"errcode":40029,"errmsg":"invalid code"}"#).err(),
+            Some(OAuthLoginClientError::ProviderUnavailable)
+        );
     }
 
     #[test]

@@ -34,6 +34,8 @@ pub enum SystemSecretKind {
     OAuthLoginOidcClientSecret,
     /// LinuxDO 用户登录 OAuth App 的 Client Secret。
     OAuthLoginLinuxDoClientSecret,
+    /// 微信开放平台网页应用的 AppSecret。
+    OAuthLoginWechatClientSecret,
     /// 用户登录 OAuth state 内携带的一次性随机材料封套。
     OAuthLoginState,
     /// 用户 TOTP 配置；用户标识参与 AAD，禁止跨账户搬用。
@@ -58,6 +60,7 @@ impl SystemSecretKind {
             Self::OAuthLoginDiscordClientSecret => "oauth_login_discord_client_secret",
             Self::OAuthLoginOidcClientSecret => "oauth_login_oidc_client_secret",
             Self::OAuthLoginLinuxDoClientSecret => "oauth_login_linuxdo_client_secret",
+            Self::OAuthLoginWechatClientSecret => "oauth_login_wechat_client_secret",
             Self::OAuthLoginState => "oauth_login_state",
             Self::TotpSecret(_) => "totp_secret",
             Self::PasskeyRegistrationState(_) => "passkey_registration_state",
@@ -250,6 +253,7 @@ fn system_secret_aad(kind: SystemSecretKind) -> Vec<u8> {
         SystemSecretKind::OAuthLoginLinuxDoClientSecret => {
             "oauth_login_providers:linuxdo".to_owned()
         }
+        SystemSecretKind::OAuthLoginWechatClientSecret => "oauth_login_providers:wechat".to_owned(),
         SystemSecretKind::OAuthLoginState => "oauth_login_state:v1".to_owned(),
         SystemSecretKind::TotpSecret(user_id) => format!("users:{}:totp", user_id.get()),
         SystemSecretKind::PasskeyRegistrationState(user_id) => {
@@ -378,6 +382,10 @@ mod tests {
             b"anyflows:system-secret:v1:record=oauth_login_providers:discord:kind=oauth_login_discord_client_secret"
         );
         assert_eq!(
+            system_secret_aad(SystemSecretKind::OAuthLoginWechatClientSecret),
+            b"anyflows:system-secret:v1:record=oauth_login_providers:wechat:kind=oauth_login_wechat_client_secret"
+        );
+        assert_eq!(
             system_secret_aad(SystemSecretKind::OAuthLoginState),
             b"anyflows:system-secret:v1:record=oauth_login_state:v1:kind=oauth_login_state"
         );
@@ -386,6 +394,29 @@ mod tests {
                 af_domain::UserId::new(7).unwrap()
             )),
             b"anyflows:system-secret:v1:record=passkey_registration_challenges:user:7:kind=passkey_registration_state"
+        );
+    }
+
+    #[test]
+    fn wechat_app_secret_cannot_be_moved_to_another_provider() {
+        let cipher = SystemSecretCipher::new(&settings()).unwrap();
+        let secret = PlainSystemSecret::new("wechat-app-secret".to_owned()).unwrap();
+        let envelope = cipher
+            .encrypt(SystemSecretKind::OAuthLoginWechatClientSecret, &secret)
+            .unwrap();
+
+        assert_eq!(
+            cipher
+                .decrypt(SystemSecretKind::OAuthLoginWechatClientSecret, &envelope)
+                .unwrap()
+                .expose_secret(),
+            "wechat-app-secret"
+        );
+        assert_eq!(
+            cipher
+                .decrypt(SystemSecretKind::OAuthLoginGithubClientSecret, &envelope)
+                .unwrap_err(),
+            SystemSecretError::Decrypt
         );
     }
 
@@ -404,6 +435,7 @@ mod tests {
             SystemSecretKind::SmtpPassword,
             SystemSecretKind::OAuthLoginGithubClientSecret,
             SystemSecretKind::OAuthLoginDiscordClientSecret,
+            SystemSecretKind::OAuthLoginWechatClientSecret,
             SystemSecretKind::OAuthLoginState,
         ] {
             assert_eq!(

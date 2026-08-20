@@ -8,24 +8,28 @@ import {
   getAdminGitHubOAuthLoginSettings,
   getAdminLinuxDoLoginSettings,
   getAdminOidcLoginSettings,
+  getAdminWeChatOAuthLoginSettings,
   startDiscordOAuthLogin,
   startGitHubOAuthLogin,
   startLinuxDoLogin,
   startOidcLogin,
+  startWeChatOAuthLogin,
   updateAdminDiscordOAuthLoginSettings,
   updateAdminGitHubOAuthLoginSettings,
   updateAdminLinuxDoLoginSettings,
   updateAdminOidcLoginSettings,
+  updateAdminWeChatOAuthLoginSettings,
 } from '@/lib/api/generated/sdk.gen'
 import type { AdminOAuthLoginProviderSettingsRequest } from '@/lib/api/generated/types.gen'
 
-export type OAuthLoginProvider = 'github' | 'discord' | 'oidc' | 'linuxdo'
+export type OAuthLoginProvider = 'github' | 'discord' | 'oidc' | 'linuxdo' | 'wechat'
 
 const startOAuthLogin = {
   github: () => startGitHubOAuthLogin({ client: apiClient }),
   discord: () => startDiscordOAuthLogin({ client: apiClient }),
   oidc: () => startOidcLogin({ client: apiClient }),
   linuxdo: () => startLinuxDoLogin({ client: apiClient }),
+  wechat: () => startWeChatOAuthLogin({ client: apiClient }),
 }
 
 const getAdminOAuthLoginSettings = {
@@ -33,6 +37,7 @@ const getAdminOAuthLoginSettings = {
   discord: (signal: AbortSignal) => getAdminDiscordOAuthLoginSettings({ client: apiClient, signal }),
   oidc: (signal: AbortSignal) => getAdminOidcLoginSettings({ client: apiClient, signal }),
   linuxdo: (signal: AbortSignal) => getAdminLinuxDoLoginSettings({ client: apiClient, signal }),
+  wechat: (signal: AbortSignal) => getAdminWeChatOAuthLoginSettings({ client: apiClient, signal }),
 }
 
 const updateAdminOAuthLoginSettings = {
@@ -44,6 +49,8 @@ const updateAdminOAuthLoginSettings = {
     updateAdminOidcLoginSettings({ body, client: apiClient }),
   linuxdo: (body: AdminOAuthLoginProviderSettingsRequest) =>
     updateAdminLinuxDoLoginSettings({ body, client: apiClient }),
+  wechat: (body: AdminOAuthLoginProviderSettingsRequest) =>
+    updateAdminWeChatOAuthLoginSettings({ body, client: apiClient }),
 }
 
 export const adminOAuthLoginSettingsQueryKey = (provider: OAuthLoginProvider) =>

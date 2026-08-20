@@ -75,6 +75,7 @@ export function AuthenticationSettingsPage() {
           <DiscordOAuthSettings />
           <OAuthProviderSettings provider="oidc" />
           <OAuthProviderSettings provider="linuxdo" />
+          <OAuthProviderSettings provider="wechat" />
         </>
       ) : null}
     </div>

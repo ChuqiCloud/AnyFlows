@@ -1,4 +1,4 @@
-import { Check, Copy, GitFork, Globe2, LoaderCircle, MessageCircle, RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-react'
+import { Check, Copy, GitFork, Globe2, LoaderCircle, MessageCircle, QrCode, RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { type FormEvent, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -26,6 +26,7 @@ const providerIcons = {
   discord: MessageCircle,
   oidc: ShieldCheck,
   linuxdo: Globe2,
+  wechat: QrCode,
 }
 
 /** 管理内置 OAuth App，密钥只支持保留、轮换和显式清除。 */
@@ -36,6 +37,9 @@ export function OAuthProviderSettings({ provider }: OAuthProviderSettingsProps) 
   const settingsQuery = useAdminOAuthLoginSettings(provider)
   const mutation = useUpdateAdminOAuthLoginSettings(provider)
   const settings = settingsQuery.data
+  const clientIdLabel = provider === 'wechat' ? t(`${baseKey}.clientId`) : t('authenticationSettings.oauth.clientId')
+  const clientSecretLabel = provider === 'wechat' ? t(`${baseKey}.clientSecret`) : t('authenticationSettings.oauth.clientSecret')
+  const newSecretLabel = provider === 'wechat' ? t(`${baseKey}.newSecret`) : t('authenticationSettings.oauth.newSecret')
   const [enabled, setEnabled] = useState(false)
   const [clientId, setClientId] = useState('')
   const [issuerUrl, setIssuerUrl] = useState('')
@@ -158,7 +162,7 @@ export function OAuthProviderSettings({ provider }: OAuthProviderSettingsProps) 
         </div>
 
         <div className="grid content-start gap-1.5">
-          <Label htmlFor={`${provider}-oauth-client-id`}>{t('authenticationSettings.oauth.clientId')}</Label>
+          <Label htmlFor={`${provider}-oauth-client-id`}>{clientIdLabel}</Label>
           <Input
             id={`${provider}-oauth-client-id`}
             value={clientId}
@@ -197,7 +201,7 @@ export function OAuthProviderSettings({ provider }: OAuthProviderSettingsProps) 
         ) : null}
 
         <div className="grid content-start gap-1.5">
-          <Label htmlFor={`${provider}-oauth-secret-action`}>{t('authenticationSettings.oauth.clientSecret')}</Label>
+          <Label htmlFor={`${provider}-oauth-secret-action`}>{clientSecretLabel}</Label>
           <Select
             id={`${provider}-oauth-secret-action`}
             value={secretAction}
@@ -220,7 +224,7 @@ export function OAuthProviderSettings({ provider }: OAuthProviderSettingsProps) 
 
         {secretAction === 'replace' ? (
           <div className="grid content-start gap-1.5 md:col-span-2">
-            <Label htmlFor={`${provider}-oauth-client-secret`}>{t('authenticationSettings.oauth.newSecret')}</Label>
+            <Label htmlFor={`${provider}-oauth-client-secret`}>{newSecretLabel}</Label>
             <Input
               id={`${provider}-oauth-client-secret`}
               type="password"
