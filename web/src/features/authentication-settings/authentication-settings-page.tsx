@@ -1,4 +1,5 @@
-import { RefreshCw } from 'lucide-react'
+import { LockKeyhole, RefreshCw, ShieldCheck, SlidersHorizontal, Waypoints } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -10,17 +11,60 @@ import { GitHubOAuthSettings } from './github-oauth-settings'
 import { OAuthProviderSettings } from './oauth-provider-settings'
 import { useAdminAuthenticationSettings } from './authentication-settings-api'
 
+const authenticationSections = [
+  { id: 'authentication-core', label: 'core', icon: LockKeyhole },
+  { id: 'authentication-allocation', label: 'allocation', icon: SlidersHorizontal },
+  { id: 'authentication-protection', label: 'protection', icon: ShieldCheck },
+  { id: 'authentication-oauth', label: 'oauth', icon: Waypoints },
+] as const
+
 /** 呈现管理员认证设置，并在策略或分组目录不可靠时禁止编辑。 */
 export function AuthenticationSettingsPage() {
   const { t } = useTranslation()
+  const [activeSection, setActiveSection] = useState('authentication-core')
   const settingsQuery = useAdminAuthenticationSettings()
   const groupsQuery = useAdminGroupCatalog()
   const pending = settingsQuery.isPending || groupsQuery.isPending
   const failed = settingsQuery.isError || groupsQuery.isError || groupsQuery.data?.length === 0
+  const sectionsReady = Boolean(settingsQuery.data && groupsQuery.data)
 
   const refresh = () => {
     void settingsQuery.refetch()
     void groupsQuery.refetch()
+  }
+
+  useEffect(() => {
+    const updateActiveSection = () => {
+      const visible = authenticationSections
+        .flatMap((section) => {
+          const element = document.getElementById(section.id)
+          if (!element) return []
+          const bounds = element.getBoundingClientRect()
+          return bounds.bottom > 80
+            ? [{ id: section.id, distance: Math.abs(bounds.top - 96) }]
+            : []
+        })
+        .sort((left, right) => left.distance - right.distance)[0]
+      if (visible) {
+        setActiveSection((current) => (current === visible.id ? current : visible.id))
+      }
+    }
+
+    updateActiveSection()
+    window.addEventListener('scroll', updateActiveSection, { passive: true })
+    window.addEventListener('resize', updateActiveSection)
+    return () => {
+      window.removeEventListener('scroll', updateActiveSection)
+      window.removeEventListener('resize', updateActiveSection)
+    }
+  }, [sectionsReady])
+
+  const focusSection = (id: string) => {
+    const element = document.getElementById(id)
+    if (!element) return
+    setActiveSection(id)
+    element.focus({ preventScroll: true })
+    element.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   return (
@@ -47,6 +91,30 @@ export function AuthenticationSettingsPage() {
         </Button>
       </header>
 
+      <nav
+        aria-label={t('authenticationSettings.navigation.label')}
+        className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {authenticationSections.map((section) => {
+          const Icon = section.icon
+          const active = activeSection === section.id
+          return (
+            <button
+              key={section.id}
+              type="button"
+              aria-current={active ? 'true' : undefined}
+              className={active
+                ? 'flex h-8 shrink-0 items-center gap-2 rounded-lg bg-surface-2 px-3 text-xs font-medium text-foreground ring-1 ring-[var(--hairline)]'
+                : 'flex h-8 shrink-0 items-center gap-2 rounded-lg px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-2/70 hover:text-foreground'}
+              onClick={() => focusSection(section.id)}
+            >
+              <Icon className={active ? 'size-3.5 text-brand' : 'size-3.5'} aria-hidden="true" />
+              {t('authenticationSettings.navigation.' + section.label)}
+            </button>
+          )
+        })}
+      </nav>
+
       {pending ? (
         <div className="grid gap-0 border-y border-[var(--hairline)]" aria-label={t('authenticationSettings.loading')}>
           {[0, 1, 2, 3, 4, 5].map((item) => (
@@ -71,13 +139,15 @@ export function AuthenticationSettingsPage() {
       ) : settingsQuery.data && groupsQuery.data ? (
         <>
           <AuthenticationSettingsForm settings={settingsQuery.data} groups={groupsQuery.data} />
-          <GitHubOAuthSettings />
-          <DiscordOAuthSettings />
-          <OAuthProviderSettings provider="oidc" />
-          <OAuthProviderSettings provider="linuxdo" />
-          <OAuthProviderSettings provider="wechat" />
-          <OAuthProviderSettings provider="telegram" />
-          <OAuthProviderSettings provider="google" />
+          <section id="authentication-oauth" tabIndex={-1} className="grid scroll-mt-20 gap-4 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring/60">
+            <GitHubOAuthSettings />
+            <DiscordOAuthSettings />
+            <OAuthProviderSettings provider="oidc" />
+            <OAuthProviderSettings provider="linuxdo" />
+            <OAuthProviderSettings provider="wechat" />
+            <OAuthProviderSettings provider="telegram" />
+            <OAuthProviderSettings provider="google" />
+          </section>
         </>
       ) : null}
     </div>

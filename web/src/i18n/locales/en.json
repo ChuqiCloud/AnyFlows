@@ -3083,6 +3083,13 @@
     "title": "Authentication settings",
     "subtitle": "Control password sign-in, public registration, new-user allocation, and database-backed fixed-window protection.",
     "loading": "Loading authentication settings",
+    "navigation": {
+      "label": "Authentication settings sections",
+      "core": "Core authentication",
+      "allocation": "User allocation",
+      "protection": "Registration protection",
+      "oauth": "OAuth login"
+    },
     "status": {
       "title": "Authentication capabilities",
       "version": "Version {{version}}",

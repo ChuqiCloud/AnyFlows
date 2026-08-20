@@ -3082,6 +3082,13 @@
     "title": "认证设置",
     "subtitle": "控制密码登录、公开注册、新用户归属与数据库固定窗口保护。",
     "loading": "正在加载认证设置",
+    "navigation": {
+      "label": "认证设置分段",
+      "core": "基础认证",
+      "allocation": "用户归属",
+      "protection": "注册防护",
+      "oauth": "OAuth 登录"
+    },
     "status": {
       "title": "认证能力",
       "version": "版本 {{version}}",

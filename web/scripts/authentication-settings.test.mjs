@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import { URL } from 'node:url'
 
 import { routeFromHash } from '../src/app-route.ts'
 import {
@@ -61,4 +63,16 @@ test('认证设置拒绝开启注册但关闭密码登录的非法组合', () =>
     rate_limit_attempts: 5,
     rate_limit_window_seconds: 3_600,
   })
+})
+
+test('认证设置页提供不污染 hash 路由的可聚焦分段导航', () => {
+  const page = readFileSync(new URL('../src/features/authentication-settings/authentication-settings-page.tsx', import.meta.url), 'utf8')
+  const form = readFileSync(new URL('../src/features/authentication-settings/authentication-settings-form.tsx', import.meta.url), 'utf8')
+  assert.match(page, /authenticationSettings\.navigation\.label/)
+  assert.match(page, /focusSection\(section\.id\)/)
+  assert.match(page, /authentication-oauth/)
+  assert.match(form, /id="authentication-core"/)
+  assert.match(form, /id="authentication-allocation"/)
+  assert.match(form, /id="authentication-protection"/)
+  assert.doesNotMatch(page, /href="#authentication-/)
 })
