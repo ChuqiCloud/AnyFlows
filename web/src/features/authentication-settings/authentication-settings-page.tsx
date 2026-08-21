@@ -1,5 +1,5 @@
 import { LockKeyhole, RefreshCw, ShieldCheck, SlidersHorizontal, Waypoints } from 'lucide-react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useIsFetching, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -27,6 +27,8 @@ export function AuthenticationSettingsPage() {
   const settingsQuery = useAdminAuthenticationSettings()
   const groupsQuery = useAdminGroupCatalog()
   const queryClient = useQueryClient()
+  const oauthSettingsFetching = useIsFetching({ queryKey: adminOAuthLoginSettingsQueryPrefix }) > 0
+  const refreshing = settingsQuery.isFetching || groupsQuery.isFetching || oauthSettingsFetching
   const pending = settingsQuery.isPending || groupsQuery.isPending
   const failed = settingsQuery.isError || groupsQuery.isError || groupsQuery.data?.length === 0
   const sectionsReady = Boolean(settingsQuery.data && groupsQuery.data)
@@ -84,11 +86,11 @@ export function AuthenticationSettingsPage() {
           type="button"
           size="sm"
           variant="secondary"
-          disabled={settingsQuery.isFetching || groupsQuery.isFetching}
+          disabled={refreshing}
           onClick={refresh}
         >
           <RefreshCw
-            className={settingsQuery.isFetching || groupsQuery.isFetching ? 'animate-spin' : undefined}
+            className={refreshing ? 'animate-spin' : undefined}
             aria-hidden="true"
           />
           {t('authenticationSettings.actions.refresh')}

@@ -72,6 +72,8 @@ test('认证设置页提供不污染 hash 路由的可聚焦分段导航', () =>
   assert.match(page, /focusSection\(section\.id\)/)
   assert.match(page, /adminOAuthLoginSettingsQueryPrefix/)
   assert.match(page, /invalidateQueries\(\{ queryKey: adminOAuthLoginSettingsQueryPrefix \}\)/)
+  assert.match(page, /useIsFetching\(\{ queryKey: adminOAuthLoginSettingsQueryPrefix \}\)/)
+  assert.match(page, /disabled=\{refreshing\}/)
   assert.match(page, /authentication-oauth/)
   assert.match(form, /id="authentication-core"/)
   assert.match(form, /id="authentication-allocation"/)
