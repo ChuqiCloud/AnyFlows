@@ -90,6 +90,7 @@ mod m20260820_000081_seed_google_oauth_login;
 mod m20260821_000082_create_user_notification_receipts;
 mod m20260821_000083_create_subscription_plan_prices;
 mod m20260821_000084_create_subscription_orders;
+mod m20260822_000085_create_subscription_payment_events;
 mod schema;
 
 #[cfg(test)]
@@ -217,6 +218,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260821_000082_create_user_notification_receipts::Migration),
             Box::new(m20260821_000083_create_subscription_plan_prices::Migration),
             Box::new(m20260821_000084_create_subscription_orders::Migration),
+            Box::new(m20260822_000085_create_subscription_payment_events::Migration),
         ]
     }
 }

@@ -28,6 +28,10 @@ pub struct Model {
     pub version: i64,
     #[sea_orm(column_type = "String(StringLen::N(128))", nullable)]
     pub provider_order_id: Option<SensitiveString>,
+    #[sea_orm(column_type = "String(StringLen::N(128))", nullable)]
+    pub trade_no: Option<SensitiveString>,
+    #[sea_orm(column_type = "String(StringLen::N(32))", nullable)]
+    pub payment_method: Option<String>,
     pub expires_at: Option<TimeDateTimeWithTimeZone>,
     pub paid_at: Option<TimeDateTimeWithTimeZone>,
     pub closed_at: Option<TimeDateTimeWithTimeZone>,

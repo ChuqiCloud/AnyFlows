@@ -1,7 +1,10 @@
 use sea_orm::DbBackend;
 use sea_orm_migration::prelude::*;
 
-use crate::migration::iden::{payment_settings, topup_orders, topup_payment_events, users};
+use crate::migration::iden::{
+    payment_settings, subscription_orders, subscription_payment_events, topup_orders,
+    topup_payment_events, users,
+};
 
 use super::{auto_id, nullable_timestamp, table, timestamp};
 
@@ -391,6 +394,125 @@ async fn create_payment_events(manager: &SchemaManager<'_>) -> Result<(), DbErr>
                 .on_delete(ForeignKeyAction::Restrict),
         );
     manager.create_table(statement).await
+}
+
+/// 创建订阅订单专用的只追加支付审计事件表。
+pub(in crate::migration) async fn create_subscription_payment_events(
+    manager: &SchemaManager<'_>,
+) -> Result<(), DbErr> {
+    let mut statement = table(manager, subscription_payment_events::Entity);
+    statement
+        .col(auto_id(subscription_payment_events::Column::Id))
+        .col(
+            ColumnDef::new(subscription_payment_events::Column::EventKey)
+                .char_len(32)
+                .not_null(),
+        )
+        .col(
+            ColumnDef::new(subscription_payment_events::Column::OrderId)
+                .big_integer()
+                .not_null(),
+        )
+        .col(
+            ColumnDef::new(subscription_payment_events::Column::Provider)
+                .string_len(64)
+                .not_null()
+                .check(Expr::col(subscription_payment_events::Column::Provider).ne("")),
+        )
+        .col(
+            ColumnDef::new(subscription_payment_events::Column::ProviderEventId)
+                .string_len(128)
+                .not_null()
+                .check(Expr::col(subscription_payment_events::Column::ProviderEventId).ne("")),
+        )
+        .col(ColumnDef::new(subscription_payment_events::Column::TradeNo).string_len(128))
+        .col(ColumnDef::new(subscription_payment_events::Column::AmountMinor).big_integer())
+        .col(ColumnDef::new(subscription_payment_events::Column::Currency).char_len(3))
+        .col(ColumnDef::new(subscription_payment_events::Column::PaymentMethod).string_len(32))
+        .col(
+            ColumnDef::new(subscription_payment_events::Column::EventType)
+                .small_integer()
+                .not_null()
+                .check(
+                    Expr::col(subscription_payment_events::Column::EventType).is_in([1_i16, 2, 3]),
+                ),
+        )
+        .col(
+            ColumnDef::new(subscription_payment_events::Column::SignatureKeyFingerprint)
+                .char_len(64)
+                .not_null(),
+        )
+        .col(
+            ColumnDef::new(subscription_payment_events::Column::PayloadSha256)
+                .char_len(64)
+                .not_null(),
+        )
+        .col(timestamp(
+            manager,
+            subscription_payment_events::Column::ReceivedAt,
+        ))
+        .col(nullable_timestamp(
+            manager,
+            subscription_payment_events::Column::ProcessedAt,
+        ))
+        .col(timestamp(
+            manager,
+            subscription_payment_events::Column::CreatedAt,
+        ))
+        .check(hex_check(
+            manager.get_database_backend(),
+            "event_key",
+            32,
+            true,
+        ))
+        .check(hex_check(
+            manager.get_database_backend(),
+            "signature_key_fingerprint",
+            64,
+            false,
+        ))
+        .check(hex_check(
+            manager.get_database_backend(),
+            "payload_sha256",
+            64,
+            false,
+        ))
+        .foreign_key(
+            ForeignKey::create()
+                .name("fk_subscription_payment_events_order")
+                .from(
+                    subscription_payment_events::Entity,
+                    subscription_payment_events::Column::OrderId,
+                )
+                .to(subscription_orders::Entity, subscription_orders::Column::Id)
+                .on_update(ForeignKeyAction::Cascade)
+                .on_delete(ForeignKeyAction::Restrict),
+        );
+    manager.create_table(statement).await?;
+    for index in [
+        Index::create()
+            .name("uq_subscription_payment_events_event_key")
+            .table(subscription_payment_events::Entity)
+            .col(subscription_payment_events::Column::EventKey)
+            .unique()
+            .to_owned(),
+        Index::create()
+            .name("uq_subscription_payment_events_provider_event")
+            .table(subscription_payment_events::Entity)
+            .col(subscription_payment_events::Column::Provider)
+            .col(subscription_payment_events::Column::ProviderEventId)
+            .unique()
+            .to_owned(),
+        Index::create()
+            .name("idx_subscription_payment_events_order_created")
+            .table(subscription_payment_events::Entity)
+            .col(subscription_payment_events::Column::OrderId)
+            .col(subscription_payment_events::Column::CreatedAt)
+            .to_owned(),
+    ] {
+        manager.create_index(index).await?;
+    }
+    Ok(())
 }
 
 fn order_state_shape() -> SimpleExpr {
