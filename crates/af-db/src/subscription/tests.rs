@@ -6,7 +6,7 @@ use af_domain::{
     UserId, UserSubscriptionId, UserSubscriptionStatus,
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, IntoActiveModel,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, IntoActiveModel,
     PaginatorTrait, QueryFilter, Set, Statement, entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::Expr,
 };
@@ -246,7 +246,7 @@ async fn order_creation_recovers_unknown_outcome_and_rejects_price_conflicts()
         .pool
         .connection()
         .execute(Statement::from_sql_and_values(
-            DatabaseBackend::Sqlite,
+            DbBackend::Sqlite,
             "UPDATE subscription_orders SET plan_id = ? WHERE id = ?",
             [
                 second_plan_database_id.into(),
