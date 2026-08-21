@@ -122,12 +122,16 @@
     },
     "performance": {
       "title": "Performance health",
-      "subtitle": "Missing timing data stays unsampled instead of becoming zero",
+      "subtitle": "Based on persisted timings and diagnostic cutoffs, not live probes or an SLA",
       "firstToken": "Average first token",
       "duration": "Average duration",
       "coverage": "{{rate}} coverage · {{count}} samples",
       "slow": "≥ {{threshold}}: {{count}}",
-      "noSamples": "No request samples"
+      "belowThreshold": "{{rate}} below cutoff",
+      "unsampled": "{{count}} unsampled",
+      "distribution": "{{below}} below cutoff, {{slow}} slow, {{unsampled}} unsampled",
+      "noSamples": "No timing samples",
+      "noRequests": "No requests in this period"
     },
     "composition": {
       "title": "Request composition",
