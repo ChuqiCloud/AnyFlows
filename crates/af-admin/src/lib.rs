@@ -351,8 +351,10 @@ pub use subscription::{
     AdminUserSubscriptionBindCommand, AdminUserSubscriptionLifecycleAction,
     AdminUserSubscriptionLifecycleCommand, AdminUserSubscriptionLifecycleResult,
     AdminUserSubscriptionPage, DEFAULT_ADMIN_SUBSCRIPTION_PAGE_SIZE, DatabaseSubscriptionService,
-    SubscriptionBindFuture, SubscriptionCreatePlanFuture, SubscriptionDisablePlanFuture,
-    SubscriptionLifecycleFuture, SubscriptionListPlansFuture, SubscriptionListUserFuture,
+    SubscriptionBindFuture, SubscriptionCatalog, SubscriptionCatalogFuture,
+    SubscriptionCatalogPlan, SubscriptionCreateOrderFuture, SubscriptionCreatePlanFuture,
+    SubscriptionDisablePlanFuture, SubscriptionLifecycleFuture, SubscriptionListPlansFuture,
+    SubscriptionListUserFuture, SubscriptionOrder, SubscriptionOrderCreateCommand,
     SubscriptionService, SubscriptionServiceError,
 };
 pub use token_auth::{

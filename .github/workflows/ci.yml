@@ -10,7 +10,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # 共享单一 runner 时只保留最新一轮流水线，避免不同 PR 的数据库容器互相抢端口。
+  group: anyflows-ci
   cancel-in-progress: true
 
 env:
@@ -110,6 +111,9 @@ jobs:
     name: Linux amd64 release package
     needs: changes
     if: ${{ needs.changes.outputs.rust == 'true' }}
+    concurrency:
+      group: anyflows-heavy-ci
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -219,6 +223,9 @@ jobs:
     name: Rust quality gates
     needs: changes
     if: ${{ needs.changes.outputs.rust == 'true' }}
+    concurrency:
+      group: anyflows-heavy-ci
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -301,6 +308,9 @@ jobs:
     name: Minimum supported Rust version
     needs: changes
     if: ${{ needs.changes.outputs.rust == 'true' }}
+    concurrency:
+      group: anyflows-heavy-ci
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -371,6 +381,9 @@ jobs:
     name: SQLite migration smoke test
     needs: changes
     if: ${{ needs.changes.outputs.database == 'true' }}
+    concurrency:
+      group: anyflows-heavy-ci
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -423,6 +436,9 @@ jobs:
     name: PostgreSQL migration smoke test
     needs: changes
     if: ${{ needs.changes.outputs.database == 'true' }}
+    concurrency:
+      group: anyflows-heavy-ci
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -498,6 +514,9 @@ jobs:
     name: MySQL migration smoke test
     needs: changes
     if: ${{ needs.changes.outputs.database == 'true' }}
+    concurrency:
+      group: anyflows-heavy-ci
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -574,6 +593,9 @@ jobs:
     name: Redis cache smoke test
     needs: changes
     if: ${{ needs.changes.outputs.redis == 'true' }}
+    concurrency:
+      group: anyflows-heavy-ci
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
