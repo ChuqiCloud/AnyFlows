@@ -66,6 +66,3 @@ impl Related<super::subscription_plans::Entity> for Entity {
         Relation::Plan.def()
     }
 }
-
-#[async_trait::async_trait]
-impl ActiveModelBehavior for ActiveModel {}
