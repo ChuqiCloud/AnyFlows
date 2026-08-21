@@ -87,6 +87,7 @@ mod m20260820_000078_extend_oauth_login_providers;
 mod m20260820_000079_seed_wechat_oauth_login;
 mod m20260820_000080_seed_telegram_oauth_login;
 mod m20260820_000081_seed_google_oauth_login;
+mod m20260821_000082_create_user_notification_receipts;
 mod schema;
 
 #[cfg(test)]
@@ -211,6 +212,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260820_000079_seed_wechat_oauth_login::Migration),
             Box::new(m20260820_000080_seed_telegram_oauth_login::Migration),
             Box::new(m20260820_000081_seed_google_oauth_login::Migration),
+            Box::new(m20260821_000082_create_user_notification_receipts::Migration),
         ]
     }
 }

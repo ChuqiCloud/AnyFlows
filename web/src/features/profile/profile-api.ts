@@ -10,6 +10,7 @@ import {
   getUserTwoFactor,
   listUserPasskeys,
   listUserNotifications,
+  markUserNotificationsRead,
   renameUserPasskey,
   revokeUserPasskey,
   startUserPasskeyRegistration,
@@ -180,5 +181,20 @@ export function useUserNotifications() {
       return data
     },
     getNextPageParam: (page) => page.next_cursor ?? undefined,
+  })
+}
+
+/** Mark notification facts as read and let every consumer refresh the server-owned unread count. */
+export function useMarkUserNotificationsRead() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (notificationIds: number[]) => {
+      const { data } = await markUserNotificationsRead({
+        body: { notification_ids: notificationIds },
+        client: apiClient,
+      })
+      return data
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: userNotificationsQueryKey }),
   })
 }

@@ -5,8 +5,10 @@ use af_db::{
     NotificationDeliveryState as DatabaseNotificationDeliveryState,
     NotificationKind as DatabaseNotificationKind,
     UserNotificationCursor as DatabaseUserNotificationCursor, UserNotificationListOutcome,
-    UserNotificationListQuery as DatabaseUserNotificationListQuery, UserNotificationPageRecord,
-    UserNotificationRecord, UserNotificationRepository, UserNotificationRepositoryError,
+    UserNotificationListQuery as DatabaseUserNotificationListQuery,
+    UserNotificationMarkReadOutcome as DatabaseUserNotificationMarkReadOutcome,
+    UserNotificationPageRecord, UserNotificationRecord, UserNotificationRepository,
+    UserNotificationRepositoryError,
 };
 use thiserror::Error;
 
@@ -64,6 +66,30 @@ impl UserNotificationCursor {
 pub struct UserNotificationListQuery {
     before: Option<UserNotificationCursor>,
     limit: usize,
+}
+
+/// 当前用户批量标记已读命令；不接受重复或空 ID。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UserNotificationMarkReadCommand {
+    ids: Vec<i64>,
+}
+
+impl UserNotificationMarkReadCommand {
+    pub fn new(ids: Vec<i64>) -> Result<Self, UserNotificationError> {
+        if ids.is_empty()
+            || ids.len() > af_db::MAX_USER_NOTIFICATION_READ_BATCH
+            || ids.iter().any(|id| *id <= 0)
+        {
+            return Err(UserNotificationError::InvalidInput);
+        }
+        let mut sorted = ids.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        if sorted.len() != ids.len() {
+            return Err(UserNotificationError::InvalidInput);
+        }
+        Ok(Self { ids })
+    }
 }
 
 impl UserNotificationListQuery {
@@ -154,6 +180,10 @@ impl UserNotification {
     pub const fn threshold_percent(&self) -> Option<i16> {
         self.record.threshold_percent()
     }
+    #[must_use]
+    pub const fn read_at(&self) -> Option<i64> {
+        self.record.read_at()
+    }
 }
 
 impl fmt::Debug for UserNotification {
@@ -165,6 +195,7 @@ impl fmt::Debug for UserNotification {
 pub struct UserNotificationPage {
     entries: Vec<UserNotification>,
     next_cursor: Option<UserNotificationCursor>,
+    unread_count: u64,
 }
 
 impl UserNotificationPage {
@@ -180,6 +211,7 @@ impl UserNotificationPage {
                 .map(|record| UserNotification::from_record(record.clone_for_service()))
                 .collect(),
             next_cursor,
+            unread_count: page.unread_count(),
         }
     }
     #[must_use]
@@ -189,6 +221,34 @@ impl UserNotificationPage {
     #[must_use]
     pub const fn next_cursor(&self) -> Option<UserNotificationCursor> {
         self.next_cursor
+    }
+    #[must_use]
+    pub const fn unread_count(&self) -> u64 {
+        self.unread_count
+    }
+}
+
+/// 标记已读后的当前用户摘要。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UserNotificationMarkReadResult {
+    marked_count: usize,
+    unread_count: u64,
+}
+
+impl UserNotificationMarkReadResult {
+    fn from_record(record: DatabaseUserNotificationMarkReadOutcome) -> Self {
+        Self {
+            marked_count: record.marked_count(),
+            unread_count: record.unread_count(),
+        }
+    }
+    #[must_use]
+    pub const fn marked_count(self) -> usize {
+        self.marked_count
+    }
+    #[must_use]
+    pub const fn unread_count(self) -> u64 {
+        self.unread_count
     }
 }
 
@@ -202,6 +262,13 @@ pub enum UserNotificationError {
 
 pub type UserNotificationListFuture<'a> =
     Pin<Box<dyn Future<Output = Result<UserNotificationPage, UserNotificationError>> + Send + 'a>>;
+pub type UserNotificationMarkReadFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<UserNotificationMarkReadResult, UserNotificationError>>
+            + Send
+            + 'a,
+    >,
+>;
 
 pub trait UserNotificationService: Send + Sync {
     fn list<'a>(
@@ -209,6 +276,11 @@ pub trait UserNotificationService: Send + Sync {
         principal: SessionPrincipal,
         query: UserNotificationListQuery,
     ) -> UserNotificationListFuture<'a>;
+    fn mark_read<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        command: UserNotificationMarkReadCommand,
+    ) -> UserNotificationMarkReadFuture<'a>;
 }
 
 pub struct DatabaseUserNotificationService {
@@ -249,6 +321,21 @@ impl UserNotificationService for DatabaseUserNotificationService {
             }
         })
     }
+
+    fn mark_read<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        command: UserNotificationMarkReadCommand,
+    ) -> UserNotificationMarkReadFuture<'a> {
+        Box::pin(async move {
+            let result = self
+                .repository
+                .mark_read(principal.user_id().get(), command.ids)
+                .await
+                .map_err(map_error)?;
+            Ok(UserNotificationMarkReadResult::from_record(result))
+        })
+    }
 }
 
 impl fmt::Debug for DatabaseUserNotificationService {
@@ -263,5 +350,6 @@ fn map_error(error: UserNotificationRepositoryError) -> UserNotificationError {
         UserNotificationRepositoryError::Query
         | UserNotificationRepositoryError::Invariant
         | UserNotificationRepositoryError::Timeout => UserNotificationError::Internal,
+        UserNotificationRepositoryError::NotFound => UserNotificationError::InvalidInput,
     }
 }

@@ -403,11 +403,12 @@ pub use network_settings::{
     NetworkSettingsWriteRecord, ProxyPasswordUpdate,
 };
 pub use notification::{
-    MAX_USER_NOTIFICATION_PAGE_SIZE, NotificationChannel, NotificationDeliveryState,
-    NotificationKind, UserNotificationCursor, UserNotificationListOutcome,
-    UserNotificationListQuery, UserNotificationPageRecord, UserNotificationRecord,
-    UserNotificationRepository, UserNotificationRepositoryConfigError,
-    UserNotificationRepositoryError, UserNotificationSnapshot, UserNotificationWrite,
+    MAX_USER_NOTIFICATION_PAGE_SIZE, MAX_USER_NOTIFICATION_READ_BATCH, NotificationChannel,
+    NotificationDeliveryState, NotificationKind, UserNotificationCursor,
+    UserNotificationListOutcome, UserNotificationListQuery, UserNotificationMarkReadOutcome,
+    UserNotificationPageRecord, UserNotificationRecord, UserNotificationRepository,
+    UserNotificationRepositoryConfigError, UserNotificationRepositoryError,
+    UserNotificationSnapshot, UserNotificationWrite,
 };
 pub use oauth_credential::{
     MAX_OAUTH_REFRESH_CANDIDATES, OAuthCredentialExpirationProjectionUpdateOutcome,

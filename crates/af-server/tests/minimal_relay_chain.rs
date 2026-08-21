@@ -404,6 +404,14 @@ impl UserNotificationService for RejectUserNotifications {
     ) -> UserNotificationListFuture<'a> {
         Box::pin(async { Err(UserNotificationError::Internal) })
     }
+
+    fn mark_read<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _command: af_admin::UserNotificationMarkReadCommand,
+    ) -> af_admin::UserNotificationMarkReadFuture<'a> {
+        Box::pin(async { Err(UserNotificationError::Internal) })
+    }
 }
 
 impl RedemptionService for RejectRedemptions {

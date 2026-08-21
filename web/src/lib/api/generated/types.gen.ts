@@ -1900,10 +1900,19 @@ export type UserNotification = {
     quota_amount?: number | null;
     quota_used?: number | null;
     threshold_percent?: number | null;
+    read_at?: number | null;
 };
 export type UserNotificationListResponse = {
     entries: Array<UserNotification>;
     next_cursor?: string | null;
+    unread_count: number;
+};
+export type UserNotificationMarkReadRequest = {
+    notification_ids: Array<number>;
+};
+export type UserNotificationMarkReadResponse = {
+    marked_count: number;
+    unread_count: number;
 };
 export type UserNotificationPreferencesRequest = {
     email_product_updates: boolean;
@@ -3207,6 +3216,22 @@ export type ListUserWalletEntriesResponses = {
     200: UserWalletListResponse;
 };
 export type ListUserWalletEntriesResponse = ListUserWalletEntriesResponses[keyof ListUserWalletEntriesResponses];
+export type MarkUserNotificationsReadData = {
+    body: UserNotificationMarkReadRequest;
+    path?: never;
+    query?: never;
+    url: '/api/account/notifications/read';
+};
+export type MarkUserNotificationsReadErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    500: ManagementError;
+};
+export type MarkUserNotificationsReadError = MarkUserNotificationsReadErrors[keyof MarkUserNotificationsReadErrors];
+export type MarkUserNotificationsReadResponses = {
+    200: UserNotificationMarkReadResponse;
+};
+export type MarkUserNotificationsReadResponse = MarkUserNotificationsReadResponses[keyof MarkUserNotificationsReadResponses];
 export type GetUserTopupConfigurationData = {
     body?: never;
     path?: never;

@@ -24,6 +24,7 @@ import { useUserWalletSummary } from '@/features/wallet/wallet-api'
 import { OrganizationWorkspaceSwitcher } from '@/features/organization-console/organization-workspace-switcher'
 import { useOrganizationWorkspace } from '@/features/organization-console/organization-workspace-context'
 import { useOrganizationWalletSummary } from '@/features/organization-wallet/organization-wallet-api'
+import { useUserNotifications } from '@/features/profile/profile-api'
 import type { SessionUser } from '@/lib/api/generated/types.gen'
 
 type AppShellProps = {
@@ -54,6 +55,7 @@ export function AppShell({ title, children, currentUser, onLogout }: AppShellPro
     workspace.selectedId ?? 0,
     workspace.selectedId !== undefined,
   )
+  const notificationsQuery = useUserNotifications()
   const { formatQuota } = useBalanceDisplay()
   const site = siteQuery.data
   const siteName = site?.site_name ?? t('brand.name')
@@ -67,6 +69,10 @@ export function AppShell({ title, children, currentUser, onLogout }: AppShellPro
     ? t(enterpriseWorkspace ? 'shell.organizationBalanceUnavailable' : 'shell.balanceUnavailable')
     : t(enterpriseWorkspace ? 'shell.organizationBalanceValue' : 'shell.balanceValue', { value: formatQuota(balance) })
   const balanceHref = enterpriseWorkspace ? '#/console/organization-wallet' : '#/console/wallet'
+  const unreadCount = notificationsQuery.data?.pages[0]?.unread_count
+  const notificationsLabel = unreadCount !== undefined && unreadCount > 0
+    ? t('shell.notificationsUnread', { count: unreadCount })
+    : t('shell.notifications')
 
   return (
     <SidebarProvider defaultOpen={getDefaultOpen()}>
@@ -133,13 +139,14 @@ export function AppShell({ title, children, currentUser, onLogout }: AppShellPro
               <TooltipTrigger asChild>
                 <a
                   href="#/console/profile?section=notifications"
-                  className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none"
-                  aria-label={t('shell.notifications')}
+                  className="relative flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none"
+                  aria-label={notificationsLabel}
                 >
                   <BellRing className="size-3.5" aria-hidden="true" />
+                  {unreadCount !== undefined && unreadCount > 0 ? <span aria-hidden="true" className="absolute -right-0.5 -top-0.5 min-w-3.5 rounded-full bg-destructive px-1 text-center text-[0.5625rem] font-semibold leading-3 text-destructive-foreground">{unreadCount > 99 ? '99+' : unreadCount}</span> : null}
                 </a>
               </TooltipTrigger>
-              <TooltipContent side="bottom">{t('shell.notifications')}</TooltipContent>
+              <TooltipContent side="bottom">{notificationsLabel}</TooltipContent>
             </Tooltip>
             <button
               type="button"

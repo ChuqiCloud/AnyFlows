@@ -2304,3 +2304,23 @@ pub(in crate::migration) mod user_notification_events {
         UpdatedAt,
     }
 }
+
+pub(in crate::migration) mod user_notification_receipts {
+    use super::DeriveIden;
+
+    /// 用户通知已读回执的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "user_notification_receipts")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        UserId,
+        NotificationId,
+        ReadAt,
+    }
+}

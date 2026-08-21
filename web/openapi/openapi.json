@@ -3498,6 +3498,71 @@
         ]
       }
     },
+    "/api/account/notifications/read": {
+      "post": {
+        "tags": [
+          "我的通知"
+        ],
+        "operationId": "markUserNotificationsRead",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserNotificationMarkReadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "已读回执已幂等写入",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserNotificationMarkReadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "通知 ID 无效或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/account/wallet/topups/config": {
       "get": {
         "tags": [
@@ -28702,6 +28767,13 @@
               "null"
             ],
             "format": "int32"
+          },
+          "read_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
           }
         },
         "additionalProperties": false
@@ -28709,7 +28781,8 @@
       "UserNotificationListResponse": {
         "type": "object",
         "required": [
-          "entries"
+          "entries",
+          "unread_count"
         ],
         "properties": {
           "entries": {
@@ -28723,6 +28796,48 @@
               "string",
               "null"
             ]
+          },
+          "unread_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserNotificationMarkReadRequest": {
+        "type": "object",
+        "required": [
+          "notification_ids"
+        ],
+        "properties": {
+          "notification_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "maxItems": 100,
+            "minItems": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserNotificationMarkReadResponse": {
+        "type": "object",
+        "required": [
+          "marked_count",
+          "unread_count"
+        ],
+        "properties": {
+          "marked_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unread_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
           }
         },
         "additionalProperties": false

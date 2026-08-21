@@ -4,14 +4,15 @@ use af_admin::{
     DEFAULT_USER_NOTIFICATION_PAGE_SIZE, SessionAuthentication, SessionAuthenticator,
     UserNotification, UserNotificationChannel, UserNotificationCursor,
     UserNotificationDeliveryState, UserNotificationError, UserNotificationKind,
-    UserNotificationListQuery, UserNotificationPage, UserNotificationService,
+    UserNotificationListQuery, UserNotificationMarkReadCommand, UserNotificationPage,
+    UserNotificationService,
 };
 use axum::{
     Router,
-    extract::{Extension, RawQuery, State},
+    extract::{Extension, Json, RawQuery, State, rejection::JsonRejection},
     middleware,
     response::Response,
-    routing::get,
+    routing::{get, post},
 };
 use serde::Serialize;
 use utoipa::ToSchema;
@@ -37,6 +38,10 @@ pub(crate) fn build_user_notification_router(
     );
     Router::new()
         .route("/api/account/notifications", get(list_user_notifications))
+        .route(
+            "/api/account/notifications/read",
+            post(mark_user_notifications_read),
+        )
         .layer(authentication)
         .with_state(UserNotificationHttpState { service })
 }
@@ -85,6 +90,7 @@ pub(crate) struct UserNotificationResponse {
     quota_amount: Option<i64>,
     quota_used: Option<i64>,
     threshold_percent: Option<i16>,
+    read_at: Option<i64>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -93,6 +99,23 @@ pub(crate) struct UserNotificationResponse {
 pub(crate) struct UserNotificationListResponse {
     entries: Vec<UserNotificationResponse>,
     next_cursor: Option<String>,
+    unread_count: u64,
+}
+
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = UserNotificationMarkReadRequest)]
+pub(crate) struct UserNotificationMarkReadRequest {
+    #[schema(min_items = 1, max_items = 100)]
+    notification_ids: Vec<i64>,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = UserNotificationMarkReadResponse)]
+pub(crate) struct UserNotificationMarkReadResponse {
+    marked_count: usize,
+    unread_count: u64,
 }
 
 pub(crate) async fn list_user_notifications(
@@ -111,6 +134,25 @@ pub(crate) async fn list_user_notifications(
     Ok(no_store_json(UserNotificationListResponse::from_page(
         &page,
     )))
+}
+
+pub(crate) async fn mark_user_notifications_read(
+    State(state): State<UserNotificationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    request: Result<Json<UserNotificationMarkReadRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let command = UserNotificationMarkReadCommand::new(request.notification_ids)
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    let result = state
+        .service
+        .mark_read(authentication.principal(), command)
+        .await
+        .map_err(map_error)?;
+    Ok(no_store_json(UserNotificationMarkReadResponse {
+        marked_count: result.marked_count(),
+        unread_count: result.unread_count(),
+    }))
 }
 
 fn parse_query(
@@ -193,6 +235,7 @@ impl UserNotificationListResponse {
             next_cursor: page
                 .next_cursor()
                 .map(|cursor| format!("{}:{}", cursor.occurred_at(), cursor.id())),
+            unread_count: page.unread_count(),
         }
     }
 }
@@ -230,6 +273,7 @@ impl UserNotificationResponse {
             quota_amount: notification.quota_amount(),
             quota_used: notification.quota_used(),
             threshold_percent: notification.threshold_percent(),
+            read_at: notification.read_at(),
         }
     }
 }

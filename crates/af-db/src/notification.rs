@@ -1,8 +1,8 @@
-use std::{fmt, time::Duration};
+use std::{collections::HashMap, fmt, time::Duration};
 
 use sea_orm::{
-    ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
-    Set,
+    ColumnTrait, Condition, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
+    QuerySelect, Set,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Expr, OnConflict},
 };
@@ -10,10 +10,15 @@ use thiserror::Error;
 use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
-use crate::{DatabasePool, entity::user_notification_events};
+use crate::{
+    DatabasePool,
+    entity::{user_notification_events, user_notification_receipts},
+};
 
 /// 通知历史单页允许返回的最大事实数量。
 pub const MAX_USER_NOTIFICATION_PAGE_SIZE: usize = 100;
+/// 单次标记已读允许携带的通知数量。
+pub const MAX_USER_NOTIFICATION_READ_BATCH: usize = 100;
 
 /// 第一切片支持的通知类型。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -166,11 +171,13 @@ pub struct UserNotificationRecord {
     quota_amount: Option<i64>,
     quota_used: Option<i64>,
     threshold_percent: Option<i16>,
+    read_at: Option<i64>,
 }
 
 impl UserNotificationRecord {
     fn from_model(
         model: user_notification_events::Model,
+        read_at: Option<i64>,
     ) -> Result<Self, UserNotificationRepositoryError> {
         Ok(Self {
             id: model.id,
@@ -190,6 +197,7 @@ impl UserNotificationRecord {
             quota_amount: model.quota_amount,
             quota_used: model.quota_used,
             threshold_percent: model.threshold_percent,
+            read_at,
         })
     }
 
@@ -248,6 +256,10 @@ impl UserNotificationRecord {
     #[must_use]
     pub const fn threshold_percent(&self) -> Option<i16> {
         self.threshold_percent
+    }
+    #[must_use]
+    pub const fn read_at(&self) -> Option<i64> {
+        self.read_at
     }
 
     #[must_use]
@@ -328,16 +340,19 @@ impl Default for UserNotificationListQuery {
 pub struct UserNotificationPageRecord {
     entries: Vec<UserNotificationRecord>,
     next_cursor: Option<UserNotificationCursor>,
+    unread_count: u64,
 }
 
 impl UserNotificationPageRecord {
     fn from_parts(
         entries: Vec<UserNotificationRecord>,
         next_cursor: Option<UserNotificationCursor>,
+        unread_count: u64,
     ) -> Self {
         Self {
             entries,
             next_cursor,
+            unread_count,
         }
     }
 
@@ -348,6 +363,10 @@ impl UserNotificationPageRecord {
     #[must_use]
     pub const fn next_cursor(&self) -> Option<UserNotificationCursor> {
         self.next_cursor
+    }
+    #[must_use]
+    pub const fn unread_count(&self) -> u64 {
+        self.unread_count
     }
 }
 
@@ -364,6 +383,24 @@ pub enum UserNotificationListOutcome {
     NotFound,
 }
 
+/// 标记已读后的稳定摘要。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UserNotificationMarkReadOutcome {
+    marked_count: usize,
+    unread_count: u64,
+}
+
+impl UserNotificationMarkReadOutcome {
+    #[must_use]
+    pub const fn marked_count(self) -> usize {
+        self.marked_count
+    }
+    #[must_use]
+    pub const fn unread_count(self) -> u64 {
+        self.unread_count
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum UserNotificationRepositoryConfigError {
     #[error("用户通知事实库操作超时必须大于零")]
@@ -378,6 +415,8 @@ pub enum UserNotificationRepositoryError {
     Query,
     #[error("用户通知事实数据损坏")]
     Invariant,
+    #[error("用户通知事实不存在或不属于当前用户")]
+    NotFound,
     #[error("用户通知事实库操作超时")]
     Timeout,
 }
@@ -413,6 +452,36 @@ impl UserNotificationRepository {
             return Err(UserNotificationRepositoryError::InvalidInput);
         }
         match timeout(self.operation_timeout, self.list_inner(user_id, query)).await {
+            Ok(result) => result,
+            Err(_) => Err(UserNotificationRepositoryError::Timeout),
+        }
+    }
+
+    /// 在当前用户范围内幂等写入已读回执，并返回剩余未读数量。
+    pub async fn mark_read(
+        &self,
+        user_id: i64,
+        notification_ids: Vec<i64>,
+    ) -> Result<UserNotificationMarkReadOutcome, UserNotificationRepositoryError> {
+        if user_id <= 0
+            || notification_ids.is_empty()
+            || notification_ids.len() > MAX_USER_NOTIFICATION_READ_BATCH
+            || notification_ids.iter().any(|id| *id <= 0)
+        {
+            return Err(UserNotificationRepositoryError::InvalidInput);
+        }
+        let mut unique_ids = notification_ids.clone();
+        unique_ids.sort_unstable();
+        unique_ids.dedup();
+        if unique_ids.len() != notification_ids.len() {
+            return Err(UserNotificationRepositoryError::InvalidInput);
+        }
+        match timeout(
+            self.operation_timeout,
+            self.mark_read_inner(user_id, unique_ids),
+        )
+        .await
+        {
             Ok(result) => result,
             Err(_) => Err(UserNotificationRepositoryError::Timeout),
         }
@@ -469,13 +538,102 @@ impl UserNotificationRepository {
         } else {
             None
         };
+        let ids = models.iter().map(|model| model.id).collect::<Vec<_>>();
+        let receipts = if ids.is_empty() {
+            Vec::new()
+        } else {
+            user_notification_receipts::Entity::find()
+                .filter(user_notification_receipts::Column::UserId.eq(user_id))
+                .filter(user_notification_receipts::Column::NotificationId.is_in(ids))
+                .all(self.pool.connection())
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(|_| UserNotificationRepositoryError::Query)?
+        };
+        let read_at_by_id = receipts
+            .into_iter()
+            .map(|receipt| (receipt.notification_id, receipt.read_at.unix_timestamp()))
+            .collect::<HashMap<_, _>>();
+        let total_count = user_notification_events::Entity::find()
+            .filter(user_notification_events::Column::UserId.eq(user_id))
+            .count(self.pool.connection())
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| UserNotificationRepositoryError::Query)?;
+        let read_count = user_notification_receipts::Entity::find()
+            .filter(user_notification_receipts::Column::UserId.eq(user_id))
+            .count(self.pool.connection())
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| UserNotificationRepositoryError::Query)?;
+        let unread_count = total_count.saturating_sub(read_count);
         let entries = models
             .into_iter()
-            .map(UserNotificationRecord::from_model)
+            .map(|model| {
+                let read_at = read_at_by_id.get(&model.id).copied();
+                UserNotificationRecord::from_model(model, read_at)
+            })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(UserNotificationListOutcome::Found(
-            UserNotificationPageRecord::from_parts(entries, next_cursor),
+            UserNotificationPageRecord::from_parts(entries, next_cursor, unread_count),
         ))
+    }
+
+    async fn mark_read_inner(
+        &self,
+        user_id: i64,
+        notification_ids: Vec<i64>,
+    ) -> Result<UserNotificationMarkReadOutcome, UserNotificationRepositoryError> {
+        let matching_count = user_notification_events::Entity::find()
+            .filter(user_notification_events::Column::UserId.eq(user_id))
+            .filter(user_notification_events::Column::Id.is_in(notification_ids.clone()))
+            .count(self.pool.connection())
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| UserNotificationRepositoryError::Query)?;
+        if matching_count != notification_ids.len() as u64 {
+            return Err(UserNotificationRepositoryError::NotFound);
+        }
+        let now = TimeDateTimeWithTimeZone::now_utc();
+        let models = notification_ids
+            .iter()
+            .map(|notification_id| user_notification_receipts::ActiveModel {
+                user_id: Set(user_id),
+                notification_id: Set(*notification_id),
+                read_at: Set(now),
+            })
+            .collect::<Vec<_>>();
+        user_notification_receipts::Entity::insert_many(models)
+            .on_conflict(
+                OnConflict::columns([
+                    user_notification_receipts::Column::UserId,
+                    user_notification_receipts::Column::NotificationId,
+                ])
+                .do_nothing_on([
+                    user_notification_receipts::Column::UserId,
+                    user_notification_receipts::Column::NotificationId,
+                ])
+                .to_owned(),
+            )
+            .exec_without_returning(self.pool.connection())
+            .await
+            .map_err(|_| UserNotificationRepositoryError::Query)?;
+        let total_count = user_notification_events::Entity::find()
+            .filter(user_notification_events::Column::UserId.eq(user_id))
+            .count(self.pool.connection())
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| UserNotificationRepositoryError::Query)?;
+        let read_count = user_notification_receipts::Entity::find()
+            .filter(user_notification_receipts::Column::UserId.eq(user_id))
+            .count(self.pool.connection())
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| UserNotificationRepositoryError::Query)?;
+        Ok(UserNotificationMarkReadOutcome {
+            marked_count: notification_ids.len(),
+            unread_count: total_count.saturating_sub(read_count),
+        })
     }
 }
 
@@ -611,7 +769,7 @@ pub(crate) async fn update_delivery_state<C: ConnectionTrait>(
 mod tests {
     use std::time::Duration;
 
-    use sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
+    use sea_orm::{ActiveModelTrait, EntityTrait, Set, entity::prelude::TimeDateTimeWithTimeZone};
 
     use super::*;
     use crate::{
@@ -689,6 +847,85 @@ mod tests {
             return Err("notification page must exist".into());
         };
         assert!(other_user.entries().is_empty());
+        pool.close().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn mark_read_is_idempotent_and_rejects_invalid_or_cross_user_ids()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let (pool, user_id) = fixture().await?;
+        let owner = crate::entity::users::Entity::find_by_id(user_id)
+            .one(pool.connection())
+            .await?
+            .expect("notification owner must exist");
+        let other_user = crate::entity::users::ActiveModel {
+            username: Set("notification-other".to_owned()),
+            email: Set(Some("notification-other@example.com".to_owned())),
+            default_group_id: Set(owner.default_group_id),
+            aff_code: Set("notification-other-aff".to_owned()),
+            settings: Set(serde_json::json!({})),
+            ..Default::default()
+        }
+        .insert(pool.connection())
+        .await?;
+        let occurred_at = TimeDateTimeWithTimeZone::now_utc();
+        insert_queued(
+            pool.connection(),
+            &UserNotificationWrite::balance_alert(user_id, 10, 100, 1_000, occurred_at),
+        )
+        .await?;
+        insert_queued(
+            pool.connection(),
+            &UserNotificationWrite::balance_alert(other_user.id, 11, 100, 1_000, occurred_at),
+        )
+        .await?;
+        let repository = UserNotificationRepository::new(pool.clone(), Duration::from_secs(5))?;
+        let UserNotificationListOutcome::Found(page) = repository
+            .list(user_id, UserNotificationListQuery::default())
+            .await?
+        else {
+            return Err("notification page must exist".into());
+        };
+        let notification_id = page.entries()[0].id();
+        assert_eq!(page.unread_count(), 1);
+        assert_eq!(
+            repository.mark_read(user_id, vec![]).await,
+            Err(UserNotificationRepositoryError::InvalidInput)
+        );
+        assert_eq!(
+            repository
+                .mark_read(user_id, vec![notification_id, notification_id])
+                .await,
+            Err(UserNotificationRepositoryError::InvalidInput)
+        );
+        let UserNotificationListOutcome::Found(other_page) = repository
+            .list(other_user.id, UserNotificationListQuery::default())
+            .await?
+        else {
+            return Err("other notification page must exist".into());
+        };
+        let other_notification_id = other_page.entries()[0].id();
+        assert_eq!(
+            repository
+                .mark_read(user_id, vec![other_notification_id])
+                .await,
+            Err(UserNotificationRepositoryError::NotFound)
+        );
+        let marked = repository.mark_read(user_id, vec![notification_id]).await?;
+        assert_eq!(marked.marked_count(), 1);
+        assert_eq!(marked.unread_count(), 0);
+        let repeated = repository.mark_read(user_id, vec![notification_id]).await?;
+        assert_eq!(repeated.marked_count(), 1);
+        assert_eq!(repeated.unread_count(), 0);
+        let UserNotificationListOutcome::Found(page) = repository
+            .list(user_id, UserNotificationListQuery::default())
+            .await?
+        else {
+            return Err("notification page must exist".into());
+        };
+        assert!(page.entries()[0].read_at().is_some());
+        assert_eq!(page.unread_count(), 0);
         pool.close().await?;
         Ok(())
     }
