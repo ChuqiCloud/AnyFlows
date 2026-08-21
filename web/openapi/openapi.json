@@ -28810,6 +28810,7 @@
       },
       "SubscriptionOrder": {
         "type": "object",
+        "description": "当前用户创建订阅订单后的服务端快照。",
         "required": [
           "order_id",
           "plan_id",
