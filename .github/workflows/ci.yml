@@ -15,6 +15,9 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # runner 资源有限；每个 job 串行编译，避免多个 Rust 门禁同时耗尽 CPU/内存。
+  CARGO_BUILD_JOBS: "1"
+  CARGO_INCREMENTAL: "0"
   RUST_BACKTRACE: "1"
 
 jobs:
