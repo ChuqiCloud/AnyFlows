@@ -2468,6 +2468,111 @@
         ]
       }
     },
+    "/api/account/subscription-orders": {
+      "post": {
+        "tags": [
+          "订阅管理"
+        ],
+        "summary": "幂等创建当前用户订阅订单",
+        "operationId": "createCurrentSubscriptionOrder",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscriptionOrderCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "已创建待支付订阅订单",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionOrder"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "已重放同一幂等订单",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionOrder"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "订单请求或幂等键无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "订阅计划不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "价格快照、销售状态或幂等事实冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "提交结果未知",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/auth/password-reset/request": {
       "post": {
         "tags": [
@@ -29379,6 +29484,7 @@
           "name",
           "quota_amount",
           "cycle",
+          "plan_version",
           "price_provider",
           "price_currency",
           "price_amount_minor"
@@ -29403,6 +29509,11 @@
           "cycle": {
             "$ref": "#/components/schemas/SubscriptionCycle"
           },
+          "plan_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
           "price_provider": {
             "type": "string",
             "maxLength": 32,
@@ -29421,6 +29532,157 @@
           }
         },
         "additionalProperties": false
+      },
+      "SubscriptionOrderCreateRequest": {
+        "type": "object",
+        "required": [
+          "idempotency_key",
+          "plan_id",
+          "plan_version",
+          "price_provider",
+          "price_currency",
+          "price_amount_minor"
+        ],
+        "properties": {
+          "idempotency_key": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "plan_id": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "plan_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "price_provider": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1
+          },
+          "price_currency": {
+            "type": "string",
+            "maxLength": 3,
+            "minLength": 3,
+            "pattern": "^[A-Z]{3}$"
+          },
+          "price_amount_minor": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "SubscriptionOrder": {
+        "type": "object",
+        "required": [
+          "order_id",
+          "plan_id",
+          "plan_version",
+          "price_provider",
+          "price_currency",
+          "price_amount_minor",
+          "quota_amount",
+          "status",
+          "version",
+          "expires_at",
+          "paid_at",
+          "created_at",
+          "updated_at",
+          "replayed"
+        ],
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "plan_id": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "plan_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "price_provider": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1
+          },
+          "price_currency": {
+            "type": "string",
+            "maxLength": 3,
+            "minLength": 3,
+            "pattern": "^[A-Z]{3}$"
+          },
+          "price_amount_minor": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "quota_amount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "status": {
+            "$ref": "#/components/schemas/SubscriptionOrderStatus"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "nullable": true
+          },
+          "paid_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "nullable": true
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SubscriptionOrderStatus": {
+        "type": "string",
+        "enum": [
+          "created",
+          "pending",
+          "paid",
+          "failed",
+          "canceled",
+          "expired"
+        ]
       },
       "UserSubscriptionStatus": {
         "type": "string",

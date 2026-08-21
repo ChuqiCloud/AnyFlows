@@ -1,15 +1,16 @@
-import { BadgeDollarSign, CreditCard, Layers3, RefreshCw } from 'lucide-react'
-import { useMemo } from 'react'
+import { AlertTriangle, BadgeDollarSign, CheckCircle2, CreditCard, Layers3, LoaderCircle, RefreshCw, RotateCcw } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
-import type { SubscriptionCatalogPlan } from '@/lib/api/generated/types.gen'
-import { useCurrentSubscriptionCatalog } from './subscription-api'
+import type { SubscriptionCatalogPlan, SubscriptionOrder } from '@/lib/api/generated/types.gen'
+import { useCurrentSubscriptionCatalog, useCreateCurrentSubscriptionOrder, subscriptionErrorCode } from './subscription-api'
+import { createSubscriptionIdempotencyKey } from './subscription-form-model'
 
-/** 展示服务端已筛选的可售计划；本阶段只读取目录，不发起订单或支付。 */
+/** 展示服务端已筛选的可售计划，并提供幂等创建待支付订单的入口。 */
 export function SubscriptionCatalog() {
   const { i18n, t } = useTranslation()
   const query = useCurrentSubscriptionCatalog()
@@ -108,6 +109,25 @@ function CatalogPlanRow({
   formatAmount: (value: number) => string
 }) {
   const { t } = useTranslation()
+  const mutation = useCreateCurrentSubscriptionOrder()
+  const [idempotencyKey, setIdempotencyKey] = useState<string>()
+  const [order, setOrder] = useState<SubscriptionOrder>()
+  const errorCode = subscriptionErrorCode(mutation.error)
+  const submit = () => {
+    const key = idempotencyKey ?? createSubscriptionIdempotencyKey()
+    setIdempotencyKey(key)
+    mutation.mutate({
+      idempotency_key: key,
+      plan_id: plan.plan_id,
+      plan_version: plan.plan_version,
+      price_provider: plan.price_provider,
+      price_currency: plan.price_currency,
+      price_amount_minor: plan.price_amount_minor,
+    }, {
+      onSuccess: setOrder,
+    })
+  }
+  const isCreated = order?.plan_id === plan.plan_id
 
   return (
     <article className="grid gap-3 rounded-lg border border-[var(--hairline)] px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
@@ -128,7 +148,37 @@ function CatalogPlanRow({
             amount: formatAmount(plan.price_amount_minor),
           })}
         </span>
+        <Button type="button" size="sm" variant={isCreated ? 'secondary' : 'default'} disabled={mutation.isPending} onClick={submit}>
+          {mutation.isPending
+            ? <LoaderCircle className="animate-spin" aria-hidden="true" />
+            : isCreated
+              ? <RotateCcw aria-hidden="true" />
+              : <CreditCard aria-hidden="true" />}
+          {mutation.isPending
+            ? t('subscriptions.catalog.orderCreating')
+            : isCreated
+              ? t('subscriptions.catalog.orderReplay')
+              : t('subscriptions.catalog.orderCreate')}
+        </Button>
       </div>
+      {isCreated ? (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-success sm:col-span-2">
+          <CheckCircle2 className="size-3.5" aria-hidden="true" />
+          <span>{t(order.replayed ? 'subscriptions.catalog.orderReplayed' : 'subscriptions.catalog.orderCreated')}</span>
+          <Badge className="bg-success/10 font-mono text-success">{order.status}</Badge>
+          <span className="font-mono text-muted-foreground">{order.order_id}</span>
+        </div>
+      ) : null}
+      {mutation.isError ? (
+        <div role="alert" className="flex items-start gap-2 text-xs text-destructive sm:col-span-2">
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+          <span>{t(errorCode === 'subscription_conflict'
+            ? 'subscriptions.errors.orderConflict'
+            : errorCode === 'subscription_outcome_unknown'
+              ? 'subscriptions.errors.orderOutcomeUnknown'
+              : 'subscriptions.errors.orderCreate')}</span>
+        </div>
+      ) : null}
     </article>
   )
 }

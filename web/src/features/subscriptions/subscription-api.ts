@@ -4,6 +4,7 @@ import { apiClient, ApiError } from '@/lib/api'
 import {
   bindAdminUserSubscription,
   createAdminSubscriptionPlan,
+  createCurrentSubscriptionOrder,
   disableAdminSubscriptionPlan,
   listAdminSubscriptionPlans,
   listAdminUserSubscriptions,
@@ -16,6 +17,7 @@ import type {
   AdminSubscriptionPlanDisableRequest,
   AdminUserSubscriptionBindRequest,
   AdminUserSubscriptionLifecycleRequest,
+  SubscriptionOrderCreateRequest,
 } from '@/lib/api/generated/types.gen'
 
 export const adminSubscriptionPlansQueryKey = ['admin-subscription-plans'] as const
@@ -86,6 +88,16 @@ export function useCurrentSubscriptionCatalog() {
         client: apiClient,
         signal,
       })
+      return data
+    },
+  })
+}
+
+/** 为当前用户创建或幂等恢复一笔待支付订阅订单。 */
+export function useCreateCurrentSubscriptionOrder() {
+  return useMutation({
+    mutationFn: async (body: SubscriptionOrderCreateRequest) => {
+      const { data } = await createCurrentSubscriptionOrder({ body, client: apiClient })
       return data
     },
   })

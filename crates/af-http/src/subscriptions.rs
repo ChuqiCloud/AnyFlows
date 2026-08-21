@@ -5,12 +5,13 @@ use af_admin::{
     AdminSubscriptionPlanDisableCommand, AdminUserSubscription, AdminUserSubscriptionBindCommand,
     AdminUserSubscriptionLifecycleAction, AdminUserSubscriptionLifecycleCommand,
     AdminUserSubscriptionLifecycleResult, SessionAuthentication, SessionAuthenticator,
-    SubscriptionCatalog, SubscriptionCatalogPlan, SubscriptionService, SubscriptionServiceError,
+    SubscriptionCatalog, SubscriptionCatalogPlan, SubscriptionOrder,
+    SubscriptionOrderCreateCommand, SubscriptionService, SubscriptionServiceError,
     UserTopupConfiguration, UserTopupService,
 };
 use af_domain::{
-    SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus, UserId, UserSubscriptionId,
-    UserSubscriptionStatus,
+    SubscriptionCycle, SubscriptionOrderRequestId, SubscriptionOrderStatus, SubscriptionPlanId,
+    SubscriptionPlanStatus, UserId, UserSubscriptionId, UserSubscriptionStatus,
 };
 use axum::{
     Extension, Json, Router,
@@ -99,6 +100,32 @@ pub(crate) enum UserSubscriptionStatusDto {
     Expired,
 }
 
+/// 订阅购买订单的稳定状态。
+#[derive(Clone, Copy, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[schema(as = SubscriptionOrderStatus, rename_all = "snake_case")]
+pub(crate) enum SubscriptionOrderStatusDto {
+    Created,
+    Pending,
+    Paid,
+    Failed,
+    Canceled,
+    Expired,
+}
+
+impl From<SubscriptionOrderStatus> for SubscriptionOrderStatusDto {
+    fn from(value: SubscriptionOrderStatus) -> Self {
+        match value {
+            SubscriptionOrderStatus::Created => Self::Created,
+            SubscriptionOrderStatus::Pending => Self::Pending,
+            SubscriptionOrderStatus::Paid => Self::Paid,
+            SubscriptionOrderStatus::Failed => Self::Failed,
+            SubscriptionOrderStatus::Canceled => Self::Canceled,
+            SubscriptionOrderStatus::Expired => Self::Expired,
+        }
+    }
+}
+
 impl From<UserSubscriptionStatus> for UserSubscriptionStatusDto {
     fn from(value: UserSubscriptionStatus) -> Self {
         match value {
@@ -166,6 +193,8 @@ pub(crate) struct SubscriptionCatalogPlanResponse {
     #[schema(minimum = 1)]
     quota_amount: i64,
     cycle: SubscriptionCycleDto,
+    #[schema(minimum = 1)]
+    plan_version: u64,
     #[schema(min_length = 1, max_length = 32)]
     price_provider: String,
     #[schema(min_length = 3, max_length = 3, pattern = "^[A-Z]{3}$")]
@@ -205,10 +234,85 @@ impl SubscriptionCatalogPlanResponse {
             name: plan.name().to_owned(),
             quota_amount: plan.quota_amount().units(),
             cycle: plan.cycle().into(),
+            plan_version: plan.plan_version(),
             price_provider: plan.provider().to_owned(),
             price_currency: plan.currency().to_owned(),
             price_amount_minor: plan.amount_minor(),
         }
+    }
+}
+
+/// 当前用户创建待支付订阅订单的请求。
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = SubscriptionOrderCreateRequest)]
+pub(crate) struct SubscriptionOrderCreateRequest {
+    #[schema(min_length = 32, max_length = 32, pattern = "^[0-9a-f]{32}$")]
+    idempotency_key: String,
+    #[schema(min_length = 32, max_length = 32, pattern = "^[0-9a-f]{32}$")]
+    plan_id: String,
+    #[schema(minimum = 1)]
+    plan_version: i64,
+    #[schema(min_length = 1, max_length = 32)]
+    price_provider: String,
+    #[schema(min_length = 3, max_length = 3, pattern = "^[A-Z]{3}$")]
+    price_currency: String,
+    #[schema(minimum = 1)]
+    price_amount_minor: i64,
+}
+
+/// 当前用户创建订阅订单后的服务端快照。
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = SubscriptionOrder)]
+pub(crate) struct SubscriptionOrderResponse {
+    #[schema(min_length = 32, max_length = 32, pattern = "^[0-9a-f]{32}$")]
+    order_id: String,
+    #[schema(min_length = 32, max_length = 32, pattern = "^[0-9a-f]{32}$")]
+    plan_id: String,
+    #[schema(minimum = 1)]
+    plan_version: i64,
+    #[schema(min_length = 1, max_length = 32)]
+    price_provider: String,
+    #[schema(min_length = 3, max_length = 3, pattern = "^[A-Z]{3}$")]
+    price_currency: String,
+    #[schema(minimum = 1)]
+    price_amount_minor: i64,
+    #[schema(minimum = 1)]
+    quota_amount: i64,
+    status: SubscriptionOrderStatusDto,
+    #[schema(minimum = 1)]
+    version: i64,
+    #[schema(minimum = 1, required = true)]
+    expires_at: Option<i64>,
+    #[schema(minimum = 1, required = true)]
+    paid_at: Option<i64>,
+    #[schema(minimum = 1)]
+    created_at: i64,
+    #[schema(minimum = 1)]
+    updated_at: i64,
+    replayed: bool,
+}
+
+impl SubscriptionOrderResponse {
+    fn from_order(order: &SubscriptionOrder) -> Result<Self, ManagementError> {
+        Ok(Self {
+            order_id: order.order_id().persistence_key(),
+            plan_id: order.plan_id().persistence_key(),
+            plan_version: i64::try_from(order.plan_version())
+                .map_err(|_| ManagementError::Internal)?,
+            price_provider: order.provider().to_owned(),
+            price_currency: order.currency().to_owned(),
+            price_amount_minor: order.amount_minor(),
+            quota_amount: order.quota_amount().units(),
+            status: order.status().into(),
+            version: i64::try_from(order.version()).map_err(|_| ManagementError::Internal)?,
+            expires_at: optional_i64(order.expires_at())?,
+            paid_at: optional_i64(order.paid_at())?,
+            created_at: i64::try_from(order.created_at()).map_err(|_| ManagementError::Internal)?,
+            updated_at: i64::try_from(order.updated_at()).map_err(|_| ManagementError::Internal)?,
+            replayed: order.replayed(),
+        })
     }
 }
 
@@ -381,6 +485,10 @@ pub(crate) fn build_subscription_router(
             "/api/account/subscription-catalog",
             get(list_current_subscription_catalog),
         )
+        .route(
+            "/api/account/subscription-orders",
+            post(create_current_subscription_order),
+        )
         .route_layer(user_authentication)
         .with_state(state);
     admin_routes.merge(user_routes)
@@ -501,6 +609,55 @@ async fn list_current_subscription_catalog(
         &catalog,
         configured.as_ref(),
     )))
+}
+
+async fn create_current_subscription_order(
+    State(state): State<SubscriptionHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    request: Result<Json<SubscriptionOrderCreateRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let request_id = SubscriptionOrderRequestId::from_persistence_key(&request.idempotency_key)
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    let plan_id = parse_plan_id(&request.plan_id)?;
+    let configured = state
+        .topup_service
+        .as_ref()
+        .and_then(|service| service.configuration().ok());
+    let available = configured.is_some_and(|config| {
+        config.methods().iter().any(|method| {
+            method.provider() == request.price_provider
+                && method.currency() == request.price_currency
+                && request.price_amount_minor >= method.min_amount_minor()
+                && request.price_amount_minor <= method.max_amount_minor()
+        })
+    });
+    if !available {
+        return Err(ManagementError::SubscriptionConflict);
+    }
+    let command = SubscriptionOrderCreateCommand::new(
+        request_id,
+        plan_id,
+        request.plan_version,
+        request.price_provider,
+        request.price_currency,
+        request.price_amount_minor,
+    )
+    .map_err(map_service_error)?;
+    let order = state
+        .service
+        .create_order(authentication.principal(), command)
+        .await
+        .map_err(map_service_error)?;
+    let status = if order.replayed() {
+        StatusCode::OK
+    } else {
+        StatusCode::CREATED
+    };
+    Ok(status_json(
+        status,
+        SubscriptionOrderResponse::from_order(&order)?,
+    ))
 }
 
 async fn bind_admin_user_subscription(

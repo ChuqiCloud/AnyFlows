@@ -76,6 +76,13 @@ export function toSubscriptionPlanRequest(
   }
 }
 
+/** 生成可跨网络重试复用的 128 位小写十六进制幂等键。 */
+export function createSubscriptionIdempotencyKey() {
+  const bytes = new Uint8Array(new ArrayBuffer(16))
+  globalThis.crypto.getRandomValues(bytes)
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
 function parsePositiveSafeInteger(value: string) {
   if (!/^[1-9]\d*$/.test(value)) return undefined
   const parsed = Number(value)

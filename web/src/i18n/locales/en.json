@@ -3880,7 +3880,12 @@
       "loading": "Loading available plans",
       "planQuota": "{{quota}} · {{cycle}} quota",
       "priceMinor": "{{currency}} {{amount}} (minor currency unit)",
-      "orderNotice": "This slice only displays the catalog. It does not create orders, charge, or bind a subscription."
+      "orderNotice": "Creating an order locks the current price snapshot without charging or binding a subscription; payment confirmation follows in a later slice.",
+      "orderCreate": "Create order",
+      "orderCreating": "Creating",
+      "orderReplay": "Replay order",
+      "orderCreated": "Order created; payment confirmation is pending",
+      "orderReplayed": "The same idempotent order was restored"
     },
     "fields": {
       "name": "Plan name",
@@ -3976,6 +3981,9 @@
       "disablePlan": "The plan could not be disabled. Try again shortly.",
       "disableConflict": "The plan version changed. Refresh the catalog and try again.",
       "bind": "The plan could not be bound. Try again shortly.",
+      "orderCreate": "The order could not be created. Try again shortly.",
+      "orderConflict": "The plan price or idempotency facts changed. Refresh the catalog and try again.",
+      "orderOutcomeUnknown": "The order result cannot be confirmed yet. Retry with the same button.",
       "bindConflict": "Binding facts changed concurrently. Refresh the user subscriptions and try again.",
       "planNotFound": "The plan no longer exists. Refresh the plan catalog.",
       "planDisabled": "The plan is disabled. Select another active plan.",

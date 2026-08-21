@@ -4,14 +4,15 @@ use std::{
 };
 
 use af_db::{
-    SubscriptionPlanCreateOutcome, SubscriptionPlanDisable, SubscriptionPlanDisableOutcome,
-    SubscriptionPlanWrite, SubscriptionRepository, SubscriptionRepositoryError,
-    UserSubscriptionBind, UserSubscriptionBindOutcome, UserSubscriptionLifecycleTransition,
+    SubscriptionOrderCreate, SubscriptionOrderCreateOutcome, SubscriptionPlanCreateOutcome,
+    SubscriptionPlanDisable, SubscriptionPlanDisableOutcome, SubscriptionPlanWrite,
+    SubscriptionRepository, SubscriptionRepositoryError, UserSubscriptionBind,
+    UserSubscriptionBindOutcome, UserSubscriptionLifecycleTransition,
     UserSubscriptionLifecycleTransitionOutcome,
 };
 use af_domain::{
-    SubscriptionPlanId, SubscriptionPlanStatus, SubscriptionWindow, UserId, UserSubscriptionId,
-    UserSubscriptionStatus,
+    SubscriptionOrderId, SubscriptionPlanId, SubscriptionPlanStatus, SubscriptionWindow, UserId,
+    UserSubscriptionId, UserSubscriptionStatus,
 };
 
 use crate::{SessionPrincipal, SessionRole};
@@ -23,8 +24,9 @@ use super::{
         AdminSubscriptionPlanDisableCommand, AdminSubscriptionPlanPage, AdminUserSubscription,
         AdminUserSubscriptionBindCommand, AdminUserSubscriptionPage, SubscriptionBindFuture,
         SubscriptionCatalog, SubscriptionCatalogFuture, SubscriptionCatalogPlan,
-        SubscriptionCreatePlanFuture, SubscriptionDisablePlanFuture, SubscriptionLifecycleFuture,
-        SubscriptionListPlansFuture, SubscriptionListUserFuture, SubscriptionService,
+        SubscriptionCreateOrderFuture, SubscriptionCreatePlanFuture, SubscriptionDisablePlanFuture,
+        SubscriptionLifecycleFuture, SubscriptionListPlansFuture, SubscriptionListUserFuture,
+        SubscriptionOrder, SubscriptionOrderCreateCommand, SubscriptionService,
         SubscriptionServiceError,
     },
 };
@@ -57,6 +59,47 @@ impl SubscriptionService for DatabaseSubscriptionService {
                     .map(|(plan, price)| SubscriptionCatalogPlan::from_records(plan, price))
                     .collect(),
             ))
+        })
+    }
+
+    fn create_order<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        command: SubscriptionOrderCreateCommand,
+    ) -> SubscriptionCreateOrderFuture<'a> {
+        Box::pin(async move {
+            let created_at = unix_now()?;
+            let expires_at = created_at
+                .checked_add(30 * 60)
+                .ok_or(SubscriptionServiceError::Internal)?;
+            let write = SubscriptionOrderCreate::new(
+                random_order_id()?,
+                command.request_id,
+                principal.user_id(),
+                command.plan_id,
+                command.plan_version,
+                command.provider,
+                command.currency,
+                command.amount_minor,
+                created_at,
+                Some(expires_at),
+            )
+            .map_err(|_| SubscriptionServiceError::InvalidInput)?;
+            let (outcome, replayed) = recover_order(&self.repository, &write).await?;
+            let record = match outcome {
+                SubscriptionOrderCreateOutcome::Created(record)
+                | SubscriptionOrderCreateOutcome::Existing(record) => record,
+                SubscriptionOrderCreateOutcome::UserNotFound => {
+                    return Err(SubscriptionServiceError::InvalidSession);
+                }
+                SubscriptionOrderCreateOutcome::PlanNotFound => {
+                    return Err(SubscriptionServiceError::PlanNotFound);
+                }
+                SubscriptionOrderCreateOutcome::PlanDisabled => {
+                    return Err(SubscriptionServiceError::PlanDisabled);
+                }
+            };
+            Ok(SubscriptionOrder::from_record(&record, replayed))
         })
     }
 
@@ -287,6 +330,28 @@ async fn recover_create(
     }
 }
 
+async fn recover_order(
+    repository: &SubscriptionRepository,
+    write: &SubscriptionOrderCreate,
+) -> Result<(SubscriptionOrderCreateOutcome, bool), SubscriptionServiceError> {
+    match repository.create_order(write).await {
+        Ok(SubscriptionOrderCreateOutcome::Existing(record)) => {
+            Ok((SubscriptionOrderCreateOutcome::Existing(record), true))
+        }
+        Ok(outcome) => Ok((outcome, false)),
+        Err(SubscriptionRepositoryError::OutcomeUnknown) => {
+            match repository.create_order(write).await {
+                Ok(SubscriptionOrderCreateOutcome::Existing(record)) => {
+                    Ok((SubscriptionOrderCreateOutcome::Existing(record), true))
+                }
+                Ok(outcome) => Ok((outcome, false)),
+                Err(error) => Err(map_write_error(error)),
+            }
+        }
+        Err(error) => Err(map_write_error(error)),
+    }
+}
+
 async fn recover_disable(
     repository: &SubscriptionRepository,
     write: &SubscriptionPlanDisable,
@@ -376,6 +441,16 @@ fn random_subscription_id() -> Result<UserSubscriptionId, SubscriptionServiceErr
         getrandom::fill(&mut bytes).map_err(|_| SubscriptionServiceError::Internal)?;
         if let Ok(subscription_id) = UserSubscriptionId::new(bytes) {
             return Ok(subscription_id);
+        }
+    }
+}
+
+fn random_order_id() -> Result<SubscriptionOrderId, SubscriptionServiceError> {
+    loop {
+        let mut bytes = [0_u8; 16];
+        getrandom::fill(&mut bytes).map_err(|_| SubscriptionServiceError::Internal)?;
+        if let Ok(order_id) = SubscriptionOrderId::new(bytes) {
+            return Ok(order_id);
         }
     }
 }

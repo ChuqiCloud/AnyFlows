@@ -3879,7 +3879,12 @@
       "loading": "正在加载可售目录",
       "planQuota": "{{quota}} · {{cycle}}周期额度",
       "priceMinor": "{{currency}} {{amount}}（最小货币单位）",
-      "orderNotice": "当前切片仅展示目录，不创建订单、不扣款，也不绑定订阅。"
+      "orderNotice": "创建订单只会锁定当前价格快照，不会扣款或绑定订阅；支付确认将在后续切片接入。",
+      "orderCreate": "创建订单",
+      "orderCreating": "正在创建",
+      "orderReplay": "重放订单",
+      "orderCreated": "订单已创建，等待支付确认",
+      "orderReplayed": "已恢复同一幂等订单"
     },
     "fields": {
       "name": "计划名称",
@@ -3975,6 +3980,9 @@
       "disablePlan": "计划停用失败，请稍后重试。",
       "disableConflict": "计划版本已变化，请刷新目录后重试。",
       "bind": "计划绑定失败，请稍后重试。",
+      "orderCreate": "订单创建失败，请稍后重试。",
+      "orderConflict": "计划价格或幂等事实已变化，请刷新可售目录后重试。",
+      "orderOutcomeUnknown": "订单提交结果暂时无法确认，请使用同一按钮重试。",
       "bindConflict": "绑定事实发生冲突，请刷新用户订阅后重试。",
       "planNotFound": "计划不存在或已被移除，请刷新计划目录。",
       "planDisabled": "计划已经停用，请选择其他有效计划。",

@@ -1,23 +1,28 @@
 use std::{error::Error, time::Duration};
 
 use af_domain::{
-    GroupId, Quota, SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus,
-    SubscriptionWindow, UserId, UserSubscriptionId, UserSubscriptionStatus,
+    GroupId, Quota, SubscriptionCycle, SubscriptionOrderId, SubscriptionOrderRequestId,
+    SubscriptionOrderStatus, SubscriptionPlanId, SubscriptionPlanStatus, SubscriptionWindow,
+    UserId, UserSubscriptionId, UserSubscriptionStatus,
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, Set,
-    entity::prelude::TimeDateTimeWithTimeZone, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, IntoActiveModel,
+    PaginatorTrait, QueryFilter, Set, Statement, entity::prelude::TimeDateTimeWithTimeZone,
+    sea_query::Expr,
 };
 
 use super::{
-    SubscriptionInputError, SubscriptionPlanCreateOutcome, SubscriptionPlanDisable,
-    SubscriptionPlanDisableOutcome, SubscriptionPlanWrite, SubscriptionRepositoryError,
-    SubscriptionResetDueCursor, UserSubscriptionBind, UserSubscriptionBindOutcome,
-    UserSubscriptionWindowAdvance, UserSubscriptionWindowAdvanceOutcome, monotonic_updated_at,
+    SubscriptionInputError, SubscriptionOrderCreate, SubscriptionOrderCreateOutcome,
+    SubscriptionPlanCreateOutcome, SubscriptionPlanDisable, SubscriptionPlanDisableOutcome,
+    SubscriptionPlanWrite, SubscriptionRepositoryError, SubscriptionResetDueCursor,
+    UserSubscriptionBind, UserSubscriptionBindOutcome, UserSubscriptionWindowAdvance,
+    UserSubscriptionWindowAdvanceOutcome, monotonic_updated_at,
 };
 use crate::{
     AdminUserCreateRecord, AdminUserRepository, DatabaseOptions, DatabasePool, MigrationOptions,
-    entity::{SensitiveString, groups, subscription_plans, user_subscriptions},
+    entity::{
+        SensitiveString, groups, subscription_orders, subscription_plans, user_subscriptions,
+    },
 };
 
 mod lifecycle;
@@ -174,6 +179,100 @@ async fn plan_creation_is_idempotent_and_facts_are_immutable() -> Result<(), Box
     );
     assert_eq!(
         subscription_plans::Entity::find()
+            .count(fixture.pool.connection())
+            .await?,
+        1
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn order_creation_recovers_unknown_outcome_and_rejects_price_conflicts()
+-> Result<(), Box<dyn Error>> {
+    let fixture = setup_fixture().await?;
+    let plan_id = test_plan_id(0x3a);
+    fixture
+        .repository
+        .create_plan(&fixture.plan_with_id(
+            plan_id,
+            "订单幂等计划",
+            25_000,
+            SubscriptionCycle::Monthly,
+        )?)
+        .await?;
+    let second_plan_id = test_plan_id(0x3b);
+    fixture
+        .repository
+        .create_plan(&fixture.plan_with_id(
+            second_plan_id,
+            "订单其他计划",
+            30_000,
+            SubscriptionCycle::Monthly,
+        )?)
+        .await?;
+
+    let create = fixture.order(0x71, 0x72, plan_id, 100)?;
+    fixture.repository.inject_outcome_unknown_after_commit();
+    assert_eq!(
+        fixture.repository.create_order(&create).await.unwrap_err(),
+        SubscriptionRepositoryError::OutcomeUnknown
+    );
+
+    let SubscriptionOrderCreateOutcome::Existing(existing) =
+        fixture.repository.create_order(&create).await?
+    else {
+        panic!("订单提交结果未知后必须恢复同一订单")
+    };
+    assert_eq!(existing.plan_id(), plan_id);
+    assert_eq!(existing.plan_version(), 1);
+    assert_eq!(existing.provider(), "stripe");
+    assert_eq!(existing.currency(), "USD");
+    assert_eq!(existing.amount_minor(), 100);
+    assert_eq!(existing.quota_amount().units(), 25_000);
+    assert_eq!(existing.status(), SubscriptionOrderStatus::Created);
+
+    // 仅改变冗余外键列，验证恢复记录以不可变 plan_key 为准。
+    let second_plan_database_id = subscription_plans::Entity::find()
+        .filter(
+            subscription_plans::Column::PlanKey
+                .eq(SensitiveString::from(second_plan_id.persistence_key())),
+        )
+        .one(fixture.pool.connection())
+        .await?
+        .expect("第二个订阅计划必须存在")
+        .id;
+    fixture
+        .pool
+        .connection()
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            "UPDATE subscription_orders SET plan_id = ? WHERE id = ?",
+            [
+                second_plan_database_id.into(),
+                existing.database_id().into(),
+            ],
+        ))
+        .await?;
+    let SubscriptionOrderCreateOutcome::Existing(recovered) =
+        fixture.repository.create_order(&create).await?
+    else {
+        panic!("已存在订单必须返回 Existing")
+    };
+    assert_eq!(recovered.plan_id(), plan_id);
+    assert_eq!(recovered.quota_amount().units(), 25_000);
+
+    let changed_price = fixture.order(0x73, 0x72, plan_id, 101)?;
+    assert_eq!(
+        fixture
+            .repository
+            .create_order(&changed_price)
+            .await
+            .unwrap_err(),
+        SubscriptionRepositoryError::Conflict
+    );
+    assert_eq!(
+        subscription_orders::Entity::find()
             .count(fixture.pool.connection())
             .await?,
         1
@@ -855,6 +954,27 @@ impl Fixture {
             BOUND_AT,
         )
     }
+
+    fn order(
+        &self,
+        order_marker: u8,
+        request_marker: u8,
+        plan_id: SubscriptionPlanId,
+        amount_minor: i64,
+    ) -> Result<SubscriptionOrderCreate, SubscriptionInputError> {
+        SubscriptionOrderCreate::new(
+            order_id(order_marker),
+            request_id(request_marker),
+            self.first_user_id,
+            plan_id,
+            1,
+            "stripe".to_owned(),
+            "USD".to_owned(),
+            amount_minor,
+            CREATED_AT,
+            Some(CREATED_AT + 3_600),
+        )
+    }
 }
 
 async fn setup_fixture() -> Result<Fixture, Box<dyn Error>> {
@@ -926,6 +1046,14 @@ fn test_plan_id(marker: u8) -> SubscriptionPlanId {
 
 fn subscription_id(marker: u8) -> UserSubscriptionId {
     UserSubscriptionId::new([marker; 16]).expect("测试用户订阅标识必须非零")
+}
+
+fn order_id(marker: u8) -> SubscriptionOrderId {
+    SubscriptionOrderId::new([marker; 16]).expect("test order id must be non-zero")
+}
+
+fn request_id(marker: u8) -> SubscriptionOrderRequestId {
+    SubscriptionOrderRequestId::new([marker; 16]).expect("test request id must be non-zero")
 }
 
 fn database_time(value: u64) -> TimeDateTimeWithTimeZone {

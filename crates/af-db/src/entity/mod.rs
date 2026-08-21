@@ -82,6 +82,7 @@ pub(crate) mod routes;
 pub(crate) mod scheduler_outbox_events;
 pub(crate) mod site_settings;
 pub(crate) mod subscription_balance_alert_events;
+pub(crate) mod subscription_orders;
 pub(crate) mod subscription_plan_prices;
 pub(crate) mod subscription_plans;
 pub(crate) mod tokens;
@@ -1483,6 +1484,78 @@ where
     Ok(())
 }
 
+async fn validate_subscription_order<C>(
+    model: &subscription_orders::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    // 订单状态和价格快照只允许通过订阅仓储写入，避免通用实体入口绕过幂等校验。
+    if !insert {
+        return Err(DbErr::Custom("订阅订单必须通过受信任仓储更新".to_owned()));
+    }
+    let order_key = model
+        .order_key
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("订阅订单标识缺失".to_owned()))?;
+    let idempotency_key = model
+        .idempotency_key
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("订阅订单幂等键缺失".to_owned()))?;
+    let user_id = model.user_id.try_as_ref().copied().unwrap_or_default();
+    let plan_id = model.plan_id.try_as_ref().copied().unwrap_or_default();
+    let plan_key = model
+        .plan_key
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("订阅订单计划标识缺失".to_owned()))?;
+    let plan_version = model.plan_version.try_as_ref().copied().unwrap_or_default();
+    let status = model.status.try_as_ref().copied().unwrap_or_default();
+    let version = model.version.try_as_ref().copied().unwrap_or_default();
+    let amount_minor = model.amount_minor.try_as_ref().copied().unwrap_or_default();
+    let quota_amount = model.quota_amount.try_as_ref().copied().unwrap_or_default();
+    let provider = model
+        .provider
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("订阅订单支付 Provider 缺失".to_owned()))?;
+    let currency = model
+        .currency
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("订阅订单币种缺失".to_owned()))?;
+    let created_at = model
+        .created_at
+        .try_as_ref()
+        .copied()
+        .ok_or_else(|| DbErr::Custom("订阅订单创建时间缺失".to_owned()))?;
+    let expires_at = model.expires_at.try_as_ref().copied().flatten();
+    let paid_at = model.paid_at.try_as_ref().copied().flatten();
+    let closed_at = model.closed_at.try_as_ref().copied().flatten();
+
+    if !valid_hex(order_key, 32, true)
+        || !valid_hex(idempotency_key, 32, true)
+        || user_id <= 0
+        || plan_id <= 0
+        || af_domain::SubscriptionPlanId::from_persistence_key(plan_key.as_str()).is_err()
+        || plan_version <= 0
+        || provider.is_empty()
+        || provider.len() > 32
+        || provider
+            .bytes()
+            .any(|byte| !(byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-'))
+        || !valid_currency(currency)
+        || amount_minor <= 0
+        || quota_amount <= 0
+        || version != 1
+        || created_at.unix_timestamp() < 0
+        || expires_at.is_some_and(|value| value <= created_at)
+        || !valid_subscription_order_state(status, paid_at, closed_at)
+    {
+        return Err(DbErr::Custom("订阅订单状态无效".to_owned()));
+    }
+    Ok(())
+}
+
 async fn validate_topup_payment_event<C>(
     model: &topup_payment_events::ActiveModel,
     _database: &C,
@@ -1558,6 +1631,19 @@ where
 }
 
 fn valid_topup_order_state(
+    status: i16,
+    paid_at: Option<TimeDateTimeWithTimeZone>,
+    closed_at: Option<TimeDateTimeWithTimeZone>,
+) -> bool {
+    match status {
+        1 | 2 => paid_at.is_none() && closed_at.is_none(),
+        3 => paid_at.is_some() && closed_at.is_none(),
+        4..=6 => paid_at.is_none() && closed_at.is_some(),
+        _ => false,
+    }
+}
+
+fn valid_subscription_order_state(
     status: i16,
     paid_at: Option<TimeDateTimeWithTimeZone>,
     closed_at: Option<TimeDateTimeWithTimeZone>,
@@ -1659,6 +1745,7 @@ impl_updated_at_behavior!(
     site_settings::ActiveModel => validate_default,
     tokens::ActiveModel => validate_default,
     topup_orders::ActiveModel => validate_topup_order,
+    subscription_orders::ActiveModel => validate_subscription_order,
     user_oauth_identities::ActiveModel => validate_default,
     users::ActiveModel => validate_user,
 );

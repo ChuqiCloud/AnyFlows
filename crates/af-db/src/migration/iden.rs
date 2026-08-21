@@ -1459,6 +1459,43 @@ pub(in crate::migration) mod subscription_plan_prices {
     }
 }
 
+pub(in crate::migration) mod subscription_orders {
+    use super::DeriveIden;
+
+    /// `subscription_orders` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "subscription_orders")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 订阅购买订单的持久化列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrderKey,
+        UserId,
+        PlanId,
+        PlanKey,
+        PlanVersion,
+        Provider,
+        Currency,
+        AmountMinor,
+        QuotaAmount,
+        Status,
+        IdempotencyKey,
+        Version,
+        ProviderOrderId,
+        ExpiresAt,
+        PaidAt,
+        ClosedAt,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
 pub(in crate::migration) mod user_subscriptions {
     use super::DeriveIden;
 

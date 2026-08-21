@@ -12,6 +12,7 @@ use crate::{
         AdminUserSubscriptionBindRequest, AdminUserSubscriptionLifecycleActionDto,
         AdminUserSubscriptionLifecycleRequest, AdminUserSubscriptionLifecycleResponse,
         SubscriptionCatalogPlanResponse, SubscriptionCatalogResponse, SubscriptionCycleDto,
+        SubscriptionOrderCreateRequest, SubscriptionOrderResponse, SubscriptionOrderStatusDto,
         SubscriptionPlanStatusDto, UserSubscriptionListResponse, UserSubscriptionResponse,
         UserSubscriptionStatusDto,
     },
@@ -184,6 +185,27 @@ fn list_current_user_subscriptions() {}
 )]
 fn list_current_subscription_catalog() {}
 
+#[utoipa::path(
+    post,
+    path = "/api/account/subscription-orders",
+    operation_id = "createCurrentSubscriptionOrder",
+    tag = "订阅管理",
+    summary = "幂等创建当前用户订阅订单",
+    request_body = SubscriptionOrderCreateRequest,
+    responses(
+        (status = 201, description = "已创建待支付订阅订单", body = SubscriptionOrderResponse),
+        (status = 200, description = "已重放同一幂等订单", body = SubscriptionOrderResponse),
+        (status = 400, description = "订单请求或幂等键无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 404, description = "订阅计划不存在", body = ManagementErrorBody),
+        (status = 409, description = "价格快照、销售状态或幂等事实冲突", body = ManagementErrorBody),
+        (status = 503, description = "提交结果未知", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn create_current_subscription_order() {}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -194,7 +216,8 @@ fn list_current_subscription_catalog() {}
         bind_admin_user_subscription,
         transition_admin_user_subscription_lifecycle,
         list_current_user_subscriptions,
-        list_current_subscription_catalog
+        list_current_subscription_catalog,
+        create_current_subscription_order
     ),
     components(schemas(
         SubscriptionCycleDto,
@@ -205,6 +228,9 @@ fn list_current_subscription_catalog() {}
         AdminSubscriptionPlanCreateRequest,
         SubscriptionCatalogResponse,
         SubscriptionCatalogPlanResponse,
+        SubscriptionOrderCreateRequest,
+        SubscriptionOrderResponse,
+        SubscriptionOrderStatusDto,
         AdminSubscriptionPlanDisableRequest,
         UserSubscriptionResponse,
         UserSubscriptionListResponse,

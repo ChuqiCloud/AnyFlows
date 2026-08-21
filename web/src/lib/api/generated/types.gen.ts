@@ -2008,10 +2008,36 @@ export type SubscriptionCatalogPlan = {
     name: string;
     quota_amount: number;
     cycle: SubscriptionCycle;
+    plan_version: number;
     price_provider: string;
     price_currency: string;
     price_amount_minor: number;
 };
+export type SubscriptionOrderCreateRequest = {
+    idempotency_key: string;
+    plan_id: string;
+    plan_version: number;
+    price_provider: string;
+    price_currency: string;
+    price_amount_minor: number;
+};
+export type SubscriptionOrder = {
+    order_id: string;
+    plan_id: string;
+    plan_version: number;
+    price_provider: string;
+    price_currency: string;
+    price_amount_minor: number;
+    quota_amount: number;
+    status: SubscriptionOrderStatus;
+    version: number;
+    expires_at: number;
+    paid_at: number;
+    created_at: number;
+    updated_at: number;
+    replayed: boolean;
+};
+export type SubscriptionOrderStatus = 'created' | 'pending' | 'paid' | 'failed' | 'canceled' | 'expired';
 export type UserSubscriptionStatus = 'active' | 'suspended' | 'canceled' | 'expired';
 export type UserToken = {
     id: number;
@@ -2964,6 +2990,26 @@ export type ListCurrentSubscriptionCatalogResponses = {
     200: SubscriptionCatalogResponse;
 };
 export type ListCurrentSubscriptionCatalogResponse = ListCurrentSubscriptionCatalogResponses[keyof ListCurrentSubscriptionCatalogResponses];
+export type CreateCurrentSubscriptionOrderData = {
+    body?: SubscriptionOrderCreateRequest;
+    path?: never;
+    query?: never;
+    url: '/api/account/subscription-orders';
+};
+export type CreateCurrentSubscriptionOrderErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type CreateCurrentSubscriptionOrderError = CreateCurrentSubscriptionOrderErrors[keyof CreateCurrentSubscriptionOrderErrors];
+export type CreateCurrentSubscriptionOrderResponses = {
+    200: SubscriptionOrder;
+    201: SubscriptionOrder;
+};
+export type CreateCurrentSubscriptionOrderResponse = CreateCurrentSubscriptionOrderResponses[keyof CreateCurrentSubscriptionOrderResponses];
 export type RequestPasswordResetData = {
     body: PasswordResetRequest;
     path?: never;

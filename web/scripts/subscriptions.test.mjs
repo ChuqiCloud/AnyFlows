@@ -72,6 +72,10 @@ test('订阅 OpenAPI 不接受客户端覆盖所有权与周期窗口', () => {
     openapi.paths['/api/account/subscription-catalog'].get.operationId,
     'listCurrentSubscriptionCatalog',
   )
+  assert.equal(
+    openapi.paths['/api/account/subscription-orders'].post.operationId,
+    'createCurrentSubscriptionOrder',
+  )
   assert.deepEqual(
     Object.keys(openapi.components.schemas.AdminSubscriptionPlanCreateRequest.properties).sort(),
     ['cycle', 'name', 'price_amount_minor', 'price_currency', 'price_provider', 'quota_amount'],
@@ -83,6 +87,18 @@ test('订阅 OpenAPI 不接受客户端覆盖所有权与周期窗口', () => {
   assert.equal(
     openapi.components.schemas.SubscriptionCatalogPlan.properties.price_currency.pattern,
     '^[A-Z]{3}$',
+  )
+  assert.equal(
+    openapi.components.schemas.SubscriptionCatalogPlan.properties.plan_version.minimum,
+    1,
+  )
+  assert.deepEqual(
+    Object.keys(openapi.components.schemas.SubscriptionOrderCreateRequest.properties).sort(),
+    ['idempotency_key', 'plan_id', 'plan_version', 'price_amount_minor', 'price_currency', 'price_provider'],
+  )
+  assert.deepEqual(
+    Object.keys(openapi.paths['/api/account/subscription-orders'].post.responses).sort(),
+    ['200', '201', '400', '401', '404', '409', '500', '503'],
   )
   assert.deepEqual(
     Object.keys(openapi.components.schemas.AdminUserSubscriptionBindRequest.properties),

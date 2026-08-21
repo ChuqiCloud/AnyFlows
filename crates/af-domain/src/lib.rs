@@ -74,8 +74,9 @@ pub use routing::{
     route_model_pattern_matches, validate_route_model_pattern,
 };
 pub use subscription::{
-    SubscriptionCycle, SubscriptionIdentifierError, SubscriptionPlanId, SubscriptionPlanStatus,
-    SubscriptionStateCodeError, UserSubscriptionId, UserSubscriptionStatus,
+    SubscriptionCycle, SubscriptionIdentifierError, SubscriptionOrderId,
+    SubscriptionOrderRequestId, SubscriptionOrderStatus, SubscriptionPlanId,
+    SubscriptionPlanStatus, SubscriptionStateCodeError, UserSubscriptionId, UserSubscriptionStatus,
 };
 pub use subscription_window::{
     MAX_SUBSCRIPTION_WINDOW_ADVANCES, SubscriptionWindow, SubscriptionWindowAdvance,

@@ -40,9 +40,10 @@ use crate::entity::{
     passkey_authentication_challenges, passkey_registration_challenges, passkeys, payment_settings,
     platform_audit_logs, playground_conversations, playground_shares, redemption_batches,
     redemption_codes, registration_rate_limits, request_outcome_logs, scheduler_outbox_events,
-    site_settings, subscription_balance_alert_events, subscription_plans, tokens, topup_orders,
-    topup_payment_events, usage_logs, user_notification_events, user_notification_receipts,
-    user_subscriptions, users, wallet_ledger_entries,
+    site_settings, subscription_balance_alert_events, subscription_orders,
+    subscription_plan_prices, subscription_plans, tokens, topup_orders, topup_payment_events,
+    usage_logs, user_notification_events, user_notification_receipts, user_subscriptions, users,
+    wallet_ledger_entries,
 };
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
@@ -74,7 +75,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 82;
+const EXPECTED_MIGRATION_COUNT: usize = 83;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -93,7 +94,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 72] = [
+const CORE_TABLES: [&str; 74] = [
     "groups",
     "users",
     "passkeys",
@@ -134,6 +135,8 @@ const CORE_TABLES: [&str; 72] = [
     "redemption_batches",
     "redemption_codes",
     "subscription_plans",
+    "subscription_plan_prices",
+    "subscription_orders",
     "user_subscriptions",
     "invite_rebate_events",
     "balance_alert_settings",
@@ -2886,6 +2889,9 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     assert_entity_columns::<redemption_batches::Column>(&manager, "redemption_batches").await?;
     assert_entity_columns::<redemption_codes::Column>(&manager, "redemption_codes").await?;
     assert_entity_columns::<subscription_plans::Column>(&manager, "subscription_plans").await?;
+    assert_entity_columns::<subscription_plan_prices::Column>(&manager, "subscription_plan_prices")
+        .await?;
+    assert_entity_columns::<subscription_orders::Column>(&manager, "subscription_orders").await?;
     assert_entity_columns::<user_subscriptions::Column>(&manager, "user_subscriptions").await?;
     assert_entity_columns::<invite_rebate_events::Column>(&manager, "invite_rebate_events").await?;
     assert_entity_columns::<balance_alert_settings::Column>(&manager, "balance_alert_settings")
@@ -2994,6 +3000,15 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         ("subscription_plans", "uq_subscription_plans_plan_key"),
         ("subscription_plans", "idx_subscription_plans_status_id"),
         ("subscription_plans", "idx_subscription_plans_creator"),
+        (
+            "subscription_plan_prices",
+            "uq_subscription_plan_prices_plan",
+        ),
+        ("subscription_orders", "uq_subscription_orders_order_key"),
+        (
+            "subscription_orders",
+            "uq_subscription_orders_user_idempotency_key",
+        ),
         (
             "user_subscriptions",
             "uq_user_subscriptions_subscription_key",
