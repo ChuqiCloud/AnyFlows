@@ -2546,8 +2546,8 @@
               }
             }
           },
-          "503": {
-            "description": "提交结果未知",
+          "500": {
+            "description": "服务内部错误",
             "content": {
               "application/json": {
                 "schema": {
@@ -2556,8 +2556,8 @@
               }
             }
           },
-          "500": {
-            "description": "服务内部错误",
+          "503": {
+            "description": "提交结果未知",
             "content": {
               "application/json": {
                 "schema": {
