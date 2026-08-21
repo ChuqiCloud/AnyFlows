@@ -70,6 +70,8 @@ test('认证设置页提供不污染 hash 路由的可聚焦分段导航', () =>
   const form = readFileSync(new URL('../src/features/authentication-settings/authentication-settings-form.tsx', import.meta.url), 'utf8')
   assert.match(page, /authenticationSettings\.navigation\.label/)
   assert.match(page, /focusSection\(section\.id\)/)
+  assert.match(page, /adminOAuthLoginSettingsQueryPrefix/)
+  assert.match(page, /invalidateQueries\(\{ queryKey: adminOAuthLoginSettingsQueryPrefix \}\)/)
   assert.match(page, /authentication-oauth/)
   assert.match(form, /id="authentication-core"/)
   assert.match(form, /id="authentication-allocation"/)

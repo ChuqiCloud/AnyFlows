@@ -1,9 +1,11 @@
 import { LockKeyhole, RefreshCw, ShieldCheck, SlidersHorizontal, Waypoints } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { adminOAuthLoginSettingsQueryPrefix } from '@/features/auth/oauth-login-api'
 import { useAdminGroupCatalog } from '@/features/groups/group-api'
 import { AuthenticationSettingsForm } from './authentication-settings-form'
 import { DiscordOAuthSettings } from './discord-oauth-settings'
@@ -24,6 +26,7 @@ export function AuthenticationSettingsPage() {
   const [activeSection, setActiveSection] = useState('authentication-core')
   const settingsQuery = useAdminAuthenticationSettings()
   const groupsQuery = useAdminGroupCatalog()
+  const queryClient = useQueryClient()
   const pending = settingsQuery.isPending || groupsQuery.isPending
   const failed = settingsQuery.isError || groupsQuery.isError || groupsQuery.data?.length === 0
   const sectionsReady = Boolean(settingsQuery.data && groupsQuery.data)
@@ -31,6 +34,7 @@ export function AuthenticationSettingsPage() {
   const refresh = () => {
     void settingsQuery.refetch()
     void groupsQuery.refetch()
+    void queryClient.invalidateQueries({ queryKey: adminOAuthLoginSettingsQueryPrefix })
   }
 
   useEffect(() => {
