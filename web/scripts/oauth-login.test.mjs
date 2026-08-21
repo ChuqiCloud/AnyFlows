@@ -27,11 +27,16 @@ test('登录页只消费公开 Provider 投影并请求服务端授权地址', (
     new URL('../src/features/auth/login-page.tsx', import.meta.url),
     'utf8',
   )
+  const iconSource = readFileSync(
+    new URL('../src/features/auth/oauth-provider-icon.tsx', import.meta.url),
+    'utf8',
+  )
   assert.match(source, /authentication\.oauth_providers/)
   assert.match(source, /beginOAuthLogin/)
-  assert.match(source, /provider\.id === 'discord'/)
-  assert.match(source, /provider\.id === 'telegram'/)
-  assert.match(source, /provider\.id === 'google'/)
+  assert.match(source, /OAuthProviderIcon provider=\{providerId\}/)
+  assert.match(iconSource, /provider === 'github' \|\| provider === 'google'/)
+  assert.match(iconSource, /telegram: Send/)
+  assert.match(iconSource, /provider === 'google'/)
   assert.doesNotMatch(source, /github\.com\/login\/oauth\/authorize/)
 })
 
@@ -78,4 +83,16 @@ test('OAuth 管理设置按 Provider 分开渲染并保持独立查询键', () =
   assert.match(source, /useAdminOAuthLoginSettings\(provider\)/)
   assert.match(source, /useUpdateAdminOAuthLoginSettings\(provider\)/)
   assert.match(source, /authenticationSettings\.oauth\.\$\{provider\}/)
+  assert.match(source, /aria-labelledby=\{`\$\{provider\}-oauth-title`\}/)
+  assert.match(source, /disabled=\{mutation\.isPending\}/)
+})
+
+test('OAuth 管理设置将后端 404 显示为版本提示', () => {
+  const source = readFileSync(
+    new URL('../src/features/authentication-settings/oauth-provider-settings.tsx', import.meta.url),
+    'utf8',
+  )
+  assert.match(source, /error instanceof ApiError/)
+  assert.match(source, /status === 404/)
+  assert.match(source, /oauth\.errors\.unsupported/)
 })

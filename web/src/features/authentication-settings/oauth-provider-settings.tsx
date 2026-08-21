@@ -1,5 +1,4 @@
-import { Check, Copy, GitFork, Globe2, LoaderCircle, MessageCircle, QrCode, RefreshCw, Send, ShieldAlert, ShieldCheck } from 'lucide-react'
-import GoogleIcon from '@lobehub/icons/es/Google/components/Color'
+import { Check, Copy, LoaderCircle, RefreshCw, ShieldAlert } from 'lucide-react'
 import { type FormEvent, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -10,11 +9,13 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
+import { ApiError } from '@/lib/api'
 import {
   type OAuthLoginProvider,
   useAdminOAuthLoginSettings,
   useUpdateAdminOAuthLoginSettings,
 } from '@/features/auth/oauth-login-api'
+import { OAuthProviderIcon } from '@/features/auth/oauth-provider-icon'
 
 type SecretAction = 'keep' | 'replace' | 'clear'
 
@@ -22,27 +23,17 @@ type OAuthProviderSettingsProps = {
   provider: OAuthLoginProvider
 }
 
-const providerIcons = {
-  github: GitFork,
-  discord: MessageCircle,
-  oidc: ShieldCheck,
-  linuxdo: Globe2,
-  wechat: QrCode,
-  telegram: Send,
-  google: GoogleIcon,
-}
-
 /** 管理内置 OAuth App，密钥只支持保留、轮换和显式清除。 */
 export function OAuthProviderSettings({ provider }: OAuthProviderSettingsProps) {
   const { t } = useTranslation()
   const baseKey = `authenticationSettings.oauth.${provider}`
-  const Icon = providerIcons[provider]
   const settingsQuery = useAdminOAuthLoginSettings(provider)
   const mutation = useUpdateAdminOAuthLoginSettings(provider)
   const settings = settingsQuery.data
-  const clientIdLabel = provider === 'wechat' || provider === 'telegram' || provider === 'google' ? t(`${baseKey}.clientId`) : t('authenticationSettings.oauth.clientId')
-  const clientSecretLabel = provider === 'wechat' || provider === 'telegram' || provider === 'google' ? t(`${baseKey}.clientSecret`) : t('authenticationSettings.oauth.clientSecret')
-  const newSecretLabel = provider === 'wechat' || provider === 'telegram' || provider === 'google' ? t(`${baseKey}.newSecret`) : t('authenticationSettings.oauth.newSecret')
+  const hasProviderSpecificLabels = provider === 'wechat' || provider === 'telegram' || provider === 'google'
+  const clientIdLabel = hasProviderSpecificLabels ? t(`${baseKey}.clientId`) : t('authenticationSettings.oauth.clientId')
+  const clientSecretLabel = hasProviderSpecificLabels ? t(`${baseKey}.clientSecret`) : t('authenticationSettings.oauth.clientSecret')
+  const newSecretLabel = hasProviderSpecificLabels ? t(`${baseKey}.newSecret`) : t('authenticationSettings.oauth.newSecret')
   const [enabled, setEnabled] = useState(false)
   const [clientId, setClientId] = useState('')
   const [issuerUrl, setIssuerUrl] = useState('')
@@ -65,9 +56,17 @@ export function OAuthProviderSettings({ provider }: OAuthProviderSettingsProps) 
     return <Skeleton className="h-64 w-full rounded-xl" />
   }
   if (settingsQuery.isError || !settings) {
+    const unsupported = settingsQuery.error instanceof ApiError && settingsQuery.error.status === 404
     return (
-      <div role="alert" className="rounded-xl border border-destructive/25 bg-destructive/8 p-4">
-        <h3 className="text-sm font-semibold text-destructive">{t(`${baseKey}.errors.load`)}</h3>
+      <div role="alert" className={`rounded-xl border p-4 ${unsupported ? 'border-warning/25 bg-warning/8' : 'border-destructive/25 bg-destructive/8'}`}>
+        <h3 className={`text-sm font-semibold ${unsupported ? 'text-warning' : 'text-destructive'}`}>
+          {t(unsupported ? 'authenticationSettings.oauth.errors.unsupportedTitle' : `${baseKey}.errors.load`)}
+        </h3>
+        {unsupported ? (
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            {t('authenticationSettings.oauth.errors.unsupported', { provider: t(`${baseKey}.title`) })}
+          </p>
+        ) : null}
         <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => void settingsQuery.refetch()}>
           <RefreshCw aria-hidden="true" />{t('authenticationSettings.actions.retry')}
         </Button>
@@ -119,11 +118,15 @@ export function OAuthProviderSettings({ provider }: OAuthProviderSettingsProps) 
   }
 
   return (
-    <form onSubmit={(event) => void submit(event)} className="overflow-hidden rounded-xl border border-[var(--hairline)] bg-surface-1/45 shadow-[var(--shadow-subtle)]">
+    <form
+      aria-labelledby={`${provider}-oauth-title`}
+      onSubmit={(event) => void submit(event)}
+      className="overflow-hidden rounded-xl border border-[var(--hairline)] bg-surface-1/45 shadow-[var(--shadow-subtle)]"
+    >
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--hairline)] px-4 py-3.5">
         <div className="flex items-center gap-2">
-          <Icon className="size-4" aria-hidden="true" />
-          <h3 className="text-sm font-semibold">{t(`${baseKey}.title`)}</h3>
+          <OAuthProviderIcon provider={provider} />
+          <h3 id={`${provider}-oauth-title`} className="text-sm font-semibold">{t(`${baseKey}.title`)}</h3>
           <Badge className={enabled ? 'border-success/25 bg-success/10 text-success' : undefined}>
             {t(enabled ? 'authenticationSettings.status.enabled' : 'authenticationSettings.status.disabled')}
           </Badge>
@@ -147,6 +150,7 @@ export function OAuthProviderSettings({ provider }: OAuthProviderSettingsProps) 
               id={`${provider}-oauth-callback`}
               value={currentSettings.callback_url ?? t('authenticationSettings.oauth.callbackMissing')}
               readOnly
+              disabled={mutation.isPending}
               className="font-mono text-xs"
             />
             <Button
@@ -171,6 +175,7 @@ export function OAuthProviderSettings({ provider }: OAuthProviderSettingsProps) 
             value={clientId}
             maxLength={255}
             autoComplete="off"
+            disabled={mutation.isPending}
             onChange={(event) => {
               setClientId(event.target.value)
               setValidationError(false)
@@ -188,6 +193,7 @@ export function OAuthProviderSettings({ provider }: OAuthProviderSettingsProps) 
               maxLength={2048}
               autoComplete="url"
               placeholder="https://id.example.com"
+              disabled={mutation.isPending}
               onChange={(event) => {
                 setIssuerUrl(event.target.value)
                 setValidationError(false)
@@ -198,7 +204,13 @@ export function OAuthProviderSettings({ provider }: OAuthProviderSettingsProps) 
         ) : provider === 'linuxdo' || provider === 'telegram' || provider === 'google' ? (
           <div className="grid content-start gap-1.5 md:col-span-2">
             <Label htmlFor={`${provider}-oauth-issuer`}>{t('authenticationSettings.oauth.issuer')}</Label>
-            <Input id={`${provider}-oauth-issuer`} value={currentSettings.issuer_url ?? (provider === 'linuxdo' ? 'https://connect.linux.do' : provider === 'telegram' ? 'https://oauth.telegram.org' : 'https://accounts.google.com')} readOnly className="font-mono text-xs" />
+            <Input
+              id={`${provider}-oauth-issuer`}
+              value={currentSettings.issuer_url ?? (provider === 'linuxdo' ? 'https://connect.linux.do' : provider === 'telegram' ? 'https://oauth.telegram.org' : 'https://accounts.google.com')}
+              readOnly
+              disabled={mutation.isPending}
+              className="font-mono text-xs"
+            />
             <p className="text-[0.6875rem] leading-4 text-muted-foreground">{t(`${baseKey}.issuerHint`)}</p>
           </div>
         ) : null}
@@ -208,6 +220,7 @@ export function OAuthProviderSettings({ provider }: OAuthProviderSettingsProps) 
           <Select
             id={`${provider}-oauth-secret-action`}
             value={secretAction}
+            disabled={mutation.isPending}
             onChange={(event) => {
               setSecretAction(event.target.value as SecretAction)
               setClientSecret('')
@@ -234,6 +247,7 @@ export function OAuthProviderSettings({ provider }: OAuthProviderSettingsProps) 
               value={clientSecret}
               maxLength={4096}
               autoComplete="new-password"
+              disabled={mutation.isPending}
               onChange={(event) => {
                 setClientSecret(event.target.value)
                 setValidationError(false)

@@ -3082,6 +3082,13 @@
     "title": "认证设置",
     "subtitle": "控制密码登录、公开注册、新用户归属与数据库固定窗口保护。",
     "loading": "正在加载认证设置",
+    "navigation": {
+      "label": "认证设置分段",
+      "core": "基础认证",
+      "allocation": "用户归属",
+      "protection": "注册防护",
+      "oauth": "OAuth 登录"
+    },
     "status": {
       "title": "认证能力",
       "version": "版本 {{version}}",
@@ -3116,7 +3123,7 @@
       "callbackHint": "将此地址完整填写到 GitHub OAuth App 的 Authorization callback URL。",
       "copyCallback": "复制回调地址",
       "clientId": "Client ID",
-      "clientSecret": "Client Secret 操作",
+      "clientSecret": "Client Secret",
       "newSecret": "新的 Client Secret",
       "version": "GitHub OAuth 配置版本 {{version}}",
       "secret": {
@@ -3129,6 +3136,8 @@
       "errors": {
         "load": "无法读取 GitHub OAuth 登录设置",
         "save": "GitHub OAuth 设置保存失败，请刷新后核对版本。",
+        "unsupportedTitle": "当前后端尚未提供此登录方式",
+        "unsupported": "{{provider}} 接口返回 HTTP 404，请更新后端服务后再重试。",
         "publicBaseUrl": "启用前必须先保存站点公开基址，以生成稳定回调地址。",
         "incomplete": "启用 GitHub 登录需要回调地址、Client ID 和已配置的 Client Secret。"
       },
@@ -3188,7 +3197,7 @@
         "title": "微信开放平台登录",
         "enabled": "启用微信二维码登录",
         "clientId": "AppID",
-        "clientSecret": "AppSecret 操作",
+        "clientSecret": "AppSecret",
         "newSecret": "新的 AppSecret",
         "callbackHint": "将此地址填写到微信开放平台网站应用的授权回调域配置中。",
         "version": "微信登录配置版本 {{version}}",
@@ -3203,7 +3212,7 @@
         "title": "Telegram 登录",
         "enabled": "启用 Telegram 登录",
         "clientId": "Client ID",
-        "clientSecret": "Client Secret 操作",
+        "clientSecret": "Client Secret",
         "newSecret": "新的 Client Secret",
         "callbackHint": "将此地址登记到 Telegram BotFather 的 Allowed URLs / OIDC 回调白名单。",
         "version": "Telegram 登录配置版本 {{version}}",
@@ -3218,7 +3227,7 @@
         "title": "Google 登录",
         "enabled": "启用 Google 登录",
         "clientId": "OAuth Client ID",
-        "clientSecret": "OAuth Client Secret 操作",
+        "clientSecret": "OAuth Client Secret",
         "newSecret": "新的 OAuth Client Secret",
         "callbackHint": "将此地址登记到 Google Cloud OAuth 客户端的授权重定向 URI。",
         "issuerHint": "Google 使用官方固定 Issuer，不能自定义网络目标。",

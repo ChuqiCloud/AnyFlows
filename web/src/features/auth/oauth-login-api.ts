@@ -67,8 +67,10 @@ const updateAdminOAuthLoginSettings = {
     updateAdminGoogleOAuthLoginSettings({ body, client: apiClient }),
 }
 
+export const adminOAuthLoginSettingsQueryPrefix = ['admin-oauth-login-settings'] as const
+
 export const adminOAuthLoginSettingsQueryKey = (provider: OAuthLoginProvider) =>
-  ['admin-oauth-login-settings', provider] as const
+  [...adminOAuthLoginSettingsQueryPrefix, provider] as const
 
 /** 请求服务端生成的固定内置 Provider 授权地址，前端不拼接 OAuth 参数。 */
 export async function beginOAuthLogin(provider: OAuthLoginProvider) {
