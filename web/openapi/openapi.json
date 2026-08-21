@@ -2482,7 +2482,8 @@
                 "$ref": "#/components/schemas/SubscriptionOrderCreateRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "201": {
