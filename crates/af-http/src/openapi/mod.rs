@@ -658,6 +658,8 @@ mod tests {
         assert!(schemas.contains_key("NotificationDeliveryState"));
         assert!(schemas.contains_key("UserNotification"));
         assert!(schemas.contains_key("UserNotificationListResponse"));
+        assert!(schemas.contains_key("UserNotificationMarkReadRequest"));
+        assert!(schemas.contains_key("UserNotificationMarkReadResponse"));
         assert!(schemas.contains_key("UserTwoFactorEnrollmentResponse"));
         assert!(schemas.contains_key("UserTwoFactorPasswordRequest"));
         assert!(schemas.contains_key("UserTwoFactorStatusResponse"));

@@ -71,6 +71,7 @@
     "settings": "设置"
   },
   "shell": {
+    "notificationsUnread": "{{count}} \u672a\u8bfb\u901a\u77e5",
     "search": "搜索",
     "notifications": "通知偏好",
     "version": "开发预览版",
@@ -5264,6 +5265,14 @@
       "footer": "设置只影响后续邮件，不会改变账户安全通知。"
     },
     "notificationHistory": {
+      "unreadCount": "{{count}} \u6761\u672a\u8bfb",
+      "markRead": "\u6807\u8bb0\u4e3a\u5df2\u8bfb",
+      "markReadError": "\u8fd9\u6761\u901a\u77e5\u6682\u65f6\u65e0\u6cd5\u6807\u8bb0\u4e3a\u5df2\u8bfb\uff0c\u8bf7\u91cd\u8bd5\u3002",
+      "readAt": "\u5df2\u4e8e {{time}} \u8bfb\u53d6",
+      "readState": {
+        "read": "\u5df2\u8bfb",
+        "unread": "\u672a\u8bfb"
+      },
       "title": "通知历史",
       "subtitle": "展示余额和订阅预警的系统已知投递事实；SMTP 接受不代表已送达收件箱或已读。",
       "loadError": "通知历史暂时无法加载。",

@@ -73,6 +73,7 @@
   "shell": {
     "search": "Search",
     "notifications": "Notification preferences",
+    "notificationsUnread": "{{count}} unread notification(s)",
     "version": "Development preview",
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
@@ -5270,6 +5271,10 @@
       "loadError": "Notification history is temporarily unavailable.",
       "olderLoadError": "Older notifications could not be loaded.",
       "empty": "No notification facts yet.",
+      "unreadCount": "{{count}} unread",
+      "markRead": "Mark as read",
+      "markReadError": "This notification could not be marked as read. Try again.",
+      "readAt": "Read {{time}}",
       "loading": "Loading",
       "loadOlder": "Load older records",
       "kind": {
@@ -5281,6 +5286,10 @@
         "accepted": "SMTP accepted",
         "failed": "Failed",
         "canceled": "Canceled"
+      },
+      "readState": {
+        "read": "Read",
+        "unread": "Unread"
       },
       "channel": {
         "email": "Email"

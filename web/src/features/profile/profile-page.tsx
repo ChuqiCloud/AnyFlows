@@ -43,6 +43,7 @@ import {
   useDisableUserTwoFactor,
   useEnableUserTwoFactor,
   useFinishUserPasskeyRegistration,
+  useMarkUserNotificationsRead,
   useRenameUserPasskey,
   useRevokeUserPasskey,
   useStartUserPasskeyRegistration,
@@ -753,19 +754,34 @@ function NotificationsCard({ profile }: { profile: UserProfileResponse }) {
 function NotificationHistoryCard() {
   const { t, i18n } = useTranslation()
   const query = useUserNotifications()
+  const markReadMutation = useMarkUserNotificationsRead()
+  const [pendingId, setPendingId] = useState<number>()
   const formatTime = (value: number) => new Intl.DateTimeFormat(
     i18n.resolvedLanguage?.startsWith('zh') ? 'zh-CN' : 'en-US',
     { dateStyle: 'medium', timeStyle: 'short' },
   ).format(new Date(value * 1000))
   const entries = query.data?.pages.flatMap((page) => page.entries) ?? []
+  const unreadCount = query.data?.pages[0]?.unread_count
+  const markRead = async (id: number) => {
+    if (markReadMutation.isPending) return
+    setPendingId(id)
+    try {
+      await markReadMutation.mutateAsync([id])
+    } finally {
+      setPendingId(undefined)
+    }
+  }
 
   return (
     <Card className="overflow-hidden">
       <CardHeader className="border-b border-[var(--hairline)] bg-surface-1/45">
         <div className="flex gap-3">
           <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-info/10 text-info"><BellRing className="size-4" aria-hidden="true" /></div>
-          <div>
-            <CardTitle className="text-base">{t('profile.notificationHistory.title')}</CardTitle>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <CardTitle className="text-base">{t('profile.notificationHistory.title')}</CardTitle>
+              {unreadCount !== undefined ? <Badge className={unreadCount > 0 ? 'bg-warning/10 text-warning' : 'bg-muted text-muted-foreground'}>{t('profile.notificationHistory.unreadCount', { count: unreadCount })}</Badge> : null}
+            </div>
             <CardDescription className="mt-1">{t('profile.notificationHistory.subtitle')}</CardDescription>
           </div>
         </div>
@@ -774,7 +790,8 @@ function NotificationHistoryCard() {
         {query.isPending ? <div className="grid gap-3 p-5"><Skeleton className="h-12" /><Skeleton className="h-12" /></div> : null}
         {query.isError ? <div role="alert" className="flex items-center justify-between gap-3 p-5 text-xs text-destructive"><span>{t('profile.notificationHistory.loadError')}</span><Button type="button" size="sm" variant="secondary" onClick={() => void query.refetch()}>{t('profile.actions.retry')}</Button></div> : null}
         {!query.isPending && !query.isError && entries.length === 0 ? <div className="p-5 text-xs text-muted-foreground">{t('profile.notificationHistory.empty')}</div> : null}
-        {entries.length > 0 ? <div className="divide-y divide-[var(--hairline)]">{entries.map((entry) => <NotificationHistoryRow key={entry.id} entry={entry} formatTime={formatTime} />)}</div> : null}
+        {markReadMutation.isError ? <div role="alert" className="border-t border-[var(--hairline)] px-5 py-3 text-xs text-destructive">{t('profile.notificationHistory.markReadError')}</div> : null}
+        {entries.length > 0 ? <div className="divide-y divide-[var(--hairline)]">{entries.map((entry) => <NotificationHistoryRow key={entry.id} entry={entry} formatTime={formatTime} onMarkRead={markRead} pending={pendingId === entry.id && markReadMutation.isPending} />)}</div> : null}
         {query.isFetchNextPageError ? <div role="alert" className="flex items-center justify-between gap-3 border-t border-[var(--hairline)] p-4 text-xs text-destructive"><span>{t('profile.notificationHistory.olderLoadError')}</span><Button type="button" size="sm" variant="ghost" onClick={() => void query.fetchNextPage()}>{t('profile.actions.retry')}</Button></div> : null}
         {query.hasNextPage && !query.isFetchNextPageError ? <div className="flex justify-center border-t border-[var(--hairline)] p-4"><Button type="button" size="sm" variant="secondary" disabled={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>{t(query.isFetchingNextPage ? 'profile.notificationHistory.loading' : 'profile.notificationHistory.loadOlder')}</Button></div> : null}
       </CardContent>
@@ -782,15 +799,16 @@ function NotificationHistoryCard() {
   )
 }
 
-function NotificationHistoryRow({ entry, formatTime }: { entry: UserNotification; formatTime: (value: number) => string }) {
+function NotificationHistoryRow({ entry, formatTime, onMarkRead, pending }: { entry: UserNotification; formatTime: (value: number) => string; onMarkRead: (id: number) => void; pending: boolean }) {
   const { t } = useTranslation()
+  const isRead = entry.read_at !== undefined && entry.read_at !== null
   const title = t(`profile.notificationHistory.kind.${entry.kind}`)
   const state = t(`profile.notificationHistory.state.${entry.delivery_state}`)
   const detail = entry.kind === 'balance_alert'
     ? t('profile.notificationHistory.balanceDetail', { observed: entry.observed_quota ?? '--', threshold: entry.threshold_quota ?? '--' })
     : t('profile.notificationHistory.subscriptionDetail', { used: entry.quota_used ?? '--', amount: entry.quota_amount ?? '--', threshold: entry.threshold_percent ?? '--' })
 
-  return <article className="grid gap-2 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="text-sm font-medium">{title}</span><Badge className={entry.delivery_state === 'accepted' ? 'bg-success/10 text-success' : entry.delivery_state === 'failed' ? 'bg-destructive/10 text-destructive' : 'bg-warning/10 text-warning'}>{state}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{detail}</p><p className="mt-1 text-[0.6875rem] text-muted-foreground/75">{t('profile.notificationHistory.meta', { time: formatTime(entry.occurred_at), attempts: entry.delivery_attempts, id: entry.id })}</p></div><span className="text-[0.6875rem] text-muted-foreground">{t(`profile.notificationHistory.channel.${entry.channel}`)}</span></article>
+  return <article className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className={isRead ? 'text-sm font-medium' : 'text-sm font-semibold'}>{title}</span><Badge className={isRead ? 'bg-muted text-muted-foreground' : 'bg-brand/10 text-brand'}>{t(`profile.notificationHistory.readState.${isRead ? 'read' : 'unread'}`)}</Badge><Badge className={entry.delivery_state === 'accepted' ? 'bg-success/10 text-success' : entry.delivery_state === 'failed' ? 'bg-destructive/10 text-destructive' : 'bg-warning/10 text-warning'}>{state}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{detail}</p><p className="mt-1 text-[0.6875rem] text-muted-foreground/75">{t('profile.notificationHistory.meta', { time: formatTime(entry.occurred_at), attempts: entry.delivery_attempts, id: entry.id })}</p></div><div className="flex items-center justify-between gap-3 sm:flex-col sm:items-end"><span className="text-[0.6875rem] text-muted-foreground">{t(`profile.notificationHistory.channel.${entry.channel}`)}</span>{isRead ? <span className="text-[0.6875rem] text-muted-foreground">{t('profile.notificationHistory.readAt', { time: formatTime(entry.read_at ?? entry.occurred_at) })}</span> : <Button type="button" size="sm" variant="secondary" disabled={pending} onClick={() => onMarkRead(entry.id)}>{pending ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <Check aria-hidden="true" />}{t('profile.notificationHistory.markRead')}</Button>}</div></article>
 }
 
 function PreferenceRow({ id, title, description, checked, onCheckedChange }: { id: string; title: string; description: string; checked: boolean; onCheckedChange: (checked: boolean) => void }) {

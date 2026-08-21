@@ -7,7 +7,8 @@ use crate::{
     management_error::ManagementErrorBody,
     user_notifications::{
         NotificationChannelResponse, NotificationDeliveryStateResponse, NotificationKindResponse,
-        UserNotificationListResponse, UserNotificationResponse,
+        UserNotificationListResponse, UserNotificationMarkReadRequest,
+        UserNotificationMarkReadResponse, UserNotificationResponse,
     },
 };
 
@@ -31,15 +32,33 @@ use crate::{
 )]
 fn list_user_notifications() {}
 
+#[utoipa::path(
+    post,
+    path = "/api/account/notifications/read",
+    operation_id = "markUserNotificationsRead",
+    tag = "我的通知",
+    request_body = UserNotificationMarkReadRequest,
+    responses(
+        (status = 200, description = "已读回执已幂等写入", body = UserNotificationMarkReadResponse),
+        (status = 400, description = "通知 ID 无效或不属于当前用户", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn mark_user_notifications_read() {}
+
 #[derive(OpenApi)]
 #[openapi(
-    paths(list_user_notifications),
+    paths(list_user_notifications, mark_user_notifications_read),
     components(schemas(
         NotificationKindResponse,
         NotificationChannelResponse,
         NotificationDeliveryStateResponse,
         UserNotificationResponse,
         UserNotificationListResponse,
+        UserNotificationMarkReadRequest,
+        UserNotificationMarkReadResponse,
         ManagementErrorBody
     ))
 )]

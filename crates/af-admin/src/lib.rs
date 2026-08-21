@@ -382,7 +382,8 @@ pub use user_notifications::{
     DEFAULT_USER_NOTIFICATION_PAGE_SIZE, DatabaseUserNotificationService, UserNotification,
     UserNotificationChannel, UserNotificationCursor, UserNotificationDeliveryState,
     UserNotificationError, UserNotificationKind, UserNotificationListFuture,
-    UserNotificationListQuery, UserNotificationPage, UserNotificationService,
+    UserNotificationListQuery, UserNotificationMarkReadCommand, UserNotificationMarkReadFuture,
+    UserNotificationMarkReadResult, UserNotificationPage, UserNotificationService,
 };
 pub use user_profile::{
     DatabaseUserProfileService, MAX_USER_PROFILE_PASSWORD_BYTES, MAX_USER_PROFILE_USERNAME_BYTES,
