@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { apiClient, ApiError } from '@/lib/api'
 import {
@@ -7,6 +7,7 @@ import {
   disableAdminSubscriptionPlan,
   listAdminSubscriptionPlans,
   listAdminUserSubscriptions,
+  listCurrentSubscriptionCatalog,
   listCurrentUserSubscriptions,
   transitionAdminUserSubscriptionLifecycle,
 } from '@/lib/api/generated/sdk.gen'
@@ -20,6 +21,7 @@ import type {
 export const adminSubscriptionPlansQueryKey = ['admin-subscription-plans'] as const
 export const adminUserSubscriptionsQueryKey = ['admin-user-subscriptions'] as const
 export const currentUserSubscriptionsQueryKey = ['current-user-subscriptions'] as const
+export const currentSubscriptionCatalogQueryKey = ['current-subscription-catalog'] as const
 
 /** 按计划主键倒序读取管理员计划目录。 */
 export function useAdminSubscriptionPlans(pageSize = 25) {
@@ -72,6 +74,20 @@ export function useCurrentUserSubscriptions() {
       return data
     },
     getNextPageParam: (page) => page.next_cursor ?? undefined,
+  })
+}
+
+/** 读取当前会话可购买的计划与服务端筛选后的价格快照。 */
+export function useCurrentSubscriptionCatalog() {
+  return useQuery({
+    queryKey: currentSubscriptionCatalogQueryKey,
+    queryFn: async ({ signal }) => {
+      const { data } = await listCurrentSubscriptionCatalog({
+        client: apiClient,
+        signal,
+      })
+      return data
+    },
   })
 }
 

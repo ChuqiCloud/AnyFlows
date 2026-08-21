@@ -1,7 +1,8 @@
 use std::{fmt, future::Future, pin::Pin};
 
 use af_db::{
-    MAX_SUBSCRIPTION_PAGE_SIZE, MAX_SUBSCRIPTION_PLAN_NAME_BYTES, SubscriptionPlanRecord,
+    MAX_SUBSCRIPTION_CURRENCY_BYTES, MAX_SUBSCRIPTION_PAGE_SIZE, MAX_SUBSCRIPTION_PLAN_NAME_BYTES,
+    MAX_SUBSCRIPTION_PROVIDER_BYTES, SubscriptionPlanPriceRecord, SubscriptionPlanRecord,
     UserSubscriptionRecord,
 };
 use af_domain::{
@@ -16,8 +17,94 @@ use super::lifecycle::{
     AdminUserSubscriptionLifecycleCommand, AdminUserSubscriptionLifecycleResult,
 };
 
+fn valid_price_text(value: &str, max_bytes: usize) -> bool {
+    !value.is_empty()
+        && value.len() <= max_bytes
+        && value.trim() == value
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+}
+
+fn valid_currency(value: &str) -> bool {
+    value.len() == MAX_SUBSCRIPTION_CURRENCY_BYTES
+        && value.bytes().all(|byte| byte.is_ascii_uppercase())
+}
+
 /// 管理端订阅目录和用户订阅列表的默认页大小。
 pub const DEFAULT_ADMIN_SUBSCRIPTION_PAGE_SIZE: usize = 25;
+
+/// 当前用户可购买的计划价格快照。
+pub struct SubscriptionCatalogPlan {
+    plan_id: SubscriptionPlanId,
+    name: String,
+    quota_amount: Quota,
+    cycle: SubscriptionCycle,
+    provider: String,
+    currency: String,
+    amount_minor: i64,
+}
+
+impl SubscriptionCatalogPlan {
+    pub(super) fn from_records(
+        plan: &SubscriptionPlanRecord,
+        price: &SubscriptionPlanPriceRecord,
+    ) -> Self {
+        Self {
+            plan_id: plan.plan_id(),
+            name: plan.name().to_owned(),
+            quota_amount: plan.quota_amount(),
+            cycle: plan.cycle(),
+            provider: price.provider().to_owned(),
+            currency: price.currency().to_owned(),
+            amount_minor: price.amount_minor(),
+        }
+    }
+
+    #[must_use]
+    pub const fn plan_id(&self) -> SubscriptionPlanId {
+        self.plan_id
+    }
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    #[must_use]
+    pub const fn quota_amount(&self) -> Quota {
+        self.quota_amount
+    }
+    #[must_use]
+    pub const fn cycle(&self) -> SubscriptionCycle {
+        self.cycle
+    }
+    #[must_use]
+    pub fn provider(&self) -> &str {
+        &self.provider
+    }
+    #[must_use]
+    pub fn currency(&self) -> &str {
+        &self.currency
+    }
+    #[must_use]
+    pub const fn amount_minor(&self) -> i64 {
+        self.amount_minor
+    }
+}
+
+/// 当前用户可购买的计划目录。
+pub struct SubscriptionCatalog {
+    plans: Vec<SubscriptionCatalogPlan>,
+}
+
+impl SubscriptionCatalog {
+    pub(super) fn new(plans: Vec<SubscriptionCatalogPlan>) -> Self {
+        Self { plans }
+    }
+    #[must_use]
+    pub fn plans(&self) -> &[SubscriptionCatalogPlan] {
+        &self.plans
+    }
+}
 
 /// 管理员可读取的订阅计划快照。
 pub struct AdminSubscriptionPlan {
@@ -357,6 +444,9 @@ pub struct AdminSubscriptionPlanCreateCommand {
     pub(super) name: String,
     pub(super) quota_amount: Quota,
     pub(super) cycle: SubscriptionCycle,
+    pub(super) price_provider: String,
+    pub(super) price_currency: String,
+    pub(super) price_amount_minor: i64,
 }
 
 impl AdminSubscriptionPlanCreateCommand {
@@ -365,6 +455,9 @@ impl AdminSubscriptionPlanCreateCommand {
         name: String,
         quota_amount: i64,
         cycle: SubscriptionCycle,
+        price_provider: String,
+        price_currency: String,
+        price_amount_minor: i64,
     ) -> Result<Self, SubscriptionServiceError> {
         if name.is_empty()
             || name.len() > MAX_SUBSCRIPTION_PLAN_NAME_BYTES
@@ -378,10 +471,19 @@ impl AdminSubscriptionPlanCreateCommand {
         if quota_amount.is_zero() {
             return Err(SubscriptionServiceError::InvalidInput);
         }
+        if !valid_price_text(&price_provider, MAX_SUBSCRIPTION_PROVIDER_BYTES)
+            || !valid_currency(&price_currency)
+            || price_amount_minor <= 0
+        {
+            return Err(SubscriptionServiceError::InvalidInput);
+        }
         Ok(Self {
             name,
             quota_amount,
             cycle,
+            price_provider,
+            price_currency,
+            price_amount_minor,
         })
     }
 }
@@ -474,6 +576,10 @@ pub type SubscriptionListPlansFuture<'a> = Pin<
             + 'a,
     >,
 >;
+/// 当前用户可见的订阅可售目录读取结果。
+pub type SubscriptionCatalogFuture<'a> = Pin<
+    Box<dyn Future<Output = Result<SubscriptionCatalog, SubscriptionServiceError>> + Send + 'a>,
+>;
 /// 管理员创建计划的异步结果。
 pub type SubscriptionCreatePlanFuture<'a> = Pin<
     Box<dyn Future<Output = Result<AdminSubscriptionPlan, SubscriptionServiceError>> + Send + 'a>,
@@ -505,6 +611,8 @@ pub type SubscriptionLifecycleFuture<'a> = Pin<
 
 /// 管理员订阅管理与当前用户只读应用端口。
 pub trait SubscriptionService: Send + Sync {
+    /// 读取 Active 计划及其不可变价格快照。
+    fn list_catalog<'a>(&'a self, principal: SessionPrincipal) -> SubscriptionCatalogFuture<'a>;
     /// 管理员读取计划目录。
     fn list_plans<'a>(
         &'a self,

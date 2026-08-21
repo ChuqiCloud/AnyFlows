@@ -13,9 +13,10 @@ pub use lifecycle::{
 };
 pub use repository::SubscriptionRepository;
 pub use types::{
-    MAX_SUBSCRIPTION_PAGE_SIZE, MAX_SUBSCRIPTION_PLAN_NAME_BYTES, SubscriptionInputError,
-    SubscriptionPlanCreateOutcome, SubscriptionPlanDisable, SubscriptionPlanDisableOutcome,
-    SubscriptionPlanPageRecord, SubscriptionPlanRecord, SubscriptionPlanWrite,
+    MAX_SUBSCRIPTION_CURRENCY_BYTES, MAX_SUBSCRIPTION_PAGE_SIZE, MAX_SUBSCRIPTION_PLAN_NAME_BYTES,
+    MAX_SUBSCRIPTION_PROVIDER_BYTES, SubscriptionInputError, SubscriptionPlanCreateOutcome,
+    SubscriptionPlanDisable, SubscriptionPlanDisableOutcome, SubscriptionPlanPageRecord,
+    SubscriptionPlanPriceRecord, SubscriptionPlanRecord, SubscriptionPlanWrite,
     SubscriptionRepositoryConfigError, SubscriptionRepositoryError, SubscriptionResetDueCursor,
     UserSubscriptionBind, UserSubscriptionBindOutcome, UserSubscriptionPageRecord,
     UserSubscriptionRecord, UserSubscriptionResetDuePageRecord, UserSubscriptionWindowAdvance,

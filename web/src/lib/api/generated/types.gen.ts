@@ -958,6 +958,9 @@ export type AdminSubscriptionPlanCreateRequest = {
     name: string;
     quota_amount: number;
     cycle: SubscriptionCycle;
+    price_provider: string;
+    price_currency: string;
+    price_amount_minor: number;
 };
 export type AdminSubscriptionPlanDisableRequest = {
     expected_version: number;
@@ -1997,6 +2000,18 @@ export type UserSubscriptionListResponse = {
     subscriptions: Array<UserSubscription>;
     next_cursor: number | null;
 };
+export type SubscriptionCatalogResponse = {
+    plans: Array<SubscriptionCatalogPlan>;
+};
+export type SubscriptionCatalogPlan = {
+    plan_id: string;
+    name: string;
+    quota_amount: number;
+    cycle: SubscriptionCycle;
+    price_provider: string;
+    price_currency: string;
+    price_amount_minor: number;
+};
 export type UserSubscriptionStatus = 'active' | 'suspended' | 'canceled' | 'expired';
 export type UserToken = {
     id: number;
@@ -2934,6 +2949,21 @@ export type ListCurrentUserSubscriptionsResponses = {
     200: UserSubscriptionListResponse;
 };
 export type ListCurrentUserSubscriptionsResponse = ListCurrentUserSubscriptionsResponses[keyof ListCurrentUserSubscriptionsResponses];
+export type ListCurrentSubscriptionCatalogData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/account/subscription-catalog';
+};
+export type ListCurrentSubscriptionCatalogErrors = {
+    401: ManagementError;
+    500: ManagementError;
+};
+export type ListCurrentSubscriptionCatalogError = ListCurrentSubscriptionCatalogErrors[keyof ListCurrentSubscriptionCatalogErrors];
+export type ListCurrentSubscriptionCatalogResponses = {
+    200: SubscriptionCatalogResponse;
+};
+export type ListCurrentSubscriptionCatalogResponse = ListCurrentSubscriptionCatalogResponses[keyof ListCurrentSubscriptionCatalogResponses];
 export type RequestPasswordResetData = {
     body: PasswordResetRequest;
     path?: never;

@@ -11,8 +11,9 @@ use crate::{
         AdminSubscriptionPlanListResponse, AdminSubscriptionPlanResponse,
         AdminUserSubscriptionBindRequest, AdminUserSubscriptionLifecycleActionDto,
         AdminUserSubscriptionLifecycleRequest, AdminUserSubscriptionLifecycleResponse,
-        SubscriptionCycleDto, SubscriptionPlanStatusDto, UserSubscriptionListResponse,
-        UserSubscriptionResponse, UserSubscriptionStatusDto,
+        SubscriptionCatalogPlanResponse, SubscriptionCatalogResponse, SubscriptionCycleDto,
+        SubscriptionPlanStatusDto, UserSubscriptionListResponse, UserSubscriptionResponse,
+        UserSubscriptionStatusDto,
     },
 };
 
@@ -168,6 +169,21 @@ fn transition_admin_user_subscription_lifecycle() {}
 )]
 fn list_current_user_subscriptions() {}
 
+#[utoipa::path(
+    get,
+    path = "/api/account/subscription-catalog",
+    operation_id = "listCurrentSubscriptionCatalog",
+    tag = "订阅管理",
+    summary = "读取当前用户可售订阅目录",
+    responses(
+        (status = 200, description = "当前用户可购买的 Active 计划与价格快照", body = SubscriptionCatalogResponse),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn list_current_subscription_catalog() {}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -177,7 +193,8 @@ fn list_current_user_subscriptions() {}
         list_admin_user_subscriptions,
         bind_admin_user_subscription,
         transition_admin_user_subscription_lifecycle,
-        list_current_user_subscriptions
+        list_current_user_subscriptions,
+        list_current_subscription_catalog
     ),
     components(schemas(
         SubscriptionCycleDto,
@@ -186,6 +203,8 @@ fn list_current_user_subscriptions() {}
         AdminSubscriptionPlanResponse,
         AdminSubscriptionPlanListResponse,
         AdminSubscriptionPlanCreateRequest,
+        SubscriptionCatalogResponse,
+        SubscriptionCatalogPlanResponse,
         AdminSubscriptionPlanDisableRequest,
         UserSubscriptionResponse,
         UserSubscriptionListResponse,

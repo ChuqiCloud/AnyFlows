@@ -458,6 +458,13 @@ impl RedemptionService for RejectRedemptions {
 }
 
 impl SubscriptionService for RejectSubscriptions {
+    fn list_catalog<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+    ) -> af_admin::SubscriptionCatalogFuture<'a> {
+        Box::pin(async { Err(SubscriptionServiceError::Internal) })
+    }
+
     fn list_plans<'a>(
         &'a self,
         _principal: SessionPrincipal,

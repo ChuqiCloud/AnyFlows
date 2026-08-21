@@ -82,6 +82,7 @@ pub(crate) mod routes;
 pub(crate) mod scheduler_outbox_events;
 pub(crate) mod site_settings;
 pub(crate) mod subscription_balance_alert_events;
+pub(crate) mod subscription_plan_prices;
 pub(crate) mod subscription_plans;
 pub(crate) mod tokens;
 pub(crate) mod topup_orders;

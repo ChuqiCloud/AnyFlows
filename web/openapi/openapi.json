@@ -2422,6 +2422,52 @@
         ]
       }
     },
+    "/api/account/subscription-catalog": {
+      "get": {
+        "tags": [
+          "订阅管理"
+        ],
+        "summary": "读取当前用户可售订阅目录",
+        "operationId": "listCurrentSubscriptionCatalog",
+        "responses": {
+          "200": {
+            "description": "当前用户可购买的 Active 计划与价格快照",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionCatalogResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/auth/password-reset/request": {
       "post": {
         "tags": [
@@ -23161,7 +23207,10 @@
         "required": [
           "name",
           "quota_amount",
-          "cycle"
+          "cycle",
+          "price_provider",
+          "price_currency",
+          "price_amount_minor"
         ],
         "properties": {
           "name": {
@@ -23176,6 +23225,22 @@
           },
           "cycle": {
             "$ref": "#/components/schemas/SubscriptionCycle"
+          },
+          "price_provider": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1
+          },
+          "price_currency": {
+            "type": "string",
+            "maxLength": 3,
+            "minLength": 3,
+            "pattern": "^[A-Z]{3}$"
+          },
+          "price_amount_minor": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
           }
         },
         "additionalProperties": false
@@ -29284,6 +29349,73 @@
               "integer",
               "null"
             ],
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "SubscriptionCatalogResponse": {
+        "type": "object",
+        "description": "当前用户可购买的计划与不可变价格快照。",
+        "required": [
+          "plans"
+        ],
+        "properties": {
+          "plans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SubscriptionCatalogPlan"
+            },
+            "maxItems": 100
+          }
+        },
+        "additionalProperties": false
+      },
+      "SubscriptionCatalogPlan": {
+        "type": "object",
+        "required": [
+          "plan_id",
+          "name",
+          "quota_amount",
+          "cycle",
+          "price_provider",
+          "price_currency",
+          "price_amount_minor"
+        ],
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1
+          },
+          "quota_amount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "cycle": {
+            "$ref": "#/components/schemas/SubscriptionCycle"
+          },
+          "price_provider": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1
+          },
+          "price_currency": {
+            "type": "string",
+            "maxLength": 3,
+            "minLength": 3,
+            "pattern": "^[A-Z]{3}$"
+          },
+          "price_amount_minor": {
+            "type": "integer",
             "format": "int64",
             "minimum": 1
           }

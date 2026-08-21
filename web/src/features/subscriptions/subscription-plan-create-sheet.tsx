@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { CalendarRange, Layers3, LoaderCircle } from 'lucide-react'
+import { CreditCard, Layers3, LoaderCircle } from 'lucide-react'
 import { useEffect, type ReactNode } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -32,6 +32,8 @@ export function SubscriptionPlanCreateSheet({ open, onOpenChange }: Subscription
     resolver: zodResolver(buildSubscriptionPlanSchema({
       name: t('subscriptions.validation.name'),
       quotaAmount: t('subscriptions.validation.quotaAmount'),
+      priceCurrency: t('subscriptions.validation.priceCurrency'),
+      priceAmountMinor: t('subscriptions.validation.priceAmountMinor'),
     })),
   })
 
@@ -76,6 +78,51 @@ export function SubscriptionPlanCreateSheet({ open, onOpenChange }: Subscription
             />
           </SubscriptionField>
 
+          <div className="grid gap-4 border-y border-[var(--hairline)] py-4 sm:grid-cols-3">
+            <SubscriptionField
+              id="subscription-plan-provider"
+              label={t('subscriptions.fields.priceProvider')}
+              hint={t('subscriptions.fields.priceProviderHint')}
+            >
+              <Select id="subscription-plan-provider" disabled={mutation.isPending} {...form.register('priceProvider')}>
+                <option value="stripe">Stripe</option>
+                <option value="epay">EasyPay</option>
+              </Select>
+            </SubscriptionField>
+
+            <SubscriptionField
+              id="subscription-plan-currency"
+              label={t('subscriptions.fields.priceCurrency')}
+              hint={t('subscriptions.fields.priceCurrencyHint')}
+              error={form.formState.errors.priceCurrency?.message}
+            >
+              <Input
+                id="subscription-plan-currency"
+                maxLength={3}
+                autoComplete="off"
+                disabled={mutation.isPending}
+                {...form.register('priceCurrency', {
+                  setValueAs: (value: string) => value.toUpperCase(),
+                })}
+              />
+            </SubscriptionField>
+
+            <SubscriptionField
+              id="subscription-plan-price"
+              label={t('subscriptions.fields.priceAmountMinor')}
+              hint={t('subscriptions.fields.priceAmountMinorHint')}
+              error={form.formState.errors.priceAmountMinor?.message}
+            >
+              <Input
+                id="subscription-plan-price"
+                inputMode="numeric"
+                autoComplete="off"
+                disabled={mutation.isPending}
+                {...form.register('priceAmountMinor')}
+              />
+            </SubscriptionField>
+          </div>
+
           <SubscriptionField
             id="subscription-plan-quota"
             label={t('subscriptions.fields.quotaAmount')}
@@ -105,7 +152,7 @@ export function SubscriptionPlanCreateSheet({ open, onOpenChange }: Subscription
           </SubscriptionField>
 
           <div className="flex items-center gap-3 border-y border-[var(--hairline)] py-3 text-xs text-muted-foreground">
-            <CalendarRange className="size-4 shrink-0 text-brand" aria-hidden="true" />
+            <CreditCard className="size-4 shrink-0 text-brand" aria-hidden="true" />
             <span>{t('subscriptions.create.snapshotNotice')}</span>
           </div>
 

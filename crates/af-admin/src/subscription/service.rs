@@ -22,6 +22,7 @@ use super::{
         AdminSubscriptionPageQuery, AdminSubscriptionPlan, AdminSubscriptionPlanCreateCommand,
         AdminSubscriptionPlanDisableCommand, AdminSubscriptionPlanPage, AdminUserSubscription,
         AdminUserSubscriptionBindCommand, AdminUserSubscriptionPage, SubscriptionBindFuture,
+        SubscriptionCatalog, SubscriptionCatalogFuture, SubscriptionCatalogPlan,
         SubscriptionCreatePlanFuture, SubscriptionDisablePlanFuture, SubscriptionLifecycleFuture,
         SubscriptionListPlansFuture, SubscriptionListUserFuture, SubscriptionService,
         SubscriptionServiceError,
@@ -42,6 +43,23 @@ impl DatabaseSubscriptionService {
 }
 
 impl SubscriptionService for DatabaseSubscriptionService {
+    fn list_catalog<'a>(&'a self, principal: SessionPrincipal) -> SubscriptionCatalogFuture<'a> {
+        Box::pin(async move {
+            let _ = principal;
+            let records = self
+                .repository
+                .list_active_catalog()
+                .await
+                .map_err(map_read_error)?;
+            Ok(SubscriptionCatalog::new(
+                records
+                    .iter()
+                    .map(|(plan, price)| SubscriptionCatalogPlan::from_records(plan, price))
+                    .collect(),
+            ))
+        })
+    }
+
     fn list_plans<'a>(
         &'a self,
         principal: SessionPrincipal,
@@ -72,12 +90,15 @@ impl SubscriptionService for DatabaseSubscriptionService {
         Box::pin(async move {
             require_admin(principal)?;
             let created_at = unix_now()?;
-            let write = SubscriptionPlanWrite::new(
+            let write = SubscriptionPlanWrite::new_with_price(
                 random_plan_id()?,
                 command.name,
                 principal.user_id(),
                 command.quota_amount,
                 command.cycle,
+                command.price_provider,
+                command.price_currency,
+                command.price_amount_minor,
                 created_at,
             )
             .map_err(|_| SubscriptionServiceError::InvalidInput)?;

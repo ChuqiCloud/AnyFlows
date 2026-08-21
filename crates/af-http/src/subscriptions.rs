@@ -5,7 +5,8 @@ use af_admin::{
     AdminSubscriptionPlanDisableCommand, AdminUserSubscription, AdminUserSubscriptionBindCommand,
     AdminUserSubscriptionLifecycleAction, AdminUserSubscriptionLifecycleCommand,
     AdminUserSubscriptionLifecycleResult, SessionAuthentication, SessionAuthenticator,
-    SubscriptionService, SubscriptionServiceError,
+    SubscriptionCatalog, SubscriptionCatalogPlan, SubscriptionService, SubscriptionServiceError,
+    UserTopupConfiguration, UserTopupService,
 };
 use af_domain::{
     SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus, UserId, UserSubscriptionId,
@@ -33,6 +34,7 @@ use crate::{
 #[derive(Clone)]
 struct SubscriptionHttpState {
     service: Arc<dyn SubscriptionService>,
+    topup_service: Option<Arc<dyn UserTopupService>>,
 }
 
 /// HTTP 契约使用的闭合订阅周期。
@@ -144,6 +146,72 @@ pub(crate) struct AdminSubscriptionPlanListResponse {
     next_cursor: Option<i64>,
 }
 
+/// 当前用户可购买的计划与不可变价格快照。
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = SubscriptionCatalogResponse)]
+pub(crate) struct SubscriptionCatalogResponse {
+    #[schema(max_items = 100)]
+    plans: Vec<SubscriptionCatalogPlanResponse>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = SubscriptionCatalogPlan)]
+pub(crate) struct SubscriptionCatalogPlanResponse {
+    #[schema(min_length = 32, max_length = 32, pattern = "^[0-9a-f]{32}$")]
+    plan_id: String,
+    #[schema(min_length = 1, max_length = 80)]
+    name: String,
+    #[schema(minimum = 1)]
+    quota_amount: i64,
+    cycle: SubscriptionCycleDto,
+    #[schema(min_length = 1, max_length = 32)]
+    price_provider: String,
+    #[schema(min_length = 3, max_length = 3, pattern = "^[A-Z]{3}$")]
+    price_currency: String,
+    #[schema(minimum = 1)]
+    price_amount_minor: i64,
+}
+
+impl SubscriptionCatalogResponse {
+    fn from_catalog(
+        catalog: &SubscriptionCatalog,
+        configuration: Option<&UserTopupConfiguration>,
+    ) -> Self {
+        let plans = catalog
+            .plans()
+            .iter()
+            .filter(|plan| {
+                configuration.is_some_and(|config| {
+                    config.methods().iter().any(|method| {
+                        method.provider() == plan.provider()
+                            && method.currency() == plan.currency()
+                            && plan.amount_minor() >= method.min_amount_minor()
+                            && plan.amount_minor() <= method.max_amount_minor()
+                    })
+                })
+            })
+            .map(SubscriptionCatalogPlanResponse::from_plan)
+            .collect();
+        Self { plans }
+    }
+}
+
+impl SubscriptionCatalogPlanResponse {
+    fn from_plan(plan: &SubscriptionCatalogPlan) -> Self {
+        Self {
+            plan_id: plan.plan_id().persistence_key(),
+            name: plan.name().to_owned(),
+            quota_amount: plan.quota_amount().units(),
+            cycle: plan.cycle().into(),
+            price_provider: plan.provider().to_owned(),
+            price_currency: plan.currency().to_owned(),
+            price_amount_minor: plan.amount_minor(),
+        }
+    }
+}
+
 /// 管理员创建订阅计划的结构化请求。
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -154,6 +222,12 @@ pub(crate) struct AdminSubscriptionPlanCreateRequest {
     #[schema(minimum = 1)]
     quota_amount: i64,
     cycle: SubscriptionCycleDto,
+    #[schema(min_length = 1, max_length = 32)]
+    price_provider: String,
+    #[schema(min_length = 3, max_length = 3, pattern = "^[A-Z]{3}$")]
+    price_currency: String,
+    #[schema(minimum = 1)]
+    price_amount_minor: i64,
 }
 
 /// 管理员停用订阅计划的 CAS 请求。
@@ -264,8 +338,12 @@ pub(crate) struct AdminUserSubscriptionLifecycleResponse {
 pub(crate) fn build_subscription_router(
     service: Arc<dyn SubscriptionService>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
+    topup_service: Option<Arc<dyn UserTopupService>>,
 ) -> Router {
-    let state = SubscriptionHttpState { service };
+    let state = SubscriptionHttpState {
+        service,
+        topup_service,
+    };
     let admin_authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(Arc::clone(&session_authenticator)),
         authenticate_management_session,
@@ -298,6 +376,10 @@ pub(crate) fn build_subscription_router(
         .route(
             "/api/account/subscriptions",
             get(list_current_user_subscriptions),
+        )
+        .route(
+            "/api/account/subscription-catalog",
+            get(list_current_subscription_catalog),
         )
         .route_layer(user_authentication)
         .with_state(state);
@@ -336,6 +418,9 @@ async fn create_admin_subscription_plan(
         request.name,
         request.quota_amount,
         request.cycle.into(),
+        request.price_provider,
+        request.price_currency,
+        request.price_amount_minor,
     )
     .map_err(map_service_error)?;
     let plan = state
@@ -397,6 +482,25 @@ async fn list_current_user_subscriptions(
         .await
         .map_err(map_service_error)?;
     user_subscription_page_response(page)
+}
+
+async fn list_current_subscription_catalog(
+    State(state): State<SubscriptionHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+) -> Result<Response, ManagementError> {
+    let catalog = state
+        .service
+        .list_catalog(authentication.principal())
+        .await
+        .map_err(map_service_error)?;
+    let configured = state
+        .topup_service
+        .as_ref()
+        .and_then(|service| service.configuration().ok());
+    Ok(no_store_json(SubscriptionCatalogResponse::from_catalog(
+        &catalog,
+        configured.as_ref(),
+    )))
 }
 
 async fn bind_admin_user_subscription(
