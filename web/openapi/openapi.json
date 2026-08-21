@@ -2487,7 +2487,7 @@
         },
         "responses": {
           "200": {
-            "description": "已创建待支付订阅订单",
+            "description": "已重放同一幂等订单",
             "content": {
               "application/json": {
                 "schema": {
@@ -2496,8 +2496,8 @@
               }
             }
           },
-          "200": {
-            "description": "已重放同一幂等订单",
+          "201": {
+            "description": "已创建待支付订阅订单",
             "content": {
               "application/json": {
                 "schema": {

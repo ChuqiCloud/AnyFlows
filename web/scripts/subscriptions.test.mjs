@@ -98,7 +98,7 @@ test('订阅 OpenAPI 不接受客户端覆盖所有权与周期窗口', () => {
   )
   assert.deepEqual(
     Object.keys(openapi.paths['/api/account/subscription-orders'].post.responses).sort(),
-    ['200', '400', '401', '404', '409', '500', '503'],
+    ['200', '201', '400', '401', '404', '409', '500', '503'],
   )
   assert.deepEqual(
     Object.keys(openapi.components.schemas.AdminUserSubscriptionBindRequest.properties),
