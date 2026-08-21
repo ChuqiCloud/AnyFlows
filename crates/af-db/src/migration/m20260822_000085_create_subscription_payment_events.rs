@@ -11,6 +11,7 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        // SQLite 一次 ALTER TABLE 只能增加一列，拆开执行以保持三方言一致。
         manager
             .alter_table(
                 Table::alter()
@@ -18,6 +19,13 @@ impl MigrationTrait for Migration {
                     .add_column(
                         ColumnDef::new(subscription_orders::Column::TradeNo).string_len(128),
                     )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(subscription_orders::Entity)
                     .add_column(
                         ColumnDef::new(subscription_orders::Column::PaymentMethod).string_len(32),
                     )
@@ -40,6 +48,13 @@ impl MigrationTrait for Migration {
                 Table::alter()
                     .table(subscription_orders::Entity)
                     .drop_column(subscription_orders::Column::PaymentMethod)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(subscription_orders::Entity)
                     .drop_column(subscription_orders::Column::TradeNo)
                     .to_owned(),
             )
