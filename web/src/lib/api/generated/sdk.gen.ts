@@ -287,7 +287,7 @@ export const listCurrentSubscriptionCatalog = <ThrowOnError extends boolean = tr
     url: '/api/account/subscription-catalog',
     ...options
 });
-export const createCurrentSubscriptionOrder = <ThrowOnError extends boolean = true>(options?: Options<CreateCurrentSubscriptionOrderData, ThrowOnError>): RequestResult<CreateCurrentSubscriptionOrderResponses, CreateCurrentSubscriptionOrderErrors, ThrowOnError> => (options?.client ?? client).post<CreateCurrentSubscriptionOrderResponses, CreateCurrentSubscriptionOrderErrors, ThrowOnError>({
+export const createCurrentSubscriptionOrder = <ThrowOnError extends boolean = true>(options: Options<CreateCurrentSubscriptionOrderData, ThrowOnError>): RequestResult<CreateCurrentSubscriptionOrderResponses, CreateCurrentSubscriptionOrderErrors, ThrowOnError> => (options.client ?? client).post<CreateCurrentSubscriptionOrderResponses, CreateCurrentSubscriptionOrderErrors, ThrowOnError>({
     security: [{
             key: 'bearerAuth',
             scheme: 'bearer',
@@ -297,7 +297,7 @@ export const createCurrentSubscriptionOrder = <ThrowOnError extends boolean = tr
     ...options,
     headers: {
         'Content-Type': 'application/json',
-        ...options?.headers
+        ...options.headers
     }
 });
 export const requestPasswordReset = <ThrowOnError extends boolean = true>(options: Options<RequestPasswordResetData, ThrowOnError>): RequestResult<RequestPasswordResetResponses, RequestPasswordResetErrors, ThrowOnError> => (options.client ?? client).post<RequestPasswordResetResponses, RequestPasswordResetErrors, ThrowOnError>({

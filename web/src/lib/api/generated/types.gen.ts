@@ -2991,7 +2991,7 @@ export type ListCurrentSubscriptionCatalogResponses = {
 };
 export type ListCurrentSubscriptionCatalogResponse = ListCurrentSubscriptionCatalogResponses[keyof ListCurrentSubscriptionCatalogResponses];
 export type CreateCurrentSubscriptionOrderData = {
-    body?: SubscriptionOrderCreateRequest;
+    body: SubscriptionOrderCreateRequest;
     path?: never;
     query?: never;
     url: '/api/account/subscription-orders';
