@@ -28781,6 +28781,23 @@
         },
         "additionalProperties": false
       },
+      "SubscriptionCatalogResponse": {
+        "type": "object",
+        "description": "当前用户可购买的计划与不可变价格快照。",
+        "required": [
+          "plans"
+        ],
+        "properties": {
+          "plans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SubscriptionCatalogPlan"
+            },
+            "maxItems": 100
+          }
+        },
+        "additionalProperties": false
+      },
       "SubscriptionCycle": {
         "type": "string",
         "description": "HTTP 契约使用的闭合订阅周期。",
@@ -29513,23 +29530,6 @@
             ],
             "format": "int64",
             "minimum": 1
-          }
-        },
-        "additionalProperties": false
-      },
-      "SubscriptionCatalogResponse": {
-        "type": "object",
-        "description": "当前用户可购买的计划与不可变价格快照。",
-        "required": [
-          "plans"
-        ],
-        "properties": {
-          "plans": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SubscriptionCatalogPlan"
-            },
-            "maxItems": 100
           }
         },
         "additionalProperties": false

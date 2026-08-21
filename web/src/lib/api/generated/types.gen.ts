@@ -1881,6 +1881,9 @@ export type SubscriptionCatalogPlan = {
     price_currency: string;
     price_amount_minor: number;
 };
+export type SubscriptionCatalogResponse = {
+    plans: Array<SubscriptionCatalogPlan>;
+};
 export type SubscriptionCycle = 'daily' | 'weekly' | 'monthly' | 'yearly';
 export type SubscriptionPlanStatus = 'active' | 'disabled';
 export type UsageLogOperation = 'chat' | 'responses' | 'responses_compact' | 'embedding' | 'image' | 'audio' | 'rerank' | 'video' | 'count_tokens';
@@ -2009,9 +2012,6 @@ export type UserSubscription = {
 export type UserSubscriptionListResponse = {
     subscriptions: Array<UserSubscription>;
     next_cursor: number | null;
-};
-export type SubscriptionCatalogResponse = {
-    plans: Array<SubscriptionCatalogPlan>;
 };
 export type SubscriptionOrderCreateRequest = {
     idempotency_key: string;
