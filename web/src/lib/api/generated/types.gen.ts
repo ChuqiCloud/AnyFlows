@@ -1885,6 +1885,31 @@ export type SubscriptionCatalogResponse = {
     plans: Array<SubscriptionCatalogPlan>;
 };
 export type SubscriptionCycle = 'daily' | 'weekly' | 'monthly' | 'yearly';
+export type SubscriptionOrder = {
+    order_id: string;
+    plan_id: string;
+    plan_version: number;
+    price_provider: string;
+    price_currency: string;
+    price_amount_minor: number;
+    quota_amount: number;
+    status: SubscriptionOrderStatus;
+    version: number;
+    expires_at: number;
+    paid_at: number;
+    created_at: number;
+    updated_at: number;
+    replayed: boolean;
+};
+export type SubscriptionOrderCreateRequest = {
+    idempotency_key: string;
+    plan_id: string;
+    plan_version: number;
+    price_provider: string;
+    price_currency: string;
+    price_amount_minor: number;
+};
+export type SubscriptionOrderStatus = 'created' | 'pending' | 'paid' | 'failed' | 'canceled' | 'expired';
 export type SubscriptionPlanStatus = 'active' | 'disabled';
 export type UsageLogOperation = 'chat' | 'responses' | 'responses_compact' | 'embedding' | 'image' | 'audio' | 'rerank' | 'video' | 'count_tokens';
 export type UsageLogProtocol = 'open_ai_chat' | 'open_ai_responses' | 'open_ai_embeddings' | 'open_ai_images' | 'open_ai_audio' | 'open_ai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
@@ -2013,31 +2038,6 @@ export type UserSubscriptionListResponse = {
     subscriptions: Array<UserSubscription>;
     next_cursor: number | null;
 };
-export type SubscriptionOrderCreateRequest = {
-    idempotency_key: string;
-    plan_id: string;
-    plan_version: number;
-    price_provider: string;
-    price_currency: string;
-    price_amount_minor: number;
-};
-export type SubscriptionOrder = {
-    order_id: string;
-    plan_id: string;
-    plan_version: number;
-    price_provider: string;
-    price_currency: string;
-    price_amount_minor: number;
-    quota_amount: number;
-    status: SubscriptionOrderStatus;
-    version: number;
-    expires_at: number;
-    paid_at: number;
-    created_at: number;
-    updated_at: number;
-    replayed: boolean;
-};
-export type SubscriptionOrderStatus = 'created' | 'pending' | 'paid' | 'failed' | 'canceled' | 'expired';
 export type UserSubscriptionStatus = 'active' | 'suspended' | 'canceled' | 'expired';
 export type UserToken = {
     id: number;

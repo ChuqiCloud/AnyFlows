@@ -28808,6 +28808,157 @@
           "yearly"
         ]
       },
+      "SubscriptionOrder": {
+        "type": "object",
+        "required": [
+          "order_id",
+          "plan_id",
+          "plan_version",
+          "price_provider",
+          "price_currency",
+          "price_amount_minor",
+          "quota_amount",
+          "status",
+          "version",
+          "expires_at",
+          "paid_at",
+          "created_at",
+          "updated_at",
+          "replayed"
+        ],
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "plan_id": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "plan_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "price_provider": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1
+          },
+          "price_currency": {
+            "type": "string",
+            "maxLength": 3,
+            "minLength": 3,
+            "pattern": "^[A-Z]{3}$"
+          },
+          "price_amount_minor": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "quota_amount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "status": {
+            "$ref": "#/components/schemas/SubscriptionOrderStatus"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "nullable": true
+          },
+          "paid_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "nullable": true
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SubscriptionOrderCreateRequest": {
+        "type": "object",
+        "required": [
+          "idempotency_key",
+          "plan_id",
+          "plan_version",
+          "price_provider",
+          "price_currency",
+          "price_amount_minor"
+        ],
+        "properties": {
+          "idempotency_key": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "plan_id": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "plan_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "price_provider": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1
+          },
+          "price_currency": {
+            "type": "string",
+            "maxLength": 3,
+            "minLength": 3,
+            "pattern": "^[A-Z]{3}$"
+          },
+          "price_amount_minor": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "SubscriptionOrderStatus": {
+        "type": "string",
+        "enum": [
+          "created",
+          "pending",
+          "paid",
+          "failed",
+          "canceled",
+          "expired"
+        ]
+      },
       "SubscriptionPlanStatus": {
         "type": "string",
         "description": "订阅计划的闭合管理状态。",
@@ -29533,157 +29684,6 @@
           }
         },
         "additionalProperties": false
-      },
-      "SubscriptionOrderCreateRequest": {
-        "type": "object",
-        "required": [
-          "idempotency_key",
-          "plan_id",
-          "plan_version",
-          "price_provider",
-          "price_currency",
-          "price_amount_minor"
-        ],
-        "properties": {
-          "idempotency_key": {
-            "type": "string",
-            "maxLength": 32,
-            "minLength": 32,
-            "pattern": "^[0-9a-f]{32}$"
-          },
-          "plan_id": {
-            "type": "string",
-            "maxLength": 32,
-            "minLength": 32,
-            "pattern": "^[0-9a-f]{32}$"
-          },
-          "plan_version": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          },
-          "price_provider": {
-            "type": "string",
-            "maxLength": 32,
-            "minLength": 1
-          },
-          "price_currency": {
-            "type": "string",
-            "maxLength": 3,
-            "minLength": 3,
-            "pattern": "^[A-Z]{3}$"
-          },
-          "price_amount_minor": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          }
-        },
-        "additionalProperties": false
-      },
-      "SubscriptionOrder": {
-        "type": "object",
-        "required": [
-          "order_id",
-          "plan_id",
-          "plan_version",
-          "price_provider",
-          "price_currency",
-          "price_amount_minor",
-          "quota_amount",
-          "status",
-          "version",
-          "expires_at",
-          "paid_at",
-          "created_at",
-          "updated_at",
-          "replayed"
-        ],
-        "properties": {
-          "order_id": {
-            "type": "string",
-            "maxLength": 32,
-            "minLength": 32,
-            "pattern": "^[0-9a-f]{32}$"
-          },
-          "plan_id": {
-            "type": "string",
-            "maxLength": 32,
-            "minLength": 32,
-            "pattern": "^[0-9a-f]{32}$"
-          },
-          "plan_version": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          },
-          "price_provider": {
-            "type": "string",
-            "maxLength": 32,
-            "minLength": 1
-          },
-          "price_currency": {
-            "type": "string",
-            "maxLength": 3,
-            "minLength": 3,
-            "pattern": "^[A-Z]{3}$"
-          },
-          "price_amount_minor": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          },
-          "quota_amount": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          },
-          "status": {
-            "$ref": "#/components/schemas/SubscriptionOrderStatus"
-          },
-          "version": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          },
-          "expires_at": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1,
-            "nullable": true
-          },
-          "paid_at": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1,
-            "nullable": true
-          },
-          "created_at": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          },
-          "updated_at": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          },
-          "replayed": {
-            "type": "boolean"
-          }
-        },
-        "additionalProperties": false
-      },
-      "SubscriptionOrderStatus": {
-        "type": "string",
-        "enum": [
-          "created",
-          "pending",
-          "paid",
-          "failed",
-          "canceled",
-          "expired"
-        ]
       },
       "UserSubscriptionStatus": {
         "type": "string",

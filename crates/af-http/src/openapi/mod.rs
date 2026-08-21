@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 147);
+        assert_eq!(document.paths.paths.len(), 149);
         let operation_count = document
             .paths
             .paths
@@ -215,7 +215,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 206);
+        assert_eq!(operation_count, 208);
         assert!(
             document
                 .components
@@ -385,6 +385,8 @@ mod tests {
             "listAdminRedemptionBatches",
             "listAdminSubscriptionPlans",
             "listAdminUserSubscriptions",
+            "listCurrentSubscriptionCatalog",
+            "createCurrentSubscriptionOrder",
             "listMissingAdminModels",
             "listAdminTokens",
             "listAdminUsageLogs",
@@ -455,7 +457,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 354);
+        assert_eq!(schemas.len(), 359);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminDashboardChannelFlow"));
         assert!(schemas.contains_key("AdminDashboardFailure"));
@@ -619,7 +621,12 @@ mod tests {
         assert!(schemas.contains_key("AdminRedemptionBatchDisableResponse"));
         assert!(schemas.contains_key("UserRedemptionRequest"));
         assert!(schemas.contains_key("UserRedemptionResult"));
+        assert!(schemas.contains_key("SubscriptionCatalogPlan"));
+        assert!(schemas.contains_key("SubscriptionCatalogResponse"));
         assert!(schemas.contains_key("SubscriptionCycle"));
+        assert!(schemas.contains_key("SubscriptionOrder"));
+        assert!(schemas.contains_key("SubscriptionOrderCreateRequest"));
+        assert!(schemas.contains_key("SubscriptionOrderStatus"));
         assert!(schemas.contains_key("SubscriptionPlanStatus"));
         assert!(schemas.contains_key("UserSubscriptionStatus"));
         assert!(schemas.contains_key("AdminSubscriptionPlan"));

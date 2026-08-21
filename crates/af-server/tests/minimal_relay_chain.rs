@@ -465,6 +465,14 @@ impl SubscriptionService for RejectSubscriptions {
         Box::pin(async { Err(SubscriptionServiceError::Internal) })
     }
 
+    fn create_order<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _command: af_admin::SubscriptionOrderCreateCommand,
+    ) -> af_admin::SubscriptionCreateOrderFuture<'a> {
+        Box::pin(async { Err(SubscriptionServiceError::Internal) })
+    }
+
     fn list_plans<'a>(
         &'a self,
         _principal: SessionPrincipal,
