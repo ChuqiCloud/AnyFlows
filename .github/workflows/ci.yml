@@ -10,8 +10,8 @@ permissions:
   contents: read
 
 concurrency:
-  # 共享单一 runner 时只保留最新一轮流水线，避免不同 PR 的数据库容器互相抢端口。
-  group: anyflows-ci
+  # 同一 PR 只保留最新一轮；不同 PR 可并行使用已扩容的流水线资源。
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
