@@ -111,9 +111,6 @@ jobs:
     name: Linux amd64 release package
     needs: changes
     if: ${{ needs.changes.outputs.rust == 'true' }}
-    concurrency:
-      group: anyflows-heavy-ci
-      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -221,11 +218,8 @@ jobs:
 
   rust-quality:
     name: Rust quality gates
-    needs: changes
-    if: ${{ needs.changes.outputs.rust == 'true' }}
-    concurrency:
-      group: anyflows-heavy-ci
-      cancel-in-progress: false
+    needs: [changes, release-package]
+    if: ${{ always() && needs.changes.outputs.rust == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -306,11 +300,8 @@ jobs:
 
   msrv:
     name: Minimum supported Rust version
-    needs: changes
-    if: ${{ needs.changes.outputs.rust == 'true' }}
-    concurrency:
-      group: anyflows-heavy-ci
-      cancel-in-progress: false
+    needs: [changes, rust-quality]
+    if: ${{ always() && needs.changes.outputs.rust == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -379,11 +370,8 @@ jobs:
 
   sqlite-migration:
     name: SQLite migration smoke test
-    needs: changes
-    if: ${{ needs.changes.outputs.database == 'true' }}
-    concurrency:
-      group: anyflows-heavy-ci
-      cancel-in-progress: false
+    needs: [changes, msrv]
+    if: ${{ always() && needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -434,11 +422,8 @@ jobs:
 
   postgres-migration:
     name: PostgreSQL migration smoke test
-    needs: changes
-    if: ${{ needs.changes.outputs.database == 'true' }}
-    concurrency:
-      group: anyflows-heavy-ci
-      cancel-in-progress: false
+    needs: [changes, sqlite-migration]
+    if: ${{ always() && needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -512,11 +497,8 @@ jobs:
 
   mysql-migration:
     name: MySQL migration smoke test
-    needs: changes
-    if: ${{ needs.changes.outputs.database == 'true' }}
-    concurrency:
-      group: anyflows-heavy-ci
-      cancel-in-progress: false
+    needs: [changes, postgres-migration]
+    if: ${{ always() && needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -591,11 +573,8 @@ jobs:
 
   cache-redis:
     name: Redis cache smoke test
-    needs: changes
-    if: ${{ needs.changes.outputs.redis == 'true' }}
-    concurrency:
-      group: anyflows-heavy-ci
-      cancel-in-progress: false
+    needs: [changes, mysql-migration]
+    if: ${{ always() && needs.changes.outputs.redis == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
