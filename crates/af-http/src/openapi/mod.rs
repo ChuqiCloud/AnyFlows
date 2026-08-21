@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 146);
+        assert_eq!(document.paths.paths.len(), 147);
         let operation_count = document
             .paths
             .paths
@@ -215,7 +215,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 205);
+        assert_eq!(operation_count, 206);
         assert!(
             document
                 .components
@@ -328,6 +328,7 @@ mod tests {
             "changeUserPassword",
             "updateUserNotificationPreferences",
             "listUserNotifications",
+            "markUserNotificationsRead",
             "createPlaygroundShare",
             "createUserToken",
             "createPlaygroundToken",
@@ -454,7 +455,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 352);
+        assert_eq!(schemas.len(), 354);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminDashboardChannelFlow"));
         assert!(schemas.contains_key("AdminDashboardFailure"));
