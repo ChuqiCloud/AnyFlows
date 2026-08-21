@@ -924,7 +924,7 @@ mod tests {
         else {
             return Err("notification page must exist".into());
         };
-        assert_eq!(page.entries()[0].read_at().is_some(), true);
+        assert!(page.entries()[0].read_at().is_some());
         assert_eq!(page.unread_count(), 0);
         pool.close().await?;
         Ok(())
