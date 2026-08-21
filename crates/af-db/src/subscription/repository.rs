@@ -150,7 +150,7 @@ impl SubscriptionRepository {
                     // 历史管理员计划没有价格事实，绝不能借用默认值后对用户伪装为可售。
                     price.map(|price| Ok((plan_record(plan)?, plan_price_record(price)?)))
                 })
-                .collect()
+                .collect::<Result<Vec<_>, _>>()
         }
         .with_subscriber(NoSubscriber::default());
         match timeout(self.operation_timeout, operation).await {

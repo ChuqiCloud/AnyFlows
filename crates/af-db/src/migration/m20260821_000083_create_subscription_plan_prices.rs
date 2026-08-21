@@ -2,17 +2,18 @@ use sea_orm_migration::prelude::*;
 
 use crate::migration::iden::{subscription_plan_prices, subscription_plans};
 
-use super::{auto_id, table, timestamp};
+use super::schema;
 
 /// 创建订阅计划不可变价格事实表。
+#[derive(DeriveMigrationName)]
 pub struct Migration;
 
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
-    async fn up(&self, manager: &SchemaManager<'_>) -> Result<(), DbErr> {
-        let mut statement = table(manager, subscription_plan_prices::Entity);
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        let mut statement = schema::table(manager, subscription_plan_prices::Entity);
         statement
-            .col(auto_id(subscription_plan_prices::Column::Id))
+            .col(schema::auto_id(subscription_plan_prices::Column::Id))
             .col(
                 ColumnDef::new(subscription_plan_prices::Column::PlanId)
                     .big_integer()
@@ -33,7 +34,7 @@ impl MigrationTrait for Migration {
                     .big_integer()
                     .not_null(),
             )
-            .col(timestamp(
+            .col(schema::timestamp(
                 manager,
                 subscription_plan_prices::Column::CreatedAt,
             ))
@@ -64,7 +65,7 @@ impl MigrationTrait for Migration {
             .await
     }
 
-    async fn down(&self, manager: &SchemaManager<'_>) -> Result<(), DbErr> {
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
             .drop_table(
                 Table::drop()
