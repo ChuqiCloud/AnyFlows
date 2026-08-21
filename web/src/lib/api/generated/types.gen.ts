@@ -1871,6 +1871,16 @@ export type SetupRequest = {
 export type SetupStatusResponse = {
     setup_required: boolean;
 };
+export type SubscriptionCatalogPlan = {
+    plan_id: string;
+    name: string;
+    quota_amount: number;
+    cycle: SubscriptionCycle;
+    plan_version: number;
+    price_provider: string;
+    price_currency: string;
+    price_amount_minor: number;
+};
 export type SubscriptionCycle = 'daily' | 'weekly' | 'monthly' | 'yearly';
 export type SubscriptionPlanStatus = 'active' | 'disabled';
 export type UsageLogOperation = 'chat' | 'responses' | 'responses_compact' | 'embedding' | 'image' | 'audio' | 'rerank' | 'video' | 'count_tokens';
@@ -2002,16 +2012,6 @@ export type UserSubscriptionListResponse = {
 };
 export type SubscriptionCatalogResponse = {
     plans: Array<SubscriptionCatalogPlan>;
-};
-export type SubscriptionCatalogPlan = {
-    plan_id: string;
-    name: string;
-    quota_amount: number;
-    cycle: SubscriptionCycle;
-    plan_version: number;
-    price_provider: string;
-    price_currency: string;
-    price_amount_minor: number;
 };
 export type SubscriptionOrderCreateRequest = {
     idempotency_key: string;

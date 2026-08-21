@@ -28725,6 +28725,62 @@
         },
         "additionalProperties": false
       },
+      "SubscriptionCatalogPlan": {
+        "type": "object",
+        "required": [
+          "plan_id",
+          "name",
+          "quota_amount",
+          "cycle",
+          "plan_version",
+          "price_provider",
+          "price_currency",
+          "price_amount_minor"
+        ],
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1
+          },
+          "quota_amount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "cycle": {
+            "$ref": "#/components/schemas/SubscriptionCycle"
+          },
+          "plan_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "price_provider": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1
+          },
+          "price_currency": {
+            "type": "string",
+            "maxLength": 3,
+            "minLength": 3,
+            "pattern": "^[A-Z]{3}$"
+          },
+          "price_amount_minor": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
       "SubscriptionCycle": {
         "type": "string",
         "description": "HTTP 契约使用的闭合订阅周期。",
@@ -29474,62 +29530,6 @@
               "$ref": "#/components/schemas/SubscriptionCatalogPlan"
             },
             "maxItems": 100
-          }
-        },
-        "additionalProperties": false
-      },
-      "SubscriptionCatalogPlan": {
-        "type": "object",
-        "required": [
-          "plan_id",
-          "name",
-          "quota_amount",
-          "cycle",
-          "plan_version",
-          "price_provider",
-          "price_currency",
-          "price_amount_minor"
-        ],
-        "properties": {
-          "plan_id": {
-            "type": "string",
-            "maxLength": 32,
-            "minLength": 32,
-            "pattern": "^[0-9a-f]{32}$"
-          },
-          "name": {
-            "type": "string",
-            "maxLength": 80,
-            "minLength": 1
-          },
-          "quota_amount": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          },
-          "cycle": {
-            "$ref": "#/components/schemas/SubscriptionCycle"
-          },
-          "plan_version": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          },
-          "price_provider": {
-            "type": "string",
-            "maxLength": 32,
-            "minLength": 1
-          },
-          "price_currency": {
-            "type": "string",
-            "maxLength": 3,
-            "minLength": 3,
-            "pattern": "^[A-Z]{3}$"
-          },
-          "price_amount_minor": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
           }
         },
         "additionalProperties": false
