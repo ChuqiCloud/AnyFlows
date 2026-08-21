@@ -283,12 +283,12 @@ impl fmt::Debug for UserSubscriptionWindowAdvance {
 
 /// 已持久化订阅计划的不可变价格快照。
 pub struct SubscriptionPlanPriceRecord {
-    database_id: i64,
-    plan_database_id: i64,
-    provider: String,
-    currency: String,
-    amount_minor: i64,
-    created_at: u64,
+    pub(super) database_id: i64,
+    pub(super) plan_database_id: i64,
+    pub(super) provider: String,
+    pub(super) currency: String,
+    pub(super) amount_minor: i64,
+    pub(super) created_at: u64,
 }
 
 impl SubscriptionPlanPriceRecord {
@@ -394,24 +394,24 @@ impl fmt::Debug for SubscriptionOrderCreate {
 
 /// 已持久化的订阅购买订单快照。
 pub struct SubscriptionOrderRecord {
-    database_id: i64,
-    order_id: SubscriptionOrderId,
-    request_id: SubscriptionOrderRequestId,
-    user_id: UserId,
-    plan_id: SubscriptionPlanId,
-    plan_version: u64,
-    provider: String,
-    currency: String,
-    amount_minor: i64,
-    quota_amount: Quota,
-    status: SubscriptionOrderStatus,
-    version: u64,
-    provider_order_id: Option<String>,
-    expires_at: Option<u64>,
-    paid_at: Option<u64>,
-    closed_at: Option<u64>,
-    created_at: u64,
-    updated_at: u64,
+    pub(super) database_id: i64,
+    pub(super) order_id: SubscriptionOrderId,
+    pub(super) request_id: SubscriptionOrderRequestId,
+    pub(super) user_id: UserId,
+    pub(super) plan_id: SubscriptionPlanId,
+    pub(super) plan_version: u64,
+    pub(super) provider: String,
+    pub(super) currency: String,
+    pub(super) amount_minor: i64,
+    pub(super) quota_amount: Quota,
+    pub(super) status: SubscriptionOrderStatus,
+    pub(super) version: u64,
+    pub(super) provider_order_id: Option<String>,
+    pub(super) expires_at: Option<u64>,
+    pub(super) paid_at: Option<u64>,
+    pub(super) closed_at: Option<u64>,
+    pub(super) created_at: u64,
+    pub(super) updated_at: u64,
 }
 
 impl SubscriptionOrderRecord {
