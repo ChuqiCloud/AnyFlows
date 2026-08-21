@@ -122,12 +122,16 @@
     },
     "performance": {
       "title": "性能健康",
-      "subtitle": "缺失耗时保持无样本，不按零毫秒计算",
+      "subtitle": "基于已持久化耗时与诊断阈值，不代表实时探活或 SLA",
       "firstToken": "平均首字耗时",
       "duration": "平均总耗时",
       "coverage": "覆盖 {{rate}} · {{count}} 个样本",
       "slow": "≥ {{threshold}}：{{count}} 个",
-      "noSamples": "暂无请求样本"
+      "belowThreshold": "{{rate}} 低于阈值",
+      "unsampled": "未采样 {{count}} 个",
+      "distribution": "低于阈值 {{below}} 个，慢请求 {{slow}} 个，未采样 {{unsampled}} 个",
+      "noSamples": "暂无耗时样本",
+      "noRequests": "当前时段无请求"
     },
     "composition": {
       "title": "请求构成",

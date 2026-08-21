@@ -3,15 +3,12 @@ import { useTranslation } from 'react-i18next'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import type { AdminDashboardResponse } from '@/lib/api/generated/types.gen'
+import { getDashboardPerformanceMetrics, type DashboardTimingMetric } from './dashboard-performance-metrics'
 
 type DashboardPerformanceProps = {
   dashboard: AdminDashboardResponse
   formatNumber: (value: number) => string
   formatPercent: (value: number) => string
-}
-
-function ratio(value: number, total: number) {
-  return total > 0 ? value / total : null
 }
 
 function formatMilliseconds(value: number | null | undefined, formatNumber: (value: number) => string) {
@@ -24,12 +21,22 @@ type SampleRowProps = {
   icon: typeof Gauge
   label: string
   average: string
-  sampleHint: string
-  coverage: number | null
-  slowHint: string
+  threshold: string
+  metric: DashboardTimingMetric
+  formatNumber: (value: number) => string
+  formatPercent: (value: number) => string
 }
 
-function SampleRow({ icon: Icon, label, average, sampleHint, coverage, slowHint }: SampleRowProps) {
+function SampleRow({ icon: Icon, label, average, threshold, metric, formatNumber, formatPercent }: SampleRowProps) {
+  const { t } = useTranslation()
+  const distributionLabel = metric.sampleCount === 0
+    ? t('dashboard.performance.noSamples')
+    : t('dashboard.performance.distribution', {
+        below: formatNumber(metric.belowThresholdCount),
+        slow: formatNumber(metric.slowCount),
+        unsampled: formatNumber(metric.unsampledCount),
+      })
+
   return (
     <div className="py-3 first:pt-0 last:pb-0">
       <div className="flex items-start justify-between gap-3">
@@ -39,12 +46,39 @@ function SampleRow({ icon: Icon, label, average, sampleHint, coverage, slowHint 
         </div>
         <span className="shrink-0 text-sm font-semibold tabular-nums">{average}</span>
       </div>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-3" aria-hidden="true">
-        <div className="h-full rounded-full bg-success" style={{ width: `${(coverage ?? 0) * 100}%` }} />
+      <div
+        className="mt-2 flex h-1.5 overflow-hidden rounded-full bg-surface-3"
+        role="img"
+        aria-label={distributionLabel}
+      >
+        <span className="h-full bg-success" style={{ width: `${metric.belowThresholdShare * 100}%` }} />
+        <span className="h-full bg-warning" style={{ width: `${metric.slowShare * 100}%` }} />
       </div>
-      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[0.6875rem] leading-4 text-muted-foreground">
-        <span>{sampleHint}</span>
-        <span>{slowHint}</span>
+      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[0.6875rem] leading-4 text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="size-1.5 rounded-full bg-success" aria-hidden="true" />
+          {metric.belowThresholdRate === null
+            ? t('dashboard.performance.noSamples')
+            : t('dashboard.performance.belowThreshold', { rate: formatPercent(metric.belowThresholdRate) })}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="size-1.5 rounded-full bg-warning" aria-hidden="true" />
+          {t('dashboard.performance.slow', { count: formatNumber(metric.slowCount), threshold })}
+        </span>
+        {metric.unsampledCount > 0 && (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="size-1.5 rounded-full bg-surface-3" aria-hidden="true" />
+            {t('dashboard.performance.unsampled', { count: formatNumber(metric.unsampledCount) })}
+          </span>
+        )}
+      </div>
+      <div className="mt-1 text-[0.6875rem] leading-4 text-muted-foreground">
+        {metric.sampleCoverage === null
+          ? t('dashboard.performance.noRequests')
+          : t('dashboard.performance.coverage', {
+              rate: formatPercent(metric.sampleCoverage),
+              count: formatNumber(metric.sampleCount),
+            })}
       </div>
     </div>
   )
@@ -54,8 +88,7 @@ function SampleRow({ icon: Icon, label, average, sampleHint, coverage, slowHint 
 export function DashboardPerformance({ dashboard, formatNumber, formatPercent }: DashboardPerformanceProps) {
   const { t } = useTranslation()
   const performance = dashboard.performance
-  const firstTokenCoverage = ratio(performance.first_token_sample_count, dashboard.request_count)
-  const durationCoverage = ratio(performance.duration_sample_count, dashboard.request_count)
+  const metrics = getDashboardPerformanceMetrics(dashboard)
 
   return (
     <Card>
@@ -68,33 +101,19 @@ export function DashboardPerformance({ dashboard, formatNumber, formatPercent }:
           icon={Gauge}
           label={t('dashboard.performance.firstToken')}
           average={formatMilliseconds(performance.average_first_token_ms, formatNumber)}
-          coverage={firstTokenCoverage}
-          sampleHint={firstTokenCoverage === null
-            ? t('dashboard.performance.noSamples')
-            : t('dashboard.performance.coverage', {
-                rate: formatPercent(firstTokenCoverage),
-                count: formatNumber(performance.first_token_sample_count),
-              })}
-          slowHint={t('dashboard.performance.slow', {
-            count: formatNumber(performance.slow_first_token_count),
-            threshold: formatMilliseconds(performance.slow_first_token_threshold_ms, formatNumber),
-          })}
+          threshold={formatMilliseconds(performance.slow_first_token_threshold_ms, formatNumber)}
+          metric={metrics.firstToken}
+          formatNumber={formatNumber}
+          formatPercent={formatPercent}
         />
         <SampleRow
           icon={TimerReset}
           label={t('dashboard.performance.duration')}
           average={formatMilliseconds(performance.average_duration_ms, formatNumber)}
-          coverage={durationCoverage}
-          sampleHint={durationCoverage === null
-            ? t('dashboard.performance.noSamples')
-            : t('dashboard.performance.coverage', {
-                rate: formatPercent(durationCoverage),
-                count: formatNumber(performance.duration_sample_count),
-              })}
-          slowHint={t('dashboard.performance.slow', {
-            count: formatNumber(performance.slow_request_count),
-            threshold: formatMilliseconds(performance.slow_request_threshold_ms, formatNumber),
-          })}
+          threshold={formatMilliseconds(performance.slow_request_threshold_ms, formatNumber)}
+          metric={metrics.duration}
+          formatNumber={formatNumber}
+          formatPercent={formatPercent}
         />
       </CardContent>
     </Card>
