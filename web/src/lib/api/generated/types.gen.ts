@@ -3007,7 +3007,6 @@ export type CreateCurrentSubscriptionOrderErrors = {
 export type CreateCurrentSubscriptionOrderError = CreateCurrentSubscriptionOrderErrors[keyof CreateCurrentSubscriptionOrderErrors];
 export type CreateCurrentSubscriptionOrderResponses = {
     200: SubscriptionOrder;
-    201: SubscriptionOrder;
 };
 export type CreateCurrentSubscriptionOrderResponse = CreateCurrentSubscriptionOrderResponses[keyof CreateCurrentSubscriptionOrderResponses];
 export type RequestPasswordResetData = {
