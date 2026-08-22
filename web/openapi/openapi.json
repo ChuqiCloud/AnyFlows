@@ -25337,7 +25337,8 @@
         "type": "string",
         "enum": [
           "balance_alert",
-          "subscription_balance_alert"
+          "subscription_balance_alert",
+          "subscription_purchase"
         ]
       },
       "OAuthLoginExchangeRequest": {

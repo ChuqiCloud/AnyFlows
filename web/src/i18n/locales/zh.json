@@ -5311,7 +5311,8 @@
       "loadOlder": "加载更早记录",
       "kind": {
         "balance_alert": "余额预警",
-        "subscription_balance_alert": "订阅窗口预警"
+        "subscription_balance_alert": "订阅窗口预警",
+        "subscription_purchase": "订阅购买确认"
       },
       "state": {
         "queued": "排队中",
@@ -5324,6 +5325,7 @@
       },
       "balanceDetail": "观测额度 {{observed}}，阈值 {{threshold}}",
       "subscriptionDetail": "已用 {{used}} / {{amount}}，阈值 {{threshold}}%",
+      "purchaseDetail": "订阅购买确认已记录",
       "meta": "{{time}} · 尝试 {{attempts}} 次 · #{{id}}"
     },
     "actions": {

@@ -1256,7 +1256,7 @@ export type ModelCatalogTokenPrices = {
 };
 export type NotificationChannel = 'email';
 export type NotificationDeliveryState = 'queued' | 'accepted' | 'failed' | 'canceled';
-export type NotificationKind = 'balance_alert' | 'subscription_balance_alert';
+export type NotificationKind = 'balance_alert' | 'subscription_balance_alert' | 'subscription_purchase';
 export type OAuthLoginExchangeRequest = {
     ticket: string;
 };

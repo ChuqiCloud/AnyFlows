@@ -8,7 +8,8 @@ use std::sync::{
 
 use af_domain::{
     Quota, SubscriptionCycle, SubscriptionOrderId, SubscriptionOrderRequestId,
-    SubscriptionOrderStatus, SubscriptionPlanId, SubscriptionPlanStatus, SubscriptionWindow,
+    SubscriptionOrderStatus, SubscriptionPaymentEventType, SubscriptionPlanId,
+    SubscriptionPlanStatus, SubscriptionWindow,
     SubscriptionWindowAdvance as DomainSubscriptionWindowAdvance, UserId, UserSubscriptionId,
     UserSubscriptionStatus,
 };
@@ -24,15 +25,17 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 use crate::{
     DatabasePool,
     entity::{
-        SensitiveString, subscription_orders, subscription_plan_prices, subscription_plans,
-        user_subscriptions, users,
+        SensitiveString, subscription_orders, subscription_payment_events,
+        subscription_plan_prices, subscription_plans, user_subscriptions, users,
     },
+    notification::UserNotificationWrite,
 };
 
 use super::types::{valid_currency, valid_name, valid_price_text};
 use super::{
     MAX_SUBSCRIPTION_PAGE_SIZE, SubscriptionOrderCreate, SubscriptionOrderCreateOutcome,
-    SubscriptionOrderRecord, SubscriptionPlanCreateOutcome, SubscriptionPlanDisable,
+    SubscriptionOrderRecord, SubscriptionPaymentEventOutcome, SubscriptionPaymentEventRejection,
+    SubscriptionPaymentEventWrite, SubscriptionPlanCreateOutcome, SubscriptionPlanDisable,
     SubscriptionPlanDisableOutcome, SubscriptionPlanPageRecord, SubscriptionPlanPriceRecord,
     SubscriptionPlanRecord, SubscriptionPlanWrite, SubscriptionRepositoryConfigError,
     SubscriptionRepositoryError, SubscriptionResetDueCursor, UserSubscriptionBind,
@@ -291,6 +294,29 @@ impl SubscriptionRepository {
         Ok(outcome)
     }
 
+    /// 在单一事务内接收已验签事件、推进订单并绑定用户订阅。
+    pub async fn accept_verified_event(
+        &self,
+        write: &SubscriptionPaymentEventWrite,
+    ) -> Result<SubscriptionPaymentEventOutcome, SubscriptionRepositoryError> {
+        let operation = self
+            .accept_verified_event_inner(write)
+            .with_subscriber(NoSubscriber::default());
+        let outcome = match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result.map_err(internal)?,
+            Err(_) => return Err(internal(SubscriptionRepositoryError::OutcomeUnknown)),
+        };
+        #[cfg(test)]
+        if matches!(&outcome, SubscriptionPaymentEventOutcome::Applied { .. })
+            && self
+                .outcome_unknown_after_commit
+                .swap(false, Ordering::AcqRel)
+        {
+            return Err(internal(SubscriptionRepositoryError::OutcomeUnknown));
+        }
+        Ok(outcome)
+    }
+
     /// 通过订阅版本和观测窗口 CAS 推进到包含扫描时刻的新窗口。
     pub async fn advance_user_subscription_window(
         &self,
@@ -415,6 +441,8 @@ impl SubscriptionRepository {
             idempotency_key: Set(create.request_id.persistence_key()),
             version: Set(1),
             provider_order_id: Set(None),
+            trade_no: Set(None),
+            payment_method: Set(None),
             expires_at: Set(expires_at),
             paid_at: Set(None),
             closed_at: Set(None),
@@ -682,6 +710,43 @@ impl SubscriptionRepository {
         Ok(SubscriptionPlanDisableOutcome::Applied(record))
     }
 
+    async fn accept_verified_event_inner(
+        &self,
+        write: &SubscriptionPaymentEventWrite,
+    ) -> Result<SubscriptionPaymentEventOutcome, SubscriptionRepositoryError> {
+        let Some(preloaded) = load_order_by_key(self.pool.connection(), write.order_id).await?
+        else {
+            return Ok(SubscriptionPaymentEventOutcome::NotFound);
+        };
+        if let Some(existing) = load_event_collision(self.pool.connection(), write).await? {
+            return classify_event_collision(self.pool.connection(), existing, &preloaded, write)
+                .await;
+        }
+
+        let transaction = begin(&self.pool).await?;
+        let result = accept_event_in_transaction(&transaction, preloaded.user_id, write).await;
+        match result {
+            Ok(outcome) => {
+                commit(transaction).await?;
+                Ok(outcome)
+            }
+            Err(TransactionWriteError::UniqueConflict) => {
+                rollback(transaction).await?;
+                let order = load_order_by_key(self.pool.connection(), write.order_id)
+                    .await?
+                    .ok_or(SubscriptionRepositoryError::Invariant)?;
+                let existing = load_event_collision(self.pool.connection(), write)
+                    .await?
+                    .ok_or(SubscriptionRepositoryError::Invariant)?;
+                classify_event_collision(self.pool.connection(), existing, &order, write).await
+            }
+            Err(TransactionWriteError::Repository(error)) => {
+                rollback(transaction).await?;
+                Err(error)
+            }
+        }
+    }
+
     async fn bind_user_inner(
         &self,
         bind: &UserSubscriptionBind,
@@ -879,6 +944,494 @@ impl SubscriptionRepository {
     }
 }
 
+enum TransactionWriteError {
+    UniqueConflict,
+    Repository(SubscriptionRepositoryError),
+}
+
+impl From<SubscriptionRepositoryError> for TransactionWriteError {
+    fn from(error: SubscriptionRepositoryError) -> Self {
+        Self::Repository(error)
+    }
+}
+
+async fn accept_event_in_transaction(
+    transaction: &DatabaseTransaction,
+    preloaded_user_id: UserId,
+    write: &SubscriptionPaymentEventWrite,
+) -> Result<SubscriptionPaymentEventOutcome, TransactionWriteError> {
+    let user = lock_user(transaction, preloaded_user_id)
+        .await?
+        .ok_or(SubscriptionRepositoryError::Invariant)?;
+    let Some(order_model) = lock_order(transaction, write.order_id).await? else {
+        return Ok(SubscriptionPaymentEventOutcome::NotFound);
+    };
+    let order = subscription_order_record(order_model.clone())?;
+    if order.user_id != preloaded_user_id {
+        return Err(SubscriptionRepositoryError::Invariant.into());
+    }
+    if let Some(existing) = load_event_collision(transaction, write).await? {
+        return classify_event_collision(transaction, existing, &order, write)
+            .await
+            .map_err(Into::into);
+    }
+
+    let received_at = to_database_time(write.received_at)?;
+    let inserted = subscription_payment_events::ActiveModel {
+        event_key: Set(write.event_id.persistence_key()),
+        order_id: Set(order.database_id),
+        provider: Set(write.provider.clone()),
+        provider_event_id: Set(SensitiveString::from(write.provider_event_id.clone())),
+        trade_no: Set(write.trade_no.clone().map(SensitiveString::from)),
+        amount_minor: Set(write.amount_minor),
+        currency: Set(write.currency.clone()),
+        payment_method: Set(write.payment_method.clone()),
+        event_type: Set(write.event_type.code()),
+        signature_key_fingerprint: Set(SensitiveString::from(hex_digest(
+            write.signature_key_fingerprint,
+        ))),
+        payload_sha256: Set(SensitiveString::from(hex_digest(write.payload_sha256))),
+        received_at: Set(received_at),
+        processed_at: Set(None),
+        created_at: Set(received_at),
+        ..Default::default()
+    }
+    .insert(transaction)
+    .await;
+    let inserted = match inserted {
+        Ok(model) => model,
+        Err(error) if is_event_unique_conflict(&error) => {
+            return Err(TransactionWriteError::UniqueConflict);
+        }
+        Err(_) => return Err(SubscriptionRepositoryError::Query.into()),
+    };
+
+    if write.provider != order.provider {
+        return Ok(record_unprocessed(
+            order,
+            SubscriptionPaymentEventRejection::ProviderMismatch,
+        ));
+    }
+    if write.amount_minor != Some(order.amount_minor) {
+        return Ok(record_unprocessed(
+            order,
+            SubscriptionPaymentEventRejection::AmountMismatch,
+        ));
+    }
+    if write.currency.as_deref() != Some(order.currency.as_str()) {
+        return Ok(record_unprocessed(
+            order,
+            SubscriptionPaymentEventRejection::CurrencyMismatch,
+        ));
+    }
+    if order
+        .payment_method
+        .as_deref()
+        .is_some_and(|expected| write.payment_method.as_deref() != Some(expected))
+    {
+        return Ok(record_unprocessed(
+            order,
+            SubscriptionPaymentEventRejection::PaymentMethodMismatch,
+        ));
+    }
+    if write.received_at < order.created_at {
+        return Ok(record_unprocessed(
+            order,
+            SubscriptionPaymentEventRejection::TimingConflict,
+        ));
+    }
+    if order
+        .trade_no
+        .as_deref()
+        .zip(write.trade_no.as_deref())
+        .is_some_and(|(existing, incoming)| existing != incoming)
+    {
+        return Ok(record_unprocessed(
+            order,
+            SubscriptionPaymentEventRejection::TradeNumberConflict,
+        ));
+    }
+
+    if !order.status.is_open() {
+        if terminal_event_matches(&order, write) {
+            mark_event_processed_at(transaction, inserted.id, processing_time(received_at)).await?;
+            let subscription = load_subscription_for_order(transaction, &order).await?;
+            return Ok(SubscriptionPaymentEventOutcome::Acknowledged {
+                order,
+                subscription,
+            });
+        }
+        return Ok(record_unprocessed(
+            order,
+            SubscriptionPaymentEventRejection::TerminalConflict,
+        ));
+    }
+
+    let processed_at = processing_time(received_at);
+    let subscription = if write.event_type == SubscriptionPaymentEventType::Succeeded {
+        let Some(plan_model) = lock_plan(transaction, order.plan_id).await? else {
+            return Err(SubscriptionRepositoryError::Invariant.into());
+        };
+        let plan = plan_record(plan_model)?;
+        if plan.quota_amount() != order.quota_amount {
+            return Err(SubscriptionRepositoryError::Conflict.into());
+        }
+        bind_paid_order(transaction, &order, &plan, write.received_at).await?
+    } else {
+        None
+    };
+
+    transition_order(transaction, &order_model, write, received_at, processed_at).await?;
+    mark_event_processed_at(transaction, inserted.id, processed_at).await?;
+    crate::notification::insert_queued(
+        transaction,
+        &UserNotificationWrite::subscription_purchase(
+            user.id,
+            order.order_id.persistence_key(),
+            order_status_label(write.event_type),
+            processed_at,
+        ),
+    )
+    .await
+    .map_err(|_| SubscriptionRepositoryError::Query)?;
+    let updated = load_order_by_database_id(transaction, order.database_id)
+        .await?
+        .ok_or(SubscriptionRepositoryError::Invariant)?;
+    Ok(SubscriptionPaymentEventOutcome::Applied {
+        order: updated,
+        subscription,
+    })
+}
+
+async fn bind_paid_order(
+    transaction: &DatabaseTransaction,
+    order: &SubscriptionOrderRecord,
+    plan: &SubscriptionPlanRecord,
+    bound_at: u64,
+) -> Result<Option<UserSubscriptionRecord>, SubscriptionRepositoryError> {
+    let subscription_id =
+        UserSubscriptionId::from_persistence_key(&order.order_id.persistence_key())
+            .map_err(|_| SubscriptionRepositoryError::Invariant)?;
+    let window = SubscriptionWindow::initial(plan.cycle(), bound_at)
+        .map_err(|_| SubscriptionRepositoryError::Invariant)?;
+    let bind = UserSubscriptionBind::new(
+        subscription_id,
+        order.user_id,
+        order.plan_id,
+        window.started_at(),
+        window.ends_at(),
+        bound_at,
+    )
+    .map_err(|_| SubscriptionRepositoryError::Invariant)?;
+    if let Some((model, existing_plan)) = lock_subscription(transaction, subscription_id).await? {
+        let existing_plan = plan_record(existing_plan)?;
+        let current = subscription_record(model, &existing_plan)?;
+        if current.matches_bind(&bind) {
+            return Ok(Some(current));
+        }
+        return Err(SubscriptionRepositoryError::Conflict);
+    }
+
+    let bound_at = to_database_time(bind.bound_at)?;
+    let inserted = user_subscriptions::ActiveModel {
+        subscription_key: Set(SensitiveString::from(
+            bind.subscription_id.persistence_key(),
+        )),
+        user_id: Set(bind.user_id.get()),
+        plan_id: Set(plan.database_id()),
+        plan_version: Set(
+            i64::try_from(plan.version()).map_err(|_| SubscriptionRepositoryError::Invariant)?
+        ),
+        status: Set(UserSubscriptionStatus::Active.code()),
+        quota_amount: Set(plan.quota_amount().units()),
+        quota_used: Set(0),
+        cycle: Set(plan.cycle().code()),
+        window_started_at: Set(to_database_time(bind.window_started_at)?),
+        window_ends_at: Set(to_database_time(bind.window_ends_at)?),
+        version: Set(1),
+        bound_at: Set(bound_at),
+        status_changed_at: Set(bound_at),
+        created_at: Set(bound_at),
+        updated_at: Set(bound_at),
+        ..Default::default()
+    }
+    .insert(transaction)
+    .await;
+    let inserted = match inserted {
+        Ok(model) => model,
+        Err(error) if is_subscription_unique_conflict(&error) => {
+            return Err(SubscriptionRepositoryError::Conflict);
+        }
+        Err(_) => return Err(SubscriptionRepositoryError::Query),
+    };
+    subscription_record(inserted, plan).map(Some)
+}
+
+async fn load_subscription_for_order(
+    transaction: &DatabaseTransaction,
+    order: &SubscriptionOrderRecord,
+) -> Result<Option<UserSubscriptionRecord>, SubscriptionRepositoryError> {
+    let subscription_id =
+        UserSubscriptionId::from_persistence_key(&order.order_id.persistence_key())
+            .map_err(|_| SubscriptionRepositoryError::Invariant)?;
+    let Some((model, plan)) = lock_subscription(transaction, subscription_id).await? else {
+        return Ok(None);
+    };
+    subscription_record(model, &plan_record(plan)?).map(Some)
+}
+
+fn record_unprocessed(
+    order: SubscriptionOrderRecord,
+    reason: SubscriptionPaymentEventRejection,
+) -> SubscriptionPaymentEventOutcome {
+    SubscriptionPaymentEventOutcome::RecordedUnprocessed { order, reason }
+}
+
+fn terminal_event_matches(
+    order: &SubscriptionOrderRecord,
+    write: &SubscriptionPaymentEventWrite,
+) -> bool {
+    order.status == write.event_type.target_status()
+        && (order.status != SubscriptionOrderStatus::Paid
+            || order.trade_no.as_deref() == write.trade_no.as_deref())
+}
+
+fn order_status_label(event_type: SubscriptionPaymentEventType) -> String {
+    match event_type {
+        SubscriptionPaymentEventType::Succeeded => "paid",
+        SubscriptionPaymentEventType::Failed => "failed",
+        SubscriptionPaymentEventType::Expired => "expired",
+    }
+    .to_owned()
+}
+
+async fn transition_order(
+    transaction: &DatabaseTransaction,
+    order: &subscription_orders::Model,
+    write: &SubscriptionPaymentEventWrite,
+    received_at: TimeDateTimeWithTimeZone,
+    updated_at: TimeDateTimeWithTimeZone,
+) -> Result<(), SubscriptionRepositoryError> {
+    let next_version = order
+        .version
+        .checked_add(1)
+        .ok_or(SubscriptionRepositoryError::Invariant)?;
+    let target = write.event_type.target_status();
+    let paid_at = (target == SubscriptionOrderStatus::Paid).then_some(received_at);
+    let closed_at = (target != SubscriptionOrderStatus::Paid).then_some(received_at);
+    let update = subscription_orders::Entity::update_many()
+        .filter(subscription_orders::Column::Id.eq(order.id))
+        .filter(subscription_orders::Column::Version.eq(order.version))
+        .filter(subscription_orders::Column::Status.is_in([
+            SubscriptionOrderStatus::Created.code(),
+            SubscriptionOrderStatus::Pending.code(),
+        ]))
+        .col_expr(
+            subscription_orders::Column::Status,
+            Expr::value(target.code()),
+        )
+        .col_expr(
+            subscription_orders::Column::TradeNo,
+            Expr::value(write.trade_no.clone().map(SensitiveString::from)),
+        )
+        .col_expr(
+            subscription_orders::Column::PaymentMethod,
+            Expr::value(write.payment_method.clone()),
+        )
+        .col_expr(
+            subscription_orders::Column::Version,
+            Expr::value(next_version),
+        )
+        .col_expr(subscription_orders::Column::PaidAt, Expr::value(paid_at))
+        .col_expr(
+            subscription_orders::Column::ClosedAt,
+            Expr::value(closed_at),
+        )
+        .col_expr(
+            subscription_orders::Column::UpdatedAt,
+            Expr::value(updated_at),
+        )
+        .exec(transaction)
+        .await
+        .map_err(|_| SubscriptionRepositoryError::Query)?;
+    if update.rows_affected != 1 {
+        return Err(SubscriptionRepositoryError::Conflict);
+    }
+    Ok(())
+}
+
+async fn mark_event_processed_at(
+    transaction: &DatabaseTransaction,
+    event_id: i64,
+    processed_at: TimeDateTimeWithTimeZone,
+) -> Result<(), SubscriptionRepositoryError> {
+    let update = subscription_payment_events::Entity::update_many()
+        .filter(subscription_payment_events::Column::Id.eq(event_id))
+        .filter(subscription_payment_events::Column::ProcessedAt.is_null())
+        .col_expr(
+            subscription_payment_events::Column::ProcessedAt,
+            Expr::value(processed_at),
+        )
+        .exec(transaction)
+        .await
+        .map_err(|_| SubscriptionRepositoryError::Query)?;
+    if update.rows_affected != 1 {
+        return Err(SubscriptionRepositoryError::Invariant);
+    }
+    Ok(())
+}
+
+fn processing_time(received_at: TimeDateTimeWithTimeZone) -> TimeDateTimeWithTimeZone {
+    TimeDateTimeWithTimeZone::now_utc().max(received_at)
+}
+
+struct StoredPaymentEvent {
+    order_database_id: i64,
+    provider: String,
+    provider_event_id: String,
+    trade_no: Option<String>,
+    amount_minor: Option<i64>,
+    currency: Option<String>,
+    payment_method: Option<String>,
+    event_type: SubscriptionPaymentEventType,
+    signature_key_fingerprint: String,
+    payload_sha256: String,
+}
+
+impl StoredPaymentEvent {
+    fn try_from_model(
+        model: subscription_payment_events::Model,
+    ) -> Result<Self, SubscriptionRepositoryError> {
+        if model.id <= 0 || model.order_id <= 0 {
+            return Err(SubscriptionRepositoryError::Invariant);
+        }
+        Ok(Self {
+            order_database_id: model.order_id,
+            provider: model.provider,
+            provider_event_id: model.provider_event_id.as_str().to_owned(),
+            trade_no: model.trade_no.map(|value| value.as_str().to_owned()),
+            amount_minor: model.amount_minor,
+            currency: model.currency,
+            payment_method: model.payment_method,
+            event_type: SubscriptionPaymentEventType::try_from(model.event_type)
+                .map_err(|_| SubscriptionRepositoryError::Invariant)?,
+            signature_key_fingerprint: model.signature_key_fingerprint.as_str().to_owned(),
+            payload_sha256: model.payload_sha256.as_str().to_owned(),
+        })
+    }
+
+    fn matches(
+        &self,
+        order: &SubscriptionOrderRecord,
+        write: &SubscriptionPaymentEventWrite,
+    ) -> bool {
+        self.order_database_id == order.database_id
+            && self.provider == write.provider
+            && self.provider_event_id == write.provider_event_id
+            && self.trade_no == write.trade_no
+            && self.amount_minor == write.amount_minor
+            && self.currency == write.currency
+            && self.payment_method == write.payment_method
+            && self.event_type == write.event_type
+            && self.signature_key_fingerprint == hex_digest(write.signature_key_fingerprint)
+            && self.payload_sha256 == hex_digest(write.payload_sha256)
+    }
+}
+
+async fn load_event_collision<C: ConnectionTrait>(
+    connection: &C,
+    write: &SubscriptionPaymentEventWrite,
+) -> Result<Option<StoredPaymentEvent>, SubscriptionRepositoryError> {
+    let models = subscription_payment_events::Entity::find()
+        .filter(
+            Condition::any()
+                .add(
+                    subscription_payment_events::Column::EventKey
+                        .eq(write.event_id.persistence_key()),
+                )
+                .add(
+                    Condition::all()
+                        .add(
+                            subscription_payment_events::Column::Provider
+                                .eq(write.provider.clone()),
+                        )
+                        .add(
+                            subscription_payment_events::Column::ProviderEventId
+                                .eq(SensitiveString::from(write.provider_event_id.clone())),
+                        ),
+                ),
+        )
+        .all(connection)
+        .await
+        .map_err(|_| SubscriptionRepositoryError::Query)?;
+    if models.len() > 1 {
+        return Err(SubscriptionRepositoryError::Conflict);
+    }
+    models
+        .into_iter()
+        .next()
+        .map(StoredPaymentEvent::try_from_model)
+        .transpose()
+}
+
+async fn classify_event_collision<C: ConnectionTrait>(
+    connection: &C,
+    existing: StoredPaymentEvent,
+    order: &SubscriptionOrderRecord,
+    write: &SubscriptionPaymentEventWrite,
+) -> Result<SubscriptionPaymentEventOutcome, SubscriptionRepositoryError> {
+    if !existing.matches(order, write) {
+        return Err(SubscriptionRepositoryError::Conflict);
+    }
+    let subscription = if order.status == SubscriptionOrderStatus::Paid {
+        load_subscription_for_order_connection(connection, order).await?
+    } else {
+        None
+    };
+    Ok(SubscriptionPaymentEventOutcome::Existing {
+        order: subscription_order_snapshot(order),
+        subscription,
+    })
+}
+
+async fn load_subscription_for_order_connection<C: ConnectionTrait>(
+    connection: &C,
+    order: &SubscriptionOrderRecord,
+) -> Result<Option<UserSubscriptionRecord>, SubscriptionRepositoryError> {
+    let subscription_id =
+        UserSubscriptionId::from_persistence_key(&order.order_id.persistence_key())
+            .map_err(|_| SubscriptionRepositoryError::Invariant)?;
+    let Some((model, plan)) = load_subscription(connection, subscription_id).await? else {
+        return Ok(None);
+    };
+    subscription_record(model, &plan_record(plan)?).map(Some)
+}
+
+fn subscription_order_snapshot(order: &SubscriptionOrderRecord) -> SubscriptionOrderRecord {
+    SubscriptionOrderRecord {
+        database_id: order.database_id,
+        order_id: order.order_id,
+        request_id: order.request_id,
+        user_id: order.user_id,
+        plan_id: order.plan_id,
+        plan_version: order.plan_version,
+        provider: order.provider.clone(),
+        currency: order.currency.clone(),
+        amount_minor: order.amount_minor,
+        quota_amount: order.quota_amount,
+        status: order.status,
+        version: order.version,
+        provider_order_id: order.provider_order_id.clone(),
+        trade_no: order.trade_no.clone(),
+        payment_method: order.payment_method.clone(),
+        expires_at: order.expires_at,
+        paid_at: order.paid_at,
+        closed_at: order.closed_at,
+        created_at: order.created_at,
+        updated_at: order.updated_at,
+    }
+}
+
 async fn recover_plan_collision<C>(
     connection: &C,
     write: &SubscriptionPlanWrite,
@@ -935,6 +1488,31 @@ async fn load_order_by_request<C: ConnectionTrait>(
         .one(connection)
         .await
         .map_err(|_| SubscriptionRepositoryError::Query)
+}
+
+async fn load_order_by_key<C: ConnectionTrait>(
+    connection: &C,
+    order_id: SubscriptionOrderId,
+) -> Result<Option<SubscriptionOrderRecord>, SubscriptionRepositoryError> {
+    subscription_orders::Entity::find()
+        .filter(subscription_orders::Column::OrderKey.eq(order_id.persistence_key()))
+        .one(connection)
+        .await
+        .map_err(|_| SubscriptionRepositoryError::Query)?
+        .map(subscription_order_record)
+        .transpose()
+}
+
+async fn load_order_by_database_id<C: ConnectionTrait>(
+    connection: &C,
+    id: i64,
+) -> Result<Option<SubscriptionOrderRecord>, SubscriptionRepositoryError> {
+    subscription_orders::Entity::find_by_id(id)
+        .one(connection)
+        .await
+        .map_err(|_| SubscriptionRepositoryError::Query)?
+        .map(subscription_order_record)
+        .transpose()
 }
 
 async fn recover_order_collision<C: ConnectionTrait>(
@@ -1174,6 +1752,40 @@ async fn lock_user(
         .map_err(|_| SubscriptionRepositoryError::Query)
 }
 
+async fn lock_order(
+    transaction: &DatabaseTransaction,
+    order_id: SubscriptionOrderId,
+) -> Result<Option<subscription_orders::Model>, SubscriptionRepositoryError> {
+    let key = order_id.persistence_key();
+    if transaction.get_database_backend() == DbBackend::Sqlite {
+        // SQLite 不支持 FOR UPDATE，先执行同值更新取得写锁，再读取订单快照。
+        let update = subscription_orders::Entity::update_many()
+            .filter(subscription_orders::Column::OrderKey.eq(key.clone()))
+            .col_expr(
+                subscription_orders::Column::Version,
+                Expr::col(subscription_orders::Column::Version).into(),
+            )
+            .exec(transaction)
+            .await
+            .map_err(|_| SubscriptionRepositoryError::Query)?;
+        if update.rows_affected == 0 {
+            return Ok(None);
+        }
+        if update.rows_affected != 1 {
+            return Err(SubscriptionRepositoryError::Invariant);
+        }
+    }
+    let mut query =
+        subscription_orders::Entity::find().filter(subscription_orders::Column::OrderKey.eq(key));
+    if transaction.get_database_backend() != DbBackend::Sqlite {
+        query = query.lock(LockType::Update);
+    }
+    query
+        .one(transaction)
+        .await
+        .map_err(|_| SubscriptionRepositoryError::Query)
+}
+
 pub(super) fn plan_record(
     model: subscription_plans::Model,
 ) -> Result<SubscriptionPlanRecord, SubscriptionRepositoryError> {
@@ -1250,6 +1862,12 @@ fn subscription_order_record(
         || !valid_price_text(&model.provider, super::MAX_SUBSCRIPTION_PROVIDER_BYTES)
         || !valid_currency(&model.currency)
         || model.amount_minor <= 0
+        || model.payment_method.as_deref().is_some_and(|value| {
+            !valid_price_text(value, super::MAX_SUBSCRIPTION_PAYMENT_METHOD_BYTES)
+        })
+        || model.trade_no.as_ref().is_some_and(|value| {
+            !valid_price_text(value.as_str(), super::MAX_SUBSCRIPTION_TRADE_NO_BYTES)
+        })
         || quota_amount.is_zero()
         || version == 0
         || expires_at.is_some_and(|value| value <= created_at)
@@ -1274,6 +1892,11 @@ fn subscription_order_record(
             .provider_order_id
             .as_ref()
             .map(|value| value.as_str().to_owned()),
+        trade_no: model
+            .trade_no
+            .as_ref()
+            .map(|value| value.as_str().to_owned()),
+        payment_method: model.payment_method,
         expires_at,
         paid_at,
         closed_at,
@@ -1389,6 +2012,33 @@ pub(super) fn page_query_limit(limit: usize) -> Result<u64, SubscriptionReposito
         .ok()
         .and_then(|value| value.checked_add(1))
         .ok_or(SubscriptionRepositoryError::Invariant)
+}
+
+const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
+
+fn hex_digest(value: [u8; 32]) -> String {
+    let mut encoded = String::with_capacity(64);
+    for byte in value {
+        encoded.push(char::from(HEX_DIGITS[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX_DIGITS[usize::from(byte & 0x0f)]));
+    }
+    encoded
+}
+
+fn is_subscription_unique_conflict(error: &sea_orm::DbErr) -> bool {
+    let rendered = error.to_string();
+    rendered.contains("uq_user_subscriptions_subscription_key")
+        || rendered.contains("user_subscriptions.subscription_key")
+        || rendered.contains("Duplicate entry")
+}
+
+fn is_event_unique_conflict(error: &sea_orm::DbErr) -> bool {
+    let rendered = error.to_string();
+    rendered.contains("uq_subscription_payment_events_event_key")
+        || rendered.contains("uq_subscription_payment_events_provider_event")
+        || rendered.contains("subscription_payment_events.event_key")
+        || rendered.contains("subscription_payment_events.provider")
+        || rendered.contains("Duplicate entry")
 }
 
 fn is_unique_conflict(error: &sea_orm::DbErr) -> bool {
