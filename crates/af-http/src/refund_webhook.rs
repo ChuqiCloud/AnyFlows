@@ -88,6 +88,7 @@ fn refund_receipt_failure(error: RefundReceiptProcessorError) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use af_billing::RefundReceiptHandlerFuture;
     use axum::body::Body;
     use http::Request;
     use tower::ServiceExt;
