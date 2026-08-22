@@ -75,8 +75,9 @@ pub use routing::{
 };
 pub use subscription::{
     SubscriptionCycle, SubscriptionIdentifierError, SubscriptionOrderId,
-    SubscriptionOrderRequestId, SubscriptionOrderStatus, SubscriptionPlanId,
-    SubscriptionPlanStatus, SubscriptionStateCodeError, UserSubscriptionId, UserSubscriptionStatus,
+    SubscriptionOrderRequestId, SubscriptionOrderStatus, SubscriptionPaymentEventId,
+    SubscriptionPaymentEventType, SubscriptionPlanId, SubscriptionPlanStatus,
+    SubscriptionStateCodeError, UserSubscriptionId, UserSubscriptionStatus,
 };
 pub use subscription_window::{
     MAX_SUBSCRIPTION_WINDOW_ADVANCES, SubscriptionWindow, SubscriptionWindowAdvance,

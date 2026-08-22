@@ -83,6 +83,7 @@ pub(crate) mod scheduler_outbox_events;
 pub(crate) mod site_settings;
 pub(crate) mod subscription_balance_alert_events;
 pub(crate) mod subscription_orders;
+pub(crate) mod subscription_payment_events;
 pub(crate) mod subscription_plan_prices;
 pub(crate) mod subscription_plans;
 pub(crate) mod tokens;
@@ -1605,6 +1606,61 @@ where
     Ok(())
 }
 
+async fn validate_subscription_payment_event<C>(
+    model: &subscription_payment_events::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    // 订阅支付事件与充值事件隔离，且同样只能通过唯一键追加。
+    if !insert {
+        return Err(DbErr::Custom("订阅支付事件不允许更新".to_owned()));
+    }
+    let event_key = model
+        .event_key
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("订阅支付事件标识缺失".to_owned()))?;
+    let provider = model
+        .provider
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("订阅支付事件渠道缺失".to_owned()))?;
+    let provider_event_id = model
+        .provider_event_id
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("订阅支付事件 Provider 标识缺失".to_owned()))?;
+    let signature_key_fingerprint = model
+        .signature_key_fingerprint
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("订阅支付事件签名指纹缺失".to_owned()))?;
+    let payload_sha256 = model
+        .payload_sha256
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("订阅支付事件负载哈希缺失".to_owned()))?;
+    let order_id = model.order_id.try_as_ref().copied().unwrap_or_default();
+    let event_type = model.event_type.try_as_ref().copied().unwrap_or_default();
+    let amount_minor = model.amount_minor.try_as_ref().copied().flatten();
+    let currency = model.currency.try_as_ref().and_then(Option::as_deref);
+    let payment_method = model.payment_method.try_as_ref().and_then(Option::as_deref);
+    if order_id <= 0
+        || !valid_hex(event_key, 32, true)
+        || provider.is_empty()
+        || provider_event_id.as_str().is_empty()
+        || !matches!(event_type, 1..=3)
+        || amount_minor.is_some_and(|value| value <= 0)
+        || currency.is_some_and(|value| !valid_currency(value))
+        || payment_method.is_some_and(|value| value.is_empty() || value.len() > 32)
+        || !valid_hex(signature_key_fingerprint.as_str(), 64, false)
+        || !valid_hex(payload_sha256.as_str(), 64, false)
+        || model.received_at.try_as_ref().is_none()
+        || model.created_at.try_as_ref().is_none()
+    {
+        return Err(DbErr::Custom("订阅支付事件状态无效".to_owned()));
+    }
+    Ok(())
+}
+
 fn merge_required<T>(
     active: &ActiveValue<T>,
     persisted: Option<T>,
@@ -2152,6 +2208,17 @@ impl ActiveModelBehavior for topup_payment_events::ActiveModel {
         C: ConnectionTrait,
     {
         validate_topup_payment_event(&self, database, insert).await?;
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for subscription_payment_events::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_subscription_payment_event(&self, database, insert).await?;
         Ok(self)
     }
 }

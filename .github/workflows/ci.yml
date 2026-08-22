@@ -10,8 +10,8 @@ permissions:
   contents: read
 
 concurrency:
-  # 共享单一 runner 时只保留最新一轮流水线，避免不同 PR 的数据库容器互相抢端口。
-  group: anyflows-ci
+  # 同一 PR 只保留最新一轮；不同 PR 可并行使用已扩容的流水线资源。
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -218,8 +218,8 @@ jobs:
 
   rust-quality:
     name: Rust quality gates
-    needs: [changes, release-package]
-    if: ${{ always() && needs.changes.outputs.rust == 'true' }}
+    needs: changes
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -300,8 +300,8 @@ jobs:
 
   msrv:
     name: Minimum supported Rust version
-    needs: [changes, rust-quality]
-    if: ${{ always() && needs.changes.outputs.rust == 'true' }}
+    needs: changes
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -370,8 +370,8 @@ jobs:
 
   sqlite-migration:
     name: SQLite migration smoke test
-    needs: [changes, msrv]
-    if: ${{ always() && needs.changes.outputs.database == 'true' }}
+    needs: changes
+    if: ${{ needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -422,8 +422,8 @@ jobs:
 
   postgres-migration:
     name: PostgreSQL migration smoke test
-    needs: [changes, sqlite-migration]
-    if: ${{ always() && needs.changes.outputs.database == 'true' }}
+    needs: changes
+    if: ${{ needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -497,8 +497,8 @@ jobs:
 
   mysql-migration:
     name: MySQL migration smoke test
-    needs: [changes, postgres-migration]
-    if: ${{ always() && needs.changes.outputs.database == 'true' }}
+    needs: changes
+    if: ${{ needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -573,8 +573,8 @@ jobs:
 
   cache-redis:
     name: Redis cache smoke test
-    needs: [changes, mysql-migration]
-    if: ${{ always() && needs.changes.outputs.redis == 'true' }}
+    needs: changes
+    if: ${{ needs.changes.outputs.redis == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:

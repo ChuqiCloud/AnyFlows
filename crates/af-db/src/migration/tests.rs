@@ -41,9 +41,9 @@ use crate::entity::{
     platform_audit_logs, playground_conversations, playground_shares, redemption_batches,
     redemption_codes, registration_rate_limits, request_outcome_logs, scheduler_outbox_events,
     site_settings, subscription_balance_alert_events, subscription_orders,
-    subscription_plan_prices, subscription_plans, tokens, topup_orders, topup_payment_events,
-    usage_logs, user_notification_events, user_notification_receipts, user_subscriptions, users,
-    wallet_ledger_entries,
+    subscription_payment_events, subscription_plan_prices, subscription_plans, tokens,
+    topup_orders, topup_payment_events, usage_logs, user_notification_events,
+    user_notification_receipts, user_subscriptions, users, wallet_ledger_entries,
 };
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
@@ -75,7 +75,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 84;
+const EXPECTED_MIGRATION_COUNT: usize = 85;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -94,7 +94,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 74] = [
+const CORE_TABLES: [&str; 75] = [
     "groups",
     "users",
     "passkeys",
@@ -137,6 +137,7 @@ const CORE_TABLES: [&str; 74] = [
     "subscription_plans",
     "subscription_plan_prices",
     "subscription_orders",
+    "subscription_payment_events",
     "user_subscriptions",
     "invite_rebate_events",
     "balance_alert_settings",
@@ -1182,7 +1183,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 25);
+    assert_eq!(pending_migrations.len(), 26);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -1282,6 +1283,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[24].name(),
         "m20260821_000084_create_subscription_orders"
+    );
+    assert_eq!(
+        pending_migrations[25].name(),
+        "m20260822_000085_create_subscription_payment_events"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
@@ -2900,6 +2905,11 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     assert_entity_columns::<subscription_plan_prices::Column>(&manager, "subscription_plan_prices")
         .await?;
     assert_entity_columns::<subscription_orders::Column>(&manager, "subscription_orders").await?;
+    assert_entity_columns::<subscription_payment_events::Column>(
+        &manager,
+        "subscription_payment_events",
+    )
+    .await?;
     assert_entity_columns::<user_subscriptions::Column>(&manager, "user_subscriptions").await?;
     assert_entity_columns::<invite_rebate_events::Column>(&manager, "invite_rebate_events").await?;
     assert_entity_columns::<balance_alert_settings::Column>(&manager, "balance_alert_settings")
@@ -3016,6 +3026,18 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         (
             "subscription_orders",
             "uq_subscription_orders_user_idempotency_key",
+        ),
+        (
+            "subscription_payment_events",
+            "uq_subscription_payment_events_event_key",
+        ),
+        (
+            "subscription_payment_events",
+            "uq_subscription_payment_events_provider_event",
+        ),
+        (
+            "subscription_payment_events",
+            "idx_subscription_payment_events_order_created",
         ),
         (
             "user_subscriptions",

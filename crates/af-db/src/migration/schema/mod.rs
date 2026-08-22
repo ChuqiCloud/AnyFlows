@@ -154,8 +154,8 @@ pub(super) use organization_invitation::create_organization_invitations;
 pub(super) use organization_wallet::{
     create_organization_wallet_storage, drop_organization_wallet_storage,
 };
-pub(super) use payment::create_topup_payment_audit;
 pub(super) use payment::{create_payment_settings, extend_topup_payment_facts};
+pub(super) use payment::{create_subscription_payment_events, create_topup_payment_audit};
 pub(super) use playground::{create_playground_shares, create_playground_shares_indexes};
 pub(super) use playground_conversation::{
     create_playground_conversation_indexes, create_playground_conversations,

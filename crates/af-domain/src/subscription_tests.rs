@@ -1,5 +1,6 @@
 use super::{
-    SubscriptionCycle, SubscriptionIdentifierError, SubscriptionPlanId, SubscriptionPlanStatus,
+    SubscriptionCycle, SubscriptionIdentifierError, SubscriptionPaymentEventId,
+    SubscriptionPaymentEventType, SubscriptionPlanId, SubscriptionPlanStatus,
     SubscriptionStateCodeError, UserSubscriptionId, UserSubscriptionStatus,
 };
 
@@ -7,6 +8,7 @@ use super::{
 fn subscription_identifiers_round_trip_without_debug_disclosure() {
     let plan_id = SubscriptionPlanId::new([0x12; 16]).unwrap();
     let subscription_id = UserSubscriptionId::new([0x34; 16]).unwrap();
+    let payment_event_id = SubscriptionPaymentEventId::new([0x56; 16]).unwrap();
 
     assert_eq!(
         SubscriptionPlanId::from_persistence_key(&plan_id.persistence_key()),
@@ -16,10 +18,18 @@ fn subscription_identifiers_round_trip_without_debug_disclosure() {
         UserSubscriptionId::from_persistence_key(&subscription_id.persistence_key()),
         Ok(subscription_id)
     );
+    assert_eq!(
+        SubscriptionPaymentEventId::from_persistence_key(&payment_event_id.persistence_key()),
+        Ok(payment_event_id)
+    );
     assert_eq!(format!("{plan_id:?}"), "SubscriptionPlanId(<redacted>)");
     assert_eq!(
         format!("{subscription_id:?}"),
         "UserSubscriptionId(<redacted>)"
+    );
+    assert_eq!(
+        format!("{payment_event_id:?}"),
+        "SubscriptionPaymentEventId(<redacted>)"
     );
 }
 
@@ -87,6 +97,19 @@ fn subscription_state_codes_are_closed() {
     assert_eq!(
         SubscriptionCycle::try_from(0),
         Err(SubscriptionStateCodeError::InvalidCycle)
+    );
+
+    for (event, code) in [
+        (SubscriptionPaymentEventType::Succeeded, 1),
+        (SubscriptionPaymentEventType::Failed, 2),
+        (SubscriptionPaymentEventType::Expired, 3),
+    ] {
+        assert_eq!(event.code(), code);
+        assert_eq!(SubscriptionPaymentEventType::try_from(code), Ok(event));
+    }
+    assert_eq!(
+        SubscriptionPaymentEventType::try_from(4),
+        Err(SubscriptionStateCodeError::InvalidPaymentEventType)
     );
 }
 
