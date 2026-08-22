@@ -289,6 +289,7 @@ impl fmt::Debug for RefundRequestCreate {
 
 /// 已持久化的退款请求快照。
 pub struct RefundRequestRecord {
+    #[allow(dead_code, reason = "后续退款 Provider 与对账切片将使用持久化主键")]
     pub(super) database_id: i64,
     pub(super) request_id: RefundRequestId,
     pub(super) idempotency_key: RefundRequestKey,

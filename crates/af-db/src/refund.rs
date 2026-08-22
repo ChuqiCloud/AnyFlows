@@ -231,6 +231,7 @@ fn to_record(model: refund_requests::Model) -> Result<RefundRequestRecord, Refun
 }
 
 fn to_database_time(value: u64) -> Result<TimeDateTimeWithTimeZone, RefundRepositoryError> {
+    let value = i64::try_from(value).map_err(|_| RefundRepositoryError::Invariant)?;
     TimeDateTimeWithTimeZone::from_unix_timestamp(value)
         .map_err(|_| RefundRepositoryError::Invariant)
 }

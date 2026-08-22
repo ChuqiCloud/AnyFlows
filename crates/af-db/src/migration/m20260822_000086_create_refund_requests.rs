@@ -90,7 +90,7 @@ impl MigrationTrait for Migration {
             .check(Expr::col(refund_requests::Column::RefundAmountMinor).gt(0_i64))
             .check(
                 Expr::col(refund_requests::Column::RefundAmountMinor)
-                    .le(Expr::col(refund_requests::Column::OriginalAmountMinor)),
+                    .lte(Expr::col(refund_requests::Column::OriginalAmountMinor)),
             )
             .check(Expr::col(refund_requests::Column::Status).between(1_i16, 5_i16))
             .check(Expr::col(refund_requests::Column::Version).gt(0_i64));
