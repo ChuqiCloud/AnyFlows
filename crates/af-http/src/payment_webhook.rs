@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use af_billing::{
-    EASYPAY_PAYMENT_PROVIDER, PaymentWebhookHeader, PaymentWebhookRequest, TopupWebhookOutcome,
-    TopupWebhookProcessor, TopupWebhookProcessorError,
+    EASYPAY_PAYMENT_PROVIDER, PaymentWebhookHandler, PaymentWebhookHandlerError,
+    PaymentWebhookHandlerOutcome, PaymentWebhookHeader, PaymentWebhookRequest,
 };
 use axum::{
     Router,
@@ -21,7 +21,7 @@ use http::{HeaderValue, header::CONTENT_TYPE};
 /// 固定返回 503，避免被前端 fallback 误认为成功。
 pub trait PaymentWebhookProcessorRegistry: Send + Sync {
     /// 返回当前支付运行时快照中的 Provider 处理器。
-    fn processor(&self, provider: &str) -> Option<Arc<TopupWebhookProcessor>>;
+    fn processor(&self, provider: &str) -> Option<Arc<dyn PaymentWebhookHandler>>;
 }
 
 /// 构建从稳定运行时门面按请求读取处理器的 webhook 路由。
@@ -76,13 +76,13 @@ async fn receive_payment_webhook(
         Ok(request) => request,
         Err(_) => return provider_failure(&provider, StatusCode::BAD_REQUEST),
     };
-    match processor.process(request).await {
+    match processor.handle(request).await {
         Ok(
-            TopupWebhookOutcome::Applied(_)
-            | TopupWebhookOutcome::Acknowledged(_)
-            | TopupWebhookOutcome::Existing(_),
+            PaymentWebhookHandlerOutcome::Applied
+            | PaymentWebhookHandlerOutcome::Acknowledged
+            | PaymentWebhookHandlerOutcome::Existing,
         ) => provider_success(&provider),
-        Ok(TopupWebhookOutcome::IgnoredNonTerminal) => {
+        Ok(PaymentWebhookHandlerOutcome::IgnoredNonTerminal) => {
             if provider == EASYPAY_PAYMENT_PROVIDER {
                 provider_failure(&provider, StatusCode::CONFLICT)
             } else {
@@ -90,9 +90,10 @@ async fn receive_payment_webhook(
             }
         }
         // 无订单或事实不一致不能提前确认，否则 Provider 不再重试会形成漏账。
-        Ok(TopupWebhookOutcome::RecordedUnprocessed { .. } | TopupWebhookOutcome::NotFound) => {
-            provider_failure(&provider, StatusCode::CONFLICT)
-        }
+        Ok(
+            PaymentWebhookHandlerOutcome::RecordedUnprocessed
+            | PaymentWebhookHandlerOutcome::NotFound,
+        ) => provider_failure(&provider, StatusCode::CONFLICT),
         Err(error) => provider_failure(&provider, map_processor_error(error)),
     }
 }
@@ -122,13 +123,13 @@ fn plain_text(status: StatusCode, value: &'static str) -> Response {
     response
 }
 
-fn map_processor_error(error: TopupWebhookProcessorError) -> StatusCode {
+fn map_processor_error(error: PaymentWebhookHandlerError) -> StatusCode {
     match error {
-        TopupWebhookProcessorError::VerificationRejected => StatusCode::BAD_REQUEST,
-        TopupWebhookProcessorError::Conflict => StatusCode::CONFLICT,
-        TopupWebhookProcessorError::OutcomeUnknown | TopupWebhookProcessorError::Unavailable => {
+        PaymentWebhookHandlerError::VerificationRejected => StatusCode::BAD_REQUEST,
+        PaymentWebhookHandlerError::Conflict => StatusCode::CONFLICT,
+        PaymentWebhookHandlerError::OutcomeUnknown | PaymentWebhookHandlerError::Unavailable => {
             StatusCode::SERVICE_UNAVAILABLE
         }
-        TopupWebhookProcessorError::Invariant => StatusCode::INTERNAL_SERVER_ERROR,
+        PaymentWebhookHandlerError::Invariant => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }

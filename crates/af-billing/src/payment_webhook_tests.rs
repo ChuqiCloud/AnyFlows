@@ -6,10 +6,11 @@ use std::sync::{
 use af_domain::{TopupOrderId, TopupOrderStatus, TopupPaymentEventType};
 
 use super::{
-    PaymentWebhookHeader, PaymentWebhookInputError, PaymentWebhookRequest,
-    PaymentWebhookVerificationError, PaymentWebhookVerifier, TopupPaymentEventFuture,
-    TopupPaymentEventPort, TopupWebhookOutcome, TopupWebhookProcessor, TopupWebhookProcessorError,
-    VerifiedTopupPaymentEvent,
+    PaymentWebhookEventRouter, PaymentWebhookHandlerError, PaymentWebhookHandlerOutcome,
+    PaymentWebhookHeader, PaymentWebhookInputError, PaymentWebhookProcessor, PaymentWebhookRequest,
+    PaymentWebhookRouteFuture, PaymentWebhookVerificationError, PaymentWebhookVerifier,
+    TopupPaymentEventFuture, TopupPaymentEventPort, TopupWebhookOutcome, TopupWebhookProcessor,
+    TopupWebhookProcessorError, VerifiedTopupPaymentEvent,
 };
 
 const RECEIVED_AT: u64 = 1_900_000_000;
@@ -99,6 +100,49 @@ async fn verified_non_terminal_event_is_acknowledged_without_persistence() {
     assert_eq!(
         processor.process(request).await,
         Ok(TopupWebhookOutcome::IgnoredNonTerminal)
+    );
+    assert_eq!(calls.load(Ordering::Acquire), 0);
+}
+
+#[tokio::test]
+async fn unified_processor_routes_only_verified_facts() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let processor = PaymentWebhookProcessor::new(
+        Arc::new(FakeVerifier {
+            valid: true,
+            provider: "stripe",
+        }),
+        Arc::new(RecordingRouter {
+            calls: Arc::clone(&calls),
+            outcome: PaymentWebhookHandlerOutcome::Applied,
+        }),
+    );
+    let headers = [PaymentWebhookHeader::new("stripe-signature", "valid").unwrap()];
+    let request = PaymentWebhookRequest::new(b"payload", &headers, RECEIVED_AT).unwrap();
+
+    assert_eq!(
+        processor.process(request).await,
+        Ok(PaymentWebhookHandlerOutcome::Applied)
+    );
+    assert_eq!(calls.load(Ordering::Acquire), 1);
+}
+
+#[tokio::test]
+async fn unified_processor_does_not_route_non_terminal_events() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let processor = PaymentWebhookProcessor::new(
+        Arc::new(NonTerminalVerifier),
+        Arc::new(RecordingRouter {
+            calls: Arc::clone(&calls),
+            outcome: PaymentWebhookHandlerOutcome::Applied,
+        }),
+    );
+    let headers = [PaymentWebhookHeader::new("stripe-signature", "valid").unwrap()];
+    let request = PaymentWebhookRequest::new(b"payload", &headers, RECEIVED_AT).unwrap();
+
+    assert_eq!(
+        processor.process(request).await,
+        Ok(PaymentWebhookHandlerOutcome::IgnoredNonTerminal)
     );
     assert_eq!(calls.load(Ordering::Acquire), 0);
 }
@@ -202,6 +246,25 @@ impl PaymentWebhookVerifier for FakeVerifier {
 struct RecordingPort {
     calls: Arc<AtomicUsize>,
     outcome: TopupWebhookOutcome,
+}
+
+struct RecordingRouter {
+    calls: Arc<AtomicUsize>,
+    outcome: PaymentWebhookHandlerOutcome,
+}
+
+impl PaymentWebhookEventRouter for RecordingRouter {
+    fn route<'a>(
+        &'a self,
+        _provider: String,
+        _event: VerifiedTopupPaymentEvent,
+        _payload_sha256: [u8; 32],
+        _received_at: u64,
+    ) -> PaymentWebhookRouteFuture<'a> {
+        self.calls.fetch_add(1, Ordering::AcqRel);
+        let outcome = self.outcome;
+        Box::pin(async move { Ok::<_, PaymentWebhookHandlerError>(outcome) })
+    }
 }
 
 struct NonTerminalVerifier;

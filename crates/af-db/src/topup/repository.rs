@@ -80,6 +80,19 @@ impl TopupRepository {
         Ok(outcome)
     }
 
+    /// 按稳定订单标识读取充值订单，供支付 webhook 路由先判定订单类型。
+    pub async fn get_order(
+        &self,
+        order_id: TopupOrderId,
+    ) -> Result<Option<TopupOrderRecord>, TopupRepositoryError> {
+        let operation = load_order_by_key(self.pool.connection(), order_id)
+            .with_subscriber(NoSubscriber::default());
+        match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result.map_err(internal),
+            Err(_) => Err(internal(TopupRepositoryError::Timeout)),
+        }
+    }
+
     /// 使用预期版本把 Created 订单绑定为 Pending；相同绑定可以安全重放。
     pub async fn submit_order(
         &self,

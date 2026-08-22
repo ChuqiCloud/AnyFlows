@@ -1324,6 +1324,7 @@ impl Bootstrap<RelayReady> {
         .await?;
         let payment_runtime = Arc::new(PaymentRuntime::new(
             topup_repository,
+            self.stage.infrastructure.subscription_repository.clone(),
             self.stage.infrastructure.site_settings_repository.clone(),
             self.stage.upstream_clients.clone(),
             request_timeout,
