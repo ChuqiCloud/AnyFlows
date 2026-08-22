@@ -5,8 +5,7 @@ use af_db::{
     RefundSubmissionOutcome,
 };
 use af_domain::{
-    MAX_REFUND_PROVIDER_REFUND_ID_BYTES, RefundApprovalStatus, RefundRequestId,
-    RefundRequestRecord, RefundRequestStatus,
+    MAX_REFUND_PROVIDER_REFUND_ID_BYTES, RefundRequestId, RefundRequestRecord, RefundRequestStatus,
 };
 use sha2::{Digest, Sha256};
 use thiserror::Error;

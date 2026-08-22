@@ -124,6 +124,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("个人资料与安全"),
         Tag::new("我的钱包"),
         Tag::new("兑换码"),
+        Tag::new("退款审批"),
         Tag::new("订阅管理"),
         Tag::new("邀请中心"),
         Tag::new("站点设置"),

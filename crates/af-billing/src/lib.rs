@@ -25,7 +25,7 @@ mod usage_record_queue;
 mod video_pricing;
 
 /// 已通过 webhook 处理器校验的持久化事件写入值。
-pub use af_db::TopupPaymentEventWrite;
+pub use af_db::{RefundSubmissionOutcome, TopupPaymentEventWrite};
 pub use batch::{
     BillingBatch, BillingBatchApplyOutcome, BillingBatchError, BillingBatchEvent,
     BillingBatchFlushOutcome, BillingBatchRecordOutcome, BillingBatchSink, BillingBatchSinkError,
