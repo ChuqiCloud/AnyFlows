@@ -87,6 +87,8 @@ pub enum UserNotificationSnapshot {
         quota_used: i64,
         threshold_percent: i16,
     },
+    /// 订阅购买确认只保存订单公开键和状态来源，不复用用量预警快照字段。
+    SubscriptionPurchase { order_id: String, status: String },
 }
 
 /// 与预警入队事务一起写入的通知事实。
@@ -152,6 +154,24 @@ impl UserNotificationWrite {
             },
         }
     }
+
+    /// 构造订阅支付确认通知事实；来源键保证同一订单状态只入队一次。
+    #[must_use]
+    pub fn subscription_purchase(
+        user_id: i64,
+        order_id: String,
+        status: String,
+        occurred_at: TimeDateTimeWithTimeZone,
+    ) -> Self {
+        Self {
+            user_id,
+            // 兼容既有三方言约束：订阅域通知统一使用 2，来源前缀区分购买确认。
+            kind: NotificationKind::SubscriptionBalanceAlert,
+            occurred_at,
+            source_key: format!("subscription-purchase:{order_id}:{status}"),
+            snapshot: UserNotificationSnapshot::SubscriptionPurchase { order_id, status },
+        }
+    }
 }
 
 /// 用户通知事实记录，已移除邮箱、正文和 Provider 响应。
@@ -172,6 +192,7 @@ pub struct UserNotificationRecord {
     quota_used: Option<i64>,
     threshold_percent: Option<i16>,
     read_at: Option<i64>,
+    subscription_purchase: bool,
 }
 
 impl UserNotificationRecord {
@@ -198,6 +219,7 @@ impl UserNotificationRecord {
             quota_used: model.quota_used,
             threshold_percent: model.threshold_percent,
             read_at,
+            subscription_purchase: model.source_key.starts_with("subscription-purchase:"),
         })
     }
 
@@ -208,6 +230,11 @@ impl UserNotificationRecord {
     #[must_use]
     pub const fn kind(&self) -> NotificationKind {
         self.kind
+    }
+
+    #[must_use]
+    pub const fn is_subscription_purchase(&self) -> bool {
+        self.subscription_purchase
     }
     #[must_use]
     pub const fn channel(&self) -> NotificationChannel {
@@ -691,6 +718,9 @@ pub(crate) async fn insert_queued<C: ConnectionTrait>(
             Some(*quota_used),
             Some(*threshold_percent),
         ),
+        UserNotificationSnapshot::SubscriptionPurchase { .. } => {
+            (None, None, None, None, None, None, None)
+        }
     };
     user_notification_events::Entity::insert(user_notification_events::ActiveModel {
         id: sea_orm::NotSet,

@@ -2,8 +2,9 @@ use std::fmt;
 
 use af_domain::{
     Quota, SubscriptionCycle, SubscriptionOrderId, SubscriptionOrderRequestId,
-    SubscriptionOrderStatus, SubscriptionPlanId, SubscriptionPlanStatus, SubscriptionWindow,
-    UserId, UserSubscriptionId, UserSubscriptionStatus,
+    SubscriptionOrderStatus, SubscriptionPaymentEventId, SubscriptionPaymentEventType,
+    SubscriptionPlanId, SubscriptionPlanStatus, SubscriptionWindow, UserId, UserSubscriptionId,
+    UserSubscriptionStatus,
 };
 use thiserror::Error;
 
@@ -12,6 +13,9 @@ pub const MAX_SUBSCRIPTION_PLAN_NAME_BYTES: usize = 80;
 pub const MAX_SUBSCRIPTION_PROVIDER_BYTES: usize = 32;
 pub const MAX_SUBSCRIPTION_CURRENCY_BYTES: usize = 3;
 pub const MAX_SUBSCRIPTION_IDEMPOTENCY_KEY_BYTES: usize = 32;
+pub const MAX_SUBSCRIPTION_PROVIDER_EVENT_ID_BYTES: usize = 128;
+pub const MAX_SUBSCRIPTION_TRADE_NO_BYTES: usize = 128;
+pub const MAX_SUBSCRIPTION_PAYMENT_METHOD_BYTES: usize = 32;
 
 /// 订阅目录与用户订阅列表允许的最大页大小。
 pub const MAX_SUBSCRIPTION_PAGE_SIZE: usize = 100;
@@ -412,6 +416,8 @@ pub struct SubscriptionOrderRecord {
     pub(super) status: SubscriptionOrderStatus,
     pub(super) version: u64,
     pub(super) provider_order_id: Option<String>,
+    pub(super) trade_no: Option<String>,
+    pub(super) payment_method: Option<String>,
     pub(super) expires_at: Option<u64>,
     pub(super) paid_at: Option<u64>,
     pub(super) closed_at: Option<u64>,
@@ -473,6 +479,14 @@ impl SubscriptionOrderRecord {
         self.provider_order_id.as_deref()
     }
     #[must_use]
+    pub fn trade_no(&self) -> Option<&str> {
+        self.trade_no.as_deref()
+    }
+    #[must_use]
+    pub fn payment_method(&self) -> Option<&str> {
+        self.payment_method.as_deref()
+    }
+    #[must_use]
     pub const fn expires_at(&self) -> Option<u64> {
         self.expires_at
     }
@@ -512,6 +526,146 @@ impl SubscriptionOrderRecord {
 impl fmt::Debug for SubscriptionOrderRecord {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("SubscriptionOrderRecord(<redacted>)")
+    }
+}
+
+/// 已完成验签的订阅支付事件写入事实；原始 payload 不进入订阅仓储。
+pub struct SubscriptionPaymentEventWrite {
+    pub(super) event_id: SubscriptionPaymentEventId,
+    pub(super) order_id: SubscriptionOrderId,
+    pub(super) provider: String,
+    pub(super) provider_event_id: String,
+    pub(super) trade_no: Option<String>,
+    pub(super) amount_minor: Option<i64>,
+    pub(super) currency: Option<String>,
+    pub(super) payment_method: Option<String>,
+    pub(super) event_type: SubscriptionPaymentEventType,
+    pub(super) signature_key_fingerprint: [u8; 32],
+    pub(super) payload_sha256: [u8; 32],
+    pub(super) received_at: u64,
+}
+
+impl SubscriptionPaymentEventWrite {
+    /// 校验 Provider 事件边界；成功事件必须携带可核对的金额、币种和流水号。
+    #[allow(clippy::too_many_arguments, reason = "支付事件字段需要逐项固化并核对")]
+    pub fn new(
+        event_id: SubscriptionPaymentEventId,
+        order_id: SubscriptionOrderId,
+        provider: String,
+        provider_event_id: String,
+        trade_no: Option<String>,
+        amount_minor: Option<u64>,
+        currency: Option<String>,
+        payment_method: Option<String>,
+        event_type: SubscriptionPaymentEventType,
+        signature_key_fingerprint: [u8; 32],
+        payload_sha256: [u8; 32],
+        received_at: u64,
+    ) -> Result<Self, SubscriptionInputError> {
+        if !valid_price_text(&provider, MAX_SUBSCRIPTION_PROVIDER_BYTES)
+            || !valid_price_text(&provider_event_id, MAX_SUBSCRIPTION_PROVIDER_EVENT_ID_BYTES)
+        {
+            return Err(SubscriptionInputError::InvalidPrice);
+        }
+        if trade_no
+            .as_deref()
+            .is_some_and(|value| !valid_price_text(value, MAX_SUBSCRIPTION_TRADE_NO_BYTES))
+            || (event_type == SubscriptionPaymentEventType::Succeeded && trade_no.is_none())
+        {
+            return Err(SubscriptionInputError::InvalidPrice);
+        }
+        let amount_minor = amount_minor
+            .map(|value| i64::try_from(value).map_err(|_| SubscriptionInputError::InvalidPrice))
+            .transpose()?;
+        if event_type == SubscriptionPaymentEventType::Succeeded
+            && (amount_minor.is_none_or(|value| value <= 0) || currency.is_none())
+        {
+            return Err(SubscriptionInputError::InvalidPrice);
+        }
+        if currency
+            .as_deref()
+            .is_some_and(|value| !valid_currency(value))
+            || payment_method.as_deref().is_some_and(|value| {
+                !valid_price_text(value, MAX_SUBSCRIPTION_PAYMENT_METHOD_BYTES)
+            })
+        {
+            return Err(SubscriptionInputError::InvalidPrice);
+        }
+        validate_time(received_at)?;
+        Ok(Self {
+            event_id,
+            order_id,
+            provider,
+            provider_event_id,
+            trade_no,
+            amount_minor,
+            currency,
+            payment_method,
+            event_type,
+            signature_key_fingerprint,
+            payload_sha256,
+            received_at,
+        })
+    }
+}
+
+impl fmt::Debug for SubscriptionPaymentEventWrite {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("SubscriptionPaymentEventWrite(<redacted>)")
+    }
+}
+
+/// 已验签支付事件在订单与订阅事务中的闭合拒绝原因。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SubscriptionPaymentEventRejection {
+    ProviderMismatch,
+    AmountMismatch,
+    CurrencyMismatch,
+    PaymentMethodMismatch,
+    TimingConflict,
+    TradeNumberConflict,
+    TerminalConflict,
+}
+
+/// 订阅支付事件的幂等处理结果；通知投递状态不改变购买状态。
+pub enum SubscriptionPaymentEventOutcome {
+    Applied {
+        order: SubscriptionOrderRecord,
+        subscription: Option<UserSubscriptionRecord>,
+    },
+    Acknowledged {
+        order: SubscriptionOrderRecord,
+        subscription: Option<UserSubscriptionRecord>,
+    },
+    Existing {
+        order: SubscriptionOrderRecord,
+        subscription: Option<UserSubscriptionRecord>,
+    },
+    RecordedUnprocessed {
+        order: SubscriptionOrderRecord,
+        reason: SubscriptionPaymentEventRejection,
+    },
+    NotFound,
+}
+
+impl fmt::Debug for SubscriptionPaymentEventOutcome {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Applied { .. } => {
+                formatter.write_str("SubscriptionPaymentEventOutcome::Applied(<redacted>)")
+            }
+            Self::Acknowledged { .. } => {
+                formatter.write_str("SubscriptionPaymentEventOutcome::Acknowledged(<redacted>)")
+            }
+            Self::Existing { .. } => {
+                formatter.write_str("SubscriptionPaymentEventOutcome::Existing(<redacted>)")
+            }
+            Self::RecordedUnprocessed { reason, .. } => formatter
+                .debug_struct("SubscriptionPaymentEventOutcome::RecordedUnprocessed")
+                .field("reason", reason)
+                .finish_non_exhaustive(),
+            Self::NotFound => formatter.write_str("SubscriptionPaymentEventOutcome::NotFound"),
+        }
     }
 }
 

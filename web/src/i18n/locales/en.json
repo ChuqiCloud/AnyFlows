@@ -5308,7 +5308,8 @@
       "loadOlder": "Load older records",
       "kind": {
         "balance_alert": "Balance alert",
-        "subscription_balance_alert": "Subscription window alert"
+        "subscription_balance_alert": "Subscription window alert",
+        "subscription_purchase": "Subscription purchase"
       },
       "state": {
         "queued": "Queued",
@@ -5325,6 +5326,7 @@
       },
       "balanceDetail": "Observed quota {{observed}}, threshold {{threshold}}",
       "subscriptionDetail": "Used {{used}} / {{amount}}, threshold {{threshold}}%",
+      "purchaseDetail": "Subscription purchase confirmation recorded",
       "meta": "{{time}} · Attempts {{attempts}} · #{{id}}"
     },
     "actions": {

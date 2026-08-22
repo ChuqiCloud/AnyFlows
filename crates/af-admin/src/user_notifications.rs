@@ -20,6 +20,7 @@ pub const DEFAULT_USER_NOTIFICATION_PAGE_SIZE: usize = 25;
 pub enum UserNotificationKind {
     BalanceAlert,
     SubscriptionBalanceAlert,
+    SubscriptionPurchase,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -118,6 +119,9 @@ impl UserNotification {
     }
     #[must_use]
     pub const fn kind(&self) -> UserNotificationKind {
+        if self.record.is_subscription_purchase() {
+            return UserNotificationKind::SubscriptionPurchase;
+        }
         match self.record.kind() {
             DatabaseNotificationKind::BalanceAlert => UserNotificationKind::BalanceAlert,
             DatabaseNotificationKind::SubscriptionBalanceAlert => {

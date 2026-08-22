@@ -52,6 +52,7 @@ pub(crate) fn build_user_notification_router(
 pub(crate) enum NotificationKindResponse {
     BalanceAlert,
     SubscriptionBalanceAlert,
+    SubscriptionPurchase,
 }
 
 #[derive(Clone, Copy, Serialize, ToSchema)]
@@ -248,6 +249,9 @@ impl UserNotificationResponse {
                 UserNotificationKind::BalanceAlert => NotificationKindResponse::BalanceAlert,
                 UserNotificationKind::SubscriptionBalanceAlert => {
                     NotificationKindResponse::SubscriptionBalanceAlert
+                }
+                UserNotificationKind::SubscriptionPurchase => {
+                    NotificationKindResponse::SubscriptionPurchase
                 }
             },
             channel: match notification.channel() {
