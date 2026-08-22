@@ -543,7 +543,7 @@ fn hex_lower(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use af_domain::{RefundOrderKind, RefundRequestKey, UserId};
+    use af_domain::{RefundApprovalStatus, RefundOrderKind, RefundRequestKey, UserId};
 
     fn record() -> RefundRequestRecord {
         RefundRequestRecord::from_persistence(
@@ -554,7 +554,7 @@ mod tests {
             RefundOrderKind::Topup,
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
             "stripe".to_owned(),
-            "pi_original".to_owned(),
+            Some("pi_original".to_owned()),
             "USD".to_owned(),
             100,
             40,
