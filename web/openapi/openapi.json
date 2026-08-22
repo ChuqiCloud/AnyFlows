@@ -29143,6 +29143,65 @@
         },
         "additionalProperties": false
       },
+      "SubscriptionOrderPaymentRequest": {
+        "type": "object",
+        "required": [
+          "payment_method"
+        ],
+        "properties": {
+          "payment_method": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1
+          }
+        }
+      },
+      "SubscriptionPaymentResponse": {
+        "type": "object",
+        "required": [
+          "payment_intent_id",
+          "client_secret",
+          "redirect_url"
+        ],
+        "properties": {
+          "payment_intent_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 256
+          },
+          "client_secret": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4096
+          },
+          "redirect_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 16384
+          }
+        }
+      },
+      "SubscriptionOrderPaymentResponse": {
+        "type": "object",
+        "required": [
+          "order",
+          "payment"
+        ],
+        "properties": {
+          "order": {
+            "$ref": "#/components/schemas/SubscriptionOrder"
+          },
+          "payment": {
+            "$ref": "#/components/schemas/SubscriptionPaymentResponse"
+          }
+        }
+      },
       "SubscriptionOrderStatus": {
         "type": "string",
         "description": "订阅购买订单的稳定状态。",
@@ -30976,65 +31035,6 @@
           "expired",
           "failed"
         ]
-      },
-      "SubscriptionOrderPaymentRequest": {
-        "type": "object",
-        "required": [
-          "payment_method"
-        ],
-        "properties": {
-          "payment_method": {
-            "type": "string",
-            "maxLength": 32,
-            "minLength": 1
-          }
-        }
-      },
-      "SubscriptionPaymentResponse": {
-        "type": "object",
-        "required": [
-          "payment_intent_id",
-          "client_secret",
-          "redirect_url"
-        ],
-        "properties": {
-          "payment_intent_id": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "maxLength": 256
-          },
-          "client_secret": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "maxLength": 4096
-          },
-          "redirect_url": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "maxLength": 16384
-          }
-        }
-      },
-      "SubscriptionOrderPaymentResponse": {
-        "type": "object",
-        "required": [
-          "order",
-          "payment"
-        ],
-        "properties": {
-          "order": {
-            "$ref": "#/components/schemas/SubscriptionOrder"
-          },
-          "payment": {
-            "$ref": "#/components/schemas/SubscriptionPaymentResponse"
-          }
-        }
       }
     },
     "securitySchemes": {

@@ -1909,6 +1909,18 @@ export type SubscriptionOrderCreateRequest = {
     price_currency: string;
     price_amount_minor: number;
 };
+export type SubscriptionOrderPaymentRequest = {
+    payment_method: string;
+};
+export type SubscriptionPaymentResponse = {
+    payment_intent_id: string | null;
+    client_secret: string | null;
+    redirect_url: string | null;
+};
+export type SubscriptionOrderPaymentResponse = {
+    order: SubscriptionOrder;
+    payment: SubscriptionPaymentResponse;
+};
 export type SubscriptionOrderStatus = 'created' | 'pending' | 'paid' | 'failed' | 'canceled' | 'expired';
 export type SubscriptionPlanStatus = 'active' | 'disabled';
 export type UsageLogOperation = 'chat' | 'responses' | 'responses_compact' | 'embedding' | 'image' | 'audio' | 'rerank' | 'video' | 'count_tokens';
@@ -2214,18 +2226,6 @@ export type VideoTaskListResponse = {
     next_cursor: string | null;
 };
 export type VideoTaskStatus = 'pending' | 'done' | 'expired' | 'failed';
-export type SubscriptionOrderPaymentRequest = {
-    payment_method: string;
-};
-export type SubscriptionPaymentResponse = {
-    payment_intent_id: string | null;
-    client_secret: string | null;
-    redirect_url: string | null;
-};
-export type SubscriptionOrderPaymentResponse = {
-    order: SubscriptionOrder;
-    payment: SubscriptionPaymentResponse;
-};
 export type AdminChannelCreateRequestWritable = {
     name: string;
     type: 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
