@@ -15,13 +15,14 @@ use af_admin::{
 use af_billing::{
     DatabasePaymentWebhookRouter, EASYPAY_PAYMENT_PROVIDER, EasyPayPaymentMethod,
     EasyPayPaymentProvider, PaymentOrderProvider, PaymentWebhookHandler, PaymentWebhookProcessor,
-    RefundProvider, STRIPE_PAYMENT_PROVIDER, StripePaymentProvider,
+    RefundProvider, RefundReceiptHandler, RefundReceiptProcessor, STRIPE_PAYMENT_PROVIDER,
+    StripePaymentProvider,
 };
 use af_db::{
-    EncryptedCredentialEnvelope, PaymentSettingsRecord, SiteSettingsRepository,
+    EncryptedCredentialEnvelope, PaymentSettingsRecord, RefundRepository, SiteSettingsRepository,
     SubscriptionRepository, TopupRepository,
 };
-use af_http::PaymentWebhookProcessorRegistry;
+use af_http::{PaymentWebhookProcessorRegistry, RefundReceiptProcessorRegistry};
 use af_httpclient::HttpClientProvider;
 use url::Url;
 
@@ -34,9 +35,8 @@ const EASYPAY_PRODUCT_NAME: &str = "AnyFlows 余额充值";
 struct PaymentRuntimeSnapshot {
     user_topup_service: Option<Arc<dyn UserTopupService>>,
     webhook_processors: HashMap<String, Arc<dyn PaymentWebhookHandler>>,
-    // 退款 HTTP/编排入口将在后续切片接入；当前先随支付配置快照原子切换。
-    #[allow(dead_code)]
     refund_providers: HashMap<String, Arc<dyn RefundProvider>>,
+    refund_receipt_processors: HashMap<String, Arc<dyn RefundReceiptHandler>>,
 }
 
 impl PaymentRuntimeSnapshot {
@@ -45,6 +45,7 @@ impl PaymentRuntimeSnapshot {
             user_topup_service: None,
             webhook_processors: HashMap::new(),
             refund_providers: HashMap::new(),
+            refund_receipt_processors: HashMap::new(),
         }
     }
 }
@@ -53,6 +54,7 @@ impl PaymentRuntimeSnapshot {
 pub(crate) struct PaymentRuntime {
     snapshot: RwLock<Arc<PaymentRuntimeSnapshot>>,
     topup_repository: TopupRepository,
+    refund_repository: RefundRepository,
     subscription_repository: SubscriptionRepository,
     site_settings_repository: SiteSettingsRepository,
     upstream_clients: HttpClientProvider,
@@ -63,6 +65,7 @@ impl PaymentRuntime {
     /// 使用稳定数据库与网络依赖创建初始禁用的支付运行时。
     pub(crate) fn new(
         topup_repository: TopupRepository,
+        refund_repository: RefundRepository,
         subscription_repository: SubscriptionRepository,
         site_settings_repository: SiteSettingsRepository,
         upstream_clients: HttpClientProvider,
@@ -71,6 +74,7 @@ impl PaymentRuntime {
         Self {
             snapshot: RwLock::new(Arc::new(PaymentRuntimeSnapshot::disabled())),
             topup_repository,
+            refund_repository,
             subscription_repository,
             site_settings_repository,
             upstream_clients,
@@ -87,6 +91,8 @@ impl PaymentRuntime {
         let mut webhook_processors: HashMap<String, Arc<dyn PaymentWebhookHandler>> =
             HashMap::new();
         let mut refund_providers: HashMap<String, Arc<dyn RefundProvider>> = HashMap::new();
+        let mut refund_receipt_processors: HashMap<String, Arc<dyn RefundReceiptHandler>> =
+            HashMap::new();
 
         if record.stripe_enabled() {
             self.add_stripe(
@@ -95,6 +101,7 @@ impl PaymentRuntime {
                 &mut routes,
                 &mut webhook_processors,
                 &mut refund_providers,
+                &mut refund_receipt_processors,
             )?;
         }
         if record.epay_enabled() {
@@ -113,6 +120,7 @@ impl PaymentRuntime {
             user_topup_service,
             webhook_processors,
             refund_providers,
+            refund_receipt_processors,
         })
     }
 
@@ -123,6 +131,7 @@ impl PaymentRuntime {
         routes: &mut Vec<UserTopupProviderRoute>,
         processors: &mut HashMap<String, Arc<dyn PaymentWebhookHandler>>,
         refund_providers: &mut HashMap<String, Arc<dyn RefundProvider>>,
+        refund_receipt_processors: &mut HashMap<String, Arc<dyn RefundReceiptHandler>>,
     ) -> Result<(), PaymentSettingsRuntimeError> {
         let publishable_key = record
             .stripe_publishable_key()
@@ -172,11 +181,18 @@ impl PaymentRuntime {
         processors.insert(
             STRIPE_PAYMENT_PROVIDER.to_owned(),
             Arc::new(PaymentWebhookProcessor::new(
-                webhook_provider,
+                webhook_provider.clone(),
                 Arc::new(DatabasePaymentWebhookRouter::new(
                     self.topup_repository.clone(),
                     self.subscription_repository.clone(),
                 )),
+            )),
+        );
+        refund_receipt_processors.insert(
+            STRIPE_PAYMENT_PROVIDER.to_owned(),
+            Arc::new(RefundReceiptProcessor::new(
+                webhook_provider,
+                self.refund_repository.clone(),
             )),
         );
         Ok(())
@@ -340,6 +356,15 @@ impl PaymentWebhookProcessorRegistry for PaymentRuntime {
     fn processor(&self, provider: &str) -> Option<Arc<dyn PaymentWebhookHandler>> {
         self.current_snapshot()
             .webhook_processors
+            .get(provider)
+            .cloned()
+    }
+}
+
+impl RefundReceiptProcessorRegistry for PaymentRuntime {
+    fn processor(&self, provider: &str) -> Option<Arc<dyn RefundReceiptHandler>> {
+        self.current_snapshot()
+            .refund_receipt_processors
             .get(provider)
             .cloned()
     }

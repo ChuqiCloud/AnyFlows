@@ -270,6 +270,36 @@ impl RefundReceiptProcessor {
     }
 }
 
+/// 退款回执 HTTP 层可观察的闭合结果。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RefundReceiptHandlerOutcome {
+    /// 新回执已推进退款请求终态。
+    Applied,
+    /// 相同回执已幂等处理，未重复推进状态。
+    Existing,
+    /// 回执引用的退款请求不存在。
+    NotFound,
+}
+
+/// 退款回执 HTTP 处理器的擦除接口。
+pub trait RefundReceiptHandler: Send + Sync + 'static {
+    fn handle<'a>(&'a self, request: PaymentWebhookRequest<'a>) -> RefundReceiptHandlerFuture<'a>;
+}
+
+pub type RefundReceiptHandlerFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<RefundReceiptHandlerOutcome, RefundReceiptProcessorError>>
+            + Send
+            + 'a,
+    >,
+>;
+
+impl RefundReceiptHandler for RefundReceiptProcessor {
+    fn handle<'a>(&'a self, request: PaymentWebhookRequest<'a>) -> RefundReceiptHandlerFuture<'a> {
+        Box::pin(async move { self.process(request).await.map(map_receipt_outcome) })
+    }
+}
+
 /// 退款提交编排器：先抢占本地状态，再调用 Provider，最后以 CAS 绑定结果。
 ///
 /// Provider 返回结果未知或响应无法校验时保持 `Submitted`，后续只能通过同一请求恢复，
@@ -490,6 +520,14 @@ fn valid_provider_refund_id(value: &str) -> bool {
         && value.len() <= MAX_REFUND_PROVIDER_REFUND_ID_BYTES
         && value.trim() == value
         && !value.chars().any(char::is_control)
+}
+
+fn map_receipt_outcome(outcome: RefundReceiptOutcome) -> RefundReceiptHandlerOutcome {
+    match outcome {
+        RefundReceiptOutcome::Applied(_) => RefundReceiptHandlerOutcome::Applied,
+        RefundReceiptOutcome::Existing(_) => RefundReceiptHandlerOutcome::Existing,
+        RefundReceiptOutcome::NotFound => RefundReceiptHandlerOutcome::NotFound,
+    }
 }
 
 fn hex_lower(bytes: &[u8]) -> String {

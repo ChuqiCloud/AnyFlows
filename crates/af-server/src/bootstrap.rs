@@ -87,25 +87,26 @@ use af_db::{
     PaymentSettingsWriteRecord, PlatformAuditRepository, PlaygroundConversationRepository,
     PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
     PlaygroundShareRepositoryConfigError, QuotaRepository, RedemptionRepository,
-    RedemptionRepositoryConfigError, RegistrationRepository, RegistrationRepositoryConfigError,
-    RequestOutcomeRepository, SiteSettingsRepository, SiteSettingsRepositoryConfigError,
-    SiteSettingsRepositoryError, SmartRouteRuntimeRepository,
-    SmartRouteRuntimeRepositoryConfigError, SubscriptionBalanceAlertRepository,
-    SubscriptionBalanceAlertRepositoryConfigError, SubscriptionRepository,
-    SubscriptionRepositoryConfigError, TokenAuthRepository, TokenAuthRepositoryConfigError,
-    TokenRequestAdmissionRepository, TokenRequestAdmissionRepositoryConfigError, TopupRepository,
-    TopupRepositoryConfigError, UsageLogRepository, UserInvitationRepository,
-    UserInvitationRepositoryConfigError, UserNotificationRepository,
-    UserNotificationRepositoryConfigError, UserProfileRepository, UserProfileRepositoryConfigError,
-    UserSessionRepository, UserSessionRepositoryConfigError, UserTokenRepository,
-    UserTokenRepositoryConfigError, WalletLedgerRepository, WalletLedgerRepositoryConfigError,
-    connect_and_migrate,
+    RedemptionRepositoryConfigError, RefundRepository, RefundRepositoryConfigError,
+    RegistrationRepository, RegistrationRepositoryConfigError, RequestOutcomeRepository,
+    SiteSettingsRepository, SiteSettingsRepositoryConfigError, SiteSettingsRepositoryError,
+    SmartRouteRuntimeRepository, SmartRouteRuntimeRepositoryConfigError,
+    SubscriptionBalanceAlertRepository, SubscriptionBalanceAlertRepositoryConfigError,
+    SubscriptionRepository, SubscriptionRepositoryConfigError, TokenAuthRepository,
+    TokenAuthRepositoryConfigError, TokenRequestAdmissionRepository,
+    TokenRequestAdmissionRepositoryConfigError, TopupRepository, TopupRepositoryConfigError,
+    UsageLogRepository, UserInvitationRepository, UserInvitationRepositoryConfigError,
+    UserNotificationRepository, UserNotificationRepositoryConfigError, UserProfileRepository,
+    UserProfileRepositoryConfigError, UserSessionRepository, UserSessionRepositoryConfigError,
+    UserTokenRepository, UserTokenRepositoryConfigError, WalletLedgerRepository,
+    WalletLedgerRepositoryConfigError, connect_and_migrate,
 };
 use af_http::{
     AdminChannelProbe, AdminOAuthConnectionService, AudioService, ChatService, EmbeddingService,
     HttpListener, HttpRouter, ImageService, PaymentWebhookProcessorRegistry, QueryApiKeyPolicy,
-    ReadinessHandle, RerankService, ResponsesCompactService, ServeError, ServeOutcome,
-    SpeechService, TurnstileVerifier, VideoTaskService, build_payment_webhook_router, build_router,
+    ReadinessHandle, RefundReceiptProcessorRegistry, RerankService, ResponsesCompactService,
+    ServeError, ServeOutcome, SpeechService, TurnstileVerifier, VideoTaskService,
+    build_payment_webhook_router, build_refund_receipt_webhook_router, build_router,
     serve_with_graceful_shutdown,
 };
 use af_httpclient::{
@@ -442,6 +443,9 @@ pub enum BootstrapError {
     /// 充值订单与支付事件仓储的启动参数无效。
     #[error("充值仓储启动参数无效")]
     TopupRepository(#[source] TopupRepositoryConfigError),
+    /// 退款请求与回执仓储的启动参数无效。
+    #[error("退款仓储启动参数无效")]
+    RefundRepository(#[source] RefundRepositoryConfigError),
     /// 凭据专属代理目录仓储的启动参数无效。
     #[error("专属代理目录仓储启动参数无效")]
     CredentialProxyRepository(#[source] CredentialProxyRepositoryConfigError),
@@ -1316,6 +1320,11 @@ impl Bootstrap<RelayReady> {
             Duration::from_secs(self.config.auth().lookup_timeout_secs()),
         )
         .map_err(BootstrapError::TopupRepository)?;
+        let refund_repository = RefundRepository::new(
+            self.stage.infrastructure.infrastructure.database.clone(),
+            Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::RefundRepository)?;
         import_legacy_stripe_payment_settings(
             &self.stage.infrastructure.payment_settings_repository,
             &self.stage.infrastructure.system_secret_cipher,
@@ -1324,6 +1333,7 @@ impl Bootstrap<RelayReady> {
         .await?;
         let payment_runtime = Arc::new(PaymentRuntime::new(
             topup_repository,
+            refund_repository,
             self.stage.infrastructure.subscription_repository.clone(),
             self.stage.infrastructure.site_settings_repository.clone(),
             self.stage.upstream_clients.clone(),
@@ -2146,7 +2156,10 @@ impl Bootstrap<Supervised> {
         let user_topup_service: Arc<dyn UserTopupService> = self.stage.payment_runtime.clone();
         let payment_webhook_registry: Arc<dyn PaymentWebhookProcessorRegistry> =
             self.stage.payment_runtime.clone();
-        let payment_webhook_routes = build_payment_webhook_router(payment_webhook_registry);
+        let refund_receipt_registry: Arc<dyn RefundReceiptProcessorRegistry> =
+            self.stage.payment_runtime.clone();
+        let payment_webhook_routes = build_payment_webhook_router(payment_webhook_registry)
+            .merge(build_refund_receipt_webhook_router(refund_receipt_registry));
         let router = build_router(
             self.config.server(),
             self.stage.chat.clone(),

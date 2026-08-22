@@ -29,6 +29,7 @@ mod platform_audit;
 mod playground_conversations;
 mod playground_shares;
 mod redemptions;
+mod refund_webhook;
 mod registration;
 mod rerank;
 mod responses_compact;
@@ -101,6 +102,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(credential_proxies::document());
     document.merge(debug_traces::document());
     document.merge(payment_webhook::document());
+    document.merge(refund_webhook::document());
     document.merge(organization_wallet::document());
     document.merge(organization_budget::document());
     document.merge(organization_tokens::document());
@@ -155,6 +157,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("专属代理"),
         Tag::new("调试追踪"),
         Tag::new("支付回调"),
+        Tag::new("退款回执"),
     ]);
     document
         .components
@@ -194,7 +197,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 151);
+        assert_eq!(document.paths.paths.len(), 152);
         let operation_count = document
             .paths
             .paths
@@ -215,7 +218,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 210);
+        assert_eq!(operation_count, 211);
         assert!(
             document
                 .components
@@ -405,6 +408,7 @@ mod tests {
             "listPlaygroundConversations",
             "listUserTokens",
             "receivePaymentWebhook",
+            "receiveRefundWebhook",
             "listUserWalletEntries",
             "listCurrentUserSubscriptions",
             "loginManagementSession",

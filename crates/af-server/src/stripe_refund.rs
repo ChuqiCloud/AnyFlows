@@ -12,6 +12,7 @@ use zeroize::Zeroize;
 
 const STRIPE_API_BASE_URL: &str = "https://api.stripe.com";
 const STRIPE_REFUNDS_PATH: &str = "/v1/refunds";
+const STRIPE_REFUND_REQUEST_METADATA_KEY: &str = "anyflows_refund_request_id";
 const MAX_STRIPE_SECRET_KEY_BYTES: usize = 4 * 1024;
 const MAX_STRIPE_RESPONSE_BYTES: usize = 64 * 1024;
 const STRIPE_REFUND_IDEMPOTENCY_DOMAIN: &str = "anyflows-refund-v1";
@@ -292,6 +293,10 @@ fn submit_form(request: &RefundProviderRequest) -> String {
     let mut serializer = form_urlencoded::Serializer::new(String::new());
     serializer.append_pair("payment_intent", request.payment_reference());
     serializer.append_pair("amount", &request.amount_minor().to_string());
+    serializer.append_pair(
+        &format!("metadata[{STRIPE_REFUND_REQUEST_METADATA_KEY}]"),
+        &request.request_id().persistence_key(),
+    );
     serializer.finish()
 }
 
@@ -354,7 +359,7 @@ mod tests {
         let request = request();
         assert_eq!(
             submit_form(&request),
-            "payment_intent=pi_test_123&amount=40"
+            "payment_intent=pi_test_123&amount=40&metadata%5Banyflows_refund_request_id%5D=01010101010101010101010101010101"
         );
         assert_eq!(
             idempotency_key(&request),
