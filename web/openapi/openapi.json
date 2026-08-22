@@ -29157,6 +29157,22 @@
         },
         "additionalProperties": false
       },
+      "SubscriptionOrderPaymentResponse": {
+        "type": "object",
+        "required": [
+          "order",
+          "payment"
+        ],
+        "properties": {
+          "order": {
+            "$ref": "#/components/schemas/SubscriptionOrder"
+          },
+          "payment": {
+            "$ref": "#/components/schemas/SubscriptionPaymentResponse"
+          }
+        },
+        "additionalProperties": false
+      },
       "SubscriptionPaymentResponse": {
         "type": "object",
         "required": [
@@ -29185,22 +29201,6 @@
               "null"
             ],
             "maxLength": 16384
-          }
-        },
-        "additionalProperties": false
-      },
-      "SubscriptionOrderPaymentResponse": {
-        "type": "object",
-        "required": [
-          "order",
-          "payment"
-        ],
-        "properties": {
-          "order": {
-            "$ref": "#/components/schemas/SubscriptionOrder"
-          },
-          "payment": {
-            "$ref": "#/components/schemas/SubscriptionPaymentResponse"
           }
         },
         "additionalProperties": false

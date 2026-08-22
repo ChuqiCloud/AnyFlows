@@ -1912,14 +1912,14 @@ export type SubscriptionOrderCreateRequest = {
 export type SubscriptionOrderPaymentRequest = {
     payment_method: string;
 };
+export type SubscriptionOrderPaymentResponse = {
+    order: SubscriptionOrder;
+    payment: SubscriptionPaymentResponse;
+};
 export type SubscriptionPaymentResponse = {
     payment_intent_id: string | null;
     client_secret: string | null;
     redirect_url: string | null;
-};
-export type SubscriptionOrderPaymentResponse = {
-    order: SubscriptionOrder;
-    payment: SubscriptionPaymentResponse;
 };
 export type SubscriptionOrderStatus = 'created' | 'pending' | 'paid' | 'failed' | 'canceled' | 'expired';
 export type SubscriptionPlanStatus = 'active' | 'disabled';
