@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 150);
+        assert_eq!(document.paths.paths.len(), 151);
         let operation_count = document
             .paths
             .paths
@@ -215,7 +215,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 209);
+        assert_eq!(operation_count, 210);
         assert!(
             document
                 .components
@@ -388,6 +388,7 @@ mod tests {
             "listCurrentSubscriptionCatalog",
             "createCurrentSubscriptionOrder",
             "getCurrentSubscriptionOrder",
+            "submitCurrentSubscriptionOrderPayment",
             "listMissingAdminModels",
             "listAdminTokens",
             "listAdminUsageLogs",
@@ -458,7 +459,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 359);
+        assert_eq!(schemas.len(), 362);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminDashboardChannelFlow"));
         assert!(schemas.contains_key("AdminDashboardFailure"));
