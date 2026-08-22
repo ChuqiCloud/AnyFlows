@@ -75,6 +75,7 @@ pub(crate) mod playground_shares;
 pub(crate) mod proxies;
 pub(crate) mod redemption_batches;
 pub(crate) mod redemption_codes;
+pub(crate) mod refund_requests;
 pub(crate) mod registration_rate_limits;
 pub(crate) mod request_outcome_logs;
 pub(crate) mod route_channels;
@@ -1557,6 +1558,120 @@ where
     Ok(())
 }
 
+async fn validate_refund_request<C>(
+    model: &refund_requests::ActiveModel,
+    database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    let persisted = if insert {
+        None
+    } else {
+        let id = model
+            .id
+            .try_as_ref()
+            .copied()
+            .ok_or_else(|| DbErr::Custom("退款请求更新缺少标识".to_owned()))?;
+        Some(
+            refund_requests::Entity::find_by_id(id)
+                .one(database)
+                .await?
+                .ok_or_else(|| DbErr::Custom("退款请求不存在".to_owned()))?,
+        )
+    };
+    let request_key = merge_required(
+        &model.request_key,
+        persisted.as_ref().map(|row| row.request_key.clone()),
+        "退款请求标识缺失",
+    )?;
+    let idempotency_key = merge_required(
+        &model.idempotency_key,
+        persisted.as_ref().map(|row| row.idempotency_key.clone()),
+        "退款请求幂等键缺失",
+    )?;
+    let order_key = merge_required(
+        &model.order_key,
+        persisted.as_ref().map(|row| row.order_key.clone()),
+        "退款订单标识缺失",
+    )?;
+    let provider = merge_required(
+        &model.provider,
+        persisted.as_ref().map(|row| row.provider.clone()),
+        "退款支付渠道缺失",
+    )?;
+    let currency = merge_required(
+        &model.currency,
+        persisted.as_ref().map(|row| row.currency.clone()),
+        "退款币种缺失",
+    )?;
+    let order_kind = merge_required(
+        &model.order_kind,
+        persisted.as_ref().map(|row| row.order_kind),
+        "退款订单类型缺失",
+    )?;
+    let original_amount_minor = merge_required(
+        &model.original_amount_minor,
+        persisted.as_ref().map(|row| row.original_amount_minor),
+        "退款原始金额缺失",
+    )?;
+    let refund_amount_minor = merge_required(
+        &model.refund_amount_minor,
+        persisted.as_ref().map(|row| row.refund_amount_minor),
+        "退款金额缺失",
+    )?;
+    let status = merge_required(
+        &model.status,
+        persisted.as_ref().map(|row| row.status),
+        "退款请求状态缺失",
+    )?;
+    let version = merge_required(
+        &model.version,
+        persisted.as_ref().map(|row| row.version),
+        "退款请求版本缺失",
+    )?;
+    let created_at = merge_required(
+        &model.created_at,
+        persisted.as_ref().map(|row| row.created_at),
+        "退款请求创建时间缺失",
+    )?;
+    let updated_at = merge_required(
+        &model.updated_at,
+        persisted.as_ref().map(|row| row.updated_at),
+        "退款请求更新时间缺失",
+    )?;
+    let user_id = model
+        .user_id
+        .try_as_ref()
+        .copied()
+        .or_else(|| persisted.as_ref().map(|row| row.user_id))
+        .unwrap_or_default();
+
+    if !valid_hex(&request_key, 32, true)
+        || !valid_hex(&idempotency_key, 32, true)
+        || !valid_hex(&order_key, 32, true)
+        || user_id <= 0
+        || !matches!(order_kind, 1 | 2)
+        || provider.is_empty()
+        || provider.len() > 64
+        || provider
+            .bytes()
+            .any(|byte| !(byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-'))
+        || !valid_currency(&currency)
+        || original_amount_minor <= 0
+        || refund_amount_minor <= 0
+        || refund_amount_minor > original_amount_minor
+        || !matches!(status, 1..=5)
+        || version <= 0
+        || created_at.unix_timestamp() < 0
+        || updated_at < created_at
+    {
+        return Err(DbErr::Custom("退款请求状态无效".to_owned()));
+    }
+    Ok(())
+}
+
 async fn validate_topup_payment_event<C>(
     model: &topup_payment_events::ActiveModel,
     _database: &C,
@@ -1802,6 +1917,7 @@ impl_updated_at_behavior!(
     tokens::ActiveModel => validate_default,
     topup_orders::ActiveModel => validate_topup_order,
     subscription_orders::ActiveModel => validate_subscription_order,
+    refund_requests::ActiveModel => validate_refund_request,
     user_oauth_identities::ActiveModel => validate_default,
     users::ActiveModel => validate_user,
 );

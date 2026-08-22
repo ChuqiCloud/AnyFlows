@@ -146,6 +146,7 @@ mod quota_tests;
 #[cfg(test)]
 mod quota_token_window_tests;
 mod redemption;
+mod refund;
 mod registration;
 #[cfg(test)]
 mod registration_tests;
@@ -517,6 +518,7 @@ pub use redemption::{
     RedemptionOutcome, RedemptionRecord, RedemptionRejection, RedemptionRepository,
     RedemptionRepositoryConfigError, RedemptionRepositoryError,
 };
+pub use refund::{RefundRepository, RefundRepositoryConfigError, RefundRepositoryError};
 pub use registration::{
     DEFAULT_REGISTRATION_RATE_LIMIT_ATTEMPTS, DEFAULT_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS,
     MAX_REGISTRATION_RATE_LIMIT_ATTEMPTS, MAX_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS,
