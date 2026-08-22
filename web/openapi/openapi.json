@@ -28908,6 +28908,7 @@
       },
       "SubscriptionOrderCreateRequest": {
         "type": "object",
+        "description": "当前用户创建待支付订阅订单的请求。",
         "required": [
           "idempotency_key",
           "plan_id",
@@ -28955,6 +28956,7 @@
       },
       "SubscriptionOrderStatus": {
         "type": "string",
+        "description": "订阅购买订单的稳定状态。",
         "enum": [
           "created",
           "pending",
