@@ -76,6 +76,18 @@ test('订阅 OpenAPI 不接受客户端覆盖所有权与周期窗口', () => {
     openapi.paths['/api/account/subscription-orders'].post.operationId,
     'createCurrentSubscriptionOrder',
   )
+  assert.equal(
+    openapi.paths['/api/account/subscription-orders/{order_id}'].get.operationId,
+    'getCurrentSubscriptionOrder',
+  )
+  assert.deepEqual(
+    Object.keys(openapi.paths['/api/account/subscription-orders/{order_id}'].get.responses).sort(),
+    ['200', '400', '401', '404', '500'],
+  )
+  assert.equal(
+    openapi.components.schemas.SubscriptionOrder.properties.provider_order_id,
+    undefined,
+  )
   assert.deepEqual(
     Object.keys(openapi.components.schemas.AdminSubscriptionPlanCreateRequest.properties).sort(),
     ['cycle', 'name', 'price_amount_minor', 'price_currency', 'price_provider', 'quota_amount'],

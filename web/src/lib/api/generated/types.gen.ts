@@ -3010,6 +3010,25 @@ export type CreateCurrentSubscriptionOrderResponses = {
     201: SubscriptionOrder;
 };
 export type CreateCurrentSubscriptionOrderResponse = CreateCurrentSubscriptionOrderResponses[keyof CreateCurrentSubscriptionOrderResponses];
+export type GetCurrentSubscriptionOrderData = {
+    body?: never;
+    path: {
+        order_id: string;
+    };
+    query?: never;
+    url: '/api/account/subscription-orders/{order_id}';
+};
+export type GetCurrentSubscriptionOrderErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetCurrentSubscriptionOrderError = GetCurrentSubscriptionOrderErrors[keyof GetCurrentSubscriptionOrderErrors];
+export type GetCurrentSubscriptionOrderResponses = {
+    200: SubscriptionOrder;
+};
+export type GetCurrentSubscriptionOrderResponse = GetCurrentSubscriptionOrderResponses[keyof GetCurrentSubscriptionOrderResponses];
 export type RequestPasswordResetData = {
     body: PasswordResetRequest;
     path?: never;

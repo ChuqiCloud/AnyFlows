@@ -10,8 +10,8 @@ use af_admin::{
     UserTopupConfiguration, UserTopupService,
 };
 use af_domain::{
-    SubscriptionCycle, SubscriptionOrderRequestId, SubscriptionOrderStatus, SubscriptionPlanId,
-    SubscriptionPlanStatus, UserId, UserSubscriptionId, UserSubscriptionStatus,
+    SubscriptionCycle, SubscriptionOrderId, SubscriptionOrderRequestId, SubscriptionOrderStatus,
+    SubscriptionPlanId, SubscriptionPlanStatus, UserId, UserSubscriptionId, UserSubscriptionStatus,
 };
 use axum::{
     Extension, Json, Router,
@@ -489,6 +489,10 @@ pub(crate) fn build_subscription_router(
             "/api/account/subscription-orders",
             post(create_current_subscription_order),
         )
+        .route(
+            "/api/account/subscription-orders/{order_id}",
+            get(get_current_subscription_order),
+        )
         .route_layer(user_authentication)
         .with_state(state);
     admin_routes.merge(user_routes)
@@ -660,6 +664,23 @@ async fn create_current_subscription_order(
     ))
 }
 
+/// 读取当前用户的订阅订单结果；跨用户订单不泄露存在性。
+async fn get_current_subscription_order(
+    State(state): State<SubscriptionHttpState>,
+    Path(order_id): Path<String>,
+    Extension(authentication): Extension<SessionAuthentication>,
+) -> Result<Response, ManagementError> {
+    let order_id = parse_order_id(&order_id)?;
+    let order = state
+        .service
+        .get_order(authentication.principal(), order_id)
+        .await
+        .map_err(map_service_error)?;
+    Ok(no_store_json(SubscriptionOrderResponse::from_order(
+        &order,
+    )?))
+}
+
 async fn bind_admin_user_subscription(
     State(state): State<SubscriptionHttpState>,
     Path(user_id): Path<String>,
@@ -801,6 +822,10 @@ fn parse_user_id(value: &str) -> Result<UserId, ManagementError> {
 
 fn parse_subscription_id(value: &str) -> Result<UserSubscriptionId, ManagementError> {
     UserSubscriptionId::from_persistence_key(value).map_err(|_| ManagementError::InvalidRequest)
+}
+
+fn parse_order_id(value: &str) -> Result<SubscriptionOrderId, ManagementError> {
+    SubscriptionOrderId::from_persistence_key(value).map_err(|_| ManagementError::InvalidRequest)
 }
 
 fn optional_i64(value: Option<u64>) -> Result<Option<i64>, ManagementError> {

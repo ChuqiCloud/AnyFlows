@@ -749,6 +749,9 @@ pub type SubscriptionCatalogFuture<'a> = Pin<
 /// 当前用户幂等创建订阅订单的异步结果。
 pub type SubscriptionCreateOrderFuture<'a> =
     Pin<Box<dyn Future<Output = Result<SubscriptionOrder, SubscriptionServiceError>> + Send + 'a>>;
+/// 当前用户读取订阅订单结果的异步结果。
+pub type SubscriptionGetOrderFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<SubscriptionOrder, SubscriptionServiceError>> + Send + 'a>>;
 /// 管理员创建计划的异步结果。
 pub type SubscriptionCreatePlanFuture<'a> = Pin<
     Box<dyn Future<Output = Result<AdminSubscriptionPlan, SubscriptionServiceError>> + Send + 'a>,
@@ -788,6 +791,12 @@ pub trait SubscriptionService: Send + Sync {
         principal: SessionPrincipal,
         command: SubscriptionOrderCreateCommand,
     ) -> SubscriptionCreateOrderFuture<'a>;
+    /// 当前用户读取自己的订阅订单，跨用户订单统一视为不存在。
+    fn get_order<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        order_id: SubscriptionOrderId,
+    ) -> SubscriptionGetOrderFuture<'a>;
     /// 管理员读取计划目录。
     fn list_plans<'a>(
         &'a self,
