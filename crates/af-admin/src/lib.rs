@@ -44,6 +44,7 @@ mod playground_share;
 mod playground_share_snapshot;
 mod playground_share_token;
 mod redemption;
+mod refund;
 mod registration;
 #[cfg(test)]
 mod registration_tests;
@@ -310,6 +311,11 @@ pub use redemption::{
     DatabaseRedemptionService, IssuedAdminRedemptionBatch, RedemptionAuditFuture,
     RedemptionCreateFuture, RedemptionDisableFuture, RedemptionListFuture, RedemptionRedeemFuture,
     RedemptionService, RedemptionServiceError, UserRedemptionCommand, UserRedemptionResult,
+};
+pub use refund::{
+    AdminRefundDecisionCommand, AdminRefundError, AdminRefundListFuture, AdminRefundListQuery,
+    AdminRefundPage, AdminRefundRequest, AdminRefundService, AdminRefundSubmitter,
+    DEFAULT_ADMIN_REFUND_PAGE_SIZE, DatabaseAdminRefundService, MAX_ADMIN_REFUND_PAGE_SIZE,
 };
 pub use registration::{
     DatabaseRegistrationService, MAX_REGISTRATION_PASSWORD_BYTES, MIN_REGISTRATION_PASSWORD_BYTES,

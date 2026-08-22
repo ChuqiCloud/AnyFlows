@@ -2443,6 +2443,7 @@ pub(in crate::migration) mod refund_requests {
         OrderKind,
         OrderKey,
         Provider,
+        PaymentReference,
         Currency,
         OriginalAmountMinor,
         RefundAmountMinor,

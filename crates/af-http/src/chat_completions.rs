@@ -62,6 +62,7 @@ pub(crate) struct HttpState {
     pub(crate) admin_user_reader: Arc<dyn AdminUserReader>,
     pub(crate) admin_user_writer: Arc<dyn AdminUserWriter>,
     pub(crate) admin_wallet_service: Option<Arc<dyn AdminWalletService>>,
+    pub(crate) admin_refund_service: Option<Arc<dyn af_admin::AdminRefundService>>,
     pub(crate) platform_audit_service: Option<Arc<dyn PlatformAuditService>>,
     pub(crate) organization_authorization_service:
         Option<Arc<dyn af_admin::OrganizationAuthorizationService>>,
@@ -113,6 +114,7 @@ impl HttpState {
             admin_user_reader,
             admin_user_writer,
             admin_wallet_service: None,
+            admin_refund_service: None,
             platform_audit_service: None,
             organization_authorization_service: None,
             organization_invitation_service: None,
@@ -199,6 +201,15 @@ impl HttpState {
         service: Option<Arc<dyn AdminWalletService>>,
     ) -> Self {
         self.admin_wallet_service = service;
+        self
+    }
+
+    /// 注入管理员退款审批与人工提交服务。
+    pub(crate) fn with_admin_refund_service(
+        mut self,
+        service: Option<Arc<dyn af_admin::AdminRefundService>>,
+    ) -> Self {
+        self.admin_refund_service = service;
         self
     }
 

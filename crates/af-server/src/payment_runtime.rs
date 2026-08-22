@@ -7,16 +7,17 @@ use std::{
 
 use af_account::{SystemSecretCipher, SystemSecretKind};
 use af_admin::{
-    DatabaseUserTopupService, EPAY_ALIPAY_PAYMENT_METHOD, EPAY_WXPAY_PAYMENT_METHOD,
-    PaymentSettingsApplyFuture, PaymentSettingsRuntimeApplier, PaymentSettingsRuntimeError,
-    SessionPrincipal, UserTopupConfiguration, UserTopupError, UserTopupOrderCreateCommand,
-    UserTopupOrderCreateFuture, UserTopupProviderRoute, UserTopupService,
+    AdminRefundError, AdminRefundSubmitter, DatabaseUserTopupService, EPAY_ALIPAY_PAYMENT_METHOD,
+    EPAY_WXPAY_PAYMENT_METHOD, PaymentSettingsApplyFuture, PaymentSettingsRuntimeApplier,
+    PaymentSettingsRuntimeError, SessionPrincipal, UserTopupConfiguration, UserTopupError,
+    UserTopupOrderCreateCommand, UserTopupOrderCreateFuture, UserTopupProviderRoute,
+    UserTopupService,
 };
 use af_billing::{
     DatabasePaymentWebhookRouter, EASYPAY_PAYMENT_PROVIDER, EasyPayPaymentMethod,
     EasyPayPaymentProvider, PaymentOrderProvider, PaymentWebhookHandler, PaymentWebhookProcessor,
-    RefundProvider, RefundReceiptHandler, RefundReceiptProcessor, STRIPE_PAYMENT_PROVIDER,
-    StripePaymentProvider,
+    RefundProvider, RefundReceiptHandler, RefundReceiptProcessor, RefundSubmissionOutcome,
+    RefundSubmissionProcessor, STRIPE_PAYMENT_PROVIDER, StripePaymentProvider,
 };
 use af_db::{
     EncryptedCredentialEnvelope, PaymentSettingsRecord, RefundRepository, SiteSettingsRepository,
@@ -38,6 +39,7 @@ struct PaymentRuntimeSnapshot {
     webhook_processors: HashMap<String, Arc<dyn PaymentWebhookHandler>>,
     refund_providers: HashMap<String, Arc<dyn RefundProvider>>,
     refund_receipt_processors: HashMap<String, Arc<dyn RefundReceiptHandler>>,
+    refund_auto_submit_enabled: bool,
 }
 
 impl PaymentRuntimeSnapshot {
@@ -47,6 +49,7 @@ impl PaymentRuntimeSnapshot {
             webhook_processors: HashMap::new(),
             refund_providers: HashMap::new(),
             refund_receipt_processors: HashMap::new(),
+            refund_auto_submit_enabled: false,
         }
     }
 }
@@ -128,6 +131,7 @@ impl PaymentRuntime {
             webhook_processors,
             refund_providers,
             refund_receipt_processors,
+            refund_auto_submit_enabled: record.refund_auto_submit_enabled(),
         })
     }
 
@@ -314,6 +318,76 @@ impl PaymentRuntime {
             .refund_providers
             .get(provider)
             .cloned()
+    }
+}
+
+impl AdminRefundSubmitter for PaymentRuntime {
+    fn auto_submit_enabled<'a>(
+        &'a self,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<bool, AdminRefundError>> + Send + 'a>,
+    > {
+        Box::pin(async move { Ok(self.current_snapshot().refund_auto_submit_enabled) })
+    }
+
+    fn submit<'a>(
+        &'a self,
+        record: &'a af_domain::RefundRequestRecord,
+        now: u64,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<af_domain::RefundRequestRecord, AdminRefundError>,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            if record.approval_status() != af_domain::RefundApprovalStatus::Approved
+                || !matches!(
+                    record.status(),
+                    af_domain::RefundRequestStatus::Requested
+                        | af_domain::RefundRequestStatus::Failed
+                )
+            {
+                return Err(AdminRefundError::Conflict);
+            }
+            let payment_reference = record
+                .payment_reference()
+                .ok_or(AdminRefundError::Unavailable)?;
+            let provider = self
+                .refund_provider(record.provider())
+                .ok_or(AdminRefundError::Unavailable)?;
+            let processor =
+                RefundSubmissionProcessor::new(provider, self.refund_repository.clone());
+            let outcome = processor
+                .submit(record.request_id(), payment_reference.to_owned(), now)
+                .await
+                .map_err(map_admin_refund_submission_error)?;
+            Ok(match outcome {
+                RefundSubmissionOutcome::Applied(record)
+                | RefundSubmissionOutcome::Existing(record) => record,
+            })
+        })
+    }
+}
+
+fn map_admin_refund_submission_error(
+    error: af_billing::RefundSubmissionProcessorError,
+) -> AdminRefundError {
+    match error {
+        af_billing::RefundSubmissionProcessorError::NotFound => AdminRefundError::NotFound,
+        af_billing::RefundSubmissionProcessorError::Conflict => AdminRefundError::Conflict,
+        af_billing::RefundSubmissionProcessorError::OutcomeUnknown => {
+            AdminRefundError::OutcomeUnknown
+        }
+        af_billing::RefundSubmissionProcessorError::Unavailable => AdminRefundError::Unavailable,
+        af_billing::RefundSubmissionProcessorError::Rejected
+        | af_billing::RefundSubmissionProcessorError::InvalidResponse => {
+            AdminRefundError::AutoSubmitFailed
+        }
+        af_billing::RefundSubmissionProcessorError::InvalidInput
+        | af_billing::RefundSubmissionProcessorError::Invariant => AdminRefundError::Internal,
     }
 }
 

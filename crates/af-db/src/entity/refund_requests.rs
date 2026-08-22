@@ -17,6 +17,8 @@ pub struct Model {
     pub order_key: String,
     #[sea_orm(column_type = "String(StringLen::N(64))")]
     pub provider: String,
+    #[sea_orm(column_type = "String(StringLen::N(128))", nullable)]
+    pub payment_reference: Option<String>,
     #[sea_orm(column_type = "Char(Some(3))")]
     pub currency: String,
     pub original_amount_minor: i64,

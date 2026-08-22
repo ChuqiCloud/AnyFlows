@@ -555,6 +555,7 @@ mod tests {
             RefundOrderKind::Topup,
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
             "stripe".to_owned(),
+            "pi_original".to_owned(),
             "USD".to_owned(),
             100,
             40,

@@ -67,6 +67,11 @@ pub(crate) enum ManagementError {
     WalletOverflow,
     /// 调账提交结果未知，调用方必须复用同一事件键确认。
     WalletOutcomeUnknown,
+    RefundNotFound,
+    RefundConflict,
+    RefundUnavailable,
+    RefundAutoSubmitFailed,
+    RefundOutcomeUnknown,
     /// 预算策略版本或预留状态与请求不一致。
     BudgetConflict,
     /// 预算写入结果未知，调用方必须按原请求重试或查询。
@@ -110,7 +115,9 @@ pub(crate) enum ManagementError {
     /// 当前实例尚未启用公开注册。
     RegistrationDisabled,
     /// 当前客户端已耗尽公开注册固定窗口尝试次数。
-    RegistrationRateLimited { retry_after_seconds: u64 },
+    RegistrationRateLimited {
+        retry_after_seconds: u64,
+    },
     /// 验证码无效或带邮箱身份无法创建；不得细分具体原因。
     RegistrationRejected,
     /// 邀请码不存在、已失效或对应邀请人当前不可用。
@@ -459,6 +466,41 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "wallet_outcome_unknown",
                     message: "Wallet outcome unknown",
+                },
+            ),
+            Self::RefundNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "refund_not_found",
+                    message: "Refund request not found",
+                },
+            ),
+            Self::RefundConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "refund_conflict",
+                    message: "Refund request state conflict",
+                },
+            ),
+            Self::RefundUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "refund_unavailable",
+                    message: "Refund service unavailable",
+                },
+            ),
+            Self::RefundAutoSubmitFailed => (
+                StatusCode::BAD_GATEWAY,
+                ManagementErrorBody {
+                    code: "refund_auto_submit_failed",
+                    message: "Refund provider rejected the automatic submission",
+                },
+            ),
+            Self::RefundOutcomeUnknown => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "refund_outcome_unknown",
+                    message: "Refund submission outcome unknown",
                 },
             ),
             Self::BudgetConflict => (

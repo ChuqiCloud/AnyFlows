@@ -264,6 +264,10 @@ pub struct RefundAdminPage {
 
 impl RefundAdminPage {
     #[must_use]
+    pub fn into_parts(self) -> (Vec<RefundRequestRecord>, Option<i64>) {
+        (self.entries, self.next_cursor)
+    }
+    #[must_use]
     pub fn entries(&self) -> &[RefundRequestRecord] {
         &self.entries
     }
@@ -834,6 +838,7 @@ async fn create_request_inner(
         order_kind: Set(write.order_kind().code()),
         order_key: Set(write.order_key().to_owned()),
         provider: Set(write.provider().to_owned()),
+        payment_reference: Set(Some(write.payment_reference().to_owned())),
         currency: Set(write.currency().to_owned()),
         original_amount_minor: Set(write.original_amount_minor()),
         refund_amount_minor: Set(write.refund_amount_minor()),
@@ -954,6 +959,7 @@ fn to_record(model: refund_requests::Model) -> Result<RefundRequestRecord, Refun
         order_kind,
         model.order_key,
         model.provider,
+        model.payment_reference,
         model.currency,
         model.original_amount_minor,
         model.refund_amount_minor,
