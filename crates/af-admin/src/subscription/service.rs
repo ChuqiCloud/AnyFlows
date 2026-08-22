@@ -103,6 +103,23 @@ impl SubscriptionService for DatabaseSubscriptionService {
         })
     }
 
+    fn get_order<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        order_id: SubscriptionOrderId,
+    ) -> super::types::SubscriptionGetOrderFuture<'a> {
+        Box::pin(async move {
+            let record = self
+                .repository
+                .get_order(order_id)
+                .await
+                .map_err(map_read_error)?
+                .filter(|record| record.user_id() == principal.user_id())
+                .ok_or(SubscriptionServiceError::SubscriptionNotFound)?;
+            Ok(SubscriptionOrder::from_record(&record, false))
+        })
+    }
+
     fn list_plans<'a>(
         &'a self,
         principal: SessionPrincipal,

@@ -353,9 +353,9 @@ pub use subscription::{
     AdminUserSubscriptionPage, DEFAULT_ADMIN_SUBSCRIPTION_PAGE_SIZE, DatabaseSubscriptionService,
     SubscriptionBindFuture, SubscriptionCatalog, SubscriptionCatalogFuture,
     SubscriptionCatalogPlan, SubscriptionCreateOrderFuture, SubscriptionCreatePlanFuture,
-    SubscriptionDisablePlanFuture, SubscriptionLifecycleFuture, SubscriptionListPlansFuture,
-    SubscriptionListUserFuture, SubscriptionOrder, SubscriptionOrderCreateCommand,
-    SubscriptionService, SubscriptionServiceError,
+    SubscriptionDisablePlanFuture, SubscriptionGetOrderFuture, SubscriptionLifecycleFuture,
+    SubscriptionListPlansFuture, SubscriptionListUserFuture, SubscriptionOrder,
+    SubscriptionOrderCreateCommand, SubscriptionService, SubscriptionServiceError,
 };
 pub use token_auth::{
     DatabaseTokenAuthenticator, TokenAuthentication, TokenAuthenticationError,

@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 149);
+        assert_eq!(document.paths.paths.len(), 150);
         let operation_count = document
             .paths
             .paths
@@ -215,7 +215,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 208);
+        assert_eq!(operation_count, 209);
         assert!(
             document
                 .components
@@ -387,6 +387,7 @@ mod tests {
             "listAdminUserSubscriptions",
             "listCurrentSubscriptionCatalog",
             "createCurrentSubscriptionOrder",
+            "getCurrentSubscriptionOrder",
             "listMissingAdminModels",
             "listAdminTokens",
             "listAdminUsageLogs",

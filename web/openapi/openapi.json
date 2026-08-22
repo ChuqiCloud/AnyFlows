@@ -2574,6 +2574,85 @@
         ]
       }
     },
+    "/api/account/subscription-orders/{order_id}": {
+      "get": {
+        "tags": [
+          "订阅管理"
+        ],
+        "summary": "查询当前用户订阅订单结果",
+        "operationId": "getCurrentSubscriptionOrder",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "description": "订阅订单标识",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 32,
+              "minLength": 32
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "订阅订单服务端结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionOrder"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "订单标识无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "订单不存在或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/auth/password-reset/request": {
       "post": {
         "tags": [

@@ -206,6 +206,24 @@ fn list_current_subscription_catalog() {}
 )]
 fn create_current_subscription_order() {}
 
+#[utoipa::path(
+    get,
+    path = "/api/account/subscription-orders/{order_id}",
+    operation_id = "getCurrentSubscriptionOrder",
+    tag = "订阅管理",
+    summary = "查询当前用户订阅订单结果",
+    params(("order_id" = String, Path, min_length = 32, max_length = 32, description = "订阅订单标识")),
+    responses(
+        (status = 200, description = "订阅订单服务端结果", body = SubscriptionOrderResponse),
+        (status = 400, description = "订单标识无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 404, description = "订单不存在或不属于当前用户", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn get_current_subscription_order() {}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -217,7 +235,8 @@ fn create_current_subscription_order() {}
         transition_admin_user_subscription_lifecycle,
         list_current_user_subscriptions,
         list_current_subscription_catalog,
-        create_current_subscription_order
+        create_current_subscription_order,
+        get_current_subscription_order
     ),
     components(schemas(
         SubscriptionCycleDto,
