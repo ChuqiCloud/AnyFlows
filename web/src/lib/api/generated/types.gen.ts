@@ -946,6 +946,34 @@ export type AdminSiteSettingsRequest = {
     balance_display: BalanceDisplaySettings;
     expected_version: number;
 };
+export type AdminRefundOrderKind = 'topup' | 'subscription';
+export type AdminRefundStatus = 'requested' | 'submitted' | 'succeeded' | 'failed' | 'canceled';
+export type AdminRefundApprovalStatus = 'pending' | 'approved' | 'rejected';
+export type AdminRefundRequest = {
+    request_id: string;
+    user_id: number;
+    order_kind: AdminRefundOrderKind;
+    order_key: string;
+    provider: string;
+    currency: string;
+    original_amount_minor: number;
+    refund_amount_minor: number;
+    provider_refund_id?: string | null;
+    status: AdminRefundStatus;
+    approval_status: AdminRefundApprovalStatus;
+    approval_actor_id?: number | null;
+    approval_reason?: string | null;
+    version: number;
+    created_at: number;
+    updated_at: number;
+};
+export type AdminRefundListResponse = {
+    entries: Array<AdminRefundRequest>;
+    next_cursor: number | null;
+};
+export type AdminRefundDecisionRequest = {
+    reason: string | null;
+};
 export type AdminSubscriptionPlan = {
     plan_id: string;
     name: string;
@@ -2230,34 +2258,6 @@ export type VideoTaskListResponse = {
     next_cursor: string | null;
 };
 export type VideoTaskStatus = 'pending' | 'done' | 'expired' | 'failed';
-export type AdminRefundOrderKind = 'topup' | 'subscription';
-export type AdminRefundStatus = 'requested' | 'submitted' | 'succeeded' | 'failed' | 'canceled';
-export type AdminRefundApprovalStatus = 'pending' | 'approved' | 'rejected';
-export type AdminRefundRequest = {
-    request_id: string;
-    user_id: number;
-    order_kind: AdminRefundOrderKind;
-    order_key: string;
-    provider: string;
-    currency: string;
-    original_amount_minor: number;
-    refund_amount_minor: number;
-    provider_refund_id?: string | null;
-    status: AdminRefundStatus;
-    approval_status: AdminRefundApprovalStatus;
-    approval_actor_id?: number | null;
-    approval_reason?: string | null;
-    version: number;
-    created_at: number;
-    updated_at: number;
-};
-export type AdminRefundListResponse = {
-    entries: Array<AdminRefundRequest>;
-    next_cursor: number | null;
-};
-export type AdminRefundDecisionRequest = {
-    reason: string | null;
-};
 export type AdminChannelCreateRequestWritable = {
     name: string;
     type: 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
@@ -2874,6 +2874,93 @@ export type RedeemUserRedemptionCodeResponses = {
     200: UserRedemptionResult;
 };
 export type RedeemUserRedemptionCodeResponse = RedeemUserRedemptionCodeResponses[keyof RedeemUserRedemptionCodeResponses];
+export type ListAdminRefundsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        after?: number | null;
+        approval_status?: string | null;
+        limit?: number | null;
+    };
+    url: '/api/admin/refunds';
+};
+export type ListAdminRefundsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminRefundsError = ListAdminRefundsErrors[keyof ListAdminRefundsErrors];
+export type ListAdminRefundsResponses = {
+    200: AdminRefundListResponse;
+};
+export type ListAdminRefundsResponse = ListAdminRefundsResponses[keyof ListAdminRefundsResponses];
+export type ApproveAdminRefundData = {
+    body: AdminRefundDecisionRequest;
+    path: {
+        request_id: string;
+    };
+    query?: never;
+    url: '/api/admin/refunds/{request_id}/approve';
+};
+export type ApproveAdminRefundErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    502: ManagementError;
+    503: ManagementError;
+};
+export type ApproveAdminRefundError = ApproveAdminRefundErrors[keyof ApproveAdminRefundErrors];
+export type ApproveAdminRefundResponses = {
+    200: AdminRefundListResponse;
+};
+export type ApproveAdminRefundResponse = ApproveAdminRefundResponses[keyof ApproveAdminRefundResponses];
+export type RejectAdminRefundData = {
+    body: AdminRefundDecisionRequest;
+    path: {
+        request_id: string;
+    };
+    query?: never;
+    url: '/api/admin/refunds/{request_id}/reject';
+};
+export type RejectAdminRefundErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type RejectAdminRefundError = RejectAdminRefundErrors[keyof RejectAdminRefundErrors];
+export type RejectAdminRefundResponses = {
+    200: AdminRefundListResponse;
+};
+export type RejectAdminRefundResponse = RejectAdminRefundResponses[keyof RejectAdminRefundResponses];
+export type SubmitAdminRefundData = {
+    body?: never;
+    path: {
+        request_id: string;
+    };
+    query?: never;
+    url: '/api/admin/refunds/{request_id}/submit';
+};
+export type SubmitAdminRefundErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type SubmitAdminRefundError = SubmitAdminRefundErrors[keyof SubmitAdminRefundErrors];
+export type SubmitAdminRefundResponses = {
+    200: AdminRefundListResponse;
+};
+export type SubmitAdminRefundResponse = SubmitAdminRefundResponses[keyof SubmitAdminRefundResponses];
 export type ListAdminSubscriptionPlansData = {
     body?: never;
     path?: never;
@@ -6483,90 +6570,3 @@ export type UpdateAdminGoogleOAuthLoginSettingsResponses = {
     200: AdminOAuthLoginProviderSettings;
 };
 export type UpdateAdminGoogleOAuthLoginSettingsResponse = UpdateAdminGoogleOAuthLoginSettingsResponses[keyof UpdateAdminGoogleOAuthLoginSettingsResponses];
-export type ListAdminRefundsData = {
-    body?: never;
-    path?: never;
-    query?: {
-        after?: number | null;
-        approval_status?: string | null;
-        limit?: number | null;
-    };
-    url: '/api/admin/refunds';
-};
-export type ListAdminRefundsErrors = {
-    400: ManagementError;
-    401: ManagementError;
-    403: ManagementError;
-    500: ManagementError;
-};
-export type ListAdminRefundsError = ListAdminRefundsErrors[keyof ListAdminRefundsErrors];
-export type ListAdminRefundsResponses = {
-    200: AdminRefundListResponse;
-};
-export type ListAdminRefundsResponse = ListAdminRefundsResponses[keyof ListAdminRefundsResponses];
-export type ApproveAdminRefundData = {
-    body: AdminRefundDecisionRequest;
-    path: {
-        request_id: string;
-    };
-    query?: never;
-    url: '/api/admin/refunds/{request_id}/approve';
-};
-export type ApproveAdminRefundErrors = {
-    400: ManagementError;
-    401: ManagementError;
-    403: ManagementError;
-    404: ManagementError;
-    409: ManagementError;
-    500: ManagementError;
-    502: ManagementError;
-    503: ManagementError;
-};
-export type ApproveAdminRefundError = ApproveAdminRefundErrors[keyof ApproveAdminRefundErrors];
-export type ApproveAdminRefundResponses = {
-    200: AdminRefundListResponse;
-};
-export type ApproveAdminRefundResponse = ApproveAdminRefundResponses[keyof ApproveAdminRefundResponses];
-export type RejectAdminRefundData = {
-    body: AdminRefundDecisionRequest;
-    path: {
-        request_id: string;
-    };
-    query?: never;
-    url: '/api/admin/refunds/{request_id}/reject';
-};
-export type RejectAdminRefundErrors = {
-    400: ManagementError;
-    401: ManagementError;
-    403: ManagementError;
-    404: ManagementError;
-    409: ManagementError;
-    500: ManagementError;
-};
-export type RejectAdminRefundError = RejectAdminRefundErrors[keyof RejectAdminRefundErrors];
-export type RejectAdminRefundResponses = {
-    200: AdminRefundListResponse;
-};
-export type RejectAdminRefundResponse = RejectAdminRefundResponses[keyof RejectAdminRefundResponses];
-export type SubmitAdminRefundData = {
-    body?: never;
-    path: {
-        request_id: string;
-    };
-    query?: never;
-    url: '/api/admin/refunds/{request_id}/submit';
-};
-export type SubmitAdminRefundErrors = {
-    400: ManagementError;
-    401: ManagementError;
-    403: ManagementError;
-    404: ManagementError;
-    409: ManagementError;
-    500: ManagementError;
-    503: ManagementError;
-};
-export type SubmitAdminRefundError = SubmitAdminRefundErrors[keyof SubmitAdminRefundErrors];
-export type SubmitAdminRefundResponses = {
-    200: AdminRefundListResponse;
-};
-export type SubmitAdminRefundResponse = SubmitAdminRefundResponses[keyof SubmitAdminRefundResponses];

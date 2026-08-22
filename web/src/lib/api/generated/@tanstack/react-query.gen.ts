@@ -398,6 +398,83 @@ export const redeemUserRedemptionCodeMutation = (options?: Partial<Options<Redee
     };
     return mutationOptions;
 };
+export const listAdminRefundsQueryKey = (options?: Options<ListAdminRefundsData>) => createQueryKey('listAdminRefunds', options);
+export const listAdminRefundsOptions = (options?: Options<ListAdminRefundsData>) => queryOptions<ListAdminRefundsResponse, ListAdminRefundsError, ListAdminRefundsResponse, ReturnType<typeof listAdminRefundsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await listAdminRefunds({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: listAdminRefundsQueryKey(options)
+});
+export const listAdminRefundsInfiniteQueryKey = (options?: Options<ListAdminRefundsData>): QueryKey<Options<ListAdminRefundsData>> => createQueryKey('listAdminRefunds', options, true);
+export const listAdminRefundsInfiniteOptions = (options?: Options<ListAdminRefundsData>) => {
+    const opts = infiniteQueryOptions<ListAdminRefundsResponse, ListAdminRefundsError, InfiniteData<ListAdminRefundsResponse>, QueryKey<Options<ListAdminRefundsData>>, number | null | Pick<QueryKey<Options<ListAdminRefundsData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
+    // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
+    {
+        queryFn: async ({ pageParam, queryKey, signal }) => {
+            // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
+            const page: Pick<QueryKey<Options<ListAdminRefundsData>>[0], 'body' | 'headers' | 'path' | 'query'> = typeof pageParam === 'object' ? pageParam : {
+                query: {
+                    after: pageParam
+                }
+            };
+            const params = createInfiniteParams(queryKey, page);
+            const { data } = await listAdminRefunds({
+                ...options,
+                ...params,
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: listAdminRefundsInfiniteQueryKey(options)
+    });
+    return opts as Omit<typeof opts, 'initialData'>;
+};
+export const approveAdminRefundMutation = (options?: Partial<Options<ApproveAdminRefundData>>): UseMutationOptions<ApproveAdminRefundResponse, ApproveAdminRefundError, Options<ApproveAdminRefundData>> => {
+    const mutationOptions: UseMutationOptions<ApproveAdminRefundResponse, ApproveAdminRefundError, Options<ApproveAdminRefundData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await approveAdminRefund({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+export const rejectAdminRefundMutation = (options?: Partial<Options<RejectAdminRefundData>>): UseMutationOptions<RejectAdminRefundResponse, RejectAdminRefundError, Options<RejectAdminRefundData>> => {
+    const mutationOptions: UseMutationOptions<RejectAdminRefundResponse, RejectAdminRefundError, Options<RejectAdminRefundData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await rejectAdminRefund({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+export const submitAdminRefundMutation = (options?: Partial<Options<SubmitAdminRefundData>>): UseMutationOptions<SubmitAdminRefundResponse, SubmitAdminRefundError, Options<SubmitAdminRefundData>> => {
+    const mutationOptions: UseMutationOptions<SubmitAdminRefundResponse, SubmitAdminRefundError, Options<SubmitAdminRefundData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await submitAdminRefund({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
 export const listAdminSubscriptionPlansQueryKey = (options?: Options<ListAdminSubscriptionPlansData>) => createQueryKey('listAdminSubscriptionPlans', options);
 export const listAdminSubscriptionPlansOptions = (options?: Options<ListAdminSubscriptionPlansData>) => queryOptions<ListAdminSubscriptionPlansResponse, ListAdminSubscriptionPlansError, ListAdminSubscriptionPlansResponse, ReturnType<typeof listAdminSubscriptionPlansQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -3672,83 +3749,6 @@ export const updateAdminGoogleOAuthLoginSettingsMutation = (options?: Partial<Op
     const mutationOptions: UseMutationOptions<UpdateAdminGoogleOAuthLoginSettingsResponse, UpdateAdminGoogleOAuthLoginSettingsError, Options<UpdateAdminGoogleOAuthLoginSettingsData>> = {
         mutationFn: async (fnOptions) => {
             const { data } = await updateAdminGoogleOAuthLoginSettings({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
-export const listAdminRefundsQueryKey = (options?: Options<ListAdminRefundsData>) => createQueryKey('listAdminRefunds', options);
-export const listAdminRefundsOptions = (options?: Options<ListAdminRefundsData>) => queryOptions<ListAdminRefundsResponse, ListAdminRefundsError, ListAdminRefundsResponse, ReturnType<typeof listAdminRefundsQueryKey>>({
-    queryFn: async ({ queryKey, signal }) => {
-        const { data } = await listAdminRefunds({
-            ...options,
-            ...queryKey[0],
-            signal,
-            throwOnError: true
-        });
-        return data;
-    },
-    queryKey: listAdminRefundsQueryKey(options)
-});
-export const listAdminRefundsInfiniteQueryKey = (options?: Options<ListAdminRefundsData>): QueryKey<Options<ListAdminRefundsData>> => createQueryKey('listAdminRefunds', options, true);
-export const listAdminRefundsInfiniteOptions = (options?: Options<ListAdminRefundsData>) => {
-    const opts = infiniteQueryOptions<ListAdminRefundsResponse, ListAdminRefundsError, InfiniteData<ListAdminRefundsResponse>, QueryKey<Options<ListAdminRefundsData>>, number | null | Pick<QueryKey<Options<ListAdminRefundsData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
-    // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
-    {
-        queryFn: async ({ pageParam, queryKey, signal }) => {
-            // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
-            const page: Pick<QueryKey<Options<ListAdminRefundsData>>[0], 'body' | 'headers' | 'path' | 'query'> = typeof pageParam === 'object' ? pageParam : {
-                query: {
-                    after: pageParam
-                }
-            };
-            const params = createInfiniteParams(queryKey, page);
-            const { data } = await listAdminRefunds({
-                ...options,
-                ...params,
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: listAdminRefundsInfiniteQueryKey(options)
-    });
-    return opts as Omit<typeof opts, 'initialData'>;
-};
-export const approveAdminRefundMutation = (options?: Partial<Options<ApproveAdminRefundData>>): UseMutationOptions<ApproveAdminRefundResponse, ApproveAdminRefundError, Options<ApproveAdminRefundData>> => {
-    const mutationOptions: UseMutationOptions<ApproveAdminRefundResponse, ApproveAdminRefundError, Options<ApproveAdminRefundData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await approveAdminRefund({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
-export const rejectAdminRefundMutation = (options?: Partial<Options<RejectAdminRefundData>>): UseMutationOptions<RejectAdminRefundResponse, RejectAdminRefundError, Options<RejectAdminRefundData>> => {
-    const mutationOptions: UseMutationOptions<RejectAdminRefundResponse, RejectAdminRefundError, Options<RejectAdminRefundData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await rejectAdminRefund({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
-export const submitAdminRefundMutation = (options?: Partial<Options<SubmitAdminRefundData>>): UseMutationOptions<SubmitAdminRefundResponse, SubmitAdminRefundError, Options<SubmitAdminRefundData>> => {
-    const mutationOptions: UseMutationOptions<SubmitAdminRefundResponse, SubmitAdminRefundError, Options<SubmitAdminRefundData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await submitAdminRefund({
                 ...options,
                 ...fnOptions,
                 throwOnError: true

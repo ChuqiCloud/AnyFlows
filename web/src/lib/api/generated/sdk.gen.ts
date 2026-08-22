@@ -199,6 +199,50 @@ export const redeemUserRedemptionCode = <ThrowOnError extends boolean = true>(op
         ...options.headers
     }
 });
+export const listAdminRefunds = <ThrowOnError extends boolean = true>(options?: Options<ListAdminRefundsData, ThrowOnError>): RequestResult<ListAdminRefundsResponses, ListAdminRefundsErrors, ThrowOnError> => (options?.client ?? client).get<ListAdminRefundsResponses, ListAdminRefundsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/refunds',
+    ...options
+});
+export const approveAdminRefund = <ThrowOnError extends boolean = true>(options: Options<ApproveAdminRefundData, ThrowOnError>): RequestResult<ApproveAdminRefundResponses, ApproveAdminRefundErrors, ThrowOnError> => (options.client ?? client).post<ApproveAdminRefundResponses, ApproveAdminRefundErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/refunds/{request_id}/approve',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const rejectAdminRefund = <ThrowOnError extends boolean = true>(options: Options<RejectAdminRefundData, ThrowOnError>): RequestResult<RejectAdminRefundResponses, RejectAdminRefundErrors, ThrowOnError> => (options.client ?? client).post<RejectAdminRefundResponses, RejectAdminRefundErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/refunds/{request_id}/reject',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const submitAdminRefund = <ThrowOnError extends boolean = true>(options: Options<SubmitAdminRefundData, ThrowOnError>): RequestResult<SubmitAdminRefundResponses, SubmitAdminRefundErrors, ThrowOnError> => (options.client ?? client).post<SubmitAdminRefundResponses, SubmitAdminRefundErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/refunds/{request_id}/submit',
+    ...options
+});
 export const listAdminSubscriptionPlans = <ThrowOnError extends boolean = true>(options?: Options<ListAdminSubscriptionPlansData, ThrowOnError>): RequestResult<ListAdminSubscriptionPlansResponses, ListAdminSubscriptionPlansErrors, ThrowOnError> => (options?.client ?? client).get<ListAdminSubscriptionPlansResponses, ListAdminSubscriptionPlansErrors, ThrowOnError>({
     security: [{
             key: 'bearerAuth',
@@ -2074,48 +2118,4 @@ export const updateAdminGoogleOAuthLoginSettings = <ThrowOnError extends boolean
         'Content-Type': 'application/json',
         ...options.headers
     }
-});
-export const listAdminRefunds = <ThrowOnError extends boolean = true>(options?: Options<ListAdminRefundsData, ThrowOnError>): RequestResult<ListAdminRefundsResponses, ListAdminRefundsErrors, ThrowOnError> => (options?.client ?? client).get<ListAdminRefundsResponses, ListAdminRefundsErrors, ThrowOnError>({
-    security: [{
-            key: 'bearerAuth',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/api/admin/refunds',
-    ...options
-});
-export const approveAdminRefund = <ThrowOnError extends boolean = true>(options: Options<ApproveAdminRefundData, ThrowOnError>): RequestResult<ApproveAdminRefundResponses, ApproveAdminRefundErrors, ThrowOnError> => (options.client ?? client).post<ApproveAdminRefundResponses, ApproveAdminRefundErrors, ThrowOnError>({
-    security: [{
-            key: 'bearerAuth',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/api/admin/refunds/{request_id}/approve',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-export const rejectAdminRefund = <ThrowOnError extends boolean = true>(options: Options<RejectAdminRefundData, ThrowOnError>): RequestResult<RejectAdminRefundResponses, RejectAdminRefundErrors, ThrowOnError> => (options.client ?? client).post<RejectAdminRefundResponses, RejectAdminRefundErrors, ThrowOnError>({
-    security: [{
-            key: 'bearerAuth',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/api/admin/refunds/{request_id}/reject',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-export const submitAdminRefund = <ThrowOnError extends boolean = true>(options: Options<SubmitAdminRefundData, ThrowOnError>): RequestResult<SubmitAdminRefundResponses, SubmitAdminRefundErrors, ThrowOnError> => (options.client ?? client).post<SubmitAdminRefundResponses, SubmitAdminRefundErrors, ThrowOnError>({
-    security: [{
-            key: 'bearerAuth',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/api/admin/refunds/{request_id}/submit',
-    ...options
 });
