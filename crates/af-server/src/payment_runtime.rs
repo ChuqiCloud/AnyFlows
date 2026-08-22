@@ -15,7 +15,7 @@ use af_admin::{
 use af_billing::{
     DatabasePaymentWebhookRouter, EASYPAY_PAYMENT_PROVIDER, EasyPayPaymentMethod,
     EasyPayPaymentProvider, PaymentOrderProvider, PaymentWebhookHandler, PaymentWebhookProcessor,
-    STRIPE_PAYMENT_PROVIDER, StripePaymentProvider,
+    RefundProvider, STRIPE_PAYMENT_PROVIDER, StripePaymentProvider,
 };
 use af_db::{
     EncryptedCredentialEnvelope, PaymentSettingsRecord, SiteSettingsRepository,
@@ -26,6 +26,7 @@ use af_httpclient::HttpClientProvider;
 use url::Url;
 
 use crate::stripe_payment_intent::StripePaymentIntentProvider;
+use crate::stripe_refund::StripeRefundProvider;
 
 const EASYPAY_PRODUCT_NAME: &str = "AnyFlows 余额充值";
 
@@ -33,6 +34,9 @@ const EASYPAY_PRODUCT_NAME: &str = "AnyFlows 余额充值";
 struct PaymentRuntimeSnapshot {
     user_topup_service: Option<Arc<dyn UserTopupService>>,
     webhook_processors: HashMap<String, Arc<dyn PaymentWebhookHandler>>,
+    // 退款 HTTP/编排入口将在后续切片接入；当前先随支付配置快照原子切换。
+    #[allow(dead_code)]
+    refund_providers: HashMap<String, Arc<dyn RefundProvider>>,
 }
 
 impl PaymentRuntimeSnapshot {
@@ -40,6 +44,7 @@ impl PaymentRuntimeSnapshot {
         Self {
             user_topup_service: None,
             webhook_processors: HashMap::new(),
+            refund_providers: HashMap::new(),
         }
     }
 }
@@ -81,9 +86,16 @@ impl PaymentRuntime {
         let mut routes = Vec::new();
         let mut webhook_processors: HashMap<String, Arc<dyn PaymentWebhookHandler>> =
             HashMap::new();
+        let mut refund_providers: HashMap<String, Arc<dyn RefundProvider>> = HashMap::new();
 
         if record.stripe_enabled() {
-            self.add_stripe(record, cipher, &mut routes, &mut webhook_processors)?;
+            self.add_stripe(
+                record,
+                cipher,
+                &mut routes,
+                &mut webhook_processors,
+                &mut refund_providers,
+            )?;
         }
         if record.epay_enabled() {
             self.add_epay(record, cipher, &mut routes, &mut webhook_processors)
@@ -100,6 +112,7 @@ impl PaymentRuntime {
         Ok(PaymentRuntimeSnapshot {
             user_topup_service,
             webhook_processors,
+            refund_providers,
         })
     }
 
@@ -109,6 +122,7 @@ impl PaymentRuntime {
         cipher: &SystemSecretCipher,
         routes: &mut Vec<UserTopupProviderRoute>,
         processors: &mut HashMap<String, Arc<dyn PaymentWebhookHandler>>,
+        refund_providers: &mut HashMap<String, Arc<dyn RefundProvider>>,
     ) -> Result<(), PaymentSettingsRuntimeError> {
         let publishable_key = record
             .stripe_publishable_key()
@@ -137,6 +151,16 @@ impl PaymentRuntime {
             UserTopupProviderRoute::stripe(publishable_key.to_owned(), order_provider)
                 .map_err(|_| runtime_failed("stripe_route"))?,
         );
+
+        let refund_provider = Arc::new(
+            StripeRefundProvider::new(
+                secret_key.expose_secret(),
+                self.upstream_clients.clone(),
+                self.request_timeout,
+            )
+            .map_err(|_| runtime_failed("stripe_refund_provider"))?,
+        );
+        refund_providers.insert(STRIPE_PAYMENT_PROVIDER.to_owned(), refund_provider);
 
         let webhook_provider = Arc::new(
             StripePaymentProvider::new(
@@ -243,6 +267,15 @@ impl PaymentRuntime {
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
+    }
+
+    /// 返回当前快照中的退款 Provider，供退款提交/恢复入口复用同一配置版本。
+    #[allow(dead_code)]
+    pub(crate) fn refund_provider(&self, provider: &str) -> Option<Arc<dyn RefundProvider>> {
+        self.current_snapshot()
+            .refund_providers
+            .get(provider)
+            .cloned()
     }
 }
 

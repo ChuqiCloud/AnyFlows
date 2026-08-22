@@ -40,6 +40,7 @@ mod shutdown;
 mod smtp_delivery;
 mod sticky_session;
 mod stripe_payment_intent;
+mod stripe_refund;
 mod supervisor;
 #[cfg(test)]
 mod test_database;
