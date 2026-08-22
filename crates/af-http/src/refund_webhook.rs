@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use af_billing::{
-    PaymentWebhookHeader, PaymentWebhookRequest, RefundReceiptHandler, RefundReceiptHandlerFuture,
-    RefundReceiptHandlerOutcome, RefundReceiptProcessorError,
+    PaymentWebhookHeader, PaymentWebhookRequest, RefundReceiptHandler, RefundReceiptHandlerOutcome,
+    RefundReceiptProcessorError,
 };
 use axum::{
     Router,

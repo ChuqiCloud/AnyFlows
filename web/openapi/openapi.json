@@ -13992,6 +13992,63 @@
         }
       }
     },
+    "/api/refund/webhook/{provider}": {
+      "post": {
+        "tags": [
+          "退款回执"
+        ],
+        "summary": "接收原路退款 Provider 回执",
+        "operationId": "receiveRefundWebhook",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "description": "退款 Provider 标识",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 32,
+              "minLength": 1
+            }
+          },
+          {
+            "name": "stripe-signature",
+            "in": "header",
+            "description": "Stripe 原始签名；服务端会先验签再解析退款正文",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "必须保留 Provider 原始退款回执正文，服务端在任何解析前完成验签",
+          "content": {
+            "application/json": {}
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "退款回执已验签并完成幂等处理"
+          },
+          "400": {
+            "description": "请求正文或签名无效"
+          },
+          "405": {
+            "description": "请求方法不受支持"
+          },
+          "409": {
+            "description": "退款回执与已有退款事实发生冲突"
+          },
+          "500": {
+            "description": "服务内部状态异常"
+          },
+          "503": {
+            "description": "回执 Provider 未启用或持久化暂不可用"
+          }
+        }
+      }
+    },
     "/api/organizations/{organization_id}/wallet": {
       "get": {
         "tags": [
