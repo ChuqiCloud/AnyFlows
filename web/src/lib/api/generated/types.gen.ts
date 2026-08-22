@@ -1895,8 +1895,8 @@ export type SubscriptionOrder = {
     quota_amount: number;
     status: SubscriptionOrderStatus;
     version: number;
-    expires_at: number;
-    paid_at: number;
+    expires_at: number | null;
+    paid_at: number | null;
     created_at: number;
     updated_at: number;
     replayed: boolean;

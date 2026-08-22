@@ -28875,16 +28875,20 @@
             "minimum": 1
           },
           "expires_at": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64",
-            "minimum": 1,
-            "nullable": true
+            "minimum": 1
           },
           "paid_at": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64",
-            "minimum": 1,
-            "nullable": true
+            "minimum": 1
           },
           "created_at": {
             "type": "integer",
