@@ -2425,8 +2425,8 @@ pub(in crate::migration) mod refund_requests {
 
     /// 退款请求事实的固定表标识。
     #[derive(Clone, Copy, DeriveIden)]
-    #[sea_orm(iden = "refund_requests")]
     pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "refund_requests")]
         Name,
     }
 

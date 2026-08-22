@@ -176,7 +176,8 @@ const CORE_TABLES: [&str; 77] = [
 ];
 
 #[test]
-fn refund_provider_events_table_iden_is_stable() {
+fn refund_table_idens_are_stable() {
+    assert_eq!(refund_requests::Entity.to_string(), "refund_requests");
     assert_eq!(
         refund_provider_events::Entity.to_string(),
         "refund_provider_events"
