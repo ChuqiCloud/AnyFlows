@@ -39,6 +39,7 @@ import { PublicPlaygroundSharePage } from '@/features/playground/public-playgrou
 import { ProfilePage } from '@/features/profile/profile-page'
 import { RegistrationPage } from '@/features/registration/registration-page'
 import { RedemptionPage } from '@/features/redemptions/redemption-page'
+import { RefundPage } from '@/features/refunds/refund-page'
 import { RoutePage } from '@/features/routes/route-page'
 import { SiteSettingsPage } from '@/features/site-settings/site-settings-page'
 import { MySubscriptionsPage } from '@/features/subscriptions/my-subscriptions-page'
@@ -141,6 +142,8 @@ function ManagementEntry({
         ? 'authenticationSettings.title'
           : view === 'redemption-codes'
             ? 'redemptions.title'
+          : view === 'refunds'
+            ? 'refunds.title'
           : view === 'subscription-management'
             ? 'subscriptions.managementTitle'
           : view === 'subscriptions'
@@ -208,6 +211,8 @@ function ManagementEntry({
         ? <AuthenticationSettingsPage />
         : view === 'redemption-codes'
           ? <RedemptionPage />
+        : view === 'refunds'
+          ? <RefundPage />
         : view === 'subscription-management'
           ? <SubscriptionManagementPage />
         : view === 'subscriptions'

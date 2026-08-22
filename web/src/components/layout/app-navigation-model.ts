@@ -18,6 +18,7 @@ export type NavKey =
   | 'users'
   | 'subscriptionManagement'
   | 'redemptionCodes'
+  | 'refunds'
   | 'siteSettings'
   | 'authenticationSettings'
   | 'emailSettings'
@@ -47,7 +48,7 @@ export const adminWorkspaceItems = ['overview', 'usage', 'models', 'playground',
 export const adminNavigationSections = [
   { key: 'personal', items: ['apiKeys', 'wallet', 'subscriptions', 'invitations', 'profile'] },
   { key: 'organization', items: ['organizationOverview', 'organizationMembers', 'organizationApiKeys', 'organizationBudgets', 'organizationWallet', 'organizationActivity', 'organizationSettings'] },
-  { key: 'operations', items: ['users', 'subscriptionManagement', 'redemptionCodes', 'paymentSettings', 'billingSettings'] },
+  { key: 'operations', items: ['users', 'subscriptionManagement', 'redemptionCodes', 'refunds', 'paymentSettings', 'billingSettings'] },
   { key: 'gateway', items: ['modelSettings', 'groupSettings', 'channels', 'credentials', 'credentialProxies', 'routes'] },
   { key: 'platform', items: ['siteSettings', 'authenticationSettings', 'emailSettings', 'networkSettings', 'keys'] },
 ] as const satisfies ReadonlyArray<{ key: AdminSectionKey; items: readonly NavKey[] }>
@@ -82,6 +83,7 @@ export const activeKeyByView: Readonly<Record<string, NavKey>> = {
   users: 'users',
   'subscription-management': 'subscriptionManagement',
   'redemption-codes': 'redemptionCodes',
+  refunds: 'refunds',
   'site-settings': 'siteSettings',
   'authentication-settings': 'authenticationSettings',
   'email-settings': 'emailSettings',

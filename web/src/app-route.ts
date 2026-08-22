@@ -27,6 +27,7 @@ export type AppView =
   | 'public-models'
   | 'register'
   | 'redemption-codes'
+  | 'refunds'
   | 'routes'
   | 'reset-password'
   | 'site-settings'
@@ -101,6 +102,7 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash.startsWith('#/console/proxies')) return { view: 'credential-proxies' }
   if (hash.startsWith('#/console/debug-traces')) return { view: 'debug-traces' }
   if (hash.startsWith('#/console/redemption-codes')) return { view: 'redemption-codes' }
+  if (hash.startsWith('#/console/refunds')) return { view: 'refunds' }
   if (hash.startsWith('#/console/subscription-management')) return { view: 'subscription-management' }
   if (hash.startsWith('#/console/subscriptions')) return { view: 'subscriptions' }
   if (hash.startsWith('#/console/routes')) return { view: 'routes' }
