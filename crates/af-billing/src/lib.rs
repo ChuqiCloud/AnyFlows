@@ -71,9 +71,9 @@ pub use multimodal::{
 };
 pub use payment_order::{
     MAX_PAYMENT_CLIENT_SECRET_BYTES, MAX_PAYMENT_REDIRECT_URL_BYTES, PaymentCheckoutAction,
-    PaymentClientSecret, PaymentOrderFuture, PaymentOrderInputError, PaymentOrderProvider,
-    PaymentOrderProviderError, PaymentOrderRecoveryRequest, PaymentOrderRequest,
-    PaymentOrderSession, PaymentRedirectUrl,
+    PaymentClientSecret, PaymentOrderFuture, PaymentOrderId, PaymentOrderInputError,
+    PaymentOrderProvider, PaymentOrderProviderError, PaymentOrderRecoveryRequest,
+    PaymentOrderRequest, PaymentOrderSession, PaymentRedirectUrl,
 };
 pub use payment_webhook::{
     DatabasePaymentWebhookRouter, MAX_PAYMENT_WEBHOOK_HEADER_NAME_BYTES,

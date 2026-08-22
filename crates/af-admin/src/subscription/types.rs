@@ -1,7 +1,9 @@
 use std::{fmt, future::Future, pin::Pin};
 
+use af_billing::PaymentOrderProvider;
 use af_db::{
-    MAX_SUBSCRIPTION_CURRENCY_BYTES, MAX_SUBSCRIPTION_PAGE_SIZE, MAX_SUBSCRIPTION_PLAN_NAME_BYTES,
+    MAX_SUBSCRIPTION_CURRENCY_BYTES, MAX_SUBSCRIPTION_PAGE_SIZE,
+    MAX_SUBSCRIPTION_PAYMENT_METHOD_BYTES, MAX_SUBSCRIPTION_PLAN_NAME_BYTES,
     MAX_SUBSCRIPTION_PROVIDER_BYTES, SubscriptionOrderRecord, SubscriptionPlanPriceRecord,
     SubscriptionPlanRecord, UserSubscriptionRecord,
 };
@@ -12,7 +14,7 @@ use af_domain::{
 };
 use thiserror::Error;
 
-use crate::SessionPrincipal;
+use crate::{SessionPrincipal, UserTopupPaymentSession};
 
 use super::lifecycle::{
     AdminUserSubscriptionLifecycleCommand, AdminUserSubscriptionLifecycleResult,
@@ -162,6 +164,62 @@ pub struct SubscriptionOrder {
     created_at: u64,
     updated_at: u64,
     replayed: bool,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct SubscriptionOrderPaymentCommand {
+    payment_method: String,
+}
+
+impl SubscriptionOrderPaymentCommand {
+    pub fn new(payment_method: String) -> Result<Self, SubscriptionServiceError> {
+        if payment_method.is_empty()
+            || payment_method.len() > MAX_SUBSCRIPTION_PAYMENT_METHOD_BYTES
+            || !payment_method.bytes().all(|byte| {
+                byte.is_ascii_lowercase()
+                    || byte.is_ascii_digit()
+                    || matches!(byte, b'.' | b'_' | b'-')
+            })
+        {
+            return Err(SubscriptionServiceError::InvalidInput);
+        }
+        Ok(Self { payment_method })
+    }
+
+    pub fn payment_method(&self) -> &str {
+        &self.payment_method
+    }
+}
+
+impl fmt::Debug for SubscriptionOrderPaymentCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("SubscriptionOrderPaymentCommand(<redacted>)")
+    }
+}
+
+pub struct SubscriptionOrderPayment {
+    order: SubscriptionOrder,
+    payment: UserTopupPaymentSession,
+}
+
+impl SubscriptionOrderPayment {
+    pub(super) fn new(order: SubscriptionOrder, payment: UserTopupPaymentSession) -> Self {
+        Self { order, payment }
+    }
+
+    pub fn order(&self) -> &SubscriptionOrder {
+        &self.order
+    }
+
+    pub fn payment(&self) -> &UserTopupPaymentSession {
+        &self.payment
+    }
+}
+
+impl fmt::Debug for SubscriptionOrderPayment {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("SubscriptionOrderPayment(<redacted>)")
+    }
 }
 
 impl SubscriptionOrder {
@@ -729,6 +787,10 @@ pub enum SubscriptionServiceError {
     /// 写入结果无法确认，调用方应刷新事实。
     #[error("订阅操作结果未知")]
     OutcomeUnknown,
+    #[error("订阅支付 Provider 暂不可用")]
+    PaymentUnavailable,
+    #[error("订阅支付请求被 Provider 拒绝")]
+    PaymentRejected,
     /// 内部依赖或持久化不变量失败。
     #[error("订阅内部失败")]
     Internal,
@@ -752,6 +814,11 @@ pub type SubscriptionCreateOrderFuture<'a> =
 /// 当前用户读取订阅订单结果的异步结果。
 pub type SubscriptionGetOrderFuture<'a> =
     Pin<Box<dyn Future<Output = Result<SubscriptionOrder, SubscriptionServiceError>> + Send + 'a>>;
+pub type SubscriptionSubmitOrderFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<SubscriptionOrderPayment, SubscriptionServiceError>> + Send + 'a,
+    >,
+>;
 /// 管理员创建计划的异步结果。
 pub type SubscriptionCreatePlanFuture<'a> = Pin<
     Box<dyn Future<Output = Result<AdminSubscriptionPlan, SubscriptionServiceError>> + Send + 'a>,
@@ -797,6 +864,13 @@ pub trait SubscriptionService: Send + Sync {
         principal: SessionPrincipal,
         order_id: SubscriptionOrderId,
     ) -> SubscriptionGetOrderFuture<'a>;
+    fn submit_order<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        order_id: SubscriptionOrderId,
+        command: SubscriptionOrderPaymentCommand,
+        provider: std::sync::Arc<dyn PaymentOrderProvider>,
+    ) -> SubscriptionSubmitOrderFuture<'a>;
     /// 管理员读取计划目录。
     fn list_plans<'a>(
         &'a self,

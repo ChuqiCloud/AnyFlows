@@ -34,7 +34,8 @@ use crate::{
 use super::types::{valid_currency, valid_name, valid_price_text};
 use super::{
     MAX_SUBSCRIPTION_PAGE_SIZE, SubscriptionOrderCreate, SubscriptionOrderCreateOutcome,
-    SubscriptionOrderRecord, SubscriptionPaymentEventOutcome, SubscriptionPaymentEventRejection,
+    SubscriptionOrderRecord, SubscriptionOrderSubmission, SubscriptionOrderSubmitOutcome,
+    SubscriptionPaymentEventOutcome, SubscriptionPaymentEventRejection,
     SubscriptionPaymentEventWrite, SubscriptionPlanCreateOutcome, SubscriptionPlanDisable,
     SubscriptionPlanDisableOutcome, SubscriptionPlanPageRecord, SubscriptionPlanPriceRecord,
     SubscriptionPlanRecord, SubscriptionPlanWrite, SubscriptionRepositoryConfigError,
@@ -210,6 +211,28 @@ impl SubscriptionRepository {
         };
         #[cfg(test)]
         if matches!(&outcome, SubscriptionOrderCreateOutcome::Created(_))
+            && self
+                .outcome_unknown_after_commit
+                .swap(false, Ordering::AcqRel)
+        {
+            return Err(internal(SubscriptionRepositoryError::OutcomeUnknown));
+        }
+        Ok(outcome)
+    }
+
+    pub async fn submit_order(
+        &self,
+        write: SubscriptionOrderSubmission,
+    ) -> Result<SubscriptionOrderSubmitOutcome, SubscriptionRepositoryError> {
+        let operation = self
+            .submit_order_inner(&write)
+            .with_subscriber(NoSubscriber::default());
+        let outcome = match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result.map_err(internal)?,
+            Err(_) => return Err(internal(SubscriptionRepositoryError::OutcomeUnknown)),
+        };
+        #[cfg(test)]
+        if matches!(&outcome, SubscriptionOrderSubmitOutcome::Applied(_))
             && self
                 .outcome_unknown_after_commit
                 .swap(false, Ordering::AcqRel)
@@ -479,6 +502,75 @@ impl SubscriptionRepository {
         let record = subscription_order_record(inserted)?;
         commit(transaction).await?;
         Ok(SubscriptionOrderCreateOutcome::Created(record))
+    }
+
+    async fn submit_order_inner(
+        &self,
+        write: &SubscriptionOrderSubmission,
+    ) -> Result<SubscriptionOrderSubmitOutcome, SubscriptionRepositoryError> {
+        let transaction = begin(&self.pool).await?;
+        let Some(model) = lock_order(&transaction, write.order_id).await? else {
+            rollback(transaction).await?;
+            return Ok(SubscriptionOrderSubmitOutcome::NotFound);
+        };
+        let current = subscription_order_record(model.clone())?;
+        if current.matches_submission(write) {
+            rollback(transaction).await?;
+            return Ok(SubscriptionOrderSubmitOutcome::Existing(current));
+        }
+        if current.status() != SubscriptionOrderStatus::Created
+            || model.version != write.expected_version
+            || write.submitted_at < current.created_at()
+        {
+            rollback(transaction).await?;
+            return Err(SubscriptionRepositoryError::Conflict);
+        }
+        let next_version = model
+            .version
+            .checked_add(1)
+            .ok_or(SubscriptionRepositoryError::Invariant)?;
+        let submitted_at = to_database_time(write.submitted_at)?;
+        let expires_at = to_database_time(write.expires_at)?;
+        let update = subscription_orders::Entity::update_many()
+            .filter(subscription_orders::Column::Id.eq(model.id))
+            .filter(subscription_orders::Column::Status.eq(SubscriptionOrderStatus::Created.code()))
+            .filter(subscription_orders::Column::Version.eq(write.expected_version))
+            .col_expr(
+                subscription_orders::Column::ProviderOrderId,
+                Expr::value(Some(SensitiveString::from(write.provider_order_id.clone()))),
+            )
+            .col_expr(
+                subscription_orders::Column::PaymentMethod,
+                Expr::value(Some(write.payment_method.clone())),
+            )
+            .col_expr(
+                subscription_orders::Column::Status,
+                Expr::value(SubscriptionOrderStatus::Pending.code()),
+            )
+            .col_expr(
+                subscription_orders::Column::ExpiresAt,
+                Expr::value(expires_at),
+            )
+            .col_expr(
+                subscription_orders::Column::Version,
+                Expr::value(next_version),
+            )
+            .col_expr(
+                subscription_orders::Column::UpdatedAt,
+                Expr::value(submitted_at),
+            )
+            .exec(&transaction)
+            .await
+            .map_err(|_| SubscriptionRepositoryError::Query)?;
+        if update.rows_affected != 1 {
+            rollback(transaction).await?;
+            return Err(SubscriptionRepositoryError::Conflict);
+        }
+        let updated = load_order_by_database_id(&transaction, model.id)
+            .await?
+            .ok_or(SubscriptionRepositoryError::Invariant)?;
+        commit(transaction).await?;
+        Ok(SubscriptionOrderSubmitOutcome::Applied(updated))
     }
 
     async fn list_user_subscriptions_inner(

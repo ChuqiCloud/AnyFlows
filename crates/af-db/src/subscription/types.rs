@@ -400,6 +400,58 @@ impl fmt::Debug for SubscriptionOrderCreate {
     }
 }
 
+/// 将订阅订单绑定到 Provider 订单的版本 CAS 命令。
+#[derive(Clone)]
+pub struct SubscriptionOrderSubmission {
+    pub(super) order_id: SubscriptionOrderId,
+    pub(super) expected_version: i64,
+    pub(super) provider_order_id: String,
+    pub(super) payment_method: String,
+    pub(super) submitted_at: u64,
+    pub(super) expires_at: u64,
+}
+
+impl SubscriptionOrderSubmission {
+    pub fn new(
+        order_id: SubscriptionOrderId,
+        expected_version: u64,
+        provider_order_id: String,
+        payment_method: String,
+        submitted_at: u64,
+        expires_at: u64,
+    ) -> Result<Self, SubscriptionInputError> {
+        let expected_version =
+            i64::try_from(expected_version).map_err(|_| SubscriptionInputError::InvalidVersion)?;
+        if expected_version <= 0 || expected_version == i64::MAX {
+            return Err(SubscriptionInputError::InvalidVersion);
+        }
+        if !valid_price_text(&provider_order_id, MAX_SUBSCRIPTION_PROVIDER_EVENT_ID_BYTES)
+            || !valid_price_text(&payment_method, MAX_SUBSCRIPTION_PAYMENT_METHOD_BYTES)
+        {
+            return Err(SubscriptionInputError::InvalidPrice);
+        }
+        validate_time(submitted_at)?;
+        validate_time(expires_at)?;
+        if expires_at <= submitted_at {
+            return Err(SubscriptionInputError::InvalidTiming);
+        }
+        Ok(Self {
+            order_id,
+            expected_version,
+            provider_order_id,
+            payment_method,
+            submitted_at,
+            expires_at,
+        })
+    }
+}
+
+impl fmt::Debug for SubscriptionOrderSubmission {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("SubscriptionOrderSubmission(<redacted>)")
+    }
+}
+
 /// 已持久化的订阅购买订单快照。
 pub struct SubscriptionOrderRecord {
     #[allow(dead_code, reason = "支付确认事务切片将使用持久化订单主键")]
@@ -520,6 +572,15 @@ impl SubscriptionOrderRecord {
             && self.currency == create.currency
             && self.amount_minor == create.amount_minor
             && quota.is_none_or(|value| self.quota_amount == value)
+    }
+
+    pub(super) fn matches_submission(&self, write: &SubscriptionOrderSubmission) -> bool {
+        self.order_id == write.order_id
+            && self.status == SubscriptionOrderStatus::Pending
+            && self.version == write.expected_version as u64 + 1
+            && self.provider_order_id.as_deref() == Some(write.provider_order_id.as_str())
+            && self.payment_method.as_deref() == Some(write.payment_method.as_str())
+            && self.expires_at == Some(write.expires_at)
     }
 }
 
@@ -1072,6 +1133,12 @@ pub enum SubscriptionOrderCreateOutcome {
     PlanDisabled,
 }
 
+pub enum SubscriptionOrderSubmitOutcome {
+    Applied(SubscriptionOrderRecord),
+    Existing(SubscriptionOrderRecord),
+    NotFound,
+}
+
 /// CAS 停用订阅计划后的闭合结果。
 pub enum SubscriptionPlanDisableOutcome {
     /// 本次调用把 Active 计划推进为 Disabled。
@@ -1202,6 +1269,20 @@ impl fmt::Debug for SubscriptionOrderCreateOutcome {
             Self::PlanDisabled => {
                 formatter.write_str("SubscriptionOrderCreateOutcome::PlanDisabled")
             }
+        }
+    }
+}
+
+impl fmt::Debug for SubscriptionOrderSubmitOutcome {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Applied(_) => {
+                formatter.write_str("SubscriptionOrderSubmitOutcome::Applied(<redacted>)")
+            }
+            Self::Existing(_) => {
+                formatter.write_str("SubscriptionOrderSubmitOutcome::Existing(<redacted>)")
+            }
+            Self::NotFound => formatter.write_str("SubscriptionOrderSubmitOutcome::NotFound"),
         }
     }
 }

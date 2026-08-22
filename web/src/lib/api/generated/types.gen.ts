@@ -1909,7 +1909,19 @@ export type SubscriptionOrderCreateRequest = {
     price_currency: string;
     price_amount_minor: number;
 };
+export type SubscriptionOrderPaymentRequest = {
+    payment_method: string;
+};
+export type SubscriptionOrderPaymentResponse = {
+    order: SubscriptionOrder;
+    payment: SubscriptionPaymentResponse;
+};
 export type SubscriptionOrderStatus = 'created' | 'pending' | 'paid' | 'failed' | 'canceled' | 'expired';
+export type SubscriptionPaymentResponse = {
+    payment_intent_id: string | null;
+    client_secret: string | null;
+    redirect_url: string | null;
+};
 export type SubscriptionPlanStatus = 'active' | 'disabled';
 export type UsageLogOperation = 'chat' | 'responses' | 'responses_compact' | 'embedding' | 'image' | 'audio' | 'rerank' | 'video' | 'count_tokens';
 export type UsageLogProtocol = 'open_ai_chat' | 'open_ai_responses' | 'open_ai_embeddings' | 'open_ai_images' | 'open_ai_audio' | 'open_ai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
@@ -3029,6 +3041,27 @@ export type GetCurrentSubscriptionOrderResponses = {
     200: SubscriptionOrder;
 };
 export type GetCurrentSubscriptionOrderResponse = GetCurrentSubscriptionOrderResponses[keyof GetCurrentSubscriptionOrderResponses];
+export type SubmitCurrentSubscriptionOrderPaymentData = {
+    body: SubscriptionOrderPaymentRequest;
+    path: {
+        order_id: string;
+    };
+    query?: never;
+    url: '/api/account/subscription-orders/{order_id}/payment';
+};
+export type SubmitCurrentSubscriptionOrderPaymentErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type SubmitCurrentSubscriptionOrderPaymentError = SubmitCurrentSubscriptionOrderPaymentErrors[keyof SubmitCurrentSubscriptionOrderPaymentErrors];
+export type SubmitCurrentSubscriptionOrderPaymentResponses = {
+    200: SubscriptionOrderPaymentResponse;
+};
+export type SubmitCurrentSubscriptionOrderPaymentResponse = SubmitCurrentSubscriptionOrderPaymentResponses[keyof SubmitCurrentSubscriptionOrderPaymentResponses];
 export type RequestPasswordResetData = {
     body: PasswordResetRequest;
     path?: never;
