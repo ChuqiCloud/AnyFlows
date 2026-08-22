@@ -1636,6 +1636,25 @@ where
         persisted.as_ref().map(|row| row.status),
         "退款请求状态缺失",
     )?;
+    let approval_status = merge_required(
+        &model.approval_status,
+        persisted.as_ref().map(|row| row.approval_status),
+        "退款审批状态缺失",
+    )?;
+    let approval_actor_id = model
+        .approval_actor_id
+        .try_as_ref()
+        .and_then(Clone::clone)
+        .or_else(|| persisted.as_ref().and_then(|row| row.approval_actor_id));
+    let approval_reason = model
+        .approval_reason
+        .try_as_ref()
+        .and_then(Clone::clone)
+        .or_else(|| {
+            persisted
+                .as_ref()
+                .and_then(|row| row.approval_reason.clone())
+        });
     let version = merge_required(
         &model.version,
         persisted.as_ref().map(|row| row.version),
@@ -1673,6 +1692,16 @@ where
         || refund_amount_minor <= 0
         || refund_amount_minor > original_amount_minor
         || !matches!(status, 1..=5)
+        || !matches!(approval_status, 1..=3)
+        || approval_actor_id.is_some_and(|value| value <= 0)
+        || (approval_status == 1 && (approval_actor_id.is_some() || approval_reason.is_some()))
+        || (approval_status != 1 && approval_actor_id.is_none())
+        || approval_reason.as_deref().is_some_and(|value| {
+            value.is_empty()
+                || value.len() > 512
+                || value.trim() != value
+                || value.chars().any(char::is_control)
+        })
         || provider_refund_id.as_deref().is_some_and(|value| {
             value.is_empty()
                 || value.len() > 128

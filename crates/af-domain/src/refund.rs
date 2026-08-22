@@ -9,6 +9,7 @@ const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 pub const MAX_REFUND_ORDER_KEY_BYTES: usize = REFUND_KEY_BYTES;
 pub const MAX_REFUND_PROVIDER_BYTES: usize = 64;
 pub const MAX_REFUND_PROVIDER_REFUND_ID_BYTES: usize = 128;
+pub const MAX_REFUND_APPROVAL_REASON_BYTES: usize = 512;
 
 /// 退款业务标识构造错误；不保留外部输入。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
@@ -171,6 +172,35 @@ impl TryFrom<i16> for RefundRequestStatus {
     }
 }
 
+/// 管理员审批状态，与 Provider 退款生命周期独立持久化。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(i16)]
+pub enum RefundApprovalStatus {
+    Pending = 1,
+    Approved = 2,
+    Rejected = 3,
+}
+
+impl RefundApprovalStatus {
+    #[must_use]
+    pub const fn code(self) -> i16 {
+        self as i16
+    }
+}
+
+impl TryFrom<i16> for RefundApprovalStatus {
+    type Error = RefundStateCodeError;
+
+    fn try_from(value: i16) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::Pending),
+            2 => Ok(Self::Approved),
+            3 => Ok(Self::Rejected),
+            _ => Err(RefundStateCodeError::InvalidApprovalStatus),
+        }
+    }
+}
+
 /// 退款状态持久化代码错误。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum RefundStateCodeError {
@@ -180,6 +210,9 @@ pub enum RefundStateCodeError {
     /// 退款状态不属于闭合集合。
     #[error("退款状态无效")]
     InvalidStatus,
+    /// 审批状态不属于固定集合。
+    #[error("退款审批状态无效")]
+    InvalidApprovalStatus,
 }
 
 /// 创建退款请求时固化的订单与金额事实。
@@ -303,6 +336,9 @@ pub struct RefundRequestRecord {
     pub(super) refund_amount_minor: i64,
     pub(super) provider_refund_id: Option<String>,
     pub(super) status: RefundRequestStatus,
+    pub(super) approval_status: RefundApprovalStatus,
+    pub(super) approval_actor_id: Option<UserId>,
+    pub(super) approval_reason: Option<String>,
     pub(super) version: u64,
     pub(super) created_at: u64,
     pub(super) updated_at: u64,
@@ -327,6 +363,9 @@ impl RefundRequestRecord {
         refund_amount_minor: i64,
         provider_refund_id: Option<String>,
         status: RefundRequestStatus,
+        approval_status: RefundApprovalStatus,
+        approval_actor_id: Option<UserId>,
+        approval_reason: Option<String>,
         version: i64,
         created_at: u64,
         updated_at: u64,
@@ -360,6 +399,22 @@ impl RefundRequestRecord {
         if status == RefundRequestStatus::Succeeded && provider_refund_id.is_none() {
             return Err(RefundRequestInputError::InvalidPersistedState);
         }
+        if approval_reason.as_deref().is_some_and(|value| {
+            value.is_empty()
+                || value.len() > MAX_REFUND_APPROVAL_REASON_BYTES
+                || value.trim() != value
+                || value.chars().any(char::is_control)
+        }) {
+            return Err(RefundRequestInputError::InvalidPersistedState);
+        }
+        if approval_status == RefundApprovalStatus::Pending
+            && (approval_actor_id.is_some() || approval_reason.is_some())
+        {
+            return Err(RefundRequestInputError::InvalidPersistedState);
+        }
+        if approval_status != RefundApprovalStatus::Pending && approval_actor_id.is_none() {
+            return Err(RefundRequestInputError::InvalidPersistedState);
+        }
         Ok(Self {
             database_id,
             request_id: create.request_id,
@@ -373,6 +428,9 @@ impl RefundRequestRecord {
             refund_amount_minor: create.refund_amount_minor,
             provider_refund_id,
             status,
+            approval_status,
+            approval_actor_id,
+            approval_reason,
             version: u64::try_from(version)
                 .map_err(|_| RefundRequestInputError::InvalidPersistedState)?,
             created_at,
@@ -427,6 +485,18 @@ impl RefundRequestRecord {
     #[must_use]
     pub fn provider_refund_id(&self) -> Option<&str> {
         self.provider_refund_id.as_deref()
+    }
+    #[must_use]
+    pub const fn approval_status(&self) -> RefundApprovalStatus {
+        self.approval_status
+    }
+    #[must_use]
+    pub const fn approval_actor_id(&self) -> Option<UserId> {
+        self.approval_actor_id
+    }
+    #[must_use]
+    pub fn approval_reason(&self) -> Option<&str> {
+        self.approval_reason.as_deref()
     }
     #[must_use]
     pub const fn version(&self) -> u64 {

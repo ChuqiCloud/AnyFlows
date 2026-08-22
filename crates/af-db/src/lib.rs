@@ -519,8 +519,9 @@ pub use redemption::{
     RedemptionRepositoryConfigError, RedemptionRepositoryError,
 };
 pub use refund::{
-    RefundReceiptOutcome, RefundReceiptWrite, RefundRepository, RefundRepositoryConfigError,
-    RefundRepositoryError, RefundSubmissionOutcome,
+    DEFAULT_REFUND_ADMIN_PAGE_SIZE, MAX_REFUND_ADMIN_PAGE_SIZE, RefundAdminListQuery,
+    RefundAdminPage, RefundApprovalOutcome, RefundReceiptOutcome, RefundReceiptWrite,
+    RefundRepository, RefundRepositoryConfigError, RefundRepositoryError, RefundSubmissionOutcome,
 };
 pub use registration::{
     DEFAULT_REGISTRATION_RATE_LIMIT_ATTEMPTS, DEFAULT_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS,

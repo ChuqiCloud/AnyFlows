@@ -286,8 +286,8 @@ fn valid_secret(value: &[u8]) -> bool {
 mod tests {
     use super::*;
     use af_domain::{
-        RefundOrderKind, RefundRequestId, RefundRequestKey, RefundRequestRecord,
-        RefundRequestStatus, UserId,
+        RefundApprovalStatus, RefundOrderKind, RefundRequestId, RefundRequestKey,
+        RefundRequestRecord, RefundRequestStatus, UserId,
     };
     use af_httpclient::HttpClientConfig;
 
@@ -305,6 +305,9 @@ mod tests {
             40,
             None,
             RefundRequestStatus::Requested,
+            RefundApprovalStatus::Pending,
+            None,
+            None,
             1,
             1_900_000_000,
             1_900_000_000,
