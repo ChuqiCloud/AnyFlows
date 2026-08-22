@@ -569,9 +569,8 @@ impl SubscriptionRepository {
         let updated = load_order_by_database_id(&transaction, model.id)
             .await?
             .ok_or(SubscriptionRepositoryError::Invariant)?;
-        let record = subscription_order_record(updated)?;
         commit(transaction).await?;
-        Ok(SubscriptionOrderSubmitOutcome::Applied(record))
+        Ok(SubscriptionOrderSubmitOutcome::Applied(updated))
     }
 
     async fn list_user_subscriptions_inner(
