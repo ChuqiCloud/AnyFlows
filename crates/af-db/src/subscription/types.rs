@@ -53,6 +53,10 @@ impl SubscriptionPlanWrite {
     }
 
     /// 构造带有明确支付 Provider、币种和最小货币单位金额的计划事实。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "价格快照字段与订阅计划写入契约一一对应"
+    )]
     pub fn new_with_price(
         plan_id: SubscriptionPlanId,
         name: String,
@@ -394,6 +398,7 @@ impl fmt::Debug for SubscriptionOrderCreate {
 
 /// 已持久化的订阅购买订单快照。
 pub struct SubscriptionOrderRecord {
+    #[allow(dead_code, reason = "支付确认事务切片将使用持久化订单主键")]
     pub(super) database_id: i64,
     pub(super) order_id: SubscriptionOrderId,
     pub(super) request_id: SubscriptionOrderRequestId,
@@ -415,6 +420,7 @@ pub struct SubscriptionOrderRecord {
 }
 
 impl SubscriptionOrderRecord {
+    #[allow(dead_code, reason = "支付确认事务切片将读取持久化订单主键")]
     pub(crate) const fn database_id(&self) -> i64 {
         self.database_id
     }
