@@ -17,6 +17,10 @@ const MAX_EASYPAY_RESPONSE_BYTES: usize = 64 * 1024;
 
 /// 易支付退款 Provider 的本地配置错误，不包含商户密钥或网关地址。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+#[allow(
+    clippy::enum_variant_names,
+    reason = "配置错误需要保留统一的 Invalid 前缀以便运行时分类"
+)]
 pub(crate) enum EasyPayRefundProviderConfigError {
     #[error("易支付网关地址无效")]
     InvalidGatewayUrl,
