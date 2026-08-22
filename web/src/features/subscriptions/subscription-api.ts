@@ -126,6 +126,7 @@ export function useCurrentSubscriptionOrder(orderId: string | undefined) {
 
 /** 提交或恢复同一订阅订单的 Provider 支付会话，不在客户端推导支付结果。 */
 export function useSubmitCurrentSubscriptionOrderPayment() {
+  const queryClient = useQueryClient()
   return useMutation({
     gcTime: 0,
     mutationFn: async ({ orderId, body }: { orderId: string; body: SubscriptionOrderPaymentRequest }) => {
@@ -135,6 +136,12 @@ export function useSubmitCurrentSubscriptionOrderPayment() {
         path: { order_id: orderId },
       })
       return data
+    },
+    onSuccess: (data) => {
+      // 支付确认后重新读取订阅事实，界面不能从订单状态臆造已生效。
+      if (data.order.status === 'paid') {
+        void queryClient.invalidateQueries({ queryKey: currentUserSubscriptionsQueryKey })
+      }
     },
   })
 }
