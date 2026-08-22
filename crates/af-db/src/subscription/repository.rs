@@ -89,6 +89,19 @@ impl SubscriptionRepository {
         }
     }
 
+    /// 按稳定订单标识读取订阅订单，供支付 webhook 路由先判定订单类型。
+    pub async fn get_order(
+        &self,
+        order_id: SubscriptionOrderId,
+    ) -> Result<Option<SubscriptionOrderRecord>, SubscriptionRepositoryError> {
+        let operation = load_order_by_key(self.pool.connection(), order_id)
+            .with_subscriber(NoSubscriber::default());
+        match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result.map_err(internal),
+            Err(_) => Err(internal(SubscriptionRepositoryError::Timeout)),
+        }
+    }
+
     /// 按稳定业务标识读取单个用户订阅及其计划快照。
     pub async fn get_user_subscription(
         &self,

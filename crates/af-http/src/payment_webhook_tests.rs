@@ -4,9 +4,9 @@ use std::sync::{
 };
 
 use af_billing::{
-    PaymentWebhookRequest, PaymentWebhookVerificationError, PaymentWebhookVerifier,
-    TopupPaymentEventFuture, TopupPaymentEventPort, TopupPaymentEventWrite, TopupWebhookOutcome,
-    TopupWebhookProcessor, VerifiedTopupPaymentEvent,
+    PaymentWebhookHandler, PaymentWebhookRequest, PaymentWebhookVerificationError,
+    PaymentWebhookVerifier, TopupPaymentEventFuture, TopupPaymentEventPort, TopupPaymentEventWrite,
+    TopupWebhookOutcome, TopupWebhookProcessor, VerifiedTopupPaymentEvent,
 };
 use af_domain::TopupOrderStatus;
 use af_domain::{TopupOrderId, TopupPaymentEventType};
@@ -24,9 +24,13 @@ struct FixedRegistry {
 }
 
 impl PaymentWebhookProcessorRegistry for FixedRegistry {
-    fn processor(&self, provider: &str) -> Option<Arc<TopupWebhookProcessor>> {
+    fn processor(&self, provider: &str) -> Option<Arc<dyn PaymentWebhookHandler>> {
         (provider == self.provider)
-            .then(|| self.processor.as_ref().map(Arc::clone))
+            .then(|| {
+                self.processor
+                    .as_ref()
+                    .map(|processor| Arc::clone(processor) as Arc<dyn PaymentWebhookHandler>)
+            })
             .flatten()
     }
 }

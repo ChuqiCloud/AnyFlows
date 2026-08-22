@@ -13,11 +13,13 @@ use af_admin::{
     UserTopupOrderCreateFuture, UserTopupProviderRoute, UserTopupService,
 };
 use af_billing::{
-    EASYPAY_PAYMENT_PROVIDER, EasyPayPaymentMethod, EasyPayPaymentProvider,
-    STRIPE_PAYMENT_PROVIDER, StripePaymentProvider, TopupWebhookProcessor,
+    DatabasePaymentWebhookRouter, EASYPAY_PAYMENT_PROVIDER, EasyPayPaymentMethod,
+    EasyPayPaymentProvider, PaymentWebhookHandler, PaymentWebhookProcessor,
+    STRIPE_PAYMENT_PROVIDER, StripePaymentProvider,
 };
 use af_db::{
-    EncryptedCredentialEnvelope, PaymentSettingsRecord, SiteSettingsRepository, TopupRepository,
+    EncryptedCredentialEnvelope, PaymentSettingsRecord, SiteSettingsRepository,
+    SubscriptionRepository, TopupRepository,
 };
 use af_http::PaymentWebhookProcessorRegistry;
 use af_httpclient::HttpClientProvider;
@@ -30,7 +32,7 @@ const EASYPAY_PRODUCT_NAME: &str = "AnyFlows 余额充值";
 /// 支付运行时的不可变快照；一次请求始终持有同一代 Provider 组合。
 struct PaymentRuntimeSnapshot {
     user_topup_service: Option<Arc<dyn UserTopupService>>,
-    webhook_processors: HashMap<String, Arc<TopupWebhookProcessor>>,
+    webhook_processors: HashMap<String, Arc<dyn PaymentWebhookHandler>>,
 }
 
 impl PaymentRuntimeSnapshot {
@@ -46,6 +48,7 @@ impl PaymentRuntimeSnapshot {
 pub(crate) struct PaymentRuntime {
     snapshot: RwLock<Arc<PaymentRuntimeSnapshot>>,
     topup_repository: TopupRepository,
+    subscription_repository: SubscriptionRepository,
     site_settings_repository: SiteSettingsRepository,
     upstream_clients: HttpClientProvider,
     request_timeout: Duration,
@@ -55,6 +58,7 @@ impl PaymentRuntime {
     /// 使用稳定数据库与网络依赖创建初始禁用的支付运行时。
     pub(crate) fn new(
         topup_repository: TopupRepository,
+        subscription_repository: SubscriptionRepository,
         site_settings_repository: SiteSettingsRepository,
         upstream_clients: HttpClientProvider,
         request_timeout: Duration,
@@ -62,6 +66,7 @@ impl PaymentRuntime {
         Self {
             snapshot: RwLock::new(Arc::new(PaymentRuntimeSnapshot::disabled())),
             topup_repository,
+            subscription_repository,
             site_settings_repository,
             upstream_clients,
             request_timeout,
@@ -74,7 +79,8 @@ impl PaymentRuntime {
         cipher: &SystemSecretCipher,
     ) -> Result<PaymentRuntimeSnapshot, PaymentSettingsRuntimeError> {
         let mut routes = Vec::new();
-        let mut webhook_processors = HashMap::new();
+        let mut webhook_processors: HashMap<String, Arc<dyn PaymentWebhookHandler>> =
+            HashMap::new();
 
         if record.stripe_enabled() {
             self.add_stripe(record, cipher, &mut routes, &mut webhook_processors)?;
@@ -102,7 +108,7 @@ impl PaymentRuntime {
         record: &PaymentSettingsRecord,
         cipher: &SystemSecretCipher,
         routes: &mut Vec<UserTopupProviderRoute>,
-        processors: &mut HashMap<String, Arc<TopupWebhookProcessor>>,
+        processors: &mut HashMap<String, Arc<dyn PaymentWebhookHandler>>,
     ) -> Result<(), PaymentSettingsRuntimeError> {
         let publishable_key = record
             .stripe_publishable_key()
@@ -141,9 +147,12 @@ impl PaymentRuntime {
         );
         processors.insert(
             STRIPE_PAYMENT_PROVIDER.to_owned(),
-            Arc::new(TopupWebhookProcessor::new(
+            Arc::new(PaymentWebhookProcessor::new(
                 webhook_provider,
-                Arc::new(self.topup_repository.clone()),
+                Arc::new(DatabasePaymentWebhookRouter::new(
+                    self.topup_repository.clone(),
+                    self.subscription_repository.clone(),
+                )),
             )),
         );
         Ok(())
@@ -154,7 +163,7 @@ impl PaymentRuntime {
         record: &PaymentSettingsRecord,
         cipher: &SystemSecretCipher,
         routes: &mut Vec<UserTopupProviderRoute>,
-        processors: &mut HashMap<String, Arc<TopupWebhookProcessor>>,
+        processors: &mut HashMap<String, Arc<dyn PaymentWebhookHandler>>,
     ) -> Result<(), PaymentSettingsRuntimeError> {
         let gateway_url = record
             .epay_gateway_url()
@@ -218,9 +227,12 @@ impl PaymentRuntime {
         }
         processors.insert(
             EASYPAY_PAYMENT_PROVIDER.to_owned(),
-            Arc::new(TopupWebhookProcessor::new(
+            Arc::new(PaymentWebhookProcessor::new(
                 provider,
-                Arc::new(self.topup_repository.clone()),
+                Arc::new(DatabasePaymentWebhookRouter::new(
+                    self.topup_repository.clone(),
+                    self.subscription_repository.clone(),
+                )),
             )),
         );
         Ok(())
@@ -279,7 +291,7 @@ impl UserTopupService for PaymentRuntime {
 }
 
 impl PaymentWebhookProcessorRegistry for PaymentRuntime {
-    fn processor(&self, provider: &str) -> Option<Arc<TopupWebhookProcessor>> {
+    fn processor(&self, provider: &str) -> Option<Arc<dyn PaymentWebhookHandler>> {
         self.current_snapshot()
             .webhook_processors
             .get(provider)
