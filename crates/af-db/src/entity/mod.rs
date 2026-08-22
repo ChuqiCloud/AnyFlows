@@ -75,6 +75,7 @@ pub(crate) mod playground_shares;
 pub(crate) mod proxies;
 pub(crate) mod redemption_batches;
 pub(crate) mod redemption_codes;
+pub(crate) mod refund_provider_events;
 pub(crate) mod refund_requests;
 pub(crate) mod registration_rate_limits;
 pub(crate) mod request_outcome_logs;
@@ -1621,6 +1622,15 @@ where
         persisted.as_ref().map(|row| row.refund_amount_minor),
         "退款金额缺失",
     )?;
+    let provider_refund_id = model
+        .provider_refund_id
+        .try_as_ref()
+        .and_then(Clone::clone)
+        .or_else(|| {
+            persisted
+                .as_ref()
+                .and_then(|row| row.provider_refund_id.clone())
+        });
     let status = merge_required(
         &model.status,
         persisted.as_ref().map(|row| row.status),
@@ -1663,6 +1673,13 @@ where
         || refund_amount_minor <= 0
         || refund_amount_minor > original_amount_minor
         || !matches!(status, 1..=5)
+        || provider_refund_id.as_deref().is_some_and(|value| {
+            value.is_empty()
+                || value.len() > 128
+                || value.trim() != value
+                || value.chars().any(char::is_control)
+        })
+        || (status == 3 && provider_refund_id.is_none())
         || version <= 0
         || created_at.unix_timestamp() < 0
         || updated_at < created_at
@@ -2338,6 +2355,9 @@ impl ActiveModelBehavior for subscription_payment_events::ActiveModel {
         Ok(self)
     }
 }
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for refund_provider_events::ActiveModel {}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for redemption_batches::ActiveModel {

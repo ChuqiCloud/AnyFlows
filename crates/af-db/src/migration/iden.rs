@@ -2425,8 +2425,8 @@ pub(in crate::migration) mod refund_requests {
 
     /// 退款请求事实的固定表标识。
     #[derive(Clone, Copy, DeriveIden)]
-    #[sea_orm(iden = "refund_requests")]
     pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "refund_requests")]
         Name,
     }
 
@@ -2444,9 +2444,41 @@ pub(in crate::migration) mod refund_requests {
         Currency,
         OriginalAmountMinor,
         RefundAmountMinor,
+        ProviderRefundId,
         Status,
         Version,
         CreatedAt,
         UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod refund_provider_events {
+    use super::DeriveIden;
+
+    /// 退款 Provider 回执事实的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "refund_provider_events")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        EventKey,
+        RequestKey,
+        Provider,
+        ProviderEventId,
+        ProviderRefundId,
+        EventType,
+        AmountMinor,
+        Currency,
+        SignatureKeyFingerprint,
+        PayloadSha256,
+        ReceivedAt,
+        ProcessedAt,
+        CreatedAt,
     }
 }

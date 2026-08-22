@@ -21,6 +21,8 @@ pub struct Model {
     pub currency: String,
     pub original_amount_minor: i64,
     pub refund_amount_minor: i64,
+    #[sea_orm(column_type = "String(StringLen::N(128))", nullable)]
+    pub provider_refund_id: Option<String>,
     pub status: i16,
     pub version: i64,
     pub created_at: TimeDateTimeWithTimeZone,
