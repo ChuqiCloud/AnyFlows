@@ -1,5 +1,6 @@
 import { Elements } from '@stripe/react-stripe-js'
 import { loadStripe, type PaymentIntent } from '@stripe/stripe-js'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
   BadgeDollarSign,
@@ -31,6 +32,7 @@ import {
   useCurrentSubscriptionCatalog,
   useCurrentSubscriptionOrder,
   useSubmitCurrentSubscriptionOrderPayment,
+  currentUserSubscriptionsQueryKey,
 } from './subscription-api'
 import { createSubscriptionIdempotencyKey } from './subscription-form-model'
 
@@ -45,7 +47,13 @@ type StoredSubscriptionPaymentAttempt = {
 type PaymentPhase = 'processing' | 'succeeded'
 
 /** 展示服务端筛选的可售计划，并把支付动作绑定到同一订阅订单。 */
-export function SubscriptionCatalog() {
+export function SubscriptionCatalog({
+  activePlanIds,
+  subscriptionsFetching,
+}: {
+  activePlanIds: ReadonlySet<string>
+  subscriptionsFetching: boolean
+}) {
   const { i18n, t } = useTranslation()
   const query = useCurrentSubscriptionCatalog()
   const configurationQuery = useUserTopupConfiguration()
@@ -125,6 +133,8 @@ export function SubscriptionCatalog() {
               methods={methods}
               methodsLoading={configurationQuery.isPending}
               methodsUnavailable={configurationQuery.isError}
+              active={activePlanIds.has(plan.plan_id)}
+              subscriptionsFetching={subscriptionsFetching}
             />
           ))}
         </div>
@@ -145,6 +155,8 @@ function CatalogPlanRow({
   methods,
   methodsLoading,
   methodsUnavailable,
+  active,
+  subscriptionsFetching,
 }: {
   plan: SubscriptionCatalogPlan
   formatQuota: (value: number) => string
@@ -152,10 +164,13 @@ function CatalogPlanRow({
   methods: UserTopupMethod[] | undefined
   methodsLoading: boolean
   methodsUnavailable: boolean
+  active: boolean
+  subscriptionsFetching: boolean
 }) {
   const { i18n, t } = useTranslation()
   const createMutation = useCreateCurrentSubscriptionOrder()
   const paymentMutation = useSubmitCurrentSubscriptionOrderPayment()
+  const queryClient = useQueryClient()
   const availableMethods = useMemo(
     () => methods?.filter((method) => method.provider === plan.price_provider) ?? [],
     [methods, plan.price_provider],
@@ -181,8 +196,11 @@ function CatalogPlanRow({
   useEffect(() => {
     if (orderQuery.data === undefined) return
     setOrder(orderQuery.data)
-    if (orderQuery.data.status === 'paid') clearStoredAttempt(plan.plan_id)
-  }, [orderQuery.data, plan.plan_id])
+    if (orderQuery.data.status === 'paid') {
+      void queryClient.invalidateQueries({ queryKey: currentUserSubscriptionsQueryKey })
+      if (active) clearStoredAttempt(plan.plan_id)
+    }
+  }, [active, orderQuery.data, plan.plan_id, queryClient])
 
   useEffect(() => {
     if (availableMethods.length === 0) return
@@ -225,6 +243,9 @@ function CatalogPlanRow({
       planId: plan.plan_id,
       provider: plan.price_provider,
     })
+    if (result.order.status === 'paid') {
+      void queryClient.invalidateQueries({ queryKey: currentUserSubscriptionsQueryKey })
+    }
     return result
   }
 
@@ -256,7 +277,10 @@ function CatalogPlanRow({
 
   const refreshOrder = async () => {
     const refreshed = await orderQuery.refetch()
-    if (refreshed.data?.status === 'paid') clearStoredAttempt(plan.plan_id)
+    if (refreshed.data?.status === 'paid') {
+      await queryClient.invalidateQueries({ queryKey: currentUserSubscriptionsQueryKey })
+      if (active) clearStoredAttempt(plan.plan_id)
+    }
   }
 
   const paymentConfirmed = async (status: PaymentIntent.Status) => {
@@ -341,11 +365,20 @@ function CatalogPlanRow({
             <span className="font-mono text-muted-foreground">{order.order_id}</span>
           </div>
 
-          {order.status === 'paid' ? (
+          {order.status === 'paid' && active ? (
             <div className="flex flex-wrap items-center gap-2 text-xs text-success">
               <CheckCircle2 className="size-3.5" aria-hidden="true" />
-              <span>{t('subscriptions.catalog.paymentPaid')}</span>
+              <span>{t('subscriptions.catalog.paymentEffective')}</span>
               <Button type="button" size="sm" variant="secondary" onClick={clearAttempt}>{t('subscriptions.actions.done')}</Button>
+            </div>
+          ) : order.status === 'paid' ? (
+            <div className="flex flex-wrap items-center gap-2 text-xs text-warning-foreground">
+              <RefreshCw className={subscriptionsFetching ? 'size-3.5 animate-spin' : 'size-3.5'} aria-hidden="true" />
+              <span>{t('subscriptions.catalog.paymentPaid')}</span>
+              <Button type="button" size="sm" variant="secondary" disabled={orderQuery.isFetching || subscriptionsFetching} onClick={() => void refreshOrder()}>
+                <RefreshCw aria-hidden="true" />
+                {t('subscriptions.catalog.refreshSubscription')}
+              </Button>
             </div>
           ) : phase !== undefined ? (
             <div className="flex flex-wrap items-center gap-2 text-xs text-warning-foreground">

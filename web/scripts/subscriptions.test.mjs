@@ -145,3 +145,13 @@ test('订阅 OpenAPI 不接受客户端覆盖所有权与周期窗口', () => {
     ['plan_id'],
   )
 })
+
+test('subscription purchase only shows effective after current-user facts confirm it', () => {
+  const catalog = readFileSync(new URL('../src/features/subscriptions/subscription-catalog.tsx', import.meta.url), 'utf8')
+  const api = readFileSync(new URL('../src/features/subscriptions/subscription-api.ts', import.meta.url), 'utf8')
+  assert.match(catalog, /order\.status === 'paid' && active/)
+  assert.match(catalog, /currentUserSubscriptionsQueryKey/)
+  assert.match(catalog, /paymentEffective/)
+  assert.match(api, /data\.order\.status === 'paid'/)
+  assert.match(api, /invalidateQueries\(\{ queryKey: currentUserSubscriptionsQueryKey \}\)/)
+})
