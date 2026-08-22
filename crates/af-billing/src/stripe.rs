@@ -1,6 +1,9 @@
 use std::fmt;
 
-use af_domain::{TopupOrderId, TopupPaymentEventType};
+use af_domain::{
+    MAX_REFUND_PROVIDER_REFUND_ID_BYTES, RefundRequestId, RefundRequestStatus, TopupOrderId,
+    TopupPaymentEventType,
+};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -10,6 +13,7 @@ use crate::payment_webhook::{
     PaymentProvider, PaymentWebhookRequest, PaymentWebhookVerificationError,
     VerifiedTopupPaymentEvent,
 };
+use crate::refund::{RefundReceiptVerificationError, RefundReceiptVerifier, VerifiedRefundReceipt};
 
 /// Stripe Provider 在订单和 webhook 中使用的稳定标识。
 pub const STRIPE_PAYMENT_PROVIDER: &str = "stripe";
@@ -90,7 +94,80 @@ impl PaymentProvider for StripePaymentProvider {
     }
 }
 
+impl RefundReceiptVerifier for StripePaymentProvider {
+    fn provider(&self) -> &str {
+        STRIPE_PAYMENT_PROVIDER
+    }
+
+    fn verify(
+        &self,
+        request: &PaymentWebhookRequest<'_>,
+    ) -> Result<VerifiedRefundReceipt, RefundReceiptVerificationError> {
+        self.verify_signature(request)
+            .map_err(|_| RefundReceiptVerificationError::InvalidSignature)?;
+        let payload: Value = serde_json::from_slice(request.payload())
+            .map_err(|_| RefundReceiptVerificationError::InvalidReceipt)?;
+        self.parse_refund_event(&payload)
+    }
+}
+
 impl StripePaymentProvider {
+    /// 解析已验签的 Stripe 退款事件，关联键只从服务端写入的 metadata 读取。
+    fn parse_refund_event(
+        &self,
+        payload: &Value,
+    ) -> Result<VerifiedRefundReceipt, RefundReceiptVerificationError> {
+        let event_id =
+            string_field(payload, &["id"]).ok_or(RefundReceiptVerificationError::InvalidReceipt)?;
+        let event_type = string_field(payload, &["type"])
+            .ok_or(RefundReceiptVerificationError::InvalidReceipt)?;
+        if !matches!(
+            event_type,
+            "refund.created" | "refund.updated" | "refund.failed"
+        ) {
+            return Err(RefundReceiptVerificationError::InvalidReceipt);
+        }
+        let object = payload
+            .get("data")
+            .and_then(|data| data.get("object"))
+            .ok_or(RefundReceiptVerificationError::InvalidReceipt)?;
+        let request_id = RefundRequestId::from_persistence_key(
+            string_field(object, &["metadata", "anyflows_refund_request_id"])
+                .ok_or(RefundReceiptVerificationError::InvalidReceipt)?,
+        )
+        .map_err(|_| RefundReceiptVerificationError::InvalidReceipt)?;
+        let provider_refund_id = string_field(object, &["id"])
+            .ok_or(RefundReceiptVerificationError::InvalidReceipt)?
+            .to_owned();
+        if !valid_stripe_refund_id(&provider_refund_id) {
+            return Err(RefundReceiptVerificationError::InvalidReceipt);
+        }
+        let amount_minor = object
+            .get("amount")
+            .and_then(Value::as_u64)
+            .filter(|amount| *amount > 0 && *amount <= i64::MAX as u64)
+            .ok_or(RefundReceiptVerificationError::InvalidReceipt)?;
+        let currency = string_field(object, &["currency"])
+            .filter(|value| value.len() == 3 && value.bytes().all(|byte| byte.is_ascii_lowercase()))
+            .map(str::to_ascii_uppercase)
+            .ok_or(RefundReceiptVerificationError::InvalidReceipt)?;
+        let status = match string_field(object, &["status"]) {
+            Some("succeeded") => RefundRequestStatus::Succeeded,
+            Some("failed" | "canceled") => RefundRequestStatus::Failed,
+            _ => return Err(RefundReceiptVerificationError::InvalidReceipt),
+        };
+        VerifiedRefundReceipt::new(
+            request_id,
+            event_id.to_owned(),
+            provider_refund_id,
+            status,
+            i64::try_from(amount_minor)
+                .map_err(|_| RefundReceiptVerificationError::InvalidReceipt)?,
+            currency,
+            self.secret_fingerprint,
+        )
+    }
+
     fn verify_signature(
         &self,
         request: &PaymentWebhookRequest<'_>,
@@ -330,6 +407,14 @@ fn stripe_payment_method(value: &Value) -> Result<&str, PaymentWebhookVerificati
         .ok_or(PaymentWebhookVerificationError::InvalidPayload)
 }
 
+fn valid_stripe_refund_id(value: &str) -> bool {
+    value.starts_with("re_")
+        && value.len() <= MAX_REFUND_PROVIDER_REFUND_ID_BYTES
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+}
+
 const fn hex_digit(value: u8) -> Option<u8> {
     match value {
         b'0'..=b'9' => Some(value - b'0'),
@@ -358,7 +443,10 @@ mod tests {
         let request =
             PaymentWebhookRequest::new(payload.as_bytes(), &headers, RECEIVED_AT).unwrap();
 
-        assert_eq!(provider.provider(), STRIPE_PAYMENT_PROVIDER);
+        assert_eq!(
+            PaymentProvider::provider(&provider),
+            STRIPE_PAYMENT_PROVIDER
+        );
         assert!(provider.verify_webhook(&request).is_ok());
     }
 
@@ -422,6 +510,31 @@ mod tests {
         assert_eq!(
             provider.verify_webhook(&request).unwrap_err(),
             PaymentWebhookVerificationError::NonTerminalEvent
+        );
+    }
+
+    #[test]
+    fn verifies_terminal_refund_event_from_server_metadata() {
+        let payload = r#"{"id":"evt_refund_123","type":"refund.updated","data":{"object":{"id":"re_123","amount":40,"currency":"usd","status":"succeeded","metadata":{"anyflows_refund_request_id":"01010101010101010101010101010101"}}}}"#;
+        let provider = StripePaymentProvider::new("whsec_test", 300).unwrap();
+        let signature = signature_header(&provider, payload.as_bytes(), RECEIVED_AT);
+        let header = PaymentWebhookHeader::new(STRIPE_SIGNATURE_HEADER, &signature).unwrap();
+        let headers = [header];
+        let request =
+            PaymentWebhookRequest::new(payload.as_bytes(), &headers, RECEIVED_AT).unwrap();
+
+        assert!(RefundReceiptVerifier::verify(&provider, &request).is_ok());
+
+        let pending = payload.replace("succeeded", "pending");
+        let pending_signature = signature_header(&provider, pending.as_bytes(), RECEIVED_AT);
+        let pending_header =
+            PaymentWebhookHeader::new(STRIPE_SIGNATURE_HEADER, &pending_signature).unwrap();
+        let pending_headers = [pending_header];
+        let pending_request =
+            PaymentWebhookRequest::new(pending.as_bytes(), &pending_headers, RECEIVED_AT).unwrap();
+        assert_eq!(
+            RefundReceiptVerifier::verify(&provider, &pending_request).unwrap_err(),
+            RefundReceiptVerificationError::InvalidReceipt
         );
     }
 

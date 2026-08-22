@@ -99,6 +99,7 @@ pub use quota_math::quota_from_cny_minor;
 pub use refund::{
     RefundProvider, RefundProviderError, RefundProviderFuture, RefundProviderInputError,
     RefundProviderRecoveryRequest, RefundProviderRequest, RefundProviderResult,
+    RefundReceiptHandler, RefundReceiptHandlerFuture, RefundReceiptHandlerOutcome,
     RefundReceiptProcessor, RefundReceiptProcessorError, RefundReceiptVerificationError,
     RefundReceiptVerifier, RefundSubmissionProcessor, RefundSubmissionProcessorError,
     VerifiedRefundReceipt,

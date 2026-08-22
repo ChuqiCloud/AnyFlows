@@ -5626,6 +5626,27 @@ export type ReceivePaymentWebhookErrors = {
 export type ReceivePaymentWebhookResponses = {
     200: unknown;
 };
+export type ReceiveRefundWebhookData = {
+    body?: unknown;
+    headers: {
+        'stripe-signature': string;
+    };
+    path: {
+        provider: string;
+    };
+    query?: never;
+    url: '/api/refund/webhook/{provider}';
+};
+export type ReceiveRefundWebhookErrors = {
+    400: unknown;
+    405: unknown;
+    409: unknown;
+    500: unknown;
+    503: unknown;
+};
+export type ReceiveRefundWebhookResponses = {
+    200: unknown;
+};
 export type GetOrganizationWalletData = {
     body?: never;
     path: {
