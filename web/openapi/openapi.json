@@ -2589,8 +2589,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "minLength": 32,
-              "maxLength": 32
+              "maxLength": 32,
+              "minLength": 32
             }
           }
         ],
