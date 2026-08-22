@@ -309,6 +309,19 @@ export const getCurrentSubscriptionOrder = <ThrowOnError extends boolean = true>
     url: '/api/account/subscription-orders/{order_id}',
     ...options
 });
+export const submitCurrentSubscriptionOrderPayment = <ThrowOnError extends boolean = true>(options: Options<SubmitCurrentSubscriptionOrderPaymentData, ThrowOnError>): RequestResult<SubmitCurrentSubscriptionOrderPaymentResponses, SubmitCurrentSubscriptionOrderPaymentErrors, ThrowOnError> => (options.client ?? client).post<SubmitCurrentSubscriptionOrderPaymentResponses, SubmitCurrentSubscriptionOrderPaymentErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/account/subscription-orders/{order_id}/payment',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 export const requestPasswordReset = <ThrowOnError extends boolean = true>(options: Options<RequestPasswordResetData, ThrowOnError>): RequestResult<RequestPasswordResetResponses, RequestPasswordResetErrors, ThrowOnError> => (options.client ?? client).post<RequestPasswordResetResponses, RequestPasswordResetErrors, ThrowOnError>({
     url: '/api/auth/password-reset/request',
     ...options,
@@ -2048,19 +2061,6 @@ export const updateAdminGoogleOAuthLoginSettings = <ThrowOnError extends boolean
             type: 'http'
         }],
     url: '/api/admin/authentication-settings/oauth/google',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-export const submitCurrentSubscriptionOrderPayment = <ThrowOnError extends boolean = true>(options: Options<SubmitCurrentSubscriptionOrderPaymentData, ThrowOnError>): RequestResult<SubmitCurrentSubscriptionOrderPaymentResponses, SubmitCurrentSubscriptionOrderPaymentErrors, ThrowOnError> => (options.client ?? client).post<SubmitCurrentSubscriptionOrderPaymentResponses, SubmitCurrentSubscriptionOrderPaymentErrors, ThrowOnError>({
-    security: [{
-            key: 'bearerAuth',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/api/account/subscription-orders/{order_id}/payment',
     ...options,
     headers: {
         'Content-Type': 'application/json',

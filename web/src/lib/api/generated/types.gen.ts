@@ -3041,6 +3041,27 @@ export type GetCurrentSubscriptionOrderResponses = {
     200: SubscriptionOrder;
 };
 export type GetCurrentSubscriptionOrderResponse = GetCurrentSubscriptionOrderResponses[keyof GetCurrentSubscriptionOrderResponses];
+export type SubmitCurrentSubscriptionOrderPaymentData = {
+    body: SubscriptionOrderPaymentRequest;
+    path: {
+        order_id: string;
+    };
+    query?: never;
+    url: '/api/account/subscription-orders/{order_id}/payment';
+};
+export type SubmitCurrentSubscriptionOrderPaymentErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type SubmitCurrentSubscriptionOrderPaymentError = SubmitCurrentSubscriptionOrderPaymentErrors[keyof SubmitCurrentSubscriptionOrderPaymentErrors];
+export type SubmitCurrentSubscriptionOrderPaymentResponses = {
+    200: SubscriptionOrderPaymentResponse;
+};
+export type SubmitCurrentSubscriptionOrderPaymentResponse = SubmitCurrentSubscriptionOrderPaymentResponses[keyof SubmitCurrentSubscriptionOrderPaymentResponses];
 export type RequestPasswordResetData = {
     body: PasswordResetRequest;
     path?: never;
@@ -6407,24 +6428,3 @@ export type UpdateAdminGoogleOAuthLoginSettingsResponses = {
     200: AdminOAuthLoginProviderSettings;
 };
 export type UpdateAdminGoogleOAuthLoginSettingsResponse = UpdateAdminGoogleOAuthLoginSettingsResponses[keyof UpdateAdminGoogleOAuthLoginSettingsResponses];
-export type SubmitCurrentSubscriptionOrderPaymentData = {
-    body: SubscriptionOrderPaymentRequest;
-    path: {
-        order_id: string;
-    };
-    query?: never;
-    url: '/api/account/subscription-orders/{order_id}/payment';
-};
-export type SubmitCurrentSubscriptionOrderPaymentErrors = {
-    400: ManagementError;
-    401: ManagementError;
-    404: ManagementError;
-    409: ManagementError;
-    500: ManagementError;
-    503: ManagementError;
-};
-export type SubmitCurrentSubscriptionOrderPaymentError = SubmitCurrentSubscriptionOrderPaymentErrors[keyof SubmitCurrentSubscriptionOrderPaymentErrors];
-export type SubmitCurrentSubscriptionOrderPaymentResponses = {
-    200: SubscriptionOrderPaymentResponse;
-};
-export type SubmitCurrentSubscriptionOrderPaymentResponse = SubmitCurrentSubscriptionOrderPaymentResponses[keyof SubmitCurrentSubscriptionOrderPaymentResponses];

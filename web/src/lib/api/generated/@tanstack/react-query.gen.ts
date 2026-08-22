@@ -603,6 +603,19 @@ export const getCurrentSubscriptionOrderOptions = (options: Options<GetCurrentSu
     },
     queryKey: getCurrentSubscriptionOrderQueryKey(options)
 });
+export const submitCurrentSubscriptionOrderPaymentMutation = (options?: Partial<Options<SubmitCurrentSubscriptionOrderPaymentData>>): UseMutationOptions<SubmitCurrentSubscriptionOrderPaymentResponse, SubmitCurrentSubscriptionOrderPaymentError, Options<SubmitCurrentSubscriptionOrderPaymentData>> => {
+    const mutationOptions: UseMutationOptions<SubmitCurrentSubscriptionOrderPaymentResponse, SubmitCurrentSubscriptionOrderPaymentError, Options<SubmitCurrentSubscriptionOrderPaymentData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await submitCurrentSubscriptionOrderPayment({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
 export const requestPasswordResetMutation = (options?: Partial<Options<RequestPasswordResetData>>): UseMutationOptions<RequestPasswordResetResponse, RequestPasswordResetError, Options<RequestPasswordResetData>> => {
     const mutationOptions: UseMutationOptions<RequestPasswordResetResponse, RequestPasswordResetError, Options<RequestPasswordResetData>> = {
         mutationFn: async (fnOptions) => {
@@ -3646,19 +3659,6 @@ export const updateAdminGoogleOAuthLoginSettingsMutation = (options?: Partial<Op
     const mutationOptions: UseMutationOptions<UpdateAdminGoogleOAuthLoginSettingsResponse, UpdateAdminGoogleOAuthLoginSettingsError, Options<UpdateAdminGoogleOAuthLoginSettingsData>> = {
         mutationFn: async (fnOptions) => {
             const { data } = await updateAdminGoogleOAuthLoginSettings({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
-export const submitCurrentSubscriptionOrderPaymentMutation = (options?: Partial<Options<SubmitCurrentSubscriptionOrderPaymentData>>): UseMutationOptions<SubmitCurrentSubscriptionOrderPaymentResponse, SubmitCurrentSubscriptionOrderPaymentError, Options<SubmitCurrentSubscriptionOrderPaymentData>> => {
-    const mutationOptions: UseMutationOptions<SubmitCurrentSubscriptionOrderPaymentResponse, SubmitCurrentSubscriptionOrderPaymentError, Options<SubmitCurrentSubscriptionOrderPaymentData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await submitCurrentSubscriptionOrderPayment({
                 ...options,
                 ...fnOptions,
                 throwOnError: true
