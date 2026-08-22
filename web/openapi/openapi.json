@@ -29154,7 +29154,8 @@
             "maxLength": 32,
             "minLength": 1
           }
-        }
+        },
+        "additionalProperties": false
       },
       "SubscriptionPaymentResponse": {
         "type": "object",
@@ -29185,7 +29186,8 @@
             ],
             "maxLength": 16384
           }
-        }
+        },
+        "additionalProperties": false
       },
       "SubscriptionOrderPaymentResponse": {
         "type": "object",
@@ -29200,7 +29202,8 @@
           "payment": {
             "$ref": "#/components/schemas/SubscriptionPaymentResponse"
           }
-        }
+        },
+        "additionalProperties": false
       },
       "SubscriptionOrderStatus": {
         "type": "string",
