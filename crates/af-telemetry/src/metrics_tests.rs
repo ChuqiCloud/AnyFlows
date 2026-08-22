@@ -5,9 +5,10 @@ use ::metrics::{Key, Label};
 use crate::{
     ANALYTICS_EXPORT_BACKLOG, BILLING_FLUSH_LAG, CHANNEL_HEALTH, CLIENT_SIMULATION_ATTEMPTS_TOTAL,
     CONCURRENCY_SLOTS, FIRST_TOKEN_SECONDS, MetricClientSimulationProfile,
-    MetricClientSimulationResult, MetricConcurrencyLevel, MetricLabelError, MetricProtocol,
-    MetricRequestRateLimitFailure, MetricRequestRateLimitSubject, MetricRequestStatus,
-    MetricUpstreamErrorType, MetricsHandle, PROMETHEUS_CONTENT_TYPE, PROMETHEUS_PATH,
+    MetricClientSimulationResult, MetricConcurrencyLevel, MetricLabelError,
+    MetricPaymentConfirmationOutcome, MetricProtocol, MetricRequestRateLimitFailure,
+    MetricRequestRateLimitSubject, MetricRequestStatus, MetricUpstreamErrorType, MetricsHandle,
+    PAYMENT_WEBHOOK_CONFIRMATIONS_TOTAL, PROMETHEUS_CONTENT_TYPE, PROMETHEUS_PATH,
     QUOTA_CONSUMED_TOTAL, REQUEST_DURATION_SECONDS, REQUEST_RATE_LIMIT_ADMISSIONS_TOTAL,
     REQUEST_RATE_LIMIT_FAILURES_TOTAL, REQUEST_RATE_LIMIT_REJECTIONS_TOTAL,
     REQUEST_RATE_LIMIT_RETRY_AFTER_SECONDS, REQUEST_RATE_LIMIT_RULES_PER_CHECK, REQUESTS_TOTAL,
@@ -16,9 +17,10 @@ use crate::{
         MAX_CHANNEL_LABELS, MAX_GROUP_LABELS, MAX_MODEL_LABELS, MAX_SERIES_PER_FAMILY,
         build_metrics_recorder, describe_metric_families,
     },
-    record_client_simulation_attempt, record_request_rate_limit_admission,
-    record_request_rate_limit_check, record_request_rate_limit_failure,
-    record_request_rate_limit_rejection, set_analytics_export_backlog,
+    record_client_simulation_attempt, record_payment_confirmation,
+    record_request_rate_limit_admission, record_request_rate_limit_check,
+    record_request_rate_limit_failure, record_request_rate_limit_rejection,
+    set_analytics_export_backlog,
 };
 
 const GLOBAL_METRICS_INIT_CHILD: &str = "ANYFLOWS_METRICS_INIT_CHILD";
@@ -80,6 +82,39 @@ fn test_key(name: &str, labels: &[(&str, &str)]) -> Key {
         .map(|(key, value)| Label::new((*key).to_owned(), (*value).to_owned()))
         .collect::<Vec<_>>();
     Key::from_parts(name.to_owned(), labels)
+}
+
+#[test]
+fn payment_confirmation_metric_accepts_only_fixed_outcomes() {
+    let (recorder, handle) = build_metrics_recorder();
+    ::metrics::with_local_recorder(&recorder, || {
+        describe_metric_families();
+        for outcome in [
+            MetricPaymentConfirmationOutcome::Applied,
+            MetricPaymentConfirmationOutcome::Acknowledged,
+            MetricPaymentConfirmationOutcome::Existing,
+            MetricPaymentConfirmationOutcome::Rejected,
+            MetricPaymentConfirmationOutcome::IgnoredNonTerminal,
+            MetricPaymentConfirmationOutcome::NotFound,
+            MetricPaymentConfirmationOutcome::VerificationRejected,
+            MetricPaymentConfirmationOutcome::Conflict,
+            MetricPaymentConfirmationOutcome::BindingConflict,
+            MetricPaymentConfirmationOutcome::OutcomeUnknown,
+            MetricPaymentConfirmationOutcome::Unavailable,
+            MetricPaymentConfirmationOutcome::Invariant,
+            MetricPaymentConfirmationOutcome::InvalidRequest,
+        ] {
+            record_payment_confirmation(outcome);
+        }
+    });
+    let rendered = handle.render();
+    let lines = rendered
+        .lines()
+        .filter(|line| line.starts_with(&format!("{PAYMENT_WEBHOOK_CONFIRMATIONS_TOTAL}{{")))
+        .collect::<Vec<_>>();
+    assert_eq!(lines.len(), 13);
+    assert!(lines.iter().all(|line| line.contains("outcome=\"")));
+    assert!(!rendered.contains("provider_event_id"));
 }
 
 #[test]

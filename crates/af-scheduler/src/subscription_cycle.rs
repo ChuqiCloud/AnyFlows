@@ -203,7 +203,9 @@ fn record_mutation_result(
         Ok(SubscriptionCycleMutationOutcome::Applied) => report.applied += 1,
         Ok(SubscriptionCycleMutationOutcome::Existing) => report.existing += 1,
         Ok(SubscriptionCycleMutationOutcome::Skipped) => report.skipped += 1,
-        Err(SubscriptionRepositoryError::Conflict) => report.conflicted += 1,
+        Err(
+            SubscriptionRepositoryError::Conflict | SubscriptionRepositoryError::BindingConflict,
+        ) => report.conflicted += 1,
         Err(
             SubscriptionRepositoryError::Query
             | SubscriptionRepositoryError::Timeout

@@ -1234,7 +1234,7 @@ async fn bind_paid_order(
         if current.matches_bind(&bind) {
             return Ok(Some(current));
         }
-        return Err(SubscriptionRepositoryError::Conflict);
+        return Err(SubscriptionRepositoryError::BindingConflict);
     }
 
     let bound_at = to_database_time(bind.bound_at)?;
@@ -1265,7 +1265,7 @@ async fn bind_paid_order(
     let inserted = match inserted {
         Ok(model) => model,
         Err(error) if is_subscription_unique_conflict(&error) => {
-            return Err(SubscriptionRepositoryError::Conflict);
+            return Err(SubscriptionRepositoryError::BindingConflict);
         }
         Err(_) => return Err(SubscriptionRepositoryError::Query),
     };
@@ -2190,6 +2190,7 @@ pub(super) async fn rollback(
 pub(super) fn internal(error: SubscriptionRepositoryError) -> SubscriptionRepositoryError {
     let error_kind = match error {
         SubscriptionRepositoryError::Conflict => return error,
+        SubscriptionRepositoryError::BindingConflict => "subscription_binding_conflict",
         SubscriptionRepositoryError::Query => "subscription_query",
         SubscriptionRepositoryError::Timeout => "subscription_timeout",
         SubscriptionRepositoryError::OutcomeUnknown => "subscription_outcome_unknown",

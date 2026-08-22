@@ -48,6 +48,8 @@ pub const REQUEST_RATE_LIMIT_FAILURES_TOTAL: &str = "request_rate_limit_failures
 pub const REQUEST_RATE_LIMIT_RULES_PER_CHECK: &str = "request_rate_limit_rules_per_check";
 /// 请求被限流后需要等待的时间，单位为秒。
 pub const REQUEST_RATE_LIMIT_RETRY_AFTER_SECONDS: &str = "request_rate_limit_retry_after_seconds";
+/// 支付 webhook 确认结果；不代表 Provider 投递或用户已读状态。
+pub const PAYMENT_WEBHOOK_CONFIRMATIONS_TOTAL: &str = "payment_webhook_confirmations_total";
 
 const REQUESTS_DESCRIPTION: &str = "AnyFlows 请求总数。";
 const REQUEST_DURATION_DESCRIPTION: &str = "AnyFlows 请求总耗时。";
@@ -64,9 +66,13 @@ const REQUEST_RATE_LIMIT_REJECTIONS_DESCRIPTION: &str = "AnyFlows 请求速率�
 const REQUEST_RATE_LIMIT_FAILURES_DESCRIPTION: &str = "AnyFlows 请求速率限制失败关闭总数。";
 const REQUEST_RATE_LIMIT_RULES_DESCRIPTION: &str = "AnyFlows 单次请求速率限制检查的规则数量。";
 const REQUEST_RATE_LIMIT_RETRY_AFTER_DESCRIPTION: &str = "AnyFlows 请求速率限制拒绝后的等待时间。";
+const PAYMENT_WEBHOOK_CONFIRMATIONS_DESCRIPTION: &str =
+    "AnyFlows 支付 webhook 确认结果总数；不代表通知投递成功。";
 
 const METRICS_CALLSITE: &str = module_path!();
 const OTHER_LABEL: &str = "other";
+
+const PAYMENT_CONFIRMATION_LABELS: &[&str] = &["outcome"];
 
 // 固定 bucket 避免 exporter 回退为 summary，并覆盖网关的毫秒级到长流式请求。
 const REQUEST_DURATION_BUCKETS: &[f64] = &[
@@ -251,6 +257,15 @@ pub fn record_request_rate_limit_failure(failure: MetricRequestRateLimitFailure)
     .increment(1);
 }
 
+/// 记录一次支付 webhook 确认结果；指标不改变订单或通知事实状态。
+pub fn record_payment_confirmation(outcome: MetricPaymentConfirmationOutcome) {
+    ::metrics::counter!(
+        PAYMENT_WEBHOOK_CONFIRMATIONS_TOTAL,
+        "outcome" => outcome.as_str()
+    )
+    .increment(1);
+}
+
 macro_rules! registered_label {
     ($(#[$meta:meta])* $name:ident) => {
         $(#[$meta])*
@@ -341,6 +356,45 @@ pub enum MetricRequestRateLimitFailure {
     StoreProtocol,
     StoreOther,
     InvalidRetryAfter,
+}
+
+/// 支付 webhook 确认的稳定结果分类；不包含订单、用户或 Provider 标识。
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum MetricPaymentConfirmationOutcome {
+    Applied,
+    Acknowledged,
+    Existing,
+    Rejected,
+    IgnoredNonTerminal,
+    NotFound,
+    VerificationRejected,
+    Conflict,
+    BindingConflict,
+    OutcomeUnknown,
+    Unavailable,
+    Invariant,
+    InvalidRequest,
+}
+
+impl MetricPaymentConfirmationOutcome {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Applied => "applied",
+            Self::Acknowledged => "acknowledged",
+            Self::Existing => "existing",
+            Self::Rejected => "rejected",
+            Self::IgnoredNonTerminal => "ignored_non_terminal",
+            Self::NotFound => "not_found",
+            Self::VerificationRejected => "verification_rejected",
+            Self::Conflict => "conflict",
+            Self::BindingConflict => "binding_conflict",
+            Self::OutcomeUnknown => "outcome_unknown",
+            Self::Unavailable => "unavailable",
+            Self::Invariant => "invariant",
+            Self::InvalidRequest => "invalid_request",
+        }
+    }
 }
 
 impl MetricRequestRateLimitFailure {
@@ -567,5 +621,10 @@ pub(crate) fn describe_metric_families() {
         REQUEST_RATE_LIMIT_RETRY_AFTER_SECONDS,
         Unit::Seconds,
         REQUEST_RATE_LIMIT_RETRY_AFTER_DESCRIPTION
+    );
+    ::metrics::describe_counter!(
+        PAYMENT_WEBHOOK_CONFIRMATIONS_TOTAL,
+        Unit::Count,
+        PAYMENT_WEBHOOK_CONFIRMATIONS_DESCRIPTION
     );
 }
