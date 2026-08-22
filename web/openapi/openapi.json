@@ -2653,6 +2653,115 @@
         ]
       }
     },
+    "/api/account/subscription-orders/{order_id}/payment": {
+      "post": {
+        "tags": [
+          "订阅管理"
+        ],
+        "summary": "提交或恢复当前用户订阅订单支付",
+        "operationId": "submitCurrentSubscriptionOrderPayment",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "description": "订阅订单标识",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 32,
+              "minLength": 32
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscriptionOrderPaymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "支付会话已创建或恢复",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionOrderPaymentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "订单标识或支付方式无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "订单不存在或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "订单状态、Provider 或支付事实冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "支付 Provider 或提交结果暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/auth/password-reset/request": {
       "post": {
         "tags": [
@@ -17447,115 +17556,6 @@
           },
           "500": {
             "description": "服务内部错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/account/subscription-orders/{order_id}/payment": {
-      "post": {
-        "tags": [
-          "订阅管理"
-        ],
-        "summary": "提交或恢复当前用户订阅订单支付",
-        "operationId": "submitCurrentSubscriptionOrderPayment",
-        "parameters": [
-          {
-            "name": "order_id",
-            "in": "path",
-            "description": "订阅订单标识",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "maxLength": 32,
-              "minLength": 32
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SubscriptionOrderPaymentRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "支付会话已创建或恢复",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SubscriptionOrderPaymentResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "订单标识或支付方式无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "会话无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "订单不存在或不属于当前用户",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "订单状态、Provider 或支付事实冲突",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "服务内部错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "支付 Provider 或提交结果暂不可用",
             "content": {
               "application/json": {
                 "schema": {
