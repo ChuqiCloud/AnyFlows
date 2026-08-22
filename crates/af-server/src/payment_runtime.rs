@@ -34,6 +34,8 @@ const EASYPAY_PRODUCT_NAME: &str = "AnyFlows 余额充值";
 struct PaymentRuntimeSnapshot {
     user_topup_service: Option<Arc<dyn UserTopupService>>,
     webhook_processors: HashMap<String, Arc<dyn PaymentWebhookHandler>>,
+    // 退款 HTTP/编排入口将在后续切片接入；当前先随支付配置快照原子切换。
+    #[allow(dead_code)]
     refund_providers: HashMap<String, Arc<dyn RefundProvider>>,
 }
 
@@ -268,6 +270,7 @@ impl PaymentRuntime {
     }
 
     /// 返回当前快照中的退款 Provider，供退款提交/恢复入口复用同一配置版本。
+    #[allow(dead_code)]
     pub(crate) fn refund_provider(&self, provider: &str) -> Option<Arc<dyn RefundProvider>> {
         self.current_snapshot()
             .refund_providers
