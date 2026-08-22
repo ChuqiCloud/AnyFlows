@@ -26,6 +26,7 @@ use af_http::{PaymentWebhookProcessorRegistry, RefundReceiptProcessorRegistry};
 use af_httpclient::HttpClientProvider;
 use url::Url;
 
+use crate::epay_refund::EasyPayRefundProvider;
 use crate::stripe_payment_intent::StripePaymentIntentProvider;
 use crate::stripe_refund::StripeRefundProvider;
 
@@ -105,8 +106,14 @@ impl PaymentRuntime {
             )?;
         }
         if record.epay_enabled() {
-            self.add_epay(record, cipher, &mut routes, &mut webhook_processors)
-                .await?;
+            self.add_epay(
+                record,
+                cipher,
+                &mut routes,
+                &mut webhook_processors,
+                &mut refund_providers,
+            )
+            .await?;
         }
 
         let user_topup_service = if routes.is_empty() {
@@ -204,6 +211,7 @@ impl PaymentRuntime {
         cipher: &SystemSecretCipher,
         routes: &mut Vec<UserTopupProviderRoute>,
         processors: &mut HashMap<String, Arc<dyn PaymentWebhookHandler>>,
+        refund_providers: &mut HashMap<String, Arc<dyn RefundProvider>>,
     ) -> Result<(), PaymentSettingsRuntimeError> {
         let gateway_url = record
             .epay_gateway_url()
@@ -245,6 +253,17 @@ impl PaymentRuntime {
             )
             .map_err(|_| runtime_failed("epay_provider"))?,
         );
+        let refund_provider = Arc::new(
+            EasyPayRefundProvider::new(
+                gateway_url,
+                merchant_id,
+                merchant_key.expose_secret(),
+                self.upstream_clients.clone(),
+                self.request_timeout,
+            )
+            .map_err(|_| runtime_failed("epay_refund_provider"))?,
+        );
+        refund_providers.insert(EASYPAY_PAYMENT_PROVIDER.to_owned(), refund_provider);
         if record.epay_alipay_enabled() {
             routes.push(
                 UserTopupProviderRoute::epay(
