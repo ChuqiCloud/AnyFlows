@@ -1693,8 +1693,8 @@
         "tags": [
           "退款审批"
         ],
-        "summary": "读取退款审批列表",
         "operationId": "listAdminRefunds",
+        "summary": "读取退款审批列表",
         "parameters": [
           {
             "name": "after",
@@ -1799,8 +1799,8 @@
         "tags": [
           "退款审批"
         ],
-        "summary": "批准退款",
         "operationId": "approveAdminRefund",
+        "summary": "批准退款",
         "parameters": [
           {
             "name": "request_id",
@@ -1929,8 +1929,8 @@
         "tags": [
           "退款审批"
         ],
-        "summary": "拒绝退款",
         "operationId": "rejectAdminRefund",
+        "summary": "拒绝退款",
         "parameters": [
           {
             "name": "request_id",
@@ -2039,8 +2039,8 @@
         "tags": [
           "退款审批"
         ],
-        "summary": "手动提交已批准退款",
         "operationId": "submitAdminRefund",
+        "summary": "手动提交已批准退款",
         "parameters": [
           {
             "name": "request_id",
