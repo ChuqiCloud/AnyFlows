@@ -300,7 +300,7 @@ mod tests {
             RefundOrderKind::Topup,
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
             "epay".to_owned(),
-            "trade_original".to_owned(),
+            Some("trade_original".to_owned()),
             "CNY".to_owned(),
             100,
             40,
