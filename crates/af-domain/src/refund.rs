@@ -8,6 +8,7 @@ const REFUND_KEY_BYTES: usize = REFUND_ID_BYTES * 2;
 const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 pub const MAX_REFUND_ORDER_KEY_BYTES: usize = REFUND_KEY_BYTES;
 pub const MAX_REFUND_PROVIDER_BYTES: usize = 64;
+pub const MAX_REFUND_PROVIDER_REFUND_ID_BYTES: usize = 128;
 
 /// 退款业务标识构造错误；不保留外部输入。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
@@ -300,6 +301,7 @@ pub struct RefundRequestRecord {
     pub(super) currency: String,
     pub(super) original_amount_minor: i64,
     pub(super) refund_amount_minor: i64,
+    pub(super) provider_refund_id: Option<String>,
     pub(super) status: RefundRequestStatus,
     pub(super) version: u64,
     pub(super) created_at: u64,
@@ -323,6 +325,7 @@ impl RefundRequestRecord {
         currency: String,
         original_amount_minor: i64,
         refund_amount_minor: i64,
+        provider_refund_id: Option<String>,
         status: RefundRequestStatus,
         version: i64,
         created_at: u64,
@@ -346,6 +349,17 @@ impl RefundRequestRecord {
             created_at,
         )
         .map_err(|_| RefundRequestInputError::InvalidPersistedState)?;
+        if provider_refund_id.as_deref().is_some_and(|value| {
+            value.is_empty()
+                || value.len() > MAX_REFUND_PROVIDER_REFUND_ID_BYTES
+                || value.trim() != value
+                || value.chars().any(char::is_control)
+        }) {
+            return Err(RefundRequestInputError::InvalidPersistedState);
+        }
+        if status == RefundRequestStatus::Succeeded && provider_refund_id.is_none() {
+            return Err(RefundRequestInputError::InvalidPersistedState);
+        }
         Ok(Self {
             database_id,
             request_id: create.request_id,
@@ -357,6 +371,7 @@ impl RefundRequestRecord {
             currency: create.currency,
             original_amount_minor: create.original_amount_minor,
             refund_amount_minor: create.refund_amount_minor,
+            provider_refund_id,
             status,
             version: u64::try_from(version)
                 .map_err(|_| RefundRequestInputError::InvalidPersistedState)?,
@@ -365,6 +380,10 @@ impl RefundRequestRecord {
         })
     }
 
+    #[must_use]
+    pub const fn database_id(&self) -> i64 {
+        self.database_id
+    }
     #[must_use]
     pub const fn request_id(&self) -> RefundRequestId {
         self.request_id
@@ -404,6 +423,10 @@ impl RefundRequestRecord {
     #[must_use]
     pub const fn status(&self) -> RefundRequestStatus {
         self.status
+    }
+    #[must_use]
+    pub fn provider_refund_id(&self) -> Option<&str> {
+        self.provider_refund_id.as_deref()
     }
     #[must_use]
     pub const fn version(&self) -> u64 {

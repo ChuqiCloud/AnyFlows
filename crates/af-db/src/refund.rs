@@ -5,13 +5,17 @@ use af_domain::{
     RefundRequestKey, RefundRequestRecord, RefundRequestStatus, UserId,
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
-    entity::prelude::TimeDateTimeWithTimeZone,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
+    EntityTrait, QueryFilter, Set, SqlErr, TransactionTrait,
+    entity::prelude::TimeDateTimeWithTimeZone, sea_query::Expr,
 };
 use thiserror::Error;
 use tokio::time::timeout;
 
-use crate::{DatabasePool, entity::refund_requests};
+use crate::{
+    DatabasePool,
+    entity::{SensitiveString, refund_provider_events, refund_requests},
+};
 
 /// 退款请求事实仓储。
 ///
@@ -74,6 +78,500 @@ impl RefundRepository {
             Err(_) => Err(RefundRepositoryError::Timeout),
         }
     }
+
+    /// 把请求占位推进到 Submitted；Provider 调用发生在该 CAS 之后，避免并发重复出资。
+    pub async fn claim_submission(
+        &self,
+        request_id: RefundRequestId,
+        expected_version: u64,
+        updated_at: u64,
+    ) -> Result<RefundSubmissionOutcome, RefundRepositoryError> {
+        let operation = claim_submission_inner(
+            self.pool.connection(),
+            request_id,
+            expected_version,
+            updated_at,
+        );
+        match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result,
+            Err(_) => Err(RefundRepositoryError::OutcomeUnknown),
+        }
+    }
+
+    /// 绑定 Provider 退款标识；只接受 Submitted 状态的严格版本 CAS。
+    pub async fn bind_provider_refund_id(
+        &self,
+        request_id: RefundRequestId,
+        expected_version: u64,
+        provider_refund_id: String,
+        updated_at: u64,
+    ) -> Result<RefundSubmissionOutcome, RefundRepositoryError> {
+        let operation = bind_provider_refund_id_inner(
+            self.pool.connection(),
+            request_id,
+            expected_version,
+            provider_refund_id,
+            updated_at,
+        );
+        match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result,
+            Err(_) => Err(RefundRepositoryError::OutcomeUnknown),
+        }
+    }
+
+    /// 记录 Provider 明确失败；结果未知不应调用此方法。
+    pub async fn mark_failed(
+        &self,
+        request_id: RefundRequestId,
+        expected_version: u64,
+        updated_at: u64,
+    ) -> Result<RefundSubmissionOutcome, RefundRepositoryError> {
+        let operation = transition_submission(
+            self.pool.connection(),
+            request_id,
+            expected_version,
+            RefundRequestStatus::Failed,
+            updated_at,
+        );
+        match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result,
+            Err(_) => Err(RefundRepositoryError::OutcomeUnknown),
+        }
+    }
+
+    /// 在事务内追加已验签回执并 CAS 推进退款状态。
+    pub async fn apply_receipt(
+        &self,
+        write: RefundReceiptWrite,
+    ) -> Result<RefundReceiptOutcome, RefundRepositoryError> {
+        let operation = apply_receipt_inner(self.pool.connection(), &write);
+        match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result,
+            Err(_) => Err(RefundRepositoryError::OutcomeUnknown),
+        }
+    }
+}
+
+/// Provider 调用前成功抢到的退款请求快照。
+#[derive(Debug)]
+pub enum RefundSubmissionOutcome {
+    Applied(RefundRequestRecord),
+    Existing(RefundRequestRecord),
+}
+
+/// 已验签回执的规范持久化输入；不允许携带原始 payload 或签名。
+#[derive(Clone, Debug)]
+pub struct RefundReceiptWrite {
+    pub event_key: String,
+    pub request_id: RefundRequestId,
+    pub provider: String,
+    pub provider_event_id: String,
+    pub provider_refund_id: String,
+    pub status: RefundRequestStatus,
+    pub amount_minor: i64,
+    pub currency: String,
+    pub signature_key_fingerprint: String,
+    pub payload_sha256: String,
+    pub received_at: u64,
+    pub processed_at: u64,
+    pub created_at: u64,
+}
+
+/// 回执应用结果。
+#[derive(Debug)]
+pub enum RefundReceiptOutcome {
+    Applied(RefundRequestRecord),
+    Existing(RefundRequestRecord),
+    NotFound,
+}
+
+async fn claim_submission_inner(
+    connection: &DatabaseConnection,
+    request_id: RefundRequestId,
+    expected_version: u64,
+    updated_at: u64,
+) -> Result<RefundSubmissionOutcome, RefundRepositoryError> {
+    let Some(current) = load_model_by_request_key(connection, request_id).await? else {
+        return Err(RefundRepositoryError::NotFound);
+    };
+    let record = to_record(current.clone())?;
+    if updated_at < record.created_at() {
+        return Err(RefundRepositoryError::Invariant);
+    }
+    if record.status() == RefundRequestStatus::Submitted
+        && (record.version() == expected_version
+            || record.version() == expected_version.saturating_add(1))
+    {
+        return Ok(RefundSubmissionOutcome::Existing(record));
+    }
+    if record.version() != expected_version
+        || !matches!(
+            record.status(),
+            RefundRequestStatus::Requested | RefundRequestStatus::Failed
+        )
+        || record.provider_refund_id().is_some()
+    {
+        return Err(RefundRepositoryError::Conflict);
+    }
+    transition_submission(
+        connection,
+        request_id,
+        expected_version,
+        RefundRequestStatus::Submitted,
+        updated_at,
+    )
+    .await
+}
+
+async fn bind_provider_refund_id_inner(
+    connection: &DatabaseConnection,
+    request_id: RefundRequestId,
+    expected_version: u64,
+    provider_refund_id: String,
+    updated_at: u64,
+) -> Result<RefundSubmissionOutcome, RefundRepositoryError> {
+    if !valid_provider_refund_id(&provider_refund_id) {
+        return Err(RefundRepositoryError::Invariant);
+    }
+    let Some(current) = load_model_by_request_key(connection, request_id).await? else {
+        return Err(RefundRepositoryError::NotFound);
+    };
+    let record = to_record(current.clone())?;
+    if updated_at < record.created_at() {
+        return Err(RefundRepositoryError::Invariant);
+    }
+    if record.status() == RefundRequestStatus::Submitted
+        && record.provider_refund_id() == Some(provider_refund_id.as_str())
+        && record.version() == expected_version.saturating_add(1)
+    {
+        return Ok(RefundSubmissionOutcome::Existing(record));
+    }
+    if record.version() != expected_version
+        || record.status() != RefundRequestStatus::Submitted
+        || record.provider_refund_id().is_some()
+    {
+        return Err(RefundRepositoryError::Conflict);
+    }
+    let updated_at = to_database_time(updated_at)?;
+    let next_version = expected_version
+        .checked_add(1)
+        .ok_or(RefundRepositoryError::Invariant)?;
+    let result = refund_requests::Entity::update_many()
+        .filter(refund_requests::Column::RequestKey.eq(request_id.persistence_key()))
+        .filter(
+            refund_requests::Column::Version
+                .eq(i64::try_from(expected_version)
+                    .map_err(|_| RefundRepositoryError::Invariant)?),
+        )
+        .filter(refund_requests::Column::Status.eq(RefundRequestStatus::Submitted.code()))
+        .filter(refund_requests::Column::ProviderRefundId.is_null())
+        .col_expr(
+            refund_requests::Column::ProviderRefundId,
+            Expr::value(provider_refund_id),
+        )
+        .col_expr(
+            refund_requests::Column::Version,
+            Expr::value(i64::try_from(next_version).map_err(|_| RefundRepositoryError::Invariant)?),
+        )
+        .col_expr(refund_requests::Column::UpdatedAt, Expr::value(updated_at))
+        .exec(connection)
+        .await
+        .map_err(|_| RefundRepositoryError::Query)?;
+    if result.rows_affected != 1 {
+        return Err(RefundRepositoryError::Conflict);
+    }
+    let model = load_model_by_request_key(connection, request_id)
+        .await?
+        .ok_or(RefundRepositoryError::Invariant)?;
+    Ok(RefundSubmissionOutcome::Applied(to_record(model)?))
+}
+
+async fn transition_submission(
+    connection: &DatabaseConnection,
+    request_id: RefundRequestId,
+    expected_version: u64,
+    target: RefundRequestStatus,
+    updated_at: u64,
+) -> Result<RefundSubmissionOutcome, RefundRepositoryError> {
+    let Some(current) = load_model_by_request_key(connection, request_id).await? else {
+        return Err(RefundRepositoryError::NotFound);
+    };
+    let record = to_record(current)?;
+    if updated_at < record.created_at() {
+        return Err(RefundRepositoryError::Invariant);
+    }
+    if record.status() == target
+        && (record.version() == expected_version
+            || record.version() == expected_version.saturating_add(1))
+    {
+        return Ok(RefundSubmissionOutcome::Existing(record));
+    }
+    if record.version() != expected_version || !record.status().can_transition_to(target) {
+        return Err(RefundRepositoryError::Conflict);
+    }
+    let updated_at = to_database_time(updated_at)?;
+    let next_version = expected_version
+        .checked_add(1)
+        .ok_or(RefundRepositoryError::Invariant)?;
+    let result = refund_requests::Entity::update_many()
+        .filter(refund_requests::Column::RequestKey.eq(request_id.persistence_key()))
+        .filter(
+            refund_requests::Column::Version
+                .eq(i64::try_from(expected_version)
+                    .map_err(|_| RefundRepositoryError::Invariant)?),
+        )
+        .filter(refund_requests::Column::Status.eq(record.status().code()))
+        .col_expr(refund_requests::Column::Status, Expr::value(target.code()))
+        .col_expr(
+            refund_requests::Column::Version,
+            Expr::value(i64::try_from(next_version).map_err(|_| RefundRepositoryError::Invariant)?),
+        )
+        .col_expr(refund_requests::Column::UpdatedAt, Expr::value(updated_at))
+        .exec(connection)
+        .await
+        .map_err(|_| RefundRepositoryError::Query)?;
+    if result.rows_affected != 1 {
+        return Err(RefundRepositoryError::Conflict);
+    }
+    let model = load_model_by_request_key(connection, request_id)
+        .await?
+        .ok_or(RefundRepositoryError::Invariant)?;
+    Ok(RefundSubmissionOutcome::Applied(to_record(model)?))
+}
+
+async fn apply_receipt_inner(
+    connection: &DatabaseConnection,
+    write: &RefundReceiptWrite,
+) -> Result<RefundReceiptOutcome, RefundRepositoryError> {
+    validate_receipt_write(write)?;
+    let transaction = connection
+        .begin()
+        .await
+        .map_err(|_| RefundRepositoryError::Query)?;
+    let result = apply_receipt_transaction(&transaction, write).await;
+    match result {
+        Ok(outcome) => {
+            transaction
+                .commit()
+                .await
+                .map_err(|_| RefundRepositoryError::OutcomeUnknown)?;
+            Ok(outcome)
+        }
+        Err(RefundRepositoryError::Conflict) => {
+            transaction
+                .rollback()
+                .await
+                .map_err(|_| RefundRepositoryError::OutcomeUnknown)?;
+            Err(RefundRepositoryError::Conflict)
+        }
+        Err(error) => {
+            transaction
+                .rollback()
+                .await
+                .map_err(|_| RefundRepositoryError::OutcomeUnknown)?;
+            Err(error)
+        }
+    }
+}
+
+async fn apply_receipt_transaction(
+    transaction: &DatabaseTransaction,
+    write: &RefundReceiptWrite,
+) -> Result<RefundReceiptOutcome, RefundRepositoryError> {
+    let Some(current) = load_model_by_request_key(transaction, write.request_id).await? else {
+        return Ok(RefundReceiptOutcome::NotFound);
+    };
+    let record = to_record(current.clone())?;
+    if record.provider() != write.provider
+        || record.currency() != write.currency
+        || record.refund_amount_minor() != write.amount_minor
+        || record
+            .provider_refund_id()
+            .is_some_and(|value| value != write.provider_refund_id)
+    {
+        return Err(RefundRepositoryError::Conflict);
+    }
+    if write.processed_at < record.created_at() {
+        return Err(RefundRepositoryError::Invariant);
+    }
+    if !matches!(
+        write.status,
+        RefundRequestStatus::Succeeded | RefundRequestStatus::Failed
+    ) || record.status() != RefundRequestStatus::Submitted
+    {
+        if record.status() == write.status {
+            return Ok(RefundReceiptOutcome::Existing(record));
+        }
+        return Err(RefundRepositoryError::Conflict);
+    }
+    let received_at = to_database_time(write.received_at)?;
+    let processed_at = to_database_time(write.processed_at)?;
+    let created_at = to_database_time(write.created_at)?;
+    let event = refund_provider_events::ActiveModel {
+        id: sea_orm::NotSet,
+        event_key: Set(write.event_key.clone()),
+        request_key: Set(write.request_id.persistence_key()),
+        provider: Set(write.provider.clone()),
+        provider_event_id: Set(SensitiveString::from(write.provider_event_id.clone())),
+        provider_refund_id: Set(SensitiveString::from(write.provider_refund_id.clone())),
+        event_type: Set(write.status.code()),
+        amount_minor: Set(write.amount_minor),
+        currency: Set(write.currency.clone()),
+        signature_key_fingerprint: Set(SensitiveString::from(
+            write.signature_key_fingerprint.clone(),
+        )),
+        payload_sha256: Set(SensitiveString::from(write.payload_sha256.clone())),
+        received_at: Set(received_at),
+        processed_at: Set(Some(processed_at)),
+        created_at: Set(created_at),
+    };
+    // 唯一约束冲突只代表重复回执；用保存点隔离插入失败，不能吞掉真实数据库错误。
+    let savepoint = transaction
+        .begin()
+        .await
+        .map_err(|_| RefundRepositoryError::Query)?;
+    let insert_result = event.insert(&savepoint).await;
+    match insert_result {
+        Ok(_) => savepoint
+            .commit()
+            .await
+            .map_err(|_| RefundRepositoryError::OutcomeUnknown)?,
+        Err(error) if matches!(error.sql_err(), Some(SqlErr::UniqueConstraintViolation(_))) => {
+            savepoint
+                .rollback()
+                .await
+                .map_err(|_| RefundRepositoryError::OutcomeUnknown)?;
+            return duplicate_receipt_outcome(transaction, write, record).await;
+        }
+        Err(_) => {
+            savepoint
+                .rollback()
+                .await
+                .map_err(|_| RefundRepositoryError::OutcomeUnknown)?;
+            return Err(RefundRepositoryError::Query);
+        }
+    }
+    let expected_version =
+        i64::try_from(record.version()).map_err(|_| RefundRepositoryError::Invariant)?;
+    let next_version = record
+        .version()
+        .checked_add(1)
+        .ok_or(RefundRepositoryError::Invariant)?;
+    let result = refund_requests::Entity::update_many()
+        .filter(refund_requests::Column::Id.eq(record.database_id()))
+        .filter(refund_requests::Column::Version.eq(expected_version))
+        .filter(refund_requests::Column::Status.eq(RefundRequestStatus::Submitted.code()))
+        .col_expr(
+            refund_requests::Column::ProviderRefundId,
+            Expr::value(write.provider_refund_id.clone()),
+        )
+        .col_expr(
+            refund_requests::Column::Status,
+            Expr::value(write.status.code()),
+        )
+        .col_expr(
+            refund_requests::Column::Version,
+            Expr::value(i64::try_from(next_version).map_err(|_| RefundRepositoryError::Invariant)?),
+        )
+        .col_expr(
+            refund_requests::Column::UpdatedAt,
+            Expr::value(processed_at),
+        )
+        .exec(transaction)
+        .await
+        .map_err(|_| RefundRepositoryError::Query)?;
+    if result.rows_affected != 1 {
+        return Err(RefundRepositoryError::Conflict);
+    }
+    let updated = load_model_by_request_key(transaction, write.request_id)
+        .await?
+        .ok_or(RefundRepositoryError::Invariant)?;
+    Ok(RefundReceiptOutcome::Applied(to_record(updated)?))
+}
+
+async fn duplicate_receipt_outcome(
+    transaction: &DatabaseTransaction,
+    write: &RefundReceiptWrite,
+    record: RefundRequestRecord,
+) -> Result<RefundReceiptOutcome, RefundRepositoryError> {
+    let by_event_key = refund_provider_events::Entity::find()
+        .filter(refund_provider_events::Column::EventKey.eq(write.event_key.clone()))
+        .one(transaction)
+        .await
+        .map_err(map_query)?;
+    let existing = match by_event_key {
+        Some(event) => Some(event),
+        None => refund_provider_events::Entity::find()
+            .filter(refund_provider_events::Column::Provider.eq(write.provider.clone()))
+            .filter(
+                refund_provider_events::Column::ProviderEventId
+                    .eq(SensitiveString::from(write.provider_event_id.clone())),
+            )
+            .one(transaction)
+            .await
+            .map_err(map_query)?,
+    };
+    let Some(existing) = existing else {
+        return Err(RefundRepositoryError::Query);
+    };
+    if existing.request_key == write.request_id.persistence_key()
+        && existing.provider == write.provider
+        && existing.provider_refund_id.as_str() == write.provider_refund_id
+        && existing.event_type == write.status.code()
+        && existing.amount_minor == write.amount_minor
+        && existing.currency == write.currency
+    {
+        Ok(RefundReceiptOutcome::Existing(record))
+    } else {
+        Err(RefundRepositoryError::Conflict)
+    }
+}
+
+fn validate_receipt_write(write: &RefundReceiptWrite) -> Result<(), RefundRepositoryError> {
+    if !valid_hex_text(&write.event_key, 32)
+        || write.provider.is_empty()
+        || write.provider.len() > 64
+        || write.provider_event_id.is_empty()
+        || write.provider_event_id.len() > 128
+        || write.provider_refund_id.is_empty()
+        || write.provider_refund_id.len() > 128
+        || write.amount_minor <= 0
+        || !valid_currency(&write.currency)
+        || !valid_hex_text(&write.signature_key_fingerprint, 64)
+        || !valid_hex_text(&write.payload_sha256, 64)
+        || write.received_at > i64::MAX as u64
+        || write.processed_at > i64::MAX as u64
+        || write.created_at > i64::MAX as u64
+    {
+        return Err(RefundRepositoryError::Invariant);
+    }
+    Ok(())
+}
+
+async fn load_model_by_request_key<C: ConnectionTrait>(
+    connection: &C,
+    request_id: RefundRequestId,
+) -> Result<Option<refund_requests::Model>, RefundRepositoryError> {
+    refund_requests::Entity::find()
+        .filter(refund_requests::Column::RequestKey.eq(request_id.persistence_key()))
+        .one(connection)
+        .await
+        .map_err(map_query)
+}
+
+fn valid_provider_refund_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= af_domain::MAX_REFUND_PROVIDER_REFUND_ID_BYTES
+        && value.trim() == value
+        && !value.chars().any(char::is_control)
+}
+
+fn valid_hex_text(value: &str, length: usize) -> bool {
+    value.len() == length && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn valid_currency(value: &str) -> bool {
+    value.len() == 3 && value.bytes().all(|byte| byte.is_ascii_uppercase())
 }
 
 async fn create_request_inner(
@@ -106,6 +604,7 @@ async fn create_request_inner(
         currency: Set(write.currency().to_owned()),
         original_amount_minor: Set(write.original_amount_minor()),
         refund_amount_minor: Set(write.refund_amount_minor()),
+        provider_refund_id: Set(None),
         status: Set(RefundRequestStatus::Requested.code()),
         version: Set(1),
         created_at: Set(created_at),
@@ -222,6 +721,7 @@ fn to_record(model: refund_requests::Model) -> Result<RefundRequestRecord, Refun
         model.currency,
         model.original_amount_minor,
         model.refund_amount_minor,
+        model.provider_refund_id,
         status,
         model.version,
         created_at,
@@ -259,6 +759,9 @@ pub enum RefundRepositoryError {
     /// 相同幂等键或订单已经绑定不同事实。
     #[error("退款请求事实冲突")]
     Conflict,
+    /// 请求标识不存在。
+    #[error("退款请求不存在")]
+    NotFound,
     /// 数据库查询或写入失败。
     #[error("退款数据库操作失败")]
     Query,

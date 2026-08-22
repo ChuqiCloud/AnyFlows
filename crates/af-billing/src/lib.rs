@@ -14,6 +14,7 @@ mod payment_webhook;
 mod pricing;
 mod pricing_snapshot;
 pub mod quota_math;
+mod refund;
 mod refund_signal_consumer;
 mod refund_signal_queue;
 mod stripe;
@@ -95,6 +96,13 @@ pub use pricing_snapshot::{
     RequestPricingSnapshotSource,
 };
 pub use quota_math::quota_from_cny_minor;
+pub use refund::{
+    RefundProvider, RefundProviderError, RefundProviderFuture, RefundProviderInputError,
+    RefundProviderRecoveryRequest, RefundProviderRequest, RefundProviderResult,
+    RefundReceiptProcessor, RefundReceiptProcessorError, RefundReceiptVerificationError,
+    RefundReceiptVerifier, RefundSubmissionProcessor, RefundSubmissionProcessorError,
+    VerifiedRefundReceipt,
+};
 pub use refund_signal_consumer::{
     RefundSignalConsumer, RefundSignalConsumerError, RefundSignalSink, RefundSignalSinkError,
     RefundSignalSinkFuture,

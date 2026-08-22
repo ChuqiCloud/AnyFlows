@@ -518,7 +518,10 @@ pub use redemption::{
     RedemptionOutcome, RedemptionRecord, RedemptionRejection, RedemptionRepository,
     RedemptionRepositoryConfigError, RedemptionRepositoryError,
 };
-pub use refund::{RefundRepository, RefundRepositoryConfigError, RefundRepositoryError};
+pub use refund::{
+    RefundReceiptOutcome, RefundReceiptWrite, RefundRepository, RefundRepositoryConfigError,
+    RefundRepositoryError, RefundSubmissionOutcome,
+};
 pub use registration::{
     DEFAULT_REGISTRATION_RATE_LIMIT_ATTEMPTS, DEFAULT_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS,
     MAX_REGISTRATION_RATE_LIMIT_ATTEMPTS, MAX_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS,
