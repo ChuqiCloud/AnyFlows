@@ -1221,6 +1221,9 @@ pub enum SubscriptionRepositoryError {
     /// 相同计划、绑定键或 CAS 版本绑定了不同事实。
     #[error("订阅计划或用户绑定冲突")]
     Conflict,
+    /// 支付成功后无法将订单绑定到唯一的用户订阅。
+    #[error("订阅支付绑定冲突")]
+    BindingConflict,
     /// 获取连接或执行确定未提交的数据库操作失败。
     #[error("订阅数据库操作失败")]
     Query,

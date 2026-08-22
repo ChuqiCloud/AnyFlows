@@ -493,6 +493,8 @@ pub enum PaymentWebhookHandlerError {
     VerificationRejected,
     #[error("支付 webhook 状态冲突")]
     Conflict,
+    #[error("支付 webhook 订阅绑定冲突")]
+    BindingConflict,
     #[error("支付 webhook 处理结果未知")]
     OutcomeUnknown,
     #[error("支付 webhook 处理暂不可用")]
@@ -772,6 +774,7 @@ fn map_topup_route_error(error: TopupRepositoryError) -> PaymentWebhookHandlerEr
 fn map_subscription_route_error(error: SubscriptionRepositoryError) -> PaymentWebhookHandlerError {
     match error {
         SubscriptionRepositoryError::Conflict => PaymentWebhookHandlerError::Conflict,
+        SubscriptionRepositoryError::BindingConflict => PaymentWebhookHandlerError::BindingConflict,
         SubscriptionRepositoryError::OutcomeUnknown => PaymentWebhookHandlerError::OutcomeUnknown,
         SubscriptionRepositoryError::Query | SubscriptionRepositoryError::Timeout => {
             PaymentWebhookHandlerError::Unavailable

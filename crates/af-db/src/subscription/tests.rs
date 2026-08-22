@@ -396,7 +396,7 @@ async fn verified_payment_conflicts_record_facts_and_roll_back_binding_conflicts
             .accept_verified_event(&matching)
             .await
             .unwrap_err(),
-        SubscriptionRepositoryError::Conflict
+        SubscriptionRepositoryError::BindingConflict
     );
     let order_model = subscription_orders::Entity::find()
         .filter(subscription_orders::Column::OrderKey.eq(order_id.persistence_key()))

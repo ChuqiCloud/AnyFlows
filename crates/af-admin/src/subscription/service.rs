@@ -569,6 +569,7 @@ fn random_order_id() -> Result<SubscriptionOrderId, SubscriptionServiceError> {
 fn map_read_error(error: SubscriptionRepositoryError) -> SubscriptionServiceError {
     match error {
         SubscriptionRepositoryError::Conflict
+        | SubscriptionRepositoryError::BindingConflict
         | SubscriptionRepositoryError::Query
         | SubscriptionRepositoryError::Timeout
         | SubscriptionRepositoryError::OutcomeUnknown
@@ -578,7 +579,9 @@ fn map_read_error(error: SubscriptionRepositoryError) -> SubscriptionServiceErro
 
 fn map_write_error(error: SubscriptionRepositoryError) -> SubscriptionServiceError {
     match error {
-        SubscriptionRepositoryError::Conflict => SubscriptionServiceError::Conflict,
+        SubscriptionRepositoryError::Conflict | SubscriptionRepositoryError::BindingConflict => {
+            SubscriptionServiceError::Conflict
+        }
         SubscriptionRepositoryError::OutcomeUnknown => SubscriptionServiceError::OutcomeUnknown,
         SubscriptionRepositoryError::Query
         | SubscriptionRepositoryError::Timeout
