@@ -22,6 +22,7 @@ mod concurrency_runtime;
 mod credential_feedback;
 mod credential_order;
 mod debug_trace_runtime;
+mod epay_refund;
 mod frontend;
 mod group_pricing_refresh;
 mod health_runtime;
