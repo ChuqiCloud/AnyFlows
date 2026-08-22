@@ -14,7 +14,7 @@ use af_admin::{
 };
 use af_billing::{
     DatabasePaymentWebhookRouter, EASYPAY_PAYMENT_PROVIDER, EasyPayPaymentMethod,
-    EasyPayPaymentProvider, PaymentWebhookHandler, PaymentWebhookProcessor,
+    EasyPayPaymentProvider, PaymentOrderProvider, PaymentWebhookHandler, PaymentWebhookProcessor,
     STRIPE_PAYMENT_PROVIDER, StripePaymentProvider,
 };
 use af_db::{
@@ -272,6 +272,19 @@ impl UserTopupService for PaymentRuntime {
             .as_ref()
             .ok_or(UserTopupError::Unavailable)?
             .configuration()
+    }
+
+    fn provider_for(
+        &self,
+        provider: &str,
+        payment_method: &str,
+    ) -> Result<Arc<dyn PaymentOrderProvider>, UserTopupError> {
+        let snapshot = self.current_snapshot();
+        snapshot
+            .user_topup_service
+            .as_ref()
+            .ok_or(UserTopupError::Unavailable)?
+            .provider_for(provider, payment_method)
     }
 
     fn create<'a>(

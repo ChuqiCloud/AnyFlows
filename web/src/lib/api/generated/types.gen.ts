@@ -2214,6 +2214,18 @@ export type VideoTaskListResponse = {
     next_cursor: string | null;
 };
 export type VideoTaskStatus = 'pending' | 'done' | 'expired' | 'failed';
+export type SubscriptionOrderPaymentRequest = {
+    payment_method: string;
+};
+export type SubscriptionPaymentResponse = {
+    payment_intent_id: string | null;
+    client_secret: string | null;
+    redirect_url: string | null;
+};
+export type SubscriptionOrderPaymentResponse = {
+    order: SubscriptionOrder;
+    payment: SubscriptionPaymentResponse;
+};
 export type AdminChannelCreateRequestWritable = {
     name: string;
     type: 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
@@ -6395,3 +6407,24 @@ export type UpdateAdminGoogleOAuthLoginSettingsResponses = {
     200: AdminOAuthLoginProviderSettings;
 };
 export type UpdateAdminGoogleOAuthLoginSettingsResponse = UpdateAdminGoogleOAuthLoginSettingsResponses[keyof UpdateAdminGoogleOAuthLoginSettingsResponses];
+export type SubmitCurrentSubscriptionOrderPaymentData = {
+    body: SubscriptionOrderPaymentRequest;
+    path: {
+        order_id: string;
+    };
+    query?: never;
+    url: '/api/account/subscription-orders/{order_id}/payment';
+};
+export type SubmitCurrentSubscriptionOrderPaymentErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type SubmitCurrentSubscriptionOrderPaymentError = SubmitCurrentSubscriptionOrderPaymentErrors[keyof SubmitCurrentSubscriptionOrderPaymentErrors];
+export type SubmitCurrentSubscriptionOrderPaymentResponses = {
+    200: SubscriptionOrderPaymentResponse;
+};
+export type SubmitCurrentSubscriptionOrderPaymentResponse = SubmitCurrentSubscriptionOrderPaymentResponses[keyof SubmitCurrentSubscriptionOrderPaymentResponses];

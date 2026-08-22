@@ -140,7 +140,7 @@ pub struct UserTopupPaymentSession {
 impl UserTopupPaymentSession {
     /// 组合只在公开 HTTPS 响应中出现的支付会话。
     #[must_use]
-    const fn new(session: PaymentOrderSession) -> Self {
+    pub(crate) const fn new(session: PaymentOrderSession) -> Self {
         Self { session }
     }
 
@@ -501,6 +501,16 @@ pub trait UserTopupService: Send + Sync {
         principal: SessionPrincipal,
         command: UserTopupOrderCreateCommand,
     ) -> UserTopupOrderCreateFuture<'a>;
+
+    /// 按已配置的 Provider 和支付方式返回支付订单适配器。
+    fn provider_for(
+        &self,
+        provider: &str,
+        payment_method: &str,
+    ) -> Result<Arc<dyn PaymentOrderProvider>, UserTopupError> {
+        let _ = (provider, payment_method);
+        Err(UserTopupError::Unavailable)
+    }
 }
 
 /// 使用原子充值仓储和支付 Provider 实现订单创建与提交。
@@ -612,6 +622,17 @@ impl DatabaseUserTopupService {
 impl UserTopupService for DatabaseUserTopupService {
     fn configuration(&self) -> Result<UserTopupConfiguration, UserTopupError> {
         Ok(self.configuration.clone())
+    }
+
+    fn provider_for(
+        &self,
+        provider: &str,
+        payment_method: &str,
+    ) -> Result<Arc<dyn PaymentOrderProvider>, UserTopupError> {
+        self.routes
+            .get(&route_key(provider, payment_method))
+            .map(|route| Arc::clone(&route.provider))
+            .ok_or(UserTopupError::Unavailable)
     }
 
     fn create<'a>(

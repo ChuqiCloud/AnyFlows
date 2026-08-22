@@ -12,9 +12,10 @@ use crate::{
         AdminUserSubscriptionBindRequest, AdminUserSubscriptionLifecycleActionDto,
         AdminUserSubscriptionLifecycleRequest, AdminUserSubscriptionLifecycleResponse,
         SubscriptionCatalogPlanResponse, SubscriptionCatalogResponse, SubscriptionCycleDto,
-        SubscriptionOrderCreateRequest, SubscriptionOrderResponse, SubscriptionOrderStatusDto,
-        SubscriptionPlanStatusDto, UserSubscriptionListResponse, UserSubscriptionResponse,
-        UserSubscriptionStatusDto,
+        SubscriptionOrderCreateRequest, SubscriptionOrderPaymentRequest,
+        SubscriptionOrderPaymentResponse, SubscriptionOrderResponse, SubscriptionOrderStatusDto,
+        SubscriptionPaymentResponse, SubscriptionPlanStatusDto, UserSubscriptionListResponse,
+        UserSubscriptionResponse, UserSubscriptionStatusDto,
     },
 };
 
@@ -224,6 +225,27 @@ fn create_current_subscription_order() {}
 )]
 fn get_current_subscription_order() {}
 
+#[utoipa::path(
+    post,
+    path = "/api/account/subscription-orders/{order_id}/payment",
+    operation_id = "submitCurrentSubscriptionOrderPayment",
+    tag = "订阅管理",
+    summary = "提交或恢复当前用户订阅订单支付",
+    params(("order_id" = String, Path, min_length = 32, max_length = 32, description = "订阅订单标识")),
+    request_body = SubscriptionOrderPaymentRequest,
+    responses(
+        (status = 200, description = "支付会话已创建或恢复", body = SubscriptionOrderPaymentResponse),
+        (status = 400, description = "订单标识或支付方式无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 404, description = "订单不存在或不属于当前用户", body = ManagementErrorBody),
+        (status = 409, description = "订单状态、Provider 或支付事实冲突", body = ManagementErrorBody),
+        (status = 503, description = "支付 Provider 或提交结果暂不可用", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn submit_current_subscription_order_payment() {}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -236,7 +258,8 @@ fn get_current_subscription_order() {}
         list_current_user_subscriptions,
         list_current_subscription_catalog,
         create_current_subscription_order,
-        get_current_subscription_order
+        get_current_subscription_order,
+        submit_current_subscription_order_payment
     ),
     components(schemas(
         SubscriptionCycleDto,
@@ -248,6 +271,9 @@ fn get_current_subscription_order() {}
         SubscriptionCatalogResponse,
         SubscriptionCatalogPlanResponse,
         SubscriptionOrderCreateRequest,
+        SubscriptionOrderPaymentRequest,
+        SubscriptionOrderPaymentResponse,
+        SubscriptionPaymentResponse,
         SubscriptionOrderResponse,
         SubscriptionOrderStatusDto,
         AdminSubscriptionPlanDisableRequest,

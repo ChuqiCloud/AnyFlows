@@ -80,6 +80,34 @@ test('订阅 OpenAPI 不接受客户端覆盖所有权与周期窗口', () => {
     openapi.paths['/api/account/subscription-orders/{order_id}'].get.operationId,
     'getCurrentSubscriptionOrder',
   )
+  assert.equal(
+    openapi.paths['/api/account/subscription-orders/{order_id}/payment'].post.operationId,
+    'submitCurrentSubscriptionOrderPayment',
+  )
+  assert.deepEqual(
+    Object.keys(openapi.components.schemas.SubscriptionOrderPaymentRequest.properties),
+    ['payment_method'],
+  )
+  assert.deepEqual(
+    Object.keys(openapi.paths['/api/account/subscription-orders/{order_id}/payment'].post.responses).sort(),
+    ['200', '400', '401', '404', '409', '500', '503'],
+  )
+  assert.equal(
+    openapi.components.schemas.SubscriptionOrderPaymentResponse.properties.order.$ref,
+    '#/components/schemas/SubscriptionOrder',
+  )
+  assert.equal(
+    openapi.components.schemas.SubscriptionOrder.properties.provider_order_id,
+    undefined,
+  )
+  assert.equal(
+    openapi.components.schemas.SubscriptionPaymentResponse.properties.provider_order_id,
+    undefined,
+  )
+  assert.equal(
+    openapi.components.schemas.SubscriptionPaymentResponse.properties.signature,
+    undefined,
+  )
   assert.deepEqual(
     Object.keys(openapi.paths['/api/account/subscription-orders/{order_id}'].get.responses).sort(),
     ['200', '400', '401', '404', '500'],

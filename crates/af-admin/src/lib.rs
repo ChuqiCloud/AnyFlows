@@ -355,7 +355,8 @@ pub use subscription::{
     SubscriptionCatalogPlan, SubscriptionCreateOrderFuture, SubscriptionCreatePlanFuture,
     SubscriptionDisablePlanFuture, SubscriptionGetOrderFuture, SubscriptionLifecycleFuture,
     SubscriptionListPlansFuture, SubscriptionListUserFuture, SubscriptionOrder,
-    SubscriptionOrderCreateCommand, SubscriptionService, SubscriptionServiceError,
+    SubscriptionOrderCreateCommand, SubscriptionOrderPayment, SubscriptionOrderPaymentCommand,
+    SubscriptionService, SubscriptionServiceError, SubscriptionSubmitOrderFuture,
 };
 pub use token_auth::{
     DatabaseTokenAuthenticator, TokenAuthentication, TokenAuthenticationError,

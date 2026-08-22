@@ -15,6 +15,7 @@ pub use types::{
     SubscriptionCatalogFuture, SubscriptionCatalogPlan, SubscriptionCreateOrderFuture,
     SubscriptionCreatePlanFuture, SubscriptionDisablePlanFuture, SubscriptionGetOrderFuture,
     SubscriptionLifecycleFuture, SubscriptionListPlansFuture, SubscriptionListUserFuture,
-    SubscriptionOrder, SubscriptionOrderCreateCommand, SubscriptionService,
-    SubscriptionServiceError,
+    SubscriptionOrder, SubscriptionOrderCreateCommand, SubscriptionOrderPayment,
+    SubscriptionOrderPaymentCommand, SubscriptionService, SubscriptionServiceError,
+    SubscriptionSubmitOrderFuture,
 };

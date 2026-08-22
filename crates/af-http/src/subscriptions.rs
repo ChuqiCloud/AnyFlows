@@ -6,8 +6,8 @@ use af_admin::{
     AdminUserSubscriptionLifecycleAction, AdminUserSubscriptionLifecycleCommand,
     AdminUserSubscriptionLifecycleResult, SessionAuthentication, SessionAuthenticator,
     SubscriptionCatalog, SubscriptionCatalogPlan, SubscriptionOrder,
-    SubscriptionOrderCreateCommand, SubscriptionService, SubscriptionServiceError,
-    UserTopupConfiguration, UserTopupService,
+    SubscriptionOrderCreateCommand, SubscriptionOrderPaymentCommand, SubscriptionService,
+    SubscriptionServiceError, UserTopupConfiguration, UserTopupError, UserTopupService,
 };
 use af_domain::{
     SubscriptionCycle, SubscriptionOrderId, SubscriptionOrderRequestId, SubscriptionOrderStatus,
@@ -261,6 +261,14 @@ pub(crate) struct SubscriptionOrderCreateRequest {
     price_amount_minor: i64,
 }
 
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = SubscriptionOrderPaymentRequest)]
+pub(crate) struct SubscriptionOrderPaymentRequest {
+    #[schema(min_length = 1, max_length = 32)]
+    payment_method: String,
+}
+
 /// 当前用户创建订阅订单后的服务端快照。
 #[derive(Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -292,6 +300,26 @@ pub(crate) struct SubscriptionOrderResponse {
     #[schema(minimum = 1)]
     updated_at: i64,
     replayed: bool,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = SubscriptionPaymentResponse)]
+pub(crate) struct SubscriptionPaymentResponse {
+    #[schema(max_length = 256, required = true)]
+    payment_intent_id: Option<String>,
+    #[schema(max_length = 4096, required = true)]
+    client_secret: Option<String>,
+    #[schema(max_length = 16384, required = true)]
+    redirect_url: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = SubscriptionOrderPaymentResponse)]
+pub(crate) struct SubscriptionOrderPaymentResponse {
+    order: SubscriptionOrderResponse,
+    payment: SubscriptionPaymentResponse,
 }
 
 impl SubscriptionOrderResponse {
@@ -493,6 +521,10 @@ pub(crate) fn build_subscription_router(
             "/api/account/subscription-orders/{order_id}",
             get(get_current_subscription_order),
         )
+        .route(
+            "/api/account/subscription-orders/{order_id}/payment",
+            post(submit_current_subscription_order_payment),
+        )
         .route_layer(user_authentication)
         .with_state(state);
     admin_routes.merge(user_routes)
@@ -681,6 +713,45 @@ async fn get_current_subscription_order(
     )?))
 }
 
+async fn submit_current_subscription_order_payment(
+    State(state): State<SubscriptionHttpState>,
+    Path(order_id): Path<String>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    request: Result<Json<SubscriptionOrderPaymentRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let order_id = parse_order_id(&order_id)?;
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let command =
+        SubscriptionOrderPaymentCommand::new(request.payment_method).map_err(map_service_error)?;
+    let order = state
+        .service
+        .get_order(authentication.principal(), order_id)
+        .await
+        .map_err(map_service_error)?;
+    let provider = state
+        .topup_service
+        .as_ref()
+        .ok_or(ManagementError::TopupUnavailable)?
+        .provider_for(order.provider(), command.payment_method())
+        .map_err(map_topup_provider_error)?;
+    let result = state
+        .service
+        .submit_order(authentication.principal(), order_id, command, provider)
+        .await
+        .map_err(map_service_error)?;
+    let payment = result.payment();
+    Ok(no_store_json(SubscriptionOrderPaymentResponse {
+        order: SubscriptionOrderResponse::from_order(result.order())?,
+        payment: SubscriptionPaymentResponse {
+            payment_intent_id: payment
+                .client_secret()
+                .map(|_| payment.payment_intent_id().to_owned()),
+            client_secret: payment.client_secret().map(str::to_owned),
+            redirect_url: payment.redirect_url().map(str::to_owned),
+        },
+    }))
+}
+
 async fn bind_admin_user_subscription(
     State(state): State<SubscriptionHttpState>,
     Path(user_id): Path<String>,
@@ -850,7 +921,21 @@ fn map_service_error(error: SubscriptionServiceError) -> ManagementError {
         SubscriptionServiceError::InUse => ManagementError::SubscriptionInUse,
         SubscriptionServiceError::Conflict => ManagementError::SubscriptionConflict,
         SubscriptionServiceError::OutcomeUnknown => ManagementError::SubscriptionOutcomeUnknown,
+        SubscriptionServiceError::PaymentUnavailable => ManagementError::TopupUnavailable,
+        SubscriptionServiceError::PaymentRejected => ManagementError::TopupProviderRejected,
         SubscriptionServiceError::Internal => ManagementError::Internal,
+    }
+}
+
+fn map_topup_provider_error(error: UserTopupError) -> ManagementError {
+    match error {
+        UserTopupError::Unavailable => ManagementError::TopupUnavailable,
+        UserTopupError::Conflict => ManagementError::SubscriptionConflict,
+        UserTopupError::OutcomeUnknown => ManagementError::SubscriptionOutcomeUnknown,
+        UserTopupError::ProviderRejected => ManagementError::TopupProviderRejected,
+        UserTopupError::InvalidInput
+        | UserTopupError::InvalidSession
+        | UserTopupError::Internal => ManagementError::Internal,
     }
 }
 
