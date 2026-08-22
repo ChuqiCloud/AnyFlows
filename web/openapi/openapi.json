@@ -29173,6 +29173,18 @@
         },
         "additionalProperties": false
       },
+      "SubscriptionOrderStatus": {
+        "type": "string",
+        "description": "订阅购买订单的稳定状态。",
+        "enum": [
+          "created",
+          "pending",
+          "paid",
+          "failed",
+          "canceled",
+          "expired"
+        ]
+      },
       "SubscriptionPaymentResponse": {
         "type": "object",
         "required": [
@@ -29204,18 +29216,6 @@
           }
         },
         "additionalProperties": false
-      },
-      "SubscriptionOrderStatus": {
-        "type": "string",
-        "description": "订阅购买订单的稳定状态。",
-        "enum": [
-          "created",
-          "pending",
-          "paid",
-          "failed",
-          "canceled",
-          "expired"
-        ]
       },
       "SubscriptionPlanStatus": {
         "type": "string",
