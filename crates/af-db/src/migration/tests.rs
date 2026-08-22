@@ -175,6 +175,14 @@ const CORE_TABLES: [&str; 77] = [
     "refund_provider_events",
 ];
 
+#[test]
+fn refund_provider_events_table_iden_is_stable() {
+    assert_eq!(
+        refund_provider_events::Entity.to_string(),
+        "refund_provider_events"
+    );
+}
+
 struct SlowMigrator;
 
 impl MigratorTrait for SlowMigrator {
