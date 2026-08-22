@@ -80,7 +80,6 @@ impl RefundRepository {
         }
     }
 
-    /// 把请求占位推进到 Submitted；Provider 调用发生在该 CAS 之后，避免并发重复出资。
     /// 按数据库 ID 倒序分页读取管理员可见的退款请求。
     pub async fn list_admin_requests(
         &self,
@@ -137,6 +136,7 @@ impl RefundRepository {
         }
     }
 
+    /// 把请求占位推进到 Submitted；Provider 调用发生在该 CAS 之后，避免并发重复出资。
     pub async fn claim_submission(
         &self,
         request_id: RefundRequestId,
@@ -209,8 +209,7 @@ impl RefundRepository {
     }
 }
 
-/// Provider 调用前成功抢到的退款请求快照。
-#[derive(Debug)]
+/// 管理员退款列表默认分页边界。
 pub const DEFAULT_REFUND_ADMIN_PAGE_SIZE: usize = 50;
 pub const MAX_REFUND_ADMIN_PAGE_SIZE: usize = 100;
 
