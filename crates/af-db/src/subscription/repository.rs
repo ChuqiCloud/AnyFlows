@@ -7,7 +7,8 @@ use std::sync::{
 };
 
 use af_domain::{
-    Quota, SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus, SubscriptionWindow,
+    Quota, SubscriptionCycle, SubscriptionOrderId, SubscriptionOrderRequestId,
+    SubscriptionOrderStatus, SubscriptionPlanId, SubscriptionPlanStatus, SubscriptionWindow,
     SubscriptionWindowAdvance as DomainSubscriptionWindowAdvance, UserId, UserSubscriptionId,
     UserSubscriptionStatus,
 };
@@ -22,18 +23,23 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
     DatabasePool,
-    entity::{SensitiveString, subscription_plans, user_subscriptions, users},
+    entity::{
+        SensitiveString, subscription_orders, subscription_plan_prices, subscription_plans,
+        user_subscriptions, users,
+    },
 };
 
-use super::types::valid_name;
+use super::types::{valid_currency, valid_name, valid_price_text};
 use super::{
-    MAX_SUBSCRIPTION_PAGE_SIZE, SubscriptionPlanCreateOutcome, SubscriptionPlanDisable,
-    SubscriptionPlanDisableOutcome, SubscriptionPlanPageRecord, SubscriptionPlanRecord,
-    SubscriptionPlanWrite, SubscriptionRepositoryConfigError, SubscriptionRepositoryError,
-    SubscriptionResetDueCursor, UserSubscriptionBind, UserSubscriptionBindOutcome,
-    UserSubscriptionPageRecord, UserSubscriptionRecord, UserSubscriptionResetDuePageRecord,
-    UserSubscriptionWindowAdvance, UserSubscriptionWindowAdvanceOutcome,
-    UserSubscriptionWindowAdvanceRecord, monotonic_updated_at,
+    MAX_SUBSCRIPTION_PAGE_SIZE, SubscriptionOrderCreate, SubscriptionOrderCreateOutcome,
+    SubscriptionOrderRecord, SubscriptionPlanCreateOutcome, SubscriptionPlanDisable,
+    SubscriptionPlanDisableOutcome, SubscriptionPlanPageRecord, SubscriptionPlanPriceRecord,
+    SubscriptionPlanRecord, SubscriptionPlanWrite, SubscriptionRepositoryConfigError,
+    SubscriptionRepositoryError, SubscriptionResetDueCursor, UserSubscriptionBind,
+    UserSubscriptionBindOutcome, UserSubscriptionPageRecord, UserSubscriptionRecord,
+    UserSubscriptionResetDuePageRecord, UserSubscriptionWindowAdvance,
+    UserSubscriptionWindowAdvanceOutcome, UserSubscriptionWindowAdvanceRecord,
+    monotonic_updated_at,
 };
 
 /// 原子维护订阅计划启停和用户订阅幂等绑定的数据库仓储。
@@ -121,6 +127,38 @@ impl SubscriptionRepository {
         }
     }
 
+    /// 读取 Active 计划及其不可变价格快照，供用户目录过滤支付渠道。
+    pub async fn list_active_catalog(
+        &self,
+    ) -> Result<
+        Vec<(SubscriptionPlanRecord, SubscriptionPlanPriceRecord)>,
+        SubscriptionRepositoryError,
+    > {
+        let operation = async {
+            let rows = subscription_plans::Entity::find()
+                .find_also_related(subscription_plan_prices::Entity)
+                .filter(
+                    subscription_plans::Column::Status.eq(SubscriptionPlanStatus::Active.code()),
+                )
+                .order_by_asc(subscription_plans::Column::Id)
+                .limit((MAX_SUBSCRIPTION_PAGE_SIZE + 1) as u64)
+                .all(self.pool.connection())
+                .await
+                .map_err(|_| SubscriptionRepositoryError::Query)?;
+            rows.into_iter()
+                .filter_map(|(plan, price)| {
+                    // 历史管理员计划没有价格事实，绝不能借用默认值后对用户伪装为可售。
+                    price.map(|price| Ok((plan_record(plan)?, plan_price_record(price)?)))
+                })
+                .collect::<Result<Vec<_>, _>>()
+        }
+        .with_subscriber(NoSubscriber::default());
+        match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result.map_err(internal),
+            Err(_) => Err(internal(SubscriptionRepositoryError::Timeout)),
+        }
+    }
+
     /// 按内部主键倒序读取指定用户的一页订阅记录。
     pub async fn list_user_subscriptions(
         &self,
@@ -140,6 +178,29 @@ impl SubscriptionRepository {
             Ok(result) => result.map_err(internal),
             Err(_) => Err(internal(SubscriptionRepositoryError::Timeout)),
         }
+    }
+
+    /// 在当前用户范围内幂等创建待支付订阅订单。
+    pub async fn create_order(
+        &self,
+        create: &SubscriptionOrderCreate,
+    ) -> Result<SubscriptionOrderCreateOutcome, SubscriptionRepositoryError> {
+        let operation = self
+            .create_order_inner(create)
+            .with_subscriber(NoSubscriber::default());
+        let outcome = match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result.map_err(internal)?,
+            Err(_) => return Err(internal(SubscriptionRepositoryError::OutcomeUnknown)),
+        };
+        #[cfg(test)]
+        if matches!(&outcome, SubscriptionOrderCreateOutcome::Created(_))
+            && self
+                .outcome_unknown_after_commit
+                .swap(false, Ordering::AcqRel)
+        {
+            return Err(internal(SubscriptionRepositoryError::OutcomeUnknown));
+        }
+        Ok(outcome)
     }
 
     /// 按窗口结束时间和主键升序读取一页到期 Active 订阅。
@@ -291,6 +352,94 @@ impl SubscriptionRepository {
         Ok(SubscriptionPlanPageRecord::new(plans, next_cursor))
     }
 
+    async fn create_order_inner(
+        &self,
+        create: &SubscriptionOrderCreate,
+    ) -> Result<SubscriptionOrderCreateOutcome, SubscriptionRepositoryError> {
+        if let Some(existing) =
+            load_order_by_request(self.pool.connection(), create.user_id, create.request_id).await?
+        {
+            return classify_order(existing, create, None);
+        }
+
+        let transaction = begin(&self.pool).await?;
+        if lock_user(&transaction, create.user_id).await?.is_none() {
+            rollback(transaction).await?;
+            return Ok(SubscriptionOrderCreateOutcome::UserNotFound);
+        }
+        let Some(plan_model) = lock_plan(&transaction, create.plan_id).await? else {
+            rollback(transaction).await?;
+            return Ok(SubscriptionOrderCreateOutcome::PlanNotFound);
+        };
+        let plan = plan_record(plan_model.clone())?;
+        if !plan.status.is_active() {
+            rollback(transaction).await?;
+            return Ok(SubscriptionOrderCreateOutcome::PlanDisabled);
+        }
+        let Some(price_model) = load_plan_price(&transaction, plan.database_id()).await? else {
+            rollback(transaction).await?;
+            return Err(SubscriptionRepositoryError::Invariant);
+        };
+        let price = plan_price_record(price_model)?;
+        let expected_version = i64::try_from(create.plan_version)
+            .map_err(|_| SubscriptionRepositoryError::Invariant)?;
+        if plan.version() != create.plan_version
+            || price.provider() != create.provider
+            || price.currency() != create.currency
+            || price.amount_minor() != create.amount_minor
+        {
+            rollback(transaction).await?;
+            return Err(SubscriptionRepositoryError::Conflict);
+        }
+
+        if let Some(existing) =
+            load_order_by_request(&transaction, create.user_id, create.request_id).await?
+        {
+            rollback(transaction).await?;
+            return classify_order(existing, create, Some(plan.quota_amount()));
+        }
+
+        let created_at = to_database_time(create.created_at)?;
+        let expires_at = create.expires_at.map(to_database_time).transpose()?;
+        let inserted = subscription_orders::ActiveModel {
+            order_key: Set(create.order_id.persistence_key()),
+            user_id: Set(create.user_id.get()),
+            plan_id: Set(plan.database_id()),
+            plan_key: Set(create.plan_id.persistence_key()),
+            plan_version: Set(expected_version),
+            provider: Set(create.provider.clone()),
+            currency: Set(create.currency.clone()),
+            amount_minor: Set(create.amount_minor),
+            quota_amount: Set(plan.quota_amount().units()),
+            status: Set(SubscriptionOrderStatus::Created.code()),
+            idempotency_key: Set(create.request_id.persistence_key()),
+            version: Set(1),
+            provider_order_id: Set(None),
+            expires_at: Set(expires_at),
+            paid_at: Set(None),
+            closed_at: Set(None),
+            created_at: Set(created_at),
+            updated_at: Set(created_at),
+            ..Default::default()
+        }
+        .insert(&transaction)
+        .await;
+        let inserted = match inserted {
+            Ok(model) => model,
+            Err(error) => {
+                let unique = is_unique_conflict(&error);
+                rollback(transaction).await?;
+                if unique {
+                    return recover_order_collision(self.pool.connection(), create).await;
+                }
+                return Err(SubscriptionRepositoryError::Query);
+            }
+        };
+        let record = subscription_order_record(inserted)?;
+        commit(transaction).await?;
+        Ok(SubscriptionOrderCreateOutcome::Created(record))
+    }
+
     async fn list_user_subscriptions_inner(
         &self,
         user_id: UserId,
@@ -397,7 +546,7 @@ impl SubscriptionRepository {
         write: &SubscriptionPlanWrite,
     ) -> Result<SubscriptionPlanCreateOutcome, SubscriptionRepositoryError> {
         if let Some(model) = load_plan(self.pool.connection(), write.plan_id).await? {
-            return classify_plan(model, write);
+            return classify_plan_with_price(self.pool.connection(), model, write).await;
         }
 
         let transaction = begin(&self.pool).await?;
@@ -409,8 +558,9 @@ impl SubscriptionRepository {
             return Ok(SubscriptionPlanCreateOutcome::CreatorNotFound);
         }
         if let Some(model) = load_plan(&transaction, write.plan_id).await? {
+            let outcome = classify_plan_with_price(&transaction, model, write).await;
             rollback(transaction).await?;
-            return classify_plan(model, write);
+            return outcome;
         }
 
         let created_at = to_database_time(write.created_at)?;
@@ -441,6 +591,21 @@ impl SubscriptionRepository {
                 };
             }
         };
+
+        let price = subscription_plan_prices::ActiveModel {
+            plan_id: Set(inserted.id),
+            provider: Set(write.price_provider.clone()),
+            currency: Set(write.price_currency.clone()),
+            amount_minor: Set(write.price_amount_minor),
+            created_at: Set(created_at),
+            ..Default::default()
+        }
+        .insert(&transaction)
+        .await;
+        if price.is_err() {
+            rollback(transaction).await?;
+            return Err(SubscriptionRepositoryError::Query);
+        }
 
         let record = plan_record(inserted)?;
         commit(transaction).await?;
@@ -724,16 +889,73 @@ where
     let model = load_plan(connection, write.plan_id)
         .await?
         .ok_or(SubscriptionRepositoryError::Conflict)?;
-    classify_plan(model, write)
+    classify_plan_with_price(connection, model, write).await
 }
 
-fn classify_plan(
+async fn classify_plan_with_price<C: ConnectionTrait>(
+    connection: &C,
     model: subscription_plans::Model,
     write: &SubscriptionPlanWrite,
 ) -> Result<SubscriptionPlanCreateOutcome, SubscriptionRepositoryError> {
     let record = plan_record(model)?;
-    if record.matches_write(write) {
+    let Some(price) = load_plan_price(connection, record.database_id()).await? else {
+        return Err(SubscriptionRepositoryError::Invariant);
+    };
+    if record.matches_write(write)
+        && price.provider == write.price_provider
+        && price.currency == write.price_currency
+        && price.amount_minor == write.price_amount_minor
+    {
         Ok(SubscriptionPlanCreateOutcome::Existing(record))
+    } else {
+        Err(SubscriptionRepositoryError::Conflict)
+    }
+}
+
+async fn load_plan_price<C: ConnectionTrait>(
+    connection: &C,
+    plan_database_id: i64,
+) -> Result<Option<subscription_plan_prices::Model>, SubscriptionRepositoryError> {
+    subscription_plan_prices::Entity::find()
+        .filter(subscription_plan_prices::Column::PlanId.eq(plan_database_id))
+        .order_by_desc(subscription_plan_prices::Column::Id)
+        .one(connection)
+        .await
+        .map_err(|_| SubscriptionRepositoryError::Query)
+}
+
+async fn load_order_by_request<C: ConnectionTrait>(
+    connection: &C,
+    user_id: UserId,
+    request_id: SubscriptionOrderRequestId,
+) -> Result<Option<subscription_orders::Model>, SubscriptionRepositoryError> {
+    subscription_orders::Entity::find()
+        .filter(subscription_orders::Column::UserId.eq(user_id.get()))
+        .filter(subscription_orders::Column::IdempotencyKey.eq(request_id.persistence_key()))
+        .one(connection)
+        .await
+        .map_err(|_| SubscriptionRepositoryError::Query)
+}
+
+async fn recover_order_collision<C: ConnectionTrait>(
+    connection: &C,
+    create: &SubscriptionOrderCreate,
+) -> Result<SubscriptionOrderCreateOutcome, SubscriptionRepositoryError> {
+    let Some(model) = load_order_by_request(connection, create.user_id, create.request_id).await?
+    else {
+        return Err(SubscriptionRepositoryError::Conflict);
+    };
+    classify_order(model, create, None)
+}
+
+fn classify_order(
+    model: subscription_orders::Model,
+    create: &SubscriptionOrderCreate,
+    quota: Option<Quota>,
+) -> Result<SubscriptionOrderCreateOutcome, SubscriptionRepositoryError> {
+    let record = subscription_order_record(model)?;
+    if record.matches_create(create, quota) {
+        Ok(SubscriptionOrderCreateOutcome::Existing(record))
     } else {
         Err(SubscriptionRepositoryError::Conflict)
     }
@@ -999,6 +1221,88 @@ pub(super) fn plan_record(
     })
 }
 
+fn subscription_order_record(
+    model: subscription_orders::Model,
+) -> Result<SubscriptionOrderRecord, SubscriptionRepositoryError> {
+    let order_id = SubscriptionOrderId::from_persistence_key(&model.order_key)
+        .map_err(|_| SubscriptionRepositoryError::Invariant)?;
+    let request_id = SubscriptionOrderRequestId::from_persistence_key(&model.idempotency_key)
+        .map_err(|_| SubscriptionRepositoryError::Invariant)?;
+    let user_id = UserId::new(model.user_id).map_err(|_| SubscriptionRepositoryError::Invariant)?;
+    let plan_id = SubscriptionPlanId::from_persistence_key(model.plan_key.as_str())
+        .map_err(|_| SubscriptionRepositoryError::Invariant)?;
+    let plan_version =
+        u64::try_from(model.plan_version).map_err(|_| SubscriptionRepositoryError::Invariant)?;
+    let status = SubscriptionOrderStatus::try_from(model.status)
+        .map_err(|_| SubscriptionRepositoryError::Invariant)?;
+    let quota_amount =
+        Quota::new(model.quota_amount).map_err(|_| SubscriptionRepositoryError::Invariant)?;
+    let version =
+        u64::try_from(model.version).map_err(|_| SubscriptionRepositoryError::Invariant)?;
+    let expires_at = optional_unix_seconds(model.expires_at)?;
+    let paid_at = optional_unix_seconds(model.paid_at)?;
+    let closed_at = optional_unix_seconds(model.closed_at)?;
+    let created_at = unix_seconds(model.created_at)?;
+    let updated_at = unix_seconds(model.updated_at)?;
+    if model.id <= 0
+        || model.plan_id <= 0
+        || plan_version == 0
+        || !valid_price_text(&model.provider, super::MAX_SUBSCRIPTION_PROVIDER_BYTES)
+        || !valid_currency(&model.currency)
+        || model.amount_minor <= 0
+        || quota_amount.is_zero()
+        || version == 0
+        || expires_at.is_some_and(|value| value <= created_at)
+        || updated_at < created_at
+    {
+        return Err(SubscriptionRepositoryError::Invariant);
+    }
+    Ok(SubscriptionOrderRecord {
+        database_id: model.id,
+        order_id,
+        request_id,
+        user_id,
+        plan_id,
+        plan_version,
+        provider: model.provider,
+        currency: model.currency,
+        amount_minor: model.amount_minor,
+        quota_amount,
+        status,
+        version,
+        provider_order_id: model
+            .provider_order_id
+            .as_ref()
+            .map(|value| value.as_str().to_owned()),
+        expires_at,
+        paid_at,
+        closed_at,
+        created_at,
+        updated_at,
+    })
+}
+
+fn plan_price_record(
+    model: subscription_plan_prices::Model,
+) -> Result<SubscriptionPlanPriceRecord, SubscriptionRepositoryError> {
+    if model.id <= 0
+        || model.plan_id <= 0
+        || model.amount_minor <= 0
+        || !valid_price_text(&model.provider, super::MAX_SUBSCRIPTION_PROVIDER_BYTES)
+        || !valid_currency(&model.currency)
+    {
+        return Err(SubscriptionRepositoryError::Invariant);
+    }
+    Ok(SubscriptionPlanPriceRecord {
+        database_id: model.id,
+        plan_database_id: model.plan_id,
+        provider: model.provider,
+        currency: model.currency,
+        amount_minor: model.amount_minor,
+        created_at: unix_seconds(model.created_at)?,
+    })
+}
+
 pub(super) fn subscription_record(
     model: user_subscriptions::Model,
     plan: &SubscriptionPlanRecord,
@@ -1089,7 +1393,11 @@ pub(super) fn page_query_limit(limit: usize) -> Result<u64, SubscriptionReposito
 
 fn is_unique_conflict(error: &sea_orm::DbErr) -> bool {
     let rendered = error.to_string();
-    rendered.contains("uq_subscription_plans_plan_key")
+    rendered.contains("uq_subscription_orders_order_key")
+        || rendered.contains("uq_subscription_orders_user_idempotency_key")
+        || rendered.contains("subscription_orders.order_key")
+        || rendered.contains("subscription_orders.user_id")
+        || rendered.contains("uq_subscription_plans_plan_key")
         || rendered.contains("uq_user_subscriptions_subscription_key")
         || rendered.contains("subscription_plans.plan_key")
         || rendered.contains("user_subscriptions.subscription_key")

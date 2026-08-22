@@ -3873,6 +3873,20 @@
       "unavailable": "Your alert policy is temporarily unavailable. Subscription facts remain visible.",
       "due": "Alert range"
     },
+    "catalog": {
+      "eyebrow": "Available catalog",
+      "title": "Choose a subscription plan",
+      "description": "Only active plans with a configured payment provider and price snapshot appear here.",
+      "loading": "Loading available plans",
+      "planQuota": "{{quota}} · {{cycle}} quota",
+      "priceMinor": "{{currency}} {{amount}} (minor currency unit)",
+      "orderNotice": "Creating an order locks the current price snapshot without charging or binding a subscription; payment confirmation follows in a later slice.",
+      "orderCreate": "Create order",
+      "orderCreating": "Creating",
+      "orderReplay": "Replay order",
+      "orderCreated": "Order created; payment confirmation is pending",
+      "orderReplayed": "The same idempotent order was restored"
+    },
     "fields": {
       "name": "Plan name",
       "nameHint": "1 to 80 UTF-8 bytes, without leading or trailing whitespace.",
@@ -3881,11 +3895,19 @@
       "cycle": "Reset cycle",
       "cycleHint": "New bindings use UTC calendar boundaries for their first window.",
       "plan": "Subscription plan",
-      "planHint": "Only plans that still accept new bindings are listed."
+      "planHint": "Only plans that still accept new bindings are listed.",
+      "priceProvider": "Payment provider",
+      "priceProviderHint": "The price snapshot uses a configured payment provider.",
+      "priceCurrency": "Currency",
+      "priceCurrencyHint": "Use a three-letter uppercase ISO-style code, such as USD.",
+      "priceAmountMinor": "Minor currency unit amount",
+      "priceAmountMinorHint": "Enter a positive integer, for example 100 for USD 1.00."
     },
     "validation": {
       "name": "Enter a valid plan name.",
-      "quotaAmount": "Enter a positive integer that can be represented safely."
+      "quotaAmount": "Enter a positive integer that can be represented safely.",
+      "priceCurrency": "Enter a three-letter uppercase currency code.",
+      "priceAmountMinor": "Enter a positive integer amount that can be represented safely."
     },
     "create": {
       "title": "New subscription plan",
@@ -3935,11 +3957,15 @@
       "plansTitle": "No subscription plans yet",
       "plansBody": "Create a plan with an explicit quota and cycle before binding users.",
       "usersTitle": "No users to manage",
-      "usersBody": "Create a user before binding a subscription plan."
+      "usersBody": "Create a user before binding a subscription plan.",
+      "catalogTitle": "No plans are currently available",
+      "catalogBody": "Available plans appear after an administrator enables them and records a price."
     },
     "errors": {
       "currentTitle": "My subscriptions could not be loaded",
       "currentBody": "The service did not return subscription facts for this account. Try again shortly.",
+      "catalogTitle": "Available plans could not be loaded",
+      "catalogBody": "The service did not return the sellable catalog. Try again shortly.",
       "adminTitle": "User subscriptions could not be loaded",
       "adminBody": "The service did not return subscription facts for this user. Try again shortly.",
       "plansTitle": "Subscription plans could not be loaded",
@@ -3955,6 +3981,9 @@
       "disablePlan": "The plan could not be disabled. Try again shortly.",
       "disableConflict": "The plan version changed. Refresh the catalog and try again.",
       "bind": "The plan could not be bound. Try again shortly.",
+      "orderCreate": "The order could not be created. Try again shortly.",
+      "orderConflict": "The plan price or idempotency facts changed. Refresh the catalog and try again.",
+      "orderOutcomeUnknown": "The order result cannot be confirmed yet. Retry with the same button.",
       "bindConflict": "Binding facts changed concurrently. Refresh the user subscriptions and try again.",
       "planNotFound": "The plan no longer exists. Refresh the plan catalog.",
       "planDisabled": "The plan is disabled. Select another active plan.",

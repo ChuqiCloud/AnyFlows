@@ -3872,6 +3872,20 @@
       "unavailable": "暂时无法读取个人预警规则，订阅事实仍可正常查看。",
       "due": "预警区间"
     },
+    "catalog": {
+      "eyebrow": "可售目录",
+      "title": "选择订阅计划",
+      "description": "这里只展示当前可售且已配置支付 Provider 的计划与价格快照。",
+      "loading": "正在加载可售目录",
+      "planQuota": "{{quota}} · {{cycle}}周期额度",
+      "priceMinor": "{{currency}} {{amount}}（最小货币单位）",
+      "orderNotice": "创建订单只会锁定当前价格快照，不会扣款或绑定订阅；支付确认将在后续切片接入。",
+      "orderCreate": "创建订单",
+      "orderCreating": "正在创建",
+      "orderReplay": "重放订单",
+      "orderCreated": "订单已创建，等待支付确认",
+      "orderReplayed": "已恢复同一幂等订单"
+    },
     "fields": {
       "name": "计划名称",
       "nameHint": "1 至 80 个 UTF-8 字节，首尾不能包含空白。",
@@ -3880,11 +3894,19 @@
       "cycle": "重置周期",
       "cycleHint": "新绑定按 UTC 日历边界计算首个周期窗口。",
       "plan": "订阅计划",
-      "planHint": "只列出当前仍可新增绑定的计划。"
+      "planHint": "只列出当前仍可新增绑定的计划。",
+      "priceProvider": "支付 Provider",
+      "priceProviderHint": "价格快照使用已配置的支付 Provider。",
+      "priceCurrency": "币种",
+      "priceCurrencyHint": "使用三位大写 ISO 风格币种代码，例如 USD。",
+      "priceAmountMinor": "最小货币单位金额",
+      "priceAmountMinorHint": "输入大于零的整数，例如 USD 100 表示 1.00 USD。"
     },
     "validation": {
       "name": "请输入有效的计划名称。",
-      "quotaAmount": "请输入大于零且可安全表示的整数额度。"
+      "quotaAmount": "请输入大于零且可安全表示的整数额度。",
+      "priceCurrency": "请输入三位大写币种代码。",
+      "priceAmountMinor": "请输入大于零且可安全表示的整数金额。"
     },
     "create": {
       "title": "新建订阅计划",
@@ -3934,11 +3956,15 @@
       "plansTitle": "还没有订阅计划",
       "plansBody": "创建第一个额度与周期明确的计划后即可为用户绑定。",
       "usersTitle": "还没有可管理用户",
-      "usersBody": "创建用户后再为其绑定订阅计划。"
+      "usersBody": "创建用户后再为其绑定订阅计划。",
+      "catalogTitle": "暂无可售计划",
+      "catalogBody": "管理员启用并配置价格后，可售计划会显示在这里。"
     },
     "errors": {
       "currentTitle": "无法读取我的订阅",
       "currentBody": "服务暂时没有返回当前账户的订阅事实，请稍后重试。",
+      "catalogTitle": "无法读取可售目录",
+      "catalogBody": "服务暂时没有返回可售计划，请稍后重试。",
       "adminTitle": "无法读取用户订阅",
       "adminBody": "服务暂时没有返回该用户的订阅事实，请稍后重试。",
       "plansTitle": "无法读取订阅计划",
@@ -3954,6 +3980,9 @@
       "disablePlan": "计划停用失败，请稍后重试。",
       "disableConflict": "计划版本已变化，请刷新目录后重试。",
       "bind": "计划绑定失败，请稍后重试。",
+      "orderCreate": "订单创建失败，请稍后重试。",
+      "orderConflict": "计划价格或幂等事实已变化，请刷新可售目录后重试。",
+      "orderOutcomeUnknown": "订单提交结果暂时无法确认，请使用同一按钮重试。",
       "bindConflict": "绑定事实发生冲突，请刷新用户订阅后重试。",
       "planNotFound": "计划不存在或已被移除，请刷新计划目录。",
       "planDisabled": "计划已经停用，请选择其他有效计划。",

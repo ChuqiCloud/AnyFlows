@@ -11,7 +11,9 @@ pub use types::{
     AdminSubscriptionPageQuery, AdminSubscriptionPlan, AdminSubscriptionPlanCreateCommand,
     AdminSubscriptionPlanDisableCommand, AdminSubscriptionPlanPage, AdminUserSubscription,
     AdminUserSubscriptionBindCommand, AdminUserSubscriptionPage,
-    DEFAULT_ADMIN_SUBSCRIPTION_PAGE_SIZE, SubscriptionBindFuture, SubscriptionCreatePlanFuture,
-    SubscriptionDisablePlanFuture, SubscriptionLifecycleFuture, SubscriptionListPlansFuture,
-    SubscriptionListUserFuture, SubscriptionService, SubscriptionServiceError,
+    DEFAULT_ADMIN_SUBSCRIPTION_PAGE_SIZE, SubscriptionBindFuture, SubscriptionCatalog,
+    SubscriptionCatalogFuture, SubscriptionCatalogPlan, SubscriptionCreateOrderFuture,
+    SubscriptionCreatePlanFuture, SubscriptionDisablePlanFuture, SubscriptionLifecycleFuture,
+    SubscriptionListPlansFuture, SubscriptionListUserFuture, SubscriptionOrder,
+    SubscriptionOrderCreateCommand, SubscriptionService, SubscriptionServiceError,
 };

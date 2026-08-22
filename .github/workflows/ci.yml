@@ -10,11 +10,15 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # 共享单一 runner 时只保留最新一轮流水线，避免不同 PR 的数据库容器互相抢端口。
+  group: anyflows-ci
   cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
+  # runner 资源有限；每个 job 串行编译，避免多个 Rust 门禁同时耗尽 CPU/内存。
+  CARGO_BUILD_JOBS: "1"
+  CARGO_INCREMENTAL: "0"
   RUST_BACKTRACE: "1"
 
 jobs:
@@ -214,8 +218,8 @@ jobs:
 
   rust-quality:
     name: Rust quality gates
-    needs: changes
-    if: ${{ needs.changes.outputs.rust == 'true' }}
+    needs: [changes, release-package]
+    if: ${{ always() && needs.changes.outputs.rust == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -296,8 +300,8 @@ jobs:
 
   msrv:
     name: Minimum supported Rust version
-    needs: changes
-    if: ${{ needs.changes.outputs.rust == 'true' }}
+    needs: [changes, rust-quality]
+    if: ${{ always() && needs.changes.outputs.rust == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -366,8 +370,8 @@ jobs:
 
   sqlite-migration:
     name: SQLite migration smoke test
-    needs: changes
-    if: ${{ needs.changes.outputs.database == 'true' }}
+    needs: [changes, msrv]
+    if: ${{ always() && needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -418,8 +422,8 @@ jobs:
 
   postgres-migration:
     name: PostgreSQL migration smoke test
-    needs: changes
-    if: ${{ needs.changes.outputs.database == 'true' }}
+    needs: [changes, sqlite-migration]
+    if: ${{ always() && needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -493,8 +497,8 @@ jobs:
 
   mysql-migration:
     name: MySQL migration smoke test
-    needs: changes
-    if: ${{ needs.changes.outputs.database == 'true' }}
+    needs: [changes, postgres-migration]
+    if: ${{ always() && needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -569,8 +573,8 @@ jobs:
 
   cache-redis:
     name: Redis cache smoke test
-    needs: changes
-    if: ${{ needs.changes.outputs.redis == 'true' }}
+    needs: [changes, mysql-migration]
+    if: ${{ always() && needs.changes.outputs.redis == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:

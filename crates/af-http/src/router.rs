@@ -478,6 +478,7 @@ pub fn build_router(
     let subscription_routes = build_subscription_router(
         subscription_service,
         Arc::clone(&http_state.session_authenticator),
+        user_topup_service.clone(),
     );
     let user_invitation_routes = build_user_invitation_router(
         user_invitation_service,

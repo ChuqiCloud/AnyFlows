@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useUserProfile } from '@/features/profile/profile-api'
 import { isSubscriptionAlertDue } from './subscription-alert-policy'
+import { SubscriptionCatalog } from './subscription-catalog'
 import { SubscriptionList } from './subscription-list'
 import { useCurrentUserSubscriptions } from './subscription-api'
 
@@ -94,6 +95,8 @@ export function MySubscriptionsPage() {
         scope="current"
         alertPolicy={{ enabled: alertPolicyEnabled, thresholdPercent: alertThresholdPercent }}
       />
+
+      <SubscriptionCatalog />
     </div>
   )
 }

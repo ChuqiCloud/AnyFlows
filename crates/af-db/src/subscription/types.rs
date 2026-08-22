@@ -1,13 +1,17 @@
 use std::fmt;
 
 use af_domain::{
-    Quota, SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus, SubscriptionWindow,
+    Quota, SubscriptionCycle, SubscriptionOrderId, SubscriptionOrderRequestId,
+    SubscriptionOrderStatus, SubscriptionPlanId, SubscriptionPlanStatus, SubscriptionWindow,
     UserId, UserSubscriptionId, UserSubscriptionStatus,
 };
 use thiserror::Error;
 
 /// 订阅计划名称允许的最大 UTF-8 字节数。
 pub const MAX_SUBSCRIPTION_PLAN_NAME_BYTES: usize = 80;
+pub const MAX_SUBSCRIPTION_PROVIDER_BYTES: usize = 32;
+pub const MAX_SUBSCRIPTION_CURRENCY_BYTES: usize = 3;
+pub const MAX_SUBSCRIPTION_IDEMPOTENCY_KEY_BYTES: usize = 32;
 
 /// 订阅目录与用户订阅列表允许的最大页大小。
 pub const MAX_SUBSCRIPTION_PAGE_SIZE: usize = 100;
@@ -19,6 +23,9 @@ pub struct SubscriptionPlanWrite {
     pub(super) created_by_user_id: UserId,
     pub(super) quota_amount: Quota,
     pub(super) cycle: SubscriptionCycle,
+    pub(super) price_provider: String,
+    pub(super) price_currency: String,
+    pub(super) price_amount_minor: i64,
     pub(super) created_at: u64,
 }
 
@@ -32,11 +39,46 @@ impl SubscriptionPlanWrite {
         cycle: SubscriptionCycle,
         created_at: u64,
     ) -> Result<Self, SubscriptionInputError> {
+        Self::new_with_price(
+            plan_id,
+            name,
+            created_by_user_id,
+            quota_amount,
+            cycle,
+            "stripe".to_owned(),
+            "USD".to_owned(),
+            100,
+            created_at,
+        )
+    }
+
+    /// 构造带有明确支付 Provider、币种和最小货币单位金额的计划事实。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "价格快照字段与订阅计划写入契约一一对应"
+    )]
+    pub fn new_with_price(
+        plan_id: SubscriptionPlanId,
+        name: String,
+        created_by_user_id: UserId,
+        quota_amount: Quota,
+        cycle: SubscriptionCycle,
+        price_provider: String,
+        price_currency: String,
+        price_amount_minor: i64,
+        created_at: u64,
+    ) -> Result<Self, SubscriptionInputError> {
         if !valid_name(&name) {
             return Err(SubscriptionInputError::InvalidName);
         }
         if quota_amount.is_zero() {
             return Err(SubscriptionInputError::InvalidQuota);
+        }
+        if !valid_price_text(&price_provider, MAX_SUBSCRIPTION_PROVIDER_BYTES)
+            || !valid_currency(&price_currency)
+            || price_amount_minor <= 0
+        {
+            return Err(SubscriptionInputError::InvalidPrice);
         }
         validate_time(created_at)?;
         Ok(Self {
@@ -45,8 +87,26 @@ impl SubscriptionPlanWrite {
             created_by_user_id,
             quota_amount,
             cycle,
+            price_provider,
+            price_currency,
+            price_amount_minor,
             created_at,
         })
+    }
+
+    #[must_use]
+    pub fn price_provider(&self) -> &str {
+        &self.price_provider
+    }
+
+    #[must_use]
+    pub fn price_currency(&self) -> &str {
+        &self.price_currency
+    }
+
+    #[must_use]
+    pub const fn price_amount_minor(&self) -> i64 {
+        self.price_amount_minor
     }
 }
 
@@ -225,6 +285,236 @@ impl fmt::Debug for UserSubscriptionWindowAdvance {
     }
 }
 
+/// 已持久化订阅计划的不可变价格快照。
+pub struct SubscriptionPlanPriceRecord {
+    pub(super) database_id: i64,
+    pub(super) plan_database_id: i64,
+    pub(super) provider: String,
+    pub(super) currency: String,
+    pub(super) amount_minor: i64,
+    pub(super) created_at: u64,
+}
+
+impl SubscriptionPlanPriceRecord {
+    #[must_use]
+    pub const fn database_id(&self) -> i64 {
+        self.database_id
+    }
+
+    #[must_use]
+    pub const fn plan_database_id(&self) -> i64 {
+        self.plan_database_id
+    }
+
+    #[must_use]
+    pub fn provider(&self) -> &str {
+        &self.provider
+    }
+
+    #[must_use]
+    pub fn currency(&self) -> &str {
+        &self.currency
+    }
+
+    #[must_use]
+    pub const fn amount_minor(&self) -> i64 {
+        self.amount_minor
+    }
+
+    #[must_use]
+    pub const fn created_at(&self) -> u64 {
+        self.created_at
+    }
+}
+
+impl fmt::Debug for SubscriptionPlanPriceRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("SubscriptionPlanPriceRecord(<redacted>)")
+    }
+}
+
+/// 创建订阅购买订单时固化的请求事实。
+pub struct SubscriptionOrderCreate {
+    pub(super) order_id: SubscriptionOrderId,
+    pub(super) request_id: SubscriptionOrderRequestId,
+    pub(super) user_id: UserId,
+    pub(super) plan_id: SubscriptionPlanId,
+    pub(super) plan_version: u64,
+    pub(super) provider: String,
+    pub(super) currency: String,
+    pub(super) amount_minor: i64,
+    pub(super) created_at: u64,
+    pub(super) expires_at: Option<u64>,
+}
+
+impl SubscriptionOrderCreate {
+    /// 校验订单 ID、价格快照和有效时间后构造幂等建单命令。
+    #[allow(clippy::too_many_arguments, reason = "字段与订单建单契约一一对应")]
+    pub fn new(
+        order_id: SubscriptionOrderId,
+        request_id: SubscriptionOrderRequestId,
+        user_id: UserId,
+        plan_id: SubscriptionPlanId,
+        plan_version: u64,
+        provider: String,
+        currency: String,
+        amount_minor: i64,
+        created_at: u64,
+        expires_at: Option<u64>,
+    ) -> Result<Self, SubscriptionInputError> {
+        let plan_version =
+            i64::try_from(plan_version).map_err(|_| SubscriptionInputError::InvalidVersion)?;
+        if plan_version <= 0
+            || !valid_price_text(&provider, MAX_SUBSCRIPTION_PROVIDER_BYTES)
+            || !valid_currency(&currency)
+            || amount_minor <= 0
+        {
+            return Err(SubscriptionInputError::InvalidPrice);
+        }
+        validate_time(created_at)?;
+        if expires_at.is_some_and(|value| value <= created_at) {
+            return Err(SubscriptionInputError::InvalidTiming);
+        }
+        Ok(Self {
+            order_id,
+            request_id,
+            user_id,
+            plan_id,
+            plan_version: plan_version as u64,
+            provider,
+            currency,
+            amount_minor,
+            created_at,
+            expires_at,
+        })
+    }
+}
+
+impl fmt::Debug for SubscriptionOrderCreate {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("SubscriptionOrderCreate(<redacted>)")
+    }
+}
+
+/// 已持久化的订阅购买订单快照。
+pub struct SubscriptionOrderRecord {
+    #[allow(dead_code, reason = "支付确认事务切片将使用持久化订单主键")]
+    pub(super) database_id: i64,
+    pub(super) order_id: SubscriptionOrderId,
+    pub(super) request_id: SubscriptionOrderRequestId,
+    pub(super) user_id: UserId,
+    pub(super) plan_id: SubscriptionPlanId,
+    pub(super) plan_version: u64,
+    pub(super) provider: String,
+    pub(super) currency: String,
+    pub(super) amount_minor: i64,
+    pub(super) quota_amount: Quota,
+    pub(super) status: SubscriptionOrderStatus,
+    pub(super) version: u64,
+    pub(super) provider_order_id: Option<String>,
+    pub(super) expires_at: Option<u64>,
+    pub(super) paid_at: Option<u64>,
+    pub(super) closed_at: Option<u64>,
+    pub(super) created_at: u64,
+    pub(super) updated_at: u64,
+}
+
+impl SubscriptionOrderRecord {
+    #[allow(dead_code, reason = "支付确认事务切片将读取持久化订单主键")]
+    pub(crate) const fn database_id(&self) -> i64 {
+        self.database_id
+    }
+    #[must_use]
+    pub const fn order_id(&self) -> SubscriptionOrderId {
+        self.order_id
+    }
+    #[must_use]
+    pub const fn request_id(&self) -> SubscriptionOrderRequestId {
+        self.request_id
+    }
+    #[must_use]
+    pub const fn user_id(&self) -> UserId {
+        self.user_id
+    }
+    #[must_use]
+    pub const fn plan_id(&self) -> SubscriptionPlanId {
+        self.plan_id
+    }
+    #[must_use]
+    pub const fn plan_version(&self) -> u64 {
+        self.plan_version
+    }
+    #[must_use]
+    pub fn provider(&self) -> &str {
+        &self.provider
+    }
+    #[must_use]
+    pub fn currency(&self) -> &str {
+        &self.currency
+    }
+    #[must_use]
+    pub const fn amount_minor(&self) -> i64 {
+        self.amount_minor
+    }
+    #[must_use]
+    pub const fn quota_amount(&self) -> Quota {
+        self.quota_amount
+    }
+    #[must_use]
+    pub const fn status(&self) -> SubscriptionOrderStatus {
+        self.status
+    }
+    #[must_use]
+    pub const fn version(&self) -> u64 {
+        self.version
+    }
+    #[must_use]
+    pub fn provider_order_id(&self) -> Option<&str> {
+        self.provider_order_id.as_deref()
+    }
+    #[must_use]
+    pub const fn expires_at(&self) -> Option<u64> {
+        self.expires_at
+    }
+    #[must_use]
+    pub const fn paid_at(&self) -> Option<u64> {
+        self.paid_at
+    }
+    #[must_use]
+    pub const fn closed_at(&self) -> Option<u64> {
+        self.closed_at
+    }
+    #[must_use]
+    pub const fn created_at(&self) -> u64 {
+        self.created_at
+    }
+    #[must_use]
+    pub const fn updated_at(&self) -> u64 {
+        self.updated_at
+    }
+
+    pub(super) fn matches_create(
+        &self,
+        create: &SubscriptionOrderCreate,
+        quota: Option<Quota>,
+    ) -> bool {
+        self.request_id == create.request_id
+            && self.user_id == create.user_id
+            && self.plan_id == create.plan_id
+            && self.plan_version == create.plan_version
+            && self.provider == create.provider
+            && self.currency == create.currency
+            && self.amount_minor == create.amount_minor
+            && quota.is_none_or(|value| self.quota_amount == value)
+    }
+}
+
+impl fmt::Debug for SubscriptionOrderRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("SubscriptionOrderRecord(<redacted>)")
+    }
+}
+
 /// 已持久化订阅计划的非敏感状态快照。
 pub struct SubscriptionPlanRecord {
     pub(super) database_id: i64,
@@ -241,6 +531,10 @@ pub struct SubscriptionPlanRecord {
 }
 
 impl SubscriptionPlanRecord {
+    #[must_use]
+    pub(crate) const fn database_id(&self) -> i64 {
+        self.database_id
+    }
     /// 返回稳定计划标识。
     #[must_use]
     pub const fn plan_id(&self) -> SubscriptionPlanId {
@@ -610,6 +904,20 @@ pub enum SubscriptionPlanCreateOutcome {
     CreatorNotFound,
 }
 
+/// 幂等创建订阅购买订单后的闭合结果。
+pub enum SubscriptionOrderCreateOutcome {
+    /// 本次调用创建了新的本地待支付订单。
+    Created(SubscriptionOrderRecord),
+    /// 相同用户和幂等请求已经创建过完全相同的订单。
+    Existing(SubscriptionOrderRecord),
+    /// 当前用户不存在或已被软删除。
+    UserNotFound,
+    /// 计划不存在。
+    PlanNotFound,
+    /// 计划已停止销售。
+    PlanDisabled,
+}
+
 /// CAS 停用订阅计划后的闭合结果。
 pub enum SubscriptionPlanDisableOutcome {
     /// 本次调用把 Active 计划推进为 Disabled。
@@ -659,6 +967,8 @@ pub enum SubscriptionInputError {
     /// 计划周期额度必须为正整数。
     #[error("订阅计划额度无效")]
     InvalidQuota,
+    #[error("订阅价格无效")]
+    InvalidPrice,
     /// 用户订阅时间窗为空或绑定时已经结束。
     #[error("用户订阅时间窗无效")]
     InvalidWindow,
@@ -715,6 +1025,28 @@ impl fmt::Debug for SubscriptionPlanCreateOutcome {
             }
             Self::CreatorNotFound => {
                 formatter.write_str("SubscriptionPlanCreateOutcome::CreatorNotFound")
+            }
+        }
+    }
+}
+
+impl fmt::Debug for SubscriptionOrderCreateOutcome {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Created(_) => {
+                formatter.write_str("SubscriptionOrderCreateOutcome::Created(<redacted>)")
+            }
+            Self::Existing(_) => {
+                formatter.write_str("SubscriptionOrderCreateOutcome::Existing(<redacted>)")
+            }
+            Self::UserNotFound => {
+                formatter.write_str("SubscriptionOrderCreateOutcome::UserNotFound")
+            }
+            Self::PlanNotFound => {
+                formatter.write_str("SubscriptionOrderCreateOutcome::PlanNotFound")
+            }
+            Self::PlanDisabled => {
+                formatter.write_str("SubscriptionOrderCreateOutcome::PlanDisabled")
             }
         }
     }
@@ -785,4 +1117,18 @@ pub(super) fn valid_name(value: &str) -> bool {
         && value.len() <= MAX_SUBSCRIPTION_PLAN_NAME_BYTES
         && value.trim() == value
         && !value.chars().any(char::is_control)
+}
+
+pub(super) fn valid_price_text(value: &str, max_bytes: usize) -> bool {
+    !value.is_empty()
+        && value.len() <= max_bytes
+        && value.trim() == value
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+}
+
+pub(super) fn valid_currency(value: &str) -> bool {
+    value.len() == MAX_SUBSCRIPTION_CURRENCY_BYTES
+        && value.bytes().all(|byte| byte.is_ascii_uppercase())
 }

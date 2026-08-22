@@ -2422,6 +2422,158 @@
         ]
       }
     },
+    "/api/account/subscription-catalog": {
+      "get": {
+        "tags": [
+          "订阅管理"
+        ],
+        "summary": "读取当前用户可售订阅目录",
+        "operationId": "listCurrentSubscriptionCatalog",
+        "responses": {
+          "200": {
+            "description": "当前用户可购买的 Active 计划与价格快照",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionCatalogResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/account/subscription-orders": {
+      "post": {
+        "tags": [
+          "订阅管理"
+        ],
+        "summary": "幂等创建当前用户订阅订单",
+        "operationId": "createCurrentSubscriptionOrder",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscriptionOrderCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "已重放同一幂等订单",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionOrder"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "已创建待支付订阅订单",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionOrder"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "订单请求或幂等键无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "订阅计划不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "价格快照、销售状态或幂等事实冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "提交结果未知",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/auth/password-reset/request": {
       "post": {
         "tags": [
@@ -23161,7 +23313,10 @@
         "required": [
           "name",
           "quota_amount",
-          "cycle"
+          "cycle",
+          "price_provider",
+          "price_currency",
+          "price_amount_minor"
         ],
         "properties": {
           "name": {
@@ -23176,6 +23331,22 @@
           },
           "cycle": {
             "$ref": "#/components/schemas/SubscriptionCycle"
+          },
+          "price_provider": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1
+          },
+          "price_currency": {
+            "type": "string",
+            "maxLength": 3,
+            "minLength": 3,
+            "pattern": "^[A-Z]{3}$"
+          },
+          "price_amount_minor": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
           }
         },
         "additionalProperties": false
@@ -28554,6 +28725,79 @@
         },
         "additionalProperties": false
       },
+      "SubscriptionCatalogPlan": {
+        "type": "object",
+        "required": [
+          "plan_id",
+          "name",
+          "quota_amount",
+          "cycle",
+          "plan_version",
+          "price_provider",
+          "price_currency",
+          "price_amount_minor"
+        ],
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1
+          },
+          "quota_amount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "cycle": {
+            "$ref": "#/components/schemas/SubscriptionCycle"
+          },
+          "plan_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "price_provider": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1
+          },
+          "price_currency": {
+            "type": "string",
+            "maxLength": 3,
+            "minLength": 3,
+            "pattern": "^[A-Z]{3}$"
+          },
+          "price_amount_minor": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "SubscriptionCatalogResponse": {
+        "type": "object",
+        "description": "当前用户可购买的计划与不可变价格快照。",
+        "required": [
+          "plans"
+        ],
+        "properties": {
+          "plans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SubscriptionCatalogPlan"
+            },
+            "maxItems": 100
+          }
+        },
+        "additionalProperties": false
+      },
       "SubscriptionCycle": {
         "type": "string",
         "description": "HTTP 契约使用的闭合订阅周期。",
@@ -28562,6 +28806,164 @@
           "weekly",
           "monthly",
           "yearly"
+        ]
+      },
+      "SubscriptionOrder": {
+        "type": "object",
+        "description": "当前用户创建订阅订单后的服务端快照。",
+        "required": [
+          "order_id",
+          "plan_id",
+          "plan_version",
+          "price_provider",
+          "price_currency",
+          "price_amount_minor",
+          "quota_amount",
+          "status",
+          "version",
+          "expires_at",
+          "paid_at",
+          "created_at",
+          "updated_at",
+          "replayed"
+        ],
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "plan_id": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "plan_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "price_provider": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1
+          },
+          "price_currency": {
+            "type": "string",
+            "maxLength": 3,
+            "minLength": 3,
+            "pattern": "^[A-Z]{3}$"
+          },
+          "price_amount_minor": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "quota_amount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "status": {
+            "$ref": "#/components/schemas/SubscriptionOrderStatus"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "expires_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "paid_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SubscriptionOrderCreateRequest": {
+        "type": "object",
+        "description": "当前用户创建待支付订阅订单的请求。",
+        "required": [
+          "idempotency_key",
+          "plan_id",
+          "plan_version",
+          "price_provider",
+          "price_currency",
+          "price_amount_minor"
+        ],
+        "properties": {
+          "idempotency_key": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "plan_id": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "plan_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "price_provider": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1
+          },
+          "price_currency": {
+            "type": "string",
+            "maxLength": 3,
+            "minLength": 3,
+            "pattern": "^[A-Z]{3}$"
+          },
+          "price_amount_minor": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "SubscriptionOrderStatus": {
+        "type": "string",
+        "description": "订阅购买订单的稳定状态。",
+        "enum": [
+          "created",
+          "pending",
+          "paid",
+          "failed",
+          "canceled",
+          "expired"
         ]
       },
       "SubscriptionPlanStatus": {
