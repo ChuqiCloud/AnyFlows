@@ -4191,7 +4191,8 @@
       "title": "Epay",
       "description": "Connect an Epay-compatible gateway and enable Alipay or WeChat Pay independently.",
       "publicBaseUrlRequired": "Set the public base URL before enabling Epay",
-      "publicBaseUrlHint": "Webhook and return URLs require a stable externally accessible address, not the current local preview URL."
+      "publicBaseUrlHint": "Webhook and return URLs require a stable externally accessible address, not the current local preview URL.",
+      "refundHint": "Epay gateways do not necessarily support refunds. Enable this only after the provider confirms support. Refund requests still require administrator approval; the automatic-submit policy only controls what happens after approval."
     },
     "fields": {
       "stripeEnabled": "Enable Stripe",
@@ -4205,7 +4206,9 @@
       "epayMerchantKey": "Merchant PKey",
       "epayQuotaPerCny": "Quota per CNY",
       "alipay": "Alipay",
-      "wxpay": "WeChat Pay"
+      "wxpay": "WeChat Pay",
+      "epayRefundEnabled": "Allow Epay refunds",
+      "refundAutoSubmitEnabled": "Automatically submit refunds after approval"
     },
     "status": {
       "enabled": "Enabled",
@@ -4240,6 +4243,7 @@
       "epayMerchantId": "Enter a merchant PID without spaces or control characters.",
       "epayMerchantKey": "Enter a valid merchant PKey; replacement and clearing cannot be combined.",
       "epayPaymentMethod": "Enable at least one payment method when Epay is active.",
+      "epayRefund": "Epay refunds require Epay to be active and the provider to confirm refund support.",
       "epayPublicBaseUrl": "Set the public base URL in site settings before enabling Epay.",
       "epayQuota": "Quota per CNY must be a positive integer."
     },

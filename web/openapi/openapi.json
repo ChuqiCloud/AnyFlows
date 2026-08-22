@@ -22541,6 +22541,8 @@
           "epay_merchant_key_configured",
           "epay_alipay_enabled",
           "epay_wxpay_enabled",
+          "epay_refund_enabled",
+          "refund_auto_submit_enabled",
           "epay_quota_per_cny",
           "version"
         ],
@@ -22593,6 +22595,12 @@
           "epay_wxpay_enabled": {
             "type": "boolean"
           },
+          "epay_refund_enabled": {
+            "type": "boolean"
+          },
+          "refund_auto_submit_enabled": {
+            "type": "boolean"
+          },
           "epay_quota_per_cny": {
             "type": "integer",
             "format": "int64",
@@ -22619,6 +22627,8 @@
           "clear_epay_merchant_key",
           "epay_alipay_enabled",
           "epay_wxpay_enabled",
+          "epay_refund_enabled",
+          "refund_auto_submit_enabled",
           "epay_quota_per_cny"
         ],
         "properties": {
@@ -22703,6 +22713,12 @@
             "type": "boolean"
           },
           "epay_wxpay_enabled": {
+            "type": "boolean"
+          },
+          "epay_refund_enabled": {
+            "type": "boolean"
+          },
+          "refund_auto_submit_enabled": {
             "type": "boolean"
           },
           "epay_quota_per_cny": {

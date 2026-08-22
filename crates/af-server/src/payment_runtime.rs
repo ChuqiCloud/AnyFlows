@@ -253,17 +253,20 @@ impl PaymentRuntime {
             )
             .map_err(|_| runtime_failed("epay_provider"))?,
         );
-        let refund_provider = Arc::new(
-            EasyPayRefundProvider::new(
-                gateway_url,
-                merchant_id,
-                merchant_key.expose_secret(),
-                self.upstream_clients.clone(),
-                self.request_timeout,
-            )
-            .map_err(|_| runtime_failed("epay_refund_provider"))?,
-        );
-        refund_providers.insert(EASYPAY_PAYMENT_PROVIDER.to_owned(), refund_provider);
+        if record.epay_refund_enabled() {
+            // 易支付退款协议并非所有服务商都提供，只有显式开启时才暴露退款 Provider。
+            let refund_provider = Arc::new(
+                EasyPayRefundProvider::new(
+                    gateway_url,
+                    merchant_id,
+                    merchant_key.expose_secret(),
+                    self.upstream_clients.clone(),
+                    self.request_timeout,
+                )
+                .map_err(|_| runtime_failed("epay_refund_provider"))?,
+            );
+            refund_providers.insert(EASYPAY_PAYMENT_PROVIDER.to_owned(), refund_provider);
+        }
         if record.epay_alipay_enabled() {
             routes.push(
                 UserTopupProviderRoute::epay(

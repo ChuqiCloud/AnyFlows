@@ -36,6 +36,7 @@ export function PaymentSettingsWorkspace({ publicBaseUrl, settings }: PaymentSet
       epayMerchantId: t('paymentSettings.validation.epayMerchantId'),
       epayMerchantKey: t('paymentSettings.validation.epayMerchantKey'),
       epayPaymentMethod: t('paymentSettings.validation.epayPaymentMethod'),
+      epayRefund: t('paymentSettings.validation.epayRefund'),
       epayPublicBaseUrl: t('paymentSettings.validation.epayPublicBaseUrl'),
       epayQuota: t('paymentSettings.validation.epayQuota'),
       stripePublishableKey: t('paymentSettings.validation.stripePublishableKey'),
@@ -84,7 +85,10 @@ export function PaymentSettingsWorkspace({ publicBaseUrl, settings }: PaymentSet
           description={t('paymentSettings.epay.description')}
           enabled={form.watch('epayEnabled')}
           switchId="payment-epay-enabled"
-          onEnabledChange={(checked) => form.setValue('epayEnabled', checked, { shouldDirty: true, shouldValidate: true })}
+          onEnabledChange={(checked) => {
+            form.setValue('epayEnabled', checked, { shouldDirty: true, shouldValidate: true })
+            if (!checked) form.setValue('epayRefundEnabled', false, { shouldDirty: true, shouldValidate: true })
+          }}
           enabledLabel={t('paymentSettings.fields.epayEnabled')}
           statusLabel={t(form.watch('epayEnabled') ? 'paymentSettings.status.enabled' : 'paymentSettings.status.disabled')}
           last
@@ -108,7 +112,25 @@ export function PaymentSettingsWorkspace({ publicBaseUrl, settings }: PaymentSet
           <div className="grid gap-2 sm:grid-cols-2">
             <ToggleField form={form} name="epayAlipayEnabled" id="payment-epay-alipay" label={t('paymentSettings.fields.alipay')} />
             <ToggleField form={form} name="epayWxpayEnabled" id="payment-epay-wxpay" label={t('paymentSettings.fields.wxpay')} />
+            <ToggleField
+              form={form}
+              name="epayRefundEnabled"
+              id="payment-epay-refund"
+              label={t('paymentSettings.fields.epayRefundEnabled')}
+              disabled={!form.watch('epayEnabled')}
+              onCheckedChange={(checked) => {
+                if (!checked) form.setValue('refundAutoSubmitEnabled', false, { shouldDirty: true, shouldValidate: true })
+              }}
+            />
+            <ToggleField
+              form={form}
+              name="refundAutoSubmitEnabled"
+              id="payment-refund-auto-submit"
+              label={t('paymentSettings.fields.refundAutoSubmitEnabled')}
+              disabled={!form.watch('epayRefundEnabled')}
+            />
           </div>
+          <p className="text-[0.6875rem] leading-4 text-muted-foreground sm:col-span-2">{t('paymentSettings.epay.refundHint')}</p>
         </ProviderSection>
 
         <div className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-t border-[var(--hairline)] bg-surface-2/25 px-5 py-3">
@@ -197,9 +219,9 @@ function NumberField({ form, id, label, name, suffix }: { form: UseFormReturn<Pa
   return <div className="grid gap-1.5"><Label htmlFor={id}>{label}</Label><div className="relative"><Input id={id} type="number" min={1} className="pr-16 tabular-nums" aria-invalid={!!error} {...form.register(name, { valueAsNumber: true })} /><span data-input-suffix className="pointer-events-none absolute right-3 top-0 grid h-8 place-items-center text-xs leading-none text-muted-foreground">{suffix}</span></div>{error ? <p className="text-xs text-destructive">{error.message}</p> : null}</div>
 }
 
-type ToggleName = 'epayAlipayEnabled' | 'epayWxpayEnabled'
-function ToggleField({ form, id, label, name }: { form: UseFormReturn<PaymentSettingsValues>; id: string; label: string; name: ToggleName }) {
-  return <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--hairline)] px-3 py-2.5"><Label htmlFor={id}>{label}</Label><Controller control={form.control} name={name} render={({ field }) => <Switch id={id} checked={field.value} onCheckedChange={field.onChange} />} /></div>
+type ToggleName = 'epayAlipayEnabled' | 'epayRefundEnabled' | 'epayWxpayEnabled' | 'refundAutoSubmitEnabled'
+function ToggleField({ disabled, form, id, label, name, onCheckedChange }: { disabled?: boolean; form: UseFormReturn<PaymentSettingsValues>; id: string; label: string; name: ToggleName; onCheckedChange?: (checked: boolean) => void }) {
+  return <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--hairline)] px-3 py-2.5"><Label htmlFor={id}>{label}</Label><Controller control={form.control} name={name} render={({ field }) => <Switch id={id} checked={field.value} disabled={disabled} onCheckedChange={(checked) => { field.onChange(checked); onCheckedChange?.(checked) }} />} /></div>
 }
 
 /** 回调地址由站点公开基址和固定路由生成，只允许复制，不参与配置提交。 */

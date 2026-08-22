@@ -789,6 +789,8 @@ export type AdminPaymentSettings = {
     epay_merchant_key_configured: boolean;
     epay_alipay_enabled: boolean;
     epay_wxpay_enabled: boolean;
+    epay_refund_enabled: boolean;
+    refund_auto_submit_enabled: boolean;
     epay_quota_per_cny: number;
     version: number;
 };
@@ -805,6 +807,8 @@ export type AdminPaymentSettingsRequest = {
     clear_epay_merchant_key: boolean;
     epay_alipay_enabled: boolean;
     epay_wxpay_enabled: boolean;
+    epay_refund_enabled: boolean;
+    refund_auto_submit_enabled: boolean;
     epay_quota_per_cny: number;
 };
 export type AdminRedemptionAuditBatch = {
@@ -2405,6 +2409,8 @@ export type AdminPaymentSettingsRequestWritable = {
     clear_epay_merchant_key: boolean;
     epay_alipay_enabled: boolean;
     epay_wxpay_enabled: boolean;
+    epay_refund_enabled: boolean;
+    refund_auto_submit_enabled: boolean;
     epay_quota_per_cny: number;
 };
 export type LoginRequestWritable = {

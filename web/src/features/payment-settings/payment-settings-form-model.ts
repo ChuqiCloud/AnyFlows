@@ -14,8 +14,10 @@ export type PaymentSettingsValues = {
   epayGatewayUrl: string
   epayMerchantId: string
   epayMerchantKey: string
+  epayRefundEnabled: boolean
   epayQuotaPerCny: number
   epayWxpayEnabled: boolean
+  refundAutoSubmitEnabled: boolean
   stripeEnabled: boolean
   stripePublishableKey: string
   stripeSecretKey: string
@@ -28,6 +30,7 @@ type ValidationMessages = {
   epayMerchantId: string
   epayMerchantKey: string
   epayPaymentMethod: string
+  epayRefund: string
   epayPublicBaseUrl: string
   epayQuota: string
   stripePublishableKey: string
@@ -47,8 +50,10 @@ export function paymentSettingsValues(settings: AdminPaymentSettings): PaymentSe
     epayGatewayUrl: settings.epay_gateway_url ?? '',
     epayMerchantId: settings.epay_merchant_id ?? '',
     epayMerchantKey: '',
+    epayRefundEnabled: settings.epay_refund_enabled,
     epayQuotaPerCny: settings.epay_quota_per_cny,
     epayWxpayEnabled: settings.epay_wxpay_enabled,
+    refundAutoSubmitEnabled: settings.refund_auto_submit_enabled,
     stripeEnabled: settings.stripe_enabled,
     stripePublishableKey: settings.stripe_publishable_key ?? '',
     stripeSecretKey: '',
@@ -72,8 +77,10 @@ export function buildPaymentSettingsSchema(
     epayGatewayUrl: z.string(),
     epayMerchantId: z.string(),
     epayMerchantKey: z.string(),
+    epayRefundEnabled: z.boolean(),
     epayQuotaPerCny: z.number().int(messages.epayQuota).min(1, messages.epayQuota),
     epayWxpayEnabled: z.boolean(),
+    refundAutoSubmitEnabled: z.boolean(),
     stripeEnabled: z.boolean(),
     stripePublishableKey: z.string(),
     stripeSecretKey: z.string(),
@@ -130,6 +137,9 @@ export function buildPaymentSettingsSchema(
         addIssue(context, 'epayAlipayEnabled', messages.epayPaymentMethod)
       }
     }
+    if (values.epayRefundEnabled && !values.epayEnabled) {
+      addIssue(context, 'epayRefundEnabled', messages.epayRefund)
+    }
   })
 }
 
@@ -179,8 +189,10 @@ export function toPaymentSettingsRequest(
     epay_gateway_url: values.epayGatewayUrl || null,
     epay_merchant_id: values.epayMerchantId || null,
     epay_merchant_key: optionalSecret(values.epayMerchantKey),
+    epay_refund_enabled: values.epayRefundEnabled,
     epay_quota_per_cny: values.epayQuotaPerCny,
     epay_wxpay_enabled: values.epayWxpayEnabled,
+    refund_auto_submit_enabled: values.refundAutoSubmitEnabled,
     expected_version: version,
     stripe_enabled: values.stripeEnabled,
     stripe_publishable_key: values.stripePublishableKey || null,

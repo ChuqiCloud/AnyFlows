@@ -46,6 +46,8 @@ pub(crate) struct AdminPaymentSettingsResponse {
     epay_merchant_key_configured: bool,
     epay_alipay_enabled: bool,
     epay_wxpay_enabled: bool,
+    epay_refund_enabled: bool,
+    refund_auto_submit_enabled: bool,
     #[schema(minimum = 1)]
     epay_quota_per_cny: i64,
     #[schema(minimum = 1)]
@@ -66,6 +68,8 @@ impl From<AdminPaymentSettings> for AdminPaymentSettingsResponse {
             epay_merchant_key_configured: settings.epay_merchant_key_configured(),
             epay_alipay_enabled: settings.epay_alipay_enabled(),
             epay_wxpay_enabled: settings.epay_wxpay_enabled(),
+            epay_refund_enabled: settings.epay_refund_enabled(),
+            refund_auto_submit_enabled: settings.refund_auto_submit_enabled(),
             epay_quota_per_cny: settings.epay_quota_per_cny(),
             version: settings.version(),
         }
@@ -100,6 +104,8 @@ pub(crate) struct AdminPaymentSettingsRequest {
     clear_epay_merchant_key: bool,
     epay_alipay_enabled: bool,
     epay_wxpay_enabled: bool,
+    epay_refund_enabled: bool,
+    refund_auto_submit_enabled: bool,
     #[schema(minimum = 1)]
     epay_quota_per_cny: i64,
 }
@@ -157,6 +163,8 @@ async fn update_payment_settings(
         request.clear_epay_merchant_key,
         request.epay_alipay_enabled,
         request.epay_wxpay_enabled,
+        request.epay_refund_enabled,
+        request.refund_auto_submit_enabled,
         request.epay_quota_per_cny,
     )
     .map_err(map_payment_settings_error)?;

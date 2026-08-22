@@ -2107,6 +2107,8 @@ async fn import_legacy_stripe_payment_settings(
             PaymentSecretUpdate::Keep,
             true,
             true,
+            false,
+            false,
             500_000,
         ))
         .await;

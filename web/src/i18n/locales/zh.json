@@ -4190,7 +4190,8 @@
       "title": "易支付",
       "description": "连接兼容易支付协议的聚合网关，可分别开放支付宝与微信支付。",
       "publicBaseUrlRequired": "启用易支付前需要配置站点公开基址",
-      "publicBaseUrlHint": "异步通知和支付返回地址必须使用外部可访问的稳定地址，不能使用当前本地预览地址。"
+      "publicBaseUrlHint": "异步通知和支付返回地址必须使用外部可访问的稳定地址，不能使用当前本地预览地址。",
+      "refundHint": "易支付服务商未必支持退款；仅在服务商确认支持时开启。退款请求仍需管理员审批，自动提交策略只决定审批通过后的执行方式。"
     },
     "fields": {
       "stripeEnabled": "启用 Stripe",
@@ -4204,7 +4205,9 @@
       "epayMerchantKey": "商户 PKey",
       "epayQuotaPerCny": "每人民币到账额度",
       "alipay": "支付宝",
-      "wxpay": "微信支付"
+      "wxpay": "微信支付",
+      "epayRefundEnabled": "允许易支付退款",
+      "refundAutoSubmitEnabled": "审批通过后自动提交退款"
     },
     "status": {
       "enabled": "已启用",
@@ -4239,6 +4242,7 @@
       "epayMerchantId": "请输入不含空格和控制字符的商户 PID。",
       "epayMerchantKey": "请输入有效商户 PKey；替换与清除不能同时选择。",
       "epayPaymentMethod": "启用易支付时至少开放一种支付方式。",
+      "epayRefund": "易支付退款必须在易支付启用且服务商确认支持后开启。",
       "epayPublicBaseUrl": "启用易支付前必须在站点设置中配置公开基址。",
       "epayQuota": "每人民币到账额度必须是正整数。"
     },
