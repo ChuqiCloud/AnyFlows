@@ -2419,3 +2419,34 @@ pub(in crate::migration) mod user_notification_receipts {
         ReadAt,
     }
 }
+
+pub(in crate::migration) mod refund_requests {
+    use super::DeriveIden;
+
+    /// 退款请求事实的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    #[sea_orm(iden = "refund_requests")]
+    pub(in crate::migration) enum Table {
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        RequestKey,
+        IdempotencyKey,
+        UserId,
+        OrderKind,
+        OrderKey,
+        Provider,
+        Currency,
+        OriginalAmountMinor,
+        RefundAmountMinor,
+        Status,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}

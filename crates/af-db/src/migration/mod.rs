@@ -91,6 +91,7 @@ mod m20260821_000082_create_user_notification_receipts;
 mod m20260821_000083_create_subscription_plan_prices;
 mod m20260821_000084_create_subscription_orders;
 mod m20260822_000085_create_subscription_payment_events;
+mod m20260822_000086_create_refund_requests;
 mod schema;
 
 #[cfg(test)]
@@ -219,6 +220,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260821_000083_create_subscription_plan_prices::Migration),
             Box::new(m20260821_000084_create_subscription_orders::Migration),
             Box::new(m20260822_000085_create_subscription_payment_events::Migration),
+            Box::new(m20260822_000086_create_refund_requests::Migration),
         ]
     }
 }

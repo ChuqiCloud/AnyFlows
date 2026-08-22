@@ -14,6 +14,7 @@ mod payment;
 mod principal;
 mod quota;
 mod redemption;
+mod refund;
 mod routing;
 mod subscription;
 mod subscription_window;
@@ -69,6 +70,11 @@ pub use redemption::{
     RedemptionBatchId, RedemptionBatchStatus, RedemptionCodeId, RedemptionCodeStatus,
     RedemptionIdentifierError, RedemptionStateCodeError,
 };
+pub use refund::{
+    MAX_REFUND_ORDER_KEY_BYTES, MAX_REFUND_PROVIDER_BYTES, RefundIdentifierError, RefundOrderKind,
+    RefundRequestCreate, RefundRequestCreateOutcome, RefundRequestId, RefundRequestInputError,
+    RefundRequestKey, RefundRequestRecord, RefundRequestStatus, RefundStateCodeError,
+};
 pub use routing::{
     MAX_ROUTE_MODEL_PATTERN_BYTES, RouteMode, RoutePatternError, RouteStrategy,
     route_model_pattern_matches, validate_route_model_pattern,
@@ -116,6 +122,8 @@ mod principal_tests;
 mod quota_tests;
 #[cfg(test)]
 mod redemption_tests;
+#[cfg(test)]
+mod refund_tests;
 #[cfg(test)]
 mod subscription_tests;
 #[cfg(test)]
