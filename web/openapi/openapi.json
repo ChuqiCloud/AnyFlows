@@ -1942,7 +1942,7 @@
         },
         "responses": {
           "200": {
-            "description": "拒绝退款",
+            "description": "退款已拒绝",
             "content": {
               "application/json": {
                 "schema": {
