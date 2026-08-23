@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use af_admin::{
-    AdminCustomOAuth2Provider, AdminCustomOAuth2ProviderCommand, AdminCustomOAuth2ProviderError,
+    AdminCustomOAuth2Provider, AdminCustomOAuth2ProviderCommand,
+    AdminCustomOAuth2ProviderCommandInput, AdminCustomOAuth2ProviderError,
     AdminCustomOAuth2ProviderService, SessionAuthenticator,
 };
 use axum::{
@@ -162,19 +163,19 @@ async fn update_custom_oauth2_provider(
     request: Result<Json<AdminCustomOAuth2ProviderRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
     let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
-    let command = AdminCustomOAuth2ProviderCommand::new(
-        request.expected_version,
-        request.display_name,
-        request.client_id,
-        request.authorization_endpoint,
-        request.token_endpoint,
-        request.userinfo_endpoint,
-        request.scope,
-        request.subject_field,
-        request.enabled,
-        request.client_secret,
-        request.clear_client_secret,
-    )
+    let command = AdminCustomOAuth2ProviderCommand::new(AdminCustomOAuth2ProviderCommandInput {
+        expected_version: request.expected_version,
+        display_name: request.display_name,
+        client_id: request.client_id,
+        authorization_endpoint: request.authorization_endpoint,
+        token_endpoint: request.token_endpoint,
+        userinfo_endpoint: request.userinfo_endpoint,
+        scope: request.scope,
+        subject_field: request.subject_field,
+        enabled: request.enabled,
+        client_secret: request.client_secret,
+        clear_client_secret: request.clear_client_secret,
+    })
     .map_err(map_custom_oauth2_error)?;
     let provider = state
         .service

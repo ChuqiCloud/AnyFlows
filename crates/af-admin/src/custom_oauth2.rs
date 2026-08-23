@@ -150,21 +150,39 @@ pub struct AdminCustomOAuth2ProviderCommand {
     clear_client_secret: bool,
 }
 
+/// 管理员保存自定义 Provider 的具名输入；明文密钥不会被持久化或输出。
+pub struct AdminCustomOAuth2ProviderCommandInput {
+    pub expected_version: i64,
+    pub display_name: String,
+    pub client_id: String,
+    pub authorization_endpoint: String,
+    pub token_endpoint: String,
+    pub userinfo_endpoint: String,
+    pub scope: String,
+    pub subject_field: String,
+    pub enabled: bool,
+    pub client_secret: Option<String>,
+    pub clear_client_secret: bool,
+}
+
 impl AdminCustomOAuth2ProviderCommand {
     /// 构造 CAS 写入命令；明文密钥为空时表示保留既有密文。
     pub fn new(
-        expected_version: i64,
-        display_name: String,
-        client_id: String,
-        authorization_endpoint: String,
-        token_endpoint: String,
-        userinfo_endpoint: String,
-        scope: String,
-        subject_field: String,
-        enabled: bool,
-        client_secret: Option<String>,
-        clear_client_secret: bool,
+        input: AdminCustomOAuth2ProviderCommandInput,
     ) -> Result<Self, AdminCustomOAuth2ProviderError> {
+        let AdminCustomOAuth2ProviderCommandInput {
+            expected_version,
+            display_name,
+            client_id,
+            authorization_endpoint,
+            token_endpoint,
+            userinfo_endpoint,
+            scope,
+            subject_field,
+            enabled,
+            client_secret,
+            clear_client_secret,
+        } = input;
         let client_secret = client_secret
             .and_then(|secret| (!secret.is_empty()).then_some(secret))
             .map(PlainSystemSecret::new)
@@ -386,35 +404,36 @@ mod tests {
 
     #[test]
     fn command_redacts_secret_and_rejects_ambiguous_updates() {
-        let command = AdminCustomOAuth2ProviderCommand::new(
-            0,
-            "企业登录".to_owned(),
-            "client-id".to_owned(),
-            "https://login.example.com/authorize".to_owned(),
-            "https://login.example.com/token".to_owned(),
-            "https://login.example.com/userinfo".to_owned(),
-            "openid profile".to_owned(),
-            "sub".to_owned(),
-            true,
-            Some("secret-value".to_owned()),
-            false,
-        )
-        .unwrap();
+        let command =
+            AdminCustomOAuth2ProviderCommand::new(AdminCustomOAuth2ProviderCommandInput {
+                expected_version: 0,
+                display_name: "企业登录".to_owned(),
+                client_id: "client-id".to_owned(),
+                authorization_endpoint: "https://login.example.com/authorize".to_owned(),
+                token_endpoint: "https://login.example.com/token".to_owned(),
+                userinfo_endpoint: "https://login.example.com/userinfo".to_owned(),
+                scope: "openid profile".to_owned(),
+                subject_field: "sub".to_owned(),
+                enabled: true,
+                client_secret: Some("secret-value".to_owned()),
+                clear_client_secret: false,
+            })
+            .unwrap();
         assert!(!format!("{command:?}").contains("secret-value"));
         assert_eq!(
-            AdminCustomOAuth2ProviderCommand::new(
-                1,
-                "企业登录".to_owned(),
-                "client-id".to_owned(),
-                "https://login.example.com/authorize".to_owned(),
-                "https://login.example.com/token".to_owned(),
-                "https://login.example.com/userinfo".to_owned(),
-                "openid".to_owned(),
-                "sub".to_owned(),
-                false,
-                Some("secret-value".to_owned()),
-                true,
-            )
+            AdminCustomOAuth2ProviderCommand::new(AdminCustomOAuth2ProviderCommandInput {
+                expected_version: 1,
+                display_name: "企业登录".to_owned(),
+                client_id: "client-id".to_owned(),
+                authorization_endpoint: "https://login.example.com/authorize".to_owned(),
+                token_endpoint: "https://login.example.com/token".to_owned(),
+                userinfo_endpoint: "https://login.example.com/userinfo".to_owned(),
+                scope: "openid".to_owned(),
+                subject_field: "sub".to_owned(),
+                enabled: false,
+                client_secret: Some("secret-value".to_owned()),
+                clear_client_secret: true,
+            },)
             .unwrap_err(),
             AdminCustomOAuth2ProviderError::InvalidInput
         );

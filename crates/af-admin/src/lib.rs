@@ -111,7 +111,8 @@ pub use credential_read::{
     AdminCredentialQuotaDimension,
 };
 pub use custom_oauth2::{
-    AdminCustomOAuth2Provider, AdminCustomOAuth2ProviderCommand, AdminCustomOAuth2ProviderError,
+    AdminCustomOAuth2Provider, AdminCustomOAuth2ProviderCommand,
+    AdminCustomOAuth2ProviderCommandInput, AdminCustomOAuth2ProviderError,
     AdminCustomOAuth2ProviderGetFuture, AdminCustomOAuth2ProviderListFuture,
     AdminCustomOAuth2ProviderService, AdminCustomOAuth2ProviderUpdateFuture,
     DatabaseAdminCustomOAuth2ProviderService,
