@@ -127,7 +127,6 @@ jobs:
           - dialect: sqlite
             database_url: "sqlite::memory:"
             service_image: redis:8.2.7-bookworm@sha256:d30960f73a599496d8b2802c97758bab6b1cd421fd06337f837779c47a57e1f3
-            service_port: 6379
             service_options: >-
               --health-cmd "redis-cli ping"
               --health-interval 5s
@@ -136,7 +135,6 @@ jobs:
           - dialect: postgres
             database_url: postgres://anyflows:anyflows_ci@database:5432/anyflows_migration_test_ci
             service_image: postgres:17.10-bookworm@sha256:67870dc097790edf2bd6726658db995dcc830f799d41bb2b78ef07c9a2d5f010
-            service_port: 5432
             service_options: >-
               --health-cmd "pg_isready -U anyflows -d anyflows_migration_test_ci"
               --health-interval 5s
@@ -145,7 +143,6 @@ jobs:
           - dialect: mysql
             database_url: mysql://anyflows:anyflows_ci@database:3306/anyflows_migration_test_ci?timezone=%2B08:00
             service_image: mysql:8.4.10@sha256:6ec1dc148edc412cce3ae27dd5b78dcd4e026976648424b3d31d9a8c6204db4e
-            service_port: 3306
             service_options: >-
               --health-cmd "mysqladmin ping -h 127.0.0.1 -u root -proot_ci --silent"
               --health-interval 5s
@@ -162,8 +159,6 @@ jobs:
           MYSQL_PASSWORD: anyflows_ci
           MYSQL_ROOT_PASSWORD: root_ci
           MYSQL_DATABASE: anyflows_migration_test_ci
-        ports:
-          - ${{ matrix.service_port }}:${{ matrix.service_port }}
         options: ${{ matrix.service_options }}
     steps:
       - name: Check out repository
@@ -200,8 +195,6 @@ jobs:
     services:
       redis:
         image: redis:8.2.7-bookworm@sha256:d30960f73a599496d8b2802c97758bab6b1cd421fd06337f837779c47a57e1f3
-        ports:
-          - 6379:6379
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s
