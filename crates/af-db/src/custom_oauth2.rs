@@ -578,7 +578,7 @@ fn encrypted_json(
 ) -> Result<crate::entity::EncryptedJson, CustomOAuth2ProviderRepositoryError> {
     crate::entity::EncryptedJson::from_envelope(json!({
         "version": 1,
-        "algorithm": "xchacha20-poly1305",
+        "algorithm": "xchacha20poly1305",
         "key_id": envelope.key_id(),
         "nonce": URL_SAFE_NO_PAD.encode(envelope.nonce()),
         "ciphertext": URL_SAFE_NO_PAD.encode(envelope.ciphertext()),
