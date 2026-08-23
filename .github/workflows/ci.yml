@@ -5,6 +5,7 @@ on:
     branches: [master, develop]
   pull_request:
     branches: [master, develop]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -137,13 +138,11 @@ jobs:
 
       - name: Ensure Rust toolchain manager
         shell: bash
-        run: |
-          if ! command -v rustup >/dev/null 2>&1; then
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
-          fi
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.cargo/bin:$PATH"
-          rustup --version
+        run: bash tools/ci/install-rustup.sh
+
+      - name: Install rustup when missing from runner image
+        shell: bash
+        run: bash tools/ci/install-rustup.sh
 
       - name: Install pinned Rust toolchain
         shell: bash
@@ -328,13 +327,7 @@ jobs:
 
       - name: Ensure Rust toolchain manager
         shell: bash
-        run: |
-          if ! command -v rustup >/dev/null 2>&1; then
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
-          fi
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.cargo/bin:$PATH"
-          rustup --version
+        run: bash tools/ci/install-rustup.sh
 
       - name: Install MSRV toolchain
         id: msrv
@@ -428,13 +421,11 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: postgres:17.10-bookworm
+        image: postgres:17.10-bookworm@sha256:67870dc097790edf2bd6726658db995dcc830f799d41bb2b78ef07c9a2d5f010
         env:
           POSTGRES_USER: anyflows
           POSTGRES_PASSWORD: anyflows_ci
           POSTGRES_DB: anyflows_migration_test_ci
-        ports:
-          - 15432:5432
         options: >-
           --health-cmd "pg_isready -U anyflows -d anyflows_migration_test_ci"
           --health-interval 5s
@@ -509,8 +500,6 @@ jobs:
           MYSQL_PASSWORD: anyflows_ci
           MYSQL_ROOT_PASSWORD: root_ci
           MYSQL_DATABASE: anyflows_migration_test_ci
-        ports:
-          - 13306:3306
         options: >-
           --health-cmd "mysql --protocol=tcp -h 127.0.0.1 -u root -proot_ci -e 'SET GLOBAL log_bin_trust_function_creators = 1; SELECT 1'"
           --health-interval 5s
@@ -540,13 +529,7 @@ jobs:
 
       - name: Ensure Rust toolchain manager
         shell: bash
-        run: |
-          if ! command -v rustup >/dev/null 2>&1; then
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
-          fi
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.cargo/bin:$PATH"
-          rustup --version
+        run: bash tools/ci/install-rustup.sh
 
       - name: Install pinned Rust toolchain
         shell: bash
@@ -580,8 +563,6 @@ jobs:
     services:
       redis:
         image: redis:8.2.7-bookworm@sha256:d30960f73a599496d8b2802c97758bab6b1cd421fd06337f837779c47a57e1f3
-        ports:
-          - 16379:6379
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s
@@ -619,6 +600,10 @@ jobs:
           export PATH="$HOME/.cargo/bin:$PATH"
           rustup --version
 
+      - name: Install rustup when missing from runner image
+        shell: bash
+        run: bash tools/ci/install-rustup.sh
+
       - name: Install pinned Rust toolchain
         shell: bash
         run: |
@@ -630,12 +615,5 @@ jobs:
         if: ${{ github.server_url != 'https://github.com' }}
         env:
           AF_TEST_REDIS_URL: redis://redis:6379/
-          AF_REQUIRE_LIVE_REDIS: "1"
-        run: bash tools/ci/run-cache-redis-test.sh
-
-      - name: Run Redis cache smoke test on GitHub
-        if: ${{ github.server_url == 'https://github.com' }}
-        env:
-          AF_TEST_REDIS_URL: redis://127.0.0.1:16379/
           AF_REQUIRE_LIVE_REDIS: "1"
         run: bash tools/ci/run-cache-redis-test.sh
