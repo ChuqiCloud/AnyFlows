@@ -4768,6 +4768,9 @@
     },
     "permissions": {
       "organization": {
+        "overview": {
+          "read": "查看企业概览"
+        },
         "profile": {
           "write": "修改企业资料"
         },
@@ -4797,6 +4800,11 @@
         },
         "audit": {
           "read": "查看管理审计"
+        },
+        "roles": {
+          "read": "查看自定义角色",
+          "manage": "管理自定义角色",
+          "assign": "分配自定义角色"
         }
       }
     },
@@ -4877,6 +4885,62 @@
         "description": "在 {{organization}} 内修改用户 #{{userId}} 的角色、状态和团队归属。",
         "removedWarning": "移除后将停用该成员在 {{organization}} 的企业能力和企业 Key，但保留历史账务、用量与审计。",
         "ownerHint": "Owner 不允许普通编辑。请在企业设置中执行所有权转移。"
+      }
+    },
+    "customRoles": {
+      "title": "自定义角色",
+      "subtitle": "创建可复用的企业权限集合，授权、权限与状态转换始终以服务端为准。",
+      "noDescription": "暂无角色说明",
+      "status": {
+        "active": "已启用",
+        "disabled": "已停用"
+      },
+      "actions": {
+        "create": "新建角色",
+        "disable": "停用角色",
+        "disabling": "正在停用"
+      },
+      "fields": {
+        "name": "角色名称",
+        "description": "角色说明",
+        "permissions": "授予权限"
+      },
+      "validation": {
+        "name": "角色名称不能为空、不能包含首尾空白，且不能超过 160 字节。",
+        "permissions": "请至少选择一项权限。"
+      },
+      "editor": {
+        "createTitle": "新建自定义角色",
+        "editTitle": "编辑自定义角色",
+        "description": "该角色仅属于 {{organization}}，不能授予平台权限、角色管理或角色分配权限。",
+        "permissionsHint": "此处仅提供服务端允许写入的权限。"
+      },
+      "list": {
+        "permissionCount": "已授予 {{count}} 项权限"
+      },
+      "empty": {
+        "title": "还没有自定义角色",
+        "manageBody": "请先创建角色，再将其分配给活动成员。",
+        "readBody": "拥有角色管理权限的成员可以为当前企业创建角色。"
+      },
+      "restricted": {
+        "entitlementTitle": "尚未开启自定义角色",
+        "entitlementBody": "当前商业授权不允许管理自定义角色，因此没有发起角色目录请求。",
+        "permissionTitle": "无权读取自定义角色目录",
+        "permissionBody": "当前企业角色不具备读取自定义角色的权限。"
+      },
+      "disable": {
+        "title": "停用自定义角色",
+        "description": "确定停用 {{name}} 吗？该操作不可恢复，角色将不能再分配给成员。"
+      },
+      "errors": {
+        "listTitle": "无法读取自定义角色",
+        "listBody": "角色目录暂时不可用，服务端现有状态不会受到影响。",
+        "conflict": "角色已被其他操作更新，请刷新目录后按最新版本重新提交。",
+        "inactive": "该角色已不处于启用状态，不能继续修改。",
+        "entitlement": "当前商业授权已不再允许管理自定义角色。",
+        "notFound": "该角色已不可用，请刷新目录。",
+        "mutation": "操作没有返回可靠结果，请保留当前输入，刷新事实后重试。"
       }
     },
     "teams": {

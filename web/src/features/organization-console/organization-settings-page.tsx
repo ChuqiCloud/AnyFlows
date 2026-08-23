@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select } from '@/components/ui/select'
 import { useOrganizationMemberCatalog } from '@/features/organization-budgets/organization-budget-api'
 import { organizationMemberErrorCode, useTransferOrganizationOwnership } from '@/features/organization-members/organization-member-api'
+import { OrganizationCustomRolePanel } from '@/features/organization-roles/organization-custom-role-panel'
 import type { OrganizationOverviewResponse } from '@/lib/api/generated/types.gen'
 import {
   OrganizationPageBoundary,
@@ -19,6 +20,7 @@ import {
 const OWNERSHIP_TRANSFER = 'organization.ownership.transfer'
 
 const permissionCodes = [
+  'organization.overview.read',
   'organization.profile.write',
   'organization.ownership.transfer',
   'organization.members.manage',
@@ -31,6 +33,9 @@ const permissionCodes = [
   'organization.usage_logs.read_all',
   'organization.usage_logs.read_self',
   'organization.audit.read',
+  'organization.roles.read',
+  'organization.roles.manage',
+  'organization.roles.assign',
 ] as const
 
 /** 企业设置只呈现真实资料、授权与权限；当前唯一写接口为所有权转移。 */
@@ -113,6 +118,13 @@ function OrganizationSettingsWorkspace({ organizationId, overview }: { organizat
           <ReadOnlyField label={t('organizationConsole.settings.entitlement.audit')} value={t('organizationConsole.settings.entitlement.days', { count: overview.entitlement.audit_retention_days })} />
         </CardContent>
       </Card>
+
+      <OrganizationCustomRolePanel
+        organizationId={organizationId}
+        organizationName={overview.name}
+        customRolesEnabled={overview.entitlement.custom_roles_enabled}
+        permissions={overview.permissions}
+      />
 
       <Card className="overflow-hidden">
         <CardHeader className="border-b border-[var(--hairline)] bg-surface-1/45">

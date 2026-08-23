@@ -36,13 +36,13 @@ import {
   useDisableOrganizationTeam,
   useOrganizationInvitations,
   useOrganizationMembers,
-  useOrganizationCustomRoles,
   useOrganizationTeams,
   useResendOrganizationInvitation,
   useRevokeOrganizationInvitation,
 } from './organization-member-api'
 import { OrganizationMemberEditorSheet } from './organization-member-editor-sheet'
 import { OrganizationTeamEditorSheet } from './organization-team-editor-sheet'
+import { useOrganizationCustomRoles } from '@/features/organization-roles/organization-custom-role-api'
 
 const MEMBERS_MANAGE = 'organization.members.manage'
 const TEAMS_MANAGE = 'organization.teams.manage'
