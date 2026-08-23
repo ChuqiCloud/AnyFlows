@@ -943,6 +943,63 @@ export const disableOrganizationTeam = <ThrowOnError extends boolean = true>(opt
         ...options.headers
     }
 });
+export const listOrganizationCustomRoles = <ThrowOnError extends boolean = true>(options: Options<ListOrganizationCustomRolesData, ThrowOnError>): RequestResult<ListOrganizationCustomRolesResponses, ListOrganizationCustomRolesErrors, ThrowOnError> => (options.client ?? client).get<ListOrganizationCustomRolesResponses, ListOrganizationCustomRolesErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/roles',
+    ...options
+});
+export const createOrganizationCustomRole = <ThrowOnError extends boolean = true>(options: Options<CreateOrganizationCustomRoleData, ThrowOnError>): RequestResult<CreateOrganizationCustomRoleResponses, CreateOrganizationCustomRoleErrors, ThrowOnError> => (options.client ?? client).post<CreateOrganizationCustomRoleResponses, CreateOrganizationCustomRoleErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/roles',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const getOrganizationCustomRole = <ThrowOnError extends boolean = true>(options: Options<GetOrganizationCustomRoleData, ThrowOnError>): RequestResult<GetOrganizationCustomRoleResponses, GetOrganizationCustomRoleErrors, ThrowOnError> => (options.client ?? client).get<GetOrganizationCustomRoleResponses, GetOrganizationCustomRoleErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/roles/{role_key}',
+    ...options
+});
+export const updateOrganizationCustomRole = <ThrowOnError extends boolean = true>(options: Options<UpdateOrganizationCustomRoleData, ThrowOnError>): RequestResult<UpdateOrganizationCustomRoleResponses, UpdateOrganizationCustomRoleErrors, ThrowOnError> => (options.client ?? client).patch<UpdateOrganizationCustomRoleResponses, UpdateOrganizationCustomRoleErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/roles/{role_key}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const disableOrganizationCustomRole = <ThrowOnError extends boolean = true>(options: Options<DisableOrganizationCustomRoleData, ThrowOnError>): RequestResult<DisableOrganizationCustomRoleResponses, DisableOrganizationCustomRoleErrors, ThrowOnError> => (options.client ?? client).post<DisableOrganizationCustomRoleResponses, DisableOrganizationCustomRoleErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/roles/{role_key}/disable',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 export const getAdminBalanceAlertSettings = <ThrowOnError extends boolean = true>(options?: Options<GetAdminBalanceAlertSettingsData, ThrowOnError>): RequestResult<GetAdminBalanceAlertSettingsResponses, GetAdminBalanceAlertSettingsErrors, ThrowOnError> => (options?.client ?? client).get<GetAdminBalanceAlertSettingsResponses, GetAdminBalanceAlertSettingsErrors, ThrowOnError>({
     security: [{
             key: 'bearerAuth',
@@ -2146,63 +2203,6 @@ export const updateAdminGoogleOAuthLoginSettings = <ThrowOnError extends boolean
             type: 'http'
         }],
     url: '/api/admin/authentication-settings/oauth/google',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-export const listOrganizationCustomRoles = <ThrowOnError extends boolean = true>(options: Options<ListOrganizationCustomRolesData, ThrowOnError>): RequestResult<ListOrganizationCustomRolesResponses, ListOrganizationCustomRolesErrors, ThrowOnError> => (options.client ?? client).get<ListOrganizationCustomRolesResponses, ListOrganizationCustomRolesErrors, ThrowOnError>({
-    security: [{
-            key: 'bearerAuth',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/api/organizations/{organization_id}/roles',
-    ...options
-});
-export const createOrganizationCustomRole = <ThrowOnError extends boolean = true>(options: Options<CreateOrganizationCustomRoleData, ThrowOnError>): RequestResult<CreateOrganizationCustomRoleResponses, CreateOrganizationCustomRoleErrors, ThrowOnError> => (options.client ?? client).post<CreateOrganizationCustomRoleResponses, CreateOrganizationCustomRoleErrors, ThrowOnError>({
-    security: [{
-            key: 'bearerAuth',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/api/organizations/{organization_id}/roles',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-export const getOrganizationCustomRole = <ThrowOnError extends boolean = true>(options: Options<GetOrganizationCustomRoleData, ThrowOnError>): RequestResult<GetOrganizationCustomRoleResponses, GetOrganizationCustomRoleErrors, ThrowOnError> => (options.client ?? client).get<GetOrganizationCustomRoleResponses, GetOrganizationCustomRoleErrors, ThrowOnError>({
-    security: [{
-            key: 'bearerAuth',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/api/organizations/{organization_id}/roles/{role_key}',
-    ...options
-});
-export const updateOrganizationCustomRole = <ThrowOnError extends boolean = true>(options: Options<UpdateOrganizationCustomRoleData, ThrowOnError>): RequestResult<UpdateOrganizationCustomRoleResponses, UpdateOrganizationCustomRoleErrors, ThrowOnError> => (options.client ?? client).patch<UpdateOrganizationCustomRoleResponses, UpdateOrganizationCustomRoleErrors, ThrowOnError>({
-    security: [{
-            key: 'bearerAuth',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/api/organizations/{organization_id}/roles/{role_key}',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-export const disableOrganizationCustomRole = <ThrowOnError extends boolean = true>(options: Options<DisableOrganizationCustomRoleData, ThrowOnError>): RequestResult<DisableOrganizationCustomRoleResponses, DisableOrganizationCustomRoleErrors, ThrowOnError> => (options.client ?? client).post<DisableOrganizationCustomRoleResponses, DisableOrganizationCustomRoleErrors, ThrowOnError>({
-    security: [{
-            key: 'bearerAuth',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/api/organizations/{organization_id}/roles/{role_key}/disable',
     ...options,
     headers: {
         'Content-Type': 'application/json',

@@ -1521,6 +1521,96 @@ export const disableOrganizationTeamMutation = (options?: Partial<Options<Disabl
     };
     return mutationOptions;
 };
+export const listOrganizationCustomRolesQueryKey = (options: Options<ListOrganizationCustomRolesData>) => createQueryKey('listOrganizationCustomRoles', options);
+export const listOrganizationCustomRolesOptions = (options: Options<ListOrganizationCustomRolesData>) => queryOptions<ListOrganizationCustomRolesResponse, ListOrganizationCustomRolesError, ListOrganizationCustomRolesResponse, ReturnType<typeof listOrganizationCustomRolesQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await listOrganizationCustomRoles({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: listOrganizationCustomRolesQueryKey(options)
+});
+export const listOrganizationCustomRolesInfiniteQueryKey = (options: Options<ListOrganizationCustomRolesData>): QueryKey<Options<ListOrganizationCustomRolesData>> => createQueryKey('listOrganizationCustomRoles', options, true);
+export const listOrganizationCustomRolesInfiniteOptions = (options: Options<ListOrganizationCustomRolesData>) => {
+    const opts = infiniteQueryOptions<ListOrganizationCustomRolesResponse, ListOrganizationCustomRolesError, InfiniteData<ListOrganizationCustomRolesResponse>, QueryKey<Options<ListOrganizationCustomRolesData>>, number | Pick<QueryKey<Options<ListOrganizationCustomRolesData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
+    // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
+    {
+        queryFn: async ({ pageParam, queryKey, signal }) => {
+            // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
+            const page: Pick<QueryKey<Options<ListOrganizationCustomRolesData>>[0], 'body' | 'headers' | 'path' | 'query'> = typeof pageParam === 'object' ? pageParam : {
+                query: {
+                    after: pageParam
+                }
+            };
+            const params = createInfiniteParams(queryKey, page);
+            const { data } = await listOrganizationCustomRoles({
+                ...options,
+                ...params,
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: listOrganizationCustomRolesInfiniteQueryKey(options)
+    });
+    return opts as Omit<typeof opts, 'initialData'>;
+};
+export const createOrganizationCustomRoleMutation = (options?: Partial<Options<CreateOrganizationCustomRoleData>>): UseMutationOptions<CreateOrganizationCustomRoleResponse, CreateOrganizationCustomRoleError, Options<CreateOrganizationCustomRoleData>> => {
+    const mutationOptions: UseMutationOptions<CreateOrganizationCustomRoleResponse, CreateOrganizationCustomRoleError, Options<CreateOrganizationCustomRoleData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await createOrganizationCustomRole({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+export const getOrganizationCustomRoleQueryKey = (options: Options<GetOrganizationCustomRoleData>) => createQueryKey('getOrganizationCustomRole', options);
+export const getOrganizationCustomRoleOptions = (options: Options<GetOrganizationCustomRoleData>) => queryOptions<GetOrganizationCustomRoleResponse, GetOrganizationCustomRoleError, GetOrganizationCustomRoleResponse, ReturnType<typeof getOrganizationCustomRoleQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await getOrganizationCustomRole({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: getOrganizationCustomRoleQueryKey(options)
+});
+export const updateOrganizationCustomRoleMutation = (options?: Partial<Options<UpdateOrganizationCustomRoleData>>): UseMutationOptions<UpdateOrganizationCustomRoleResponse, UpdateOrganizationCustomRoleError, Options<UpdateOrganizationCustomRoleData>> => {
+    const mutationOptions: UseMutationOptions<UpdateOrganizationCustomRoleResponse, UpdateOrganizationCustomRoleError, Options<UpdateOrganizationCustomRoleData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await updateOrganizationCustomRole({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+export const disableOrganizationCustomRoleMutation = (options?: Partial<Options<DisableOrganizationCustomRoleData>>): UseMutationOptions<DisableOrganizationCustomRoleResponse, DisableOrganizationCustomRoleError, Options<DisableOrganizationCustomRoleData>> => {
+    const mutationOptions: UseMutationOptions<DisableOrganizationCustomRoleResponse, DisableOrganizationCustomRoleError, Options<DisableOrganizationCustomRoleData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await disableOrganizationCustomRole({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
 export const getAdminBalanceAlertSettingsQueryKey = (options?: Options<GetAdminBalanceAlertSettingsData>) => createQueryKey('getAdminBalanceAlertSettings', options);
 export const getAdminBalanceAlertSettingsOptions = (options?: Options<GetAdminBalanceAlertSettingsData>) => queryOptions<GetAdminBalanceAlertSettingsResponse, GetAdminBalanceAlertSettingsError, GetAdminBalanceAlertSettingsResponse, ReturnType<typeof getAdminBalanceAlertSettingsQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -3814,96 +3904,6 @@ export const updateAdminGoogleOAuthLoginSettingsMutation = (options?: Partial<Op
     const mutationOptions: UseMutationOptions<UpdateAdminGoogleOAuthLoginSettingsResponse, UpdateAdminGoogleOAuthLoginSettingsError, Options<UpdateAdminGoogleOAuthLoginSettingsData>> = {
         mutationFn: async (fnOptions) => {
             const { data } = await updateAdminGoogleOAuthLoginSettings({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
-export const listOrganizationCustomRolesQueryKey = (options: Options<ListOrganizationCustomRolesData>) => createQueryKey('listOrganizationCustomRoles', options);
-export const listOrganizationCustomRolesOptions = (options: Options<ListOrganizationCustomRolesData>) => queryOptions<ListOrganizationCustomRolesResponse, ListOrganizationCustomRolesError, ListOrganizationCustomRolesResponse, ReturnType<typeof listOrganizationCustomRolesQueryKey>>({
-    queryFn: async ({ queryKey, signal }) => {
-        const { data } = await listOrganizationCustomRoles({
-            ...options,
-            ...queryKey[0],
-            signal,
-            throwOnError: true
-        });
-        return data;
-    },
-    queryKey: listOrganizationCustomRolesQueryKey(options)
-});
-export const listOrganizationCustomRolesInfiniteQueryKey = (options: Options<ListOrganizationCustomRolesData>): QueryKey<Options<ListOrganizationCustomRolesData>> => createQueryKey('listOrganizationCustomRoles', options, true);
-export const listOrganizationCustomRolesInfiniteOptions = (options: Options<ListOrganizationCustomRolesData>) => {
-    const opts = infiniteQueryOptions<ListOrganizationCustomRolesResponse, ListOrganizationCustomRolesError, InfiniteData<ListOrganizationCustomRolesResponse>, QueryKey<Options<ListOrganizationCustomRolesData>>, number | Pick<QueryKey<Options<ListOrganizationCustomRolesData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
-    // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
-    {
-        queryFn: async ({ pageParam, queryKey, signal }) => {
-            // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
-            const page: Pick<QueryKey<Options<ListOrganizationCustomRolesData>>[0], 'body' | 'headers' | 'path' | 'query'> = typeof pageParam === 'object' ? pageParam : {
-                query: {
-                    after: pageParam
-                }
-            };
-            const params = createInfiniteParams(queryKey, page);
-            const { data } = await listOrganizationCustomRoles({
-                ...options,
-                ...params,
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: listOrganizationCustomRolesInfiniteQueryKey(options)
-    });
-    return opts as Omit<typeof opts, 'initialData'>;
-};
-export const createOrganizationCustomRoleMutation = (options?: Partial<Options<CreateOrganizationCustomRoleData>>): UseMutationOptions<CreateOrganizationCustomRoleResponse, CreateOrganizationCustomRoleError, Options<CreateOrganizationCustomRoleData>> => {
-    const mutationOptions: UseMutationOptions<CreateOrganizationCustomRoleResponse, CreateOrganizationCustomRoleError, Options<CreateOrganizationCustomRoleData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await createOrganizationCustomRole({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
-export const getOrganizationCustomRoleQueryKey = (options: Options<GetOrganizationCustomRoleData>) => createQueryKey('getOrganizationCustomRole', options);
-export const getOrganizationCustomRoleOptions = (options: Options<GetOrganizationCustomRoleData>) => queryOptions<GetOrganizationCustomRoleResponse, GetOrganizationCustomRoleError, GetOrganizationCustomRoleResponse, ReturnType<typeof getOrganizationCustomRoleQueryKey>>({
-    queryFn: async ({ queryKey, signal }) => {
-        const { data } = await getOrganizationCustomRole({
-            ...options,
-            ...queryKey[0],
-            signal,
-            throwOnError: true
-        });
-        return data;
-    },
-    queryKey: getOrganizationCustomRoleQueryKey(options)
-});
-export const updateOrganizationCustomRoleMutation = (options?: Partial<Options<UpdateOrganizationCustomRoleData>>): UseMutationOptions<UpdateOrganizationCustomRoleResponse, UpdateOrganizationCustomRoleError, Options<UpdateOrganizationCustomRoleData>> => {
-    const mutationOptions: UseMutationOptions<UpdateOrganizationCustomRoleResponse, UpdateOrganizationCustomRoleError, Options<UpdateOrganizationCustomRoleData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await updateOrganizationCustomRole({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
-export const disableOrganizationCustomRoleMutation = (options?: Partial<Options<DisableOrganizationCustomRoleData>>): UseMutationOptions<DisableOrganizationCustomRoleResponse, DisableOrganizationCustomRoleError, Options<DisableOrganizationCustomRoleData>> => {
-    const mutationOptions: UseMutationOptions<DisableOrganizationCustomRoleResponse, DisableOrganizationCustomRoleError, Options<DisableOrganizationCustomRoleData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await disableOrganizationCustomRole({
                 ...options,
                 ...fnOptions,
                 throwOnError: true
