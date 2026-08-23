@@ -1799,10 +1799,7 @@
             "description": "32 位小写十六进制退款请求 ID",
             "required": true,
             "schema": {
-              "type": "string",
-              "minLength": 32,
-              "maxLength": 32,
-              "pattern": "^[0-9a-f]{32}$"
+              "type": "string"
             }
           }
         ],
@@ -1929,10 +1926,7 @@
             "description": "32 位小写十六进制退款请求 ID",
             "required": true,
             "schema": {
-              "type": "string",
-              "minLength": 32,
-              "maxLength": 32,
-              "pattern": "^[0-9a-f]{32}$"
+              "type": "string"
             }
           }
         ],
@@ -2039,10 +2033,7 @@
             "description": "32 位小写十六进制退款请求 ID",
             "required": true,
             "schema": {
-              "type": "string",
-              "minLength": 32,
-              "maxLength": 32,
-              "pattern": "^[0-9a-f]{32}$"
+              "type": "string"
             }
           }
         ],
