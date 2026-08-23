@@ -1,5 +1,6 @@
 mod authorization;
 mod coordinator;
+mod custom;
 mod exchange;
 mod identity;
 mod persistence;
@@ -18,6 +19,7 @@ pub use authorization::{
     UpstreamOAuthProvider,
 };
 pub use coordinator::{OAuthConnectionCoordinator, OAuthConnectionError, OAuthConnectionOutcome};
+pub use custom::{CustomOAuth2EndpointBundle, CustomOAuth2EndpointError};
 pub use exchange::{
     MAX_OAUTH_TOKEN_RESPONSE_BYTES, OAuthClientAuthenticationMethod, OAuthEndpointErrorCode,
     OAuthRefreshedTokenSet, OAuthTokenExchange, OAuthTokenExchangeError, OAuthTokenRefreshRequest,
