@@ -2069,6 +2069,56 @@ pub(in crate::migration) mod organizations {
     }
 }
 
+pub(in crate::migration) mod organization_custom_roles {
+    use super::DeriveIden;
+
+    /// 企业自定义角色目录表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_custom_roles")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业自定义角色定义列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        RoleKey,
+        Name,
+        Description,
+        Status,
+        Version,
+        CreatedByUserId,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod organization_custom_role_permissions {
+    use super::DeriveIden;
+
+    /// 企业自定义角色逐条权限表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_custom_role_permissions")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业自定义角色权限事实列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        CustomRoleId,
+        PermissionCode,
+        CreatedAt,
+    }
+}
+
 pub(in crate::migration) mod organization_teams {
     use super::DeriveIden;
 

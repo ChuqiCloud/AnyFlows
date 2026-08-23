@@ -126,6 +126,9 @@ mod organization_audit;
 mod organization_budget;
 #[cfg(test)]
 mod organization_budget_tests;
+mod organization_custom_role;
+#[cfg(test)]
+mod organization_custom_role_tests;
 #[cfg(test)]
 mod organization_tests;
 mod organization_token;
@@ -470,6 +473,13 @@ pub use organization_budget::{
     OrganizationBudgetPolicyWrite, OrganizationBudgetRepository,
     OrganizationBudgetRepositoryConfigError, OrganizationBudgetRepositoryError,
     OrganizationBudgetScope, OrganizationBudgetWindowRecord,
+};
+pub use organization_custom_role::{
+    MAX_ORGANIZATION_CUSTOM_ROLE_DESCRIPTION_BYTES, MAX_ORGANIZATION_CUSTOM_ROLE_NAME_BYTES,
+    MAX_ORGANIZATION_CUSTOM_ROLE_PAGE_SIZE, OrganizationCustomRoleCreate,
+    OrganizationCustomRolePageRecord, OrganizationCustomRoleRecord,
+    OrganizationCustomRoleRepository, OrganizationCustomRoleRepositoryConfigError,
+    OrganizationCustomRoleRepositoryError, OrganizationCustomRoleUpdate,
 };
 pub use organization_token::{
     MAX_ORGANIZATION_TOKEN_PAGE_SIZE, OrganizationTokenCreateRecord,

@@ -110,6 +110,11 @@ principal_id! {
 }
 
 principal_id! {
+    /// 已通过组织范围校验的企业自定义角色内部标识。
+    OrganizationCustomRoleId
+}
+
+principal_id! {
     /// 企业预算策略的持久化标识。
     OrganizationBudgetPolicyId
 }

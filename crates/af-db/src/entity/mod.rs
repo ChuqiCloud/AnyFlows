@@ -10,12 +10,13 @@ use rust_decimal::Decimal;
 use sea_orm::{ActiveValue, EntityTrait, Set, entity::prelude::*};
 
 use af_domain::{
-    BillingReservationId, ChannelTimeout, MAX_ROUTE_MODEL_PATTERN_BYTES, OrganizationKey,
-    OrganizationMembershipStatus, OrganizationRole, OrganizationStatus, OrganizationTeamStatus,
-    Quota, QuotaDelta, RedemptionBatchId, RedemptionBatchStatus, RedemptionCodeId,
-    RedemptionCodeStatus, RouteMode, RouteStrategy, SubscriptionCycle, SubscriptionPlanId,
-    SubscriptionPlanStatus, SubscriptionWindow, UserSubscriptionId, UserSubscriptionStatus,
-    WalletEventId, validate_route_model_pattern,
+    BillingReservationId, ChannelTimeout, MAX_ROUTE_MODEL_PATTERN_BYTES, OrganizationCustomRoleKey,
+    OrganizationCustomRoleStatus, OrganizationKey, OrganizationMembershipStatus,
+    OrganizationPermission, OrganizationRole, OrganizationStatus, OrganizationTeamStatus, Quota,
+    QuotaDelta, RedemptionBatchId, RedemptionBatchStatus, RedemptionCodeId, RedemptionCodeStatus,
+    RouteMode, RouteStrategy, SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus,
+    SubscriptionWindow, UserSubscriptionId, UserSubscriptionStatus, WalletEventId,
+    validate_route_model_pattern,
 };
 
 pub(crate) mod abilities;
@@ -61,6 +62,8 @@ pub(crate) mod options;
 pub(crate) mod organization_audit_logs;
 pub(crate) mod organization_budget_policies;
 pub(crate) mod organization_budget_windows;
+pub(crate) mod organization_custom_role_permissions;
+pub(crate) mod organization_custom_roles;
 pub(crate) mod organization_entitlements;
 pub(crate) mod organization_invitations;
 pub(crate) mod organization_memberships;
@@ -228,6 +231,80 @@ where
         if disabled != deleted_at.is_some() {
             return Err(DbErr::Custom("企业团队状态与删除时间不一致".to_owned()));
         }
+    }
+    Ok(())
+}
+
+async fn validate_organization_custom_role<C>(
+    model: &organization_custom_roles::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    let role_key = model.role_key.try_as_ref().map(String::as_str);
+    let name = model.name.try_as_ref().map(String::as_str);
+    if insert
+        && (model.organization_id.try_as_ref().is_none()
+            || role_key.is_none()
+            || name.is_none()
+            || model.status.try_as_ref().is_none()
+            || model.created_by_user_id.try_as_ref().is_none())
+    {
+        return Err(DbErr::Custom("企业自定义角色基础字段缺失".to_owned()));
+    }
+    if model
+        .organization_id
+        .try_as_ref()
+        .is_some_and(|value| *value <= 0)
+        || role_key
+            .is_some_and(|value| OrganizationCustomRoleKey::from_persistence_key(value).is_err())
+        || name.is_some_and(|value| !valid_organization_text(value, 128))
+        || model.description.try_as_ref().is_some_and(|value| {
+            value.as_ref().is_some_and(|text| {
+                text.len() > 2_000 || text.trim() != text || text.chars().any(char::is_control)
+            })
+        })
+        || model
+            .status
+            .try_as_ref()
+            .is_some_and(|value| OrganizationCustomRoleStatus::try_from(*value).is_err())
+        || model.version.try_as_ref().is_some_and(|value| *value <= 0)
+        || model
+            .created_by_user_id
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+    {
+        return Err(DbErr::Custom("企业自定义角色字段无效".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_organization_custom_role_permission<C>(
+    model: &organization_custom_role_permissions::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    let permission_code = model.permission_code.try_as_ref().map(String::as_str);
+    if insert && (model.custom_role_id.try_as_ref().is_none() || permission_code.is_none()) {
+        return Err(DbErr::Custom("企业自定义角色权限字段缺失".to_owned()));
+    }
+    let permission = permission_code.map(OrganizationPermission::from_code);
+    if model
+        .custom_role_id
+        .try_as_ref()
+        .is_some_and(|value| *value <= 0)
+        || permission.is_some_and(|value| {
+            value
+                .map(|permission| !permission.is_custom_role_grantable())
+                .unwrap_or(true)
+        })
+    {
+        return Err(DbErr::Custom("企业自定义角色权限无效".to_owned()));
     }
     Ok(())
 }
@@ -1961,6 +2038,7 @@ impl_updated_at_behavior!(
     options::ActiveModel => validate_default,
     organizations::ActiveModel => validate_organization,
     organization_teams::ActiveModel => validate_organization_team,
+    organization_custom_roles::ActiveModel => validate_organization_custom_role,
     registration_rate_limits::ActiveModel => validate_default,
     route_channels::ActiveModel => validate_route_channel,
     routes::ActiveModel => validate_route,
@@ -1972,6 +2050,17 @@ impl_updated_at_behavior!(
     user_oauth_identities::ActiveModel => validate_default,
     users::ActiveModel => validate_user,
 );
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_custom_role_permissions::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_organization_custom_role_permission(&self, database, insert).await?;
+        Ok(self)
+    }
+}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for user_notification_events::ActiveModel {}

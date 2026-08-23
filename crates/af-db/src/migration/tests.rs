@@ -35,8 +35,9 @@ use crate::entity::{
     email_settings, group_model_ratios, groups, invite_rebate_events, model_prices,
     model_sync_items, model_sync_runs, models, oauth_login_providers, options,
     organization_audit_logs, organization_budget_policies, organization_budget_windows,
-    organization_entitlements, organization_invitations, organization_memberships,
-    organization_teams, organization_wallet_ledger_entries, organization_wallets, organizations,
+    organization_custom_role_permissions, organization_custom_roles, organization_entitlements,
+    organization_invitations, organization_memberships, organization_teams,
+    organization_wallet_ledger_entries, organization_wallets, organizations,
     passkey_authentication_challenges, passkey_registration_challenges, passkeys, payment_settings,
     platform_audit_logs, playground_conversations, playground_shares, redemption_batches,
     redemption_codes, refund_provider_events, refund_requests, registration_rate_limits,
@@ -76,7 +77,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 92;
+const EXPECTED_MIGRATION_COUNT: usize = 93;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -95,7 +96,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 77] = [
+const CORE_TABLES: [&str; 79] = [
     "groups",
     "users",
     "passkeys",
@@ -158,6 +159,8 @@ const CORE_TABLES: [&str; 77] = [
     "organizations",
     "organization_teams",
     "organization_memberships",
+    "organization_custom_roles",
+    "organization_custom_role_permissions",
     "organization_entitlements",
     "organization_invitations",
     "organization_wallets",
@@ -391,6 +394,42 @@ async fn standard_startup_installs_organization_budget_schema() -> Result<(), Bo
         "billing_organization_reservations",
     ] {
         assert!(manager.has_table(table).await?, "缺少数据表 {table}");
+    }
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn standard_startup_installs_organization_custom_role_schema() -> Result<(), Box<dyn Error>> {
+    let database_options = DatabaseOptions::new("sqlite::memory:")?;
+    let pool = crate::connect_and_migrate(&database_options, MigrationOptions::default()).await?;
+    let manager = SchemaManager::new(pool.connection());
+
+    for table in [
+        "organization_custom_roles",
+        "organization_custom_role_permissions",
+    ] {
+        assert!(manager.has_table(table).await?, "缺少数据表 {table}");
+    }
+    for (table, index) in [
+        (
+            "organization_custom_roles",
+            "uq_organization_custom_roles_key",
+        ),
+        (
+            "organization_custom_roles",
+            "uq_organization_custom_roles_scope_name",
+        ),
+        (
+            "organization_custom_roles",
+            "idx_organization_custom_roles_scope_status",
+        ),
+        (
+            "organization_custom_role_permissions",
+            "uq_organization_custom_role_permissions_role_code",
+        ),
+    ] {
+        assert!(manager.has_index(table, index).await?, "缺少索引 {index}");
     }
     pool.close().await?;
     Ok(())
@@ -1262,7 +1301,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 33);
+    assert_eq!(pending_migrations.len(), 34);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -1394,6 +1433,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[32].name(),
         "m20260823_000092_create_custom_oauth2_login"
+    );
+    assert_eq!(
+        pending_migrations[33].name(),
+        "m20260823_000093_create_organization_custom_roles"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
@@ -2909,6 +2952,16 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     assert_entity_columns::<organization_teams::Column>(&manager, "organization_teams").await?;
     assert_entity_columns::<organization_memberships::Column>(&manager, "organization_memberships")
         .await?;
+    assert_entity_columns::<organization_custom_roles::Column>(
+        &manager,
+        "organization_custom_roles",
+    )
+    .await?;
+    assert_entity_columns::<organization_custom_role_permissions::Column>(
+        &manager,
+        "organization_custom_role_permissions",
+    )
+    .await?;
     assert_entity_columns::<organization_entitlements::Column>(
         &manager,
         "organization_entitlements",
@@ -3228,6 +3281,22 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         (
             "organization_entitlements",
             "idx_organization_entitlements_validity",
+        ),
+        (
+            "organization_custom_roles",
+            "uq_organization_custom_roles_key",
+        ),
+        (
+            "organization_custom_roles",
+            "uq_organization_custom_roles_scope_name",
+        ),
+        (
+            "organization_custom_roles",
+            "idx_organization_custom_roles_scope_status",
+        ),
+        (
+            "organization_custom_role_permissions",
+            "uq_organization_custom_role_permissions_role_code",
         ),
         (
             "organization_invitations",

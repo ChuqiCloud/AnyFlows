@@ -41,9 +41,11 @@ pub use error::{
 };
 pub use network::{IpCidr, IpCidrParseError, TrustedClientIp};
 pub use organization::{
-    OrganizationIdentifierError, OrganizationInvitationKey, OrganizationInvitationStatus,
-    OrganizationKey, OrganizationMembershipStatus, OrganizationPermission, OrganizationRole,
-    OrganizationStateCodeError, OrganizationStatus, OrganizationTeamStatus, PlatformPermission,
+    OrganizationCustomRoleKey, OrganizationCustomRoleStatus, OrganizationIdentifierError,
+    OrganizationInvitationKey, OrganizationInvitationStatus, OrganizationKey,
+    OrganizationMembershipStatus, OrganizationPermission, OrganizationPermissionCodeError,
+    OrganizationRole, OrganizationStateCodeError, OrganizationStatus, OrganizationTeamStatus,
+    PlatformPermission,
 };
 pub use organization_budget::{
     MAX_ORGANIZATION_BUDGET_FIXED_PERIOD_SECONDS, MIN_ORGANIZATION_BUDGET_FIXED_PERIOD_SECONDS,
@@ -61,9 +63,9 @@ pub use payment::{
 };
 pub use principal::{
     ChannelId, CredentialId, GatewayPrincipal, GroupId, ModelId, OrganizationBudgetPolicyId,
-    OrganizationBudgetWindowId, OrganizationGatewayPrincipal, OrganizationId,
-    OrganizationMembershipId, OrganizationTeamId, PrincipalIdError, ProxyId, RouteChannelId,
-    RouteId, TokenId, UserId,
+    OrganizationBudgetWindowId, OrganizationCustomRoleId, OrganizationGatewayPrincipal,
+    OrganizationId, OrganizationMembershipId, OrganizationTeamId, PrincipalIdError, ProxyId,
+    RouteChannelId, RouteId, TokenId, UserId,
 };
 pub use quota::{Quota, QuotaDelta, QuotaError};
 pub use redemption::{
