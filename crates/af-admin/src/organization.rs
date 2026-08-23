@@ -21,6 +21,7 @@ pub struct OrganizationContext {
     membership_id: OrganizationMembershipId,
     user_id: UserId,
     role: OrganizationRole,
+    permissions: Vec<OrganizationPermission>,
     name: String,
     slug: String,
     entitlement: OrganizationEntitlementSummary,
@@ -44,11 +45,13 @@ pub struct OrganizationEntitlementSummary {
 impl OrganizationContext {
     fn from_access(access: &OrganizationAccessRecord) -> Self {
         let membership = access.membership();
+        let role = membership.role();
         Self {
             organization_id: access.organization().id(),
             membership_id: membership.id(),
             user_id: membership.user_id(),
-            role: membership.role(),
+            role,
+            permissions: effective_permissions(role, access.custom_role_permissions()),
             name: access.organization().name().to_owned(),
             slug: access.organization().slug().to_owned(),
             entitlement: OrganizationEntitlementSummary::from_access(access),
@@ -79,6 +82,12 @@ impl OrganizationContext {
         self.role
     }
 
+    /// 返回固定角色基线与有效自定义角色合并后的权限集合。
+    #[must_use]
+    pub fn permissions(&self) -> &[OrganizationPermission] {
+        &self.permissions
+    }
+
     /// 返回已校验的企业名称。
     #[must_use]
     pub fn name(&self) -> &str {
@@ -94,7 +103,7 @@ impl OrganizationContext {
     /// 判断当前企业角色是否拥有指定权限。
     #[must_use]
     pub fn allows(&self, permission: OrganizationPermission) -> bool {
-        self.role.allows(permission)
+        self.permissions.contains(&permission)
     }
 
     /// 返回当前企业的授权和容量投影。
@@ -102,6 +111,22 @@ impl OrganizationContext {
     pub const fn entitlement(&self) -> OrganizationEntitlementSummary {
         self.entitlement
     }
+}
+
+fn effective_permissions(
+    role: OrganizationRole,
+    custom_role_permissions: Option<&[OrganizationPermission]>,
+) -> Vec<OrganizationPermission> {
+    let mut permissions = role.permissions().to_vec();
+    if role != OrganizationRole::Member {
+        return permissions;
+    }
+    for permission in custom_role_permissions.into_iter().flatten() {
+        if !permissions.contains(permission) {
+            permissions.push(*permission);
+        }
+    }
+    permissions
 }
 
 impl OrganizationEntitlementSummary {
@@ -339,5 +364,37 @@ fn map_repository_error(error: OrganizationRepositoryError) -> OrganizationAutho
         | OrganizationRepositoryError::EntropyUnavailable => {
             OrganizationAuthorizationError::Internal
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn member_projection_keeps_baseline_and_adds_closed_permissions() {
+        let custom = [
+            OrganizationPermission::ProfileWrite,
+            OrganizationPermission::OverviewRead,
+        ];
+        let permissions = effective_permissions(OrganizationRole::Member, Some(&custom));
+        assert!(permissions.contains(&OrganizationPermission::ProfileWrite));
+        assert!(permissions.contains(&OrganizationPermission::KeysManageSelf));
+        assert_eq!(
+            permissions
+                .iter()
+                .filter(|permission| **permission == OrganizationPermission::OverviewRead)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn fixed_non_member_roles_ignore_custom_projection() {
+        let custom = [OrganizationPermission::WalletManage];
+        let viewer = effective_permissions(OrganizationRole::Viewer, Some(&custom));
+        let owner = effective_permissions(OrganizationRole::Owner, None);
+        assert!(!viewer.contains(&OrganizationPermission::WalletManage));
+        assert!(owner.contains(&OrganizationPermission::OwnershipTransfer));
     }
 }

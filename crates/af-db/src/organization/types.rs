@@ -2,10 +2,10 @@ use std::fmt;
 
 use crate::EncryptedCredentialEnvelope;
 use af_domain::{
-    OrganizationEntitlementSnapshot, OrganizationId, OrganizationInvitationKey,
-    OrganizationInvitationStatus, OrganizationKey, OrganizationMembershipId,
-    OrganizationMembershipStatus, OrganizationRole, OrganizationStatus, OrganizationTeamId,
-    OrganizationTeamStatus, UserId,
+    OrganizationCustomRoleId, OrganizationEntitlementSnapshot, OrganizationId,
+    OrganizationInvitationKey, OrganizationInvitationStatus, OrganizationKey,
+    OrganizationMembershipId, OrganizationMembershipStatus, OrganizationPermission,
+    OrganizationRole, OrganizationStatus, OrganizationTeamId, OrganizationTeamStatus, UserId,
 };
 use thiserror::Error;
 use zeroize::Zeroizing;
@@ -691,6 +691,7 @@ pub struct OrganizationMembershipRecord {
     pub(super) user_id: UserId,
     pub(super) role: OrganizationRole,
     pub(super) team_id: Option<OrganizationTeamId>,
+    pub(super) custom_role_id: Option<OrganizationCustomRoleId>,
     pub(super) status: OrganizationMembershipStatus,
     pub(super) joined_at: i64,
     pub(super) suspended_at: Option<i64>,
@@ -736,6 +737,12 @@ impl OrganizationMembershipRecord {
         self.team_id
     }
 
+    /// 返回当前绑定的自定义角色内部标识。
+    #[must_use]
+    pub const fn custom_role_id(&self) -> Option<OrganizationCustomRoleId> {
+        self.custom_role_id
+    }
+
     /// 返回成员 CAS 版本。
     #[must_use]
     pub const fn version(&self) -> i64 {
@@ -774,6 +781,7 @@ impl fmt::Debug for OrganizationMembershipRecord {
             .field("role", &self.role)
             .field("status", &self.status)
             .field("has_team", &self.team_id.is_some())
+            .field("has_custom_role", &self.custom_role_id.is_some())
             .field("version", &self.version)
             .finish_non_exhaustive()
     }
@@ -799,15 +807,17 @@ pub struct OrganizationAccessRecord {
     organization: OrganizationRecord,
     membership: OrganizationMembershipRecord,
     entitlement: OrganizationEntitlementSnapshot,
+    custom_role_permissions: Option<Vec<OrganizationPermission>>,
     active_seats: i64,
     active_teams: i64,
 }
 
 impl OrganizationAccessRecord {
-    pub(super) const fn new(
+    pub(super) fn new(
         organization: OrganizationRecord,
         membership: OrganizationMembershipRecord,
         entitlement: OrganizationEntitlementSnapshot,
+        custom_role_permissions: Option<Vec<OrganizationPermission>>,
         active_seats: i64,
         active_teams: i64,
     ) -> Self {
@@ -815,6 +825,7 @@ impl OrganizationAccessRecord {
             organization,
             membership,
             entitlement,
+            custom_role_permissions,
             active_seats,
             active_teams,
         }
@@ -836,6 +847,12 @@ impl OrganizationAccessRecord {
     #[must_use]
     pub const fn entitlement(&self) -> OrganizationEntitlementSnapshot {
         self.entitlement
+    }
+
+    /// 返回已经过开关、角色状态和白名单闭合的自定义权限投影。
+    #[must_use]
+    pub fn custom_role_permissions(&self) -> Option<&[OrganizationPermission]> {
+        self.custom_role_permissions.as_deref()
     }
 
     /// 返回当前活动成员数。

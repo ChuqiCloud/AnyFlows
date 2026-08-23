@@ -340,6 +340,10 @@ where
             .try_as_ref()
             .is_some_and(|value| value.is_some_and(|team_id| team_id <= 0))
         || model
+            .custom_role_id
+            .try_as_ref()
+            .is_some_and(|value| value.is_some_and(|role_id| role_id <= 0))
+        || model
             .status
             .try_as_ref()
             .is_some_and(|value| OrganizationMembershipStatus::try_from(*value).is_err())
@@ -350,6 +354,14 @@ where
         || model.version.try_as_ref().is_some_and(|value| *value <= 0)
     {
         return Err(DbErr::Custom("企业成员字段无效".to_owned()));
+    }
+    if let (Some(role), Some(custom_role_id)) = (
+        model.role.try_as_ref().copied(),
+        model.custom_role_id.try_as_ref(),
+    ) && custom_role_id.is_some()
+        && role != OrganizationRole::Member.code()
+    {
+        return Err(DbErr::Custom("仅普通成员可绑定企业自定义角色".to_owned()));
     }
     if let (Some(status), Some(suspended_at), Some(removed_at)) = (
         model.status.try_as_ref().copied(),

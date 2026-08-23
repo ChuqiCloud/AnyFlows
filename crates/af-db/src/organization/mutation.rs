@@ -396,6 +396,9 @@ pub(super) async fn change_membership(
     let mut active = current.into_active_model();
     active.role = Set(change.role.code());
     active.team_id = Set(target_team_id);
+    if change.role != OrganizationRole::Member {
+        active.custom_role_id = Set(None);
+    }
     active.status = Set(change.status.code());
     active.suspended_at = Set(suspended_at);
     active.removed_at = Set(removed_at);
@@ -847,6 +850,9 @@ async fn update_membership_role(
     let next_version = model.version.checked_add(1).ok_or_else(invariant)?;
     let mut active = model.into_active_model();
     active.role = Set(role.code());
+    if role != OrganizationRole::Member {
+        active.custom_role_id = Set(None);
+    }
     active.version = Set(next_version);
     active.update(transaction).await.map_err(query_error)
 }

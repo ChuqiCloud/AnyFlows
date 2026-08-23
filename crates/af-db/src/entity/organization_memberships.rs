@@ -10,6 +10,7 @@ pub struct Model {
     pub user_id: i64,
     pub role: i16,
     pub team_id: Option<i64>,
+    pub custom_role_id: Option<i64>,
     pub status: i16,
     pub joined_at: TimeDateTimeWithTimeZone,
     pub suspended_at: Option<TimeDateTimeWithTimeZone>,
@@ -52,6 +53,14 @@ pub enum Relation {
         on_delete = "Restrict"
     )]
     Team,
+    #[sea_orm(
+        belongs_to = "super::organization_custom_roles::Entity",
+        from = "Column::CustomRoleId",
+        to = "super::organization_custom_roles::Column::Id",
+        on_update = "Restrict",
+        on_delete = "Restrict"
+    )]
+    CustomRole,
 }
 
 impl Related<super::organizations::Entity> for Entity {
@@ -69,5 +78,11 @@ impl Related<super::users::Entity> for Entity {
 impl Related<super::organization_teams::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Team.def()
+    }
+}
+
+impl Related<super::organization_custom_roles::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::CustomRole.def()
     }
 }

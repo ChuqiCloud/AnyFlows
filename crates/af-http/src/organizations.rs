@@ -1202,7 +1202,6 @@ async fn get_organization(
         role: organization_role_code(context.role()),
         membership_id: context.membership_id().get(),
         permissions: context
-            .role()
             .permissions()
             .iter()
             .map(|permission| permission.code())
