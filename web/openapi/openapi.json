@@ -23547,6 +23547,176 @@
           "disabled"
         ]
       },
+      "AdminRefundApprovalStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "approved",
+          "rejected"
+        ]
+      },
+      "AdminRefundDecisionRequest": {
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminRefundListResponse": {
+        "type": "object",
+        "required": [
+          "entries",
+          "next_cursor"
+        ],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminRefundRequest"
+            },
+            "maxItems": 100
+          },
+          "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminRefundOrderKind": {
+        "type": "string",
+        "enum": [
+          "topup",
+          "subscription"
+        ]
+      },
+      "AdminRefundRequest": {
+        "type": "object",
+        "required": [
+          "request_id",
+          "user_id",
+          "order_kind",
+          "order_key",
+          "provider",
+          "currency",
+          "original_amount_minor",
+          "refund_amount_minor",
+          "status",
+          "approval_status",
+          "version",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "order_kind": {
+            "$ref": "#/components/schemas/AdminRefundOrderKind"
+          },
+          "order_key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "provider": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "currency": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 16
+          },
+          "original_amount_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "refund_amount_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "provider_refund_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "status": {
+            "$ref": "#/components/schemas/AdminRefundStatus"
+          },
+          "approval_status": {
+            "$ref": "#/components/schemas/AdminRefundApprovalStatus"
+          },
+          "approval_actor_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "approval_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminRefundStatus": {
+        "type": "string",
+        "enum": [
+          "requested",
+          "submitted",
+          "succeeded",
+          "failed",
+          "canceled"
+        ]
+      },
       "AdminResponsesCompactProbe": {
         "type": "object",
         "description": "管理端可见的最近一次确定性 Compact 探测事实。",
@@ -23933,176 +24103,6 @@
             "type": "integer",
             "format": "int64",
             "minimum": 1
-          }
-        },
-        "additionalProperties": false
-      },
-      "AdminRefundOrderKind": {
-        "type": "string",
-        "enum": [
-          "topup",
-          "subscription"
-        ]
-      },
-      "AdminRefundStatus": {
-        "type": "string",
-        "enum": [
-          "requested",
-          "submitted",
-          "succeeded",
-          "failed",
-          "canceled"
-        ]
-      },
-      "AdminRefundApprovalStatus": {
-        "type": "string",
-        "enum": [
-          "pending",
-          "approved",
-          "rejected"
-        ]
-      },
-      "AdminRefundRequest": {
-        "type": "object",
-        "required": [
-          "request_id",
-          "user_id",
-          "order_kind",
-          "order_key",
-          "provider",
-          "currency",
-          "original_amount_minor",
-          "refund_amount_minor",
-          "status",
-          "approval_status",
-          "version",
-          "created_at",
-          "updated_at"
-        ],
-        "properties": {
-          "request_id": {
-            "type": "string",
-            "minLength": 32,
-            "maxLength": 32,
-            "pattern": "^[0-9a-f]{32}$"
-          },
-          "user_id": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          },
-          "order_kind": {
-            "$ref": "#/components/schemas/AdminRefundOrderKind"
-          },
-          "order_key": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 32
-          },
-          "provider": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
-          },
-          "currency": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 16
-          },
-          "original_amount_minor": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "refund_amount_minor": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "provider_refund_id": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "status": {
-            "$ref": "#/components/schemas/AdminRefundStatus"
-          },
-          "approval_status": {
-            "$ref": "#/components/schemas/AdminRefundApprovalStatus"
-          },
-          "approval_actor_id": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "minimum": 1
-          },
-          "approval_reason": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "minLength": 1,
-            "maxLength": 512
-          },
-          "version": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          },
-          "created_at": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "updated_at": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          }
-        },
-        "additionalProperties": false
-      },
-      "AdminRefundListResponse": {
-        "type": "object",
-        "required": [
-          "entries",
-          "next_cursor"
-        ],
-        "properties": {
-          "entries": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AdminRefundRequest"
-            },
-            "maxItems": 100
-          },
-          "next_cursor": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "minimum": 1
-          }
-        },
-        "additionalProperties": false
-      },
-      "AdminRefundDecisionRequest": {
-        "type": "object",
-        "required": [
-          "reason"
-        ],
-        "properties": {
-          "reason": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "minLength": 1,
-            "maxLength": 512
           }
         },
         "additionalProperties": false
