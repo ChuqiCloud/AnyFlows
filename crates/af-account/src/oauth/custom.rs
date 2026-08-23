@@ -284,7 +284,7 @@ mod tests {
     #[test]
     fn debug_output_does_not_expose_configuration() {
         let bundle = bundle(
-            "https://login.example.test/oauth/authorize?tenant=secret-tenant",
+            "https://login.example.test/oauth/authorize/secret-tenant",
             TOKEN,
             USERINFO,
             "openid profile secret-scope",
