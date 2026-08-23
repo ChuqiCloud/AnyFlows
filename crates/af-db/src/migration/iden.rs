@@ -228,6 +228,37 @@ pub(in crate::migration) mod oauth_login_providers {
     }
 }
 
+pub(in crate::migration) mod custom_oauth2_providers {
+    use super::DeriveIden;
+
+    /// 自定义 OAuth2 Provider 持久化表的固定标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "custom_oauth2_providers")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 自定义 OAuth2 Provider 持久化列的固定标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        ProviderKey,
+        DisplayName,
+        ClientId,
+        AuthorizationEndpoint,
+        TokenEndpoint,
+        UserinfoEndpoint,
+        Scope,
+        SubjectField,
+        Enabled,
+        ClientSecret,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
 pub(in crate::migration) mod passkeys {
     use super::DeriveIden;
 

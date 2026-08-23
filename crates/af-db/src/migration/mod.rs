@@ -96,6 +96,7 @@ mod m20260822_000087_add_refund_provider_receipts;
 mod m20260823_000088_add_refund_settings;
 mod m20260823_000089_add_refund_approval;
 mod m20260823_000090_add_refund_payment_reference;
+mod m20260823_000091_create_custom_oauth2_providers;
 mod schema;
 
 #[cfg(test)]
@@ -229,6 +230,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260823_000088_add_refund_settings::Migration),
             Box::new(m20260823_000089_add_refund_approval::Migration),
             Box::new(m20260823_000090_add_refund_payment_reference::Migration),
+            Box::new(m20260823_000091_create_custom_oauth2_providers::Migration),
         ]
     }
 }
