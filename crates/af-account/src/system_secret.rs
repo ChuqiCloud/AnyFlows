@@ -10,6 +10,7 @@ use thiserror::Error;
 use zeroize::Zeroize as _;
 
 use crate::credential_decryption::{CredentialKey, is_valid_key_id};
+use crate::oauth::CustomOAuth2ProviderKey;
 
 const MAX_SYSTEM_SECRET_BYTES: usize = 4 * 1_024;
 
@@ -184,6 +185,23 @@ impl SystemSecretCipher {
         kind: SystemSecretKind,
         secret: &PlainSystemSecret,
     ) -> Result<EncryptedCredentialEnvelope, SystemSecretError> {
+        self.encrypt_with_aad(&system_secret_aad(kind), secret)
+    }
+
+    /// 使用 Provider key 绑定的独立 AAD 加密自定义 OAuth2 Client Secret。
+    pub fn encrypt_custom_oauth2_client_secret(
+        &self,
+        provider_key: &CustomOAuth2ProviderKey,
+        secret: &PlainSystemSecret,
+    ) -> Result<EncryptedCredentialEnvelope, SystemSecretError> {
+        self.encrypt_with_aad(&custom_oauth2_system_secret_aad(provider_key), secret)
+    }
+
+    fn encrypt_with_aad(
+        &self,
+        aad: &[u8],
+        secret: &PlainSystemSecret,
+    ) -> Result<EncryptedCredentialEnvelope, SystemSecretError> {
         let mut nonce = [0_u8; CREDENTIAL_ENVELOPE_NONCE_BYTES];
         getrandom::fill(&mut nonce).map_err(|_| SystemSecretError::Entropy)?;
         let cipher = XChaCha20Poly1305::new_from_slice(self.key.as_slice())
@@ -193,7 +211,7 @@ impl SystemSecretCipher {
                 XNonce::from_slice(&nonce),
                 Payload {
                     msg: secret.expose().as_bytes(),
-                    aad: &system_secret_aad(kind),
+                    aad,
                 },
             )
             .map_err(|_| SystemSecretError::Encrypt)?;
@@ -207,6 +225,23 @@ impl SystemSecretCipher {
         kind: SystemSecretKind,
         envelope: &EncryptedCredentialEnvelope,
     ) -> Result<DecryptedSystemSecret, SystemSecretError> {
+        self.decrypt_with_aad(&system_secret_aad(kind), envelope)
+    }
+
+    /// 使用 Provider key 绑定的独立 AAD 解密自定义 OAuth2 Client Secret。
+    pub fn decrypt_custom_oauth2_client_secret(
+        &self,
+        provider_key: &CustomOAuth2ProviderKey,
+        envelope: &EncryptedCredentialEnvelope,
+    ) -> Result<DecryptedSystemSecret, SystemSecretError> {
+        self.decrypt_with_aad(&custom_oauth2_system_secret_aad(provider_key), envelope)
+    }
+
+    fn decrypt_with_aad(
+        &self,
+        aad: &[u8],
+        envelope: &EncryptedCredentialEnvelope,
+    ) -> Result<DecryptedSystemSecret, SystemSecretError> {
         if envelope.key_id() != self.key_id {
             return Err(SystemSecretError::KeyMismatch);
         }
@@ -217,7 +252,7 @@ impl SystemSecretCipher {
                 XNonce::from_slice(envelope.nonce()),
                 Payload {
                     msg: envelope.ciphertext(),
-                    aad: &system_secret_aad(kind),
+                    aad,
                 },
             )
             .map_err(|_| SystemSecretError::Decrypt)?;
@@ -279,6 +314,14 @@ fn system_secret_aad(kind: SystemSecretKind) -> Vec<u8> {
     format!(
         "anyflows:system-secret:v1:record={record}:kind={}",
         kind.as_str()
+    )
+    .into_bytes()
+}
+
+fn custom_oauth2_system_secret_aad(provider_key: &CustomOAuth2ProviderKey) -> Vec<u8> {
+    format!(
+        "anyflows:system-secret:v1:record=oauth_login_custom_providers:{}:kind=oauth_login_custom_client_secret",
+        provider_key.as_str()
     )
     .into_bytes()
 }
@@ -463,6 +506,33 @@ mod tests {
                 SystemSecretError::Decrypt
             );
         }
+    }
+
+    #[test]
+    fn custom_oauth2_client_secret_is_bound_to_provider_key() {
+        let cipher = SystemSecretCipher::new(&settings()).unwrap();
+        let secret = PlainSystemSecret::new("custom-client-secret".to_owned()).unwrap();
+        let first = CustomOAuth2ProviderKey::new("custom_first".to_owned()).unwrap();
+        let second = CustomOAuth2ProviderKey::new("custom_second".to_owned()).unwrap();
+        let envelope = cipher
+            .encrypt_custom_oauth2_client_secret(&first, &secret)
+            .unwrap();
+
+        assert_eq!(
+            cipher
+                .decrypt_custom_oauth2_client_secret(&first, &envelope)
+                .unwrap()
+                .expose_secret(),
+            "custom-client-secret"
+        );
+        assert_eq!(
+            cipher
+                .decrypt_custom_oauth2_client_secret(&second, &envelope)
+                .unwrap_err(),
+            SystemSecretError::Decrypt
+        );
+        let rendered = format!("{cipher:?}{secret:?}{envelope:?}");
+        assert!(!rendered.contains("custom-client-secret"));
     }
 
     fn settings() -> CredentialEncryptionSettings {
