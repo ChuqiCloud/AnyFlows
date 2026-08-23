@@ -13934,6 +13934,234 @@
         ]
       }
     },
+    "/api/admin/authentication-settings/oauth/custom": {
+      "get": {
+        "tags": [
+          "认证设置"
+        ],
+        "summary": "读取自定义 OAuth2 Provider 脱敏配置",
+        "operationId": "listAdminCustomOAuth2Providers",
+        "responses": {
+          "200": {
+            "description": "Provider 脱敏配置列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCustomOAuth2ProviderList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/authentication-settings/oauth/custom/{provider_key}": {
+      "get": {
+        "tags": [
+          "认证设置"
+        ],
+        "summary": "读取单个自定义 OAuth2 Provider 脱敏配置",
+        "operationId": "getAdminCustomOAuth2Provider",
+        "parameters": [
+          {
+            "name": "provider_key",
+            "in": "path",
+            "description": "custom_ 命名空间 Provider key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Provider 脱敏配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCustomOAuth2Provider"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Provider 不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "认证设置"
+        ],
+        "summary": "创建或 CAS 更新自定义 OAuth2 Provider",
+        "operationId": "updateAdminCustomOAuth2Provider",
+        "parameters": [
+          {
+            "name": "provider_key",
+            "in": "path",
+            "description": "custom_ 命名空间 Provider key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminCustomOAuth2ProviderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "保存后的 Provider 脱敏配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCustomOAuth2Provider"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求正文或 Provider 配置无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Provider 版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/debug-trace-settings": {
       "get": {
         "tags": [
@@ -20093,6 +20321,151 @@
           }
         }
       },
+      "AdminCustomOAuth2Provider": {
+        "type": "object",
+        "description": "管理端自定义 OAuth2 Provider 的脱敏配置投影。",
+        "required": [
+          "provider_key",
+          "display_name",
+          "client_id",
+          "authorization_endpoint_configured",
+          "token_endpoint_configured",
+          "userinfo_endpoint_configured",
+          "scope_configured",
+          "subject_field_configured",
+          "enabled",
+          "secret_configured",
+          "version"
+        ],
+        "properties": {
+          "provider_key": {
+            "type": "string",
+            "maxLength": 32,
+            "pattern": "^custom_[a-z0-9_-]+$"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "client_id": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "authorization_endpoint_configured": {
+            "type": "boolean"
+          },
+          "token_endpoint_configured": {
+            "type": "boolean"
+          },
+          "userinfo_endpoint_configured": {
+            "type": "boolean"
+          },
+          "scope_configured": {
+            "type": "boolean"
+          },
+          "subject_field_configured": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "secret_configured": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminCustomOAuth2ProviderList": {
+        "type": "object",
+        "required": [
+          "providers"
+        ],
+        "properties": {
+          "providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminCustomOAuth2Provider"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminCustomOAuth2ProviderRequest": {
+        "type": "object",
+        "description": "自定义 Provider 写入请求；端点原文只允许进入写入命令，不会出现在响应中。",
+        "required": [
+          "expected_version",
+          "display_name",
+          "client_id",
+          "authorization_endpoint",
+          "token_endpoint",
+          "userinfo_endpoint",
+          "scope",
+          "subject_field",
+          "enabled",
+          "clear_client_secret"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "client_id": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "authorization_endpoint": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 2048
+          },
+          "token_endpoint": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 2048
+          },
+          "userinfo_endpoint": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 2048
+          },
+          "scope": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "subject_field": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "client_secret": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "password",
+            "writeOnly": true,
+            "maxLength": 4096,
+            "minLength": 1
+          },
+          "clear_client_secret": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "AdminDashboardChannelFlow": {
         "type": "object",
         "description": "管理看板窗口内一条入口协议到最终成功渠道流向。",
@@ -25778,6 +26151,8 @@
               "probe_unavailable",
               "oauth_provider_not_configured",
               "oauth_login_settings_conflict",
+              "custom_oauth2_provider_not_found",
+              "custom_oauth2_provider_conflict",
               "oauth_credential_provider_mismatch",
               "oauth_authorization_capacity_exceeded",
               "oauth_authorization_not_found",
