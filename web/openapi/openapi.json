@@ -1815,7 +1815,7 @@
         },
         "responses": {
           "200": {
-            "description": "批准退款",
+            "description": "退款已批准，若开启自动提交则返回最新状态",
             "content": {
               "application/json": {
                 "schema": {
@@ -1825,7 +1825,7 @@
             }
           },
           "400": {
-            "description": "请求 ID 或请求正文无效",
+            "description": "请求 ID 或审批理由无效",
             "content": {
               "application/json": {
                 "schema": {
@@ -1865,7 +1865,7 @@
             }
           },
           "409": {
-            "description": "退款状态冲突",
+            "description": "审批状态冲突",
             "content": {
               "application/json": {
                 "schema": {
@@ -1952,7 +1952,7 @@
             }
           },
           "400": {
-            "description": "请求 ID 或请求正文无效",
+            "description": "请求 ID 或审批理由无效",
             "content": {
               "application/json": {
                 "schema": {
@@ -1992,7 +1992,7 @@
             }
           },
           "409": {
-            "description": "退款状态冲突",
+            "description": "审批状态冲突",
             "content": {
               "application/json": {
                 "schema": {
@@ -2039,7 +2039,7 @@
         ],
         "responses": {
           "200": {
-            "description": "手动提交已批准退款",
+            "description": "退款已提交或返回已存在事实",
             "content": {
               "application/json": {
                 "schema": {
@@ -2049,7 +2049,7 @@
             }
           },
           "400": {
-            "description": "请求 ID 或请求正文无效",
+            "description": "请求 ID 无效",
             "content": {
               "application/json": {
                 "schema": {
@@ -2089,7 +2089,7 @@
             }
           },
           "409": {
-            "description": "退款状态冲突",
+            "description": "退款状态不允许提交",
             "content": {
               "application/json": {
                 "schema": {
