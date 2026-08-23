@@ -2018,6 +2018,7 @@ async fn start_server(
         None,
         None,
         None,
+        None,
     );
     let listener = HttpListener::bind("127.0.0.1:0".parse().unwrap()).unwrap();
     let address = listener.local_addr();
