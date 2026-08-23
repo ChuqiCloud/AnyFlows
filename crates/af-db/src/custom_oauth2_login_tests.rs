@@ -154,7 +154,7 @@ async fn custom_identity_obeys_registration_and_ticket_boundaries() -> Result<()
     );
 
     let mut disabled_user = user.into_active_model();
-    disabled_user.status = Set(0);
+    disabled_user.status = Set(2);
     disabled_user.update(fixture.pool.connection()).await?;
     fixture
         .repository
