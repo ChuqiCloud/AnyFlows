@@ -147,11 +147,13 @@ impl OrganizationCustomRoleBindingService for DatabaseOrganizationCustomRoleBind
         Box::pin(async move {
             require_binding_access(&context)?;
             let custom_role_id = if let Some(role_key) = command.role_key() {
-                self.custom_role_service
+                let custom_role_id = self
+                    .custom_role_service
                     .get(context.clone(), role_key)
                     .await
                     .map_err(map_role_error)?
-                    .id()
+                    .id();
+                Some(custom_role_id)
             } else {
                 None
             };
