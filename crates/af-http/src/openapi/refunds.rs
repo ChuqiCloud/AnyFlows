@@ -1,3 +1,5 @@
+#![allow(dead_code, reason = "文档端点仅由 utoipa 过程宏读取")]
+
 use utoipa::OpenApi;
 
 use crate::{
