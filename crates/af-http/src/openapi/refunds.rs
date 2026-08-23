@@ -12,6 +12,7 @@ use crate::{
     path = "/api/admin/refunds",
     operation_id = "listAdminRefunds",
     tag = "退款审批",
+    summary = "读取退款审批列表",
     params(
         ("after" = Option<i64>, Query, description = "数据库 ID 游标"),
         ("approval_status" = Option<String>, Query, description = "pending、approved 或 rejected"),
@@ -33,6 +34,7 @@ fn list_admin_refunds() {}
     path = "/api/admin/refunds/{request_id}/approve",
     operation_id = "approveAdminRefund",
     tag = "退款审批",
+    summary = "批准退款",
     params(("request_id" = String, Path, description = "32 位小写十六进制退款请求 ID")),
     request_body = AdminRefundDecisionRequest,
     responses(
@@ -55,6 +57,7 @@ fn approve_admin_refund() {}
     path = "/api/admin/refunds/{request_id}/reject",
     operation_id = "rejectAdminRefund",
     tag = "退款审批",
+    summary = "拒绝退款",
     params(("request_id" = String, Path, description = "32 位小写十六进制退款请求 ID")),
     request_body = AdminRefundDecisionRequest,
     responses(
@@ -75,6 +78,7 @@ fn reject_admin_refund() {}
     path = "/api/admin/refunds/{request_id}/submit",
     operation_id = "submitAdminRefund",
     tag = "退款审批",
+    summary = "手动提交已批准退款",
     params(("request_id" = String, Path, description = "32 位小写十六进制退款请求 ID")),
     responses(
         (status = 200, description = "退款已提交或返回已存在事实", body = AdminRefundListResponse),
