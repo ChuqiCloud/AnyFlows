@@ -28297,51 +28297,6 @@
         },
         "additionalProperties": false
       },
-      "OrganizationMemberCustomRoleRequest": {
-        "type": "object",
-        "required": [
-          "role_key",
-          "expected_version"
-        ],
-        "properties": {
-          "role_key": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "expected_version": {
-            "type": "integer",
-            "format": "int64"
-          }
-        },
-        "additionalProperties": false
-      },
-      "OrganizationMemberCustomRoleResponse": {
-        "type": "object",
-        "required": [
-          "membership_id",
-          "custom_role_key",
-          "version"
-        ],
-        "properties": {
-          "membership_id": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "custom_role_key": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "version": {
-            "type": "integer",
-            "format": "int64"
-          }
-        },
-        "additionalProperties": false
-      },
       "OrganizationInvitationAcceptRequest": {
         "type": "object",
         "required": [
@@ -28642,6 +28597,51 @@
             "items": {
               "$ref": "#/components/schemas/OrganizationSummaryResponse"
             }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationMemberCustomRoleRequest": {
+        "type": "object",
+        "required": [
+          "role_key",
+          "expected_version"
+        ],
+        "properties": {
+          "role_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expected_version": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationMemberCustomRoleResponse": {
+        "type": "object",
+        "required": [
+          "membership_id",
+          "custom_role_key",
+          "version"
+        ],
+        "properties": {
+          "membership_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "custom_role_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
           }
         },
         "additionalProperties": false
