@@ -23615,8 +23615,11 @@
           "currency",
           "original_amount_minor",
           "refund_amount_minor",
+          "provider_refund_id",
           "status",
           "approval_status",
+          "approval_actor_id",
+          "approval_reason",
           "version",
           "created_at",
           "updated_at"

@@ -892,11 +892,11 @@ export type AdminRefundRequest = {
     currency: string;
     original_amount_minor: number;
     refund_amount_minor: number;
-    provider_refund_id?: string | null;
+    provider_refund_id: string | null;
     status: AdminRefundStatus;
     approval_status: AdminRefundApprovalStatus;
-    approval_actor_id?: number | null;
-    approval_reason?: string | null;
+    approval_actor_id: number | null;
+    approval_reason: string | null;
     version: number;
     created_at: number;
     updated_at: number;
