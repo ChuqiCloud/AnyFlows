@@ -1,3 +1,4 @@
+use sea_orm::DbBackend;
 use sea_orm_migration::prelude::*;
 
 use crate::migration::iden::{refund_requests, users};
@@ -43,20 +44,23 @@ impl MigrationTrait for Migration {
                     .to_owned(),
             )
             .await?;
-        manager
-            .create_foreign_key(
-                ForeignKey::create()
-                    .name("fk_refund_requests_approval_actor")
-                    .from(
-                        refund_requests::Entity,
-                        refund_requests::Column::ApprovalActorId,
-                    )
-                    .to(users::Entity, users::Column::Id)
-                    .on_update(ForeignKeyAction::Cascade)
-                    .on_delete(ForeignKeyAction::Restrict)
-                    .to_owned(),
-            )
-            .await?;
+        // SQLite 无法为已有表追加外键；应用层仍会校验审批人，其他方言保留数据库约束。
+        if manager.get_database_backend() != DbBackend::Sqlite {
+            manager
+                .create_foreign_key(
+                    ForeignKey::create()
+                        .name("fk_refund_requests_approval_actor")
+                        .from(
+                            refund_requests::Entity,
+                            refund_requests::Column::ApprovalActorId,
+                        )
+                        .to(users::Entity, users::Column::Id)
+                        .on_update(ForeignKeyAction::Cascade)
+                        .on_delete(ForeignKeyAction::Restrict)
+                        .to_owned(),
+                )
+                .await?;
+        }
         manager
             .create_index(
                 Index::create()
@@ -78,14 +82,16 @@ impl MigrationTrait for Migration {
                     .to_owned(),
             )
             .await?;
-        manager
-            .drop_foreign_key(
-                ForeignKey::drop()
-                    .name("fk_refund_requests_approval_actor")
-                    .table(refund_requests::Entity)
-                    .to_owned(),
-            )
-            .await?;
+        if manager.get_database_backend() != DbBackend::Sqlite {
+            manager
+                .drop_foreign_key(
+                    ForeignKey::drop()
+                        .name("fk_refund_requests_approval_actor")
+                        .table(refund_requests::Entity)
+                        .to_owned(),
+                )
+                .await?;
+        }
         manager
             .alter_table(
                 Table::alter()
