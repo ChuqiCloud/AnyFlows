@@ -74,6 +74,9 @@ mod credential_proxy_tests;
 mod credential_state;
 #[cfg(test)]
 mod credential_state_tests;
+mod custom_oauth2;
+#[cfg(test)]
+mod custom_oauth2_tests;
 mod debug_trace;
 #[cfg(test)]
 mod debug_trace_tests;
@@ -339,6 +342,11 @@ pub use credential_proxy::{
 pub use credential_state::{
     CredentialStateChange, CredentialStateEvent, CredentialStateRepository,
     CredentialStateRepositoryError, CredentialStateWriteReport, MAX_CREDENTIAL_STATE_BATCH,
+};
+pub use custom_oauth2::{
+    CustomOAuth2ProviderRecord, CustomOAuth2ProviderRepository,
+    CustomOAuth2ProviderRepositoryError, CustomOAuth2ProviderSecretUpdate,
+    CustomOAuth2ProviderWriteRecord,
 };
 pub use debug_trace::{
     DEFAULT_DEBUG_TRACE_BODY_BYTES, DebugTraceAttemptDiagnosticWrite, DebugTraceAttemptOutcome,

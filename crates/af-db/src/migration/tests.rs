@@ -76,7 +76,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 90;
+const EXPECTED_MIGRATION_COUNT: usize = 91;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -308,6 +308,39 @@ async fn standard_startup_installs_oauth_login_schema_and_indexes() -> Result<()
     );
     assert_eq!(google.client_secret, None);
     assert_eq!(google.version, 1);
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn standard_startup_installs_custom_oauth2_provider_schema() -> Result<(), Box<dyn Error>> {
+    let database_options = DatabaseOptions::new("sqlite::memory:")?;
+    let pool = crate::connect_and_migrate(&database_options, MigrationOptions::default()).await?;
+    let manager = SchemaManager::new(pool.connection());
+
+    assert!(manager.has_table("custom_oauth2_providers").await?);
+    for column in [
+        "provider_key",
+        "display_name",
+        "client_id",
+        "authorization_endpoint",
+        "token_endpoint",
+        "userinfo_endpoint",
+        "scope",
+        "subject_field",
+        "enabled",
+        "client_secret",
+        "version",
+        "created_at",
+        "updated_at",
+    ] {
+        assert!(
+            manager
+                .has_column("custom_oauth2_providers", column)
+                .await?,
+            "缺少自定义 OAuth2 Provider 列 {column}"
+        );
+    }
     pool.close().await?;
     Ok(())
 }
@@ -1195,7 +1228,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 31);
+    assert_eq!(pending_migrations.len(), 32);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -1319,6 +1352,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[30].name(),
         "m20260823_000090_add_refund_payment_reference"
+    );
+    assert_eq!(
+        pending_migrations[31].name(),
+        "m20260823_000091_create_custom_oauth2_providers"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;

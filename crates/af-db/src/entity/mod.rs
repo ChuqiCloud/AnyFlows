@@ -38,6 +38,7 @@ pub(crate) mod channel_groups;
 pub(crate) mod channel_models;
 pub(crate) mod channels;
 pub(crate) mod credentials;
+pub(crate) mod custom_oauth2_providers;
 pub(crate) mod debug_trace_attempts;
 pub(crate) mod debug_trace_settings;
 pub(crate) mod debug_trace_snapshot_access_audits;
@@ -2448,6 +2449,9 @@ impl ActiveModelBehavior for model_sync_runs::ActiveModel {}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for model_sync_items::ActiveModel {}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for custom_oauth2_providers::ActiveModel {}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for usage_logs::ActiveModel {
