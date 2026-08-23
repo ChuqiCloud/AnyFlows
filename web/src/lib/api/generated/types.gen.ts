@@ -874,6 +874,34 @@ export type AdminRedemptionBatchListResponse = {
     next_cursor: number | null;
 };
 export type AdminRedemptionBatchStatus = 'active' | 'disabled';
+export type AdminRefundApprovalStatus = 'pending' | 'approved' | 'rejected';
+export type AdminRefundDecisionRequest = {
+    reason: string | null;
+};
+export type AdminRefundListResponse = {
+    entries: Array<AdminRefundRequest>;
+    next_cursor: number | null;
+};
+export type AdminRefundOrderKind = 'topup' | 'subscription';
+export type AdminRefundRequest = {
+    request_id: string;
+    user_id: number;
+    order_kind: AdminRefundOrderKind;
+    order_key: string;
+    provider: string;
+    currency: string;
+    original_amount_minor: number;
+    refund_amount_minor: number;
+    provider_refund_id?: string | null;
+    status: AdminRefundStatus;
+    approval_status: AdminRefundApprovalStatus;
+    approval_actor_id?: number | null;
+    approval_reason?: string | null;
+    version: number;
+    created_at: number;
+    updated_at: number;
+};
+export type AdminRefundStatus = 'requested' | 'submitted' | 'succeeded' | 'failed' | 'canceled';
 export type AdminResponsesCompactProbe = {
     result: ResponsesCompactProbeResult;
     checked_at: number | null;
@@ -945,34 +973,6 @@ export type AdminSiteSettingsRequest = {
     brand: AdminBrandSettingsRequest;
     balance_display: BalanceDisplaySettings;
     expected_version: number;
-};
-export type AdminRefundOrderKind = 'topup' | 'subscription';
-export type AdminRefundStatus = 'requested' | 'submitted' | 'succeeded' | 'failed' | 'canceled';
-export type AdminRefundApprovalStatus = 'pending' | 'approved' | 'rejected';
-export type AdminRefundRequest = {
-    request_id: string;
-    user_id: number;
-    order_kind: AdminRefundOrderKind;
-    order_key: string;
-    provider: string;
-    currency: string;
-    original_amount_minor: number;
-    refund_amount_minor: number;
-    provider_refund_id?: string | null;
-    status: AdminRefundStatus;
-    approval_status: AdminRefundApprovalStatus;
-    approval_actor_id?: number | null;
-    approval_reason?: string | null;
-    version: number;
-    created_at: number;
-    updated_at: number;
-};
-export type AdminRefundListResponse = {
-    entries: Array<AdminRefundRequest>;
-    next_cursor: number | null;
-};
-export type AdminRefundDecisionRequest = {
-    reason: string | null;
 };
 export type AdminSubscriptionPlan = {
     plan_id: string;

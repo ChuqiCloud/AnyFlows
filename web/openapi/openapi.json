@@ -23566,8 +23566,8 @@
               "string",
               "null"
             ],
-            "minLength": 1,
-            "maxLength": 512
+            "maxLength": 512,
+            "minLength": 1
           }
         },
         "additionalProperties": false
