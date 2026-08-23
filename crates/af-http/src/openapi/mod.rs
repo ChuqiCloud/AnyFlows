@@ -4,6 +4,7 @@ mod balance_alert_settings;
 mod channels;
 mod credential_proxies;
 mod credentials;
+mod custom_oauth2;
 mod dashboard;
 mod debug_traces;
 mod email_settings;
@@ -102,6 +103,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(channels::document());
     document.merge(credentials::document());
     document.merge(credential_proxies::document());
+    document.merge(custom_oauth2::document());
     document.merge(debug_traces::document());
     document.merge(payment_webhook::document());
     document.merge(refund_webhook::document());

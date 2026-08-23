@@ -10,6 +10,7 @@ mod chat_service;
 mod client_ip;
 mod credential_proxies;
 mod credentials;
+mod custom_oauth2;
 mod debug_traces;
 mod email_settings;
 mod embedding_service;
@@ -143,6 +144,8 @@ mod authentication_tests;
 mod client_ip_tests;
 #[cfg(test)]
 mod credentials_tests;
+#[cfg(test)]
+mod custom_oauth2_tests;
 #[cfg(test)]
 mod email_settings_tests;
 #[cfg(test)]
