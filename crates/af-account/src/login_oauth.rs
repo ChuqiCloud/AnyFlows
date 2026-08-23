@@ -7,11 +7,12 @@ use base64::{
 };
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use serde::{Deserialize, Deserializer, de::Error as _};
+use serde_json::Value;
 use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 use zeroize::{Zeroize as _, Zeroizing};
 
-use crate::DecryptedSystemSecret;
+use crate::{DecryptedSystemSecret, oauth::CustomOAuth2ProviderConfig};
 
 const GITHUB_TOKEN_URL: &str = "https://github.com/login/oauth/access_token";
 const GITHUB_USER_URL: &str = "https://api.github.com/user";
@@ -277,6 +278,93 @@ impl OAuthLoginClient {
         let user_bytes =
             execute_json(&client, Method::GET, provider.user_url(), headers, None).await?;
         parse_identity(provider, &user_bytes)
+    }
+
+    /// 使用管理员已校验的静态端点交换自定义 Provider 身份；Token 与 UserInfo 只存在于内存。
+    pub async fn exchange_custom_identity(
+        &self,
+        config: &CustomOAuth2ProviderConfig,
+        client_secret: &DecryptedSystemSecret,
+        code: &str,
+        verifier: &str,
+        redirect_uri: &str,
+    ) -> Result<OAuthLoginIdentity, OAuthLoginClientError> {
+        if !config.enabled()
+            || !valid_custom_oauth_parameter(code)
+            || !valid_custom_oauth_parameter(verifier)
+            || !valid_custom_redirect_uri(redirect_uri)
+        {
+            return Err(OAuthLoginClientError::ProviderUnavailable);
+        }
+        let client = self
+            .http_clients
+            .get(Some(PROVIDER_REQUEST_TIMEOUT))
+            .map_err(|_| OAuthLoginClientError::ClientUnavailable)?;
+        let token_bytes = execute_json(
+            &client,
+            Method::POST,
+            config.endpoints().token_endpoint().as_str(),
+            custom_oauth_headers(true),
+            Some(custom_token_request_body(
+                config,
+                client_secret,
+                code,
+                verifier,
+                redirect_uri,
+            )),
+        )
+        .await?;
+        let response = serde_json::from_slice::<OAuthTokenResponse>(&token_bytes)
+            .map_err(|_| OAuthLoginClientError::ProviderUnavailable)?;
+        if !response.token_type.eq_ignore_ascii_case("bearer") {
+            return Err(OAuthLoginClientError::ProviderUnavailable);
+        }
+        let access_token = response.access_token.into_zeroizing();
+        let mut authorization = Zeroizing::new(String::from("Bearer "));
+        authorization.push_str(access_token.as_str());
+        let mut headers = custom_oauth_headers(false);
+        let mut authorization = HeaderValue::from_str(authorization.as_str())
+            .map_err(|_| OAuthLoginClientError::ProviderUnavailable)?;
+        authorization.set_sensitive(true);
+        headers.insert(HeaderName::from_static("authorization"), authorization);
+        let user_bytes = execute_json(
+            &client,
+            Method::GET,
+            config.endpoints().userinfo_endpoint().as_str(),
+            headers,
+            None,
+        )
+        .await?;
+        parse_custom_identity(config, &user_bytes)
+    }
+
+    /// 构造固定参数的自定义 OAuth2 授权地址，不接受请求方覆盖端点、scope 或回调。
+    pub fn custom_authorization_url(
+        config: &CustomOAuth2ProviderConfig,
+        redirect_uri: &str,
+        state: &str,
+        challenge: &str,
+    ) -> Result<String, OAuthLoginClientError> {
+        if !config.enabled()
+            || !valid_custom_oauth_parameter(state)
+            || !valid_custom_oauth_parameter(challenge)
+            || !valid_custom_redirect_uri(redirect_uri)
+        {
+            return Err(OAuthLoginClientError::ProviderUnavailable);
+        }
+        let mut url = config.endpoints().authorization_endpoint().clone();
+        url.query_pairs_mut()
+            .append_pair("client_id", config.client_id())
+            .append_pair("redirect_uri", redirect_uri)
+            .append_pair("response_type", "code")
+            .append_pair("scope", config.endpoints().scope())
+            .append_pair("state", state)
+            .append_pair("code_challenge", challenge)
+            .append_pair("code_challenge_method", "S256");
+        if url.as_str().len() > 8 * 1_024 {
+            return Err(OAuthLoginClientError::ProviderUnavailable);
+        }
+        Ok(url.into())
     }
 
     /// 微信协议要求 AppSecret 与 access token 位于固定 HTTPS 查询参数中；临时 URL 用后立即清零。
@@ -626,6 +714,83 @@ fn token_request_form(
         serializer.append_pair("code_verifier", verifier);
     }
     Zeroizing::new(serializer.finish())
+}
+
+fn custom_token_request_body(
+    config: &CustomOAuth2ProviderConfig,
+    client_secret: &DecryptedSystemSecret,
+    code: &str,
+    verifier: &str,
+    redirect_uri: &str,
+) -> Body {
+    let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+    serializer
+        .append_pair("grant_type", "authorization_code")
+        .append_pair("code", code)
+        .append_pair("redirect_uri", redirect_uri)
+        .append_pair("client_id", config.client_id())
+        .append_pair("client_secret", client_secret.expose_secret())
+        .append_pair("code_verifier", verifier);
+    let form = Zeroizing::new(serializer.finish());
+    Body::from(Bytes::from_owner(Zeroizing::new(form.as_bytes().to_vec())))
+}
+
+fn custom_oauth_headers(form: bool) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        HeaderName::from_static("accept"),
+        HeaderValue::from_static("application/json"),
+    );
+    headers.insert(
+        HeaderName::from_static("user-agent"),
+        HeaderValue::from_static("AnyFlows-OAuth"),
+    );
+    if form {
+        headers.insert(
+            HeaderName::from_static("content-type"),
+            HeaderValue::from_static("application/x-www-form-urlencoded"),
+        );
+    }
+    headers
+}
+
+fn parse_custom_identity(
+    config: &CustomOAuth2ProviderConfig,
+    bytes: &[u8],
+) -> Result<OAuthLoginIdentity, OAuthLoginClientError> {
+    let user = serde_json::from_slice::<Value>(bytes)
+        .map_err(|_| OAuthLoginClientError::ProviderUnavailable)?;
+    let subject = user
+        .as_object()
+        .and_then(|object| object.get(config.endpoints().subject_field()))
+        .and_then(Value::as_str)
+        .ok_or(OAuthLoginClientError::ProviderUnavailable)?;
+    validate_oidc_subject(subject)?;
+    Ok(OAuthLoginIdentity {
+        subject: subject.to_owned(),
+        username: subject.to_owned(),
+    })
+}
+
+fn valid_custom_oauth_parameter(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 512
+        && value.trim() == value
+        && !value.chars().any(char::is_control)
+}
+
+fn valid_custom_redirect_uri(value: &str) -> bool {
+    let Ok(url) = url::Url::parse(value) else {
+        return false;
+    };
+    value.len() <= 2_048
+        && matches!(url.scheme(), "http" | "https")
+        && url.host_str().is_some()
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none()
+        && !value.chars().any(char::is_control)
 }
 
 impl fmt::Debug for OAuthLoginClient {
@@ -1130,6 +1295,81 @@ fn validate_discord_username(username: &str) -> Result<(), OAuthLoginClientError
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::oauth::CustomOAuth2EndpointBundle;
+
+    fn custom_config(enabled: bool) -> CustomOAuth2ProviderConfig {
+        let endpoints = CustomOAuth2EndpointBundle::new(
+            "https://login.example.test/oauth/authorize".to_owned(),
+            "https://login.example.test/oauth/token".to_owned(),
+            "https://login.example.test/oauth/userinfo".to_owned(),
+            "openid profile".to_owned(),
+            "sub".to_owned(),
+        )
+        .unwrap();
+        CustomOAuth2ProviderConfig::new(
+            "custom_enterprise".to_owned(),
+            "企业登录".to_owned(),
+            "client-id".to_owned(),
+            endpoints,
+            enabled,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn custom_authorization_url_uses_only_fixed_pkce_parameters() {
+        let config = custom_config(true);
+        let authorization = OAuthLoginClient::custom_authorization_url(
+            &config,
+            "https://anyflows.example.test/oauth/custom/callback",
+            "state-value",
+            "challenge-value",
+        )
+        .unwrap();
+        let parsed = url::Url::parse(&authorization).unwrap();
+        let params: std::collections::HashMap<_, _> = parsed.query_pairs().into_owned().collect();
+        assert_eq!(params.get("client_id"), Some(&"client-id".to_owned()));
+        assert_eq!(params.get("response_type"), Some(&"code".to_owned()));
+        assert_eq!(params.get("scope"), Some(&"openid profile".to_owned()));
+        assert_eq!(
+            params.get("code_challenge_method"),
+            Some(&"S256".to_owned())
+        );
+        assert_eq!(params.get("state"), Some(&"state-value".to_owned()));
+        assert!(!authorization.contains("client_secret"));
+        assert!(
+            OAuthLoginClient::custom_authorization_url(
+                &config,
+                "https://anyflows.example.test/oauth/custom/callback?unsafe=1",
+                "state-value",
+                "challenge-value",
+            )
+            .is_err()
+        );
+        assert!(
+            OAuthLoginClient::custom_authorization_url(
+                &custom_config(false),
+                "https://anyflows.example.test/oauth/custom/callback",
+                "state-value",
+                "challenge-value",
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn custom_identity_keeps_only_configured_top_level_subject() {
+        let config = custom_config(true);
+        let identity = parse_custom_identity(
+            &config,
+            br#"{"sub":"external-123","email":"private@example.test","nested":{"sub":"wrong"}}"#,
+        )
+        .unwrap();
+        assert_eq!(identity.subject(), "external-123");
+        assert_eq!(identity.username(), "external-123");
+        assert!(parse_custom_identity(&config, br#"{"sub":123}"#).is_err());
+        assert!(parse_custom_identity(&config, br#"{"nested":{"sub":"external-123"}}"#).is_err());
+    }
 
     #[test]
     fn token_secret_and_client_debug_are_redacted() {
