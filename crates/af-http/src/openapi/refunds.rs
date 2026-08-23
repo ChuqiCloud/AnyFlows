@@ -10,6 +10,7 @@ use crate::{
 #[utoipa::path(
     get,
     path = "/api/admin/refunds",
+    operation_id = "listAdminRefunds",
     tag = "退款审批",
     params(
         ("after" = Option<i64>, Query, description = "数据库 ID 游标"),
@@ -30,6 +31,7 @@ fn list_admin_refunds() {}
 #[utoipa::path(
     post,
     path = "/api/admin/refunds/{request_id}/approve",
+    operation_id = "approveAdminRefund",
     tag = "退款审批",
     params(("request_id" = String, Path, description = "32 位小写十六进制退款请求 ID")),
     request_body = AdminRefundDecisionRequest,
@@ -51,6 +53,7 @@ fn approve_admin_refund() {}
 #[utoipa::path(
     post,
     path = "/api/admin/refunds/{request_id}/reject",
+    operation_id = "rejectAdminRefund",
     tag = "退款审批",
     params(("request_id" = String, Path, description = "32 位小写十六进制退款请求 ID")),
     request_body = AdminRefundDecisionRequest,
@@ -70,6 +73,7 @@ fn reject_admin_refund() {}
 #[utoipa::path(
     post,
     path = "/api/admin/refunds/{request_id}/submit",
+    operation_id = "submitAdminRefund",
     tag = "退款审批",
     params(("request_id" = String, Path, description = "32 位小写十六进制退款请求 ID")),
     responses(
