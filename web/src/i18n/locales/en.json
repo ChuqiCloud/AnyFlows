@@ -4856,7 +4856,16 @@
         "member": "Member",
         "role": "Role",
         "status": "Status",
-        "team": "Primary team"
+        "team": "Primary team",
+        "customRole": "Custom role"
+      },
+      "customRoles": {
+        "assigned": "Custom role assigned",
+        "none": "Use fixed Member permissions",
+        "disabled": "disabled",
+        "disabledByEntitlement": "Custom roles are not enabled by this organization's commercial entitlement.",
+        "assignmentRestricted": "Your organization role cannot assign custom roles.",
+        "loading": "Loading roles available to this organization."
       },
       "list": {
         "title": "Member directory",

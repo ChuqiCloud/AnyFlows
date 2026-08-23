@@ -14,6 +14,7 @@ use crate::{
         OrganizationInvitationListResponse, OrganizationInvitationPreviewItemResponse,
         OrganizationInvitationPreviewRequest, OrganizationInvitationPreviewResponse,
         OrganizationInvitationResponse, OrganizationListResponse,
+        OrganizationMemberCustomRoleRequest, OrganizationMemberCustomRoleResponse,
         OrganizationMembershipChangeRequest, OrganizationMembershipListResponse,
         OrganizationMembershipResponse, OrganizationOverviewResponse,
         OrganizationOwnershipTransferRequest, OrganizationOwnershipTransferResponse,
@@ -474,6 +475,30 @@ fn update_organization_custom_role() {}
 )]
 fn disable_organization_custom_role() {}
 
+#[utoipa::path(
+    patch,
+    path = "/api/organizations/{organization_id}/members/{membership_id}/custom-role",
+    operation_id = "setOrganizationMemberCustomRole",
+    tag = "企业空间",
+    summary = "按成员版本绑定或清除自定义角色",
+    params(
+        ("organization_id" = i64, Path, minimum = 1),
+        ("membership_id" = i64, Path, minimum = 1)
+    ),
+    request_body = OrganizationMemberCustomRoleRequest,
+    responses(
+        (status = 200, body = OrganizationMemberCustomRoleResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 409, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn set_organization_member_custom_role() {}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -497,7 +522,8 @@ fn disable_organization_custom_role() {}
         get_organization_custom_role,
         create_organization_custom_role,
         update_organization_custom_role,
-        disable_organization_custom_role
+        disable_organization_custom_role,
+        set_organization_member_custom_role
     ),
     components(schemas(
         OrganizationListResponse,
@@ -528,6 +554,8 @@ fn disable_organization_custom_role() {}
         OrganizationCustomRoleChangeRequest,
         OrganizationCustomRoleDisableRequest,
         OrganizationCustomRoleResponse,
+        OrganizationMemberCustomRoleRequest,
+        OrganizationMemberCustomRoleResponse,
         OrganizationCustomRoleListResponse,
         ManagementErrorBody
     ))

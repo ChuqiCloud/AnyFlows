@@ -214,6 +214,7 @@ async fn sqlite_organization_router()
         Some(invitation_service),
         Some(management_service),
         Some(custom_role_service),
+        None,
         test_organization_activity_service(),
         sessions,
     );
@@ -728,6 +729,7 @@ async fn acceptance_maps_all_rejection_facts_to_one_public_error() {
         Some(Arc::new(RejectionInvitations)),
         None,
         None,
+        None,
         test_organization_activity_service(),
         sessions,
     );
@@ -759,6 +761,7 @@ async fn organization_directory_remains_available_without_invitation_service() {
     });
     let app = build_organization_router(
         Arc::new(NoOrganizations),
+        None,
         None,
         None,
         None,

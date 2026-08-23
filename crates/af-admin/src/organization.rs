@@ -32,6 +32,7 @@ pub struct OrganizationContext {
 pub struct OrganizationEntitlementSummary {
     status: OrganizationEntitlementStatus,
     team_management_enabled: bool,
+    custom_roles_enabled: bool,
     seat_limit: i64,
     active_seats: i64,
     team_limit: i64,
@@ -140,6 +141,7 @@ impl OrganizationEntitlementSummary {
         Self {
             status: snapshot.status(access.organization().status(), now),
             team_management_enabled: snapshot.team_management_enabled(),
+            custom_roles_enabled: snapshot.custom_roles_enabled(),
             seat_limit: capacity.seat_limit(),
             active_seats: access.active_seats(),
             team_limit: capacity.team_limit(),
@@ -160,6 +162,12 @@ impl OrganizationEntitlementSummary {
     #[must_use]
     pub const fn team_management_enabled(&self) -> bool {
         self.team_management_enabled
+    }
+
+    /// 判断商业授权是否正式开放自定义角色能力。
+    #[must_use]
+    pub const fn custom_roles_enabled(&self) -> bool {
+        self.custom_roles_enabled
     }
     /// 返回席位上限。
     #[must_use]

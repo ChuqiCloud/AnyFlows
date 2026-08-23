@@ -12,18 +12,21 @@ import {
   createOrganizationInvitationBatch,
   createOrganizationTeam,
   disableOrganizationTeam,
+  listOrganizationCustomRoles,
   listOrganizationInvitations,
   listOrganizationMembers,
   listOrganizationTeams,
   previewOrganizationInvitations,
   resendOrganizationInvitation,
   revokeOrganizationInvitation,
+  setOrganizationMemberCustomRole,
   transferOrganizationOwnership,
 } from '@/lib/api/generated/sdk.gen'
 import type {
   OrganizationInvitationBatchRequest,
   OrganizationInvitationCreateRequest,
   OrganizationInvitationPreviewRequest,
+  OrganizationMemberCustomRoleRequest,
   OrganizationMembershipChangeRequest,
   OrganizationOwnershipTransferRequest,
   OrganizationTeamChangeRequest,
@@ -81,11 +84,44 @@ export function useOrganizationInvitations(organizationId: number, enabled = tru
   })
 }
 
+export function useOrganizationCustomRoles(organizationId: number, enabled = true) {
+  return useInfiniteQuery({
+    queryKey: organizationQueryKey(organizationId, 'custom-roles', 'pages'),
+    enabled,
+    initialPageParam: undefined as number | undefined,
+    queryFn: async ({ pageParam, signal }) => {
+      const { data } = await listOrganizationCustomRoles({
+        client: apiClient,
+        path: { organization_id: organizationId },
+        query: { after: pageParam, limit: 100 },
+        signal,
+      })
+      return data
+    },
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
+  })
+}
+
 export function useChangeOrganizationMember(organizationId: number) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async ({ membershipId, body }: { membershipId: number; body: OrganizationMembershipChangeRequest }) => {
       const { data } = await changeOrganizationMember({
+        body,
+        client: apiClient,
+        path: { membership_id: membershipId, organization_id: organizationId },
+      })
+      return data
+    },
+    onSuccess: () => invalidateMembers(queryClient, organizationId),
+  })
+}
+
+export function useSetOrganizationMemberCustomRole(organizationId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ membershipId, body }: { membershipId: number; body: OrganizationMemberCustomRoleRequest }) => {
+      const { data } = await setOrganizationMemberCustomRole({
         body,
         client: apiClient,
         path: { membership_id: membershipId, organization_id: organizationId },

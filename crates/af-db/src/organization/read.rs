@@ -1,12 +1,16 @@
+use std::collections::HashMap;
+
 use af_domain::{
-    OrganizationCustomRoleId, OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot,
-    OrganizationId, OrganizationKey, OrganizationMembershipId, OrganizationMembershipStatus,
-    OrganizationRole, OrganizationStatus, OrganizationTeamId, OrganizationTeamStatus, UserId,
+    OrganizationCustomRoleId, OrganizationCustomRoleKey, OrganizationEntitlementCapacity,
+    OrganizationEntitlementSnapshot, OrganizationId, OrganizationKey, OrganizationMembershipId,
+    OrganizationMembershipStatus, OrganizationRole, OrganizationStatus, OrganizationTeamId,
+    OrganizationTeamStatus, UserId,
 };
 use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect};
 
 use crate::entity::{
-    organization_entitlements, organization_memberships, organization_teams, organizations,
+    organization_custom_roles, organization_entitlements, organization_memberships,
+    organization_teams, organizations,
 };
 use crate::organization_custom_role_binding::active_custom_role_permissions;
 
@@ -61,6 +65,7 @@ pub(super) async fn list_memberships(
         .into_iter()
         .map(membership_record)
         .collect::<Result<Vec<_>, _>>()?;
+    let records = attach_custom_role_keys(repository, organization_id, records).await?;
     let next_cursor = has_more
         .then(|| records.last().map(OrganizationMembershipRecord::id))
         .flatten();
@@ -320,6 +325,7 @@ pub(super) fn membership_record(
             .map(OrganizationCustomRoleId::new)
             .transpose()
             .map_err(|_| invariant())?,
+        custom_role_key: None,
         status,
         joined_at: model.joined_at.unix_timestamp(),
         suspended_at: model.suspended_at.map(|value| value.unix_timestamp()),
@@ -348,6 +354,44 @@ pub(super) fn membership_record(
         return Err(invariant());
     }
     Ok(record)
+}
+
+async fn attach_custom_role_keys(
+    repository: &OrganizationRepository,
+    organization_id: af_domain::OrganizationId,
+    records: Vec<OrganizationMembershipRecord>,
+) -> Result<Vec<OrganizationMembershipRecord>, OrganizationRepositoryError> {
+    let role_ids = records
+        .iter()
+        .filter_map(|record| record.custom_role_id().map(OrganizationCustomRoleId::get))
+        .collect::<Vec<_>>();
+    if role_ids.is_empty() {
+        return Ok(records);
+    }
+    let roles = organization_custom_roles::Entity::find()
+        .filter(organization_custom_roles::Column::OrganizationId.eq(organization_id.get()))
+        .filter(organization_custom_roles::Column::Id.is_in(role_ids))
+        .all(repository.pool.connection())
+        .await
+        .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?;
+    let keys = roles
+        .into_iter()
+        .map(|role| {
+            let key = OrganizationCustomRoleKey::from_persistence_key(&role.role_key)
+                .map_err(|_| invariant())?;
+            Ok((role.id, key))
+        })
+        .collect::<Result<HashMap<_, _>, OrganizationRepositoryError>>()?;
+    records
+        .into_iter()
+        .map(|record| {
+            let key = record
+                .custom_role_id()
+                .map(|role_id| keys.get(&role_id.get()).copied().ok_or_else(invariant))
+                .transpose()?;
+            Ok(record.with_custom_role_key(key))
+        })
+        .collect()
 }
 
 pub(super) fn team_record(

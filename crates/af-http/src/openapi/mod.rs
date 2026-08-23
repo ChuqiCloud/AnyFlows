@@ -202,7 +202,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 163);
+        assert_eq!(document.paths.paths.len(), 164);
         let operation_count = document
             .paths
             .paths
@@ -223,7 +223,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 225);
+        assert_eq!(operation_count, 226);
         assert!(
             document
                 .components
@@ -328,6 +328,7 @@ mod tests {
             "acceptOrganizationInvitation",
             "listOrganizationMembers",
             "changeOrganizationMember",
+            "setOrganizationMemberCustomRole",
             "transferOrganizationOwnership",
             "listOrganizationTeams",
             "createOrganizationTeam",
@@ -482,7 +483,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 376);
+        assert_eq!(schemas.len(), 378);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminDashboardChannelFlow"));
         assert!(schemas.contains_key("AdminDashboardFailure"));
@@ -498,6 +499,8 @@ mod tests {
         assert!(schemas.contains_key("OrganizationCustomRoleResponse"));
         assert!(schemas.contains_key("OrganizationInvitationAcceptRequest"));
         assert!(schemas.contains_key("OrganizationInvitationResponse"));
+        assert!(schemas.contains_key("OrganizationMemberCustomRoleRequest"));
+        assert!(schemas.contains_key("OrganizationMemberCustomRoleResponse"));
         assert!(schemas.contains_key("OrganizationMembershipChangeRequest"));
         assert!(schemas.contains_key("OrganizationMembershipListResponse"));
         assert!(schemas.contains_key("OrganizationMembershipResponse"));

@@ -4855,7 +4855,16 @@
         "member": "成员",
         "role": "角色",
         "status": "状态",
-        "team": "主团队"
+        "team": "主团队",
+        "customRole": "自定义角色"
+      },
+      "customRoles": {
+        "assigned": "已分配自定义角色",
+        "none": "使用固定成员权限",
+        "disabled": "已停用",
+        "disabledByEntitlement": "当前企业商业授权尚未开启自定义角色。",
+        "assignmentRestricted": "当前企业角色无权分配自定义角色。",
+        "loading": "正在加载当前企业可分配的角色。"
       },
       "list": {
         "title": "成员目录",

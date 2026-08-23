@@ -36,6 +36,7 @@ import {
   useDisableOrganizationTeam,
   useOrganizationInvitations,
   useOrganizationMembers,
+  useOrganizationCustomRoles,
   useOrganizationTeams,
   useResendOrganizationInvitation,
   useRevokeOrganizationInvitation,
@@ -45,6 +46,7 @@ import { OrganizationTeamEditorSheet } from './organization-team-editor-sheet'
 
 const MEMBERS_MANAGE = 'organization.members.manage'
 const TEAMS_MANAGE = 'organization.teams.manage'
+const ROLES_ASSIGN = 'organization.roles.assign'
 type MemberTab = 'invitations' | 'members' | 'teams'
 
 /** 企业成员域集中管理成员、团队和邀请，所有写入均由服务端权限与 CAS 再校验。 */
@@ -66,6 +68,7 @@ function OrganizationMemberWorkspace({ organizationId, overview }: { organizatio
   const [tab, setTab] = useState<MemberTab>('members')
   const canManageMembers = overview.permissions.includes(MEMBERS_MANAGE)
   const canManageTeams = overview.permissions.includes(TEAMS_MANAGE)
+  const canAssignCustomRoles = overview.permissions.includes(ROLES_ASSIGN)
   return (
     <>
       <section className="grid gap-3 sm:grid-cols-3">
@@ -82,20 +85,23 @@ function OrganizationMemberWorkspace({ organizationId, overview }: { organizatio
         ))}
       </div>
 
-      {tab === 'members' ? <MembersPanel organizationId={organizationId} organizationName={overview.name} canManage={canManageMembers} /> : null}
+      {tab === 'members' ? <MembersPanel organizationId={organizationId} organizationName={overview.name} canManage={canManageMembers} canAssignCustomRoles={canAssignCustomRoles} customRolesEnabled={overview.entitlement.custom_roles_enabled} /> : null}
       {tab === 'teams' ? <TeamsPanel organizationId={organizationId} organizationName={overview.name} canManage={canManageTeams} enabled={overview.entitlement.team_management_enabled} /> : null}
       {tab === 'invitations' ? <InvitationsPanel organizationId={organizationId} organizationName={overview.name} canManage={canManageMembers} /> : null}
     </>
   )
 }
 
-function MembersPanel({ organizationId, organizationName, canManage }: { organizationId: number; organizationName: string; canManage: boolean }) {
+function MembersPanel({ organizationId, organizationName, canManage, canAssignCustomRoles, customRolesEnabled }: { organizationId: number; organizationName: string; canManage: boolean; canAssignCustomRoles: boolean; customRolesEnabled: boolean }) {
   const { t } = useTranslation()
   const query = useOrganizationMembers(organizationId)
   const teamCatalog = useOrganizationTeamCatalog(organizationId, canManage)
+  const customRoleCatalog = useOrganizationCustomRoles(organizationId, customRolesEnabled && canAssignCustomRoles)
   const [editing, setEditing] = useState<OrganizationMembershipResponse>()
   const members = query.data?.pages.flatMap((page) => page.members) ?? []
   const teamNames = useMemo(() => new Map((teamCatalog.data ?? []).map((team) => [team.id, team.name])), [teamCatalog.data])
+  const customRoles = useMemo(() => customRoleCatalog.data?.pages.flatMap((page) => page.roles) ?? [], [customRoleCatalog.data])
+  const customRoleNames = useMemo(() => new Map(customRoles.map((role) => [role.role_key, role.name])), [customRoles])
   return (
     <Card className="overflow-hidden">
       <PanelHeader icon={UsersRound} title={t('organizationConsole.members.list.title')} subtitle={t('organizationConsole.members.list.subtitle')} count={members.length} refreshing={query.isFetching} onRefresh={() => void query.refetch()} />
@@ -109,6 +115,7 @@ function MembersPanel({ organizationId, organizationName, canManage }: { organiz
                     <span className="text-sm font-medium">{t('organizationConsole.members.memberLabel', { id: member.user_id })}</span>
                     <Badge className={member.role === 'owner' ? 'text-warning' : undefined}>{t(`organizationConsole.roles.${member.role}`)}</Badge>
                     <Badge className={member.status === 'active' ? 'text-success' : member.status === 'removed' ? 'text-destructive' : 'text-warning'}>{t(`organizationConsole.memberStatus.${member.status}`)}</Badge>
+                    {member.custom_role_key ? <Badge className="text-brand">{customRoleNames.get(member.custom_role_key) ?? t('organizationConsole.members.customRoles.assigned')}</Badge> : null}
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">{member.team_id ? teamNames.get(member.team_id) ?? t('organizationConsole.members.teamLabel', { id: member.team_id }) : t('organizationConsole.members.noTeam')} · {t('organizationConsole.members.membershipLabel', { id: member.id })}</p>
                 </div>
@@ -119,7 +126,7 @@ function MembersPanel({ organizationId, organizationName, canManage }: { organiz
           </div>
         </PagedContent>
       </CardContent>
-      <OrganizationMemberEditorSheet organizationId={organizationId} organizationName={organizationName} member={editing} teams={teamCatalog.data ?? []} open={editing !== undefined} onOpenChange={(open) => { if (!open) setEditing(undefined) }} />
+      <OrganizationMemberEditorSheet organizationId={organizationId} organizationName={organizationName} member={editing} teams={teamCatalog.data ?? []} customRoles={customRoles} customRolesReady={customRoleCatalog.isSuccess} customRolesEnabled={customRolesEnabled} canAssignCustomRoles={canAssignCustomRoles} open={editing !== undefined} onOpenChange={(open) => { if (!open) setEditing(undefined) }} />
     </Card>
   )
 }

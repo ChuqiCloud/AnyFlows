@@ -23,18 +23,19 @@ use af_admin::{
     DatabaseAdminTokenReader, DatabaseAdminTokenWriter, DatabaseAdminUsageLogReader,
     DatabaseAdminUserReader, DatabaseAdminUserWriter, DatabaseAdminWalletService,
     DatabaseInitialSetup, DatabaseOAuthLoginService, DatabaseOrganizationActivityService,
-    DatabaseOrganizationBudgetService, DatabaseOrganizationCustomRoleService,
-    DatabaseOrganizationTokenService, DatabaseOrganizationWalletService,
-    DatabasePasskeyAuthenticationService, DatabasePasswordResetService,
-    DatabasePlatformAuditService, DatabasePlaygroundConversationService,
-    DatabasePlaygroundShareService, DatabaseRedemptionService, DatabaseRegistrationService,
-    DatabaseSessionAuthenticator, DatabaseSiteSettingsService, DatabaseSubscriptionService,
-    DatabaseTokenAuthenticator, DatabaseUserInvitationService, DatabaseUserNotificationService,
-    DatabaseUserProfileService, DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery,
-    InitialSetup, ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
+    DatabaseOrganizationBudgetService, DatabaseOrganizationCustomRoleBindingService,
+    DatabaseOrganizationCustomRoleService, DatabaseOrganizationTokenService,
+    DatabaseOrganizationWalletService, DatabasePasskeyAuthenticationService,
+    DatabasePasswordResetService, DatabasePlatformAuditService,
+    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
+    DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
+    DatabaseSiteSettingsService, DatabaseSubscriptionService, DatabaseTokenAuthenticator,
+    DatabaseUserInvitationService, DatabaseUserNotificationService, DatabaseUserProfileService,
+    DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery, InitialSetup,
+    ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
     OAuthLoginService, OrganizationActivityService, OrganizationActivityServiceConfigError,
-    OrganizationBudgetService, OrganizationCustomRoleService, OrganizationTokenService,
-    OrganizationWalletService, PasskeyAuthenticationService,
+    OrganizationBudgetService, OrganizationCustomRoleBindingService, OrganizationCustomRoleService,
+    OrganizationTokenService, OrganizationWalletService, PasskeyAuthenticationService,
     PasskeyAuthenticationServiceConfigError, PasswordResetService, PasswordResetServiceConfigError,
     PlatformAuditService, PlaygroundConversationService, PlaygroundShareService, RedemptionService,
     RegistrationService, RegistrationServiceConfigError, RuntimeRefreshingAdminGroupWriter,
@@ -82,7 +83,8 @@ use af_db::{
     ModelPriceRepository, ModelSyncRepository, NetworkSettingsMode, NetworkSettingsRecord,
     NetworkSettingsRepository, NetworkSettingsRepositoryConfigError, OAuthLoginRepository,
     OAuthLoginRepositoryError, OrganizationAuditRepository, OrganizationBudgetRepository,
-    OrganizationBudgetRepositoryConfigError, OrganizationCustomRoleRepository,
+    OrganizationBudgetRepositoryConfigError, OrganizationCustomRoleBindingRepository,
+    OrganizationCustomRoleBindingRepositoryConfigError, OrganizationCustomRoleRepository,
     OrganizationCustomRoleRepositoryConfigError, OrganizationRepository,
     OrganizationRepositoryConfigError, OrganizationTokenRepository,
     OrganizationTokenRepositoryConfigError, OrganizationWalletRepository,
@@ -213,6 +215,7 @@ pub struct AuthenticationReady {
     organization_invitation_service: Arc<dyn af_admin::OrganizationInvitationService>,
     organization_management_service: Arc<dyn af_admin::OrganizationManagementService>,
     organization_custom_role_service: Arc<dyn OrganizationCustomRoleService>,
+    organization_custom_role_binding_service: Arc<dyn OrganizationCustomRoleBindingService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
     site_settings_repository: SiteSettingsRepository,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
@@ -437,6 +440,11 @@ pub enum BootstrapError {
     /// 企业自定义角色仓储的启动参数无效。
     #[error("企业自定义角色仓储启动参数无效")]
     OrganizationCustomRoleRepository(#[source] OrganizationCustomRoleRepositoryConfigError),
+    /// 企业自定义角色绑定仓储的启动参数无效。
+    #[error("企业自定义角色绑定仓储启动参数无效")]
+    OrganizationCustomRoleBindingRepository(
+        #[source] OrganizationCustomRoleBindingRepositoryConfigError,
+    ),
     /// 站点设置仓储的启动参数无效。
     #[error("站点设置仓储启动参数无效")]
     SiteSettingsRepository(#[source] SiteSettingsRepositoryConfigError),
@@ -921,6 +929,13 @@ impl Bootstrap<DatabaseReady> {
             )
             .map_err(BootstrapError::OrganizationCustomRoleRepository)?,
         );
+        let organization_custom_role_binding_repository = Arc::new(
+            OrganizationCustomRoleBindingRepository::new(
+                self.stage.database.clone(),
+                Duration::from_secs(auth.lookup_timeout_secs()),
+            )
+            .map_err(BootstrapError::OrganizationCustomRoleBindingRepository)?,
+        );
         let organization_wallet_repository = Arc::new(
             OrganizationWalletRepository::new(
                 self.stage.database.clone(),
@@ -1102,6 +1117,17 @@ impl Bootstrap<DatabaseReady> {
             system_secret_cipher.clone(),
             stage.passkey_public_base_url.as_deref(),
         ));
+        // 角色目录与成员绑定共用同一服务实例，保证授权边界和配置一致。
+        let organization_custom_role_service: Arc<dyn OrganizationCustomRoleService> =
+            Arc::new(DatabaseOrganizationCustomRoleService::new(Arc::clone(
+                &organization_custom_role_repository,
+            )));
+        let organization_custom_role_binding_service: Arc<
+            dyn OrganizationCustomRoleBindingService,
+        > = Arc::new(DatabaseOrganizationCustomRoleBindingService::new(
+            organization_custom_role_binding_repository,
+            Arc::clone(&organization_custom_role_service),
+        ));
         Ok(Bootstrap {
             config,
             shutdown_timeout,
@@ -1155,9 +1181,8 @@ impl Bootstrap<DatabaseReady> {
                         &organization_repository,
                     )),
                 ),
-                organization_custom_role_service: Arc::new(
-                    DatabaseOrganizationCustomRoleService::new(organization_custom_role_repository),
-                ),
+                organization_custom_role_service,
+                organization_custom_role_binding_service,
                 site_settings_service: Arc::new(DatabaseSiteSettingsService::new(
                     site_settings_repository.clone(),
                 )),
@@ -2311,6 +2336,12 @@ impl Bootstrap<Supervised> {
             )),
             Some(Arc::clone(
                 &self.stage.infrastructure.organization_custom_role_service,
+            )),
+            Some(Arc::clone(
+                &self
+                    .stage
+                    .infrastructure
+                    .organization_custom_role_binding_service,
             )),
             Some(Arc::clone(
                 &self.stage.infrastructure.platform_audit_service,

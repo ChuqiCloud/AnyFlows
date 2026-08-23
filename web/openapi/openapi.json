@@ -8011,6 +8011,124 @@
         ]
       }
     },
+    "/api/organizations/{organization_id}/members/{membership_id}/custom-role": {
+      "patch": {
+        "tags": [
+          "企业空间"
+        ],
+        "summary": "按成员版本绑定或清除自定义角色",
+        "operationId": "setOrganizationMemberCustomRole",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "membership_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationMemberCustomRoleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationMemberCustomRoleResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/balance-alert-settings": {
       "get": {
         "tags": [
@@ -28112,6 +28230,7 @@
         "required": [
           "status",
           "team_management_enabled",
+          "custom_roles_enabled",
           "seat_limit",
           "active_seats",
           "remaining_seats",
@@ -28127,6 +28246,9 @@
             "type": "string"
           },
           "team_management_enabled": {
+            "type": "boolean"
+          },
+          "custom_roles_enabled": {
             "type": "boolean"
           },
           "seat_limit": {
@@ -28479,6 +28601,51 @@
         },
         "additionalProperties": false
       },
+      "OrganizationMemberCustomRoleRequest": {
+        "type": "object",
+        "required": [
+          "role_key",
+          "expected_version"
+        ],
+        "properties": {
+          "role_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expected_version": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationMemberCustomRoleResponse": {
+        "type": "object",
+        "required": [
+          "membership_id",
+          "custom_role_key",
+          "version"
+        ],
+        "properties": {
+          "membership_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "custom_role_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
       "OrganizationMembershipChangeRequest": {
         "type": "object",
         "required": [
@@ -28536,6 +28703,7 @@
           "organization_id",
           "user_id",
           "role",
+          "custom_role_key",
           "status",
           "joined_at",
           "version"
@@ -28562,6 +28730,12 @@
               "null"
             ],
             "format": "int64"
+          },
+          "custom_role_key": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "status": {
             "type": "string"
