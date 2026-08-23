@@ -1,7 +1,8 @@
 use super::organization::{
-    OrganizationIdentifierError, OrganizationKey, OrganizationMembershipStatus,
-    OrganizationPermission, OrganizationRole, OrganizationStateCodeError, OrganizationStatus,
-    OrganizationTeamStatus, PlatformPermission,
+    OrganizationCustomRoleKey, OrganizationCustomRoleStatus, OrganizationIdentifierError,
+    OrganizationKey, OrganizationMembershipStatus, OrganizationPermission,
+    OrganizationPermissionCodeError, OrganizationRole, OrganizationStateCodeError,
+    OrganizationStatus, OrganizationTeamStatus, PlatformPermission,
 };
 
 #[test]
@@ -31,12 +32,37 @@ fn organization_key_rejects_zero_and_noncanonical_text() {
 }
 
 #[test]
+fn organization_custom_role_key_is_nonzero_and_canonical() {
+    let key = OrganizationCustomRoleKey::new([0x5c; 16]).unwrap();
+    let persisted = key.persistence_key();
+
+    assert_eq!(persisted, "5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c");
+    assert_eq!(
+        OrganizationCustomRoleKey::from_persistence_key(&persisted),
+        Ok(key)
+    );
+    assert_eq!(format!("{key:?}"), "OrganizationCustomRoleKey(<redacted>)");
+    for invalid in [
+        "",
+        "5C5C5C5C5C5C5C5C5C5C5C5C5C5C5C5C",
+        "00000000000000000000000000000000",
+        "not-a-custom-role-key",
+    ] {
+        assert!(OrganizationCustomRoleKey::from_persistence_key(invalid).is_err());
+    }
+}
+
+#[test]
 fn organization_state_codes_are_closed() {
     assert_eq!(
         OrganizationStatus::try_from(1),
         Ok(OrganizationStatus::Active)
     );
     assert_eq!(OrganizationRole::try_from(1), Ok(OrganizationRole::Owner));
+    assert_eq!(
+        OrganizationCustomRoleStatus::try_from(2),
+        Ok(OrganizationCustomRoleStatus::Disabled)
+    );
     assert_eq!(
         OrganizationMembershipStatus::try_from(3),
         Ok(OrganizationMembershipStatus::Removed)
@@ -62,6 +88,9 @@ fn organization_roles_use_the_fixed_permission_matrix() {
     assert!(OrganizationRole::Member.allows(OrganizationPermission::KeysManageSelf));
     assert!(!OrganizationRole::Member.allows(OrganizationPermission::AuditRead));
     assert!(OrganizationRole::Viewer.allows(OrganizationPermission::AuditRead));
+    assert!(OrganizationRole::Owner.allows(OrganizationPermission::RolesAssign));
+    assert!(OrganizationRole::Admin.allows(OrganizationPermission::RolesManage));
+    assert!(!OrganizationRole::Billing.allows(OrganizationPermission::RolesRead));
     assert_eq!(
         OrganizationPermission::MembersManage.code(),
         "organization.members.manage"
@@ -85,5 +114,36 @@ fn organization_roles_use_the_fixed_permission_matrix() {
     assert_eq!(
         PlatformPermission::OrganizationAuditReadAll.code(),
         "platform.organization_audit.read_all"
+    );
+}
+
+#[test]
+fn custom_role_permissions_use_a_closed_server_allowlist() {
+    for permission in OrganizationPermission::custom_role_grantable_permissions() {
+        assert!(permission.is_custom_role_grantable());
+        assert_eq!(
+            OrganizationPermission::from_code(permission.code()),
+            Ok(*permission)
+        );
+    }
+    for reserved in [
+        OrganizationPermission::OwnershipTransfer,
+        OrganizationPermission::Close,
+        OrganizationPermission::RolesManage,
+        OrganizationPermission::RolesAssign,
+    ] {
+        assert!(!reserved.is_custom_role_grantable());
+        assert_eq!(
+            OrganizationPermission::from_code(reserved.code()),
+            Ok(reserved)
+        );
+    }
+    assert_eq!(
+        OrganizationPermission::from_code("platform.organizations.read_all"),
+        Err(OrganizationPermissionCodeError::Unknown)
+    );
+    assert_eq!(
+        OrganizationPermission::from_code("organization.unknown.read"),
+        Err(OrganizationPermissionCodeError::Unknown)
     );
 }

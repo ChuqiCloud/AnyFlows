@@ -4,6 +4,8 @@ use thiserror::Error;
 
 const ORGANIZATION_KEY_BYTES: usize = 16;
 const ORGANIZATION_KEY_HEX_BYTES: usize = ORGANIZATION_KEY_BYTES * 2;
+const ORGANIZATION_CUSTOM_ROLE_KEY_BYTES: usize = 16;
+const ORGANIZATION_CUSTOM_ROLE_KEY_HEX_BYTES: usize = ORGANIZATION_CUSTOM_ROLE_KEY_BYTES * 2;
 const ORGANIZATION_INVITATION_KEY_BYTES: usize = 16;
 const ORGANIZATION_INVITATION_KEY_HEX_BYTES: usize = ORGANIZATION_INVITATION_KEY_BYTES * 2;
 const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
@@ -70,6 +72,57 @@ impl fmt::Debug for OrganizationKey {
     }
 }
 
+/// 不暴露数据库顺序的非零 128 位企业自定义角色公开标识。
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct OrganizationCustomRoleKey([u8; ORGANIZATION_CUSTOM_ROLE_KEY_BYTES]);
+
+impl OrganizationCustomRoleKey {
+    /// 校验并构造非零企业自定义角色公开标识。
+    pub const fn new(
+        bytes: [u8; ORGANIZATION_CUSTOM_ROLE_KEY_BYTES],
+    ) -> Result<Self, OrganizationIdentifierError> {
+        let mut index = 0;
+        while index < bytes.len() {
+            if bytes[index] != 0 {
+                return Ok(Self(bytes));
+            }
+            index += 1;
+        }
+        Err(OrganizationIdentifierError::AllZero)
+    }
+
+    /// 从数据库和接口使用的 32 位小写十六进制文本恢复标识。
+    pub fn from_persistence_key(value: &str) -> Result<Self, OrganizationIdentifierError> {
+        if value.len() != ORGANIZATION_CUSTOM_ROLE_KEY_HEX_BYTES {
+            return Err(OrganizationIdentifierError::InvalidEncoding);
+        }
+        let mut bytes = [0_u8; ORGANIZATION_CUSTOM_ROLE_KEY_BYTES];
+        for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
+            let high = decode_hex(pair[0]).ok_or(OrganizationIdentifierError::InvalidEncoding)?;
+            let low = decode_hex(pair[1]).ok_or(OrganizationIdentifierError::InvalidEncoding)?;
+            bytes[index] = (high << 4) | low;
+        }
+        Self::new(bytes)
+    }
+
+    /// 返回数据库和接口共用的稳定持久化文本。
+    #[must_use]
+    pub fn persistence_key(self) -> String {
+        let mut encoded = String::with_capacity(ORGANIZATION_CUSTOM_ROLE_KEY_HEX_BYTES);
+        for byte in self.0 {
+            encoded.push(char::from(HEX_DIGITS[usize::from(byte >> 4)]));
+            encoded.push(char::from(HEX_DIGITS[usize::from(byte & 0x0f)]));
+        }
+        encoded
+    }
+}
+
+impl fmt::Debug for OrganizationCustomRoleKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("OrganizationCustomRoleKey(<redacted>)")
+    }
+}
+
 /// 不暴露数据库顺序的非零 128 位企业邀请公开标识。
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct OrganizationInvitationKey([u8; ORGANIZATION_INVITATION_KEY_BYTES]);
@@ -130,6 +183,9 @@ pub enum OrganizationStateCodeError {
     /// 企业角色不属于固定五角色集合。
     #[error("企业角色无效")]
     InvalidRole,
+    /// 企业自定义角色状态不属于闭合集合。
+    #[error("企业自定义角色状态无效")]
+    InvalidCustomRoleStatus,
     /// 成员状态不属于闭合集合。
     #[error("企业成员状态无效")]
     InvalidMembershipStatus,
@@ -183,6 +239,38 @@ pub enum OrganizationRole {
     Viewer = 5,
 }
 
+/// 企业自定义角色目录状态；停用后保留定义与权限事实。
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[repr(i16)]
+pub enum OrganizationCustomRoleStatus {
+    /// 角色可参与后续成员绑定和授权投影。
+    Active = 1,
+    /// 角色已停用，仅保留历史事实。
+    Disabled = 2,
+}
+
+impl OrganizationCustomRoleStatus {
+    /// 返回数据库使用的稳定数值。
+    #[must_use]
+    pub const fn code(self) -> i16 {
+        self as i16
+    }
+
+    /// 判断角色是否可参与授权投影。
+    #[must_use]
+    pub const fn is_active(self) -> bool {
+        matches!(self, Self::Active)
+    }
+}
+
+/// 企业权限文本解析错误；错误中不保留外部输入。
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum OrganizationPermissionCodeError {
+    /// 权限码不属于服务端闭合集合。
+    #[error("企业权限码无效")]
+    Unknown,
+}
+
 /// 企业空间内固定的权限码；与平台管理员权限保持独立。
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum OrganizationPermission {
@@ -214,7 +302,29 @@ pub enum OrganizationPermission {
     UsageLogsReadSelf,
     /// 查看企业管理审计记录。
     AuditRead,
+    /// 查看企业自定义角色目录。
+    RolesRead,
+    /// 管理企业自定义角色定义。
+    RolesManage,
+    /// 为企业成员分配自定义角色。
+    RolesAssign,
 }
+
+const CUSTOM_ROLE_GRANTABLE_PERMISSIONS: &[OrganizationPermission] = &[
+    OrganizationPermission::OverviewRead,
+    OrganizationPermission::ProfileWrite,
+    OrganizationPermission::MembersManage,
+    OrganizationPermission::TeamsManage,
+    OrganizationPermission::WalletRead,
+    OrganizationPermission::WalletManage,
+    OrganizationPermission::BudgetsManage,
+    OrganizationPermission::KeysReadAll,
+    OrganizationPermission::KeysManageSelf,
+    OrganizationPermission::UsageLogsReadAll,
+    OrganizationPermission::UsageLogsReadSelf,
+    OrganizationPermission::AuditRead,
+    OrganizationPermission::RolesRead,
+];
 
 impl OrganizationPermission {
     /// 返回对外稳定的权限码，路由和审计只依赖该文本。
@@ -235,7 +345,49 @@ impl OrganizationPermission {
             Self::UsageLogsReadAll => "organization.usage_logs.read_all",
             Self::UsageLogsReadSelf => "organization.usage_logs.read_self",
             Self::AuditRead => "organization.audit.read",
+            Self::RolesRead => "organization.roles.read",
+            Self::RolesManage => "organization.roles.manage",
+            Self::RolesAssign => "organization.roles.assign",
         }
+    }
+
+    /// 从持久化文本恢复闭合权限枚举，未知或平台权限统一拒绝。
+    pub fn from_code(value: &str) -> Result<Self, OrganizationPermissionCodeError> {
+        match value {
+            "organization.overview.read" => Ok(Self::OverviewRead),
+            "organization.profile.write" => Ok(Self::ProfileWrite),
+            "organization.ownership.transfer" => Ok(Self::OwnershipTransfer),
+            "organization.close" => Ok(Self::Close),
+            "organization.members.manage" => Ok(Self::MembersManage),
+            "organization.teams.manage" => Ok(Self::TeamsManage),
+            "organization.wallet.read" => Ok(Self::WalletRead),
+            "organization.wallet.manage" => Ok(Self::WalletManage),
+            "organization.budgets.manage" => Ok(Self::BudgetsManage),
+            "organization.keys.read_all" => Ok(Self::KeysReadAll),
+            "organization.keys.manage_self" => Ok(Self::KeysManageSelf),
+            "organization.usage_logs.read_all" => Ok(Self::UsageLogsReadAll),
+            "organization.usage_logs.read_self" => Ok(Self::UsageLogsReadSelf),
+            "organization.audit.read" => Ok(Self::AuditRead),
+            "organization.roles.read" => Ok(Self::RolesRead),
+            "organization.roles.manage" => Ok(Self::RolesManage),
+            "organization.roles.assign" => Ok(Self::RolesAssign),
+            _ => Err(OrganizationPermissionCodeError::Unknown),
+        }
+    }
+
+    /// 判断权限是否允许写入企业自定义角色。
+    #[must_use]
+    pub const fn is_custom_role_grantable(self) -> bool {
+        !matches!(
+            self,
+            Self::OwnershipTransfer | Self::Close | Self::RolesManage | Self::RolesAssign
+        )
+    }
+
+    /// 返回服务端维护的自定义角色可授予权限白名单。
+    #[must_use]
+    pub const fn custom_role_grantable_permissions() -> &'static [Self] {
+        CUSTOM_ROLE_GRANTABLE_PERMISSIONS
     }
 }
 
@@ -307,6 +459,9 @@ impl OrganizationRole {
                 Permission::UsageLogsReadAll,
                 Permission::UsageLogsReadSelf,
                 Permission::AuditRead,
+                Permission::RolesRead,
+                Permission::RolesManage,
+                Permission::RolesAssign,
             ],
             Self::Admin => &[
                 Permission::OverviewRead,
@@ -321,6 +476,9 @@ impl OrganizationRole {
                 Permission::UsageLogsReadAll,
                 Permission::UsageLogsReadSelf,
                 Permission::AuditRead,
+                Permission::RolesRead,
+                Permission::RolesManage,
+                Permission::RolesAssign,
             ],
             Self::Billing => &[
                 Permission::OverviewRead,
@@ -456,6 +614,14 @@ state_code_conversion!(OrganizationRole, OrganizationStateCodeError::InvalidRole
     4 => OrganizationRole::Member,
     5 => OrganizationRole::Viewer,
 });
+state_code_conversion!(
+    OrganizationCustomRoleStatus,
+    OrganizationStateCodeError::InvalidCustomRoleStatus,
+    {
+        1 => OrganizationCustomRoleStatus::Active,
+        2 => OrganizationCustomRoleStatus::Disabled,
+    }
+);
 state_code_conversion!(
     OrganizationMembershipStatus,
     OrganizationStateCodeError::InvalidMembershipStatus,
