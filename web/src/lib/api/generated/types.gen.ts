@@ -1482,15 +1482,6 @@ export type OrganizationEntitlementResponse = {
     valid_until: number;
     grace_until?: number | null;
 };
-export type OrganizationMemberCustomRoleRequest = {
-    role_key: string | null;
-    expected_version: number;
-};
-export type OrganizationMemberCustomRoleResponse = {
-    membership_id: number;
-    custom_role_key: string | null;
-    version: number;
-};
 export type OrganizationInvitationAcceptRequest = {
     token: string;
 };
@@ -1553,6 +1544,15 @@ export type OrganizationInvitationResponse = {
 };
 export type OrganizationListResponse = {
     organizations: Array<OrganizationSummaryResponse>;
+};
+export type OrganizationMemberCustomRoleRequest = {
+    role_key: string | null;
+    expected_version: number;
+};
+export type OrganizationMemberCustomRoleResponse = {
+    membership_id: number;
+    custom_role_key: string | null;
+    version: number;
 };
 export type OrganizationMembershipChangeRequest = {
     role: string;
