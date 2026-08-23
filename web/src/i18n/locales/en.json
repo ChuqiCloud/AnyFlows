@@ -4769,6 +4769,9 @@
     },
     "permissions": {
       "organization": {
+        "overview": {
+          "read": "View organization overview"
+        },
         "profile": {
           "write": "Edit organization profile"
         },
@@ -4798,6 +4801,11 @@
         },
         "audit": {
           "read": "Read management audit"
+        },
+        "roles": {
+          "read": "View custom roles",
+          "manage": "Manage custom roles",
+          "assign": "Assign custom roles"
         }
       }
     },
@@ -4878,6 +4886,63 @@
         "description": "Change the role, state, and team for user #{{userId}} inside {{organization}}.",
         "removedWarning": "Removing this membership disables its {{organization}} capabilities and organization keys while retaining historical billing, usage, and audit facts.",
         "ownerHint": "Owners cannot be edited here. Use ownership transfer in organization settings."
+      }
+    },
+    "customRoles": {
+      "title": "Custom roles",
+      "subtitle": "Create reusable organization permission sets. The server remains the authority for entitlement, permissions, and state transitions.",
+      "noDescription": "No role description",
+      "status": {
+        "active": "Active",
+        "disabled": "Disabled"
+      },
+      "actions": {
+        "create": "Create role",
+        "disable": "Disable role",
+        "disabling": "Disabling"
+      },
+      "fields": {
+        "name": "Role name",
+        "description": "Role description",
+        "permissions": "Granted permissions"
+      },
+      "validation": {
+        "name": "The role name is required, cannot have surrounding whitespace, and must be at most 160 bytes.",
+        "permissions": "Select at least one permission."
+      },
+      "editor": {
+        "createTitle": "Create custom role",
+        "editTitle": "Edit custom role",
+        "description": "This role belongs only to {{organization}}. Platform permissions and role administration permissions cannot be granted.",
+        "permissionsHint": "Only permissions accepted by the server are available here."
+      },
+      "list": {
+        "permissionCount_one": "{{count}} granted permission",
+        "permissionCount_other": "{{count}} granted permissions"
+      },
+      "empty": {
+        "title": "No custom roles yet",
+        "manageBody": "Create a role before assigning it to active Members.",
+        "readBody": "A manager can create roles for this organization."
+      },
+      "restricted": {
+        "entitlementTitle": "Custom roles are not enabled",
+        "entitlementBody": "The current commercial entitlement does not allow custom-role management. No role catalog request was sent.",
+        "permissionTitle": "Custom-role catalog access is restricted",
+        "permissionBody": "Your current organization role does not include permission to read custom roles."
+      },
+      "disable": {
+        "title": "Disable custom role",
+        "description": "Disable {{name}}? This action cannot be undone, and the role will no longer be available for member assignment."
+      },
+      "errors": {
+        "listTitle": "Custom roles could not be loaded",
+        "listBody": "The role catalog is temporarily unavailable. Existing server state is unchanged.",
+        "conflict": "The role changed concurrently. Refresh the catalog and submit against the latest version.",
+        "inactive": "This role is no longer active and cannot be changed again.",
+        "entitlement": "The current commercial entitlement no longer allows custom-role management.",
+        "notFound": "This role is no longer available. Refresh the catalog.",
+        "mutation": "The operation did not return a reliable result. Keep the current input, refresh the facts, and retry."
       }
     },
     "teams": {

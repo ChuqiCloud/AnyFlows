@@ -64,6 +64,36 @@ test('成员自定义角色分配遵循服务端授权、CAS 与公开标识边�
   assert.match(editorSource, /role_key: customRoleKey \|\| null/)
 })
 
+test('企业自定义角色目录只在授权允许时读取，并限制为服务端可授予权限', async () => {
+  const [apiSource, panelSource, editorSource, permissionsSource] = await Promise.all([
+    readFile(new URL('../src/features/organization-roles/organization-custom-role-api.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/features/organization-roles/organization-custom-role-panel.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/features/organization-roles/organization-custom-role-editor-sheet.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/features/organization-roles/organization-custom-role-permissions.ts', import.meta.url), 'utf8'),
+  ])
+  const operations = [
+    ['/api/organizations/{organization_id}/roles', 'get', 'listOrganizationCustomRoles'],
+    ['/api/organizations/{organization_id}/roles', 'post', 'createOrganizationCustomRole'],
+    ['/api/organizations/{organization_id}/roles/{role_key}', 'patch', 'updateOrganizationCustomRole'],
+    ['/api/organizations/{organization_id}/roles/{role_key}/disable', 'post', 'disableOrganizationCustomRole'],
+  ]
+  for (const [path, method, operationId] of operations) {
+    assert.equal(openapi.paths[path][method].operationId, operationId)
+  }
+  assert.match(apiSource, /queryKey: organizationQueryKey\(organizationId, 'custom-roles', 'pages'\)/)
+  assert.match(apiSource, /expected_version: expectedVersion/)
+  assert.match(panelSource, /customRolesEnabled && canRead/)
+  assert.match(panelSource, /organization\.roles\.read/)
+  assert.match(panelSource, /organization\.roles\.manage/)
+  assert.match(editorSource, /expected_version: role\.version/)
+  assert.match(editorSource, /CUSTOM_ROLE_PERMISSION_CODES/)
+  assert.match(permissionsSource, /organization\.roles\.read/)
+  assert.doesNotMatch(permissionsSource, /organization\.ownership\.transfer/)
+  assert.doesNotMatch(permissionsSource, /organization\.close/)
+  assert.doesNotMatch(permissionsSource, /organization\.roles\.manage/)
+  assert.doesNotMatch(permissionsSource, /organization\.roles\.assign/)
+})
+
 test('企业充值恢复状态按企业隔离', async () => {
   const runtime = await readFile(new URL('../src/features/wallet/wallet-topup-runtime.ts', import.meta.url), 'utf8')
   const panel = await readFile(new URL('../src/features/wallet/wallet-topup-panel.tsx', import.meta.url), 'utf8')
@@ -84,6 +114,10 @@ test('企业控制台具备中英文入口和关键状态文案', async () => {
     assert.equal(typeof locale.organizationConsole.workspace.personal, 'string')
     assert.equal(typeof locale.organizationConsole.members.fields.customRole, 'string')
     assert.equal(typeof locale.organizationConsole.members.customRoles.disabledByEntitlement, 'string')
+    assert.equal(typeof locale.organizationConsole.customRoles.title, 'string')
+    assert.equal(typeof locale.organizationConsole.customRoles.editor.permissionsHint, 'string')
+    assert.equal(typeof locale.organizationConsole.customRoles.disable.description, 'string')
+    assert.equal(typeof locale.organizationConsole.permissions.organization.roles.read, 'string')
     assert.equal(typeof locale.organizationConsole.invitations.batch.preview, 'string')
     assert.equal(typeof locale.organizationConsole.wallet.adjustment.title, 'string')
     assert.equal(typeof locale.invitations.organization.accept, 'string')

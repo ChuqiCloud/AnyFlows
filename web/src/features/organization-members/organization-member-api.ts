@@ -12,7 +12,6 @@ import {
   createOrganizationInvitationBatch,
   createOrganizationTeam,
   disableOrganizationTeam,
-  listOrganizationCustomRoles,
   listOrganizationInvitations,
   listOrganizationMembers,
   listOrganizationTeams,
@@ -81,24 +80,6 @@ export function useOrganizationInvitations(organizationId: number, enabled = tru
       })
       return data
     },
-  })
-}
-
-export function useOrganizationCustomRoles(organizationId: number, enabled = true) {
-  return useInfiniteQuery({
-    queryKey: organizationQueryKey(organizationId, 'custom-roles', 'pages'),
-    enabled,
-    initialPageParam: undefined as number | undefined,
-    queryFn: async ({ pageParam, signal }) => {
-      const { data } = await listOrganizationCustomRoles({
-        client: apiClient,
-        path: { organization_id: organizationId },
-        query: { after: pageParam, limit: 100 },
-        signal,
-      })
-      return data
-    },
-    getNextPageParam: (page) => page.next_cursor ?? undefined,
   })
 }
 
