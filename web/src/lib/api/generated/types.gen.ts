@@ -1438,6 +1438,35 @@ export type OrganizationBudgetWindowResponse = {
     window_ends_at: number;
     version: number;
 };
+export type OrganizationCustomRoleChangeRequest = {
+    name: string;
+    description?: string | null;
+    permissions: Array<string>;
+    expected_version: number;
+};
+export type OrganizationCustomRoleCreateRequest = {
+    name: string;
+    description?: string | null;
+    permissions: Array<string>;
+};
+export type OrganizationCustomRoleDisableRequest = {
+    expected_version: number;
+};
+export type OrganizationCustomRoleListResponse = {
+    roles: Array<OrganizationCustomRoleResponse>;
+    next_cursor?: number | null;
+};
+export type OrganizationCustomRoleResponse = {
+    role_key: string;
+    name: string;
+    description?: string | null;
+    status: string;
+    permissions: Array<string>;
+    version: number;
+    created_by_user_id: number;
+    created_at: number;
+    updated_at: number;
+};
 export type OrganizationEntitlementResponse = {
     status: string;
     team_management_enabled: boolean;
@@ -4225,6 +4254,115 @@ export type DisableOrganizationTeamResponses = {
     200: OrganizationTeamResponse;
 };
 export type DisableOrganizationTeamResponse = DisableOrganizationTeamResponses[keyof DisableOrganizationTeamResponses];
+export type ListOrganizationCustomRolesData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        after?: number;
+        limit?: number;
+    };
+    url: '/api/organizations/{organization_id}/roles';
+};
+export type ListOrganizationCustomRolesErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationCustomRolesError = ListOrganizationCustomRolesErrors[keyof ListOrganizationCustomRolesErrors];
+export type ListOrganizationCustomRolesResponses = {
+    200: OrganizationCustomRoleListResponse;
+};
+export type ListOrganizationCustomRolesResponse = ListOrganizationCustomRolesResponses[keyof ListOrganizationCustomRolesResponses];
+export type CreateOrganizationCustomRoleData = {
+    body: OrganizationCustomRoleCreateRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/roles';
+};
+export type CreateOrganizationCustomRoleErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type CreateOrganizationCustomRoleError = CreateOrganizationCustomRoleErrors[keyof CreateOrganizationCustomRoleErrors];
+export type CreateOrganizationCustomRoleResponses = {
+    200: OrganizationCustomRoleResponse;
+};
+export type CreateOrganizationCustomRoleResponse = CreateOrganizationCustomRoleResponses[keyof CreateOrganizationCustomRoleResponses];
+export type GetOrganizationCustomRoleData = {
+    body?: never;
+    path: {
+        organization_id: number;
+        role_key: string;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/roles/{role_key}';
+};
+export type GetOrganizationCustomRoleErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetOrganizationCustomRoleError = GetOrganizationCustomRoleErrors[keyof GetOrganizationCustomRoleErrors];
+export type GetOrganizationCustomRoleResponses = {
+    200: OrganizationCustomRoleResponse;
+};
+export type GetOrganizationCustomRoleResponse = GetOrganizationCustomRoleResponses[keyof GetOrganizationCustomRoleResponses];
+export type UpdateOrganizationCustomRoleData = {
+    body: OrganizationCustomRoleChangeRequest;
+    path: {
+        organization_id: number;
+        role_key: string;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/roles/{role_key}';
+};
+export type UpdateOrganizationCustomRoleErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateOrganizationCustomRoleError = UpdateOrganizationCustomRoleErrors[keyof UpdateOrganizationCustomRoleErrors];
+export type UpdateOrganizationCustomRoleResponses = {
+    200: OrganizationCustomRoleResponse;
+};
+export type UpdateOrganizationCustomRoleResponse = UpdateOrganizationCustomRoleResponses[keyof UpdateOrganizationCustomRoleResponses];
+export type DisableOrganizationCustomRoleData = {
+    body: OrganizationCustomRoleDisableRequest;
+    path: {
+        organization_id: number;
+        role_key: string;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/roles/{role_key}/disable';
+};
+export type DisableOrganizationCustomRoleErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type DisableOrganizationCustomRoleError = DisableOrganizationCustomRoleErrors[keyof DisableOrganizationCustomRoleErrors];
+export type DisableOrganizationCustomRoleResponses = {
+    200: OrganizationCustomRoleResponse;
+};
+export type DisableOrganizationCustomRoleResponse = DisableOrganizationCustomRoleResponses[keyof DisableOrganizationCustomRoleResponses];
 export type GetAdminBalanceAlertSettingsData = {
     body?: never;
     path?: never;

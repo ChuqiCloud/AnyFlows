@@ -23,23 +23,24 @@ use af_admin::{
     DatabaseAdminTokenReader, DatabaseAdminTokenWriter, DatabaseAdminUsageLogReader,
     DatabaseAdminUserReader, DatabaseAdminUserWriter, DatabaseAdminWalletService,
     DatabaseInitialSetup, DatabaseOAuthLoginService, DatabaseOrganizationActivityService,
-    DatabaseOrganizationBudgetService, DatabaseOrganizationTokenService,
-    DatabaseOrganizationWalletService, DatabasePasskeyAuthenticationService,
-    DatabasePasswordResetService, DatabasePlatformAuditService,
-    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
-    DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
-    DatabaseSiteSettingsService, DatabaseSubscriptionService, DatabaseTokenAuthenticator,
-    DatabaseUserInvitationService, DatabaseUserNotificationService, DatabaseUserProfileService,
-    DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery, InitialSetup,
-    ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
+    DatabaseOrganizationBudgetService, DatabaseOrganizationCustomRoleService,
+    DatabaseOrganizationTokenService, DatabaseOrganizationWalletService,
+    DatabasePasskeyAuthenticationService, DatabasePasswordResetService,
+    DatabasePlatformAuditService, DatabasePlaygroundConversationService,
+    DatabasePlaygroundShareService, DatabaseRedemptionService, DatabaseRegistrationService,
+    DatabaseSessionAuthenticator, DatabaseSiteSettingsService, DatabaseSubscriptionService,
+    DatabaseTokenAuthenticator, DatabaseUserInvitationService, DatabaseUserNotificationService,
+    DatabaseUserProfileService, DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery,
+    InitialSetup, ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
     OAuthLoginService, OrganizationActivityService, OrganizationActivityServiceConfigError,
-    OrganizationBudgetService, OrganizationTokenService, OrganizationWalletService,
-    PasskeyAuthenticationService, PasskeyAuthenticationServiceConfigError, PasswordResetService,
-    PasswordResetServiceConfigError, PlatformAuditService, PlaygroundConversationService,
-    PlaygroundShareService, RedemptionService, RegistrationService, RegistrationServiceConfigError,
-    RuntimeRefreshingAdminGroupWriter, SessionAuthenticator, SessionAuthenticatorConfigError,
-    SiteSettingsService, SubscriptionService, TokenAuthenticator, UserInvitationService,
-    UserProfileService, UserTokenService, UserTopupService, UserWalletService,
+    OrganizationBudgetService, OrganizationCustomRoleService, OrganizationTokenService,
+    OrganizationWalletService, PasskeyAuthenticationService,
+    PasskeyAuthenticationServiceConfigError, PasswordResetService, PasswordResetServiceConfigError,
+    PlatformAuditService, PlaygroundConversationService, PlaygroundShareService, RedemptionService,
+    RegistrationService, RegistrationServiceConfigError, RuntimeRefreshingAdminGroupWriter,
+    SessionAuthenticator, SessionAuthenticatorConfigError, SiteSettingsService,
+    SubscriptionService, TokenAuthenticator, UserInvitationService, UserProfileService,
+    UserTokenService, UserTopupService, UserWalletService,
 };
 use af_analytics::{
     AdminDashboardChannelStorage, AdminDashboardReader, SplitAdminDashboardStorage,
@@ -81,7 +82,8 @@ use af_db::{
     ModelPriceRepository, ModelSyncRepository, NetworkSettingsMode, NetworkSettingsRecord,
     NetworkSettingsRepository, NetworkSettingsRepositoryConfigError, OAuthLoginRepository,
     OAuthLoginRepositoryError, OrganizationAuditRepository, OrganizationBudgetRepository,
-    OrganizationBudgetRepositoryConfigError, OrganizationRepository,
+    OrganizationBudgetRepositoryConfigError, OrganizationCustomRoleRepository,
+    OrganizationCustomRoleRepositoryConfigError, OrganizationRepository,
     OrganizationRepositoryConfigError, OrganizationTokenRepository,
     OrganizationTokenRepositoryConfigError, OrganizationWalletRepository,
     OrganizationWalletRepositoryConfigError, PasskeyRepository, PasswordResetRepository,
@@ -210,6 +212,7 @@ pub struct AuthenticationReady {
     organization_authorization_service: Arc<dyn af_admin::OrganizationAuthorizationService>,
     organization_invitation_service: Arc<dyn af_admin::OrganizationInvitationService>,
     organization_management_service: Arc<dyn af_admin::OrganizationManagementService>,
+    organization_custom_role_service: Arc<dyn OrganizationCustomRoleService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
     site_settings_repository: SiteSettingsRepository,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
@@ -431,6 +434,9 @@ pub enum BootstrapError {
     /// 企业活动审计指纹派生密钥缺失或无效。
     #[error("企业活动服务启动配置无效")]
     OrganizationActivityService(#[source] OrganizationActivityServiceConfigError),
+    /// 企业自定义角色仓储的启动参数无效。
+    #[error("企业自定义角色仓储启动参数无效")]
+    OrganizationCustomRoleRepository(#[source] OrganizationCustomRoleRepositoryConfigError),
     /// 站点设置仓储的启动参数无效。
     #[error("站点设置仓储启动参数无效")]
     SiteSettingsRepository(#[source] SiteSettingsRepositoryConfigError),
@@ -908,6 +914,13 @@ impl Bootstrap<DatabaseReady> {
         )
         .map_err(BootstrapError::OrganizationRepository)?;
         let organization_repository = Arc::new(organization_repository);
+        let organization_custom_role_repository = Arc::new(
+            OrganizationCustomRoleRepository::new(
+                self.stage.database.clone(),
+                Duration::from_secs(auth.lookup_timeout_secs()),
+            )
+            .map_err(BootstrapError::OrganizationCustomRoleRepository)?,
+        );
         let organization_wallet_repository = Arc::new(
             OrganizationWalletRepository::new(
                 self.stage.database.clone(),
@@ -1141,6 +1154,9 @@ impl Bootstrap<DatabaseReady> {
                     af_admin::DatabaseOrganizationManagementService::new(Arc::clone(
                         &organization_repository,
                     )),
+                ),
+                organization_custom_role_service: Arc::new(
+                    DatabaseOrganizationCustomRoleService::new(organization_custom_role_repository),
                 ),
                 site_settings_service: Arc::new(DatabaseSiteSettingsService::new(
                     site_settings_repository.clone(),
@@ -2292,6 +2308,9 @@ impl Bootstrap<Supervised> {
             )),
             Some(Arc::clone(
                 &self.stage.infrastructure.organization_management_service,
+            )),
+            Some(Arc::clone(
+                &self.stage.infrastructure.organization_custom_role_service,
             )),
             Some(Arc::clone(
                 &self.stage.infrastructure.platform_audit_service,

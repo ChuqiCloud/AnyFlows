@@ -5,18 +5,20 @@ use utoipa::OpenApi;
 use crate::{
     management_error::ManagementErrorBody,
     organizations::{
-        OrganizationEntitlementResponse, OrganizationInvitationAcceptRequest,
-        OrganizationInvitationAcceptResponse, OrganizationInvitationBatchRequest,
-        OrganizationInvitationBatchResponse, OrganizationInvitationCreateRequest,
-        OrganizationInvitationIssuedResponse, OrganizationInvitationListResponse,
-        OrganizationInvitationPreviewItemResponse, OrganizationInvitationPreviewRequest,
-        OrganizationInvitationPreviewResponse, OrganizationInvitationResponse,
-        OrganizationListResponse, OrganizationMembershipChangeRequest,
-        OrganizationMembershipListResponse, OrganizationMembershipResponse,
-        OrganizationOverviewResponse, OrganizationOwnershipTransferRequest,
-        OrganizationOwnershipTransferResponse, OrganizationTeamChangeRequest,
-        OrganizationTeamCreateRequest, OrganizationTeamDisableRequest,
-        OrganizationTeamListResponse, OrganizationTeamResponse,
+        OrganizationCustomRoleChangeRequest, OrganizationCustomRoleCreateRequest,
+        OrganizationCustomRoleDisableRequest, OrganizationCustomRoleListResponse,
+        OrganizationCustomRoleResponse, OrganizationEntitlementResponse,
+        OrganizationInvitationAcceptRequest, OrganizationInvitationAcceptResponse,
+        OrganizationInvitationBatchRequest, OrganizationInvitationBatchResponse,
+        OrganizationInvitationCreateRequest, OrganizationInvitationIssuedResponse,
+        OrganizationInvitationListResponse, OrganizationInvitationPreviewItemResponse,
+        OrganizationInvitationPreviewRequest, OrganizationInvitationPreviewResponse,
+        OrganizationInvitationResponse, OrganizationListResponse,
+        OrganizationMembershipChangeRequest, OrganizationMembershipListResponse,
+        OrganizationMembershipResponse, OrganizationOverviewResponse,
+        OrganizationOwnershipTransferRequest, OrganizationOwnershipTransferResponse,
+        OrganizationTeamChangeRequest, OrganizationTeamCreateRequest,
+        OrganizationTeamDisableRequest, OrganizationTeamListResponse, OrganizationTeamResponse,
     },
 };
 
@@ -358,6 +360,120 @@ fn change_organization_team() {}
 )]
 fn disable_organization_team() {}
 
+#[utoipa::path(
+    get,
+    path = "/api/organizations/{organization_id}/roles",
+    operation_id = "listOrganizationCustomRoles",
+    tag = "企业空间",
+    summary = "按稳定游标列出企业自定义角色",
+    params(
+        ("organization_id" = i64, Path, minimum = 1),
+        ("after" = Option<i64>, Query, minimum = 1),
+        ("limit" = Option<usize>, Query, minimum = 1, maximum = 100)
+    ),
+    responses(
+        (status = 200, body = OrganizationCustomRoleListResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn list_organization_custom_roles() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/organizations/{organization_id}/roles/{role_key}",
+    operation_id = "getOrganizationCustomRole",
+    tag = "企业空间",
+    summary = "读取企业自定义角色详情",
+    params(
+        ("organization_id" = i64, Path, minimum = 1),
+        ("role_key" = String, Path, description = "企业自定义角色公开标识")
+    ),
+    responses(
+        (status = 200, body = OrganizationCustomRoleResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn get_organization_custom_role() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/organizations/{organization_id}/roles",
+    operation_id = "createOrganizationCustomRole",
+    tag = "企业空间",
+    summary = "创建企业自定义角色",
+    params(("organization_id" = i64, Path, minimum = 1)),
+    request_body = OrganizationCustomRoleCreateRequest,
+    responses(
+        (status = 200, body = OrganizationCustomRoleResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 409, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn create_organization_custom_role() {}
+
+#[utoipa::path(
+    patch,
+    path = "/api/organizations/{organization_id}/roles/{role_key}",
+    operation_id = "updateOrganizationCustomRole",
+    tag = "企业空间",
+    summary = "按 CAS 更新企业自定义角色",
+    params(
+        ("organization_id" = i64, Path, minimum = 1),
+        ("role_key" = String, Path, description = "企业自定义角色公开标识")
+    ),
+    request_body = OrganizationCustomRoleChangeRequest,
+    responses(
+        (status = 200, body = OrganizationCustomRoleResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 409, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn update_organization_custom_role() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/organizations/{organization_id}/roles/{role_key}/disable",
+    operation_id = "disableOrganizationCustomRole",
+    tag = "企业空间",
+    summary = "按 CAS 不可逆停用企业自定义角色",
+    params(
+        ("organization_id" = i64, Path, minimum = 1),
+        ("role_key" = String, Path, description = "企业自定义角色公开标识")
+    ),
+    request_body = OrganizationCustomRoleDisableRequest,
+    responses(
+        (status = 200, body = OrganizationCustomRoleResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 409, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn disable_organization_custom_role() {}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -376,7 +492,12 @@ fn disable_organization_team() {}
         list_organization_teams,
         create_organization_team,
         change_organization_team,
-        disable_organization_team
+        disable_organization_team,
+        list_organization_custom_roles,
+        get_organization_custom_role,
+        create_organization_custom_role,
+        update_organization_custom_role,
+        disable_organization_custom_role
     ),
     components(schemas(
         OrganizationListResponse,
@@ -403,6 +524,11 @@ fn disable_organization_team() {}
         OrganizationTeamResponse,
         OrganizationTeamListResponse,
         OrganizationOwnershipTransferResponse,
+        OrganizationCustomRoleCreateRequest,
+        OrganizationCustomRoleChangeRequest,
+        OrganizationCustomRoleDisableRequest,
+        OrganizationCustomRoleResponse,
+        OrganizationCustomRoleListResponse,
         ManagementErrorBody
     ))
 )]

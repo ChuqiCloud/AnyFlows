@@ -4,6 +4,9 @@ use af_admin::{
     DEFAULT_ORGANIZATION_INVITATION_TTL_SECONDS, IssuedOrganizationInvitation,
     OrganizationAccessSummary, OrganizationActivityService, OrganizationAuditOutcome,
     OrganizationAuthorizationError, OrganizationAuthorizationService,
+    OrganizationCustomRoleChangeCommand, OrganizationCustomRoleCreateCommand,
+    OrganizationCustomRoleDisableCommand, OrganizationCustomRoleListQuery,
+    OrganizationCustomRoleService, OrganizationCustomRoleServiceError,
     OrganizationEntitlementSummary, OrganizationInvitationBatchCommand,
     OrganizationInvitationBatchResult, OrganizationInvitationCommand, OrganizationInvitationError,
     OrganizationInvitationPreviewCommand, OrganizationInvitationPreviewResult,
@@ -15,9 +18,9 @@ use af_admin::{
     OrganizationTeamRecord, SessionAuthentication,
 };
 use af_domain::{
-    OrganizationId, OrganizationInvitationKey, OrganizationInvitationStatus,
-    OrganizationMembershipId, OrganizationMembershipStatus, OrganizationPermission,
-    OrganizationRole, OrganizationTeamId,
+    OrganizationCustomRoleKey, OrganizationId, OrganizationInvitationKey,
+    OrganizationInvitationStatus, OrganizationMembershipId, OrganizationMembershipStatus,
+    OrganizationPermission, OrganizationRole, OrganizationTeamId,
 };
 use af_telemetry::RequestId;
 use axum::{
@@ -47,6 +50,7 @@ pub(crate) struct OrganizationHttpState {
     authorization_service: Arc<dyn OrganizationAuthorizationService>,
     invitation_service: Option<Arc<dyn OrganizationInvitationService>>,
     management_service: Option<Arc<dyn OrganizationManagementService>>,
+    custom_role_service: Option<Arc<dyn OrganizationCustomRoleService>>,
     activity_service: Arc<dyn OrganizationActivityService>,
 }
 
@@ -55,6 +59,7 @@ pub fn build_organization_router(
     authorization_service: Arc<dyn OrganizationAuthorizationService>,
     invitation_service: Option<Arc<dyn OrganizationInvitationService>>,
     management_service: Option<Arc<dyn OrganizationManagementService>>,
+    custom_role_service: Option<Arc<dyn OrganizationCustomRoleService>>,
     activity_service: Arc<dyn OrganizationActivityService>,
     session_authenticator: Arc<dyn af_admin::SessionAuthenticator>,
 ) -> Router {
@@ -126,6 +131,23 @@ pub fn build_organization_router(
     } else {
         router
     };
+    let router = if custom_role_service.is_some() {
+        router
+            .route(
+                "/api/organizations/{organization_id}/roles",
+                get(list_organization_custom_roles).post(create_organization_custom_role),
+            )
+            .route(
+                "/api/organizations/{organization_id}/roles/{role_key}",
+                get(get_organization_custom_role).patch(update_organization_custom_role),
+            )
+            .route(
+                "/api/organizations/{organization_id}/roles/{role_key}/disable",
+                post(disable_organization_custom_role),
+            )
+    } else {
+        router
+    };
     router
         .layer(authentication)
         .layer(middleware::from_fn(ensure_request_id))
@@ -133,6 +155,7 @@ pub fn build_organization_router(
             authorization_service,
             invitation_service,
             management_service,
+            custom_role_service,
             activity_service,
         })
 }
@@ -312,6 +335,50 @@ pub struct OrganizationTeamDisableRequest {
     expected_version: i64,
 }
 
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationCustomRoleCreateRequest {
+    name: String,
+    description: Option<String>,
+    permissions: Vec<String>,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationCustomRoleChangeRequest {
+    name: String,
+    description: Option<String>,
+    permissions: Vec<String>,
+    expected_version: i64,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationCustomRoleDisableRequest {
+    expected_version: i64,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationCustomRoleResponse {
+    role_key: String,
+    name: String,
+    description: Option<String>,
+    status: &'static str,
+    permissions: Vec<&'static str>,
+    version: i64,
+    created_by_user_id: i64,
+    created_at: i64,
+    updated_at: i64,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationCustomRoleListResponse {
+    roles: Vec<OrganizationCustomRoleResponse>,
+    next_cursor: Option<i64>,
+}
+
 #[derive(Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct OrganizationMembershipResponse {
@@ -361,6 +428,342 @@ pub struct OrganizationTeamListResponse {
 pub struct OrganizationOwnershipTransferResponse {
     previous_owner: OrganizationMembershipResponse,
     current_owner: OrganizationMembershipResponse,
+}
+
+async fn list_organization_custom_roles(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path(organization_id): Path<i64>,
+    headers: HeaderMap,
+    RawQuery(raw_query): RawQuery,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::RolesRead,
+        &request_id,
+        &headers,
+        "organization.role.list",
+        "organization",
+        organization_id.get().to_string(),
+    )
+    .await?;
+    let query = parse_custom_role_list_query(raw_query.as_deref())?;
+    let service = state
+        .custom_role_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let page = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::RolesRead,
+        "organization.role.list",
+        "organization",
+        organization_id.get().to_string(),
+        service
+            .list(context.clone(), query)
+            .await
+            .map_err(map_custom_role_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::RolesRead.code(),
+        "organization.role.list",
+        "organization",
+        organization_id.get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({
+            "result_count": page.records().len(),
+            "has_next_cursor": page.next_cursor().is_some(),
+        })),
+    )
+    .await?;
+    Ok(no_store_json(OrganizationCustomRoleListResponse {
+        roles: page
+            .records()
+            .iter()
+            .map(OrganizationCustomRoleResponse::from)
+            .collect(),
+        next_cursor: page
+            .next_cursor()
+            .map(af_domain::OrganizationCustomRoleId::get),
+    }))
+}
+
+async fn get_organization_custom_role(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path((organization_id, role_key)): Path<(i64, String)>,
+    headers: HeaderMap,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let role_key = parse_custom_role_key(&role_key)?;
+    let role_identifier = role_key.persistence_key();
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::RolesRead,
+        &request_id,
+        &headers,
+        "organization.role.read",
+        "custom_role",
+        role_identifier.clone(),
+    )
+    .await?;
+    let service = state
+        .custom_role_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let role = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::RolesRead,
+        "organization.role.read",
+        "custom_role",
+        role_identifier,
+        service
+            .get(context.clone(), role_key)
+            .await
+            .map_err(map_custom_role_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::RolesRead.code(),
+        "organization.role.read",
+        "custom_role",
+        role.role_key().persistence_key(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({"version": role.version()})),
+    )
+    .await?;
+    Ok(no_store_json(OrganizationCustomRoleResponse::from(&role)))
+}
+
+async fn create_organization_custom_role(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path(organization_id): Path<i64>,
+    headers: HeaderMap,
+    Json(request): Json<OrganizationCustomRoleCreateRequest>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::RolesManage,
+        &request_id,
+        &headers,
+        "organization.role.create",
+        "custom_role",
+        "new".to_owned(),
+    )
+    .await?;
+    let permissions = parse_custom_role_permissions(request.permissions)?;
+    let service = state
+        .custom_role_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let role = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::RolesManage,
+        "organization.role.create",
+        "custom_role",
+        "new".to_owned(),
+        service
+            .create(
+                context.clone(),
+                OrganizationCustomRoleCreateCommand::new(
+                    request.name,
+                    request.description,
+                    permissions,
+                ),
+            )
+            .await
+            .map_err(map_custom_role_error),
+    )
+    .await?;
+    record_custom_role_success(
+        &state,
+        context,
+        &request_id,
+        &headers,
+        "organization.role.create",
+        &role,
+    )
+    .await?;
+    Ok(no_store_json(OrganizationCustomRoleResponse::from(&role)))
+}
+
+async fn update_organization_custom_role(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path((organization_id, role_key)): Path<(i64, String)>,
+    headers: HeaderMap,
+    Json(request): Json<OrganizationCustomRoleChangeRequest>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let role_key = parse_custom_role_key(&role_key)?;
+    let role_identifier = role_key.persistence_key();
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::RolesManage,
+        &request_id,
+        &headers,
+        "organization.role.update",
+        "custom_role",
+        role_identifier.clone(),
+    )
+    .await?;
+    let command = OrganizationCustomRoleChangeCommand::new(
+        role_key,
+        request.name,
+        request.description,
+        parse_custom_role_permissions(request.permissions)?,
+        request.expected_version,
+    )
+    .map_err(map_custom_role_error)?;
+    let service = state
+        .custom_role_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let role = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::RolesManage,
+        "organization.role.update",
+        "custom_role",
+        role_identifier,
+        service
+            .update(context.clone(), command)
+            .await
+            .map_err(map_custom_role_error),
+    )
+    .await?;
+    record_custom_role_success(
+        &state,
+        context,
+        &request_id,
+        &headers,
+        "organization.role.update",
+        &role,
+    )
+    .await?;
+    Ok(no_store_json(OrganizationCustomRoleResponse::from(&role)))
+}
+
+async fn disable_organization_custom_role(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path((organization_id, role_key)): Path<(i64, String)>,
+    headers: HeaderMap,
+    Json(request): Json<OrganizationCustomRoleDisableRequest>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let role_key = parse_custom_role_key(&role_key)?;
+    let role_identifier = role_key.persistence_key();
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::RolesManage,
+        &request_id,
+        &headers,
+        "organization.role.disable",
+        "custom_role",
+        role_identifier.clone(),
+    )
+    .await?;
+    let command = OrganizationCustomRoleDisableCommand::new(role_key, request.expected_version)
+        .map_err(map_custom_role_error)?;
+    let service = state
+        .custom_role_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let role = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::RolesManage,
+        "organization.role.disable",
+        "custom_role",
+        role_identifier,
+        service
+            .disable(context.clone(), command)
+            .await
+            .map_err(map_custom_role_error),
+    )
+    .await?;
+    record_custom_role_success(
+        &state,
+        context,
+        &request_id,
+        &headers,
+        "organization.role.disable",
+        &role,
+    )
+    .await?;
+    Ok(no_store_json(OrganizationCustomRoleResponse::from(&role)))
+}
+
+async fn record_custom_role_success(
+    state: &OrganizationHttpState,
+    context: af_admin::OrganizationContext,
+    request_id: &RequestId,
+    headers: &HeaderMap,
+    operation: &'static str,
+    role: &af_admin::OrganizationCustomRoleRecord,
+) -> Result<(), ManagementError> {
+    record_organization_action(
+        &state.activity_service,
+        context,
+        request_id,
+        headers,
+        OrganizationPermission::RolesManage.code(),
+        operation,
+        "custom_role",
+        role.role_key().persistence_key(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({
+            "status": custom_role_status_code(role.status()),
+            "permission_count": role.permissions().len(),
+            "version": role.version(),
+        })),
+    )
+    .await
 }
 
 async fn list_organization_members(
@@ -1359,6 +1762,26 @@ impl From<&OrganizationTeamRecord> for OrganizationTeamResponse {
     }
 }
 
+impl From<&af_admin::OrganizationCustomRoleRecord> for OrganizationCustomRoleResponse {
+    fn from(record: &af_admin::OrganizationCustomRoleRecord) -> Self {
+        Self {
+            role_key: record.role_key().persistence_key(),
+            name: record.name().to_owned(),
+            description: record.description().map(str::to_owned),
+            status: custom_role_status_code(record.status()),
+            permissions: record
+                .permissions()
+                .iter()
+                .map(|permission| permission.code())
+                .collect(),
+            version: record.version(),
+            created_by_user_id: record.created_by_user_id().get(),
+            created_at: record.created_at(),
+            updated_at: record.updated_at(),
+        }
+    }
+}
+
 async fn authorize_invitation_management(
     state: &OrganizationHttpState,
     authentication: &SessionAuthentication,
@@ -1416,6 +1839,17 @@ fn parse_team_list_query(
     OrganizationTeamListQuery::new(after, limit).map_err(map_management_lifecycle_error)
 }
 
+fn parse_custom_role_list_query(
+    raw_query: Option<&str>,
+) -> Result<OrganizationCustomRoleListQuery, ManagementError> {
+    let (after, limit) = parse_directory_query(raw_query)?;
+    let after = after
+        .map(af_domain::OrganizationCustomRoleId::new)
+        .transpose()
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    OrganizationCustomRoleListQuery::new(after, limit).map_err(map_custom_role_error)
+}
+
 fn parse_directory_query(raw_query: Option<&str>) -> Result<(Option<i64>, usize), ManagementError> {
     let Some(raw_query) = raw_query.filter(|value| !value.is_empty()) else {
         return Ok((None, af_admin::DEFAULT_ORGANIZATION_DIRECTORY_PAGE_SIZE));
@@ -1462,6 +1896,29 @@ fn parse_invitation_key(value: &str) -> Result<OrganizationInvitationKey, Manage
         .map_err(|_| ManagementError::InvalidRequest)
 }
 
+fn parse_custom_role_key(value: &str) -> Result<OrganizationCustomRoleKey, ManagementError> {
+    OrganizationCustomRoleKey::from_persistence_key(value)
+        .map_err(|_| ManagementError::InvalidRequest)
+}
+
+fn parse_custom_role_permissions(
+    values: Vec<String>,
+) -> Result<Vec<OrganizationPermission>, ManagementError> {
+    values
+        .into_iter()
+        .map(|value| {
+            OrganizationPermission::from_code(&value)
+                .map_err(|_| ManagementError::InvalidRequest)
+                .and_then(|permission| {
+                    permission
+                        .is_custom_role_grantable()
+                        .then_some(permission)
+                        .ok_or(ManagementError::InvalidRequest)
+                })
+        })
+        .collect()
+}
+
 fn parse_organization_role(value: &str) -> Result<OrganizationRole, ManagementError> {
     match value {
         "owner" => Ok(OrganizationRole::Owner),
@@ -1505,6 +1962,31 @@ fn organization_team_status_code(status: af_domain::OrganizationTeamStatus) -> &
     match status {
         af_domain::OrganizationTeamStatus::Active => "active",
         af_domain::OrganizationTeamStatus::Disabled => "disabled",
+    }
+}
+
+fn custom_role_status_code(status: af_domain::OrganizationCustomRoleStatus) -> &'static str {
+    match status {
+        af_domain::OrganizationCustomRoleStatus::Active => "active",
+        af_domain::OrganizationCustomRoleStatus::Disabled => "disabled",
+    }
+}
+
+fn map_custom_role_error(error: OrganizationCustomRoleServiceError) -> ManagementError {
+    match error {
+        OrganizationCustomRoleServiceError::InvalidInput => ManagementError::InvalidRequest,
+        OrganizationCustomRoleServiceError::Forbidden => ManagementError::Forbidden,
+        OrganizationCustomRoleServiceError::NotFound => ManagementError::OrganizationNotFound,
+        OrganizationCustomRoleServiceError::Conflict => {
+            ManagementError::OrganizationLifecycleConflict
+        }
+        OrganizationCustomRoleServiceError::InvalidTransition => {
+            ManagementError::OrganizationLifecycleTransitionInvalid
+        }
+        OrganizationCustomRoleServiceError::EntitlementRestricted => {
+            ManagementError::OrganizationEntitlementRestricted
+        }
+        OrganizationCustomRoleServiceError::Internal => ManagementError::Internal,
     }
 }
 

@@ -29,6 +29,7 @@ mod oauth_login;
 mod organization;
 mod organization_activity;
 mod organization_budget;
+mod organization_custom_role;
 mod organization_invitation;
 mod organization_management;
 mod organization_token;
@@ -75,8 +76,8 @@ pub use af_db::{
     CredentialProxyScheme, DatabaseTimestamp, NetworkSettingsMode,
     OrganizationBillingReservationRecord, OrganizationBillingReservationStatus,
     OrganizationBudgetAllocationRecord, OrganizationBudgetPolicyRecord, OrganizationBudgetScope,
-    OrganizationBudgetWindowRecord, OrganizationInvitationRecord, OrganizationMembershipRecord,
-    OrganizationTeamRecord, OrganizationWalletLedgerEntryType,
+    OrganizationBudgetWindowRecord, OrganizationCustomRoleRecord, OrganizationInvitationRecord,
+    OrganizationMembershipRecord, OrganizationTeamRecord, OrganizationWalletLedgerEntryType,
 };
 pub use af_db::{OrganizationAuditOutcome, PlatformAuditOutcome};
 pub use api_key::{
@@ -227,6 +228,13 @@ pub use organization_budget::{
     OrganizationBudgetPolicyCreateCommand, OrganizationBudgetPolicyFuture,
     OrganizationBudgetReservationFuture, OrganizationBudgetService, OrganizationBudgetServiceError,
     OrganizationBudgetWindowsFuture,
+};
+pub use organization_custom_role::{
+    DEFAULT_ORGANIZATION_CUSTOM_ROLE_PAGE_SIZE, DatabaseOrganizationCustomRoleService,
+    OrganizationCustomRoleChangeCommand, OrganizationCustomRoleCreateCommand,
+    OrganizationCustomRoleDisableCommand, OrganizationCustomRoleFuture,
+    OrganizationCustomRoleListQuery, OrganizationCustomRolePage, OrganizationCustomRolePageFuture,
+    OrganizationCustomRoleService, OrganizationCustomRoleServiceError,
 };
 pub use organization_invitation::{
     AcceptedOrganizationInvitation, DEFAULT_ORGANIZATION_INVITATION_TTL_SECONDS,
