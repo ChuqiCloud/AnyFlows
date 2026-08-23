@@ -2,8 +2,8 @@ use std::fmt;
 
 use crate::EncryptedCredentialEnvelope;
 use af_domain::{
-    OrganizationCustomRoleId, OrganizationEntitlementSnapshot, OrganizationId,
-    OrganizationInvitationKey, OrganizationInvitationStatus, OrganizationKey,
+    OrganizationCustomRoleId, OrganizationCustomRoleKey, OrganizationEntitlementSnapshot,
+    OrganizationId, OrganizationInvitationKey, OrganizationInvitationStatus, OrganizationKey,
     OrganizationMembershipId, OrganizationMembershipStatus, OrganizationPermission,
     OrganizationRole, OrganizationStatus, OrganizationTeamId, OrganizationTeamStatus, UserId,
 };
