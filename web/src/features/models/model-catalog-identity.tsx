@@ -12,8 +12,8 @@ export function ModelCatalogIdentity({ item }: { item: ModelCatalogItem }) {
   const logo = findProviderLogo(item.provider)
   const ProviderIcon = logo?.Icon ?? Cpu
   return (
-    <div className="flex min-w-0 items-start gap-2.5">
-      <div className="relative grid size-9 shrink-0 place-items-center overflow-hidden rounded-lg border border-[var(--hairline)] bg-surface-2 text-foreground">
+    <div className="flex min-w-0 items-start gap-2">
+      <div className="relative grid size-8 shrink-0 place-items-center overflow-hidden rounded-md border border-[var(--hairline)] bg-surface-2 text-foreground">
         <ProviderIcon className="size-4" aria-hidden="true" />
         {item.icon_url ? (
           <img
@@ -27,13 +27,11 @@ export function ModelCatalogIdentity({ item }: { item: ModelCatalogItem }) {
       </div>
       <div className="min-w-0">
         <div className="truncate text-sm font-semibold text-foreground" title={item.display_name}>{item.display_name}</div>
-        <div className="mt-0.5 flex min-w-0 items-center gap-0.5">
-          <span className="truncate font-mono text-[0.6875rem] text-muted-foreground" title={item.model}>{item.model}</span>
+        <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1">
+          <span className="max-w-48 truncate font-mono text-[0.6875rem] text-muted-foreground" title={item.model}>{item.model}</span>
           <ModelCopyButton model={item.model} size="icon-xs" />
-        </div>
-        <div className="mt-1.5 flex flex-wrap gap-1">
-          <Badge className="max-w-32 truncate border-transparent bg-info/8 text-info">{item.provider}</Badge>
-          {item.tags.slice(0, 2).map((tag) => <Badge key={tag} className="max-w-32 truncate">{tag}</Badge>)}
+          <Badge className="max-w-24 truncate border-transparent bg-info/8 text-info">{item.provider}</Badge>
+          {item.tags.slice(0, 2).map((tag) => <Badge key={tag} className="max-w-24 truncate">{tag}</Badge>)}
           {item.tags.length > 2 ? <Badge>{t('models.values.moreTags', { count: item.tags.length - 2 })}</Badge> : null}
         </div>
       </div>

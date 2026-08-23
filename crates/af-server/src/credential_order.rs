@@ -147,7 +147,7 @@ fn credential_load(
     loads: &BTreeMap<i64, CredentialLoad>,
 ) -> CredentialLoad {
     loads
-        .get(&credential.credential_id())
+        .get(&credential.concurrency_owner_id().get())
         .copied()
         .unwrap_or(CredentialLoad::new(0, 0, credential.concurrency()))
 }

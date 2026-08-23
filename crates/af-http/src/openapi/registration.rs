@@ -39,6 +39,7 @@ fn get_registration_status() {}
         (status = 403, description = "公开注册未启用", body = ManagementErrorBody),
         (status = 409, description = "SMTP 设置尚未完整配置", body = ManagementErrorBody),
         (status = 429, description = "主体、客户端 IP 或发送冷却窗口仍受限", body = ManagementErrorBody),
+        (status = 503, description = "Turnstile 验证服务不可用", body = ManagementErrorBody),
         (status = 500, description = "服务内部错误", body = ManagementErrorBody),
         (status = 502, description = "SMTP 连接、认证或投递失败", body = ManagementErrorBody)
     )
@@ -56,6 +57,7 @@ fn send_registration_email_verification() {}
         (status = 201, description = "注册及自动登录成功", body = LoginResponse),
         (status = 400, description = "请求正文或字段无效", body = ManagementErrorBody),
         (status = 403, description = "公开注册未启用", body = ManagementErrorBody),
+        (status = 503, description = "Turnstile 验证服务不可用", body = ManagementErrorBody),
         (status = 409, description = "验证码无效或公开身份无法创建", body = ManagementErrorBody),
         (status = 429, description = "固定窗口注册尝试次数已耗尽", body = ManagementErrorBody),
         (status = 500, description = "服务内部错误", body = ManagementErrorBody)

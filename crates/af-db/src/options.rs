@@ -178,6 +178,29 @@ impl DatabaseOptions {
         self.close_timeout
     }
 
+    /// 文件 SQLite 的并发池必须先通过独立单连接完成迁移，避免多步表重建跨连接执行。
+    pub(crate) fn dedicated_migration_options(&self) -> Option<Self> {
+        if self.dialect != DatabaseDialect::Sqlite
+            || self.pool.max_connections <= 1
+            || self.sqlite_is_memory()
+        {
+            return None;
+        }
+        let mut options = self.clone();
+        options.pool.max_connections = 1;
+        options.pool.min_connections = 1;
+        Some(options)
+    }
+
+    fn sqlite_is_memory(&self) -> bool {
+        Url::parse(&self.url).is_ok_and(|url| {
+            url.path() == ":memory:"
+                || url
+                    .query_pairs()
+                    .any(|(key, value)| key == "mode" && value.eq_ignore_ascii_case("memory"))
+        })
+    }
+
     pub(crate) fn to_connect_options(&self) -> Result<ConnectOptions, DatabaseOptionsError> {
         self.validate()?;
 
@@ -323,6 +346,43 @@ mod tests {
             sea_orm_options.get_acquire_timeout(),
             Some(options.pool.acquire_timeout)
         );
+    }
+
+    #[test]
+    fn file_sqlite_uses_one_connection_for_migrations_before_reopening_parallel_pool() {
+        let parallel_pool = PoolOptions {
+            max_connections: 8,
+            min_connections: 2,
+            ..PoolOptions::default()
+        };
+        let file = DatabaseOptions::new("sqlite:///tmp/anyflows.db?mode=rwc")
+            .unwrap()
+            .with_pool_options(parallel_pool.clone());
+        let dedicated = file
+            .dedicated_migration_options()
+            .expect("文件 SQLite 并发池必须使用独立迁移连接");
+        assert_eq!(
+            (
+                dedicated.pool.max_connections,
+                dedicated.pool.min_connections
+            ),
+            (1, 1)
+        );
+        assert_eq!(
+            (file.pool.max_connections, file.pool.min_connections),
+            (8, 2)
+        );
+
+        for url in ["sqlite::memory:", "sqlite:///memory.db?mode=memory"] {
+            let memory = DatabaseOptions::new(url)
+                .unwrap()
+                .with_pool_options(parallel_pool.clone());
+            assert!(memory.dedicated_migration_options().is_none());
+        }
+        let postgres = DatabaseOptions::new("postgres://localhost/db")
+            .unwrap()
+            .with_pool_options(parallel_pool);
+        assert!(postgres.dedicated_migration_options().is_none());
     }
 
     #[test]

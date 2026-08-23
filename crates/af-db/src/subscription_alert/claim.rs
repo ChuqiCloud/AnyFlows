@@ -10,6 +10,7 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 use crate::{
     DatabasePool, MAX_BALANCE_ALERT_ATTEMPTS,
     entity::{subscription_balance_alert_events, subscription_plans, user_subscriptions, users},
+    notification::{NotificationDeliveryState, NotificationKind, update_delivery_state},
 };
 
 use super::{
@@ -154,6 +155,11 @@ pub(super) async fn claim_next(
             threshold_percent: event.threshold_percent,
             attempt_count: event.attempt_count,
             version: event.version,
+            notification_source_key: format!(
+                "subscription:{}:{}",
+                event.user_subscription_id,
+                event.window_started_at.unix_timestamp()
+            ),
         };
         commit(transaction).await?;
         return Ok(SubscriptionBalanceAlertClaimOutcome::Claimed(lease));
@@ -166,30 +172,65 @@ pub(super) async fn cancel_expired(
     pool: &DatabasePool,
     now: TimeDateTimeWithTimeZone,
 ) -> Result<u64, SubscriptionBalanceAlertRepositoryError> {
-    let result = subscription_balance_alert_events::Entity::update_many()
-        .col_expr(
-            subscription_balance_alert_events::Column::Status,
-            Expr::value(STATUS_CANCELED),
-        )
-        .col_expr(
-            subscription_balance_alert_events::Column::LeaseExpiresAt,
-            Expr::value(Option::<TimeDateTimeWithTimeZone>::None),
-        )
-        .col_expr(
-            subscription_balance_alert_events::Column::Version,
-            Expr::col(subscription_balance_alert_events::Column::Version).add(1_i64),
-        )
-        .col_expr(
-            subscription_balance_alert_events::Column::UpdatedAt,
-            Expr::value(now),
-        )
+    let transaction = begin(pool).await?;
+    let candidates = subscription_balance_alert_events::Entity::find()
         .filter(subscription_balance_alert_events::Column::WindowEndsAt.lte(now))
         .filter(cancelable_condition(now))
-        .exec(pool.connection())
+        .all(&transaction)
         .with_subscriber(NoSubscriber::default())
         .await
         .map_err(|_| SubscriptionBalanceAlertRepositoryError::Query)?;
-    Ok(result.rows_affected)
+    let mut canceled = 0_u64;
+    for event in candidates {
+        let result = subscription_balance_alert_events::Entity::update_many()
+            .col_expr(
+                subscription_balance_alert_events::Column::Status,
+                Expr::value(STATUS_CANCELED),
+            )
+            .col_expr(
+                subscription_balance_alert_events::Column::LeaseExpiresAt,
+                Expr::value(Option::<TimeDateTimeWithTimeZone>::None),
+            )
+            .col_expr(
+                subscription_balance_alert_events::Column::Version,
+                Expr::value(
+                    event
+                        .version
+                        .checked_add(1)
+                        .ok_or(SubscriptionBalanceAlertRepositoryError::Invariant)?,
+                ),
+            )
+            .col_expr(
+                subscription_balance_alert_events::Column::UpdatedAt,
+                Expr::value(now),
+            )
+            .filter(subscription_balance_alert_events::Column::Id.eq(event.id))
+            .filter(subscription_balance_alert_events::Column::Version.eq(event.version))
+            .filter(cancelable_condition(now))
+            .exec(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| SubscriptionBalanceAlertRepositoryError::Query)?;
+        if result.rows_affected == 0 {
+            continue;
+        }
+        if result.rows_affected != 1 {
+            return Err(SubscriptionBalanceAlertRepositoryError::Invariant);
+        }
+        sync_notification_state(
+            &transaction,
+            &subscription_notification_source_key(&event),
+            NotificationDeliveryState::Canceled,
+            event.attempt_count,
+            now,
+        )
+        .await?;
+        canceled = canceled
+            .checked_add(1)
+            .ok_or(SubscriptionBalanceAlertRepositoryError::Invariant)?;
+    }
+    commit(transaction).await?;
+    Ok(canceled)
 }
 
 /// 将达到最大投递次数且没有有效租约的事件推进到失败终态。
@@ -197,32 +238,67 @@ pub(super) async fn fail_exhausted(
     pool: &DatabasePool,
     now: TimeDateTimeWithTimeZone,
 ) -> Result<u64, SubscriptionBalanceAlertRepositoryError> {
-    let result = subscription_balance_alert_events::Entity::update_many()
-        .col_expr(
-            subscription_balance_alert_events::Column::Status,
-            Expr::value(STATUS_FAILED),
-        )
-        .col_expr(
-            subscription_balance_alert_events::Column::LeaseExpiresAt,
-            Expr::value(Option::<TimeDateTimeWithTimeZone>::None),
-        )
-        .col_expr(
-            subscription_balance_alert_events::Column::Version,
-            Expr::col(subscription_balance_alert_events::Column::Version).add(1_i64),
-        )
-        .col_expr(
-            subscription_balance_alert_events::Column::UpdatedAt,
-            Expr::value(now),
-        )
+    let transaction = begin(pool).await?;
+    let candidates = subscription_balance_alert_events::Entity::find()
         .filter(
             subscription_balance_alert_events::Column::AttemptCount.gte(MAX_BALANCE_ALERT_ATTEMPTS),
         )
         .filter(cancelable_condition(now))
-        .exec(pool.connection())
+        .all(&transaction)
         .with_subscriber(NoSubscriber::default())
         .await
         .map_err(|_| SubscriptionBalanceAlertRepositoryError::Query)?;
-    Ok(result.rows_affected)
+    let mut failed = 0_u64;
+    for event in candidates {
+        let result = subscription_balance_alert_events::Entity::update_many()
+            .col_expr(
+                subscription_balance_alert_events::Column::Status,
+                Expr::value(STATUS_FAILED),
+            )
+            .col_expr(
+                subscription_balance_alert_events::Column::LeaseExpiresAt,
+                Expr::value(Option::<TimeDateTimeWithTimeZone>::None),
+            )
+            .col_expr(
+                subscription_balance_alert_events::Column::Version,
+                Expr::value(
+                    event
+                        .version
+                        .checked_add(1)
+                        .ok_or(SubscriptionBalanceAlertRepositoryError::Invariant)?,
+                ),
+            )
+            .col_expr(
+                subscription_balance_alert_events::Column::UpdatedAt,
+                Expr::value(now),
+            )
+            .filter(subscription_balance_alert_events::Column::Id.eq(event.id))
+            .filter(subscription_balance_alert_events::Column::Version.eq(event.version))
+            .filter(cancelable_condition(now))
+            .exec(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| SubscriptionBalanceAlertRepositoryError::Query)?;
+        if result.rows_affected == 0 {
+            continue;
+        }
+        if result.rows_affected != 1 {
+            return Err(SubscriptionBalanceAlertRepositoryError::Invariant);
+        }
+        sync_notification_state(
+            &transaction,
+            &subscription_notification_source_key(&event),
+            NotificationDeliveryState::Failed,
+            event.attempt_count,
+            now,
+        )
+        .await?;
+        failed = failed
+            .checked_add(1)
+            .ok_or(SubscriptionBalanceAlertRepositoryError::Invariant)?;
+    }
+    commit(transaction).await?;
+    Ok(failed)
 }
 
 fn valid_snapshot(
@@ -300,10 +376,47 @@ async fn cancel_claimed(
         .await
         .map_err(|_| SubscriptionBalanceAlertRepositoryError::Query)?;
     if result.rows_affected == 1 {
+        sync_notification_state(
+            transaction,
+            &subscription_notification_source_key(event),
+            NotificationDeliveryState::Canceled,
+            event.attempt_count,
+            now,
+        )
+        .await?;
         Ok(())
     } else {
         Err(SubscriptionBalanceAlertRepositoryError::Invariant)
     }
+}
+
+fn subscription_notification_source_key(
+    event: &subscription_balance_alert_events::Model,
+) -> String {
+    format!(
+        "subscription:{}:{}",
+        event.user_subscription_id,
+        event.window_started_at.unix_timestamp()
+    )
+}
+
+async fn sync_notification_state(
+    transaction: &DatabaseTransaction,
+    source_key: &str,
+    state: NotificationDeliveryState,
+    attempts: i16,
+    updated_at: TimeDateTimeWithTimeZone,
+) -> Result<(), SubscriptionBalanceAlertRepositoryError> {
+    update_delivery_state(
+        transaction,
+        NotificationKind::SubscriptionBalanceAlert,
+        source_key,
+        state,
+        attempts,
+        updated_at,
+    )
+    .await
+    .map_err(|_| SubscriptionBalanceAlertRepositoryError::Query)
 }
 
 fn valid_recipient(value: &str) -> bool {

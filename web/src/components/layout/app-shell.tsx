@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { CircleUserRound, LogOut, Search, ShieldCheck, WalletCards } from 'lucide-react'
+import { BellRing, CircleUserRound, LogOut, Search, ShieldCheck, WalletCards } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { AppNavigation } from '@/components/layout/app-navigation'
@@ -19,7 +19,12 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { SiteBrandMark } from '@/features/site-settings/site-brand-mark'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
+import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import { useUserWalletSummary } from '@/features/wallet/wallet-api'
+import { OrganizationWorkspaceSwitcher } from '@/features/organization-console/organization-workspace-switcher'
+import { useOrganizationWorkspace } from '@/features/organization-console/organization-workspace-context'
+import { useOrganizationWalletSummary } from '@/features/organization-wallet/organization-wallet-api'
+import { useUserNotifications } from '@/features/profile/profile-api'
 import type { SessionUser } from '@/lib/api/generated/types.gen'
 
 type AppShellProps = {
@@ -41,23 +46,33 @@ function getDefaultOpen() {
 }
 
 export function AppShell({ title, children, currentUser, onLogout }: AppShellProps) {
-  const { i18n, t } = useTranslation()
+  const { t } = useTranslation()
+  const workspace = useOrganizationWorkspace()
   // 控制台与首页共用公开站点设置缓存，保存站点设置后可即时同步品牌展示。
   const siteQuery = usePublicSiteSettings()
-  const walletQuery = useUserWalletSummary()
+  const walletQuery = useUserWalletSummary(workspace.selectedId === undefined)
+  const organizationWalletQuery = useOrganizationWalletSummary(
+    workspace.selectedId ?? 0,
+    workspace.selectedId !== undefined,
+  )
+  const notificationsQuery = useUserNotifications()
+  const { formatQuota } = useBalanceDisplay()
   const site = siteQuery.data
   const siteName = site?.site_name ?? t('brand.name')
   const siteScope = site?.brand.tagline ?? t('brand.scope')
-  const compactQuota = new Intl.NumberFormat(i18n.resolvedLanguage === 'zh' ? 'zh-CN' : 'en-US', {
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  })
-  const fullQuota = new Intl.NumberFormat(i18n.resolvedLanguage === 'zh' ? 'zh-CN' : 'en-US')
-  const balance = walletQuery.data?.balance
-  const balanceText = balance === undefined ? '—' : compactQuota.format(balance)
+  const enterpriseWorkspace = workspace.selectedId !== undefined
+  const balance = enterpriseWorkspace
+    ? organizationWalletQuery.data?.balance
+    : walletQuery.data?.balance
+  const balanceText = balance === undefined ? '--' : formatQuota(balance)
   const balanceLabel = balance === undefined
-    ? t('shell.balanceUnavailable')
-    : t('shell.balanceValue', { value: fullQuota.format(balance) })
+    ? t(enterpriseWorkspace ? 'shell.organizationBalanceUnavailable' : 'shell.balanceUnavailable')
+    : t(enterpriseWorkspace ? 'shell.organizationBalanceValue' : 'shell.balanceValue', { value: formatQuota(balance) })
+  const balanceHref = enterpriseWorkspace ? '#/console/organization-wallet' : '#/console/wallet'
+  const unreadCount = notificationsQuery.data?.pages[0]?.unread_count
+  const notificationsLabel = unreadCount !== undefined && unreadCount > 0
+    ? t('shell.notificationsUnread', { count: unreadCount })
+    : t('shell.notifications')
 
   return (
     <SidebarProvider defaultOpen={getDefaultOpen()}>
@@ -101,23 +116,37 @@ export function AppShell({ title, children, currentUser, onLogout }: AppShellPro
             />
             <span className="h-3.5 w-px bg-[var(--hairline)]" aria-hidden="true" />
             <h1 className="truncate text-sm font-semibold">{title}</h1>
+            <OrganizationWorkspaceSwitcher />
           </div>
 
           <div className="flex items-center gap-1">
             <Tooltip>
               <TooltipTrigger asChild>
                 <a
-                  href="#/console/wallet"
+                  href={balanceHref}
                   className="flex h-7 min-w-7 items-center justify-center gap-1.5 rounded-lg px-1.5 text-xs text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground sm:min-w-[4.75rem]"
                   aria-label={balanceLabel}
                 >
-                  <WalletCards className="size-3.5 shrink-0 text-success" aria-hidden="true" />
-                  <span className="hidden max-w-16 truncate font-medium tabular-nums sm:inline">
+                  <WalletCards className={`size-3.5 shrink-0 ${enterpriseWorkspace ? 'text-brand' : 'text-success'}`} aria-hidden="true" />
+                  <span className="hidden max-w-24 truncate font-medium tabular-nums sm:inline">
                     {balanceText}
                   </span>
                 </a>
               </TooltipTrigger>
               <TooltipContent side="bottom">{balanceLabel}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <a
+                  href="#/console/profile?section=notifications"
+                  className="relative flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none"
+                  aria-label={notificationsLabel}
+                >
+                  <BellRing className="size-3.5" aria-hidden="true" />
+                  {unreadCount !== undefined && unreadCount > 0 ? <span aria-hidden="true" className="absolute -right-0.5 -top-0.5 min-w-3.5 rounded-full bg-destructive px-1 text-center text-[0.5625rem] font-semibold leading-3 text-destructive-foreground">{unreadCount > 99 ? '99+' : unreadCount}</span> : null}
+                </a>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{notificationsLabel}</TooltipContent>
             </Tooltip>
             <button
               type="button"

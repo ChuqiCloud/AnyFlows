@@ -21,17 +21,15 @@ use af_domain::{ConcurrencyLimit, CredentialId, GroupId, TokenId, UserId};
 
 const LIVE_REDIS_GATE: &str = "AF_REQUIRE_LIVE_REDIS";
 const LIVE_REDIS_URL: &str = "AF_TEST_REDIS_URL";
+const RATE_LIMIT_LOAD_INSTANCE_COUNT: usize = 8;
+const RATE_LIMIT_LOAD_ATTEMPT_COUNT: usize = 128;
+const RATE_LIMIT_LOAD_CAPACITY: u32 = 17;
 
 /// 验证真实 Redis 下的 L1/L2、TTL、删除和跨实例边界。
 #[tokio::test]
 #[ignore = "需要显式配置隔离的 Redis 测试实例"]
 async fn redis_hybrid_cache_smoke() {
-    assert_eq!(
-        env::var(LIVE_REDIS_GATE).as_deref(),
-        Ok("1"),
-        "必须显式设置 {LIVE_REDIS_GATE}=1"
-    );
-    let redis_url = env::var(LIVE_REDIS_URL).expect("必须设置 AF_TEST_REDIS_URL");
+    let redis_url = live_redis_url();
     let namespace = unique_namespace();
     let config = || {
         HybridCacheConfig::new(namespace.clone(), 8)
@@ -97,6 +95,75 @@ async fn redis_hybrid_cache_smoke() {
     verify_request_rate_limit_contract(&redis_url, &format!("{namespace}.rate-limit")).await;
 }
 
+/// 验证多个独立 Redis 连接并发竞争同一窗口时，全局容量不会按实例数放大。
+#[tokio::test]
+#[ignore = "需要显式配置隔离的 Redis 测试实例"]
+async fn redis_request_rate_limit_multi_instance_capacity() {
+    let redis_url = live_redis_url();
+    let namespace = format!("{}.rate-limit-load", unique_namespace());
+    verify_request_rate_limit_multi_instance_capacity(&redis_url, &namespace).await;
+}
+
+fn live_redis_url() -> String {
+    assert_eq!(
+        env::var(LIVE_REDIS_GATE).as_deref(),
+        Ok("1"),
+        "必须显式设置 {LIVE_REDIS_GATE}=1"
+    );
+    env::var(LIVE_REDIS_URL).expect("必须设置 AF_TEST_REDIS_URL")
+}
+
+async fn verify_request_rate_limit_multi_instance_capacity(redis_url: &str, namespace: &str) {
+    let config = || {
+        RedisRequestRateLimitConfig::new(
+            RedisConfig::new(redis_url)
+                .with_timeouts(DEFAULT_REDIS_CONNECT_TIMEOUT, Duration::from_secs(2)),
+            namespace,
+        )
+        .unwrap()
+    };
+    let mut instances = Vec::with_capacity(RATE_LIMIT_LOAD_INSTANCE_COUNT);
+    for _ in 0..RATE_LIMIT_LOAD_INSTANCE_COUNT {
+        instances.push(RedisRequestRateLimitStore::connect(config()).await.unwrap());
+    }
+
+    // 测试窗口足够长，避免并发请求恰好跨越窗口边界而掩盖容量断言。
+    let window = Duration::from_secs(10 * 60);
+    let rule = RequestRateLimitRule::new(
+        RequestRateLimitSubject::User(UserId::new(301).unwrap()),
+        NonZeroU32::new(RATE_LIMIT_LOAD_CAPACITY).unwrap(),
+        window,
+    )
+    .unwrap();
+    let outcomes =
+        futures_util::future::join_all((0..RATE_LIMIT_LOAD_ATTEMPT_COUNT).map(|attempt| {
+            let instance = instances[attempt % instances.len()].clone();
+            async move { instance.admit(&[rule]).await }
+        }))
+        .await;
+
+    let mut admitted = 0_usize;
+    let mut limited = 0_usize;
+    for outcome in outcomes {
+        match outcome.unwrap() {
+            RequestRateLimitOutcome::Admitted => admitted += 1,
+            RequestRateLimitOutcome::Limited(rejection) => {
+                limited += 1;
+                assert_eq!(rejection.subject(), rule.subject());
+                assert!(!rejection.retry_after().is_zero());
+                assert!(rejection.retry_after() <= window);
+            }
+        }
+    }
+
+    assert_eq!(admitted, RATE_LIMIT_LOAD_CAPACITY as usize);
+    assert_eq!(limited, RATE_LIMIT_LOAD_ATTEMPT_COUNT - admitted);
+    assert!(matches!(
+        instances[0].admit(&[rule]).await.unwrap(),
+        RequestRateLimitOutcome::Limited(_)
+    ));
+}
+
 async fn verify_request_rate_limit_contract(redis_url: &str, namespace: &str) {
     let config = || {
         RedisRequestRateLimitConfig::new(
@@ -109,6 +176,13 @@ async fn verify_request_rate_limit_contract(redis_url: &str, namespace: &str) {
     let first = RedisRequestRateLimitStore::connect(config()).await.unwrap();
     let second = RedisRequestRateLimitStore::connect(config()).await.unwrap();
     let window = Duration::from_millis(300);
+    let alignment_rule = RequestRateLimitRule::new(
+        RequestRateLimitSubject::User(UserId::new(100).unwrap()),
+        NonZeroU32::new(1).unwrap(),
+        window,
+    )
+    .unwrap();
+    align_to_fresh_rate_limit_window(&first, alignment_rule).await;
     let user_rule = RequestRateLimitRule::new(
         RequestRateLimitSubject::User(UserId::new(101).unwrap()),
         NonZeroU32::new(2).unwrap(),
@@ -150,6 +224,29 @@ async fn verify_request_rate_limit_contract(redis_url: &str, namespace: &str) {
         second.admit(&[user_rule, group_rule]).await.unwrap(),
         RequestRateLimitOutcome::Admitted
     );
+}
+
+/// 通过 Redis 返回的剩余时间进入新窗口，避免集成断言随机跨桶。
+async fn align_to_fresh_rate_limit_window(
+    store: &RedisRequestRateLimitStore,
+    rule: RequestRateLimitRule,
+) {
+    assert_eq!(
+        store.admit(&[rule]).await.unwrap(),
+        RequestRateLimitOutcome::Admitted
+    );
+    let mut retry_after = None;
+    for _ in 0..8 {
+        match store.admit(&[rule]).await.unwrap() {
+            RequestRateLimitOutcome::Limited(rejection) => {
+                retry_after = Some(rejection.retry_after());
+                break;
+            }
+            RequestRateLimitOutcome::Admitted => continue,
+        }
+    }
+    let retry_after = retry_after.expect("连续请求必须在同一固定窗口内触发限流");
+    tokio::time::sleep(retry_after + Duration::from_millis(10)).await;
 }
 
 async fn verify_health_contract(redis_url: &str, namespace: &str) {

@@ -6,6 +6,7 @@ import { AppShell } from '@/components/layout/app-shell'
 import { AuthenticationSettingsPage } from '@/features/authentication-settings/authentication-settings-page'
 import { ForgotPasswordPage } from '@/features/auth/forgot-password-page'
 import { LoginPage, type LoginNotice } from '@/features/auth/login-page'
+import { OAuthCallbackPage } from '@/features/auth/oauth-callback-page'
 import { ResetPasswordPage } from '@/features/auth/reset-password-page'
 import { SessionBoundary } from '@/features/auth/session-boundary'
 import { endManagementSession } from '@/features/auth/session-query'
@@ -23,6 +24,14 @@ import { LandingPage } from '@/features/landing/landing-page'
 import { ModelPage } from '@/features/models/model-page'
 import { ModelManagementPage } from '@/features/model-management/model-management-page'
 import { NetworkSettingsPage } from '@/features/network-settings/network-settings-page'
+import { OrganizationActivityPage } from '@/features/organization-activity/organization-activity-page'
+import { OrganizationApiKeyPage } from '@/features/organization-api-keys/organization-api-key-page'
+import { OrganizationBudgetPage } from '@/features/organization-budgets/organization-budget-page'
+import { OrganizationMemberPage } from '@/features/organization-members/organization-member-page'
+import { OrganizationOverviewPage } from '@/features/organization-console/organization-overview-page'
+import { OrganizationSettingsPage } from '@/features/organization-console/organization-settings-page'
+import { OrganizationWalletPage } from '@/features/organization-wallet/organization-wallet-page'
+import { OrganizationWorkspaceProvider } from '@/features/organization-console/organization-workspace-context'
 import { PaymentSettingsPage } from '@/features/payment-settings/payment-settings-page'
 import { PublicModelPage } from '@/features/models/public-model-page'
 import { PlaygroundPage } from '@/features/playground/playground-page'
@@ -30,6 +39,7 @@ import { PublicPlaygroundSharePage } from '@/features/playground/public-playgrou
 import { ProfilePage } from '@/features/profile/profile-page'
 import { RegistrationPage } from '@/features/registration/registration-page'
 import { RedemptionPage } from '@/features/redemptions/redemption-page'
+import { RefundPage } from '@/features/refunds/refund-page'
 import { RoutePage } from '@/features/routes/route-page'
 import { SiteSettingsPage } from '@/features/site-settings/site-settings-page'
 import { MySubscriptionsPage } from '@/features/subscriptions/my-subscriptions-page'
@@ -65,8 +75,9 @@ function useHashRoute(): [AppRoute, (hash: string) => void] {
 }
 
 type ManagementEntryProps = {
-  view: Exclude<AppView, 'landing' | 'public-models' | 'register' | 'share' | 'forgot-password' | 'reset-password'>
+  view: Exclude<AppView, 'landing' | 'public-models' | 'register' | 'share' | 'forgot-password' | 'reset-password' | 'oauth-callback'>
   credentialChannelId?: number
+  profileSection?: AppRoute['profileSection']
   loginNotice?: LoginNotice
   onAuthenticated: () => void
   onLoginRequired: (reason: 'required' | 'sessionExpired' | 'setupComplete') => void
@@ -79,6 +90,7 @@ type ManagementEntryProps = {
 function ManagementEntry({
   view,
   credentialChannelId,
+  profileSection,
   loginNotice,
   onAuthenticated,
   onLoginRequired,
@@ -130,6 +142,8 @@ function ManagementEntry({
         ? 'authenticationSettings.title'
           : view === 'redemption-codes'
             ? 'redemptions.title'
+          : view === 'refunds'
+            ? 'refunds.title'
           : view === 'subscription-management'
             ? 'subscriptions.managementTitle'
           : view === 'subscriptions'
@@ -152,6 +166,20 @@ function ManagementEntry({
                 ? 'users.title'
             : view === 'api-keys'
               ? 'apiKeys.title'
+              : view === 'organization-api-keys'
+                ? 'organizationApiKeys.title'
+                : view === 'organization-activity'
+                  ? 'organizationActivity.title'
+                : view === 'organization-budgets'
+                  ? 'organizationBudgets.title'
+                : view === 'organization-members'
+                  ? 'organizationConsole.members.title'
+                : view === 'organization-overview'
+                  ? 'organizationConsole.overview.title'
+                : view === 'organization-settings'
+                  ? 'organizationConsole.settings.title'
+                : view === 'organization-wallet'
+                  ? 'organizationConsole.wallet.title'
               : view === 'wallet'
                 ? 'wallet.title'
               : view === 'invitations'
@@ -183,6 +211,8 @@ function ManagementEntry({
         ? <AuthenticationSettingsPage />
         : view === 'redemption-codes'
           ? <RedemptionPage />
+        : view === 'refunds'
+          ? <RefundPage />
         : view === 'subscription-management'
           ? <SubscriptionManagementPage />
         : view === 'subscriptions'
@@ -205,6 +235,20 @@ function ManagementEntry({
                 ? <UserPage />
             : view === 'api-keys'
               ? <ApiKeyPage />
+            : view === 'organization-api-keys'
+                ? <OrganizationApiKeyPage />
+                : view === 'organization-activity'
+                  ? <OrganizationActivityPage />
+                : view === 'organization-budgets'
+                  ? <OrganizationBudgetPage />
+                : view === 'organization-members'
+                  ? <OrganizationMemberPage />
+                : view === 'organization-overview'
+                  ? <OrganizationOverviewPage />
+                : view === 'organization-settings'
+                  ? <OrganizationSettingsPage />
+                : view === 'organization-wallet'
+                  ? <OrganizationWalletPage />
               : view === 'wallet'
                 ? <WalletPage />
               : view === 'invitations'
@@ -216,7 +260,7 @@ function ManagementEntry({
                   : view === 'video-tasks'
                     ? <VideoTaskPage />
                   : view === 'profile'
-                    ? <ProfilePage onPasswordChanged={onPasswordChanged} />
+                    ? <ProfilePage section={profileSection} onPasswordChanged={onPasswordChanged} />
                     : view === 'tokens'
                       ? <TokenPage />
                       : view === 'usage-logs'
@@ -226,6 +270,13 @@ function ManagementEntry({
                         : <DashboardPage />
 
   const requireAdmin = view !== 'api-keys'
+    && view !== 'organization-api-keys'
+    && view !== 'organization-activity'
+    && view !== 'organization-budgets'
+    && view !== 'organization-members'
+    && view !== 'organization-overview'
+    && view !== 'organization-settings'
+    && view !== 'organization-wallet'
     && view !== 'wallet'
     && view !== 'subscriptions'
     && view !== 'invitations'
@@ -242,9 +293,11 @@ function ManagementEntry({
       onUserHomeRequired={onUserHomeRequired}
     >
       {(session) => (
-        <AppShell title={t(titleKey)} currentUser={session.user} onLogout={onLogout}>
-          {content(session.user.role === 'admin')}
-        </AppShell>
+        <OrganizationWorkspaceProvider enterpriseView={view.startsWith('organization-')}>
+          <AppShell title={t(titleKey)} currentUser={session.user} onLogout={onLogout}>
+            {content(session.user.role === 'admin')}
+          </AppShell>
+        </OrganizationWorkspaceProvider>
       )}
     </SessionBoundary>
   )
@@ -303,6 +356,9 @@ export default function App() {
   if (view === 'reset-password') {
     return <ResetPasswordPage token={route.resetToken} onCompleted={openPasswordResetSuccess} />
   }
+  if (view === 'oauth-callback') {
+    return <OAuthCallbackPage onAuthenticated={openConsole} />
+  }
   if (view === 'share') {
     return <PublicPlaygroundSharePage key={route.shareToken ?? 'invalid'} token={route.shareToken} />
   }
@@ -311,6 +367,7 @@ export default function App() {
     <ManagementEntry
       view={view}
       credentialChannelId={route.channelId}
+      profileSection={route.profileSection}
       loginNotice={loginNotice}
       onAuthenticated={openConsole}
       onLoginRequired={openLogin}

@@ -1,0 +1,413 @@
+#![allow(dead_code, reason = "文档端点仅由 utoipa 过程宏读取")]
+
+use utoipa::OpenApi;
+
+use crate::{
+    management_error::ManagementErrorBody,
+    organizations::{
+        OrganizationEntitlementResponse, OrganizationInvitationAcceptRequest,
+        OrganizationInvitationAcceptResponse, OrganizationInvitationBatchRequest,
+        OrganizationInvitationBatchResponse, OrganizationInvitationCreateRequest,
+        OrganizationInvitationIssuedResponse, OrganizationInvitationListResponse,
+        OrganizationInvitationPreviewItemResponse, OrganizationInvitationPreviewRequest,
+        OrganizationInvitationPreviewResponse, OrganizationInvitationResponse,
+        OrganizationListResponse, OrganizationMembershipChangeRequest,
+        OrganizationMembershipListResponse, OrganizationMembershipResponse,
+        OrganizationOverviewResponse, OrganizationOwnershipTransferRequest,
+        OrganizationOwnershipTransferResponse, OrganizationTeamChangeRequest,
+        OrganizationTeamCreateRequest, OrganizationTeamDisableRequest,
+        OrganizationTeamListResponse, OrganizationTeamResponse,
+    },
+};
+
+#[utoipa::path(
+    get,
+    path = "/api/account/organizations",
+    operation_id = "listAccountOrganizations",
+    tag = "企业空间",
+    summary = "列出当前用户可进入的企业",
+    responses(
+        (status = 200, description = "活动企业目录", body = OrganizationListResponse),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn list_account_organizations() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/organizations/{organization_id}",
+    operation_id = "getOrganizationOverview",
+    tag = "企业空间",
+    summary = "读取企业概览与当前成员权限",
+    params(("organization_id" = i64, Path, minimum = 1, description = "企业内部标识")),
+    responses(
+        (status = 200, description = "企业概览", body = OrganizationOverviewResponse),
+        (status = 400, description = "企业标识无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "企业角色无权访问", body = ManagementErrorBody),
+        (status = 404, description = "企业不存在或无权访问", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn get_organization_overview() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/organizations/{organization_id}/invitations",
+    operation_id = "listOrganizationInvitations",
+    tag = "企业空间",
+    summary = "列出企业邀请安全投影",
+    params(("organization_id" = i64, Path, minimum = 1)),
+    responses(
+        (status = 200, body = OrganizationInvitationListResponse),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn list_organization_invitations() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/organizations/{organization_id}/invitations",
+    operation_id = "createOrganizationInvitation",
+    tag = "企业空间",
+    summary = "创建企业邀请",
+    params(("organization_id" = i64, Path, minimum = 1)),
+    request_body = OrganizationInvitationCreateRequest,
+    responses(
+        (status = 200, body = OrganizationInvitationIssuedResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 409, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn create_organization_invitation() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/organizations/{organization_id}/invitations/preview",
+    operation_id = "previewOrganizationInvitations",
+    tag = "企业空间",
+    summary = "预览最多 200 条企业邀请",
+    params(("organization_id" = i64, Path, minimum = 1)),
+    request_body = OrganizationInvitationPreviewRequest,
+    responses(
+        (status = 200, body = OrganizationInvitationPreviewResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn preview_organization_invitations() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/organizations/{organization_id}/invitations/batches",
+    operation_id = "createOrganizationInvitationBatch",
+    tag = "企业空间",
+    summary = "幂等提交最多 200 条企业邀请",
+    params(("organization_id" = i64, Path, minimum = 1)),
+    request_body = OrganizationInvitationBatchRequest,
+    responses(
+        (status = 200, body = OrganizationInvitationBatchResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 409, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn create_organization_invitation_batch() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/organizations/{organization_id}/invitations/{invitation_key}/revoke",
+    operation_id = "revokeOrganizationInvitation",
+    tag = "企业空间",
+    summary = "撤销待接受企业邀请",
+    params(
+        ("organization_id" = i64, Path, minimum = 1),
+        ("invitation_key" = String, Path, description = "企业邀请公开标识")
+    ),
+    responses(
+        (status = 200, body = OrganizationInvitationResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 409, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn revoke_organization_invitation() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/organizations/{organization_id}/invitations/{invitation_key}/resend",
+    operation_id = "resendOrganizationInvitation",
+    tag = "企业空间",
+    summary = "重发企业邀请并使旧令牌失效",
+    params(
+        ("organization_id" = i64, Path, minimum = 1),
+        ("invitation_key" = String, Path, description = "企业邀请公开标识")
+    ),
+    responses(
+        (status = 200, body = OrganizationInvitationIssuedResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 409, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn resend_organization_invitation() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/account/organization-invitations/accept",
+    operation_id = "acceptOrganizationInvitation",
+    tag = "企业空间",
+    summary = "当前登录用户单次消费企业邀请",
+    request_body = OrganizationInvitationAcceptRequest,
+    responses(
+        (status = 200, body = OrganizationInvitationAcceptResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 409, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn accept_organization_invitation() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/organizations/{organization_id}/members",
+    operation_id = "listOrganizationMembers",
+    tag = "企业空间",
+    summary = "按稳定游标列出企业成员",
+    params(
+        ("organization_id" = i64, Path, minimum = 1),
+        ("after" = Option<i64>, Query, minimum = 1),
+        ("limit" = Option<usize>, Query, minimum = 1, maximum = 100)
+    ),
+    responses(
+        (status = 200, body = OrganizationMembershipListResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn list_organization_members() {}
+
+#[utoipa::path(
+    patch,
+    path = "/api/organizations/{organization_id}/members/{membership_id}",
+    operation_id = "changeOrganizationMember",
+    tag = "企业空间",
+    summary = "按 CAS 更新成员角色、团队与状态",
+    params(
+        ("organization_id" = i64, Path, minimum = 1),
+        ("membership_id" = i64, Path, minimum = 1)
+    ),
+    request_body = OrganizationMembershipChangeRequest,
+    responses(
+        (status = 200, body = OrganizationMembershipResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 409, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn change_organization_member() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/organizations/{organization_id}/ownership-transfer",
+    operation_id = "transferOrganizationOwnership",
+    tag = "企业空间",
+    summary = "由当前 Owner 原子转移企业所有权",
+    params(("organization_id" = i64, Path, minimum = 1)),
+    request_body = OrganizationOwnershipTransferRequest,
+    responses(
+        (status = 200, body = OrganizationOwnershipTransferResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 409, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn transfer_organization_ownership() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/organizations/{organization_id}/teams",
+    operation_id = "listOrganizationTeams",
+    tag = "企业空间",
+    summary = "按稳定游标列出企业团队",
+    params(
+        ("organization_id" = i64, Path, minimum = 1),
+        ("after" = Option<i64>, Query, minimum = 1),
+        ("limit" = Option<usize>, Query, minimum = 1, maximum = 100)
+    ),
+    responses(
+        (status = 200, body = OrganizationTeamListResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn list_organization_teams() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/organizations/{organization_id}/teams",
+    operation_id = "createOrganizationTeam",
+    tag = "企业空间",
+    summary = "创建企业团队",
+    params(("organization_id" = i64, Path, minimum = 1)),
+    request_body = OrganizationTeamCreateRequest,
+    responses(
+        (status = 200, body = OrganizationTeamResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 409, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn create_organization_team() {}
+
+#[utoipa::path(
+    patch,
+    path = "/api/organizations/{organization_id}/teams/{team_id}",
+    operation_id = "changeOrganizationTeam",
+    tag = "企业空间",
+    summary = "按 CAS 更新企业团队资料",
+    params(
+        ("organization_id" = i64, Path, minimum = 1),
+        ("team_id" = i64, Path, minimum = 1)
+    ),
+    request_body = OrganizationTeamChangeRequest,
+    responses(
+        (status = 200, body = OrganizationTeamResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 409, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn change_organization_team() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/organizations/{organization_id}/teams/{team_id}/disable",
+    operation_id = "disableOrganizationTeam",
+    tag = "企业空间",
+    summary = "禁用没有活动成员的企业团队",
+    params(
+        ("organization_id" = i64, Path, minimum = 1),
+        ("team_id" = i64, Path, minimum = 1)
+    ),
+    request_body = OrganizationTeamDisableRequest,
+    responses(
+        (status = 200, body = OrganizationTeamResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 409, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn disable_organization_team() {}
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(
+        list_account_organizations,
+        get_organization_overview,
+        list_organization_invitations,
+        create_organization_invitation,
+        preview_organization_invitations,
+        create_organization_invitation_batch,
+        revoke_organization_invitation,
+        resend_organization_invitation,
+        accept_organization_invitation,
+        list_organization_members,
+        change_organization_member,
+        transfer_organization_ownership,
+        list_organization_teams,
+        create_organization_team,
+        change_organization_team,
+        disable_organization_team
+    ),
+    components(schemas(
+        OrganizationListResponse,
+        OrganizationOverviewResponse,
+        OrganizationEntitlementResponse,
+        OrganizationInvitationCreateRequest,
+        OrganizationInvitationPreviewRequest,
+        OrganizationInvitationBatchRequest,
+        OrganizationInvitationAcceptRequest,
+        OrganizationInvitationResponse,
+        OrganizationInvitationIssuedResponse,
+        OrganizationInvitationListResponse,
+        OrganizationInvitationBatchResponse,
+        OrganizationInvitationPreviewItemResponse,
+        OrganizationInvitationPreviewResponse,
+        OrganizationInvitationAcceptResponse,
+        OrganizationMembershipChangeRequest,
+        OrganizationOwnershipTransferRequest,
+        OrganizationTeamCreateRequest,
+        OrganizationTeamChangeRequest,
+        OrganizationTeamDisableRequest,
+        OrganizationMembershipResponse,
+        OrganizationMembershipListResponse,
+        OrganizationTeamResponse,
+        OrganizationTeamListResponse,
+        OrganizationOwnershipTransferResponse,
+        ManagementErrorBody
+    ))
+)]
+struct OrganizationApi;
+
+pub(super) fn document() -> utoipa::openapi::OpenApi {
+    OrganizationApi::openapi()
+}

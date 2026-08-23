@@ -1,7 +1,8 @@
 use std::{error::Error, time::Duration};
 
 use af_domain::{
-    ChannelId, CredentialId, GroupId, ResponsesCompactMode, ResponsesCompactProbeResult, Status,
+    ChannelId, ClientSimulationProfile, CredentialId, GroupId, ResponsesCompactMode,
+    ResponsesCompactProbeResult, Status,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::sea_query::{MysqlQueryBuilder, PostgresQueryBuilder, SqliteQueryBuilder};
@@ -113,7 +114,10 @@ async fn detail_exposes_only_validated_non_sensitive_metadata() -> Result<(), Bo
     assert_eq!(credential.multi_key_mode(), Some(1));
     assert_eq!(credential.load_factor_micros(), Some(1_100_000));
     assert_eq!(credential.rate_multiplier_micros(), Some(900_000));
-    assert_eq!(credential.quota_dimension(), "global");
+    assert_eq!(
+        credential.quota_dimension(),
+        af_domain::CredentialQuotaDimension::Global
+    );
     assert_eq!(credential.oauth_provider(), Some("example-oauth"));
     assert_eq!(
         format!("{credential:?}"),
@@ -248,6 +252,51 @@ async fn pool_mode_projection_accepts_boolean_and_rejects_other_values()
 }
 
 #[tokio::test]
+async fn client_simulation_projection_exposes_only_validated_profile() -> Result<(), Box<dyn Error>>
+{
+    let fixture = fixture().await?;
+    let model = channels::Entity::find_by_id(fixture.primary_channel_id.get())
+        .one(fixture.pool.connection())
+        .await?
+        .expect("测试渠道必须存在");
+    let mut active = channels::ActiveModel::from(model);
+    active.r#type = Set("anthropic".to_owned());
+    active.protocol = Set("anthropic".to_owned());
+    active.settings = Set(SensitiveJson::from(serde_json::json!({
+        "client_simulation_profile": "anthropic_cli_headers_v1",
+        "private_setting": "must-not-be-returned"
+    })));
+    let model = active.update(fixture.pool.connection()).await?;
+
+    let AdminChannelLookupOutcome::Found(channel) =
+        fixture.repository.get(fixture.primary_channel_id).await?
+    else {
+        panic!("有效渠道详情必须存在");
+    };
+    assert_eq!(
+        channel.client_simulation_profile(),
+        Some(ClientSimulationProfile::AnthropicCliHeadersV1)
+    );
+
+    let mut active = channels::ActiveModel::from(model);
+    active.settings = Set(SensitiveJson::from(serde_json::json!({
+        "client_simulation_profile": "unknown"
+    })));
+    active.update(fixture.pool.connection()).await?;
+    assert_eq!(
+        fixture
+            .repository
+            .get(fixture.primary_channel_id)
+            .await
+            .unwrap_err(),
+        AdminChannelRepositoryError::Invariant
+    );
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn compact_projection_exposes_only_validated_capability_fields() -> Result<(), Box<dyn Error>>
 {
     let fixture = fixture().await?;
@@ -310,6 +359,7 @@ fn read_queries_only_project_non_sensitive_channel_capabilities() {
         assert!(sql.contains("responses_compact_probe_result"));
         assert!(sql.contains("auto_ban_rules"));
         assert!(sql.contains("pool_mode"));
+        assert!(sql.contains("client_simulation_profile"));
         assert!(!sql.contains("as \"settings\""));
         assert!(!sql.contains("as `settings`"));
     }
@@ -322,7 +372,8 @@ fn read_queries_only_project_non_sensitive_channel_capabilities() {
     for sql in credential_queries {
         let sql = sql.to_ascii_lowercase();
         assert!(!sql.contains("secret"));
-        assert!(!sql.contains("temp_unschedulable_reason"));
+        // 内部原因只用于派生共享认证状态，不会进入管理 API 响应。
+        assert!(sql.contains("temp_unschedulable_reason"));
     }
 }
 

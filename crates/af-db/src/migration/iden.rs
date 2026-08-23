@@ -204,6 +204,153 @@ pub(in crate::migration) mod users {
     }
 }
 
+pub(in crate::migration) mod oauth_login_providers {
+    use super::DeriveIden;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "oauth_login_providers")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Provider,
+        Enabled,
+        ClientId,
+        IssuerUrl,
+        ClientSecret,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod passkeys {
+    use super::DeriveIden;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "passkeys")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        UserId,
+        CredentialId,
+        CredentialIdDigest,
+        Passkey,
+        DisplayName,
+        CreatedAt,
+        LastUsedAt,
+        RevokedAt,
+        SignCount,
+        AnomalyAt,
+    }
+}
+
+pub(in crate::migration) mod passkey_authentication_challenges {
+    use super::DeriveIden;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "passkey_authentication_challenges")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        UserId,
+        ChallengeDigest,
+        AuthenticationState,
+        SessionVersion,
+        ExpiresAt,
+        ConsumedAt,
+        CreatedAt,
+    }
+}
+
+pub(in crate::migration) mod passkey_registration_challenges {
+    use super::DeriveIden;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "passkey_registration_challenges")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        UserId,
+        ChallengeDigest,
+        RegistrationState,
+        ExpiresAt,
+        ConsumedAt,
+        CreatedAt,
+    }
+}
+
+pub(in crate::migration) mod user_oauth_identities {
+    use super::DeriveIden;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "user_oauth_identities")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        UserId,
+        Provider,
+        Subject,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod oauth_login_transactions {
+    use super::DeriveIden;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "oauth_login_transactions")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        Provider,
+        StateDigest,
+        ExpiresAt,
+        ClaimedAt,
+        UserId,
+        TicketDigest,
+        TicketExpiresAt,
+        ExchangedAt,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
 pub(in crate::migration) mod channels {
     use super::DeriveIden;
 
@@ -342,6 +489,9 @@ pub(in crate::migration) mod tokens {
         Name,
         Status,
         GroupId,
+        OrganizationId,
+        OrganizationMembershipId,
+        OrganizationTeamId,
         RemainQuota,
         UnlimitedQuota,
         UsedQuota,
@@ -487,6 +637,7 @@ pub(in crate::migration) mod billing_reservations {
         UserId,
         TokenId,
         GroupId,
+        OrganizationId,
         Status,
         ReservationKind,
         FundingSource,
@@ -780,6 +931,8 @@ pub(in crate::migration) mod usage_logs {
         UserId,
         TokenId,
         GroupId,
+        OrganizationId,
+        OrganizationTeamId,
         BillingMode,
         InputTokens,
         OutputTokens,
@@ -1030,6 +1183,8 @@ pub(in crate::migration) mod payment_settings {
         EpayMerchantKey,
         EpayAlipayEnabled,
         EpayWxpayEnabled,
+        EpayRefundEnabled,
+        RefundAutoSubmitEnabled,
         EpayQuotaPerCny,
         Version,
         CreatedAt,
@@ -1058,6 +1213,12 @@ pub(in crate::migration) mod site_settings {
         BrandLogoUrl,
         BrandTagline,
         BrandDescription,
+        BalanceDisplayMode,
+        BalanceUnitName,
+        BalanceUnitSymbol,
+        QuotaUnitsPerDisplayUnit,
+        BalanceSymbolPosition,
+        BalanceFractionDigits,
         Version,
         CreatedAt,
         UpdatedAt,
@@ -1140,6 +1301,7 @@ pub(in crate::migration) mod topup_orders {
         Id,
         OrderKey,
         UserId,
+        OrganizationId,
         Provider,
         PaymentMethod,
         ProviderOrderId,
@@ -1273,6 +1435,101 @@ pub(in crate::migration) mod subscription_plans {
         DisabledAt,
         CreatedAt,
         UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod subscription_plan_prices {
+    use super::DeriveIden;
+
+    /// 订阅计划不可变价格事实表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "subscription_plan_prices")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        PlanId,
+        Provider,
+        Currency,
+        AmountMinor,
+        CreatedAt,
+    }
+}
+
+pub(in crate::migration) mod subscription_orders {
+    use super::DeriveIden;
+
+    /// `subscription_orders` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "subscription_orders")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 订阅购买订单的持久化列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrderKey,
+        UserId,
+        PlanId,
+        PlanKey,
+        PlanVersion,
+        Provider,
+        Currency,
+        AmountMinor,
+        QuotaAmount,
+        Status,
+        IdempotencyKey,
+        Version,
+        ProviderOrderId,
+        TradeNo,
+        PaymentMethod,
+        ExpiresAt,
+        PaidAt,
+        ClosedAt,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod subscription_payment_events {
+    use super::DeriveIden;
+
+    /// `subscription_payment_events` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "subscription_payment_events")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 订阅支付审计事件的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        EventKey,
+        OrderId,
+        Provider,
+        ProviderEventId,
+        TradeNo,
+        AmountMinor,
+        Currency,
+        PaymentMethod,
+        EventType,
+        SignatureKeyFingerprint,
+        PayloadSha256,
+        ReceivedAt,
+        ProcessedAt,
+        CreatedAt,
     }
 }
 
@@ -1460,6 +1717,35 @@ pub(in crate::migration) mod scheduler_outbox_events {
     }
 }
 
+pub(in crate::migration) mod analytics_export_outbox_events {
+    use super::DeriveIden;
+
+    /// ClickHouse 事实投递 outbox 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "analytics_export_outbox_events")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// ClickHouse 事实投递 outbox 的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        FactKind,
+        FactId,
+        Status,
+        AttemptCount,
+        NextAttemptAt,
+        LeaseExpiresAt,
+        PublishedAt,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
 pub(in crate::migration) mod routes {
     use super::DeriveIden;
 
@@ -1541,6 +1827,9 @@ pub(in crate::migration) mod debug_trace_settings {
         Enabled,
         SamplePerMillion,
         RetentionHours,
+        CaptureHeaders,
+        CaptureBodies,
+        MaxBodyBytes,
         Version,
         CreatedAt,
         UpdatedAt,
@@ -1576,6 +1865,10 @@ pub(in crate::migration) mod debug_traces {
         SelectedCredentialId,
         RoutingElapsedMs,
         AttemptCount,
+        DownstreamMethod,
+        DownstreamPath,
+        DownstreamHeadersJson,
+        DownstreamBodyJson,
         CreatedAt,
     }
 }
@@ -1605,6 +1898,593 @@ pub(in crate::migration) mod debug_trace_attempts {
         UpstreamStatus,
         RetryDecision,
         ElapsedMs,
+        ClientSimulationProfile,
+        ClientSimulationResult,
+        RequestMethod,
+        RequestUrl,
+        RequestHeadersJson,
+        RequestBodyJson,
+        ResponseHeadersJson,
+        ResponseBodyJson,
+        ResponseStatus,
+        ResponseStreamed,
+        CreatedAt,
+    }
+}
+
+pub(in crate::migration) mod debug_trace_snapshots {
+    use super::DeriveIden;
+
+    /// `debug_trace_snapshots` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "debug_trace_snapshots")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 字段级密文诊断快照迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        TraceId,
+        AttemptId,
+        Kind,
+        EncryptedPayload,
+        CreatedAt,
+    }
+}
+
+pub(in crate::migration) mod debug_trace_snapshot_access_audits {
+    use super::DeriveIden;
+
+    /// `debug_trace_snapshot_access_audits` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "debug_trace_snapshot_access_audits")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 敏感快照读取审计迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        TraceId,
+        ActorUserId,
+        Scope,
+        Outcome,
+        CreatedAt,
+    }
+}
+
+pub(in crate::migration) mod organizations {
+    use super::DeriveIden;
+
+    /// `organizations` 企业主体表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organizations")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业主体的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationKey,
+        Name,
+        Slug,
+        Status,
+        CreatedByUserId,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+        ClosedAt,
+    }
+}
+
+pub(in crate::migration) mod organization_teams {
+    use super::DeriveIden;
+
+    /// `organization_teams` 企业团队表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_teams")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业团队的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        Name,
+        Description,
+        Status,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+        DeletedAt,
+    }
+}
+
+pub(in crate::migration) mod organization_audit_logs {
+    use super::DeriveIden;
+
+    /// `organization_audit_logs` 企业管理审计表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_audit_logs")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业管理审计的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        ActorUserId,
+        ActorRole,
+        PermissionCode,
+        Operation,
+        TargetType,
+        TargetIdentifier,
+        Outcome,
+        PlatformProxy,
+        PlatformReason,
+        RequestId,
+        ClientFingerprint,
+        ChangeSummary,
+        CreatedAt,
+    }
+}
+
+pub(in crate::migration) mod platform_audit_logs {
+    use super::DeriveIden;
+
+    /// `platform_audit_logs` 平台管理审计表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "platform_audit_logs")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 平台管理审计的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OperatorUserId,
+        PermissionCode,
+        Route,
+        Operation,
+        Resource,
+        ResourceId,
+        Outcome,
+        BeforeValue,
+        AfterValue,
+        AuditInfo,
+        RequestId,
+        CreatedAt,
+    }
+}
+
+pub(in crate::migration) mod request_outcome_logs {
+    use super::DeriveIden;
+
+    /// `request_outcome_logs` 请求终态事实表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "request_outcome_logs")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 请求终态事实的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        RequestId,
+        Protocol,
+        Operation,
+        Model,
+        Outcome,
+        ErrorKind,
+        ChannelId,
+        DurationMs,
+        CreatedAt,
+    }
+}
+
+pub(in crate::migration) mod organization_memberships {
+    use super::DeriveIden;
+
+    /// `organization_memberships` 企业成员关系表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_memberships")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业成员关系的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        UserId,
+        Role,
+        TeamId,
+        Status,
+        JoinedAt,
+        SuspendedAt,
+        RemovedAt,
+        InvitedByUserId,
+        Version,
+    }
+}
+
+pub(in crate::migration) mod organization_entitlements {
+    use super::DeriveIden;
+
+    /// 企业商业授权表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_entitlements")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业商业授权的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        TeamManagementEnabled,
+        SeatLimit,
+        TeamLimit,
+        OrganizationKeyLimit,
+        AuditRetentionDays,
+        SsoEnabled,
+        CustomRolesEnabled,
+        ValidFrom,
+        ValidUntil,
+        GraceUntil,
+        Source,
+        ExternalReference,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod organization_invitations {
+    use super::DeriveIden;
+
+    /// `organization_invitations` 企业邀请表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_invitations")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业邀请的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        InvitationKey,
+        OrganizationId,
+        EmailFingerprint,
+        EmailSecret,
+        TokenDigest,
+        Role,
+        TeamId,
+        Status,
+        InvitedByUserId,
+        AcceptedByUserId,
+        BatchKey,
+        BatchDigest,
+        BatchSize,
+        Version,
+        CreatedAt,
+        ExpiresAt,
+        FinalizedAt,
+    }
+}
+
+pub(in crate::migration) mod organization_wallets {
+    use super::DeriveIden;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_wallets")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        Quota,
+        UsedQuota,
+        FrozenQuota,
+        BillingProtected,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod organization_budget_policies {
+    use super::DeriveIden;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_budget_policies")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        ScopeKind,
+        TeamId,
+        MembershipId,
+        PeriodKind,
+        FixedPeriodSeconds,
+        QuotaLimit,
+        EffectiveFrom,
+        EffectiveUntil,
+        CreatedByUserId,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod organization_budget_windows {
+    use super::DeriveIden;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_budget_windows")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        PolicyId,
+        OrganizationId,
+        ScopeKind,
+        TeamId,
+        MembershipId,
+        PolicyVersion,
+        LimitSnapshot,
+        UsedQuota,
+        FrozenQuota,
+        WindowStartsAt,
+        WindowEndsAt,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod billing_organization_reservations {
+    use super::DeriveIden;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "billing_organization_reservations")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        IdempotencyKey,
+        OrganizationId,
+        MembershipId,
+        TeamId,
+        UserId,
+        TokenId,
+        GroupId,
+        ReservationKind,
+        Status,
+        ReservedQuota,
+        TokenReservedQuota,
+        ActualQuota,
+        OrganizationPolicyId,
+        OrganizationWindowId,
+        OrganizationPolicyVersion,
+        OrganizationWindowVersion,
+        OrganizationReservedQuota,
+        TeamPolicyId,
+        TeamWindowId,
+        TeamPolicyVersion,
+        TeamWindowVersion,
+        TeamReservedQuota,
+        MemberPolicyId,
+        MemberWindowId,
+        MemberPolicyVersion,
+        MemberWindowVersion,
+        MemberReservedQuota,
+        ExpiresAt,
+        FinalizedAt,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod organization_wallet_ledger_entries {
+    use super::DeriveIden;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_wallet_ledger_entries")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        EventKey,
+        ActorUserId,
+        EntryType,
+        QuotaDelta,
+        BalanceBefore,
+        BalanceAfter,
+        Source,
+        Reason,
+        CreatedAt,
+    }
+}
+
+pub(in crate::migration) mod user_notification_events {
+    use super::DeriveIden;
+
+    /// 用户通知事实账本的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "user_notification_events")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        UserId,
+        Kind,
+        Channel,
+        TemplateVersion,
+        OccurredAt,
+        DeliveryState,
+        DeliveryAttempts,
+        SourceKind,
+        SourceKey,
+        ObservedQuota,
+        ThresholdQuota,
+        SubscriptionId,
+        WindowEndsAt,
+        QuotaAmount,
+        QuotaUsed,
+        ThresholdPercent,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod user_notification_receipts {
+    use super::DeriveIden;
+
+    /// 用户通知已读回执的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "user_notification_receipts")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        UserId,
+        NotificationId,
+        ReadAt,
+    }
+}
+
+pub(in crate::migration) mod refund_requests {
+    use super::DeriveIden;
+
+    /// 退款请求事实的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "refund_requests")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        RequestKey,
+        IdempotencyKey,
+        UserId,
+        OrderKind,
+        OrderKey,
+        Provider,
+        PaymentReference,
+        Currency,
+        OriginalAmountMinor,
+        RefundAmountMinor,
+        ProviderRefundId,
+        Status,
+        ApprovalStatus,
+        ApprovalActorId,
+        ApprovalReason,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod refund_provider_events {
+    use super::DeriveIden;
+
+    /// 退款 Provider 回执事实的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "refund_provider_events")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        EventKey,
+        RequestKey,
+        Provider,
+        ProviderEventId,
+        ProviderRefundId,
+        EventType,
+        AmountMinor,
+        Currency,
+        SignatureKeyFingerprint,
+        PayloadSha256,
+        ReceivedAt,
+        ProcessedAt,
         CreatedAt,
     }
 }

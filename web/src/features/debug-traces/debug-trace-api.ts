@@ -5,15 +5,15 @@ import {
   getAdminDebugTrace,
   getAdminDebugTraceSettings,
   listAdminDebugTraces,
+  readAdminDebugTraceSnapshots,
   updateAdminDebugTraceSettings,
 } from '@/lib/api/generated/sdk.gen'
-import type { AdminDebugTraceSettingsRequest } from '@/lib/api/generated/types.gen'
-
-const PAGE_SIZE = 30
+import type { AdminDebugTraceSettingsRequest, AdminDebugTraceSnapshotScope } from '@/lib/api/generated/types.gen'
 
 export type DebugTraceFilters = {
   outcome?: 'succeeded' | 'failed'
   model?: string
+  requestId?: string
 }
 
 export const adminDebugTraceSettingsQueryKey = ['admin-debug-trace-settings'] as const
@@ -44,17 +44,18 @@ export function useUpdateAdminDebugTraceSettings() {
 }
 
 /** 按稳定倒序游标读取一页脱敏追踪摘要。 */
-export function useAdminDebugTraces(before: number | undefined, filters: DebugTraceFilters) {
+export function useAdminDebugTraces(before: number | undefined, filters: DebugTraceFilters, pageSize: number) {
   return useQuery({
-    queryKey: ['admin-debug-traces', { before, ...filters }],
+    queryKey: ['admin-debug-traces', { before, pageSize, ...filters }],
     queryFn: async ({ signal }) => {
       const { data } = await listAdminDebugTraces({
         client: apiClient,
         query: {
           before,
-          limit: PAGE_SIZE,
+          limit: pageSize,
           outcome: filters.outcome,
           model: filters.model,
+          request_id: filters.requestId,
         },
         signal,
       })
@@ -73,6 +74,21 @@ export function useAdminDebugTrace(traceId?: number) {
         client: apiClient,
         path: { id: traceId as number },
         signal,
+      })
+      return data
+    },
+  })
+}
+
+/** 敏感快照使用 mutation 显式读取，避免普通详情预取或进入长期 Query 缓存。 */
+export function useReadAdminDebugTraceSnapshots(traceId: number) {
+  return useMutation({
+    gcTime: 0,
+    mutationFn: async (scope: AdminDebugTraceSnapshotScope) => {
+      const { data } = await readAdminDebugTraceSnapshots({
+        body: { scope },
+        client: apiClient,
+        path: { id: traceId },
       })
       return data
     },

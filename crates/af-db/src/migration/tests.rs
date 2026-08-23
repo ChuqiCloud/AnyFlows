@@ -4,8 +4,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use af_domain::{
-    BillingReservationId, ChannelId, CredentialKind, GatewayPrincipal, GroupId, Quota, QuotaDelta,
-    SubscriptionCycle, SubscriptionWindow, TokenId, TrustedClientIp, UserId,
+    BillingReservationId, ChannelId, CredentialKind, GatewayPrincipal, GroupId,
+    OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationGatewayPrincipal,
+    OrganizationId, OrganizationMembershipId, OrganizationMembershipStatus, OrganizationRole,
+    OrganizationTeamId, Quota, QuotaDelta, SubscriptionCycle, SubscriptionWindow, TokenId,
+    TrustedClientIp, UserId,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use rust_decimal::Decimal;
@@ -13,7 +16,7 @@ use sea_orm::entity::prelude::{Json, TimeDateTimeWithTimeZone, TimeTime};
 use sea_orm::{
     ActiveModelBehavior, ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection,
     DbBackend, EntityTrait, IdenStatic, IntoActiveModel, Iterable, PaginatorTrait, QueryFilter,
-    Set, Statement,
+    QuerySelect, Set, Statement,
 };
 use sea_orm_migration::prelude::*;
 use url::Url;
@@ -23,38 +26,57 @@ use crate::entity::{
     BillingBatchFingerprint, BillingBatchWriterKey, BillingReservationKey, ChannelBaseUrl,
     EncryptedJson, HeaderOverrides, PasswordHash, PlaygroundConversationKey, SensitiveDecimal,
     SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist, WalletLedgerKey, abilities,
-    auth_challenge_rate_limits, auth_challenges, authentication_settings, balance_alert_events,
-    balance_alert_settings, billing_batch_checkpoints, billing_group_window_reservations,
-    billing_reservations, billing_subscription_reservations, billing_token_window_reservations,
-    channel_groups, channel_models, channels, credentials, email_settings, group_model_ratios,
-    groups, invite_rebate_events, model_prices, model_sync_items, model_sync_runs, models, options,
-    payment_settings, playground_conversations, playground_shares, redemption_batches,
-    redemption_codes, registration_rate_limits, scheduler_outbox_events, site_settings,
-    subscription_balance_alert_events, subscription_plans, tokens, topup_orders,
-    topup_payment_events, usage_logs, user_subscriptions, users, wallet_ledger_entries,
+    analytics_export_outbox_events, auth_challenge_rate_limits, auth_challenges,
+    authentication_settings, balance_alert_events, balance_alert_settings,
+    billing_batch_checkpoints, billing_group_window_reservations,
+    billing_organization_reservations, billing_reservations, billing_subscription_reservations,
+    billing_token_window_reservations, channel_groups, channel_models, channels, credentials,
+    debug_trace_attempts, debug_trace_snapshot_access_audits, debug_trace_snapshots, debug_traces,
+    email_settings, group_model_ratios, groups, invite_rebate_events, model_prices,
+    model_sync_items, model_sync_runs, models, oauth_login_providers, options,
+    organization_audit_logs, organization_budget_policies, organization_budget_windows,
+    organization_entitlements, organization_invitations, organization_memberships,
+    organization_teams, organization_wallet_ledger_entries, organization_wallets, organizations,
+    passkey_authentication_challenges, passkey_registration_challenges, passkeys, payment_settings,
+    platform_audit_logs, playground_conversations, playground_shares, redemption_batches,
+    redemption_codes, refund_provider_events, refund_requests, registration_rate_limits,
+    request_outcome_logs, scheduler_outbox_events, site_settings,
+    subscription_balance_alert_events, subscription_orders, subscription_payment_events,
+    subscription_plan_prices, subscription_plans, tokens, topup_orders, topup_payment_events,
+    usage_logs, user_notification_events, user_notification_receipts, user_subscriptions, users,
+    wallet_ledger_entries,
 };
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
-    AuthChallengeIssue, AuthChallengeIssueOutcome, AuthChallengePurpose, AuthChallengeRepository,
-    BillingBatchRepository, BillingBatchWrite, BillingBatchWriteOutcome, ChannelBillingWrite,
-    DatabaseOptions, EmailPasswordUpdate, EmailSettingsRepository, EmailSettingsWriteRecord,
-    EmailTlsMode, EncryptedCredentialEnvelope, GroupPricingRepository, ModelPriceBillingMode,
-    ModelPriceRepository, PlaygroundConversationRepository, PlaygroundConversationWrite,
-    PlaygroundShareRepository, PlaygroundShareWrite, PoolOptions, QuotaMutationOutcome,
-    QuotaRepository, QuotaReservationStatus, RegistrationAttemptOutcome,
-    RegistrationPolicyWriteRecord, RegistrationRepository, SchedulerCatalogSubject,
-    SchedulerOutboxClaimOutcome, SchedulerOutboxCompletionOutcome, SchedulerOutboxRepository,
-    SiteSettingsRepository, SiteSettingsWriteRecord, TokenAuthLookup, TokenAuthLookupOutcome,
-    TokenAuthRepository, TokenBillingWrite, UsageLogBillingMode, UsageLogRepository,
-    UsageLogRepositoryError, UsageLogSemantics, UsageLogSource, UsageLogUsage,
-    UsageLogVideoResolution, UsageLogWrite, UsageLogWriteOutcome, UserBillingWrite, connect,
+    AuthChallengeIssue, AuthChallengeIssueOutcome, AuthChallengePurpose,
+    AuthChallengeRateLimitClaim, AuthChallengeRateLimitOutcome, AuthChallengeRateLimitRepository,
+    AuthChallengeRepository, BalanceDisplayModeRecord, BalanceDisplayPolicyRecord,
+    BalanceSymbolPositionRecord, BillingBatchRepository, BillingBatchWrite,
+    BillingBatchWriteOutcome, ChannelBillingWrite, DatabaseOptions, EmailPasswordUpdate,
+    EmailSettingsRepository, EmailSettingsWriteRecord, EmailTlsMode, EncryptedCredentialEnvelope,
+    GroupPricingRepository, ModelPriceBillingMode, ModelPriceRepository, OrganizationAuditOutcome,
+    OrganizationAuditQuery, OrganizationAuditRepository, OrganizationAuditRepositoryError,
+    OrganizationAuditWrite, OrganizationAuditWriteOutcome, OrganizationCreate,
+    OrganizationEntitlementWrite, OrganizationMembershipChange, OrganizationMembershipCreate,
+    OrganizationRepository, OrganizationRepositoryError, OrganizationTeamCreate,
+    PlatformAuditOutcome, PlatformAuditQuery, PlatformAuditRepository,
+    PlatformAuditRepositoryError, PlatformAuditWrite, PlatformAuditWriteOutcome,
+    PlaygroundConversationRepository, PlaygroundConversationWrite, PlaygroundShareRepository,
+    PlaygroundShareWrite, PoolOptions, QuotaMutationOutcome, QuotaRepository,
+    QuotaReservationStatus, RegistrationAttemptOutcome, RegistrationPolicyWriteRecord,
+    RegistrationRepository, SchedulerCatalogSubject, SchedulerOutboxClaimOutcome,
+    SchedulerOutboxCompletionOutcome, SchedulerOutboxRepository, SiteSettingsRepository,
+    SiteSettingsWriteRecord, TokenAuthLookup, TokenAuthLookupOutcome, TokenAuthRepository,
+    TokenBillingWrite, UsageLogBillingMode, UsageLogRepository, UsageLogRepositoryError,
+    UsageLogSemantics, UsageLogSource, UsageLogUsage, UsageLogVideoResolution, UsageLogWrite,
+    UsageLogWriteOutcome, UserBillingWrite, connect,
 };
 
 const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 57;
+const EXPECTED_MIGRATION_COUNT: usize = 90;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -63,6 +85,7 @@ const TOKEN_HASH_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 const TOKEN_HASH_C: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 const TOKEN_HASH_D: &str = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
 const TOKEN_HASH_E: &str = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+const TOKEN_HASH_F: &str = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
 const RESERVATION_KEY_A: &str = "11111111111111111111111111111111";
 const RESERVATION_KEY_B: &str = "22222222222222222222222222222222";
 const RESERVATION_KEY_C: &str = "33333333333333333333333333333333";
@@ -72,9 +95,12 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 48] = [
+const CORE_TABLES: [&str; 77] = [
     "groups",
     "users",
+    "passkeys",
+    "passkey_registration_challenges",
+    "passkey_authentication_challenges",
     "channels",
     "credentials",
     "tokens",
@@ -110,6 +136,9 @@ const CORE_TABLES: [&str; 48] = [
     "redemption_batches",
     "redemption_codes",
     "subscription_plans",
+    "subscription_plan_prices",
+    "subscription_orders",
+    "subscription_payment_events",
     "user_subscriptions",
     "invite_rebate_events",
     "balance_alert_settings",
@@ -121,7 +150,39 @@ const CORE_TABLES: [&str; 48] = [
     "async_tasks",
     "async_task_submission_claims",
     "async_task_billings",
+    "debug_trace_settings",
+    "debug_traces",
+    "debug_trace_attempts",
+    "debug_trace_snapshots",
+    "debug_trace_snapshot_access_audits",
+    "organizations",
+    "organization_teams",
+    "organization_memberships",
+    "organization_entitlements",
+    "organization_invitations",
+    "organization_wallets",
+    "organization_wallet_ledger_entries",
+    "organization_budget_policies",
+    "organization_budget_windows",
+    "billing_organization_reservations",
+    "organization_audit_logs",
+    "platform_audit_logs",
+    "request_outcome_logs",
+    "user_notification_events",
+    "user_notification_receipts",
+    "analytics_export_outbox_events",
+    "refund_requests",
+    "refund_provider_events",
 ];
+
+#[test]
+fn refund_table_idens_are_stable() {
+    assert_eq!(refund_requests::Entity.to_string(), "refund_requests");
+    assert_eq!(
+        refund_provider_events::Entity.to_string(),
+        "refund_provider_events"
+    );
+}
 
 struct SlowMigrator;
 
@@ -150,6 +211,120 @@ async fn standard_startup_installs_core_schema() -> Result<(), Box<dyn Error>> {
 
     assert!(manager.has_table("seaql_migrations").await?);
     assert!(manager.has_table("users").await?);
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn standard_startup_installs_oauth_login_schema_and_indexes() -> Result<(), Box<dyn Error>> {
+    let database_options = DatabaseOptions::new("sqlite::memory:")?;
+    let pool = crate::connect_and_migrate(&database_options, MigrationOptions::default()).await?;
+    let manager = SchemaManager::new(pool.connection());
+
+    for table in [
+        "oauth_login_providers",
+        "user_oauth_identities",
+        "oauth_login_transactions",
+    ] {
+        assert!(manager.has_table(table).await?, "缺少数据表 {table}");
+    }
+    for (table, index) in [
+        ("user_oauth_identities", "uq_user_oauth_identities_subject"),
+        (
+            "user_oauth_identities",
+            "uq_user_oauth_identities_user_provider",
+        ),
+        (
+            "oauth_login_transactions",
+            "uq_oauth_login_transactions_state",
+        ),
+        (
+            "oauth_login_transactions",
+            "uq_oauth_login_transactions_ticket",
+        ),
+        (
+            "oauth_login_transactions",
+            "idx_oauth_login_transactions_expires",
+        ),
+        (
+            "oauth_login_transactions",
+            "idx_oauth_login_transactions_ticket_expires",
+        ),
+    ] {
+        assert!(manager.has_index(table, index).await?, "缺少索引 {index}");
+    }
+    let providers = oauth_login_providers::Entity::find()
+        .all(pool.connection())
+        .await?;
+    let mut provider_names = providers
+        .iter()
+        .map(|provider| provider.provider.as_str())
+        .collect::<Vec<_>>();
+    provider_names.sort_unstable();
+    assert_eq!(
+        provider_names,
+        [
+            "discord", "github", "google", "linuxdo", "oidc", "telegram", "wechat"
+        ]
+    );
+    let linuxdo = providers
+        .iter()
+        .find(|provider| provider.provider == "linuxdo")
+        .expect("应预置 LinuxDO Provider");
+    assert_eq!(
+        linuxdo.issuer_url.as_deref(),
+        Some("https://connect.linux.do/")
+    );
+    let wechat = providers
+        .iter()
+        .find(|provider| provider.provider == "wechat")
+        .expect("应预置微信 Provider");
+    assert!(!wechat.enabled);
+    assert_eq!(wechat.client_id, None);
+    assert_eq!(wechat.issuer_url, None);
+    assert_eq!(wechat.client_secret, None);
+    assert_eq!(wechat.version, 1);
+    let telegram = providers
+        .iter()
+        .find(|provider| provider.provider == "telegram")
+        .expect("应预置 Telegram Provider");
+    assert!(!telegram.enabled);
+    assert_eq!(telegram.client_id, None);
+    assert_eq!(
+        telegram.issuer_url.as_deref(),
+        Some("https://oauth.telegram.org")
+    );
+    assert_eq!(telegram.client_secret, None);
+    assert_eq!(telegram.version, 1);
+    let google = providers
+        .iter()
+        .find(|provider| provider.provider == "google")
+        .expect("预置 Google Provider");
+    assert!(!google.enabled);
+    assert_eq!(google.client_id, None);
+    assert_eq!(
+        google.issuer_url.as_deref(),
+        Some("https://accounts.google.com")
+    );
+    assert_eq!(google.client_secret, None);
+    assert_eq!(google.version, 1);
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn standard_startup_installs_organization_budget_schema() -> Result<(), Box<dyn Error>> {
+    let database_options = DatabaseOptions::new("sqlite::memory:")?;
+    let pool = crate::connect_and_migrate(&database_options, MigrationOptions::default()).await?;
+    let manager = SchemaManager::new(pool.connection());
+
+    for table in [
+        "organization_budget_policies",
+        "organization_budget_windows",
+        "billing_organization_reservations",
+    ] {
+        assert!(manager.has_table(table).await?, "缺少数据表 {table}");
+    }
     pool.close().await?;
     Ok(())
 }
@@ -251,6 +426,52 @@ async fn credential_oauth_pending_migration_backfills_existing_rows() -> Result<
 }
 
 #[tokio::test]
+async fn spark_shadow_shape_migration_preserves_legacy_rows_and_guards_new_writes()
+-> Result<(), Box<dyn Error>> {
+    let pool = connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
+    Migrator::up(pool.connection(), Some(68)).await?;
+    let channel = channel_active_model("spark-shadow-shape")
+        .insert(pool.connection())
+        .await?;
+    let parent = oauth_credential_active_model(channel.id, "spark-parent")
+        .insert(pool.connection())
+        .await?;
+
+    // 旧脚手架可能留下 parent + global 密文，迁移只能保留并阻止继续写入。
+    let mut legacy = oauth_credential_active_model(channel.id, "legacy-shadow-ciphertext");
+    legacy.parent_id = Set(Some(parent.id));
+    let legacy = legacy.insert(pool.connection()).await?;
+
+    Migrator::up(pool.connection(), None).await?;
+    let manager = SchemaManager::new(pool.connection());
+    assert!(
+        manager
+            .has_index("credentials", "uq_credentials_active_spark_parent")
+            .await?
+    );
+    let preserved = credentials::Entity::find_by_id(legacy.id)
+        .one(pool.connection())
+        .await?
+        .expect("旧脚手架行必须保留供管理员删除重建");
+    assert_eq!(preserved.quota_dimension, "global");
+
+    let mut rejected = oauth_credential_active_model(channel.id, "new-invalid-shadow");
+    rejected.parent_id = Set(Some(parent.id));
+    assert!(rejected.insert(pool.connection()).await.is_err());
+
+    let mut deleted_legacy = preserved.into_active_model();
+    deleted_legacy.deleted_at = Set(Some(historical_audit_time()));
+    deleted_legacy.update(pool.connection()).await?;
+
+    let shadow = spark_shadow_active_model(channel.id, parent.id, "spark-shadow-reference");
+    shadow.clone().insert(pool.connection()).await?;
+    assert!(shadow.insert(pool.connection()).await.is_err());
+
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn token_window_migration_backfills_only_active_requests() -> Result<(), Box<dyn Error>> {
     let pool = connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
     Migrator::up(pool.connection(), Some(48)).await?;
@@ -268,17 +489,26 @@ async fn token_window_migration_backfills_only_active_requests() -> Result<(), B
     )
     .insert(pool.connection())
     .await?;
-    let token = token_active_model(user.id, group_id, TOKEN_HASH_A, "token-window-token")
-        .insert(pool.connection())
-        .await?;
+    let token_id = insert_legacy_token(
+        pool.connection(),
+        90_048,
+        token_active_model(user.id, group_id, TOKEN_HASH_A, "token-window-token"),
+    )
+    .await?;
     let request_key = "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
-    let request = reservation_active_model(request_key, user.id, token.id, group_id, 80, 80)
-        .insert(pool.connection())
+    let request_created_at = historical_audit_time();
+    let mut request = reservation_active_model(request_key, user.id, token_id, group_id, 80, 80);
+    request.created_at = Set(request_created_at);
+    // 历史 schema 尚无组织列，插入时不能让 ORM 返回并投影当前实体。
+    billing_reservations::Entity::insert(request)
+        .exec_without_returning(pool.connection())
         .await?;
     let batch_key = "dededededededededededededededede";
-    let mut batch = reservation_active_model(batch_key, user.id, token.id, group_id, 90, 90);
+    let mut batch = reservation_active_model(batch_key, user.id, token_id, group_id, 90, 90);
     batch.reservation_kind = Set(2);
-    batch.insert(pool.connection()).await?;
+    billing_reservations::Entity::insert(batch)
+        .exec_without_returning(pool.connection())
+        .await?;
 
     Migrator::up(pool.connection(), None).await?;
     let manager = SchemaManager::new(pool.connection());
@@ -296,12 +526,12 @@ async fn token_window_migration_backfills_only_active_requests() -> Result<(), B
     .one(pool.connection())
     .await?
     .expect("升级前在途普通请求必须获得兼容快照");
-    assert_eq!(snapshot.reserved_quota, request.reserved_quota);
-    assert_eq!(snapshot.window_5h_start, request.created_at);
-    assert_eq!(snapshot.window_1d_start, request.created_at);
-    assert_eq!(snapshot.window_7d_start, request.created_at);
-    assert_eq!(snapshot.created_at, request.created_at);
-    assert_eq!(snapshot.updated_at, request.created_at);
+    assert_eq!(snapshot.reserved_quota, 80);
+    assert_eq!(snapshot.window_5h_start, request_created_at);
+    assert_eq!(snapshot.window_1d_start, request_created_at);
+    assert_eq!(snapshot.window_7d_start, request_created_at);
+    assert_eq!(snapshot.created_at, request_created_at);
+    assert_eq!(snapshot.updated_at, request_created_at);
     assert!(
         billing_token_window_reservations::Entity::find_by_id(BillingReservationKey::parse(
             batch_key
@@ -334,17 +564,26 @@ async fn group_window_migration_backfills_state_and_only_active_requests()
     )
     .insert(pool.connection())
     .await?;
-    let token = token_active_model(user.id, group_id, TOKEN_HASH_B, "group-window-token")
-        .insert(pool.connection())
-        .await?;
+    let token_id = insert_legacy_token(
+        pool.connection(),
+        90_049,
+        token_active_model(user.id, group_id, TOKEN_HASH_B, "group-window-token"),
+    )
+    .await?;
     let request_key = "efefefefefefefefefefefefefefefef";
-    let request = reservation_active_model(request_key, user.id, token.id, group_id, 70, 70)
-        .insert(pool.connection())
+    let request_created_at = historical_audit_time();
+    let mut request = reservation_active_model(request_key, user.id, token_id, group_id, 70, 70);
+    request.created_at = Set(request_created_at);
+    // 历史 schema 尚无组织列，插入时不能让 ORM 返回并投影当前实体。
+    billing_reservations::Entity::insert(request)
+        .exec_without_returning(pool.connection())
         .await?;
     let batch_key = "fafafafafafafafafafafafafafafafa";
-    let mut batch = reservation_active_model(batch_key, user.id, token.id, group_id, 90, 90);
+    let mut batch = reservation_active_model(batch_key, user.id, token_id, group_id, 90, 90);
     batch.reservation_kind = Set(2);
-    batch.insert(pool.connection()).await?;
+    billing_reservations::Entity::insert(batch)
+        .exec_without_returning(pool.connection())
+        .await?;
 
     Migrator::up(pool.connection(), None).await?;
     let manager = SchemaManager::new(pool.connection());
@@ -381,12 +620,12 @@ async fn group_window_migration_backfills_state_and_only_active_requests()
     .one(pool.connection())
     .await?
     .expect("升级前在途普通请求必须获得分组兼容快照");
-    assert_eq!(snapshot.reserved_quota, request.reserved_quota);
-    assert_eq!(snapshot.daily_window_start, request.created_at);
-    assert_eq!(snapshot.weekly_window_start, request.created_at);
-    assert_eq!(snapshot.monthly_window_start, request.created_at);
-    assert_eq!(snapshot.created_at, request.created_at);
-    assert_eq!(snapshot.updated_at, request.created_at);
+    assert_eq!(snapshot.reserved_quota, 70);
+    assert_eq!(snapshot.daily_window_start, request_created_at);
+    assert_eq!(snapshot.weekly_window_start, request_created_at);
+    assert_eq!(snapshot.monthly_window_start, request_created_at);
+    assert_eq!(snapshot.created_at, request_created_at);
+    assert_eq!(snapshot.updated_at, request_created_at);
     assert!(
         billing_group_window_reservations::Entity::find_by_id(BillingReservationKey::parse(
             batch_key
@@ -419,15 +658,18 @@ async fn billing_reservation_kind_migration_backfills_existing_rows() -> Result<
     )
     .insert(pool.connection())
     .await?;
-    let token = token_active_model(user.id, group_id, TOKEN_HASH_A, "reservation-kind-token")
-        .insert(pool.connection())
-        .await?;
+    let token_id = insert_legacy_token(
+        pool.connection(),
+        90_045,
+        token_active_model(user.id, group_id, TOKEN_HASH_A, "reservation-kind-token"),
+    )
+    .await?;
     let reservation_id = "abababababababababababababababab";
     // 旧 schema 尚无用途列，插入时不能让 ORM 返回并投影新实体。
     billing_reservations::Entity::insert(reservation_active_model(
         reservation_id,
         user.id,
-        token.id,
+        token_id,
         group_id,
         100,
         100,
@@ -894,6 +1136,45 @@ async fn generated_active_models_redact_sensitive_payloads() {
 }
 
 #[tokio::test]
+async fn passkey_authentication_migration_preserves_legacy_counter() -> Result<(), Box<dyn Error>> {
+    let pool = connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
+    Migrator::up(pool.connection(), Some(72)).await?;
+
+    let group = group_active_model("passkey-migration-group", "Passkey 迁移分组")
+        .insert(pool.connection())
+        .await?;
+    let user = user_active_model(
+        group.id,
+        "passkey-migration-user",
+        "passkey-migration@example.com",
+        "invite-passkey-migration",
+    )
+    .insert(pool.connection())
+    .await?;
+    passkeys::Entity::insert(passkeys::ActiveModel {
+        user_id: Set(user.id),
+        credential_id: Set("bGVnYWN5LWNlZGF0".to_owned()),
+        credential_id_digest: Set("a".repeat(64)),
+        passkey: Set(serde_json::json!({"cred": {"counter": 37}})),
+        display_name: Set("旧 Passkey".to_owned()),
+        ..Default::default()
+    })
+    .exec_without_returning(pool.connection())
+    .await?;
+
+    Migrator::up(pool.connection(), Some(73)).await?;
+    let migrated = passkeys::Entity::find()
+        .filter(passkeys::Column::UserId.eq(user.id))
+        .one(pool.connection())
+        .await?
+        .expect("旧 Passkey 必须保留");
+    assert_eq!(migrated.sign_count, 37);
+    assert_eq!(migrated.anomaly_at, None);
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 #[ignore = "仅由显式启用的隔离数据库迁移流水线执行"]
 async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     let database_url = test_database_url();
@@ -913,7 +1194,135 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
 
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
+    let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
+    assert_eq!(pending_migrations.len(), 31);
+    assert_eq!(
+        pending_migrations[0].name(),
+        "m20260815_000060_secure_debug_trace_snapshots"
+    );
+    assert_eq!(
+        pending_migrations[1].name(),
+        "m20260815_000061_create_organization_foundation"
+    );
+    assert_eq!(
+        pending_migrations[2].name(),
+        "m20260815_000062_create_organization_entitlements"
+    );
+    assert_eq!(
+        pending_migrations[3].name(),
+        "m20260816_000063_create_organization_invitations"
+    );
+    assert_eq!(
+        pending_migrations[4].name(),
+        "m20260816_000064_create_organization_wallets"
+    );
+    assert_eq!(
+        pending_migrations[5].name(),
+        "m20260816_000065_create_organization_budgets"
+    );
+    assert_eq!(
+        pending_migrations[6].name(),
+        "m20260817_000066_add_organization_tokens"
+    );
+    assert_eq!(
+        pending_migrations[7].name(),
+        "m20260817_000067_create_organization_activity"
+    );
+    assert_eq!(
+        pending_migrations[8].name(),
+        "m20260817_000068_add_client_simulation_observability"
+    );
+    assert_eq!(
+        pending_migrations[9].name(),
+        "m20260817_000069_enforce_spark_shadow_shape"
+    );
+    assert_eq!(
+        pending_migrations[10].name(),
+        "m20260817_000070_create_oauth_login"
+    );
+    assert_eq!(
+        pending_migrations[11].name(),
+        "m20260818_000071_seed_discord_oauth_login"
+    );
+    assert_eq!(
+        pending_migrations[12].name(),
+        "m20260818_000072_create_passkeys"
+    );
+    assert_eq!(
+        pending_migrations[13].name(),
+        "m20260818_000073_add_passkey_authentication_state"
+    );
+    assert_eq!(
+        pending_migrations[14].name(),
+        "m20260819_000074_create_platform_audit"
+    );
+    assert_eq!(
+        pending_migrations[15].name(),
+        "m20260819_000075_create_request_outcomes"
+    );
+    assert_eq!(
+        pending_migrations[16].name(),
+        "m20260819_000076_create_user_notification_events"
+    );
+    assert_eq!(
+        pending_migrations[17].name(),
+        "m20260819_000077_create_analytics_export_outbox"
+    );
+    assert_eq!(
+        pending_migrations[18].name(),
+        "m20260820_000078_extend_oauth_login_providers"
+    );
+    assert_eq!(
+        pending_migrations[19].name(),
+        "m20260820_000079_seed_wechat_oauth_login"
+    );
+    assert_eq!(
+        pending_migrations[20].name(),
+        "m20260820_000080_seed_telegram_oauth_login"
+    );
+    assert_eq!(
+        pending_migrations[21].name(),
+        "m20260820_000081_seed_google_oauth_login"
+    );
+    assert_eq!(
+        pending_migrations[22].name(),
+        "m20260821_000082_create_user_notification_receipts"
+    );
+    assert_eq!(
+        pending_migrations[23].name(),
+        "m20260821_000083_create_subscription_plan_prices"
+    );
+    assert_eq!(
+        pending_migrations[24].name(),
+        "m20260821_000084_create_subscription_orders"
+    );
+    assert_eq!(
+        pending_migrations[25].name(),
+        "m20260822_000085_create_subscription_payment_events"
+    );
+    assert_eq!(
+        pending_migrations[26].name(),
+        "m20260822_000086_create_refund_requests"
+    );
+    assert_eq!(
+        pending_migrations[27].name(),
+        "m20260822_000087_add_refund_provider_receipts"
+    );
+    assert_eq!(
+        pending_migrations[28].name(),
+        "m20260823_000088_add_refund_settings"
+    );
+    assert_eq!(
+        pending_migrations[29].name(),
+        "m20260823_000089_add_refund_approval"
+    );
+    assert_eq!(
+        pending_migrations[30].name(),
+        "m20260823_000090_add_refund_payment_reference"
+    );
+    let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
+    assert_legacy_debug_trace_snapshot_cleared(&pool, legacy_debug_trace_id).await?;
 
     assert_core_schema(pool.connection()).await?;
     assert!(
@@ -928,26 +1337,46 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
         EXPECTED_MIGRATION_COUNT
     );
 
+    eprintln!("迁移冒烟阶段：更新时间行为");
     assert_updated_at_behaviors(pool.connection()).await?;
+    eprintln!("迁移冒烟阶段：余额预警迁移");
     exercise_balance_alert_migration(pool.connection()).await?;
+    eprintln!("迁移冒烟阶段：调度发件箱仓储");
     exercise_scheduler_outbox_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：令牌鉴权仓储");
     exercise_token_auth_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：额度仓储");
     exercise_quota_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：批量计费仓储");
     exercise_billing_batch_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：模型价格仓储");
     exercise_model_price_repository(&pool).await?;
     // Expression 降级保护由独立测试覆盖；全量回滚前清理业务测试行以允许迁移降级。
     model_prices::Entity::delete_many()
         .exec(pool.connection())
         .await?;
+    eprintln!("迁移冒烟阶段：用量日志仓储");
     exercise_usage_log_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：试炼场分享仓储");
     exercise_playground_share_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：试炼场会话仓储");
     exercise_playground_conversation_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：注册仓储");
     exercise_registration_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：认证挑战仓储");
     exercise_auth_challenge_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：Passkey 登录限流仓储");
+    exercise_passkey_rate_limit_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：站点设置仓储");
     exercise_site_settings_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：邮件设置仓储");
     exercise_email_settings_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：管理看板仓储");
     exercise_admin_dashboard_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：核心结构校验");
     exercise_core_schema(pool.connection()).await?;
+    eprintln!("迁移冒烟阶段：企业仓储");
+    exercise_organization_repository(&pool).await?;
 
     Migrator::down(pool.connection(), None).await?;
     assert_core_tables_absent(pool.connection()).await?;
@@ -959,6 +1388,119 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_core_tables_absent(pool.connection()).await?;
 
     pool.close().await?;
+    Ok(())
+}
+
+/// 在第 59 号 schema 写入旧诊断明文，供第 60 号迁移验证清理而非伪加密。
+async fn insert_legacy_debug_trace_snapshot(pool: &DatabasePool) -> Result<i64, Box<dyn Error>> {
+    let group = group_active_model("debug-snapshot-upgrade-group", "诊断快照升级分组")
+        .insert(pool.connection())
+        .await?;
+    let mut user = user_active_model(
+        group.id,
+        "debug-snapshot-upgrade-user",
+        "debug-snapshot-upgrade@example.com",
+        "invite-debug-snapshot-upgrade",
+    );
+    user.status = Set(1);
+    let user = user.insert(pool.connection()).await?;
+    let mut token = token_active_model(
+        user.id,
+        group.id,
+        TOKEN_HASH_F,
+        "debug-snapshot-upgrade-token",
+    );
+    token.status = Set(1);
+    let token_id = insert_legacy_token(pool.connection(), 90_059, token).await?;
+    let trace = debug_traces::ActiveModel {
+        request_id: Set("debug-snapshot-upgrade-request".to_owned()),
+        user_id: Set(user.id),
+        token_id: Set(token_id),
+        group_id: Set(group.id),
+        requested_model: Set("gpt-5.5".to_owned()),
+        downstream_protocol: Set(1),
+        upstream_protocol: Set(1),
+        operation: Set(1),
+        outcome: Set(1),
+        selected_channel_id: Set(Some(101)),
+        selected_credential_id: Set(Some(201)),
+        routing_elapsed_ms: Set(9),
+        attempt_count: Set(1),
+        downstream_method: Set(Some("POST".to_owned())),
+        downstream_path: Set(Some("/v1/chat/completions".to_owned())),
+        downstream_headers_json: Set(Some(
+            r#"[{"name":"authorization","value":"<redacted>"}]"#.to_owned(),
+        )),
+        downstream_body_json: Set(Some(r#"{"content":"legacy-body"}"#.to_owned())),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+    let attempt = debug_trace_attempts::ActiveModel {
+        trace_id: Set(trace.id),
+        candidate_index: Set(0),
+        channel_id: Set(101),
+        credential_id: Set(201),
+        outcome: Set(1),
+        failure_kind: Set(None),
+        upstream_status: Set(None),
+        retry_decision: Set(false),
+        elapsed_ms: Set(8),
+        request_method: Set(Some("POST".to_owned())),
+        request_url: Set(Some(
+            "https://upstream.example/v1/chat/completions".to_owned(),
+        )),
+        request_headers_json: Set(Some(
+            r#"[{"name":"authorization","value":"<redacted>"}]"#.to_owned(),
+        )),
+        request_body_json: Set(Some(r#"{"content":"legacy-request"}"#.to_owned())),
+        response_headers_json: Set(Some(
+            r#"[{"name":"content-type","value":"application/json"}]"#.to_owned(),
+        )),
+        response_body_json: Set(Some(r#"{"content":"legacy-response"}"#.to_owned())),
+        response_status: Set(Some(200)),
+        response_streamed: Set(false),
+        ..Default::default()
+    };
+    // 历史 schema 尚无第 68 号列，禁止当前实体通过 RETURNING 提前投影新列。
+    debug_trace_attempts::Entity::insert(attempt)
+        .exec_without_returning(pool.connection())
+        .await?;
+    Ok(trace.id)
+}
+
+async fn assert_legacy_debug_trace_snapshot_cleared(
+    pool: &DatabasePool,
+    trace_id: i64,
+) -> Result<(), Box<dyn Error>> {
+    let trace = debug_traces::Entity::find_by_id(trace_id)
+        .one(pool.connection())
+        .await?
+        .expect("升级后必须保留调试追踪元数据");
+    assert_eq!(trace.request_id, "debug-snapshot-upgrade-request");
+    assert!(trace.downstream_headers_json.is_none());
+    assert!(trace.downstream_body_json.is_none());
+    let attempt = debug_trace_attempts::Entity::find()
+        .filter(debug_trace_attempts::Column::TraceId.eq(trace_id))
+        .one(pool.connection())
+        .await?
+        .expect("升级后必须保留候选时间线");
+    assert!(attempt.request_headers_json.is_none());
+    assert!(attempt.request_body_json.is_none());
+    assert!(attempt.response_headers_json.is_none());
+    assert!(attempt.response_body_json.is_none());
+    assert_eq!(
+        debug_trace_snapshots::Entity::find()
+            .count(pool.connection())
+            .await?,
+        0
+    );
+    assert_eq!(
+        debug_trace_snapshot_access_audits::Entity::find()
+            .count(pool.connection())
+            .await?,
+        0
+    );
     Ok(())
 }
 
@@ -979,9 +1521,9 @@ async fn exercise_usage_per_call_migration_upgrade(
     let user = user.insert(pool.connection()).await?;
     let mut token = token_active_model(user.id, group.id, TOKEN_HASH_E, "usage-v55-upgrade-token");
     token.status = Set(1);
-    let token = token.insert(pool.connection()).await?;
+    let token_id = insert_legacy_token(pool.connection(), 90_054, token).await?;
     let principal = GatewayPrincipal::new(
-        TokenId::new(token.id)?,
+        TokenId::new(token_id)?,
         UserId::new(user.id)?,
         GroupId::new(group.id)?,
     );
@@ -1012,36 +1554,62 @@ async fn exercise_usage_per_call_migration_upgrade(
     .exec_without_returning(pool.connection())
     .await?;
 
-    Migrator::up(pool.connection(), None).await?;
-    let repository = UsageLogRepository::new(pool.clone());
-    let per_call_write = UsageLogWrite::new(
-        BillingReservationId::new([0xd2; 16])?,
-        principal,
-        UsageLogBillingMode::PerCall,
-        UsageLogUsage::new(0, 0, 0, 0, 0, 0, 0, 0)?,
-        UsageLogSource::Upstream,
-        UsageLogSemantics::Inclusive,
-        Quota::new(320_000)?,
-    )
-    .with_video_dimensions(Some(8), None)?;
-    assert_eq!(
-        repository.record(&per_call_write).await?,
-        UsageLogWriteOutcome::Applied
-    );
+    // 先升级到第 59 号并显式使用当时的列投影，避免当前仓储提前引用第 67 号企业归属列。
+    Migrator::up(pool.connection(), Some(5)).await?;
+    let per_call_event_id = BillingReservationId::new([0xd2; 16])?;
+    let per_call_key = BillingReservationKey::parse(&per_call_event_id.persistence_key())?;
+    usage_logs::Entity::insert(usage_logs::ActiveModel {
+        event_id: Set(per_call_key),
+        event_type: Set(1),
+        user_id: Set(principal.user_id().get()),
+        token_id: Set(principal.token_id().get()),
+        group_id: Set(principal.group_id().get()),
+        billing_mode: Set(3),
+        input_tokens: Set(0),
+        output_tokens: Set(0),
+        cache_read: Set(0),
+        cache_creation_5m: Set(0),
+        cache_creation_1h: Set(0),
+        reasoning_tokens: Set(0),
+        audio_input_tokens: Set(0),
+        audio_output_tokens: Set(0),
+        audio_duration_nanoseconds: Set(None),
+        video_duration_seconds: Set(Some(8)),
+        video_resolution: Set(None),
+        request_id: Set(None),
+        model: Set(None),
+        protocol: Set(None),
+        operation: Set(None),
+        is_stream: Set(None),
+        reasoning_effort: Set(None),
+        reasoning_budget_tokens: Set(None),
+        first_token_ms: Set(None),
+        duration_ms: Set(None),
+        usage_source: Set(1),
+        usage_semantics: Set(1),
+        quota: Set(320_000),
+        created_at: Set(TimeDateTimeWithTimeZone::now_utc()),
+        ..Default::default()
+    })
+    .exec_without_returning(pool.connection())
+    .await?;
     let ids = usage_logs::Entity::find()
+        .select_only()
+        .column(usage_logs::Column::Id)
         .filter(usage_logs::Column::UserId.eq(user.id))
+        .into_tuple::<i64>()
         .all(pool.connection())
         .await?;
     assert_eq!(ids.len(), 2);
-    let minimum_id = ids.iter().map(|record| record.id).min().unwrap_or_default();
-    let maximum_id = ids.iter().map(|record| record.id).max().unwrap_or_default();
+    let minimum_id = ids.iter().copied().min().unwrap_or_default();
+    let maximum_id = ids.iter().copied().max().unwrap_or_default();
     assert!(maximum_id > minimum_id, "迁移后自增主键必须继续递增");
 
     usage_logs::Entity::delete_many()
         .filter(usage_logs::Column::UserId.eq(user.id))
         .exec(pool.connection())
         .await?;
-    tokens::Entity::delete_by_id(token.id)
+    tokens::Entity::delete_by_id(token_id)
         .exec(pool.connection())
         .await?;
     users::Entity::delete_by_id(user.id)
@@ -1531,8 +2099,11 @@ async fn exercise_admin_dashboard_repository(pool: &DatabasePool) -> Result<(), 
         .unix_timestamp()
         .checked_add(1)
         .ok_or_else(|| std::io::Error::other("管理看板冒烟时间溢出"))?;
+    let period_start = period_end
+        .checked_sub(24 * 60 * 60)
+        .ok_or_else(|| std::io::Error::other("管理看板冒烟窗口下溢"))?;
     let dashboard = AdminDashboardRepository::new(pool.clone(), Duration::from_secs(2))?
-        .snapshot(0, period_end)
+        .snapshot(period_start, period_end)
         .await?;
     assert_eq!(dashboard.request_count(), 0);
     assert_eq!(dashboard.quota_consumed(), 0);
@@ -1540,6 +2111,9 @@ async fn exercise_admin_dashboard_repository(pool: &DatabasePool) -> Result<(), 
     assert_eq!(dashboard.estimated_usage_count(), 0);
     assert_eq!(dashboard.per_token_request_count(), 0);
     assert_eq!(dashboard.free_request_count(), 0);
+    assert_eq!(dashboard.hourly().len(), 24);
+    assert_eq!(dashboard.performance().first_token_sample_count(), 0);
+    assert_eq!(dashboard.performance().average_first_token_ms(), None);
     Ok(())
 }
 
@@ -2106,12 +2680,45 @@ async fn exercise_auth_challenge_repository(pool: &DatabasePool) -> Result<(), B
     Ok(())
 }
 
+/// 在三方言真实事务中验证 Passkey 主体与客户端双作用域原子限流。
+async fn exercise_passkey_rate_limit_repository(pool: &DatabasePool) -> Result<(), Box<dyn Error>> {
+    let repository = AuthChallengeRateLimitRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let claim = || {
+        AuthChallengeRateLimitClaim::new(
+            AuthChallengePurpose::PasskeyAuthentication,
+            [0x7a; 32],
+            [0x7b; 32],
+            10_020,
+            1,
+            60,
+        )
+    };
+    assert_eq!(
+        repository.claim(claim()?).await?,
+        AuthChallengeRateLimitOutcome::Allowed
+    );
+    assert_eq!(
+        repository.claim(claim()?).await?,
+        AuthChallengeRateLimitOutcome::RateLimited {
+            retry_after_seconds: 60
+        }
+    );
+    auth_challenge_rate_limits::Entity::delete_many()
+        .exec(pool.connection())
+        .await?;
+    Ok(())
+}
+
 /// 在三方言真实事务中验证站点固定记录和单调版本。
 async fn exercise_site_settings_repository(pool: &DatabasePool) -> Result<(), Box<dyn Error>> {
     let repository = SiteSettingsRepository::new(pool.clone(), Duration::from_secs(5))?;
     let initial = repository.settings().await?;
     assert_eq!(initial.site_name(), "AnyFlows");
     assert_eq!(initial.version(), 1);
+    assert_eq!(
+        initial.balance_display().mode(),
+        BalanceDisplayModeRecord::Quota
+    );
 
     let saved = repository
         .update(SiteSettingsWriteRecord::new(
@@ -2120,10 +2727,23 @@ async fn exercise_site_settings_repository(pool: &DatabasePool) -> Result<(), Bo
             Some("/brand.svg".to_owned()),
             Some("统一访问模型".to_owned()),
             Some("三方言站点设置冒烟。".to_owned()),
+            BalanceDisplayPolicyRecord::new(
+                BalanceDisplayModeRecord::CustomUnit,
+                "算力积分".to_owned(),
+                "积分".to_owned(),
+                10_000,
+                BalanceSymbolPositionRecord::Suffix,
+                2,
+            )?,
+            initial.version(),
         ))
         .await?;
     assert_eq!(saved.version(), 2);
     assert_eq!(saved.site_name(), "AnyFlows Smoke");
+    assert_eq!(
+        saved.balance_display().mode(),
+        BalanceDisplayModeRecord::CustomUnit
+    );
     Ok(())
 }
 
@@ -2199,9 +2819,69 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
 
     assert_entity_columns::<groups::Column>(&manager, "groups").await?;
     assert_entity_columns::<users::Column>(&manager, "users").await?;
+    assert_entity_columns::<passkeys::Column>(&manager, "passkeys").await?;
+    assert_entity_columns::<passkey_authentication_challenges::Column>(
+        &manager,
+        "passkey_authentication_challenges",
+    )
+    .await?;
+    assert_entity_columns::<passkey_registration_challenges::Column>(
+        &manager,
+        "passkey_registration_challenges",
+    )
+    .await?;
+    assert_entity_columns::<organizations::Column>(&manager, "organizations").await?;
+    assert_entity_columns::<organization_teams::Column>(&manager, "organization_teams").await?;
+    assert_entity_columns::<organization_memberships::Column>(&manager, "organization_memberships")
+        .await?;
+    assert_entity_columns::<organization_entitlements::Column>(
+        &manager,
+        "organization_entitlements",
+    )
+    .await?;
+    assert_entity_columns::<organization_audit_logs::Column>(&manager, "organization_audit_logs")
+        .await?;
+    assert_entity_columns::<platform_audit_logs::Column>(&manager, "platform_audit_logs").await?;
+    assert_entity_columns::<request_outcome_logs::Column>(&manager, "request_outcome_logs").await?;
+    assert_entity_columns::<analytics_export_outbox_events::Column>(
+        &manager,
+        "analytics_export_outbox_events",
+    )
+    .await?;
+    assert_entity_columns::<user_notification_events::Column>(&manager, "user_notification_events")
+        .await?;
+    assert_entity_columns::<user_notification_receipts::Column>(
+        &manager,
+        "user_notification_receipts",
+    )
+    .await?;
+    assert_entity_columns::<organization_invitations::Column>(&manager, "organization_invitations")
+        .await?;
+    assert_entity_columns::<organization_wallets::Column>(&manager, "organization_wallets").await?;
+    assert_entity_columns::<organization_wallet_ledger_entries::Column>(
+        &manager,
+        "organization_wallet_ledger_entries",
+    )
+    .await?;
+    assert_entity_columns::<organization_budget_policies::Column>(
+        &manager,
+        "organization_budget_policies",
+    )
+    .await?;
+    assert_entity_columns::<organization_budget_windows::Column>(
+        &manager,
+        "organization_budget_windows",
+    )
+    .await?;
+    assert_entity_columns::<billing_organization_reservations::Column>(
+        &manager,
+        "billing_organization_reservations",
+    )
+    .await?;
     assert_entity_columns::<channels::Column>(&manager, "channels").await?;
     assert_entity_columns::<credentials::Column>(&manager, "credentials").await?;
     assert_entity_columns::<tokens::Column>(&manager, "tokens").await?;
+    assert_entity_columns::<usage_logs::Column>(&manager, "usage_logs").await?;
     assert_entity_columns::<channel_models::Column>(&manager, "channel_models").await?;
     assert_entity_columns::<channel_groups::Column>(&manager, "channel_groups").await?;
     assert_entity_columns::<abilities::Column>(&manager, "abilities").await?;
@@ -2254,6 +2934,17 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     assert_entity_columns::<redemption_batches::Column>(&manager, "redemption_batches").await?;
     assert_entity_columns::<redemption_codes::Column>(&manager, "redemption_codes").await?;
     assert_entity_columns::<subscription_plans::Column>(&manager, "subscription_plans").await?;
+    assert_entity_columns::<subscription_plan_prices::Column>(&manager, "subscription_plan_prices")
+        .await?;
+    assert_entity_columns::<subscription_orders::Column>(&manager, "subscription_orders").await?;
+    assert_entity_columns::<subscription_payment_events::Column>(
+        &manager,
+        "subscription_payment_events",
+    )
+    .await?;
+    assert_entity_columns::<refund_requests::Column>(&manager, "refund_requests").await?;
+    assert_entity_columns::<refund_provider_events::Column>(&manager, "refund_provider_events")
+        .await?;
     assert_entity_columns::<user_subscriptions::Column>(&manager, "user_subscriptions").await?;
     assert_entity_columns::<invite_rebate_events::Column>(&manager, "invite_rebate_events").await?;
     assert_entity_columns::<balance_alert_settings::Column>(&manager, "balance_alert_settings")
@@ -2264,6 +2955,7 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         "subscription_balance_alert_events",
     )
     .await?;
+    assert_entity_columns::<debug_trace_attempts::Column>(&manager, "debug_trace_attempts").await?;
 
     assert!(manager.has_column("tokens", "key_hash").await?);
     assert!(manager.has_column("tokens", "key_prefix").await?);
@@ -2273,9 +2965,28 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         ("users", "uq_users_active_username"),
         ("users", "uq_users_active_email"),
         ("users", "uq_users_aff_code"),
+        ("passkeys", "uq_passkeys_credential_id_digest"),
+        ("passkeys", "idx_passkeys_user_active"),
+        (
+            "passkey_registration_challenges",
+            "idx_passkey_registration_challenges_user_state",
+        ),
+        (
+            "passkey_authentication_challenges",
+            "uq_passkey_authentication_challenges_digest",
+        ),
+        (
+            "passkey_authentication_challenges",
+            "idx_passkey_authentication_challenges_user_state",
+        ),
+        (
+            "passkey_authentication_challenges",
+            "idx_passkey_authentication_challenges_expires_at",
+        ),
         ("groups", "uq_groups_active_name"),
         ("tokens", "uq_tokens_key_hash"),
         ("credentials", "idx_credentials_channel_status_schedulable"),
+        ("credentials", "uq_credentials_active_spark_parent"),
         ("abilities", "idx_abilities_group_model_enabled"),
         (
             "billing_reservations",
@@ -2343,6 +3054,27 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         ("subscription_plans", "idx_subscription_plans_status_id"),
         ("subscription_plans", "idx_subscription_plans_creator"),
         (
+            "subscription_plan_prices",
+            "uq_subscription_plan_prices_plan",
+        ),
+        ("subscription_orders", "uq_subscription_orders_order_key"),
+        (
+            "subscription_orders",
+            "uq_subscription_orders_user_idempotency_key",
+        ),
+        (
+            "subscription_payment_events",
+            "uq_subscription_payment_events_event_key",
+        ),
+        (
+            "subscription_payment_events",
+            "uq_subscription_payment_events_provider_event",
+        ),
+        (
+            "subscription_payment_events",
+            "idx_subscription_payment_events_order_created",
+        ),
+        (
             "user_subscriptions",
             "uq_user_subscriptions_subscription_key",
         ),
@@ -2380,6 +3112,137 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
             "subscription_balance_alert_events",
             "idx_subscription_balance_alert_user_created",
         ),
+        (
+            "user_notification_events",
+            "uq_user_notification_events_source",
+        ),
+        (
+            "user_notification_events",
+            "idx_user_notification_events_user_cursor",
+        ),
+        (
+            "user_notification_events",
+            "idx_user_notification_events_delivery",
+        ),
+        (
+            "user_notification_receipts",
+            "idx_user_notification_receipts_user_read",
+        ),
+        ("organizations", "uq_organizations_key"),
+        ("organizations", "uq_organizations_slug"),
+        ("organizations", "idx_organizations_status_id"),
+        ("organization_teams", "uq_organization_teams_scope_id"),
+        ("organization_teams", "uq_organization_teams_scope_name"),
+        ("organization_teams", "idx_organization_teams_scope_status"),
+        (
+            "organization_memberships",
+            "uq_organization_memberships_scope_user",
+        ),
+        (
+            "organization_memberships",
+            "idx_organization_memberships_scope_status",
+        ),
+        (
+            "organization_memberships",
+            "idx_organization_memberships_scope_team_status",
+        ),
+        (
+            "organization_entitlements",
+            "uq_organization_entitlements_organization",
+        ),
+        (
+            "organization_entitlements",
+            "idx_organization_entitlements_validity",
+        ),
+        (
+            "organization_invitations",
+            "uq_organization_invitations_key",
+        ),
+        (
+            "organization_invitations",
+            "uq_organization_invitations_token_digest",
+        ),
+        (
+            "organization_invitations",
+            "idx_organization_invitations_email_status",
+        ),
+        (
+            "organization_invitations",
+            "idx_organization_invitations_status_expiry",
+        ),
+        (
+            "organization_invitations",
+            "uq_organization_invitations_batch_email",
+        ),
+        ("topup_orders", "idx_topup_orders_organization"),
+        (
+            "organization_wallets",
+            "uq_organization_wallets_organization",
+        ),
+        (
+            "organization_wallet_ledger_entries",
+            "uq_organization_wallet_ledger_scope_event",
+        ),
+        (
+            "organization_wallet_ledger_entries",
+            "idx_organization_wallet_ledger_scope_id",
+        ),
+        (
+            "organization_memberships",
+            "uq_organization_memberships_scope_id",
+        ),
+        ("tokens", "idx_tokens_organization_status_id"),
+        ("tokens", "idx_tokens_organization_owner_id"),
+        ("tokens", "idx_tokens_organization_membership_status"),
+        (
+            "billing_reservations",
+            "idx_billing_reservations_organization_status",
+        ),
+        ("usage_logs", "idx_usage_logs_organization_id"),
+        ("usage_logs", "idx_usage_logs_organization_user_id"),
+        ("usage_logs", "idx_usage_logs_organization_team_id"),
+        ("organization_audit_logs", "uq_org_audit_request_operation"),
+        ("organization_audit_logs", "idx_org_audit_organization_id"),
+        (
+            "organization_audit_logs",
+            "idx_org_audit_organization_actor_id",
+        ),
+        (
+            "organization_audit_logs",
+            "idx_org_audit_organization_operation_id",
+        ),
+        (
+            "organization_audit_logs",
+            "idx_org_audit_organization_created",
+        ),
+        ("organization_audit_logs", "idx_org_audit_platform_id"),
+        ("platform_audit_logs", "uq_platform_audit_request_action"),
+        ("platform_audit_logs", "idx_platform_audit_operator_id"),
+        ("platform_audit_logs", "idx_platform_audit_route_id"),
+        ("platform_audit_logs", "idx_platform_audit_created_id"),
+        ("request_outcome_logs", "uq_request_outcome_request_id"),
+        ("request_outcome_logs", "idx_request_outcome_created_id"),
+        (
+            "request_outcome_logs",
+            "idx_request_outcome_outcome_created",
+        ),
+        (
+            "request_outcome_logs",
+            "idx_request_outcome_channel_created",
+        ),
+        ("request_outcome_logs", "idx_request_outcome_flow_created"),
+        (
+            "analytics_export_outbox_events",
+            "uq_analytics_export_outbox_fact",
+        ),
+        (
+            "analytics_export_outbox_events",
+            "idx_analytics_export_outbox_due",
+        ),
+        (
+            "analytics_export_outbox_events",
+            "idx_analytics_export_outbox_fact_cursor",
+        ),
     ] {
         assert!(
             manager.has_index(table, index).await?,
@@ -2387,6 +3250,562 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         );
     }
     Ok(())
+}
+
+/// 在当前方言上验证组织事务仓储的 Owner、团队归属和禁用保护。
+async fn exercise_organization_repository(pool: &DatabasePool) -> Result<(), Box<dyn Error>> {
+    let group = group_active_model("organization-smoke-group", "企业迁移冒烟分组")
+        .insert(pool.connection())
+        .await?;
+    let mut owner = user_active_model(
+        group.id,
+        "organization-smoke-owner",
+        "organization-smoke-owner@example.com",
+        "organization-smoke-owner-aff",
+    );
+    owner.status = Set(1);
+    let owner = owner.insert(pool.connection()).await?;
+    let mut member = user_active_model(
+        group.id,
+        "organization-smoke-member",
+        "organization-smoke-member@example.com",
+        "organization-smoke-member-aff",
+    );
+    member.status = Set(1);
+    let member = member.insert(pool.connection()).await?;
+    let owner_user_id = UserId::new(owner.id)?;
+    let member_user_id = UserId::new(member.id)?;
+    let repository = OrganizationRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let (organization, owner_membership) = repository
+        .create(OrganizationCreate::new(
+            "Organization Smoke".to_owned(),
+            "organization-smoke".to_owned(),
+            owner_user_id,
+            migration_test_entitlement()?,
+        ))
+        .await?
+        .into_parts();
+
+    let mut enterprise_order = topup_order_active_model(
+        owner.id,
+        "abababababababababababababababab",
+        "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+    );
+    enterprise_order.organization_id = Set(Some(organization.id().get()));
+    enterprise_order.insert(pool.connection()).await?;
+    let mut invalid_order = topup_order_active_model(
+        owner.id,
+        "efefefefefefefefefefefefefefefef",
+        "12121212121212121212121212121212",
+    );
+    invalid_order.organization_id = Set(Some(i64::MAX));
+    assert!(invalid_order.insert(pool.connection()).await.is_err());
+
+    assert_eq!(
+        repository
+            .change_membership(
+                organization.id(),
+                owner_membership.id(),
+                OrganizationMembershipChange::new(
+                    OrganizationRole::Admin,
+                    OrganizationMembershipStatus::Active,
+                    None,
+                    owner_membership.version(),
+                ),
+            )
+            .await,
+        Err(OrganizationRepositoryError::LastOwner)
+    );
+
+    let team = repository
+        .create_team(
+            organization.id(),
+            OrganizationTeamCreate::new("Smoke Team".to_owned(), None),
+        )
+        .await?;
+    let membership = repository
+        .add_membership(
+            organization.id(),
+            OrganizationMembershipCreate::new(
+                member_user_id,
+                OrganizationRole::Member,
+                Some(team.id()),
+                Some(owner_user_id),
+            ),
+        )
+        .await?;
+    let valid_hash = "f0".repeat(32);
+    let mut enterprise_token =
+        token_active_model(member.id, group.id, &valid_hash, "organization-smoke-token");
+    enterprise_token.group_id = Set(None);
+    enterprise_token.organization_id = Set(Some(organization.id().get()));
+    enterprise_token.organization_membership_id = Set(Some(membership.id().get()));
+    enterprise_token.organization_team_id = Set(Some(team.id().get()));
+    let enterprise_token = enterprise_token.insert(pool.connection()).await?;
+
+    let invalid_shape_hash = "f1".repeat(32);
+    let mut invalid_shape = token_active_model(
+        member.id,
+        group.id,
+        &invalid_shape_hash,
+        "organization-invalid-shape-token",
+    );
+    invalid_shape.group_id = Set(None);
+    invalid_shape.organization_id = Set(Some(organization.id().get()));
+    assert!(invalid_shape.insert(pool.connection()).await.is_err());
+
+    let (other_organization, other_owner_membership) = repository
+        .create(OrganizationCreate::new(
+            "Other Organization Smoke".to_owned(),
+            "other-organization-smoke".to_owned(),
+            owner_user_id,
+            migration_test_entitlement()?,
+        ))
+        .await?
+        .into_parts();
+    let other_team = repository
+        .create_team(
+            other_organization.id(),
+            OrganizationTeamCreate::new("Other Smoke Team".to_owned(), None),
+        )
+        .await?;
+    exercise_organization_activity_repository(
+        pool,
+        organization.id(),
+        membership.id(),
+        team.id(),
+        other_organization.id(),
+        other_team.id(),
+        owner_user_id,
+        member_user_id,
+        TokenId::new(enterprise_token.id)?,
+        GroupId::new(group.id)?,
+    )
+    .await?;
+    exercise_platform_audit_repository(pool, owner_user_id, member_user_id).await?;
+    let cross_scope_hash = "f2".repeat(32);
+    let mut cross_scope = token_active_model(
+        owner.id,
+        group.id,
+        &cross_scope_hash,
+        "organization-cross-scope-token",
+    );
+    cross_scope.group_id = Set(None);
+    cross_scope.organization_id = Set(Some(organization.id().get()));
+    cross_scope.organization_membership_id = Set(Some(other_owner_membership.id().get()));
+    assert!(cross_scope.insert(pool.connection()).await.is_err());
+    assert_eq!(
+        repository
+            .disable_team(organization.id(), team.id(), team.version())
+            .await,
+        Err(OrganizationRepositoryError::TeamHasActiveMembers)
+    );
+    repository
+        .change_membership(
+            organization.id(),
+            membership.id(),
+            OrganizationMembershipChange::new(
+                OrganizationRole::Member,
+                OrganizationMembershipStatus::Active,
+                None,
+                membership.version(),
+            ),
+        )
+        .await?;
+    assert_eq!(
+        tokens::Entity::find_by_id(enterprise_token.id)
+            .one(pool.connection())
+            .await?
+            .expect("调组后的企业 Key 必须保留审计事实")
+            .status,
+        2
+    );
+    repository
+        .disable_team(organization.id(), team.id(), team.version())
+        .await?;
+    Ok(())
+}
+
+/// 在当前方言上验证平台审计的幂等追加、稳定分页和更新保护。
+async fn exercise_platform_audit_repository(
+    pool: &DatabasePool,
+    owner_user_id: UserId,
+    member_user_id: UserId,
+) -> Result<(), Box<dyn Error>> {
+    let repository = PlatformAuditRepository::new(pool.clone());
+    let succeeded = PlatformAuditWrite::new(
+        owner_user_id,
+        "platform.user_directory.read_all".to_owned(),
+        "/api/admin/users".to_owned(),
+        "platform.user_directory.list".to_owned(),
+        "user_directory".to_owned(),
+        None,
+        PlatformAuditOutcome::Succeeded,
+        None,
+        None,
+        Some(r#"{"after":null,"limit":2}"#.to_owned()),
+        "platform-audit-success".to_owned(),
+    )?;
+    assert_eq!(
+        repository.record(&succeeded).await?,
+        PlatformAuditWriteOutcome::Applied
+    );
+    assert_eq!(
+        repository.record(&succeeded).await?,
+        PlatformAuditWriteOutcome::Existing
+    );
+    let conflicting = PlatformAuditWrite::new(
+        owner_user_id,
+        "platform.user_directory.read_all".to_owned(),
+        "/api/admin/users".to_owned(),
+        "platform.user_directory.list".to_owned(),
+        "user_directory".to_owned(),
+        None,
+        PlatformAuditOutcome::Succeeded,
+        None,
+        None,
+        Some(r#"{"after":null,"limit":10}"#.to_owned()),
+        "platform-audit-success".to_owned(),
+    )?;
+    assert_eq!(
+        repository.record(&conflicting).await,
+        Err(PlatformAuditRepositoryError::Conflict)
+    );
+    for (user_id, request_id, outcome) in [
+        (
+            member_user_id,
+            "platform-audit-denied",
+            PlatformAuditOutcome::Denied,
+        ),
+        (
+            owner_user_id,
+            "platform-audit-failed",
+            PlatformAuditOutcome::Failed,
+        ),
+    ] {
+        let write = PlatformAuditWrite::new(
+            user_id,
+            "platform.user_directory.read_all".to_owned(),
+            "/api/admin/users".to_owned(),
+            "platform.user_directory.list".to_owned(),
+            "user_directory".to_owned(),
+            None,
+            outcome,
+            None,
+            None,
+            None,
+            request_id.to_owned(),
+        )?;
+        assert_eq!(
+            repository.record(&write).await?,
+            PlatformAuditWriteOutcome::Applied
+        );
+    }
+    let (first_page, next_cursor) = repository
+        .list(&PlatformAuditQuery::new(None, 2, None)?)
+        .await?
+        .into_parts();
+    assert_eq!(first_page.len(), 2);
+    assert!(next_cursor.is_some());
+    let (second_page, final_cursor) = repository
+        .list(&PlatformAuditQuery::new(next_cursor, 2, None)?)
+        .await?
+        .into_parts();
+    assert_eq!(second_page.len(), 1);
+    assert_eq!(final_cursor, None);
+    let (owner_records, owner_cursor) = repository
+        .list(&PlatformAuditQuery::new(None, 10, Some(owner_user_id))?)
+        .await?
+        .into_parts();
+    assert_eq!(owner_records.len(), 2);
+    assert_eq!(owner_cursor, None);
+    let stored = platform_audit_logs::Entity::find()
+        .filter(platform_audit_logs::Column::RequestId.eq("platform-audit-success"))
+        .one(pool.connection())
+        .await?
+        .expect("平台审计事实必须存在");
+    let mut forbidden_update = stored.into_active_model();
+    forbidden_update.outcome = Set(PlatformAuditOutcome::Failed as i16);
+    assert!(forbidden_update.update(pool.connection()).await.is_err());
+    Ok(())
+}
+
+/// 在三方言实库中闭合企业用量归属、审计追加、筛选分页与保留期清理。
+#[allow(
+    clippy::too_many_arguments,
+    reason = "参数逐一对应已创建的企业测试主体"
+)]
+async fn exercise_organization_activity_repository(
+    pool: &DatabasePool,
+    organization_id: OrganizationId,
+    membership_id: OrganizationMembershipId,
+    team_id: OrganizationTeamId,
+    other_organization_id: OrganizationId,
+    other_team_id: OrganizationTeamId,
+    owner_user_id: UserId,
+    member_user_id: UserId,
+    token_id: TokenId,
+    group_id: GroupId,
+) -> Result<(), Box<dyn Error>> {
+    let usage_repository = UsageLogRepository::new(pool.clone());
+    let enterprise_principal = GatewayPrincipal::organization(
+        token_id,
+        member_user_id,
+        group_id,
+        OrganizationGatewayPrincipal::new(organization_id, membership_id, Some(team_id)),
+    );
+    let usage_write = UsageLogWrite::new(
+        BillingReservationId::new([0xe1; 16])?,
+        enterprise_principal,
+        UsageLogBillingMode::PerToken,
+        UsageLogUsage::new(12, 3, 0, 0, 0, 1, 0, 0)?,
+        UsageLogSource::Upstream,
+        UsageLogSemantics::Inclusive,
+        Quota::new(15)?,
+    );
+    assert_eq!(
+        usage_repository.record(&usage_write).await?,
+        UsageLogWriteOutcome::Applied
+    );
+    let stored_usage = usage_logs::Entity::find()
+        .filter(usage_logs::Column::OrganizationId.eq(organization_id.get()))
+        .one(pool.connection())
+        .await?
+        .expect("企业用量事实必须写入组织归属");
+    assert_eq!(stored_usage.user_id, member_user_id.get());
+    assert_eq!(stored_usage.organization_team_id, Some(team_id.get()));
+
+    let cross_team_principal = GatewayPrincipal::organization(
+        token_id,
+        member_user_id,
+        group_id,
+        OrganizationGatewayPrincipal::new(organization_id, membership_id, Some(other_team_id)),
+    );
+    let cross_team_write = UsageLogWrite::new(
+        BillingReservationId::new([0xe2; 16])?,
+        cross_team_principal,
+        UsageLogBillingMode::PerToken,
+        UsageLogUsage::new(1, 1, 0, 0, 0, 0, 0, 0)?,
+        UsageLogSource::Upstream,
+        UsageLogSemantics::Inclusive,
+        Quota::new(2)?,
+    );
+    assert_eq!(
+        usage_repository.record(&cross_team_write).await,
+        Err(UsageLogRepositoryError::OutcomeUnknown)
+    );
+    assert_eq!(
+        usage_logs::Entity::find()
+            .filter(usage_logs::Column::OrganizationId.eq(organization_id.get()))
+            .count(pool.connection())
+            .await?,
+        1
+    );
+
+    let audit_repository = OrganizationAuditRepository::new(pool.clone());
+    let succeeded = OrganizationAuditWrite::new(
+        organization_id,
+        owner_user_id,
+        Some(OrganizationRole::Owner),
+        "organization.teams.manage".to_owned(),
+        "organization.team.create".to_owned(),
+        "team".to_owned(),
+        team_id.get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        None,
+        "audit-request-success".to_owned(),
+        [0x11; 32],
+        Some(r#"{"name":"Smoke Team"}"#.to_owned()),
+    )?;
+    assert_eq!(
+        audit_repository.record(&succeeded).await?,
+        OrganizationAuditWriteOutcome::Applied
+    );
+    assert_eq!(
+        audit_repository.record(&succeeded).await?,
+        OrganizationAuditWriteOutcome::Existing
+    );
+    let conflicting = OrganizationAuditWrite::new(
+        organization_id,
+        owner_user_id,
+        Some(OrganizationRole::Owner),
+        "organization.teams.manage".to_owned(),
+        "organization.team.create".to_owned(),
+        "team".to_owned(),
+        "conflicting-target".to_owned(),
+        OrganizationAuditOutcome::Succeeded,
+        None,
+        "audit-request-success".to_owned(),
+        [0x11; 32],
+        Some(r#"{"name":"Smoke Team"}"#.to_owned()),
+    )?;
+    assert_eq!(
+        audit_repository.record(&conflicting).await,
+        Err(OrganizationAuditRepositoryError::Conflict)
+    );
+
+    for (request_id, operation, outcome, fingerprint) in [
+        (
+            "audit-request-failed",
+            "organization.member.update",
+            OrganizationAuditOutcome::Failed,
+            [0x22; 32],
+        ),
+        (
+            "audit-request-denied",
+            "organization.member.disable",
+            OrganizationAuditOutcome::Denied,
+            [0x33; 32],
+        ),
+    ] {
+        let write = OrganizationAuditWrite::new(
+            organization_id,
+            member_user_id,
+            Some(OrganizationRole::Member),
+            "organization.members.manage".to_owned(),
+            operation.to_owned(),
+            "membership".to_owned(),
+            membership_id.get().to_string(),
+            outcome,
+            None,
+            request_id.to_owned(),
+            fingerprint,
+            None,
+        )?;
+        assert_eq!(
+            audit_repository.record(&write).await?,
+            OrganizationAuditWriteOutcome::Applied
+        );
+    }
+    let platform_write = OrganizationAuditWrite::new(
+        organization_id,
+        owner_user_id,
+        None,
+        "platform.organizations.read".to_owned(),
+        "organization.audit.list".to_owned(),
+        "organization".to_owned(),
+        organization_id.get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        Some("企业支持工单核查".to_owned()),
+        "audit-request-platform".to_owned(),
+        [0x44; 32],
+        None,
+    )?;
+    assert_eq!(
+        audit_repository.record(&platform_write).await?,
+        OrganizationAuditWriteOutcome::Applied
+    );
+    let other_write = OrganizationAuditWrite::new(
+        other_organization_id,
+        owner_user_id,
+        Some(OrganizationRole::Owner),
+        "organization.audit.read".to_owned(),
+        "organization.audit.list".to_owned(),
+        "organization".to_owned(),
+        other_organization_id.get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        None,
+        "audit-request-other".to_owned(),
+        [0x55; 32],
+        None,
+    )?;
+    assert_eq!(
+        audit_repository.record(&other_write).await?,
+        OrganizationAuditWriteOutcome::Applied
+    );
+
+    let (first_page, next_cursor) = audit_repository
+        .list(
+            organization_id,
+            &OrganizationAuditQuery::new(None, 2, None, None, None, None)?,
+        )
+        .await?
+        .into_parts();
+    assert_eq!(first_page.len(), 2);
+    let (second_page, final_cursor) = audit_repository
+        .list(
+            organization_id,
+            &OrganizationAuditQuery::new(next_cursor, 2, None, None, None, None)?,
+        )
+        .await?
+        .into_parts();
+    assert_eq!(second_page.len(), 2);
+    assert_eq!(final_cursor, None);
+
+    let (denied_records, denied_cursor) = audit_repository
+        .list(
+            organization_id,
+            &OrganizationAuditQuery::new(
+                None,
+                10,
+                Some(member_user_id),
+                None,
+                Some("membership".to_owned()),
+                Some(OrganizationAuditOutcome::Denied),
+            )?,
+        )
+        .await?
+        .into_parts();
+    assert_eq!(denied_records.len(), 1);
+    assert_eq!(denied_records[0].request_id(), "audit-request-denied");
+    assert_eq!(denied_cursor, None);
+
+    let stored_audit = organization_audit_logs::Entity::find()
+        .filter(organization_audit_logs::Column::OrganizationId.eq(organization_id.get()))
+        .filter(organization_audit_logs::Column::RequestId.eq("audit-request-success"))
+        .one(pool.connection())
+        .await?
+        .expect("企业审计事实必须存在");
+    let mut forbidden_update = stored_audit.into_active_model();
+    forbidden_update.outcome = Set(OrganizationAuditOutcome::Failed as i16);
+    assert!(forbidden_update.update(pool.connection()).await.is_err());
+
+    assert_eq!(audit_repository.retention_days(organization_id).await?, 90);
+    let cutoff = TimeDateTimeWithTimeZone::now_utc()
+        .unix_timestamp()
+        .checked_add(60)
+        .ok_or("审计清理截止时间溢出")?;
+    assert_eq!(
+        audit_repository
+            .prune_before(organization_id, cutoff)
+            .await?,
+        4
+    );
+    let (remaining, _) = audit_repository
+        .list(
+            organization_id,
+            &OrganizationAuditQuery::new(None, 10, None, None, None, None)?,
+        )
+        .await?
+        .into_parts();
+    assert!(remaining.is_empty());
+    let (other_remaining, _) = audit_repository
+        .list(
+            other_organization_id,
+            &OrganizationAuditQuery::new(None, 10, None, None, None, None)?,
+        )
+        .await?
+        .into_parts();
+    assert_eq!(other_remaining.len(), 1);
+    Ok(())
+}
+
+fn migration_test_entitlement() -> Result<OrganizationEntitlementWrite, Box<dyn Error>> {
+    Ok(OrganizationEntitlementWrite::new(
+        OrganizationEntitlementSnapshot::new(
+            OrganizationEntitlementCapacity::new(10, 10, 2)?,
+            true,
+            false,
+            false,
+            90,
+            946_684_800,
+            4_102_444_800,
+            Some(4_102_444_800),
+        )?,
+        "migration-smoke".to_owned(),
+        None,
+        None,
+    )?)
 }
 
 async fn assert_entity_columns<C>(manager: &SchemaManager<'_>, table: &str) -> Result<(), DbErr>
@@ -2677,7 +4096,7 @@ async fn exercise_core_schema(connection: &DatabaseConnection) -> Result<(), DbE
     let channel = channel_active_model("primary").insert(connection).await?;
     assert_eq!(channel.status, 2);
     assert_debug_redacted(&channel, "https://api.example.com");
-    let credential = credential_active_model(channel.id, "credential-ciphertext")
+    let credential = oauth_credential_active_model(channel.id, "credential-ciphertext")
         .insert(connection)
         .await?;
     assert_eq!(credential.status, 2);
@@ -2685,19 +4104,17 @@ async fn exercise_core_schema(connection: &DatabaseConnection) -> Result<(), DbE
     assert_eq!(credential.oauth_revision, 0);
     assert_debug_redacted(&credential, "credential-ciphertext");
 
-    let mut child_credential = credential_active_model(channel.id, "child-ciphertext");
-    child_credential.parent_id = Set(Some(credential.id));
+    let child_credential = spark_shadow_active_model(channel.id, credential.id, "child-ciphertext");
     child_credential.insert(connection).await?;
 
     let mut self_parent = credential.clone().into_active_model();
     self_parent.parent_id = Set(Some(credential.id));
     assert!(self_parent.update(connection).await.is_err());
 
-    let direct_parent = credential_active_model(channel.id, "direct-parent")
+    let direct_parent = oauth_credential_active_model(channel.id, "direct-parent")
         .insert(connection)
         .await?;
-    let mut direct_child = credential_active_model(channel.id, "direct-child");
-    direct_child.parent_id = Set(Some(direct_parent.id));
+    let direct_child = spark_shadow_active_model(channel.id, direct_parent.id, "direct-child");
     let direct_child = direct_child.insert(connection).await?;
     credentials::Entity::delete_by_id(direct_parent.id)
         .exec(connection)
@@ -2732,6 +4149,8 @@ async fn exercise_core_schema(connection: &DatabaseConnection) -> Result<(), DbE
     assert!(!payment.initialized);
     assert!(!payment.stripe_enabled);
     assert!(!payment.epay_enabled);
+    assert!(!payment.epay_refund_enabled);
+    assert!(!payment.refund_auto_submit_enabled);
     assert_eq!(payment.stripe_signature_tolerance_seconds, 300);
     assert_eq!(payment.epay_quota_per_cny, 500_000);
     assert_eq!(payment.version, 1);
@@ -2803,9 +4222,14 @@ async fn exercise_core_schema(connection: &DatabaseConnection) -> Result<(), DbE
     assert_foreign_key_actions(connection, group.id).await?;
 
     let cascade_channel = channel_active_model("cascade").insert(connection).await?;
-    let mut cross_channel_child =
-        credential_active_model(cascade_channel.id, "cross-channel-child");
-    cross_channel_child.parent_id = Set(Some(credential.id));
+    let cross_channel_parent = oauth_credential_active_model(channel.id, "cross-channel-parent")
+        .insert(connection)
+        .await?;
+    let cross_channel_child = spark_shadow_active_model(
+        cascade_channel.id,
+        cross_channel_parent.id,
+        "cross-channel-child",
+    );
     assert!(cross_channel_child.insert(connection).await.is_err());
     let raw_cross_channel_child =
         credential_active_model(cascade_channel.id, "raw-cross-channel-child")
@@ -2816,7 +4240,9 @@ async fn exercise_core_schema(connection: &DatabaseConnection) -> Result<(), DbE
             connection,
             Query::update()
                 .table(credentials::Entity)
-                .value(credentials::Column::ParentId, credential.id)
+                .value(credentials::Column::Kind, CredentialKind::Oauth.as_str())
+                .value(credentials::Column::ParentId, cross_channel_parent.id)
+                .value(credentials::Column::QuotaDimension, "spark")
                 .and_where(Expr::col(credentials::Column::Id).eq(raw_cross_channel_child.id))
                 .to_owned(),
         )
@@ -2826,11 +4252,14 @@ async fn exercise_core_schema(connection: &DatabaseConnection) -> Result<(), DbE
     credentials::Entity::delete_by_id(raw_cross_channel_child.id)
         .exec(connection)
         .await?;
-    let cascade_parent = credential_active_model(cascade_channel.id, "cascade-ciphertext")
+    credentials::Entity::delete_by_id(cross_channel_parent.id)
+        .exec(connection)
+        .await?;
+    let cascade_parent = oauth_credential_active_model(cascade_channel.id, "cascade-ciphertext")
         .insert(connection)
         .await?;
-    let mut cascade_child = credential_active_model(cascade_channel.id, "cascade-child");
-    cascade_child.parent_id = Set(Some(cascade_parent.id));
+    let cascade_child =
+        spark_shadow_active_model(cascade_channel.id, cascade_parent.id, "cascade-child");
     cascade_child.insert(connection).await?;
     channel_models::ActiveModel {
         channel_id: Set(cascade_channel.id),
@@ -3161,8 +4590,7 @@ async fn assert_persistence_constraints(
     invalid_quota_dimension.quota_dimension = Set("unknown".to_owned());
     assert!(invalid_quota_dimension.insert(connection).await.is_err());
 
-    let mut missing_parent = credential_active_model(channel_id, "missing-parent");
-    missing_parent.parent_id = Set(Some(i64::MAX));
+    let missing_parent = spark_shadow_active_model(channel_id, i64::MAX, "missing-parent");
     assert!(missing_parent.insert(connection).await.is_err());
 
     if connection.get_database_backend() != DbBackend::MySql {
@@ -3171,7 +4599,9 @@ async fn assert_persistence_constraints(
                 connection,
                 Query::update()
                     .table(credentials::Entity)
+                    .value(credentials::Column::Kind, CredentialKind::Oauth.as_str())
                     .value(credentials::Column::ParentId, credential_id)
+                    .value(credentials::Column::QuotaDimension, "spark")
                     .and_where(Expr::col(credentials::Column::Id).eq(credential_id))
                     .to_owned(),
             )
@@ -3875,6 +5305,29 @@ fn credential_active_model(channel_id: i64, marker: &str) -> credentials::Active
     }
 }
 
+fn oauth_credential_active_model(channel_id: i64, marker: &str) -> credentials::ActiveModel {
+    let mut credential = credential_active_model(channel_id, marker);
+    credential.kind = Set(CredentialKind::Oauth.as_str().to_owned());
+    credential
+}
+
+fn spark_shadow_active_model(
+    channel_id: i64,
+    parent_id: i64,
+    marker: &str,
+) -> credentials::ActiveModel {
+    let mut shadow = oauth_credential_active_model(channel_id, marker);
+    shadow.parent_id = Set(Some(parent_id));
+    shadow.quota_dimension = Set("spark".to_owned());
+    shadow.concurrency = Set(None);
+    shadow.proxy_id = Set(None);
+    shadow.oauth_provider = Set(None);
+    shadow.oauth_account_key = Set(None);
+    shadow.oauth_project_id = Set(None);
+    shadow.oauth_token_pending = Set(false);
+    shadow
+}
+
 fn token_active_model(
     user_id: i64,
     group_id: i64,
@@ -3890,6 +5343,19 @@ fn token_active_model(
         expired_at: Set(Some(future_expiration())),
         ..Default::default()
     }
+}
+
+/// 在历史 schema 上写入令牌时跳过当前实体的返回投影，避免提前读取尚未迁移的新列。
+async fn insert_legacy_token(
+    connection: &DatabaseConnection,
+    token_id: i64,
+    mut token: tokens::ActiveModel,
+) -> Result<i64, DbErr> {
+    token.id = Set(token_id);
+    tokens::Entity::insert(token)
+        .exec_without_returning(connection)
+        .await?;
+    Ok(token_id)
 }
 
 fn reservation_active_model(

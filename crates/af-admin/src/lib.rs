@@ -24,15 +24,27 @@ mod model_metadata_write;
 mod model_price;
 mod model_sync;
 mod network_settings;
+mod oauth_login;
+mod organization;
+mod organization_activity;
+mod organization_budget;
+mod organization_invitation;
+mod organization_management;
+mod organization_token;
+mod organization_wallet;
+mod passkey;
+mod passkey_auth;
 mod password_reset;
 mod payment_settings;
 #[cfg(test)]
 mod payment_settings_tests;
+mod platform_rbac;
 mod playground_conversation;
 mod playground_share;
 mod playground_share_snapshot;
 mod playground_share_token;
 mod redemption;
+mod refund;
 mod registration;
 #[cfg(test)]
 mod registration_tests;
@@ -46,7 +58,9 @@ mod subscription;
 mod token_auth;
 mod token_read;
 mod token_write;
+mod two_factor;
 mod usage_log_read;
+mod user_notifications;
 mod user_profile;
 mod user_read;
 mod user_token;
@@ -56,7 +70,14 @@ mod user_write;
 mod wallet;
 
 pub use af_account::PlainCredentialSecret as AdminCredentialSecret;
-pub use af_db::{CredentialProxyScheme, NetworkSettingsMode};
+pub use af_db::{
+    CredentialProxyScheme, DatabaseTimestamp, NetworkSettingsMode,
+    OrganizationBillingReservationRecord, OrganizationBillingReservationStatus,
+    OrganizationBudgetAllocationRecord, OrganizationBudgetPolicyRecord, OrganizationBudgetScope,
+    OrganizationBudgetWindowRecord, OrganizationInvitationRecord, OrganizationMembershipRecord,
+    OrganizationTeamRecord, OrganizationWalletLedgerEntryType,
+};
+pub use af_db::{OrganizationAuditOutcome, PlatformAuditOutcome};
 pub use api_key::{
     ApiKeyDigest, ApiKeyGenerationError, ApiKeyParseError, ApiKeyPrefix, IssuedApiKey,
     PresentedApiKey,
@@ -89,14 +110,15 @@ pub use credential_read::{
     AdminCredentialQuotaDimension,
 };
 pub use debug_trace::{
-    AdminDebugTrace, AdminDebugTraceAttempt, AdminDebugTraceAttemptOutcome, AdminDebugTraceDetail,
-    AdminDebugTraceDetailFuture, AdminDebugTraceError, AdminDebugTraceFailureKind,
-    AdminDebugTraceGetFuture, AdminDebugTraceListFuture, AdminDebugTraceListQuery,
-    AdminDebugTraceOperation, AdminDebugTraceOutcome, AdminDebugTracePage, AdminDebugTraceProtocol,
-    AdminDebugTraceService, AdminDebugTraceSettings, AdminDebugTraceSettingsCommand,
-    AdminDebugTraceSettingsFuture, AdminDebugTraceSettingsRuntimeApplier,
-    AdminDebugTraceUpdateFuture, DEFAULT_ADMIN_DEBUG_TRACE_PAGE_SIZE,
-    DatabaseAdminDebugTraceService,
+    AdminDebugTrace, AdminDebugTraceAttempt, AdminDebugTraceAttemptOutcome,
+    AdminDebugTraceAttemptSnapshot, AdminDebugTraceDetail, AdminDebugTraceDetailFuture,
+    AdminDebugTraceError, AdminDebugTraceFailureKind, AdminDebugTraceGetFuture,
+    AdminDebugTraceListFuture, AdminDebugTraceListQuery, AdminDebugTraceOperation,
+    AdminDebugTraceOutcome, AdminDebugTracePage, AdminDebugTraceProtocol, AdminDebugTraceService,
+    AdminDebugTraceSettings, AdminDebugTraceSettingsCommand, AdminDebugTraceSettingsFuture,
+    AdminDebugTraceSettingsRuntimeApplier, AdminDebugTraceSnapshotScope, AdminDebugTraceSnapshots,
+    AdminDebugTraceSnapshotsFuture, AdminDebugTraceUpdateFuture,
+    DEFAULT_ADMIN_DEBUG_TRACE_PAGE_SIZE, DatabaseAdminDebugTraceService,
 };
 pub use email_settings::{
     AdminEmailSettings, AdminEmailSettingsCommand, AdminEmailSettingsError,
@@ -174,6 +196,72 @@ pub use network_settings::{
     DatabaseAdminNetworkSettingsService, NetworkSettingsApplyFuture, NetworkSettingsRuntimeApplier,
     NetworkSettingsRuntimeError,
 };
+pub use oauth_login::{
+    AdminOAuthLoginProviderSettings, AdminOAuthLoginProviderSettingsCommand,
+    DatabaseOAuthLoginService, OAuthLoginCallbackResult, OAuthLoginError, OAuthLoginService,
+    OAuthLoginServiceFuture, OAuthLoginStart, PublicOAuthLoginProvider,
+};
+pub use organization::{
+    DatabaseOrganizationAuthorizationService, OrganizationAccessFuture, OrganizationAccessSummary,
+    OrganizationAuthorizationError, OrganizationAuthorizationService, OrganizationContext,
+    OrganizationEntitlementSummary, OrganizationListFuture,
+};
+pub use organization_activity::{
+    DatabaseOrganizationActivityService, OrganizationActivityError, OrganizationActivityService,
+    OrganizationActivityServiceConfigError, OrganizationAuditChangeSummary,
+    OrganizationAuditListFuture, OrganizationAuditListQuery, OrganizationAuditLog,
+    OrganizationAuditPage, OrganizationAuditRecordFuture, OrganizationAuditRequestContext,
+    OrganizationUsageLogFuture, OrganizationUsageLogPage, OrganizationUsageLogRows,
+    OrganizationUsageLogScope, OrganizationUsageLogSummary,
+};
+pub use organization_budget::{
+    DatabaseOrganizationBudgetService, OrganizationBudgetPoliciesFuture,
+    OrganizationBudgetPolicyCreateCommand, OrganizationBudgetPolicyFuture,
+    OrganizationBudgetReservationFuture, OrganizationBudgetService, OrganizationBudgetServiceError,
+    OrganizationBudgetWindowsFuture,
+};
+pub use organization_invitation::{
+    AcceptedOrganizationInvitation, DEFAULT_ORGANIZATION_INVITATION_TTL_SECONDS,
+    DatabaseOrganizationInvitationService, IssuedOrganizationInvitation,
+    MAX_ORGANIZATION_INVITATION_TTL_SECONDS, MIN_ORGANIZATION_INVITATION_TTL_SECONDS,
+    OrganizationInvitationBatchCommand, OrganizationInvitationBatchResult,
+    OrganizationInvitationCommand, OrganizationInvitationError, OrganizationInvitationFuture,
+    OrganizationInvitationPreviewCommand, OrganizationInvitationPreviewIssue,
+    OrganizationInvitationPreviewItemResult, OrganizationInvitationPreviewResult,
+    OrganizationInvitationService,
+};
+pub use organization_management::{
+    DEFAULT_ORGANIZATION_DIRECTORY_PAGE_SIZE, DatabaseOrganizationManagementService,
+    OrganizationManagementError, OrganizationManagementService,
+    OrganizationMembershipChangeCommand, OrganizationMembershipFuture,
+    OrganizationMembershipListQuery, OrganizationMembershipPage, OrganizationMembershipPageFuture,
+    OrganizationOwnershipTransferCommand, OrganizationOwnershipTransferFuture,
+    OrganizationOwnershipTransferResult, OrganizationTeamChangeCommand,
+    OrganizationTeamCreateCommand, OrganizationTeamDisableCommand, OrganizationTeamFuture,
+    OrganizationTeamListQuery, OrganizationTeamPage, OrganizationTeamPageFuture,
+};
+pub use organization_token::{
+    DEFAULT_ORGANIZATION_TOKEN_PAGE_SIZE, DatabaseOrganizationTokenService,
+    IssuedOrganizationToken, OrganizationToken, OrganizationTokenError, OrganizationTokenListQuery,
+    OrganizationTokenPage, OrganizationTokenService, OrganizationTokenStatus,
+    OrganizationTokenWriteCommand,
+};
+pub use organization_wallet::{
+    DEFAULT_ORGANIZATION_WALLET_PAGE_SIZE, DatabaseOrganizationWalletService,
+    OrganizationWalletAdjustment, OrganizationWalletAdjustmentCommand,
+    OrganizationWalletAdjustmentFuture, OrganizationWalletEntry, OrganizationWalletListFuture,
+    OrganizationWalletListQuery, OrganizationWalletPage, OrganizationWalletService,
+    OrganizationWalletServiceError, OrganizationWalletSummary, OrganizationWalletSummaryFuture,
+};
+pub use passkey::{
+    PasskeyRegistrationCommand, PasskeyRegistrationOptions, PasskeyRenameCommand,
+    PasskeyRevokeCommand, UserPasskey,
+};
+pub use passkey_auth::{
+    DatabasePasskeyAuthenticationService, PasskeyAuthenticationCommand, PasskeyAuthenticationError,
+    PasskeyAuthenticationFuture, PasskeyAuthenticationOptions, PasskeyAuthenticationOptionsFuture,
+    PasskeyAuthenticationService, PasskeyAuthenticationServiceConfigError,
+};
 pub use password_reset::{
     DatabasePasswordResetService, MAX_PASSWORD_RESET_PASSWORD_BYTES,
     MIN_PASSWORD_RESET_PASSWORD_BYTES, PasswordResetConfirmCommand, PasswordResetConfirmFuture,
@@ -186,6 +274,12 @@ pub use payment_settings::{
     AdminPaymentSettingsReadFuture, AdminPaymentSettingsService, AdminPaymentSettingsUpdateFuture,
     DatabaseAdminPaymentSettingsService, PaymentSettingsApplyFuture, PaymentSettingsRuntimeApplier,
     PaymentSettingsRuntimeError,
+};
+pub use platform_rbac::{
+    DEFAULT_PLATFORM_AUDIT_PAGE_SIZE, DatabasePlatformAuditService, PlatformAuditEntry,
+    PlatformAuditError, PlatformAuditListFuture, PlatformAuditListQuery, PlatformAuditLog,
+    PlatformAuditPage, PlatformAuditRecordFuture, PlatformAuditScope, PlatformAuditService,
+    PlatformPolicy,
 };
 pub use playground_conversation::{
     DatabasePlaygroundConversationService, PlaygroundConversation,
@@ -218,6 +312,11 @@ pub use redemption::{
     RedemptionCreateFuture, RedemptionDisableFuture, RedemptionListFuture, RedemptionRedeemFuture,
     RedemptionService, RedemptionServiceError, UserRedemptionCommand, UserRedemptionResult,
 };
+pub use refund::{
+    AdminRefundDecisionCommand, AdminRefundError, AdminRefundListFuture, AdminRefundListQuery,
+    AdminRefundPage, AdminRefundRequest, AdminRefundService, AdminRefundSubmitter,
+    DEFAULT_ADMIN_REFUND_PAGE_SIZE, DatabaseAdminRefundService, MAX_ADMIN_REFUND_PAGE_SIZE,
+};
 pub use registration::{
     DatabaseRegistrationService, MAX_REGISTRATION_PASSWORD_BYTES, MIN_REGISTRATION_PASSWORD_BYTES,
     RegistrationCommand, RegistrationEmailVerificationCommand, RegistrationEmailVerificationFuture,
@@ -248,8 +347,9 @@ pub use session::{
 };
 pub use site_settings::{
     AdminSiteSettings, AdminSiteSettingsReadFuture, AdminSiteSettingsUpdateFuture,
-    DatabaseSiteSettingsService, PublicSiteSettings, PublicSiteSettingsFuture, SiteSettingsCommand,
-    SiteSettingsError, SiteSettingsService,
+    BalanceDisplayMode, BalanceDisplayPolicy, BalanceSymbolPosition, DatabaseSiteSettingsService,
+    PublicSiteSettings, PublicSiteSettingsFuture, SiteSettingsCommand, SiteSettingsError,
+    SiteSettingsService,
 };
 pub use subscription::{
     AdminSubscriptionPageQuery, AdminSubscriptionPlan, AdminSubscriptionPlanCreateCommand,
@@ -257,9 +357,12 @@ pub use subscription::{
     AdminUserSubscriptionBindCommand, AdminUserSubscriptionLifecycleAction,
     AdminUserSubscriptionLifecycleCommand, AdminUserSubscriptionLifecycleResult,
     AdminUserSubscriptionPage, DEFAULT_ADMIN_SUBSCRIPTION_PAGE_SIZE, DatabaseSubscriptionService,
-    SubscriptionBindFuture, SubscriptionCreatePlanFuture, SubscriptionDisablePlanFuture,
-    SubscriptionLifecycleFuture, SubscriptionListPlansFuture, SubscriptionListUserFuture,
-    SubscriptionService, SubscriptionServiceError,
+    SubscriptionBindFuture, SubscriptionCatalog, SubscriptionCatalogFuture,
+    SubscriptionCatalogPlan, SubscriptionCreateOrderFuture, SubscriptionCreatePlanFuture,
+    SubscriptionDisablePlanFuture, SubscriptionGetOrderFuture, SubscriptionLifecycleFuture,
+    SubscriptionListPlansFuture, SubscriptionListUserFuture, SubscriptionOrder,
+    SubscriptionOrderCreateCommand, SubscriptionOrderPayment, SubscriptionOrderPaymentCommand,
+    SubscriptionService, SubscriptionServiceError, SubscriptionSubmitOrderFuture,
 };
 pub use token_auth::{
     DatabaseTokenAuthenticator, TokenAuthentication, TokenAuthenticationError,
@@ -276,6 +379,7 @@ pub use token_write::{
     DatabaseAdminTokenWriter, IssuedAdminToken, MAX_ADMIN_TOKEN_IP_ALLOWLIST_COUNT,
     MAX_ADMIN_TOKEN_IP_ALLOWLIST_ITEM_BYTES, MAX_ADMIN_TOKEN_IP_ALLOWLIST_TEXT_BYTES,
 };
+pub use two_factor::TwoFactorEnrollment;
 pub use usage_log_read::{
     AdminUsageLog, AdminUsageLogBillingMode, AdminUsageLogListFuture, AdminUsageLogListQuery,
     AdminUsageLogPage, AdminUsageLogReadError, AdminUsageLogReader, AdminUsageLogSemantics,
@@ -283,12 +387,23 @@ pub use usage_log_read::{
     DEFAULT_ADMIN_USAGE_LOG_PAGE_SIZE, DatabaseAdminUsageLogReader, UsageLogOperation,
     UsageLogProtocol, UsageLogReasoningEffort,
 };
+pub use user_notifications::{
+    DEFAULT_USER_NOTIFICATION_PAGE_SIZE, DatabaseUserNotificationService, UserNotification,
+    UserNotificationChannel, UserNotificationCursor, UserNotificationDeliveryState,
+    UserNotificationError, UserNotificationKind, UserNotificationListFuture,
+    UserNotificationListQuery, UserNotificationMarkReadCommand, UserNotificationMarkReadFuture,
+    UserNotificationMarkReadResult, UserNotificationPage, UserNotificationService,
+};
 pub use user_profile::{
     DatabaseUserProfileService, MAX_USER_PROFILE_PASSWORD_BYTES, MAX_USER_PROFILE_USERNAME_BYTES,
     MIN_USER_PROFILE_PASSWORD_BYTES, UserNotificationPreferences,
-    UserNotificationPreferencesCommand, UserNotificationUpdateFuture, UserPasswordChangeCommand,
-    UserPasswordChangeFuture, UserProfile, UserProfileError, UserProfileReadFuture,
-    UserProfileService, UserProfileUpdateCommand, UserProfileUpdateFuture,
+    UserNotificationPreferencesCommand, UserNotificationUpdateFuture, UserPasskeyListFuture,
+    UserPasskeyRegistrationFuture, UserPasskeyRegistrationOptionsFuture, UserPasskeyRenameFuture,
+    UserPasskeyRevokeFuture, UserPasswordChangeCommand, UserPasswordChangeFuture, UserProfile,
+    UserProfileError, UserProfileReadFuture, UserProfileService, UserProfileUpdateCommand,
+    UserProfileUpdateFuture, UserTwoFactorDisableCommand, UserTwoFactorDisableFuture,
+    UserTwoFactorEnableCommand, UserTwoFactorEnableFuture, UserTwoFactorReadFuture,
+    UserTwoFactorStatus,
 };
 pub use user_read::{
     AdminUser, AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserPage,

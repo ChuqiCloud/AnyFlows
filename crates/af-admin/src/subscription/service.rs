@@ -1,17 +1,23 @@
 use std::{
     fmt,
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use af_billing::{
+    PaymentOrderId, PaymentOrderProvider, PaymentOrderProviderError, PaymentOrderRecoveryRequest,
+    PaymentOrderRequest,
+};
 use af_db::{
-    SubscriptionPlanCreateOutcome, SubscriptionPlanDisable, SubscriptionPlanDisableOutcome,
-    SubscriptionPlanWrite, SubscriptionRepository, SubscriptionRepositoryError,
-    UserSubscriptionBind, UserSubscriptionBindOutcome, UserSubscriptionLifecycleTransition,
-    UserSubscriptionLifecycleTransitionOutcome,
+    SubscriptionOrderCreate, SubscriptionOrderCreateOutcome, SubscriptionOrderSubmission,
+    SubscriptionOrderSubmitOutcome, SubscriptionPlanCreateOutcome, SubscriptionPlanDisable,
+    SubscriptionPlanDisableOutcome, SubscriptionPlanWrite, SubscriptionRepository,
+    SubscriptionRepositoryError, UserSubscriptionBind, UserSubscriptionBindOutcome,
+    UserSubscriptionLifecycleTransition, UserSubscriptionLifecycleTransitionOutcome,
 };
 use af_domain::{
-    SubscriptionPlanId, SubscriptionPlanStatus, SubscriptionWindow, UserId, UserSubscriptionId,
-    UserSubscriptionStatus,
+    SubscriptionOrderId, SubscriptionPlanId, SubscriptionPlanStatus, SubscriptionWindow, UserId,
+    UserSubscriptionId, UserSubscriptionStatus,
 };
 
 use crate::{SessionPrincipal, SessionRole};
@@ -22,9 +28,12 @@ use super::{
         AdminSubscriptionPageQuery, AdminSubscriptionPlan, AdminSubscriptionPlanCreateCommand,
         AdminSubscriptionPlanDisableCommand, AdminSubscriptionPlanPage, AdminUserSubscription,
         AdminUserSubscriptionBindCommand, AdminUserSubscriptionPage, SubscriptionBindFuture,
-        SubscriptionCreatePlanFuture, SubscriptionDisablePlanFuture, SubscriptionLifecycleFuture,
-        SubscriptionListPlansFuture, SubscriptionListUserFuture, SubscriptionService,
-        SubscriptionServiceError,
+        SubscriptionCatalog, SubscriptionCatalogFuture, SubscriptionCatalogPlan,
+        SubscriptionCreateOrderFuture, SubscriptionCreatePlanFuture, SubscriptionDisablePlanFuture,
+        SubscriptionLifecycleFuture, SubscriptionListPlansFuture, SubscriptionListUserFuture,
+        SubscriptionOrder, SubscriptionOrderCreateCommand, SubscriptionOrderPayment,
+        SubscriptionOrderPaymentCommand, SubscriptionService, SubscriptionServiceError,
+        SubscriptionSubmitOrderFuture,
     },
 };
 
@@ -42,6 +51,169 @@ impl DatabaseSubscriptionService {
 }
 
 impl SubscriptionService for DatabaseSubscriptionService {
+    fn list_catalog<'a>(&'a self, principal: SessionPrincipal) -> SubscriptionCatalogFuture<'a> {
+        Box::pin(async move {
+            let _ = principal;
+            let records = self
+                .repository
+                .list_active_catalog()
+                .await
+                .map_err(map_read_error)?;
+            Ok(SubscriptionCatalog::new(
+                records
+                    .iter()
+                    .map(|(plan, price)| SubscriptionCatalogPlan::from_records(plan, price))
+                    .collect(),
+            ))
+        })
+    }
+
+    fn create_order<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        command: SubscriptionOrderCreateCommand,
+    ) -> SubscriptionCreateOrderFuture<'a> {
+        Box::pin(async move {
+            let created_at = unix_now()?;
+            let expires_at = created_at
+                .checked_add(30 * 60)
+                .ok_or(SubscriptionServiceError::Internal)?;
+            let write = SubscriptionOrderCreate::new(
+                random_order_id()?,
+                command.request_id,
+                principal.user_id(),
+                command.plan_id,
+                command.plan_version,
+                command.provider,
+                command.currency,
+                command.amount_minor,
+                created_at,
+                Some(expires_at),
+            )
+            .map_err(|_| SubscriptionServiceError::InvalidInput)?;
+            let (outcome, replayed) = recover_order(&self.repository, &write).await?;
+            let record = match outcome {
+                SubscriptionOrderCreateOutcome::Created(record)
+                | SubscriptionOrderCreateOutcome::Existing(record) => record,
+                SubscriptionOrderCreateOutcome::UserNotFound => {
+                    return Err(SubscriptionServiceError::InvalidSession);
+                }
+                SubscriptionOrderCreateOutcome::PlanNotFound => {
+                    return Err(SubscriptionServiceError::PlanNotFound);
+                }
+                SubscriptionOrderCreateOutcome::PlanDisabled => {
+                    return Err(SubscriptionServiceError::PlanDisabled);
+                }
+            };
+            Ok(SubscriptionOrder::from_record(&record, replayed))
+        })
+    }
+
+    fn get_order<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        order_id: SubscriptionOrderId,
+    ) -> super::types::SubscriptionGetOrderFuture<'a> {
+        Box::pin(async move {
+            let record = self
+                .repository
+                .get_order(order_id)
+                .await
+                .map_err(map_read_error)?
+                .filter(|record| record.user_id() == principal.user_id())
+                .ok_or(SubscriptionServiceError::SubscriptionNotFound)?;
+            Ok(SubscriptionOrder::from_record(&record, false))
+        })
+    }
+
+    fn submit_order<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        order_id: SubscriptionOrderId,
+        command: SubscriptionOrderPaymentCommand,
+        provider: Arc<dyn PaymentOrderProvider>,
+    ) -> SubscriptionSubmitOrderFuture<'a> {
+        Box::pin(async move {
+            let record = self
+                .repository
+                .get_order(order_id)
+                .await
+                .map_err(map_read_error)?
+                .filter(|record| record.user_id() == principal.user_id())
+                .ok_or(SubscriptionServiceError::SubscriptionNotFound)?;
+            if provider.provider() != record.provider() {
+                return Err(SubscriptionServiceError::Conflict);
+            }
+            let payment = match record.status() {
+                af_domain::SubscriptionOrderStatus::Created => {
+                    let expires_at = record
+                        .expires_at()
+                        .ok_or(SubscriptionServiceError::Internal)?;
+                    if expires_at <= unix_now()? {
+                        return Err(SubscriptionServiceError::Conflict);
+                    }
+                    let request = payment_request(&record, command.payment_method())?;
+                    let session = provider.create(request).await.map_err(map_provider_error)?;
+                    let submitted_at = unix_now()?;
+                    if submitted_at >= expires_at {
+                        return Err(SubscriptionServiceError::Conflict);
+                    }
+                    let write = SubscriptionOrderSubmission::new(
+                        record.order_id(),
+                        record.version(),
+                        session.provider_order_id().to_owned(),
+                        command.payment_method().to_owned(),
+                        submitted_at,
+                        expires_at,
+                    )
+                    .map_err(|_| SubscriptionServiceError::Internal)?;
+                    let submitted = recover_submit(&self.repository, write).await?;
+                    if submitted.provider_order_id() != Some(session.provider_order_id())
+                        || submitted.payment_method() != Some(command.payment_method())
+                        || submitted.expires_at() != Some(expires_at)
+                    {
+                        return Err(SubscriptionServiceError::Conflict);
+                    }
+                    session
+                }
+                af_domain::SubscriptionOrderStatus::Pending => {
+                    if record.payment_method() != Some(command.payment_method()) {
+                        return Err(SubscriptionServiceError::Conflict);
+                    }
+                    let provider_order_id = record
+                        .provider_order_id()
+                        .ok_or(SubscriptionServiceError::Internal)?
+                        .to_owned();
+                    let request = payment_request(&record, command.payment_method())?;
+                    provider
+                        .recover(
+                            PaymentOrderRecoveryRequest::new(request, provider_order_id)
+                                .map_err(|_| SubscriptionServiceError::Internal)?,
+                        )
+                        .await
+                        .map_err(map_provider_error)?
+                }
+                af_domain::SubscriptionOrderStatus::Paid
+                | af_domain::SubscriptionOrderStatus::Failed
+                | af_domain::SubscriptionOrderStatus::Canceled
+                | af_domain::SubscriptionOrderStatus::Expired => {
+                    return Err(SubscriptionServiceError::Conflict);
+                }
+            };
+            let record = self
+                .repository
+                .get_order(order_id)
+                .await
+                .map_err(map_read_error)?
+                .filter(|record| record.user_id() == principal.user_id())
+                .ok_or(SubscriptionServiceError::SubscriptionNotFound)?;
+            Ok(SubscriptionOrderPayment::new(
+                SubscriptionOrder::from_record(&record, false),
+                crate::UserTopupPaymentSession::new(payment),
+            ))
+        })
+    }
+
     fn list_plans<'a>(
         &'a self,
         principal: SessionPrincipal,
@@ -72,12 +244,15 @@ impl SubscriptionService for DatabaseSubscriptionService {
         Box::pin(async move {
             require_admin(principal)?;
             let created_at = unix_now()?;
-            let write = SubscriptionPlanWrite::new(
+            let write = SubscriptionPlanWrite::new_with_price(
                 random_plan_id()?,
                 command.name,
                 principal.user_id(),
                 command.quota_amount,
                 command.cycle,
+                command.price_provider,
+                command.price_currency,
+                command.price_amount_minor,
                 created_at,
             )
             .map_err(|_| SubscriptionServiceError::InvalidInput)?;
@@ -266,6 +441,28 @@ async fn recover_create(
     }
 }
 
+async fn recover_order(
+    repository: &SubscriptionRepository,
+    write: &SubscriptionOrderCreate,
+) -> Result<(SubscriptionOrderCreateOutcome, bool), SubscriptionServiceError> {
+    match repository.create_order(write).await {
+        Ok(SubscriptionOrderCreateOutcome::Existing(record)) => {
+            Ok((SubscriptionOrderCreateOutcome::Existing(record), true))
+        }
+        Ok(outcome) => Ok((outcome, false)),
+        Err(SubscriptionRepositoryError::OutcomeUnknown) => {
+            match repository.create_order(write).await {
+                Ok(SubscriptionOrderCreateOutcome::Existing(record)) => {
+                    Ok((SubscriptionOrderCreateOutcome::Existing(record), true))
+                }
+                Ok(outcome) => Ok((outcome, false)),
+                Err(error) => Err(map_write_error(error)),
+            }
+        }
+        Err(error) => Err(map_write_error(error)),
+    }
+}
+
 async fn recover_disable(
     repository: &SubscriptionRepository,
     write: &SubscriptionPlanDisable,
@@ -359,9 +556,20 @@ fn random_subscription_id() -> Result<UserSubscriptionId, SubscriptionServiceErr
     }
 }
 
+fn random_order_id() -> Result<SubscriptionOrderId, SubscriptionServiceError> {
+    loop {
+        let mut bytes = [0_u8; 16];
+        getrandom::fill(&mut bytes).map_err(|_| SubscriptionServiceError::Internal)?;
+        if let Ok(order_id) = SubscriptionOrderId::new(bytes) {
+            return Ok(order_id);
+        }
+    }
+}
+
 fn map_read_error(error: SubscriptionRepositoryError) -> SubscriptionServiceError {
     match error {
         SubscriptionRepositoryError::Conflict
+        | SubscriptionRepositoryError::BindingConflict
         | SubscriptionRepositoryError::Query
         | SubscriptionRepositoryError::Timeout
         | SubscriptionRepositoryError::OutcomeUnknown
@@ -371,11 +579,60 @@ fn map_read_error(error: SubscriptionRepositoryError) -> SubscriptionServiceErro
 
 fn map_write_error(error: SubscriptionRepositoryError) -> SubscriptionServiceError {
     match error {
-        SubscriptionRepositoryError::Conflict => SubscriptionServiceError::Conflict,
+        SubscriptionRepositoryError::Conflict | SubscriptionRepositoryError::BindingConflict => {
+            SubscriptionServiceError::Conflict
+        }
         SubscriptionRepositoryError::OutcomeUnknown => SubscriptionServiceError::OutcomeUnknown,
         SubscriptionRepositoryError::Query
         | SubscriptionRepositoryError::Timeout
         | SubscriptionRepositoryError::Invariant => SubscriptionServiceError::Internal,
+    }
+}
+
+fn payment_request(
+    record: &af_db::SubscriptionOrderRecord,
+    payment_method: &str,
+) -> Result<PaymentOrderRequest, SubscriptionServiceError> {
+    PaymentOrderRequest::new(
+        PaymentOrderId::Subscription(record.order_id()),
+        u64::try_from(record.amount_minor()).map_err(|_| SubscriptionServiceError::Internal)?,
+        record.currency().to_owned(),
+        payment_method.to_owned(),
+    )
+    .map_err(|_| SubscriptionServiceError::InvalidInput)
+}
+
+async fn recover_submit(
+    repository: &SubscriptionRepository,
+    write: SubscriptionOrderSubmission,
+) -> Result<af_db::SubscriptionOrderRecord, SubscriptionServiceError> {
+    match repository.submit_order(write.clone()).await {
+        Ok(SubscriptionOrderSubmitOutcome::Applied(record))
+        | Ok(SubscriptionOrderSubmitOutcome::Existing(record)) => Ok(record),
+        Ok(SubscriptionOrderSubmitOutcome::NotFound) => {
+            Err(SubscriptionServiceError::SubscriptionNotFound)
+        }
+        Err(SubscriptionRepositoryError::OutcomeUnknown) => repository
+            .submit_order(write)
+            .await
+            .map_err(map_write_error)
+            .and_then(|outcome| match outcome {
+                SubscriptionOrderSubmitOutcome::Applied(record)
+                | SubscriptionOrderSubmitOutcome::Existing(record) => Ok(record),
+                SubscriptionOrderSubmitOutcome::NotFound => {
+                    Err(SubscriptionServiceError::SubscriptionNotFound)
+                }
+            }),
+        Err(error) => Err(map_write_error(error)),
+    }
+}
+
+fn map_provider_error(error: PaymentOrderProviderError) -> SubscriptionServiceError {
+    match error {
+        PaymentOrderProviderError::Rejected => SubscriptionServiceError::PaymentRejected,
+        PaymentOrderProviderError::OutcomeUnknown => SubscriptionServiceError::OutcomeUnknown,
+        PaymentOrderProviderError::Unavailable => SubscriptionServiceError::PaymentUnavailable,
+        PaymentOrderProviderError::InvalidResponse => SubscriptionServiceError::Internal,
     }
 }
 

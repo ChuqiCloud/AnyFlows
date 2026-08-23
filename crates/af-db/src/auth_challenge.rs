@@ -29,6 +29,7 @@ pub const MAX_AUTH_CHALLENGE_ATTEMPTS: u32 = 10;
 
 const REGISTRATION_EMAIL_PURPOSE: i16 = 1;
 const PASSWORD_RESET_PURPOSE: i16 = 2;
+const PASSKEY_AUTHENTICATION_PURPOSE: i16 = 3;
 
 /// 认证挑战的闭合用途；不同用途必须使用独立摘要域。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -37,6 +38,8 @@ pub enum AuthChallengePurpose {
     RegistrationEmail,
     /// 已存在用户通过邮件重置密码。
     PasswordReset,
+    /// Passkey 公开登录的主体与客户端限流。
+    PasskeyAuthentication,
 }
 
 impl AuthChallengePurpose {
@@ -44,6 +47,7 @@ impl AuthChallengePurpose {
         match self {
             Self::RegistrationEmail => REGISTRATION_EMAIL_PURPOSE,
             Self::PasswordReset => PASSWORD_RESET_PURPOSE,
+            Self::PasskeyAuthentication => PASSKEY_AUTHENTICATION_PURPOSE,
         }
     }
 
@@ -145,6 +149,9 @@ impl AuthChallengeConsume {
         secret_digest: [u8; 32],
         attempted_at: u64,
     ) -> Result<Self, AuthChallengeInputError> {
+        if purpose == AuthChallengePurpose::PasskeyAuthentication {
+            return Err(AuthChallengeInputError::InvalidTarget);
+        }
         if attempted_at > i64::MAX as u64 {
             return Err(AuthChallengeInputError::InvalidTiming);
         }

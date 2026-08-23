@@ -26,6 +26,28 @@ pub enum SystemSecretKind {
     StripeWebhookSecret,
     /// 易支付商户密钥。
     EpayMerchantKey,
+    /// GitHub 用户登录 OAuth App 的 Client Secret。
+    OAuthLoginGithubClientSecret,
+    /// Discord 用户登录 OAuth App 的 Client Secret。
+    OAuthLoginDiscordClientSecret,
+    /// 通用 OIDC 用户登录 OAuth App 的 Client Secret。
+    OAuthLoginOidcClientSecret,
+    /// LinuxDO 用户登录 OAuth App 的 Client Secret。
+    OAuthLoginLinuxDoClientSecret,
+    /// 微信开放平台网页应用的 AppSecret。
+    OAuthLoginWechatClientSecret,
+    /// Telegram OIDC 应用的 Client Secret。
+    OAuthLoginTelegramClientSecret,
+    /// Google OIDC 应用的 Client Secret。
+    OAuthLoginGoogleClientSecret,
+    /// 用户登录 OAuth state 内携带的一次性随机材料封套。
+    OAuthLoginState,
+    /// 用户 TOTP 配置；用户标识参与 AAD，禁止跨账户搬用。
+    TotpSecret(af_domain::UserId),
+    /// Passkey 注册状态；用户标识参与 AAD，禁止跨账户搬用。
+    PasskeyRegistrationState(af_domain::UserId),
+    /// Passkey 登录状态；用户标识参与 AAD，禁止跨账户搬运密文。
+    PasskeyAuthenticationState(af_domain::UserId),
     /// 凭据专属代理认证密码；记录标识参与 AAD，禁止密文跨代理搬用。
     CredentialProxyPassword(af_domain::ProxyId),
 }
@@ -38,6 +60,17 @@ impl SystemSecretKind {
             Self::StripeSecretKey => "stripe_secret_key",
             Self::StripeWebhookSecret => "stripe_webhook_secret",
             Self::EpayMerchantKey => "epay_merchant_key",
+            Self::OAuthLoginGithubClientSecret => "oauth_login_github_client_secret",
+            Self::OAuthLoginDiscordClientSecret => "oauth_login_discord_client_secret",
+            Self::OAuthLoginOidcClientSecret => "oauth_login_oidc_client_secret",
+            Self::OAuthLoginLinuxDoClientSecret => "oauth_login_linuxdo_client_secret",
+            Self::OAuthLoginWechatClientSecret => "oauth_login_wechat_client_secret",
+            Self::OAuthLoginTelegramClientSecret => "oauth_login_telegram_client_secret",
+            Self::OAuthLoginGoogleClientSecret => "oauth_login_google_client_secret",
+            Self::OAuthLoginState => "oauth_login_state",
+            Self::TotpSecret(_) => "totp_secret",
+            Self::PasskeyRegistrationState(_) => "passkey_registration_state",
+            Self::PasskeyAuthenticationState(_) => "passkey_authentication_state",
             Self::CredentialProxyPassword(_) => "credential_proxy_password",
         }
     }
@@ -218,6 +251,27 @@ fn system_secret_aad(kind: SystemSecretKind) -> Vec<u8> {
         SystemSecretKind::StripeSecretKey
         | SystemSecretKind::StripeWebhookSecret
         | SystemSecretKind::EpayMerchantKey => "payment_settings:1".to_owned(),
+        SystemSecretKind::OAuthLoginGithubClientSecret => "oauth_login_providers:github".to_owned(),
+        SystemSecretKind::OAuthLoginDiscordClientSecret => {
+            "oauth_login_providers:discord".to_owned()
+        }
+        SystemSecretKind::OAuthLoginOidcClientSecret => "oauth_login_providers:oidc".to_owned(),
+        SystemSecretKind::OAuthLoginLinuxDoClientSecret => {
+            "oauth_login_providers:linuxdo".to_owned()
+        }
+        SystemSecretKind::OAuthLoginWechatClientSecret => "oauth_login_providers:wechat".to_owned(),
+        SystemSecretKind::OAuthLoginTelegramClientSecret => {
+            "oauth_login_providers:telegram".to_owned()
+        }
+        SystemSecretKind::OAuthLoginGoogleClientSecret => "oauth_login_providers:google".to_owned(),
+        SystemSecretKind::OAuthLoginState => "oauth_login_state:v1".to_owned(),
+        SystemSecretKind::TotpSecret(user_id) => format!("users:{}:totp", user_id.get()),
+        SystemSecretKind::PasskeyRegistrationState(user_id) => {
+            format!("passkey_registration_challenges:user:{}", user_id.get())
+        }
+        SystemSecretKind::PasskeyAuthenticationState(user_id) => {
+            format!("passkey_authentication_challenges:user:{}", user_id.get())
+        }
         SystemSecretKind::CredentialProxyPassword(proxy_id) => {
             format!("proxies:{}", proxy_id.get())
         }
@@ -329,6 +383,59 @@ mod tests {
             system_secret_aad(SystemSecretKind::EpayMerchantKey),
             b"anyflows:system-secret:v1:record=payment_settings:1:kind=epay_merchant_key"
         );
+        assert_eq!(
+            system_secret_aad(SystemSecretKind::OAuthLoginGithubClientSecret),
+            b"anyflows:system-secret:v1:record=oauth_login_providers:github:kind=oauth_login_github_client_secret"
+        );
+        assert_eq!(
+            system_secret_aad(SystemSecretKind::OAuthLoginDiscordClientSecret),
+            b"anyflows:system-secret:v1:record=oauth_login_providers:discord:kind=oauth_login_discord_client_secret"
+        );
+        assert_eq!(
+            system_secret_aad(SystemSecretKind::OAuthLoginWechatClientSecret),
+            b"anyflows:system-secret:v1:record=oauth_login_providers:wechat:kind=oauth_login_wechat_client_secret"
+        );
+        assert_eq!(
+            system_secret_aad(SystemSecretKind::OAuthLoginTelegramClientSecret),
+            b"anyflows:system-secret:v1:record=oauth_login_providers:telegram:kind=oauth_login_telegram_client_secret"
+        );
+        assert_eq!(
+            system_secret_aad(SystemSecretKind::OAuthLoginGoogleClientSecret),
+            b"anyflows:system-secret:v1:record=oauth_login_providers:google:kind=oauth_login_google_client_secret"
+        );
+        assert_eq!(
+            system_secret_aad(SystemSecretKind::OAuthLoginState),
+            b"anyflows:system-secret:v1:record=oauth_login_state:v1:kind=oauth_login_state"
+        );
+        assert_eq!(
+            system_secret_aad(SystemSecretKind::PasskeyRegistrationState(
+                af_domain::UserId::new(7).unwrap()
+            )),
+            b"anyflows:system-secret:v1:record=passkey_registration_challenges:user:7:kind=passkey_registration_state"
+        );
+    }
+
+    #[test]
+    fn wechat_app_secret_cannot_be_moved_to_another_provider() {
+        let cipher = SystemSecretCipher::new(&settings()).unwrap();
+        let secret = PlainSystemSecret::new("wechat-app-secret".to_owned()).unwrap();
+        let envelope = cipher
+            .encrypt(SystemSecretKind::OAuthLoginWechatClientSecret, &secret)
+            .unwrap();
+
+        assert_eq!(
+            cipher
+                .decrypt(SystemSecretKind::OAuthLoginWechatClientSecret, &envelope)
+                .unwrap()
+                .expose_secret(),
+            "wechat-app-secret"
+        );
+        assert_eq!(
+            cipher
+                .decrypt(SystemSecretKind::OAuthLoginGithubClientSecret, &envelope)
+                .unwrap_err(),
+            SystemSecretError::Decrypt
+        );
     }
 
     #[test]
@@ -344,6 +451,12 @@ mod tests {
             SystemSecretKind::EpayMerchantKey,
             SystemSecretKind::ProxyPassword,
             SystemSecretKind::SmtpPassword,
+            SystemSecretKind::OAuthLoginGithubClientSecret,
+            SystemSecretKind::OAuthLoginDiscordClientSecret,
+            SystemSecretKind::OAuthLoginWechatClientSecret,
+            SystemSecretKind::OAuthLoginTelegramClientSecret,
+            SystemSecretKind::OAuthLoginGoogleClientSecret,
+            SystemSecretKind::OAuthLoginState,
         ] {
             assert_eq!(
                 cipher.decrypt(wrong_kind, &envelope).unwrap_err(),

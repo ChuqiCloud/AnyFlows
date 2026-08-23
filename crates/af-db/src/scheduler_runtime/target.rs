@@ -1,8 +1,12 @@
-use std::{collections::BTreeSet, fmt};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+};
 
 use af_domain::{
-    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ConcurrencyLimit, CredentialKind,
-    Protocol, ProxyId, ResponsesCompactMode, ResponsesCompactProbeResult,
+    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ClientSimulationProfile,
+    ConcurrencyLimit, CredentialId, CredentialKind, CredentialQuotaDimension, Protocol, ProxyId,
+    ResponsesCompactMode, ResponsesCompactProbeResult,
 };
 use sea_orm::entity::prelude::Json;
 use sha2::{Digest, Sha256};
@@ -182,7 +186,11 @@ impl fmt::Debug for SchedulerRuntimeProxyRecord {
 /// 已校验且仍保持密文形态的运行时凭据。
 #[derive(Clone, Eq, PartialEq)]
 pub struct SchedulerRuntimeCredentialRecord {
-    credential_id: i64,
+    routing_credential_id: CredentialId,
+    secret_owner_id: CredentialId,
+    concurrency_owner_id: CredentialId,
+    shared_health_id: CredentialId,
+    quota_dimension: CredentialQuotaDimension,
     credential_kind: CredentialKind,
     envelope: EncryptedCredentialEnvelope,
     credential_revision: u64,
@@ -242,7 +250,55 @@ impl SchedulerRuntimeCredentialRecord {
         weight: u32,
         concurrency: Option<ConcurrencyLimit>,
     ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
-        if credential_id <= 0
+        let credential_id =
+            CredentialId::new(credential_id).map_err(|_| SchedulerRuntimeTargetRecordError)?;
+        Self::with_runtime_identity(
+            credential_id,
+            credential_id,
+            credential_id,
+            credential_id,
+            CredentialQuotaDimension::Global,
+            credential_kind,
+            envelope,
+            proxy_required,
+            priority,
+            weight,
+            concurrency,
+        )
+    }
+
+    /// 连同路由、密钥、并发和共享健康身份构造不可混用的运行时凭据。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "字段与凭据运行时身份投影一一对应"
+    )]
+    pub fn with_runtime_identity(
+        routing_credential_id: CredentialId,
+        secret_owner_id: CredentialId,
+        concurrency_owner_id: CredentialId,
+        shared_health_id: CredentialId,
+        quota_dimension: CredentialQuotaDimension,
+        credential_kind: CredentialKind,
+        envelope: EncryptedCredentialEnvelope,
+        proxy_required: bool,
+        priority: i32,
+        weight: u32,
+        concurrency: Option<ConcurrencyLimit>,
+    ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
+        let valid_identity = match quota_dimension {
+            CredentialQuotaDimension::Global => {
+                routing_credential_id == secret_owner_id
+                    && routing_credential_id == concurrency_owner_id
+                    && routing_credential_id == shared_health_id
+            }
+            CredentialQuotaDimension::Spark => {
+                credential_kind == CredentialKind::Oauth
+                    && routing_credential_id != secret_owner_id
+                    && secret_owner_id == concurrency_owner_id
+                    && secret_owner_id == shared_health_id
+            }
+        };
+        if !valid_identity
             || !matches!(
                 credential_kind,
                 CredentialKind::ApiKey | CredentialKind::Oauth
@@ -252,7 +308,11 @@ impl SchedulerRuntimeCredentialRecord {
         }
         let credential_revision = derive_credential_revision(&envelope);
         Ok(Self {
-            credential_id,
+            routing_credential_id,
+            secret_owner_id,
+            concurrency_owner_id,
+            shared_health_id,
+            quota_dimension,
             credential_kind,
             envelope,
             credential_revision,
@@ -267,7 +327,37 @@ impl SchedulerRuntimeCredentialRecord {
     /// 返回凭据数据库标识，用于绑定密文 AAD。
     #[must_use]
     pub fn credential_id(&self) -> i64 {
-        self.credential_id
+        self.routing_credential_id.get()
+    }
+
+    /// 返回逻辑路由凭据，供权重、限流、尝试审计和维度健康使用。
+    #[must_use]
+    pub const fn routing_credential_id(&self) -> CredentialId {
+        self.routing_credential_id
+    }
+
+    /// 返回密钥与代理所有者，解密 AAD 和连接复用必须使用该标识。
+    #[must_use]
+    pub const fn secret_owner_id(&self) -> CredentialId {
+        self.secret_owner_id
+    }
+
+    /// 返回真实上游账号的并发槽位所有者。
+    #[must_use]
+    pub const fn concurrency_owner_id(&self) -> CredentialId {
+        self.concurrency_owner_id
+    }
+
+    /// 返回认证、撤销和账号停用共享健康的所有者。
+    #[must_use]
+    pub const fn shared_health_id(&self) -> CredentialId {
+        self.shared_health_id
+    }
+
+    /// 返回该逻辑凭据只允许服务的固定上游额度维度。
+    #[must_use]
+    pub const fn quota_dimension(&self) -> CredentialQuotaDimension {
+        self.quota_dimension
     }
 
     /// 返回数据库声明的凭据类型。
@@ -324,6 +414,20 @@ impl SchedulerRuntimeCredentialRecord {
         self.weight
     }
 
+    /// 使用智能路由规则覆盖当前不可变副本的局部调度顺序。
+    pub fn with_route_scheduling(
+        mut self,
+        priority: i32,
+        weight: u32,
+    ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
+        if priority < 0 {
+            return Err(SchedulerRuntimeTargetRecordError);
+        }
+        self.priority = priority;
+        self.weight = weight;
+        Ok(self)
+    }
+
     /// 返回账号级并发限制；空值表示不限并发但仍可追踪实时负载。
     #[must_use]
     pub const fn concurrency(&self) -> Option<ConcurrencyLimit> {
@@ -335,7 +439,11 @@ impl fmt::Debug for SchedulerRuntimeCredentialRecord {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("SchedulerRuntimeCredentialRecord")
-            .field("credential_id", &self.credential_id)
+            .field("routing_credential_id", &self.routing_credential_id)
+            .field("secret_owner_id", &self.secret_owner_id)
+            .field("concurrency_owner_id", &self.concurrency_owner_id)
+            .field("shared_health_id", &self.shared_health_id)
+            .field("quota_dimension", &self.quota_dimension)
             .field("credential_kind", &self.credential_kind)
             .field("envelope", &self.envelope)
             .field("credential_revision", &"<已脱敏>")
@@ -362,6 +470,7 @@ pub struct SchedulerRuntimeTargetRecord {
     headers: Vec<SchedulerRuntimeHeader>,
     auto_ban_rules: ChannelAutoBanRules,
     pool_mode: bool,
+    client_simulation_profile: Option<ClientSimulationProfile>,
     responses_websocket_enabled: bool,
     responses_compact_mode: ResponsesCompactMode,
     responses_compact_probe_result: ResponsesCompactProbeResult,
@@ -456,6 +565,11 @@ impl SchedulerRuntimeTargetRecord {
         if !is_supported_runtime_target(channel_type, protocol)
             || credentials.is_empty()
             || credentials.len() > MAX_SCHEDULER_RUNTIME_CREDENTIALS_PER_CHANNEL
+            || credentials.iter().any(|credential| {
+                credential.quota_dimension() == CredentialQuotaDimension::Spark
+                    && (channel_type != ChannelType::OpenAi
+                        || protocol != Protocol::OpenAiResponses)
+            })
             || parameter_overrides.validate_for_protocol(protocol).is_err()
             || (!responses_compact_model_mapping.is_empty()
                 && (channel_type != ChannelType::OpenAi || protocol != Protocol::OpenAiResponses))
@@ -505,6 +619,7 @@ impl SchedulerRuntimeTargetRecord {
             headers,
             auto_ban_rules: ChannelAutoBanRules::default(),
             pool_mode: false,
+            client_simulation_profile: None,
             responses_websocket_enabled: false,
             responses_compact_mode: ResponsesCompactMode::Auto,
             responses_compact_probe_result: ResponsesCompactProbeResult::Unknown,
@@ -561,6 +676,25 @@ impl SchedulerRuntimeTargetRecord {
     pub fn with_pool_mode(mut self, enabled: bool) -> Self {
         self.pool_mode = enabled;
         self
+    }
+
+    /// 显式设置客户端仿真档案，并保证快照内只保留适用的 OAuth 凭据。
+    pub fn with_client_simulation_profile(
+        mut self,
+        profile: Option<ClientSimulationProfile>,
+    ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
+        if profile.is_some()
+            && (self.channel_type != ChannelType::Anthropic
+                || self.protocol != Protocol::Anthropic
+                || self
+                    .credentials
+                    .iter()
+                    .any(|credential| credential.credential_kind() != CredentialKind::Oauth))
+        {
+            return Err(SchedulerRuntimeTargetRecordError);
+        }
+        self.client_simulation_profile = profile;
+        Ok(self)
     }
 
     /// 显式设置原生 Responses WebSocket 能力。
@@ -626,6 +760,12 @@ impl SchedulerRuntimeTargetRecord {
         self.pool_mode
     }
 
+    /// 返回目标显式选择的版本化客户端仿真档案。
+    #[must_use]
+    pub const fn client_simulation_profile(&self) -> Option<ClientSimulationProfile> {
+        self.client_simulation_profile
+    }
+
     /// 返回渠道是否显式允许使用原生 Responses WebSocket。
     #[must_use]
     pub const fn responses_websocket_enabled(&self) -> bool {
@@ -675,6 +815,29 @@ impl SchedulerRuntimeTargetRecord {
     #[must_use]
     pub fn credentials(&self) -> &[SchedulerRuntimeCredentialRecord] {
         &self.credentials
+    }
+
+    /// 仅保留智能路由显式绑定的凭据，并在不可变副本上应用规则内调度参数。
+    pub fn bind_route_credentials(
+        mut self,
+        scheduling: &BTreeMap<i64, (i32, u32)>,
+    ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
+        if scheduling.is_empty() {
+            return Err(SchedulerRuntimeTargetRecordError);
+        }
+        self.credentials =
+            self.credentials
+                .into_iter()
+                .filter_map(|credential| {
+                    scheduling.get(&credential.credential_id()).copied().map(
+                        |(priority, weight)| credential.with_route_scheduling(priority, weight),
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+        if self.credentials.is_empty() {
+            return Err(SchedulerRuntimeTargetRecordError);
+        }
+        Ok(self)
     }
 
     /// 返回请求模型命中的上游模型；未命中时为空。
@@ -748,6 +911,7 @@ impl fmt::Debug for SchedulerRuntimeTargetRecord {
             .field("header_count", &self.headers.len())
             .field("auto_ban_rules", &self.auto_ban_rules)
             .field("pool_mode", &self.pool_mode)
+            .field("client_simulation_profile", &self.client_simulation_profile)
             .field(
                 "responses_websocket_enabled",
                 &self.responses_websocket_enabled,

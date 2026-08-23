@@ -9,11 +9,16 @@ export type SubscriptionPlanValues = {
   name: string
   quotaAmount: string
   cycle: SubscriptionCycle
+  priceProvider: 'stripe' | 'epay'
+  priceCurrency: string
+  priceAmountMinor: string
 }
 
 type SubscriptionPlanValidationMessages = {
   name: string
   quotaAmount: string
+  priceCurrency: string
+  priceAmountMinor: string
 }
 
 /** 返回新建计划表单的稳定初值。 */
@@ -22,6 +27,9 @@ export function defaultSubscriptionPlanValues(): SubscriptionPlanValues {
     name: '',
     quotaAmount: '',
     cycle: 'monthly',
+    priceProvider: 'stripe',
+    priceCurrency: 'USD',
+    priceAmountMinor: '100',
   }
 }
 
@@ -34,6 +42,12 @@ export function buildSubscriptionPlanSchema(messages: SubscriptionPlanValidation
       messages.quotaAmount,
     ),
     cycle: z.enum(['daily', 'weekly', 'monthly', 'yearly']),
+    priceProvider: z.enum(['stripe', 'epay']),
+    priceCurrency: z.string().refine(validCurrency, messages.priceCurrency),
+    priceAmountMinor: z.string().refine(
+      (value) => parsePositiveSafeInteger(value) !== undefined,
+      messages.priceAmountMinor,
+    ),
   })
 }
 
@@ -42,14 +56,31 @@ export function toSubscriptionPlanRequest(
   values: SubscriptionPlanValues,
 ): AdminSubscriptionPlanCreateRequest {
   const quotaAmount = parsePositiveSafeInteger(values.quotaAmount)
-  if (!validPlanName(values.name) || quotaAmount === undefined) {
+  const priceAmountMinor = parsePositiveSafeInteger(values.priceAmountMinor)
+  if (
+    !validPlanName(values.name)
+    || quotaAmount === undefined
+    || !['stripe', 'epay'].includes(values.priceProvider)
+    || !validCurrency(values.priceCurrency)
+    || priceAmountMinor === undefined
+  ) {
     throw new Error('订阅计划表单尚未通过校验')
   }
   return {
     name: values.name,
     quota_amount: quotaAmount,
     cycle: values.cycle,
+    price_provider: values.priceProvider,
+    price_currency: values.priceCurrency,
+    price_amount_minor: priceAmountMinor,
   }
+}
+
+/** 生成可跨网络重试复用的 128 位小写十六进制幂等键。 */
+export function createSubscriptionIdempotencyKey() {
+  const bytes = new Uint8Array(new ArrayBuffer(16))
+  globalThis.crypto.getRandomValues(bytes)
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
 function parsePositiveSafeInteger(value: string) {
@@ -66,4 +97,8 @@ function validPlanName(value: string) {
       const codePoint = character.codePointAt(0)
       return codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f)
     })
+}
+
+function validCurrency(value: string) {
+  return /^[A-Z]{3}$/.test(value)
 }

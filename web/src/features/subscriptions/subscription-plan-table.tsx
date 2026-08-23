@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import type { AdminSubscriptionPlan } from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
 
@@ -16,8 +17,8 @@ type SubscriptionPlanTableProps = {
 /** 展示不可变计划快照，并仅对有效计划开放停用操作。 */
 export function SubscriptionPlanTable({ plans, onDisable }: SubscriptionPlanTableProps) {
   const { i18n, t } = useTranslation()
+  const { formatQuota } = useBalanceDisplay()
   const locale = i18n.resolvedLanguage === 'zh' ? 'zh-CN' : 'en-US'
-  const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale])
   const timeFormat = useMemo(() => new Intl.DateTimeFormat(locale, {
     dateStyle: 'medium',
     timeStyle: 'short',
@@ -55,7 +56,7 @@ export function SubscriptionPlanTable({ plans, onDisable }: SubscriptionPlanTabl
             {plans.map((plan) => (
               <tr key={plan.plan_id} className="hover:bg-surface-2/35">
                 <td className="px-3 py-3"><PlanIdentity plan={plan} /></td>
-                <td className="px-3 py-3 font-medium tabular-nums">{numberFormat.format(plan.quota_amount)}</td>
+                <td className="px-3 py-3 font-medium tabular-nums">{formatQuota(plan.quota_amount)}</td>
                 <td className="px-3 py-3"><PlanCycle plan={plan} /></td>
                 <td className="px-3 py-3"><PlanTiming plan={plan} formatTime={formatTime} /></td>
                 <td className="px-2 py-3"><PlanActions plan={plan} onDisable={onDisable} /></td>
@@ -67,7 +68,7 @@ export function SubscriptionPlanTable({ plans, onDisable }: SubscriptionPlanTabl
 
       <div className="grid gap-2 md:hidden">
         {plans.map((plan) => (
-          <article key={plan.plan_id} className="rounded-lg border border-[var(--hairline)] bg-surface-1 p-3">
+          <article key={plan.plan_id} className="min-w-0 rounded-lg border border-[var(--hairline)] bg-surface-1 p-3">
             <div className="flex items-start justify-between gap-3">
               <PlanIdentity plan={plan} />
               <PlanActions plan={plan} onDisable={onDisable} />
@@ -75,7 +76,7 @@ export function SubscriptionPlanTable({ plans, onDisable }: SubscriptionPlanTabl
             <div className="mt-3 grid grid-cols-2 gap-3 border-t border-[var(--hairline)] pt-3">
               <div>
                 <div className="text-[0.6875rem] text-muted-foreground">{t('subscriptions.columns.quota')}</div>
-                <div className="mt-1 font-medium tabular-nums">{numberFormat.format(plan.quota_amount)}</div>
+                <div className="mt-1 font-medium tabular-nums">{formatQuota(plan.quota_amount)}</div>
               </div>
               <PlanCycle plan={plan} />
             </div>

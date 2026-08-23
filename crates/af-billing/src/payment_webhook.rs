@@ -1,10 +1,14 @@
 use std::{fmt, future::Future, pin::Pin, sync::Arc};
 
 use af_db::{
-    TopupPaymentEventOutcome, TopupPaymentEventRejection, TopupPaymentEventWrite, TopupRepository,
-    TopupRepositoryError,
+    SubscriptionPaymentEventOutcome, SubscriptionPaymentEventWrite, SubscriptionRepository,
+    SubscriptionRepositoryError, TopupPaymentEventOutcome, TopupPaymentEventRejection,
+    TopupPaymentEventWrite, TopupRepository, TopupRepositoryError,
 };
-use af_domain::{TopupOrderId, TopupOrderStatus, TopupPaymentEventId, TopupPaymentEventType};
+use af_domain::{
+    SubscriptionOrderId, SubscriptionPaymentEventId, SubscriptionPaymentEventType, TopupOrderId,
+    TopupOrderStatus, TopupPaymentEventId, TopupPaymentEventType,
+};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use uuid::Uuid;
@@ -468,5 +472,313 @@ fn map_repository_error(error: TopupRepositoryError) -> TopupPaymentEventPortErr
             TopupPaymentEventPortError::Unavailable
         }
         TopupRepositoryError::Invariant => TopupPaymentEventPortError::Invariant,
+    }
+}
+
+/// HTTP webhook 只关心支付事实是否已闭合，不暴露充值或订阅内部状态。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PaymentWebhookHandlerOutcome {
+    Applied,
+    Acknowledged,
+    Existing,
+    RecordedUnprocessed,
+    IgnoredNonTerminal,
+    NotFound,
+}
+
+/// 支付 webhook 在验签、路由和持久化边界上的闭合错误分类。
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum PaymentWebhookHandlerError {
+    #[error("支付 webhook 已拒绝")]
+    VerificationRejected,
+    #[error("支付 webhook 状态冲突")]
+    Conflict,
+    #[error("支付 webhook 订阅绑定冲突")]
+    BindingConflict,
+    #[error("支付 webhook 处理结果未知")]
+    OutcomeUnknown,
+    #[error("支付 webhook 处理暂不可用")]
+    Unavailable,
+    #[error("支付 webhook 内部状态损坏")]
+    Invariant,
+}
+
+/// 通过已验签事件选择充值或订阅持久化端口。
+pub trait PaymentWebhookEventRouter: Send + Sync + 'static {
+    fn route<'a>(
+        &'a self,
+        provider: String,
+        event: VerifiedTopupPaymentEvent,
+        payload_sha256: [u8; 32],
+        received_at: u64,
+    ) -> PaymentWebhookRouteFuture<'a>;
+}
+
+pub type PaymentWebhookRouteFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<PaymentWebhookHandlerOutcome, PaymentWebhookHandlerError>>
+            + Send
+            + 'a,
+    >,
+>;
+
+/// 数据库支付路由：双查订单类型后才允许进入对应的原子确认事务。
+#[derive(Clone)]
+pub struct DatabasePaymentWebhookRouter {
+    topup_repository: TopupRepository,
+    subscription_repository: SubscriptionRepository,
+}
+
+impl DatabasePaymentWebhookRouter {
+    #[must_use]
+    pub fn new(
+        topup_repository: TopupRepository,
+        subscription_repository: SubscriptionRepository,
+    ) -> Self {
+        Self {
+            topup_repository,
+            subscription_repository,
+        }
+    }
+}
+
+impl PaymentWebhookEventRouter for DatabasePaymentWebhookRouter {
+    fn route<'a>(
+        &'a self,
+        provider: String,
+        event: VerifiedTopupPaymentEvent,
+        payload_sha256: [u8; 32],
+        received_at: u64,
+    ) -> PaymentWebhookRouteFuture<'a> {
+        Box::pin(async move {
+            let topup = self
+                .topup_repository
+                .get_order(event.order_id)
+                .await
+                .map_err(map_topup_route_error)?;
+            let subscription_id =
+                SubscriptionOrderId::from_persistence_key(&event.order_id.persistence_key())
+                    .map_err(|_| PaymentWebhookHandlerError::Invariant)?;
+            let subscription = self
+                .subscription_repository
+                .get_order(subscription_id)
+                .await
+                .map_err(map_subscription_route_error)?;
+
+            // 同一个外部订单键同时命中两类订单时，拒绝猜测资金归属。
+            if topup.is_some() && subscription.is_some() {
+                return Err(PaymentWebhookHandlerError::Conflict);
+            }
+            if topup.is_none() && subscription.is_none() {
+                return Ok(PaymentWebhookHandlerOutcome::NotFound);
+            }
+
+            let event_id = *Uuid::new_v4().as_bytes();
+            if topup.is_some() {
+                let write = TopupPaymentEventWrite::new(
+                    TopupPaymentEventId::new(event_id)
+                        .map_err(|_| PaymentWebhookHandlerError::Invariant)?,
+                    event.order_id,
+                    provider,
+                    event.provider_event_id,
+                    event.trade_no,
+                    event.amount_minor,
+                    event.currency,
+                    event.payment_method,
+                    event.event_type,
+                    event.signature_key_fingerprint,
+                    payload_sha256,
+                    received_at,
+                )
+                .map_err(|_| PaymentWebhookHandlerError::Invariant)?;
+                return self
+                    .topup_repository
+                    .accept_verified_event(write)
+                    .await
+                    .map(map_topup_outcome)
+                    .map_err(map_topup_route_error);
+            }
+
+            let write = SubscriptionPaymentEventWrite::new(
+                SubscriptionPaymentEventId::new(event_id)
+                    .map_err(|_| PaymentWebhookHandlerError::Invariant)?,
+                subscription_id,
+                provider,
+                event.provider_event_id,
+                event.trade_no,
+                Some(event.amount_minor),
+                Some(event.currency),
+                Some(event.payment_method),
+                map_subscription_event_type(event.event_type),
+                event.signature_key_fingerprint,
+                payload_sha256,
+                received_at,
+            )
+            .map_err(|_| PaymentWebhookHandlerError::Invariant)?;
+            self.subscription_repository
+                .accept_verified_event(&write)
+                .await
+                .map(map_subscription_outcome)
+                .map_err(map_subscription_route_error)
+        })
+    }
+}
+
+/// 统一 Provider 验签与订单类型路由，Provider 适配器不直接写订阅状态。
+#[derive(Clone)]
+pub struct PaymentWebhookProcessor {
+    verifier: Arc<dyn PaymentWebhookVerifier>,
+    router: Arc<dyn PaymentWebhookEventRouter>,
+}
+
+impl PaymentWebhookProcessor {
+    #[must_use]
+    pub fn new(
+        verifier: Arc<dyn PaymentWebhookVerifier>,
+        router: Arc<dyn PaymentWebhookEventRouter>,
+    ) -> Self {
+        Self { verifier, router }
+    }
+
+    pub async fn process(
+        &self,
+        request: PaymentWebhookRequest<'_>,
+    ) -> Result<PaymentWebhookHandlerOutcome, PaymentWebhookHandlerError> {
+        let verified = match self.verifier.verify(&request) {
+            Ok(verified) => verified,
+            Err(PaymentWebhookVerificationError::NonTerminalEvent) => {
+                return Ok(PaymentWebhookHandlerOutcome::IgnoredNonTerminal);
+            }
+            Err(_) => return Err(PaymentWebhookHandlerError::VerificationRejected),
+        };
+        let payload_sha256: [u8; 32] = Sha256::digest(request.payload()).into();
+        self.router
+            .route(
+                self.verifier.provider().to_owned(),
+                verified,
+                payload_sha256,
+                request.received_at(),
+            )
+            .await
+    }
+}
+
+impl fmt::Debug for PaymentWebhookProcessor {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("PaymentWebhookProcessor(<redacted>)")
+    }
+}
+
+/// HTTP 层使用的统一 webhook handler，兼容旧充值处理器测试和新订单路由。
+pub trait PaymentWebhookHandler: Send + Sync + 'static {
+    fn handle<'a>(&'a self, request: PaymentWebhookRequest<'a>) -> PaymentWebhookHandlerFuture<'a>;
+}
+
+pub type PaymentWebhookHandlerFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<PaymentWebhookHandlerOutcome, PaymentWebhookHandlerError>>
+            + Send
+            + 'a,
+    >,
+>;
+
+impl PaymentWebhookHandler for PaymentWebhookProcessor {
+    fn handle<'a>(&'a self, request: PaymentWebhookRequest<'a>) -> PaymentWebhookHandlerFuture<'a> {
+        Box::pin(self.process(request))
+    }
+}
+
+impl PaymentWebhookHandler for TopupWebhookProcessor {
+    fn handle<'a>(&'a self, request: PaymentWebhookRequest<'a>) -> PaymentWebhookHandlerFuture<'a> {
+        Box::pin(async move {
+            self.process(request)
+                .await
+                .map(map_topup_webhook_outcome)
+                .map_err(map_topup_processor_error)
+        })
+    }
+}
+
+fn map_topup_webhook_outcome(outcome: TopupWebhookOutcome) -> PaymentWebhookHandlerOutcome {
+    match outcome {
+        TopupWebhookOutcome::Applied(_) => PaymentWebhookHandlerOutcome::Applied,
+        TopupWebhookOutcome::Acknowledged(_) => PaymentWebhookHandlerOutcome::Acknowledged,
+        TopupWebhookOutcome::Existing(_) => PaymentWebhookHandlerOutcome::Existing,
+        TopupWebhookOutcome::RecordedUnprocessed { .. } => {
+            PaymentWebhookHandlerOutcome::RecordedUnprocessed
+        }
+        TopupWebhookOutcome::IgnoredNonTerminal => PaymentWebhookHandlerOutcome::IgnoredNonTerminal,
+        TopupWebhookOutcome::NotFound => PaymentWebhookHandlerOutcome::NotFound,
+    }
+}
+
+fn map_topup_processor_error(error: TopupWebhookProcessorError) -> PaymentWebhookHandlerError {
+    match error {
+        TopupWebhookProcessorError::VerificationRejected => {
+            PaymentWebhookHandlerError::VerificationRejected
+        }
+        TopupWebhookProcessorError::Conflict => PaymentWebhookHandlerError::Conflict,
+        TopupWebhookProcessorError::OutcomeUnknown => PaymentWebhookHandlerError::OutcomeUnknown,
+        TopupWebhookProcessorError::Unavailable => PaymentWebhookHandlerError::Unavailable,
+        TopupWebhookProcessorError::Invariant => PaymentWebhookHandlerError::Invariant,
+    }
+}
+
+fn map_topup_outcome(outcome: TopupPaymentEventOutcome) -> PaymentWebhookHandlerOutcome {
+    match outcome {
+        TopupPaymentEventOutcome::Applied(_) => PaymentWebhookHandlerOutcome::Applied,
+        TopupPaymentEventOutcome::Acknowledged(_) => PaymentWebhookHandlerOutcome::Acknowledged,
+        TopupPaymentEventOutcome::Existing(_) => PaymentWebhookHandlerOutcome::Existing,
+        TopupPaymentEventOutcome::RecordedUnprocessed { .. } => {
+            PaymentWebhookHandlerOutcome::RecordedUnprocessed
+        }
+        TopupPaymentEventOutcome::NotFound => PaymentWebhookHandlerOutcome::NotFound,
+    }
+}
+
+fn map_subscription_outcome(
+    outcome: SubscriptionPaymentEventOutcome,
+) -> PaymentWebhookHandlerOutcome {
+    match outcome {
+        SubscriptionPaymentEventOutcome::Applied { .. } => PaymentWebhookHandlerOutcome::Applied,
+        SubscriptionPaymentEventOutcome::Acknowledged { .. } => {
+            PaymentWebhookHandlerOutcome::Acknowledged
+        }
+        SubscriptionPaymentEventOutcome::Existing { .. } => PaymentWebhookHandlerOutcome::Existing,
+        SubscriptionPaymentEventOutcome::RecordedUnprocessed { .. } => {
+            PaymentWebhookHandlerOutcome::RecordedUnprocessed
+        }
+        SubscriptionPaymentEventOutcome::NotFound => PaymentWebhookHandlerOutcome::NotFound,
+    }
+}
+
+fn map_subscription_event_type(event_type: TopupPaymentEventType) -> SubscriptionPaymentEventType {
+    match event_type {
+        TopupPaymentEventType::Succeeded => SubscriptionPaymentEventType::Succeeded,
+        TopupPaymentEventType::Failed => SubscriptionPaymentEventType::Failed,
+        TopupPaymentEventType::Expired => SubscriptionPaymentEventType::Expired,
+    }
+}
+
+fn map_topup_route_error(error: TopupRepositoryError) -> PaymentWebhookHandlerError {
+    match error {
+        TopupRepositoryError::Conflict => PaymentWebhookHandlerError::Conflict,
+        TopupRepositoryError::OutcomeUnknown => PaymentWebhookHandlerError::OutcomeUnknown,
+        TopupRepositoryError::Query | TopupRepositoryError::Timeout => {
+            PaymentWebhookHandlerError::Unavailable
+        }
+        TopupRepositoryError::Invariant => PaymentWebhookHandlerError::Invariant,
+    }
+}
+
+fn map_subscription_route_error(error: SubscriptionRepositoryError) -> PaymentWebhookHandlerError {
+    match error {
+        SubscriptionRepositoryError::Conflict => PaymentWebhookHandlerError::Conflict,
+        SubscriptionRepositoryError::BindingConflict => PaymentWebhookHandlerError::BindingConflict,
+        SubscriptionRepositoryError::OutcomeUnknown => PaymentWebhookHandlerError::OutcomeUnknown,
+        SubscriptionRepositoryError::Query | SubscriptionRepositoryError::Timeout => {
+            PaymentWebhookHandlerError::Unavailable
+        }
+        SubscriptionRepositoryError::Invariant => PaymentWebhookHandlerError::Invariant,
     }
 }

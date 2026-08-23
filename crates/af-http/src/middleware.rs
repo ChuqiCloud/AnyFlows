@@ -53,6 +53,15 @@ pub(crate) async fn assign_request_id(mut request: Request, next: Next) -> Respo
     response
 }
 
+/// 为可独立组合测试的子路由补齐请求标识；完整 Router 已存在时不会重复覆盖。
+pub(crate) async fn ensure_request_id(request: Request, next: Next) -> Response {
+    if request.extensions().get::<RequestId>().is_some() {
+        next.run(request).await
+    } else {
+        assign_request_id(request, next).await
+    }
+}
+
 /// 在 CORS 层执行前拒绝不受信 Origin，避免跨域副作用请求进入 handler。
 pub(crate) async fn enforce_allowed_origin(
     State(allowed): State<AllowedOrigins>,

@@ -7,30 +7,39 @@ use std::{
 
 use af_account::{SystemSecretCipher, SystemSecretKind};
 use af_admin::{
-    DatabaseUserTopupService, EPAY_ALIPAY_PAYMENT_METHOD, EPAY_WXPAY_PAYMENT_METHOD,
-    PaymentSettingsApplyFuture, PaymentSettingsRuntimeApplier, PaymentSettingsRuntimeError,
-    SessionPrincipal, UserTopupConfiguration, UserTopupError, UserTopupOrderCreateCommand,
-    UserTopupOrderCreateFuture, UserTopupProviderRoute, UserTopupService,
+    AdminRefundError, AdminRefundSubmitter, DatabaseUserTopupService, EPAY_ALIPAY_PAYMENT_METHOD,
+    EPAY_WXPAY_PAYMENT_METHOD, PaymentSettingsApplyFuture, PaymentSettingsRuntimeApplier,
+    PaymentSettingsRuntimeError, SessionPrincipal, UserTopupConfiguration, UserTopupError,
+    UserTopupOrderCreateCommand, UserTopupOrderCreateFuture, UserTopupProviderRoute,
+    UserTopupService,
 };
 use af_billing::{
-    EASYPAY_PAYMENT_PROVIDER, EasyPayPaymentMethod, EasyPayPaymentProvider,
-    STRIPE_PAYMENT_PROVIDER, StripePaymentProvider, TopupWebhookProcessor,
+    DatabasePaymentWebhookRouter, EASYPAY_PAYMENT_PROVIDER, EasyPayPaymentMethod,
+    EasyPayPaymentProvider, PaymentOrderProvider, PaymentWebhookHandler, PaymentWebhookProcessor,
+    RefundProvider, RefundReceiptHandler, RefundReceiptProcessor, RefundSubmissionOutcome,
+    RefundSubmissionProcessor, STRIPE_PAYMENT_PROVIDER, StripePaymentProvider,
 };
 use af_db::{
-    EncryptedCredentialEnvelope, PaymentSettingsRecord, SiteSettingsRepository, TopupRepository,
+    EncryptedCredentialEnvelope, PaymentSettingsRecord, RefundRepository, SiteSettingsRepository,
+    SubscriptionRepository, TopupRepository,
 };
-use af_http::PaymentWebhookProcessorRegistry;
+use af_http::{PaymentWebhookProcessorRegistry, RefundReceiptProcessorRegistry};
 use af_httpclient::HttpClientProvider;
 use url::Url;
 
+use crate::epay_refund::EasyPayRefundProvider;
 use crate::stripe_payment_intent::StripePaymentIntentProvider;
+use crate::stripe_refund::StripeRefundProvider;
 
 const EASYPAY_PRODUCT_NAME: &str = "AnyFlows 余额充值";
 
 /// 支付运行时的不可变快照；一次请求始终持有同一代 Provider 组合。
 struct PaymentRuntimeSnapshot {
     user_topup_service: Option<Arc<dyn UserTopupService>>,
-    webhook_processors: HashMap<String, Arc<TopupWebhookProcessor>>,
+    webhook_processors: HashMap<String, Arc<dyn PaymentWebhookHandler>>,
+    refund_providers: HashMap<String, Arc<dyn RefundProvider>>,
+    refund_receipt_processors: HashMap<String, Arc<dyn RefundReceiptHandler>>,
+    refund_auto_submit_enabled: bool,
 }
 
 impl PaymentRuntimeSnapshot {
@@ -38,6 +47,9 @@ impl PaymentRuntimeSnapshot {
         Self {
             user_topup_service: None,
             webhook_processors: HashMap::new(),
+            refund_providers: HashMap::new(),
+            refund_receipt_processors: HashMap::new(),
+            refund_auto_submit_enabled: false,
         }
     }
 }
@@ -46,6 +58,8 @@ impl PaymentRuntimeSnapshot {
 pub(crate) struct PaymentRuntime {
     snapshot: RwLock<Arc<PaymentRuntimeSnapshot>>,
     topup_repository: TopupRepository,
+    refund_repository: RefundRepository,
+    subscription_repository: SubscriptionRepository,
     site_settings_repository: SiteSettingsRepository,
     upstream_clients: HttpClientProvider,
     request_timeout: Duration,
@@ -55,6 +69,8 @@ impl PaymentRuntime {
     /// 使用稳定数据库与网络依赖创建初始禁用的支付运行时。
     pub(crate) fn new(
         topup_repository: TopupRepository,
+        refund_repository: RefundRepository,
+        subscription_repository: SubscriptionRepository,
         site_settings_repository: SiteSettingsRepository,
         upstream_clients: HttpClientProvider,
         request_timeout: Duration,
@@ -62,6 +78,8 @@ impl PaymentRuntime {
         Self {
             snapshot: RwLock::new(Arc::new(PaymentRuntimeSnapshot::disabled())),
             topup_repository,
+            refund_repository,
+            subscription_repository,
             site_settings_repository,
             upstream_clients,
             request_timeout,
@@ -74,14 +92,31 @@ impl PaymentRuntime {
         cipher: &SystemSecretCipher,
     ) -> Result<PaymentRuntimeSnapshot, PaymentSettingsRuntimeError> {
         let mut routes = Vec::new();
-        let mut webhook_processors = HashMap::new();
+        let mut webhook_processors: HashMap<String, Arc<dyn PaymentWebhookHandler>> =
+            HashMap::new();
+        let mut refund_providers: HashMap<String, Arc<dyn RefundProvider>> = HashMap::new();
+        let mut refund_receipt_processors: HashMap<String, Arc<dyn RefundReceiptHandler>> =
+            HashMap::new();
 
         if record.stripe_enabled() {
-            self.add_stripe(record, cipher, &mut routes, &mut webhook_processors)?;
+            self.add_stripe(
+                record,
+                cipher,
+                &mut routes,
+                &mut webhook_processors,
+                &mut refund_providers,
+                &mut refund_receipt_processors,
+            )?;
         }
         if record.epay_enabled() {
-            self.add_epay(record, cipher, &mut routes, &mut webhook_processors)
-                .await?;
+            self.add_epay(
+                record,
+                cipher,
+                &mut routes,
+                &mut webhook_processors,
+                &mut refund_providers,
+            )
+            .await?;
         }
 
         let user_topup_service = if routes.is_empty() {
@@ -94,6 +129,9 @@ impl PaymentRuntime {
         Ok(PaymentRuntimeSnapshot {
             user_topup_service,
             webhook_processors,
+            refund_providers,
+            refund_receipt_processors,
+            refund_auto_submit_enabled: record.refund_auto_submit_enabled(),
         })
     }
 
@@ -102,7 +140,9 @@ impl PaymentRuntime {
         record: &PaymentSettingsRecord,
         cipher: &SystemSecretCipher,
         routes: &mut Vec<UserTopupProviderRoute>,
-        processors: &mut HashMap<String, Arc<TopupWebhookProcessor>>,
+        processors: &mut HashMap<String, Arc<dyn PaymentWebhookHandler>>,
+        refund_providers: &mut HashMap<String, Arc<dyn RefundProvider>>,
+        refund_receipt_processors: &mut HashMap<String, Arc<dyn RefundReceiptHandler>>,
     ) -> Result<(), PaymentSettingsRuntimeError> {
         let publishable_key = record
             .stripe_publishable_key()
@@ -132,6 +172,16 @@ impl PaymentRuntime {
                 .map_err(|_| runtime_failed("stripe_route"))?,
         );
 
+        let refund_provider = Arc::new(
+            StripeRefundProvider::new(
+                secret_key.expose_secret(),
+                self.upstream_clients.clone(),
+                self.request_timeout,
+            )
+            .map_err(|_| runtime_failed("stripe_refund_provider"))?,
+        );
+        refund_providers.insert(STRIPE_PAYMENT_PROVIDER.to_owned(), refund_provider);
+
         let webhook_provider = Arc::new(
             StripePaymentProvider::new(
                 webhook_secret.expose_secret(),
@@ -141,9 +191,19 @@ impl PaymentRuntime {
         );
         processors.insert(
             STRIPE_PAYMENT_PROVIDER.to_owned(),
-            Arc::new(TopupWebhookProcessor::new(
+            Arc::new(PaymentWebhookProcessor::new(
+                webhook_provider.clone(),
+                Arc::new(DatabasePaymentWebhookRouter::new(
+                    self.topup_repository.clone(),
+                    self.subscription_repository.clone(),
+                )),
+            )),
+        );
+        refund_receipt_processors.insert(
+            STRIPE_PAYMENT_PROVIDER.to_owned(),
+            Arc::new(RefundReceiptProcessor::new(
                 webhook_provider,
-                Arc::new(self.topup_repository.clone()),
+                self.refund_repository.clone(),
             )),
         );
         Ok(())
@@ -154,7 +214,8 @@ impl PaymentRuntime {
         record: &PaymentSettingsRecord,
         cipher: &SystemSecretCipher,
         routes: &mut Vec<UserTopupProviderRoute>,
-        processors: &mut HashMap<String, Arc<TopupWebhookProcessor>>,
+        processors: &mut HashMap<String, Arc<dyn PaymentWebhookHandler>>,
+        refund_providers: &mut HashMap<String, Arc<dyn RefundProvider>>,
     ) -> Result<(), PaymentSettingsRuntimeError> {
         let gateway_url = record
             .epay_gateway_url()
@@ -196,6 +257,20 @@ impl PaymentRuntime {
             )
             .map_err(|_| runtime_failed("epay_provider"))?,
         );
+        if record.epay_refund_enabled() {
+            // 易支付退款协议并非所有服务商都提供，只有显式开启时才暴露退款 Provider。
+            let refund_provider = Arc::new(
+                EasyPayRefundProvider::new(
+                    gateway_url,
+                    merchant_id,
+                    merchant_key.expose_secret(),
+                    self.upstream_clients.clone(),
+                    self.request_timeout,
+                )
+                .map_err(|_| runtime_failed("epay_refund_provider"))?,
+            );
+            refund_providers.insert(EASYPAY_PAYMENT_PROVIDER.to_owned(), refund_provider);
+        }
         if record.epay_alipay_enabled() {
             routes.push(
                 UserTopupProviderRoute::epay(
@@ -218,9 +293,12 @@ impl PaymentRuntime {
         }
         processors.insert(
             EASYPAY_PAYMENT_PROVIDER.to_owned(),
-            Arc::new(TopupWebhookProcessor::new(
+            Arc::new(PaymentWebhookProcessor::new(
                 provider,
-                Arc::new(self.topup_repository.clone()),
+                Arc::new(DatabasePaymentWebhookRouter::new(
+                    self.topup_repository.clone(),
+                    self.subscription_repository.clone(),
+                )),
             )),
         );
         Ok(())
@@ -231,6 +309,85 @@ impl PaymentRuntime {
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
+    }
+
+    /// 返回当前快照中的退款 Provider，供退款提交/恢复入口复用同一配置版本。
+    #[allow(dead_code)]
+    pub(crate) fn refund_provider(&self, provider: &str) -> Option<Arc<dyn RefundProvider>> {
+        self.current_snapshot()
+            .refund_providers
+            .get(provider)
+            .cloned()
+    }
+}
+
+impl AdminRefundSubmitter for PaymentRuntime {
+    fn auto_submit_enabled<'a>(
+        &'a self,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<bool, AdminRefundError>> + Send + 'a>,
+    > {
+        Box::pin(async move { Ok(self.current_snapshot().refund_auto_submit_enabled) })
+    }
+
+    fn submit<'a>(
+        &'a self,
+        record: &'a af_domain::RefundRequestRecord,
+        now: u64,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<af_domain::RefundRequestRecord, AdminRefundError>,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            if record.approval_status() != af_domain::RefundApprovalStatus::Approved
+                || !matches!(
+                    record.status(),
+                    af_domain::RefundRequestStatus::Requested
+                        | af_domain::RefundRequestStatus::Failed
+                )
+            {
+                return Err(AdminRefundError::Conflict);
+            }
+            let payment_reference = record
+                .payment_reference()
+                .ok_or(AdminRefundError::Unavailable)?;
+            let provider = self
+                .refund_provider(record.provider())
+                .ok_or(AdminRefundError::Unavailable)?;
+            let processor =
+                RefundSubmissionProcessor::new(provider, self.refund_repository.clone());
+            let outcome = processor
+                .submit(record.request_id(), payment_reference.to_owned(), now)
+                .await
+                .map_err(map_admin_refund_submission_error)?;
+            Ok(match outcome {
+                RefundSubmissionOutcome::Applied(record)
+                | RefundSubmissionOutcome::Existing(record) => record,
+            })
+        })
+    }
+}
+
+fn map_admin_refund_submission_error(
+    error: af_billing::RefundSubmissionProcessorError,
+) -> AdminRefundError {
+    match error {
+        af_billing::RefundSubmissionProcessorError::NotFound => AdminRefundError::NotFound,
+        af_billing::RefundSubmissionProcessorError::Conflict => AdminRefundError::Conflict,
+        af_billing::RefundSubmissionProcessorError::OutcomeUnknown => {
+            AdminRefundError::OutcomeUnknown
+        }
+        af_billing::RefundSubmissionProcessorError::Unavailable => AdminRefundError::Unavailable,
+        af_billing::RefundSubmissionProcessorError::Rejected
+        | af_billing::RefundSubmissionProcessorError::InvalidResponse => {
+            AdminRefundError::AutoSubmitFailed
+        }
+        af_billing::RefundSubmissionProcessorError::InvalidInput
+        | af_billing::RefundSubmissionProcessorError::Invariant => AdminRefundError::Internal,
     }
 }
 
@@ -262,6 +419,19 @@ impl UserTopupService for PaymentRuntime {
             .configuration()
     }
 
+    fn provider_for(
+        &self,
+        provider: &str,
+        payment_method: &str,
+    ) -> Result<Arc<dyn PaymentOrderProvider>, UserTopupError> {
+        let snapshot = self.current_snapshot();
+        snapshot
+            .user_topup_service
+            .as_ref()
+            .ok_or(UserTopupError::Unavailable)?
+            .provider_for(provider, payment_method)
+    }
+
     fn create<'a>(
         &'a self,
         principal: SessionPrincipal,
@@ -279,9 +449,18 @@ impl UserTopupService for PaymentRuntime {
 }
 
 impl PaymentWebhookProcessorRegistry for PaymentRuntime {
-    fn processor(&self, provider: &str) -> Option<Arc<TopupWebhookProcessor>> {
+    fn processor(&self, provider: &str) -> Option<Arc<dyn PaymentWebhookHandler>> {
         self.current_snapshot()
             .webhook_processors
+            .get(provider)
+            .cloned()
+    }
+}
+
+impl RefundReceiptProcessorRegistry for PaymentRuntime {
+    fn processor(&self, provider: &str) -> Option<Arc<dyn RefundReceiptHandler>> {
+        self.current_snapshot()
+            .refund_receipt_processors
             .get(provider)
             .cloned()
     }

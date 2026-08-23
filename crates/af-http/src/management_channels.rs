@@ -85,6 +85,9 @@ pub(crate) struct AdminChannelResponse {
     auto_ban_rules: AdminChannelAutoBanRulesDto,
     /// 外部账号池模式开启时不维护渠道级本地故障状态。
     pool_mode: bool,
+    /// 默认关闭的版本化客户端仿真档案。
+    #[schema(value_type = Option<crate::openapi::schema::ClientSimulationProfileSchema>)]
+    client_simulation_profile: Option<af_domain::ClientSimulationProfile>,
     /// 是否显式允许该原生 Responses 渠道使用 WebSocket。
     responses_websocket_enabled: bool,
     /// Compact 能力由探测决定、强制开启或强制关闭。
@@ -190,6 +193,7 @@ impl AdminChannelResponse {
             auto_ban: channel.auto_ban(),
             auto_ban_rules: AdminChannelAutoBanRulesDto::from(channel.auto_ban_rules()),
             pool_mode: channel.pool_mode(),
+            client_simulation_profile: channel.client_simulation_profile(),
             responses_websocket_enabled: channel.responses_websocket_enabled(),
             responses_compact_mode: channel.responses_compact_mode(),
             responses_compact_model_mapping: channel.responses_compact_model_mapping().clone(),

@@ -13,18 +13,52 @@ pub(crate) enum ManagementError {
     InvalidRequest,
     /// 用户名或密码不正确。
     InvalidCredentials,
+    /// 用户名密码正确，但需要输入 TOTP 或备份码。
+    TwoFactorRequired,
+    /// TOTP 或备份码校验失败。
+    TwoFactorInvalid,
     /// 用户名密码登录已被运营设置关闭。
     LoginDisabled,
+    /// Turnstile token 无效、过期或缺失。
+    TurnstileRejected,
+    /// Turnstile 上游验证不可用，服务端失败关闭认证入口。
+    TurnstileUnavailable,
     /// JWT 缺失、无效、过期或对应用户已失效。
     InvalidSession,
     /// 当前会话没有访问该管理端点的角色权限。
     Forbidden,
     /// 系统已经完成首次安装，或并发请求先完成了安装。
     SetupConflict,
+    /// 站点设置版本已被其他管理员推进。
+    SiteSettingsConflict,
     /// 用户不存在或已经被软删除。
     UserNotFound,
     /// 用户名或邮箱与当前有效用户冲突。
     UserConflict,
+    /// 企业不存在、已关闭或当前用户不是活动成员。
+    OrganizationNotFound,
+    /// 企业邀请不存在或不属于路径企业。
+    OrganizationInvitationNotFound,
+    /// 企业邀请批次、邮箱或生命周期事实发生冲突。
+    OrganizationInvitationConflict,
+    /// 企业授权下没有可供新邀请占用的席位。
+    OrganizationSeatLimitReached,
+    /// 企业邀请已经超过受信过期时间。
+    OrganizationInvitationExpired,
+    /// 邀请令牌、邮箱或当前状态不允许接受；不细分具体事实。
+    OrganizationInvitationRejected,
+    /// 企业成员或团队 CAS 版本冲突。
+    OrganizationLifecycleConflict,
+    /// 企业成员或团队生命周期状态不允许当前转换。
+    OrganizationLifecycleTransitionInvalid,
+    /// 当前操作会移除企业最后一个 Owner。
+    OrganizationLastOwner,
+    /// 团队仍有活动成员归属。
+    OrganizationTeamInUse,
+    /// 企业授权不允许当前生命周期写入。
+    OrganizationEntitlementRestricted,
+    /// 企业团队容量已用尽。
+    OrganizationTeamLimitReached,
     /// 钱包事件键已经绑定不同业务事实。
     WalletEventConflict,
     /// 负向调账会使用户余额低于零。
@@ -33,6 +67,15 @@ pub(crate) enum ManagementError {
     WalletOverflow,
     /// 调账提交结果未知，调用方必须复用同一事件键确认。
     WalletOutcomeUnknown,
+    RefundNotFound,
+    RefundConflict,
+    RefundUnavailable,
+    RefundAutoSubmitFailed,
+    RefundOutcomeUnknown,
+    /// 预算策略版本或预留状态与请求不一致。
+    BudgetConflict,
+    /// 预算写入结果未知，调用方必须按原请求重试或查询。
+    BudgetOutcomeUnknown,
     /// 当前实例尚未配置可用的 Stripe 充值通道。
     TopupUnavailable,
     /// Stripe 确定拒绝服务端构造的 PaymentIntent 请求。
@@ -72,7 +115,9 @@ pub(crate) enum ManagementError {
     /// 当前实例尚未启用公开注册。
     RegistrationDisabled,
     /// 当前客户端已耗尽公开注册固定窗口尝试次数。
-    RegistrationRateLimited { retry_after_seconds: u64 },
+    RegistrationRateLimited {
+        retry_after_seconds: u64,
+    },
     /// 验证码无效或带邮箱身份无法创建；不得细分具体原因。
     RegistrationRejected,
     /// 邀请码不存在、已失效或对应邀请人当前不可用。
@@ -81,6 +126,10 @@ pub(crate) enum ManagementError {
     PasswordResetRejected,
     /// 当前密码校验失败；不代表当前会话已经失效。
     PasswordChangeRejected,
+    /// 当前用户已经启用 TOTP。
+    TwoFactorAlreadyEnabled,
+    /// 当前用户尚未启用 TOTP。
+    TwoFactorNotEnabled,
     /// SMTP 设置尚未达到可投递状态。
     EmailNotConfigured,
     /// SMTP 连接、认证或投递失败，底层响应不会向外透传。
@@ -149,6 +198,8 @@ pub(crate) enum ManagementError {
     TokenNotFound,
     /// 当前用户的未软删除 API Key 已达到容量上限。
     TokenLimitReached,
+    /// 企业 API Key 写操作提交结果未知，调用方必须查询确认。
+    TokenOutcomeUnknown,
     /// 渠道不存在或已经被软删除。
     ChannelNotFound,
     /// 凭据不存在、已经软删除或不属于指定渠道。
@@ -159,6 +210,8 @@ pub(crate) enum ManagementError {
     ProbeUnavailable,
     /// 请求的上游 OAuth provider 未在启动配置中启用。
     OauthProviderNotConfigured,
+    /// 用户登录 OAuth Provider 设置已被其他管理员更新。
+    OauthLoginSettingsConflict,
     /// 目标 OAuth 凭据已经绑定其他 provider。
     OauthCredentialProviderMismatch,
     /// 单实例待完成 OAuth 授权已达到容量上限。
@@ -226,11 +279,39 @@ impl IntoResponse for ManagementError {
                     message: "Invalid credentials",
                 },
             ),
+            Self::TwoFactorRequired => (
+                StatusCode::UNAUTHORIZED,
+                ManagementErrorBody {
+                    code: "two_factor_required",
+                    message: "Two-factor authentication required",
+                },
+            ),
+            Self::TwoFactorInvalid => (
+                StatusCode::UNAUTHORIZED,
+                ManagementErrorBody {
+                    code: "two_factor_invalid",
+                    message: "Invalid two-factor authentication code",
+                },
+            ),
             Self::LoginDisabled => (
                 StatusCode::FORBIDDEN,
                 ManagementErrorBody {
                     code: "password_login_disabled",
                     message: "Password login disabled",
+                },
+            ),
+            Self::TurnstileRejected => (
+                StatusCode::FORBIDDEN,
+                ManagementErrorBody {
+                    code: "turnstile_rejected",
+                    message: "Turnstile verification rejected",
+                },
+            ),
+            Self::TurnstileUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "turnstile_unavailable",
+                    message: "Turnstile verification unavailable",
                 },
             ),
             Self::InvalidSession => (
@@ -254,6 +335,13 @@ impl IntoResponse for ManagementError {
                     message: "Setup already completed",
                 },
             ),
+            Self::SiteSettingsConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "site_settings_conflict",
+                    message: "Site settings changed",
+                },
+            ),
             Self::UserNotFound => (
                 StatusCode::NOT_FOUND,
                 ManagementErrorBody {
@@ -266,6 +354,90 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "user_conflict",
                     message: "User conflict",
+                },
+            ),
+            Self::OrganizationNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "organization_not_found",
+                    message: "Organization not found",
+                },
+            ),
+            Self::OrganizationInvitationNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "organization_invitation_not_found",
+                    message: "Organization invitation not found",
+                },
+            ),
+            Self::OrganizationInvitationConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_invitation_conflict",
+                    message: "Organization invitation conflict",
+                },
+            ),
+            Self::OrganizationSeatLimitReached => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_seat_limit_reached",
+                    message: "Organization seat limit reached",
+                },
+            ),
+            Self::OrganizationInvitationExpired => (
+                StatusCode::GONE,
+                ManagementErrorBody {
+                    code: "organization_invitation_expired",
+                    message: "Organization invitation expired",
+                },
+            ),
+            Self::OrganizationInvitationRejected => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_invitation_rejected",
+                    message: "Organization invitation rejected",
+                },
+            ),
+            Self::OrganizationLifecycleConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_lifecycle_conflict",
+                    message: "Organization lifecycle conflict",
+                },
+            ),
+            Self::OrganizationLifecycleTransitionInvalid => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_lifecycle_transition_invalid",
+                    message: "Organization lifecycle transition invalid",
+                },
+            ),
+            Self::OrganizationLastOwner => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_last_owner",
+                    message: "Organization must retain an active owner",
+                },
+            ),
+            Self::OrganizationTeamInUse => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_team_in_use",
+                    message: "Organization team still has active members",
+                },
+            ),
+            Self::OrganizationEntitlementRestricted => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_entitlement_restricted",
+                    message: "Organization entitlement restricts this operation",
+                },
+            ),
+            Self::OrganizationTeamLimitReached => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_team_limit_reached",
+                    message: "Organization team limit reached",
                 },
             ),
             Self::WalletEventConflict => (
@@ -294,6 +466,55 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "wallet_outcome_unknown",
                     message: "Wallet outcome unknown",
+                },
+            ),
+            Self::RefundNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "refund_not_found",
+                    message: "Refund request not found",
+                },
+            ),
+            Self::RefundConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "refund_conflict",
+                    message: "Refund request state conflict",
+                },
+            ),
+            Self::RefundUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "refund_unavailable",
+                    message: "Refund service unavailable",
+                },
+            ),
+            Self::RefundAutoSubmitFailed => (
+                StatusCode::BAD_GATEWAY,
+                ManagementErrorBody {
+                    code: "refund_auto_submit_failed",
+                    message: "Refund provider rejected the automatic submission",
+                },
+            ),
+            Self::RefundOutcomeUnknown => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "refund_outcome_unknown",
+                    message: "Refund submission outcome unknown",
+                },
+            ),
+            Self::BudgetConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "budget_conflict",
+                    message: "Budget state conflict",
+                },
+            ),
+            Self::BudgetOutcomeUnknown => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "budget_outcome_unknown",
+                    message: "Budget write outcome unknown",
                 },
             ),
             Self::TopupUnavailable => (
@@ -462,6 +683,20 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "password_change_rejected",
                     message: "Current password is incorrect",
+                },
+            ),
+            Self::TwoFactorAlreadyEnabled => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "two_factor_already_enabled",
+                    message: "Two-factor authentication is already enabled",
+                },
+            ),
+            Self::TwoFactorNotEnabled => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "two_factor_not_enabled",
+                    message: "Two-factor authentication is not enabled",
                 },
             ),
             Self::EmailNotConfigured => (
@@ -702,6 +937,13 @@ impl IntoResponse for ManagementError {
                     message: "Token limit reached",
                 },
             ),
+            Self::TokenOutcomeUnknown => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "token_outcome_unknown",
+                    message: "Token write outcome unknown",
+                },
+            ),
             Self::ChannelNotFound => (
                 StatusCode::NOT_FOUND,
                 ManagementErrorBody {
@@ -735,6 +977,13 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "oauth_provider_not_configured",
                     message: "OAuth provider not configured",
+                },
+            ),
+            Self::OauthLoginSettingsConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "oauth_login_settings_conflict",
+                    message: "OAuth login settings changed",
                 },
             ),
             Self::OauthCredentialProviderMismatch => (

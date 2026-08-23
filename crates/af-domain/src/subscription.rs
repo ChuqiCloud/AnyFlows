@@ -90,10 +90,57 @@ opaque_subscription_id!(
     "SubscriptionPlanId"
 );
 opaque_subscription_id!(
+    /// 订阅购买订单的稳定业务标识。
+    SubscriptionOrderId,
+    "SubscriptionOrderId"
+);
+opaque_subscription_id!(
+    /// 创建订阅购买订单时由调用方复用的幂等请求标识。
+    SubscriptionOrderRequestId,
+    "SubscriptionOrderRequestId"
+);
+opaque_subscription_id!(
     /// 用户订阅记录及其幂等绑定的稳定业务标识。
     UserSubscriptionId,
     "UserSubscriptionId"
 );
+opaque_subscription_id!(
+    /// 订阅订单已验签支付事件的本地审计标识。
+    SubscriptionPaymentEventId,
+    "SubscriptionPaymentEventId"
+);
+
+/// 订阅购买订单的闭合状态集合。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(i16)]
+pub enum SubscriptionOrderStatus {
+    /// 本地订单已创建，尚未向支付 Provider 发起支付。
+    Created = 1,
+    /// Provider 订单已建立，等待支付结果。
+    Pending = 2,
+    /// Provider 已确认支付成功。
+    Paid = 3,
+    /// Provider 已明确报告支付失败。
+    Failed = 4,
+    /// 本地或 Provider 已取消订单。
+    Canceled = 5,
+    /// 订单已超过有效期。
+    Expired = 6,
+}
+
+impl SubscriptionOrderStatus {
+    /// 返回持久化使用的稳定数值。
+    #[must_use]
+    pub const fn code(self) -> i16 {
+        self as i16
+    }
+
+    /// 判断订单是否仍允许接收支付确认。
+    #[must_use]
+    pub const fn is_open(self) -> bool {
+        matches!(self, Self::Created | Self::Pending)
+    }
+}
 
 /// 订阅计划的闭合启停状态。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -187,6 +234,12 @@ pub enum SubscriptionStateCodeError {
     /// 数据库周期不属于闭合集合。
     #[error("订阅周期无效")]
     InvalidCycle,
+    /// 订阅购买订单状态不属于闭合集合。
+    #[error("订阅购买订单状态无效")]
+    InvalidOrderStatus,
+    /// 订阅支付事件类型不属于闭合集合。
+    #[error("订阅支付事件类型无效")]
+    InvalidPaymentEventType,
 }
 
 impl TryFrom<i16> for SubscriptionPlanStatus {
@@ -225,6 +278,65 @@ impl TryFrom<i16> for SubscriptionCycle {
             3 => Ok(Self::Monthly),
             4 => Ok(Self::Yearly),
             _ => Err(SubscriptionStateCodeError::InvalidCycle),
+        }
+    }
+}
+
+impl TryFrom<i16> for SubscriptionOrderStatus {
+    type Error = SubscriptionStateCodeError;
+
+    fn try_from(value: i16) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::Created),
+            2 => Ok(Self::Pending),
+            3 => Ok(Self::Paid),
+            4 => Ok(Self::Failed),
+            5 => Ok(Self::Canceled),
+            6 => Ok(Self::Expired),
+            _ => Err(SubscriptionStateCodeError::InvalidOrderStatus),
+        }
+    }
+}
+
+/// 已验签订阅支付 webhook 的闭合事件类型。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(i16)]
+pub enum SubscriptionPaymentEventType {
+    /// Provider 确认资金支付成功。
+    Succeeded = 1,
+    /// Provider 明确报告支付失败。
+    Failed = 2,
+    /// Provider 确认订单已过期。
+    Expired = 3,
+}
+
+impl SubscriptionPaymentEventType {
+    /// 返回持久化使用的稳定数值。
+    #[must_use]
+    pub const fn code(self) -> i16 {
+        self as i16
+    }
+
+    /// 返回本事件首次应用时对应的订单终态。
+    #[must_use]
+    pub const fn target_status(self) -> SubscriptionOrderStatus {
+        match self {
+            Self::Succeeded => SubscriptionOrderStatus::Paid,
+            Self::Failed => SubscriptionOrderStatus::Failed,
+            Self::Expired => SubscriptionOrderStatus::Expired,
+        }
+    }
+}
+
+impl TryFrom<i16> for SubscriptionPaymentEventType {
+    type Error = SubscriptionStateCodeError;
+
+    fn try_from(value: i16) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::Succeeded),
+            2 => Ok(Self::Failed),
+            3 => Ok(Self::Expired),
+            _ => Err(SubscriptionStateCodeError::InvalidPaymentEventType),
         }
     }
 }

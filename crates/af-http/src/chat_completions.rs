@@ -4,15 +4,15 @@ use af_admin::{
     AdminChannelReader, AdminChannelWriter, AdminGroupReader, AdminGroupWriter,
     AdminModelPriceService, AdminModelReader, AdminModelSyncService, AdminModelWriter,
     AdminRouteReader, AdminRouteWriter, AdminTokenReader, AdminTokenWriter, AdminUsageLogReader,
-    AdminUserReader, AdminUserWriter, AdminWalletService, InitialSetup, SessionAuthenticator,
-    TokenAuthentication,
+    AdminUserReader, AdminUserWriter, AdminWalletService, InitialSetup, PlatformAuditService,
+    SessionAuthenticator, TokenAuthentication,
 };
 use af_analytics::AdminDashboardReader;
 use af_domain::{AfError, Protocol, TokenModelPolicy};
 use af_protocol::{
     CanonicalRequestEnvelope, apply_reasoning_model_suffix, openai_chat::parse_request_envelope,
 };
-use af_relay::ChatResponse;
+use af_relay::{ChatResponse, RelayDiagnosticInput};
 use af_telemetry::RequestId;
 use axum::{
     body::Bytes,
@@ -20,7 +20,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use http::{
-    HeaderValue, StatusCode,
+    HeaderMap, HeaderValue, StatusCode,
     header::{CACHE_CONTROL, CONTENT_TYPE},
 };
 
@@ -62,6 +62,14 @@ pub(crate) struct HttpState {
     pub(crate) admin_user_reader: Arc<dyn AdminUserReader>,
     pub(crate) admin_user_writer: Arc<dyn AdminUserWriter>,
     pub(crate) admin_wallet_service: Option<Arc<dyn AdminWalletService>>,
+    pub(crate) admin_refund_service: Option<Arc<dyn af_admin::AdminRefundService>>,
+    pub(crate) platform_audit_service: Option<Arc<dyn PlatformAuditService>>,
+    pub(crate) organization_authorization_service:
+        Option<Arc<dyn af_admin::OrganizationAuthorizationService>>,
+    pub(crate) organization_invitation_service:
+        Option<Arc<dyn af_admin::OrganizationInvitationService>>,
+    pub(crate) organization_management_service:
+        Option<Arc<dyn af_admin::OrganizationManagementService>>,
     stream_delivery: StreamDeliveryPolicy,
 }
 
@@ -106,6 +114,11 @@ impl HttpState {
             admin_user_reader,
             admin_user_writer,
             admin_wallet_service: None,
+            admin_refund_service: None,
+            platform_audit_service: None,
+            organization_authorization_service: None,
+            organization_invitation_service: None,
+            organization_management_service: None,
             stream_delivery: StreamDeliveryPolicy::default(),
         }
     }
@@ -188,6 +201,51 @@ impl HttpState {
         service: Option<Arc<dyn AdminWalletService>>,
     ) -> Self {
         self.admin_wallet_service = service;
+        self
+    }
+
+    /// 注入管理员退款审批与人工提交服务。
+    pub(crate) fn with_admin_refund_service(
+        mut self,
+        service: Option<Arc<dyn af_admin::AdminRefundService>>,
+    ) -> Self {
+        self.admin_refund_service = service;
+        self
+    }
+
+    /// 注入平台权限与只追加管理审计服务。
+    pub(crate) fn with_platform_audit_service(
+        mut self,
+        service: Option<Arc<dyn PlatformAuditService>>,
+    ) -> Self {
+        self.platform_audit_service = service;
+        self
+    }
+
+    /// 注入企业上下文只读授权服务；未注入时不注册企业入口。
+    pub(crate) fn with_organization_authorization_service(
+        mut self,
+        service: Option<Arc<dyn af_admin::OrganizationAuthorizationService>>,
+    ) -> Self {
+        self.organization_authorization_service = service;
+        self
+    }
+
+    /// 注入企业邀请服务；只有授权服务同时存在时才注册邀请入口。
+    pub(crate) fn with_organization_invitation_service(
+        mut self,
+        service: Option<Arc<dyn af_admin::OrganizationInvitationService>>,
+    ) -> Self {
+        self.organization_invitation_service = service;
+        self
+    }
+
+    /// 注入企业成员与团队生命周期服务；未注入时不注册生命周期入口。
+    pub(crate) fn with_organization_management_service(
+        mut self,
+        service: Option<Arc<dyn af_admin::OrganizationManagementService>>,
+    ) -> Self {
+        self.organization_management_service = service;
         self
     }
 
@@ -326,8 +384,10 @@ pub(crate) async fn chat_completions(
     State(state): State<HttpState>,
     Extension(request_id): Extension<RequestId>,
     Extension(authentication): Extension<TokenAuthentication>,
+    headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, OpenAiHttpError> {
+    let diagnostic = RelayDiagnosticInput::capture("POST", "/v1/chat/completions", &headers, &body);
     let request = prepare_chat_request(body, authentication.model_policy())?;
     let principal = authentication.principal();
     let response = state
@@ -338,6 +398,7 @@ pub(crate) async fn chat_completions(
             request,
             Protocol::OpenAiChat,
             request_id.as_str(),
+            diagnostic,
         )
         .await
         .map_err(OpenAiHttpError::from)?;

@@ -163,6 +163,18 @@ string_enum! {
     }
 }
 
+impl CredentialQuotaDimension {
+    /// 根据已归一化的 Canonical 模型选择固定额度维度。
+    #[must_use]
+    pub fn for_canonical_model(model: &str) -> Self {
+        if model == "gpt-5.3-codex-spark" {
+            Self::Spark
+        } else {
+            Self::Global
+        }
+    }
+}
+
 string_enum! {
     /// 一次 Canonical 请求执行的操作类型。
     pub enum Operation {
@@ -212,6 +224,28 @@ string_enum! {
 }
 
 string_enum! {
+    /// 出站请求可显式选择的版本化客户端仿真档案。
+    ///
+    /// 关闭状态由配置缺失表达，避免把默认关闭误序列化为已选择档案。
+    pub enum ClientSimulationProfile {
+        /// 只模拟 Anthropic CLI 的稳定 HTTP 身份 Header，不改变正文或协议能力。
+        AnthropicCliHeadersV1 => "anthropic_cli_headers_v1",
+    }
+}
+
+string_enum! {
+    /// 单个上游 Attempt 的客户端仿真应用结果。
+    pub enum ClientSimulationResult {
+        /// 当前候选配置了档案，但在应用前已结束。
+        NotApplied => "not_applied",
+        /// 白名单身份 Header 已通过统一请求预算校验。
+        Applied => "applied",
+        /// 档案不匹配或补丁校验失败，请求未发送。
+        Failed => "failed",
+    }
+}
+
+string_enum! {
     /// 渠道选择的上游适配器类型。
     pub enum ChannelType {
         /// OpenAI 及其兼容 API。
@@ -250,6 +284,16 @@ string_enum! {
         ServiceAccount => "service_account",
         /// 存储为 `upstream` 的凭据种类。
         Upstream => "upstream",
+    }
+}
+
+string_enum! {
+    /// 凭据使用的固定上游额度维度。
+    pub enum CredentialQuotaDimension {
+        /// 普通模型共享的全局额度。
+        Global => "global",
+        /// GPT-5.3 Codex Spark 使用的独立额度。
+        Spark => "spark",
     }
 }
 

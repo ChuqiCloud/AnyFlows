@@ -436,6 +436,22 @@ pub(crate) enum AdminChannelWriteProtocolSchema {
 
 #[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
 #[derive(ToSchema)]
+#[schema(as = ClientSimulationProfile, rename_all = "snake_case")]
+pub(crate) enum ClientSimulationProfileSchema {
+    AnthropicCliHeadersV1,
+}
+
+#[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
+#[derive(ToSchema)]
+#[schema(as = ClientSimulationResult, rename_all = "snake_case")]
+pub(crate) enum ClientSimulationResultSchema {
+    NotApplied,
+    Applied,
+    Failed,
+}
+
+#[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
+#[derive(ToSchema)]
 #[schema(as = ResponsesCompactMode, rename_all = "snake_case")]
 pub(crate) enum ResponsesCompactModeSchema {
     Auto,
@@ -486,7 +502,9 @@ pub(crate) enum AdminCredentialMultiKeyModeSchema {
 #[derive(ToSchema)]
 #[schema(as = AdminCredentialQuotaDimension, rename_all = "snake_case")]
 pub(crate) enum AdminCredentialQuotaDimensionSchema {
+    /// 普通凭据使用的全局额度窗口。
     Global,
+    /// 仅 `gpt-5.3-codex-spark` 使用的影子额度窗口。
     Spark,
 }
 
@@ -620,18 +638,25 @@ pub(crate) enum BearerTokenTypeSchema {
 pub(crate) enum ManagementErrorCodeSchema {
     InvalidRequest,
     InvalidCredentials,
+    TwoFactorRequired,
+    TwoFactorInvalid,
     PasswordLoginDisabled,
+    TurnstileRejected,
+    TurnstileUnavailable,
     InvalidSession,
     Forbidden,
     SetupConflict,
+    SiteSettingsConflict,
     UserNotFound,
     GroupNotFound,
     TokenNotFound,
     TokenLimitReached,
+    TokenOutcomeUnknown,
     ChannelNotFound,
     CredentialNotFound,
     ProbeUnavailable,
     OauthProviderNotConfigured,
+    OauthLoginSettingsConflict,
     OauthCredentialProviderMismatch,
     OauthAuthorizationCapacityExceeded,
     OauthAuthorizationNotFound,
@@ -647,10 +672,16 @@ pub(crate) enum ManagementErrorCodeSchema {
     PlaygroundConversationLimitReached,
     PlaygroundConversationConflict,
     UserConflict,
+    OrganizationNotFound,
     WalletEventConflict,
     WalletInsufficientQuota,
     WalletOverflow,
     WalletOutcomeUnknown,
+    RefundNotFound,
+    RefundConflict,
+    RefundUnavailable,
+    RefundAutoSubmitFailed,
+    RefundOutcomeUnknown,
     TopupUnavailable,
     TopupProviderRejected,
     TopupOrderConflict,
@@ -675,6 +706,8 @@ pub(crate) enum ManagementErrorCodeSchema {
     InvitationRejected,
     PasswordResetRejected,
     PasswordChangeRejected,
+    TwoFactorAlreadyEnabled,
+    TwoFactorNotEnabled,
     EmailNotConfigured,
     EmailDeliveryFailed,
     GroupConflict,

@@ -5,6 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use af_adapter::Bytes;
 use af_billing::{
     BillingLifecycleError, BillingPrechargeError, BillingPrechargePort, BillingRequestLifecycle,
     BillingRequestPlan, BillingSettlementPort, BillingUsageContext, BillingUsageDimensions,
@@ -12,12 +13,13 @@ use af_billing::{
     RequestPricingSnapshotSource, UsageRecordPort,
 };
 use af_domain::{
-    AfError, BillingReservationId, ConcurrencyLimit, GatewayPrincipal, GroupId, Protocol,
+    AfError, BillingReservationId, ChannelId, ConcurrencyLimit, GatewayPrincipal, GroupId, Protocol,
 };
 use af_http::{ChatService, ChatServiceFuture};
 use af_protocol::{CanonicalRequestEnvelope, TokenCount, Usage};
 use af_relay::{
-    ChatResponse, GenerationCompletionFuture, GenerationCompletionHook, UsageResolutionError,
+    ChatResponse, GenerationCompletionFuture, GenerationCompletionHook, GenerationStream,
+    OpenAiChatUsageHandle, RelayDiagnosticInput, UsageResolutionError,
     estimate_openai_request_upper_bound,
 };
 use tokio::time::sleep;
@@ -29,8 +31,11 @@ const RETRY_DELAY: Duration = Duration::from_millis(20);
 const DEFAULT_MAX_OUTPUT_TOKENS: i64 = 8_192;
 
 /// 已固定路由计划的一次异步执行结果。
-pub type PlannedChatExecutionFuture =
-    Pin<Box<dyn Future<Output = Result<ChatResponse, AfError>> + Send + 'static>>;
+pub type PlannedChatExecutionFuture = Pin<
+    Box<
+        dyn Future<Output = Result<crate::RoutedExecution<ChatResponse>, AfError>> + Send + 'static,
+    >,
+>;
 
 /// 路由计划生成的异步返回类型；Redis 粘性查找必须在计费预扣前完成。
 pub type ChatRoutePlanFuture<'a> =
@@ -41,8 +46,26 @@ pub trait PlannedChatExecution: Send {
     /// 返回本计划全部候选共同的实际计费分组。
     fn target_group_id(&self) -> GroupId;
 
+    /// 返回路由映射后用于定价解析的 Canonical 模型。
+    fn pricing_model(&self) -> &str;
+
     /// 在预扣成功后消费计划并执行全部候选故障转移。
     fn execute(self: Box<Self>) -> PlannedChatExecutionFuture;
+}
+
+/// 计费完成后交还给公开服务边界的完整或流式结果。
+enum BilledChatExecution {
+    Full {
+        body: Bytes,
+        usage: Usage,
+        channel_id: ChannelId,
+    },
+    Stream {
+        body: Box<dyn GenerationStream>,
+        usage: OpenAiChatUsageHandle,
+        channel_id: ChannelId,
+        completion: Box<BillingStreamCompletionHook>,
+    },
 }
 
 /// 为已认证 Chat 请求信封生成不可变路由计划的对象安全端口。
@@ -55,6 +78,7 @@ pub trait ChatRoutePlanner: Send + Sync {
         request: CanonicalRequestEnvelope,
         response_protocol: Protocol,
         request_id: &'a str,
+        diagnostic: RelayDiagnosticInput,
     ) -> ChatRoutePlanFuture<'a>;
 }
 
@@ -70,6 +94,7 @@ pub struct BillingChatService {
     refund: Option<Arc<dyn RefundSignalPort>>,
     settlement: Option<Arc<dyn BillingSettlementPort>>,
     usage: Arc<dyn UsageRecordPort>,
+    request_outcomes: Option<crate::RequestOutcomeRuntime>,
 }
 
 impl BillingChatService {
@@ -90,7 +115,15 @@ impl BillingChatService {
             refund,
             settlement,
             usage,
+            request_outcomes: None,
         }
+    }
+
+    /// 注入同步模型请求终态的只追加观测运行时。
+    #[must_use]
+    pub fn with_request_outcomes(mut self, runtime: crate::RequestOutcomeRuntime) -> Self {
+        self.request_outcomes = Some(runtime);
+        self
     }
 
     async fn call(
@@ -100,7 +133,73 @@ impl BillingChatService {
         request: CanonicalRequestEnvelope,
         response_protocol: Protocol,
         request_id: &str,
+        diagnostic: RelayDiagnosticInput,
     ) -> Result<ChatResponse, AfError> {
+        let outcome = crate::RequestOutcomeContext::new(
+            request_id,
+            response_protocol,
+            request.canonical().operation,
+            request.requested_model(),
+        );
+        match self
+            .call_billed(
+                principal,
+                user_concurrency,
+                request,
+                response_protocol,
+                request_id,
+                diagnostic,
+            )
+            .await
+        {
+            Ok(BilledChatExecution::Full {
+                body,
+                usage,
+                channel_id,
+            }) => {
+                outcome
+                    .record_success(self.request_outcomes.as_ref(), channel_id)
+                    .await;
+                Ok(ChatResponse::Full {
+                    body,
+                    usage: Ok(usage),
+                })
+            }
+            Ok(BilledChatExecution::Stream {
+                body,
+                usage,
+                channel_id,
+                mut completion,
+            }) => {
+                completion.outcome = Some(StreamRequestOutcome {
+                    context: outcome,
+                    runtime: self.request_outcomes.clone(),
+                    channel_id,
+                });
+                Ok(ChatResponse::Stream {
+                    body: body.with_completion_hook(completion),
+                    usage,
+                })
+            }
+            Err(error) => {
+                outcome
+                    .record_failure(self.request_outcomes.as_ref(), &error, None)
+                    .await;
+                Err(error)
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn call_billed(
+        &self,
+        principal: &GatewayPrincipal,
+        user_concurrency: Option<ConcurrencyLimit>,
+        request: CanonicalRequestEnvelope,
+        response_protocol: Protocol,
+        request_id: &str,
+        diagnostic: RelayDiagnosticInput,
+    ) -> Result<BilledChatExecution, AfError> {
         let started_at = Instant::now();
         let canonical = request.canonical();
         let reasoning = canonical.reasoning;
@@ -120,7 +219,6 @@ impl BillingChatService {
         );
         let upper_bound = estimate_openai_request_upper_bound(request.canonical())
             .map_err(map_upper_bound_error)?;
-        let model = request.canonical().model.clone();
         let planned = self
             .inner
             .plan(
@@ -129,14 +227,16 @@ impl BillingChatService {
                 request,
                 response_protocol,
                 request_id,
+                diagnostic,
             )
             .await?;
         let source_group_id = principal.group_id();
         let target_group_id = planned.target_group_id();
+        let pricing_model = planned.pricing_model().to_owned();
         let snapshot = self
             .pricing_source
             .capture(
-                &model,
+                &pricing_model,
                 source_group_id,
                 target_group_id,
                 crate::utc_time::current_utc_day_second().ok_or(AfError::Internal)?,
@@ -170,7 +270,9 @@ impl BillingChatService {
             }
         };
 
-        let response = planned.execute().await?;
+        let routed = planned.execute().await?;
+        let channel_id = routed.channel_id();
+        let response = routed.into_value();
         match response {
             ChatResponse::Full { body, usage } => {
                 let usage = usage.map_err(|_| AfError::Internal)?;
@@ -183,20 +285,26 @@ impl BillingChatService {
                 )
                 .await
                 .map_err(map_lifecycle_error)?;
-                Ok(ChatResponse::Full {
+                Ok(BilledChatExecution::Full {
                     body,
-                    usage: Ok(usage),
+                    usage,
+                    channel_id,
                 })
             }
             ChatResponse::Stream { body, usage } => {
-                let hook = BillingStreamCompletionHook {
+                let completion = Box::new(BillingStreamCompletionHook {
                     lifecycle: Some(lifecycle),
                     context: observation_context,
                     started_at,
                     first_token: started_at.elapsed(),
-                };
-                let body = body.with_completion_hook(Box::new(hook));
-                Ok(ChatResponse::Stream { body, usage })
+                    outcome: None,
+                });
+                Ok(BilledChatExecution::Stream {
+                    body,
+                    usage,
+                    channel_id,
+                    completion,
+                })
             }
         }
     }
@@ -210,6 +318,7 @@ impl ChatService for BillingChatService {
         request: CanonicalRequestEnvelope,
         response_protocol: Protocol,
         request_id: &'a str,
+        diagnostic: RelayDiagnosticInput,
     ) -> ChatServiceFuture<'a> {
         Box::pin(self.call(
             principal,
@@ -217,6 +326,7 @@ impl ChatService for BillingChatService {
             request,
             response_protocol,
             request_id,
+            diagnostic,
         ))
     }
 }
@@ -227,6 +337,80 @@ struct BillingStreamCompletionHook {
     context: BillingUsageContext,
     started_at: Instant,
     first_token: Duration,
+    outcome: Option<StreamRequestOutcome>,
+}
+
+/// 流式计费与请求终态共享的一次性低敏感度上下文。
+struct StreamRequestOutcome {
+    context: crate::RequestOutcomeContext,
+    runtime: Option<crate::RequestOutcomeRuntime>,
+    channel_id: ChannelId,
+}
+
+impl StreamRequestOutcome {
+    fn spawn_success(self) -> Option<tokio::task::JoinHandle<()>> {
+        let runtime = tokio::runtime::Handle::try_current().ok()?;
+        Some(runtime.spawn(async move {
+            self.context
+                .record_success(self.runtime.as_ref(), self.channel_id)
+                .await;
+        }))
+    }
+
+    fn spawn_failure(self, error: AfError) -> Option<tokio::task::JoinHandle<()>> {
+        let runtime = tokio::runtime::Handle::try_current().ok()?;
+        Some(runtime.spawn(async move {
+            self.context
+                .record_failure(self.runtime.as_ref(), &error, Some(self.channel_id))
+                .await;
+        }))
+    }
+}
+
+/// 确保流回调在终态判定前被取消时仍写入一次结果未知事实。
+struct StreamRequestOutcomeGuard {
+    outcome: Option<StreamRequestOutcome>,
+}
+
+impl StreamRequestOutcomeGuard {
+    const fn new(outcome: Option<StreamRequestOutcome>) -> Self {
+        Self { outcome }
+    }
+
+    async fn record_success(mut self) {
+        let Some(outcome) = self.outcome.take() else {
+            return;
+        };
+        if let Some(task) = outcome.spawn_success() {
+            let _ = task.await;
+        }
+    }
+
+    async fn record_failure(mut self, error: AfError) {
+        let Some(outcome) = self.outcome.take() else {
+            return;
+        };
+        if let Some(task) = outcome.spawn_failure(error) {
+            let _ = task.await;
+        }
+    }
+}
+
+impl Drop for StreamRequestOutcomeGuard {
+    fn drop(&mut self) {
+        let Some(outcome) = self.outcome.take() else {
+            return;
+        };
+        if outcome
+            .spawn_failure(AfError::RequestOutcomeUnknown)
+            .is_none()
+        {
+            tracing::error!(
+                error_kind = "request_outcome_stream_drop_without_runtime",
+                "流式请求提前释放且当前没有可用异步运行时"
+            );
+        }
+    }
 }
 
 impl GenerationCompletionHook for BillingStreamCompletionHook {
@@ -234,12 +418,15 @@ impl GenerationCompletionHook for BillingStreamCompletionHook {
         mut self: Box<Self>,
         usage: Result<Usage, UsageResolutionError>,
     ) -> GenerationCompletionFuture {
+        let outcome = StreamRequestOutcomeGuard::new(self.outcome.take());
         Box::pin(async move {
             let Some(mut lifecycle) = self.lifecycle.take() else {
+                outcome.record_failure(AfError::Internal).await;
                 return;
             };
             let Ok(usage) = usage else {
                 drop(lifecycle);
+                outcome.record_failure(AfError::RequestOutcomeUnknown).await;
                 return;
             };
             let observation = call_observation(
@@ -247,21 +434,44 @@ impl GenerationCompletionHook for BillingStreamCompletionHook {
                 Some(self.first_token),
                 self.started_at.elapsed(),
             );
-            if complete_with_observation_retries(
+            match complete_with_observation_retries(
                 &mut lifecycle,
                 usage,
                 BillingUsageDimensions::empty(),
                 observation,
             )
             .await
-            .is_err()
             {
-                tracing::error!(
-                    error_kind = "billing_stream_completion_failed",
-                    "流式响应结束后的计费完成失败"
-                );
+                Ok(_) => {
+                    outcome.record_success().await;
+                }
+                Err(error) => {
+                    tracing::error!(
+                        error_kind = "billing_stream_completion_failed",
+                        "流式响应结束后的计费完成失败"
+                    );
+                    outcome.record_failure(map_lifecycle_error(error)).await;
+                }
             }
         })
+    }
+}
+
+impl Drop for BillingStreamCompletionHook {
+    fn drop(&mut self) {
+        let Some(outcome) = self.outcome.take() else {
+            return;
+        };
+        // Drop 只移交一次性收尾任务，不在析构路径执行数据库 IO。
+        if outcome
+            .spawn_failure(AfError::RequestOutcomeUnknown)
+            .is_none()
+        {
+            tracing::error!(
+                error_kind = "request_outcome_stream_drop_without_runtime",
+                "流式请求提前释放且当前没有可用异步运行时"
+            );
+        }
     }
 }
 
@@ -413,7 +623,7 @@ pub(crate) fn map_lifecycle_error(error: BillingLifecycleError) -> AfError {
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use af_adapter::Bytes;
+    use af_adapter::{Bytes, HeaderMap};
     use af_billing::{
         BillingMode, BillingPrechargeFuture, BillingPrechargePort, BillingSettlementFuture,
         BillingSettlementPort, BillingUsageRecord, CachedRequestPricingSnapshotSource,
@@ -422,15 +632,20 @@ mod tests {
         ModelPriceCache, ModelPriceSource, ModelPriceSourceFuture, ModelPriceSourceRecord,
         PricingRatio, RefundSignalOutcome, RequestPricingSnapshot, TokenPrices, UsageRecordOutcome,
     };
-    use af_domain::{GroupId, Operation, Quota, QuotaWindowRetryAfter, Role, TokenId, UserId};
+    use af_db::RequestOutcomeRepository;
+    use af_domain::{
+        ChannelId, GroupId, Operation, Quota, QuotaWindowRetryAfter, Role, TokenId, UserId,
+    };
     use af_http::ChatService;
     use af_protocol::{
         CanonicalRequest, CanonicalRequestEnvelope, ContentBlock, Message, TokenCount, Usage,
         openai_responses,
     };
     use rust_decimal::Decimal;
+    use sea_orm::{ConnectionTrait, Statement};
 
     use super::*;
+    use crate::test_database::SqliteTestDatabase;
 
     #[test]
     fn recoverable_window_precharge_maps_to_downstream_rate_limit() {
@@ -441,8 +656,99 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn stream_outcome_guard_records_each_terminal_path_once() {
+        let database = SqliteTestDatabase::new("stream-outcome").await;
+        let backend = database.seed().get_database_backend();
+        database
+            .seed()
+            .execute(Statement::from_string(
+                backend,
+                "INSERT INTO channels (id, name, \"type\", protocol, model_mapping, param_override, header_override, settings) VALUES (1, '流式终态测试渠道', 'openai', 'openai_chat', '{}', '{}', '{}', '{}')",
+            ))
+            .await
+            .unwrap();
+        let runtime = crate::RequestOutcomeRuntime::new(RequestOutcomeRepository::new(
+            database.pool().clone(),
+        ));
+
+        StreamRequestOutcomeGuard::new(stream_outcome(&runtime, "request-stream-success"))
+            .record_success()
+            .await;
+        StreamRequestOutcomeGuard::new(stream_outcome(&runtime, "request-stream-failure"))
+            .record_failure(AfError::Internal)
+            .await;
+        drop(StreamRequestOutcomeGuard::new(stream_outcome(
+            &runtime,
+            "request-stream-interrupted",
+        )));
+
+        let rows = tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let rows = database
+                    .seed()
+                    .query_all(Statement::from_string(
+                        backend,
+                        "SELECT request_id, outcome, error_kind FROM request_outcome_logs ORDER BY request_id",
+                    ))
+                    .await
+                    .unwrap();
+                if rows.len() == 3 {
+                    break rows;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let facts = rows
+            .iter()
+            .map(|row| {
+                (
+                    row.try_get::<String>("", "request_id").unwrap(),
+                    row.try_get::<i16>("", "outcome").unwrap(),
+                    row.try_get::<Option<String>>("", "error_kind").unwrap(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            facts,
+            vec![
+                (
+                    "request-stream-failure".to_owned(),
+                    2,
+                    Some("internal".to_owned()),
+                ),
+                (
+                    "request-stream-interrupted".to_owned(),
+                    2,
+                    Some("outcome_unknown".to_owned()),
+                ),
+                ("request-stream-success".to_owned(), 1, None),
+            ]
+        );
+        database.close().await;
+    }
+
+    fn stream_outcome(
+        runtime: &crate::RequestOutcomeRuntime,
+        request_id: &str,
+    ) -> Option<StreamRequestOutcome> {
+        Some(StreamRequestOutcome {
+            context: crate::RequestOutcomeContext::new(
+                request_id,
+                Protocol::OpenAiChat,
+                Operation::Chat,
+                "gpt-test",
+            ),
+            runtime: Some(runtime.clone()),
+            channel_id: ChannelId::new(1).unwrap(),
+        })
+    }
+
     struct FullStub {
         target_group_id: GroupId,
+        pricing_model_override: Option<String>,
     }
 
     impl ChatRoutePlanner for FullStub {
@@ -450,13 +756,18 @@ mod tests {
             &'a self,
             _principal: &'a GatewayPrincipal,
             _user_concurrency: Option<ConcurrencyLimit>,
-            _request: CanonicalRequestEnvelope,
+            request: CanonicalRequestEnvelope,
             _response_protocol: Protocol,
             _request_id: &'a str,
+            _diagnostic: RelayDiagnosticInput,
         ) -> ChatRoutePlanFuture<'a> {
             Box::pin(async move {
                 Ok(Box::new(FullExecution {
                     target_group_id: self.target_group_id,
+                    pricing_model: self
+                        .pricing_model_override
+                        .clone()
+                        .unwrap_or_else(|| request.canonical().model.clone()),
                 }) as Box<dyn PlannedChatExecution>)
             })
         }
@@ -464,6 +775,7 @@ mod tests {
 
     struct FullExecution {
         target_group_id: GroupId,
+        pricing_model: String,
     }
 
     struct ProtocolTrackingStub {
@@ -481,14 +793,16 @@ mod tests {
             &'a self,
             _principal: &'a GatewayPrincipal,
             _user_concurrency: Option<ConcurrencyLimit>,
-            _request: CanonicalRequestEnvelope,
+            request: CanonicalRequestEnvelope,
             response_protocol: Protocol,
             _request_id: &'a str,
+            _diagnostic: RelayDiagnosticInput,
         ) -> ChatRoutePlanFuture<'a> {
             self.protocols.lock().unwrap().push(response_protocol);
             Box::pin(async move {
                 Ok(Box::new(FullExecution {
                     target_group_id: self.target_group_id,
+                    pricing_model: request.canonical().model.clone(),
                 }) as Box<dyn PlannedChatExecution>)
             })
         }
@@ -502,6 +816,7 @@ mod tests {
             request: CanonicalRequestEnvelope,
             _response_protocol: Protocol,
             _request_id: &'a str,
+            _diagnostic: RelayDiagnosticInput,
         ) -> ChatRoutePlanFuture<'a> {
             let max_output_tokens = request
                 .canonical()
@@ -516,6 +831,7 @@ mod tests {
             Box::pin(async move {
                 Ok(Box::new(FullExecution {
                     target_group_id: self.target_group_id,
+                    pricing_model: request.canonical().model.clone(),
                 }) as Box<dyn PlannedChatExecution>)
             })
         }
@@ -526,12 +842,19 @@ mod tests {
             self.target_group_id
         }
 
+        fn pricing_model(&self) -> &str {
+            &self.pricing_model
+        }
+
         fn execute(self: Box<Self>) -> PlannedChatExecutionFuture {
             Box::pin(async move {
-                Ok(ChatResponse::Full {
-                    body: Bytes::from_static(b"{}"),
-                    usage: Ok(usage()),
-                })
+                Ok(crate::RoutedExecution::new(
+                    ChatResponse::Full {
+                        body: Bytes::from_static(b"{}"),
+                        usage: Ok(usage()),
+                    },
+                    af_domain::ChannelId::new(1).unwrap(),
+                ))
             })
         }
     }
@@ -600,6 +923,7 @@ mod tests {
         let service = BillingChatService::new(
             Arc::new(FullStub {
                 target_group_id: GroupId::new(3).unwrap(),
+                pricing_model_override: None,
             }),
             Arc::new(metered_snapshot_source().await),
             Some(precharge.clone()),
@@ -614,6 +938,7 @@ mod tests {
                 request(),
                 Protocol::OpenAiChat,
                 "request-1",
+                diagnostic(),
             )
             .await
             .unwrap();
@@ -631,6 +956,7 @@ mod tests {
         let service = BillingChatService::new(
             Arc::new(FullStub {
                 target_group_id: GroupId::new(3).unwrap(),
+                pricing_model_override: None,
             }),
             Arc::new(expression_snapshot_source().await),
             Some(precharge.clone()),
@@ -646,6 +972,7 @@ mod tests {
                 request(),
                 Protocol::OpenAiChat,
                 "request-expression",
+                diagnostic(),
             )
             .await
             .unwrap();
@@ -682,6 +1009,7 @@ mod tests {
                 request(),
                 Protocol::Anthropic,
                 "request-anthropic",
+                diagnostic(),
             )
             .await
             .unwrap();
@@ -692,6 +1020,7 @@ mod tests {
                 responses_request(),
                 Protocol::OpenAiResponses,
                 "request-responses",
+                diagnostic(),
             )
             .await
             .unwrap();
@@ -725,6 +1054,7 @@ mod tests {
                 responses_request(),
                 Protocol::OpenAiResponses,
                 "request-default-output-limit",
+                diagnostic(),
             )
             .await
             .unwrap();
@@ -739,6 +1069,7 @@ mod tests {
         let service = BillingChatService::new(
             Arc::new(FullStub {
                 target_group_id: GroupId::new(3).unwrap(),
+                pricing_model_override: None,
             }),
             Arc::new(metered_snapshot_source().await),
             Some(precharge.clone()),
@@ -754,6 +1085,7 @@ mod tests {
                 encrypted_reasoning_responses_request(),
                 Protocol::OpenAiResponses,
                 "request-encrypted-reasoning",
+                diagnostic(),
             )
             .await
             .unwrap();
@@ -763,7 +1095,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pricing_capture_uses_the_group_pinned_by_the_route_plan() {
+    async fn pricing_capture_uses_model_and_group_pinned_by_the_route_plan() {
         let pricing = Arc::new(TrackingPricingSource {
             inner: metered_snapshot_source_with_target(GroupId::new(4).unwrap()).await,
             calls: Mutex::new(Vec::new()),
@@ -771,6 +1103,7 @@ mod tests {
         let service = BillingChatService::new(
             Arc::new(FullStub {
                 target_group_id: GroupId::new(4).unwrap(),
+                pricing_model_override: Some("gpt-routed".to_owned()),
             }),
             pricing.clone(),
             Some(Arc::new(PrechargeStub::default())),
@@ -786,13 +1119,18 @@ mod tests {
                 request(),
                 Protocol::OpenAiChat,
                 "request-target-group",
+                diagnostic(),
             )
             .await
             .unwrap();
 
         assert_eq!(
             pricing.calls.lock().unwrap().as_slice(),
-            &[(GroupId::new(3).unwrap(), GroupId::new(4).unwrap())]
+            &[(
+                "gpt-routed".to_owned(),
+                GroupId::new(3).unwrap(),
+                GroupId::new(4).unwrap(),
+            )]
         );
     }
 
@@ -819,6 +1157,7 @@ mod tests {
                 request(),
                 Protocol::OpenAiChat,
                 "request-failover",
+                diagnostic(),
             )
             .await
             .unwrap();
@@ -842,6 +1181,15 @@ mod tests {
             TokenId::new(1).unwrap(),
             UserId::new(2).unwrap(),
             GroupId::new(3).unwrap(),
+        )
+    }
+
+    fn diagnostic() -> RelayDiagnosticInput {
+        RelayDiagnosticInput::capture(
+            "POST",
+            "/v1/chat/completions",
+            &HeaderMap::new(),
+            &Bytes::new(),
         )
     }
 
@@ -982,6 +1330,13 @@ mod tests {
                     1,
                 )
                 .unwrap(),
+                ModelPriceSourceRecord::new(
+                    "gpt-routed".to_owned(),
+                    BillingMode::PerToken,
+                    prices,
+                    1,
+                )
+                .unwrap(),
             ],
         }))
         .await
@@ -1019,7 +1374,7 @@ mod tests {
 
     struct TrackingPricingSource {
         inner: CachedRequestPricingSnapshotSource,
-        calls: Mutex<Vec<(GroupId, GroupId)>>,
+        calls: Mutex<Vec<(String, GroupId, GroupId)>>,
     }
 
     struct SimulatedFailoverStub {
@@ -1031,15 +1386,17 @@ mod tests {
             &'a self,
             principal: &'a GatewayPrincipal,
             _user_concurrency: Option<ConcurrencyLimit>,
-            _request: CanonicalRequestEnvelope,
+            request: CanonicalRequestEnvelope,
             _response_protocol: Protocol,
             _request_id: &'a str,
+            _diagnostic: RelayDiagnosticInput,
         ) -> ChatRoutePlanFuture<'a> {
             let target_group_id = principal.group_id();
             let attempts = self.attempts.clone();
             Box::pin(async move {
                 Ok(Box::new(SimulatedFailoverExecution {
                     target_group_id,
+                    pricing_model: request.canonical().model.clone(),
                     attempts,
                 }) as Box<dyn PlannedChatExecution>)
             })
@@ -1048,6 +1405,7 @@ mod tests {
 
     struct SimulatedFailoverExecution {
         target_group_id: GroupId,
+        pricing_model: String,
         attempts: Arc<Mutex<usize>>,
     }
 
@@ -1056,14 +1414,21 @@ mod tests {
             self.target_group_id
         }
 
+        fn pricing_model(&self) -> &str {
+            &self.pricing_model
+        }
+
         fn execute(self: Box<Self>) -> PlannedChatExecutionFuture {
             Box::pin(async move {
                 // 两次内部尝试模拟 RelayStateMachine 完成一次故障转移。
                 *self.attempts.lock().unwrap() = 2;
-                Ok(ChatResponse::Full {
-                    body: Bytes::from_static(b"{}"),
-                    usage: Ok(usage()),
-                })
+                Ok(crate::RoutedExecution::new(
+                    ChatResponse::Full {
+                        body: Bytes::from_static(b"{}"),
+                        usage: Ok(usage()),
+                    },
+                    af_domain::ChannelId::new(1).unwrap(),
+                ))
             })
         }
     }
@@ -1079,7 +1444,7 @@ mod tests {
             self.calls
                 .lock()
                 .unwrap()
-                .push((source_group_id, target_group_id));
+                .push((model.to_owned(), source_group_id, target_group_id));
             self.inner
                 .capture(model, source_group_id, target_group_id, current_second)
         }

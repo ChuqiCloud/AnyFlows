@@ -1,7 +1,8 @@
 use std::collections::HashSet;
 
 use crate::{
-    ChannelType, CredentialKind, Operation, Protocol, PublicErrorCode, ResponsesCompactMode,
+    ChannelType, ClientSimulationProfile, ClientSimulationResult, CredentialKind,
+    CredentialQuotaDimension, Operation, Protocol, PublicErrorCode, ResponsesCompactMode,
     ResponsesCompactProbeResult, Role, Status,
 };
 
@@ -76,6 +77,23 @@ fn string_enums_have_unique_stable_parse_and_json_contracts() {
         ]
     );
     assert_string_enum_contract!(
+        ClientSimulationProfile,
+        ClientSimulationProfile::ALL,
+        [(
+            ClientSimulationProfile::AnthropicCliHeadersV1,
+            "anthropic_cli_headers_v1"
+        )]
+    );
+    assert_string_enum_contract!(
+        ClientSimulationResult,
+        ClientSimulationResult::ALL,
+        [
+            (ClientSimulationResult::NotApplied, "not_applied"),
+            (ClientSimulationResult::Applied, "applied"),
+            (ClientSimulationResult::Failed, "failed"),
+        ]
+    );
+    assert_string_enum_contract!(
         ChannelType,
         ChannelType::ALL,
         [
@@ -100,6 +118,14 @@ fn string_enums_have_unique_stable_parse_and_json_contracts() {
             (CredentialKind::Bedrock, "bedrock"),
             (CredentialKind::ServiceAccount, "service_account"),
             (CredentialKind::Upstream, "upstream"),
+        ]
+    );
+    assert_string_enum_contract!(
+        CredentialQuotaDimension,
+        CredentialQuotaDimension::ALL,
+        [
+            (CredentialQuotaDimension::Global, "global"),
+            (CredentialQuotaDimension::Spark, "spark"),
         ]
     );
     assert_string_enum_contract!(
@@ -132,6 +158,25 @@ fn string_enums_have_unique_stable_parse_and_json_contracts() {
             (PublicErrorCode::InternalError, "internal_error"),
         ]
     );
+}
+
+#[test]
+fn credential_quota_dimension_only_selects_spark_for_the_closed_model() {
+    assert_eq!(
+        CredentialQuotaDimension::for_canonical_model("gpt-5.3-codex-spark"),
+        CredentialQuotaDimension::Spark
+    );
+    for model in [
+        "gpt-5.3-codex",
+        "gpt-5.3-codex-spark-high",
+        "GPT-5.3-CODEX-SPARK",
+        "",
+    ] {
+        assert_eq!(
+            CredentialQuotaDimension::for_canonical_model(model),
+            CredentialQuotaDimension::Global
+        );
+    }
 }
 
 #[test]

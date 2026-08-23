@@ -16,12 +16,14 @@ import type { CredentialValidationMessages } from './credential-form-types'
 
 type CredentialSchemaOptions = {
   channelType: AdminChannelType
+  allowSparkShadow: boolean
   creating: boolean
   currentId?: number
   messages: CredentialValidationMessages
 }
 
 const credentialFormShape = z.object({
+  mode: z.enum(['standard', 'spark_shadow']),
   kind: z.enum(['api_key', 'oauth', 'bedrock', 'service_account']),
   oauthCreateMode: z.enum(['authorize', 'access_token']),
   rotateSecret: z.boolean(),
@@ -41,20 +43,25 @@ const credentialFormShape = z.object({
 export function buildCredentialFormSchema(options: CredentialSchemaOptions) {
   return credentialFormShape.superRefine((values, context) => {
     const message = options.messages
+    if (values.mode === 'spark_shadow') {
+      if (!options.allowSparkShadow
+        || values.kind !== 'oauth'
+        || values.quotaDimension !== 'spark'
+        || values.parentId === ''
+        || values.concurrency !== ''
+        || values.proxyId !== '') {
+        issue(context, 'parentId', message.parent)
+      }
+      if (values.parentId !== '' && (!validInteger(values.parentId, 1, Number.MAX_SAFE_INTEGER)
+        || Number(values.parentId) === options.currentId)) issue(context, 'parentId', message.parent)
+      validateScheduling(values, context, message)
+      return
+    }
     if (options.creating && !credentialKindsForChannel(options.channelType).includes(values.kind)) {
       issue(context, 'kind', message.incompatibleKind)
     }
-    if (values.status === 'auto_disabled') issue(context, 'status', message.status)
-    if (!validInteger(values.priority, -2_147_483_648, 2_147_483_647)) issue(context, 'priority', message.integer)
-    if (!validInteger(values.weight, 0, 2_147_483_647)) issue(context, 'weight', message.nonNegativeInteger)
-    if (values.concurrency !== '' && !validInteger(values.concurrency, 0, 2_147_483_647)) {
-      issue(context, 'concurrency', message.nonNegativeInteger)
-    }
-    for (const field of ['loadFactor', 'rateMultiplier'] as const) {
-      if (values[field] !== '' && parseMicros(values[field]) === undefined) issue(context, field, message.multiplier)
-    }
-    if (values.parentId !== '' && (!validInteger(values.parentId, 1, Number.MAX_SAFE_INTEGER)
-      || Number(values.parentId) === options.currentId)) issue(context, 'parentId', message.parent)
+    validateScheduling(values, context, message)
+    if (values.parentId !== '' || values.quotaDimension !== 'global') issue(context, 'parentId', message.parent)
     if (values.proxyId !== '' && !validInteger(values.proxyId, 1, Number.MAX_SAFE_INTEGER)) {
       issue(context, 'proxyId', message.parent)
     }
@@ -70,6 +77,22 @@ export function buildCredentialFormSchema(options: CredentialSchemaOptions) {
     if (!options.creating && !values.rotateSecret) return
     validateSecret(values, context, message)
   })
+}
+
+function validateScheduling(
+  values: z.infer<typeof credentialFormShape>,
+  context: z.RefinementCtx,
+  message: CredentialValidationMessages,
+) {
+  if (values.status === 'auto_disabled') issue(context, 'status', message.status)
+  if (!validInteger(values.priority, -2_147_483_648, 2_147_483_647)) issue(context, 'priority', message.integer)
+  if (!validInteger(values.weight, 0, 2_147_483_647)) issue(context, 'weight', message.nonNegativeInteger)
+  if (values.concurrency !== '' && !validInteger(values.concurrency, 0, 2_147_483_647)) {
+    issue(context, 'concurrency', message.nonNegativeInteger)
+  }
+  for (const field of ['loadFactor', 'rateMultiplier'] as const) {
+    if (values[field] !== '' && parseMicros(values[field]) === undefined) issue(context, field, message.multiplier)
+  }
 }
 
 function validateSecret(

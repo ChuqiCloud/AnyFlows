@@ -3,6 +3,8 @@ import { Plus, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import { DataTablePagination } from '@/components/data-table/data-table-pagination'
+import { useClientTablePagination } from '@/components/data-table/use-table-pagination'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { AdminRoute } from '@/lib/api/generated/types.gen'
 import {
@@ -24,6 +26,8 @@ export function RoutePage() {
   const [editor, setEditor] = useState<EditorState>()
   const [deleting, setDeleting] = useState<AdminRoute>()
   const routes = routesQuery.data ?? []
+  const pagination = useClientTablePagination(routes.length)
+  const visibleRoutes = routes.slice(pagination.startIndex, pagination.endIndex)
   const enabledCount = routes.filter((route) => route.enabled).length
   const candidateCount = routes.reduce((sum, route) => sum + route.channels.length, 0)
 
@@ -56,8 +60,24 @@ export function RoutePage() {
       ) : routesQuery.isError ? (
         <div role="alert" className="rounded-xl border border-destructive/25 bg-destructive/8 p-4"><h2 className="text-sm font-semibold text-destructive">{t('routes.error.title')}</h2><p className="mt-1 text-xs text-muted-foreground">{t('routes.error.body')}</p><Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => void routesQuery.refetch()}>{t('routes.actions.retry')}</Button></div>
       ) : (
-        <RouteTable routes={routes} pendingToggleId={updateMutation.isPending ? updateMutation.variables?.id : undefined} onEdit={setEditor} onDelete={setDeleting} onToggle={(route) => { void toggle(route) }} />
+        <RouteTable routes={visibleRoutes} pendingToggleId={updateMutation.isPending ? updateMutation.variables?.id : undefined} onEdit={setEditor} onDelete={setDeleting} onToggle={(route) => { void toggle(route) }} />
       )}
+
+      {!routesQuery.isPending && !routesQuery.isError ? (
+        <DataTablePagination
+          currentPage={pagination.currentPage}
+          availablePageCount={pagination.availablePageCount}
+          pageSize={pagination.pageSize}
+          itemCount={visibleRoutes.length}
+          hasNextPage={pagination.hasNextPage}
+          fetching={routesQuery.isFetching}
+          onFirstPage={pagination.goToFirstPage}
+          onPreviousPage={pagination.goToPreviousPage}
+          onPageSelect={pagination.selectPage}
+          onNextPage={pagination.goToNextPage}
+          onPageSizeChange={pagination.setPageSize}
+        />
+      ) : null}
 
       {updateMutation.isError ? <p role="alert" className="text-xs text-destructive">{t('routes.errors.updateFailed')}</p> : null}
       <RouteEditorSheet

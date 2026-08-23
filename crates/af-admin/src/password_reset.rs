@@ -488,6 +488,7 @@ fn map_email_repository_error(error: EmailSettingsRepositoryError) -> PasswordRe
 fn map_site_repository_error(error: SiteSettingsRepositoryError) -> PasswordResetError {
     match error {
         SiteSettingsRepositoryError::InvalidSettings
+        | SiteSettingsRepositoryError::Conflict
         | SiteSettingsRepositoryError::Query
         | SiteSettingsRepositoryError::Timeout
         | SiteSettingsRepositoryError::Invariant => PasswordResetError::Internal,

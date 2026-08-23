@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import type { AdminWalletEntry } from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
 import { useAdminWalletEntries } from './user-api'
@@ -39,9 +40,9 @@ const walletEntryCopy = {
 
 export function UserWalletHistory({ open, userId }: UserWalletHistoryProps) {
   const { i18n, t } = useTranslation()
+  const { formatQuota } = useBalanceDisplay()
   const query = useAdminWalletEntries(userId, open)
   const entries = query.data?.pages.flatMap((page) => page.entries) ?? []
-  const formatQuota = (value: number) => new Intl.NumberFormat(i18n.language).format(value)
   const formatTime = (value: number) => new Intl.DateTimeFormat(i18n.language, {
     dateStyle: 'medium',
     timeStyle: 'short',

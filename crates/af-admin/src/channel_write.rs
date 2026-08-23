@@ -10,8 +10,8 @@ use af_db::{
     MAX_ADMIN_CHANNEL_MODELS, validate_channel_header_overrides,
 };
 use af_domain::{
-    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, CredentialId, CredentialKind,
-    GroupId, Protocol, ResponsesCompactMode, Status,
+    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ClientSimulationProfile,
+    CredentialId, CredentialKind, GroupId, Protocol, ResponsesCompactMode, Status,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -124,6 +124,21 @@ impl AdminChannelCreateCommand {
         self
     }
 
+    /// 创建时显式选择仿真档案；启用档案必须同时确认合规风险。
+    pub fn with_client_simulation_profile(
+        mut self,
+        profile: Option<ClientSimulationProfile>,
+        risk_accepted: bool,
+    ) -> Result<Self, AdminChannelWriteError> {
+        if profile.is_some() && !risk_accepted {
+            return Err(AdminChannelWriteError::InvalidInput);
+        }
+        self.fields = self
+            .fields
+            .with_client_simulation_profile(profile, risk_accepted)?;
+        Ok(self)
+    }
+
     /// 设置创建渠道时使用的自动禁用规则。
     pub fn with_auto_ban_rules(
         mut self,
@@ -224,6 +239,18 @@ impl AdminChannelUpdateCommand {
         self
     }
 
+    /// 更新仿真档案选择；仓储只在首次启用或换档案时消费风险确认。
+    pub fn with_client_simulation_profile(
+        mut self,
+        profile: Option<ClientSimulationProfile>,
+        risk_accepted: bool,
+    ) -> Result<Self, AdminChannelWriteError> {
+        self.fields = self
+            .fields
+            .with_client_simulation_profile(profile, risk_accepted)?;
+        Ok(self)
+    }
+
     /// 设置更新渠道时使用的自动禁用规则。
     pub fn with_auto_ban_rules(
         mut self,
@@ -257,6 +284,8 @@ struct AdminChannelWriteFields {
     header_override: Option<serde_json::Value>,
     settings: Option<serde_json::Value>,
     pool_mode: Option<bool>,
+    client_simulation_profile: Option<Option<ClientSimulationProfile>>,
+    client_simulation_risk_accepted: bool,
     responses_websocket_enabled: Option<bool>,
     responses_compact_mode: Option<ResponsesCompactMode>,
     responses_compact_model_mapping: Option<serde_json::Value>,
@@ -353,6 +382,8 @@ impl AdminChannelWriteFields {
             header_override,
             settings,
             pool_mode: require_sensitive_fields.then_some(false),
+            client_simulation_profile: require_sensitive_fields.then_some(None),
+            client_simulation_risk_accepted: false,
             responses_websocket_enabled: require_sensitive_fields.then_some(false),
             responses_compact_mode: None,
             responses_compact_model_mapping: None,
@@ -372,6 +403,21 @@ impl AdminChannelWriteFields {
             return Err(AdminChannelWriteError::InvalidInput);
         }
         self.responses_websocket_enabled = Some(enabled);
+        Ok(self)
+    }
+
+    fn with_client_simulation_profile(
+        mut self,
+        profile: Option<ClientSimulationProfile>,
+        risk_accepted: bool,
+    ) -> Result<Self, AdminChannelWriteError> {
+        if profile.is_some()
+            && (self.channel_type != ChannelType::Anthropic || self.protocol != Protocol::Anthropic)
+        {
+            return Err(AdminChannelWriteError::InvalidInput);
+        }
+        self.client_simulation_profile = Some(profile);
+        self.client_simulation_risk_accepted = risk_accepted;
         Ok(self)
     }
 
@@ -395,6 +441,8 @@ impl AdminChannelWriteFields {
 
     fn into_record(self) -> AdminChannelWriteRecord {
         let pool_mode = self.pool_mode;
+        let client_simulation_profile = self.client_simulation_profile;
+        let client_simulation_risk_accepted = self.client_simulation_risk_accepted;
         let responses_websocket_enabled = self.responses_websocket_enabled;
         let responses_compact_mode = self.responses_compact_mode;
         let responses_compact_model_mapping = self.responses_compact_model_mapping;
@@ -421,6 +469,12 @@ impl AdminChannelWriteFields {
             Some(enabled) => record.with_pool_mode(enabled),
             None => record,
         };
+        let record = match client_simulation_profile {
+            Some(profile) => {
+                record.with_client_simulation_profile(profile, client_simulation_risk_accepted)
+            }
+            None => record,
+        };
         let record = match responses_websocket_enabled {
             Some(enabled) => record.with_responses_websocket_enabled(enabled),
             None => record,
@@ -442,8 +496,13 @@ impl AdminChannelWriteFields {
 /// 管理员创建凭据时使用的完整配置和一次性明文。
 pub struct AdminCredentialCreateCommand {
     fields: AdminCredentialWriteFields,
-    secret: Option<PlainCredentialSecret>,
-    oauth_token_pending: bool,
+    mode: AdminCredentialCreateMode,
+}
+
+enum AdminCredentialCreateMode {
+    Encrypted(PlainCredentialSecret),
+    PendingOauth,
+    SparkShadow,
 }
 
 impl AdminCredentialCreateCommand {
@@ -470,6 +529,9 @@ impl AdminCredentialCreateCommand {
         oauth_account_key: Option<String>,
         oauth_project_id: Option<String>,
     ) -> Result<Self, AdminChannelWriteError> {
+        if parent_id.is_some() || quota_dimension != AdminCredentialQuotaDimension::Global {
+            return Err(AdminChannelWriteError::InvalidInput);
+        }
         let fields = AdminCredentialWriteFields::new(
             kind,
             status,
@@ -492,8 +554,7 @@ impl AdminCredentialCreateCommand {
         }
         Ok(Self {
             fields,
-            secret: Some(secret),
-            oauth_token_pending: false,
+            mode: AdminCredentialCreateMode::Encrypted(secret),
         })
     }
 
@@ -519,7 +580,11 @@ impl AdminCredentialCreateCommand {
         oauth_account_key: Option<String>,
         oauth_project_id: Option<String>,
     ) -> Result<Self, AdminChannelWriteError> {
-        if kind != CredentialKind::Oauth || oauth_provider.is_none() {
+        if kind != CredentialKind::Oauth
+            || oauth_provider.is_none()
+            || parent_id.is_some()
+            || quota_dimension != AdminCredentialQuotaDimension::Global
+        {
             return Err(AdminChannelWriteError::InvalidInput);
         }
         let fields = AdminCredentialWriteFields::new(
@@ -541,17 +606,59 @@ impl AdminCredentialCreateCommand {
         )?;
         Ok(Self {
             fields,
-            secret: None,
-            oauth_token_pending: true,
+            mode: AdminCredentialCreateMode::PendingOauth,
         })
     }
 
-    fn into_parts(self) -> (AdminCredentialWriteRecord, Option<PlainCredentialSecret>) {
+    /// 创建只继承母凭据密钥和代理的 Spark 调度影子。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "字段与管理端凭据调度配置一一对应"
+    )]
+    pub fn new_spark_shadow(
+        status: AdminRoutingWriteStatus,
+        multi_key_mode: Option<AdminCredentialMultiKeyMode>,
+        priority: i32,
+        weight: i32,
+        concurrency: Option<i32>,
+        load_factor_micros: Option<i64>,
+        rate_multiplier_micros: Option<i64>,
+        schedulable: bool,
+        parent_id: CredentialId,
+    ) -> Result<Self, AdminChannelWriteError> {
+        if concurrency.is_some() {
+            return Err(AdminChannelWriteError::InvalidInput);
+        }
+        let fields = AdminCredentialWriteFields::new(
+            CredentialKind::Oauth,
+            status,
+            multi_key_mode,
+            priority,
+            weight,
+            None,
+            load_factor_micros,
+            rate_multiplier_micros,
+            schedulable,
+            Some(parent_id),
+            AdminCredentialQuotaDimension::Spark,
+            None,
+            None,
+            None,
+            None,
+        )?;
+        Ok(Self {
+            fields,
+            mode: AdminCredentialCreateMode::SparkShadow,
+        })
+    }
+
+    fn into_parts(self) -> (AdminCredentialWriteRecord, AdminCredentialCreateMode) {
+        let oauth_token_pending = matches!(&self.mode, AdminCredentialCreateMode::PendingOauth);
         (
             self.fields
                 .into_record()
-                .with_oauth_token_pending(self.oauth_token_pending),
-            self.secret,
+                .with_oauth_token_pending(oauth_token_pending),
+            self.mode,
         )
     }
 }
@@ -609,7 +716,9 @@ impl AdminCredentialUpdateCommand {
             oauth_account_key,
             oauth_project_id,
         )?;
-        if secret.as_ref().is_some_and(|secret| secret.kind() != kind) {
+        if secret.as_ref().is_some_and(|secret| secret.kind() != kind)
+            || (quota_dimension == AdminCredentialQuotaDimension::Spark && secret.is_some())
+        {
             return Err(AdminChannelWriteError::InvalidInput);
         }
         Ok(Self { fields, secret })
@@ -668,6 +777,16 @@ impl AdminCredentialWriteFields {
     ) -> Result<Self, AdminChannelWriteError> {
         let oauth_fields_present =
             oauth_provider.is_some() || oauth_account_key.is_some() || oauth_project_id.is_some();
+        let valid_shape = match quota_dimension {
+            AdminCredentialQuotaDimension::Global => parent_id.is_none(),
+            AdminCredentialQuotaDimension::Spark => {
+                kind == CredentialKind::Oauth
+                    && parent_id.is_some()
+                    && concurrency.is_none()
+                    && proxy_id.is_none()
+                    && !oauth_fields_present
+            }
+        };
         if !matches!(
             kind,
             CredentialKind::ApiKey
@@ -683,6 +802,7 @@ impl AdminCredentialWriteFields {
             || !valid_optional_text(oauth_account_key.as_deref(), 255)
             || !valid_optional_text(oauth_project_id.as_deref(), 255)
             || (kind != CredentialKind::Oauth && oauth_fields_present)
+            || !valid_shape
         {
             return Err(AdminChannelWriteError::InvalidInput);
         }
@@ -720,10 +840,7 @@ impl AdminCredentialWriteFields {
             self.rate_multiplier_micros,
             self.schedulable,
             self.parent_id,
-            match self.quota_dimension {
-                AdminCredentialQuotaDimension::Global => "global",
-                AdminCredentialQuotaDimension::Spark => "spark",
-            },
+            self.quota_dimension,
             self.proxy_id,
             self.oauth_provider,
             self.oauth_account_key,
@@ -840,11 +957,14 @@ impl AdminChannelWriter for DatabaseAdminChannelWriter {
     ) -> AdminChannelCreateFuture<'a> {
         Box::pin(async move {
             require_admin(principal)?;
-            self.repository
+            let channel = self
+                .repository
                 .create_channel(command.into_record())
                 .await
                 .map(AdminChannel::from_record)
-                .map_err(map_repository_error)
+                .map_err(map_repository_error)?;
+            audit_client_simulation_write("create", principal, &channel);
+            Ok(channel)
         })
     }
 
@@ -863,7 +983,9 @@ impl AdminChannelWriter for DatabaseAdminChannelWriter {
                 .map_err(map_repository_error)?
             {
                 AdminChannelMutationOutcome::Mutated(record) => {
-                    Ok(AdminChannel::from_record(*record))
+                    let channel = AdminChannel::from_record(*record);
+                    audit_client_simulation_write("update", principal, &channel);
+                    Ok(channel)
                 }
                 AdminChannelMutationOutcome::NotFound => {
                     Err(AdminChannelWriteError::ChannelNotFound)
@@ -899,9 +1021,9 @@ impl AdminChannelWriter for DatabaseAdminChannelWriter {
     ) -> AdminCredentialCreateFuture<'a> {
         Box::pin(async move {
             require_admin(principal)?;
-            let (record, secret) = command.into_parts();
-            let outcome = match secret {
-                Some(secret) => self
+            let (record, mode) = command.into_parts();
+            let outcome = match mode {
+                AdminCredentialCreateMode::Encrypted(secret) => self
                     .repository
                     .create_credential(channel_id, record, |credential_id| {
                         self.encryptor
@@ -910,9 +1032,14 @@ impl AdminChannelWriter for DatabaseAdminChannelWriter {
                     })
                     .await
                     .map_err(map_repository_error)?,
-                None => self
+                AdminCredentialCreateMode::PendingOauth => self
                     .repository
                     .create_pending_oauth_credential(channel_id, record)
+                    .await
+                    .map_err(map_repository_error)?,
+                AdminCredentialCreateMode::SparkShadow => self
+                    .repository
+                    .create_spark_shadow_credential(channel_id, record)
                     .await
                     .map_err(map_repository_error)?,
             };
@@ -998,6 +1125,25 @@ fn require_admin(principal: SessionPrincipal) -> Result<(), AdminChannelWriteErr
     } else {
         Err(AdminChannelWriteError::Forbidden)
     }
+}
+
+/// 记录平台渠道写入后的闭合仿真状态，不展开任何敏感设置。
+fn audit_client_simulation_write(
+    operation: &'static str,
+    principal: SessionPrincipal,
+    channel: &AdminChannel,
+) {
+    tracing::info!(
+        target: "af_admin::channel_audit",
+        audit_event = "channel_client_simulation_write",
+        operation,
+        actor_user_id = principal.user_id().get(),
+        channel_id = channel.channel_id().get(),
+        client_simulation_profile = channel
+            .client_simulation_profile()
+            .map_or("disabled", af_domain::ClientSimulationProfile::as_str),
+        "管理员已写入渠道客户端仿真配置"
+    );
 }
 
 fn map_repository_error(error: AdminChannelWriteRepositoryError) -> AdminChannelWriteError {
@@ -1215,6 +1361,110 @@ mod tests {
                 None,
                 false,
                 None,
+                AdminCredentialQuotaDimension::Global,
+                None,
+                None,
+                None,
+                None,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn credential_commands_keep_spark_shadow_shape_closed() {
+        let parent_id = CredentialId::new(41).unwrap();
+        let shadow = AdminCredentialCreateCommand::new_spark_shadow(
+            AdminRoutingWriteStatus::Enabled,
+            Some(AdminCredentialMultiKeyMode::RoundRobin),
+            10,
+            20,
+            None,
+            Some(1_000_000),
+            Some(900_000),
+            true,
+            parent_id,
+        )
+        .unwrap();
+        let (record, mode) = shadow.into_parts();
+        assert_eq!(record.kind(), CredentialKind::Oauth);
+        assert_eq!(record.parent_id(), Some(parent_id));
+        assert_eq!(
+            record.quota_dimension(),
+            AdminCredentialQuotaDimension::Spark
+        );
+        assert!(matches!(mode, AdminCredentialCreateMode::SparkShadow));
+
+        assert!(
+            AdminCredentialCreateCommand::new_spark_shadow(
+                AdminRoutingWriteStatus::Enabled,
+                None,
+                10,
+                20,
+                Some(2),
+                None,
+                None,
+                true,
+                parent_id,
+            )
+            .is_err()
+        );
+
+        assert!(
+            AdminCredentialCreateCommand::new(
+                CredentialKind::Oauth,
+                PlainCredentialSecret::oauth_access_token("spark-token".to_owned()).unwrap(),
+                AdminRoutingWriteStatus::Enabled,
+                None,
+                0,
+                1,
+                None,
+                None,
+                None,
+                true,
+                Some(parent_id),
+                AdminCredentialQuotaDimension::Spark,
+                None,
+                None,
+                None,
+                None,
+            )
+            .is_err()
+        );
+        assert!(
+            AdminCredentialUpdateCommand::new(
+                CredentialKind::Oauth,
+                Some(PlainCredentialSecret::oauth_access_token("spark-token".to_owned()).unwrap(),),
+                AdminRoutingWriteStatus::Enabled,
+                None,
+                0,
+                1,
+                None,
+                None,
+                None,
+                true,
+                Some(parent_id),
+                AdminCredentialQuotaDimension::Spark,
+                None,
+                None,
+                None,
+                None,
+            )
+            .is_err()
+        );
+        assert!(
+            AdminCredentialUpdateCommand::new(
+                CredentialKind::Oauth,
+                None,
+                AdminRoutingWriteStatus::Enabled,
+                None,
+                0,
+                1,
+                None,
+                None,
+                None,
+                true,
+                Some(parent_id),
                 AdminCredentialQuotaDimension::Global,
                 None,
                 None,

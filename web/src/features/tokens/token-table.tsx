@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { AdminToken } from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
+import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 
 type TokenTableProps = {
   tokens: AdminToken[]
@@ -62,7 +63,7 @@ function RowActions({ token, onDelete, onEdit }: {
 
 function QuotaValue({ token }: { token: AdminToken }) {
   const { i18n, t } = useTranslation()
-  const format = (value: number) => new Intl.NumberFormat(i18n.language).format(value)
+  const { formatQuota } = useBalanceDisplay()
   const resetFormat = new Intl.DateTimeFormat(i18n.language, {
     month: 'numeric',
     day: 'numeric',
@@ -72,8 +73,8 @@ function QuotaValue({ token }: { token: AdminToken }) {
   const now = Math.floor(Date.now() / 1000)
   return (
     <>
-      <div>{token.unlimited_quota ? t('tokens.values.unlimited') : t('tokens.values.remaining', { value: format(token.remain_quota) })}</div>
-      <div className="mt-1 text-[0.6875rem] text-muted-foreground">{t('tokens.values.usedQuota', { value: format(token.used_quota) })}</div>
+      <div>{token.unlimited_quota ? t('tokens.values.unlimited') : t('tokens.values.remaining', { value: formatQuota(token.remain_quota) })}</div>
+      <div className="mt-1 text-[0.6875rem] text-muted-foreground">{t('tokens.values.usedQuota', { value: formatQuota(token.used_quota) })}</div>
       <div className="mt-2 grid gap-1.5 border-t border-[var(--hairline)] pt-2">
         {TOKEN_WINDOWS.map((window) => {
           const limit = token[window.limit]
@@ -85,8 +86,8 @@ function QuotaValue({ token }: { token: AdminToken }) {
               <div className="min-w-0">
                 <div className="truncate font-medium tabular-nums">
                   {limit === null
-                    ? t('tokens.values.windowUsageUnlimited', { used: format(usage) })
-                    : t('tokens.values.windowUsage', { used: format(usage), limit: format(limit) })}
+                    ? t('tokens.values.windowUsageUnlimited', { used: formatQuota(usage) })
+                    : t('tokens.values.windowUsage', { used: formatQuota(usage), limit: formatQuota(limit) })}
                 </div>
                 <time
                   className="block truncate text-[0.625rem] text-muted-foreground"
@@ -171,7 +172,7 @@ export function TokenTable({ tokens, onDelete, onEdit }: TokenTableProps) {
 
       <div className="grid gap-2 md:hidden">
         {tokens.map((token) => (
-          <article key={token.id} className="rounded-xl border border-[var(--hairline)] bg-surface-1 p-3">
+          <article key={token.id} className="min-w-0 rounded-xl border border-[var(--hairline)] bg-surface-1 p-3">
             <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex items-center gap-2"><h2 className="truncate text-sm font-semibold">{token.name}</h2><StatusBadge token={token} /></div><p className="mt-1 truncate font-mono text-[0.6875rem] text-muted-foreground">{token.key_prefix}… · #{token.id}</p></div><RowActions token={token} onDelete={onDelete} onEdit={onEdit} /></div>
             <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-[var(--hairline)] pt-3 text-xs">
               <div><dt className="text-muted-foreground">{t('tokens.columns.owner')}</dt><dd className="mt-1">{t('tokens.values.user', { id: token.user_id })}</dd></div>

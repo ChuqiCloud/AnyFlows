@@ -1,8 +1,9 @@
 use std::{error::Error, sync::Mutex, time::Duration};
 
 use af_domain::{
-    ChannelAutoBanRules, ChannelId, ChannelType, CredentialId, CredentialKind, Protocol,
-    ResponsesCompactMode, ResponsesCompactProbeResult, Status,
+    ChannelAutoBanRules, ChannelId, ChannelType, ClientSimulationProfile, CredentialId,
+    CredentialKind, CredentialQuotaDimension, Protocol, ResponsesCompactMode,
+    ResponsesCompactProbeResult, Status,
 };
 use sea_orm::{ConnectionTrait, DbBackend, QueryResult, Statement};
 
@@ -470,6 +471,147 @@ async fn pool_mode_round_trip_preserves_unknown_sensitive_settings() -> Result<(
 }
 
 #[tokio::test]
+async fn client_simulation_requires_risk_confirmation_only_when_profile_changes()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let create_record = |risk_accepted| {
+        AdminChannelWriteRecord::new(
+            "anthropic-simulation".to_owned(),
+            ChannelType::Anthropic,
+            Protocol::Anthropic,
+            Some("https://api.anthropic.com".to_owned()),
+            Some(af_domain::ChannelTimeout::new(60).unwrap()),
+            Status::Enabled,
+            10,
+            20,
+            true,
+            Vec::new(),
+            Vec::new(),
+            serde_json::json!({}),
+            serde_json::json!({}),
+            serde_json::json!({}),
+            serde_json::json!({
+                "private_setting": "private-setting-value",
+                "client_simulation_profile": "untrusted-raw-value"
+            }),
+            None,
+        )
+        .with_client_simulation_profile(
+            Some(ClientSimulationProfile::AnthropicCliHeadersV1),
+            risk_accepted,
+        )
+    };
+    assert_eq!(
+        fixture
+            .repository
+            .create_channel(create_record(false))
+            .await
+            .unwrap_err(),
+        AdminChannelWriteRepositoryError::InvalidInput
+    );
+
+    let created = fixture
+        .repository
+        .create_channel(create_record(true))
+        .await?;
+    assert_eq!(
+        created.client_simulation_profile(),
+        Some(ClientSimulationProfile::AnthropicCliHeadersV1)
+    );
+
+    let update_record = || {
+        AdminChannelWriteRecord::new_update(
+            "anthropic-simulation".to_owned(),
+            ChannelType::Anthropic,
+            Protocol::Anthropic,
+            Some("https://api.anthropic.com".to_owned()),
+            Some(af_domain::ChannelTimeout::new(60).unwrap()),
+            Status::Enabled,
+            10,
+            20,
+            true,
+            Vec::new(),
+            Vec::new(),
+            serde_json::json!({}),
+            serde_json::json!({}),
+            None,
+            None,
+            None,
+        )
+    };
+    let AdminChannelMutationOutcome::Mutated(preserved) = fixture
+        .repository
+        .update_channel(
+            created.channel_id(),
+            update_record().with_client_simulation_profile(
+                Some(ClientSimulationProfile::AnthropicCliHeadersV1),
+                false,
+            ),
+        )
+        .await?
+    else {
+        panic!("同一仿真档案必须允许普通更新");
+    };
+    assert_eq!(
+        preserved.client_simulation_profile(),
+        Some(ClientSimulationProfile::AnthropicCliHeadersV1)
+    );
+
+    let AdminChannelMutationOutcome::Mutated(disabled) = fixture
+        .repository
+        .update_channel(
+            created.channel_id(),
+            update_record().with_client_simulation_profile(None, false),
+        )
+        .await?
+    else {
+        panic!("关闭仿真档案必须成功");
+    };
+    assert_eq!(disabled.client_simulation_profile(), None);
+    assert_eq!(
+        fixture
+            .repository
+            .update_channel(
+                created.channel_id(),
+                update_record().with_client_simulation_profile(
+                    Some(ClientSimulationProfile::AnthropicCliHeadersV1),
+                    false,
+                ),
+            )
+            .await
+            .unwrap_err(),
+        AdminChannelWriteRepositoryError::InvalidInput
+    );
+    let AdminChannelMutationOutcome::Mutated(enabled_again) = fixture
+        .repository
+        .update_channel(
+            created.channel_id(),
+            update_record().with_client_simulation_profile(
+                Some(ClientSimulationProfile::AnthropicCliHeadersV1),
+                true,
+            ),
+        )
+        .await?
+    else {
+        panic!("确认风险后必须允许重新启用仿真档案");
+    };
+    assert_eq!(
+        enabled_again.client_simulation_profile(),
+        Some(ClientSimulationProfile::AnthropicCliHeadersV1)
+    );
+    let (_, settings) = channel_sensitive_fields(&fixture, created.channel_id()).await?;
+    let settings: serde_json::Value = serde_json::from_str(&settings)?;
+    assert_eq!(settings["private_setting"], "private-setting-value");
+    assert_eq!(
+        settings["client_simulation_profile"],
+        "anthropic_cli_headers_v1"
+    );
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn auto_ban_rules_round_trip_preserve_and_clear_controlled_settings()
 -> Result<(), Box<dyn Error>> {
     let fixture = fixture().await?;
@@ -647,7 +789,7 @@ async fn credential_update_preserves_secret_and_runtime_state() -> Result<(), Bo
                 Some(700_000),
                 false,
                 None,
-                "spark",
+                CredentialQuotaDimension::Global,
                 None,
                 None,
                 None,
@@ -772,12 +914,92 @@ async fn oauth_credential_update_invalidates_concurrent_refresh_guards()
 }
 
 #[tokio::test]
+async fn spark_shadow_creation_enforces_parent_marker_uniqueness_and_immutability()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let channel_id = create_spark_channel(&fixture).await?;
+    let parent_id = create_oauth_credential(&fixture, channel_id, 0x70).await?;
+
+    let AdminCredentialCreateOutcome::Created(shadow) = fixture
+        .repository
+        .create_spark_shadow_credential(channel_id, spark_shadow_record(parent_id))
+        .await?
+    else {
+        panic!("Spark 渠道和有效母凭据必须创建影子");
+    };
+    let shadow_id = shadow.credential_id();
+    assert_eq!(shadow.parent_id(), Some(parent_id));
+    assert_eq!(shadow.quota_dimension(), CredentialQuotaDimension::Spark);
+    assert_eq!(shadow.proxy_id(), None);
+    assert_eq!(shadow.oauth_provider(), None);
+    let marker: serde_json::Value =
+        serde_json::from_str(&credential_secret(&fixture, shadow_id).await?)?;
+    assert_eq!(marker["key_id"], "shadow-reference");
+
+    assert_eq!(
+        fixture
+            .repository
+            .create_spark_shadow_credential(channel_id, spark_shadow_record(parent_id))
+            .await
+            .unwrap_err(),
+        AdminChannelWriteRepositoryError::InvalidReference
+    );
+    assert_eq!(
+        fixture
+            .repository
+            .update_credential(
+                channel_id,
+                shadow_id,
+                spark_shadow_record(parent_id),
+                Some(envelope(0x71)),
+            )
+            .await
+            .unwrap_err(),
+        AdminChannelWriteRepositoryError::InvalidInput
+    );
+    assert_eq!(
+        fixture
+            .repository
+            .update_credential(
+                channel_id,
+                shadow_id,
+                oauth_credential_record("codex", None),
+                None,
+            )
+            .await
+            .unwrap_err(),
+        AdminChannelWriteRepositoryError::InvalidInput
+    );
+
+    let chat_channel_id = create_channel(&fixture).await?;
+    let chat_parent_id = create_oauth_credential(&fixture, chat_channel_id, 0x72).await?;
+    assert_eq!(
+        fixture
+            .repository
+            .create_spark_shadow_credential(chat_channel_id, spark_shadow_record(chat_parent_id),)
+            .await
+            .unwrap_err(),
+        AdminChannelWriteRepositoryError::InvalidInput
+    );
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn deletes_cascade_shadow_credentials_and_clear_channel_relations()
 -> Result<(), Box<dyn Error>> {
     let fixture = fixture().await?;
-    let channel_id = create_channel(&fixture).await?;
-    let parent_id = create_credential(&fixture, channel_id, None, 0x71).await?;
-    let child_id = create_credential(&fixture, channel_id, Some(parent_id), 0x72).await?;
+    let channel_id = create_spark_channel(&fixture).await?;
+    let parent_id = create_oauth_credential(&fixture, channel_id, 0x71).await?;
+    let AdminCredentialCreateOutcome::Created(child) = fixture
+        .repository
+        .create_spark_shadow_credential(channel_id, spark_shadow_record(parent_id))
+        .await?
+    else {
+        panic!("有效母凭据必须创建 Spark 影子");
+    };
+    let child_id = child.credential_id();
     assert_eq!(channel_outbox_count(&fixture, channel_id).await?, 3);
     seed_relations(&fixture, channel_id).await?;
 
@@ -793,7 +1015,7 @@ async fn deletes_cascade_shadow_credentials_and_clear_channel_relations()
     }
     assert_eq!(channel_outbox_count(&fixture, channel_id).await?, 4);
 
-    let second_id = create_credential(&fixture, channel_id, None, 0x73).await?;
+    let second_id = create_oauth_credential(&fixture, channel_id, 0x73).await?;
     assert_eq!(
         fixture.repository.delete_channel(channel_id).await?,
         AdminChannelDeleteOutcome::Deleted
@@ -842,12 +1064,24 @@ async fn create_channel(fixture: &Fixture) -> Result<ChannelId, Box<dyn Error>> 
         .channel_id())
 }
 
+async fn create_spark_channel(fixture: &Fixture) -> Result<ChannelId, Box<dyn Error>> {
+    Ok(fixture
+        .repository
+        .create_channel(spark_channel_record(
+            "spark-primary",
+            "https://api.example.com/v1",
+        ))
+        .await?
+        .channel_id())
+}
+
 async fn create_credential(
     fixture: &Fixture,
     channel_id: ChannelId,
     parent_id: Option<CredentialId>,
     marker: u8,
 ) -> Result<CredentialId, Box<dyn Error>> {
+    assert!(parent_id.is_none(), "普通测试凭据不得携带父级");
     let AdminCredentialCreateOutcome::Created(credential) = fixture
         .repository
         .create_credential(
@@ -855,6 +1089,23 @@ async fn create_credential(
             credential_record(CredentialKind::ApiKey, parent_id),
             |_| Ok(envelope(marker)),
         )
+        .await?
+    else {
+        panic!("测试渠道必须存在");
+    };
+    Ok(credential.credential_id())
+}
+
+async fn create_oauth_credential(
+    fixture: &Fixture,
+    channel_id: ChannelId,
+    marker: u8,
+) -> Result<CredentialId, Box<dyn Error>> {
+    let AdminCredentialCreateOutcome::Created(credential) = fixture
+        .repository
+        .create_credential(channel_id, oauth_credential_record("codex", None), |_| {
+            Ok(envelope(marker))
+        })
         .await?
     else {
         panic!("测试渠道必须存在");
@@ -880,6 +1131,27 @@ fn channel_record(name: &str, base_url: &str) -> AdminChannelWriteRecord {
         serde_json::json!({"x-runtime": "private-header-value"}),
         serde_json::json!({"private_setting": "private-setting-value"}),
         Some("test".to_owned()),
+    )
+}
+
+fn spark_channel_record(name: &str, base_url: &str) -> AdminChannelWriteRecord {
+    AdminChannelWriteRecord::new(
+        name.to_owned(),
+        ChannelType::OpenAi,
+        Protocol::OpenAiResponses,
+        Some(base_url.to_owned()),
+        Some(af_domain::ChannelTimeout::new(60).unwrap()),
+        Status::Enabled,
+        10,
+        20,
+        true,
+        Vec::new(),
+        Vec::new(),
+        serde_json::json!({"gpt-5.3-codex-spark": "gpt-5.3-codex-spark"}),
+        serde_json::json!({}),
+        serde_json::json!({}),
+        serde_json::json!({}),
+        Some("spark".to_owned()),
     )
 }
 
@@ -922,7 +1194,7 @@ fn credential_record(
         Some(900_000),
         true,
         parent_id,
-        "global",
+        CredentialQuotaDimension::Global,
         None,
         None,
         None,
@@ -945,11 +1217,31 @@ fn oauth_credential_record(
         Some(900_000),
         true,
         parent_id,
-        "global",
+        CredentialQuotaDimension::Global,
         None,
         Some(provider.to_owned()),
         Some("account".to_owned()),
         Some("project".to_owned()),
+    )
+}
+
+fn spark_shadow_record(parent_id: CredentialId) -> AdminCredentialWriteRecord {
+    AdminCredentialWriteRecord::new(
+        CredentialKind::Oauth,
+        Status::Enabled,
+        Some(1),
+        10,
+        20,
+        None,
+        Some(1_000_000),
+        Some(900_000),
+        true,
+        Some(parent_id),
+        CredentialQuotaDimension::Spark,
+        None,
+        None,
+        None,
+        None,
     )
 }
 

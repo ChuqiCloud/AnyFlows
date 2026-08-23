@@ -2,7 +2,7 @@ use std::{fmt, time::Duration};
 
 use af_domain::{ChannelId, CredentialId, CredentialKind, Status};
 use sea_orm::{
-    ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
+    ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Condition, Expr, Query},
 };
@@ -14,8 +14,9 @@ use super::{
     encrypted_json, is_valid_provider, query_error, record_internal_error,
 };
 use crate::{
-    EncryptedCredentialEnvelope,
+    EncryptedCredentialEnvelope, SchedulerCatalogSubject,
     entity::{EncryptedJson, channels, credentials},
+    scheduler_outbox::enqueue_scheduler_catalog_change,
 };
 
 /// 单次后台扫描允许返回的最大 OAuth 凭据数。
@@ -427,6 +428,12 @@ impl OAuthCredentialRepository {
         identity: OAuthCredentialIdentityPatch,
     ) -> Result<OAuthCredentialRefreshUpdateOutcome, OAuthCredentialRepositoryError> {
         let now = sea_orm::entity::prelude::TimeDateTimeWithTimeZone::now_utc();
+        let transaction = self
+            .pool
+            .connection()
+            .begin()
+            .await
+            .map_err(|_| query_error("oauth_refresh_token_begin"))?;
         let mut update = credentials::Entity::update_many()
             .filter(credentials::Column::Id.eq(candidate.credential_id.get()))
             .filter(credentials::Column::ChannelId.eq(candidate.channel_id.get()))
@@ -460,13 +467,38 @@ impl OAuthCredentialRepository {
             );
         }
         let result = update
-            .exec(self.pool.connection())
+            .exec(&transaction)
             .await
             .map_err(|_| query_error("oauth_refresh_token_update"))?;
         match result.rows_affected {
-            1 => Ok(OAuthCredentialRefreshUpdateOutcome::Updated),
-            0 => self.classify_refresh_cas_miss(&candidate).await,
-            _ => Err(OAuthCredentialRepositoryError::Invariant),
+            1 => {
+                enqueue_scheduler_catalog_change(
+                    &transaction,
+                    SchedulerCatalogSubject::Channel(candidate.channel_id),
+                    now,
+                )
+                .await
+                .map_err(|_| query_error("oauth_refresh_token_outbox"))?;
+                transaction
+                    .commit()
+                    .await
+                    .map_err(|_| query_error("oauth_refresh_token_commit"))?;
+                Ok(OAuthCredentialRefreshUpdateOutcome::Updated)
+            }
+            0 => {
+                transaction
+                    .rollback()
+                    .await
+                    .map_err(|_| query_error("oauth_refresh_token_rollback"))?;
+                self.classify_refresh_cas_miss(&candidate).await
+            }
+            _ => {
+                transaction
+                    .rollback()
+                    .await
+                    .map_err(|_| query_error("oauth_refresh_token_rollback"))?;
+                Err(OAuthCredentialRepositoryError::Invariant)
+            }
         }
     }
 

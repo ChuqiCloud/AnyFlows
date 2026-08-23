@@ -12,14 +12,14 @@ import type { AdminTokenWriteRequest } from '@/lib/api/generated/types.gen'
 export const adminTokensQueryKey = ['admin-tokens'] as const
 
 /** 按稳定 ID 游标读取令牌，避免刷新期间出现重复页或漏项。 */
-export function useAdminTokens() {
+export function useAdminTokens(pageSize = 50) {
   return useInfiniteQuery({
-    queryKey: adminTokensQueryKey,
+    queryKey: [...adminTokensQueryKey, { pageSize }],
     initialPageParam: undefined as number | undefined,
     queryFn: async ({ pageParam, signal }) => {
       const { data } = await listAdminTokens({
         client: apiClient,
-        query: { after: pageParam, limit: 50 },
+        query: { after: pageParam, limit: pageSize },
         signal,
       })
       return data

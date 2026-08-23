@@ -92,7 +92,6 @@ fn uses_known_unsupported_feature(value: &Value) -> bool {
         "inference_geo",
         "max_tokens_to_sample",
         "mcp_servers",
-        "output_config",
         "output_format",
         "prompt",
         "service_tier",

@@ -11,7 +11,10 @@ use crate::{
         AdminSubscriptionPlanListResponse, AdminSubscriptionPlanResponse,
         AdminUserSubscriptionBindRequest, AdminUserSubscriptionLifecycleActionDto,
         AdminUserSubscriptionLifecycleRequest, AdminUserSubscriptionLifecycleResponse,
-        SubscriptionCycleDto, SubscriptionPlanStatusDto, UserSubscriptionListResponse,
+        SubscriptionCatalogPlanResponse, SubscriptionCatalogResponse, SubscriptionCycleDto,
+        SubscriptionOrderCreateRequest, SubscriptionOrderPaymentRequest,
+        SubscriptionOrderPaymentResponse, SubscriptionOrderResponse, SubscriptionOrderStatusDto,
+        SubscriptionPaymentResponse, SubscriptionPlanStatusDto, UserSubscriptionListResponse,
         UserSubscriptionResponse, UserSubscriptionStatusDto,
     },
 };
@@ -168,6 +171,81 @@ fn transition_admin_user_subscription_lifecycle() {}
 )]
 fn list_current_user_subscriptions() {}
 
+#[utoipa::path(
+    get,
+    path = "/api/account/subscription-catalog",
+    operation_id = "listCurrentSubscriptionCatalog",
+    tag = "订阅管理",
+    summary = "读取当前用户可售订阅目录",
+    responses(
+        (status = 200, description = "当前用户可购买的 Active 计划与价格快照", body = SubscriptionCatalogResponse),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn list_current_subscription_catalog() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/account/subscription-orders",
+    operation_id = "createCurrentSubscriptionOrder",
+    tag = "订阅管理",
+    summary = "幂等创建当前用户订阅订单",
+    request_body = SubscriptionOrderCreateRequest,
+    responses(
+        (status = 201, description = "已创建待支付订阅订单", body = SubscriptionOrderResponse),
+        (status = 200, description = "已重放同一幂等订单", body = SubscriptionOrderResponse),
+        (status = 400, description = "订单请求或幂等键无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 404, description = "订阅计划不存在", body = ManagementErrorBody),
+        (status = 409, description = "价格快照、销售状态或幂等事实冲突", body = ManagementErrorBody),
+        (status = 503, description = "提交结果未知", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn create_current_subscription_order() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/account/subscription-orders/{order_id}",
+    operation_id = "getCurrentSubscriptionOrder",
+    tag = "订阅管理",
+    summary = "查询当前用户订阅订单结果",
+    params(("order_id" = String, Path, min_length = 32, max_length = 32, description = "订阅订单标识")),
+    responses(
+        (status = 200, description = "订阅订单服务端结果", body = SubscriptionOrderResponse),
+        (status = 400, description = "订单标识无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 404, description = "订单不存在或不属于当前用户", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn get_current_subscription_order() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/account/subscription-orders/{order_id}/payment",
+    operation_id = "submitCurrentSubscriptionOrderPayment",
+    tag = "订阅管理",
+    summary = "提交或恢复当前用户订阅订单支付",
+    params(("order_id" = String, Path, min_length = 32, max_length = 32, description = "订阅订单标识")),
+    request_body = SubscriptionOrderPaymentRequest,
+    responses(
+        (status = 200, description = "支付会话已创建或恢复", body = SubscriptionOrderPaymentResponse),
+        (status = 400, description = "订单标识或支付方式无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 404, description = "订单不存在或不属于当前用户", body = ManagementErrorBody),
+        (status = 409, description = "订单状态、Provider 或支付事实冲突", body = ManagementErrorBody),
+        (status = 503, description = "支付 Provider 或提交结果暂不可用", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn submit_current_subscription_order_payment() {}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -177,7 +255,11 @@ fn list_current_user_subscriptions() {}
         list_admin_user_subscriptions,
         bind_admin_user_subscription,
         transition_admin_user_subscription_lifecycle,
-        list_current_user_subscriptions
+        list_current_user_subscriptions,
+        list_current_subscription_catalog,
+        create_current_subscription_order,
+        get_current_subscription_order,
+        submit_current_subscription_order_payment
     ),
     components(schemas(
         SubscriptionCycleDto,
@@ -186,6 +268,14 @@ fn list_current_user_subscriptions() {}
         AdminSubscriptionPlanResponse,
         AdminSubscriptionPlanListResponse,
         AdminSubscriptionPlanCreateRequest,
+        SubscriptionCatalogResponse,
+        SubscriptionCatalogPlanResponse,
+        SubscriptionOrderCreateRequest,
+        SubscriptionOrderPaymentRequest,
+        SubscriptionOrderPaymentResponse,
+        SubscriptionPaymentResponse,
+        SubscriptionOrderResponse,
+        SubscriptionOrderStatusDto,
         AdminSubscriptionPlanDisableRequest,
         UserSubscriptionResponse,
         UserSubscriptionListResponse,

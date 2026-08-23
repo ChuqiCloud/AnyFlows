@@ -177,6 +177,7 @@ async fn registration_reuses_identity_creation_and_counts_conflicts() -> Result<
             user_id: registered.user_id(),
             role: 0,
             session_version: 1,
+            totp_secret: None,
         }
     );
 

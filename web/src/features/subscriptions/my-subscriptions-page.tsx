@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useUserProfile } from '@/features/profile/profile-api'
 import { isSubscriptionAlertDue } from './subscription-alert-policy'
+import { SubscriptionCatalog } from './subscription-catalog'
 import { SubscriptionList } from './subscription-list'
 import { useCurrentUserSubscriptions } from './subscription-api'
 
@@ -16,6 +17,10 @@ export function MySubscriptionsPage() {
   const profileQuery = useUserProfile()
   const subscriptions = query.data?.pages.flatMap((page) => page.subscriptions) ?? []
   const active = subscriptions.filter((subscription) => subscription.status === 'active')
+  const activePlanIds = useMemo(
+    () => new Set(active.map((subscription) => subscription.plan_id)),
+    [active],
+  )
   const notifications = profileQuery.data?.notifications
   const alertThresholdPercent = notifications?.subscription_remaining_percent ?? 20
   const alertPolicyEnabled = Boolean(
@@ -94,6 +99,8 @@ export function MySubscriptionsPage() {
         scope="current"
         alertPolicy={{ enabled: alertPolicyEnabled, thresholdPercent: alertThresholdPercent }}
       />
+
+      <SubscriptionCatalog activePlanIds={activePlanIds} subscriptionsFetching={query.isFetching} />
     </div>
   )
 }

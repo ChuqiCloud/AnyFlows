@@ -15,6 +15,8 @@ pub struct Model {
     pub user_id: i64,
     pub token_id: i64,
     pub group_id: i64,
+    pub organization_id: Option<i64>,
+    pub organization_team_id: Option<i64>,
     pub billing_mode: i16,
     pub input_tokens: i64,
     pub output_tokens: i64,

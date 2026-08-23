@@ -88,7 +88,7 @@ export function ModelPriceTable(props: ModelPriceTableProps) {
         {props.rows.map((row) => {
           const display = displayPrice(row)
           return (
-            <article key={row.model.model} className="rounded-xl border border-[var(--hairline)] p-3">
+            <article key={row.model.model} className="min-w-0 rounded-xl border border-[var(--hairline)] p-3">
               <div className="flex items-start gap-3">
                 <RowCheckbox row={row} selected={props.selected.has(row.model.model)} onSelect={props.onSelect} />
                 <div className="min-w-0 flex-1">

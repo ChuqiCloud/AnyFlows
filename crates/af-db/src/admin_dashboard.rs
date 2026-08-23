@@ -13,11 +13,16 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
     DatabasePool,
+    admin_dashboard_observability::{
+        AdminDashboardHourlyRecord, AdminDashboardObservabilityRecord,
+        AdminDashboardPerformanceRecord, append_observability_expressions, decode_observability,
+    },
+    admin_dashboard_outcomes::{AdminDashboardOutcomeRecord, query_outcomes},
     entity::{channels, usage_logs},
 };
 
 /// 管理看板使用的持久化聚合快照。
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdminDashboardRecord {
     request_count: i64,
     quota_consumed: i64,
@@ -29,67 +34,117 @@ pub struct AdminDashboardRecord {
     enabled_channel_count: i64,
     disabled_channel_count: i64,
     auto_disabled_channel_count: i64,
+    observability: AdminDashboardObservabilityRecord,
+    outcomes: AdminDashboardOutcomeRecord,
 }
 
 impl AdminDashboardRecord {
     /// 返回窗口内已经确认并落库的请求数。
     #[must_use]
-    pub const fn request_count(self) -> i64 {
+    pub const fn request_count(&self) -> i64 {
         self.request_count
     }
 
     /// 返回窗口内最终消耗的额度单位数。
     #[must_use]
-    pub const fn quota_consumed(self) -> i64 {
+    pub const fn quota_consumed(&self) -> i64 {
         self.quota_consumed
     }
 
     /// 返回由上游响应确认用量的请求数。
     #[must_use]
-    pub const fn upstream_usage_count(self) -> i64 {
+    pub const fn upstream_usage_count(&self) -> i64 {
         self.upstream_usage_count
     }
 
     /// 返回由本地估算用量的请求数。
     #[must_use]
-    pub const fn estimated_usage_count(self) -> i64 {
+    pub const fn estimated_usage_count(&self) -> i64 {
         self.estimated_usage_count
     }
 
     /// 返回按 token 计费的请求数。
     #[must_use]
-    pub const fn per_token_request_count(self) -> i64 {
+    pub const fn per_token_request_count(&self) -> i64 {
         self.per_token_request_count
     }
 
     /// 返回按次计费的请求数。
     #[must_use]
-    pub const fn per_call_request_count(self) -> i64 {
+    pub const fn per_call_request_count(&self) -> i64 {
         self.per_call_request_count
     }
 
     /// 返回免费请求数。
     #[must_use]
-    pub const fn free_request_count(self) -> i64 {
+    pub const fn free_request_count(&self) -> i64 {
         self.free_request_count
     }
 
     /// 返回当前启用的未删除渠道数。
     #[must_use]
-    pub const fn enabled_channel_count(self) -> i64 {
+    pub const fn enabled_channel_count(&self) -> i64 {
         self.enabled_channel_count
     }
 
     /// 返回当前手动禁用的未删除渠道数。
     #[must_use]
-    pub const fn disabled_channel_count(self) -> i64 {
+    pub const fn disabled_channel_count(&self) -> i64 {
         self.disabled_channel_count
     }
 
     /// 返回当前自动禁用的未删除渠道数。
     #[must_use]
-    pub const fn auto_disabled_channel_count(self) -> i64 {
+    pub const fn auto_disabled_channel_count(&self) -> i64 {
         self.auto_disabled_channel_count
+    }
+
+    /// 返回覆盖整个窗口且连续的一小时用量分桶。
+    #[must_use]
+    pub fn hourly(&self) -> &[AdminDashboardHourlyRecord] {
+        self.observability.hourly()
+    }
+
+    /// 返回只基于已持久化耗时样本计算的性能健康聚合。
+    #[must_use]
+    pub const fn performance(&self) -> AdminDashboardPerformanceRecord {
+        self.observability.performance()
+    }
+
+    /// 返回窗口内已经进入终态观测的同步模型请求数。
+    #[must_use]
+    pub const fn outcome_request_count(&self) -> i64 {
+        self.outcomes.request_count()
+    }
+
+    /// 返回窗口内成功完成的同步模型请求数。
+    #[must_use]
+    pub const fn successful_request_count(&self) -> i64 {
+        self.outcomes.successful_request_count()
+    }
+
+    /// 返回窗口内失败完成的同步模型请求数。
+    #[must_use]
+    pub const fn failed_request_count(&self) -> i64 {
+        self.outcomes.failed_request_count()
+    }
+
+    /// 返回未进入前十二条可见流向的成功请求数。
+    #[must_use]
+    pub const fn other_success_count(&self) -> i64 {
+        self.outcomes.other_success_count()
+    }
+
+    /// 返回按闭合错误分类聚合的失败请求。
+    #[must_use]
+    pub fn failures(&self) -> &[crate::AdminDashboardFailureRecord] {
+        self.outcomes.failures()
+    }
+
+    /// 返回请求量最高的协议到渠道流向。
+    #[must_use]
+    pub fn channel_flows(&self) -> &[crate::AdminDashboardChannelFlowRecord] {
+        self.outcomes.channel_flows()
     }
 }
 
@@ -107,7 +162,7 @@ pub enum AdminDashboardRepositoryError {
     /// 获取连接或执行聚合查询失败。
     #[error("管理看板数据库查询失败")]
     Query,
-    /// 两组聚合查询超过共同的硬截止时间。
+    /// 全部聚合查询超过共同的硬截止时间。
     #[error("管理看板数据库查询超时")]
     Timeout,
     /// 查询窗口或持久化聚合结果违反不变量。
@@ -153,9 +208,10 @@ impl AdminDashboardRepository {
         let period_end = TimeDateTimeWithTimeZone::from_unix_timestamp(period_end)
             .map_err(|_| record_internal_error(AdminDashboardRepositoryError::Invariant))?;
         let operation = async {
-            let usage = self.query_usage(period_start, period_end).await?;
+            let (usage, observability) = self.query_usage(period_start, period_end).await?;
             let channels = self.query_channels().await?;
-            AdminDashboardRecord::try_from_rows(usage, channels)
+            let outcomes = query_outcomes(&self.pool, period_start, period_end).await?;
+            AdminDashboardRecord::try_from_rows(usage, channels, observability, outcomes)
         }
         .with_subscriber(NoSubscriber::default());
 
@@ -167,25 +223,54 @@ impl AdminDashboardRepository {
         }
     }
 
+    /// 只读取事务主库中当前未删除渠道的闭合状态计数。
+    pub async fn channel_snapshot(
+        &self,
+    ) -> Result<AdminDashboardChannelRecord, AdminDashboardRepositoryError> {
+        let operation = self
+            .query_channels()
+            .with_subscriber(NoSubscriber::default());
+        match timeout(self.lookup_timeout, operation).await {
+            Ok(result) => result.and_then(AdminDashboardChannelRecord::validate),
+            Err(_) => Err(record_internal_error(
+                AdminDashboardRepositoryError::Timeout,
+            )),
+        }
+    }
+
     async fn query_usage(
         &self,
         period_start: TimeDateTimeWithTimeZone,
         period_end: TimeDateTimeWithTimeZone,
-    ) -> Result<UsageAggregateRow, AdminDashboardRepositoryError> {
+    ) -> Result<(UsageAggregateRow, AdminDashboardObservabilityRecord), AdminDashboardRepositoryError>
+    {
         let backend = self.pool.connection().get_database_backend();
         query_one(
             self.pool.connection(),
-            usage_query(period_start, period_end),
+            usage_query(period_start, period_end)?,
         )
         .await
-        .and_then(|result| UsageAggregateRow::try_from_query_result(result, backend))
+        .and_then(|result| {
+            let usage = UsageAggregateRow::try_from_query_result(&result, backend)?;
+            let observability = decode_observability(
+                &result,
+                backend,
+                period_start.unix_timestamp(),
+                period_end.unix_timestamp(),
+                usage.request_count,
+                usage.quota_consumed,
+            )?;
+            Ok((usage, observability))
+        })
     }
 
-    async fn query_channels(&self) -> Result<ChannelAggregateRow, AdminDashboardRepositoryError> {
+    async fn query_channels(
+        &self,
+    ) -> Result<AdminDashboardChannelRecord, AdminDashboardRepositoryError> {
         let backend = self.pool.connection().get_database_backend();
         query_one(self.pool.connection(), channel_query())
             .await
-            .and_then(|result| ChannelAggregateRow::try_from_query_result(result, backend))
+            .and_then(|result| AdminDashboardChannelRecord::try_from_query_result(result, backend))
     }
 }
 
@@ -211,30 +296,48 @@ struct UsageAggregateRow {
 
 impl UsageAggregateRow {
     fn try_from_query_result(
-        result: QueryResult,
+        result: &QueryResult,
         backend: DbBackend,
     ) -> Result<Self, AdminDashboardRepositoryError> {
         Ok(Self {
-            request_count: get_count(&result, "request_count", backend)?,
-            quota_consumed: get_sum(&result, "quota_consumed", backend)?,
-            upstream_usage_count: get_count(&result, "upstream_usage_count", backend)?,
-            estimated_usage_count: get_count(&result, "estimated_usage_count", backend)?,
-            per_token_request_count: get_count(&result, "per_token_request_count", backend)?,
-            per_call_request_count: get_count(&result, "per_call_request_count", backend)?,
-            free_request_count: get_count(&result, "free_request_count", backend)?,
+            request_count: get_count(result, "request_count", backend)?,
+            quota_consumed: get_sum(result, "quota_consumed", backend)?,
+            upstream_usage_count: get_count(result, "upstream_usage_count", backend)?,
+            estimated_usage_count: get_count(result, "estimated_usage_count", backend)?,
+            per_token_request_count: get_count(result, "per_token_request_count", backend)?,
+            per_call_request_count: get_count(result, "per_call_request_count", backend)?,
+            free_request_count: get_count(result, "free_request_count", backend)?,
         })
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct ChannelAggregateRow {
+pub struct AdminDashboardChannelRecord {
     channel_count: i64,
     enabled_channel_count: i64,
     disabled_channel_count: i64,
     auto_disabled_channel_count: i64,
 }
 
-impl ChannelAggregateRow {
+impl AdminDashboardChannelRecord {
+    /// 返回当前启用的未删除渠道数。
+    #[must_use]
+    pub const fn enabled_channel_count(self) -> i64 {
+        self.enabled_channel_count
+    }
+
+    /// 返回当前人工停用的未删除渠道数。
+    #[must_use]
+    pub const fn disabled_channel_count(self) -> i64 {
+        self.disabled_channel_count
+    }
+
+    /// 返回当前自动停用的未删除渠道数。
+    #[must_use]
+    pub const fn auto_disabled_channel_count(self) -> i64 {
+        self.auto_disabled_channel_count
+    }
+
     fn try_from_query_result(
         result: QueryResult,
         backend: DbBackend,
@@ -250,12 +353,36 @@ impl ChannelAggregateRow {
             )?,
         })
     }
+
+    fn validate(self) -> Result<Self, AdminDashboardRepositoryError> {
+        let status_count = self
+            .enabled_channel_count
+            .checked_add(self.disabled_channel_count)
+            .and_then(|count| count.checked_add(self.auto_disabled_channel_count));
+        if [
+            self.channel_count,
+            self.enabled_channel_count,
+            self.disabled_channel_count,
+            self.auto_disabled_channel_count,
+        ]
+        .into_iter()
+        .any(|value| value < 0)
+            || status_count != Some(self.channel_count)
+        {
+            return Err(record_internal_error(
+                AdminDashboardRepositoryError::Invariant,
+            ));
+        }
+        Ok(self)
+    }
 }
 
 impl AdminDashboardRecord {
     fn try_from_rows(
         usage: UsageAggregateRow,
-        channels: ChannelAggregateRow,
+        channels: AdminDashboardChannelRecord,
+        observability: AdminDashboardObservabilityRecord,
+        outcomes: AdminDashboardOutcomeRecord,
     ) -> Result<Self, AdminDashboardRepositoryError> {
         let usage_values = [
             usage.request_count,
@@ -266,12 +393,7 @@ impl AdminDashboardRecord {
             usage.per_call_request_count,
             usage.free_request_count,
         ];
-        let channel_values = [
-            channels.channel_count,
-            channels.enabled_channel_count,
-            channels.disabled_channel_count,
-            channels.auto_disabled_channel_count,
-        ];
+        let channels = channels.validate()?;
         let source_count = usage
             .upstream_usage_count
             .checked_add(usage.estimated_usage_count);
@@ -279,15 +401,9 @@ impl AdminDashboardRecord {
             .per_token_request_count
             .checked_add(usage.per_call_request_count)
             .and_then(|count| count.checked_add(usage.free_request_count));
-        let status_count = channels
-            .enabled_channel_count
-            .checked_add(channels.disabled_channel_count)
-            .and_then(|count| count.checked_add(channels.auto_disabled_channel_count));
         if usage_values.into_iter().any(|value| value < 0)
-            || channel_values.into_iter().any(|value| value < 0)
             || source_count != Some(usage.request_count)
             || billing_count != Some(usage.request_count)
-            || status_count != Some(channels.channel_count)
         {
             return Err(record_internal_error(
                 AdminDashboardRepositoryError::Invariant,
@@ -304,6 +420,8 @@ impl AdminDashboardRecord {
             enabled_channel_count: channels.enabled_channel_count,
             disabled_channel_count: channels.disabled_channel_count,
             auto_disabled_channel_count: channels.auto_disabled_channel_count,
+            observability,
+            outcomes,
         })
     }
 }
@@ -311,8 +429,9 @@ impl AdminDashboardRecord {
 fn usage_query(
     period_start: TimeDateTimeWithTimeZone,
     period_end: TimeDateTimeWithTimeZone,
-) -> SelectStatement {
-    Query::select()
+) -> Result<SelectStatement, AdminDashboardRepositoryError> {
+    let mut query = Query::select();
+    query
         .expr_as(
             Expr::col((usage_logs::Entity, usage_logs::Column::Id)).count(),
             Alias::new("request_count"),
@@ -340,12 +459,18 @@ fn usage_query(
         .expr_as(
             conditional_count(usage_logs::Column::BillingMode, 2_i16),
             Alias::new("free_request_count"),
-        )
+        );
+    append_observability_expressions(
+        &mut query,
+        period_start.unix_timestamp(),
+        period_end.unix_timestamp(),
+    )?;
+    Ok(query
         .from(usage_logs::Entity)
         .and_where(Expr::col((usage_logs::Entity, usage_logs::Column::EventType)).eq(1_i16))
         .and_where(Expr::col((usage_logs::Entity, usage_logs::Column::CreatedAt)).gte(period_start))
         .and_where(Expr::col((usage_logs::Entity, usage_logs::Column::CreatedAt)).lt(period_end))
-        .to_owned()
+        .to_owned())
 }
 
 fn channel_query() -> SelectStatement {
@@ -390,7 +515,7 @@ fn conditional_channel_count(status: Status) -> sea_orm::sea_query::SimpleExpr {
     .into()
 }
 
-async fn query_one(
+pub(crate) async fn query_one(
     connection: &sea_orm::DatabaseConnection,
     statement: SelectStatement,
 ) -> Result<QueryResult, AdminDashboardRepositoryError> {
@@ -402,7 +527,18 @@ async fn query_one(
         .ok_or_else(|| record_internal_error(AdminDashboardRepositoryError::Invariant))
 }
 
-fn get_count(
+pub(crate) async fn query_all(
+    connection: &sea_orm::DatabaseConnection,
+    statement: SelectStatement,
+) -> Result<Vec<QueryResult>, AdminDashboardRepositoryError> {
+    let backend = connection.get_database_backend();
+    connection
+        .query_all(backend.build(&statement))
+        .await
+        .map_err(|_| record_internal_error(AdminDashboardRepositoryError::Query))
+}
+
+pub(crate) fn get_count(
     result: &QueryResult,
     column: &str,
     backend: DbBackend,
@@ -419,7 +555,7 @@ fn get_count(
     .ok_or_else(|| record_internal_error(AdminDashboardRepositoryError::Invariant))
 }
 
-fn get_sum(
+pub(crate) fn get_sum(
     result: &QueryResult,
     column: &str,
     backend: DbBackend,
@@ -442,7 +578,9 @@ fn get_sum(
 }
 
 /// 只记录闭合内部分类，避免任何聚合值或数据库细节进入日志。
-fn record_internal_error(error: AdminDashboardRepositoryError) -> AdminDashboardRepositoryError {
+pub(crate) fn record_internal_error(
+    error: AdminDashboardRepositoryError,
+) -> AdminDashboardRepositoryError {
     let error_kind = match error {
         AdminDashboardRepositoryError::Query => "admin_dashboard_query",
         AdminDashboardRepositoryError::Timeout => "admin_dashboard_timeout",
@@ -471,14 +609,19 @@ mod tests {
             per_call_request_count: 0,
             free_request_count: 1,
         };
-        let channels = ChannelAggregateRow {
+        let channels = AdminDashboardChannelRecord {
             channel_count: 1,
             enabled_channel_count: 1,
             disabled_channel_count: 0,
             auto_disabled_channel_count: 0,
         };
         assert_eq!(
-            AdminDashboardRecord::try_from_rows(usage, channels),
+            AdminDashboardRecord::try_from_rows(
+                usage,
+                channels,
+                AdminDashboardObservabilityRecord::empty(),
+                AdminDashboardOutcomeRecord::empty(),
+            ),
             Err(AdminDashboardRepositoryError::Invariant)
         );
     }
@@ -486,9 +629,9 @@ mod tests {
     #[test]
     fn generated_queries_remain_portable_across_supported_dialects() {
         let start = TimeDateTimeWithTimeZone::from_unix_timestamp(1_000).unwrap();
-        let end = TimeDateTimeWithTimeZone::from_unix_timestamp(2_000).unwrap();
+        let end = TimeDateTimeWithTimeZone::from_unix_timestamp(87_400).unwrap();
         for backend in [DbBackend::Sqlite, DbBackend::Postgres, DbBackend::MySql] {
-            let usage = backend.build(&usage_query(start, end));
+            let usage = backend.build(&usage_query(start, end).unwrap());
             let channels = backend.build(&channel_query());
             assert!(!usage.sql.is_empty());
             assert!(!channels.sql.is_empty());

@@ -1,11 +1,14 @@
 use std::{sync::Arc, time::Duration};
 
 use af_db::{
-    DebugTraceAttemptWrite, DebugTraceFailureKind, DebugTraceOperation, DebugTraceOutcome,
-    DebugTraceProtocol, DebugTraceRepository, DebugTraceSettingsRecord, DebugTraceWrite,
+    DebugTraceAttemptDiagnosticWrite, DebugTraceAttemptWrite, DebugTraceFailureKind,
+    DebugTraceOperation, DebugTraceOutcome, DebugTraceProtocol, DebugTraceRepository,
+    DebugTraceRequestDiagnosticWrite, DebugTraceSettingsRecord, DebugTraceWrite,
 };
 use af_domain::{GatewayPrincipal, Operation, Protocol, UpstreamError};
-use af_relay::RelayAttemptReport;
+use af_relay::{
+    RelayAttemptDiagnostic, RelayAttemptReport, RelayDiagnosticInput, RelayDiagnosticPolicy,
+};
 use sha2::{Digest as _, Sha256};
 use tokio::{
     sync::{Mutex, mpsc, watch},
@@ -25,6 +28,9 @@ struct DebugTraceSettingsSnapshot {
     enabled: bool,
     sample_per_million: u64,
     retention_hours: i32,
+    capture_headers: bool,
+    capture_bodies: bool,
+    max_body_bytes: i32,
     version: i64,
 }
 
@@ -35,6 +41,9 @@ impl DebugTraceSettingsSnapshot {
             sample_per_million: u64::try_from(record.sample_per_million())
                 .expect("已校验的调试追踪采样率必须非负"),
             retention_hours: record.retention_hours(),
+            capture_headers: record.capture_headers(),
+            capture_bodies: record.capture_bodies(),
+            max_body_bytes: record.max_body_bytes(),
             version: record.version(),
         }
     }
@@ -83,11 +92,28 @@ impl DebugTraceRuntime {
         downstream_protocol: Protocol,
         upstream_protocol: Protocol,
         operation: Operation,
+        downstream: RelayDiagnosticInput,
     ) -> Option<DebugTraceCapture> {
         let settings = *self.settings.borrow();
         if !settings.enabled || !sampled(request_id, settings.sample_per_million) {
             return None;
         }
+        let policy = RelayDiagnosticPolicy::new(
+            settings.capture_headers,
+            settings.capture_bodies,
+            usize::try_from(settings.max_body_bytes).ok()?,
+        )?;
+        let downstream = DebugTraceRequestDiagnosticWrite::new(
+            downstream.method().to_owned(),
+            downstream.path().to_owned(),
+            settings
+                .capture_headers
+                .then(|| downstream.headers_json().to_owned()),
+            settings
+                .capture_bodies
+                .then(|| downstream.body_json(policy.max_body_bytes())),
+        )
+        .ok()?;
         Some(DebugTraceCapture {
             queue: self.queue.clone(),
             request_id: request_id.to_owned(),
@@ -98,6 +124,8 @@ impl DebugTraceRuntime {
             downstream_protocol: map_protocol(downstream_protocol)?,
             upstream_protocol: map_protocol(upstream_protocol)?,
             operation: map_operation(operation)?,
+            policy,
+            downstream,
         })
     }
 }
@@ -120,7 +148,7 @@ impl af_admin::AdminDebugTraceSettingsRuntimeApplier for AdminDebugTraceRuntimeA
     }
 }
 
-/// 一次已命中采样的请求上下文，不包含正文、Header、URL 或凭据材料。
+/// 一次已命中采样的请求上下文；所含诊断材料均已永久脱敏。
 pub(crate) struct DebugTraceCapture {
     queue: mpsc::Sender<DebugTraceWrite>,
     request_id: String,
@@ -131,9 +159,16 @@ pub(crate) struct DebugTraceCapture {
     downstream_protocol: DebugTraceProtocol,
     upstream_protocol: DebugTraceProtocol,
     operation: DebugTraceOperation,
+    policy: RelayDiagnosticPolicy,
+    downstream: DebugTraceRequestDiagnosticWrite,
 }
 
 impl DebugTraceCapture {
+    /// 返回本次请求固定的 Relay 采集策略。
+    pub(crate) const fn relay_policy(&self) -> RelayDiagnosticPolicy {
+        self.policy
+    }
+
     /// 把 Relay 的闭合报告转换为脱敏时间线并尝试无阻塞入队。
     pub(crate) fn submit(
         self,
@@ -166,7 +201,8 @@ impl DebugTraceCapture {
             },
             elapsed_millis(routing_elapsed),
             attempts,
-        );
+        )
+        .map(|write| write.with_downstream_diagnostic(self.downstream));
         let Ok(write) = write else {
             tracing::error!(
                 target: "af_server::debug_trace",
@@ -288,32 +324,60 @@ fn trace_attempts(
         let target = targets.get(failure.candidate_index())?;
         let retried =
             position + 1 < report.failures().len() || report.successful_candidate_index().is_some();
-        attempts.push(
-            DebugTraceAttemptWrite::failed(
-                failure.candidate_index(),
-                target.channel_id().get(),
-                target.credential_id().get(),
-                map_failure(failure.error()),
-                failure.server_status().map(|status| status.get()),
-                retried,
-                elapsed_millis(failure.elapsed()),
-            )
-            .ok()?,
-        );
+        let mut attempt = DebugTraceAttemptWrite::failed(
+            failure.candidate_index(),
+            target.channel_id().get(),
+            target.credential_id().get(),
+            map_failure(failure.error()),
+            failure.server_status().map(|status| status.get()),
+            retried,
+            elapsed_millis(failure.elapsed()),
+        )
+        .ok()?;
+        if let Some(client_simulation) = failure.client_simulation() {
+            attempt = attempt
+                .with_client_simulation(client_simulation.profile(), client_simulation.result());
+        }
+        if let Some(diagnostic) = failure.diagnostic() {
+            attempt = attempt.with_diagnostic(map_attempt_diagnostic(diagnostic)?);
+        }
+        attempts.push(attempt);
     }
     if let Some(index) = report.successful_candidate_index() {
         let target = targets.get(index)?;
-        attempts.push(
-            DebugTraceAttemptWrite::succeeded(
-                index,
-                target.channel_id().get(),
-                target.credential_id().get(),
-                elapsed_millis(report.successful_elapsed()?),
-            )
-            .ok()?,
-        );
+        let mut attempt = DebugTraceAttemptWrite::succeeded(
+            index,
+            target.channel_id().get(),
+            target.credential_id().get(),
+            elapsed_millis(report.successful_elapsed()?),
+        )
+        .ok()?;
+        if let Some(client_simulation) = report.successful_client_simulation() {
+            attempt = attempt
+                .with_client_simulation(client_simulation.profile(), client_simulation.result());
+        }
+        if let Some(diagnostic) = report.successful_diagnostic() {
+            attempt = attempt.with_diagnostic(map_attempt_diagnostic(diagnostic)?);
+        }
+        attempts.push(attempt);
     }
     Some(attempts)
+}
+
+fn map_attempt_diagnostic(
+    diagnostic: &RelayAttemptDiagnostic,
+) -> Option<DebugTraceAttemptDiagnosticWrite> {
+    DebugTraceAttemptDiagnosticWrite::new(
+        diagnostic.request_method().to_owned(),
+        diagnostic.request_url().to_owned(),
+        diagnostic.request_headers_json().map(str::to_owned),
+        diagnostic.request_body_json().map(str::to_owned),
+        diagnostic.response_status(),
+        diagnostic.response_headers_json().map(str::to_owned),
+        diagnostic.response_body_json().map(str::to_owned),
+        diagnostic.response_streamed(),
+    )
+    .ok()
 }
 
 fn sampled(request_id: &str, sample_per_million: u64) -> bool {

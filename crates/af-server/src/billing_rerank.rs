@@ -18,8 +18,13 @@ use crate::billing_chat::{
 };
 
 /// 已固定路由计划的一次 Rerank 异步执行结果。
-pub type PlannedRerankExecutionFuture =
-    Pin<Box<dyn Future<Output = Result<RerankResponse, AfError>> + Send + 'static>>;
+pub type PlannedRerankExecutionFuture = Pin<
+    Box<
+        dyn Future<Output = Result<crate::RoutedExecution<RerankResponse>, AfError>>
+            + Send
+            + 'static,
+    >,
+>;
 
 /// 在计费前完成候选与目标分组装配的 Rerank 请求级计划。
 pub trait PlannedRerankExecution: Send {
@@ -54,6 +59,7 @@ pub struct BillingRerankService {
     refund: Option<Arc<dyn RefundSignalPort>>,
     settlement: Option<Arc<dyn BillingSettlementPort>>,
     usage: Arc<dyn UsageRecordPort>,
+    request_outcomes: Option<crate::RequestOutcomeRuntime>,
 }
 
 impl BillingRerankService {
@@ -74,7 +80,15 @@ impl BillingRerankService {
             refund,
             settlement,
             usage,
+            request_outcomes: None,
         }
+    }
+
+    /// 注入同步模型请求终态的只追加观测运行时。
+    #[must_use]
+    pub fn with_request_outcomes(mut self, runtime: crate::RequestOutcomeRuntime) -> Self {
+        self.request_outcomes = Some(runtime);
+        self
     }
 
     async fn call(
@@ -84,6 +98,28 @@ impl BillingRerankService {
         request: CanonicalRerankRequest,
         request_id: &str,
     ) -> Result<RerankResponse, AfError> {
+        let outcome = crate::RequestOutcomeContext::new(
+            request_id,
+            af_domain::Protocol::JinaRerank,
+            af_domain::Operation::Rerank,
+            request.model(),
+        );
+        outcome
+            .finish(
+                self.request_outcomes.as_ref(),
+                self.call_billed(principal, user_concurrency, request, request_id)
+                    .await,
+            )
+            .await
+    }
+
+    async fn call_billed(
+        &self,
+        principal: &GatewayPrincipal,
+        user_concurrency: Option<ConcurrencyLimit>,
+        request: CanonicalRerankRequest,
+        request_id: &str,
+    ) -> Result<crate::RoutedExecution<RerankResponse>, AfError> {
         let upper_bound = rerank_usage_upper_bound(&request)?;
         let model = request.model().to_owned();
         let planned = self
@@ -104,13 +140,18 @@ impl BillingRerankService {
         let reservation_id = new_reservation_id()?;
         let mut lifecycle = start_lifecycle(self, plan, *principal, reservation_id).await?;
 
-        let response = planned.execute().await?;
+        let routed = planned.execute().await?;
+        let channel_id = routed.channel_id();
+        let response = routed.into_value();
         let (body, usage) = response.into_parts();
         let settlement_usage = rerank_settlement_usage(usage, upper_bound);
         let _ = complete_with_retries(&mut lifecycle, settlement_usage)
             .await
             .map_err(map_lifecycle_error)?;
-        Ok(RerankResponse::new(body, usage))
+        Ok(crate::RoutedExecution::new(
+            RerankResponse::new(body, usage),
+            channel_id,
+        ))
     }
 }
 

@@ -142,7 +142,13 @@ fn router(service: Arc<FakeSiteSettingsService>) -> axum::Router {
     let site_service: Arc<dyn SiteSettingsService> = service;
     let registration_service: Arc<dyn RegistrationService> = Arc::new(FakeRegistrationService);
     let authenticator: Arc<dyn SessionAuthenticator> = Arc::new(FakeSessionAuthenticator);
-    build_site_settings_router(site_service, registration_service, authenticator)
+    build_site_settings_router(
+        site_service,
+        registration_service,
+        None,
+        None,
+        authenticator,
+    )
 }
 
 #[tokio::test]
@@ -160,8 +166,15 @@ async fn public_projection_exposes_only_brand_and_authentication_capabilities() 
     let body = response_json(response).await;
     assert_eq!(body["site_name"], "AnyFlows Cloud");
     assert_eq!(body["brand"]["logo_url"], "/brand.svg");
+    assert_eq!(body["balance_display"]["mode"], "quota");
+    assert_eq!(
+        body["balance_display"]["quota_units_per_display_unit"],
+        "10000"
+    );
     assert_eq!(body["authentication"]["password_login_enabled"], true);
     assert_eq!(body["authentication"]["registration_enabled"], true);
+    assert_eq!(body["authentication"]["oauth_providers"], json!([]));
+    assert_eq!(body["authentication"]["turnstile_site_key"], Value::Null);
     assert!(body.get("version").is_none());
     assert!(body.get("default_group_id").is_none());
 }
@@ -198,7 +211,16 @@ async fn admin_projection_rejects_normal_users_before_service_access() {
                     "logo_url": "/brand.svg",
                     "tagline": "统一访问模型",
                     "description": "面向团队的模型 API 工作台。"
-                }
+                },
+                "balance_display": {
+                    "mode": "custom_unit",
+                    "unit_name": "算力积分",
+                    "unit_symbol": "积分",
+                    "quota_units_per_display_unit": "10000",
+                    "symbol_position": "suffix",
+                    "fraction_digits": 2
+                },
+                "expected_version": 3
             }),
             ADMIN_TOKEN,
         ))

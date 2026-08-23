@@ -1,7 +1,7 @@
-use std::{fmt, num::NonZeroUsize, sync::Arc};
+use std::{collections::BTreeMap, fmt, num::NonZeroUsize, sync::Arc};
 
 use af_db::SchedulerRuntimeTargetRecord;
-use af_domain::{ChannelId, GroupId};
+use af_domain::{ChannelId, CredentialId, GroupId, RouteChannelId};
 
 use crate::{RetrySelection, RouteWaitPlan, StickyRouteOutcome, StickyWaitPolicy};
 
@@ -9,6 +9,7 @@ use crate::{RetrySelection, RouteWaitPlan, StickyRouteOutcome, StickyWaitPolicy}
 pub struct IndexedRouteCandidate {
     selection: RetrySelection,
     runtime_target: Arc<SchedulerRuntimeTargetRecord>,
+    route_channel_ids: BTreeMap<CredentialId, RouteChannelId>,
     wait_plan: RouteWaitPlan,
 }
 
@@ -20,6 +21,21 @@ impl IndexedRouteCandidate {
         Self {
             selection,
             runtime_target,
+            route_channel_ids: BTreeMap::new(),
+            wait_plan: StickyWaitPolicy::default()
+                .fallback_plan(selection.candidate().channel_id()),
+        }
+    }
+
+    pub(super) fn new_bound(
+        selection: RetrySelection,
+        runtime_target: Arc<SchedulerRuntimeTargetRecord>,
+        route_channel_ids: BTreeMap<CredentialId, RouteChannelId>,
+    ) -> Self {
+        Self {
+            selection,
+            runtime_target,
+            route_channel_ids,
             wait_plan: StickyWaitPolicy::default()
                 .fallback_plan(selection.candidate().channel_id()),
         }
@@ -48,6 +64,12 @@ impl IndexedRouteCandidate {
     pub const fn wait_plan(&self) -> RouteWaitPlan {
         self.wait_plan
     }
+
+    /// 返回当前凭据在管理员智能路由中的候选记录标识。
+    #[must_use]
+    pub fn route_channel_id(&self, credential_id: CredentialId) -> Option<RouteChannelId> {
+        self.route_channel_ids.get(&credential_id).copied()
+    }
 }
 
 impl fmt::Debug for IndexedRouteCandidate {
@@ -56,6 +78,7 @@ impl fmt::Debug for IndexedRouteCandidate {
             .debug_struct("IndexedRouteCandidate")
             .field("selection", &self.selection)
             .field("runtime_target", &self.runtime_target)
+            .field("route_binding_count", &self.route_channel_ids.len())
             .finish()
     }
 }

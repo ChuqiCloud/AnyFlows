@@ -4,10 +4,15 @@ use af_admin::{
     ApiKeyDigest, TokenAuthenticationError, TokenAuthenticationFuture, TokenAuthenticator,
 };
 use af_cache::{
-    CacheError, RedisRequestRateLimitStore, RequestRateLimitOutcome, RequestRateLimitRule,
-    RequestRateLimitSubject,
+    CacheError, RedisFailureKind, RedisRequestRateLimitStore, RequestRateLimitOutcome,
+    RequestRateLimitRule, RequestRateLimitSubject,
 };
 use af_domain::{GatewayPrincipal, UpstreamRetryAfter};
+use af_telemetry::{
+    MetricRequestRateLimitFailure, MetricRequestRateLimitSubject,
+    record_request_rate_limit_admission, record_request_rate_limit_check,
+    record_request_rate_limit_failure, record_request_rate_limit_rejection,
+};
 
 const REQUEST_RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
 
@@ -56,6 +61,7 @@ impl TokenAuthenticator for RuntimeTokenAuthenticator {
                 authentication.group_rpm_limit(),
             )
             .map_err(|_| {
+                record_request_rate_limit_failure(MetricRequestRateLimitFailure::InvalidRule);
                 tracing::error!(
                     target: "af_server::request_rate_limit",
                     error_kind = "request_rate_limit_rule_invalid",
@@ -66,8 +72,10 @@ impl TokenAuthenticator for RuntimeTokenAuthenticator {
             if rules.is_empty() {
                 return Ok(authentication);
             }
+            record_request_rate_limit_check(u32::try_from(rules.len()).unwrap_or(u32::MAX));
 
             let Some(store) = store else {
+                record_request_rate_limit_failure(MetricRequestRateLimitFailure::StoreMissing);
                 tracing::error!(
                     target: "af_server::request_rate_limit",
                     error_kind = "request_rate_limit_store_missing",
@@ -76,9 +84,15 @@ impl TokenAuthenticator for RuntimeTokenAuthenticator {
                 return Err(TokenAuthenticationError::RateLimitUnavailable);
             };
             match store.admit(&rules).await {
-                Ok(RequestRateLimitOutcome::Admitted) => Ok(authentication),
+                Ok(RequestRateLimitOutcome::Admitted) => {
+                    record_request_rate_limit_admission();
+                    Ok(authentication)
+                }
                 Ok(RequestRateLimitOutcome::Limited(rejection)) => {
                     let Some(retry_after) = retry_after(rejection.retry_after()) else {
+                        record_request_rate_limit_failure(
+                            MetricRequestRateLimitFailure::InvalidRetryAfter,
+                        );
                         tracing::error!(
                             target: "af_server::request_rate_limit",
                             error_kind = "request_rate_limit_retry_after_invalid",
@@ -86,9 +100,14 @@ impl TokenAuthenticator for RuntimeTokenAuthenticator {
                         );
                         return Err(TokenAuthenticationError::RateLimitUnavailable);
                     };
+                    record_request_rate_limit_rejection(
+                        metric_subject(rejection.subject()),
+                        rejection.retry_after(),
+                    );
                     Err(TokenAuthenticationError::RateLimited { retry_after })
                 }
-                Err(_) => {
+                Err(error) => {
+                    record_request_rate_limit_failure(metric_failure(error));
                     tracing::error!(
                         target: "af_server::request_rate_limit",
                         error_kind = "request_rate_limit_store_error",
@@ -98,6 +117,30 @@ impl TokenAuthenticator for RuntimeTokenAuthenticator {
                 }
             }
         })
+    }
+}
+
+/// 将业务主体压缩为固定指标标签，严禁把主体标识写入 Prometheus。
+const fn metric_subject(subject: RequestRateLimitSubject) -> MetricRequestRateLimitSubject {
+    match subject {
+        RequestRateLimitSubject::User(_) => MetricRequestRateLimitSubject::User,
+        RequestRateLimitSubject::Group(_) => MetricRequestRateLimitSubject::Group,
+        RequestRateLimitSubject::Token(_) => MetricRequestRateLimitSubject::Token,
+    }
+}
+
+/// 将 Redis 错误压缩为可运营的有限分类，底层诊断文本不得进入指标标签。
+const fn metric_failure(error: CacheError) -> MetricRequestRateLimitFailure {
+    match error {
+        CacheError::Redis {
+            kind: RedisFailureKind::Timeout | RedisFailureKind::Unavailable,
+            ..
+        } => MetricRequestRateLimitFailure::StoreUnavailable,
+        CacheError::Redis {
+            kind: RedisFailureKind::Protocol,
+            ..
+        } => MetricRequestRateLimitFailure::StoreProtocol,
+        _ => MetricRequestRateLimitFailure::StoreOther,
     }
 }
 
@@ -139,6 +182,7 @@ mod tests {
     };
 
     use af_admin::{PresentedApiKey, TokenAuthentication};
+    use af_cache::CacheOperation;
     use af_domain::{GroupId, TokenId, TokenModelPolicy, TrustedClientIp, UserId};
 
     use super::*;
@@ -179,6 +223,43 @@ mod tests {
     #[test]
     fn no_limits_produce_no_rules() {
         assert!(build_rules(principal(), None, None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn metric_classification_is_fixed_and_drops_subject_identifiers() {
+        assert_eq!(
+            metric_subject(RequestRateLimitSubject::User(UserId::new(91).unwrap())),
+            MetricRequestRateLimitSubject::User
+        );
+        assert_eq!(
+            metric_subject(RequestRateLimitSubject::Group(GroupId::new(92).unwrap())),
+            MetricRequestRateLimitSubject::Group
+        );
+        assert_eq!(
+            metric_subject(RequestRateLimitSubject::Token(TokenId::new(93).unwrap())),
+            MetricRequestRateLimitSubject::Token
+        );
+
+        for kind in [RedisFailureKind::Timeout, RedisFailureKind::Unavailable] {
+            assert_eq!(
+                metric_failure(CacheError::Redis {
+                    operation: CacheOperation::RateLimitCheck,
+                    kind,
+                }),
+                MetricRequestRateLimitFailure::StoreUnavailable
+            );
+        }
+        assert_eq!(
+            metric_failure(CacheError::Redis {
+                operation: CacheOperation::RateLimitCheck,
+                kind: RedisFailureKind::Protocol,
+            }),
+            MetricRequestRateLimitFailure::StoreProtocol
+        );
+        assert_eq!(
+            metric_failure(CacheError::InvalidRateLimitBatch),
+            MetricRequestRateLimitFailure::StoreOther
+        );
     }
 
     #[tokio::test]
@@ -229,6 +310,19 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn store_error_fails_closed() {
+        let runtime = RuntimeTokenAuthenticator::new(
+            Arc::new(FixedAuthenticator(authentication(NonZeroU32::new(1), None))),
+            Some(Arc::new(FailingStore)),
+        );
+
+        assert_eq!(
+            authenticate(&runtime).await,
+            Err(TokenAuthenticationError::RateLimitUnavailable)
+        );
+    }
+
     struct FixedAuthenticator(TokenAuthentication);
 
     impl TokenAuthenticator for FixedAuthenticator {
@@ -253,6 +347,14 @@ mod tests {
             self.calls.fetch_add(1, Ordering::Relaxed);
             self.batches.lock().unwrap().push(rules.to_vec());
             Box::pin(async { Ok(RequestRateLimitOutcome::Admitted) })
+        }
+    }
+
+    struct FailingStore;
+
+    impl RequestRateLimitStore for FailingStore {
+        fn admit<'a>(&'a self, _rules: &'a [RequestRateLimitRule]) -> AdmissionFuture<'a> {
+            Box::pin(async { Err(CacheError::InvalidRateLimitBatch) })
         }
     }
 

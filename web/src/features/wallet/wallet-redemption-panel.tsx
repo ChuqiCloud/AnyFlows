@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ApiError } from '@/lib/api'
 import type { UserRedemptionResult } from '@/lib/api/generated/types.gen'
+import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import { useRedeemUserCode } from './wallet-api'
 
 type RedemptionValues = {
@@ -18,8 +19,9 @@ type RedemptionValues = {
 }
 
 export function WalletRedemptionPanel() {
-  const { i18n, t } = useTranslation()
+  const { t } = useTranslation()
   const mutation = useRedeemUserCode()
+  const { formatQuota } = useBalanceDisplay()
   const [result, setResult] = useState<UserRedemptionResult>()
   const form = useForm<RedemptionValues>({
     defaultValues: { code: '' },
@@ -27,7 +29,6 @@ export function WalletRedemptionPanel() {
       code: z.string().regex(/^rc-af-[A-Za-z0-9_-]{43}$/, t('wallet.redemption.validation')),
     })),
   })
-  const numberFormat = new Intl.NumberFormat(i18n.resolvedLanguage === 'zh' ? 'zh-CN' : 'en-US')
 
   const submit = form.handleSubmit(async ({ code }) => {
     const redeemed = await mutation.mutateAsync({ code })
@@ -82,10 +83,10 @@ export function WalletRedemptionPanel() {
           <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[var(--hairline)] pt-3 text-xs text-success" role="status">
             <CheckCircle2 className="size-4" aria-hidden="true" />
             <span>{t(result.replayed ? 'wallet.redemption.replayed' : 'wallet.redemption.success', {
-              amount: numberFormat.format(result.quota_amount),
+              amount: formatQuota(result.quota_amount),
             })}</span>
             <span className="text-muted-foreground">{t('wallet.redemption.balanceAfter', {
-              balance: numberFormat.format(result.balance_after),
+              balance: formatQuota(result.balance_after),
             })}</span>
           </div>
         ) : mutation.isError ? (

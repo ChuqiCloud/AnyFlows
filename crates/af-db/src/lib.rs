@@ -14,6 +14,8 @@ mod admin_channel_write;
 mod admin_channel_write_tests;
 mod admin_credential;
 mod admin_dashboard;
+mod admin_dashboard_observability;
+mod admin_dashboard_outcomes;
 #[cfg(test)]
 mod admin_dashboard_tests;
 mod admin_group;
@@ -40,6 +42,9 @@ mod admin_user;
 #[cfg(test)]
 mod admin_user_tests;
 mod admin_user_write;
+mod analytics_export;
+#[cfg(test)]
+mod analytics_export_tests;
 mod async_task;
 mod auth;
 mod auth_challenge;
@@ -102,14 +107,31 @@ mod model_sync_tests;
 mod network_settings;
 #[cfg(test)]
 mod network_settings_tests;
+mod notification;
 mod oauth_credential;
 #[cfg(test)]
 mod oauth_credential_tests;
+mod oauth_login;
+#[cfg(test)]
+mod oauth_login_tests;
 mod options;
+mod organization;
+mod organization_audit;
+mod organization_budget;
+#[cfg(test)]
+mod organization_budget_tests;
+#[cfg(test)]
+mod organization_tests;
+mod organization_token;
+mod organization_wallet;
+mod passkey;
+#[cfg(test)]
+mod passkey_tests;
 mod password_reset;
 mod payment_settings;
 #[cfg(test)]
 mod payment_settings_tests;
+mod platform_audit;
 mod playground_conversation;
 #[cfg(test)]
 mod playground_conversation_tests;
@@ -124,9 +146,13 @@ mod quota_tests;
 #[cfg(test)]
 mod quota_token_window_tests;
 mod redemption;
+mod refund;
 mod registration;
 #[cfg(test)]
 mod registration_tests;
+mod request_outcome;
+#[cfg(test)]
+mod request_outcome_tests;
 mod scheduler_ability;
 #[cfg(test)]
 mod scheduler_ability_tests;
@@ -137,6 +163,9 @@ mod scheduler_runtime;
 mod site_settings;
 #[cfg(test)]
 mod site_settings_tests;
+mod smart_route_runtime;
+#[cfg(test)]
+mod smart_route_runtime_tests;
 mod subscription;
 mod subscription_alert;
 mod token_owner_guard;
@@ -175,8 +204,15 @@ pub use admin_credential::{
     AdminCredentialRecord,
 };
 pub use admin_dashboard::{
-    AdminDashboardRecord, AdminDashboardRepository, AdminDashboardRepositoryConfigError,
-    AdminDashboardRepositoryError,
+    AdminDashboardChannelRecord, AdminDashboardRecord, AdminDashboardRepository,
+    AdminDashboardRepositoryConfigError, AdminDashboardRepositoryError,
+};
+pub use admin_dashboard_observability::{
+    ADMIN_DASHBOARD_BUCKET_COUNT, ADMIN_DASHBOARD_BUCKET_SECONDS, AdminDashboardHourlyRecord,
+    AdminDashboardPerformanceRecord, SLOW_FIRST_TOKEN_THRESHOLD_MS, SLOW_REQUEST_THRESHOLD_MS,
+};
+pub use admin_dashboard_outcomes::{
+    AdminDashboardChannelFlowRecord, AdminDashboardFailureRecord, MAX_DASHBOARD_CHANNEL_FLOWS,
 };
 pub use admin_group::{
     AdminGroupLookupOutcome, AdminGroupPageRecord, AdminGroupPeakRecord, AdminGroupRecord,
@@ -226,6 +262,10 @@ pub use admin_user::{
 pub use admin_user_write::{
     AdminUserCreateRecord, AdminUserDeleteOutcome, AdminUserMutationOutcome,
     AdminUserRegistrationCreateOutcome, AdminUserUpdateRecord, AdminUserVerifiedCreateOutcome,
+};
+pub use analytics_export::{
+    AnalyticsExportCompletionOutcome, AnalyticsExportFact, AnalyticsExportFactKind,
+    AnalyticsExportLease, AnalyticsExportRepository, AnalyticsExportRepositoryError,
 };
 pub use async_task::{
     AsyncTaskBillingAccept, AsyncTaskBillingClear, AsyncTaskBillingMark,
@@ -301,12 +341,17 @@ pub use credential_state::{
     CredentialStateRepositoryError, CredentialStateWriteReport, MAX_CREDENTIAL_STATE_BATCH,
 };
 pub use debug_trace::{
-    DebugTraceAttemptOutcome, DebugTraceAttemptRecord, DebugTraceAttemptWrite,
+    DEFAULT_DEBUG_TRACE_BODY_BYTES, DebugTraceAttemptDiagnosticWrite, DebugTraceAttemptOutcome,
+    DebugTraceAttemptRecord, DebugTraceAttemptSnapshotRecord, DebugTraceAttemptWrite,
     DebugTraceDetailRecord, DebugTraceFailureKind, DebugTraceListQuery, DebugTraceOperation,
     DebugTraceOutcome, DebugTracePageRecord, DebugTraceProtocol, DebugTraceRepository,
-    DebugTraceRepositoryConfigError, DebugTraceRepositoryError, DebugTraceSettingsRecord,
-    DebugTraceSettingsWrite, DebugTraceSummaryRecord, DebugTraceWrite, DebugTraceWriteError,
+    DebugTraceRepositoryConfigError, DebugTraceRepositoryError, DebugTraceRequestDiagnosticWrite,
+    DebugTraceSettingsRecord, DebugTraceSettingsWrite, DebugTraceSnapshotCipher,
+    DebugTraceSnapshotCipherError, DebugTraceSnapshotContext, DebugTraceSnapshotKind,
+    DebugTraceSnapshotPlaintext, DebugTraceSnapshotRecord, DebugTraceSnapshotScope,
+    DebugTraceSummaryRecord, DebugTraceWrite, DebugTraceWriteError, MAX_DEBUG_TRACE_BODY_BYTES,
     MAX_DEBUG_TRACE_PAGE_SIZE, MAX_DEBUG_TRACE_RETENTION_HOURS, MAX_DEBUG_TRACE_SAMPLE_PER_MILLION,
+    MIN_DEBUG_TRACE_BODY_BYTES,
 };
 pub use email_settings::{
     EmailPasswordUpdate, EmailSettingsRecord, EmailSettingsRepository,
@@ -358,6 +403,14 @@ pub use network_settings::{
     NetworkSettingsRepositoryConfigError, NetworkSettingsRepositoryError,
     NetworkSettingsWriteRecord, ProxyPasswordUpdate,
 };
+pub use notification::{
+    MAX_USER_NOTIFICATION_PAGE_SIZE, MAX_USER_NOTIFICATION_READ_BATCH, NotificationChannel,
+    NotificationDeliveryState, NotificationKind, UserNotificationCursor,
+    UserNotificationListOutcome, UserNotificationListQuery, UserNotificationMarkReadOutcome,
+    UserNotificationPageRecord, UserNotificationRecord, UserNotificationRepository,
+    UserNotificationRepositoryConfigError, UserNotificationRepositoryError,
+    UserNotificationSnapshot, UserNotificationWrite,
+};
 pub use oauth_credential::{
     MAX_OAUTH_REFRESH_CANDIDATES, OAuthCredentialExpirationProjectionUpdateOutcome,
     OAuthCredentialIdentityPatch, OAuthCredentialRefreshFailureKind,
@@ -365,7 +418,64 @@ pub use oauth_credential::{
     OAuthCredentialRepository, OAuthCredentialRepositoryError, OAuthCredentialTokenUpdateOutcome,
     OAuthExpirationProjectionCandidateRecord, OAuthRefreshCandidateRecord,
 };
+pub use oauth_login::{
+    OAUTH_LOGIN_DISCORD_PROVIDER, OAUTH_LOGIN_GITHUB_PROVIDER, OAUTH_LOGIN_GOOGLE_PROVIDER,
+    OAUTH_LOGIN_LINUXDO_PROVIDER, OAUTH_LOGIN_OIDC_PROVIDER, OAUTH_LOGIN_TELEGRAM_PROVIDER,
+    OAUTH_LOGIN_WECHAT_PROVIDER, OAuthIdentityCompletion, OAuthLoginProviderRecord,
+    OAuthLoginProviderWriteRecord, OAuthLoginRepository, OAuthLoginRepositoryError,
+    OAuthLoginSecretUpdate, OAuthLoginStateClaim,
+};
 pub use options::{DatabaseDialect, DatabaseOptions, PoolOptions};
+pub use organization::{
+    MAX_ORGANIZATION_DIRECTORY_PAGE_SIZE, MAX_ORGANIZATION_ENTITLEMENT_REFERENCE_BYTES,
+    MAX_ORGANIZATION_ENTITLEMENT_SOURCE_BYTES, MAX_ORGANIZATION_INVITATION_BATCH_SIZE,
+    MAX_ORGANIZATION_NAME_BYTES, MAX_ORGANIZATION_SLUG_BYTES,
+    MAX_ORGANIZATION_TEAM_DESCRIPTION_BYTES, MAX_ORGANIZATION_TEAM_NAME_BYTES,
+    OrganizationAccessRecord, OrganizationCreate, OrganizationCreatedRecord,
+    OrganizationEntitlementRecord, OrganizationEntitlementWrite,
+    OrganizationInvitationAcceptanceContext, OrganizationInvitationBatchRecord,
+    OrganizationInvitationCreate, OrganizationInvitationPreviewItem,
+    OrganizationInvitationPreviewRow, OrganizationInvitationPreviewSnapshot,
+    OrganizationInvitationRecord, OrganizationMembershipChange, OrganizationMembershipCreate,
+    OrganizationMembershipPageRecord, OrganizationMembershipRecord, OrganizationOwnershipTransfer,
+    OrganizationOwnershipTransferRecord, OrganizationRecord, OrganizationRepository,
+    OrganizationRepositoryConfigError, OrganizationRepositoryError, OrganizationTeamChange,
+    OrganizationTeamCreate, OrganizationTeamPageRecord, OrganizationTeamRecord,
+};
+pub use organization_audit::{
+    MAX_ORGANIZATION_AUDIT_PAGE_SIZE, OrganizationAuditOutcome, OrganizationAuditPageRecord,
+    OrganizationAuditQuery, OrganizationAuditRecord, OrganizationAuditRepository,
+    OrganizationAuditRepositoryError, OrganizationAuditWrite, OrganizationAuditWriteError,
+    OrganizationAuditWriteOutcome,
+};
+pub use organization_budget::{
+    OrganizationBillingMutationOutcome, OrganizationBillingPrincipal,
+    OrganizationBillingReservationRecord, OrganizationBillingReservationStatus,
+    OrganizationBudgetAllocationRecord, OrganizationBudgetPolicyRecord,
+    OrganizationBudgetPolicyWrite, OrganizationBudgetRepository,
+    OrganizationBudgetRepositoryConfigError, OrganizationBudgetRepositoryError,
+    OrganizationBudgetScope, OrganizationBudgetWindowRecord,
+};
+pub use organization_token::{
+    MAX_ORGANIZATION_TOKEN_PAGE_SIZE, OrganizationTokenCreateRecord,
+    OrganizationTokenLookupOutcome, OrganizationTokenMutationOutcome, OrganizationTokenPageRecord,
+    OrganizationTokenRecord, OrganizationTokenRepository, OrganizationTokenRepositoryConfigError,
+    OrganizationTokenRepositoryError, OrganizationTokenWriteRecord,
+};
+pub use organization_wallet::{
+    MAX_ORGANIZATION_WALLET_ADJUSTMENT_REASON_BYTES, MAX_ORGANIZATION_WALLET_LEDGER_PAGE_SIZE,
+    OrganizationWalletAdjustmentOutcome, OrganizationWalletAdjustmentWrite,
+    OrganizationWalletBalanceLookupOutcome, OrganizationWalletBalanceRecord,
+    OrganizationWalletError, OrganizationWalletLedgerEntryRecord,
+    OrganizationWalletLedgerEntryType, OrganizationWalletLedgerListOutcome,
+    OrganizationWalletLedgerPageRecord, OrganizationWalletRepository,
+    OrganizationWalletRepositoryConfigError,
+};
+pub use passkey::{
+    PasskeyAuthenticationChallenge, PasskeyAuthenticationOutcome, PasskeyAuthenticationTarget,
+    PasskeyRecord, PasskeyRegistrationChallenge, PasskeyRepository, PasskeyRepositoryError,
+    PasskeyRevokeOutcome, PasskeySecurityFactors,
+};
 pub use password_reset::{
     PasswordResetOutcome, PasswordResetRepository, PasswordResetRepositoryConfigError,
     PasswordResetRepositoryError, PasswordResetTargetOutcome,
@@ -374,6 +484,11 @@ pub use payment_settings::{
     PaymentSecretUpdate, PaymentSettingsRecord, PaymentSettingsRepository,
     PaymentSettingsRepositoryConfigError, PaymentSettingsRepositoryError,
     PaymentSettingsWriteRecord,
+};
+pub use platform_audit::{
+    MAX_PLATFORM_AUDIT_PAGE_SIZE, PlatformAuditOutcome, PlatformAuditPageRecord,
+    PlatformAuditQuery, PlatformAuditRecord, PlatformAuditRepository, PlatformAuditRepositoryError,
+    PlatformAuditWrite, PlatformAuditWriteError, PlatformAuditWriteOutcome,
 };
 pub use playground_conversation::{
     MAX_PLAYGROUND_CONVERSATIONS_PER_USER, PlaygroundConversationDeleteOutcome,
@@ -403,12 +518,21 @@ pub use redemption::{
     RedemptionOutcome, RedemptionRecord, RedemptionRejection, RedemptionRepository,
     RedemptionRepositoryConfigError, RedemptionRepositoryError,
 };
+pub use refund::{
+    DEFAULT_REFUND_ADMIN_PAGE_SIZE, MAX_REFUND_ADMIN_PAGE_SIZE, RefundAdminListQuery,
+    RefundAdminPage, RefundApprovalOutcome, RefundReceiptOutcome, RefundReceiptWrite,
+    RefundRepository, RefundRepositoryConfigError, RefundRepositoryError, RefundSubmissionOutcome,
+};
 pub use registration::{
     DEFAULT_REGISTRATION_RATE_LIMIT_ATTEMPTS, DEFAULT_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS,
     MAX_REGISTRATION_RATE_LIMIT_ATTEMPTS, MAX_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS,
     MIN_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS, RegistrationAttemptOutcome,
     RegistrationPolicyRecord, RegistrationPolicyWriteRecord, RegistrationRepository,
     RegistrationRepositoryConfigError, RegistrationRepositoryError, RegistrationStatusRecord,
+};
+pub use request_outcome::{
+    RequestFailureKind, RequestOutcomeRepository, RequestOutcomeRepositoryError,
+    RequestOutcomeWrite, RequestOutcomeWriteError, RequestOutcomeWriteOutcome,
 };
 pub use scheduler_ability::{
     MAX_SCHEDULER_ABILITY_ENTRIES, MAX_SCHEDULER_ABILITY_SNAPSHOT_ENTRIES, SchedulerAbilityRecord,
@@ -431,13 +555,26 @@ pub use scheduler_runtime::{
     SchedulerRuntimeTargetRecordError, validate_channel_header_overrides,
 };
 pub use site_settings::{
+    BalanceDisplayModeRecord, BalanceDisplayPolicyRecord, BalanceSymbolPositionRecord,
     SiteSettingsRecord, SiteSettingsRepository, SiteSettingsRepositoryConfigError,
     SiteSettingsRepositoryError, SiteSettingsWriteRecord,
 };
+pub use smart_route_runtime::{
+    MAX_SMART_ROUTE_RUNTIME_RULES, SmartRouteAttemptFeedback, SmartRouteRuntimeCandidate,
+    SmartRouteRuntimeRepository, SmartRouteRuntimeRepositoryConfigError,
+    SmartRouteRuntimeRepositoryError, SmartRouteRuntimeRule, validate_smart_route_model_mapping,
+};
 pub use subscription::{
-    MAX_SUBSCRIPTION_PAGE_SIZE, MAX_SUBSCRIPTION_PLAN_NAME_BYTES, SubscriptionExpirationDueCursor,
-    SubscriptionInputError, SubscriptionPlanCreateOutcome, SubscriptionPlanDisable,
-    SubscriptionPlanDisableOutcome, SubscriptionPlanPageRecord, SubscriptionPlanRecord,
+    MAX_SUBSCRIPTION_CURRENCY_BYTES, MAX_SUBSCRIPTION_IDEMPOTENCY_KEY_BYTES,
+    MAX_SUBSCRIPTION_PAGE_SIZE, MAX_SUBSCRIPTION_PAYMENT_METHOD_BYTES,
+    MAX_SUBSCRIPTION_PLAN_NAME_BYTES, MAX_SUBSCRIPTION_PROVIDER_BYTES,
+    MAX_SUBSCRIPTION_PROVIDER_EVENT_ID_BYTES, MAX_SUBSCRIPTION_TRADE_NO_BYTES,
+    SubscriptionExpirationDueCursor, SubscriptionInputError, SubscriptionOrderCreate,
+    SubscriptionOrderCreateOutcome, SubscriptionOrderRecord, SubscriptionOrderSubmission,
+    SubscriptionOrderSubmitOutcome, SubscriptionPaymentEventOutcome,
+    SubscriptionPaymentEventRejection, SubscriptionPaymentEventWrite,
+    SubscriptionPlanCreateOutcome, SubscriptionPlanDisable, SubscriptionPlanDisableOutcome,
+    SubscriptionPlanPageRecord, SubscriptionPlanPriceRecord, SubscriptionPlanRecord,
     SubscriptionPlanWrite, SubscriptionRepository, SubscriptionRepositoryConfigError,
     SubscriptionRepositoryError, SubscriptionResetDueCursor, UserSubscriptionBind,
     UserSubscriptionBindOutcome, UserSubscriptionExpirationDuePageRecord,
@@ -470,7 +607,7 @@ pub use usage_log::{
 pub use user_profile::{
     MAX_USER_PROFILE_USERNAME_BYTES, UserNotificationPreferencesRecord, UserPasswordChangeOutcome,
     UserProfileLookupOutcome, UserProfileMutationOutcome, UserProfileRecord, UserProfileRepository,
-    UserProfileRepositoryConfigError, UserProfileRepositoryError,
+    UserProfileRepositoryConfigError, UserProfileRepositoryError, UserTwoFactorMutationOutcome,
 };
 pub use user_session::{
     UserSessionLookupByIdOutcome, UserSessionLookupOutcome, UserSessionRepository,
@@ -496,6 +633,15 @@ pub async fn connect_and_migrate(
     database_options: &DatabaseOptions,
     migration_options: MigrationOptions,
 ) -> Result<DatabasePool, DatabaseError> {
+    if let Some(dedicated_options) = database_options.dedicated_migration_options() {
+        let migration_pool = connect(&dedicated_options).await?;
+        if let Err(error) = run_pending_migrations(&migration_pool, migration_options).await {
+            let _ = migration_pool.close().await;
+            return Err(error);
+        }
+        migration_pool.close().await?;
+        return connect(database_options).await;
+    }
     let pool = connect(database_options).await?;
     if let Err(error) = run_pending_migrations(&pool, migration_options).await {
         // 迁移失败时主动执行有界关闭，同时保留原始迁移错误供启动层判定。

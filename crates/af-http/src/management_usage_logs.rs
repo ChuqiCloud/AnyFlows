@@ -21,10 +21,16 @@ pub(crate) struct AdminUsageLogResponse {
     event_id: String,
     #[schema(minimum = 1)]
     user_id: i64,
+    #[schema(min_length = 1, max_length = 64)]
+    username: String,
     #[schema(minimum = 1)]
     token_id: i64,
     #[schema(minimum = 1)]
     group_id: i64,
+    #[schema(minimum = 1, required = true)]
+    organization_id: Option<i64>,
+    #[schema(minimum = 1, required = true)]
+    organization_team_id: Option<i64>,
     #[schema(value_type = crate::openapi::schema::AdminUsageLogBillingModeSchema)]
     billing_mode: af_admin::AdminUsageLogBillingMode,
     #[schema(minimum = 0)]
@@ -199,14 +205,17 @@ impl AdminUsageLogListResponse {
 }
 
 impl AdminUsageLogResponse {
-    fn from_log(log: &AdminUsageLog) -> Self {
+    pub(crate) fn from_log(log: &AdminUsageLog) -> Self {
         let usage = log.usage();
         Self {
             id: log.id(),
             event_id: log.event_id().to_owned(),
             user_id: log.user_id().get(),
+            username: log.username().to_owned(),
             token_id: log.token_id().get(),
             group_id: log.group_id().get(),
+            organization_id: log.organization_id().map(|value| value.get()),
+            organization_team_id: log.organization_team_id().map(|value| value.get()),
             billing_mode: log.billing_mode(),
             input_tokens: usage.input_tokens(),
             output_tokens: usage.output_tokens(),
@@ -318,7 +327,7 @@ fn parse_list_query(raw_query: Option<&str>) -> Result<AdminUsageLogListQuery, M
     .map_err(map_read_error)
 }
 
-fn parse_positive_i64(value: &str) -> Result<i64, ManagementError> {
+pub(crate) fn parse_positive_i64(value: &str) -> Result<i64, ManagementError> {
     if value.is_empty()
         || value.starts_with('+')
         || value.starts_with('-')
@@ -334,7 +343,7 @@ fn parse_positive_i64(value: &str) -> Result<i64, ManagementError> {
         .ok_or(ManagementError::InvalidRequest)
 }
 
-fn parse_limit(value: &str) -> Result<usize, ManagementError> {
+pub(crate) fn parse_limit(value: &str) -> Result<usize, ManagementError> {
     if value.is_empty()
         || value.starts_with('+')
         || value.starts_with('-')
@@ -347,7 +356,7 @@ fn parse_limit(value: &str) -> Result<usize, ManagementError> {
         .map_err(|_| ManagementError::InvalidRequest)
 }
 
-fn validate_percent_encoding(raw_query: &str) -> Result<(), ManagementError> {
+pub(crate) fn validate_percent_encoding(raw_query: &str) -> Result<(), ManagementError> {
     let bytes = raw_query.as_bytes();
     let mut index = 0;
     while index < bytes.len() {

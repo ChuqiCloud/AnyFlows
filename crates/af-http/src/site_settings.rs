@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
 use af_admin::{
-    AdminSiteSettings, PublicSiteSettings, RegistrationError, RegistrationService,
-    SessionAuthenticator, SiteSettingsCommand, SiteSettingsError, SiteSettingsService,
+    AdminSiteSettings, BalanceDisplayMode, BalanceDisplayPolicy, BalanceSymbolPosition,
+    OAuthLoginError, OAuthLoginService, PublicOAuthLoginProvider, PublicSiteSettings,
+    RegistrationError, RegistrationService, SessionAuthenticator, SiteSettingsCommand,
+    SiteSettingsError, SiteSettingsService,
 };
 use axum::{
     Extension, Json, Router,
@@ -25,6 +27,8 @@ use crate::{
 struct SiteSettingsHttpState {
     site_service: Arc<dyn SiteSettingsService>,
     registration_service: Arc<dyn RegistrationService>,
+    oauth_login_service: Option<Arc<dyn OAuthLoginService>>,
+    turnstile_site_key: Option<String>,
 }
 
 #[derive(Clone, Serialize, ToSchema)]
@@ -39,13 +43,109 @@ pub(crate) struct PublicBrandSettingsResponse {
     description: Option<String>,
 }
 
-#[derive(Clone, Copy, Serialize, ToSchema)]
+#[derive(Clone, Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 #[schema(as = PublicAuthenticationCapabilities)]
 pub(crate) struct PublicAuthenticationCapabilitiesResponse {
     password_login_enabled: bool,
     registration_enabled: bool,
     registration_email_required: bool,
+    oauth_providers: Vec<PublicOAuthLoginProviderResponse>,
+    #[schema(max_length = 256)]
+    turnstile_site_key: Option<String>,
+}
+
+#[derive(Clone, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = PublicOAuthLoginProvider)]
+pub(crate) struct PublicOAuthLoginProviderResponse {
+    #[schema(max_length = 32)]
+    id: String,
+    #[schema(max_length = 64)]
+    display_name: String,
+}
+
+impl From<PublicOAuthLoginProvider> for PublicOAuthLoginProviderResponse {
+    fn from(provider: PublicOAuthLoginProvider) -> Self {
+        Self {
+            id: provider.id().to_owned(),
+            display_name: provider.display_name().to_owned(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[schema(as = BalanceDisplayMode)]
+pub(crate) enum BalanceDisplayModeDto {
+    Quota,
+    CustomUnit,
+}
+
+#[derive(Clone, Copy, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[schema(as = BalanceDisplaySymbolPosition)]
+pub(crate) enum BalanceDisplaySymbolPositionDto {
+    Prefix,
+    Suffix,
+}
+
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = BalanceDisplaySettings)]
+pub(crate) struct BalanceDisplaySettingsDto {
+    mode: BalanceDisplayModeDto,
+    #[schema(min_length = 1, max_length = 64)]
+    unit_name: String,
+    #[schema(min_length = 1, max_length = 24)]
+    unit_symbol: String,
+    #[schema(pattern = r"^[1-9][0-9]{0,18}$", example = "10000")]
+    quota_units_per_display_unit: String,
+    symbol_position: BalanceDisplaySymbolPositionDto,
+    #[schema(minimum = 0, maximum = 4)]
+    fraction_digits: u8,
+}
+
+impl From<&BalanceDisplayPolicy> for BalanceDisplaySettingsDto {
+    fn from(policy: &BalanceDisplayPolicy) -> Self {
+        Self {
+            mode: match policy.mode() {
+                BalanceDisplayMode::Quota => BalanceDisplayModeDto::Quota,
+                BalanceDisplayMode::CustomUnit => BalanceDisplayModeDto::CustomUnit,
+            },
+            unit_name: policy.unit_name().to_owned(),
+            unit_symbol: policy.unit_symbol().to_owned(),
+            quota_units_per_display_unit: policy.quota_units_per_display_unit().to_string(),
+            symbol_position: match policy.symbol_position() {
+                BalanceSymbolPosition::Prefix => BalanceDisplaySymbolPositionDto::Prefix,
+                BalanceSymbolPosition::Suffix => BalanceDisplaySymbolPositionDto::Suffix,
+            },
+            fraction_digits: policy.fraction_digits(),
+        }
+    }
+}
+
+impl BalanceDisplaySettingsDto {
+    fn into_policy(self) -> Result<BalanceDisplayPolicy, SiteSettingsError> {
+        let quota_units_per_display_unit = self
+            .quota_units_per_display_unit
+            .parse::<i64>()
+            .map_err(|_| SiteSettingsError::InvalidInput)?;
+        BalanceDisplayPolicy::new(
+            match self.mode {
+                BalanceDisplayModeDto::Quota => BalanceDisplayMode::Quota,
+                BalanceDisplayModeDto::CustomUnit => BalanceDisplayMode::CustomUnit,
+            },
+            self.unit_name,
+            self.unit_symbol,
+            quota_units_per_display_unit,
+            match self.symbol_position {
+                BalanceDisplaySymbolPositionDto::Prefix => BalanceSymbolPosition::Prefix,
+                BalanceDisplaySymbolPositionDto::Suffix => BalanceSymbolPosition::Suffix,
+            },
+            self.fraction_digits,
+        )
+    }
 }
 
 #[derive(Serialize, ToSchema)]
@@ -57,6 +157,7 @@ pub(crate) struct PublicSiteSettingsResponse {
     #[schema(max_length = 2048, format = "uri")]
     public_base_url: Option<String>,
     brand: PublicBrandSettingsResponse,
+    balance_display: BalanceDisplaySettingsDto,
     authentication: PublicAuthenticationCapabilitiesResponse,
 }
 
@@ -69,6 +170,7 @@ pub(crate) struct AdminSiteSettingsResponse {
     #[schema(max_length = 2048, format = "uri")]
     public_base_url: Option<String>,
     brand: PublicBrandSettingsResponse,
+    balance_display: BalanceDisplaySettingsDto,
     #[schema(minimum = 1)]
     version: i64,
 }
@@ -83,6 +185,7 @@ impl From<AdminSiteSettings> for AdminSiteSettingsResponse {
                 tagline: settings.brand_tagline().map(str::to_owned),
                 description: settings.brand_description().map(str::to_owned),
             },
+            balance_display: BalanceDisplaySettingsDto::from(settings.balance_display()),
             version: settings.version(),
         }
     }
@@ -97,6 +200,9 @@ pub(crate) struct AdminSiteSettingsRequest {
     #[schema(max_length = 2048, format = "uri")]
     public_base_url: Option<String>,
     brand: AdminBrandSettingsRequest,
+    balance_display: BalanceDisplaySettingsDto,
+    #[schema(minimum = 1)]
+    expected_version: i64,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -115,6 +221,8 @@ pub(crate) struct AdminBrandSettingsRequest {
 pub(crate) fn build_site_settings_router(
     site_service: Arc<dyn SiteSettingsService>,
     registration_service: Arc<dyn RegistrationService>,
+    oauth_login_service: Option<Arc<dyn OAuthLoginService>>,
+    turnstile_site_key: Option<&str>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
 ) -> Router {
     let authentication = middleware::from_fn_with_state(
@@ -133,6 +241,8 @@ pub(crate) fn build_site_settings_router(
         .with_state(SiteSettingsHttpState {
             site_service,
             registration_service,
+            oauth_login_service,
+            turnstile_site_key: turnstile_site_key.map(str::to_owned),
         })
 }
 
@@ -140,13 +250,26 @@ pub(crate) fn build_site_settings_router(
 async fn get_public_site_settings(
     State(state): State<SiteSettingsHttpState>,
 ) -> Result<Response, ManagementError> {
-    let (site, authentication) = tokio::join!(
+    let oauth_providers = async {
+        match state.oauth_login_service.as_ref() {
+            Some(service) => service.public_providers().await,
+            None => Ok(Vec::new()),
+        }
+    };
+    let (site, authentication, oauth_providers) = tokio::join!(
         state.site_service.public_settings(),
-        state.registration_service.status()
+        state.registration_service.status(),
+        oauth_providers,
     );
     let site = site.map_err(map_site_settings_error)?;
     let authentication = authentication.map_err(map_registration_error)?;
-    Ok(no_store_json(public_response(site, authentication)))
+    let oauth_providers = oauth_providers.map_err(map_oauth_login_error)?;
+    Ok(no_store_json(public_response(
+        site,
+        authentication,
+        oauth_providers,
+        state.turnstile_site_key,
+    )))
 }
 
 async fn get_admin_site_settings(
@@ -173,6 +296,11 @@ async fn update_admin_site_settings(
         request.brand.logo_url,
         request.brand.tagline,
         request.brand.description,
+        request
+            .balance_display
+            .into_policy()
+            .map_err(map_site_settings_error)?,
+        request.expected_version,
     )
     .map_err(map_site_settings_error)?;
     let settings = state
@@ -186,6 +314,8 @@ async fn update_admin_site_settings(
 fn public_response(
     site: PublicSiteSettings,
     authentication: af_admin::RegistrationStatus,
+    oauth_providers: Vec<PublicOAuthLoginProvider>,
+    turnstile_site_key: Option<String>,
 ) -> PublicSiteSettingsResponse {
     PublicSiteSettingsResponse {
         site_name: site.site_name().to_owned(),
@@ -195,11 +325,29 @@ fn public_response(
             tagline: site.brand_tagline().map(str::to_owned),
             description: site.brand_description().map(str::to_owned),
         },
+        balance_display: BalanceDisplaySettingsDto::from(site.balance_display()),
         authentication: PublicAuthenticationCapabilitiesResponse {
             password_login_enabled: authentication.password_login_enabled(),
             registration_enabled: authentication.enabled(),
             registration_email_required: authentication.email_required(),
+            oauth_providers: oauth_providers
+                .into_iter()
+                .map(PublicOAuthLoginProviderResponse::from)
+                .collect(),
+            turnstile_site_key,
         },
+    }
+}
+
+fn map_oauth_login_error(error: OAuthLoginError) -> ManagementError {
+    match error {
+        OAuthLoginError::InvalidInput => ManagementError::InvalidRequest,
+        OAuthLoginError::Forbidden => ManagementError::Forbidden,
+        OAuthLoginError::Unavailable => ManagementError::OauthProviderNotConfigured,
+        OAuthLoginError::Rejected => ManagementError::OauthAuthorizationDenied,
+        OAuthLoginError::ConcurrentUpdate => ManagementError::OauthLoginSettingsConflict,
+        OAuthLoginError::ProviderUnavailable => ManagementError::OauthUnavailable,
+        OAuthLoginError::Internal => ManagementError::Internal,
     }
 }
 
@@ -208,6 +356,7 @@ fn map_site_settings_error(error: SiteSettingsError) -> ManagementError {
         SiteSettingsError::InvalidInput => ManagementError::InvalidRequest,
         SiteSettingsError::Forbidden => ManagementError::Forbidden,
         SiteSettingsError::Internal => ManagementError::Internal,
+        SiteSettingsError::Conflict => ManagementError::SiteSettingsConflict,
     }
 }
 

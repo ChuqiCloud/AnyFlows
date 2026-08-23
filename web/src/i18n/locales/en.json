@@ -3,18 +3,48 @@
     "name": "AnyFlows",
     "scope": "Gateway"
   },
+  "tablePagination": {
+    "label": "Table pagination",
+    "pageSummary": "Page {{page}}, {{count}} records",
+    "pageNumber": "Page {{page}}",
+    "pageSize": "Per page",
+    "moreAvailable": "More records available",
+    "endReached": "Last page reached",
+    "actions": {
+      "first": "First page",
+      "previous": "Previous",
+      "next": "Next"
+    }
+  },
   "nav": {
     "label": "Primary navigation",
     "groups": {
       "use": "Use",
+      "organization": "Organization",
       "account": "Account",
+      "workspace": "Workspace",
+      "personal": "Personal",
       "system": "System management"
+    },
+    "sections": {
+      "personal": "Personal account",
+      "organization": "Organization",
+      "operations": "Users & commerce",
+      "gateway": "Models & gateway",
+      "platform": "Platform settings"
     },
     "overview": "Operations overview",
     "models": "Models",
     "playground": "Multimodal playground",
     "videoTasks": "Video tasks",
     "apiKeys": "My API keys",
+    "organizationApiKeys": "Organization API keys",
+    "organizationBudgets": "Organization budgets",
+    "organizationActivity": "Organization logs & audit",
+    "organizationOverview": "Organization overview",
+    "organizationMembers": "Members and teams",
+    "organizationWallet": "Organization wallet",
+    "organizationSettings": "Organization settings",
     "wallet": "My wallet",
     "subscriptions": "My subscriptions",
     "invitations": "Invitations",
@@ -22,6 +52,7 @@
     "users": "Users",
     "subscriptionManagement": "Subscription management",
     "redemptionCodes": "Redemption codes",
+    "refunds": "Refund approvals",
     "siteSettings": "Site settings",
     "authenticationSettings": "Authentication",
     "emailSettings": "Email settings",
@@ -42,12 +73,16 @@
   },
   "shell": {
     "search": "Search",
+    "notifications": "Notification preferences",
+    "notificationsUnread": "{{count}} unread notification(s)",
     "version": "Development preview",
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
     "home": "Back to home",
     "balanceUnavailable": "Balance unavailable",
-    "balanceValue": "Available balance: {{value}} quota"
+    "balanceValue": "Available balance: {{value}} quota",
+    "organizationBalanceUnavailable": "Organization balance unavailable",
+    "organizationBalanceValue": "Organization available balance: {{value}} quota"
   },
   "dashboard": {
     "title": "Operations overview",
@@ -60,14 +95,45 @@
     },
     "summary": {
       "label": "Summary metrics",
-      "requests": { "label": "Requests", "hint": "Confirmed in the last 24 hours" },
-      "quota": { "label": "Quota consumed", "hint": "Final persisted quota units" },
-      "channels": { "label": "Enabled channels", "hint": "{{total}} non-deleted channels total" },
+      "requests": {
+        "label": "Requests",
+        "hint": "Confirmed in the last 24 hours"
+      },
+      "quota": {
+        "label": "Quota consumed",
+        "hint": "Final persisted quota units"
+      },
+      "channels": {
+        "label": "Enabled channels",
+        "hint": "{{total}} non-deleted channels total"
+      },
       "confirmed": {
         "label": "Upstream confirmation",
         "hint": "{{count}} requests reported by upstreams",
         "empty": "No request sample yet"
       }
+    },
+    "trend": {
+      "title": "24-hour trend",
+      "subtitle": "Each column is a persisted one-hour server window",
+      "legend": "Trend chart legend",
+      "requests": "Requests",
+      "quota": "Quota",
+      "chartLabel": "Requests and quota over the last 24 hours",
+      "point": "{{time}}: {{requests}} requests, {{quota}}"
+    },
+    "performance": {
+      "title": "Performance health",
+      "subtitle": "Based on persisted timings and diagnostic cutoffs, not live probes or an SLA",
+      "firstToken": "Average first token",
+      "duration": "Average duration",
+      "coverage": "{{rate}} coverage · {{count}} samples",
+      "slow": "≥ {{threshold}}: {{count}}",
+      "belowThreshold": "{{rate}} below cutoff",
+      "unsampled": "{{count}} unsampled",
+      "distribution": "{{below}} below cutoff, {{slow}} slow, {{unsampled}} unsampled",
+      "noSamples": "No timing samples",
+      "noRequests": "No requests in this period"
     },
     "composition": {
       "title": "Request composition",
@@ -84,12 +150,91 @@
         "free": "Free requests"
       }
     },
+    "outcomes": {
+      "label": "Request outcomes",
+      "title": "Request outcomes",
+      "subtitle": "Only synchronous model requests with a parsed, persisted terminal fact",
+      "sampleCount": "Terminal samples",
+      "sampleHint": "Independent from usage facts",
+      "successRate": "Resolved success rate",
+      "successHint": "{{count}} succeeded",
+      "failureRate": "Resolved failure rate",
+      "failureHint": "{{count}} failed",
+      "unknownCount": "Unknown outcomes",
+      "unknownHint": "Excluded from the success-rate denominator",
+      "empty": "No terminal samples are available for success-rate analysis in this window.",
+      "failuresTitle": "Failure composition",
+      "noFailures": "No failed terminal outcomes in this window.",
+      "flowsTitle": "Protocol to channel flow",
+      "flowsSubtitle": "Top 12 final successful channels by request count",
+      "noFlows": "No confirmed channel flow in this window.",
+      "otherFlows": "Other successful flows",
+      "channelId": "Channel {{id}}",
+      "flowMap": {
+        "visible": "{{count}} requests shown",
+        "share": "{{rate}} of successful outcomes",
+        "requests": "requests",
+        "chartLabel": "Protocol to channel request flow map",
+        "chartTitle": "Protocol to channel flow",
+        "chartDescription": "Line width represents the number of successful requests from each protocol to each final channel.",
+        "path": "{{protocol}} to {{channel}}: {{count}} requests"
+      },
+      "protocols": {
+        "openai_chat": "OpenAI Chat",
+        "openai_responses": "OpenAI Responses",
+        "openai_embeddings": "OpenAI Embeddings",
+        "openai_images": "OpenAI Images",
+        "openai_audio": "OpenAI Audio",
+        "openai_speech": "OpenAI Speech",
+        "jina_rerank": "Jina Rerank",
+        "cohere_rerank": "Cohere Rerank",
+        "xai_video": "xAI Video",
+        "anthropic": "Anthropic",
+        "gemini": "Gemini"
+      },
+      "failures": {
+        "invalid_request": "Invalid request",
+        "model_not_allowed": "Model not allowed",
+        "insufficient_quota": "Insufficient quota",
+        "quota_limited": "Quota limited",
+        "concurrency_limited": "Concurrency limited",
+        "outcome_unknown": "Outcome unknown",
+        "upstream_rate_limited": "Upstream rate limited",
+        "upstream_overloaded": "Upstream overloaded",
+        "upstream_authentication": "Upstream authentication",
+        "upstream_quota": "Upstream quota",
+        "upstream_model": "Upstream model",
+        "upstream_protocol": "Upstream protocol",
+        "upstream_server": "Upstream server",
+        "upstream_network": "Upstream network",
+        "internal": "Internal error"
+      }
+    },
     "channels": {
       "title": "Channel status",
       "total": "{{count}} total",
       "enabled": "Enabled",
       "disabled": "Disabled",
       "autoDisabled": "Auto-disabled"
+    },
+    "availability": {
+      "title": "Availability facts",
+      "subtitle": "Based only on persisted outcomes and channel state, not live probes or an SLA",
+      "factsLabel": "Request availability facts",
+      "channelsLabel": "Channel configuration status",
+      "observedRate": "Resolved request success rate",
+      "resolved": "{{resolved}} / {{total}} terminal outcomes resolved ({{rate}} coverage)",
+      "noSamples": "No terminal samples exist in this window, so availability is not calculated.",
+      "unknownOnly": "All terminal outcomes are unknown, so success rate is not calculated.",
+      "success": "Successful outcomes",
+      "failure": "Confirmed failures",
+      "unknown": "Unknown outcomes",
+      "distributionLabel": "{{success}} successful, {{failure}} confirmed failures, {{unknown}} unknown",
+      "routable": "Routable channels",
+      "channelValue": "{{enabled}} / {{total}}",
+      "noChannels": "No non-deleted channels exist.",
+      "noEnabledChannels": "No channels are enabled, so there is no routable configuration.",
+      "configured": "This is channel configuration state, not a live probe result."
     },
     "empty": {
       "title": "No operating data yet",
@@ -152,7 +297,8 @@
       "timeout": "Timeout {{value}}s",
       "inheritTimeout": "Service default",
       "poolMode": "External pool",
-      "responsesWebsocket": "WebSocket"
+      "responsesWebsocket": "WebSocket",
+      "clientSimulation": "Client simulation"
     },
     "probe": {
       "notTested": "Not tested",
@@ -204,6 +350,9 @@
       "autoBanRulesHint": "Matches exact 5xx statuses and structured upstream type, code, or status fields. Empty rules never disable a channel.",
       "autoBanKeywordPlaceholder": "Enter a structured error keyword",
       "poolModeHint": "Delegates channel-level failures to the upstream account pool while still isolating unusable local credentials.",
+      "clientSimulationHint": "Applies a fixed, versioned HTTP identity profile only to Anthropic OAuth Chat candidates.",
+      "clientSimulationRisk": "This capability may interact with upstream terms or risk controls. The current profile changes only User-Agent and X-App, not the body, authentication, model, routing, or billing facts.",
+      "clientSimulationRiskAccept": "I have reviewed and accept the compliance risk of enabling this profile for the channel.",
       "responsesWebsocketHint": "Reuses a connection only when the request has a stable session identifier. Failures before the first event fall back to HTTP once.",
       "responsesCompactModeHint": "Auto mode routes only after a real probe confirms support. Force-on is still limited to native Responses channels.",
       "responsesCompactModelMappingHint": "Optional. Applies a Compact-only upstream model mapping after the normal model mapping.",
@@ -235,6 +384,7 @@
       "autoBanStatusCodes": "HTTP status codes",
       "autoBanKeywords": "Structured error keywords",
       "poolMode": "External account pool mode",
+      "clientSimulationProfile": "Client simulation profile",
       "responsesWebsocket": "Enable Responses WebSocket",
       "responsesCompactMode": "Context compaction capability",
       "responsesCompactModelMapping": "Compact model mapping",
@@ -260,7 +410,12 @@
       "timeout": "Enter an integer from 1 to 900 seconds, or leave it blank to use the service default.",
       "url": "Enter an HTTP(S) URL without credentials, a query string, or a fragment.",
       "routing": "Models and groups must both be set or both be empty, with no duplicates or capacity overflow.",
-      "autoBanRules": "Rules must use unique statuses from 500 to 599 and bounded keywords, with no more than 64 entries in total."
+      "autoBanRules": "Rules must use unique statuses from 500 to 599 and bounded keywords, with no more than 64 entries in total.",
+      "clientSimulationRisk": "Confirm the compliance risk before enabling or changing the client simulation profile."
+    },
+    "clientSimulation": {
+      "off": "Off",
+      "anthropicCliHeadersV1": "Anthropic CLI Headers v1"
     },
     "mapping": {
       "source": "Client model",
@@ -444,7 +599,10 @@
       "health": "Runtime",
       "actions": "Actions"
     },
-    "status": { "enabled": "Enabled", "disabled": "Disabled" },
+    "status": {
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
     "mode": {
       "pattern": "Model pattern",
       "explicit_group": "Explicit group",
@@ -457,8 +615,8 @@
     },
     "strategyHint": {
       "weighted": "Combines priority, weight, and live health when selecting a candidate.",
-      "round_robin": "Rotates through candidates with the same priority in a stable order.",
-      "stable_first": "Keeps candidates close to the healthiest score in the primary pool."
+      "round_robin": "Rotates channels by least recently selected, ignoring priority and weight.",
+      "stable_first": "Prefers primary-pool channels close to the best health score; observation traffic stays disabled for now."
     },
     "values": {
       "candidates": "{{count}} candidates",
@@ -503,20 +661,20 @@
       "matching": "Matching and strategy",
       "modelPattern": "Model or group match",
       "modelPatternPlaceholder": "For example gpt-5.5 or re:^gpt-5\\.",
-      "modelPatternHint": "Model matching accepts a re: prefix for regex. Explicit groups use a group name, not regex.",
+      "modelPatternHint": "Fixed precedence is explicit group, exact model, then regex; older rules win within the same tier.",
       "mode": "Match mode",
       "strategy": "Selection strategy",
       "mapping": "Model mapping",
-      "mappingHint": "Optional. Map a public model name to the upstream model name used by candidates.",
+      "mappingHint": "Optional. Map the public name to a Canonical model before each channel applies its upstream mapping.",
       "mappingSource": "Public model",
-      "mappingTarget": "Upstream model",
+      "mappingTarget": "Canonical model",
       "mappingSourcePlaceholder": "For example gpt-5.5",
-      "mappingTargetPlaceholder": "For example gpt-5.5-pro",
+      "mappingTargetPlaceholder": "For example gpt-5.5",
       "mappingEmpty": "No model mapping configured",
       "addMapping": "Add mapping",
       "removeMapping": "Remove mapping",
       "candidates": "Channel and account candidates",
-      "candidatesHint": "Drag to change priority. Weight affects weighted strategies. Each channel and credential pair can be added once.",
+      "candidatesHint": "Candidates only apply inside the explicit billing group's abilities. Credentials are grouped by channel; order and weight control credential priority and weighted choice.",
       "channel": "Channel",
       "selectChannel": "Select channel",
       "credential": "Credential",
@@ -597,6 +755,7 @@
       "autoDisabled": "Auto-disabled",
       "cooling": "Cooling down",
       "disabled": "Disabled",
+      "parentBlocked": "Blocked by parent credential",
       "paused": "Scheduling paused",
       "pending": "Awaiting first use"
     },
@@ -605,12 +764,18 @@
       "disabled": "Disabled",
       "autoDisabled": "Auto-disabled"
     },
-    "values": { "unlimited": "Unlimited" },
+    "values": {
+      "unlimited": "Unlimited"
+    },
     "item": {
       "priorityWeight": "Priority {{priority}}, weight {{weight}}",
       "concurrency": "Concurrency {{value}}",
+      "inheritedConcurrency": "Inherited concurrency {{value}}",
       "parent": "Parent account #{{id}}",
+      "sharedParent": "Shared parent credential #{{id}}",
       "proxy": "Proxy #{{id}}",
+      "inheritedProxy": "Inherited proxy #{{id}}",
+      "inheritedGlobalProxy": "Inherited global network egress",
       "coolingUntil": "Cooling until {{value}}",
       "authorizationRequired": "Complete OAuth authorization before scheduling begins",
       "neverUsed": "Not used yet",
@@ -627,12 +792,40 @@
       "editDescription": "Update credential #{{id}} in “{{name}}”. Existing secrets are preserved by default."
     },
     "form": {
+      "mode": "Credential mode",
+      "modeLabel": {
+        "standard": "Standard credential",
+        "spark_shadow": "Spark shadow"
+      },
+      "modeHint": {
+        "standard": "Stores an independent secret, proxy, and quota state.",
+        "spark_shadow": "Inherits an OAuth parent and isolates only Spark quota."
+      },
       "kind": "Credential type",
       "identityTitle": "Identity material",
       "identityDescription": "Sensitive material is sent only with this request and is never echoed after storage.",
       "rotateSecret": "Rotate secret",
       "rotateSecretHint": "Replace the complete secret set with the fields below.",
       "secretPreserved": "This save will preserve the existing server-side secret."
+    },
+    "spark": {
+      "badge": "Spark shadow",
+      "parent": "OAuth parent credential",
+      "parentHint": "Only enabled, authorized root credentials without a Spark shadow are listed.",
+      "parentLocked": "The parent credential and quota dimension cannot change after creation.",
+      "selectParent": "Select an OAuth parent credential",
+      "noParent": "No eligible OAuth root credential is loaded. Create and authorize one first, or check whether it already has a Spark shadow.",
+      "catalog": {
+        "loading": "Checking the complete account catalog. Spark shadow mode will unlock when it finishes.",
+        "error": "The complete account catalog could not be loaded, so Spark shadows cannot be created right now."
+      },
+      "inheritance": "Inherited identity",
+      "secret": "Secret and OAuth lifecycle",
+      "proxy": "Egress proxy",
+      "concurrency": "Real account concurrency",
+      "fromParent": "Inherited from #{{id}}",
+      "globalProxy": "Global network egress",
+      "selectFirst": "Select a parent to preview"
     },
     "secret": {
       "apiKey": "Upstream API key",
@@ -744,7 +937,10 @@
       "proxyLoadFailed": "The dedicated proxy catalog could not be loaded.",
       "optional": "Leave empty for unlimited"
     },
-    "state": { "unsaved": "Unsaved changes", "synced": "Synced with server" },
+    "state": {
+      "unsaved": "Unsaved changes",
+      "synced": "Synced with server"
+    },
     "actions": {
       "refresh": "Refresh",
       "retry": "Try again",
@@ -764,7 +960,10 @@
     },
     "delete": {
       "title": "Delete credential",
-      "description": "Credential #{{id}} will be permanently removed. This action cannot be undone."
+      "description": "Credential #{{id}} will be permanently removed. This action cannot be undone.",
+      "cascadeDescription": "Parent credential #{{id}} and its {{count}} Spark shadow will be permanently removed. This action cannot be undone.",
+      "catalogLoading": "Checking the complete credential catalog for Spark shadows that would be deleted with this credential.",
+      "catalogError": "The complete credential catalog could not be loaded, so the cascade scope cannot be confirmed safely. Retry before deleting."
     },
     "validation": {
       "incompatibleKind": "This channel type does not support that credential.",
@@ -1855,25 +2054,111 @@
     "count": "{{count}} records on this page",
     "filteredCount": "Showing {{visible}} of {{count}}",
     "page": "Page {{page}}",
+    "pageSummary": "Page {{page}} · {{count}} settled records",
     "loading": "Loading usage logs",
     "pagination": "Usage log pagination",
     "columns": {
+      "time": "Time / status",
       "call": "Model request",
       "latency": "Response speed",
       "tokens": "Token usage",
       "billing": "Billing result"
     },
     "listLabel": "Settled request list",
-    "filters": { "model": "Model", "modelPlaceholder": "Search models on this page", "protocol": "Protocol", "allProtocols": "All protocols" },
-    "protocol": { "openai_chat": "Chat", "openai_responses": "Responses", "openai_embeddings": "Embeddings", "openai_images": "Images", "openai_audio": "Audio", "openai_speech": "Speech", "jina_rerank": "Jina Rerank", "cohere_rerank": "Cohere Rerank", "xai_video": "xAI Video", "anthropic": "Anthropic", "gemini": "Gemini" },
-    "operation": { "chat": "Chat", "responses": "Responses", "responses_compact": "Context compaction", "embedding": "Embedding", "image": "Image", "audio": "Audio", "rerank": "Rerank", "video": "Video", "count_tokens": "Token count" },
-    "reasoning": { "none": "Off", "minimal": "Minimal", "low": "Low", "medium": "Medium", "high": "High", "extra_high": "Extra high", "max": "Max" },
-    "details": { "request": "Request ID", "tokens": "Cache and reasoning tokens", "reasoning": "Reasoning effort / budget", "mode": "Billing / response mode", "principal": "Billing principal" },
+    "status": {
+      "settled": "Settled",
+      "settledOnly": "Settled only"
+    },
+    "summary": {
+      "label": "Current filtered results",
+      "requests": "Settled requests",
+      "tokens": "Total tokens",
+      "averageFirstToken": "Average first token",
+      "quota": "Total quota"
+    },
+    "filters": {
+      "label": "Filter this page",
+      "model": "Model",
+      "modelPlaceholder": "Search models on this page",
+      "protocol": "Protocol",
+      "allProtocols": "All protocols",
+      "mode": "Response mode",
+      "allModes": "All modes"
+    },
+    "protocol": {
+      "open_ai_chat": "Chat",
+      "open_ai_responses": "Responses",
+      "open_ai_embeddings": "Embeddings",
+      "open_ai_images": "Images",
+      "open_ai_audio": "Audio",
+      "open_ai_speech": "Speech",
+      "jina_rerank": "Jina Rerank",
+      "cohere_rerank": "Cohere Rerank",
+      "xai_video": "xAI Video",
+      "anthropic": "Anthropic",
+      "gemini": "Gemini"
+    },
+    "operation": {
+      "chat": "Chat",
+      "responses": "Responses",
+      "responses_compact": "Context compaction",
+      "embedding": "Embedding",
+      "image": "Image",
+      "audio": "Audio",
+      "rerank": "Rerank",
+      "video": "Video",
+      "count_tokens": "Token count"
+    },
+    "reasoning": {
+      "none": "Off",
+      "minimal": "Minimal",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "extra_high": "Extra high",
+      "max": "Max"
+    },
+    "details": {
+      "request": "Request ID",
+      "tokens": "Cache and reasoning tokens",
+      "reasoning": "Reasoning effort / budget",
+      "mode": "Billing / response mode",
+      "principal": "Billing principal"
+    },
+    "detailSections": {
+      "request": "Request",
+      "performance": "Performance",
+      "tokens": "Token details",
+      "billing": "Billing facts",
+      "reasoning": "Reasoning",
+      "principal": "Billing principal"
+    },
+    "detailFields": {
+      "responseMode": "Response mode",
+      "protocol": "Inbound protocol",
+      "operation": "Operation",
+      "totalTokens": "Total tokens",
+      "cacheRead": "Cache read",
+      "cacheCreate5m": "Cache create 5m",
+      "cacheCreate1h": "Cache create 1h",
+      "cacheTotal": "Total cache",
+      "reasoningTokens": "Reasoning tokens",
+      "billingMode": "Billing mode",
+      "usageSource": "Usage source",
+      "usageSemantics": "Cache semantics",
+      "reasoningEffort": "Reasoning effort",
+      "reasoningBudget": "Reasoning budget",
+      "user": "User",
+      "token": "API key",
+      "group": "Group"
+    },
     "values": {
       "userTokenGroup": "User #{{user}} / API key #{{token}} / Group #{{group}}",
+      "userTokenGroupCompact": "User #{{user}} · Key #{{token}} · Group #{{group}}",
       "legacy": "Historical",
       "legacyModel": "Model not recorded",
       "notSpecified": "Not specified",
+      "notRecorded": "Not recorded",
       "stream": "Stream",
       "sync": "Non-stream",
       "firstToken": "First token",
@@ -1881,6 +2166,8 @@
       "inputLabel": "Input",
       "outputLabel": "Output",
       "quota": "Billed quota",
+      "quotaShort": "Quota",
+      "inputOutputCompact": "Input {{input}} · Output {{output}}",
       "cacheReasoning": "Cache {{cache}} / Reasoning {{reasoning}}",
       "input": "Input {{value}}",
       "output": "Output {{value}}",
@@ -1907,8 +2194,13 @@
     },
     "actions": {
       "refresh": "Refresh",
+      "debugTraces": "Debug traces",
       "reset": "Reset",
       "details": "Expand request details",
+      "openDetails": "Open {{model}} request details",
+      "copyRequestId": "Copy request ID",
+      "copiedRequestId": "Request ID copied",
+      "copyRequestIdFailed": "Copy failed. Select the request ID in details.",
       "retry": "Retry",
       "previous": "Previous",
       "next": "Next"
@@ -1922,13 +2214,29 @@
     "error": {
       "title": "Unable to load request logs",
       "body": "The service did not return settled requests. Try again shortly."
+    },
+    "userSheet": {
+      "title": "User profile",
+      "description": "Review the account, wallet balance, and request limits for this request owner.",
+      "loading": "Loading user profile",
+      "errorTitle": "Unable to load user profile",
+      "errorBody": "The user may have been deleted, or the service did not return an account snapshot.",
+      "account": "Account",
+      "traffic": "Requests and limits",
+      "requests": "Total requests",
+      "openManagement": "Open user management"
     }
   },
   "debugTraces": {
     "title": "Debug traces",
-    "subtitle": "Inspect sanitized routing decisions and candidate attempts without storing or replaying request bodies or credentials.",
+    "subtitle": "Inspect routing decisions and safe diagnostic snapshots. Credentials are permanently redacted before persistence.",
     "count": "{{count}} traces on this page",
     "page": "Page {{page}}",
+    "pageSummary": "Page {{page}}, {{count}} records",
+    "pageNumber": "Page {{page}}",
+    "pageSize": "Per page",
+    "moreAvailable": "More records available",
+    "endReached": "Last page reached",
     "loading": "Loading debug traces",
     "pagination": "Debug trace pagination",
     "listLabel": "Debug trace list",
@@ -1938,16 +2246,28 @@
       "settings": "Trace settings",
       "filter": "Filter",
       "retry": "Try again",
+      "first": "First page",
       "previous": "Previous",
       "next": "Next",
+      "openDetails": "View trace details for {{model}}",
       "save": "Save settings",
-      "saving": "Saving"
+      "saving": "Saving",
+      "copy": "Copy content",
+      "readHeaders": "View headers",
+      "headersLoaded": "Headers loaded",
+      "readBodies": "View bodies",
+      "bodiesLoaded": "Bodies loaded",
+      "confirmReadBodies": "View bodies",
+      "cancel": "Cancel"
     },
     "filters": {
+      "label": "Filter trace records",
       "outcome": "Request outcome",
       "all": "All outcomes",
       "model": "Model name",
-      "modelPlaceholder": "Filter by exact model name"
+      "modelPlaceholder": "Filter by exact model name",
+      "requestId": "Request ID",
+      "requestIdPlaceholder": "Filter by exact request ID"
     },
     "outcome": {
       "succeeded": "Succeeded",
@@ -1955,8 +2275,22 @@
     },
     "values": {
       "attempts": "{{count}} candidate attempts",
+      "attemptsShort": "{{count}} attempts",
       "elapsed": "{{value}} ms",
-      "principal": "User #{{user}} / Token #{{token}}"
+      "principal": "User #{{user}} / Token #{{token}}",
+      "principalCompact": "#{{user}} / #{{token}}",
+      "routingCompact": "{{count}} attempts / {{value}} ms",
+      "convertedProtocol": "To {{protocol}}",
+      "user": "User #{{id}}",
+      "token": "Token #{{id}}"
+    },
+    "columns": {
+      "time": "Time",
+      "request": "Request",
+      "protocol": "Protocol",
+      "routing": "Routing",
+      "principal": "Principal",
+      "outcome": "Outcome"
     },
     "empty": {
       "title": "No debug traces yet",
@@ -1967,6 +2301,8 @@
       "body": "The service did not return a reliable trace list. Try again shortly."
     },
     "detail": {
+      "sheetTitle": "Debug trace details",
+      "sheetDescription": "Inspect sanitized request snapshots, route candidates, and upstream attempts.",
       "loading": "Loading trace details",
       "errorTitle": "Unable to load trace details",
       "errorBody": "This trace may have expired. Refresh the list and try again.",
@@ -1978,6 +2314,20 @@
       "routingElapsed": "Routing time",
       "group": "Billing group",
       "timeline": "Candidate decision timeline",
+      "downstreamRequest": "Downstream request",
+      "attempts": "Upstream attempts",
+      "requestHeaders": "Request headers",
+      "requestBody": "Request body",
+      "responseHeaders": "Response headers",
+      "responseBody": "Response body",
+      "sensitiveSnapshots": "Sensitive diagnostic snapshots",
+      "sensitiveSnapshotsHint": "Content is permanently redacted. Headers and bodies are authorized separately, and every read is audited.",
+      "bodyConfirmTitle": "View request and response bodies?",
+      "bodyConfirmDescription": "Bodies may contain business content. Only bounded, permanently redacted snapshots are returned, and this administrator read will be audited.",
+      "snapshotReadError": "This snapshot scope is unavailable, expired, or cannot be safely decrypted.",
+      "notCaptured": "Not captured",
+      "streamNotBuffered": "Streaming response body is not buffered without limit",
+      "truncated": "Body truncated at the configured limit. Original size: {{bytes}} bytes",
       "noAttempts": "No candidate attempts were persisted for this trace.",
       "candidate": "Candidate {{index}}",
       "retried": "Retried",
@@ -1999,6 +2349,16 @@
     "operation": {
       "chat": "Chat generation",
       "responses": "Responses generation"
+    },
+    "clientSimulation": {
+      "profile": {
+        "anthropic_cli_headers_v1": "Anthropic CLI simulation"
+      },
+      "result": {
+        "not_applied": "Not applied",
+        "applied": "Applied",
+        "failed": "Application failed"
+      }
     },
     "failure": {
       "auth_expired": "Authentication expired",
@@ -2026,7 +2386,15 @@
       "sampleInvalid": "Enter a percentage from 0 to 100 with at most two decimal places.",
       "retention": "Retention period",
       "retentionValue": "{{hours}} hours",
-      "security": "Traces never store headers, bodies, prompts, raw errors, keys, proxy credentials, session keys, or upstream URLs.",
+      "diagnostics": "Diagnostic snapshots",
+      "diagnosticsDescription": "Only newly sampled requests record snapshots. Headers and bodies are controlled independently.",
+      "captureHeaders": "Capture headers",
+      "captureHeadersDescription": "Store downstream and upstream headers with authentication, cookies, and session fields redacted.",
+      "captureBodies": "Capture bodies",
+      "captureBodiesDescription": "Store request and non-streaming response bodies for short protocol compatibility investigations.",
+      "bodyLimit": "Per-body limit",
+      "bodyLimitValue": "{{value}} KiB",
+      "security": "Authorization, API keys, cookies, proxy credentials, and session material are always permanently redacted. This cannot be disabled. Streaming responses are never buffered without limit.",
       "saveError": "Settings could not be saved. The active runtime configuration is unchanged.",
       "saved": "Settings saved",
       "unsaved": "Unsaved changes"
@@ -2101,6 +2469,7 @@
       "notApplicable": "Not applicable",
       "priceTitle": "{{label}}: ${{value}} per million tokens",
       "perMillion": "per million tokens",
+      "perMillionCompact": "/ 1M",
       "appliedRatios": "Applied ratios",
       "baseRatios": "Public base ratios",
       "moreTags": "+{{count}}",
@@ -2542,9 +2911,13 @@
       "usernamePlaceholder": "Enter your username",
       "password": "Password",
       "passwordPlaceholder": "Enter your password",
+      "twoFactorCode": "Authenticator or backup code",
+      "twoFactorCodePlaceholder": "Enter an authenticator code or backup code",
+      "twoFactorCodeHint": "Authenticator codes are usually 6 digits; an unused backup code also works.",
       "showPassword": "Show password",
       "hidePassword": "Hide password",
       "submit": "Sign in",
+      "verifyTwoFactor": "Verify and sign in",
       "submitting": "Verifying",
       "noAccount": "New to AnyFlows?",
       "register": "Create an account",
@@ -2555,16 +2928,54 @@
       "capabilityUnavailableBody": "The service did not return a reliable authentication state, so the password form remains closed.",
       "disabledTitle": "Password sign-in is disabled",
       "disabledBody": "This site does not currently accept username and password sign-in. You can still browse the model catalog as a guest.",
-      "retry": "Check again"
+      "retry": "Check again",
+      "oauth": {
+        "github": "Continue with GitHub",
+        "discord": "Continue with Discord",
+        "oidc": "Continue with enterprise OIDC",
+        "linuxdo": "Continue with LinuxDO",
+        "wechat": "Continue with WeChat",
+        "telegram": "Continue with Telegram",
+        "google": "Continue with Google"
+      },
+      "oauthStarting": {
+        "github": "Opening GitHub",
+        "discord": "Opening Discord",
+        "oidc": "Opening enterprise OIDC",
+        "linuxdo": "Opening LinuxDO",
+        "wechat": "Opening WeChat QR sign-in",
+        "telegram": "Opening Telegram",
+        "google": "Opening Google"
+      },
+      "orPassword": "or use a password",
+      "orAccount": "or use account sign-in",
+      "passkey": "Sign in with Passkey",
+      "passkeyVerifying": "Verifying Passkey"
+    },
+    "oauthCallback": {
+      "title": "Completing sign-in",
+      "exchanging": "Securely exchanging the one-time login ticket.",
+      "succeeded": "Sign-in is complete. Opening the console.",
+      "cancelled": "You cancelled authorization. Return to try again.",
+      "failed": "This authorization could not be completed. Start a new sign-in.",
+      "wait": "Keep this page open",
+      "retry": "Return to sign in"
     },
     "errors": {
       "invalidCredentials": "The username or password is incorrect.",
+      "twoFactorRequired": "This account uses two-factor authentication. Enter a code to continue.",
+      "twoFactorInvalid": "The authenticator or backup code is incorrect. Try again.",
       "adminRequired": "This account does not have administrator access.",
       "sessionExpired": "Your session has expired. Sign in again.",
       "setupComplete": "Setup is complete. Sign in with an administrator account.",
       "passwordResetSuccess": "Your password was updated. Sign in with the new password.",
       "passwordChanged": "Your password changed and older sessions were revoked. Sign in again with the new password.",
       "passwordLoginDisabled": "Password sign-in was just disabled. Use an authentication method currently offered by this site.",
+      "turnstileRequired": "Complete the security check before continuing.",
+      "turnstileRejected": "The security check expired or was rejected. Try again.",
+      "turnstileUnavailable": "The security check is temporarily unavailable. Try again shortly.",
+      "passkeyCancelled": "Passkey verification was cancelled.",
+      "passkeyUnsupported": "This browser does not support Passkey. Use another sign-in method.",
       "unavailable": "The service is unavailable. Try again shortly."
     },
     "session": {
@@ -2597,6 +3008,39 @@
       "title": "Brand content",
       "description": "The logo, tagline, and description are public. Do not enter credentials or internal operations data."
     },
+    "balanceDisplay": {
+      "title": "Balance display",
+      "displayOnly": "Display only",
+      "description": "Customize the balance name, symbol, and fixed denomination. Internal quota, model pricing, settlement, and payment amounts remain unchanged.",
+      "modeLabel": "Balance display mode",
+      "mode": {
+        "quota": "Raw quota",
+        "custom_unit": "Custom unit"
+      },
+      "unitName": "Unit name",
+      "unitNameHint": "Describes the balance, such as compute credits.",
+      "unitSymbol": "Display symbol",
+      "unitSymbolHint": "Shown next to values, such as credits, points, or P.",
+      "quotaScale": "Quota per display unit",
+      "quotaScaleHint": "A positive fixed denomination. For example, 10000 means 10000 quota = 1 display unit.",
+      "symbolPosition": "Symbol position",
+      "position": {
+        "prefix": "Before the value",
+        "suffix": "After the value"
+      },
+      "fractionDigits": "Fraction digits",
+      "fractionDigitsHint": "Choose 0 to 4 digits. This only controls display rounding.",
+      "previewTitle": "Balance conversion preview",
+      "previewDescription": "Review the current draft with a fixed example",
+      "rawUnit": "Raw quota",
+      "confirm": {
+        "title": "Confirm balance display rescaling",
+        "description": "The display mode or denomination changed. All historical balances, ledger entries, and quota records will be shown using the new rule.",
+        "safety": "This does not modify stored quota, billing, payment amounts, or order facts.",
+        "cancel": "Review again",
+        "save": "Confirm and save"
+      }
+    },
     "fields": {
       "siteName": "Site name",
       "publicBaseUrl": "Public base URL",
@@ -2611,7 +3055,11 @@
       "publicBaseUrl": "Enter a valid HTTP(S) URL without credentials, query parameters, or a fragment.",
       "logoUrl": "Enter a site-relative absolute path or a valid HTTP(S) logo URL.",
       "tagline": "The tagline cannot contain control characters and is limited to 160 UTF-8 bytes.",
-      "description": "The description is limited to 500 UTF-8 bytes and cannot contain invalid control characters."
+      "description": "The description is limited to 500 UTF-8 bytes and cannot contain invalid control characters.",
+      "unitName": "Unit name is required, cannot contain control characters, and is limited to 64 UTF-8 bytes.",
+      "unitSymbol": "Display symbol is required, cannot contain control characters, and is limited to 24 UTF-8 bytes.",
+      "quotaUnitsPerDisplayUnit": "Enter a positive denomination within the i64 range.",
+      "fractionDigits": "Fraction digits must be an integer from 0 to 4."
     },
     "preview": {
       "title": "Public brand preview",
@@ -2633,13 +3081,21 @@
     "errors": {
       "title": "Site settings could not be loaded",
       "load": "The service did not return reliable site settings. Try again shortly.",
-      "save": "Site settings could not be saved. Server state is unchanged."
+      "save": "Site settings could not be saved. Server state is unchanged.",
+      "conflict": "Site settings changed in another administrator session. Refresh and review again."
     }
   },
   "authenticationSettings": {
     "title": "Authentication settings",
     "subtitle": "Control password sign-in, public registration, new-user allocation, and database-backed fixed-window protection.",
     "loading": "Loading authentication settings",
+    "navigation": {
+      "label": "Authentication settings sections",
+      "core": "Core authentication",
+      "allocation": "User allocation",
+      "protection": "Registration protection",
+      "oauth": "OAuth login"
+    },
     "status": {
       "title": "Authentication capabilities",
       "version": "Version {{version}}",
@@ -2665,6 +3121,131 @@
     "protection": {
       "title": "Registration rate protection",
       "description": "A keyed client IP fingerprint enforces a cross-instance fixed window without storing raw IP addresses."
+    },
+    "oauth": {
+      "title": "OAuth sign-in",
+      "enabled": "Enable this OAuth sign-in",
+      "callback": "Authorization callback URL",
+      "callbackMissing": "Configure the public base URL in site settings first",
+      "callbackHint": "Enter this exact value as the Authorization callback URL in the GitHub OAuth App.",
+      "copyCallback": "Copy callback URL",
+      "clientId": "Client ID",
+      "clientSecret": "Client Secret",
+      "newSecret": "New Client Secret",
+      "version": "GitHub OAuth configuration version {{version}}",
+      "secret": {
+        "keep": "Keep the current secret",
+        "replace": "Rotate the secret",
+        "clear": "Clear the secret",
+        "configured": "The secret is encrypted and will not be displayed.",
+        "missing": "No secret is configured."
+      },
+      "errors": {
+        "load": "GitHub OAuth sign-in settings could not be loaded",
+        "save": "GitHub OAuth settings could not be saved. Refresh and review the version.",
+        "unsupportedTitle": "This sign-in method is not available on the current backend",
+        "unsupported": "{{provider}} returned HTTP 404. Update the backend service, then retry.",
+        "publicBaseUrl": "Save a public base URL before enabling GitHub sign-in so a stable callback URL can be generated.",
+        "incomplete": "GitHub sign-in requires a callback URL, Client ID, and configured Client Secret."
+      },
+      "github": {
+        "title": "GitHub OAuth sign-in",
+        "enabled": "Enable GitHub sign-in",
+        "callbackHint": "Enter this exact value as the Authorization callback URL in the GitHub OAuth App.",
+        "version": "GitHub OAuth configuration version {{version}}",
+        "errors": {
+          "load": "GitHub OAuth sign-in settings could not be loaded",
+          "save": "GitHub OAuth settings could not be saved. Refresh and review the version.",
+          "publicBaseUrl": "Save a public base URL before enabling GitHub sign-in so a stable callback URL can be generated.",
+          "incomplete": "GitHub sign-in requires a callback URL, Client ID, and configured Client Secret."
+        }
+      },
+      "discord": {
+        "title": "Discord OAuth sign-in",
+        "enabled": "Enable Discord sign-in",
+        "callbackHint": "Enter this exact value in the Redirects list of the Discord Developer Portal application.",
+        "version": "Discord OAuth configuration version {{version}}",
+        "errors": {
+          "load": "Discord OAuth sign-in settings could not be loaded",
+          "save": "Discord OAuth settings could not be saved. Refresh and review the version.",
+          "publicBaseUrl": "Save a public base URL before enabling Discord sign-in so a stable callback URL can be generated.",
+          "incomplete": "Discord sign-in requires a callback URL, Client ID, and configured Client Secret."
+        }
+      },
+      "issuer": "Issuer URL",
+      "issuerHint": "Only HTTPS issuers without credentials or query parameters are accepted. The server re-validates discovery metadata.",
+      "oidc": {
+        "title": "Enterprise OIDC sign-in",
+        "enabled": "Enable enterprise OIDC sign-in",
+        "callbackHint": "Register this URL in the enterprise identity platform's OIDC callback allowlist.",
+        "issuerHint": "The issuer must be a publicly reachable HTTPS URL. Discovery, token, and JWKS endpoints are validated server-side.",
+        "version": "Enterprise OIDC configuration version {{version}}",
+        "errors": {
+          "load": "Enterprise OIDC sign-in settings could not be loaded",
+          "save": "Enterprise OIDC settings could not be saved. Refresh and review the version.",
+          "publicBaseUrl": "Save a public base URL before enabling enterprise OIDC sign-in.",
+          "incomplete": "Enterprise OIDC sign-in requires a callback URL, issuer, Client ID, and configured Client Secret."
+        }
+      },
+      "linuxdo": {
+        "title": "LinuxDO sign-in",
+        "enabled": "Enable LinuxDO sign-in",
+        "callbackHint": "Register this URL in the LinuxDO application's callback allowlist.",
+        "issuerHint": "LinuxDO uses the official server-fixed issuer and cannot be customized.",
+        "version": "LinuxDO configuration version {{version}}",
+        "errors": {
+          "load": "LinuxDO sign-in settings could not be loaded",
+          "save": "LinuxDO settings could not be saved. Refresh and review the version.",
+          "publicBaseUrl": "Save a public base URL before enabling LinuxDO sign-in.",
+          "incomplete": "LinuxDO sign-in requires a callback URL, Client ID, and configured Client Secret."
+        }
+      },
+      "wechat": {
+        "title": "WeChat Open Platform sign-in",
+        "enabled": "Enable WeChat QR sign-in",
+        "clientId": "AppID",
+        "clientSecret": "AppSecret",
+        "newSecret": "New AppSecret",
+        "callbackHint": "Register this URL for the website application in WeChat Open Platform.",
+        "version": "WeChat sign-in configuration version {{version}}",
+        "errors": {
+          "load": "Unable to load WeChat sign-in settings",
+          "save": "Unable to save WeChat settings. Refresh and verify the version.",
+          "publicBaseUrl": "Save the public site base URL before enabling WeChat sign-in.",
+          "incomplete": "WeChat sign-in requires a callback URL, AppID, and configured AppSecret."
+        }
+      },
+      "telegram": {
+        "title": "Telegram sign-in",
+        "enabled": "Enable Telegram sign-in",
+        "clientId": "Client ID",
+        "clientSecret": "Client Secret",
+        "newSecret": "New Client Secret",
+        "callbackHint": "Register this URL in BotFather Allowed URLs and the OIDC callback allowlist.",
+        "version": "Telegram sign-in configuration version {{version}}",
+        "errors": {
+          "load": "Unable to load Telegram sign-in settings",
+          "save": "Unable to save Telegram settings. Refresh and verify the version.",
+          "publicBaseUrl": "Save the public site base URL before enabling Telegram sign-in.",
+          "incomplete": "Telegram sign-in requires a callback URL, Client ID, and configured Client Secret."
+        }
+      },
+      "google": {
+        "title": "Google sign-in",
+        "enabled": "Enable Google sign-in",
+        "clientId": "OAuth Client ID",
+        "clientSecret": "OAuth Client Secret",
+        "newSecret": "New OAuth Client Secret",
+        "callbackHint": "Register this URL as an authorized redirect URI for the Google Cloud OAuth client.",
+        "issuerHint": "Google uses the official server-fixed issuer and cannot be customized.",
+        "version": "Google sign-in configuration version {{version}}",
+        "errors": {
+          "load": "Unable to load Google sign-in settings",
+          "save": "Unable to save Google sign-in settings. Refresh and verify the version.",
+          "publicBaseUrl": "Save the public site base URL before enabling Google sign-in.",
+          "incomplete": "Google sign-in requires a callback URL, Client ID, and configured Client Secret."
+        }
+      }
     },
     "fields": {
       "defaultGroup": "Default group",
@@ -2711,7 +3292,7 @@
     },
     "warning": {
       "title": "Confirm another entry point before disabling passwords",
-      "description": "OAuth sign-in is not available in this version. After existing sessions expire, an operator must restore the database switch before users can sign in again."
+      "description": "Confirm that at least one OAuth sign-in method is configured and working. Otherwise, an operator must restore password sign-in after existing sessions expire."
     }
   },
   "billingSettings": {
@@ -2896,8 +3477,15 @@
       "security": "Security",
       "actions": "Actions"
     },
-    "status": { "enabled": "Enabled", "disabled": "Disabled" },
-    "security": { "auth": "Authenticated", "noAuth": "No auth", "proxyDns": "Proxy DNS" },
+    "status": {
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
+    "security": {
+      "auth": "Authenticated",
+      "noAuth": "No auth",
+      "proxyDns": "Proxy DNS"
+    },
     "fields": {
       "name": "Proxy name",
       "scheme": "Protocol",
@@ -2921,8 +3509,14 @@
       "authDescription": "Leave username and password empty for an unauthenticated proxy.",
       "authKeepHint": "An empty password preserves the encrypted value. Clearing the username removes authentication."
     },
-    "empty": { "title": "No dedicated proxies", "body": "Add a proxy to make it selectable from the credential editor." },
-    "delete": { "title": "Delete dedicated proxy", "description": "Delete “{{name}}”? The server refuses while credentials still reference it." },
+    "empty": {
+      "title": "No dedicated proxies",
+      "body": "Add a proxy to make it selectable from the credential editor."
+    },
+    "delete": {
+      "title": "Delete dedicated proxy",
+      "description": "Delete “{{name}}”? The server refuses while credentials still reference it."
+    },
     "actions": {
       "refresh": "Refresh",
       "retry": "Try again",
@@ -3110,6 +3704,9 @@
       "invalidInput": "The server rejected these registration details. Check them and try again.",
       "invitationRejected": "That invitation code is invalid or no longer available.",
       "verificationRejected": "The code is invalid or the registration could not be completed. Check the details and try again.",
+      "turnstileRequired": "Complete the security check before creating your account.",
+      "turnstileRejected": "The security check expired or was rejected. Try again.",
+      "turnstileUnavailable": "The security check is temporarily unavailable. Try again shortly.",
       "rateLimited": "There have been too many registration attempts from this network. Try again later.",
       "unavailable": "An account could not be created. Try again shortly."
     },
@@ -3118,6 +3715,9 @@
       "emailNotConfigured": "Email delivery is not configured yet. Try again later or contact the site administrator.",
       "emailDeliveryFailed": "The code could not be delivered. Try again shortly.",
       "invalidInput": "Enter a valid email address first.",
+      "turnstileRequired": "Complete the security check before requesting a code.",
+      "turnstileRejected": "The security check expired or was rejected. Try again.",
+      "turnstileUnavailable": "The security check is temporarily unavailable. Try again shortly.",
       "rateLimited": "A code was sent recently. Wait for the countdown before trying again.",
       "unavailable": "The verification service is temporarily unavailable. Try again shortly."
     },
@@ -3138,6 +3738,15 @@
     "eyebrow": "Invitations and rebates",
     "title": "Invitation center",
     "subtitle": "Share your personal link and review confirmed invitation rebates.",
+    "organization": {
+      "title": "Accept an organization invitation",
+      "subtitle": "Organizations use the same sign-in account. Paste the one-time token from an organization administrator to join.",
+      "token": "Organization invitation token",
+      "accept": "Accept invitation",
+      "invalid": "Enter a complete, valid organization invitation token.",
+      "accepted": "You joined organization #{{organizationId}}. The workspace directory has been refreshed.",
+      "error": "The invitation could not be accepted. Confirm that your signed-in email matches the invitation or ask an administrator to resend it."
+    },
     "share": {
       "title": "Your invitation",
       "subtitle": "The code is generated randomly and is ready to share.",
@@ -3169,6 +3778,49 @@
       "loadTitle": "Invitation center is unavailable",
       "loadBody": "Invitation data could not be loaded. Try again shortly.",
       "copy": "Clipboard access was denied. Select and copy the value manually."
+    }
+  },
+  "refunds": {
+    "eyebrow": "Payment operations",
+    "title": "Refund approvals",
+    "subtitle": "Review refund requests and submit approved refunds through the configured payment provider.",
+    "loading": "Loading refund requests",
+    "empty": "No refund requests match this filter.",
+    "user": "User #{{id}}",
+    "filters": {
+      "label": "Approval",
+      "pending": "Pending",
+      "all": "All requests",
+      "approved": "Approved",
+      "rejected": "Rejected"
+    },
+    "summary": {
+      "pending": "{{count}} pending",
+      "approved": "{{count}} approved",
+      "succeeded": "{{count}} succeeded"
+    },
+    "orderKinds": { "topup": "Top-up", "subscription": "Subscription" },
+    "statuses": { "requested": "Requested", "submitted": "Submitted", "succeeded": "Succeeded", "failed": "Failed", "canceled": "Canceled" },
+    "approval": { "pending": "Pending", "approved": "Approved", "rejected": "Rejected" },
+    "table": { "request": "Request", "order": "Order", "amount": "Refund / original", "status": "Provider status", "approval": "Approval", "actions": "Actions" },
+    "actions": { "refresh": "Refresh", "retry": "Retry", "approve": "Approve", "reject": "Reject", "submit": "Submit refund", "cancel": "Cancel" },
+    "confirm": {
+      "approveTitle": "Approve this refund?",
+      "approveBody": "Approval is recorded first. If automatic submission is enabled, the same request is submitted immediately; a provider rejection will leave the approval fact intact.",
+      "rejectTitle": "Reject this refund?",
+      "rejectBody": "The request will be marked canceled and no provider refund will be submitted.",
+      "reasonLabel": "Approval reason",
+      "reasonPlaceholder": "Optional reason"
+    },
+    "errors": {
+      "listTitle": "Refund requests are unavailable",
+      "listBody": "The refund list could not be loaded. Try again shortly.",
+      "actionTitle": "Refund action was not completed",
+      "refund_auto_submit_failed": "The provider rejected automatic submission. The approval is saved; retry with manual submission after checking the provider.",
+      "refund_outcome_unknown": "The provider result is unknown. Refresh this request and retry the same submission; do not create a new refund.",
+      "refund_unavailable": "The configured refund provider is unavailable or refunds are disabled.",
+      "refund_conflict": "Another administrator changed this request. Refresh the list before acting again.",
+      "unknown": "The service could not complete this action. Refresh and try again."
     }
   },
   "subscriptions": {
@@ -3265,6 +3917,47 @@
       "unavailable": "Your alert policy is temporarily unavailable. Subscription facts remain visible.",
       "due": "Alert range"
     },
+    "catalog": {
+      "eyebrow": "Available catalog",
+      "title": "Choose a subscription plan",
+      "description": "Only active plans with a configured payment provider and price snapshot appear here.",
+      "loading": "Loading available plans",
+      "planQuota": "{{quota}} · {{cycle}} quota",
+      "priceMinor": "{{currency}} {{amount}} (minor currency unit)",
+      "orderNotice": "The service locks the price snapshot before payment. Subscription activation is shown only after the current account facts confirm it.",
+      "orderCreate": "Create order",
+      "orderCreating": "Creating",
+      "orderReplay": "Replay order",
+      "orderCreated": "Order created; payment confirmation is pending",
+      "orderReplayed": "The same idempotent order was restored",
+      "paymentMethod": "Payment method",
+      "paymentMethodsLoading": "Loading payment methods",
+      "paymentMethodsUnavailable": "Payment methods are temporarily unavailable. Try again shortly.",
+      "paymentMethodsEmpty": "No payment method is available for this provider.",
+      "paymentMethods": {
+        "card": "Card",
+        "alipay": "Alipay",
+        "wxpay": "WeChat Pay"
+      },
+      "paymentCreating": "Preparing payment",
+      "orderId": "Order",
+      "paymentPaid": "Payment is confirmed by the service. Refresh while the current account subscription is being activated.",
+      "paymentEffective": "Payment confirmed and this subscription is active.",
+      "refreshSubscription": "Refresh subscription",
+      "paymentConfirmed": "Payment submitted; waiting for service confirmation.",
+      "paymentProcessing": "Payment is processing; waiting for service confirmation.",
+      "refreshPayment": "Refresh status",
+      "paymentRedirectHint": "Continue in the provider checkout, then refresh this order.",
+      "openPayment": "Open checkout",
+      "retryPayment": "Retry same order",
+      "paymentFailed": "The provider marked this payment as failed.",
+      "paymentCanceled": "This payment was canceled.",
+      "paymentExpired": "This payment order expired.",
+      "newOrder": "Start new order",
+      "paymentResumeHint": "This order is ready to resume with the same payment facts.",
+      "resumePayment": "Resume payment",
+      "orderRecoveryPending": "The order identifier is being persisted for recovery; payment material is never stored."
+    },
     "fields": {
       "name": "Plan name",
       "nameHint": "1 to 80 UTF-8 bytes, without leading or trailing whitespace.",
@@ -3273,11 +3966,19 @@
       "cycle": "Reset cycle",
       "cycleHint": "New bindings use UTC calendar boundaries for their first window.",
       "plan": "Subscription plan",
-      "planHint": "Only plans that still accept new bindings are listed."
+      "planHint": "Only plans that still accept new bindings are listed.",
+      "priceProvider": "Payment provider",
+      "priceProviderHint": "The price snapshot uses a configured payment provider.",
+      "priceCurrency": "Currency",
+      "priceCurrencyHint": "Use a three-letter uppercase ISO-style code, such as USD.",
+      "priceAmountMinor": "Minor currency unit amount",
+      "priceAmountMinorHint": "Enter a positive integer, for example 100 for USD 1.00."
     },
     "validation": {
       "name": "Enter a valid plan name.",
-      "quotaAmount": "Enter a positive integer that can be represented safely."
+      "quotaAmount": "Enter a positive integer that can be represented safely.",
+      "priceCurrency": "Enter a three-letter uppercase currency code.",
+      "priceAmountMinor": "Enter a positive integer amount that can be represented safely."
     },
     "create": {
       "title": "New subscription plan",
@@ -3327,11 +4028,15 @@
       "plansTitle": "No subscription plans yet",
       "plansBody": "Create a plan with an explicit quota and cycle before binding users.",
       "usersTitle": "No users to manage",
-      "usersBody": "Create a user before binding a subscription plan."
+      "usersBody": "Create a user before binding a subscription plan.",
+      "catalogTitle": "No plans are currently available",
+      "catalogBody": "Available plans appear after an administrator enables them and records a price."
     },
     "errors": {
       "currentTitle": "My subscriptions could not be loaded",
       "currentBody": "The service did not return subscription facts for this account. Try again shortly.",
+      "catalogTitle": "Available plans could not be loaded",
+      "catalogBody": "The service did not return the sellable catalog. Try again shortly.",
       "adminTitle": "User subscriptions could not be loaded",
       "adminBody": "The service did not return subscription facts for this user. Try again shortly.",
       "plansTitle": "Subscription plans could not be loaded",
@@ -3347,6 +4052,14 @@
       "disablePlan": "The plan could not be disabled. Try again shortly.",
       "disableConflict": "The plan version changed. Refresh the catalog and try again.",
       "bind": "The plan could not be bound. Try again shortly.",
+      "orderCreate": "The order could not be created. Try again shortly.",
+      "orderConflict": "The plan price or idempotency facts changed. Refresh the catalog and try again.",
+      "orderOutcomeUnknown": "The order result cannot be confirmed yet. Retry with the same button.",
+      "paymentSubmit": "The payment session could not be prepared. Retry the same order.",
+      "paymentOutcomeUnknown": "The payment result cannot be confirmed yet. Retry the same order.",
+      "paymentUnavailable": "The configured payment provider is temporarily unavailable.",
+      "paymentRejected": "The payment provider rejected this request.",
+      "paymentOrderLoad": "The saved order could not be restored. Retry after refreshing.",
       "bindConflict": "Binding facts changed concurrently. Refresh the user subscriptions and try again.",
       "planNotFound": "The plan no longer exists. Refresh the plan catalog.",
       "planDisabled": "The plan is disabled. Select another active plan.",
@@ -3514,29 +4227,854 @@
     "title": "Payment settings",
     "subtitle": "Configure Stripe and Epay collection methods, wallet credit conversion, and fixed callback endpoints.",
     "loading": "Loading payment settings",
-    "stripe": { "title": "Stripe", "description": "Accept card payments with Payment Element and confirm credit through signed webhooks." },
+    "stripe": {
+      "title": "Stripe",
+      "description": "Accept card payments with Payment Element and confirm credit through signed webhooks."
+    },
     "epay": {
       "title": "Epay",
       "description": "Connect an Epay-compatible gateway and enable Alipay or WeChat Pay independently.",
       "publicBaseUrlRequired": "Set the public base URL before enabling Epay",
-      "publicBaseUrlHint": "Webhook and return URLs require a stable externally accessible address, not the current local preview URL."
+      "publicBaseUrlHint": "Webhook and return URLs require a stable externally accessible address, not the current local preview URL.",
+      "refundHint": "Epay gateways do not necessarily support refunds. Enable this only after the provider confirms support. Refund requests still require administrator approval; the automatic-submit policy only controls what happens after approval."
     },
     "fields": {
-      "stripeEnabled": "Enable Stripe", "stripePublishableKey": "Publishable Key", "stripeSecretKey": "Secret Key", "stripeWebhookSecret": "Webhook Secret", "stripeTolerance": "Signature tolerance",
-      "epayEnabled": "Enable Epay", "epayGatewayUrl": "Gateway URL", "epayMerchantId": "Merchant PID", "epayMerchantKey": "Merchant PKey", "epayQuotaPerCny": "Quota per CNY", "alipay": "Alipay", "wxpay": "WeChat Pay"
+      "stripeEnabled": "Enable Stripe",
+      "stripePublishableKey": "Publishable Key",
+      "stripeSecretKey": "Secret Key",
+      "stripeWebhookSecret": "Webhook Secret",
+      "stripeTolerance": "Signature tolerance",
+      "epayEnabled": "Enable Epay",
+      "epayGatewayUrl": "Gateway URL",
+      "epayMerchantId": "Merchant PID",
+      "epayMerchantKey": "Merchant PKey",
+      "epayQuotaPerCny": "Quota per CNY",
+      "alipay": "Alipay",
+      "wxpay": "WeChat Pay",
+      "epayRefundEnabled": "Allow Epay refunds",
+      "refundAutoSubmitEnabled": "Automatically submit refunds after approval"
     },
-    "status": { "enabled": "Enabled", "disabled": "Disabled" },
-    "secrets": { "configured": "Configured", "missing": "Not configured", "replacePlaceholder": "Enter a value to replace the stored secret", "createPlaceholder": "Enter a new secret", "clear": "Clear the stored secret when saving", "neverShown": "The plaintext is never shown again after saving." },
-    "callbacks": { "title": "Callback URLs", "description": "URLs are derived from the site public base URL, read-only, and excluded from the payment settings request.", "missingPublicBaseUrl": "Set the site public base URL to reveal the production callback URLs to enter in payment providers.", "stripe": "Stripe webhook", "epay": "Epay notification", "return": "Synchronous return" },
-    "security": { "title": "Secret handling", "description": "Read requests expose configured state only. Blank means keep; an explicit clear selection removes a stored secret." },
+    "status": {
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
+    "secrets": {
+      "configured": "Configured",
+      "missing": "Not configured",
+      "replacePlaceholder": "Enter a value to replace the stored secret",
+      "createPlaceholder": "Enter a new secret",
+      "clear": "Clear the stored secret when saving",
+      "neverShown": "The plaintext is never shown again after saving."
+    },
+    "callbacks": {
+      "title": "Callback URLs",
+      "description": "URLs are derived from the site public base URL, read-only, and excluded from the payment settings request.",
+      "missingPublicBaseUrl": "Set the site public base URL to reveal the production callback URLs to enter in payment providers.",
+      "stripe": "Stripe webhook",
+      "epay": "Epay notification",
+      "return": "Synchronous return"
+    },
+    "security": {
+      "title": "Secret handling",
+      "description": "Read requests expose configured state only. Blank means keep; an explicit clear selection removes a stored secret."
+    },
     "validation": {
-      "stripePublishableKey": "Enter a valid pk_test_ or pk_live_ publishable key.", "stripeSecretKey": "Enter a valid secret; replacement and clearing cannot be combined.", "stripeWebhookSecret": "Enter a valid webhook secret; replacement and clearing cannot be combined.", "stripeTolerance": "Signature tolerance must be an integer from 30 to 900 seconds.",
-      "epayGatewayUrl": "Enter an HTTPS gateway URL without credentials, query, or fragment.", "epayMerchantId": "Enter a merchant PID without spaces or control characters.", "epayMerchantKey": "Enter a valid merchant PKey; replacement and clearing cannot be combined.", "epayPaymentMethod": "Enable at least one payment method when Epay is active.", "epayPublicBaseUrl": "Set the public base URL in site settings before enabling Epay.", "epayQuota": "Quota per CNY must be a positive integer."
+      "stripePublishableKey": "Enter a valid pk_test_ or pk_live_ publishable key.",
+      "stripeSecretKey": "Enter a valid secret; replacement and clearing cannot be combined.",
+      "stripeWebhookSecret": "Enter a valid webhook secret; replacement and clearing cannot be combined.",
+      "stripeTolerance": "Signature tolerance must be an integer from 30 to 900 seconds.",
+      "epayGatewayUrl": "Enter an HTTPS gateway URL without credentials, query, or fragment.",
+      "epayMerchantId": "Enter a merchant PID without spaces or control characters.",
+      "epayMerchantKey": "Enter a valid merchant PKey; replacement and clearing cannot be combined.",
+      "epayPaymentMethod": "Enable at least one payment method when Epay is active.",
+      "epayRefund": "Epay refunds require Epay to be active and the provider to confirm refund support.",
+      "epayPublicBaseUrl": "Set the public base URL in site settings before enabling Epay.",
+      "epayQuota": "Quota per CNY must be a positive integer."
     },
-    "units": { "seconds": "sec", "quota": "quota" },
-    "actions": { "refresh": "Refresh", "retry": "Try again", "save": "Save settings", "saving": "Saving", "copy": "Copy URL", "configureSite": "Open site settings" },
-    "state": { "saved": "Payment settings saved.", "unsaved": "There are unsaved changes.", "synced": "Synced with server version {{version}}." },
-    "errors": { "title": "Payment settings could not be loaded", "load": "The service did not return reliable payment configuration. Try again shortly.", "save": "Payment settings could not be saved. Check the fields or refresh and retry." }
+    "units": {
+      "seconds": "sec",
+      "quota": "quota"
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Try again",
+      "save": "Save settings",
+      "saving": "Saving",
+      "copy": "Copy URL",
+      "configureSite": "Open site settings"
+    },
+    "state": {
+      "saved": "Payment settings saved.",
+      "unsaved": "There are unsaved changes.",
+      "synced": "Synced with server version {{version}}."
+    },
+    "errors": {
+      "title": "Payment settings could not be loaded",
+      "load": "The service did not return reliable payment configuration. Try again shortly.",
+      "save": "Payment settings could not be saved. Check the fields or refresh and retry."
+    }
+  },
+  "organizationApiKeys": {
+    "eyebrow": "Organization workspace",
+    "title": "Organization API keys",
+    "subtitle": "Members issue keys bound to the current organization and team. Organization admins can inspect the redacted directory and disable risky credentials. Organization traffic uses organization funds and budgets only.",
+    "workspace": {
+      "label": "Current organization",
+      "emptyTitle": "No organization workspace is available",
+      "emptyBody": "This account has not joined an active organization. Your organization keys appear here after membership is granted."
+    },
+    "permission": {
+      "title": "Your role cannot access organization keys",
+      "body": "Members can manage their own keys. Owners and Admins can also read the redacted organization directory. Billing and Viewer roles cannot read organization keys."
+    },
+    "views": {
+      "label": "Organization key view",
+      "self": "My organization keys",
+      "directory": "Redacted directory"
+    },
+    "summary": {
+      "page": "Page {{page}} contains {{count}} keys, {{active}} currently available",
+      "capacity": "Entitlement limit: {{limit}} keys",
+      "membership": "Current membership",
+      "keyLimit": "Organization key limit"
+    },
+    "entitlement": {
+      "readOnly": "The current entitlement does not allow new keys. Existing keys, directory access, and disable operations still follow server-side authorization."
+    },
+    "fields": {
+      "maxRequests": "Request limit",
+      "rateLimit5h": "5-hour quota",
+      "rateLimit1d": "1-day quota",
+      "rateLimit7d": "7-day quota"
+    },
+    "form": {
+      "statusHint": "Re-enabling still revalidates membership, team, and organization entitlement state.",
+      "unlimitedHint": "This removes only the key-level total quota. Organization funds and organization, team, and member budgets still apply.",
+      "quotaHint": "Organization requests never fall back to a personal wallet or personal subscription when this quota is exhausted.",
+      "optionalLimit": "Leave blank to omit this limit.",
+      "rateLimits": "Rolling quota windows",
+      "submitError": "The organization API key could not be saved. Keep the current input and try again.",
+      "limitError": "The organization has reached its entitled key limit.",
+      "outcomeUnknown": "The service cannot confirm the write result. Refresh both views before issuing another key.",
+      "entitlementRestricted": "The current organization entitlement does not allow this write."
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Try again",
+      "create": "Issue organization key",
+      "disable": "Disable"
+    },
+    "columns": {
+      "key": "Organization key",
+      "owner": "Member and team",
+      "quota": "Total quota",
+      "policy": "Access policy",
+      "limits": "Windows and requests",
+      "validity": "Validity",
+      "actions": "Actions"
+    },
+    "values": {
+      "owner": "User #{{id}}",
+      "team": "Team #{{id}}",
+      "noTeam": "No team bound",
+      "windowUnlimited": "{{window}} used {{used}}",
+      "windowUsage": "{{window}} {{used}} / {{limit}}",
+      "requestsUsed": "{{used}} requests, unlimited",
+      "requestsRatio": "Requests {{used}} / {{limit}}"
+    },
+    "empty": {
+      "selfTitle": "No organization keys yet",
+      "selfBody": "Issued keys remain bound to this organization, member, and the team selected at issue time.",
+      "directoryTitle": "The organization directory is empty",
+      "directoryBody": "No visible organization key has been issued in this workspace."
+    },
+    "editor": {
+      "createTitle": "Issue organization API key",
+      "createDescription": "Issue a one-time plaintext key for your current membership in {{organization}}.",
+      "editTitle": "Edit organization API key",
+      "editDescription": "Update your key in {{organization}}. Organization and team ownership are never rewritten silently."
+    },
+    "disable": {
+      "title": "Disable organization API key",
+      "selfDescription": "Disable “{{name}}” in {{organization}}? It will not reactivate automatically, and personal or other organization keys are unaffected.",
+      "directoryDescription": "Disable user #{{owner}}’s “{{name}}” in {{organization}}? Administrators can disable the key but can never reveal its plaintext.",
+      "failed": "The organization API key could not be disabled. Refresh the directory and try again."
+    },
+    "errors": {
+      "directoryTitle": "Organization directory could not be loaded",
+      "directoryBody": "The service did not return this account's organization memberships. Try again shortly.",
+      "overviewTitle": "Organization context could not be loaded",
+      "overviewBody": "The role, entitlement, and permission projection for this organization is unavailable.",
+      "forbiddenTitle": "Organization key access was denied",
+      "forbiddenBody": "The membership may be inactive, its role may have changed, or the organization entitlement may no longer allow this action.",
+      "tokensTitle": "Organization API keys could not be loaded",
+      "tokensBody": "Your keys or the redacted directory are temporarily unavailable. Existing server-side key state is unaffected by this read failure."
+    }
+  },
+  "organizationBudgets": {
+    "eyebrow": "Organization workspace",
+    "title": "Organization budgets",
+    "subtitle": "Maintain immutable budget policy versions for the organization, teams, and members, then inspect usage in the current window.",
+    "workspace": {
+      "label": "Current organization",
+      "emptyTitle": "No organization workspace is available",
+      "emptyBody": "This account has not joined an active organization. Budget workspaces appear here after membership is granted."
+    },
+    "permission": {
+      "title": "Your role cannot manage budgets",
+      "body": "Only Owner, Admin, or Billing roles with organization.budgets.manage can read and create budget policies."
+    },
+    "summary": {
+      "loaded": "{{policies}} policy versions and {{windows}} current windows loaded"
+    },
+    "organization": {
+      "seats": "Active seats",
+      "teams": "Active teams",
+      "retention": "Audit retention",
+      "capacity": "{{used}} / {{limit}}",
+      "days": "{{count}} days"
+    },
+    "entitlement": {
+      "active": "Entitlement active",
+      "grace": "Grace period",
+      "read_only": "Read only",
+      "suspended": "Suspended",
+      "closed": "Closed"
+    },
+    "roles": {
+      "owner": "Owner",
+      "admin": "Admin",
+      "billing": "Billing",
+      "member": "Member",
+      "viewer": "Viewer"
+    },
+    "scope": {
+      "organization": "Entire organization",
+      "team": "Selected team",
+      "member": "Selected member",
+      "organizationLabel": "Entire organization",
+      "memberLabel": "Member #{{membershipId}} (user #{{userId}})",
+      "unknownTeam": "Team #{{id}}",
+      "unknownMember": "Member #{{id}}"
+    },
+    "memberOption": "Member #{{membershipId}} · user #{{userId}} · {{role}}",
+    "period": {
+      "utc_day": "UTC calendar day",
+      "utc_week": "UTC calendar week",
+      "utc_month": "UTC calendar month",
+      "fixed": "Custom fixed period",
+      "fixedSeconds": "Fixed {{seconds}} seconds"
+    },
+    "fixedUnit": {
+      "seconds": "Seconds",
+      "minutes": "Minutes",
+      "hours": "Hours",
+      "days": "Days"
+    },
+    "values": {
+      "unlimited": "Unlimited"
+    },
+    "metrics": {
+      "limit": "Window limit",
+      "used": "Settled",
+      "frozen": "In flight",
+      "remaining": "Remaining"
+    },
+    "current": {
+      "title": "Current policies and windows",
+      "subtitle": "Windows are created by real organization requests and follow UTC boundaries or the policy effective-time anchor.",
+      "count": "{{count}} items",
+      "active": "Window active",
+      "scheduled": "Scheduled",
+      "unlimited": "Unlimited",
+      "awaiting": "Awaiting first request",
+      "effective": "Effective {{value}}",
+      "windowRange": "{{start}} to {{end}}",
+      "scheduledBody": "The policy joins budget reservations after its effective time. No window is created ahead of time.",
+      "unlimitedBody": "This scope is explicitly unlimited, so it does not create a finite quota window.",
+      "awaitingBody": "The first organization request matching this scope creates its current window atomically. No synthetic zero-usage record is shown.",
+      "emptyTitle": "No current budget policies",
+      "emptyBody": "Create the first organization, team, or member policy to establish a current version."
+    },
+    "history": {
+      "title": "Policy history",
+      "subtitle": "Every change creates a new version and closes the prior version. Historical records are never overwritten.",
+      "emptyTitle": "No policy history",
+      "emptyBody": "This organization has not created a budget policy version yet.",
+      "version": "v{{version}}",
+      "current": "Latest",
+      "limit": "Quota limit",
+      "starts": "Starts {{value}}",
+      "ends": "Ends {{value}}",
+      "noEnd": "Current version"
+    },
+    "form": {
+      "title": "Create budget policy version",
+      "subtitle": "A new version preserves history. Its effective time must be later than the prior version for the same scope.",
+      "scopeSection": "Scope",
+      "scopeKind": "Policy level",
+      "team": "Team",
+      "member": "Member",
+      "directoryLoading": "Loading the live directory",
+      "directoryError": "The directory is unavailable. Refresh before selecting a scope.",
+      "selectTeam": "Select an active team",
+      "selectMember": "Select an active member",
+      "periodSection": "Period",
+      "periodKind": "Window period",
+      "fixedValue": "Period length",
+      "fixedUnit": "Unit",
+      "utcHint": "Calendar days, weeks, and months reset on UTC boundaries. Fixed periods roll from the effective-time anchor.",
+      "limitSection": "Quota",
+      "unlimited": "Unlimited",
+      "unlimitedHint": "When enabled, the request sends null and no finite quota window is created.",
+      "quotaLimit": "Window quota limit",
+      "effectiveSection": "Effective time",
+      "effectiveFrom": "Effective from",
+      "effectiveHint": "Displayed in browser local time and submitted as Unix seconds.",
+      "latestEffective": "The prior version for this scope starts at {{value}}. The new version must be later."
+    },
+    "validation": {
+      "scope": "Select an active team or member in this organization.",
+      "fixedPeriod": "The fixed period must be an integer from 60 seconds through 366 days.",
+      "quotaLimit": "A finite quota must be a positive safe integer.",
+      "effectiveFrom": "Select a valid effective time.",
+      "effectiveConflict": "The effective time must be later than the prior policy version for this scope."
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Try again",
+      "newPolicy": "New policy",
+      "cancel": "Cancel",
+      "create": "Create version",
+      "creating": "Creating",
+      "verify": "Refresh and verify"
+    },
+    "success": {
+      "created": "Budget policy v{{version}} was created. Policy history and current windows were refreshed from the server."
+    },
+    "errors": {
+      "directoryTitle": "Organization directory could not be loaded",
+      "directoryBody": "The service did not return this account's organization memberships. Try again shortly.",
+      "overviewTitle": "Organization overview could not be loaded",
+      "overviewBody": "The role, entitlement, and permission projection for this organization is unavailable.",
+      "forbiddenTitle": "Organization budget access was denied",
+      "forbiddenBody": "The membership is no longer active or its role changed. Re-enter the organization workspace.",
+      "budgetsTitle": "Organization budgets could not be loaded",
+      "budgetsBody": "Policy history and current windows are unavailable. Existing budget enforcement is unaffected by this read failure.",
+      "mutation": {
+        "budget_conflict": {
+          "title": "The policy state changed",
+          "body": "Another action created a newer version for this scope. Refresh and choose a later effective time."
+        },
+        "budget_outcome_unknown": {
+          "title": "The create result cannot be confirmed",
+          "body": "The write may have succeeded. Refresh policy history before taking another action, and do not create a duplicate."
+        },
+        "forbidden": {
+          "title": "Budget management is no longer allowed",
+          "body": "The current organization role can no longer create budget policies."
+        },
+        "organization_not_found": {
+          "title": "The budget scope no longer exists",
+          "body": "The organization, team, or member is no longer active. Refresh the live directory and select again."
+        },
+        "invalid_request": {
+          "title": "The budget input is invalid",
+          "body": "Check the scope, period, quota, and effective time."
+        },
+        "unknown": {
+          "title": "The budget policy could not be created",
+          "body": "The service did not return a reliable result. Keep the current input and try again later."
+        }
+      }
+    }
+  },
+  "organizationActivity": {
+    "eyebrow": "Organization workspace",
+    "title": "Organization logs and audit",
+    "subtitle": "Review detailed calls, redacted aggregates, and management audit records allowed by your organization role. Organization traffic always uses organization funds and budgets, never personal funding.",
+    "workspace": {
+      "label": "Current organization",
+      "emptyTitle": "No organization workspace is available",
+      "emptyBody": "This account has not joined an active organization. Role-scoped usage logs and management audit records appear here after membership is granted."
+    },
+    "permission": {
+      "title": "Your role cannot read organization activity",
+      "body": "The organization role has neither usage-log nor management-audit read permission. Re-enter the workspace after a role change."
+    },
+    "summary": {
+      "membership": "Membership",
+      "role": "Current role",
+      "retention": "Audit retention",
+      "days": "{{count}} days"
+    },
+    "tabs": {
+      "label": "Organization activity view",
+      "usage": "Usage logs",
+      "audit": "Management audit"
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "reset": "Reset",
+      "retry": "Retry",
+      "apply": "Apply filters"
+    },
+    "filters": {
+      "label": "Current-page filters",
+      "auditLabel": "Server-side audit filters",
+      "visible": "Showing {{visible}} of {{count}}"
+    },
+    "usage": {
+      "scopeLabel": "Usage-log scope",
+      "scopes": {
+        "organization": "Organization details",
+        "self": "My calls",
+        "summary": "Redacted aggregate"
+      },
+      "summaryLabel": "Redacted organization usage aggregate",
+      "emptyTitle": "No calls exist in this scope yet",
+      "emptyBody": "Settled organization requests appear here within the range allowed by the current role.",
+      "emptyFilteredTitle": "No calls match these filters",
+      "emptyFilteredBody": "Reset the model or protocol filters to inspect other records on this page.",
+      "columns": {
+        "call": "Model & operation",
+        "requests": "Requests",
+        "tokens": "Tokens",
+        "duration": "Average duration",
+        "quota": "Quota used"
+      }
+    },
+    "audit": {
+      "loaded": "{{count}} on this page",
+      "privacy": "Only redacted facts are shown. Raw headers, IP addresses, request bodies, and credentials never enter audit storage.",
+      "platform": "Platform proxy",
+      "platformRole": "Platform administrator",
+      "redacted": "Redacted",
+      "listLabel": "Organization management audit list",
+      "filters": {
+        "actor": "Actor",
+        "actorPlaceholder": "Actor user ID",
+        "operation": "Action",
+        "operationPlaceholder": "Exact operation code",
+        "target": "Target",
+        "targetPlaceholder": "Target type",
+        "outcome": "Outcome",
+        "allOutcomes": "All outcomes",
+        "actorInvalid": "The actor must be a positive integer user ID."
+      },
+      "outcomes": {
+        "succeeded": "Succeeded",
+        "denied": "Denied",
+        "failed": "Failed"
+      },
+      "columns": {
+        "time": "Time",
+        "actor": "Actor",
+        "action": "Action & permission",
+        "target": "Target",
+        "outcome": "Outcome"
+      },
+      "emptyTitle": "No management audit records yet",
+      "emptyBody": "Organization writes, permission denials, and authorized execution failures are recorded here as append-only facts.",
+      "emptyFilteredTitle": "No audit records match these filters",
+      "emptyFilteredBody": "Adjust the action, actor, target, or outcome and apply the filters again."
+    },
+    "errors": {
+      "directoryTitle": "Organization directory could not be loaded",
+      "directoryBody": "The service did not return this account's organization memberships. Try again shortly.",
+      "overviewTitle": "Organization context could not be loaded",
+      "overviewBody": "The role, entitlement, and permission projection for this organization is unavailable.",
+      "forbiddenTitle": "Organization activity access was denied",
+      "forbiddenBody": "The membership may be inactive, the role may have changed, or the selected scope may no longer be allowed.",
+      "usageTitle": "Organization usage logs could not be loaded",
+      "usageBody": "The usage-log service is temporarily unavailable. Keep the current scope and filters, then retry.",
+      "auditTitle": "Organization management audit could not be loaded",
+      "auditBody": "The audit service is temporarily unavailable. Keep the current filters, then retry."
+    }
+  },
+  "organizationConsole": {
+    "eyebrow": "Organization workspace",
+    "workspace": {
+      "label": "Current workspace",
+      "personal": "Personal workspace"
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Try again",
+      "cancel": "Cancel",
+      "save": "Save",
+      "edit": "Edit",
+      "copy": "Copy",
+      "done": "Done",
+      "loadMore": "Load more",
+      "loadingMore": "Loading"
+    },
+    "common": {
+      "restricted": "Restricted",
+      "unlimited": "Not set",
+      "allowed": "Allowed",
+      "denied": "Not granted"
+    },
+    "empty": {
+      "title": "No organizations are available",
+      "body": "This account has not joined an organization. Organizations appear here after an invitation is accepted."
+    },
+    "errors": {
+      "directoryTitle": "Organization directory could not be loaded",
+      "directoryBody": "The service did not return this account's organization memberships. Try again shortly.",
+      "overviewTitle": "Organization context could not be loaded",
+      "overviewBody": "The role, entitlement, and permission projection for this organization is unavailable.",
+      "listTitle": "Organization directory data could not be loaded",
+      "listBody": "Members, teams, or invitations are temporarily unavailable. Existing server state is unaffected.",
+      "conflict": "The data changed concurrently. Refresh and submit against the latest version.",
+      "mutation": "The operation did not return a reliable result. Keep the current input, refresh the facts, and retry."
+    },
+    "roles": {
+      "owner": "Owner",
+      "admin": "Admin",
+      "billing": "Billing",
+      "member": "Member",
+      "viewer": "Viewer"
+    },
+    "memberStatus": {
+      "active": "Active",
+      "suspended": "Suspended",
+      "removed": "Removed"
+    },
+    "teamStatus": {
+      "active": "Active",
+      "disabled": "Disabled"
+    },
+    "invitationStatus": {
+      "pending": "Pending",
+      "accepted": "Accepted",
+      "revoked": "Revoked",
+      "expired": "Expired"
+    },
+    "entitlement": {
+      "active": "Active",
+      "grace": "Grace period",
+      "read_only": "Read only",
+      "suspended": "Suspended",
+      "closed": "Closed"
+    },
+    "entitlementHint": {
+      "active": "The current entitlement allows all purchased organization capabilities.",
+      "grace": "Existing resources remain available with limits, but new members, teams, and API keys are blocked.",
+      "read_only": "Console, logs, and ledgers remain readable while new organization calls and ordinary writes are stopped.",
+      "suspended": "Organization spending and ordinary management writes are suspended for billing or compliance risk.",
+      "closed": "The organization is closed and only retained audit facts remain available."
+    },
+    "permissions": {
+      "organization": {
+        "profile": {
+          "write": "Edit organization profile"
+        },
+        "ownership": {
+          "transfer": "Transfer organization ownership"
+        },
+        "members": {
+          "manage": "Manage members and invitations"
+        },
+        "teams": {
+          "manage": "Manage teams"
+        },
+        "wallet": {
+          "read": "Read organization wallet",
+          "manage": "Top up and adjust wallet"
+        },
+        "budgets": {
+          "manage": "Manage organization budgets"
+        },
+        "keys": {
+          "read_all": "Read all organization keys",
+          "manage_self": "Manage own organization keys"
+        },
+        "usage_logs": {
+          "read_all": "Read all usage logs",
+          "read_self": "Read own usage logs"
+        },
+        "audit": {
+          "read": "Read management audit"
+        }
+      }
+    },
+    "overview": {
+      "title": "Organization overview",
+      "subtitle": "Review this organization's funding, budgets, seats, traffic, and commercial entitlement state.",
+      "metrics": {
+        "label": "Organization metrics",
+        "balance": "Available balance",
+        "budget": "Organization budget remaining",
+        "requests": "Requests in current log scope",
+        "seats": "Active seats",
+        "balanceHint": "Available only to this organization and never copied to a personal wallet.",
+        "budgetHint": "Remaining quota in the current organization-level budget window.",
+        "requestsHint": "Calculated from the redacted aggregate allowed by the current role.",
+        "seatsHint": "{{count}} seats remain available.",
+        "permissionHint": "The current role cannot read this metric."
+      },
+      "capacity": {
+        "title": "Entitled capacity",
+        "subtitle": "The server enforces these commercial limits; the client only renders the live projection.",
+        "seats": "Member seats",
+        "teams": "Teams",
+        "keys": "Organization key limit",
+        "value": "{{used}} / {{limit}}",
+        "limitOnly": "Limit {{limit}}"
+      },
+      "links": {
+        "members": "Members and teams",
+        "keys": "Organization API keys",
+        "wallet": "Organization wallet and ledger",
+        "budgets": "Layered budgets",
+        "activity": "Usage logs and audit",
+        "settings": "Organization settings"
+      }
+    },
+    "members": {
+      "title": "Members and teams",
+      "subtitle": "Manage roles, state, team assignment, and invitations within this organization without affecting personal or other organization workspaces.",
+      "summary": {
+        "seats": "Active seats",
+        "teams": "Active teams",
+        "role": "My organization role"
+      },
+      "tabs": {
+        "label": "Member management view",
+        "members": "Members",
+        "teams": "Teams",
+        "invitations": "Invitations"
+      },
+      "memberLabel": "User #{{id}}",
+      "membershipLabel": "Membership #{{id}}",
+      "teamLabel": "Team #{{id}}",
+      "noTeam": "No team assigned",
+      "fields": {
+        "member": "Member",
+        "role": "Role",
+        "status": "Status",
+        "team": "Primary team"
+      },
+      "list": {
+        "title": "Member directory",
+        "subtitle": "Stable cursors load organization members. Owners can only change through ownership transfer.",
+        "emptyTitle": "No organization members yet",
+        "emptyBody": "Members appear here after an invitation is accepted."
+      },
+      "editor": {
+        "title": "Edit organization member",
+        "description": "Change the role, state, and team for user #{{userId}} inside {{organization}}.",
+        "removedWarning": "Removing this membership disables its {{organization}} capabilities and organization keys while retaining historical billing, usage, and audit facts.",
+        "ownerHint": "Owners cannot be edited here. Use ownership transfer in organization settings."
+      }
+    },
+    "teams": {
+      "disabledByEntitlement": "Team management is disabled by the current commercial entitlement. Existing teams remain read only.",
+      "noDescription": "No team description",
+      "actions": {
+        "create": "Create team",
+        "disable": "Disable team"
+      },
+      "list": {
+        "title": "Team directory",
+        "subtitle": "Teams are organization budget groups and remain separate from platform billing groups.",
+        "emptyTitle": "No teams yet",
+        "emptyBody": "Create teams and assign members when the entitlement allows it."
+      },
+      "fields": {
+        "name": "Team name",
+        "description": "Team description"
+      },
+      "validation": {
+        "name": "The team name is required, cannot have surrounding whitespace, and must be at most 160 bytes."
+      },
+      "editor": {
+        "createTitle": "Create organization team",
+        "editTitle": "Edit organization team",
+        "description": "This team belongs only to {{organization}} and never creates or changes a platform group."
+      },
+      "disable": {
+        "title": "Disable team",
+        "body": "Disable “{{team}}” in {{organization}}? The server rejects this while active members remain assigned."
+      }
+    },
+    "invitations": {
+      "actions": {
+        "invite": "Invite member",
+        "send": "Send invitation",
+        "batch": "Batch invitations",
+        "resend": "Resend",
+        "revoke": "Revoke"
+      },
+      "fields": {
+        "email": "Invitee email",
+        "expiresAt": "Expiration",
+        "expiresHint": "Leave blank for the server default. Entered values use the browser's local time."
+      },
+      "validation": "Enter a valid email and a future expiration time.",
+      "list": {
+        "title": "Organization invitations",
+        "subtitle": "The directory shows redacted invitation facts and never returns plaintext emails or tokens.",
+        "emptyTitle": "No organization invitations yet",
+        "emptyBody": "Single and batch invitations appear here after creation.",
+        "expires": "Expires {{time}}"
+      },
+      "editor": {
+        "title": "Invite organization member",
+        "description": "Create a one-time email invitation for {{organization}}."
+      },
+      "issued": {
+        "title": "Invitation token issued",
+        "body": "This is the one-time plaintext token for joining {{organization}}. It cannot be read again after closing.",
+        "hint": "Send it through a trusted channel. The invitee signs in and pastes it in the Invitation center."
+      },
+      "batch": {
+        "title": "Invite members in batch",
+        "description": "Enter email, role, and team as structured rows for {{organization}}, up to 200 items.",
+        "rows": "Structured invitation rows",
+        "count": "{{count}} rows",
+        "add": "Add row",
+        "remove": "Remove row",
+        "validation": "Every row needs a valid email, with 1 to 200 total rows.",
+        "preview": "Preview",
+        "submit": "Submit batch",
+        "ready": "Ready",
+        "blocked": "Needs action",
+        "previewReady": "All rows passed server preview. {{count}} seats remain available.",
+        "previewBlocked": "Some rows cannot be submitted. {{count}} seats remain available."
+      },
+      "issues": {
+        "invalid_email": "Invalid email",
+        "invalid_expiration": "Invalid expiration",
+        "duplicate_email": "Duplicate email in batch",
+        "existing_member": "Already an organization member",
+        "pending_invitation": "A pending invitation already exists",
+        "invalid_team": "Team is unavailable",
+        "seat_unavailable": "No seat is available"
+      },
+      "revoke": {
+        "title": "Revoke organization invitation",
+        "body": "Revoke this pending invitation for {{organization}}?"
+      }
+    },
+    "wallet": {
+      "title": "Organization wallet and ledger",
+      "subtitle": "Review organization balance, in-flight reservations, lifetime usage, and append-only funding facts. Organization spending never falls back to a personal wallet.",
+      "restricted": {
+        "title": "Wallet read permission is required",
+        "body": "The current organization role cannot read balances or ledger entries. Server-side funding limits remain enforced."
+      },
+      "summary": {
+        "label": "Organization wallet state",
+        "balance": "Available balance",
+        "balanceHint": "Available for new organization reservations",
+        "used": "Lifetime usage",
+        "usedHint": "Organization quota already settled",
+        "frozen": "In flight",
+        "frozenHint": "Reserved quota awaiting final settlement"
+      },
+      "topup": {
+        "title": "Organization online top-up",
+        "description": "Create an isolated top-up order for {{organization}}. Funds never enter a personal wallet."
+      },
+      "adjustment": {
+        "title": "Organization wallet adjustment",
+        "subtitle": "Apply an audited balance delta through an append-only event.",
+        "direction": "Adjustment direction",
+        "increase": "Increase balance",
+        "decrease": "Decrease balance",
+        "amount": "Quota amount",
+        "reason": "Adjustment reason",
+        "preview": "Balance after adjustment",
+        "submit": "Submit adjustment",
+        "applied": "The adjustment was written to the organization wallet and append-only ledger.",
+        "replayed": "The same event already exists; the existing adjustment result was returned.",
+        "validation": {
+          "amount": "Enter a positive safe integer.",
+          "reason": "The reason is required, cannot have surrounding whitespace or control characters, and is limited to 500 bytes."
+        },
+        "previewState": {
+          "empty": "Waiting for input",
+          "insufficient": "Insufficient balance",
+          "overflow": "Would overflow",
+          "ready": "Ready"
+        }
+      },
+      "ledger": {
+        "title": "Organization funding ledger",
+        "subtitle": "Append-only organization balance facts in descending ledger ID order.",
+        "emptyTitle": "No ledger entries yet",
+        "emptyBody": "Opening balances, adjustments, top-ups, and usage settlements create entries here.",
+        "balanceAfter": "Balance {{value}}",
+        "systemActor": "System",
+        "actor": "Actor #{{id}}"
+      },
+      "entryType": {
+        "opening_balance": "Opening balance",
+        "admin_adjustment": "Manual adjustment",
+        "topup": "Top-up",
+        "usage_settlement": "Usage settlement"
+      },
+      "entryReason": {
+        "opening_balance": "Organization opening balance",
+        "admin_adjustment": "Organization wallet adjustment",
+        "topup": "Organization top-up",
+        "usage_settlement": "Organization usage settlement"
+      },
+      "errors": {
+        "summaryTitle": "Organization wallet could not be loaded",
+        "summaryBody": "The service did not return a reliable balance state. Try again shortly.",
+        "ledgerTitle": "Organization ledger could not be loaded",
+        "ledgerBody": "Ledger history is temporarily unavailable. Existing server funding facts are unaffected.",
+        "more": "Earlier ledger entries could not be loaded.",
+        "wallet_insufficient_quota": "The organization balance is insufficient for this debit.",
+        "wallet_overflow": "The adjusted balance would exceed the safe integer limit.",
+        "wallet_outcome_unknown": "The result cannot be confirmed yet. Retry with the same event key.",
+        "wallet_event_conflict": "The event key is already bound to a different adjustment fact.",
+        "unknown": "The organization wallet operation failed. Refresh the facts and retry."
+      }
+    },
+    "settings": {
+      "title": "Organization settings",
+      "subtitle": "Review organization identity, commercial entitlement, and fixed-role permissions, and transfer ownership where the server supports it.",
+      "identity": {
+        "title": "Organization identity",
+        "subtitle": "The current API exposes a read-only identity projection.",
+        "name": "Organization name",
+        "slug": "Organization slug",
+        "organizationId": "Organization ID",
+        "role": "My role"
+      },
+      "entitlement": {
+        "title": "Commercial entitlement",
+        "subtitle": "The server enforces entitlement state and capacity.",
+        "seats": "Seats",
+        "teams": "Teams",
+        "keys": "Organization key limit",
+        "audit": "Audit retention",
+        "days": "{{count}} days"
+      },
+      "permissions": {
+        "title": "Current role permissions",
+        "subtitle": "Fixed roles map only to stable organization permission codes and cannot grant platform permissions."
+      },
+      "ownership": {
+        "title": "Transfer ownership",
+        "subtitle": "The transaction promotes the new owner before demoting the current owner.",
+        "target": "New organization owner",
+        "select": "Select an active member",
+        "action": "Transfer ownership",
+        "ownerOnly": "Only the current owner can transfer organization ownership.",
+        "confirmTitle": "Confirm ownership transfer",
+        "confirmBody": "Transfer {{organization}} ownership to user #{{userId}}? Your role will be demoted after completion.",
+        "confirm": "Confirm transfer"
+      },
+      "unavailable": {
+        "title": "Profile editing and closure are not available yet",
+        "body": "The backend does not currently expose organization rename or closure APIs, so this page does not render forms that would always fail."
+      }
+    }
   },
   "wallet": {
     "eyebrow": "Account quota",
@@ -3562,8 +5100,16 @@
     "topup": {
       "title": "Online top-up",
       "description": "Choose an available payment method to add quota to this account.",
-      "methods": { "label": "Payment method", "card": "Card", "alipay": "Alipay", "wxpay": "WeChat Pay" },
-      "providers": { "stripe": "Stripe", "epay": "Epay" },
+      "methods": {
+        "label": "Payment method",
+        "card": "Card",
+        "alipay": "Alipay",
+        "wxpay": "WeChat Pay"
+      },
+      "providers": {
+        "stripe": "Stripe",
+        "epay": "Epay"
+      },
       "unavailable": {
         "title": "Online top-up is unavailable",
         "retryable": "Payment configuration could not be loaded. Try again shortly.",
@@ -3730,6 +5276,76 @@
       "hint": "Passwords must be 12-128 bytes and cannot contain control characters.",
       "revokesSessions": "All older sign-in sessions are revoked immediately after a successful change."
     },
+    "twoFactor": {
+      "title": "Two-factor authentication (TOTP)",
+      "subtitle": "Add an authenticator challenge to password sign-in.",
+      "enabled": "Enabled",
+      "disabled": "Not enabled",
+      "enable": "Enable two-factor",
+      "disable": "Disable two-factor",
+      "working": "Updating",
+      "currentPassword": "Current password",
+      "enableHint": "After enabling, password sign-in requires an authenticator or backup code; older sessions are revoked immediately.",
+      "disableHint": "Disabling removes the second challenge from password sign-in and revokes older sessions immediately.",
+      "materialsTitle": "Save your two-factor materials",
+      "materialsHint": "The secret, import URI, and backup codes are returned only in this enrollment response. Save them now; backup codes cannot be viewed again after leaving this page.",
+      "secret": "TOTP secret",
+      "uri": "Authenticator import URI",
+      "backupCodes": "One-time backup codes",
+      "copy": "Copy",
+      "copyBackup": "Copy all backup codes",
+      "copied": "Copied",
+      "copyFailed": "Copy failed. Select and copy the value manually.",
+      "loadError": "Two-factor status could not be loaded. Try again shortly.",
+      "alreadyEnabled": "Two-factor authentication is already enabled. Refresh the page.",
+      "mutationError": "Two-factor settings could not be updated. Try again shortly."
+    },
+    "passkeys": {
+      "title": "Passkeys",
+      "subtitle": "Use your device biometrics or PIN for sign-in without storing the device private key.",
+      "count": "{{count}} credential(s)",
+      "addTitle": "Add a passkey",
+      "addHint": "Your browser will open the system authenticator. The credential is bound to this account only.",
+      "displayName": "Display name",
+      "displayNamePlaceholder": "For example, Office computer",
+      "register": "Register passkey",
+      "registering": "Waiting for device",
+      "registered": "Passkey added.",
+      "listTitle": "Registered devices",
+      "createdAt": "Created {{value}}",
+      "lastUsedAt": "Last used {{value}}",
+      "neverUsed": "Never used",
+      "rename": "Rename",
+      "saveName": "Save name",
+      "cancel": "Cancel",
+      "revoke": "Revoke",
+      "revoked": "Revoked",
+      "revokeConfirmTitle": "Revoke this passkey?",
+      "revokeConfirmBody": "This device will no longer sign in, and your current session will be revoked. You will need to sign in again.",
+      "currentPassword": "Current password",
+      "twoFactorCode": "TOTP or backup code",
+      "twoFactorRequiredPlaceholder": "Enter a TOTP or backup code",
+      "twoFactorOptionalPlaceholder": "Enter a code if TOTP is enabled",
+      "twoFactorRequiredHint": "Two-factor authentication is enabled. A current TOTP or unused backup code is required.",
+      "twoFactorOptionalHint": "Leave blank when TOTP is disabled. Otherwise enter a TOTP or backup code.",
+      "confirmRevoke": "Confirm revoke",
+      "revoking": "Revoking",
+      "loadError": "Passkeys could not be loaded. Try again shortly.",
+      "emptyTitle": "No passkeys yet",
+      "emptyBody": "Add a device passkey to sign in with the device authenticator.",
+      "errors": {
+        "unsupported": "This browser or device does not support passkeys.",
+        "cancelled": "Device verification was canceled. No passkey was added.",
+        "invalidCredential": "The browser did not return a valid passkey credential.",
+        "invalidName": "Enter a display name for the passkey.",
+        "registration": "Passkey registration failed. Refresh and try again.",
+        "rename": "The passkey name could not be saved. Try again shortly.",
+        "currentPassword": "The current password is incorrect.",
+        "twoFactorRequired": "Two-factor authentication is enabled. Enter a TOTP or backup code.",
+        "twoFactorInvalid": "The TOTP or backup code is incorrect.",
+        "revoke": "The passkey could not be revoked. Try again shortly."
+      }
+    },
     "notifications": {
       "title": "Notification preferences",
       "subtitle": "Choose which non-security email reminders you want to receive.",
@@ -3757,6 +5373,41 @@
       "alwaysOn": "Always on",
       "saved": "Notification preferences saved.",
       "footer": "These settings affect future email only; security notifications remain enabled."
+    },
+    "notificationHistory": {
+      "title": "Notification history",
+      "subtitle": "System-known delivery facts for balance and subscription alerts. SMTP acceptance does not prove inbox delivery or reading.",
+      "loadError": "Notification history is temporarily unavailable.",
+      "olderLoadError": "Older notifications could not be loaded.",
+      "empty": "No notification facts yet.",
+      "unreadCount": "{{count}} unread",
+      "markRead": "Mark as read",
+      "markReadError": "This notification could not be marked as read. Try again.",
+      "readAt": "Read {{time}}",
+      "loading": "Loading",
+      "loadOlder": "Load older records",
+      "kind": {
+        "balance_alert": "Balance alert",
+        "subscription_balance_alert": "Subscription window alert",
+        "subscription_purchase": "Subscription purchase"
+      },
+      "state": {
+        "queued": "Queued",
+        "accepted": "SMTP accepted",
+        "failed": "Failed",
+        "canceled": "Canceled"
+      },
+      "readState": {
+        "read": "Read",
+        "unread": "Unread"
+      },
+      "channel": {
+        "email": "Email"
+      },
+      "balanceDetail": "Observed quota {{observed}}, threshold {{threshold}}",
+      "subscriptionDetail": "Used {{used}} / {{amount}}, threshold {{threshold}}%",
+      "purchaseDetail": "Subscription purchase confirmation recorded",
+      "meta": "{{time}} · Attempts {{attempts}} · #{{id}}"
     },
     "actions": {
       "refresh": "Refresh",
@@ -3788,19 +5439,37 @@
         "login": "Sign in",
         "models": "Browse models"
       },
-      "secondary": "Read the docs"
+      "secondary": "View FAQ"
     },
     "providers": "Providers already supported",
     "feature": {
       "eyebrow": "Core capabilities",
       "heading": "Complexity stays inside the gateway",
       "subheading": "AnyFlows absorbs upstream differences, failures and pricing rules, so your application only ever talks to one stable interface.",
-      "routing": { "title": "Routing", "body": "Selects channels by weight, priority and live health, with automatic failover and retry." },
-      "billing": { "title": "Billing", "body": "Group multipliers, tiered pricing and an expression engine, with auditable line items." },
-      "health": { "title": "Health", "body": "Continuous liveness and balance probing, auto-disabling channels by rule." },
-      "streaming": { "title": "Streaming", "body": "End-to-end SSE passthrough with per-request TTFT and throughput visibility." },
-      "pool": { "title": "Account pool", "body": "Typed credential management, one proxy per account, shadow accounts for rollout." },
-      "observability": { "title": "Observability", "body": "Per-request candidate replay recording every fallback reason and response detail." }
+      "routing": {
+        "title": "Routing",
+        "body": "Selects channels by weight, priority and live health, with automatic failover and retry."
+      },
+      "billing": {
+        "title": "Billing",
+        "body": "Group multipliers, tiered pricing and an expression engine, with auditable line items."
+      },
+      "health": {
+        "title": "Health",
+        "body": "Continuous liveness and balance probing, auto-disabling channels by rule."
+      },
+      "streaming": {
+        "title": "Streaming",
+        "body": "End-to-end SSE passthrough with per-request TTFT and throughput visibility."
+      },
+      "pool": {
+        "title": "Account pool",
+        "body": "Typed credential management, one proxy per account, shadow accounts for rollout."
+      },
+      "observability": {
+        "title": "Observability",
+        "body": "Per-request candidate replay recording every fallback reason and response detail."
+      }
     },
     "modes": {
       "eyebrow": "Three shapes",
@@ -3835,7 +5504,7 @@
       "heading": "Ready to collapse your model traffic?",
       "body": "A single binary with the frontend embedded. One command to serve.",
       "cta": "Get started",
-      "secondary": "Read the docs"
+      "secondary": "View FAQ"
     },
     "console": {
       "eyebrow": "Drop-in compatible",
@@ -3848,9 +5517,49 @@
       "tokens": "Tokens in/out",
       "route": "Route"
     },
-    "footer": { "copyright": "AnyFlows · Open-source LLM gateway" }
+    "faq": {
+      "eyebrow": "FAQ",
+      "heading": "A few useful answers before you start",
+      "subheading": "Understand the deployment, protocol, routing, and billing boundaries before choosing an entry point.",
+      "items": {
+        "whatIsAnyFlows": {
+          "question": "What is AnyFlows?",
+          "answer": "AnyFlows is a self-hostable large-model API aggregation gateway that turns different providers and relay channels into one observable entry point."
+        },
+        "whichProtocols": {
+          "question": "Which protocols and model capabilities are supported?",
+          "answer": "The delivered protocol paths include OpenAI Chat, Anthropic Messages, Gemini, and OpenAI Responses, alongside image, audio, Embedding, and Rerank capabilities. The actual surface depends on the configured channels and their capability probes."
+        },
+        "howRoutingWorks": {
+          "question": "How does a request choose an upstream channel?",
+          "answer": "The gateway builds candidates from channel weight, priority, capabilities, and runtime state, then follows the failure policy to try other available candidates. Each request's routing facts can be reviewed in the management dashboard."
+        },
+        "howBillingWorks": {
+          "question": "How is billing calculated?",
+          "answer": "Billing is reserved and settled at request scope, with per-token, per-call, and free modes. Multipliers and prices are fixed in a request snapshot so configuration changes cannot shift an in-flight ledger entry."
+        },
+        "canSelfHost": {
+          "question": "Can I deploy it on my own server?",
+          "answer": "Yes. AnyFlows ships as a single binary with the frontend embedded; the database, cache, and upstreams are configured for the deployment environment. Production deployments should still use HTTPS, strong secrets, and least-privilege access."
+        },
+        "whereToStart": {
+          "question": "Where should I start?",
+          "answer": "Browse the model catalog first. When registration is enabled, create an account, configure a channel in the console, and issue an API key for the unified endpoint. Administrators can disable public registration and use invitations instead."
+        }
+      }
+    },
+    "footer": {
+      "copyright": "AnyFlows · Open-source LLM gateway"
+    }
   },
-  "theme": { "toggle": "Toggle theme" },
-  "motion": { "enable": "Enable motion", "disable": "Reduce motion" },
-  "language": { "toggle": "Switch language" }
+  "theme": {
+    "toggle": "Toggle theme"
+  },
+  "motion": {
+    "enable": "Enable motion",
+    "disable": "Reduce motion"
+  },
+  "language": {
+    "toggle": "Switch language"
+  }
 }

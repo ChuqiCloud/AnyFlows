@@ -5,8 +5,8 @@ use std::{
 };
 
 use af_domain::{
-    ChannelId, ChannelTimeout, ChannelType, CredentialKind, GroupId, Protocol,
-    ResponsesCompactMode, ResponsesCompactProbeResult,
+    ChannelId, ChannelTimeout, ChannelType, ClientSimulationProfile, CredentialId, CredentialKind,
+    CredentialQuotaDimension, GroupId, Protocol, ResponsesCompactMode, ResponsesCompactProbeResult,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use sea_orm::entity::prelude::Json;
@@ -179,6 +179,9 @@ struct ProjectionTargetWire {
     auto_ban_keywords: Vec<String>,
     #[serde(default)]
     pool_mode: bool,
+    /// 旧投影缺少该字段时保持默认关闭。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    client_simulation_profile: Option<String>,
     responses_websocket_enabled: bool,
     #[serde(default)]
     responses_compact_mode: Option<String>,
@@ -194,6 +197,14 @@ struct ProjectionTargetWire {
 #[serde(deny_unknown_fields)]
 struct ProjectionCredentialWire {
     credential_id: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    secret_owner_id: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    concurrency_owner_id: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    shared_health_id: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    quota_dimension: Option<String>,
     credential_kind: String,
     key_id: String,
     nonce_base64: String,
@@ -379,6 +390,9 @@ impl ProjectionTargetWire {
                 .collect(),
             auto_ban_keywords: target.auto_ban_rules().keywords().to_vec(),
             pool_mode: target.pool_mode(),
+            client_simulation_profile: target
+                .client_simulation_profile()
+                .map(|profile| profile.to_string()),
             responses_websocket_enabled: target.responses_websocket_enabled(),
             responses_compact_mode: Some(target.responses_compact_mode().to_string()),
             responses_compact_probe_result: Some(
@@ -428,6 +442,11 @@ impl ProjectionTargetWire {
         let auto_ban_rules =
             af_domain::ChannelAutoBanRules::new(self.auto_ban_status_codes, self.auto_ban_keywords)
                 .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
+        let client_simulation_profile = self
+            .client_simulation_profile
+            .map(|profile| profile.parse::<ClientSimulationProfile>())
+            .transpose()
+            .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
         let responses_compact_mode = self
             .responses_compact_mode
             .unwrap_or_else(|| ResponsesCompactMode::Auto.to_string())
@@ -459,7 +478,10 @@ impl ProjectionTargetWire {
         .with_timeout(timeout)
         .with_auto_ban_rules(auto_ban_rules)
         .with_pool_mode(self.pool_mode)
-        .with_responses_websocket_enabled(self.responses_websocket_enabled)
+        .with_client_simulation_profile(client_simulation_profile)
+        .and_then(|target| {
+            target.with_responses_websocket_enabled(self.responses_websocket_enabled)
+        })
         .and_then(|target| target.with_responses_compact_mode(responses_compact_mode))
         .and_then(|target| {
             target.with_responses_compact_probe_result(responses_compact_probe_result)
@@ -472,6 +494,10 @@ impl ProjectionCredentialWire {
     fn from_credential(credential: &SchedulerRuntimeCredentialRecord) -> Self {
         Self {
             credential_id: credential.credential_id(),
+            secret_owner_id: Some(credential.secret_owner_id().get()),
+            concurrency_owner_id: Some(credential.concurrency_owner_id().get()),
+            shared_health_id: Some(credential.shared_health_id().get()),
+            quota_dimension: Some(credential.quota_dimension().to_string()),
             credential_kind: credential.credential_kind().to_string(),
             key_id: credential.envelope().key_id().to_owned(),
             nonce_base64: BASE64_STANDARD.encode(credential.envelope().nonce()),
@@ -489,6 +515,24 @@ impl ProjectionCredentialWire {
     fn try_into_credential(
         self,
     ) -> Result<SchedulerRuntimeCredentialRecord, SchedulerRuntimeProjectionError> {
+        let routing_credential_id = CredentialId::new(self.credential_id)
+            .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
+        let parse_owner = |value: Option<i64>| {
+            value
+                .map(CredentialId::new)
+                .transpose()
+                .map(|value| value.unwrap_or(routing_credential_id))
+                .map_err(|_| SchedulerRuntimeProjectionError::Invariant)
+        };
+        let secret_owner_id = parse_owner(self.secret_owner_id)?;
+        let concurrency_owner_id = parse_owner(self.concurrency_owner_id)?;
+        let shared_health_id = parse_owner(self.shared_health_id)?;
+        let quota_dimension = self
+            .quota_dimension
+            .map(|value| value.parse::<CredentialQuotaDimension>())
+            .transpose()
+            .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?
+            .unwrap_or(CredentialQuotaDimension::Global);
         let credential_kind: CredentialKind = self
             .credential_kind
             .parse()
@@ -508,8 +552,12 @@ impl ProjectionCredentialWire {
             .map(af_domain::ConcurrencyLimit::new)
             .transpose()
             .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
-        let mut credential = SchedulerRuntimeCredentialRecord::with_scheduling_and_concurrency(
-            self.credential_id,
+        let mut credential = SchedulerRuntimeCredentialRecord::with_runtime_identity(
+            routing_credential_id,
+            secret_owner_id,
+            concurrency_owner_id,
+            shared_health_id,
+            quota_dimension,
             credential_kind,
             envelope,
             self.proxy_required,
@@ -745,6 +793,69 @@ mod tests {
         ] {
             assert!(!rendered.contains(forbidden));
         }
+    }
+
+    #[test]
+    fn projection_round_trips_client_simulation_and_old_wire_defaults_off() {
+        let channel_id = ChannelId::new(17).unwrap();
+        let target = SchedulerRuntimeTargetRecord::new_pool(
+            channel_id,
+            ChannelType::Anthropic,
+            Protocol::Anthropic,
+            None,
+            vec![
+                SchedulerRuntimeCredentialRecord::new(
+                    19,
+                    CredentialKind::Oauth,
+                    EncryptedCredentialEnvelope::new("private-key-id", [3; 24], vec![4; 16])
+                        .unwrap(),
+                    false,
+                )
+                .unwrap(),
+            ],
+            Vec::new(),
+        )
+        .unwrap()
+        .with_client_simulation_profile(Some(ClientSimulationProfile::AnthropicCliHeadersV1))
+        .unwrap();
+        let record = SchedulerRuntimeRecord::new(
+            SchedulerAbilityRecord::from_projection_parts(
+                GroupId::new(18).unwrap(),
+                "private-model".to_owned(),
+                channel_id,
+                1,
+                1,
+            )
+            .unwrap(),
+            Arc::new(target),
+        );
+        let projection = SchedulerRuntimeProjection::new(
+            20,
+            SchedulerCatalogSubject::Channel(channel_id),
+            vec![record],
+        )
+        .unwrap();
+
+        let payload = projection.encode().unwrap();
+        let decoded = SchedulerRuntimeProjection::decode(&payload).unwrap();
+        assert_eq!(
+            decoded.records()[0].target().client_simulation_profile(),
+            Some(ClientSimulationProfile::AnthropicCliHeadersV1)
+        );
+
+        let mut old_wire: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+        old_wire["targets"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("client_simulation_profile");
+        let old_decoded =
+            SchedulerRuntimeProjection::decode(&serde_json::to_vec(&old_wire).unwrap()).unwrap();
+        assert_eq!(
+            old_decoded.records()[0]
+                .target()
+                .client_simulation_profile(),
+            None
+        );
     }
 
     #[test]

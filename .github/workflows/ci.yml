@@ -11,23 +11,134 @@ permissions:
   contents: read
 
 concurrency:
+  # 同一 PR 只保留最新一轮；不同 PR 可并行使用已扩容的流水线资源。
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
+  # runner 资源有限；每个 job 串行编译，避免多个 Rust 门禁同时耗尽 CPU/内存。
+  CARGO_BUILD_JOBS: "1"
+  CARGO_INCREMENTAL: "0"
   RUST_BACKTRACE: "1"
 
 jobs:
-  rust-quality:
-    name: Rust quality gates
+  changes:
+    name: Detect changed components
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 5
+    outputs:
+      frontend: ${{ steps.paths.outputs.frontend }}
+      rust: ${{ steps.paths.outputs.rust }}
+      database: ${{ steps.paths.outputs.database }}
+      redis: ${{ steps.paths.outputs.redis }}
     steps:
+      - name: Configure external Gitea checkout endpoint
+        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+
+      - name: Detect changed paths
+        id: paths
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_AFTER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          emit_all() {
+            {
+              echo "frontend=true"
+              echo "rust=true"
+              echo "database=true"
+              echo "redis=true"
+            } >> "$GITHUB_OUTPUT"
+          }
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            emit_all
+            exit 0
+          fi
+
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            base_sha="$PR_BASE_SHA"
+            head_sha="$PR_HEAD_SHA"
+          else
+            base_sha="$PUSH_BEFORE_SHA"
+            head_sha="$PUSH_AFTER_SHA"
+          fi
+
+          if [[ -z "$base_sha" || -z "$head_sha" || "$base_sha" =~ ^0+$ ]]; then
+            emit_all
+            exit 0
+          fi
+
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$base_sha" "$head_sha"
+          git diff --name-only "$base_sha" "$head_sha" > changed-files.txt
+          cat changed-files.txt
+
+          if grep -qx '.github/workflows/ci.yml' changed-files.txt; then
+            emit_all
+            exit 0
+          fi
+
+          matches() {
+            if grep -Eq "$1" changed-files.txt; then
+              echo true
+            else
+              echo false
+            fi
+          }
+
+          {
+            echo "frontend=$(matches '^(web/)')"
+            echo "rust=$(matches '^(crates/|tools/|\.cargo/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|rustfmt\.toml$|clippy\.toml$|deny\.toml$)')"
+            echo "database=$(matches '^(crates/af-db/|tools/ci/run-db-migration-test\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
+            echo "redis=$(matches '^(crates/af-cache/|tools/ci/run-cache-redis-test\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
+          } >> "$GITHUB_OUTPUT"
+
+  release-package:
+    name: Linux amd64 release package
+    needs: changes
+    if: ${{ needs.changes.outputs.rust == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Configure external Gitea checkout endpoint
+        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+
       - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
+
+      - name: Ensure Rust toolchain manager
+        shell: bash
+        run: bash tools/ci/install-rustup.sh
 
       - name: Install rustup when missing from runner image
         shell: bash
@@ -36,7 +147,116 @@ jobs:
       - name: Install pinned Rust toolchain
         shell: bash
         run: |
-          toolchain="$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
+          toolchain="$(sed -n 's/^channel = \"\(.*\)\"/\1/p' rust-toolchain.toml)"
+          test -n "$toolchain"
+          rustup toolchain install "$toolchain" --profile minimal
+          rustc --version --verbose
+
+      - name: Install frontend dependencies
+        shell: bash
+        run: |
+          corepack enable
+          corepack pnpm@10.33.0 --dir web install --frozen-lockfile
+
+      - name: Build frontend
+        run: corepack pnpm@10.33.0 --dir web build
+
+      - name: Build release binary
+        run: |
+          cargo build --release --locked --package af-server
+
+      - name: Package and verify release archive
+        shell: bash
+        run: |
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          bash tools/ci/package-release.sh auto amd64
+          archive="$(find release -maxdepth 1 -type f -name 'anyflows-v*-linux-amd64.tar.gz' -print -quit)"
+          test -n "$archive"
+          test -s "$archive"
+          test -s "$archive.sha256"
+
+  frontend-quality:
+    name: Frontend quality gates
+    needs: changes
+    if: ${{ needs.changes.outputs.frontend == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Configure external Gitea checkout endpoint
+        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+
+      - name: Check out repository
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
+
+      - name: Install frontend dependencies
+        shell: bash
+        run: |
+          corepack enable
+          corepack pnpm@10.33.0 --dir web install --frozen-lockfile
+
+      - name: Lint frontend
+        run: corepack pnpm@10.33.0 --dir web lint
+
+      - name: Build frontend
+        run: corepack pnpm@10.33.0 --dir web build
+
+  rust-quality:
+    name: Rust quality gates
+    needs: changes
+    if: ${{ needs.changes.outputs.rust == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Configure external Gitea checkout endpoint
+        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+
+      - name: Check out repository
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
+
+      - name: Ensure Rust toolchain manager
+        shell: bash
+        run: |
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.cargo/bin:$PATH"
+          rustup --version
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          toolchain="$(sed -n 's/^channel = \"\(.*\)\"/\1/p' rust-toolchain.toml)"
           test -n "$toolchain"
           rustup toolchain install "$toolchain" --profile minimal --component rustfmt --component clippy
           rustc --version --verbose
@@ -59,7 +279,7 @@ jobs:
       - name: Test release scripts
         run: bash tools/ci/test-release-scripts.sh
 
-      - name: 测试服务容器运行脚本
+      - name: Test service container runner
         run: bash tools/ci/test-container-test-runner.sh
 
       - name: Check OpenAPI contract
@@ -69,7 +289,7 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
       - name: Run tests
-        run: cargo nextest run --workspace --all-features --locked
+        run: cargo nextest run --workspace --all-features --locked --no-fail-fast
 
       - name: Run documentation tests
         run: cargo test --workspace --all-features --doc --locked
@@ -79,15 +299,33 @@ jobs:
 
   msrv:
     name: Minimum supported Rust version
+    needs: changes
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
+      - name: Configure external Gitea checkout endpoint
+        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
 
-      - name: Install rustup when missing from runner image
+      - name: Check out repository
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
+
+      - name: Ensure Rust toolchain manager
         shell: bash
         run: bash tools/ci/install-rustup.sh
 
@@ -95,7 +333,7 @@ jobs:
         id: msrv
         shell: bash
         run: |
-          msrv="$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml)"
+          msrv="$(sed -n 's/^rust-version = \"\(.*\)\"/\1/p' Cargo.toml | head -n 1)"
           test -n "$msrv"
           if [[ "$msrv" =~ ^[0-9]+\.[0-9]+$ ]]; then
             toolchain="${msrv}.0"
@@ -106,90 +344,220 @@ jobs:
           echo "toolchain=$toolchain" >> "$GITHUB_OUTPUT"
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
-          shared-key: msrv
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: v1-rust-msrv-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'crates/**/Cargo.toml', 'tools/**/Cargo.toml') }}
+          restore-keys: |
+            v1-rust-msrv-${{ runner.os }}-
 
       - name: Check workspace with MSRV
         shell: bash
-        run: |
-          toolchain="${{ steps.msrv.outputs.toolchain }}"
-          cargo +"$toolchain" check --workspace --all-targets --all-features --locked
+        run: cargo +"${{ steps.msrv.outputs.toolchain }}" check --workspace --all-targets --all-features --locked
 
-  database-migrations:
-    name: Database migrations (${{ matrix.dialect }})
+  sqlite-migration:
+    name: SQLite migration smoke test
+    needs: changes
+    if: ${{ needs.changes.outputs.database == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - dialect: sqlite
-            database_url: "sqlite::memory:"
-            service_image: redis:8.2.7-bookworm@sha256:d30960f73a599496d8b2802c97758bab6b1cd421fd06337f837779c47a57e1f3
-            service_options: >-
-              --health-cmd "redis-cli ping"
-              --health-interval 5s
-              --health-timeout 5s
-              --health-retries 30
-          - dialect: postgres
-            database_url: postgres://anyflows:anyflows_ci@database:5432/anyflows_migration_test_ci
-            service_image: postgres:17.10-bookworm@sha256:67870dc097790edf2bd6726658db995dcc830f799d41bb2b78ef07c9a2d5f010
-            service_options: >-
-              --health-cmd "pg_isready -U anyflows -d anyflows_migration_test_ci"
-              --health-interval 5s
-              --health-timeout 5s
-              --health-retries 30
-          - dialect: mysql
-            database_url: mysql://anyflows:anyflows_ci@database:3306/anyflows_migration_test_ci?timezone=%2B08:00
-            service_image: mysql:8.4.10@sha256:6ec1dc148edc412cce3ae27dd5b78dcd4e026976648424b3d31d9a8c6204db4e
-            service_options: >-
-              --health-cmd "mysqladmin ping -h 127.0.0.1 -u root -proot_ci --silent"
-              --health-interval 5s
-              --health-timeout 5s
-              --health-retries 30
+    steps:
+      - name: Configure external Gitea checkout endpoint
+        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+
+      - name: Check out repository
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
+
+      - name: Ensure Rust toolchain manager
+        shell: bash
+        run: |
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.cargo/bin:$PATH"
+          rustup --version
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          toolchain="$(sed -n 's/^channel = \"\(.*\)\"/\1/p' rust-toolchain.toml)"
+          test -n "$toolchain"
+          rustup toolchain install "$toolchain" --profile minimal
+
+      - name: Run SQLite migration smoke test
+        env:
+          AF_TEST_DATABASE_URL: "sqlite::memory:"
+          AF_REQUIRE_LIVE_DATABASE: "1"
+          AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST: "1"
+        run: bash tools/ci/run-db-migration-test.sh sqlite
+
+  postgres-migration:
+    name: PostgreSQL migration smoke test
+    needs: changes
+    if: ${{ needs.changes.outputs.database == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     services:
-      database:
-        image: ${{ matrix.service_image }}
+      postgres:
+        image: postgres:17.10-bookworm@sha256:67870dc097790edf2bd6726658db995dcc830f799d41bb2b78ef07c9a2d5f010
         env:
           POSTGRES_USER: anyflows
           POSTGRES_PASSWORD: anyflows_ci
           POSTGRES_DB: anyflows_migration_test_ci
+        options: >-
+          --health-cmd "pg_isready -U anyflows -d anyflows_migration_test_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - name: Configure external Gitea checkout endpoint
+        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+
+      - name: Check out repository
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
+
+      - name: Ensure Rust toolchain manager
+        shell: bash
+        run: |
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.cargo/bin:$PATH"
+          rustup --version
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          toolchain="$(sed -n 's/^channel = \"\(.*\)\"/\1/p' rust-toolchain.toml)"
+          test -n "$toolchain"
+          rustup toolchain install "$toolchain" --profile minimal
+
+      - name: Run PostgreSQL migration smoke test on Gitea
+        if: ${{ github.server_url != 'https://github.com' }}
+        env:
+          AF_TEST_DATABASE_URL: postgres://anyflows:anyflows_ci@postgres:5432/anyflows_migration_test_ci
+          AF_REQUIRE_LIVE_DATABASE: "1"
+          AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST: "1"
+        run: bash tools/ci/run-db-migration-test.sh postgres
+
+      - name: Run PostgreSQL migration smoke test on GitHub
+        if: ${{ github.server_url == 'https://github.com' }}
+        env:
+          AF_TEST_DATABASE_URL: postgres://anyflows:anyflows_ci@127.0.0.1:15432/anyflows_migration_test_ci
+          AF_REQUIRE_LIVE_DATABASE: "1"
+          AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST: "1"
+        run: bash tools/ci/run-db-migration-test.sh postgres
+
+  mysql-migration:
+    name: MySQL migration smoke test
+    needs: changes
+    if: ${{ needs.changes.outputs.database == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.4.10@sha256:6ec1dc148edc412cce3ae27dd5b78dcd4e026976648424b3d31d9a8c6204db4e
+        env:
           MYSQL_USER: anyflows
           MYSQL_PASSWORD: anyflows_ci
           MYSQL_ROOT_PASSWORD: root_ci
           MYSQL_DATABASE: anyflows_migration_test_ci
-        options: ${{ matrix.service_options }}
+        options: >-
+          --health-cmd "mysql --protocol=tcp -h 127.0.0.1 -u root -proot_ci -e 'SET GLOBAL log_bin_trust_function_creators = 1; SELECT 1'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
     steps:
-      - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
+      - name: Configure external Gitea checkout endpoint
+        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
 
-      - name: Install rustup when missing from runner image
+      - name: Check out repository
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
+
+      - name: Ensure Rust toolchain manager
         shell: bash
         run: bash tools/ci/install-rustup.sh
 
       - name: Install pinned Rust toolchain
         shell: bash
         run: |
-          toolchain="$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
+          toolchain="$(sed -n 's/^channel = \"\(.*\)\"/\1/p' rust-toolchain.toml)"
           test -n "$toolchain"
           rustup toolchain install "$toolchain" --profile minimal
 
-      - name: Cache database test artifacts
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: database-${{ matrix.dialect }}
-
-      - name: Run migration smoke test
+      - name: Run MySQL migration smoke test on Gitea
+        if: ${{ github.server_url != 'https://github.com' }}
         env:
-          AF_TEST_DATABASE_URL: ${{ matrix.database_url }}
+          AF_TEST_DATABASE_URL: mysql://anyflows:anyflows_ci@mysql:3306/anyflows_migration_test_ci?timezone=%2B08:00
           AF_REQUIRE_LIVE_DATABASE: "1"
-        run: bash tools/ci/run-db-migration-test.sh "${{ matrix.dialect }}"
+          AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST: "1"
+        run: bash tools/ci/run-db-migration-test.sh mysql
+
+      - name: Run MySQL migration smoke test on GitHub
+        if: ${{ github.server_url == 'https://github.com' }}
+        env:
+          AF_TEST_DATABASE_URL: mysql://anyflows:anyflows_ci@127.0.0.1:13306/anyflows_migration_test_ci?timezone=%2B08:00
+          AF_REQUIRE_LIVE_DATABASE: "1"
+          AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST: "1"
+        run: bash tools/ci/run-db-migration-test.sh mysql
 
   cache-redis:
     name: Redis cache smoke test
+    needs: changes
+    if: ${{ needs.changes.outputs.redis == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -201,10 +569,36 @@ jobs:
           --health-timeout 5s
           --health-retries 30
     steps:
+      - name: Configure external Gitea checkout endpoint
+        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+
       - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
+
+      - name: Ensure Rust toolchain manager
+        shell: bash
+        run: |
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.cargo/bin:$PATH"
+          rustup --version
 
       - name: Install rustup when missing from runner image
         shell: bash
@@ -213,16 +607,13 @@ jobs:
       - name: Install pinned Rust toolchain
         shell: bash
         run: |
-          toolchain="$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
+          toolchain="$(sed -n 's/^channel = \"\(.*\)\"/\1/p' rust-toolchain.toml)"
           test -n "$toolchain"
           rustup toolchain install "$toolchain" --profile minimal
 
-      - name: Cache Redis test artifacts
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: cache-redis
-
-      - name: Run Redis cache smoke test
+      - name: Run Redis cache smoke test on Gitea
+        if: ${{ github.server_url != 'https://github.com' }}
         env:
           AF_TEST_REDIS_URL: redis://redis:6379/
+          AF_REQUIRE_LIVE_REDIS: "1"
         run: bash tools/ci/run-cache-redis-test.sh

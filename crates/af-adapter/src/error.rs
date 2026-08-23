@@ -112,6 +112,9 @@ pub enum AdaptorError {
     /// 请求头值无法安全写入。
     #[error("上游请求头无效")]
     InvalidHeader,
+    /// 客户端仿真档案与渠道、协议、操作或凭据边界不匹配。
+    #[error("客户端仿真档案不适用于当前上游请求")]
+    InvalidClientSimulation,
     /// 完整请求无法生成安全的供应商签名。
     #[error("上游请求签名失败")]
     RequestSigning,

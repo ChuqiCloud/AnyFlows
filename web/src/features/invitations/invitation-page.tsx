@@ -1,5 +1,6 @@
 import {
   Check,
+  Building2,
   Coins,
   Copy,
   History,
@@ -17,14 +18,16 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import type { UserInvitationSummaryResponse } from '@/lib/api/generated/types.gen'
-import { useUserInvitations } from './invitation-api'
+import { useAcceptOrganizationInvitation, useUserInvitations } from './invitation-api'
 
 type CopyTarget = 'code' | 'link'
 
 /** 展示当前用户自己的邀请码、邀请统计与脱敏返利记录。 */
 export function InvitationPage() {
   const { t, i18n } = useTranslation()
+  const { formatQuota } = useBalanceDisplay()
   const invitationsQuery = useUserInvitations()
   const [copied, setCopied] = useState<CopyTarget>()
   const [copyFailed, setCopyFailed] = useState(false)
@@ -79,6 +82,8 @@ export function InvitationPage() {
         </Button>
       </header>
 
+      <OrganizationInvitationAcceptPanel />
+
       {invitationsQuery.isPending ? (
         <InvitationLoading />
       ) : invitationsQuery.isError || !invitations ? (
@@ -92,16 +97,57 @@ export function InvitationPage() {
             copyFailed={copyFailed}
             onCopy={copyValue}
           />
-          <InvitationMetrics invitations={invitations} formatNumber={formatNumber.format} />
+          <InvitationMetrics invitations={invitations} formatNumber={formatNumber.format} formatQuota={formatQuota} />
           <RecentRebates
             invitations={invitations}
-            formatNumber={formatNumber.format}
+            formatQuota={formatQuota}
             formatTime={(value) => formatTime.format(value * 1_000)}
           />
         </>
       )}
     </div>
   )
+}
+
+function OrganizationInvitationAcceptPanel() {
+  const { t } = useTranslation()
+  const mutation = useAcceptOrganizationInvitation()
+  const [token, setToken] = useState(readOrganizationInvitationToken)
+  const valid = /^oinv_[^.\s]+\.[A-Za-z0-9_-]{43}$/.test(token)
+  const submit = async () => {
+    if (!valid) return
+    try {
+      await mutation.mutateAsync(token)
+      setToken('')
+    } catch {
+      // 失败时保留令牌，用户可核对登录邮箱或按原令牌重试。
+    }
+  }
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader className="border-b border-[var(--hairline)] bg-surface-1/45">
+        <div className="flex items-start gap-3">
+          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand/10 text-brand"><Building2 className="size-4" aria-hidden="true" /></span>
+          <div><CardTitle className="text-base">{t('invitations.organization.title')}</CardTitle><p className="mt-1 text-xs leading-5 text-muted-foreground">{t('invitations.organization.subtitle')}</p></div>
+        </div>
+      </CardHeader>
+      <CardContent className="p-4">
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+          <Input value={token} className="font-mono text-xs" autoComplete="off" placeholder="oinv_…" aria-label={t('invitations.organization.token')} disabled={mutation.isPending} onChange={(event) => { setToken(event.target.value.trim()); mutation.reset() }} />
+          <Button type="button" disabled={!valid || mutation.isPending} onClick={() => void submit()}>{t('invitations.organization.accept')}</Button>
+        </div>
+        {token && !valid ? <p className="mt-2 text-xs text-destructive">{t('invitations.organization.invalid')}</p> : null}
+        {mutation.isSuccess ? <p role="status" className="mt-3 rounded-lg bg-success/8 px-3 py-2 text-xs text-success">{t('invitations.organization.accepted', { organizationId: mutation.data.organization_id })}</p> : null}
+        {mutation.isError ? <p role="alert" className="mt-3 rounded-lg bg-destructive/8 px-3 py-2 text-xs text-destructive">{t('invitations.organization.error')}</p> : null}
+      </CardContent>
+    </Card>
+  )
+}
+
+function readOrganizationInvitationToken() {
+  const queryStart = window.location.hash.indexOf('?')
+  if (queryStart < 0) return ''
+  return new URLSearchParams(window.location.hash.slice(queryStart + 1)).get('organization_token') ?? ''
 }
 
 function InvitationSharePanel({
@@ -198,16 +244,18 @@ function CopyField({
 function InvitationMetrics({
   invitations,
   formatNumber,
+  formatQuota,
 }: {
   invitations: UserInvitationSummaryResponse
   formatNumber: (value: number) => string
+  formatQuota: (value: number) => string
 }) {
   const { t } = useTranslation()
   const metrics = [
-    { key: 'invited', icon: UsersRound, value: invitations.invited_count },
-    { key: 'credited', icon: Check, value: invitations.credited_count },
-    { key: 'current', icon: Coins, value: invitations.current_rebate_quota },
-    { key: 'history', icon: History, value: invitations.historical_rebate_quota },
+    { key: 'invited', icon: UsersRound, value: formatNumber(invitations.invited_count) },
+    { key: 'credited', icon: Check, value: formatNumber(invitations.credited_count) },
+    { key: 'current', icon: Coins, value: formatQuota(invitations.current_rebate_quota) },
+    { key: 'history', icon: History, value: formatQuota(invitations.historical_rebate_quota) },
   ] as const
   return (
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label={t('invitations.metrics.label')}>
@@ -220,7 +268,7 @@ function InvitationMetrics({
                 <span className="text-xs text-muted-foreground">{t(`invitations.metrics.${metric.key}`)}</span>
                 <Icon className="size-4 text-brand" aria-hidden="true" />
               </div>
-              <p className="mt-3 text-xl font-semibold tabular-nums">{formatNumber(metric.value)}</p>
+              <p className="mt-3 text-xl font-semibold tabular-nums">{metric.value}</p>
             </CardContent>
           </Card>
         )
@@ -231,11 +279,11 @@ function InvitationMetrics({
 
 function RecentRebates({
   invitations,
-  formatNumber,
+  formatQuota,
   formatTime,
 }: {
   invitations: UserInvitationSummaryResponse
-  formatNumber: (value: number) => string
+  formatQuota: (value: number) => string
   formatTime: (value: number) => string
 }) {
   const { t } = useTranslation()
@@ -267,7 +315,7 @@ function RecentRebates({
                   <p className="mt-1 text-xs text-muted-foreground">{formatTime(rebate.credited_at)}</p>
                 </div>
                 <Badge className="shrink-0 border-success/25 bg-success/10 text-success tabular-nums">
-                  +{formatNumber(rebate.quota_amount)}
+                  +{formatQuota(rebate.quota_amount)}
                 </Badge>
               </div>
             ))}

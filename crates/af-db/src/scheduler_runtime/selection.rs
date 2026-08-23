@@ -56,8 +56,19 @@ fn try_runtime_target(
     }
     let mut records = Vec::with_capacity(credentials.len());
     for credential in credentials {
-        let (credential_id, credential_kind, envelope, proxy, priority, weight, concurrency) =
-            credential.into_runtime_parts();
+        let (
+            routing_credential_id,
+            secret_owner_id,
+            concurrency_owner_id,
+            shared_health_id,
+            quota_dimension,
+            credential_kind,
+            envelope,
+            proxy,
+            priority,
+            weight,
+            concurrency,
+        ) = credential.into_runtime_parts();
         if !matches!(
             credential_kind,
             CredentialKind::ApiKey | CredentialKind::Oauth
@@ -65,12 +76,18 @@ fn try_runtime_target(
             channel_type,
             ChannelType::Jina | ChannelType::Cohere | ChannelType::Xai
         ) && credential_kind != CredentialKind::ApiKey)
+            || (channel.client_simulation_profile().is_some()
+                && credential_kind != CredentialKind::Oauth)
         {
             continue;
         }
         let proxy_required = proxy.is_some();
-        let mut record = SchedulerRuntimeCredentialRecord::with_scheduling_and_concurrency(
-            credential_id,
+        let mut record = SchedulerRuntimeCredentialRecord::with_runtime_identity(
+            routing_credential_id,
+            secret_owner_id,
+            concurrency_owner_id,
+            shared_health_id,
+            quota_dimension,
             credential_kind,
             envelope,
             proxy_required,
@@ -103,6 +120,7 @@ fn try_runtime_target(
     .map(|target| target.with_timeout(channel.timeout()))
     .map(|target| target.with_auto_ban_rules(channel.auto_ban_rules().clone()))
     .map(|target| target.with_pool_mode(channel.pool_mode()))
+    .and_then(|target| target.with_client_simulation_profile(channel.client_simulation_profile()))
     .and_then(|target| {
         target.with_responses_websocket_enabled(channel.responses_websocket_enabled())
     })

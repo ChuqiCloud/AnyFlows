@@ -12,6 +12,7 @@ pub struct Model {
     #[sea_orm(column_type = "Char(Some(32))")]
     pub order_key: String,
     pub user_id: i64,
+    pub organization_id: Option<i64>,
     #[sea_orm(column_type = "String(StringLen::N(64))")]
     pub provider: String,
     #[sea_orm(column_type = "String(StringLen::N(32))", nullable)]
@@ -45,10 +46,24 @@ pub enum Relation {
         on_delete = "Restrict"
     )]
     User,
+    #[sea_orm(
+        belongs_to = "super::organizations::Entity",
+        from = "Column::OrganizationId",
+        to = "super::organizations::Column::Id",
+        on_update = "Restrict",
+        on_delete = "Restrict"
+    )]
+    Organization,
 }
 
 impl Related<super::users::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::User.def()
+    }
+}
+
+impl Related<super::organizations::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Organization.def()
     }
 }

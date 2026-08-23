@@ -5,12 +5,13 @@ import {
   CheckCircle2,
   Eye,
   EyeOff,
+  Fingerprint,
   LoaderCircle,
   LockKeyhole,
   RefreshCw,
   UserRoundPlus,
 } from 'lucide-react'
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -18,11 +19,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { AuthCapabilityCard, AuthCapabilitySkeleton } from '@/features/auth/auth-capability-card'
 import { AuthPageShell } from '@/features/auth/auth-page-shell'
+import { beginOAuthLogin, type OAuthLoginProvider } from '@/features/auth/oauth-login-api'
+import { OAuthProviderIcon } from '@/features/auth/oauth-provider-icon'
+import {
+  authenticateWithPasskey,
+  PasskeyClientError,
+  supportsPasskeyAuthentication,
+} from '@/features/auth/passkey-login-api'
 import { establishManagementSession } from '@/features/auth/session-query'
+import { TurnstileWidget } from '@/features/auth/turnstile-widget'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
 import { apiClient, ApiError } from '@/lib/api'
 import { loginManagementSession } from '@/lib/api/generated/sdk.gen'
-import type { LoginRequest } from '@/lib/api/generated/types.gen'
+import type { LoginRequestWritable } from '@/lib/api/generated/types.gen'
 
 export type LoginNotice = 'sessionExpired' | 'setupComplete' | 'passwordResetSuccess' | 'passwordChanged'
 
@@ -31,14 +40,18 @@ type LoginPageProps = {
   onAuthenticated: () => void
 }
 
-type LoginError = LoginNotice | 'invalidCredentials' | 'passwordLoginDisabled' | 'unavailable'
+type LoginError = LoginNotice | 'invalidCredentials' | 'twoFactorRequired' | 'twoFactorInvalid' | 'passwordLoginDisabled' | 'turnstileRequired' | 'turnstileRejected' | 'turnstileUnavailable' | 'passkeyCancelled' | 'passkeyUnsupported' | 'unavailable'
 
 function classifyLoginError(error: unknown): LoginError {
   if (error instanceof ApiError) {
     const code = errorCode(error.details)
     // 兼容网关将管理错误包裹到 error 字段后的响应，避免把可解释的认证失败误报为服务不可用。
     if (code === 'password_login_disabled') return 'passwordLoginDisabled'
+    if (code === 'two_factor_required') return 'twoFactorRequired'
+    if (code === 'two_factor_invalid') return 'twoFactorInvalid'
     if (code === 'invalid_credentials') return 'invalidCredentials'
+    if (code === 'turnstile_rejected') return 'turnstileRejected'
+    if (code === 'turnstile_unavailable') return 'turnstileUnavailable'
     if (error.status === 400 || error.status === 401) return 'invalidCredentials'
   }
   return 'unavailable'
@@ -49,27 +62,88 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
   const { t } = useTranslation()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [twoFactorCode, setTwoFactorCode] = useState('')
+  const [twoFactorRequired, setTwoFactorRequired] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [turnstileToken, setTurnstileToken] = useState('')
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0)
   const [loginError, setLoginError] = useState<LoginError>()
   const [noticeDismissed, setNoticeDismissed] = useState(false)
   const siteQuery = usePublicSiteSettings()
 
   const loginMutation = useMutation({
-    mutationFn: async (body: LoginRequest) => {
+    mutationFn: async (body: LoginRequestWritable) => {
       const { data } = await loginManagementSession({ body, client: apiClient })
       return data
     },
   })
+  const oauthMutation = useMutation({ mutationFn: beginOAuthLogin })
+  const passkeyMutation = useMutation({ mutationFn: authenticateWithPasskey })
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setLoginError(undefined)
+    const turnstileSiteKey = siteQuery.data?.authentication.turnstile_site_key
+    if (turnstileSiteKey && !turnstileToken) {
+      setLoginError('turnstileRequired')
+      return
+    }
     try {
-      const response = await loginMutation.mutateAsync({ username, password })
+      const response = await loginMutation.mutateAsync({
+        username,
+        password,
+        ...(turnstileToken ? { turnstile_token: turnstileToken } : {}),
+        ...(twoFactorRequired && twoFactorCode.trim() ? { totp_code: twoFactorCode.trim() } : {}),
+      })
       establishManagementSession(response)
       onAuthenticated()
     } catch (error) {
-      setLoginError(classifyLoginError(error))
+      const classified = classifyLoginError(error)
+      setLoginError(classified)
+      if (classified === 'twoFactorRequired') {
+        setTwoFactorRequired(true)
+        window.requestAnimationFrame(() => document.getElementById('management-two-factor')?.focus())
+      }
+    } finally {
+      if (turnstileToken) {
+        setTurnstileToken('')
+        setTurnstileResetKey((value) => value + 1)
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (twoFactorRequired) document.getElementById('management-two-factor')?.focus()
+  }, [twoFactorRequired])
+
+  async function handleOAuthLogin(provider: OAuthLoginProvider) {
+    setLoginError(undefined)
+    try {
+      const response = await oauthMutation.mutateAsync(provider)
+      window.location.assign(response.authorization_url)
+    } catch {
+      setLoginError('unavailable')
+    }
+  }
+
+  async function handlePasskeyLogin() {
+    setLoginError(undefined)
+    const normalizedUsername = username.trim()
+    if (!normalizedUsername) {
+      setLoginError('invalidCredentials')
+      document.getElementById('management-username')?.focus()
+      return
+    }
+    try {
+      const response = await passkeyMutation.mutateAsync(normalizedUsername)
+      establishManagementSession(response)
+      onAuthenticated()
+    } catch (error) {
+      if (error instanceof PasskeyClientError) {
+        setLoginError(error.code === 'cancelled' ? 'passkeyCancelled' : error.code === 'unsupported' ? 'passkeyUnsupported' : 'invalidCredentials')
+      } else {
+        setLoginError(classifyLoginError(error))
+      }
     }
   }
 
@@ -78,10 +152,15 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
   const heroTitle = site?.brand.tagline ?? t('auth.login.heroTitle')
   const heroBody = site?.brand.description ?? t('auth.login.heroBody')
   const passwordLoginEnabled = site?.authentication.password_login_enabled ?? false
+  const oauthProviders = site?.authentication.oauth_providers ?? []
+  const oauthLoginEnabled = oauthProviders.length > 0
   const registrationEnabled = site?.authentication.registration_enabled ?? false
   const registrationAvailable = passwordLoginEnabled && registrationEnabled
+  const turnstileSiteKey = site?.authentication.turnstile_site_key ?? null
+  const passkeySupported = passwordLoginEnabled && supportsPasskeyAuthentication()
   const visibleError = loginError ?? (noticeDismissed ? undefined : notice)
   const hasFieldError = visibleError === 'invalidCredentials'
+  const hasTwoFactorError = visibleError === 'twoFactorRequired' || visibleError === 'twoFactorInvalid'
   const isSuccessNotice = visibleError === 'passwordResetSuccess' || visibleError === 'passwordChanged'
   const passwordToggleLabel = showPassword
     ? t('auth.login.hidePassword')
@@ -115,7 +194,7 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
               </div>
             )}
           />
-        ) : !passwordLoginEnabled ? (
+        ) : !passwordLoginEnabled && !oauthLoginEnabled ? (
           <AuthCapabilityCard
             icon={<LockKeyhole className="size-5" aria-hidden="true" />}
             title={t('auth.login.disabledTitle')}
@@ -138,26 +217,107 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
 
             <CardContent className="px-6 pb-6 sm:px-7 sm:pb-7">
               <form className="grid gap-5" onSubmit={handleSubmit}>
-                <div className="grid gap-2">
-                  <label htmlFor="management-username" className="text-sm font-medium">{t('auth.login.username')}</label>
-                  <Input
-                    id="management-username"
-                    name="username"
-                    autoComplete="username"
-                    autoFocus
-                    required
-                    className="h-11 px-3"
-                    placeholder={t('auth.login.usernamePlaceholder')}
-                    value={username}
-                    aria-invalid={hasFieldError ? true : undefined}
-                    aria-describedby={visibleError ? 'login-error' : undefined}
-                    onChange={(event) => {
-                      setUsername(event.target.value)
-                      setLoginError(undefined)
-                      setNoticeDismissed(true)
-                    }}
-                  />
-                </div>
+                {oauthProviders.map((provider) => {
+                  const providerId = provider.id as OAuthLoginProvider
+                  const isStarting = oauthMutation.isPending && oauthMutation.variables === providerId
+                  return (
+                    <Button
+                      key={provider.id}
+                      type="button"
+                      size="lg"
+                      variant="secondary"
+                      className="w-full"
+                      disabled={oauthMutation.isPending || passkeyMutation.isPending}
+                      onClick={() => void handleOAuthLogin(providerId)}
+                    >
+                      {isStarting
+                        ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+                        : <OAuthProviderIcon provider={providerId} />}
+                      {isStarting
+                        ? t(`auth.login.oauthStarting.${provider.id}`)
+                        : t(`auth.login.oauth.${provider.id}`)}
+                    </Button>
+                  )
+                })}
+
+                {oauthLoginEnabled && passwordLoginEnabled ? (
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground" aria-hidden="true">
+                    <span className="h-px flex-1 bg-[var(--hairline)]" />
+                    <span>{t(passkeySupported ? 'auth.login.orAccount' : 'auth.login.orPassword')}</span>
+                    <span className="h-px flex-1 bg-[var(--hairline)]" />
+                  </div>
+                ) : null}
+
+                {visibleError ? (
+                  <div
+                    id="login-error"
+                    role="alert"
+                    aria-live="polite"
+                    className={isSuccessNotice
+                      ? 'flex gap-2.5 rounded-lg border border-success/20 bg-success/8 px-3 py-2.5 text-sm leading-5 text-success'
+                      : 'flex gap-2.5 rounded-lg border border-destructive/20 bg-destructive/8 px-3 py-2.5 text-sm leading-5 text-destructive'}
+                  >
+                    {isSuccessNotice
+                      ? <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                      : <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}
+                    <span>{t(`auth.errors.${visibleError}`)}</span>
+                  </div>
+                ) : null}
+
+                {passwordLoginEnabled ? (
+                  <>
+                    {turnstileSiteKey ? (
+                      <TurnstileWidget
+                        siteKey={turnstileSiteKey}
+                        resetKey={turnstileResetKey}
+                        onToken={setTurnstileToken}
+                      />
+                    ) : null}
+                    <div className="grid gap-2">
+                      <label htmlFor="management-username" className="text-sm font-medium">{t('auth.login.username')}</label>
+                      <Input
+                        id="management-username"
+                        name="username"
+                        autoComplete="username"
+                        autoFocus
+                        required
+                        className="h-11 px-3"
+                        placeholder={t('auth.login.usernamePlaceholder')}
+                        value={username}
+                        aria-invalid={hasFieldError ? true : undefined}
+                        aria-describedby={visibleError ? 'login-error' : undefined}
+                        onChange={(event) => {
+                          setUsername(event.target.value)
+                          setLoginError(undefined)
+                          setNoticeDismissed(true)
+                        }}
+                      />
+                    </div>
+
+                {passkeySupported ? (
+                  <>
+                    <Button
+                      type="button"
+                      size="lg"
+                      variant="secondary"
+                      className="w-full"
+                      disabled={passkeyMutation.isPending || oauthMutation.isPending || !username.trim()}
+                      onClick={() => void handlePasskeyLogin()}
+                    >
+                      {passkeyMutation.isPending
+                        ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+                        : <Fingerprint className="size-4" aria-hidden="true" />}
+                      {passkeyMutation.isPending
+                        ? t('auth.login.passkeyVerifying')
+                        : t('auth.login.passkey')}
+                    </Button>
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground" aria-hidden="true">
+                      <span className="h-px flex-1 bg-[var(--hairline)]" />
+                      <span>{t('auth.login.orPassword')}</span>
+                      <span className="h-px flex-1 bg-[var(--hairline)]" />
+                    </div>
+                  </>
+                ) : null}
 
                 <div className="grid gap-2">
                   <label htmlFor="management-password" className="text-sm font-medium">{t('auth.login.password')}</label>
@@ -196,31 +356,44 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                   </div>
                 </div>
 
-                {visibleError ? (
-                  <div
-                    id="login-error"
-                    role="alert"
-                    aria-live="polite"
-                    className={isSuccessNotice
-                      ? 'flex gap-2.5 rounded-lg border border-success/20 bg-success/8 px-3 py-2.5 text-sm leading-5 text-success'
-                      : 'flex gap-2.5 rounded-lg border border-destructive/20 bg-destructive/8 px-3 py-2.5 text-sm leading-5 text-destructive'}
-                  >
-                    {isSuccessNotice
-                      ? <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                      : <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}
-                    <span>{t(`auth.errors.${visibleError}`)}</span>
+                {twoFactorRequired ? (
+                  <div className="grid gap-2">
+                    <label htmlFor="management-two-factor" className="text-sm font-medium">{t('auth.login.twoFactorCode')}</label>
+                    <Input
+                      id="management-two-factor"
+                      name="totp_code"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      required
+                      className="h-11 px-3 font-mono tracking-[0.16em]"
+                      placeholder={t('auth.login.twoFactorCodePlaceholder')}
+                      value={twoFactorCode}
+                      aria-invalid={hasTwoFactorError ? true : undefined}
+                      aria-describedby={visibleError ? 'login-error' : undefined}
+                      onChange={(event) => {
+                        setTwoFactorCode(event.target.value)
+                        setLoginError(undefined)
+                      }}
+                    />
+                    <p className="text-[0.6875rem] leading-4 text-muted-foreground">{t('auth.login.twoFactorCodeHint')}</p>
                   </div>
                 ) : null}
 
-                <Button type="submit" size="lg" className="w-full" disabled={loginMutation.isPending}>
+                <Button type="submit" size="lg" className="w-full" disabled={loginMutation.isPending || passkeyMutation.isPending}>
                   {loginMutation.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}
-                  {loginMutation.isPending ? t('auth.login.submitting') : t('auth.login.submit')}
+                  {loginMutation.isPending
+                    ? t('auth.login.submitting')
+                    : twoFactorRequired
+                      ? t('auth.login.verifyTwoFactor')
+                      : t('auth.login.submit')}
                 </Button>
                 <p className="text-center text-sm">
                   <a href="#/forgot-password" className="font-medium text-info underline-offset-4 hover:underline">
                     {t('auth.login.forgotPassword')}
                   </a>
                 </p>
+                  </>
+                ) : null}
                 {registrationAvailable ? (
                   <p className="text-center text-sm text-muted-foreground">
                     {t('auth.login.noAccount')}{' '}

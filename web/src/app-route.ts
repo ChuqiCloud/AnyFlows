@@ -13,12 +13,21 @@ export type AppView =
   | 'models'
   | 'model-settings'
   | 'network-settings'
+  | 'oauth-callback'
+  | 'organization-api-keys'
+  | 'organization-activity'
+  | 'organization-budgets'
+  | 'organization-members'
+  | 'organization-overview'
+  | 'organization-settings'
+  | 'organization-wallet'
   | 'payment-settings'
   | 'playground'
   | 'profile'
   | 'public-models'
   | 'register'
   | 'redemption-codes'
+  | 'refunds'
   | 'routes'
   | 'reset-password'
   | 'site-settings'
@@ -41,6 +50,7 @@ export type AppRoute = {
   shareToken?: string
   resetToken?: string
   inviteCode?: string
+  profileSection?: 'notifications'
 }
 
 const shareRoutePrefix = '#/share/'
@@ -57,6 +67,14 @@ function positiveIntegerQuery(hash: string, key: string) {
   if (values.length !== 1 || !/^[1-9]\d*$/.test(values[0])) return undefined
   const value = Number(values[0])
   return Number.isSafeInteger(value) ? value : undefined
+}
+
+/** 只接受通知偏好深链，避免把任意查询值带入个人资料页面状态。 */
+function profileSectionQuery(hash: string): AppRoute['profileSection'] {
+  const queryStart = hash.indexOf('?')
+  if (queryStart < 0) return undefined
+  const values = new URLSearchParams(hash.slice(queryStart + 1)).getAll('section')
+  return values.length === 1 && values[0] === 'notifications' ? 'notifications' : undefined
 }
 
 /** 解析临时 hash 路由，并严格限制公开分享令牌的可接受格式。 */
@@ -84,6 +102,7 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash.startsWith('#/console/proxies')) return { view: 'credential-proxies' }
   if (hash.startsWith('#/console/debug-traces')) return { view: 'debug-traces' }
   if (hash.startsWith('#/console/redemption-codes')) return { view: 'redemption-codes' }
+  if (hash.startsWith('#/console/refunds')) return { view: 'refunds' }
   if (hash.startsWith('#/console/subscription-management')) return { view: 'subscription-management' }
   if (hash.startsWith('#/console/subscriptions')) return { view: 'subscriptions' }
   if (hash.startsWith('#/console/routes')) return { view: 'routes' }
@@ -96,12 +115,22 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash.startsWith('#/console/system-settings/groups')) return { view: 'group-settings' }
   if (hash.startsWith('#/console/system-settings/models')) return { view: 'model-settings' }
   if (hash.startsWith('#/console/api-keys')) return { view: 'api-keys' }
+  if (hash.startsWith('#/console/organization-api-keys')) return { view: 'organization-api-keys' }
+  if (hash.startsWith('#/console/organization-activity')) return { view: 'organization-activity' }
+  if (hash.startsWith('#/console/organization-budgets')) return { view: 'organization-budgets' }
+  if (hash.startsWith('#/console/organization-members')) return { view: 'organization-members' }
+  if (hash.startsWith('#/console/organization-wallet')) return { view: 'organization-wallet' }
+  if (hash.startsWith('#/console/organization-settings')) return { view: 'organization-settings' }
+  if (hash === '#/console/organization' || hash.startsWith('#/console/organization?')) return { view: 'organization-overview' }
   if (hash.startsWith('#/console/wallet')) return { view: 'wallet' }
   if (hash.startsWith('#/console/models')) return { view: 'models' }
   if (hash.startsWith('#/console/playground')) return { view: 'playground' }
   if (hash.startsWith('#/console/video-tasks')) return { view: 'video-tasks' }
   if (hash.startsWith('#/console/invitations')) return { view: 'invitations' }
-  if (hash.startsWith('#/console/profile')) return { view: 'profile' }
+  if (hash.startsWith('#/console/profile')) {
+    const section = profileSectionQuery(hash)
+    return section ? { view: 'profile', profileSection: section } : { view: 'profile' }
+  }
   if (hash.startsWith('#/console/tokens')) return { view: 'tokens' }
   if (hash.startsWith('#/console/usage-logs')) return { view: 'usage-logs' }
   if (hash.startsWith('#/console/users')) return { view: 'users' }
@@ -117,6 +146,9 @@ export function routeFromHash(hash: string): AppRoute {
       : { view: 'register' }
   }
   if (hash.startsWith('#/forgot-password')) return { view: 'forgot-password' }
+  if (hash === '#/oauth/callback' || hash.startsWith('#/oauth/callback?')) {
+    return { view: 'oauth-callback' }
+  }
   if (hash.startsWith('#/login')) return { view: 'login' }
   if (hash.startsWith('#/setup')) return { view: 'setup' }
   return { view: 'landing' }

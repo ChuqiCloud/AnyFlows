@@ -1,6 +1,7 @@
 use af_domain::{
-    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ConcurrencyLimit, CredentialKind,
-    Protocol, ProxyId, ResponsesCompactMode, ResponsesCompactProbeResult, Status,
+    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ClientSimulationProfile,
+    ConcurrencyLimit, CredentialId, CredentialKind, CredentialQuotaDimension, Protocol, ProxyId,
+    ResponsesCompactMode, ResponsesCompactProbeResult, Status,
 };
 use sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
 use thiserror::Error;
@@ -8,8 +9,9 @@ use thiserror::Error;
 use crate::{
     CredentialProxyScheme,
     channel_settings::{
-        auto_ban_rules, pool_mode, responses_compact_mode, responses_compact_model_mapping,
-        responses_compact_probe_result, responses_websocket_enabled,
+        auto_ban_rules, client_simulation_profile, pool_mode, responses_compact_mode,
+        responses_compact_model_mapping, responses_compact_probe_result,
+        responses_websocket_enabled, validate_client_simulation_capability,
         validate_responses_compact_capability, validate_responses_compact_model_mapping,
         validate_responses_compact_probe_result, validate_responses_websocket_capability,
     },
@@ -18,6 +20,8 @@ use crate::{
 };
 
 use super::{ChannelModelMappings, ChannelParameterOverrides, SchedulerRuntimeProxyRecord};
+
+const SHADOW_REFERENCE_KEY_ID: &str = "shadow-reference";
 
 /// 将持久化实体转换为运行时选择策略可理解的内部来源对象时发生的不变量错误。
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
@@ -38,6 +42,7 @@ pub(super) struct SchedulerRuntimeChannelSource {
     headers: Vec<(String, String)>,
     auto_ban_rules: ChannelAutoBanRules,
     pool_mode: bool,
+    client_simulation_profile: Option<ClientSimulationProfile>,
     responses_websocket_enabled: bool,
     responses_compact_mode: ResponsesCompactMode,
     responses_compact_probe_result: ResponsesCompactProbeResult,
@@ -89,6 +94,10 @@ impl SchedulerRuntimeChannelSource {
         let auto_ban_rules =
             auto_ban_rules(&settings).map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         let pool_mode = pool_mode(&settings).map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        let client_simulation_profile = client_simulation_profile(&settings)
+            .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        validate_client_simulation_capability(channel_type, protocol, client_simulation_profile)
+            .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         let responses_websocket_enabled = responses_websocket_enabled(&settings)
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         validate_responses_websocket_capability(
@@ -128,6 +137,7 @@ impl SchedulerRuntimeChannelSource {
             headers,
             auto_ban_rules,
             pool_mode,
+            client_simulation_profile,
             responses_websocket_enabled,
             responses_compact_mode,
             responses_compact_probe_result,
@@ -185,6 +195,11 @@ impl SchedulerRuntimeChannelSource {
         self.pool_mode
     }
 
+    /// 返回渠道显式选择的版本化客户端仿真档案。
+    pub(super) const fn client_simulation_profile(&self) -> Option<ClientSimulationProfile> {
+        self.client_simulation_profile
+    }
+
     /// 返回渠道显式开启的 Responses WebSocket 能力。
     pub(super) const fn responses_websocket_enabled(&self) -> bool {
         self.responses_websocket_enabled
@@ -208,7 +223,11 @@ impl SchedulerRuntimeChannelSource {
 
 /// 已从数据库实体中提取并校验的凭据运行时来源。
 pub(super) struct SchedulerRuntimeCredentialSource {
-    credential_id: i64,
+    routing_credential_id: CredentialId,
+    secret_owner_id: CredentialId,
+    concurrency_owner_id: CredentialId,
+    shared_health_id: CredentialId,
+    quota_dimension: CredentialQuotaDimension,
     channel_id: ChannelId,
     credential_kind: CredentialKind,
     envelope: EncryptedCredentialEnvelope,
@@ -219,17 +238,18 @@ pub(super) struct SchedulerRuntimeCredentialSource {
     rate_limit_reset_at: Option<TimeDateTimeWithTimeZone>,
     overload_until: Option<TimeDateTimeWithTimeZone>,
     temp_unschedulable_until: Option<TimeDateTimeWithTimeZone>,
+    shared_auth_unschedulable_until: Option<TimeDateTimeWithTimeZone>,
 }
 
 impl SchedulerRuntimeCredentialSource {
     /// 从 SeaORM 凭据实体提取运行时所需字段；禁用、删除或不可调度凭据直接 fail-closed 跳过。
     pub(super) fn from_entity(
         credential: credentials::Model,
+        parent: Option<credentials::Model>,
         proxy: Option<SchedulerRuntimeProxyRecord>,
     ) -> Result<Option<Self>, SchedulerRuntimeSourceError> {
-        if credential.id <= 0 {
-            return Err(SchedulerRuntimeSourceError::Invariant);
-        }
+        let routing_credential_id =
+            CredentialId::new(credential.id).map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         let status = Status::try_from(credential.status)
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         if !status.is_enabled()
@@ -246,31 +266,94 @@ impl SchedulerRuntimeCredentialSource {
             .kind
             .parse()
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
-        let (key_id, nonce, ciphertext) = credential
+        let quota_dimension = credential
+            .quota_dimension
+            .parse::<CredentialQuotaDimension>()
+            .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        let (secret_owner, secret_owner_id, concurrency, shared_auth_unschedulable_until) =
+            match quota_dimension {
+                CredentialQuotaDimension::Global => {
+                    if credential.parent_id.is_some() || parent.is_some() {
+                        return Err(SchedulerRuntimeSourceError::Invariant);
+                    }
+                    (
+                        credential.clone(),
+                        routing_credential_id,
+                        parse_concurrency(credential.concurrency)?,
+                        None,
+                    )
+                }
+                CredentialQuotaDimension::Spark => {
+                    let parent = parent.ok_or(SchedulerRuntimeSourceError::Invariant)?;
+                    let parent_id = CredentialId::new(parent.id)
+                        .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+                    let parent_status = Status::try_from(parent.status)
+                        .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+                    if !parent_status.is_enabled()
+                        || parent.oauth_token_pending
+                        || parent.deleted_at.is_some()
+                    {
+                        return Ok(None);
+                    }
+                    let parent_kind = parent
+                        .kind
+                        .parse::<CredentialKind>()
+                        .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+                    let parent_dimension = parent
+                        .quota_dimension
+                        .parse::<CredentialQuotaDimension>()
+                        .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+                    let shadow_marker = credential
+                        .secret
+                        .envelope_parts()
+                        .map_err(|_| SchedulerRuntimeSourceError::Invariant)?
+                        .0;
+                    if credential_kind != CredentialKind::Oauth
+                        || credential.parent_id != Some(parent.id)
+                        || credential.proxy_id.is_some()
+                        || credential.concurrency.is_some()
+                        || credential.oauth_provider.is_some()
+                        || credential.oauth_account_key.is_some()
+                        || credential.oauth_project_id.is_some()
+                        || shadow_marker != SHADOW_REFERENCE_KEY_ID
+                        || parent_kind != CredentialKind::Oauth
+                        || parent.parent_id.is_some()
+                        || parent_dimension != CredentialQuotaDimension::Global
+                    {
+                        return Err(SchedulerRuntimeSourceError::Invariant);
+                    }
+                    let concurrency = parse_concurrency(parent.concurrency)?;
+                    let shared_auth_unschedulable_until = shared_auth_unschedulable_until(&parent)?;
+                    (
+                        parent,
+                        parent_id,
+                        concurrency,
+                        shared_auth_unschedulable_until,
+                    )
+                }
+            };
+        let (key_id, nonce, ciphertext) = secret_owner
             .secret
             .envelope_parts()
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        if key_id == SHADOW_REFERENCE_KEY_ID {
+            return Err(SchedulerRuntimeSourceError::Invariant);
+        }
         let envelope = EncryptedCredentialEnvelope::new(key_id, nonce, ciphertext)
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         let weight =
             u32::try_from(credential.weight).map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
-        let concurrency = match credential.concurrency {
-            None | Some(0) => None,
-            Some(value) if value > 0 => Some(
-                u32::try_from(value)
-                    .ok()
-                    .and_then(|value| ConcurrencyLimit::new(value).ok())
-                    .ok_or(SchedulerRuntimeSourceError::Invariant)?,
-            ),
-            Some(_) => return Err(SchedulerRuntimeSourceError::Invariant),
-        };
-        if credential.proxy_id.is_some() != proxy.is_some()
-            || credential.proxy_id != proxy.as_ref().map(|proxy| proxy.proxy_id().get())
+        if secret_owner.proxy_id.is_some() != proxy.is_some()
+            || secret_owner.proxy_id != proxy.as_ref().map(|proxy| proxy.proxy_id().get())
         {
             return Err(SchedulerRuntimeSourceError::Invariant);
         }
         Ok(Some(Self {
-            credential_id: credential.id,
+            routing_credential_id,
+            secret_owner_id,
+            concurrency_owner_id: secret_owner_id,
+            shared_health_id: secret_owner_id,
+            quota_dimension,
             channel_id,
             credential_kind,
             envelope,
@@ -281,6 +364,7 @@ impl SchedulerRuntimeCredentialSource {
             rate_limit_reset_at: credential.rate_limit_reset_at,
             overload_until: credential.overload_until,
             temp_unschedulable_until: credential.temp_unschedulable_until,
+            shared_auth_unschedulable_until,
         }))
     }
 
@@ -295,6 +379,7 @@ impl SchedulerRuntimeCredentialSource {
             self.rate_limit_reset_at.as_ref(),
             self.overload_until.as_ref(),
             self.temp_unschedulable_until.as_ref(),
+            self.shared_auth_unschedulable_until.as_ref(),
         ]
         .into_iter()
         .flatten()
@@ -305,7 +390,11 @@ impl SchedulerRuntimeCredentialSource {
     pub(super) fn into_runtime_parts(
         self,
     ) -> (
-        i64,
+        CredentialId,
+        CredentialId,
+        CredentialId,
+        CredentialId,
+        CredentialQuotaDimension,
         CredentialKind,
         EncryptedCredentialEnvelope,
         Option<SchedulerRuntimeProxyRecord>,
@@ -314,7 +403,11 @@ impl SchedulerRuntimeCredentialSource {
         Option<ConcurrencyLimit>,
     ) {
         (
-            self.credential_id,
+            self.routing_credential_id,
+            self.secret_owner_id,
+            self.concurrency_owner_id,
+            self.shared_health_id,
+            self.quota_dimension,
             self.credential_kind,
             self.envelope,
             self.proxy,
@@ -322,6 +415,38 @@ impl SchedulerRuntimeCredentialSource {
             self.weight,
             self.concurrency,
         )
+    }
+}
+
+fn parse_concurrency(
+    value: Option<i32>,
+) -> Result<Option<ConcurrencyLimit>, SchedulerRuntimeSourceError> {
+    match value {
+        None | Some(0) => Ok(None),
+        Some(value) if value > 0 => u32::try_from(value)
+            .ok()
+            .and_then(|value| ConcurrencyLimit::new(value).ok())
+            .map(Some)
+            .ok_or(SchedulerRuntimeSourceError::Invariant),
+        Some(_) => Err(SchedulerRuntimeSourceError::Invariant),
+    }
+}
+
+fn shared_auth_unschedulable_until(
+    parent: &credentials::Model,
+) -> Result<Option<TimeDateTimeWithTimeZone>, SchedulerRuntimeSourceError> {
+    match (
+        parent.temp_unschedulable_until.as_ref(),
+        parent.temp_unschedulable_reason.as_deref(),
+    ) {
+        (None, None) => Ok(None),
+        (Some(_), Some("quota_exhausted")) => Ok(None),
+        (Some(until), Some("auth_expired" | "oauth_refresh_transient")) => {
+            Ok(Some(until.to_owned()))
+        }
+        // 未识别的共享冷却原因不能放行引用同一密钥的影子。
+        (Some(until), Some(_)) => Ok(Some(until.to_owned())),
+        _ => Err(SchedulerRuntimeSourceError::Invariant),
     }
 }
 

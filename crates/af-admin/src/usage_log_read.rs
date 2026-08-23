@@ -4,7 +4,7 @@ use af_db::{
     AdminUsageLogRecord, AdminUsageLogRepository, AdminUsageLogRepositoryError,
     MAX_ADMIN_USAGE_LOG_PAGE_SIZE, UsageLogVideoResolution,
 };
-use af_domain::{GroupId, TokenId, UserId};
+use af_domain::{GroupId, OrganizationId, OrganizationTeamId, TokenId, UserId};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -54,7 +54,7 @@ impl Default for AdminUsageLogListQuery {
 }
 
 /// 管理 API 使用的稳定计费模式。
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AdminUsageLogBillingMode {
     /// 按 token 计费。
@@ -131,7 +131,7 @@ pub enum AdminUsageLogVideoResolution {
 }
 
 /// 调用日志公开的客户端入口协议。
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UsageLogProtocol {
     OpenAiChat,
@@ -167,7 +167,7 @@ impl UsageLogProtocol {
 }
 
 /// 调用日志公开的规范化操作类型。
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UsageLogOperation {
     Chat,
@@ -304,8 +304,11 @@ pub struct AdminUsageLog {
     id: i64,
     event_id: String,
     user_id: UserId,
+    username: String,
     token_id: TokenId,
     group_id: GroupId,
+    organization_id: Option<OrganizationId>,
+    organization_team_id: Option<OrganizationTeamId>,
     billing_mode: AdminUsageLogBillingMode,
     usage: AdminUsageLogUsage,
     source: AdminUsageLogSource,
@@ -345,6 +348,12 @@ impl AdminUsageLog {
         self.user_id
     }
 
+    /// 返回调用所属用户的当前用户名。
+    #[must_use]
+    pub fn username(&self) -> &str {
+        &self.username
+    }
+
     /// 返回令牌标识。
     #[must_use]
     pub const fn token_id(&self) -> TokenId {
@@ -355,6 +364,18 @@ impl AdminUsageLog {
     #[must_use]
     pub const fn group_id(&self) -> GroupId {
         self.group_id
+    }
+
+    /// 返回调用固化的企业归属；个人调用为空。
+    #[must_use]
+    pub const fn organization_id(&self) -> Option<OrganizationId> {
+        self.organization_id
+    }
+
+    /// 返回调用固化的企业团队归属。
+    #[must_use]
+    pub const fn organization_team_id(&self) -> Option<OrganizationTeamId> {
+        self.organization_team_id
     }
 
     /// 返回计费模式。
@@ -465,14 +486,17 @@ impl AdminUsageLog {
         self.created_at
     }
 
-    fn from_record(record: AdminUsageLogRecord) -> Result<Self, AdminUsageLogReadError> {
+    pub(crate) fn from_record(record: AdminUsageLogRecord) -> Result<Self, AdminUsageLogReadError> {
         let usage = record.usage();
         Ok(Self {
             id: record.id(),
             event_id: record.event_id().to_owned(),
             user_id: record.user_id(),
+            username: record.username().to_owned(),
             token_id: record.token_id(),
             group_id: record.group_id(),
+            organization_id: record.organization_id(),
+            organization_team_id: record.organization_team_id(),
             billing_mode: AdminUsageLogBillingMode::from_database(record.billing_mode())?,
             usage: AdminUsageLogUsage {
                 input_tokens: usage.input_tokens(),

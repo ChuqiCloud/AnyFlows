@@ -2,7 +2,7 @@ use std::{future::Future, pin::Pin};
 
 use af_domain::{AfError, ConcurrencyLimit, GatewayPrincipal, Protocol};
 use af_protocol::CanonicalRequestEnvelope;
-use af_relay::{ChatResponse, RelayService};
+use af_relay::{ChatResponse, RelayDiagnosticInput, RelayService};
 
 /// Chat 业务服务的一次异步调用结果，保持完整响应与流式 usage 句柄不变。
 pub type ChatServiceFuture<'a> =
@@ -20,6 +20,7 @@ pub trait ChatService: Send + Sync {
         request: CanonicalRequestEnvelope,
         response_protocol: Protocol,
         request_id: &'a str,
+        diagnostic: RelayDiagnosticInput,
     ) -> ChatServiceFuture<'a>;
 }
 
@@ -31,6 +32,7 @@ impl ChatService for RelayService {
         request: CanonicalRequestEnvelope,
         response_protocol: Protocol,
         request_id: &'a str,
+        _diagnostic: RelayDiagnosticInput,
     ) -> ChatServiceFuture<'a> {
         Box::pin(async move {
             RelayService::chat_completions(self, principal, request, response_protocol, request_id)
@@ -58,6 +60,7 @@ mod tests {
             _request: CanonicalRequestEnvelope,
             _response_protocol: Protocol,
             _request_id: &'a str,
+            _diagnostic: RelayDiagnosticInput,
         ) -> ChatServiceFuture<'a> {
             Box::pin(async {
                 Ok(ChatResponse::Full {
@@ -91,6 +94,12 @@ mod tests {
                 request,
                 Protocol::OpenAiChat,
                 "request-id",
+                RelayDiagnosticInput::capture(
+                    "POST",
+                    "/v1/chat/completions",
+                    &http::HeaderMap::new(),
+                    &axum::body::Bytes::from_static(b"{}"),
+                ),
             )
             .await
             .unwrap();

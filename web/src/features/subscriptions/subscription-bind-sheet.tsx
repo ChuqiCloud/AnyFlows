@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import type { AdminSubscriptionPlan, AdminUser } from '@/lib/api/generated/types.gen'
 import {
   subscriptionErrorCode,
@@ -32,14 +33,13 @@ export function SubscriptionBindSheet({
   plans,
   plansQuery,
 }: SubscriptionBindSheetProps) {
-  const { i18n, t } = useTranslation()
+  const { t } = useTranslation()
+  const { formatQuota } = useBalanceDisplay()
   const mutation = useBindAdminUserSubscription()
   const resetMutation = mutation.reset
   const activePlans = useMemo(() => plans.filter((plan) => plan.status === 'active'), [plans])
   const [planId, setPlanId] = useState('')
   const selectedPlan = activePlans.find((plan) => plan.plan_id === planId)
-  const locale = i18n.resolvedLanguage === 'zh' ? 'zh-CN' : 'en-US'
-  const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale])
 
   useEffect(() => {
     if (!open) return
@@ -125,7 +125,7 @@ export function SubscriptionBindSheet({
 
           {selectedPlan ? (
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-y border-[var(--hairline)] py-3 text-xs text-muted-foreground">
-              <span>{t('subscriptions.bind.planQuota', { value: numberFormat.format(selectedPlan.quota_amount) })}</span>
+              <span>{t('subscriptions.bind.planQuota', { value: formatQuota(selectedPlan.quota_amount) })}</span>
               <span>{t('subscriptions.bind.planCycle', { value: t(`subscriptions.cycle.${selectedPlan.cycle}`) })}</span>
               <span>{t('subscriptions.bind.planVersion', { version: selectedPlan.version })}</span>
             </div>

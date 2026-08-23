@@ -35,6 +35,7 @@ mod management_model_prices;
 mod management_model_sync;
 mod management_model_writes;
 mod management_models;
+mod management_refunds;
 mod management_route_writes;
 mod management_routes;
 mod management_session;
@@ -48,6 +49,7 @@ mod middleware;
 mod model_catalog;
 mod network_settings;
 mod oauth_connections;
+mod oauth_login;
 mod openai_audio;
 mod openai_embeddings;
 mod openai_images;
@@ -56,12 +58,20 @@ mod openai_responses_compact;
 mod openai_speech;
 mod openapi;
 mod operations;
+mod organization_activity;
+mod organization_budget;
+mod organization_tokens;
+mod organization_wallet;
+mod organizations;
+mod passkey_auth;
 mod password_reset;
 mod payment_settings;
 mod payment_webhook;
+mod platform_audit;
 mod playground_conversations;
 mod playground_shares;
 mod redemption;
+mod refund_webhook;
 mod registration;
 mod rerank;
 mod rerank_service;
@@ -72,6 +82,8 @@ mod site_settings;
 mod speech_service;
 mod streaming;
 mod subscriptions;
+mod turnstile;
+mod user_notifications;
 mod user_profile;
 mod user_tokens;
 mod user_topups;
@@ -81,6 +93,12 @@ mod wallet_query;
 mod xai_video;
 
 pub use audio_service::{AudioService, AudioServiceFuture};
+pub use axum::{
+    Router,
+    body::{Body, to_bytes},
+    http,
+    response::Response,
+};
 pub use channel_probe::{AdminChannelProbe, AdminChannelProbeFuture, AdminChannelProbeOutcome};
 pub use chat_service::{ChatService, ChatServiceFuture};
 pub use credentials::{ApiKeyExtractionError, QueryApiKeyPolicy, extract_presented_api_key};
@@ -101,12 +119,19 @@ pub use openapi::openapi_document;
 pub use operations::{
     HEALTH_PATH, READINESS_PATH, ReadinessFuture, ReadinessHandle, ReadinessProbe,
 };
+pub use organization_activity::build_organization_activity_router;
+pub use organization_budget::build_organization_budget_router;
+pub use organization_tokens::build_organization_token_router;
+pub use organization_wallet::build_organization_wallet_router;
+pub use organizations::build_organization_router;
 pub use payment_webhook::{PaymentWebhookProcessorRegistry, build_payment_webhook_router};
+pub use refund_webhook::{RefundReceiptProcessorRegistry, build_refund_receipt_webhook_router};
 pub use rerank_service::{RerankService, RerankServiceFuture};
 pub use responses_compact_service::{ResponsesCompactService, ResponsesCompactServiceFuture};
 pub use router::{DEFAULT_REQUEST_BODY_LIMIT_BYTES, HttpRouter, build_router};
 pub use serve::{HttpListener, ServeError, ServeOutcome, serve_with_graceful_shutdown};
 pub use speech_service::{SpeechService, SpeechServiceFuture};
+pub use turnstile::{TurnstileVerification, TurnstileVerificationFuture, TurnstileVerifier};
 pub use video_task_service::{
     VideoTaskListCursor, VideoTaskListFuture, VideoTaskListItem, VideoTaskPage, VideoTaskService,
     VideoTaskServiceFuture, VideoTaskSnapshot,
@@ -143,7 +168,11 @@ mod network_settings_tests;
 #[cfg(test)]
 mod oauth_connections_tests;
 #[cfg(test)]
+mod oauth_login_tests;
+#[cfg(test)]
 mod operations_tests;
+#[cfg(test)]
+mod passkey_auth_tests;
 #[cfg(test)]
 mod password_reset_tests;
 #[cfg(test)]

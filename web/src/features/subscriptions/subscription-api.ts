@@ -1,13 +1,17 @@
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { apiClient, ApiError } from '@/lib/api'
 import {
   bindAdminUserSubscription,
   createAdminSubscriptionPlan,
+  createCurrentSubscriptionOrder,
   disableAdminSubscriptionPlan,
   listAdminSubscriptionPlans,
   listAdminUserSubscriptions,
+  listCurrentSubscriptionCatalog,
   listCurrentUserSubscriptions,
+  getCurrentSubscriptionOrder,
+  submitCurrentSubscriptionOrderPayment,
   transitionAdminUserSubscriptionLifecycle,
 } from '@/lib/api/generated/sdk.gen'
 import type {
@@ -15,21 +19,25 @@ import type {
   AdminSubscriptionPlanDisableRequest,
   AdminUserSubscriptionBindRequest,
   AdminUserSubscriptionLifecycleRequest,
+  SubscriptionOrderCreateRequest,
+  SubscriptionOrderPaymentRequest,
 } from '@/lib/api/generated/types.gen'
 
 export const adminSubscriptionPlansQueryKey = ['admin-subscription-plans'] as const
 export const adminUserSubscriptionsQueryKey = ['admin-user-subscriptions'] as const
 export const currentUserSubscriptionsQueryKey = ['current-user-subscriptions'] as const
+export const currentSubscriptionCatalogQueryKey = ['current-subscription-catalog'] as const
+export const currentSubscriptionOrderQueryKey = ['current-subscription-order'] as const
 
 /** 按计划主键倒序读取管理员计划目录。 */
-export function useAdminSubscriptionPlans() {
+export function useAdminSubscriptionPlans(pageSize = 25) {
   return useInfiniteQuery({
-    queryKey: adminSubscriptionPlansQueryKey,
+    queryKey: [...adminSubscriptionPlansQueryKey, { pageSize }],
     initialPageParam: undefined as number | undefined,
     queryFn: async ({ pageParam, signal }) => {
       const { data } = await listAdminSubscriptionPlans({
         client: apiClient,
-        query: { before: pageParam, limit: 25 },
+        query: { before: pageParam, limit: pageSize },
         signal,
       })
       return data
@@ -72,6 +80,69 @@ export function useCurrentUserSubscriptions() {
       return data
     },
     getNextPageParam: (page) => page.next_cursor ?? undefined,
+  })
+}
+
+/** 读取当前会话可购买的计划与服务端筛选后的价格快照。 */
+export function useCurrentSubscriptionCatalog() {
+  return useQuery({
+    queryKey: currentSubscriptionCatalogQueryKey,
+    queryFn: async ({ signal }) => {
+      const { data } = await listCurrentSubscriptionCatalog({
+        client: apiClient,
+        signal,
+      })
+      return data
+    },
+  })
+}
+
+/** 为当前用户创建或幂等恢复一笔待支付订阅订单。 */
+export function useCreateCurrentSubscriptionOrder() {
+  return useMutation({
+    mutationFn: async (body: SubscriptionOrderCreateRequest) => {
+      const { data } = await createCurrentSubscriptionOrder({ body, client: apiClient })
+      return data
+    },
+  })
+}
+
+/** 读取当前用户可见的单笔订单，用于支付返回后的状态核对和原订单恢复。 */
+export function useCurrentSubscriptionOrder(orderId: string | undefined) {
+  return useQuery({
+    queryKey: [...currentSubscriptionOrderQueryKey, orderId],
+    enabled: orderId !== undefined,
+    queryFn: async ({ signal }) => {
+      if (orderId === undefined) throw new Error('缺少订阅订单 ID')
+      const { data } = await getCurrentSubscriptionOrder({
+        client: apiClient,
+        path: { order_id: orderId },
+        signal,
+      })
+      return data
+    },
+  })
+}
+
+/** 提交或恢复同一订阅订单的 Provider 支付会话，不在客户端推导支付结果。 */
+export function useSubmitCurrentSubscriptionOrderPayment() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    gcTime: 0,
+    mutationFn: async ({ orderId, body }: { orderId: string; body: SubscriptionOrderPaymentRequest }) => {
+      const { data } = await submitCurrentSubscriptionOrderPayment({
+        body,
+        client: apiClient,
+        path: { order_id: orderId },
+      })
+      return data
+    },
+    onSuccess: (data) => {
+      // 支付确认后重新读取订阅事实，界面不能从订单状态臆造已生效。
+      if (data.order.status === 'paid') {
+        void queryClient.invalidateQueries({ queryKey: currentUserSubscriptionsQueryKey })
+      }
+    },
   })
 }
 

@@ -96,7 +96,12 @@ export function validateRouteForm(values: RouteFormValues): RouteFormErrors {
 
   const mapping = Object.create(null) as Record<string, string>
   for (const row of values.modelMapping) {
-    if (!validText(row.source, 255) || !validText(row.target, 255) || row.source in mapping) {
+    if (
+      !validPattern(row.source, 'pattern')
+      || !validText(row.target, 256)
+      || row.target.trim() !== row.target
+      || row.source in mapping
+    ) {
       errors.mapping = 'invalidMapping'
       break
     }
@@ -171,9 +176,16 @@ function validText(value: string, maximumBytes: number) {
 }
 
 function validPattern(value: string, mode: AdminRouteMode) {
-  if (!validText(value, 255)) return false
+  if (!validText(value, 255) || value.trim() !== value) return false
   if (mode === 'explicit_group') return !value.startsWith('re:')
-  return !value.startsWith('re:') || value.length > 3
+  if (!value.startsWith('re:')) return true
+  if (value.length <= 3) return false
+  try {
+    RegExp(value.slice(3))
+    return true
+  } catch {
+    return false
+  }
 }
 
 function parseNonNegativeInt32(value: string) {

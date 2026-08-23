@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { DataTablePagination } from '@/components/data-table/data-table-pagination'
+import { useClientTablePagination } from '@/components/data-table/use-table-pagination'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { IssuedUserToken, UserToken } from '@/lib/api/generated/types.gen'
 import { useApiKeys, useUpdateApiKey } from './api-key-api'
@@ -24,6 +26,8 @@ export function ApiKeyPage() {
   const [issued, setIssued] = useState<IssuedUserToken>()
   const [togglingId, setTogglingId] = useState<number>()
   const tokens = keysQuery.data?.tokens ?? []
+  const pagination = useClientTablePagination(tokens.length)
+  const visibleTokens = tokens.slice(pagination.startIndex, pagination.endIndex)
   const capacity = keysQuery.data?.capacity
   const atCapacity = capacity !== undefined && tokens.length >= capacity
   const activeCount = tokens.filter(isApiKeyAvailable).length
@@ -87,8 +91,24 @@ export function ApiKeyPage() {
           <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => void keysQuery.refetch()}>{t('apiKeys.actions.retry')}</Button>
         </div>
       ) : (
-        <ApiKeyTable tokens={tokens} togglingId={togglingId} onDelete={setDeleting} onEdit={setEditor} onToggle={(token) => void toggle(token)} />
+        <ApiKeyTable tokens={visibleTokens} togglingId={togglingId} onDelete={setDeleting} onEdit={setEditor} onToggle={(token) => void toggle(token)} />
       )}
+
+      {!keysQuery.isPending && !keysQuery.isError ? (
+        <DataTablePagination
+          currentPage={pagination.currentPage}
+          availablePageCount={pagination.availablePageCount}
+          pageSize={pagination.pageSize}
+          itemCount={visibleTokens.length}
+          hasNextPage={pagination.hasNextPage}
+          fetching={keysQuery.isFetching}
+          onFirstPage={pagination.goToFirstPage}
+          onPreviousPage={pagination.goToPreviousPage}
+          onPageSelect={pagination.selectPage}
+          onNextPage={pagination.goToNextPage}
+          onPageSizeChange={pagination.setPageSize}
+        />
+      ) : null}
 
       <ApiKeyEditorSheet open={editor !== undefined} token={editor === 'create' ? undefined : editor} onOpenChange={(open) => !open && setEditor(undefined)} onIssued={setIssued} />
       <IssuedApiKeyDialog issued={issued} onClose={() => setIssued(undefined)} />

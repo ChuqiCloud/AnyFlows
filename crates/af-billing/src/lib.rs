@@ -14,6 +14,7 @@ mod payment_webhook;
 mod pricing;
 mod pricing_snapshot;
 pub mod quota_math;
+mod refund;
 mod refund_signal_consumer;
 mod refund_signal_queue;
 mod stripe;
@@ -24,7 +25,7 @@ mod usage_record_queue;
 mod video_pricing;
 
 /// 已通过 webhook 处理器校验的持久化事件写入值。
-pub use af_db::TopupPaymentEventWrite;
+pub use af_db::{RefundSubmissionOutcome, TopupPaymentEventWrite};
 pub use batch::{
     BillingBatch, BillingBatchApplyOutcome, BillingBatchError, BillingBatchEvent,
     BillingBatchFlushOutcome, BillingBatchRecordOutcome, BillingBatchSink, BillingBatchSinkError,
@@ -71,14 +72,17 @@ pub use multimodal::{
 };
 pub use payment_order::{
     MAX_PAYMENT_CLIENT_SECRET_BYTES, MAX_PAYMENT_REDIRECT_URL_BYTES, PaymentCheckoutAction,
-    PaymentClientSecret, PaymentOrderFuture, PaymentOrderInputError, PaymentOrderProvider,
-    PaymentOrderProviderError, PaymentOrderRecoveryRequest, PaymentOrderRequest,
-    PaymentOrderSession, PaymentRedirectUrl,
+    PaymentClientSecret, PaymentOrderFuture, PaymentOrderId, PaymentOrderInputError,
+    PaymentOrderProvider, PaymentOrderProviderError, PaymentOrderRecoveryRequest,
+    PaymentOrderRequest, PaymentOrderSession, PaymentRedirectUrl,
 };
 pub use payment_webhook::{
-    MAX_PAYMENT_WEBHOOK_HEADER_NAME_BYTES, MAX_PAYMENT_WEBHOOK_HEADER_VALUE_BYTES,
-    MAX_PAYMENT_WEBHOOK_HEADERS, MAX_PAYMENT_WEBHOOK_PAYLOAD_BYTES, PaymentProvider,
-    PaymentWebhookHeader, PaymentWebhookInputError, PaymentWebhookRequest,
+    DatabasePaymentWebhookRouter, MAX_PAYMENT_WEBHOOK_HEADER_NAME_BYTES,
+    MAX_PAYMENT_WEBHOOK_HEADER_VALUE_BYTES, MAX_PAYMENT_WEBHOOK_HEADERS,
+    MAX_PAYMENT_WEBHOOK_PAYLOAD_BYTES, PaymentProvider, PaymentWebhookEventRouter,
+    PaymentWebhookHandler, PaymentWebhookHandlerError, PaymentWebhookHandlerFuture,
+    PaymentWebhookHandlerOutcome, PaymentWebhookHeader, PaymentWebhookInputError,
+    PaymentWebhookProcessor, PaymentWebhookRequest, PaymentWebhookRouteFuture,
     PaymentWebhookVerificationError, PaymentWebhookVerifier, TopupPaymentEventFuture,
     TopupPaymentEventPort, TopupPaymentEventPortError, TopupWebhookOutcome, TopupWebhookProcessor,
     TopupWebhookProcessorError, VerifiedTopupPaymentEvent,
@@ -92,6 +96,14 @@ pub use pricing_snapshot::{
     RequestPricingSnapshotSource,
 };
 pub use quota_math::quota_from_cny_minor;
+pub use refund::{
+    RefundProvider, RefundProviderError, RefundProviderFuture, RefundProviderInputError,
+    RefundProviderRecoveryRequest, RefundProviderRequest, RefundProviderResult,
+    RefundReceiptHandler, RefundReceiptHandlerFuture, RefundReceiptHandlerOutcome,
+    RefundReceiptProcessor, RefundReceiptProcessorError, RefundReceiptVerificationError,
+    RefundReceiptVerifier, RefundSubmissionProcessor, RefundSubmissionProcessorError,
+    VerifiedRefundReceipt,
+};
 pub use refund_signal_consumer::{
     RefundSignalConsumer, RefundSignalConsumerError, RefundSignalSink, RefundSignalSinkError,
     RefundSignalSinkFuture,

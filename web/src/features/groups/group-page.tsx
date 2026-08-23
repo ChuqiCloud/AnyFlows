@@ -3,6 +3,8 @@ import { Plus, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import { DataTablePagination } from '@/components/data-table/data-table-pagination'
+import { useClientTablePagination } from '@/components/data-table/use-table-pagination'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { AdminGroup } from '@/lib/api/generated/types.gen'
 import { useAdminGroupCatalog } from './group-api'
@@ -19,6 +21,8 @@ export function GroupPage() {
   const [editor, setEditor] = useState<EditorState>()
   const [deleting, setDeleting] = useState<AdminGroup>()
   const groups = groupsQuery.data ?? []
+  const pagination = useClientTablePagination(groups.length)
+  const visibleGroups = groups.slice(pagination.startIndex, pagination.endIndex)
   const exclusiveCount = groups.filter((group) => group.is_exclusive).length
   const peakCount = groups.filter((group) => group.peak_ratio_micros !== null).length
 
@@ -52,7 +56,23 @@ export function GroupPage() {
           <p className="mt-1 text-xs text-muted-foreground">{t('groups.error.body')}</p>
           <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => void groupsQuery.refetch()}>{t('groups.actions.retry')}</Button>
         </div>
-      ) : <GroupTable groups={groups} onDelete={setDeleting} onEdit={setEditor} />}
+      ) : <GroupTable groups={visibleGroups} onDelete={setDeleting} onEdit={setEditor} />}
+
+      {!groupsQuery.isPending && !groupsQuery.isError ? (
+        <DataTablePagination
+          currentPage={pagination.currentPage}
+          availablePageCount={pagination.availablePageCount}
+          pageSize={pagination.pageSize}
+          itemCount={visibleGroups.length}
+          hasNextPage={pagination.hasNextPage}
+          fetching={groupsQuery.isFetching}
+          onFirstPage={pagination.goToFirstPage}
+          onPreviousPage={pagination.goToPreviousPage}
+          onPageSelect={pagination.selectPage}
+          onNextPage={pagination.goToNextPage}
+          onPageSizeChange={pagination.setPageSize}
+        />
+      ) : null}
 
       <GroupEditorSheet
         open={editor !== undefined}

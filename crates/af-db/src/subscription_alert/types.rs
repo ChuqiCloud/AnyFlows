@@ -19,6 +19,7 @@ pub struct SubscriptionBalanceAlertDeliveryLease {
     pub(super) threshold_percent: i16,
     pub(super) attempt_count: i16,
     pub(super) version: i64,
+    pub(super) notification_source_key: String,
 }
 
 impl SubscriptionBalanceAlertDeliveryLease {

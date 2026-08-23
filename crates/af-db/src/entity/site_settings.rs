@@ -17,6 +17,14 @@ pub struct Model {
     pub brand_tagline: Option<String>,
     #[sea_orm(column_type = "String(StringLen::N(500))", nullable)]
     pub brand_description: Option<String>,
+    pub balance_display_mode: i16,
+    #[sea_orm(column_type = "String(StringLen::N(64))")]
+    pub balance_unit_name: String,
+    #[sea_orm(column_type = "String(StringLen::N(24))")]
+    pub balance_unit_symbol: String,
+    pub quota_units_per_display_unit: i64,
+    pub balance_symbol_position: i16,
+    pub balance_fraction_digits: i16,
     pub version: i64,
     pub created_at: TimeDateTimeWithTimeZone,
     pub updated_at: TimeDateTimeWithTimeZone,

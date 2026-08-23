@@ -3,6 +3,7 @@ use std::sync::Arc;
 use af_admin::{
     AdminDebugTrace, AdminDebugTraceAttempt, AdminDebugTraceError, AdminDebugTraceListQuery,
     AdminDebugTraceService, AdminDebugTraceSettings, AdminDebugTraceSettingsCommand,
+    AdminDebugTraceSnapshotScope, AdminDebugTraceSnapshots,
 };
 use axum::{
     Json, Router,
@@ -35,6 +36,10 @@ pub(crate) struct AdminDebugTraceSettingsResponse {
     sample_per_million: i64,
     #[schema(minimum = 1, maximum = 720)]
     retention_hours: i32,
+    capture_headers: bool,
+    capture_bodies: bool,
+    #[schema(minimum = 1024, maximum = 65536)]
+    max_body_bytes: i32,
     #[schema(minimum = 1)]
     version: i64,
 }
@@ -48,6 +53,10 @@ pub(crate) struct AdminDebugTraceSettingsRequest {
     sample_per_million: i64,
     #[schema(minimum = 1, maximum = 720)]
     retention_hours: i32,
+    capture_headers: bool,
+    capture_bodies: bool,
+    #[schema(minimum = 1024, maximum = 65536)]
+    max_body_bytes: i32,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -83,6 +92,57 @@ pub(crate) struct AdminDebugTraceAttemptResponse {
     upstream_status: Option<i16>,
     retry_decision: bool,
     elapsed_ms: i64,
+    #[schema(
+        value_type = Option<crate::openapi::schema::ClientSimulationProfileSchema>
+    )]
+    client_simulation_profile: Option<String>,
+    #[schema(value_type = Option<crate::openapi::schema::ClientSimulationResultSchema>)]
+    client_simulation_result: Option<String>,
+    request_method: Option<String>,
+    request_url: Option<String>,
+    response_status: Option<i16>,
+    response_streamed: bool,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminDebugTraceDownstreamRequest)]
+pub(crate) struct AdminDebugTraceDownstreamRequestResponse {
+    method: String,
+    path: String,
+}
+
+#[derive(Clone, Copy, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+#[schema(as = AdminDebugTraceSnapshotScope)]
+pub(crate) enum AdminDebugTraceSnapshotScopeRequest {
+    Headers,
+    Bodies,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminDebugTraceSnapshotRequest)]
+pub(crate) struct AdminDebugTraceSnapshotRequest {
+    scope: AdminDebugTraceSnapshotScopeRequest,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminDebugTraceAttemptSnapshot)]
+pub(crate) struct AdminDebugTraceAttemptSnapshotResponse {
+    candidate_index: i16,
+    request: Option<serde_json::Value>,
+    response: Option<serde_json::Value>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminDebugTraceSnapshotsResponse)]
+pub(crate) struct AdminDebugTraceSnapshotsResponse {
+    scope: String,
+    downstream: Option<serde_json::Value>,
+    attempts: Vec<AdminDebugTraceAttemptSnapshotResponse>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -100,6 +160,7 @@ pub(crate) struct AdminDebugTraceListResponse {
 #[schema(as = AdminDebugTraceDetailResponse)]
 pub(crate) struct AdminDebugTraceDetailResponse {
     trace: AdminDebugTraceResponse,
+    downstream_request: Option<AdminDebugTraceDownstreamRequestResponse>,
     attempts: Vec<AdminDebugTraceAttemptResponse>,
 }
 
@@ -119,6 +180,10 @@ pub(crate) fn build_debug_trace_router(
         )
         .route("/api/admin/debug-traces", get(list_traces))
         .route("/api/admin/debug-traces/{id}", get(get_trace))
+        .route(
+            "/api/admin/debug-traces/{id}/snapshots",
+            axum::routing::post(read_snapshots),
+        )
         .route_layer(middleware::from_fn(authorize_management_admin))
         .route_layer(authentication)
         .with_state(DebugTraceHttpState { service })
@@ -148,6 +213,9 @@ async fn update_settings(
         request.enabled,
         request.sample_per_million,
         request.retention_hours,
+        request.capture_headers,
+        request.capture_bodies,
+        request.max_body_bytes,
     )
     .map_err(map_error)?;
     let settings = state
@@ -189,12 +257,36 @@ async fn get_trace(
     )))
 }
 
+async fn read_snapshots(
+    State(state): State<DebugTraceHttpState>,
+    Path(id): Path<i64>,
+    Extension(authentication): Extension<af_admin::SessionAuthentication>,
+    request: Result<Json<AdminDebugTraceSnapshotRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let scope = match request.scope {
+        AdminDebugTraceSnapshotScopeRequest::Headers => AdminDebugTraceSnapshotScope::Headers,
+        AdminDebugTraceSnapshotScopeRequest::Bodies => AdminDebugTraceSnapshotScope::Bodies,
+    };
+    let snapshots = state
+        .service
+        .snapshots(authentication.principal(), id, scope)
+        .await
+        .map_err(map_error)?;
+    Ok(no_store_json(
+        AdminDebugTraceSnapshotsResponse::from_snapshots(&snapshots),
+    ))
+}
+
 impl From<AdminDebugTraceSettings> for AdminDebugTraceSettingsResponse {
     fn from(settings: AdminDebugTraceSettings) -> Self {
         Self {
             enabled: settings.enabled(),
             sample_per_million: settings.sample_per_million(),
             retention_hours: settings.retention_hours(),
+            capture_headers: settings.capture_headers(),
+            capture_bodies: settings.capture_bodies(),
+            max_body_bytes: settings.max_body_bytes(),
             version: settings.version(),
         }
     }
@@ -217,6 +309,9 @@ impl AdminDebugTraceDetailResponse {
     fn from_detail(detail: af_admin::AdminDebugTraceDetail) -> Self {
         Self {
             trace: AdminDebugTraceResponse::from_trace(detail.trace()),
+            downstream_request: AdminDebugTraceDownstreamRequestResponse::from_trace(
+                detail.trace(),
+            ),
             attempts: detail
                 .attempts()
                 .iter()
@@ -259,8 +354,55 @@ impl AdminDebugTraceAttemptResponse {
             upstream_status: attempt.upstream_status(),
             retry_decision: attempt.retry_decision(),
             elapsed_ms: attempt.elapsed_ms(),
+            client_simulation_profile: attempt
+                .client_simulation_profile()
+                .map(|profile| profile.as_str().to_owned()),
+            client_simulation_result: attempt
+                .client_simulation_result()
+                .map(|result| result.as_str().to_owned()),
+            request_method: attempt.request_method().map(str::to_owned),
+            request_url: attempt.request_url().map(str::to_owned),
+            response_status: attempt.response_status(),
+            response_streamed: attempt.response_streamed(),
         }
     }
+}
+
+impl AdminDebugTraceDownstreamRequestResponse {
+    fn from_trace(trace: &AdminDebugTrace) -> Option<Self> {
+        Some(Self {
+            method: trace.downstream_method()?.to_owned(),
+            path: trace.downstream_path()?.to_owned(),
+        })
+    }
+}
+
+impl AdminDebugTraceSnapshotsResponse {
+    fn from_snapshots(snapshots: &AdminDebugTraceSnapshots) -> Self {
+        Self {
+            scope: match snapshots.scope() {
+                AdminDebugTraceSnapshotScope::Headers => "headers",
+                AdminDebugTraceSnapshotScope::Bodies => "bodies",
+            }
+            .to_owned(),
+            downstream: parse_snapshot(snapshots.downstream_json()),
+            attempts: snapshots
+                .attempts()
+                .iter()
+                .map(|attempt| AdminDebugTraceAttemptSnapshotResponse {
+                    candidate_index: attempt.candidate_index(),
+                    request: parse_snapshot(attempt.request_json()),
+                    response: parse_snapshot(attempt.response_json()),
+                })
+                .collect(),
+        }
+    }
+}
+
+fn parse_snapshot(value: Option<&str>) -> Option<serde_json::Value> {
+    value.map(|value| {
+        serde_json::from_str(value).expect("数据库层已校验的调试快照必须保持合法 JSON")
+    })
 }
 
 fn parse_list_query(raw_query: Option<&str>) -> Result<AdminDebugTraceListQuery, ManagementError> {
@@ -275,6 +417,7 @@ fn parse_list_query(raw_query: Option<&str>) -> Result<AdminDebugTraceListQuery,
     let mut limit = None;
     let mut outcome = None;
     let mut model = None;
+    let mut request_id = None;
     for (key, value) in url::form_urlencoded::parse(raw_query.as_bytes()) {
         if key.contains('\u{fffd}') || value.contains('\u{fffd}') {
             return Err(ManagementError::InvalidRequest);
@@ -284,6 +427,7 @@ fn parse_list_query(raw_query: Option<&str>) -> Result<AdminDebugTraceListQuery,
             "limit" if limit.is_none() => limit = Some(parse_limit(&value)?),
             "outcome" if outcome.is_none() => outcome = Some(parse_outcome(&value)?),
             "model" if model.is_none() => model = Some(value.into_owned()),
+            "request_id" if request_id.is_none() => request_id = Some(value.into_owned()),
             _ => return Err(ManagementError::InvalidRequest),
         }
     }
@@ -292,6 +436,7 @@ fn parse_list_query(raw_query: Option<&str>) -> Result<AdminDebugTraceListQuery,
         limit.unwrap_or(af_admin::DEFAULT_ADMIN_DEBUG_TRACE_PAGE_SIZE),
         outcome,
         model,
+        request_id,
     )
     .map_err(map_error)
 }
@@ -396,5 +541,40 @@ fn map_error(error: AdminDebugTraceError) -> ManagementError {
         AdminDebugTraceError::Forbidden => ManagementError::Forbidden,
         AdminDebugTraceError::NotFound => ManagementError::DebugTraceNotFound,
         AdminDebugTraceError::Internal => ManagementError::Internal,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn attempt_response_serializes_closed_client_simulation_metadata() {
+        let response = AdminDebugTraceAttemptResponse {
+            candidate_index: 0,
+            channel_id: 11,
+            credential_id: 21,
+            outcome: "failed".to_owned(),
+            failure_kind: Some("protocol_error".to_owned()),
+            upstream_status: None,
+            retry_decision: false,
+            elapsed_ms: 7,
+            client_simulation_profile: Some("anthropic_cli_headers_v1".to_owned()),
+            client_simulation_result: Some("failed".to_owned()),
+            request_method: None,
+            request_url: None,
+            response_status: None,
+            response_streamed: false,
+        };
+
+        let value = serde_json::to_value(response).unwrap();
+
+        assert_eq!(
+            value["client_simulation_profile"],
+            json!("anthropic_cli_headers_v1")
+        );
+        assert_eq!(value["client_simulation_result"], json!("failed"));
     }
 }

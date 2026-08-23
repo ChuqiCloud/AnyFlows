@@ -20,6 +20,7 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 use crate::{
     DatabasePool,
     entity::{channels, credentials, route_channels, routes},
+    smart_route_runtime::validate_smart_route_model_mapping,
 };
 
 /// 管理端路由列表允许返回的最大记录数。
@@ -627,10 +628,9 @@ impl AdminRouteRecord {
             || model.name.len() > MAX_ADMIN_ROUTE_NAME_BYTES
             || model.name.chars().any(char::is_control)
             || validate_route_model_pattern(&model.model_pattern).is_err()
-            || !model.model_mapping.is_object()
-            || serde_json::to_vec(&model.model_mapping)
-                .map(|encoded| encoded.len() > MAX_ADMIN_ROUTE_MAPPING_BYTES)
-                .unwrap_or(true)
+            || model.model_pattern.trim() != model.model_pattern
+            || (mode == RouteMode::ExplicitGroup && model.model_pattern.starts_with("re:"))
+            || !validate_smart_route_model_mapping(&model.model_mapping)
             || channel_models.len() > MAX_ADMIN_ROUTE_CHANNELS
         {
             return Err(internal_invariant());
@@ -687,10 +687,9 @@ fn validate_write_record(record: &AdminRouteWriteRecord) -> Result<(), AdminRout
         || record.name.len() > MAX_ADMIN_ROUTE_NAME_BYTES
         || record.name.chars().any(char::is_control)
         || validate_route_model_pattern(&record.model_pattern).is_err()
-        || !record.model_mapping.is_object()
-        || serde_json::to_vec(&record.model_mapping)
-            .map(|encoded| encoded.len() > MAX_ADMIN_ROUTE_MAPPING_BYTES)
-            .unwrap_or(true)
+        || record.model_pattern.trim() != record.model_pattern
+        || (record.mode == RouteMode::ExplicitGroup && record.model_pattern.starts_with("re:"))
+        || !validate_smart_route_model_mapping(&record.model_mapping)
         || record.channels.len() > MAX_ADMIN_ROUTE_CHANNELS
     {
         return Err(AdminRouteRepositoryError::Invariant);

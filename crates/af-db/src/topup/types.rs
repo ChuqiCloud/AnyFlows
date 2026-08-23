@@ -1,8 +1,8 @@
 use std::fmt;
 
 use af_domain::{
-    Quota, TopupOrderId, TopupOrderStatus, TopupPaymentEventId, TopupPaymentEventType,
-    TopupRequestId, UserId,
+    OrganizationId, Quota, TopupOrderId, TopupOrderStatus, TopupPaymentEventId,
+    TopupPaymentEventType, TopupRequestId, UserId,
 };
 use thiserror::Error;
 
@@ -24,6 +24,7 @@ pub struct TopupOrderCreate {
     pub(super) order_id: TopupOrderId,
     pub(super) request_id: TopupRequestId,
     pub(super) user_id: UserId,
+    pub(super) organization_id: Option<OrganizationId>,
     pub(super) provider: String,
     pub(super) payment_method: String,
     pub(super) amount_minor: i64,
@@ -71,6 +72,7 @@ impl TopupOrderCreate {
             order_id,
             request_id,
             user_id,
+            organization_id: None,
             provider,
             payment_method,
             amount_minor,
@@ -78,6 +80,35 @@ impl TopupOrderCreate {
             quota_amount,
             created_at,
         })
+    }
+
+    /// 创建企业收款主体订单；付款人仍由会话主体提供，到账只写企业钱包。
+    #[allow(clippy::too_many_arguments, reason = "企业充值订单事实字段一一对应")]
+    pub fn new_for_organization(
+        order_id: TopupOrderId,
+        request_id: TopupRequestId,
+        payer_user_id: UserId,
+        organization_id: OrganizationId,
+        provider: String,
+        payment_method: String,
+        amount_minor: u64,
+        currency: String,
+        quota_amount: Quota,
+        created_at: u64,
+    ) -> Result<Self, TopupInputError> {
+        let mut write = Self::new(
+            order_id,
+            request_id,
+            payer_user_id,
+            provider,
+            payment_method,
+            amount_minor,
+            currency,
+            quota_amount,
+            created_at,
+        )?;
+        write.organization_id = Some(organization_id);
+        Ok(write)
     }
 }
 
@@ -224,6 +255,7 @@ pub struct TopupOrderRecord {
     pub(super) order_id: TopupOrderId,
     pub(super) request_id: TopupRequestId,
     pub(super) user_id: UserId,
+    pub(super) organization_id: Option<OrganizationId>,
     pub(super) provider: String,
     pub(super) payment_method: Option<String>,
     pub(super) provider_order_id: Option<String>,
@@ -251,6 +283,12 @@ impl TopupOrderRecord {
     #[must_use]
     pub const fn user_id(&self) -> UserId {
         self.user_id
+    }
+
+    /// 返回收款主体企业；为空表示个人钱包订单。
+    #[must_use]
+    pub const fn organization_id(&self) -> Option<OrganizationId> {
+        self.organization_id
     }
 
     /// 返回规范 Provider 标识。
@@ -341,6 +379,7 @@ impl TopupOrderRecord {
         self.order_id == write.order_id
             && self.request_id == write.request_id
             && self.user_id == write.user_id
+            && self.organization_id == write.organization_id
             && self.provider == write.provider
             && self.payment_method.as_deref() == Some(write.payment_method.as_str())
             && self.amount_minor == write.amount_minor as u64

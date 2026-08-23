@@ -91,14 +91,15 @@ async fn compact_runtime_uses_the_dedicated_upstream_path() {
         }
     }))
     .unwrap();
+    let database = TestDatabase::new();
+    seed_database(&database, UPSTREAM_BASE_URL, UPSTREAM_MODEL, UPSTREAM_KEY).await;
+    enable_compact_channel(&database).await;
+    // 高并发门禁下数据库准备可能超过代理 I/O 窗口，准备完成后再启动单次代理。
     let (upstream_address, captured, upstream) = spawn_proxy(
         "200 OK",
         &upstream_body,
         &[("Content-Type", "application/json")],
     );
-    let database = TestDatabase::new();
-    seed_database(&database, UPSTREAM_BASE_URL, UPSTREAM_MODEL, UPSTREAM_KEY).await;
-    enable_compact_channel(&database).await;
     let proxy_url = format!("http://{upstream_address}");
     let (address, shutdown, server) = start_gateway(&database, Some(&proxy_url)).await;
 

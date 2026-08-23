@@ -63,6 +63,39 @@ mod m20260811_000054_add_usage_video_dimensions;
 mod m20260811_000055_create_async_task_billings;
 mod m20260812_000056_create_payment_settings;
 mod m20260814_000057_extend_usage_call_observations;
+mod m20260814_000058_extend_debug_trace_diagnostics;
+mod m20260815_000059_add_balance_display_policy;
+mod m20260815_000060_secure_debug_trace_snapshots;
+mod m20260815_000061_create_organization_foundation;
+mod m20260815_000062_create_organization_entitlements;
+mod m20260816_000063_create_organization_invitations;
+mod m20260816_000064_create_organization_wallets;
+mod m20260816_000065_create_organization_budgets;
+mod m20260817_000066_add_organization_tokens;
+mod m20260817_000067_create_organization_activity;
+mod m20260817_000068_add_client_simulation_observability;
+mod m20260817_000069_enforce_spark_shadow_shape;
+mod m20260817_000070_create_oauth_login;
+mod m20260818_000071_seed_discord_oauth_login;
+mod m20260818_000072_create_passkeys;
+mod m20260818_000073_add_passkey_authentication_state;
+mod m20260819_000074_create_platform_audit;
+mod m20260819_000075_create_request_outcomes;
+mod m20260819_000076_create_user_notification_events;
+mod m20260819_000077_create_analytics_export_outbox;
+mod m20260820_000078_extend_oauth_login_providers;
+mod m20260820_000079_seed_wechat_oauth_login;
+mod m20260820_000080_seed_telegram_oauth_login;
+mod m20260820_000081_seed_google_oauth_login;
+mod m20260821_000082_create_user_notification_receipts;
+mod m20260821_000083_create_subscription_plan_prices;
+mod m20260821_000084_create_subscription_orders;
+mod m20260822_000085_create_subscription_payment_events;
+mod m20260822_000086_create_refund_requests;
+mod m20260822_000087_add_refund_provider_receipts;
+mod m20260823_000088_add_refund_settings;
+mod m20260823_000089_add_refund_approval;
+mod m20260823_000090_add_refund_payment_reference;
 mod schema;
 
 #[cfg(test)]
@@ -163,6 +196,39 @@ impl MigratorTrait for Migrator {
             Box::new(m20260811_000055_create_async_task_billings::Migration),
             Box::new(m20260812_000056_create_payment_settings::Migration),
             Box::new(m20260814_000057_extend_usage_call_observations::Migration),
+            Box::new(m20260814_000058_extend_debug_trace_diagnostics::Migration),
+            Box::new(m20260815_000059_add_balance_display_policy::Migration),
+            Box::new(m20260815_000060_secure_debug_trace_snapshots::Migration),
+            Box::new(m20260815_000061_create_organization_foundation::Migration),
+            Box::new(m20260815_000062_create_organization_entitlements::Migration),
+            Box::new(m20260816_000063_create_organization_invitations::Migration),
+            Box::new(m20260816_000064_create_organization_wallets::Migration),
+            Box::new(m20260816_000065_create_organization_budgets::Migration),
+            Box::new(m20260817_000066_add_organization_tokens::Migration),
+            Box::new(m20260817_000067_create_organization_activity::Migration),
+            Box::new(m20260817_000068_add_client_simulation_observability::Migration),
+            Box::new(m20260817_000069_enforce_spark_shadow_shape::Migration),
+            Box::new(m20260817_000070_create_oauth_login::Migration),
+            Box::new(m20260818_000071_seed_discord_oauth_login::Migration),
+            Box::new(m20260818_000072_create_passkeys::Migration),
+            Box::new(m20260818_000073_add_passkey_authentication_state::Migration),
+            Box::new(m20260819_000074_create_platform_audit::Migration),
+            Box::new(m20260819_000075_create_request_outcomes::Migration),
+            Box::new(m20260819_000076_create_user_notification_events::Migration),
+            Box::new(m20260819_000077_create_analytics_export_outbox::Migration),
+            Box::new(m20260820_000078_extend_oauth_login_providers::Migration),
+            Box::new(m20260820_000079_seed_wechat_oauth_login::Migration),
+            Box::new(m20260820_000080_seed_telegram_oauth_login::Migration),
+            Box::new(m20260820_000081_seed_google_oauth_login::Migration),
+            Box::new(m20260821_000082_create_user_notification_receipts::Migration),
+            Box::new(m20260821_000083_create_subscription_plan_prices::Migration),
+            Box::new(m20260821_000084_create_subscription_orders::Migration),
+            Box::new(m20260822_000085_create_subscription_payment_events::Migration),
+            Box::new(m20260822_000086_create_refund_requests::Migration),
+            Box::new(m20260822_000087_add_refund_provider_receipts::Migration),
+            Box::new(m20260823_000088_add_refund_settings::Migration),
+            Box::new(m20260823_000089_add_refund_approval::Migration),
+            Box::new(m20260823_000090_add_refund_payment_reference::Migration),
         ]
     }
 }

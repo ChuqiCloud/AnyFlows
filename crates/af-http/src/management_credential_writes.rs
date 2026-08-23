@@ -186,6 +186,31 @@ impl AdminCredentialWriteRequest {
             AdminCredentialSecretInput::Present(None) => None,
             AdminCredentialSecretInput::Missing => return Err(ManagementError::InvalidRequest),
         };
+        if self.quota_dimension == AdminCredentialQuotaDimension::Spark {
+            if self.kind != CredentialKind::Oauth
+                || secret.is_some()
+                || self.proxy_id.is_some()
+                || self.oauth_provider.is_some()
+                || self.oauth_account_key.is_some()
+                || self.oauth_project_id.is_some()
+            {
+                return Err(ManagementError::InvalidRequest);
+            }
+            let parent_id =
+                parse_parent_id(self.parent_id)?.ok_or(ManagementError::InvalidRequest)?;
+            return AdminCredentialCreateCommand::new_spark_shadow(
+                self.status,
+                self.multi_key_mode,
+                self.priority,
+                self.weight,
+                self.concurrency,
+                self.load_factor_micros,
+                self.rate_multiplier_micros,
+                self.schedulable,
+                parent_id,
+            )
+            .map_err(map_write_error);
+        }
         let args = (
             self.status,
             self.multi_key_mode,

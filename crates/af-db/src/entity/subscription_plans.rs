@@ -33,6 +33,14 @@ pub enum Relation {
         on_delete = "Restrict"
     )]
     CreatedByUser,
+    #[sea_orm(has_many = "super::subscription_plan_prices::Entity")]
+    Prices,
+}
+
+impl Related<super::subscription_plan_prices::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Prices.def()
+    }
 }
 
 impl Related<super::users::Entity> for Entity {

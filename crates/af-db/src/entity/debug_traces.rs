@@ -1,4 +1,4 @@
-//! 不含请求正文和凭据材料的请求级调试追踪实体。
+//! 请求级调试追踪元数据；旧诊断文本列仅保留滚动升级结构兼容。
 
 use sea_orm::entity::prelude::*;
 
@@ -22,6 +22,14 @@ pub struct Model {
     pub selected_credential_id: Option<i64>,
     pub routing_elapsed_ms: i64,
     pub attempt_count: i32,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub downstream_method: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub downstream_path: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub downstream_headers_json: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub downstream_body_json: Option<String>,
     pub created_at: TimeDateTimeWithTimeZone,
 }
 

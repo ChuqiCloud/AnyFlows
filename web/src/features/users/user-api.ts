@@ -1,10 +1,11 @@
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { apiClient, ApiError } from '@/lib/api'
 import {
   adjustAdminWallet,
   createAdminUser,
   deleteAdminUser,
+  getAdminUser,
   listAdminWalletEntries,
   listAdminUsers,
   updateAdminUser,
@@ -18,15 +19,31 @@ import type {
 export const adminUsersQueryKey = ['admin-users'] as const
 export const adminWalletQueryKey = ['admin-wallet'] as const
 
+/** 仅在管理员明确打开用户资料时读取单个非敏感账户快照。 */
+export function useAdminUser(userId?: number) {
+  return useQuery({
+    queryKey: [...adminUsersQueryKey, userId],
+    enabled: userId !== undefined,
+    queryFn: async ({ signal }) => {
+      const { data } = await getAdminUser({
+        client: apiClient,
+        path: { id: userId as number },
+        signal,
+      })
+      return data
+    },
+  })
+}
+
 /** 按服务端单调 ID 游标加载用户，只在管理员明确请求时读取下一页。 */
-export function useAdminUsers() {
+export function useAdminUsers(pageSize = 25) {
   return useInfiniteQuery({
-    queryKey: adminUsersQueryKey,
+    queryKey: [...adminUsersQueryKey, { pageSize }],
     initialPageParam: undefined as number | undefined,
     queryFn: async ({ pageParam, signal }) => {
       const { data } = await listAdminUsers({
         client: apiClient,
-        query: { after: pageParam, limit: 25 },
+        query: { after: pageParam, limit: pageSize },
         signal,
       })
       return data

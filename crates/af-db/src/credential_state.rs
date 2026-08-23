@@ -17,14 +17,16 @@ const RATE_LIMIT_COOLDOWN: Duration = Duration::from_secs(60);
 const QUOTA_EXHAUSTED_COOLDOWN: Duration = Duration::from_secs(15 * 60);
 const OVERLOAD_COOLDOWN: Duration = Duration::from_secs(30);
 
-/// 单次请求最多写回的凭据状态数量。
-pub const MAX_CREDENTIAL_STATE_BATCH: usize = 64;
+/// 单次请求最多写回的凭据状态数量，覆盖影子成功时的本地与共享双事件。
+pub const MAX_CREDENTIAL_STATE_BATCH: usize = 128;
 
 /// 凭据请求结束后允许持久化的闭合状态变化。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CredentialStateChange {
     /// 请求通过协议验证，记录最近使用时间并清除历史冷却。
     Succeeded,
+    /// 共享密钥已通过认证，只清理由认证产生的临时冷却。
+    AuthenticationSucceeded,
     /// 未能确认永久失效的认证错误，进入有限冷却。
     AuthExpired,
     /// OAuth 认证已失效且没有 refresh token，无法自动恢复。
@@ -255,6 +257,10 @@ async fn apply_event(
         return Ok(false);
     }
 
+    let authentication_cooling = matches!(
+        model.temp_unschedulable_reason.as_deref(),
+        Some("auth_expired" | "oauth_refresh_transient")
+    );
     let mut active = model.into_active_model();
     match event.change {
         CredentialStateChange::Succeeded => {
@@ -264,6 +270,13 @@ async fn apply_event(
             active.overload_until = Set(None);
             active.temp_unschedulable_until = Set(None);
             active.temp_unschedulable_reason = Set(None);
+        }
+        CredentialStateChange::AuthenticationSucceeded => {
+            active.last_used_at = Set(Some(now));
+            if authentication_cooling {
+                active.temp_unschedulable_until = Set(None);
+                active.temp_unschedulable_reason = Set(None);
+            }
         }
         CredentialStateChange::AuthExpired => {
             active.temp_unschedulable_until = Set(Some(now + AUTH_EXPIRED_COOLDOWN));

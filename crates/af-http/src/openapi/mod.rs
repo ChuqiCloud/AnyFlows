@@ -15,12 +15,22 @@ mod model_sync;
 mod models;
 mod network_settings;
 mod oauth_connections;
+mod oauth_login;
+mod organization_activity;
+mod organization_budget;
+mod organization_tokens;
+mod organization_wallet;
+mod organizations;
+mod passkey_auth;
 mod password_reset;
 mod payment_settings;
 mod payment_webhook;
+mod platform_audit;
 mod playground_conversations;
 mod playground_shares;
 mod redemptions;
+mod refund_webhook;
+mod refunds;
 mod registration;
 mod rerank;
 mod responses_compact;
@@ -33,6 +43,7 @@ mod speech;
 mod subscriptions;
 mod tokens;
 mod usage_logs;
+mod user_notifications;
 mod user_profile;
 mod user_tokens;
 mod user_topups;
@@ -58,16 +69,20 @@ pub fn openapi_document() -> OpenApi {
     document.merge(speech::document());
     document.merge(videos::document());
     document.merge(redemptions::document());
+    document.merge(refunds::document());
     document.merge(subscriptions::document());
     document.merge(password_reset::document());
     document.merge(user_profile::document());
     document.merge(user_wallet::document());
+    document.merge(user_notifications::document());
     document.merge(user_topups::document());
     document.merge(invitations::document());
     document.merge(email_settings::document());
     document.merge(network_settings::document());
     document.merge(payment_settings::document());
     document.merge(oauth_connections::document());
+    document.merge(oauth_login::document());
+    document.merge(organizations::document());
     document.merge(balance_alert_settings::document());
     document.merge(site_settings::document());
     document.merge(dashboard::document());
@@ -89,6 +104,14 @@ pub fn openapi_document() -> OpenApi {
     document.merge(credential_proxies::document());
     document.merge(debug_traces::document());
     document.merge(payment_webhook::document());
+    document.merge(refund_webhook::document());
+    document.merge(organization_wallet::document());
+    document.merge(organization_budget::document());
+    document.merge(organization_tokens::document());
+    document.merge(organization_activity::document());
+    document.merge(passkey_auth::document());
+    document.merge(platform_audit::document());
+    document.merge(oauth_login::oidc_document());
 
     document.tags = Some(vec![
         Tag::new("公开注册"),
@@ -101,6 +124,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("个人资料与安全"),
         Tag::new("我的钱包"),
         Tag::new("兑换码"),
+        Tag::new("退款审批"),
         Tag::new("订阅管理"),
         Tag::new("邀请中心"),
         Tag::new("站点设置"),
@@ -108,6 +132,14 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("网络与代理"),
         Tag::new("支付设置"),
         Tag::new("OAuth 连接"),
+        Tag::new("OAuth 登录"),
+        Tag::new("Passkey 登录"),
+        Tag::new("企业钱包"),
+        Tag::new("企业预算"),
+        Tag::new("企业 API Key"),
+        Tag::new("企业活动"),
+        Tag::new("平台企业活动"),
+        Tag::new("平台管理审计"),
         Tag::new("余额预警"),
         Tag::new("管理会话"),
         Tag::new("首次安装"),
@@ -128,6 +160,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("专属代理"),
         Tag::new("调试追踪"),
         Tag::new("支付回调"),
+        Tag::new("退款回执"),
     ]);
     document
         .components
@@ -167,7 +200,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 86);
+        assert_eq!(document.paths.paths.len(), 156);
         let operation_count = document
             .paths
             .paths
@@ -188,7 +221,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 128);
+        assert_eq!(operation_count, 215);
         assert!(
             document
                 .components
@@ -233,9 +266,66 @@ mod tests {
             "createAdminToken",
             "createAdminUser",
             "beginAdminOAuthAuthorization",
+            "startGitHubOAuthLogin",
+            "completeGitHubOAuthLogin",
+            "startDiscordOAuthLogin",
+            "completeDiscordOAuthLogin",
+            "startOidcLogin",
+            "completeOidcLogin",
+            "startLinuxDoLogin",
+            "completeLinuxDoLogin",
+            "startWeChatOAuthLogin",
+            "completeWeChatOAuthLogin",
+            "startTelegramLogin",
+            "completeTelegramLogin",
+            "startGoogleLogin",
+            "completeGoogleLogin",
+            "exchangeOAuthLoginTicket",
+            "getAdminGitHubOAuthLoginSettings",
+            "updateAdminGitHubOAuthLoginSettings",
+            "getAdminDiscordOAuthLoginSettings",
+            "updateAdminDiscordOAuthLoginSettings",
+            "getAdminOidcLoginSettings",
+            "updateAdminOidcLoginSettings",
+            "getAdminLinuxDoLoginSettings",
+            "updateAdminLinuxDoLoginSettings",
+            "getAdminWeChatOAuthLoginSettings",
+            "updateAdminWeChatOAuthLoginSettings",
+            "getAdminTelegramOAuthLoginSettings",
+            "updateAdminTelegramOAuthLoginSettings",
+            "getAdminGoogleOAuthLoginSettings",
+            "updateAdminGoogleOAuthLoginSettings",
             "confirmPasswordReset",
             "completeAdminOAuthManualCallback",
             "getUserProfile",
+            "listAccountOrganizations",
+            "getOrganizationOverview",
+            "getOrganizationWallet",
+            "getOrganizationBudgets",
+            "createOrganizationBudgetPolicy",
+            "getOrganizationBudgetReservation",
+            "listOrganizationTokens",
+            "createOrganizationToken",
+            "listOrganizationTokenDirectory",
+            "getOrganizationToken",
+            "updateOrganizationToken",
+            "disableOwnOrganizationToken",
+            "disableOrganizationToken",
+            "listOrganizationInvitations",
+            "createOrganizationInvitation",
+            "previewOrganizationInvitations",
+            "createOrganizationInvitationBatch",
+            "createOrganizationTopupOrder",
+            "revokeOrganizationInvitation",
+            "resendOrganizationInvitation",
+            "acceptOrganizationInvitation",
+            "listOrganizationMembers",
+            "changeOrganizationMember",
+            "transferOrganizationOwnership",
+            "listOrganizationTeams",
+            "createOrganizationTeam",
+            "changeOrganizationTeam",
+            "disableOrganizationTeam",
             "getUserTopupConfiguration",
             "getUserWallet",
             "importMissingAdminModels",
@@ -243,6 +333,8 @@ mod tests {
             "updateUserProfile",
             "changeUserPassword",
             "updateUserNotificationPreferences",
+            "listUserNotifications",
+            "markUserNotificationsRead",
             "createPlaygroundShare",
             "createUserToken",
             "createPlaygroundToken",
@@ -299,19 +391,32 @@ mod tests {
             "listAdminRedemptionBatches",
             "listAdminSubscriptionPlans",
             "listAdminUserSubscriptions",
+            "listCurrentSubscriptionCatalog",
+            "createCurrentSubscriptionOrder",
+            "getCurrentSubscriptionOrder",
+            "submitCurrentSubscriptionOrderPayment",
             "listMissingAdminModels",
             "listAdminTokens",
             "listAdminUsageLogs",
+            "listAdminPlatformAuditLogs",
+            "listOrganizationUsageLogs",
+            "listOrganizationAuditLogs",
+            "listPlatformOrganizationUsageLogs",
+            "listPlatformOrganizationAuditLogs",
             "listUserUsageLogs",
+            "listSelfPlatformAuditLogs",
             "listAdminUsers",
             "listModels",
             "listModelProviders",
             "listPlaygroundConversations",
             "listUserTokens",
             "receivePaymentWebhook",
+            "receiveRefundWebhook",
             "listUserWalletEntries",
             "listCurrentUserSubscriptions",
             "loginManagementSession",
+            "startPasskeyAuthentication",
+            "finishPasskeyAuthentication",
             "probeAdminChannel",
             "previewAdminLiteLlmModelPrices",
             "previewAdminModelPrices",
@@ -322,6 +427,7 @@ mod tests {
             "savePlaygroundConversation",
             "sendAdminEmailTest",
             "requestPasswordReset",
+            "readAdminDebugTraceSnapshots",
             "sendRegistrationEmailVerification",
             "updateAdminChannel",
             "updateAdminBalanceAlertSettings",
@@ -340,9 +446,23 @@ mod tests {
             "updateAdminUser",
             "updateUserToken",
             "adjustAdminWallet",
+            "listAdminRefunds",
+            "approveAdminRefund",
+            "rejectAdminRefund",
+            "submitAdminRefund",
             "bindAdminUserSubscription",
             "transitionAdminUserSubscriptionLifecycle",
             "listAdminWalletEntries",
+            "listOrganizationWalletEntries",
+            "adjustOrganizationWallet",
+            "disableUserTwoFactor",
+            "enableUserTwoFactor",
+            "getUserTwoFactor",
+            "listUserPasskeys",
+            "startUserPasskeyRegistration",
+            "finishUserPasskeyRegistration",
+            "renameUserPasskey",
+            "revokeUserPasskey",
         ]
         .into_iter()
         .map(str::to_owned)
@@ -350,8 +470,65 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 256);
+        assert_eq!(schemas.len(), 368);
         assert!(schemas.keys().is_sorted());
+        assert!(schemas.contains_key("AdminDashboardChannelFlow"));
+        assert!(schemas.contains_key("AdminDashboardFailure"));
+        assert!(schemas.contains_key("AdminDashboardFailureKind"));
+        assert!(schemas.contains_key("AdminDashboardHourlyPoint"));
+        assert!(schemas.contains_key("AdminDashboardPerformance"));
+        assert!(schemas.contains_key("ClientSimulationProfile"));
+        assert!(schemas.contains_key("ClientSimulationResult"));
+        assert!(schemas.contains_key("PasskeyAuthenticationOptionsRequest"));
+        assert!(schemas.contains_key("PasskeyAuthenticationOptionsResponse"));
+        assert!(schemas.contains_key("PasskeyAuthenticationVerifyRequest"));
+        assert!(schemas.contains_key("OrganizationEntitlementResponse"));
+        assert!(schemas.contains_key("OrganizationInvitationAcceptRequest"));
+        assert!(schemas.contains_key("OrganizationInvitationResponse"));
+        assert!(schemas.contains_key("OrganizationMembershipChangeRequest"));
+        assert!(schemas.contains_key("OrganizationMembershipListResponse"));
+        assert!(schemas.contains_key("OrganizationMembershipResponse"));
+        assert!(schemas.contains_key("OrganizationOwnershipTransferRequest"));
+        assert!(schemas.contains_key("OrganizationOwnershipTransferResponse"));
+        assert!(schemas.contains_key("OrganizationTeamChangeRequest"));
+        assert!(schemas.contains_key("OrganizationTeamCreateRequest"));
+        assert!(schemas.contains_key("OrganizationTeamDisableRequest"));
+        assert!(schemas.contains_key("OrganizationTeamListResponse"));
+        assert!(schemas.contains_key("OrganizationTeamResponse"));
+        assert!(schemas.contains_key("OrganizationWalletSummaryResponse"));
+        assert!(schemas.contains_key("OrganizationWalletEntryTypeResponse"));
+        assert!(schemas.contains_key("OrganizationWalletEntryResponse"));
+        assert!(schemas.contains_key("OrganizationWalletListResponse"));
+        assert!(schemas.contains_key("OrganizationWalletAdjustmentRequest"));
+        assert!(schemas.contains_key("OrganizationWalletAdjustmentResponse"));
+        assert!(schemas.contains_key("OrganizationBudgetAllocationResponse"));
+        assert!(schemas.contains_key("OrganizationBudgetOverviewResponse"));
+        assert!(schemas.contains_key("OrganizationBudgetPeriodRequest"));
+        assert!(schemas.contains_key("OrganizationBudgetPeriodResponse"));
+        assert!(schemas.contains_key("OrganizationBudgetPolicyCreateRequest"));
+        assert!(schemas.contains_key("OrganizationBudgetPolicyResponse"));
+        assert!(schemas.contains_key("OrganizationBudgetReservationResponse"));
+        assert!(schemas.contains_key("OrganizationBudgetReservationStatusResponse"));
+        assert!(schemas.contains_key("OrganizationBudgetScopeRequest"));
+        assert!(schemas.contains_key("OrganizationBudgetScopeResponse"));
+        assert!(schemas.contains_key("OrganizationBudgetWindowResponse"));
+        assert!(schemas.contains_key("OrganizationTokenStatusDto"));
+        assert!(schemas.contains_key("OrganizationTokenWriteRequest"));
+        assert!(schemas.contains_key("OrganizationTokenResponse"));
+        assert!(schemas.contains_key("OrganizationTokenListResponse"));
+        assert!(schemas.contains_key("IssuedOrganizationTokenResponse"));
+        assert!(schemas.contains_key("OrganizationAuditLogListResponse"));
+        assert!(schemas.contains_key("OrganizationAuditLogResponse"));
+        assert!(schemas.contains_key("OrganizationAuditOutcomeResponse"));
+        assert!(schemas.contains_key("PlatformAuditLogListResponse"));
+        assert!(schemas.contains_key("PlatformAuditLog"));
+        assert!(schemas.contains_key("PlatformAuditOutcome"));
+        assert!(schemas.contains_key("OrganizationUsageLogListResponse"));
+        assert!(schemas.contains_key("OrganizationUsageLogSummaryResponse"));
+        assert!(schemas.contains_key("OrganizationTopupOrderCreateRequest"));
+        assert!(schemas.contains_key("OrganizationTopupOrderStatusResponse"));
+        assert!(schemas.contains_key("OrganizationTopupPaymentSessionResponse"));
+        assert!(schemas.contains_key("OrganizationTopupOrderResponse"));
         assert!(schemas.contains_key("ModelCatalogProvider"));
         assert!(schemas.contains_key("ModelCatalogProviderListResponse"));
         assert!(schemas.contains_key("AdminResponsesCompactProbe"));
@@ -420,10 +597,15 @@ mod tests {
         assert!(schemas.contains_key("AdminGroupWindow"));
         assert!(schemas.contains_key("AdminDebugTrace"));
         assert!(schemas.contains_key("AdminDebugTraceAttempt"));
+        assert!(schemas.contains_key("AdminDebugTraceDownstreamRequest"));
         assert!(schemas.contains_key("AdminDebugTraceDetailResponse"));
         assert!(schemas.contains_key("AdminDebugTraceListResponse"));
         assert!(schemas.contains_key("AdminDebugTraceSettings"));
         assert!(schemas.contains_key("AdminDebugTraceSettingsRequest"));
+        assert!(schemas.contains_key("AdminDebugTraceSnapshotScope"));
+        assert!(schemas.contains_key("AdminDebugTraceSnapshotRequest"));
+        assert!(schemas.contains_key("AdminDebugTraceAttemptSnapshot"));
+        assert!(schemas.contains_key("AdminDebugTraceSnapshotsResponse"));
         assert!(schemas.contains_key("AdminOAuthProvider"));
         assert!(schemas.contains_key("AdminOAuthProviderListResponse"));
         assert!(schemas.contains_key("AdminOAuthProviderStatus"));
@@ -438,6 +620,12 @@ mod tests {
         assert!(schemas.contains_key("AdminWalletEntryType"));
         assert!(schemas.contains_key("AdminWalletListResponse"));
         assert!(schemas.contains_key("AdminWalletAdjustmentRequest"));
+        assert!(schemas.contains_key("AdminRefundRequest"));
+        assert!(schemas.contains_key("AdminRefundListResponse"));
+        assert!(schemas.contains_key("AdminRefundDecisionRequest"));
+        assert!(schemas.contains_key("AdminRefundOrderKind"));
+        assert!(schemas.contains_key("AdminRefundStatus"));
+        assert!(schemas.contains_key("AdminRefundApprovalStatus"));
         assert!(schemas.contains_key("AdminUsageLogVideoResolution"));
         assert!(schemas.contains_key("AdminRedemptionAuditBatch"));
         assert!(schemas.contains_key("AdminRedemptionAuditListResponse"));
@@ -452,7 +640,12 @@ mod tests {
         assert!(schemas.contains_key("AdminRedemptionBatchDisableResponse"));
         assert!(schemas.contains_key("UserRedemptionRequest"));
         assert!(schemas.contains_key("UserRedemptionResult"));
+        assert!(schemas.contains_key("SubscriptionCatalogPlan"));
+        assert!(schemas.contains_key("SubscriptionCatalogResponse"));
         assert!(schemas.contains_key("SubscriptionCycle"));
+        assert!(schemas.contains_key("SubscriptionOrder"));
+        assert!(schemas.contains_key("SubscriptionOrderCreateRequest"));
+        assert!(schemas.contains_key("SubscriptionOrderStatus"));
         assert!(schemas.contains_key("SubscriptionPlanStatus"));
         assert!(schemas.contains_key("UserSubscriptionStatus"));
         assert!(schemas.contains_key("AdminSubscriptionPlan"));
@@ -487,6 +680,22 @@ mod tests {
         assert!(schemas.contains_key("UserProfileUpdateRequest"));
         assert!(schemas.contains_key("UserPasswordChangeRequest"));
         assert!(schemas.contains_key("UserNotificationPreferencesRequest"));
+        assert!(schemas.contains_key("NotificationKind"));
+        assert!(schemas.contains_key("NotificationChannel"));
+        assert!(schemas.contains_key("NotificationDeliveryState"));
+        assert!(schemas.contains_key("UserNotification"));
+        assert!(schemas.contains_key("UserNotificationListResponse"));
+        assert!(schemas.contains_key("UserNotificationMarkReadRequest"));
+        assert!(schemas.contains_key("UserNotificationMarkReadResponse"));
+        assert!(schemas.contains_key("UserTwoFactorEnrollmentResponse"));
+        assert!(schemas.contains_key("UserTwoFactorPasswordRequest"));
+        assert!(schemas.contains_key("UserTwoFactorStatusResponse"));
+        assert!(schemas.contains_key("UserPasskeyListResponse"));
+        assert!(schemas.contains_key("UserPasskeyRegistrationOptionsResponse"));
+        assert!(schemas.contains_key("UserPasskeyRegistrationVerifyRequest"));
+        assert!(schemas.contains_key("UserPasskeyRenameRequest"));
+        assert!(schemas.contains_key("UserPasskeyResponse"));
+        assert!(schemas.contains_key("UserPasskeyRevokeRequest"));
         assert!(schemas.contains_key("UserInvitationSummaryResponse"));
         assert!(schemas.contains_key("UserInvitationRebateResponse"));
         assert!(schemas.contains_key("AdminAuthenticationSettings"));
@@ -497,6 +706,9 @@ mod tests {
         assert!(schemas.contains_key("AdminSiteSettings"));
         assert!(schemas.contains_key("AdminSiteSettingsRequest"));
         assert!(schemas.contains_key("AdminBrandSettingsRequest"));
+        assert!(schemas.contains_key("BalanceDisplayMode"));
+        assert!(schemas.contains_key("BalanceDisplaySettings"));
+        assert!(schemas.contains_key("BalanceDisplaySymbolPosition"));
         assert!(schemas.contains_key("AdminEmailSettings"));
         assert!(schemas.contains_key("AdminEmailSettingsRequest"));
         assert!(schemas.contains_key("AdminEmailTestRequest"));
@@ -638,6 +850,27 @@ mod tests {
             schemas["AdminCredential"]["properties"]["oauth_token_pending"]["type"],
             "boolean"
         );
+        assert_eq!(
+            schemas["AdminCredential"]["properties"]["blocks_spark_shadow"]["type"],
+            "boolean"
+        );
+        assert_eq!(
+            schemas["AdminCredentialQuotaDimension"]["enum"],
+            serde_json::json!(["global", "spark"])
+        );
+        assert_eq!(create["properties"]["parent_id"]["example"], 41);
+        assert_eq!(
+            create["properties"]["quota_dimension"]["$ref"],
+            "#/components/schemas/AdminCredentialQuotaDimension"
+        );
+        assert!(
+            create["properties"]["secret"]["oneOf"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|value| value["description"].as_str())
+                .any(|description| description.contains("Spark 影子"))
+        );
 
         let secret_variants = schemas["AdminCredentialSecret"]["oneOf"]
             .as_array()
@@ -678,6 +911,11 @@ mod tests {
                 .unwrap()
                 .iter()
                 .any(|value| { value["$ref"] == "#/components/schemas/AdminCredentialSecret" })
+        );
+        assert!(
+            schemas["AdminCredentialUpdateRequest"]["properties"]["parent_id"]["description"]
+                .as_str()
+                .is_some_and(|description| description.contains("创建后不可修改"))
         );
         assert_eq!(
             schemas["AdminGroup"]["properties"]["flags"]["additionalProperties"],

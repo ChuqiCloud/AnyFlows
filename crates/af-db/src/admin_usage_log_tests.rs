@@ -38,6 +38,7 @@ async fn list_uses_newest_first_cursor_and_preserves_usage_dimensions() -> Resul
 
     let newest = &logs[0];
     assert_eq!(newest.user_id(), fixture.user_id);
+    assert_eq!(newest.username(), "usage-owner");
     assert_eq!(newest.token_id(), fixture.token_id);
     assert_eq!(newest.group_id(), fixture.group_id);
     assert_eq!(newest.billing_mode(), 3);
@@ -89,7 +90,7 @@ async fn invalid_pagination_corrupt_state_and_closed_pool_fail_closed() -> Resul
         .expect("测试用量日志必须存在");
     broken.usage_source = 9;
     assert_eq!(
-        AdminUsageLogRecord::try_from_model(broken).unwrap_err(),
+        AdminUsageLogRecord::try_from_model(broken, "usage-owner".to_owned()).unwrap_err(),
         AdminUsageLogRepositoryError::Invariant
     );
 

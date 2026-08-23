@@ -1,7 +1,7 @@
 use std::{fmt, future::Future, pin::Pin};
 
 use af_db::MAX_PROVIDER_ORDER_ID_BYTES;
-use af_domain::TopupOrderId;
+use af_domain::{SubscriptionOrderId, TopupOrderId};
 use thiserror::Error;
 use zeroize::Zeroize;
 
@@ -11,8 +11,36 @@ pub const MAX_PAYMENT_CLIENT_SECRET_BYTES: usize = 4 * 1024;
 pub const MAX_PAYMENT_REDIRECT_URL_BYTES: usize = 16 * 1024;
 
 /// 创建 Provider 支付订单所需的不可变本地事实。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PaymentOrderId {
+    Topup(TopupOrderId),
+    Subscription(SubscriptionOrderId),
+}
+
+impl From<TopupOrderId> for PaymentOrderId {
+    fn from(value: TopupOrderId) -> Self {
+        Self::Topup(value)
+    }
+}
+
+impl From<SubscriptionOrderId> for PaymentOrderId {
+    fn from(value: SubscriptionOrderId) -> Self {
+        Self::Subscription(value)
+    }
+}
+
+impl PaymentOrderId {
+    #[must_use]
+    pub fn persistence_key(self) -> String {
+        match self {
+            Self::Topup(value) => value.persistence_key(),
+            Self::Subscription(value) => value.persistence_key(),
+        }
+    }
+}
+
 pub struct PaymentOrderRequest {
-    order_id: TopupOrderId,
+    order_id: PaymentOrderId,
     amount_minor: u64,
     currency: String,
     payment_method: String,
@@ -21,7 +49,7 @@ pub struct PaymentOrderRequest {
 impl PaymentOrderRequest {
     /// 校验正整数最小单位金额和三位大写币种。
     pub fn new(
-        order_id: TopupOrderId,
+        order_id: impl Into<PaymentOrderId>,
         amount_minor: u64,
         currency: String,
         payment_method: String,
@@ -36,7 +64,7 @@ impl PaymentOrderRequest {
             return Err(PaymentOrderInputError::InvalidPaymentMethod);
         }
         Ok(Self {
-            order_id,
+            order_id: order_id.into(),
             amount_minor,
             currency,
             payment_method,
@@ -45,7 +73,7 @@ impl PaymentOrderRequest {
 
     /// 返回不可变本地订单标识。
     #[must_use]
-    pub const fn order_id(&self) -> TopupOrderId {
+    pub const fn order_id(&self) -> PaymentOrderId {
         self.order_id
     }
 

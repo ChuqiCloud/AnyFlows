@@ -1,23 +1,31 @@
 use std::{error::Error, time::Duration};
 
 use af_domain::{
-    GroupId, Quota, SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus,
-    SubscriptionWindow, UserId, UserSubscriptionId, UserSubscriptionStatus,
+    GroupId, Quota, SubscriptionCycle, SubscriptionOrderId, SubscriptionOrderRequestId,
+    SubscriptionOrderStatus, SubscriptionPaymentEventId, SubscriptionPaymentEventType,
+    SubscriptionPlanId, SubscriptionPlanStatus, SubscriptionWindow, UserId, UserSubscriptionId,
+    UserSubscriptionStatus,
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, Set,
-    entity::prelude::TimeDateTimeWithTimeZone, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, IntoActiveModel,
+    PaginatorTrait, QueryFilter, Set, Statement, entity::prelude::TimeDateTimeWithTimeZone,
+    sea_query::Expr,
 };
 
 use super::{
-    SubscriptionInputError, SubscriptionPlanCreateOutcome, SubscriptionPlanDisable,
+    SubscriptionInputError, SubscriptionOrderCreate, SubscriptionOrderCreateOutcome,
+    SubscriptionPaymentEventOutcome, SubscriptionPaymentEventRejection,
+    SubscriptionPaymentEventWrite, SubscriptionPlanCreateOutcome, SubscriptionPlanDisable,
     SubscriptionPlanDisableOutcome, SubscriptionPlanWrite, SubscriptionRepositoryError,
     SubscriptionResetDueCursor, UserSubscriptionBind, UserSubscriptionBindOutcome,
     UserSubscriptionWindowAdvance, UserSubscriptionWindowAdvanceOutcome, monotonic_updated_at,
 };
 use crate::{
     AdminUserCreateRecord, AdminUserRepository, DatabaseOptions, DatabasePool, MigrationOptions,
-    entity::{SensitiveString, groups, subscription_plans, user_subscriptions},
+    entity::{
+        SensitiveString, groups, subscription_orders, subscription_payment_events,
+        subscription_plans, user_notification_events, user_subscriptions,
+    },
 };
 
 mod lifecycle;
@@ -26,6 +34,7 @@ const CREATED_AT: u64 = 1_900_000_000;
 const WINDOW_STARTED_AT: u64 = CREATED_AT + 60;
 const WINDOW_ENDS_AT: u64 = WINDOW_STARTED_AT + 86_400;
 const BOUND_AT: u64 = CREATED_AT + 30;
+const PAYMENT_RECEIVED_AT: u64 = CREATED_AT + 60;
 
 #[test]
 fn subscription_audit_time_uses_fixed_second_precision_without_rollback() {
@@ -178,6 +187,236 @@ async fn plan_creation_is_idempotent_and_facts_are_immutable() -> Result<(), Box
             .await?,
         1
     );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn order_creation_recovers_unknown_outcome_and_rejects_price_conflicts()
+-> Result<(), Box<dyn Error>> {
+    let fixture = setup_fixture().await?;
+    let plan_id = test_plan_id(0x3a);
+    fixture
+        .repository
+        .create_plan(&fixture.plan_with_id(
+            plan_id,
+            "订单幂等计划",
+            25_000,
+            SubscriptionCycle::Monthly,
+        )?)
+        .await?;
+    let second_plan_id = test_plan_id(0x3b);
+    fixture
+        .repository
+        .create_plan(&fixture.plan_with_id(
+            second_plan_id,
+            "订单其他计划",
+            30_000,
+            SubscriptionCycle::Monthly,
+        )?)
+        .await?;
+
+    let create = fixture.order(0x71, 0x72, plan_id, 100)?;
+    fixture.repository.inject_outcome_unknown_after_commit();
+    assert_eq!(
+        fixture.repository.create_order(&create).await.unwrap_err(),
+        SubscriptionRepositoryError::OutcomeUnknown
+    );
+
+    let SubscriptionOrderCreateOutcome::Existing(existing) =
+        fixture.repository.create_order(&create).await?
+    else {
+        panic!("订单提交结果未知后必须恢复同一订单")
+    };
+    assert_eq!(existing.plan_id(), plan_id);
+    assert_eq!(existing.plan_version(), 1);
+    assert_eq!(existing.provider(), "stripe");
+    assert_eq!(existing.currency(), "USD");
+    assert_eq!(existing.amount_minor(), 100);
+    assert_eq!(existing.quota_amount().units(), 25_000);
+    assert_eq!(existing.status(), SubscriptionOrderStatus::Created);
+
+    // 仅改变冗余外键列，验证恢复记录以不可变 plan_key 为准。
+    let second_plan_database_id = subscription_plans::Entity::find()
+        .filter(
+            subscription_plans::Column::PlanKey
+                .eq(SensitiveString::from(second_plan_id.persistence_key())),
+        )
+        .one(fixture.pool.connection())
+        .await?
+        .expect("第二个订阅计划必须存在")
+        .id;
+    fixture
+        .pool
+        .connection()
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE subscription_orders SET plan_id = ? WHERE id = ?",
+            [
+                second_plan_database_id.into(),
+                existing.database_id().into(),
+            ],
+        ))
+        .await?;
+    let SubscriptionOrderCreateOutcome::Existing(recovered) =
+        fixture.repository.create_order(&create).await?
+    else {
+        panic!("已存在订单必须返回 Existing")
+    };
+    assert_eq!(recovered.plan_id(), plan_id);
+    assert_eq!(recovered.quota_amount().units(), 25_000);
+
+    let changed_price = fixture.order(0x73, 0x72, plan_id, 101)?;
+    assert_eq!(
+        fixture
+            .repository
+            .create_order(&changed_price)
+            .await
+            .unwrap_err(),
+        SubscriptionRepositoryError::Conflict
+    );
+    assert_eq!(
+        subscription_orders::Entity::find()
+            .count(fixture.pool.connection())
+            .await?,
+        1
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn verified_payment_binds_subscription_and_replays_without_duplicate_effects()
+-> Result<(), Box<dyn Error>> {
+    let fixture = setup_fixture().await?;
+    let plan_id = test_plan_id(0x7a);
+    fixture
+        .repository
+        .create_plan(&fixture.plan_with_id(
+            plan_id,
+            "支付确认计划",
+            25_000,
+            SubscriptionCycle::Monthly,
+        )?)
+        .await?;
+    let order = fixture.order(0x7b, 0x7c, plan_id, 100)?;
+    let order_id = order.order_id;
+    fixture.repository.create_order(&order).await?;
+
+    let event = fixture.payment_event(0x7d, order_id, "evt-subscription-paid", 100)?;
+    let applied = fixture.repository.accept_verified_event(&event).await?;
+    let SubscriptionPaymentEventOutcome::Applied {
+        order: paid,
+        subscription,
+    } = applied
+    else {
+        panic!("首次成功支付必须推进订单并创建订阅")
+    };
+    assert_eq!(paid.status(), SubscriptionOrderStatus::Paid);
+    assert_eq!(paid.trade_no(), Some("trade-subscription-paid"));
+    assert_eq!(paid.payment_method(), Some("card"));
+    assert!(subscription.is_some());
+
+    let replay = fixture.repository.accept_verified_event(&event).await?;
+    let SubscriptionPaymentEventOutcome::Existing {
+        order: replayed,
+        subscription,
+    } = replay
+    else {
+        panic!("相同 Provider 事件必须返回 Existing")
+    };
+    assert_eq!(replayed.status(), SubscriptionOrderStatus::Paid);
+    assert!(subscription.is_some());
+    assert_eq!(
+        subscription_payment_events::Entity::find()
+            .count(fixture.pool.connection())
+            .await?,
+        1
+    );
+    assert_eq!(
+        user_subscriptions::Entity::find()
+            .count(fixture.pool.connection())
+            .await?,
+        1
+    );
+    assert_eq!(
+        user_notification_events::Entity::find()
+            .count(fixture.pool.connection())
+            .await?,
+        1
+    );
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn verified_payment_conflicts_record_facts_and_roll_back_binding_conflicts()
+-> Result<(), Box<dyn Error>> {
+    let fixture = setup_fixture().await?;
+    let plan_id = test_plan_id(0x8a);
+    fixture
+        .repository
+        .create_plan(&fixture.plan_with_id(
+            plan_id,
+            "支付冲突计划",
+            25_000,
+            SubscriptionCycle::Monthly,
+        )?)
+        .await?;
+    let order = fixture.order(0x8b, 0x8c, plan_id, 100)?;
+    let order_id = order.order_id;
+    fixture.repository.create_order(&order).await?;
+
+    let mismatch = fixture.payment_event(0x8d, order_id, "evt-subscription-mismatch", 101)?;
+    let outcome = fixture.repository.accept_verified_event(&mismatch).await?;
+    assert!(matches!(
+        outcome,
+        SubscriptionPaymentEventOutcome::RecordedUnprocessed {
+            reason: SubscriptionPaymentEventRejection::AmountMismatch,
+            ..
+        }
+    ));
+    let SubscriptionOrderCreateOutcome::Existing(existing) =
+        fixture.repository.create_order(&order).await?
+    else {
+        panic!("冲突事件不应改变订单")
+    };
+    assert_eq!(existing.status(), SubscriptionOrderStatus::Created);
+
+    fixture
+        .repository
+        .bind_user(&fixture.bind(0x8b, fixture.first_user_id, plan_id)?)
+        .await?;
+    let matching =
+        fixture.payment_event(0x8f, order_id, "evt-subscription-binding-conflict", 100)?;
+    assert_eq!(
+        fixture
+            .repository
+            .accept_verified_event(&matching)
+            .await
+            .unwrap_err(),
+        SubscriptionRepositoryError::BindingConflict
+    );
+    let order_model = subscription_orders::Entity::find()
+        .filter(subscription_orders::Column::OrderKey.eq(order_id.persistence_key()))
+        .one(fixture.pool.connection())
+        .await?
+        .expect("订单必须保留");
+    assert_eq!(order_model.status, SubscriptionOrderStatus::Created.code());
+    assert_eq!(
+        subscription_payment_events::Entity::find()
+            .count(fixture.pool.connection())
+            .await?,
+        1
+    );
+    assert_eq!(
+        user_notification_events::Entity::find()
+            .count(fixture.pool.connection())
+            .await?,
+        0
+    );
+
     fixture.pool.close().await?;
     Ok(())
 }
@@ -855,6 +1094,50 @@ impl Fixture {
             BOUND_AT,
         )
     }
+
+    fn order(
+        &self,
+        order_marker: u8,
+        request_marker: u8,
+        plan_id: SubscriptionPlanId,
+        amount_minor: i64,
+    ) -> Result<SubscriptionOrderCreate, SubscriptionInputError> {
+        SubscriptionOrderCreate::new(
+            order_id(order_marker),
+            request_id(request_marker),
+            self.first_user_id,
+            plan_id,
+            1,
+            "stripe".to_owned(),
+            "USD".to_owned(),
+            amount_minor,
+            CREATED_AT,
+            Some(CREATED_AT + 3_600),
+        )
+    }
+
+    fn payment_event(
+        &self,
+        marker: u8,
+        order_id: SubscriptionOrderId,
+        provider_event_id: &str,
+        amount_minor: u64,
+    ) -> Result<SubscriptionPaymentEventWrite, SubscriptionInputError> {
+        SubscriptionPaymentEventWrite::new(
+            SubscriptionPaymentEventId::new([marker; 16]).expect("事件标识必须非零"),
+            order_id,
+            "stripe".to_owned(),
+            provider_event_id.to_owned(),
+            Some("trade-subscription-paid".to_owned()),
+            Some(amount_minor),
+            Some("USD".to_owned()),
+            Some("card".to_owned()),
+            SubscriptionPaymentEventType::Succeeded,
+            [0x11; 32],
+            [marker; 32],
+            PAYMENT_RECEIVED_AT,
+        )
+    }
 }
 
 async fn setup_fixture() -> Result<Fixture, Box<dyn Error>> {
@@ -926,6 +1209,14 @@ fn test_plan_id(marker: u8) -> SubscriptionPlanId {
 
 fn subscription_id(marker: u8) -> UserSubscriptionId {
     UserSubscriptionId::new([marker; 16]).expect("测试用户订阅标识必须非零")
+}
+
+fn order_id(marker: u8) -> SubscriptionOrderId {
+    SubscriptionOrderId::new([marker; 16]).expect("test order id must be non-zero")
+}
+
+fn request_id(marker: u8) -> SubscriptionOrderRequestId {
+    SubscriptionOrderRequestId::new([marker; 16]).expect("test request id must be non-zero")
 }
 
 fn database_time(value: u64) -> TimeDateTimeWithTimeZone {

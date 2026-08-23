@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AdjustAdminWalletData, AdjustAdminWalletErrors, AdjustAdminWalletResponses, ApplyAdminModelPricesData, ApplyAdminModelPricesErrors, ApplyAdminModelPricesResponses, ApplyAdminModelSyncPreviewData, ApplyAdminModelSyncPreviewErrors, ApplyAdminModelSyncPreviewResponses, BeginAdminOAuthAuthorizationData, BeginAdminOAuthAuthorizationErrors, BeginAdminOAuthAuthorizationResponses, BindAdminUserSubscriptionData, BindAdminUserSubscriptionErrors, BindAdminUserSubscriptionResponses, ChangeUserPasswordData, ChangeUserPasswordErrors, ChangeUserPasswordResponses, CompactResponseData, CompactResponseErrors, CompactResponseResponses, CompleteAdminOAuthManualCallbackData, CompleteAdminOAuthManualCallbackErrors, CompleteAdminOAuthManualCallbackResponses, ConfirmPasswordResetData, ConfirmPasswordResetErrors, ConfirmPasswordResetResponses, CreateAdminChannelData, CreateAdminChannelErrors, CreateAdminChannelResponses, CreateAdminCredentialData, CreateAdminCredentialErrors, CreateAdminCredentialProxyData, CreateAdminCredentialProxyErrors, CreateAdminCredentialProxyResponses, CreateAdminCredentialResponses, CreateAdminGroupData, CreateAdminGroupErrors, CreateAdminGroupResponses, CreateAdminModelData, CreateAdminModelErrors, CreateAdminModelResponses, CreateAdminModelSyncPreviewData, CreateAdminModelSyncPreviewErrors, CreateAdminModelSyncPreviewResponses, CreateAdminRedemptionBatchData, CreateAdminRedemptionBatchErrors, CreateAdminRedemptionBatchResponses, CreateAdminRouteData, CreateAdminRouteErrors, CreateAdminRouteResponses, CreateAdminSubscriptionPlanData, CreateAdminSubscriptionPlanErrors, CreateAdminSubscriptionPlanResponses, CreateAdminTokenData, CreateAdminTokenErrors, CreateAdminTokenResponses, CreateAdminUserData, CreateAdminUserErrors, CreateAdminUserResponses, CreatePlaygroundShareData, CreatePlaygroundShareErrors, CreatePlaygroundShareResponses, CreatePlaygroundTokenData, CreatePlaygroundTokenErrors, CreatePlaygroundTokenResponses, CreateUserTokenData, CreateUserTokenErrors, CreateUserTokenResponses, CreateUserTopupOrderData, CreateUserTopupOrderErrors, CreateUserTopupOrderResponses, DeleteAdminChannelData, DeleteAdminChannelErrors, DeleteAdminChannelResponses, DeleteAdminCredentialData, DeleteAdminCredentialErrors, DeleteAdminCredentialProxyData, DeleteAdminCredentialProxyErrors, DeleteAdminCredentialProxyResponses, DeleteAdminCredentialResponses, DeleteAdminGroupData, DeleteAdminGroupErrors, DeleteAdminGroupResponses, DeleteAdminModelData, DeleteAdminModelErrors, DeleteAdminModelResponses, DeleteAdminRouteData, DeleteAdminRouteErrors, DeleteAdminRouteResponses, DeleteAdminTokenData, DeleteAdminTokenErrors, DeleteAdminTokenResponses, DeleteAdminUserData, DeleteAdminUserErrors, DeleteAdminUserResponses, DeletePlaygroundConversationData, DeletePlaygroundConversationErrors, DeletePlaygroundConversationResponses, DeleteUserTokenData, DeleteUserTokenErrors, DeleteUserTokenResponses, DisableAdminRedemptionBatchData, DisableAdminRedemptionBatchErrors, DisableAdminRedemptionBatchResponses, DisableAdminSubscriptionPlanData, DisableAdminSubscriptionPlanErrors, DisableAdminSubscriptionPlanResponses, GetAdminAuthenticationSettingsData, GetAdminAuthenticationSettingsErrors, GetAdminAuthenticationSettingsResponses, GetAdminBalanceAlertSettingsData, GetAdminBalanceAlertSettingsErrors, GetAdminBalanceAlertSettingsResponses, GetAdminChannelData, GetAdminChannelErrors, GetAdminChannelResponses, GetAdminCredentialData, GetAdminCredentialErrors, GetAdminCredentialProxyData, GetAdminCredentialProxyErrors, GetAdminCredentialProxyResponses, GetAdminCredentialResponses, GetAdminDashboardData, GetAdminDashboardErrors, GetAdminDashboardResponses, GetAdminDebugTraceData, GetAdminDebugTraceErrors, GetAdminDebugTraceResponses, GetAdminDebugTraceSettingsData, GetAdminDebugTraceSettingsErrors, GetAdminDebugTraceSettingsResponses, GetAdminEmailSettingsData, GetAdminEmailSettingsErrors, GetAdminEmailSettingsResponses, GetAdminGroupData, GetAdminGroupErrors, GetAdminGroupResponses, GetAdminModelData, GetAdminModelErrors, GetAdminModelResponses, GetAdminNetworkSettingsData, GetAdminNetworkSettingsErrors, GetAdminNetworkSettingsResponses, GetAdminPaymentSettingsData, GetAdminPaymentSettingsErrors, GetAdminPaymentSettingsResponses, GetAdminRouteData, GetAdminRouteErrors, GetAdminRouteResponses, GetAdminSiteSettingsData, GetAdminSiteSettingsErrors, GetAdminSiteSettingsResponses, GetAdminTokenData, GetAdminTokenErrors, GetAdminTokenResponses, GetAdminUserData, GetAdminUserErrors, GetAdminUserResponses, GetInitialSetupStatusData, GetInitialSetupStatusErrors, GetInitialSetupStatusResponses, GetManagementSessionData, GetManagementSessionErrors, GetManagementSessionResponses, GetPlaygroundConversationData, GetPlaygroundConversationErrors, GetPlaygroundConversationResponses, GetPlaygroundShareData, GetPlaygroundShareErrors, GetPlaygroundShareResponses, GetPublicSiteSettingsData, GetPublicSiteSettingsErrors, GetPublicSiteSettingsResponses, GetRegistrationStatusData, GetRegistrationStatusErrors, GetRegistrationStatusResponses, GetUserInvitationsData, GetUserInvitationsErrors, GetUserInvitationsResponses, GetUserProfileData, GetUserProfileErrors, GetUserProfileResponses, GetUserTokenData, GetUserTokenErrors, GetUserTokenResponses, GetUserTopupConfigurationData, GetUserTopupConfigurationErrors, GetUserTopupConfigurationResponses, GetUserWalletData, GetUserWalletErrors, GetUserWalletResponses, ImportMissingAdminModelsData, ImportMissingAdminModelsErrors, ImportMissingAdminModelsResponses, InitializeAdminSetupData, InitializeAdminSetupErrors, InitializeAdminSetupResponses, ListAdminChannelsData, ListAdminChannelsErrors, ListAdminChannelsResponses, ListAdminCredentialProxiesData, ListAdminCredentialProxiesErrors, ListAdminCredentialProxiesResponses, ListAdminCredentialsData, ListAdminCredentialsErrors, ListAdminCredentialsResponses, ListAdminDebugTracesData, ListAdminDebugTracesErrors, ListAdminDebugTracesResponses, ListAdminGroupsData, ListAdminGroupsErrors, ListAdminGroupsResponses, ListAdminModelPricesData, ListAdminModelPricesErrors, ListAdminModelPricesResponses, ListAdminModelsData, ListAdminModelsErrors, ListAdminModelsResponses, ListAdminOAuthProvidersData, ListAdminOAuthProvidersErrors, ListAdminOAuthProvidersResponses, ListAdminRedemptionAuditData, ListAdminRedemptionAuditErrors, ListAdminRedemptionAuditResponses, ListAdminRedemptionBatchesData, ListAdminRedemptionBatchesErrors, ListAdminRedemptionBatchesResponses, ListAdminRoutesData, ListAdminRoutesErrors, ListAdminRoutesResponses, ListAdminSubscriptionPlansData, ListAdminSubscriptionPlansErrors, ListAdminSubscriptionPlansResponses, ListAdminTokensData, ListAdminTokensErrors, ListAdminTokensResponses, ListAdminUsageLogsData, ListAdminUsageLogsErrors, ListAdminUsageLogsResponses, ListAdminUsersData, ListAdminUsersErrors, ListAdminUsersResponses, ListAdminUserSubscriptionsData, ListAdminUserSubscriptionsErrors, ListAdminUserSubscriptionsResponses, ListAdminWalletEntriesData, ListAdminWalletEntriesErrors, ListAdminWalletEntriesResponses, ListCurrentUserSubscriptionsData, ListCurrentUserSubscriptionsErrors, ListCurrentUserSubscriptionsResponses, ListMissingAdminModelsData, ListMissingAdminModelsErrors, ListMissingAdminModelsResponses, ListModelProvidersData, ListModelProvidersErrors, ListModelProvidersResponses, ListModelsData, ListModelsErrors, ListModelsResponses, ListPlaygroundConversationsData, ListPlaygroundConversationsErrors, ListPlaygroundConversationsResponses, ListUserTokensData, ListUserTokensErrors, ListUserTokensResponses, ListUserUsageLogsData, ListUserUsageLogsErrors, ListUserUsageLogsResponses, ListUserWalletEntriesData, ListUserWalletEntriesErrors, ListUserWalletEntriesResponses, ListVideoTasksData, ListVideoTasksErrors, ListVideoTasksResponses, LoginManagementSessionData, LoginManagementSessionErrors, LoginManagementSessionResponses, PollVideoTaskData, PollVideoTaskErrors, PollVideoTaskResponses, PreviewAdminLiteLlmModelPricesData, PreviewAdminLiteLlmModelPricesErrors, PreviewAdminLiteLlmModelPricesResponses, PreviewAdminModelPriceExpressionData, PreviewAdminModelPriceExpressionErrors, PreviewAdminModelPriceExpressionResponses, PreviewAdminModelPricesData, PreviewAdminModelPricesErrors, PreviewAdminModelPricesResponses, ProbeAdminChannelData, ProbeAdminChannelErrors, ProbeAdminChannelResponses, ReceivePaymentWebhookData, ReceivePaymentWebhookErrors, ReceivePaymentWebhookResponses, RedeemUserRedemptionCodeData, RedeemUserRedemptionCodeErrors, RedeemUserRedemptionCodeResponses, RegisterUserData, RegisterUserErrors, RegisterUserResponses, RequestPasswordResetData, RequestPasswordResetErrors, RequestPasswordResetResponses, RerankData, RerankErrors, RerankResponses, RevokePlaygroundShareData, RevokePlaygroundShareErrors, RevokePlaygroundShareResponses, SavePlaygroundConversationData, SavePlaygroundConversationErrors, SavePlaygroundConversationResponses, SendAdminEmailTestData, SendAdminEmailTestErrors, SendAdminEmailTestResponses, SendRegistrationEmailVerificationData, SendRegistrationEmailVerificationErrors, SendRegistrationEmailVerificationResponses, SubmitVideoTaskData, SubmitVideoTaskErrors, SubmitVideoTaskResponses, SynthesizeSpeechData, SynthesizeSpeechErrors, SynthesizeSpeechResponses, TransitionAdminUserSubscriptionLifecycleData, TransitionAdminUserSubscriptionLifecycleErrors, TransitionAdminUserSubscriptionLifecycleResponses, UpdateAdminAuthenticationSettingsData, UpdateAdminAuthenticationSettingsErrors, UpdateAdminAuthenticationSettingsResponses, UpdateAdminBalanceAlertSettingsData, UpdateAdminBalanceAlertSettingsErrors, UpdateAdminBalanceAlertSettingsResponses, UpdateAdminChannelData, UpdateAdminChannelErrors, UpdateAdminChannelResponses, UpdateAdminCredentialData, UpdateAdminCredentialErrors, UpdateAdminCredentialProxyData, UpdateAdminCredentialProxyErrors, UpdateAdminCredentialProxyResponses, UpdateAdminCredentialResponses, UpdateAdminDebugTraceSettingsData, UpdateAdminDebugTraceSettingsErrors, UpdateAdminDebugTraceSettingsResponses, UpdateAdminEmailSettingsData, UpdateAdminEmailSettingsErrors, UpdateAdminEmailSettingsResponses, UpdateAdminGroupData, UpdateAdminGroupErrors, UpdateAdminGroupResponses, UpdateAdminModelData, UpdateAdminModelErrors, UpdateAdminModelResponses, UpdateAdminNetworkSettingsData, UpdateAdminNetworkSettingsErrors, UpdateAdminNetworkSettingsResponses, UpdateAdminPaymentSettingsData, UpdateAdminPaymentSettingsErrors, UpdateAdminPaymentSettingsResponses, UpdateAdminRouteData, UpdateAdminRouteErrors, UpdateAdminRouteResponses, UpdateAdminSiteSettingsData, UpdateAdminSiteSettingsErrors, UpdateAdminSiteSettingsResponses, UpdateAdminTokenData, UpdateAdminTokenErrors, UpdateAdminTokenResponses, UpdateAdminUserData, UpdateAdminUserErrors, UpdateAdminUserResponses, UpdateUserNotificationPreferencesData, UpdateUserNotificationPreferencesErrors, UpdateUserNotificationPreferencesResponses, UpdateUserProfileData, UpdateUserProfileErrors, UpdateUserProfileResponses, UpdateUserTokenData, UpdateUserTokenErrors, UpdateUserTokenResponses } from './types.gen';
+import type { AcceptOrganizationInvitationData, AcceptOrganizationInvitationErrors, AcceptOrganizationInvitationResponses, AdjustAdminWalletData, AdjustAdminWalletErrors, AdjustAdminWalletResponses, AdjustOrganizationWalletData, AdjustOrganizationWalletErrors, AdjustOrganizationWalletResponses, ApplyAdminModelPricesData, ApplyAdminModelPricesErrors, ApplyAdminModelPricesResponses, ApplyAdminModelSyncPreviewData, ApplyAdminModelSyncPreviewErrors, ApplyAdminModelSyncPreviewResponses, ApproveAdminRefundData, ApproveAdminRefundErrors, ApproveAdminRefundResponses, BeginAdminOAuthAuthorizationData, BeginAdminOAuthAuthorizationErrors, BeginAdminOAuthAuthorizationResponses, BindAdminUserSubscriptionData, BindAdminUserSubscriptionErrors, BindAdminUserSubscriptionResponses, ChangeOrganizationMemberData, ChangeOrganizationMemberErrors, ChangeOrganizationMemberResponses, ChangeOrganizationTeamData, ChangeOrganizationTeamErrors, ChangeOrganizationTeamResponses, ChangeUserPasswordData, ChangeUserPasswordErrors, ChangeUserPasswordResponses, CompactResponseData, CompactResponseErrors, CompactResponseResponses, CompleteAdminOAuthManualCallbackData, CompleteAdminOAuthManualCallbackErrors, CompleteAdminOAuthManualCallbackResponses, CompleteDiscordOAuthLoginData, CompleteDiscordOAuthLoginErrors, CompleteGitHubOAuthLoginData, CompleteGitHubOAuthLoginErrors, CompleteGoogleLoginData, CompleteGoogleLoginErrors, CompleteLinuxDoLoginData, CompleteLinuxDoLoginErrors, CompleteOidcLoginData, CompleteOidcLoginErrors, CompleteTelegramLoginData, CompleteTelegramLoginErrors, CompleteWeChatOAuthLoginData, CompleteWeChatOAuthLoginErrors, ConfirmPasswordResetData, ConfirmPasswordResetErrors, ConfirmPasswordResetResponses, CreateAdminChannelData, CreateAdminChannelErrors, CreateAdminChannelResponses, CreateAdminCredentialData, CreateAdminCredentialErrors, CreateAdminCredentialProxyData, CreateAdminCredentialProxyErrors, CreateAdminCredentialProxyResponses, CreateAdminCredentialResponses, CreateAdminGroupData, CreateAdminGroupErrors, CreateAdminGroupResponses, CreateAdminModelData, CreateAdminModelErrors, CreateAdminModelResponses, CreateAdminModelSyncPreviewData, CreateAdminModelSyncPreviewErrors, CreateAdminModelSyncPreviewResponses, CreateAdminRedemptionBatchData, CreateAdminRedemptionBatchErrors, CreateAdminRedemptionBatchResponses, CreateAdminRouteData, CreateAdminRouteErrors, CreateAdminRouteResponses, CreateAdminSubscriptionPlanData, CreateAdminSubscriptionPlanErrors, CreateAdminSubscriptionPlanResponses, CreateAdminTokenData, CreateAdminTokenErrors, CreateAdminTokenResponses, CreateAdminUserData, CreateAdminUserErrors, CreateAdminUserResponses, CreateCurrentSubscriptionOrderData, CreateCurrentSubscriptionOrderErrors, CreateCurrentSubscriptionOrderResponses, CreateOrganizationBudgetPolicyData, CreateOrganizationBudgetPolicyErrors, CreateOrganizationBudgetPolicyResponses, CreateOrganizationInvitationBatchData, CreateOrganizationInvitationBatchErrors, CreateOrganizationInvitationBatchResponses, CreateOrganizationInvitationData, CreateOrganizationInvitationErrors, CreateOrganizationInvitationResponses, CreateOrganizationTeamData, CreateOrganizationTeamErrors, CreateOrganizationTeamResponses, CreateOrganizationTokenData, CreateOrganizationTokenErrors, CreateOrganizationTokenResponses, CreateOrganizationTopupOrderData, CreateOrganizationTopupOrderErrors, CreateOrganizationTopupOrderResponses, CreatePlaygroundShareData, CreatePlaygroundShareErrors, CreatePlaygroundShareResponses, CreatePlaygroundTokenData, CreatePlaygroundTokenErrors, CreatePlaygroundTokenResponses, CreateUserTokenData, CreateUserTokenErrors, CreateUserTokenResponses, CreateUserTopupOrderData, CreateUserTopupOrderErrors, CreateUserTopupOrderResponses, DeleteAdminChannelData, DeleteAdminChannelErrors, DeleteAdminChannelResponses, DeleteAdminCredentialData, DeleteAdminCredentialErrors, DeleteAdminCredentialProxyData, DeleteAdminCredentialProxyErrors, DeleteAdminCredentialProxyResponses, DeleteAdminCredentialResponses, DeleteAdminGroupData, DeleteAdminGroupErrors, DeleteAdminGroupResponses, DeleteAdminModelData, DeleteAdminModelErrors, DeleteAdminModelResponses, DeleteAdminRouteData, DeleteAdminRouteErrors, DeleteAdminRouteResponses, DeleteAdminTokenData, DeleteAdminTokenErrors, DeleteAdminTokenResponses, DeleteAdminUserData, DeleteAdminUserErrors, DeleteAdminUserResponses, DeletePlaygroundConversationData, DeletePlaygroundConversationErrors, DeletePlaygroundConversationResponses, DeleteUserTokenData, DeleteUserTokenErrors, DeleteUserTokenResponses, DisableAdminRedemptionBatchData, DisableAdminRedemptionBatchErrors, DisableAdminRedemptionBatchResponses, DisableAdminSubscriptionPlanData, DisableAdminSubscriptionPlanErrors, DisableAdminSubscriptionPlanResponses, DisableOrganizationTeamData, DisableOrganizationTeamErrors, DisableOrganizationTeamResponses, DisableOrganizationTokenData, DisableOrganizationTokenErrors, DisableOrganizationTokenResponses, DisableOwnOrganizationTokenData, DisableOwnOrganizationTokenErrors, DisableOwnOrganizationTokenResponses, DisableUserTwoFactorData, DisableUserTwoFactorErrors, DisableUserTwoFactorResponses, EnableUserTwoFactorData, EnableUserTwoFactorErrors, EnableUserTwoFactorResponses, ExchangeOAuthLoginTicketData, ExchangeOAuthLoginTicketErrors, ExchangeOAuthLoginTicketResponses, FinishPasskeyAuthenticationData, FinishPasskeyAuthenticationErrors, FinishPasskeyAuthenticationResponses, FinishUserPasskeyRegistrationData, FinishUserPasskeyRegistrationErrors, FinishUserPasskeyRegistrationResponses, GetAdminAuthenticationSettingsData, GetAdminAuthenticationSettingsErrors, GetAdminAuthenticationSettingsResponses, GetAdminBalanceAlertSettingsData, GetAdminBalanceAlertSettingsErrors, GetAdminBalanceAlertSettingsResponses, GetAdminChannelData, GetAdminChannelErrors, GetAdminChannelResponses, GetAdminCredentialData, GetAdminCredentialErrors, GetAdminCredentialProxyData, GetAdminCredentialProxyErrors, GetAdminCredentialProxyResponses, GetAdminCredentialResponses, GetAdminDashboardData, GetAdminDashboardErrors, GetAdminDashboardResponses, GetAdminDebugTraceData, GetAdminDebugTraceErrors, GetAdminDebugTraceResponses, GetAdminDebugTraceSettingsData, GetAdminDebugTraceSettingsErrors, GetAdminDebugTraceSettingsResponses, GetAdminDiscordOAuthLoginSettingsData, GetAdminDiscordOAuthLoginSettingsErrors, GetAdminDiscordOAuthLoginSettingsResponses, GetAdminEmailSettingsData, GetAdminEmailSettingsErrors, GetAdminEmailSettingsResponses, GetAdminGitHubOAuthLoginSettingsData, GetAdminGitHubOAuthLoginSettingsErrors, GetAdminGitHubOAuthLoginSettingsResponses, GetAdminGoogleOAuthLoginSettingsData, GetAdminGoogleOAuthLoginSettingsErrors, GetAdminGoogleOAuthLoginSettingsResponses, GetAdminGroupData, GetAdminGroupErrors, GetAdminGroupResponses, GetAdminLinuxDoLoginSettingsData, GetAdminLinuxDoLoginSettingsErrors, GetAdminLinuxDoLoginSettingsResponses, GetAdminModelData, GetAdminModelErrors, GetAdminModelResponses, GetAdminNetworkSettingsData, GetAdminNetworkSettingsErrors, GetAdminNetworkSettingsResponses, GetAdminOidcLoginSettingsData, GetAdminOidcLoginSettingsErrors, GetAdminOidcLoginSettingsResponses, GetAdminPaymentSettingsData, GetAdminPaymentSettingsErrors, GetAdminPaymentSettingsResponses, GetAdminRouteData, GetAdminRouteErrors, GetAdminRouteResponses, GetAdminSiteSettingsData, GetAdminSiteSettingsErrors, GetAdminSiteSettingsResponses, GetAdminTelegramOAuthLoginSettingsData, GetAdminTelegramOAuthLoginSettingsErrors, GetAdminTelegramOAuthLoginSettingsResponses, GetAdminTokenData, GetAdminTokenErrors, GetAdminTokenResponses, GetAdminUserData, GetAdminUserErrors, GetAdminUserResponses, GetAdminWeChatOAuthLoginSettingsData, GetAdminWeChatOAuthLoginSettingsErrors, GetAdminWeChatOAuthLoginSettingsResponses, GetCurrentSubscriptionOrderData, GetCurrentSubscriptionOrderErrors, GetCurrentSubscriptionOrderResponses, GetInitialSetupStatusData, GetInitialSetupStatusErrors, GetInitialSetupStatusResponses, GetManagementSessionData, GetManagementSessionErrors, GetManagementSessionResponses, GetOrganizationBudgetReservationData, GetOrganizationBudgetReservationErrors, GetOrganizationBudgetReservationResponses, GetOrganizationBudgetsData, GetOrganizationBudgetsErrors, GetOrganizationBudgetsResponses, GetOrganizationOverviewData, GetOrganizationOverviewErrors, GetOrganizationOverviewResponses, GetOrganizationTokenData, GetOrganizationTokenErrors, GetOrganizationTokenResponses, GetOrganizationWalletData, GetOrganizationWalletErrors, GetOrganizationWalletResponses, GetPlaygroundConversationData, GetPlaygroundConversationErrors, GetPlaygroundConversationResponses, GetPlaygroundShareData, GetPlaygroundShareErrors, GetPlaygroundShareResponses, GetPublicSiteSettingsData, GetPublicSiteSettingsErrors, GetPublicSiteSettingsResponses, GetRegistrationStatusData, GetRegistrationStatusErrors, GetRegistrationStatusResponses, GetUserInvitationsData, GetUserInvitationsErrors, GetUserInvitationsResponses, GetUserProfileData, GetUserProfileErrors, GetUserProfileResponses, GetUserTokenData, GetUserTokenErrors, GetUserTokenResponses, GetUserTopupConfigurationData, GetUserTopupConfigurationErrors, GetUserTopupConfigurationResponses, GetUserTwoFactorData, GetUserTwoFactorErrors, GetUserTwoFactorResponses, GetUserWalletData, GetUserWalletErrors, GetUserWalletResponses, ImportMissingAdminModelsData, ImportMissingAdminModelsErrors, ImportMissingAdminModelsResponses, InitializeAdminSetupData, InitializeAdminSetupErrors, InitializeAdminSetupResponses, ListAccountOrganizationsData, ListAccountOrganizationsErrors, ListAccountOrganizationsResponses, ListAdminChannelsData, ListAdminChannelsErrors, ListAdminChannelsResponses, ListAdminCredentialProxiesData, ListAdminCredentialProxiesErrors, ListAdminCredentialProxiesResponses, ListAdminCredentialsData, ListAdminCredentialsErrors, ListAdminCredentialsResponses, ListAdminDebugTracesData, ListAdminDebugTracesErrors, ListAdminDebugTracesResponses, ListAdminGroupsData, ListAdminGroupsErrors, ListAdminGroupsResponses, ListAdminModelPricesData, ListAdminModelPricesErrors, ListAdminModelPricesResponses, ListAdminModelsData, ListAdminModelsErrors, ListAdminModelsResponses, ListAdminOAuthProvidersData, ListAdminOAuthProvidersErrors, ListAdminOAuthProvidersResponses, ListAdminPlatformAuditLogsData, ListAdminPlatformAuditLogsErrors, ListAdminPlatformAuditLogsResponses, ListAdminRedemptionAuditData, ListAdminRedemptionAuditErrors, ListAdminRedemptionAuditResponses, ListAdminRedemptionBatchesData, ListAdminRedemptionBatchesErrors, ListAdminRedemptionBatchesResponses, ListAdminRefundsData, ListAdminRefundsErrors, ListAdminRefundsResponses, ListAdminRoutesData, ListAdminRoutesErrors, ListAdminRoutesResponses, ListAdminSubscriptionPlansData, ListAdminSubscriptionPlansErrors, ListAdminSubscriptionPlansResponses, ListAdminTokensData, ListAdminTokensErrors, ListAdminTokensResponses, ListAdminUsageLogsData, ListAdminUsageLogsErrors, ListAdminUsageLogsResponses, ListAdminUsersData, ListAdminUsersErrors, ListAdminUsersResponses, ListAdminUserSubscriptionsData, ListAdminUserSubscriptionsErrors, ListAdminUserSubscriptionsResponses, ListAdminWalletEntriesData, ListAdminWalletEntriesErrors, ListAdminWalletEntriesResponses, ListCurrentSubscriptionCatalogData, ListCurrentSubscriptionCatalogErrors, ListCurrentSubscriptionCatalogResponses, ListCurrentUserSubscriptionsData, ListCurrentUserSubscriptionsErrors, ListCurrentUserSubscriptionsResponses, ListMissingAdminModelsData, ListMissingAdminModelsErrors, ListMissingAdminModelsResponses, ListModelProvidersData, ListModelProvidersErrors, ListModelProvidersResponses, ListModelsData, ListModelsErrors, ListModelsResponses, ListOrganizationAuditLogsData, ListOrganizationAuditLogsErrors, ListOrganizationAuditLogsResponses, ListOrganizationInvitationsData, ListOrganizationInvitationsErrors, ListOrganizationInvitationsResponses, ListOrganizationMembersData, ListOrganizationMembersErrors, ListOrganizationMembersResponses, ListOrganizationTeamsData, ListOrganizationTeamsErrors, ListOrganizationTeamsResponses, ListOrganizationTokenDirectoryData, ListOrganizationTokenDirectoryErrors, ListOrganizationTokenDirectoryResponses, ListOrganizationTokensData, ListOrganizationTokensErrors, ListOrganizationTokensResponses, ListOrganizationUsageLogsData, ListOrganizationUsageLogsErrors, ListOrganizationUsageLogsResponses, ListOrganizationWalletEntriesData, ListOrganizationWalletEntriesErrors, ListOrganizationWalletEntriesResponses, ListPlatformOrganizationAuditLogsData, ListPlatformOrganizationAuditLogsErrors, ListPlatformOrganizationAuditLogsResponses, ListPlatformOrganizationUsageLogsData, ListPlatformOrganizationUsageLogsErrors, ListPlatformOrganizationUsageLogsResponses, ListPlaygroundConversationsData, ListPlaygroundConversationsErrors, ListPlaygroundConversationsResponses, ListSelfPlatformAuditLogsData, ListSelfPlatformAuditLogsErrors, ListSelfPlatformAuditLogsResponses, ListUserNotificationsData, ListUserNotificationsErrors, ListUserNotificationsResponses, ListUserPasskeysData, ListUserPasskeysErrors, ListUserPasskeysResponses, ListUserTokensData, ListUserTokensErrors, ListUserTokensResponses, ListUserUsageLogsData, ListUserUsageLogsErrors, ListUserUsageLogsResponses, ListUserWalletEntriesData, ListUserWalletEntriesErrors, ListUserWalletEntriesResponses, ListVideoTasksData, ListVideoTasksErrors, ListVideoTasksResponses, LoginManagementSessionData, LoginManagementSessionErrors, LoginManagementSessionResponses, MarkUserNotificationsReadData, MarkUserNotificationsReadErrors, MarkUserNotificationsReadResponses, PollVideoTaskData, PollVideoTaskErrors, PollVideoTaskResponses, PreviewAdminLiteLlmModelPricesData, PreviewAdminLiteLlmModelPricesErrors, PreviewAdminLiteLlmModelPricesResponses, PreviewAdminModelPriceExpressionData, PreviewAdminModelPriceExpressionErrors, PreviewAdminModelPriceExpressionResponses, PreviewAdminModelPricesData, PreviewAdminModelPricesErrors, PreviewAdminModelPricesResponses, PreviewOrganizationInvitationsData, PreviewOrganizationInvitationsErrors, PreviewOrganizationInvitationsResponses, ProbeAdminChannelData, ProbeAdminChannelErrors, ProbeAdminChannelResponses, ReadAdminDebugTraceSnapshotsData, ReadAdminDebugTraceSnapshotsErrors, ReadAdminDebugTraceSnapshotsResponses, ReceivePaymentWebhookData, ReceivePaymentWebhookErrors, ReceivePaymentWebhookResponses, ReceiveRefundWebhookData, ReceiveRefundWebhookErrors, ReceiveRefundWebhookResponses, RedeemUserRedemptionCodeData, RedeemUserRedemptionCodeErrors, RedeemUserRedemptionCodeResponses, RegisterUserData, RegisterUserErrors, RegisterUserResponses, RejectAdminRefundData, RejectAdminRefundErrors, RejectAdminRefundResponses, RenameUserPasskeyData, RenameUserPasskeyErrors, RenameUserPasskeyResponses, RequestPasswordResetData, RequestPasswordResetErrors, RequestPasswordResetResponses, RerankData, RerankErrors, RerankResponses, ResendOrganizationInvitationData, ResendOrganizationInvitationErrors, ResendOrganizationInvitationResponses, RevokeOrganizationInvitationData, RevokeOrganizationInvitationErrors, RevokeOrganizationInvitationResponses, RevokePlaygroundShareData, RevokePlaygroundShareErrors, RevokePlaygroundShareResponses, RevokeUserPasskeyData, RevokeUserPasskeyErrors, RevokeUserPasskeyResponses, SavePlaygroundConversationData, SavePlaygroundConversationErrors, SavePlaygroundConversationResponses, SendAdminEmailTestData, SendAdminEmailTestErrors, SendAdminEmailTestResponses, SendRegistrationEmailVerificationData, SendRegistrationEmailVerificationErrors, SendRegistrationEmailVerificationResponses, StartDiscordOAuthLoginData, StartDiscordOAuthLoginErrors, StartDiscordOAuthLoginResponses, StartGitHubOAuthLoginData, StartGitHubOAuthLoginErrors, StartGitHubOAuthLoginResponses, StartGoogleLoginData, StartGoogleLoginErrors, StartGoogleLoginResponses, StartLinuxDoLoginData, StartLinuxDoLoginErrors, StartLinuxDoLoginResponses, StartOidcLoginData, StartOidcLoginErrors, StartOidcLoginResponses, StartPasskeyAuthenticationData, StartPasskeyAuthenticationErrors, StartPasskeyAuthenticationResponses, StartTelegramLoginData, StartTelegramLoginErrors, StartTelegramLoginResponses, StartUserPasskeyRegistrationData, StartUserPasskeyRegistrationErrors, StartUserPasskeyRegistrationResponses, StartWeChatOAuthLoginData, StartWeChatOAuthLoginErrors, StartWeChatOAuthLoginResponses, SubmitAdminRefundData, SubmitAdminRefundErrors, SubmitAdminRefundResponses, SubmitCurrentSubscriptionOrderPaymentData, SubmitCurrentSubscriptionOrderPaymentErrors, SubmitCurrentSubscriptionOrderPaymentResponses, SubmitVideoTaskData, SubmitVideoTaskErrors, SubmitVideoTaskResponses, SynthesizeSpeechData, SynthesizeSpeechErrors, SynthesizeSpeechResponses, TransferOrganizationOwnershipData, TransferOrganizationOwnershipErrors, TransferOrganizationOwnershipResponses, TransitionAdminUserSubscriptionLifecycleData, TransitionAdminUserSubscriptionLifecycleErrors, TransitionAdminUserSubscriptionLifecycleResponses, UpdateAdminAuthenticationSettingsData, UpdateAdminAuthenticationSettingsErrors, UpdateAdminAuthenticationSettingsResponses, UpdateAdminBalanceAlertSettingsData, UpdateAdminBalanceAlertSettingsErrors, UpdateAdminBalanceAlertSettingsResponses, UpdateAdminChannelData, UpdateAdminChannelErrors, UpdateAdminChannelResponses, UpdateAdminCredentialData, UpdateAdminCredentialErrors, UpdateAdminCredentialProxyData, UpdateAdminCredentialProxyErrors, UpdateAdminCredentialProxyResponses, UpdateAdminCredentialResponses, UpdateAdminDebugTraceSettingsData, UpdateAdminDebugTraceSettingsErrors, UpdateAdminDebugTraceSettingsResponses, UpdateAdminDiscordOAuthLoginSettingsData, UpdateAdminDiscordOAuthLoginSettingsErrors, UpdateAdminDiscordOAuthLoginSettingsResponses, UpdateAdminEmailSettingsData, UpdateAdminEmailSettingsErrors, UpdateAdminEmailSettingsResponses, UpdateAdminGitHubOAuthLoginSettingsData, UpdateAdminGitHubOAuthLoginSettingsErrors, UpdateAdminGitHubOAuthLoginSettingsResponses, UpdateAdminGoogleOAuthLoginSettingsData, UpdateAdminGoogleOAuthLoginSettingsErrors, UpdateAdminGoogleOAuthLoginSettingsResponses, UpdateAdminGroupData, UpdateAdminGroupErrors, UpdateAdminGroupResponses, UpdateAdminLinuxDoLoginSettingsData, UpdateAdminLinuxDoLoginSettingsErrors, UpdateAdminLinuxDoLoginSettingsResponses, UpdateAdminModelData, UpdateAdminModelErrors, UpdateAdminModelResponses, UpdateAdminNetworkSettingsData, UpdateAdminNetworkSettingsErrors, UpdateAdminNetworkSettingsResponses, UpdateAdminOidcLoginSettingsData, UpdateAdminOidcLoginSettingsErrors, UpdateAdminOidcLoginSettingsResponses, UpdateAdminPaymentSettingsData, UpdateAdminPaymentSettingsErrors, UpdateAdminPaymentSettingsResponses, UpdateAdminRouteData, UpdateAdminRouteErrors, UpdateAdminRouteResponses, UpdateAdminSiteSettingsData, UpdateAdminSiteSettingsErrors, UpdateAdminSiteSettingsResponses, UpdateAdminTelegramOAuthLoginSettingsData, UpdateAdminTelegramOAuthLoginSettingsErrors, UpdateAdminTelegramOAuthLoginSettingsResponses, UpdateAdminTokenData, UpdateAdminTokenErrors, UpdateAdminTokenResponses, UpdateAdminUserData, UpdateAdminUserErrors, UpdateAdminUserResponses, UpdateAdminWeChatOAuthLoginSettingsData, UpdateAdminWeChatOAuthLoginSettingsErrors, UpdateAdminWeChatOAuthLoginSettingsResponses, UpdateOrganizationTokenData, UpdateOrganizationTokenErrors, UpdateOrganizationTokenResponses, UpdateUserNotificationPreferencesData, UpdateUserNotificationPreferencesErrors, UpdateUserNotificationPreferencesResponses, UpdateUserProfileData, UpdateUserProfileErrors, UpdateUserProfileResponses, UpdateUserTokenData, UpdateUserTokenErrors, UpdateUserTokenResponses } from './types.gen';
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     client?: Client;
     meta?: keyof ClientMeta extends never ? Record<string, unknown> : ClientMeta;
@@ -199,6 +199,50 @@ export const redeemUserRedemptionCode = <ThrowOnError extends boolean = true>(op
         ...options.headers
     }
 });
+export const listAdminRefunds = <ThrowOnError extends boolean = true>(options?: Options<ListAdminRefundsData, ThrowOnError>): RequestResult<ListAdminRefundsResponses, ListAdminRefundsErrors, ThrowOnError> => (options?.client ?? client).get<ListAdminRefundsResponses, ListAdminRefundsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/refunds',
+    ...options
+});
+export const approveAdminRefund = <ThrowOnError extends boolean = true>(options: Options<ApproveAdminRefundData, ThrowOnError>): RequestResult<ApproveAdminRefundResponses, ApproveAdminRefundErrors, ThrowOnError> => (options.client ?? client).post<ApproveAdminRefundResponses, ApproveAdminRefundErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/refunds/{request_id}/approve',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const rejectAdminRefund = <ThrowOnError extends boolean = true>(options: Options<RejectAdminRefundData, ThrowOnError>): RequestResult<RejectAdminRefundResponses, RejectAdminRefundErrors, ThrowOnError> => (options.client ?? client).post<RejectAdminRefundResponses, RejectAdminRefundErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/refunds/{request_id}/reject',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const submitAdminRefund = <ThrowOnError extends boolean = true>(options: Options<SubmitAdminRefundData, ThrowOnError>): RequestResult<SubmitAdminRefundResponses, SubmitAdminRefundErrors, ThrowOnError> => (options.client ?? client).post<SubmitAdminRefundResponses, SubmitAdminRefundErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/refunds/{request_id}/submit',
+    ...options
+});
 export const listAdminSubscriptionPlans = <ThrowOnError extends boolean = true>(options?: Options<ListAdminSubscriptionPlansData, ThrowOnError>): RequestResult<ListAdminSubscriptionPlansResponses, ListAdminSubscriptionPlansErrors, ThrowOnError> => (options?.client ?? client).get<ListAdminSubscriptionPlansResponses, ListAdminSubscriptionPlansErrors, ThrowOnError>({
     security: [{
             key: 'bearerAuth',
@@ -278,6 +322,50 @@ export const listCurrentUserSubscriptions = <ThrowOnError extends boolean = true
     url: '/api/account/subscriptions',
     ...options
 });
+export const listCurrentSubscriptionCatalog = <ThrowOnError extends boolean = true>(options?: Options<ListCurrentSubscriptionCatalogData, ThrowOnError>): RequestResult<ListCurrentSubscriptionCatalogResponses, ListCurrentSubscriptionCatalogErrors, ThrowOnError> => (options?.client ?? client).get<ListCurrentSubscriptionCatalogResponses, ListCurrentSubscriptionCatalogErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/account/subscription-catalog',
+    ...options
+});
+export const createCurrentSubscriptionOrder = <ThrowOnError extends boolean = true>(options: Options<CreateCurrentSubscriptionOrderData, ThrowOnError>): RequestResult<CreateCurrentSubscriptionOrderResponses, CreateCurrentSubscriptionOrderErrors, ThrowOnError> => (options.client ?? client).post<CreateCurrentSubscriptionOrderResponses, CreateCurrentSubscriptionOrderErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/account/subscription-orders',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const getCurrentSubscriptionOrder = <ThrowOnError extends boolean = true>(options: Options<GetCurrentSubscriptionOrderData, ThrowOnError>): RequestResult<GetCurrentSubscriptionOrderResponses, GetCurrentSubscriptionOrderErrors, ThrowOnError> => (options.client ?? client).get<GetCurrentSubscriptionOrderResponses, GetCurrentSubscriptionOrderErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/account/subscription-orders/{order_id}',
+    ...options
+});
+export const submitCurrentSubscriptionOrderPayment = <ThrowOnError extends boolean = true>(options: Options<SubmitCurrentSubscriptionOrderPaymentData, ThrowOnError>): RequestResult<SubmitCurrentSubscriptionOrderPaymentResponses, SubmitCurrentSubscriptionOrderPaymentErrors, ThrowOnError> => (options.client ?? client).post<SubmitCurrentSubscriptionOrderPaymentResponses, SubmitCurrentSubscriptionOrderPaymentErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/account/subscription-orders/{order_id}/payment',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 export const requestPasswordReset = <ThrowOnError extends boolean = true>(options: Options<RequestPasswordResetData, ThrowOnError>): RequestResult<RequestPasswordResetResponses, RequestPasswordResetErrors, ThrowOnError> => (options.client ?? client).post<RequestPasswordResetResponses, RequestPasswordResetErrors, ThrowOnError>({
     url: '/api/auth/password-reset/request',
     ...options,
@@ -329,6 +417,50 @@ export const changeUserPassword = <ThrowOnError extends boolean = true>(options:
         ...options.headers
     }
 });
+export const disableUserTwoFactor = <ThrowOnError extends boolean = true>(options: Options<DisableUserTwoFactorData, ThrowOnError>): RequestResult<DisableUserTwoFactorResponses, DisableUserTwoFactorErrors, ThrowOnError> => (options.client ?? client).delete<DisableUserTwoFactorResponses, DisableUserTwoFactorErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/account/two-factor',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const getUserTwoFactor = <ThrowOnError extends boolean = true>(options?: Options<GetUserTwoFactorData, ThrowOnError>): RequestResult<GetUserTwoFactorResponses, GetUserTwoFactorErrors, ThrowOnError> => (options?.client ?? client).get<GetUserTwoFactorResponses, GetUserTwoFactorErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/account/two-factor',
+    ...options
+});
+export const enableUserTwoFactor = <ThrowOnError extends boolean = true>(options: Options<EnableUserTwoFactorData, ThrowOnError>): RequestResult<EnableUserTwoFactorResponses, EnableUserTwoFactorErrors, ThrowOnError> => (options.client ?? client).post<EnableUserTwoFactorResponses, EnableUserTwoFactorErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/account/two-factor',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const listUserNotifications = <ThrowOnError extends boolean = true>(options?: Options<ListUserNotificationsData, ThrowOnError>): RequestResult<ListUserNotificationsResponses, ListUserNotificationsErrors, ThrowOnError> => (options?.client ?? client).get<ListUserNotificationsResponses, ListUserNotificationsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/account/notifications',
+    ...options
+});
 export const updateUserNotificationPreferences = <ThrowOnError extends boolean = true>(options: Options<UpdateUserNotificationPreferencesData, ThrowOnError>): RequestResult<UpdateUserNotificationPreferencesResponses, UpdateUserNotificationPreferencesErrors, ThrowOnError> => (options.client ?? client).put<UpdateUserNotificationPreferencesResponses, UpdateUserNotificationPreferencesErrors, ThrowOnError>({
     security: [{
             key: 'bearerAuth',
@@ -336,6 +468,63 @@ export const updateUserNotificationPreferences = <ThrowOnError extends boolean =
             type: 'http'
         }],
     url: '/api/account/notifications',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const listUserPasskeys = <ThrowOnError extends boolean = true>(options?: Options<ListUserPasskeysData, ThrowOnError>): RequestResult<ListUserPasskeysResponses, ListUserPasskeysErrors, ThrowOnError> => (options?.client ?? client).get<ListUserPasskeysResponses, ListUserPasskeysErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/account/passkeys',
+    ...options
+});
+export const startUserPasskeyRegistration = <ThrowOnError extends boolean = true>(options?: Options<StartUserPasskeyRegistrationData, ThrowOnError>): RequestResult<StartUserPasskeyRegistrationResponses, StartUserPasskeyRegistrationErrors, ThrowOnError> => (options?.client ?? client).post<StartUserPasskeyRegistrationResponses, StartUserPasskeyRegistrationErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/account/passkeys/registration/options',
+    ...options
+});
+export const finishUserPasskeyRegistration = <ThrowOnError extends boolean = true>(options: Options<FinishUserPasskeyRegistrationData, ThrowOnError>): RequestResult<FinishUserPasskeyRegistrationResponses, FinishUserPasskeyRegistrationErrors, ThrowOnError> => (options.client ?? client).post<FinishUserPasskeyRegistrationResponses, FinishUserPasskeyRegistrationErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/account/passkeys/registration/verify',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const revokeUserPasskey = <ThrowOnError extends boolean = true>(options: Options<RevokeUserPasskeyData, ThrowOnError>): RequestResult<RevokeUserPasskeyResponses, RevokeUserPasskeyErrors, ThrowOnError> => (options.client ?? client).delete<RevokeUserPasskeyResponses, RevokeUserPasskeyErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/account/passkeys/{id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const renameUserPasskey = <ThrowOnError extends boolean = true>(options: Options<RenameUserPasskeyData, ThrowOnError>): RequestResult<RenameUserPasskeyResponses, RenameUserPasskeyErrors, ThrowOnError> => (options.client ?? client).patch<RenameUserPasskeyResponses, RenameUserPasskeyErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/account/passkeys/{id}',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -359,6 +548,19 @@ export const listUserWalletEntries = <ThrowOnError extends boolean = true>(optio
         }],
     url: '/api/account/wallet/entries',
     ...options
+});
+export const markUserNotificationsRead = <ThrowOnError extends boolean = true>(options: Options<MarkUserNotificationsReadData, ThrowOnError>): RequestResult<MarkUserNotificationsReadResponses, MarkUserNotificationsReadErrors, ThrowOnError> => (options.client ?? client).post<MarkUserNotificationsReadResponses, MarkUserNotificationsReadErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/account/notifications/read',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 export const getUserTopupConfiguration = <ThrowOnError extends boolean = true>(options?: Options<GetUserTopupConfigurationData, ThrowOnError>): RequestResult<GetUserTopupConfigurationResponses, GetUserTopupConfigurationErrors, ThrowOnError> => (options?.client ?? client).get<GetUserTopupConfigurationResponses, GetUserTopupConfigurationErrors, ThrowOnError>({
     security: [{
@@ -499,6 +701,242 @@ export const completeAdminOAuthManualCallback = <ThrowOnError extends boolean = 
             type: 'http'
         }],
     url: '/api/admin/oauth/authorizations/manual-callback',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const startGitHubOAuthLogin = <ThrowOnError extends boolean = true>(options?: Options<StartGitHubOAuthLoginData, ThrowOnError>): RequestResult<StartGitHubOAuthLoginResponses, StartGitHubOAuthLoginErrors, ThrowOnError> => (options?.client ?? client).post<StartGitHubOAuthLoginResponses, StartGitHubOAuthLoginErrors, ThrowOnError>({ url: '/api/auth/oauth/github/start', ...options });
+export const startDiscordOAuthLogin = <ThrowOnError extends boolean = true>(options?: Options<StartDiscordOAuthLoginData, ThrowOnError>): RequestResult<StartDiscordOAuthLoginResponses, StartDiscordOAuthLoginErrors, ThrowOnError> => (options?.client ?? client).post<StartDiscordOAuthLoginResponses, StartDiscordOAuthLoginErrors, ThrowOnError>({ url: '/api/auth/oauth/discord/start', ...options });
+export const completeGitHubOAuthLogin = <ThrowOnError extends boolean = true>(options?: Options<CompleteGitHubOAuthLoginData, ThrowOnError>): RequestResult<unknown, CompleteGitHubOAuthLoginErrors, ThrowOnError> => (options?.client ?? client).get<unknown, CompleteGitHubOAuthLoginErrors, ThrowOnError>({ url: '/api/auth/oauth/github/callback', ...options });
+export const completeDiscordOAuthLogin = <ThrowOnError extends boolean = true>(options?: Options<CompleteDiscordOAuthLoginData, ThrowOnError>): RequestResult<unknown, CompleteDiscordOAuthLoginErrors, ThrowOnError> => (options?.client ?? client).get<unknown, CompleteDiscordOAuthLoginErrors, ThrowOnError>({ url: '/api/auth/oauth/discord/callback', ...options });
+export const exchangeOAuthLoginTicket = <ThrowOnError extends boolean = true>(options: Options<ExchangeOAuthLoginTicketData, ThrowOnError>): RequestResult<ExchangeOAuthLoginTicketResponses, ExchangeOAuthLoginTicketErrors, ThrowOnError> => (options.client ?? client).post<ExchangeOAuthLoginTicketResponses, ExchangeOAuthLoginTicketErrors, ThrowOnError>({
+    url: '/api/auth/oauth/exchange',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const getAdminGitHubOAuthLoginSettings = <ThrowOnError extends boolean = true>(options?: Options<GetAdminGitHubOAuthLoginSettingsData, ThrowOnError>): RequestResult<GetAdminGitHubOAuthLoginSettingsResponses, GetAdminGitHubOAuthLoginSettingsErrors, ThrowOnError> => (options?.client ?? client).get<GetAdminGitHubOAuthLoginSettingsResponses, GetAdminGitHubOAuthLoginSettingsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/authentication-settings/oauth/github',
+    ...options
+});
+export const updateAdminGitHubOAuthLoginSettings = <ThrowOnError extends boolean = true>(options: Options<UpdateAdminGitHubOAuthLoginSettingsData, ThrowOnError>): RequestResult<UpdateAdminGitHubOAuthLoginSettingsResponses, UpdateAdminGitHubOAuthLoginSettingsErrors, ThrowOnError> => (options.client ?? client).put<UpdateAdminGitHubOAuthLoginSettingsResponses, UpdateAdminGitHubOAuthLoginSettingsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/authentication-settings/oauth/github',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const getAdminDiscordOAuthLoginSettings = <ThrowOnError extends boolean = true>(options?: Options<GetAdminDiscordOAuthLoginSettingsData, ThrowOnError>): RequestResult<GetAdminDiscordOAuthLoginSettingsResponses, GetAdminDiscordOAuthLoginSettingsErrors, ThrowOnError> => (options?.client ?? client).get<GetAdminDiscordOAuthLoginSettingsResponses, GetAdminDiscordOAuthLoginSettingsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/authentication-settings/oauth/discord',
+    ...options
+});
+export const updateAdminDiscordOAuthLoginSettings = <ThrowOnError extends boolean = true>(options: Options<UpdateAdminDiscordOAuthLoginSettingsData, ThrowOnError>): RequestResult<UpdateAdminDiscordOAuthLoginSettingsResponses, UpdateAdminDiscordOAuthLoginSettingsErrors, ThrowOnError> => (options.client ?? client).put<UpdateAdminDiscordOAuthLoginSettingsResponses, UpdateAdminDiscordOAuthLoginSettingsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/authentication-settings/oauth/discord',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const listAccountOrganizations = <ThrowOnError extends boolean = true>(options?: Options<ListAccountOrganizationsData, ThrowOnError>): RequestResult<ListAccountOrganizationsResponses, ListAccountOrganizationsErrors, ThrowOnError> => (options?.client ?? client).get<ListAccountOrganizationsResponses, ListAccountOrganizationsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/account/organizations',
+    ...options
+});
+export const getOrganizationOverview = <ThrowOnError extends boolean = true>(options: Options<GetOrganizationOverviewData, ThrowOnError>): RequestResult<GetOrganizationOverviewResponses, GetOrganizationOverviewErrors, ThrowOnError> => (options.client ?? client).get<GetOrganizationOverviewResponses, GetOrganizationOverviewErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}',
+    ...options
+});
+export const listOrganizationInvitations = <ThrowOnError extends boolean = true>(options: Options<ListOrganizationInvitationsData, ThrowOnError>): RequestResult<ListOrganizationInvitationsResponses, ListOrganizationInvitationsErrors, ThrowOnError> => (options.client ?? client).get<ListOrganizationInvitationsResponses, ListOrganizationInvitationsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/invitations',
+    ...options
+});
+export const createOrganizationInvitation = <ThrowOnError extends boolean = true>(options: Options<CreateOrganizationInvitationData, ThrowOnError>): RequestResult<CreateOrganizationInvitationResponses, CreateOrganizationInvitationErrors, ThrowOnError> => (options.client ?? client).post<CreateOrganizationInvitationResponses, CreateOrganizationInvitationErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/invitations',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const previewOrganizationInvitations = <ThrowOnError extends boolean = true>(options: Options<PreviewOrganizationInvitationsData, ThrowOnError>): RequestResult<PreviewOrganizationInvitationsResponses, PreviewOrganizationInvitationsErrors, ThrowOnError> => (options.client ?? client).post<PreviewOrganizationInvitationsResponses, PreviewOrganizationInvitationsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/invitations/preview',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const createOrganizationInvitationBatch = <ThrowOnError extends boolean = true>(options: Options<CreateOrganizationInvitationBatchData, ThrowOnError>): RequestResult<CreateOrganizationInvitationBatchResponses, CreateOrganizationInvitationBatchErrors, ThrowOnError> => (options.client ?? client).post<CreateOrganizationInvitationBatchResponses, CreateOrganizationInvitationBatchErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/invitations/batches',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const revokeOrganizationInvitation = <ThrowOnError extends boolean = true>(options: Options<RevokeOrganizationInvitationData, ThrowOnError>): RequestResult<RevokeOrganizationInvitationResponses, RevokeOrganizationInvitationErrors, ThrowOnError> => (options.client ?? client).post<RevokeOrganizationInvitationResponses, RevokeOrganizationInvitationErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/invitations/{invitation_key}/revoke',
+    ...options
+});
+export const resendOrganizationInvitation = <ThrowOnError extends boolean = true>(options: Options<ResendOrganizationInvitationData, ThrowOnError>): RequestResult<ResendOrganizationInvitationResponses, ResendOrganizationInvitationErrors, ThrowOnError> => (options.client ?? client).post<ResendOrganizationInvitationResponses, ResendOrganizationInvitationErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/invitations/{invitation_key}/resend',
+    ...options
+});
+export const acceptOrganizationInvitation = <ThrowOnError extends boolean = true>(options: Options<AcceptOrganizationInvitationData, ThrowOnError>): RequestResult<AcceptOrganizationInvitationResponses, AcceptOrganizationInvitationErrors, ThrowOnError> => (options.client ?? client).post<AcceptOrganizationInvitationResponses, AcceptOrganizationInvitationErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/account/organization-invitations/accept',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const listOrganizationMembers = <ThrowOnError extends boolean = true>(options: Options<ListOrganizationMembersData, ThrowOnError>): RequestResult<ListOrganizationMembersResponses, ListOrganizationMembersErrors, ThrowOnError> => (options.client ?? client).get<ListOrganizationMembersResponses, ListOrganizationMembersErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/members',
+    ...options
+});
+export const changeOrganizationMember = <ThrowOnError extends boolean = true>(options: Options<ChangeOrganizationMemberData, ThrowOnError>): RequestResult<ChangeOrganizationMemberResponses, ChangeOrganizationMemberErrors, ThrowOnError> => (options.client ?? client).patch<ChangeOrganizationMemberResponses, ChangeOrganizationMemberErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/members/{membership_id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const transferOrganizationOwnership = <ThrowOnError extends boolean = true>(options: Options<TransferOrganizationOwnershipData, ThrowOnError>): RequestResult<TransferOrganizationOwnershipResponses, TransferOrganizationOwnershipErrors, ThrowOnError> => (options.client ?? client).post<TransferOrganizationOwnershipResponses, TransferOrganizationOwnershipErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/ownership-transfer',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const listOrganizationTeams = <ThrowOnError extends boolean = true>(options: Options<ListOrganizationTeamsData, ThrowOnError>): RequestResult<ListOrganizationTeamsResponses, ListOrganizationTeamsErrors, ThrowOnError> => (options.client ?? client).get<ListOrganizationTeamsResponses, ListOrganizationTeamsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/teams',
+    ...options
+});
+export const createOrganizationTeam = <ThrowOnError extends boolean = true>(options: Options<CreateOrganizationTeamData, ThrowOnError>): RequestResult<CreateOrganizationTeamResponses, CreateOrganizationTeamErrors, ThrowOnError> => (options.client ?? client).post<CreateOrganizationTeamResponses, CreateOrganizationTeamErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/teams',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const changeOrganizationTeam = <ThrowOnError extends boolean = true>(options: Options<ChangeOrganizationTeamData, ThrowOnError>): RequestResult<ChangeOrganizationTeamResponses, ChangeOrganizationTeamErrors, ThrowOnError> => (options.client ?? client).patch<ChangeOrganizationTeamResponses, ChangeOrganizationTeamErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/teams/{team_id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const disableOrganizationTeam = <ThrowOnError extends boolean = true>(options: Options<DisableOrganizationTeamData, ThrowOnError>): RequestResult<DisableOrganizationTeamResponses, DisableOrganizationTeamErrors, ThrowOnError> => (options.client ?? client).post<DisableOrganizationTeamResponses, DisableOrganizationTeamErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/teams/{team_id}/disable',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -1316,8 +1754,365 @@ export const getAdminDebugTrace = <ThrowOnError extends boolean = true>(options:
     url: '/api/admin/debug-traces/{id}',
     ...options
 });
+export const readAdminDebugTraceSnapshots = <ThrowOnError extends boolean = true>(options: Options<ReadAdminDebugTraceSnapshotsData, ThrowOnError>): RequestResult<ReadAdminDebugTraceSnapshotsResponses, ReadAdminDebugTraceSnapshotsErrors, ThrowOnError> => (options.client ?? client).post<ReadAdminDebugTraceSnapshotsResponses, ReadAdminDebugTraceSnapshotsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/debug-traces/{id}/snapshots',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 export const receivePaymentWebhook = <ThrowOnError extends boolean = true>(options: Options<ReceivePaymentWebhookData, ThrowOnError>): RequestResult<ReceivePaymentWebhookResponses, ReceivePaymentWebhookErrors, ThrowOnError> => (options.client ?? client).post<ReceivePaymentWebhookResponses, ReceivePaymentWebhookErrors, ThrowOnError>({
     url: '/api/payment/webhook/{provider}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const receiveRefundWebhook = <ThrowOnError extends boolean = true>(options: Options<ReceiveRefundWebhookData, ThrowOnError>): RequestResult<ReceiveRefundWebhookResponses, ReceiveRefundWebhookErrors, ThrowOnError> => (options.client ?? client).post<ReceiveRefundWebhookResponses, ReceiveRefundWebhookErrors, ThrowOnError>({
+    url: '/api/refund/webhook/{provider}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const getOrganizationWallet = <ThrowOnError extends boolean = true>(options: Options<GetOrganizationWalletData, ThrowOnError>): RequestResult<GetOrganizationWalletResponses, GetOrganizationWalletErrors, ThrowOnError> => (options.client ?? client).get<GetOrganizationWalletResponses, GetOrganizationWalletErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/wallet',
+    ...options
+});
+export const listOrganizationWalletEntries = <ThrowOnError extends boolean = true>(options: Options<ListOrganizationWalletEntriesData, ThrowOnError>): RequestResult<ListOrganizationWalletEntriesResponses, ListOrganizationWalletEntriesErrors, ThrowOnError> => (options.client ?? client).get<ListOrganizationWalletEntriesResponses, ListOrganizationWalletEntriesErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/wallet/entries',
+    ...options
+});
+export const adjustOrganizationWallet = <ThrowOnError extends boolean = true>(options: Options<AdjustOrganizationWalletData, ThrowOnError>): RequestResult<AdjustOrganizationWalletResponses, AdjustOrganizationWalletErrors, ThrowOnError> => (options.client ?? client).post<AdjustOrganizationWalletResponses, AdjustOrganizationWalletErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/wallet/adjustments',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const createOrganizationTopupOrder = <ThrowOnError extends boolean = true>(options: Options<CreateOrganizationTopupOrderData, ThrowOnError>): RequestResult<CreateOrganizationTopupOrderResponses, CreateOrganizationTopupOrderErrors, ThrowOnError> => (options.client ?? client).post<CreateOrganizationTopupOrderResponses, CreateOrganizationTopupOrderErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/topups',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const getOrganizationBudgets = <ThrowOnError extends boolean = true>(options: Options<GetOrganizationBudgetsData, ThrowOnError>): RequestResult<GetOrganizationBudgetsResponses, GetOrganizationBudgetsErrors, ThrowOnError> => (options.client ?? client).get<GetOrganizationBudgetsResponses, GetOrganizationBudgetsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/budgets',
+    ...options
+});
+export const createOrganizationBudgetPolicy = <ThrowOnError extends boolean = true>(options: Options<CreateOrganizationBudgetPolicyData, ThrowOnError>): RequestResult<CreateOrganizationBudgetPolicyResponses, CreateOrganizationBudgetPolicyErrors, ThrowOnError> => (options.client ?? client).post<CreateOrganizationBudgetPolicyResponses, CreateOrganizationBudgetPolicyErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/budgets',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const getOrganizationBudgetReservation = <ThrowOnError extends boolean = true>(options: Options<GetOrganizationBudgetReservationData, ThrowOnError>): RequestResult<GetOrganizationBudgetReservationResponses, GetOrganizationBudgetReservationErrors, ThrowOnError> => (options.client ?? client).get<GetOrganizationBudgetReservationResponses, GetOrganizationBudgetReservationErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/budgets/reservations/{reservation_id}',
+    ...options
+});
+export const listOrganizationTokens = <ThrowOnError extends boolean = true>(options: Options<ListOrganizationTokensData, ThrowOnError>): RequestResult<ListOrganizationTokensResponses, ListOrganizationTokensErrors, ThrowOnError> => (options.client ?? client).get<ListOrganizationTokensResponses, ListOrganizationTokensErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/tokens',
+    ...options
+});
+export const createOrganizationToken = <ThrowOnError extends boolean = true>(options: Options<CreateOrganizationTokenData, ThrowOnError>): RequestResult<CreateOrganizationTokenResponses, CreateOrganizationTokenErrors, ThrowOnError> => (options.client ?? client).post<CreateOrganizationTokenResponses, CreateOrganizationTokenErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/tokens',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const listOrganizationTokenDirectory = <ThrowOnError extends boolean = true>(options: Options<ListOrganizationTokenDirectoryData, ThrowOnError>): RequestResult<ListOrganizationTokenDirectoryResponses, ListOrganizationTokenDirectoryErrors, ThrowOnError> => (options.client ?? client).get<ListOrganizationTokenDirectoryResponses, ListOrganizationTokenDirectoryErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/tokens/directory',
+    ...options
+});
+export const disableOwnOrganizationToken = <ThrowOnError extends boolean = true>(options: Options<DisableOwnOrganizationTokenData, ThrowOnError>): RequestResult<DisableOwnOrganizationTokenResponses, DisableOwnOrganizationTokenErrors, ThrowOnError> => (options.client ?? client).delete<DisableOwnOrganizationTokenResponses, DisableOwnOrganizationTokenErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/tokens/{token_id}',
+    ...options
+});
+export const getOrganizationToken = <ThrowOnError extends boolean = true>(options: Options<GetOrganizationTokenData, ThrowOnError>): RequestResult<GetOrganizationTokenResponses, GetOrganizationTokenErrors, ThrowOnError> => (options.client ?? client).get<GetOrganizationTokenResponses, GetOrganizationTokenErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/tokens/{token_id}',
+    ...options
+});
+export const updateOrganizationToken = <ThrowOnError extends boolean = true>(options: Options<UpdateOrganizationTokenData, ThrowOnError>): RequestResult<UpdateOrganizationTokenResponses, UpdateOrganizationTokenErrors, ThrowOnError> => (options.client ?? client).put<UpdateOrganizationTokenResponses, UpdateOrganizationTokenErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/tokens/{token_id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const disableOrganizationToken = <ThrowOnError extends boolean = true>(options: Options<DisableOrganizationTokenData, ThrowOnError>): RequestResult<DisableOrganizationTokenResponses, DisableOrganizationTokenErrors, ThrowOnError> => (options.client ?? client).post<DisableOrganizationTokenResponses, DisableOrganizationTokenErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/tokens/{token_id}/disable',
+    ...options
+});
+export const listOrganizationUsageLogs = <ThrowOnError extends boolean = true>(options: Options<ListOrganizationUsageLogsData, ThrowOnError>): RequestResult<ListOrganizationUsageLogsResponses, ListOrganizationUsageLogsErrors, ThrowOnError> => (options.client ?? client).get<ListOrganizationUsageLogsResponses, ListOrganizationUsageLogsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/usage-logs',
+    ...options
+});
+export const listOrganizationAuditLogs = <ThrowOnError extends boolean = true>(options: Options<ListOrganizationAuditLogsData, ThrowOnError>): RequestResult<ListOrganizationAuditLogsResponses, ListOrganizationAuditLogsErrors, ThrowOnError> => (options.client ?? client).get<ListOrganizationAuditLogsResponses, ListOrganizationAuditLogsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/organizations/{organization_id}/audit-logs',
+    ...options
+});
+export const listPlatformOrganizationUsageLogs = <ThrowOnError extends boolean = true>(options: Options<ListPlatformOrganizationUsageLogsData, ThrowOnError>): RequestResult<ListPlatformOrganizationUsageLogsResponses, ListPlatformOrganizationUsageLogsErrors, ThrowOnError> => (options.client ?? client).get<ListPlatformOrganizationUsageLogsResponses, ListPlatformOrganizationUsageLogsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/platform/organizations/{organization_id}/usage-logs',
+    ...options
+});
+export const listPlatformOrganizationAuditLogs = <ThrowOnError extends boolean = true>(options: Options<ListPlatformOrganizationAuditLogsData, ThrowOnError>): RequestResult<ListPlatformOrganizationAuditLogsResponses, ListPlatformOrganizationAuditLogsErrors, ThrowOnError> => (options.client ?? client).get<ListPlatformOrganizationAuditLogsResponses, ListPlatformOrganizationAuditLogsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/platform/organizations/{organization_id}/audit-logs',
+    ...options
+});
+export const startPasskeyAuthentication = <ThrowOnError extends boolean = true>(options: Options<StartPasskeyAuthenticationData, ThrowOnError>): RequestResult<StartPasskeyAuthenticationResponses, StartPasskeyAuthenticationErrors, ThrowOnError> => (options.client ?? client).post<StartPasskeyAuthenticationResponses, StartPasskeyAuthenticationErrors, ThrowOnError>({
+    url: '/api/auth/passkey/options',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const finishPasskeyAuthentication = <ThrowOnError extends boolean = true>(options: Options<FinishPasskeyAuthenticationData, ThrowOnError>): RequestResult<FinishPasskeyAuthenticationResponses, FinishPasskeyAuthenticationErrors, ThrowOnError> => (options.client ?? client).post<FinishPasskeyAuthenticationResponses, FinishPasskeyAuthenticationErrors, ThrowOnError>({
+    url: '/api/auth/passkey/verify',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const listAdminPlatformAuditLogs = <ThrowOnError extends boolean = true>(options?: Options<ListAdminPlatformAuditLogsData, ThrowOnError>): RequestResult<ListAdminPlatformAuditLogsResponses, ListAdminPlatformAuditLogsErrors, ThrowOnError> => (options?.client ?? client).get<ListAdminPlatformAuditLogsResponses, ListAdminPlatformAuditLogsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/audit-logs',
+    ...options
+});
+export const listSelfPlatformAuditLogs = <ThrowOnError extends boolean = true>(options?: Options<ListSelfPlatformAuditLogsData, ThrowOnError>): RequestResult<ListSelfPlatformAuditLogsResponses, ListSelfPlatformAuditLogsErrors, ThrowOnError> => (options?.client ?? client).get<ListSelfPlatformAuditLogsResponses, ListSelfPlatformAuditLogsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/account/audit-logs',
+    ...options
+});
+export const startOidcLogin = <ThrowOnError extends boolean = true>(options?: Options<StartOidcLoginData, ThrowOnError>): RequestResult<StartOidcLoginResponses, StartOidcLoginErrors, ThrowOnError> => (options?.client ?? client).post<StartOidcLoginResponses, StartOidcLoginErrors, ThrowOnError>({ url: '/api/auth/oauth/oidc/start', ...options });
+export const startLinuxDoLogin = <ThrowOnError extends boolean = true>(options?: Options<StartLinuxDoLoginData, ThrowOnError>): RequestResult<StartLinuxDoLoginResponses, StartLinuxDoLoginErrors, ThrowOnError> => (options?.client ?? client).post<StartLinuxDoLoginResponses, StartLinuxDoLoginErrors, ThrowOnError>({ url: '/api/auth/oauth/linuxdo/start', ...options });
+export const startWeChatOAuthLogin = <ThrowOnError extends boolean = true>(options?: Options<StartWeChatOAuthLoginData, ThrowOnError>): RequestResult<StartWeChatOAuthLoginResponses, StartWeChatOAuthLoginErrors, ThrowOnError> => (options?.client ?? client).post<StartWeChatOAuthLoginResponses, StartWeChatOAuthLoginErrors, ThrowOnError>({ url: '/api/auth/oauth/wechat/start', ...options });
+export const startTelegramLogin = <ThrowOnError extends boolean = true>(options?: Options<StartTelegramLoginData, ThrowOnError>): RequestResult<StartTelegramLoginResponses, StartTelegramLoginErrors, ThrowOnError> => (options?.client ?? client).post<StartTelegramLoginResponses, StartTelegramLoginErrors, ThrowOnError>({ url: '/api/auth/oauth/telegram/start', ...options });
+export const startGoogleLogin = <ThrowOnError extends boolean = true>(options?: Options<StartGoogleLoginData, ThrowOnError>): RequestResult<StartGoogleLoginResponses, StartGoogleLoginErrors, ThrowOnError> => (options?.client ?? client).post<StartGoogleLoginResponses, StartGoogleLoginErrors, ThrowOnError>({ url: '/api/auth/oauth/google/start', ...options });
+export const completeOidcLogin = <ThrowOnError extends boolean = true>(options?: Options<CompleteOidcLoginData, ThrowOnError>): RequestResult<unknown, CompleteOidcLoginErrors, ThrowOnError> => (options?.client ?? client).get<unknown, CompleteOidcLoginErrors, ThrowOnError>({ url: '/api/auth/oauth/oidc/callback', ...options });
+export const completeLinuxDoLogin = <ThrowOnError extends boolean = true>(options?: Options<CompleteLinuxDoLoginData, ThrowOnError>): RequestResult<unknown, CompleteLinuxDoLoginErrors, ThrowOnError> => (options?.client ?? client).get<unknown, CompleteLinuxDoLoginErrors, ThrowOnError>({ url: '/api/auth/oauth/linuxdo/callback', ...options });
+export const completeWeChatOAuthLogin = <ThrowOnError extends boolean = true>(options?: Options<CompleteWeChatOAuthLoginData, ThrowOnError>): RequestResult<unknown, CompleteWeChatOAuthLoginErrors, ThrowOnError> => (options?.client ?? client).get<unknown, CompleteWeChatOAuthLoginErrors, ThrowOnError>({ url: '/api/auth/oauth/wechat/callback', ...options });
+export const completeTelegramLogin = <ThrowOnError extends boolean = true>(options?: Options<CompleteTelegramLoginData, ThrowOnError>): RequestResult<unknown, CompleteTelegramLoginErrors, ThrowOnError> => (options?.client ?? client).get<unknown, CompleteTelegramLoginErrors, ThrowOnError>({ url: '/api/auth/oauth/telegram/callback', ...options });
+export const completeGoogleLogin = <ThrowOnError extends boolean = true>(options?: Options<CompleteGoogleLoginData, ThrowOnError>): RequestResult<unknown, CompleteGoogleLoginErrors, ThrowOnError> => (options?.client ?? client).get<unknown, CompleteGoogleLoginErrors, ThrowOnError>({ url: '/api/auth/oauth/google/callback', ...options });
+export const getAdminOidcLoginSettings = <ThrowOnError extends boolean = true>(options?: Options<GetAdminOidcLoginSettingsData, ThrowOnError>): RequestResult<GetAdminOidcLoginSettingsResponses, GetAdminOidcLoginSettingsErrors, ThrowOnError> => (options?.client ?? client).get<GetAdminOidcLoginSettingsResponses, GetAdminOidcLoginSettingsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/authentication-settings/oauth/oidc',
+    ...options
+});
+export const updateAdminOidcLoginSettings = <ThrowOnError extends boolean = true>(options: Options<UpdateAdminOidcLoginSettingsData, ThrowOnError>): RequestResult<UpdateAdminOidcLoginSettingsResponses, UpdateAdminOidcLoginSettingsErrors, ThrowOnError> => (options.client ?? client).put<UpdateAdminOidcLoginSettingsResponses, UpdateAdminOidcLoginSettingsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/authentication-settings/oauth/oidc',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const getAdminLinuxDoLoginSettings = <ThrowOnError extends boolean = true>(options?: Options<GetAdminLinuxDoLoginSettingsData, ThrowOnError>): RequestResult<GetAdminLinuxDoLoginSettingsResponses, GetAdminLinuxDoLoginSettingsErrors, ThrowOnError> => (options?.client ?? client).get<GetAdminLinuxDoLoginSettingsResponses, GetAdminLinuxDoLoginSettingsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/authentication-settings/oauth/linuxdo',
+    ...options
+});
+export const updateAdminLinuxDoLoginSettings = <ThrowOnError extends boolean = true>(options: Options<UpdateAdminLinuxDoLoginSettingsData, ThrowOnError>): RequestResult<UpdateAdminLinuxDoLoginSettingsResponses, UpdateAdminLinuxDoLoginSettingsErrors, ThrowOnError> => (options.client ?? client).put<UpdateAdminLinuxDoLoginSettingsResponses, UpdateAdminLinuxDoLoginSettingsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/authentication-settings/oauth/linuxdo',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const getAdminWeChatOAuthLoginSettings = <ThrowOnError extends boolean = true>(options?: Options<GetAdminWeChatOAuthLoginSettingsData, ThrowOnError>): RequestResult<GetAdminWeChatOAuthLoginSettingsResponses, GetAdminWeChatOAuthLoginSettingsErrors, ThrowOnError> => (options?.client ?? client).get<GetAdminWeChatOAuthLoginSettingsResponses, GetAdminWeChatOAuthLoginSettingsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/authentication-settings/oauth/wechat',
+    ...options
+});
+export const updateAdminWeChatOAuthLoginSettings = <ThrowOnError extends boolean = true>(options: Options<UpdateAdminWeChatOAuthLoginSettingsData, ThrowOnError>): RequestResult<UpdateAdminWeChatOAuthLoginSettingsResponses, UpdateAdminWeChatOAuthLoginSettingsErrors, ThrowOnError> => (options.client ?? client).put<UpdateAdminWeChatOAuthLoginSettingsResponses, UpdateAdminWeChatOAuthLoginSettingsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/authentication-settings/oauth/wechat',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const getAdminTelegramOAuthLoginSettings = <ThrowOnError extends boolean = true>(options?: Options<GetAdminTelegramOAuthLoginSettingsData, ThrowOnError>): RequestResult<GetAdminTelegramOAuthLoginSettingsResponses, GetAdminTelegramOAuthLoginSettingsErrors, ThrowOnError> => (options?.client ?? client).get<GetAdminTelegramOAuthLoginSettingsResponses, GetAdminTelegramOAuthLoginSettingsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/authentication-settings/oauth/telegram',
+    ...options
+});
+export const updateAdminTelegramOAuthLoginSettings = <ThrowOnError extends boolean = true>(options: Options<UpdateAdminTelegramOAuthLoginSettingsData, ThrowOnError>): RequestResult<UpdateAdminTelegramOAuthLoginSettingsResponses, UpdateAdminTelegramOAuthLoginSettingsErrors, ThrowOnError> => (options.client ?? client).put<UpdateAdminTelegramOAuthLoginSettingsResponses, UpdateAdminTelegramOAuthLoginSettingsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/authentication-settings/oauth/telegram',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const getAdminGoogleOAuthLoginSettings = <ThrowOnError extends boolean = true>(options?: Options<GetAdminGoogleOAuthLoginSettingsData, ThrowOnError>): RequestResult<GetAdminGoogleOAuthLoginSettingsResponses, GetAdminGoogleOAuthLoginSettingsErrors, ThrowOnError> => (options?.client ?? client).get<GetAdminGoogleOAuthLoginSettingsResponses, GetAdminGoogleOAuthLoginSettingsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/authentication-settings/oauth/google',
+    ...options
+});
+export const updateAdminGoogleOAuthLoginSettings = <ThrowOnError extends boolean = true>(options: Options<UpdateAdminGoogleOAuthLoginSettingsData, ThrowOnError>): RequestResult<UpdateAdminGoogleOAuthLoginSettingsResponses, UpdateAdminGoogleOAuthLoginSettingsErrors, ThrowOnError> => (options.client ?? client).put<UpdateAdminGoogleOAuthLoginSettingsResponses, UpdateAdminGoogleOAuthLoginSettingsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/authentication-settings/oauth/google',
     ...options,
     headers: {
         'Content-Type': 'application/json',

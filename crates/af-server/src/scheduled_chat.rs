@@ -30,29 +30,33 @@ use crate::{
 };
 use af_account::{CredentialDecryptor, SystemSecretCipher, SystemSecretKind};
 use af_adapter::{
-    AdaptorSettings, AnthropicAdaptorSettings, CohereAdaptorSettings, GeminiAdaptorSettings,
-    HeaderMap, HeaderName, HeaderValue, JinaAdaptorSettings, OpenAiAdaptorSettings, RelayContext,
-    ResponsesWebSocketPoolKey, TransportDispatcher, get_adaptor,
+    AdaptorSettings, AnthropicAdaptorSettings, BuiltInClientSimulation, CohereAdaptorSettings,
+    GeminiAdaptorSettings, HeaderMap, HeaderName, HeaderValue, JinaAdaptorSettings,
+    OpenAiAdaptorSettings, RelayContext, ResponsesWebSocketPoolKey, TransportDispatcher,
+    get_adaptor,
 };
 use af_db::{
     AdminGroupLookupOutcome, AdminGroupRepository, ChannelStateRepository,
-    CredentialStateRepository,
+    CredentialStateRepository, SmartRouteRuntimeRepository,
 };
 use af_domain::{
-    AfError, ChannelType, ConcurrencyLimit, CredentialId, GatewayPrincipal, GroupId, Operation,
-    Protocol,
+    AfError, ChannelType, ConcurrencyLimit, CredentialId, CredentialQuotaDimension,
+    GatewayPrincipal, GroupId, Operation, Protocol,
 };
 use af_httpclient::{HttpClientProvider, ProxyConfig, RemoteDnsPolicy};
 use af_protocol::CanonicalRequestEnvelope;
 use af_relay::{
     AnthropicRequestOverrides, ChatResponse, GeminiRequestOverrides, OpenAiChatRequestOverrides,
-    OpenAiResponsesRequestOverrides, RelayCandidate, RelayCandidateRequest, RelayStateMachine,
-    relay_anthropic_with_report, relay_gemini_with_report, relay_openai_chat_with_report,
-    relay_openai_responses_with_report,
+    OpenAiResponsesRequestOverrides, RelayCandidate, RelayCandidateRequest, RelayDiagnosticInput,
+    RelayStateMachine, relay_anthropic_with_report, relay_gemini_with_report,
+    relay_openai_chat_with_report, relay_openai_responses_with_report,
 };
 use af_scheduler::{
     ChannelRoutingHealth, IndexedRoutePlan, IndexedWeightedScheduler,
     IndexedWeightedSchedulerError, RouteWaitKind, StickyRouteOutcome, StickyWaitPolicy,
+};
+use af_telemetry::{
+    MetricClientSimulationProfile, MetricClientSimulationResult, record_client_simulation_attempt,
 };
 
 mod audio;
@@ -60,11 +64,16 @@ mod compact;
 mod embedding;
 mod image;
 mod rerank;
+mod smart_route;
 mod speech;
 mod video_task;
 mod video_task_persistence;
 
 const MAX_PLAYGROUND_GROUP_DEPTH: usize = 4;
+
+#[cfg(test)]
+use smart_route::SmartRouteRulesFuture;
+use smart_route::{SmartRouteResolver, bound_candidates, persist_feedback};
 
 pub use video_task::{
     BoundVideoTaskSubmission, VideoTaskBinding, VideoTaskPollFuture, VideoTaskRuntime,
@@ -85,7 +94,14 @@ struct PreparedConcurrencyPlan<'a> {
 struct PreparedRouteSelection {
     route: IndexedRoutePlan,
     upstream_protocol: Protocol,
+    routed_model: String,
     credential_health: Option<BTreeMap<i64, RuntimeHealthState>>,
+}
+
+struct PreparedExecutionRoute {
+    route: IndexedRoutePlan,
+    upstream_protocol: Protocol,
+    routed_model: String,
 }
 
 /// 区分静态能力缺失与运行时健康故障，避免向客户端返回错误的过载语义。
@@ -123,6 +139,8 @@ pub(crate) struct ScheduledChatService {
     channel_states: Option<ChannelStateRepository>,
     debug_trace: Option<DebugTraceRuntime>,
     groups: Option<AdminGroupRepository>,
+    smart_routes: Option<Arc<dyn SmartRouteResolver>>,
+    smart_route_feedback: Option<SmartRouteRuntimeRepository>,
 }
 
 impl ScheduledChatService {
@@ -148,6 +166,8 @@ impl ScheduledChatService {
             channel_states: None,
             debug_trace: None,
             groups: None,
+            smart_routes: None,
+            smart_route_feedback: None,
         }
     }
 
@@ -201,22 +221,43 @@ impl ScheduledChatService {
         self
     }
 
+    /// 注入管理员智能路由运行时仓储；普通 API Key 不消费该额外规则源。
+    pub(crate) fn with_smart_route_repository(
+        mut self,
+        repository: SmartRouteRuntimeRepository,
+    ) -> Self {
+        self.smart_routes = Some(Arc::new(repository.clone()));
+        self.smart_route_feedback = Some(repository);
+        self
+    }
+
+    #[cfg(test)]
+    fn with_smart_route_resolver(mut self, resolver: Arc<dyn SmartRouteResolver>) -> Self {
+        self.smart_routes = Some(resolver);
+        self
+    }
+
     fn build_plan(
         &self,
-        route: IndexedRoutePlan,
+        prepared_route: PreparedExecutionRoute,
         request: CanonicalRequestEnvelope,
         response_protocol: Protocol,
         request_id: &str,
-        upstream_protocol: Protocol,
         session_scope: Option<StableSessionScope>,
         concurrency: PreparedConcurrencyPlan<'_>,
     ) -> Result<ScheduledChatExecution, AfError> {
+        let PreparedExecutionRoute {
+            route,
+            upstream_protocol,
+            routed_model,
+        } = prepared_route;
         let PreparedConcurrencyPlan {
             account_loads,
             credential_health,
             user_permit,
         } = concurrency;
-        let model = request.canonical().model.clone();
+        let requested_model = request.canonical().model.clone();
+        let quota_dimension = CredentialQuotaDimension::for_canonical_model(&routed_model);
         let responses_websocket_session = session_scope.as_ref().map(StableSessionScope::as_str);
         let target_group_id = route.target_group_id();
         let mut relay_candidates = Vec::with_capacity(
@@ -227,6 +268,7 @@ impl ScheduledChatService {
         );
         let mut attempt_targets = Vec::with_capacity(relay_candidates.capacity());
         let mut auto_ban_targets = Vec::with_capacity(relay_candidates.capacity());
+        let mut route_channel_ids = Vec::with_capacity(relay_candidates.capacity());
         let mut health_filtered = false;
         'channels: for candidate in route.candidates() {
             let target = candidate.runtime_target();
@@ -234,8 +276,12 @@ impl ScheduledChatService {
             if !target_matches_protocol(target, upstream_protocol) {
                 continue;
             }
-            let upstream_model = target.mapped_model(&model).unwrap_or(&model).to_owned();
-            let candidate_request = candidate_request(target, &request, &model, &upstream_model)?;
+            let upstream_model = target
+                .mapped_model(&routed_model)
+                .unwrap_or(&routed_model)
+                .to_owned();
+            let candidate_request =
+                candidate_request(target, &request, &requested_model, &upstream_model)?;
             let adaptor = get_adaptor(
                 target.channel_type(),
                 adaptor_settings(target, upstream_model)?,
@@ -246,6 +292,12 @@ impl ScheduledChatService {
             }
 
             let headers = header_overrides(target)?;
+            let eligible_credentials = target
+                .credentials()
+                .iter()
+                .filter(|credential| credential.quota_dimension() == quota_dimension)
+                .cloned()
+                .collect::<Vec<_>>();
             let order_scope = session_scope
                 .as_ref()
                 .map_or(request_id, StableSessionScope::as_str);
@@ -254,7 +306,7 @@ impl ScheduledChatService {
                     order_credentials_by_load_and_health(
                         order_scope,
                         target.channel_id(),
-                        target.credentials(),
+                        &eligible_credentials,
                         loads,
                         health,
                     )
@@ -262,24 +314,26 @@ impl ScheduledChatService {
                 (RouteWaitKind::Fallback, Some(loads), None) => order_credentials_by_load(
                     order_scope,
                     target.channel_id(),
-                    target.credentials(),
+                    &eligible_credentials,
                     loads,
                 ),
                 (_, _, Some(health)) => order_credentials_with_health(
                     order_scope,
                     target.channel_id(),
-                    target.credentials(),
+                    &eligible_credentials,
                     health,
                 ),
-                _ => order_credentials(order_scope, target.channel_id(), target.credentials()),
+                _ => order_credentials(order_scope, target.channel_id(), &eligible_credentials),
             };
-            health_filtered |= !target.credentials().is_empty() && ordered_credentials.is_empty();
+            health_filtered |= !eligible_credentials.is_empty() && ordered_credentials.is_empty();
             for runtime_credential in ordered_credentials {
                 if relay_candidates.len() == RelayStateMachine::MAX_CANDIDATES {
                     break 'channels;
                 }
                 let credential_id = CredentialId::new(runtime_credential.credential_id())
                     .map_err(|_| AfError::Internal)?;
+                let secret_owner_id = runtime_credential.secret_owner_id();
+                let concurrency_owner_id = runtime_credential.concurrency_owner_id();
                 let client = self.client_for_credential(target, runtime_credential)?;
                 let responses_websocket_pool = if target.responses_websocket_enabled()
                     && responses_websocket_session.is_some()
@@ -305,7 +359,7 @@ impl ScheduledChatService {
                     .decryptor
                     .decrypt_envelope(
                         target.channel_id(),
-                        runtime_credential.credential_id(),
+                        secret_owner_id.get(),
                         runtime_credential.credential_kind(),
                         runtime_credential.envelope(),
                     )
@@ -317,9 +371,13 @@ impl ScheduledChatService {
                     RelayCandidate::new(adaptor.clone(), context.clone(), credential)
                         .with_header_overrides(headers.clone())
                         .with_channel_group(target.channel_id());
+                if let Some(profile) = target.client_simulation_profile() {
+                    relay_candidate = relay_candidate
+                        .with_client_simulation(Arc::new(BuiltInClientSimulation::new(profile)));
+                }
                 if let Some(concurrency) = &self.concurrency {
                     relay_candidate = relay_candidate.with_attempt_gate(concurrency.account_gate(
-                        credential_id,
+                        concurrency_owner_id,
                         runtime_credential.concurrency(),
                         wait_plan.timeout(),
                     ));
@@ -330,7 +388,7 @@ impl ScheduledChatService {
                 ) {
                     let key = ResponsesWebSocketPoolKey::new(
                         target.channel_id(),
-                        credential_id,
+                        secret_owner_id,
                         runtime_credential.credential_revision(),
                         session_scope,
                     )
@@ -343,9 +401,11 @@ impl ScheduledChatService {
                     relay_candidate = relay_candidate.with_request(candidate_request.clone());
                 }
                 relay_candidates.push(relay_candidate);
-                attempt_targets.push(CredentialAttemptTarget::new(
+                attempt_targets.push(CredentialAttemptTarget::with_runtime_identity(
                     target.channel_id(),
-                    runtime_credential.credential_id(),
+                    credential_id,
+                    secret_owner_id,
+                    runtime_credential.shared_health_id(),
                     runtime_credential.credential_kind(),
                     oauth_has_refresh_token,
                     target.pool_mode(),
@@ -355,6 +415,7 @@ impl ScheduledChatService {
                     target.auto_ban_rules(),
                     target.pool_mode(),
                 )?);
+                route_channel_ids.push(candidate.route_channel_id(credential_id));
             }
         }
         if relay_candidates.is_empty() {
@@ -367,9 +428,11 @@ impl ScheduledChatService {
         let machine = RelayStateMachine::new(relay_candidates).map_err(|_| AfError::Internal)?;
         Ok(ScheduledChatExecution {
             target_group_id,
+            pricing_model: routed_model,
             machine,
             attempt_targets,
             auto_ban_targets,
+            route_channel_ids,
             credential_states: self.credential_states.clone(),
             scheduler: self.scheduler.clone(),
             request,
@@ -382,6 +445,7 @@ impl ScheduledChatService {
             health: self.health.clone(),
             channel_states: self.channel_states.clone(),
             debug_trace: None,
+            smart_route_feedback: self.smart_route_feedback.clone(),
         })
     }
 
@@ -515,11 +579,12 @@ impl ScheduledChatService {
         &self,
         route: &IndexedRoutePlan,
         upstream_protocol: Protocol,
+        model: &str,
     ) -> Result<Option<BTreeMap<i64, CredentialLoad>>, AfError> {
         let Some(concurrency) = &self.concurrency else {
             return Ok(None);
         };
-        let accounts = collect_route_accounts(route, upstream_protocol)?;
+        let accounts = collect_route_accounts(route, upstream_protocol, model)?;
         concurrency
             .account_loads(&accounts)
             .await
@@ -555,11 +620,12 @@ impl ScheduledChatService {
         &self,
         route: &IndexedRoutePlan,
         upstream_protocol: Protocol,
+        model: &str,
     ) -> Result<Option<BTreeMap<i64, RuntimeHealthState>>, AfError> {
         let Some(store) = &self.health else {
             return Ok(None);
         };
-        let credential_ids = collect_route_credentials(route, upstream_protocol)?;
+        let credential_ids = collect_route_credentials(route, upstream_protocol, model)?;
         load_credential_health(store, &credential_ids)
             .await
             .map(Some)
@@ -619,7 +685,8 @@ impl ScheduledChatService {
         session_scope: Option<&StableSessionScope>,
     ) -> Result<PreparedRouteSelection, AfError> {
         let mut unhealthy_route_seen = false;
-        for group_id in self.route_group_chain(principal).await? {
+        let group_chain = self.route_group_chain(principal).await?;
+        for group_id in group_chain.iter().copied() {
             let Some(unfiltered_route) = self
                 .scheduler
                 .route_plan(group_id, &request.canonical().model)
@@ -629,8 +696,13 @@ impl ScheduledChatService {
             };
             let unfiltered_protocol =
                 select_upstream_protocol(&unfiltered_route, request, response_protocol)?;
-            if route_availability(&unfiltered_route, unfiltered_protocol, request_id, None)
-                == RouteAvailability::Unsupported
+            if route_availability(
+                &unfiltered_route,
+                unfiltered_protocol,
+                &request.canonical().model,
+                request_id,
+                None,
+            ) == RouteAvailability::Unsupported
             {
                 // 模型存在但协议不匹配或没有静态凭据时属于不支持，不能伪装成运行时过载。
                 continue;
@@ -659,12 +731,13 @@ impl ScheduledChatService {
             self.apply_sticky_binding(&mut route, upstream_protocol, session_scope)
                 .await;
             let credential_health = self
-                .load_credential_health(&route, upstream_protocol)
+                .load_credential_health(&route, upstream_protocol, &request.canonical().model)
                 .await?;
             let order_scope = session_scope.map_or(request_id, StableSessionScope::as_str);
             match route_availability(
                 &route,
                 upstream_protocol,
+                &request.canonical().model,
                 order_scope,
                 credential_health.as_ref(),
             ) {
@@ -672,6 +745,7 @@ impl ScheduledChatService {
                     return Ok(PreparedRouteSelection {
                         route,
                         upstream_protocol,
+                        routed_model: request.canonical().model.clone(),
                         credential_health,
                     });
                 }
@@ -679,6 +753,100 @@ impl ScheduledChatService {
                 RouteAvailability::Unsupported => {
                     // 健康过滤可能只留下其他协议；未过滤计划可用时仍应归类为健康故障。
                     unhealthy_route_seen |= self.health.is_some();
+                }
+            }
+        }
+
+        if principal.is_playground()
+            && let Some(resolver) = self.smart_routes.as_ref()
+        {
+            let rules = resolver
+                .matching_rules(&request.canonical().model)
+                .await
+                .map_err(|_| AfError::Internal)?;
+            for group_id in group_chain {
+                for rule in &rules {
+                    let bindings = bound_candidates(rule)?;
+                    let Some(unfiltered_route) = self
+                        .scheduler
+                        .bound_route_plan(
+                            group_id,
+                            rule.routed_model(),
+                            rule.strategy(),
+                            &bindings,
+                            &BTreeMap::new(),
+                        )
+                        .map_err(map_scheduler_error)?
+                    else {
+                        continue;
+                    };
+                    let unfiltered_protocol =
+                        select_upstream_protocol(&unfiltered_route, request, response_protocol)?;
+                    if route_availability(
+                        &unfiltered_route,
+                        unfiltered_protocol,
+                        rule.routed_model(),
+                        request_id,
+                        None,
+                    ) == RouteAvailability::Unsupported
+                    {
+                        continue;
+                    }
+
+                    let route = if self.health.is_some() {
+                        let (_, channel_health) = self
+                            .load_channel_health(group_id, rule.routed_model())
+                            .await?;
+                        self.scheduler
+                            .bound_route_plan(
+                                group_id,
+                                rule.routed_model(),
+                                rule.strategy(),
+                                &bindings,
+                                &channel_health,
+                            )
+                            .map_err(map_scheduler_error)?
+                    } else {
+                        Some(unfiltered_route)
+                    };
+                    let Some(mut route) = route else {
+                        unhealthy_route_seen = true;
+                        break;
+                    };
+                    let upstream_protocol =
+                        select_upstream_protocol(&route, request, response_protocol)?;
+                    route.configure_wait_policy(self.sticky_wait_policy);
+                    self.apply_sticky_binding(&mut route, upstream_protocol, session_scope)
+                        .await;
+                    let credential_health = self
+                        .load_credential_health(&route, upstream_protocol, rule.routed_model())
+                        .await?;
+                    let order_scope = session_scope.map_or(request_id, StableSessionScope::as_str);
+                    match route_availability(
+                        &route,
+                        upstream_protocol,
+                        rule.routed_model(),
+                        order_scope,
+                        credential_health.as_ref(),
+                    ) {
+                        RouteAvailability::Available => {
+                            return Ok(PreparedRouteSelection {
+                                route,
+                                upstream_protocol,
+                                routed_model: rule.routed_model().to_owned(),
+                                credential_health,
+                            });
+                        }
+                        RouteAvailability::Unhealthy => {
+                            unhealthy_route_seen = true;
+                            break;
+                        }
+                        RouteAvailability::Unsupported => {
+                            // 静态计划已经锁定规则优先级；健康过滤后的协议缺口只能降到下一分组。
+                            unhealthy_route_seen = true;
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -698,12 +866,14 @@ impl ChatRoutePlanner for ScheduledChatService {
         request: CanonicalRequestEnvelope,
         response_protocol: Protocol,
         request_id: &'a str,
+        diagnostic: RelayDiagnosticInput,
     ) -> ChatRoutePlanFuture<'a> {
         Box::pin(async move {
             let session_scope = stable_session_scope(*principal, request.canonical());
             let PreparedRouteSelection {
                 route,
                 upstream_protocol,
+                routed_model,
                 credential_health,
             } = self
                 .prepare_route_selection(
@@ -722,20 +892,24 @@ impl ChatRoutePlanner for ScheduledChatService {
                     response_protocol,
                     upstream_protocol,
                     request.canonical().operation,
+                    diagnostic,
                 )
             });
             let user_permit = self
                 .acquire_user_permit(*principal, user_concurrency)
                 .await?;
             let account_loads = self
-                .load_account_concurrency(&route, upstream_protocol)
+                .load_account_concurrency(&route, upstream_protocol, &routed_model)
                 .await?;
             let mut plan = self.build_plan(
-                route,
+                PreparedExecutionRoute {
+                    route,
+                    upstream_protocol,
+                    routed_model,
+                },
                 request,
                 response_protocol,
                 request_id,
-                upstream_protocol,
                 session_scope,
                 PreparedConcurrencyPlan {
                     account_loads: account_loads.as_ref(),
@@ -764,15 +938,18 @@ impl fmt::Debug for ScheduledChatService {
             .field("health", &self.health.is_some())
             .field("debug_trace", &self.debug_trace.is_some())
             .field("groups", &self.groups.is_some())
+            .field("smart_routes", &self.smart_routes.is_some())
             .finish()
     }
 }
 
 struct ScheduledChatExecution {
     target_group_id: GroupId,
+    pricing_model: String,
     machine: RelayStateMachine,
     attempt_targets: Vec<CredentialAttemptTarget>,
     auto_ban_targets: Vec<ChannelAutoBanAttemptTarget>,
+    route_channel_ids: Vec<Option<af_domain::RouteChannelId>>,
     credential_states: CredentialStateRepository,
     scheduler: IndexedWeightedScheduler,
     request: CanonicalRequestEnvelope,
@@ -785,6 +962,7 @@ struct ScheduledChatExecution {
     health: Option<Arc<dyn SchedulerHealthStore>>,
     channel_states: Option<ChannelStateRepository>,
     debug_trace: Option<DebugTraceCapture>,
+    smart_route_feedback: Option<SmartRouteRuntimeRepository>,
 }
 
 impl PlannedChatExecution for ScheduledChatExecution {
@@ -792,12 +970,18 @@ impl PlannedChatExecution for ScheduledChatExecution {
         self.target_group_id
     }
 
+    fn pricing_model(&self) -> &str {
+        &self.pricing_model
+    }
+
     fn execute(self: Box<Self>) -> PlannedChatExecutionFuture {
         let Self {
             target_group_id: _,
+            pricing_model: _,
             machine,
             attempt_targets,
             auto_ban_targets,
+            route_channel_ids,
             credential_states,
             scheduler,
             request,
@@ -810,8 +994,13 @@ impl PlannedChatExecution for ScheduledChatExecution {
             health,
             channel_states,
             debug_trace,
+            smart_route_feedback,
         } = *self;
         Box::pin(async move {
+            let machine = match debug_trace.as_ref() {
+                Some(capture) => machine.with_diagnostic_policy(capture.relay_policy()),
+                None => machine,
+            };
             let operation = request.canonical().operation;
             let routing_started_at = Instant::now();
             let (result, report) = match (operation, upstream_protocol) {
@@ -837,6 +1026,7 @@ impl PlannedChatExecution for ScheduledChatExecution {
                 }
                 _ => return Err(AfError::InvalidRequest),
             };
+            record_client_simulation_metrics(&report);
             if let Some(capture) = debug_trace {
                 capture.submit(
                     &report,
@@ -848,9 +1038,8 @@ impl PlannedChatExecution for ScheduledChatExecution {
             let successful_channel_id = report
                 .successful_candidate_index()
                 .and_then(|index| attempt_targets.get(index))
-                .map(CredentialAttemptTarget::channel_id)
-                .map(af_domain::ChannelId::get);
-            let ((), (), ()) = tokio::join!(
+                .map(CredentialAttemptTarget::channel_id);
+            let ((), (), (), ()) = tokio::join!(
                 persist_credential_feedback(
                     &credential_states,
                     &scheduler,
@@ -864,12 +1053,13 @@ impl PlannedChatExecution for ScheduledChatExecution {
                     &auto_ban_targets,
                     &report,
                 ),
+                persist_feedback(smart_route_feedback.as_ref(), &route_channel_ids, &report,),
             );
             if result.is_ok()
                 && let (Some(store), Some(scope), Some(channel_id)) = (
                     sticky_sessions.as_ref(),
                     session_scope.as_ref(),
-                    successful_channel_id,
+                    successful_channel_id.map(af_domain::ChannelId::get),
                 )
                 && let Err(error) = store.bind(scope.as_str(), channel_id).await
             {
@@ -884,7 +1074,14 @@ impl PlannedChatExecution for ScheduledChatExecution {
                     if let Some(permit) = user_permit {
                         permit.release().await;
                     }
-                    Ok(ChatResponse::Full { body, usage })
+                    successful_channel_id
+                        .map(|channel_id| {
+                            crate::RoutedExecution::new(
+                                ChatResponse::Full { body, usage },
+                                channel_id,
+                            )
+                        })
+                        .ok_or(AfError::Internal)
                 }
                 Ok(ChatResponse::Stream { body, usage }) => {
                     let body = match user_permit {
@@ -893,7 +1090,14 @@ impl PlannedChatExecution for ScheduledChatExecution {
                         }
                         None => body,
                     };
-                    Ok(ChatResponse::Stream { body, usage })
+                    successful_channel_id
+                        .map(|channel_id| {
+                            crate::RoutedExecution::new(
+                                ChatResponse::Stream { body, usage },
+                                channel_id,
+                            )
+                        })
+                        .ok_or(AfError::Internal)
                 }
                 Err(error) => {
                     if let Some(permit) = user_permit {
@@ -906,24 +1110,68 @@ impl PlannedChatExecution for ScheduledChatExecution {
     }
 }
 
+/// 只把 Relay 生成的闭合档案和结果写入低基数指标。
+fn record_client_simulation_metrics(report: &af_relay::RelayAttemptReport) {
+    for failure in report.failures() {
+        if let Some(client_simulation) = failure.client_simulation() {
+            record_client_simulation_attempt(
+                metric_client_simulation_profile(client_simulation.profile()),
+                metric_client_simulation_result(client_simulation.result()),
+            );
+        }
+    }
+    if let Some(client_simulation) = report.successful_client_simulation() {
+        record_client_simulation_attempt(
+            metric_client_simulation_profile(client_simulation.profile()),
+            metric_client_simulation_result(client_simulation.result()),
+        );
+    }
+}
+
+const fn metric_client_simulation_profile(
+    profile: af_domain::ClientSimulationProfile,
+) -> MetricClientSimulationProfile {
+    match profile {
+        af_domain::ClientSimulationProfile::AnthropicCliHeadersV1 => {
+            MetricClientSimulationProfile::AnthropicCliHeadersV1
+        }
+    }
+}
+
+const fn metric_client_simulation_result(
+    result: af_domain::ClientSimulationResult,
+) -> MetricClientSimulationResult {
+    match result {
+        af_domain::ClientSimulationResult::NotApplied => MetricClientSimulationResult::NotApplied,
+        af_domain::ClientSimulationResult::Applied => MetricClientSimulationResult::Applied,
+        af_domain::ClientSimulationResult::Failed => MetricClientSimulationResult::Failed,
+    }
+}
+
 fn collect_route_accounts(
     route: &IndexedRoutePlan,
     upstream_protocol: Protocol,
+    model: &str,
 ) -> Result<Vec<(CredentialId, Option<ConcurrencyLimit>)>, AfError> {
     let mut accounts = Vec::with_capacity(RelayStateMachine::MAX_CANDIDATES);
+    let mut unique = BTreeSet::new();
+    let quota_dimension = CredentialQuotaDimension::for_canonical_model(model);
     'channels: for candidate in route.candidates() {
         let target = candidate.runtime_target();
         if !target_matches_protocol(target, upstream_protocol) {
             continue;
         }
         for credential in target.credentials() {
+            if credential.quota_dimension() != quota_dimension {
+                continue;
+            }
             if accounts.len() == RelayStateMachine::MAX_CANDIDATES {
                 break 'channels;
             }
-            accounts.push((
-                CredentialId::new(credential.credential_id()).map_err(|_| AfError::Internal)?,
-                credential.concurrency(),
-            ));
+            let owner = credential.concurrency_owner_id();
+            if unique.insert(owner) {
+                accounts.push((owner, credential.concurrency()));
+            }
         }
     }
     Ok(accounts)
@@ -932,9 +1180,11 @@ fn collect_route_accounts(
 fn route_availability(
     route: &IndexedRoutePlan,
     upstream_protocol: Protocol,
+    model: &str,
     order_scope: &str,
     credential_health: Option<&BTreeMap<i64, RuntimeHealthState>>,
 ) -> RouteAvailability {
+    let quota_dimension = CredentialQuotaDimension::for_canonical_model(model);
     let mut matching_protocol = false;
     let mut static_credentials = false;
     for candidate in route.candidates() {
@@ -943,7 +1193,13 @@ fn route_availability(
             continue;
         }
         matching_protocol = true;
-        if target.credentials().is_empty() {
+        let eligible_credentials = target
+            .credentials()
+            .iter()
+            .filter(|credential| credential.quota_dimension() == quota_dimension)
+            .cloned()
+            .collect::<Vec<_>>();
+        if eligible_credentials.is_empty() {
             continue;
         }
         static_credentials = true;
@@ -952,7 +1208,7 @@ fn route_availability(
             Some(health) => !order_credentials_with_health(
                 order_scope,
                 target.channel_id(),
-                target.credentials(),
+                &eligible_credentials,
                 health,
             )
             .is_empty(),
@@ -971,15 +1227,20 @@ fn route_availability(
 fn collect_route_credentials(
     route: &IndexedRoutePlan,
     upstream_protocol: Protocol,
-) -> Result<Vec<CredentialId>, AfError> {
+    model: &str,
+) -> Result<Vec<(CredentialId, CredentialId)>, AfError> {
     let mut credential_ids = Vec::with_capacity(RelayStateMachine::MAX_CANDIDATES);
     let mut unique = BTreeSet::new();
+    let quota_dimension = CredentialQuotaDimension::for_canonical_model(model);
     'channels: for candidate in route.candidates() {
         let target = candidate.runtime_target();
         if !target_matches_protocol(target, upstream_protocol) {
             continue;
         }
         for credential in target.credentials() {
+            if credential.quota_dimension() != quota_dimension {
+                continue;
+            }
             if credential_ids.len() == RelayStateMachine::MAX_CANDIDATES {
                 break 'channels;
             }
@@ -988,7 +1249,7 @@ fn collect_route_credentials(
             if !unique.insert(credential_id) {
                 return Err(AfError::Internal);
             }
-            credential_ids.push(credential_id);
+            credential_ids.push((credential_id, credential.shared_health_id()));
         }
     }
     Ok(credential_ids)
@@ -1177,7 +1438,8 @@ fn map_scheduler_error(error: IndexedWeightedSchedulerError) -> AfError {
         IndexedWeightedSchedulerError::InvalidModel => AfError::InvalidRequest,
         IndexedWeightedSchedulerError::Cache(_)
         | IndexedWeightedSchedulerError::Selection(_)
-        | IndexedWeightedSchedulerError::RetryPlan(_) => AfError::Internal,
+        | IndexedWeightedSchedulerError::RetryPlan(_)
+        | IndexedWeightedSchedulerError::StableFirst(_) => AfError::Internal,
         _ => AfError::Internal,
     }
 }
@@ -1195,15 +1457,19 @@ mod tests {
     use std::{sync::Arc, time::Duration};
 
     use af_account::credential_plaintext_aad;
-    use af_adapter::Bytes;
+    use af_adapter::{Bytes, HeaderMap};
     use af_config::{CREDENTIAL_ENCRYPTION_KEY_BYTES, CredentialEncryptionSettings};
     use af_db::{
         AdminGroupRepository, AdminGroupWriteRecord, ChannelModelMappings,
         ChannelParameterOverrides, CredentialStateRepository, DatabaseOptions,
         EncryptedCredentialEnvelope, MigrationOptions, SchedulerRuntimeCredentialRecord,
-        SchedulerRuntimeTargetRecord, connect_and_migrate,
+        SchedulerRuntimeTargetRecord, SmartRouteRuntimeCandidate, SmartRouteRuntimeRule,
+        connect_and_migrate,
     };
-    use af_domain::{ChannelId, CredentialKind, Operation, UpstreamError};
+    use af_domain::{
+        ChannelId, CredentialId, CredentialKind, Operation, RouteChannelId, RouteId, RouteMode,
+        RouteStrategy, UpstreamError,
+    };
     use af_httpclient::{HttpClientConfig, HttpClientProvider};
     use af_protocol::{CanonicalRequest, RequestContinuation, RequestMetadata, openai_chat};
     use af_scheduler::{
@@ -1222,6 +1488,15 @@ mod tests {
     const CHANNEL_ID: i64 = 41;
     const CREDENTIAL_ID: i64 = 51;
     const KEY_ID: &str = "scheduled-chat-test";
+
+    fn diagnostic() -> RelayDiagnosticInput {
+        RelayDiagnosticInput::capture(
+            "POST",
+            "/v1/chat/completions",
+            &HeaderMap::new(),
+            &Bytes::new(),
+        )
+    }
 
     #[test]
     fn websocket_session_scope_requires_stable_metadata_and_isolates_tokens() {
@@ -1276,6 +1551,7 @@ mod tests {
                 request(),
                 Protocol::OpenAiChat,
                 "request-plan",
+                diagnostic(),
             )
             .await
             .unwrap();
@@ -1300,6 +1576,7 @@ mod tests {
                 request(),
                 Protocol::OpenAiChat,
                 "request-playground-fallback",
+                diagnostic(),
             )
             .await
             .unwrap();
@@ -1318,10 +1595,80 @@ mod tests {
                     request(),
                     Protocol::OpenAiChat,
                     "request-regular-no-fallback",
+                    diagnostic(),
                 )
                 .await,
             Err(AfError::Upstream(UpstreamError::ModelUnsupported))
         ));
+    }
+
+    #[tokio::test]
+    async fn playground_smart_route_maps_model_and_preserves_regular_key_boundary() {
+        let (service, group_id) = service_with_smart_route(valid_envelope()).await;
+        let playground = GatewayPrincipal::playground(
+            af_domain::TokenId::new(1).unwrap(),
+            af_domain::UserId::new(1).unwrap(),
+            group_id,
+        );
+
+        let plan = service
+            .plan(
+                &playground,
+                None,
+                valid_request_for_model("smart-chat"),
+                Protocol::OpenAiChat,
+                "request-playground-smart-route",
+                diagnostic(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(plan.target_group_id(), group_id);
+        assert_eq!(plan.pricing_model(), "gpt-routed");
+
+        let regular = GatewayPrincipal::new(
+            af_domain::TokenId::new(2).unwrap(),
+            af_domain::UserId::new(1).unwrap(),
+            group_id,
+        );
+        assert!(matches!(
+            service
+                .plan(
+                    &regular,
+                    None,
+                    valid_request_for_model("smart-chat"),
+                    Protocol::OpenAiChat,
+                    "request-regular-smart-route",
+                    diagnostic(),
+                )
+                .await,
+            Err(AfError::Upstream(UpstreamError::ModelUnsupported))
+        ));
+    }
+
+    #[tokio::test]
+    async fn playground_smart_route_keeps_the_explicit_group_chain_as_billing_authority() {
+        let (service, source_group_id, fallback_group_id) =
+            service_with_smart_route_fallback(valid_envelope()).await;
+        let playground = GatewayPrincipal::playground(
+            af_domain::TokenId::new(1).unwrap(),
+            af_domain::UserId::new(1).unwrap(),
+            source_group_id,
+        );
+
+        let plan = service
+            .plan(
+                &playground,
+                None,
+                valid_request_for_model("smart-chat"),
+                Protocol::OpenAiChat,
+                "request-playground-smart-route-fallback",
+                diagnostic(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(plan.target_group_id(), fallback_group_id);
+        assert_eq!(plan.pricing_model(), "gpt-routed");
     }
 
     #[tokio::test]
@@ -1355,17 +1702,89 @@ mod tests {
 
         let execution = service
             .build_plan(
-                route,
+                prepared_execution_route(route, Protocol::OpenAiChat),
                 request(),
                 Protocol::OpenAiChat,
                 "request-key-pool",
-                Protocol::OpenAiChat,
                 None,
                 PreparedConcurrencyPlan::disabled(),
             )
             .unwrap();
 
         assert_eq!(execution.attempt_targets.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn spark_plan_uses_parent_aad_but_keeps_shadow_attempt_identity() {
+        let parent_id = CredentialId::new(CREDENTIAL_ID).unwrap();
+        let shadow_id = CredentialId::new(CREDENTIAL_ID + 1).unwrap();
+        let parent_envelope = valid_oauth_envelope(true, 0x28);
+        let parent = SchedulerRuntimeCredentialRecord::new(
+            CREDENTIAL_ID,
+            CredentialKind::Oauth,
+            parent_envelope.clone(),
+            false,
+        )
+        .unwrap();
+        let shadow = SchedulerRuntimeCredentialRecord::with_runtime_identity(
+            shadow_id,
+            parent_id,
+            parent_id,
+            parent_id,
+            CredentialQuotaDimension::Spark,
+            CredentialKind::Oauth,
+            parent_envelope,
+            false,
+            0,
+            10,
+            None,
+        )
+        .unwrap();
+        assert_eq!(shadow.concurrency_owner_id(), parent_id);
+
+        let model = "gpt-5.3-codex-spark";
+        let service = service(vec![record_pool_with_target_for_group_and_model(
+            GroupId::new(7).unwrap(),
+            model,
+            vec![parent, shadow],
+            ChannelType::OpenAi,
+            Protocol::OpenAiResponses,
+        )])
+        .await;
+        let route = service
+            .scheduler
+            .route_plan(GroupId::new(7).unwrap(), model)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            collect_route_credentials(&route, Protocol::OpenAiResponses, "gpt-5.3-codex").unwrap(),
+            vec![(parent_id, parent_id)]
+        );
+        assert_eq!(
+            collect_route_credentials(&route, Protocol::OpenAiResponses, model).unwrap(),
+            vec![(shadow_id, parent_id)]
+        );
+
+        let execution = service
+            .build_plan(
+                PreparedExecutionRoute {
+                    route,
+                    upstream_protocol: Protocol::OpenAiResponses,
+                    routed_model: model.to_owned(),
+                },
+                CanonicalRequest::new(Operation::Responses, model.to_owned(), Vec::new(), false)
+                    .into(),
+                Protocol::OpenAiResponses,
+                "request-spark-identity",
+                None,
+                PreparedConcurrencyPlan::disabled(),
+            )
+            .unwrap();
+
+        assert_eq!(execution.attempt_targets.len(), 1);
+        assert_eq!(execution.attempt_targets[0].credential_id(), shadow_id);
+        assert_eq!(execution.attempt_targets[0].secret_owner_id(), parent_id);
     }
 
     #[tokio::test]
@@ -1387,11 +1806,10 @@ mod tests {
 
             let execution = service
                 .build_plan(
-                    route,
+                    prepared_execution_route(route, Protocol::OpenAiChat),
                     request(),
                     Protocol::OpenAiChat,
                     "request-oauth-refresh-capability",
-                    Protocol::OpenAiChat,
                     None,
                     PreparedConcurrencyPlan::disabled(),
                 )
@@ -1418,11 +1836,10 @@ mod tests {
 
         let execution = service
             .build_plan(
-                route,
+                prepared_execution_route(route, Protocol::Anthropic),
                 request(),
                 Protocol::Anthropic,
                 "request-anthropic",
-                Protocol::Anthropic,
                 None,
                 PreparedConcurrencyPlan::disabled(),
             )
@@ -1444,11 +1861,10 @@ mod tests {
 
         let execution = service
             .build_plan(
-                route,
+                prepared_execution_route(route, Protocol::OpenAiChat),
                 request(),
                 Protocol::Anthropic,
                 "request-anthropic-fallback",
-                Protocol::OpenAiChat,
                 None,
                 PreparedConcurrencyPlan::disabled(),
             )
@@ -1473,11 +1889,10 @@ mod tests {
             .unwrap();
         let execution = native
             .build_plan(
-                route,
+                prepared_execution_route(route, Protocol::Gemini),
                 request(),
                 Protocol::Gemini,
                 "request-gemini-native",
-                Protocol::Gemini,
                 None,
                 PreparedConcurrencyPlan::disabled(),
             )
@@ -1494,11 +1909,10 @@ mod tests {
             .unwrap();
         let execution = fallback
             .build_plan(
-                route,
+                prepared_execution_route(route, Protocol::OpenAiChat),
                 request(),
                 Protocol::Gemini,
                 "request-gemini-fallback",
-                Protocol::OpenAiChat,
                 None,
                 PreparedConcurrencyPlan::disabled(),
             )
@@ -1520,6 +1934,7 @@ mod tests {
                     request(),
                     Protocol::OpenAiChat,
                     "request-openai-client",
+                    diagnostic(),
                 )
                 .await
                 .err(),
@@ -1539,6 +1954,7 @@ mod tests {
                     request(),
                     Protocol::OpenAiChat,
                     "request-openai-gemini-upstream",
+                    diagnostic(),
                 )
                 .await
                 .err(),
@@ -1567,11 +1983,10 @@ mod tests {
             .unwrap();
         let execution = responses
             .build_plan(
-                route,
+                prepared_execution_route(route, Protocol::OpenAiResponses),
                 responses_request(),
                 Protocol::OpenAiResponses,
                 "request-responses",
-                Protocol::OpenAiResponses,
                 None,
                 PreparedConcurrencyPlan::disabled(),
             )
@@ -1588,6 +2003,7 @@ mod tests {
                     responses_request(),
                     Protocol::OpenAiResponses,
                     "request-wrong-protocol",
+                    diagnostic(),
                 )
                 .await
                 .err(),
@@ -1607,6 +2023,7 @@ mod tests {
                     request(),
                     Protocol::OpenAiChat,
                     "request-empty",
+                    diagnostic(),
                 )
                 .await
                 .err(),
@@ -1622,6 +2039,7 @@ mod tests {
                     request(),
                     Protocol::OpenAiChat,
                     "request-proxy",
+                    diagnostic(),
                 )
                 .await
                 .err(),
@@ -1638,6 +2056,7 @@ mod tests {
                     request(),
                     Protocol::OpenAiChat,
                     "request-decrypt",
+                    diagnostic(),
                 )
                 .await
                 .err(),
@@ -1770,6 +2189,101 @@ mod tests {
         (service, source.group_id(), fallback.group_id())
     }
 
+    async fn service_with_smart_route(
+        envelope: EncryptedCredentialEnvelope,
+    ) -> (ScheduledChatService, GroupId) {
+        let pool = connect_and_migrate(
+            &DatabaseOptions::new("sqlite::memory:").unwrap(),
+            MigrationOptions::default(),
+        )
+        .await
+        .unwrap();
+        let groups = AdminGroupRepository::new(pool.clone(), Duration::from_secs(1)).unwrap();
+        let group = groups
+            .create(group_record("playground-smart-route", None))
+            .await
+            .unwrap();
+        let credential = SchedulerRuntimeCredentialRecord::new(
+            CREDENTIAL_ID,
+            CredentialKind::ApiKey,
+            envelope,
+            false,
+        )
+        .unwrap();
+        let record = record_pool_with_target_for_group_and_model(
+            group.group_id(),
+            "gpt-routed",
+            vec![credential],
+            ChannelType::OpenAi,
+            Protocol::OpenAiChat,
+        );
+        let index = InMemoryChannelIndex::load(Arc::new(StaticSource {
+            records: vec![record],
+        }))
+        .await
+        .unwrap();
+        let service = ScheduledChatService::new(
+            IndexedWeightedScheduler::new(index),
+            decryptor(),
+            HttpClientProvider::new(HttpClientConfig::default(), 4).unwrap(),
+            CredentialStateRepository::new(pool),
+        )
+        .with_group_repository(groups)
+        .with_smart_route_resolver(Arc::new(StaticSmartRouteResolver));
+        (service, group.group_id())
+    }
+
+    async fn service_with_smart_route_fallback(
+        envelope: EncryptedCredentialEnvelope,
+    ) -> (ScheduledChatService, GroupId, GroupId) {
+        let pool = connect_and_migrate(
+            &DatabaseOptions::new("sqlite::memory:").unwrap(),
+            MigrationOptions::default(),
+        )
+        .await
+        .unwrap();
+        let groups = AdminGroupRepository::new(pool.clone(), Duration::from_secs(1)).unwrap();
+        let fallback = groups
+            .create(group_record("smart-route-fallback", None))
+            .await
+            .unwrap();
+        let source = groups
+            .create(group_record(
+                "smart-route-source",
+                Some(fallback.group_id()),
+            ))
+            .await
+            .unwrap();
+        let credential = SchedulerRuntimeCredentialRecord::new(
+            CREDENTIAL_ID,
+            CredentialKind::ApiKey,
+            envelope,
+            false,
+        )
+        .unwrap();
+        let record = record_pool_with_target_for_group_and_model(
+            fallback.group_id(),
+            "gpt-routed",
+            vec![credential],
+            ChannelType::OpenAi,
+            Protocol::OpenAiChat,
+        );
+        let index = InMemoryChannelIndex::load(Arc::new(StaticSource {
+            records: vec![record],
+        }))
+        .await
+        .unwrap();
+        let service = ScheduledChatService::new(
+            IndexedWeightedScheduler::new(index),
+            decryptor(),
+            HttpClientProvider::new(HttpClientConfig::default(), 4).unwrap(),
+            CredentialStateRepository::new(pool),
+        )
+        .with_group_repository(groups)
+        .with_smart_route_resolver(Arc::new(StaticSmartRouteResolver));
+        (service, source.group_id(), fallback.group_id())
+    }
+
     fn group_record(name: &str, fallback_group_id: Option<GroupId>) -> AdminGroupWriteRecord {
         AdminGroupWriteRecord::new(
             name.to_owned(),
@@ -1856,6 +2370,22 @@ mod tests {
         channel_type: ChannelType,
         protocol: Protocol,
     ) -> ChannelIndexSourceRecord {
+        record_pool_with_target_for_group_and_model(
+            group_id,
+            "gpt-scheduled",
+            credentials,
+            channel_type,
+            protocol,
+        )
+    }
+
+    fn record_pool_with_target_for_group_and_model(
+        group_id: GroupId,
+        model: &str,
+        credentials: Vec<SchedulerRuntimeCredentialRecord>,
+        channel_type: ChannelType,
+        protocol: Protocol,
+    ) -> ChannelIndexSourceRecord {
         let target = SchedulerRuntimeTargetRecord::new_pool(
             ChannelId::new(CHANNEL_ID).unwrap(),
             channel_type,
@@ -1865,24 +2395,38 @@ mod tests {
             vec![("x-scheduled-test".to_owned(), "test-value".to_owned())],
         )
         .unwrap();
-        ChannelIndexSourceRecord::with_runtime_target(
-            group_id,
-            "gpt-scheduled",
-            10,
-            0,
-            Arc::new(target),
-        )
-        .unwrap()
+        ChannelIndexSourceRecord::with_runtime_target(group_id, model, 10, 0, Arc::new(target))
+            .unwrap()
     }
 
     fn request() -> CanonicalRequestEnvelope {
-        CanonicalRequest::new(
-            Operation::Chat,
-            "gpt-scheduled".to_owned(),
-            Vec::new(),
-            false,
-        )
-        .into()
+        request_for_model("gpt-scheduled")
+    }
+
+    fn prepared_execution_route(
+        route: IndexedRoutePlan,
+        upstream_protocol: Protocol,
+    ) -> PreparedExecutionRoute {
+        PreparedExecutionRoute {
+            route,
+            upstream_protocol,
+            routed_model: "gpt-scheduled".to_owned(),
+        }
+    }
+
+    fn request_for_model(model: &str) -> CanonicalRequestEnvelope {
+        CanonicalRequest::new(Operation::Chat, model.to_owned(), Vec::new(), false).into()
+    }
+
+    fn valid_request_for_model(model: &str) -> CanonicalRequestEnvelope {
+        openai_chat::parse_request_envelope(Bytes::from(
+            serde_json::to_vec(&json!({
+                "model": model,
+                "messages": [{"role": "user", "content": "hello"}]
+            }))
+            .unwrap(),
+        ))
+        .unwrap()
     }
 
     fn responses_request() -> CanonicalRequestEnvelope {
@@ -1971,6 +2515,34 @@ mod tests {
         fn load<'a>(&'a self) -> ChannelIndexSourceFuture<'a> {
             let records = self.records.clone();
             Box::pin(async move { Ok(records) })
+        }
+    }
+
+    struct StaticSmartRouteResolver;
+
+    impl SmartRouteResolver for StaticSmartRouteResolver {
+        fn matching_rules<'a>(&'a self, requested_model: &'a str) -> SmartRouteRulesFuture<'a> {
+            Box::pin(async move {
+                if requested_model != "smart-chat" {
+                    return Ok(Vec::new());
+                }
+                let candidate = SmartRouteRuntimeCandidate::new(
+                    RouteChannelId::new(1).unwrap(),
+                    ChannelId::new(CHANNEL_ID).unwrap(),
+                    CredentialId::new(CREDENTIAL_ID).unwrap(),
+                    10,
+                    10,
+                    None,
+                )?;
+                SmartRouteRuntimeRule::new(
+                    RouteId::new(1).unwrap(),
+                    RouteMode::ExplicitGroup,
+                    RouteStrategy::Weighted,
+                    "gpt-routed".to_owned(),
+                    vec![candidate],
+                )
+                .map(|rule| vec![rule])
+            })
         }
     }
 }

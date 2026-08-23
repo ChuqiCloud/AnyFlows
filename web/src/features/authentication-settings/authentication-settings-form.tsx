@@ -62,7 +62,7 @@ export function AuthenticationSettingsForm({ groups, settings }: AuthenticationS
   )
 
   return (
-    <form onSubmit={onSubmit} noValidate>
+    <form id="authentication-core" tabIndex={-1} onSubmit={onSubmit} noValidate className="scroll-mt-20 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring/60">
       <div className="overflow-hidden rounded-xl border border-[var(--hairline)] bg-surface-1/45 shadow-[var(--shadow-subtle)]">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--hairline)] px-4 py-3.5">
           <div className="flex flex-wrap items-center gap-2">
@@ -156,7 +156,7 @@ export function AuthenticationSettingsForm({ groups, settings }: AuthenticationS
           )}
         />
 
-        <section className="grid gap-5 border-b border-[var(--hairline)] px-4 py-5 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]" aria-labelledby="authentication-allocation-title">
+        <section id="authentication-allocation" tabIndex={-1} className="grid scroll-mt-20 gap-5 border-b border-[var(--hairline)] px-4 py-5 outline-none focus-visible:ring-2 focus-visible:ring-ring/60 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]" aria-labelledby="authentication-allocation-title">
           <div>
             <h3 id="authentication-allocation-title" className="text-sm font-semibold">
               {t('authenticationSettings.allocation.title')}
@@ -218,7 +218,7 @@ export function AuthenticationSettingsForm({ groups, settings }: AuthenticationS
           </div>
         </section>
 
-        <section className="grid gap-5 px-4 py-5 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]" aria-labelledby="authentication-protection-title">
+        <section id="authentication-protection" tabIndex={-1} className="grid scroll-mt-20 gap-5 px-4 py-5 outline-none focus-visible:ring-2 focus-visible:ring-ring/60 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]" aria-labelledby="authentication-protection-title">
           <div>
             <h3 id="authentication-protection-title" className="text-sm font-semibold">
               {t('authenticationSettings.protection.title')}

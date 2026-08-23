@@ -10,14 +10,16 @@ use rust_decimal::Decimal;
 use sea_orm::{ActiveValue, EntityTrait, Set, entity::prelude::*};
 
 use af_domain::{
-    BillingReservationId, ChannelTimeout, MAX_ROUTE_MODEL_PATTERN_BYTES, Quota, QuotaDelta,
-    RedemptionBatchId, RedemptionBatchStatus, RedemptionCodeId, RedemptionCodeStatus, RouteMode,
-    RouteStrategy, SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus,
-    SubscriptionWindow, UserSubscriptionId, UserSubscriptionStatus, WalletEventId,
-    validate_route_model_pattern,
+    BillingReservationId, ChannelTimeout, MAX_ROUTE_MODEL_PATTERN_BYTES, OrganizationKey,
+    OrganizationMembershipStatus, OrganizationRole, OrganizationStatus, OrganizationTeamStatus,
+    Quota, QuotaDelta, RedemptionBatchId, RedemptionBatchStatus, RedemptionCodeId,
+    RedemptionCodeStatus, RouteMode, RouteStrategy, SubscriptionCycle, SubscriptionPlanId,
+    SubscriptionPlanStatus, SubscriptionWindow, UserSubscriptionId, UserSubscriptionStatus,
+    WalletEventId, validate_route_model_pattern,
 };
 
 pub(crate) mod abilities;
+pub(crate) mod analytics_export_outbox_events;
 pub(crate) mod async_task_billings;
 pub(crate) mod async_task_submission_claims;
 pub(crate) mod async_tasks;
@@ -28,6 +30,7 @@ pub(crate) mod balance_alert_events;
 pub(crate) mod balance_alert_settings;
 pub(crate) mod billing_batch_checkpoints;
 pub(crate) mod billing_group_window_reservations;
+pub(crate) mod billing_organization_reservations;
 pub(crate) mod billing_reservations;
 pub(crate) mod billing_subscription_reservations;
 pub(crate) mod billing_token_window_reservations;
@@ -37,6 +40,8 @@ pub(crate) mod channels;
 pub(crate) mod credentials;
 pub(crate) mod debug_trace_attempts;
 pub(crate) mod debug_trace_settings;
+pub(crate) mod debug_trace_snapshot_access_audits;
+pub(crate) mod debug_trace_snapshots;
 pub(crate) mod debug_traces;
 pub(crate) mod email_settings;
 pub(crate) mod group_model_ratios;
@@ -47,24 +52,49 @@ pub(crate) mod model_sync_items;
 pub(crate) mod model_sync_runs;
 pub(crate) mod models;
 pub(crate) mod network_settings;
+pub(crate) mod oauth_login_providers;
+pub(crate) mod oauth_login_transactions;
 pub(crate) mod options;
+pub(crate) mod organization_audit_logs;
+pub(crate) mod organization_budget_policies;
+pub(crate) mod organization_budget_windows;
+pub(crate) mod organization_entitlements;
+pub(crate) mod organization_invitations;
+pub(crate) mod organization_memberships;
+pub(crate) mod organization_teams;
+pub(crate) mod organization_wallet_ledger_entries;
+pub(crate) mod organization_wallets;
+pub(crate) mod organizations;
+pub(crate) mod passkey_authentication_challenges;
+pub(crate) mod passkey_registration_challenges;
+pub(crate) mod passkeys;
 pub(crate) mod payment_settings;
+pub(crate) mod platform_audit_logs;
 pub(crate) mod playground_conversations;
 pub(crate) mod playground_shares;
 pub(crate) mod proxies;
 pub(crate) mod redemption_batches;
 pub(crate) mod redemption_codes;
+pub(crate) mod refund_provider_events;
+pub(crate) mod refund_requests;
 pub(crate) mod registration_rate_limits;
+pub(crate) mod request_outcome_logs;
 pub(crate) mod route_channels;
 pub(crate) mod routes;
 pub(crate) mod scheduler_outbox_events;
 pub(crate) mod site_settings;
 pub(crate) mod subscription_balance_alert_events;
+pub(crate) mod subscription_orders;
+pub(crate) mod subscription_payment_events;
+pub(crate) mod subscription_plan_prices;
 pub(crate) mod subscription_plans;
 pub(crate) mod tokens;
 pub(crate) mod topup_orders;
 pub(crate) mod topup_payment_events;
 pub(crate) mod usage_logs;
+pub(crate) mod user_notification_events;
+pub(crate) mod user_notification_receipts;
+pub(crate) mod user_oauth_identities;
 pub(crate) mod user_subscriptions;
 pub(crate) mod users;
 pub(crate) mod wallet_ledger_entries;
@@ -109,6 +139,243 @@ where
     C: ConnectionTrait,
 {
     Ok(())
+}
+
+async fn validate_organization<C>(
+    model: &organizations::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    let key = model.organization_key.try_as_ref().map(String::as_str);
+    let name = model.name.try_as_ref().map(String::as_str);
+    let slug = model.slug.try_as_ref().map(String::as_str);
+    if insert
+        && (key.is_none()
+            || name.is_none()
+            || slug.is_none()
+            || model.created_by_user_id.try_as_ref().is_none())
+    {
+        return Err(DbErr::Custom("企业基础字段缺失".to_owned()));
+    }
+    if key.is_some_and(|value| OrganizationKey::from_persistence_key(value).is_err())
+        || name.is_some_and(|value| !valid_organization_text(value, 128))
+        || slug.is_some_and(|value| !valid_organization_slug(value))
+        || model
+            .status
+            .try_as_ref()
+            .is_some_and(|value| OrganizationStatus::try_from(*value).is_err())
+        || model
+            .created_by_user_id
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || model.version.try_as_ref().is_some_and(|value| *value <= 0)
+    {
+        return Err(DbErr::Custom("企业基础字段无效".to_owned()));
+    }
+    if let (Some(status), Some(closed_at)) = (
+        model.status.try_as_ref().copied(),
+        model.closed_at.try_as_ref(),
+    ) {
+        let is_closed = status == OrganizationStatus::Closed.code();
+        if is_closed != closed_at.is_some() {
+            return Err(DbErr::Custom("企业关闭状态与时间不一致".to_owned()));
+        }
+    }
+    Ok(())
+}
+
+async fn validate_organization_team<C>(
+    model: &organization_teams::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    let name = model.name.try_as_ref().map(String::as_str);
+    if insert && (model.organization_id.try_as_ref().is_none() || name.is_none()) {
+        return Err(DbErr::Custom("企业团队基础字段缺失".to_owned()));
+    }
+    if model
+        .organization_id
+        .try_as_ref()
+        .is_some_and(|value| *value <= 0)
+        || name.is_some_and(|value| !valid_organization_text(value, 128))
+        || model.description.try_as_ref().is_some_and(|value| {
+            value
+                .as_ref()
+                .is_some_and(|text| text.len() > 2_000 || text.contains('\0'))
+        })
+        || model
+            .status
+            .try_as_ref()
+            .is_some_and(|value| OrganizationTeamStatus::try_from(*value).is_err())
+        || model.version.try_as_ref().is_some_and(|value| *value <= 0)
+    {
+        return Err(DbErr::Custom("企业团队字段无效".to_owned()));
+    }
+    if let (Some(status), Some(deleted_at)) = (
+        model.status.try_as_ref().copied(),
+        model.deleted_at.try_as_ref(),
+    ) {
+        let disabled = status == OrganizationTeamStatus::Disabled.code();
+        if disabled != deleted_at.is_some() {
+            return Err(DbErr::Custom("企业团队状态与删除时间不一致".to_owned()));
+        }
+    }
+    Ok(())
+}
+
+async fn validate_organization_membership<C>(
+    model: &organization_memberships::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    if insert
+        && (model.organization_id.try_as_ref().is_none()
+            || model.user_id.try_as_ref().is_none()
+            || model.role.try_as_ref().is_none()
+            || model.status.try_as_ref().is_none()
+            || model.joined_at.try_as_ref().is_none())
+    {
+        return Err(DbErr::Custom("企业成员基础字段缺失".to_owned()));
+    }
+    if model
+        .organization_id
+        .try_as_ref()
+        .is_some_and(|value| *value <= 0)
+        || model.user_id.try_as_ref().is_some_and(|value| *value <= 0)
+        || model
+            .role
+            .try_as_ref()
+            .is_some_and(|value| OrganizationRole::try_from(*value).is_err())
+        || model
+            .team_id
+            .try_as_ref()
+            .is_some_and(|value| value.is_some_and(|team_id| team_id <= 0))
+        || model
+            .status
+            .try_as_ref()
+            .is_some_and(|value| OrganizationMembershipStatus::try_from(*value).is_err())
+        || model
+            .invited_by_user_id
+            .try_as_ref()
+            .is_some_and(|value| value.is_some_and(|user_id| user_id <= 0))
+        || model.version.try_as_ref().is_some_and(|value| *value <= 0)
+    {
+        return Err(DbErr::Custom("企业成员字段无效".to_owned()));
+    }
+    if let (Some(status), Some(suspended_at), Some(removed_at)) = (
+        model.status.try_as_ref().copied(),
+        model.suspended_at.try_as_ref(),
+        model.removed_at.try_as_ref(),
+    ) {
+        let lifecycle_valid = match OrganizationMembershipStatus::try_from(status) {
+            Ok(OrganizationMembershipStatus::Active) => {
+                suspended_at.is_none() && removed_at.is_none()
+            }
+            Ok(OrganizationMembershipStatus::Suspended) => {
+                suspended_at.is_some() && removed_at.is_none()
+            }
+            Ok(OrganizationMembershipStatus::Removed) => removed_at.is_some(),
+            Err(_) => false,
+        };
+        if !lifecycle_valid {
+            return Err(DbErr::Custom("企业成员状态与时间不一致".to_owned()));
+        }
+    }
+    Ok(())
+}
+
+async fn validate_organization_entitlement<C>(
+    model: &organization_entitlements::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    if insert
+        && (model.organization_id.try_as_ref().is_none()
+            || model.seat_limit.try_as_ref().is_none()
+            || model.team_limit.try_as_ref().is_none()
+            || model.organization_key_limit.try_as_ref().is_none()
+            || model.audit_retention_days.try_as_ref().is_none()
+            || model.valid_from.try_as_ref().is_none()
+            || model.valid_until.try_as_ref().is_none()
+            || model.source.try_as_ref().is_none())
+    {
+        return Err(DbErr::Custom("企业授权基础字段缺失".to_owned()));
+    }
+    let valid_from = model.valid_from.try_as_ref().copied();
+    let valid_until = model.valid_until.try_as_ref().copied();
+    let grace_until = model.grace_until.try_as_ref().copied().flatten();
+    let source = model.source.try_as_ref().map(String::as_str);
+    let external_reference = model
+        .external_reference
+        .try_as_ref()
+        .map(|value| value.as_deref());
+    if model
+        .organization_id
+        .try_as_ref()
+        .is_some_and(|value| *value <= 0)
+        || model
+            .seat_limit
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || model
+            .team_limit
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || model
+            .organization_key_limit
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || model
+            .audit_retention_days
+            .try_as_ref()
+            .is_some_and(|value| !(1..=3_650).contains(value))
+        || model.version.try_as_ref().is_some_and(|value| *value <= 0)
+        || model.sso_enabled.try_as_ref().is_some_and(|value| *value)
+        || model
+            .custom_roles_enabled
+            .try_as_ref()
+            .is_some_and(|value| *value)
+        || source.is_some_and(|value| !valid_organization_text(value, 64))
+        || external_reference
+            .is_some_and(|value| value.is_some_and(|value| !valid_organization_text(value, 128)))
+        || valid_from
+            .zip(valid_until)
+            .is_some_and(|(from, until)| from >= until)
+        || grace_until.is_some_and(|grace| valid_until.is_some_and(|until| grace < until))
+    {
+        return Err(DbErr::Custom("企业授权字段无效".to_owned()));
+    }
+    Ok(())
+}
+
+fn valid_organization_text(value: &str, maximum_bytes: usize) -> bool {
+    !value.is_empty()
+        && value.len() <= maximum_bytes
+        && value.trim() == value
+        && !value.chars().any(char::is_control)
+}
+
+fn valid_organization_slug(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && !value.starts_with('-')
+        && !value.ends_with('-')
+        && !value.contains("--")
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 }
 
 async fn validate_route<C>(
@@ -588,6 +855,15 @@ where
     let valid_event_type = matches!(model.event_type.try_as_ref(), Some(1));
     let valid_source = matches!(model.usage_source.try_as_ref(), Some(1 | 2));
     let valid_semantics = matches!(model.usage_semantics.try_as_ref(), Some(1 | 2));
+    let organization_id = model.organization_id.try_as_ref().copied().flatten();
+    let organization_team_id = model.organization_team_id.try_as_ref().copied().flatten();
+    let valid_organization = match (organization_id, organization_team_id) {
+        (None, None) => true,
+        (Some(organization_id), team_id) => {
+            organization_id > 0 && team_id.is_none_or(|team_id| team_id > 0)
+        }
+        (None, Some(_)) => false,
+    };
     let non_negative = [
         model.input_tokens.try_as_ref(),
         model.output_tokens.try_as_ref(),
@@ -609,9 +885,117 @@ where
         || !valid_modes
         || !valid_source
         || !valid_semantics
+        || !valid_organization
         || !non_negative
     {
         return Err(DbErr::Custom("用量日志状态无效".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_organization_audit_log<C>(
+    model: &organization_audit_logs::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    // 企业管理审计只追加；ORM 写入口同时闭合平台代操作与企业角色快照形状。
+    if !insert {
+        return Err(DbErr::Custom("企业管理审计不允许更新".to_owned()));
+    }
+    let organization_id = model.organization_id.try_as_ref().copied();
+    let actor_user_id = model.actor_user_id.try_as_ref().copied();
+    let actor_role = model.actor_role.try_as_ref().copied().flatten();
+    let platform_proxy = model.platform_proxy.try_as_ref().copied();
+    let platform_reason = model
+        .platform_reason
+        .try_as_ref()
+        .and_then(Option::as_deref);
+    let valid_actor = matches!(
+        (actor_role, platform_proxy, platform_reason),
+        (Some(1..=5), Some(false), None) | (None, Some(true), Some(_))
+    );
+    let valid_text = [
+        model.permission_code.try_as_ref().map(String::as_str),
+        model.operation.try_as_ref().map(String::as_str),
+        model.target_type.try_as_ref().map(String::as_str),
+        model.target_identifier.try_as_ref().map(String::as_str),
+        model.request_id.try_as_ref().map(String::as_str),
+        model.client_fingerprint.try_as_ref().map(String::as_str),
+    ]
+    .into_iter()
+    .all(|value| {
+        value.is_some_and(|value| !value.is_empty() && !value.chars().any(char::is_control))
+    });
+    if !matches!(organization_id, Some(value) if value > 0)
+        || !matches!(actor_user_id, Some(value) if value > 0)
+        || !valid_actor
+        || !matches!(model.outcome.try_as_ref(), Some(1..=3))
+        || !valid_text
+        || platform_reason.is_some_and(|value| value.is_empty() || value.len() > 255)
+        || model
+            .change_summary
+            .try_as_ref()
+            .and_then(Option::as_deref)
+            .is_some_and(|value| value.len() > 2_048)
+    {
+        return Err(DbErr::Custom("企业管理审计状态无效".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_platform_audit_log<C>(
+    model: &platform_audit_logs::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    // 平台审计只追加，JSON 字段只接受受限对象，避免把任意正文写入审计库。
+    if !insert {
+        return Err(DbErr::Custom("平台管理审计不允许更新".to_owned()));
+    }
+    let valid_text = |value: Option<&String>, max_length: usize| {
+        value.is_some_and(|value| {
+            !value.is_empty()
+                && value.len() <= max_length
+                && value.trim() == value
+                && !value.chars().any(char::is_control)
+        })
+    };
+    let valid_json = |value: Option<&String>| {
+        value.is_none_or(|value| {
+            value.len() <= 2_048
+                && serde_json::from_str::<serde_json::Value>(value)
+                    .ok()
+                    .is_some_and(|value| value.is_object())
+        })
+    };
+    if !matches!(model.operator_user_id.try_as_ref(), Some(value) if *value > 0)
+        || !valid_text(model.permission_code.try_as_ref(), 96)
+        || !valid_text(model.route.try_as_ref(), 128)
+        || !valid_text(model.operation.try_as_ref(), 96)
+        || !valid_text(model.resource.try_as_ref(), 64)
+        || model
+            .resource_id
+            .try_as_ref()
+            .and_then(Option::as_ref)
+            .is_some_and(|value| {
+                value.is_empty()
+                    || value.len() > 128
+                    || value.trim() != value
+                    || value.chars().any(char::is_control)
+            })
+        || !matches!(model.outcome.try_as_ref(), Some(1..=3))
+        || !valid_json(model.before_value.try_as_ref().and_then(Option::as_ref))
+        || !valid_json(model.after_value.try_as_ref().and_then(Option::as_ref))
+        || !valid_json(model.audit_info.try_as_ref().and_then(Option::as_ref))
+        || !valid_text(model.request_id.try_as_ref(), 128)
+    {
+        return Err(DbErr::Custom("平台管理审计状态无效".to_owned()));
     }
     Ok(())
 }
@@ -1103,6 +1487,237 @@ where
     Ok(())
 }
 
+async fn validate_subscription_order<C>(
+    model: &subscription_orders::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    // 订单状态和价格快照只允许通过订阅仓储写入，避免通用实体入口绕过幂等校验。
+    if !insert {
+        return Err(DbErr::Custom("订阅订单必须通过受信任仓储更新".to_owned()));
+    }
+    let order_key = model
+        .order_key
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("订阅订单标识缺失".to_owned()))?;
+    let idempotency_key = model
+        .idempotency_key
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("订阅订单幂等键缺失".to_owned()))?;
+    let user_id = model.user_id.try_as_ref().copied().unwrap_or_default();
+    let plan_id = model.plan_id.try_as_ref().copied().unwrap_or_default();
+    let plan_key = model
+        .plan_key
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("订阅订单计划标识缺失".to_owned()))?;
+    let plan_version = model.plan_version.try_as_ref().copied().unwrap_or_default();
+    let status = model.status.try_as_ref().copied().unwrap_or_default();
+    let version = model.version.try_as_ref().copied().unwrap_or_default();
+    let amount_minor = model.amount_minor.try_as_ref().copied().unwrap_or_default();
+    let quota_amount = model.quota_amount.try_as_ref().copied().unwrap_or_default();
+    let provider = model
+        .provider
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("订阅订单支付 Provider 缺失".to_owned()))?;
+    let currency = model
+        .currency
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("订阅订单币种缺失".to_owned()))?;
+    let created_at = model
+        .created_at
+        .try_as_ref()
+        .copied()
+        .ok_or_else(|| DbErr::Custom("订阅订单创建时间缺失".to_owned()))?;
+    let expires_at = model.expires_at.try_as_ref().copied().flatten();
+    let paid_at = model.paid_at.try_as_ref().copied().flatten();
+    let closed_at = model.closed_at.try_as_ref().copied().flatten();
+
+    if !valid_hex(order_key, 32, true)
+        || !valid_hex(idempotency_key, 32, true)
+        || user_id <= 0
+        || plan_id <= 0
+        || af_domain::SubscriptionPlanId::from_persistence_key(plan_key.as_str()).is_err()
+        || plan_version <= 0
+        || provider.is_empty()
+        || provider.len() > 32
+        || provider
+            .bytes()
+            .any(|byte| !(byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-'))
+        || !valid_currency(currency)
+        || amount_minor <= 0
+        || quota_amount <= 0
+        || version != 1
+        || created_at.unix_timestamp() < 0
+        || expires_at.is_some_and(|value| value <= created_at)
+        || !valid_subscription_order_state(status, paid_at, closed_at)
+    {
+        return Err(DbErr::Custom("订阅订单状态无效".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_refund_request<C>(
+    model: &refund_requests::ActiveModel,
+    database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    let persisted = if insert {
+        None
+    } else {
+        let id = model
+            .id
+            .try_as_ref()
+            .copied()
+            .ok_or_else(|| DbErr::Custom("退款请求更新缺少标识".to_owned()))?;
+        Some(
+            refund_requests::Entity::find_by_id(id)
+                .one(database)
+                .await?
+                .ok_or_else(|| DbErr::Custom("退款请求不存在".to_owned()))?,
+        )
+    };
+    let request_key = merge_required(
+        &model.request_key,
+        persisted.as_ref().map(|row| row.request_key.clone()),
+        "退款请求标识缺失",
+    )?;
+    let idempotency_key = merge_required(
+        &model.idempotency_key,
+        persisted.as_ref().map(|row| row.idempotency_key.clone()),
+        "退款请求幂等键缺失",
+    )?;
+    let order_key = merge_required(
+        &model.order_key,
+        persisted.as_ref().map(|row| row.order_key.clone()),
+        "退款订单标识缺失",
+    )?;
+    let provider = merge_required(
+        &model.provider,
+        persisted.as_ref().map(|row| row.provider.clone()),
+        "退款支付渠道缺失",
+    )?;
+    let currency = merge_required(
+        &model.currency,
+        persisted.as_ref().map(|row| row.currency.clone()),
+        "退款币种缺失",
+    )?;
+    let order_kind = merge_required(
+        &model.order_kind,
+        persisted.as_ref().map(|row| row.order_kind),
+        "退款订单类型缺失",
+    )?;
+    let original_amount_minor = merge_required(
+        &model.original_amount_minor,
+        persisted.as_ref().map(|row| row.original_amount_minor),
+        "退款原始金额缺失",
+    )?;
+    let refund_amount_minor = merge_required(
+        &model.refund_amount_minor,
+        persisted.as_ref().map(|row| row.refund_amount_minor),
+        "退款金额缺失",
+    )?;
+    let provider_refund_id = model
+        .provider_refund_id
+        .try_as_ref()
+        .and_then(Clone::clone)
+        .or_else(|| {
+            persisted
+                .as_ref()
+                .and_then(|row| row.provider_refund_id.clone())
+        });
+    let status = merge_required(
+        &model.status,
+        persisted.as_ref().map(|row| row.status),
+        "退款请求状态缺失",
+    )?;
+    let approval_status = merge_required(
+        &model.approval_status,
+        persisted.as_ref().map(|row| row.approval_status),
+        "退款审批状态缺失",
+    )?;
+    let approval_actor_id = model
+        .approval_actor_id
+        .try_as_ref()
+        .and_then(Clone::clone)
+        .or_else(|| persisted.as_ref().and_then(|row| row.approval_actor_id));
+    let approval_reason = model
+        .approval_reason
+        .try_as_ref()
+        .and_then(Clone::clone)
+        .or_else(|| {
+            persisted
+                .as_ref()
+                .and_then(|row| row.approval_reason.clone())
+        });
+    let version = merge_required(
+        &model.version,
+        persisted.as_ref().map(|row| row.version),
+        "退款请求版本缺失",
+    )?;
+    let created_at = merge_required(
+        &model.created_at,
+        persisted.as_ref().map(|row| row.created_at),
+        "退款请求创建时间缺失",
+    )?;
+    let updated_at = merge_required(
+        &model.updated_at,
+        persisted.as_ref().map(|row| row.updated_at),
+        "退款请求更新时间缺失",
+    )?;
+    let user_id = model
+        .user_id
+        .try_as_ref()
+        .copied()
+        .or_else(|| persisted.as_ref().map(|row| row.user_id))
+        .unwrap_or_default();
+
+    if !valid_hex(&request_key, 32, true)
+        || !valid_hex(&idempotency_key, 32, true)
+        || !valid_hex(&order_key, 32, true)
+        || user_id <= 0
+        || !matches!(order_kind, 1 | 2)
+        || provider.is_empty()
+        || provider.len() > 64
+        || provider
+            .bytes()
+            .any(|byte| !(byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-'))
+        || !valid_currency(&currency)
+        || original_amount_minor <= 0
+        || refund_amount_minor <= 0
+        || refund_amount_minor > original_amount_minor
+        || !matches!(status, 1..=5)
+        || !matches!(approval_status, 1..=3)
+        || approval_actor_id.is_some_and(|value| value <= 0)
+        || (approval_status == 1 && (approval_actor_id.is_some() || approval_reason.is_some()))
+        || (approval_status != 1 && approval_actor_id.is_none())
+        || approval_reason.as_deref().is_some_and(|value| {
+            value.is_empty()
+                || value.len() > 512
+                || value.trim() != value
+                || value.chars().any(char::is_control)
+        })
+        || provider_refund_id.as_deref().is_some_and(|value| {
+            value.is_empty()
+                || value.len() > 128
+                || value.trim() != value
+                || value.chars().any(char::is_control)
+        })
+        || (status == 3 && provider_refund_id.is_none())
+        || version <= 0
+        || created_at.unix_timestamp() < 0
+        || updated_at < created_at
+    {
+        return Err(DbErr::Custom("退款请求状态无效".to_owned()));
+    }
+    Ok(())
+}
+
 async fn validate_topup_payment_event<C>(
     model: &topup_payment_events::ActiveModel,
     _database: &C,
@@ -1152,6 +1767,61 @@ where
     Ok(())
 }
 
+async fn validate_subscription_payment_event<C>(
+    model: &subscription_payment_events::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    // 订阅支付事件与充值事件隔离，且同样只能通过唯一键追加。
+    if !insert {
+        return Err(DbErr::Custom("订阅支付事件不允许更新".to_owned()));
+    }
+    let event_key = model
+        .event_key
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("订阅支付事件标识缺失".to_owned()))?;
+    let provider = model
+        .provider
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("订阅支付事件渠道缺失".to_owned()))?;
+    let provider_event_id = model
+        .provider_event_id
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("订阅支付事件 Provider 标识缺失".to_owned()))?;
+    let signature_key_fingerprint = model
+        .signature_key_fingerprint
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("订阅支付事件签名指纹缺失".to_owned()))?;
+    let payload_sha256 = model
+        .payload_sha256
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("订阅支付事件负载哈希缺失".to_owned()))?;
+    let order_id = model.order_id.try_as_ref().copied().unwrap_or_default();
+    let event_type = model.event_type.try_as_ref().copied().unwrap_or_default();
+    let amount_minor = model.amount_minor.try_as_ref().copied().flatten();
+    let currency = model.currency.try_as_ref().and_then(Option::as_deref);
+    let payment_method = model.payment_method.try_as_ref().and_then(Option::as_deref);
+    if order_id <= 0
+        || !valid_hex(event_key, 32, true)
+        || provider.is_empty()
+        || provider_event_id.as_str().is_empty()
+        || !matches!(event_type, 1..=3)
+        || amount_minor.is_some_and(|value| value <= 0)
+        || currency.is_some_and(|value| !valid_currency(value))
+        || payment_method.is_some_and(|value| value.is_empty() || value.len() > 32)
+        || !valid_hex(signature_key_fingerprint.as_str(), 64, false)
+        || !valid_hex(payload_sha256.as_str(), 64, false)
+        || model.received_at.try_as_ref().is_none()
+        || model.created_at.try_as_ref().is_none()
+    {
+        return Err(DbErr::Custom("订阅支付事件状态无效".to_owned()));
+    }
+    Ok(())
+}
+
 fn merge_required<T>(
     active: &ActiveValue<T>,
     persisted: Option<T>,
@@ -1178,6 +1848,19 @@ where
 }
 
 fn valid_topup_order_state(
+    status: i16,
+    paid_at: Option<TimeDateTimeWithTimeZone>,
+    closed_at: Option<TimeDateTimeWithTimeZone>,
+) -> bool {
+    match status {
+        1 | 2 => paid_at.is_none() && closed_at.is_none(),
+        3 => paid_at.is_some() && closed_at.is_none(),
+        4..=6 => paid_at.is_none() && closed_at.is_some(),
+        _ => false,
+    }
+}
+
+fn valid_subscription_order_state(
     status: i16,
     paid_at: Option<TimeDateTimeWithTimeZone>,
     closed_at: Option<TimeDateTimeWithTimeZone>,
@@ -1268,15 +1951,57 @@ impl_updated_at_behavior!(
     model_prices::ActiveModel => validate_model_price,
     models::ActiveModel => validate_default,
     network_settings::ActiveModel => validate_default,
+    oauth_login_providers::ActiveModel => validate_default,
+    oauth_login_transactions::ActiveModel => validate_default,
     options::ActiveModel => validate_default,
+    organizations::ActiveModel => validate_organization,
+    organization_teams::ActiveModel => validate_organization_team,
     registration_rate_limits::ActiveModel => validate_default,
     route_channels::ActiveModel => validate_route_channel,
     routes::ActiveModel => validate_route,
     site_settings::ActiveModel => validate_default,
     tokens::ActiveModel => validate_default,
     topup_orders::ActiveModel => validate_topup_order,
+    subscription_orders::ActiveModel => validate_subscription_order,
+    refund_requests::ActiveModel => validate_refund_request,
+    user_oauth_identities::ActiveModel => validate_default,
     users::ActiveModel => validate_user,
 );
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for user_notification_events::ActiveModel {}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for user_notification_receipts::ActiveModel {}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_entitlements::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        // 授权替换必须走组织仓储的 CAS 更新，禁止通用 ActiveModel 绕过并发控制。
+        if !insert {
+            return Err(DbErr::Custom("企业授权必须通过受信仓储更新".to_owned()));
+        }
+        validate_organization_entitlement(&self, database, true).await?;
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_invitations::ActiveModel {}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_memberships::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_organization_membership(&self, database, insert).await?;
+        Ok(self)
+    }
+}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for groups::ActiveModel {
@@ -1512,6 +2237,12 @@ impl ActiveModelBehavior for debug_traces::ActiveModel {}
 impl ActiveModelBehavior for debug_trace_attempts::ActiveModel {}
 
 #[async_trait::async_trait]
+impl ActiveModelBehavior for debug_trace_snapshots::ActiveModel {}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for debug_trace_snapshot_access_audits::ActiveModel {}
+
+#[async_trait::async_trait]
 impl ActiveModelBehavior for balance_alert_events::ActiveModel {
     async fn before_save<C>(self, _database: &C, insert: bool) -> Result<Self, DbErr>
     where
@@ -1644,6 +2375,20 @@ impl ActiveModelBehavior for topup_payment_events::ActiveModel {
 }
 
 #[async_trait::async_trait]
+impl ActiveModelBehavior for subscription_payment_events::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_subscription_payment_event(&self, database, insert).await?;
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for refund_provider_events::ActiveModel {}
+
+#[async_trait::async_trait]
 impl ActiveModelBehavior for redemption_batches::ActiveModel {
     async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
     where
@@ -1713,6 +2458,65 @@ impl ActiveModelBehavior for usage_logs::ActiveModel {
         validate_usage_log(&self, database, insert).await?;
         Ok(self)
     }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_audit_logs::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_organization_audit_log(&self, database, insert).await?;
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for platform_audit_logs::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_platform_audit_log(&self, database, insert).await?;
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for request_outcome_logs::ActiveModel {
+    async fn before_save<C>(self, _database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        if !insert {
+            return Err(DbErr::Custom("请求终态事实只允许追加".to_owned()));
+        }
+        let request_id = self.request_id.try_as_ref().map(String::as_str);
+        let protocol = self.protocol.try_as_ref().map(String::as_str);
+        let operation = self.operation.try_as_ref().map(String::as_str);
+        let model = self.model.try_as_ref().map(String::as_str);
+        let outcome = self.outcome.try_as_ref().copied();
+        let error_kind = self.error_kind.try_as_ref().and_then(Option::as_deref);
+        if request_id.is_none_or(|value| !valid_request_outcome_text(value, 128))
+            || protocol.is_none_or(|value| value.parse::<af_domain::Protocol>().is_err())
+            || operation.is_none_or(|value| value.parse::<af_domain::Operation>().is_err())
+            || model.is_none_or(|value| !valid_request_outcome_text(value, 255))
+            || self.duration_ms.try_as_ref().is_none_or(|value| *value < 0)
+            || self.created_at.try_as_ref().is_none()
+            || !matches!((outcome, error_kind), (Some(1), None) | (Some(2), Some(_)))
+            || error_kind.is_some_and(|value| value.parse::<crate::RequestFailureKind>().is_err())
+        {
+            return Err(DbErr::Custom("请求终态事实字段无效".to_owned()));
+        }
+        Ok(self)
+    }
+}
+
+fn valid_request_outcome_text(value: &str, max_bytes: usize) -> bool {
+    !value.is_empty()
+        && value.len() <= max_bytes
+        && value.trim() == value
+        && !value.chars().any(char::is_control)
 }
 
 #[async_trait::async_trait]

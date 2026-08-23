@@ -3,10 +3,10 @@ mod support;
 use std::{error::Error, time::Duration};
 
 use af_domain::{
-    ChannelId, ChannelType, CredentialKind, GroupId, Protocol, ResponsesCompactMode,
-    ResponsesCompactProbeResult, Status,
+    ChannelId, ChannelType, ClientSimulationProfile, CredentialKind, CredentialQuotaDimension,
+    GroupId, Protocol, ResponsesCompactMode, ResponsesCompactProbeResult, Status,
 };
-use sea_orm::{ActiveModelTrait, Set};
+use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
 
 use crate::EncryptedCredentialEnvelope;
 use crate::entity::SensitiveJson;
@@ -97,7 +97,7 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
     pending_oauth.oauth_token_pending = Set(true);
     let pending_oauth = pending_oauth.insert(pool.connection()).await?;
     assert!(
-        super::source::SchedulerRuntimeCredentialSource::from_entity(pending_oauth, None)?
+        super::source::SchedulerRuntimeCredentialSource::from_entity(pending_oauth, None, None)?
             .is_none()
     );
     runtime_proxy(91).insert(pool.connection()).await?;
@@ -150,16 +150,18 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
     .insert(pool.connection())
     .await?;
 
-    let anthropic_channel = runtime_channel(
+    let mut anthropic_channel = runtime_channel(
         "anthropic-channel",
         Status::Enabled,
         ChannelType::Anthropic.as_str(),
         Protocol::Anthropic.as_str(),
         "https://anthropic-channel-canary.example.com",
         [],
-    )
-    .insert(pool.connection())
-    .await?;
+    );
+    anthropic_channel.settings = Set(SensitiveJson::from(serde_json::json!({
+        "client_simulation_profile": "anthropic_cli_headers_v1"
+    })));
+    let anthropic_channel = anthropic_channel.insert(pool.connection()).await?;
     attach(anthropic_channel.id, group.id, "gpt-runtime-canary")
         .insert(pool.connection())
         .await?;
@@ -181,6 +183,18 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
         None,
         "anthropic-channel-key",
         0x55,
+        false,
+    )
+    .insert(pool.connection())
+    .await?;
+    runtime_credential(
+        anthropic_channel.id,
+        CredentialKind::Oauth,
+        20,
+        true,
+        None,
+        "anthropic-oauth-key",
+        0x56,
         false,
     )
     .insert(pool.connection())
@@ -329,7 +343,12 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
     assert_eq!(anthropic_record.target().protocol(), Protocol::Anthropic);
     assert_eq!(
         anthropic_record.target().credential_kind(),
-        CredentialKind::ApiKey
+        CredentialKind::Oauth
+    );
+    assert_eq!(anthropic_record.target().credentials().len(), 1);
+    assert_eq!(
+        anthropic_record.target().client_simulation_profile(),
+        Some(ClientSimulationProfile::AnthropicCliHeadersV1)
     );
 
     let responses_record = records
@@ -377,11 +396,115 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
         "selected-key-id-canary",
         "anthropic-channel-canary",
         "anthropic-channel-key",
+        "anthropic-oauth-key",
         "gpt-responses-upstream-canary",
         "gpt-compact-upstream-canary",
     ] {
         assert!(!rendered.contains(secret));
     }
+
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn spark_shadow_reads_parent_secret_proxy_and_concurrency_without_parent_quota_cooling()
+-> Result<(), Box<dyn Error>> {
+    let pool = crate::connect_and_migrate(
+        &crate::DatabaseOptions::new("sqlite::memory:")?,
+        crate::MigrationOptions::default(),
+    )
+    .await?;
+    let group = group("spark-runtime").insert(pool.connection()).await?;
+    let channel = runtime_channel(
+        "spark-runtime",
+        Status::Enabled,
+        ChannelType::OpenAi.as_str(),
+        Protocol::OpenAiResponses.as_str(),
+        "https://spark-runtime.example.com",
+        [],
+    )
+    .insert(pool.connection())
+    .await?;
+    attach(channel.id, group.id, "gpt-5.3-codex-spark")
+        .insert(pool.connection())
+        .await?;
+    ability(group.id, "gpt-5.3-codex-spark", channel.id, true, 10, 10)
+        .insert(pool.connection())
+        .await?;
+    runtime_proxy(92).insert(pool.connection()).await?;
+
+    let mut parent = runtime_credential(
+        channel.id,
+        CredentialKind::Oauth,
+        10,
+        false,
+        Some(92),
+        "parent-secret-key",
+        0x71,
+        true,
+    );
+    parent.concurrency = Set(Some(3));
+    parent.temp_unschedulable_until = Set(Some(
+        sea_orm::entity::prelude::TimeDateTimeWithTimeZone::now_utc() + Duration::from_secs(3_600),
+    ));
+    parent.temp_unschedulable_reason = Set(Some("quota_exhausted".to_owned()));
+    let parent = parent.insert(pool.connection()).await?;
+
+    let mut shadow = runtime_credential(
+        channel.id,
+        CredentialKind::Oauth,
+        20,
+        true,
+        None,
+        "shadow-reference",
+        0,
+        false,
+    );
+    shadow.parent_id = Set(Some(parent.id));
+    shadow.quota_dimension = Set(CredentialQuotaDimension::Spark.as_str().to_owned());
+    let shadow = shadow.insert(pool.connection()).await?;
+
+    let records = SchedulerRuntimeRepository::new(pool.clone())
+        .load_all()
+        .await?;
+    assert_eq!(records.len(), 1);
+    let credential = &records[0].target().credentials()[0];
+    assert_eq!(credential.routing_credential_id().get(), shadow.id);
+    assert_eq!(credential.secret_owner_id().get(), parent.id);
+    assert_eq!(credential.concurrency_owner_id().get(), parent.id);
+    assert_eq!(credential.shared_health_id().get(), parent.id);
+    assert_eq!(
+        credential.quota_dimension(),
+        CredentialQuotaDimension::Spark
+    );
+    assert_eq!(credential.envelope().key_id(), "parent-secret-key");
+    assert_eq!(credential.proxy().unwrap().proxy_id().get(), 92);
+    assert_eq!(credential.concurrency().unwrap().get(), 3);
+
+    let mut auth_blocked = parent.clone().into_active_model();
+    auth_blocked.temp_unschedulable_reason = Set(Some("auth_expired".to_owned()));
+    let parent = auth_blocked.update(pool.connection()).await?;
+    assert!(
+        SchedulerRuntimeRepository::new(pool.clone())
+            .load_all()
+            .await?
+            .is_empty()
+    );
+
+    let mut recovered = parent.into_active_model();
+    recovered.temp_unschedulable_until = Set(None);
+    recovered.temp_unschedulable_reason = Set(None);
+    let parent = recovered.update(pool.connection()).await?;
+    let mut broken_shadow = shadow.into_active_model();
+    broken_shadow.secret = Set(parent.secret);
+    broken_shadow.update(pool.connection()).await?;
+    assert!(matches!(
+        SchedulerRuntimeRepository::new(pool.clone())
+            .load_all()
+            .await,
+        Err(SchedulerRuntimeRepositoryError::Invariant)
+    ));
 
     pool.close().await?;
     Ok(())
@@ -467,6 +590,43 @@ fn anthropic_runtime_target_accepts_messages_pair_and_rejects_mismatch() {
             vec![credential],
             Vec::new(),
         )
+        .is_err()
+    );
+    let oauth = SchedulerRuntimeCredentialRecord::with_scheduling(
+        2,
+        CredentialKind::Oauth,
+        EncryptedCredentialEnvelope::new("runtime-test-key", [0x43; 24], vec![0x25; 16]).unwrap(),
+        false,
+        0,
+        10,
+    )
+    .unwrap();
+    let target = SchedulerRuntimeTargetRecord::new_pool(
+        ChannelId::new(2).unwrap(),
+        ChannelType::Anthropic,
+        Protocol::Anthropic,
+        None,
+        vec![oauth],
+        Vec::new(),
+    )
+    .unwrap()
+    .with_client_simulation_profile(Some(ClientSimulationProfile::AnthropicCliHeadersV1))
+    .unwrap();
+    assert_eq!(
+        target.client_simulation_profile(),
+        Some(ClientSimulationProfile::AnthropicCliHeadersV1)
+    );
+    assert!(
+        SchedulerRuntimeTargetRecord::new_pool(
+            ChannelId::new(3).unwrap(),
+            ChannelType::Anthropic,
+            Protocol::Anthropic,
+            None,
+            vec![runtime_credential_record(3)],
+            Vec::new(),
+        )
+        .unwrap()
+        .with_client_simulation_profile(Some(ClientSimulationProfile::AnthropicCliHeadersV1,))
         .is_err()
     );
 }

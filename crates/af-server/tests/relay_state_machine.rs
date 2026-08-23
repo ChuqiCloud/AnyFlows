@@ -10,11 +10,13 @@ use std::{
 };
 
 use af_adapter::{
-    Adaptor, AdaptorError, AdaptorResult, AdaptorTarget, Bytes, ChannelType, Credential, HeaderMap,
-    Method, OpenAiAdaptor, Operation, PooledClient, Protocol, RelayContext, ResponseMode,
-    UpstreamRequest,
+    Adaptor, AdaptorError, AdaptorResult, AdaptorTarget, AnthropicAdaptor, BuiltInClientSimulation,
+    Bytes, ChannelType, Credential, HeaderMap, Method, OpenAiAdaptor, Operation, PooledClient,
+    Protocol, RelayContext, ResponseMode, UpstreamRequest,
 };
-use af_domain::{ChannelId, UpstreamError, UpstreamServerStatus};
+use af_domain::{
+    ChannelId, ClientSimulationProfile, ClientSimulationResult, UpstreamError, UpstreamServerStatus,
+};
 use af_httpclient::{HttpClientConfig, HttpClientPool, HttpTimeouts, ProxyConfig, RemoteDnsPolicy};
 use af_relay::{
     RelayAttemptGate, RelayAttemptGateError, RelayAttemptGateFuture, RelayAttemptPermit,
@@ -433,6 +435,78 @@ async fn candidate_request_controls_model_filter_url_and_body_together() {
     assert!(request.ends_with(mapped_body.as_ref()));
     assert!(!request.ends_with(TEST_REQUEST_BODY));
     server.join().unwrap();
+}
+
+#[tokio::test]
+async fn applied_client_simulation_adds_identity_headers_and_report_metadata() {
+    let (address, captured, server) = spawn_capturing_proxy(ProxyResponse {
+        status_line: "200 OK",
+        body: br#"{"ok":true}"#,
+    });
+    let client = proxy_client(address);
+    let candidate = RelayCandidate::new(
+        Arc::new(AnthropicAdaptor::with_supported_models([TEST_MODEL])),
+        RelayContext::new(client)
+            .with_base_url("http://anthropic.invalid")
+            .unwrap(),
+        Credential::oauth("oauth-secret").unwrap(),
+    )
+    .with_client_simulation(Arc::new(BuiltInClientSimulation::new(
+        ClientSimulationProfile::AnthropicCliHeadersV1,
+    )));
+    let machine = RelayStateMachine::new(vec![candidate]).unwrap();
+
+    let response = machine.execute_with_report(request()).await.unwrap();
+    let simulation = response
+        .report()
+        .successful_client_simulation()
+        .expect("成功 Attempt 必须保留仿真元数据");
+    assert_eq!(
+        simulation.profile(),
+        ClientSimulationProfile::AnthropicCliHeadersV1
+    );
+    assert_eq!(simulation.result(), ClientSimulationResult::Applied);
+    let (_, report) = response.into_parts();
+    assert_eq!(
+        report.successful_client_simulation().unwrap().result(),
+        ClientSimulationResult::Applied
+    );
+
+    let upstream_request = captured.recv_timeout(TEST_TIMEOUT).unwrap();
+    let headers = String::from_utf8_lossy(&upstream_request);
+    assert!(headers.contains("user-agent: claude-cli/2.1.114 (external, sdk-cli)"));
+    assert!(headers.contains("x-app: cli"));
+    assert!(headers.contains("authorization: Bearer oauth-secret"));
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn failed_client_simulation_is_protocol_error_without_fallback() {
+    let client = direct_client();
+    let simulated_candidate = candidate(&client, "https://first.invalid", &[TEST_MODEL])
+        .with_client_simulation(Arc::new(BuiltInClientSimulation::new(
+            ClientSimulationProfile::AnthropicCliHeadersV1,
+        )));
+    let machine = RelayStateMachine::new(vec![
+        simulated_candidate,
+        candidate(&client, "https://fallback.invalid", &["other-model"]),
+    ])
+    .unwrap();
+
+    let error = machine.execute_with_report(request()).await.unwrap_err();
+    assert_eq!(
+        error.error(),
+        RelayError::Upstream(UpstreamError::ProtocolError)
+    );
+    assert_eq!(error.report().failures().len(), 1);
+    let simulation = error.report().failures()[0]
+        .client_simulation()
+        .expect("失败 Attempt 必须保留仿真元数据");
+    assert_eq!(
+        simulation.profile(),
+        ClientSimulationProfile::AnthropicCliHeadersV1
+    );
+    assert_eq!(simulation.result(), ClientSimulationResult::Failed);
 }
 
 #[tokio::test]

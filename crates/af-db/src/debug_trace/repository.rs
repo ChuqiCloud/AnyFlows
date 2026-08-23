@@ -1,4 +1,4 @@
-use std::{fmt, time::Duration};
+use std::{fmt, sync::Arc, time::Duration};
 
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
@@ -15,12 +15,15 @@ use crate::{
     entity::{debug_trace_attempts, debug_trace_settings, debug_traces},
 };
 
+use super::snapshots::{insert_snapshot, prune_access_audits, read_snapshots};
 use super::types::{
     DebugTraceAttemptOutcome, DebugTraceAttemptRecord, DebugTraceDetailRecord,
     DebugTraceFailureKind, DebugTraceListQuery, DebugTraceOperation, DebugTraceOutcome,
     DebugTracePageRecord, DebugTraceProtocol, DebugTraceSettingsRecord, DebugTraceSettingsWrite,
-    DebugTraceSummaryRecord, DebugTraceWrite, DebugTraceWriteError,
-    MAX_DEBUG_TRACE_RETENTION_HOURS, valid_model, valid_request_id,
+    DebugTraceSnapshotCipher, DebugTraceSnapshotContext, DebugTraceSnapshotKind,
+    DebugTraceSnapshotRecord, DebugTraceSnapshotScope, DebugTraceSummaryRecord, DebugTraceWrite,
+    DebugTraceWriteError, MAX_DEBUG_TRACE_RETENTION_HOURS, valid_method, valid_model, valid_path,
+    valid_request_id,
 };
 
 const DEBUG_TRACE_SETTINGS_ID: i16 = 1;
@@ -43,18 +46,22 @@ pub enum DebugTraceRepositoryError {
     InvalidInput,
     #[error("调试追踪记录不存在")]
     NotFound,
+    #[error("调试追踪快照解密失败")]
+    Decrypt,
 }
 
 #[derive(Clone)]
 pub struct DebugTraceRepository {
     pool: DatabasePool,
     operation_timeout: Duration,
+    snapshot_cipher: Arc<dyn DebugTraceSnapshotCipher>,
 }
 
 impl DebugTraceRepository {
     pub fn new(
         pool: DatabasePool,
         operation_timeout: Duration,
+        snapshot_cipher: Arc<dyn DebugTraceSnapshotCipher>,
     ) -> Result<Self, DebugTraceRepositoryConfigError> {
         if operation_timeout.is_zero() {
             return Err(DebugTraceRepositoryConfigError::ZeroOperationTimeout);
@@ -62,6 +69,7 @@ impl DebugTraceRepository {
         Ok(Self {
             pool,
             operation_timeout,
+            snapshot_cipher,
         })
     }
 
@@ -98,6 +106,20 @@ impl DebugTraceRepository {
             return Err(DebugTraceRepositoryError::InvalidInput);
         }
         self.with_timeout(self.detail_inner(trace_id)).await
+    }
+
+    /// 在同一事务内解密指定范围并追加读取审计；审计提交失败时不返回明文。
+    pub async fn snapshots(
+        &self,
+        trace_id: i64,
+        actor_user_id: i64,
+        scope: DebugTraceSnapshotScope,
+    ) -> Result<DebugTraceSnapshotRecord, DebugTraceRepositoryError> {
+        if trace_id < 1 || actor_user_id < 1 {
+            return Err(DebugTraceRepositoryError::InvalidInput);
+        }
+        self.with_timeout(self.snapshots_inner(trace_id, actor_user_id, scope))
+            .await
     }
 
     pub async fn prune(&self, retention_hours: i32) -> Result<u64, DebugTraceRepositoryError> {
@@ -147,6 +169,9 @@ impl DebugTraceRepository {
             enabled: Set(write.enabled),
             sample_per_million: Set(write.sample_per_million),
             retention_hours: Set(write.retention_hours),
+            capture_headers: Set(write.capture_headers),
+            capture_bodies: Set(write.capture_bodies),
+            max_body_bytes: Set(write.max_body_bytes),
             version: Set(version),
             created_at: Set(existing.created_at),
             updated_at: Set(TimeDateTimeWithTimeZone::now_utc()),
@@ -179,6 +204,17 @@ impl DebugTraceRepository {
         let attempt_count = i32::try_from(write.attempts.len())
             .map_err(|_| internal_error(DebugTraceRepositoryError::Invariant))?;
         let created_at = TimeDateTimeWithTimeZone::now_utc();
+        let (downstream_method, downstream_path, downstream_headers_json, downstream_body_json) =
+            write
+                .downstream_diagnostic
+                .map_or((None, None, None, None), |diagnostic| {
+                    (
+                        Some(diagnostic.method),
+                        Some(diagnostic.path),
+                        diagnostic.headers_json,
+                        diagnostic.body_json,
+                    )
+                });
         let model = debug_traces::ActiveModel {
             id: sea_orm::NotSet,
             request_id: Set(write.request_id),
@@ -194,14 +230,73 @@ impl DebugTraceRepository {
             selected_credential_id: Set(selected.map(|target| target.1)),
             routing_elapsed_ms: Set(write.routing_elapsed_ms),
             attempt_count: Set(attempt_count),
+            downstream_method: Set(downstream_method),
+            downstream_path: Set(downstream_path),
+            // 旧列只保留滚动升级结构兼容，新版本永不再写入诊断明文。
+            downstream_headers_json: Set(None),
+            downstream_body_json: Set(None),
             created_at: Set(created_at),
         }
         .insert(&transaction)
         .with_subscriber(NoSubscriber::default())
         .await
         .map_err(|_| query_error("debug_trace_insert"))?;
+        if let Some(plaintext) = downstream_headers_json.as_deref() {
+            insert_snapshot(
+                &transaction,
+                self.snapshot_cipher.as_ref(),
+                DebugTraceSnapshotContext::new(
+                    model.id,
+                    None,
+                    DebugTraceSnapshotKind::DownstreamHeaders,
+                )
+                .map_err(|_| internal_error(DebugTraceRepositoryError::Invariant))?,
+                plaintext,
+                created_at,
+            )
+            .await?;
+        }
+        if let Some(plaintext) = downstream_body_json.as_deref() {
+            insert_snapshot(
+                &transaction,
+                self.snapshot_cipher.as_ref(),
+                DebugTraceSnapshotContext::new(
+                    model.id,
+                    None,
+                    DebugTraceSnapshotKind::DownstreamBody,
+                )
+                .map_err(|_| internal_error(DebugTraceRepositoryError::Invariant))?,
+                plaintext,
+                created_at,
+            )
+            .await?;
+        }
         for attempt in write.attempts {
-            debug_trace_attempts::ActiveModel {
+            let (
+                request_method,
+                request_url,
+                request_headers_json,
+                request_body_json,
+                response_status,
+                response_headers_json,
+                response_body_json,
+                response_streamed,
+            ) = attempt.diagnostic.map_or(
+                (None, None, None, None, None, None, None, false),
+                |diagnostic| {
+                    (
+                        Some(diagnostic.request_method),
+                        Some(diagnostic.request_url),
+                        diagnostic.request_headers_json,
+                        diagnostic.request_body_json,
+                        diagnostic.response_status,
+                        diagnostic.response_headers_json,
+                        diagnostic.response_body_json,
+                        diagnostic.response_streamed,
+                    )
+                },
+            );
+            let attempt_model = debug_trace_attempts::ActiveModel {
                 id: sea_orm::NotSet,
                 trace_id: Set(model.id),
                 candidate_index: Set(attempt.candidate_index),
@@ -212,12 +307,56 @@ impl DebugTraceRepository {
                 upstream_status: Set(attempt.upstream_status),
                 retry_decision: Set(attempt.retry_decision),
                 elapsed_ms: Set(attempt.elapsed_ms),
+                client_simulation_profile: Set(attempt
+                    .client_simulation_profile
+                    .map(|profile| profile.as_str().to_owned())),
+                client_simulation_result: Set(attempt
+                    .client_simulation_result
+                    .map(|result| result.as_str().to_owned())),
+                request_method: Set(request_method),
+                request_url: Set(request_url),
+                request_headers_json: Set(None),
+                request_body_json: Set(None),
+                response_status: Set(response_status),
+                response_headers_json: Set(None),
+                response_body_json: Set(None),
+                response_streamed: Set(response_streamed),
                 created_at: Set(created_at),
             }
             .insert(&transaction)
             .with_subscriber(NoSubscriber::default())
             .await
             .map_err(|_| query_error("debug_trace_attempt_insert"))?;
+            for (kind, plaintext) in [
+                (
+                    DebugTraceSnapshotKind::AttemptRequestHeaders,
+                    request_headers_json.as_deref(),
+                ),
+                (
+                    DebugTraceSnapshotKind::AttemptRequestBody,
+                    request_body_json.as_deref(),
+                ),
+                (
+                    DebugTraceSnapshotKind::AttemptResponseHeaders,
+                    response_headers_json.as_deref(),
+                ),
+                (
+                    DebugTraceSnapshotKind::AttemptResponseBody,
+                    response_body_json.as_deref(),
+                ),
+            ] {
+                if let Some(plaintext) = plaintext {
+                    insert_snapshot(
+                        &transaction,
+                        self.snapshot_cipher.as_ref(),
+                        DebugTraceSnapshotContext::new(model.id, Some(attempt_model.id), kind)
+                            .map_err(|_| internal_error(DebugTraceRepositoryError::Invariant))?,
+                        plaintext,
+                        created_at,
+                    )
+                    .await?;
+                }
+            }
         }
         let record = summary_from_model(model)?;
         transaction
@@ -241,6 +380,9 @@ impl DebugTraceRepository {
         }
         if let Some(model) = query.requested_model {
             select = select.filter(debug_traces::Column::RequestedModel.eq(model));
+        }
+        if let Some(request_id) = query.request_id {
+            select = select.filter(debug_traces::Column::RequestId.eq(request_id));
         }
         let mut traces = select
             .limit((query.limit + 1) as u64)
@@ -286,6 +428,22 @@ impl DebugTraceRepository {
         Ok(DebugTraceDetailRecord::new(summary, attempts))
     }
 
+    async fn snapshots_inner(
+        &self,
+        trace_id: i64,
+        actor_user_id: i64,
+        scope: DebugTraceSnapshotScope,
+    ) -> Result<DebugTraceSnapshotRecord, DebugTraceRepositoryError> {
+        read_snapshots(
+            &self.pool,
+            self.snapshot_cipher.as_ref(),
+            trace_id,
+            actor_user_id,
+            scope,
+        )
+        .await
+    }
+
     async fn prune_inner(&self, retention_hours: i32) -> Result<u64, DebugTraceRepositoryError> {
         let seconds = i64::from(retention_hours)
             .checked_mul(3_600)
@@ -296,13 +454,27 @@ impl DebugTraceRepository {
             .ok_or(DebugTraceRepositoryError::InvalidInput)?;
         let cutoff = TimeDateTimeWithTimeZone::from_unix_timestamp(cutoff_epoch)
             .map_err(|_| DebugTraceRepositoryError::InvalidInput)?;
-        debug_traces::Entity::delete_many()
-            .filter(debug_traces::Column::CreatedAt.lt(cutoff))
-            .exec(self.pool.connection())
+        let transaction = self
+            .pool
+            .connection()
+            .begin()
             .with_subscriber(NoSubscriber::default())
             .await
-            .map(|result| result.rows_affected)
-            .map_err(|_| query_error("debug_trace_prune"))
+            .map_err(|_| query_error("debug_trace_prune_begin"))?;
+        prune_access_audits(&transaction, cutoff).await?;
+        let deleted = debug_traces::Entity::delete_many()
+            .filter(debug_traces::Column::CreatedAt.lt(cutoff))
+            .exec(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| query_error("debug_trace_prune"))?
+            .rows_affected;
+        transaction
+            .commit()
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| query_error("debug_trace_prune_commit"))?;
+        Ok(deleted)
     }
 }
 
@@ -312,6 +484,7 @@ impl fmt::Debug for DebugTraceRepository {
             .debug_struct("DebugTraceRepository")
             .field("pool", &self.pool)
             .field("operation_timeout", &self.operation_timeout)
+            .field("snapshot_cipher", &"<已脱敏>")
             .finish()
     }
 }
@@ -326,6 +499,9 @@ fn settings_from_model(
         model.enabled,
         model.sample_per_million,
         model.retention_hours,
+        model.capture_headers,
+        model.capture_bodies,
+        model.max_body_bytes,
         model.version,
     )
     .map_err(map_write_error)
@@ -345,6 +521,15 @@ fn summary_from_model(
         || model.selected_channel_id.is_some() != model.selected_credential_id.is_some()
         || model.selected_channel_id.is_some_and(|value| value < 1)
         || model.selected_credential_id.is_some_and(|value| value < 1)
+        || model.downstream_method.is_some() != model.downstream_path.is_some()
+        || model
+            .downstream_method
+            .as_deref()
+            .is_some_and(|value| !valid_method(value))
+        || model
+            .downstream_path
+            .as_deref()
+            .is_some_and(|value| !valid_path(value))
     {
         return Err(internal_error(DebugTraceRepositoryError::Invariant));
     }
@@ -369,6 +554,8 @@ fn summary_from_model(
         selected_credential_id: model.selected_credential_id,
         routing_elapsed_ms: model.routing_elapsed_ms,
         attempt_count: model.attempt_count,
+        downstream_method: model.downstream_method,
+        downstream_path: model.downstream_path,
         created_at: model.created_at,
     })
 }
@@ -414,6 +601,18 @@ fn attempt_from_model(
         .map(DebugTraceFailureKind::from_i16)
         .transpose()
         .map_err(map_write_error)?;
+    let client_simulation_profile = model
+        .client_simulation_profile
+        .as_deref()
+        .map(str::parse)
+        .transpose()
+        .map_err(|_| internal_error(DebugTraceRepositoryError::Invariant))?;
+    let client_simulation_result = model
+        .client_simulation_result
+        .as_deref()
+        .map(str::parse)
+        .transpose()
+        .map_err(|_| internal_error(DebugTraceRepositoryError::Invariant))?;
     let shape_valid = match outcome {
         DebugTraceAttemptOutcome::Succeeded => {
             failure_kind.is_none() && model.upstream_status.is_none() && !model.retry_decision
@@ -428,6 +627,19 @@ fn attempt_from_model(
         || model
             .upstream_status
             .is_some_and(|status| !(500..=599).contains(&status))
+        || model.request_method.is_some() != model.request_url.is_some()
+        || model
+            .request_method
+            .as_deref()
+            .is_some_and(|value| !valid_method(value))
+        || model
+            .request_url
+            .as_deref()
+            .is_some_and(|value| !valid_path(value))
+        || model
+            .response_status
+            .is_some_and(|status| !(100..=599).contains(&status))
+        || client_simulation_profile.is_some() != client_simulation_result.is_some()
     {
         return Err(internal_error(DebugTraceRepositoryError::Invariant));
     }
@@ -440,6 +652,12 @@ fn attempt_from_model(
         upstream_status: model.upstream_status,
         retry_decision: model.retry_decision,
         elapsed_ms: model.elapsed_ms,
+        client_simulation_profile,
+        client_simulation_result,
+        request_method: model.request_method,
+        request_url: model.request_url,
+        response_status: model.response_status,
+        response_streamed: model.response_streamed,
     })
 }
 
@@ -450,18 +668,19 @@ fn map_write_error(error: DebugTraceWriteError) -> DebugTraceRepositoryError {
     }
 }
 
-fn query_error(kind: &'static str) -> DebugTraceRepositoryError {
+pub(super) fn query_error(kind: &'static str) -> DebugTraceRepositoryError {
     tracing::error!(target: "af_db::debug_trace", error_kind = kind, "调试追踪数据库操作失败");
     DebugTraceRepositoryError::Query
 }
 
-fn internal_error(error: DebugTraceRepositoryError) -> DebugTraceRepositoryError {
+pub(super) fn internal_error(error: DebugTraceRepositoryError) -> DebugTraceRepositoryError {
     let kind = match error {
         DebugTraceRepositoryError::Query => "debug_trace_query",
         DebugTraceRepositoryError::Timeout => "debug_trace_timeout",
         DebugTraceRepositoryError::Invariant => "debug_trace_invariant",
         DebugTraceRepositoryError::InvalidInput => "debug_trace_invalid_input",
         DebugTraceRepositoryError::NotFound => "debug_trace_not_found",
+        DebugTraceRepositoryError::Decrypt => "debug_trace_decrypt",
     };
     tracing::error!(target: "af_db::debug_trace", error_kind = kind, "调试追踪仓储拒绝损坏状态");
     error

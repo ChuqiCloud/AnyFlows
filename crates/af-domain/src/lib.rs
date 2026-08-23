@@ -7,10 +7,14 @@ mod concurrency;
 mod enums;
 mod error;
 mod network;
+mod organization;
+mod organization_budget;
+mod organization_entitlement;
 mod payment;
 mod principal;
 mod quota;
 mod redemption;
+mod refund;
 mod routing;
 mod subscription;
 mod subscription_window;
@@ -27,7 +31,8 @@ pub use auto_ban::{
 };
 pub use concurrency::{ConcurrencyLimit, ConcurrencyLimitError};
 pub use enums::{
-    ChannelType, CredentialKind, Operation, ParseEnumError, Protocol, PublicErrorCode,
+    ChannelType, ClientSimulationProfile, ClientSimulationResult, CredentialKind,
+    CredentialQuotaDimension, Operation, ParseEnumError, Protocol, PublicErrorCode,
     ResponsesCompactMode, ResponsesCompactProbeResult, Role, Status,
 };
 pub use error::{
@@ -35,25 +40,52 @@ pub use error::{
     UpstreamRetryAfter, UpstreamServerStatus,
 };
 pub use network::{IpCidr, IpCidrParseError, TrustedClientIp};
+pub use organization::{
+    OrganizationIdentifierError, OrganizationInvitationKey, OrganizationInvitationStatus,
+    OrganizationKey, OrganizationMembershipStatus, OrganizationPermission, OrganizationRole,
+    OrganizationStateCodeError, OrganizationStatus, OrganizationTeamStatus, PlatformPermission,
+};
+pub use organization_budget::{
+    MAX_ORGANIZATION_BUDGET_FIXED_PERIOD_SECONDS, MIN_ORGANIZATION_BUDGET_FIXED_PERIOD_SECONDS,
+    OrganizationBudgetLimit, OrganizationBudgetPeriod, OrganizationBudgetPolicyError,
+    OrganizationBudgetScopeKind,
+};
+pub use organization_entitlement::{
+    MAX_ORGANIZATION_AUDIT_RETENTION_DAYS, OrganizationEntitlementCapacity,
+    OrganizationEntitlementSnapshot, OrganizationEntitlementStateError,
+    OrganizationEntitlementStatus,
+};
 pub use payment::{
     TopupIdentifierError, TopupOrderId, TopupOrderStatus, TopupPaymentEventId,
     TopupPaymentEventType, TopupRequestId, TopupStateCodeError,
 };
 pub use principal::{
-    ChannelId, CredentialId, GatewayPrincipal, GroupId, ModelId, PrincipalIdError, ProxyId,
-    RouteChannelId, RouteId, TokenId, UserId,
+    ChannelId, CredentialId, GatewayPrincipal, GroupId, ModelId, OrganizationBudgetPolicyId,
+    OrganizationBudgetWindowId, OrganizationGatewayPrincipal, OrganizationId,
+    OrganizationMembershipId, OrganizationTeamId, PrincipalIdError, ProxyId, RouteChannelId,
+    RouteId, TokenId, UserId,
 };
 pub use quota::{Quota, QuotaDelta, QuotaError};
 pub use redemption::{
     RedemptionBatchId, RedemptionBatchStatus, RedemptionCodeId, RedemptionCodeStatus,
     RedemptionIdentifierError, RedemptionStateCodeError,
 };
+pub use refund::{
+    MAX_REFUND_APPROVAL_REASON_BYTES, MAX_REFUND_ORDER_KEY_BYTES,
+    MAX_REFUND_PAYMENT_REFERENCE_BYTES, MAX_REFUND_PROVIDER_BYTES,
+    MAX_REFUND_PROVIDER_REFUND_ID_BYTES, RefundApprovalStatus, RefundIdentifierError,
+    RefundOrderKind, RefundRequestCreate, RefundRequestCreateOutcome, RefundRequestId,
+    RefundRequestInputError, RefundRequestKey, RefundRequestRecord, RefundRequestStatus,
+    RefundStateCodeError,
+};
 pub use routing::{
     MAX_ROUTE_MODEL_PATTERN_BYTES, RouteMode, RoutePatternError, RouteStrategy,
-    validate_route_model_pattern,
+    route_model_pattern_matches, validate_route_model_pattern,
 };
 pub use subscription::{
-    SubscriptionCycle, SubscriptionIdentifierError, SubscriptionPlanId, SubscriptionPlanStatus,
+    SubscriptionCycle, SubscriptionIdentifierError, SubscriptionOrderId,
+    SubscriptionOrderRequestId, SubscriptionOrderStatus, SubscriptionPaymentEventId,
+    SubscriptionPaymentEventType, SubscriptionPlanId, SubscriptionPlanStatus,
     SubscriptionStateCodeError, UserSubscriptionId, UserSubscriptionStatus,
 };
 pub use subscription_window::{
@@ -82,6 +114,10 @@ mod error_tests;
 #[cfg(test)]
 mod network_tests;
 #[cfg(test)]
+mod organization_budget_tests;
+#[cfg(test)]
+mod organization_tests;
+#[cfg(test)]
 mod payment_tests;
 #[cfg(test)]
 mod principal_tests;
@@ -89,6 +125,8 @@ mod principal_tests;
 mod quota_tests;
 #[cfg(test)]
 mod redemption_tests;
+#[cfg(test)]
+mod refund_tests;
 #[cfg(test)]
 mod subscription_tests;
 #[cfg(test)]

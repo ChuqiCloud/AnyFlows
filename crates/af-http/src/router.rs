@@ -7,10 +7,12 @@ use af_admin::{
     AdminModelSyncService, AdminModelWriter, AdminNetworkSettingsService,
     AdminPaymentSettingsService, AdminRouteReader, AdminRouteWriter, AdminTokenReader,
     AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, AdminWalletService,
-    InitialSetup, ModelCatalogReader, PasswordResetService, PlaygroundConversationService,
-    PlaygroundShareService, RedemptionService, RegistrationService, SessionAuthenticator,
-    SiteSettingsService, SubscriptionService, TokenAuthenticator, UserInvitationService,
-    UserTopupService, UserWalletService,
+    InitialSetup, ModelCatalogReader, OAuthLoginService, OrganizationActivityService,
+    OrganizationBudgetService, OrganizationTokenService, OrganizationWalletService,
+    PasskeyAuthenticationService, PasswordResetService, PlatformAuditService,
+    PlaygroundConversationService, PlaygroundShareService, RedemptionService, RegistrationService,
+    SessionAuthenticator, SiteSettingsService, SubscriptionService, TokenAuthenticator,
+    UserInvitationService, UserNotificationService, UserTopupService, UserWalletService,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -64,6 +66,9 @@ use crate::management_model_sync::{
 };
 use crate::management_model_writes::{create_admin_model, delete_admin_model, update_admin_model};
 use crate::management_models::{get_admin_model, list_admin_models};
+use crate::management_refunds::{
+    approve_admin_refund, list_admin_refunds, reject_admin_refund, submit_admin_refund,
+};
 use crate::management_route_writes::{create_admin_route, delete_admin_route, update_admin_route};
 use crate::management_routes::{get_admin_route, list_admin_routes};
 use crate::management_session::current_session;
@@ -77,11 +82,12 @@ use crate::management_users::{
 use crate::management_wallet::{adjust_admin_wallet, list_admin_wallet_entries};
 use crate::middleware::{
     AllowedOrigins, LogHttpResponse, MakeHttpSpan, assign_request_id, enforce_allowed_origin,
-    request_id_header,
+    ensure_request_id, request_id_header,
 };
 use crate::model_catalog::{list_model_providers, list_models};
 use crate::network_settings::build_network_settings_router;
 use crate::oauth_connections::{AdminOAuthConnectionService, build_admin_oauth_connection_router};
+use crate::oauth_login::build_oauth_login_router;
 use crate::openai_audio::openai_audio_transcription;
 use crate::openai_embeddings::openai_embeddings;
 use crate::openai_images::openai_images;
@@ -89,8 +95,15 @@ use crate::openai_responses::openai_responses;
 use crate::openai_responses_compact::openai_responses_compact;
 use crate::openai_speech::openai_speech;
 use crate::operations::{ReadinessHandle, operations_router};
+use crate::organization_activity::{PLATFORM_REASON_HEADER, build_organization_activity_router};
+use crate::organization_budget::build_organization_budget_router;
+use crate::organization_tokens::build_organization_token_router;
+use crate::organization_wallet::build_organization_wallet_router;
+use crate::organizations::build_organization_router;
+use crate::passkey_auth::build_passkey_authentication_router;
 use crate::password_reset::build_password_reset_router;
 use crate::payment_settings::build_payment_settings_router;
+use crate::platform_audit::build_platform_audit_router;
 use crate::playground_conversations::build_playground_conversation_router;
 use crate::playground_shares::build_playground_share_router;
 use crate::redemption::build_redemption_router;
@@ -156,14 +169,24 @@ pub fn build_router(
     user_token_service: Arc<dyn af_admin::UserTokenService>,
     initial_setup: Arc<dyn InitialSetup>,
     registration_service: Arc<dyn RegistrationService>,
+    passkey_authentication_service: Option<Arc<dyn PasskeyAuthenticationService>>,
     password_reset_service: Arc<dyn PasswordResetService>,
     user_profile_service: Arc<dyn af_admin::UserProfileService>,
     user_wallet_service: Arc<dyn UserWalletService>,
+    user_notification_service: Arc<dyn UserNotificationService>,
+    organization_authorization_service: Option<Arc<dyn af_admin::OrganizationAuthorizationService>>,
+    organization_activity_service: Option<Arc<dyn OrganizationActivityService>>,
+    organization_wallet_service: Option<Arc<dyn OrganizationWalletService>>,
+    organization_budget_service: Option<Arc<dyn OrganizationBudgetService>>,
+    organization_token_service: Option<Arc<dyn OrganizationTokenService>>,
     user_topup_service: Option<Arc<dyn UserTopupService>>,
     redemption_service: Arc<dyn RedemptionService>,
     subscription_service: Arc<dyn SubscriptionService>,
     user_invitation_service: Arc<dyn UserInvitationService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
+    oauth_login_service: Option<Arc<dyn OAuthLoginService>>,
+    turnstile_verifier: Option<Arc<dyn crate::TurnstileVerifier>>,
+    turnstile_site_key: Option<&str>,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
     admin_network_settings_service: Arc<dyn AdminNetworkSettingsService>,
     admin_payment_settings_service: Arc<dyn AdminPaymentSettingsService>,
@@ -189,9 +212,13 @@ pub fn build_router(
     admin_user_reader: Arc<dyn AdminUserReader>,
     admin_user_writer: Arc<dyn AdminUserWriter>,
     admin_wallet_service: Option<Arc<dyn AdminWalletService>>,
+    admin_refund_service: Option<Arc<dyn af_admin::AdminRefundService>>,
     query_api_key_policy: QueryApiKeyPolicy,
     frontend_assets: Option<Arc<dyn FrontendAssetSource>>,
     payment_webhook_routes: Option<Router>,
+    organization_invitation_service: Option<Arc<dyn af_admin::OrganizationInvitationService>>,
+    organization_management_service: Option<Arc<dyn af_admin::OrganizationManagementService>>,
+    platform_audit_service: Option<Arc<dyn PlatformAuditService>>,
 ) -> HttpRouter {
     let openai_authentication = middleware::from_fn_with_state(
         AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config),
@@ -252,7 +279,12 @@ pub fn build_router(
     .with_admin_channel_probe(admin_channel_probe)
     .with_admin_dashboard_reader(admin_dashboard_reader)
     .with_admin_usage_log_reader(admin_usage_log_reader)
-    .with_admin_wallet_service(admin_wallet_service);
+    .with_admin_wallet_service(admin_wallet_service)
+    .with_admin_refund_service(admin_refund_service)
+    .with_platform_audit_service(platform_audit_service.clone())
+    .with_organization_authorization_service(organization_authorization_service)
+    .with_organization_invitation_service(organization_invitation_service)
+    .with_organization_management_service(organization_management_service);
     let public_routes = Router::new()
         .route(
             "/v1/chat/completions",
@@ -420,6 +452,12 @@ pub fn build_router(
         Arc::clone(&registration_service),
         Arc::clone(&http_state.session_authenticator),
         config,
+        turnstile_verifier,
+    );
+    let passkey_authentication_routes = build_passkey_authentication_router(
+        passkey_authentication_service,
+        Arc::clone(&http_state.session_authenticator),
+        config,
     );
     let password_reset_routes = build_password_reset_router(password_reset_service, config);
     let user_profile_routes = build_user_profile_router(
@@ -430,8 +468,12 @@ pub fn build_router(
         user_wallet_service,
         Arc::clone(&http_state.session_authenticator),
     );
+    let user_notification_routes = crate::user_notifications::build_user_notification_router(
+        user_notification_service,
+        Arc::clone(&http_state.session_authenticator),
+    );
     let user_topup_routes = build_user_topup_router(
-        user_topup_service,
+        user_topup_service.clone(),
         Arc::clone(&http_state.session_authenticator),
     );
     let redemption_routes = build_redemption_router(
@@ -441,6 +483,7 @@ pub fn build_router(
     let subscription_routes = build_subscription_router(
         subscription_service,
         Arc::clone(&http_state.session_authenticator),
+        user_topup_service.clone(),
     );
     let user_invitation_routes = build_user_invitation_router(
         user_invitation_service,
@@ -449,8 +492,13 @@ pub fn build_router(
     let site_settings_routes = build_site_settings_router(
         site_settings_service,
         registration_service,
+        oauth_login_service.clone(),
+        turnstile_site_key,
         Arc::clone(&http_state.session_authenticator),
     );
+    let oauth_login_routes = oauth_login_service.map(|service| {
+        build_oauth_login_router(service, Arc::clone(&http_state.session_authenticator))
+    });
     let email_settings_routes = build_email_settings_router(
         admin_email_settings_service,
         Arc::clone(&http_state.session_authenticator),
@@ -478,6 +526,14 @@ pub fn build_router(
     let oauth_connection_routes = admin_oauth_connection_service.map(|service| {
         build_admin_oauth_connection_router(service, Arc::clone(&http_state.session_authenticator))
     });
+    let admin_user_collection_routes = get(list_admin_users)
+        .route_layer(middleware::from_fn(ensure_request_id))
+        .route_layer(user_collection_authentication.clone())
+        .merge(
+            post(create_admin_user)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(user_collection_authentication),
+        );
     let management_routes = Router::new()
         .route("/api/setup/status", get(setup_status))
         .route("/api/setup", post(initialize_setup))
@@ -493,13 +549,7 @@ pub fn build_router(
             "/api/model-providers",
             get(list_model_providers).route_layer(model_catalog_authentication),
         )
-        .route(
-            "/api/admin/users",
-            get(list_admin_users)
-                .post(create_admin_user)
-                .route_layer(middleware::from_fn(authorize_management_admin))
-                .route_layer(user_collection_authentication),
-        )
+        .route("/api/admin/users", admin_user_collection_routes)
         .route(
             "/api/admin/users/{id}",
             get(get_admin_user)
@@ -519,6 +569,30 @@ pub fn build_router(
             post(adjust_admin_wallet)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(wallet_adjustment_authentication),
+        )
+        .route(
+            "/api/admin/refunds",
+            get(list_admin_refunds)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(channel_collection_authentication.clone()),
+        )
+        .route(
+            "/api/admin/refunds/{request_id}/approve",
+            post(approve_admin_refund)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(channel_collection_authentication.clone()),
+        )
+        .route(
+            "/api/admin/refunds/{request_id}/reject",
+            post(reject_admin_refund)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(channel_collection_authentication.clone()),
+        )
+        .route(
+            "/api/admin/refunds/{request_id}/submit",
+            post(submit_admin_refund)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(channel_collection_authentication.clone()),
         )
         .route(
             "/api/admin/groups",
@@ -681,14 +755,16 @@ pub fn build_router(
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(credential_item_authentication),
         )
-        .with_state(http_state)
+        .with_state(http_state.clone())
         .merge(playground_share_routes)
         .merge(playground_conversation_routes)
         .merge(user_token_routes)
         .merge(registration_routes)
+        .merge(passkey_authentication_routes)
         .merge(password_reset_routes)
         .merge(user_profile_routes)
         .merge(user_wallet_routes)
+        .merge(user_notification_routes)
         .merge(user_topup_routes)
         .merge(redemption_routes)
         .merge(subscription_routes)
@@ -699,9 +775,88 @@ pub fn build_router(
         .merge(payment_settings_routes)
         .merge(credential_proxy_routes)
         .merge(balance_alert_settings_routes);
+    let management_routes = match oauth_login_routes {
+        Some(routes) => management_routes.merge(routes),
+        None => management_routes,
+    };
     let management_routes = management_routes.merge(debug_trace_routes);
+    let management_routes = match (
+        http_state.organization_authorization_service.clone(),
+        organization_activity_service.clone(),
+    ) {
+        (Some(authorization_service), Some(activity_service)) => {
+            management_routes.merge(build_organization_router(
+                authorization_service,
+                http_state.organization_invitation_service.clone(),
+                http_state.organization_management_service.clone(),
+                activity_service,
+                Arc::clone(&http_state.session_authenticator),
+            ))
+        }
+        _ => management_routes,
+    };
+    let management_routes = match (
+        http_state.organization_authorization_service.clone(),
+        organization_wallet_service,
+        organization_activity_service.clone(),
+    ) {
+        (Some(authorization_service), Some(wallet_service), Some(activity_service)) => {
+            management_routes.merge(build_organization_wallet_router(
+                authorization_service,
+                wallet_service,
+                user_topup_service,
+                activity_service,
+                Arc::clone(&http_state.session_authenticator),
+            ))
+        }
+        _ => management_routes,
+    };
+    let management_routes = match (
+        http_state.organization_authorization_service.clone(),
+        organization_token_service,
+        organization_activity_service.clone(),
+    ) {
+        (Some(authorization_service), Some(token_service), Some(activity_service)) => {
+            management_routes.merge(build_organization_token_router(
+                authorization_service,
+                token_service,
+                activity_service,
+                Arc::clone(&http_state.session_authenticator),
+            ))
+        }
+        _ => management_routes,
+    };
+    let management_routes = match (
+        http_state.organization_authorization_service.clone(),
+        organization_budget_service,
+        organization_activity_service.clone(),
+    ) {
+        (Some(authorization_service), Some(budget_service), Some(activity_service)) => {
+            management_routes.merge(build_organization_budget_router(
+                authorization_service,
+                budget_service,
+                activity_service,
+                Arc::clone(&http_state.session_authenticator),
+            ))
+        }
+        _ => management_routes,
+    };
+    let management_routes = match organization_activity_service {
+        Some(service) => management_routes.merge(build_organization_activity_router(
+            service,
+            Arc::clone(&http_state.session_authenticator),
+        )),
+        None => management_routes,
+    };
     let management_routes = match oauth_connection_routes {
         Some(routes) => management_routes.merge(routes),
+        None => management_routes,
+    };
+    let management_routes = match platform_audit_service {
+        Some(service) => management_routes.merge(build_platform_audit_router(
+            service,
+            Arc::clone(&http_state.session_authenticator),
+        )),
         None => management_routes,
     };
     HttpRouter::new(build_router_with_routes_and_frontend(
@@ -805,6 +960,7 @@ fn cors_layer(config: &ServerConfig) -> Option<CorsLayer> {
                 HeaderName::from_static("x-api-key"),
                 HeaderName::from_static("x-goog-api-key"),
                 HeaderName::from_static("idempotency-key"),
+                HeaderName::from_static(PLATFORM_REASON_HEADER),
             ])
             .expose_headers([request_id_header()]),
     )

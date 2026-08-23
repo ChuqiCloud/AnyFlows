@@ -1,9 +1,19 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { apiClient } from '@/lib/api'
 import {
   changeUserPassword,
+  disableUserTwoFactor,
+  enableUserTwoFactor,
+  finishUserPasskeyRegistration,
   getUserProfile,
+  getUserTwoFactor,
+  listUserPasskeys,
+  listUserNotifications,
+  markUserNotificationsRead,
+  renameUserPasskey,
+  revokeUserPasskey,
+  startUserPasskeyRegistration,
   updateUserNotificationPreferences,
   updateUserProfile,
 } from '@/lib/api/generated/sdk.gen'
@@ -12,9 +22,16 @@ import type {
   UserPasswordChangeRequest,
   UserProfileResponse,
   UserProfileUpdateRequest,
+  UserPasskeyRegistrationVerifyRequest,
+  UserPasskeyRenameRequest,
+  UserPasskeyRevokeRequest,
+  UserTwoFactorPasswordRequest,
 } from '@/lib/api/generated/types.gen'
 
 export const userProfileQueryKey = ['user-profile'] as const
+export const userTwoFactorQueryKey = ['user-two-factor'] as const
+export const userPasskeysQueryKey = ['user-passkeys'] as const
+export const userNotificationsQueryKey = ['user-notifications'] as const
 
 /** 读取当前会话用户的个人资料与通知偏好。 */
 export function useUserProfile() {
@@ -48,6 +65,96 @@ export function useChangeUserPassword() {
   })
 }
 
+/** 读取当前用户的 TOTP 开关状态；响应不包含任何密钥材料。 */
+export function useUserTwoFactor() {
+  return useQuery({
+    queryKey: userTwoFactorQueryKey,
+    queryFn: async ({ signal }) => {
+      const { data } = await getUserTwoFactor({ client: apiClient, signal })
+      return data
+    },
+  })
+}
+
+/** 校验当前密码并启用 TOTP，入网材料只由本次 mutation 返回。 */
+export function useEnableUserTwoFactor() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (body: UserTwoFactorPasswordRequest) => {
+      const { data } = await enableUserTwoFactor({ body, client: apiClient })
+      return data
+    },
+    onSuccess: (status) => queryClient.setQueryData(userTwoFactorQueryKey, { enabled: status.enabled }),
+  })
+}
+
+/** 校验当前密码并停用 TOTP，同时清除旧的状态缓存。 */
+export function useDisableUserTwoFactor() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (body: UserTwoFactorPasswordRequest) => {
+      await disableUserTwoFactor({ body, client: apiClient })
+    },
+    onSuccess: () => queryClient.setQueryData(userTwoFactorQueryKey, { enabled: false }),
+  })
+}
+
+/** 读取当前用户的脱敏 Passkey 目录。 */
+export function useUserPasskeys() {
+  return useQuery({
+    queryKey: userPasskeysQueryKey,
+    queryFn: async ({ signal }) => {
+      const { data } = await listUserPasskeys({ client: apiClient, signal })
+      return data
+    },
+  })
+}
+
+/** 创建一次性 WebAuthn 注册挑战。 */
+export function useStartUserPasskeyRegistration() {
+  return useMutation({
+    mutationFn: async () => {
+      const { data } = await startUserPasskeyRegistration({ client: apiClient })
+      return data
+    },
+  })
+}
+
+/** 提交浏览器生成的 WebAuthn 注册响应并刷新目录。 */
+export function useFinishUserPasskeyRegistration() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (body: UserPasskeyRegistrationVerifyRequest) => {
+      const { data } = await finishUserPasskeyRegistration({ body, client: apiClient })
+      return data
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: userPasskeysQueryKey }),
+  })
+}
+
+/** 修改 Passkey 展示名称并保持当前目录缓存一致。 */
+export function useRenameUserPasskey() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, ...body }: UserPasskeyRenameRequest & { id: number }) => {
+      const { data } = await renameUserPasskey({ path: { id }, body, client: apiClient })
+      return data
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: userPasskeysQueryKey }),
+  })
+}
+
+/** 通过密码和可选二次验证码撤销 Passkey。 */
+export function useRevokeUserPasskey() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, ...body }: UserPasskeyRevokeRequest & { id: number }) => {
+      await revokeUserPasskey({ path: { id }, body, client: apiClient })
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: userPasskeysQueryKey }),
+  })
+}
+
 /** 保存邮件通知偏好并同步资料缓存。 */
 export function useUpdateUserNotificationPreferences() {
   const queryClient = useQueryClient()
@@ -57,5 +164,37 @@ export function useUpdateUserNotificationPreferences() {
       return data
     },
     onSuccess: (profile) => queryClient.setQueryData<UserProfileResponse>(userProfileQueryKey, profile),
+  })
+}
+
+/** 按稳定复合游标读取当前用户的通知事实历史。 */
+export function useUserNotifications() {
+  return useInfiniteQuery({
+    queryKey: userNotificationsQueryKey,
+    initialPageParam: undefined as string | undefined,
+    queryFn: async ({ pageParam, signal }) => {
+      const { data } = await listUserNotifications({
+        client: apiClient,
+        query: { before: pageParam, limit: 25 },
+        signal,
+      })
+      return data
+    },
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
+  })
+}
+
+/** Mark notification facts as read and let every consumer refresh the server-owned unread count. */
+export function useMarkUserNotificationsRead() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (notificationIds: number[]) => {
+      const { data } = await markUserNotificationsRead({
+        body: { notification_ids: notificationIds },
+        client: apiClient,
+      })
+      return data
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: userNotificationsQueryKey }),
   })
 }

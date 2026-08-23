@@ -2,14 +2,23 @@ import { CircleCheck, CircleOff, Clock3, KeyRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import type { AdminCredential } from '@/lib/api/generated/types.gen'
-import { credentialRuntimeState } from './credential-model'
+import {
+  credentialRuntimeState,
+  isSparkShadowCredential,
+  sparkShadowParentBlocked,
+} from './credential-model'
 
 export function CredentialSummary({ credentials }: { credentials: readonly AdminCredential[] }) {
   const { t } = useTranslation()
   const counts = credentials.reduce((result, credential) => {
     const state = credentialRuntimeState(credential)
+    const parent = credential.parent_id
+      ? credentials.find((item) => item.id === credential.parent_id)
+      : undefined
+    const sharedBlocked = isSparkShadowCredential(credential)
+      && sparkShadowParentBlocked(parent)
     result.total += 1
-    if (state === 'available') result.available += 1
+    if (state === 'available' && !sharedBlocked) result.available += 1
     else if (state === 'cooling') result.cooling += 1
     else result.unavailable += 1
     return result

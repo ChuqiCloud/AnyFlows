@@ -7,8 +7,8 @@ use std::sync::{
 };
 
 use af_domain::{
-    Quota, QuotaDelta, QuotaError, TopupOrderId, TopupOrderStatus, TopupPaymentEventType,
-    TopupRequestId, UserId,
+    OrganizationId, Quota, QuotaDelta, QuotaError, TopupOrderId, TopupOrderStatus,
+    TopupPaymentEventType, TopupRequestId, UserId, WalletEventId,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseTransaction, DbBackend,
@@ -22,9 +22,10 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 use crate::{
     DatabasePool, WalletLedgerEntryType,
     entity::{
-        SensitiveString, WalletLedgerKey, topup_orders, topup_payment_events, users,
-        wallet_ledger_entries,
+        SensitiveString, WalletLedgerKey, organization_wallets, organizations, topup_orders,
+        topup_payment_events, users, wallet_ledger_entries,
     },
+    organization_wallet::{OrganizationWalletCreditOutcome, credit_topup_in_transaction},
 };
 
 use super::types::{
@@ -77,6 +78,19 @@ impl TopupRepository {
         #[cfg(test)]
         self.maybe_inject_unknown(&outcome, is_created_order)?;
         Ok(outcome)
+    }
+
+    /// 按稳定订单标识读取充值订单，供支付 webhook 路由先判定订单类型。
+    pub async fn get_order(
+        &self,
+        order_id: TopupOrderId,
+    ) -> Result<Option<TopupOrderRecord>, TopupRepositoryError> {
+        let operation = load_order_by_key(self.pool.connection(), order_id)
+            .with_subscriber(NoSubscriber::default());
+        match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result.map_err(internal),
+            Err(_) => Err(internal(TopupRepositoryError::Timeout)),
+        }
     }
 
     /// 使用预期版本把 Created 订单绑定为 Pending；相同绑定可以安全重放。
@@ -247,6 +261,21 @@ async fn create_order_in_transaction(
     if lock_user(transaction, write.user_id, true).await?.is_none() {
         return Ok(TopupOrderCreateOutcome::NotFound);
     }
+    if let Some(organization_id) = write.organization_id {
+        let active = organizations::Entity::find_by_id(organization_id.get())
+            .filter(organizations::Column::Status.eq(1_i16))
+            .one(transaction)
+            .await
+            .map_err(|_| TopupRepositoryError::Query)?;
+        let wallet = organization_wallets::Entity::find()
+            .filter(organization_wallets::Column::OrganizationId.eq(organization_id.get()))
+            .one(transaction)
+            .await
+            .map_err(|_| TopupRepositoryError::Query)?;
+        if active.is_none() || wallet.is_none() {
+            return Ok(TopupOrderCreateOutcome::NotFound);
+        }
+    }
     if let Some(existing) = load_create_collision(transaction, write).await? {
         return classify_create_collision(existing, write).map_err(Into::into);
     }
@@ -255,6 +284,7 @@ async fn create_order_in_transaction(
     let inserted = topup_orders::ActiveModel {
         order_key: Set(write.order_id.persistence_key()),
         user_id: Set(write.user_id.get()),
+        organization_id: Set(write.organization_id.map(OrganizationId::get)),
         provider: Set(write.provider.clone()),
         payment_method: Set(Some(write.payment_method.clone())),
         provider_order_id: Set(None),
@@ -439,30 +469,57 @@ async fn accept_event_in_transaction(
     let processed_at = processing_time(received_at);
     match write.event_type {
         TopupPaymentEventType::Succeeded => {
-            let balance_before =
-                Quota::new(user.quota).map_err(|_| TopupRepositoryError::Invariant)?;
             let delta = QuotaDelta::new(order.quota_amount.units())
                 .map_err(|_| TopupRepositoryError::Invariant)?;
-            let balance_after = match balance_before.checked_apply(delta) {
-                Ok(balance) => balance,
-                Err(QuotaError::Overflow) => {
-                    return Ok(unprocessed(
-                        order,
-                        TopupPaymentEventRejection::CreditOverflow,
-                    ));
+            if let Some(organization_id) = order.organization_id {
+                let outcome = match credit_topup_in_transaction(
+                    transaction,
+                    organization_id,
+                    WalletEventId::new(write.event_id.bytes())
+                        .map_err(|_| TopupRepositoryError::Invariant)?,
+                    order.user_id,
+                    order.quota_amount,
+                    received_at,
+                )
+                .await
+                {
+                    Ok(outcome) => outcome,
+                    Err(crate::OrganizationWalletError::Overflow) => {
+                        return Ok(unprocessed(
+                            order,
+                            TopupPaymentEventRejection::CreditOverflow,
+                        ));
+                    }
+                    Err(error) => return Err(map_organization_wallet_error(error).into()),
+                };
+                match outcome {
+                    OrganizationWalletCreditOutcome::Applied
+                    | OrganizationWalletCreditOutcome::Existing => {}
                 }
-                Err(_) => return Err(TopupRepositoryError::Invariant.into()),
-            };
-            credit_wallet(
-                transaction,
-                &user,
-                write,
-                balance_before,
-                balance_after,
-                received_at,
-                processed_at,
-            )
-            .await?;
+            } else {
+                let balance_before =
+                    Quota::new(user.quota).map_err(|_| TopupRepositoryError::Invariant)?;
+                let balance_after = match balance_before.checked_apply(delta) {
+                    Ok(balance) => balance,
+                    Err(QuotaError::Overflow) => {
+                        return Ok(unprocessed(
+                            order,
+                            TopupPaymentEventRejection::CreditOverflow,
+                        ));
+                    }
+                    Err(_) => return Err(TopupRepositoryError::Invariant.into()),
+                };
+                credit_wallet(
+                    transaction,
+                    &user,
+                    write,
+                    balance_before,
+                    balance_after,
+                    received_at,
+                    processed_at,
+                )
+                .await?;
+            }
         }
         TopupPaymentEventType::Failed | TopupPaymentEventType::Expired => {}
     }
@@ -828,6 +885,7 @@ fn load_order_snapshot(order: &TopupOrderRecord) -> TopupOrderRecord {
         order_id: order.order_id,
         request_id: order.request_id,
         user_id: order.user_id,
+        organization_id: order.organization_id,
         provider: order.provider.clone(),
         payment_method: order.payment_method.clone(),
         provider_order_id: order.provider_order_id.clone(),
@@ -851,6 +909,11 @@ fn order_record(model: topup_orders::Model) -> Result<TopupOrderRecord, TopupRep
     let request_id = TopupRequestId::from_persistence_key(&model.idempotency_key)
         .map_err(|_| TopupRepositoryError::Invariant)?;
     let user_id = UserId::new(model.user_id).map_err(|_| TopupRepositoryError::Invariant)?;
+    let organization_id = model
+        .organization_id
+        .map(OrganizationId::new)
+        .transpose()
+        .map_err(|_| TopupRepositoryError::Invariant)?;
     let status =
         TopupOrderStatus::try_from(model.status).map_err(|_| TopupRepositoryError::Invariant)?;
     let amount_minor =
@@ -909,6 +972,7 @@ fn order_record(model: topup_orders::Model) -> Result<TopupOrderRecord, TopupRep
         order_id,
         request_id,
         user_id,
+        organization_id,
         provider: model.provider,
         payment_method: model.payment_method,
         provider_order_id,
@@ -966,6 +1030,19 @@ fn is_event_unique_conflict(error: &sea_orm::DbErr) -> bool {
         || rendered.contains("uq_topup_payment_events_provider_event")
         || rendered.contains("topup_payment_events.event_key")
         || rendered.contains("Duplicate entry")
+}
+
+fn map_organization_wallet_error(error: crate::OrganizationWalletError) -> TopupRepositoryError {
+    match error {
+        crate::OrganizationWalletError::Conflict => TopupRepositoryError::Conflict,
+        crate::OrganizationWalletError::Overflow
+        | crate::OrganizationWalletError::InsufficientQuota
+        | crate::OrganizationWalletError::Invariant => TopupRepositoryError::Invariant,
+        crate::OrganizationWalletError::InvalidInput
+        | crate::OrganizationWalletError::Query
+        | crate::OrganizationWalletError::OutcomeUnknown
+        | crate::OrganizationWalletError::Timeout => TopupRepositoryError::Query,
+    }
 }
 
 async fn begin(pool: &DatabasePool) -> Result<DatabaseTransaction, TopupRepositoryError> {

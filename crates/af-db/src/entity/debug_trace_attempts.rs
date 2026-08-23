@@ -1,4 +1,4 @@
-//! 调试追踪中单个候选尝试的脱敏结果实体。
+//! 调试追踪中单个候选尝试元数据；敏感快照已迁移到独立密文表。
 
 use sea_orm::entity::prelude::*;
 
@@ -16,6 +16,24 @@ pub struct Model {
     pub upstream_status: Option<i16>,
     pub retry_decision: bool,
     pub elapsed_ms: i64,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub client_simulation_profile: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub client_simulation_result: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub request_method: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub request_url: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub request_headers_json: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub request_body_json: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub response_headers_json: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub response_body_json: Option<String>,
+    pub response_status: Option<i16>,
+    pub response_streamed: bool,
     pub created_at: TimeDateTimeWithTimeZone,
 }
 

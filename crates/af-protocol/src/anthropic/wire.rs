@@ -43,6 +43,9 @@ pub(super) struct MessagesRequestWire {
     /// 扩展思考配置。
     #[serde(default, deserialize_with = "deserialize_field")]
     pub(super) thinking: Field<ThinkingWire>,
+    /// 自适应思考强度配置。
+    #[serde(default, deserialize_with = "deserialize_field")]
+    pub(super) output_config: Field<OutputConfigWire>,
     /// 采样温度。
     #[serde(default, deserialize_with = "deserialize_field")]
     pub(super) temperature: Field<f64>,
@@ -376,6 +379,29 @@ pub(super) enum ThinkingDisplayWire {
     Summarized,
     /// 不返回思考文本，仅保留连续会话所需签名。
     Omitted,
+}
+
+/// Anthropic 输出配置；当前只建模可无损归一化的思考强度。
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct OutputConfigWire {
+    /// 自适应思考强度。
+    pub(super) effort: OutputEffortWire,
+}
+
+/// Anthropic 自适应思考强度。
+#[derive(Deserialize)]
+pub(super) enum OutputEffortWire {
+    #[serde(rename = "low")]
+    Low,
+    #[serde(rename = "medium")]
+    Medium,
+    #[serde(rename = "high")]
+    High,
+    #[serde(rename = "xhigh")]
+    ExtraHigh,
+    #[serde(rename = "max")]
+    Max,
 }
 
 /// Anthropic 请求元数据。

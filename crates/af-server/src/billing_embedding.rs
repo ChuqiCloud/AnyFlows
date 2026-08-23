@@ -17,8 +17,13 @@ use crate::billing_chat::{
 };
 
 /// 已固定路由计划的一次 Embeddings 异步执行结果。
-pub type PlannedEmbeddingExecutionFuture =
-    Pin<Box<dyn Future<Output = Result<EmbeddingResponse, AfError>> + Send + 'static>>;
+pub type PlannedEmbeddingExecutionFuture = Pin<
+    Box<
+        dyn Future<Output = Result<crate::RoutedExecution<EmbeddingResponse>, AfError>>
+            + Send
+            + 'static,
+    >,
+>;
 
 /// 在计费前完成候选与目标分组装配的 Embeddings 请求级计划。
 pub trait PlannedEmbeddingExecution: Send {
@@ -53,6 +58,7 @@ pub struct BillingEmbeddingService {
     refund: Option<Arc<dyn RefundSignalPort>>,
     settlement: Option<Arc<dyn BillingSettlementPort>>,
     usage: Arc<dyn UsageRecordPort>,
+    request_outcomes: Option<crate::RequestOutcomeRuntime>,
 }
 
 impl BillingEmbeddingService {
@@ -73,7 +79,15 @@ impl BillingEmbeddingService {
             refund,
             settlement,
             usage,
+            request_outcomes: None,
         }
+    }
+
+    /// 注入同步模型请求终态的只追加观测运行时。
+    #[must_use]
+    pub fn with_request_outcomes(mut self, runtime: crate::RequestOutcomeRuntime) -> Self {
+        self.request_outcomes = Some(runtime);
+        self
     }
 
     async fn call(
@@ -83,6 +97,28 @@ impl BillingEmbeddingService {
         request: CanonicalEmbeddingRequest,
         request_id: &str,
     ) -> Result<EmbeddingResponse, AfError> {
+        let outcome = crate::RequestOutcomeContext::new(
+            request_id,
+            af_domain::Protocol::OpenAiEmbeddings,
+            af_domain::Operation::Embedding,
+            request.model(),
+        );
+        outcome
+            .finish(
+                self.request_outcomes.as_ref(),
+                self.call_billed(principal, user_concurrency, request, request_id)
+                    .await,
+            )
+            .await
+    }
+
+    async fn call_billed(
+        &self,
+        principal: &GatewayPrincipal,
+        user_concurrency: Option<ConcurrencyLimit>,
+        request: CanonicalEmbeddingRequest,
+        request_id: &str,
+    ) -> Result<crate::RoutedExecution<EmbeddingResponse>, AfError> {
         let upper_bound = embedding_usage_upper_bound(&request)?;
         let model = request.model().to_owned();
         let planned = self
@@ -103,12 +139,17 @@ impl BillingEmbeddingService {
         let reservation_id = new_reservation_id()?;
         let mut lifecycle = start_lifecycle(self, plan, *principal, reservation_id).await?;
 
-        let response = planned.execute().await?;
+        let routed = planned.execute().await?;
+        let channel_id = routed.channel_id();
+        let response = routed.into_value();
         let (body, usage) = response.into_parts();
         let _ = complete_with_retries(&mut lifecycle, usage)
             .await
             .map_err(map_lifecycle_error)?;
-        Ok(EmbeddingResponse::new(body, usage))
+        Ok(crate::RoutedExecution::new(
+            EmbeddingResponse::new(body, usage),
+            channel_id,
+        ))
     }
 }
 
@@ -293,9 +334,9 @@ mod tests {
                 if !self.succeed {
                     return Err(AfError::Internal);
                 }
-                Ok(EmbeddingResponse::new(
-                    Bytes::from_static(b"{}"),
-                    embedding_usage(2),
+                Ok(crate::RoutedExecution::new(
+                    EmbeddingResponse::new(Bytes::from_static(b"{}"), embedding_usage(2)),
+                    af_domain::ChannelId::new(1).unwrap(),
                 ))
             })
         }

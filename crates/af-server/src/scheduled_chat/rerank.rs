@@ -59,16 +59,16 @@ impl RerankRoutePlanner for ScheduledChatService {
                     .ok_or_else(|| AfError::from(af_domain::UpstreamError::ModelUnsupported))?
             };
             let (jina_health, cohere_health) = tokio::join!(
-                self.load_credential_health(&route, Protocol::JinaRerank),
-                self.load_credential_health(&route, Protocol::CohereRerank),
+                self.load_credential_health(&route, Protocol::JinaRerank, request.model()),
+                self.load_credential_health(&route, Protocol::CohereRerank, request.model()),
             );
             let credential_health = merge_optional_maps(jina_health?, cohere_health?);
             let user_permit = self
                 .acquire_user_permit(*principal, user_concurrency)
                 .await?;
             let (jina_loads, cohere_loads) = tokio::join!(
-                self.load_account_concurrency(&route, Protocol::JinaRerank),
-                self.load_account_concurrency(&route, Protocol::CohereRerank),
+                self.load_account_concurrency(&route, Protocol::JinaRerank, request.model()),
+                self.load_account_concurrency(&route, Protocol::CohereRerank, request.model()),
             );
             let account_loads = merge_optional_maps(jina_loads?, cohere_loads?);
             let plan = self.build_rerank_plan(
@@ -144,6 +144,7 @@ impl ScheduledChatService {
                 }
                 let credential_id = CredentialId::new(runtime_credential.credential_id())
                     .map_err(|_| AfError::Internal)?;
+                let secret_owner_id = runtime_credential.secret_owner_id();
                 let client = self.client_for_credential(target, runtime_credential)?;
                 let mut context = RelayContext::new(client);
                 if let Some(base_url) = target.base_url() {
@@ -158,7 +159,7 @@ impl ScheduledChatService {
                     .decryptor
                     .decrypt_envelope(
                         target.channel_id(),
-                        runtime_credential.credential_id(),
+                        secret_owner_id.get(),
                         runtime_credential.credential_kind(),
                         runtime_credential.envelope(),
                     )
@@ -171,7 +172,7 @@ impl ScheduledChatService {
                     .with_channel_group(target.channel_id());
                 if let Some(concurrency) = &self.concurrency {
                     relay_candidate = relay_candidate.with_attempt_gate(concurrency.account_gate(
-                        credential_id,
+                        runtime_credential.concurrency_owner_id(),
                         runtime_credential.concurrency(),
                         wait_plan.timeout(),
                     ));
@@ -181,9 +182,11 @@ impl ScheduledChatService {
                 }
                 relay_candidates.push(relay_candidate);
                 candidate_protocols.push(protocol);
-                attempt_targets.push(CredentialAttemptTarget::new(
+                attempt_targets.push(CredentialAttemptTarget::with_runtime_identity(
                     target.channel_id(),
-                    runtime_credential.credential_id(),
+                    credential_id,
+                    secret_owner_id,
+                    runtime_credential.shared_health_id(),
                     runtime_credential.credential_kind(),
                     oauth_has_refresh_token,
                     target.pool_mode(),
@@ -257,6 +260,10 @@ impl PlannedRerankExecution for ScheduledRerankExecution {
                 relay_rerank_with_report(&machine, request, &candidate_protocols)
                     .await
                     .into_parts();
+            let successful_channel_id = report
+                .successful_candidate_index()
+                .and_then(|index| attempt_targets.get(index))
+                .map(CredentialAttemptTarget::channel_id);
             let ((), (), ()) = tokio::join!(
                 persist_credential_feedback(
                     &credential_states,
@@ -275,7 +282,11 @@ impl PlannedRerankExecution for ScheduledRerankExecution {
             if let Some(permit) = user_permit {
                 permit.release().await;
             }
-            result
+            result.and_then(|response| {
+                successful_channel_id
+                    .map(|channel_id| crate::RoutedExecution::new(response, channel_id))
+                    .ok_or(AfError::Internal)
+            })
         })
     }
 }

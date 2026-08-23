@@ -57,6 +57,7 @@ export type AdminChannel = {
     auto_ban: boolean;
     auto_ban_rules: AdminChannelAutoBanRules;
     pool_mode: boolean;
+    client_simulation_profile?: null | ClientSimulationProfile;
     responses_websocket_enabled: boolean;
     responses_compact_mode: ResponsesCompactMode;
     responses_compact_model_mapping: {
@@ -96,6 +97,8 @@ export type AdminChannelCreateRequest = {
     auto_ban: boolean;
     auto_ban_rules?: AdminChannelAutoBanRules;
     pool_mode?: boolean;
+    client_simulation_profile: null | ClientSimulationProfile;
+    client_simulation_risk_accepted: boolean;
     responses_websocket_enabled?: boolean;
     responses_compact_mode?: ResponsesCompactMode;
     responses_compact_model_mapping?: {
@@ -137,6 +140,8 @@ export type AdminChannelUpdateRequest = {
     auto_ban: boolean;
     auto_ban_rules?: null | AdminChannelAutoBanRules;
     pool_mode?: boolean | null;
+    client_simulation_profile: null | ClientSimulationProfile;
+    client_simulation_risk_accepted: boolean;
     responses_websocket_enabled?: boolean | null;
     responses_compact_mode?: null | ResponsesCompactMode;
     responses_compact_model_mapping?: {
@@ -171,6 +176,7 @@ export type AdminCredential = {
     rate_limit_reset_at: number | null;
     overload_until: number | null;
     temp_unschedulable_until: number | null;
+    blocks_spark_shadow: boolean;
     session_window_start: number | null;
     session_window_end: number | null;
     parent_id: number | null;
@@ -282,6 +288,33 @@ export type AdminCredentialWriteFields = {
     oauth_account_key: string | null;
     oauth_project_id: string | null;
 };
+export type AdminDashboardChannelFlow = {
+    protocol: AdminChannelProtocol;
+    channel_id: number;
+    channel_name: string;
+    request_count: number;
+};
+export type AdminDashboardFailure = {
+    kind: AdminDashboardFailureKind;
+    request_count: number;
+};
+export type AdminDashboardFailureKind = 'invalid_request' | 'model_not_allowed' | 'insufficient_quota' | 'quota_limited' | 'concurrency_limited' | 'outcome_unknown' | 'upstream_rate_limited' | 'upstream_overloaded' | 'upstream_authentication' | 'upstream_quota' | 'upstream_model' | 'upstream_protocol' | 'upstream_server' | 'upstream_network' | 'internal';
+export type AdminDashboardHourlyPoint = {
+    period_start: number;
+    period_end: number;
+    request_count: number;
+    quota_consumed: number;
+};
+export type AdminDashboardPerformance = {
+    first_token_sample_count: number;
+    average_first_token_ms?: number | null;
+    slow_first_token_count: number;
+    slow_first_token_threshold_ms: number;
+    duration_sample_count: number;
+    average_duration_ms?: number | null;
+    slow_request_count: number;
+    slow_request_threshold_ms: number;
+};
 export type AdminDashboardResponse = {
     period_start: number;
     period_end: number;
@@ -295,6 +328,14 @@ export type AdminDashboardResponse = {
     enabled_channel_count: number;
     disabled_channel_count: number;
     auto_disabled_channel_count: number;
+    outcome_request_count: number;
+    successful_request_count: number;
+    failed_request_count: number;
+    other_success_count: number;
+    failures: Array<AdminDashboardFailure>;
+    channel_flows: Array<AdminDashboardChannelFlow>;
+    hourly: Array<AdminDashboardHourlyPoint>;
+    performance: AdminDashboardPerformance;
 };
 export type AdminDebugTrace = {
     id: number;
@@ -322,10 +363,26 @@ export type AdminDebugTraceAttempt = {
     upstream_status?: number | null;
     retry_decision: boolean;
     elapsed_ms: number;
+    client_simulation_profile?: null | ClientSimulationProfile;
+    client_simulation_result?: null | ClientSimulationResult;
+    request_method?: string | null;
+    request_url?: string | null;
+    response_status?: number | null;
+    response_streamed: boolean;
+};
+export type AdminDebugTraceAttemptSnapshot = {
+    candidate_index: number;
+    request?: unknown;
+    response?: unknown;
 };
 export type AdminDebugTraceDetailResponse = {
     trace: AdminDebugTrace;
+    downstream_request?: null | AdminDebugTraceDownstreamRequest;
     attempts: Array<AdminDebugTraceAttempt>;
+};
+export type AdminDebugTraceDownstreamRequest = {
+    method: string;
+    path: string;
 };
 export type AdminDebugTraceListResponse = {
     traces: Array<AdminDebugTrace>;
@@ -335,12 +392,27 @@ export type AdminDebugTraceSettings = {
     enabled: boolean;
     sample_per_million: number;
     retention_hours: number;
+    capture_headers: boolean;
+    capture_bodies: boolean;
+    max_body_bytes: number;
     version: number;
 };
 export type AdminDebugTraceSettingsRequest = {
     enabled: boolean;
     sample_per_million: number;
     retention_hours: number;
+    capture_headers: boolean;
+    capture_bodies: boolean;
+    max_body_bytes: number;
+};
+export type AdminDebugTraceSnapshotRequest = {
+    scope: AdminDebugTraceSnapshotScope;
+};
+export type AdminDebugTraceSnapshotScope = 'headers' | 'bodies';
+export type AdminDebugTraceSnapshotsResponse = {
+    scope: string;
+    downstream?: unknown;
+    attempts: Array<AdminDebugTraceAttemptSnapshot>;
 };
 export type AdminEmailSettings = {
     enabled: boolean;
@@ -674,6 +746,22 @@ export type AdminOAuthCompletionResponse = {
     status: AdminOAuthCompletionStatus;
 };
 export type AdminOAuthCompletionStatus = 'connected';
+export type AdminOAuthLoginProviderSettings = {
+    enabled: boolean;
+    client_id?: string | null;
+    issuer_url?: string | null;
+    client_secret_configured: boolean;
+    callback_url?: string | null;
+    version: number;
+};
+export type AdminOAuthLoginProviderSettingsRequest = {
+    expected_version: number;
+    enabled: boolean;
+    client_id?: string | null;
+    issuer_url?: string | null;
+    client_secret?: string | null;
+    clear_client_secret?: boolean;
+};
 export type AdminOAuthManualCallbackRequest = {
     provider: AdminOAuthProvider;
 };
@@ -701,6 +789,8 @@ export type AdminPaymentSettings = {
     epay_merchant_key_configured: boolean;
     epay_alipay_enabled: boolean;
     epay_wxpay_enabled: boolean;
+    epay_refund_enabled: boolean;
+    refund_auto_submit_enabled: boolean;
     epay_quota_per_cny: number;
     version: number;
 };
@@ -717,6 +807,8 @@ export type AdminPaymentSettingsRequest = {
     clear_epay_merchant_key: boolean;
     epay_alipay_enabled: boolean;
     epay_wxpay_enabled: boolean;
+    epay_refund_enabled: boolean;
+    refund_auto_submit_enabled: boolean;
     epay_quota_per_cny: number;
 };
 export type AdminRedemptionAuditBatch = {
@@ -782,6 +874,34 @@ export type AdminRedemptionBatchListResponse = {
     next_cursor: number | null;
 };
 export type AdminRedemptionBatchStatus = 'active' | 'disabled';
+export type AdminRefundApprovalStatus = 'pending' | 'approved' | 'rejected';
+export type AdminRefundDecisionRequest = {
+    reason: string | null;
+};
+export type AdminRefundListResponse = {
+    entries: Array<AdminRefundRequest>;
+    next_cursor: number | null;
+};
+export type AdminRefundOrderKind = 'topup' | 'subscription';
+export type AdminRefundRequest = {
+    request_id: string;
+    user_id: number;
+    order_kind: AdminRefundOrderKind;
+    order_key: string;
+    provider: string;
+    currency: string;
+    original_amount_minor: number;
+    refund_amount_minor: number;
+    provider_refund_id: string | null;
+    status: AdminRefundStatus;
+    approval_status: AdminRefundApprovalStatus;
+    approval_actor_id: number | null;
+    approval_reason: string | null;
+    version: number;
+    created_at: number;
+    updated_at: number;
+};
+export type AdminRefundStatus = 'requested' | 'submitted' | 'succeeded' | 'failed' | 'canceled';
 export type AdminResponsesCompactProbe = {
     result: ResponsesCompactProbeResult;
     checked_at: number | null;
@@ -844,12 +964,15 @@ export type AdminSiteSettings = {
     site_name: string;
     public_base_url?: string | null;
     brand: PublicBrandSettings;
+    balance_display: BalanceDisplaySettings;
     version: number;
 };
 export type AdminSiteSettingsRequest = {
     site_name: string;
     public_base_url?: string | null;
     brand: AdminBrandSettingsRequest;
+    balance_display: BalanceDisplaySettings;
+    expected_version: number;
 };
 export type AdminSubscriptionPlan = {
     plan_id: string;
@@ -867,6 +990,9 @@ export type AdminSubscriptionPlanCreateRequest = {
     name: string;
     quota_amount: number;
     cycle: SubscriptionCycle;
+    price_provider: string;
+    price_currency: string;
+    price_amount_minor: number;
 };
 export type AdminSubscriptionPlanDisableRequest = {
     expected_version: number;
@@ -926,8 +1052,11 @@ export type AdminUsageLog = {
     id: number;
     event_id: string;
     user_id: number;
+    username: string;
     token_id: number;
     group_id: number;
+    organization_id: number | null;
+    organization_team_id: number | null;
     billing_mode: AdminUsageLogBillingMode;
     input_tokens: number;
     output_tokens: number;
@@ -1061,6 +1190,18 @@ export type AudioSpeechRequest = {
 };
 export type AudioSpeechStreamFormat = 'audio';
 export type AudioSpeechVoice = string | AudioSpeechCustomVoice;
+export type BalanceDisplayMode = 'quota' | 'custom_unit';
+export type BalanceDisplaySettings = {
+    mode: BalanceDisplayMode;
+    unit_name: string;
+    unit_symbol: string;
+    quota_units_per_display_unit: string;
+    symbol_position: BalanceDisplaySymbolPosition;
+    fraction_digits: number;
+};
+export type BalanceDisplaySymbolPosition = 'prefix' | 'suffix';
+export type ClientSimulationProfile = 'anthropic_cli_headers_v1';
+export type ClientSimulationResult = 'not_applied' | 'applied' | 'failed';
 export type IssuedAdminRedemptionBatch = {
     batch: AdminRedemptionBatch;
     codes: Array<string>;
@@ -1068,6 +1209,10 @@ export type IssuedAdminRedemptionBatch = {
 export type IssuedAdminToken = {
     api_key: string;
     token: AdminToken;
+};
+export type IssuedOrganizationTokenResponse = {
+    api_key: string;
+    token: OrganizationTokenResponse;
 };
 export type IssuedUserToken = {
     api_key: string;
@@ -1085,7 +1230,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'password_login_disabled' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'topup_unavailable' | 'topup_provider_rejected' | 'topup_order_conflict' | 'topup_order_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'subscription_plan_not_found' | 'subscription_plan_disabled' | 'subscription_not_found' | 'subscription_transition_invalid' | 'subscription_in_use' | 'subscription_conflict' | 'subscription_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'debug_trace_not_found' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_expression_invalid' | 'model_price_expression_preview_invalid' | 'model_price_expression_evaluation_failed' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'two_factor_required' | 'two_factor_invalid' | 'password_login_disabled' | 'turnstile_rejected' | 'turnstile_unavailable' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'site_settings_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'token_outcome_unknown' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_login_settings_conflict' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'organization_not_found' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'refund_not_found' | 'refund_conflict' | 'refund_unavailable' | 'refund_auto_submit_failed' | 'refund_outcome_unknown' | 'topup_unavailable' | 'topup_provider_rejected' | 'topup_order_conflict' | 'topup_order_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'subscription_plan_not_found' | 'subscription_plan_disabled' | 'subscription_not_found' | 'subscription_transition_invalid' | 'subscription_in_use' | 'subscription_conflict' | 'subscription_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'two_factor_already_enabled' | 'two_factor_not_enabled' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'debug_trace_not_found' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_expression_invalid' | 'model_price_expression_preview_invalid' | 'model_price_expression_evaluation_failed' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
     message: string;
 };
 export type ModelCatalogBillingMode = 'per_token' | 'free';
@@ -1141,6 +1286,410 @@ export type ModelCatalogTokenPrices = {
     cache_creation_5m: string;
     cache_creation_1h: string;
 };
+export type NotificationChannel = 'email';
+export type NotificationDeliveryState = 'queued' | 'accepted' | 'failed' | 'canceled';
+export type NotificationKind = 'balance_alert' | 'subscription_balance_alert' | 'subscription_purchase';
+export type OAuthLoginExchangeRequest = {
+    ticket: string;
+};
+export type OAuthLoginStartResponse = {
+    authorization_url: string;
+};
+export type OrganizationAuditLogListResponse = {
+    logs: Array<OrganizationAuditLogResponse>;
+    next_cursor: number | null;
+};
+export type OrganizationAuditLogResponse = {
+    id: number;
+    actor_user_id: number;
+    actor_username: string;
+    actor_role: string | null;
+    permission_code: string;
+    operation: string;
+    target_type: string;
+    target_identifier: string | null;
+    outcome: OrganizationAuditOutcomeResponse;
+    platform_proxy: boolean;
+    platform_reason: string | null;
+    request_id: string;
+    client_fingerprint: string | null;
+    change_summary: string | null;
+    created_at: number;
+};
+export type OrganizationAuditOutcomeResponse = 'succeeded' | 'denied' | 'failed';
+export type OrganizationBudgetAllocationResponse = {
+    policy_id: number;
+    window_id: number;
+    policy_version: number;
+    window_version: number;
+    reserved_quota: number;
+};
+export type OrganizationBudgetOverviewResponse = {
+    policies: Array<OrganizationBudgetPolicyResponse>;
+    windows: Array<OrganizationBudgetWindowResponse>;
+};
+export type OrganizationBudgetPeriodRequest = {
+    kind: 'utc_day';
+} | {
+    kind: 'utc_week';
+} | {
+    kind: 'utc_month';
+} | {
+    seconds: number;
+    kind: 'fixed';
+};
+export type OrganizationBudgetPeriodResponse = {
+    kind: 'utc_day';
+} | {
+    kind: 'utc_week';
+} | {
+    kind: 'utc_month';
+} | {
+    seconds: number;
+    kind: 'fixed';
+};
+export type OrganizationBudgetPolicyCreateRequest = {
+    scope: OrganizationBudgetScopeRequest;
+    period: OrganizationBudgetPeriodRequest;
+    quota_limit: number | null;
+    effective_from: number;
+};
+export type OrganizationBudgetPolicyResponse = {
+    id: number;
+    organization_id: number;
+    scope: OrganizationBudgetScopeResponse;
+    period: OrganizationBudgetPeriodResponse;
+    quota_limit: number | null;
+    effective_from: number;
+    effective_until: number | null;
+    version: number;
+};
+export type OrganizationBudgetReservationResponse = {
+    reservation_id: string;
+    organization_id: number;
+    membership_id: number;
+    team_id: number | null;
+    user_id: number;
+    status: OrganizationBudgetReservationStatusResponse;
+    reserved_quota: number;
+    actual_quota: number | null;
+    organization: null | OrganizationBudgetAllocationResponse;
+    team: null | OrganizationBudgetAllocationResponse;
+    member: null | OrganizationBudgetAllocationResponse;
+};
+export type OrganizationBudgetReservationStatusResponse = 'reserved' | 'settlement_pending' | 'settled' | 'released';
+export type OrganizationBudgetScopeRequest = {
+    kind: 'organization';
+} | {
+    team_id: number;
+    kind: 'team';
+} | {
+    membership_id: number;
+    kind: 'member';
+};
+export type OrganizationBudgetScopeResponse = {
+    kind: 'organization';
+} | {
+    team_id: number;
+    kind: 'team';
+} | {
+    membership_id: number;
+    kind: 'member';
+};
+export type OrganizationBudgetWindowResponse = {
+    id: number;
+    policy_id: number;
+    organization_id: number;
+    scope: OrganizationBudgetScopeResponse;
+    policy_version: number;
+    limit_snapshot: number;
+    used_quota: number;
+    frozen_quota: number;
+    remaining_quota: number;
+    window_starts_at: number;
+    window_ends_at: number;
+    version: number;
+};
+export type OrganizationEntitlementResponse = {
+    status: string;
+    team_management_enabled: boolean;
+    seat_limit: number;
+    active_seats: number;
+    remaining_seats: number;
+    team_limit: number;
+    active_teams: number;
+    remaining_teams: number;
+    organization_key_limit: number;
+    audit_retention_days: number;
+    valid_until: number;
+    grace_until?: number | null;
+};
+export type OrganizationInvitationAcceptRequest = {
+    token: string;
+};
+export type OrganizationInvitationAcceptResponse = {
+    organization_id: number;
+    membership_id: number;
+    user_id: number;
+    role: string;
+    team_id?: number | null;
+    status: string;
+    version: number;
+};
+export type OrganizationInvitationBatchRequest = {
+    batch_key: string;
+    items: Array<OrganizationInvitationCreateRequest>;
+};
+export type OrganizationInvitationBatchResponse = {
+    replayed: boolean;
+    invitations: Array<OrganizationInvitationResponse>;
+};
+export type OrganizationInvitationCreateRequest = {
+    email: string;
+    role: string;
+    team_id?: number | null;
+    expires_at?: number | null;
+};
+export type OrganizationInvitationIssuedResponse = {
+    invitation: OrganizationInvitationResponse;
+    token: string;
+};
+export type OrganizationInvitationListResponse = {
+    invitations: Array<OrganizationInvitationResponse>;
+};
+export type OrganizationInvitationPreviewItemResponse = {
+    index: number;
+    ready: boolean;
+    issues: Array<string>;
+};
+export type OrganizationInvitationPreviewRequest = {
+    items: Array<OrganizationInvitationCreateRequest>;
+};
+export type OrganizationInvitationPreviewResponse = {
+    ready: boolean;
+    available_seats: number;
+    items: Array<OrganizationInvitationPreviewItemResponse>;
+};
+export type OrganizationInvitationResponse = {
+    invitation_key: string;
+    organization_id: number;
+    role: string;
+    team_id?: number | null;
+    status: string;
+    invited_by_user_id: number;
+    accepted_by_user_id?: number | null;
+    batch_key?: string | null;
+    version: number;
+    created_at: number;
+    expires_at: number;
+    finalized_at?: number | null;
+};
+export type OrganizationListResponse = {
+    organizations: Array<OrganizationSummaryResponse>;
+};
+export type OrganizationMembershipChangeRequest = {
+    role: string;
+    status: string;
+    team_id?: number | null;
+    expected_version: number;
+};
+export type OrganizationMembershipListResponse = {
+    members: Array<OrganizationMembershipResponse>;
+    next_cursor?: number | null;
+};
+export type OrganizationMembershipResponse = {
+    id: number;
+    organization_id: number;
+    user_id: number;
+    role: string;
+    team_id?: number | null;
+    status: string;
+    joined_at: number;
+    suspended_at?: number | null;
+    removed_at?: number | null;
+    invited_by_user_id?: number | null;
+    version: number;
+};
+export type OrganizationOverviewResponse = {
+    id: number;
+    name: string;
+    slug: string;
+    role: string;
+    membership_id: number;
+    permissions: Array<string>;
+    entitlement: OrganizationEntitlementResponse;
+};
+export type OrganizationOwnershipTransferRequest = {
+    target_membership_id: number;
+    current_owner_version: number;
+    target_expected_version: number;
+};
+export type OrganizationOwnershipTransferResponse = {
+    previous_owner: OrganizationMembershipResponse;
+    current_owner: OrganizationMembershipResponse;
+};
+export type OrganizationSummaryResponse = {
+    id: number;
+    name: string;
+    slug: string;
+    role: string;
+};
+export type OrganizationTeamChangeRequest = {
+    name: string;
+    description?: string | null;
+    expected_version: number;
+};
+export type OrganizationTeamCreateRequest = {
+    name: string;
+    description?: string | null;
+};
+export type OrganizationTeamDisableRequest = {
+    expected_version: number;
+};
+export type OrganizationTeamListResponse = {
+    teams: Array<OrganizationTeamResponse>;
+    next_cursor?: number | null;
+};
+export type OrganizationTeamResponse = {
+    id: number;
+    organization_id: number;
+    name: string;
+    description?: string | null;
+    status: string;
+    version: number;
+    created_at: number;
+    updated_at: number;
+    deleted_at?: number | null;
+};
+export type OrganizationTokenListResponse = {
+    tokens: Array<OrganizationTokenResponse>;
+    next_cursor: number | null;
+};
+export type OrganizationTokenResponse = {
+    id: number;
+    owner_user_id: number;
+    team_id: number | null;
+    key_prefix: string;
+    name: string;
+    status: OrganizationTokenStatusDto;
+    remain_quota: number;
+    unlimited_quota: boolean;
+    used_quota: number;
+    expired_at: number | null;
+    model_limits: Array<string> | null;
+    allow_ips: Array<string> | null;
+    rate_limit_5h: number | null;
+    rate_limit_1d: number | null;
+    rate_limit_7d: number | null;
+    usage_5h: number;
+    usage_1d: number;
+    usage_7d: number;
+    max_requests: number | null;
+    used_requests: number;
+    created_at: number;
+    updated_at: number;
+};
+export type OrganizationTokenStatusDto = 'enabled' | 'disabled';
+export type OrganizationTokenWriteRequest = {
+    name: string;
+    status: OrganizationTokenStatusDto;
+    remain_quota: number;
+    unlimited_quota: boolean;
+    expired_at: number | null;
+    model_limits: Array<string> | null;
+    allow_ips: Array<string> | null;
+    rate_limit_5h: number | null;
+    rate_limit_1d: number | null;
+    rate_limit_7d: number | null;
+    max_requests: number | null;
+};
+export type OrganizationTopupOrderCreateRequest = {
+    idempotency_key: string;
+    provider: string;
+    payment_method: string;
+    amount_minor: number;
+};
+export type OrganizationTopupOrderResponse = {
+    order_id: string;
+    provider: string;
+    payment_method: string;
+    status: OrganizationTopupOrderStatusResponse;
+    amount_minor: number;
+    currency: string;
+    quota_amount: number;
+    version: number;
+    created_at: number;
+    replayed: boolean;
+    payment?: null | OrganizationTopupPaymentSessionResponse;
+};
+export type OrganizationTopupOrderStatusResponse = 'created' | 'pending' | 'paid' | 'failed' | 'canceled' | 'expired';
+export type OrganizationTopupPaymentSessionResponse = {
+    payment_intent_id: string;
+    readonly client_secret: string;
+    kind: 'stripe';
+} | {
+    redirect_url: string;
+    kind: 'redirect';
+};
+export type OrganizationUsageLogListResponse = {
+    scope: string;
+    logs: Array<AdminUsageLog>;
+    summaries: Array<OrganizationUsageLogSummaryResponse>;
+    next_cursor: number | null;
+};
+export type OrganizationUsageLogSummaryResponse = {
+    model: string | null;
+    protocol: null | UsageLogProtocol;
+    operation: null | UsageLogOperation;
+    request_count: number;
+    input_tokens: number;
+    output_tokens: number;
+    reasoning_tokens: number;
+    quota: number;
+    duration_ms: number;
+};
+export type OrganizationWalletAdjustmentRequest = {
+    event_id: string;
+    quota_delta: number;
+    reason: string;
+};
+export type OrganizationWalletAdjustmentResponse = {
+    entry: OrganizationWalletEntryResponse;
+    replayed: boolean;
+};
+export type OrganizationWalletEntryResponse = {
+    id: number;
+    event_id: string;
+    actor_user_id: number | null;
+    entry_type: OrganizationWalletEntryTypeResponse;
+    quota_delta: number;
+    balance_before: number;
+    balance_after: number;
+    source: string;
+    reason: string | null;
+    created_at: number;
+};
+export type OrganizationWalletEntryTypeResponse = 'opening_balance' | 'admin_adjustment' | 'topup' | 'usage_settlement';
+export type OrganizationWalletListResponse = {
+    entries: Array<OrganizationWalletEntryResponse>;
+    next_cursor: number | null;
+};
+export type OrganizationWalletSummaryResponse = {
+    organization_id: number;
+    balance: number;
+    used_quota: number;
+    frozen_quota: number;
+    version: number;
+};
+export type PasskeyAuthenticationOptionsRequest = {
+    username: string;
+};
+export type PasskeyAuthenticationOptionsResponse = {
+    options: unknown;
+};
+export type PasskeyAuthenticationVerifyRequest = {
+    credential: unknown;
+};
 export type PasswordResetConfirmRequest = {
     token: string;
     password: string;
@@ -1151,6 +1700,33 @@ export type PasswordResetRequest = {
 export type PasswordResetRequestResponse = {
     accepted: boolean;
 };
+export type PlatformAuditLog = {
+    id: number;
+    operator_user_id: number;
+    operator_username: string | null;
+    permission_code: string;
+    route: string;
+    operation: string;
+    resource: string;
+    resource_id: string | null;
+    outcome: PlatformAuditOutcome;
+    before_value: {
+        [key: string]: unknown;
+    } | null;
+    after_value: {
+        [key: string]: unknown;
+    } | null;
+    audit_info: {
+        [key: string]: unknown;
+    } | null;
+    request_id: string;
+    created_at: number;
+};
+export type PlatformAuditLogListResponse = {
+    logs: Array<PlatformAuditLog>;
+    next_cursor: number | null;
+};
+export type PlatformAuditOutcome = 'succeeded' | 'denied' | 'failed';
 export type PlaygroundConversationListResponse = {
     conversations: Array<PlaygroundConversationSummary>;
 };
@@ -1201,16 +1777,23 @@ export type PublicAuthenticationCapabilities = {
     password_login_enabled: boolean;
     registration_enabled: boolean;
     registration_email_required: boolean;
+    oauth_providers: Array<PublicOAuthLoginProvider>;
+    turnstile_site_key?: string | null;
 };
 export type PublicBrandSettings = {
     logo_url?: string | null;
     tagline?: string | null;
     description?: string | null;
 };
+export type PublicOAuthLoginProvider = {
+    id: string;
+    display_name: string;
+};
 export type PublicSiteSettings = {
     site_name: string;
     public_base_url?: string | null;
     brand: PublicBrandSettings;
+    balance_display: BalanceDisplaySettings;
     authentication: PublicAuthenticationCapabilities;
 };
 export type RegistrationEmailVerificationRequest = {
@@ -1320,7 +1903,57 @@ export type SetupRequest = {
 export type SetupStatusResponse = {
     setup_required: boolean;
 };
+export type SubscriptionCatalogPlan = {
+    plan_id: string;
+    name: string;
+    quota_amount: number;
+    cycle: SubscriptionCycle;
+    plan_version: number;
+    price_provider: string;
+    price_currency: string;
+    price_amount_minor: number;
+};
+export type SubscriptionCatalogResponse = {
+    plans: Array<SubscriptionCatalogPlan>;
+};
 export type SubscriptionCycle = 'daily' | 'weekly' | 'monthly' | 'yearly';
+export type SubscriptionOrder = {
+    order_id: string;
+    plan_id: string;
+    plan_version: number;
+    price_provider: string;
+    price_currency: string;
+    price_amount_minor: number;
+    quota_amount: number;
+    status: SubscriptionOrderStatus;
+    version: number;
+    expires_at: number | null;
+    paid_at: number | null;
+    created_at: number;
+    updated_at: number;
+    replayed: boolean;
+};
+export type SubscriptionOrderCreateRequest = {
+    idempotency_key: string;
+    plan_id: string;
+    plan_version: number;
+    price_provider: string;
+    price_currency: string;
+    price_amount_minor: number;
+};
+export type SubscriptionOrderPaymentRequest = {
+    payment_method: string;
+};
+export type SubscriptionOrderPaymentResponse = {
+    order: SubscriptionOrder;
+    payment: SubscriptionPaymentResponse;
+};
+export type SubscriptionOrderStatus = 'created' | 'pending' | 'paid' | 'failed' | 'canceled' | 'expired';
+export type SubscriptionPaymentResponse = {
+    payment_intent_id: string | null;
+    client_secret: string | null;
+    redirect_url: string | null;
+};
 export type SubscriptionPlanStatus = 'active' | 'disabled';
 export type UsageLogOperation = 'chat' | 'responses' | 'responses_compact' | 'embedding' | 'image' | 'audio' | 'rerank' | 'video' | 'count_tokens';
 export type UsageLogProtocol = 'open_ai_chat' | 'open_ai_responses' | 'open_ai_embeddings' | 'open_ai_images' | 'open_ai_audio' | 'open_ai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
@@ -1337,6 +1970,35 @@ export type UserInvitationSummaryResponse = {
     historical_rebate_quota: number;
     recent_rebates: Array<UserInvitationRebateResponse>;
 };
+export type UserNotification = {
+    id: number;
+    kind: NotificationKind;
+    channel: NotificationChannel;
+    template_version: string;
+    occurred_at: number;
+    delivery_state: NotificationDeliveryState;
+    delivery_attempts: number;
+    observed_quota?: number | null;
+    threshold_quota?: number | null;
+    subscription_id?: string | null;
+    window_ends_at?: number | null;
+    quota_amount?: number | null;
+    quota_used?: number | null;
+    threshold_percent?: number | null;
+    read_at?: number | null;
+};
+export type UserNotificationListResponse = {
+    entries: Array<UserNotification>;
+    next_cursor?: string | null;
+    unread_count: number;
+};
+export type UserNotificationMarkReadRequest = {
+    notification_ids: Array<number>;
+};
+export type UserNotificationMarkReadResponse = {
+    marked_count: number;
+    unread_count: number;
+};
 export type UserNotificationPreferencesRequest = {
     email_product_updates: boolean;
     email_usage_alerts: boolean;
@@ -1350,6 +2012,31 @@ export type UserNotificationPreferencesResponse = {
     effective_balance_alert_threshold: number;
     subscription_alert_enabled: boolean;
     subscription_remaining_percent: number;
+};
+export type UserPasskeyListResponse = {
+    items: Array<UserPasskeyResponse>;
+};
+export type UserPasskeyRegistrationOptionsResponse = {
+    options: unknown;
+    challenge_digest: string;
+};
+export type UserPasskeyRegistrationVerifyRequest = {
+    credential: unknown;
+    display_name: string;
+};
+export type UserPasskeyRenameRequest = {
+    display_name: string;
+};
+export type UserPasskeyResponse = {
+    id: number;
+    display_name: string;
+    created_at: number;
+    last_used_at: number | null;
+    revoked_at: number | null;
+};
+export type UserPasskeyRevokeRequest = {
+    current_password: string;
+    totp_code?: string | null;
 };
 export type UserPasswordChangeRequest = {
     current_password: string;
@@ -1464,6 +2151,18 @@ export type UserTopupPaymentSession = {
     redirect_url: string;
     kind: 'redirect';
 };
+export type UserTwoFactorEnrollmentResponse = {
+    enabled: boolean;
+    secret: string;
+    otpauth_uri: string;
+    backup_codes: Array<string>;
+};
+export type UserTwoFactorPasswordRequest = {
+    current_password: string;
+};
+export type UserTwoFactorStatusResponse = {
+    enabled: boolean;
+};
 export type UserUsageLog = {
     id: number;
     token_id: number;
@@ -1571,6 +2270,8 @@ export type AdminChannelCreateRequestWritable = {
     auto_ban: boolean;
     auto_ban_rules?: AdminChannelAutoBanRules;
     pool_mode?: boolean;
+    client_simulation_profile: null | ClientSimulationProfile;
+    client_simulation_risk_accepted: boolean;
     responses_websocket_enabled?: boolean;
     responses_compact_mode?: ResponsesCompactMode;
     responses_compact_model_mapping?: {
@@ -1607,6 +2308,8 @@ export type AdminChannelUpdateRequestWritable = {
     auto_ban: boolean;
     auto_ban_rules?: null | AdminChannelAutoBanRules;
     pool_mode?: boolean | null;
+    client_simulation_profile: null | ClientSimulationProfile;
+    client_simulation_risk_accepted: boolean;
     responses_websocket_enabled?: boolean | null;
     responses_compact_mode?: null | ResponsesCompactMode;
     responses_compact_model_mapping?: {
@@ -1734,7 +2437,39 @@ export type AdminPaymentSettingsRequestWritable = {
     clear_epay_merchant_key: boolean;
     epay_alipay_enabled: boolean;
     epay_wxpay_enabled: boolean;
+    epay_refund_enabled: boolean;
+    refund_auto_submit_enabled: boolean;
     epay_quota_per_cny: number;
+};
+export type LoginRequestWritable = {
+    username: string;
+    password: string;
+    totp_code?: string | null;
+    turnstile_token?: string | null;
+};
+export type OrganizationTopupOrderResponseWritable = {
+    order_id: string;
+    provider: string;
+    payment_method: string;
+    status: OrganizationTopupOrderStatusResponse;
+    amount_minor: number;
+    currency: string;
+    quota_amount: number;
+    version: number;
+    created_at: number;
+    replayed: boolean;
+    payment?: null | OrganizationTopupPaymentSessionResponseWritable;
+};
+export type OrganizationTopupPaymentSessionResponseWritable = {
+    payment_intent_id: string;
+    kind: 'stripe';
+} | {
+    redirect_url: string;
+    kind: 'redirect';
+};
+export type RegistrationEmailVerificationRequestWritable = {
+    email: string;
+    turnstile_token?: string | null;
 };
 export type RegistrationRequestWritable = {
     username: string;
@@ -1742,6 +2477,7 @@ export type RegistrationRequestWritable = {
     password: string;
     verification_code?: string | null;
     invite_code?: string | null;
+    turnstile_token?: string | null;
 };
 export type ResponsesCompactInputWritable = string | Array<ResponsesCompactItemWritable>;
 export type ResponsesCompactItemWritable = unknown;
@@ -1770,7 +2506,7 @@ export type UserTopupPaymentSessionWritable = {
     kind: 'redirect';
 };
 export type LoginManagementSessionData = {
-    body: LoginRequest;
+    body: LoginRequestWritable;
     path?: never;
     query?: never;
     url: '/api/auth/login';
@@ -1780,6 +2516,7 @@ export type LoginManagementSessionErrors = {
     401: ManagementError;
     403: ManagementError;
     500: ManagementError;
+    503: ManagementError;
 };
 export type LoginManagementSessionError = LoginManagementSessionErrors[keyof LoginManagementSessionErrors];
 export type LoginManagementSessionResponses = {
@@ -1846,7 +2583,7 @@ export type GetRegistrationStatusResponses = {
 };
 export type GetRegistrationStatusResponse = GetRegistrationStatusResponses[keyof GetRegistrationStatusResponses];
 export type SendRegistrationEmailVerificationData = {
-    body: RegistrationEmailVerificationRequest;
+    body: RegistrationEmailVerificationRequestWritable;
     path?: never;
     query?: never;
     url: '/api/registration/email-verification';
@@ -1858,6 +2595,7 @@ export type SendRegistrationEmailVerificationErrors = {
     429: ManagementError;
     500: ManagementError;
     502: ManagementError;
+    503: ManagementError;
 };
 export type SendRegistrationEmailVerificationError = SendRegistrationEmailVerificationErrors[keyof SendRegistrationEmailVerificationErrors];
 export type SendRegistrationEmailVerificationResponses = {
@@ -1876,6 +2614,7 @@ export type RegisterUserErrors = {
     409: ManagementError;
     429: ManagementError;
     500: ManagementError;
+    503: ManagementError;
 };
 export type RegisterUserError = RegisterUserErrors[keyof RegisterUserErrors];
 export type RegisterUserResponses = {
@@ -2135,6 +2874,93 @@ export type RedeemUserRedemptionCodeResponses = {
     200: UserRedemptionResult;
 };
 export type RedeemUserRedemptionCodeResponse = RedeemUserRedemptionCodeResponses[keyof RedeemUserRedemptionCodeResponses];
+export type ListAdminRefundsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        after?: number;
+        approval_status?: string;
+        limit?: number;
+    };
+    url: '/api/admin/refunds';
+};
+export type ListAdminRefundsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminRefundsError = ListAdminRefundsErrors[keyof ListAdminRefundsErrors];
+export type ListAdminRefundsResponses = {
+    200: AdminRefundListResponse;
+};
+export type ListAdminRefundsResponse = ListAdminRefundsResponses[keyof ListAdminRefundsResponses];
+export type ApproveAdminRefundData = {
+    body: AdminRefundDecisionRequest;
+    path: {
+        request_id: string;
+    };
+    query?: never;
+    url: '/api/admin/refunds/{request_id}/approve';
+};
+export type ApproveAdminRefundErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    502: ManagementError;
+    503: ManagementError;
+};
+export type ApproveAdminRefundError = ApproveAdminRefundErrors[keyof ApproveAdminRefundErrors];
+export type ApproveAdminRefundResponses = {
+    200: AdminRefundListResponse;
+};
+export type ApproveAdminRefundResponse = ApproveAdminRefundResponses[keyof ApproveAdminRefundResponses];
+export type RejectAdminRefundData = {
+    body: AdminRefundDecisionRequest;
+    path: {
+        request_id: string;
+    };
+    query?: never;
+    url: '/api/admin/refunds/{request_id}/reject';
+};
+export type RejectAdminRefundErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type RejectAdminRefundError = RejectAdminRefundErrors[keyof RejectAdminRefundErrors];
+export type RejectAdminRefundResponses = {
+    200: AdminRefundListResponse;
+};
+export type RejectAdminRefundResponse = RejectAdminRefundResponses[keyof RejectAdminRefundResponses];
+export type SubmitAdminRefundData = {
+    body?: never;
+    path: {
+        request_id: string;
+    };
+    query?: never;
+    url: '/api/admin/refunds/{request_id}/submit';
+};
+export type SubmitAdminRefundErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type SubmitAdminRefundError = SubmitAdminRefundErrors[keyof SubmitAdminRefundErrors];
+export type SubmitAdminRefundResponses = {
+    200: AdminRefundListResponse;
+};
+export type SubmitAdminRefundResponse = SubmitAdminRefundResponses[keyof SubmitAdminRefundResponses];
 export type ListAdminSubscriptionPlansData = {
     body?: never;
     path?: never;
@@ -2282,6 +3108,81 @@ export type ListCurrentUserSubscriptionsResponses = {
     200: UserSubscriptionListResponse;
 };
 export type ListCurrentUserSubscriptionsResponse = ListCurrentUserSubscriptionsResponses[keyof ListCurrentUserSubscriptionsResponses];
+export type ListCurrentSubscriptionCatalogData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/account/subscription-catalog';
+};
+export type ListCurrentSubscriptionCatalogErrors = {
+    401: ManagementError;
+    500: ManagementError;
+};
+export type ListCurrentSubscriptionCatalogError = ListCurrentSubscriptionCatalogErrors[keyof ListCurrentSubscriptionCatalogErrors];
+export type ListCurrentSubscriptionCatalogResponses = {
+    200: SubscriptionCatalogResponse;
+};
+export type ListCurrentSubscriptionCatalogResponse = ListCurrentSubscriptionCatalogResponses[keyof ListCurrentSubscriptionCatalogResponses];
+export type CreateCurrentSubscriptionOrderData = {
+    body: SubscriptionOrderCreateRequest;
+    path?: never;
+    query?: never;
+    url: '/api/account/subscription-orders';
+};
+export type CreateCurrentSubscriptionOrderErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type CreateCurrentSubscriptionOrderError = CreateCurrentSubscriptionOrderErrors[keyof CreateCurrentSubscriptionOrderErrors];
+export type CreateCurrentSubscriptionOrderResponses = {
+    200: SubscriptionOrder;
+    201: SubscriptionOrder;
+};
+export type CreateCurrentSubscriptionOrderResponse = CreateCurrentSubscriptionOrderResponses[keyof CreateCurrentSubscriptionOrderResponses];
+export type GetCurrentSubscriptionOrderData = {
+    body?: never;
+    path: {
+        order_id: string;
+    };
+    query?: never;
+    url: '/api/account/subscription-orders/{order_id}';
+};
+export type GetCurrentSubscriptionOrderErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetCurrentSubscriptionOrderError = GetCurrentSubscriptionOrderErrors[keyof GetCurrentSubscriptionOrderErrors];
+export type GetCurrentSubscriptionOrderResponses = {
+    200: SubscriptionOrder;
+};
+export type GetCurrentSubscriptionOrderResponse = GetCurrentSubscriptionOrderResponses[keyof GetCurrentSubscriptionOrderResponses];
+export type SubmitCurrentSubscriptionOrderPaymentData = {
+    body: SubscriptionOrderPaymentRequest;
+    path: {
+        order_id: string;
+    };
+    query?: never;
+    url: '/api/account/subscription-orders/{order_id}/payment';
+};
+export type SubmitCurrentSubscriptionOrderPaymentErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type SubmitCurrentSubscriptionOrderPaymentError = SubmitCurrentSubscriptionOrderPaymentErrors[keyof SubmitCurrentSubscriptionOrderPaymentErrors];
+export type SubmitCurrentSubscriptionOrderPaymentResponses = {
+    200: SubscriptionOrderPaymentResponse;
+};
+export type SubmitCurrentSubscriptionOrderPaymentResponse = SubmitCurrentSubscriptionOrderPaymentResponses[keyof SubmitCurrentSubscriptionOrderPaymentResponses];
 export type RequestPasswordResetData = {
     body: PasswordResetRequest;
     path?: never;
@@ -2364,6 +3265,74 @@ export type ChangeUserPasswordResponses = {
     204: void;
 };
 export type ChangeUserPasswordResponse = ChangeUserPasswordResponses[keyof ChangeUserPasswordResponses];
+export type DisableUserTwoFactorData = {
+    body: UserTwoFactorPasswordRequest;
+    path?: never;
+    query?: never;
+    url: '/api/account/two-factor';
+};
+export type DisableUserTwoFactorErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type DisableUserTwoFactorError = DisableUserTwoFactorErrors[keyof DisableUserTwoFactorErrors];
+export type DisableUserTwoFactorResponses = {
+    204: void;
+};
+export type DisableUserTwoFactorResponse = DisableUserTwoFactorResponses[keyof DisableUserTwoFactorResponses];
+export type GetUserTwoFactorData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/account/two-factor';
+};
+export type GetUserTwoFactorErrors = {
+    401: ManagementError;
+    500: ManagementError;
+};
+export type GetUserTwoFactorError = GetUserTwoFactorErrors[keyof GetUserTwoFactorErrors];
+export type GetUserTwoFactorResponses = {
+    200: UserTwoFactorStatusResponse;
+};
+export type GetUserTwoFactorResponse = GetUserTwoFactorResponses[keyof GetUserTwoFactorResponses];
+export type EnableUserTwoFactorData = {
+    body: UserTwoFactorPasswordRequest;
+    path?: never;
+    query?: never;
+    url: '/api/account/two-factor';
+};
+export type EnableUserTwoFactorErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type EnableUserTwoFactorError = EnableUserTwoFactorErrors[keyof EnableUserTwoFactorErrors];
+export type EnableUserTwoFactorResponses = {
+    200: UserTwoFactorEnrollmentResponse;
+};
+export type EnableUserTwoFactorResponse = EnableUserTwoFactorResponses[keyof EnableUserTwoFactorResponses];
+export type ListUserNotificationsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before?: string;
+        limit?: number;
+    };
+    url: '/api/account/notifications';
+};
+export type ListUserNotificationsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    500: ManagementError;
+};
+export type ListUserNotificationsError = ListUserNotificationsErrors[keyof ListUserNotificationsErrors];
+export type ListUserNotificationsResponses = {
+    200: UserNotificationListResponse;
+};
+export type ListUserNotificationsResponse = ListUserNotificationsResponses[keyof ListUserNotificationsResponses];
 export type UpdateUserNotificationPreferencesData = {
     body: UserNotificationPreferencesRequest;
     path?: never;
@@ -2380,6 +3349,88 @@ export type UpdateUserNotificationPreferencesResponses = {
     200: UserProfileResponse;
 };
 export type UpdateUserNotificationPreferencesResponse = UpdateUserNotificationPreferencesResponses[keyof UpdateUserNotificationPreferencesResponses];
+export type ListUserPasskeysData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/account/passkeys';
+};
+export type ListUserPasskeysErrors = {
+    401: ManagementError;
+    500: ManagementError;
+};
+export type ListUserPasskeysError = ListUserPasskeysErrors[keyof ListUserPasskeysErrors];
+export type ListUserPasskeysResponses = {
+    200: UserPasskeyListResponse;
+};
+export type ListUserPasskeysResponse = ListUserPasskeysResponses[keyof ListUserPasskeysResponses];
+export type StartUserPasskeyRegistrationData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/account/passkeys/registration/options';
+};
+export type StartUserPasskeyRegistrationErrors = {
+    401: ManagementError;
+    500: ManagementError;
+};
+export type StartUserPasskeyRegistrationError = StartUserPasskeyRegistrationErrors[keyof StartUserPasskeyRegistrationErrors];
+export type StartUserPasskeyRegistrationResponses = {
+    200: UserPasskeyRegistrationOptionsResponse;
+};
+export type StartUserPasskeyRegistrationResponse = StartUserPasskeyRegistrationResponses[keyof StartUserPasskeyRegistrationResponses];
+export type FinishUserPasskeyRegistrationData = {
+    body: UserPasskeyRegistrationVerifyRequest;
+    path?: never;
+    query?: never;
+    url: '/api/account/passkeys/registration/verify';
+};
+export type FinishUserPasskeyRegistrationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    500: ManagementError;
+};
+export type FinishUserPasskeyRegistrationError = FinishUserPasskeyRegistrationErrors[keyof FinishUserPasskeyRegistrationErrors];
+export type FinishUserPasskeyRegistrationResponses = {
+    200: UserPasskeyResponse;
+};
+export type FinishUserPasskeyRegistrationResponse = FinishUserPasskeyRegistrationResponses[keyof FinishUserPasskeyRegistrationResponses];
+export type RevokeUserPasskeyData = {
+    body: UserPasskeyRevokeRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/account/passkeys/{id}';
+};
+export type RevokeUserPasskeyErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    500: ManagementError;
+};
+export type RevokeUserPasskeyError = RevokeUserPasskeyErrors[keyof RevokeUserPasskeyErrors];
+export type RevokeUserPasskeyResponses = {
+    204: void;
+};
+export type RevokeUserPasskeyResponse = RevokeUserPasskeyResponses[keyof RevokeUserPasskeyResponses];
+export type RenameUserPasskeyData = {
+    body: UserPasskeyRenameRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/account/passkeys/{id}';
+};
+export type RenameUserPasskeyErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    500: ManagementError;
+};
+export type RenameUserPasskeyError = RenameUserPasskeyErrors[keyof RenameUserPasskeyErrors];
+export type RenameUserPasskeyResponses = {
+    200: UserPasskeyResponse;
+};
+export type RenameUserPasskeyResponse = RenameUserPasskeyResponses[keyof RenameUserPasskeyResponses];
 export type GetUserWalletData = {
     body?: never;
     path?: never;
@@ -2414,6 +3465,22 @@ export type ListUserWalletEntriesResponses = {
     200: UserWalletListResponse;
 };
 export type ListUserWalletEntriesResponse = ListUserWalletEntriesResponses[keyof ListUserWalletEntriesResponses];
+export type MarkUserNotificationsReadData = {
+    body: UserNotificationMarkReadRequest;
+    path?: never;
+    query?: never;
+    url: '/api/account/notifications/read';
+};
+export type MarkUserNotificationsReadErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    500: ManagementError;
+};
+export type MarkUserNotificationsReadError = MarkUserNotificationsReadErrors[keyof MarkUserNotificationsReadErrors];
+export type MarkUserNotificationsReadResponses = {
+    200: UserNotificationMarkReadResponse;
+};
+export type MarkUserNotificationsReadResponse = MarkUserNotificationsReadResponses[keyof MarkUserNotificationsReadResponses];
 export type GetUserTopupConfigurationData = {
     body?: never;
     path?: never;
@@ -2644,6 +3711,479 @@ export type CompleteAdminOAuthManualCallbackResponses = {
     200: AdminOAuthCompletionResponse;
 };
 export type CompleteAdminOAuthManualCallbackResponse = CompleteAdminOAuthManualCallbackResponses[keyof CompleteAdminOAuthManualCallbackResponses];
+export type StartGitHubOAuthLoginData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/auth/oauth/github/start';
+};
+export type StartGitHubOAuthLoginErrors = {
+    409: ManagementError;
+    500: ManagementError;
+};
+export type StartGitHubOAuthLoginError = StartGitHubOAuthLoginErrors[keyof StartGitHubOAuthLoginErrors];
+export type StartGitHubOAuthLoginResponses = {
+    200: OAuthLoginStartResponse;
+};
+export type StartGitHubOAuthLoginResponse = StartGitHubOAuthLoginResponses[keyof StartGitHubOAuthLoginResponses];
+export type StartDiscordOAuthLoginData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/auth/oauth/discord/start';
+};
+export type StartDiscordOAuthLoginErrors = {
+    409: ManagementError;
+    500: ManagementError;
+};
+export type StartDiscordOAuthLoginError = StartDiscordOAuthLoginErrors[keyof StartDiscordOAuthLoginErrors];
+export type StartDiscordOAuthLoginResponses = {
+    200: OAuthLoginStartResponse;
+};
+export type StartDiscordOAuthLoginResponse = StartDiscordOAuthLoginResponses[keyof StartDiscordOAuthLoginResponses];
+export type CompleteGitHubOAuthLoginData = {
+    body?: never;
+    path?: never;
+    query?: {
+        state?: string;
+        code?: string;
+        error?: string;
+    };
+    url: '/api/auth/oauth/github/callback';
+};
+export type CompleteGitHubOAuthLoginErrors = {
+    500: ManagementError;
+};
+export type CompleteGitHubOAuthLoginError = CompleteGitHubOAuthLoginErrors[keyof CompleteGitHubOAuthLoginErrors];
+export type CompleteDiscordOAuthLoginData = {
+    body?: never;
+    path?: never;
+    query?: {
+        state?: string;
+        code?: string;
+        error?: string;
+    };
+    url: '/api/auth/oauth/discord/callback';
+};
+export type CompleteDiscordOAuthLoginErrors = {
+    500: ManagementError;
+};
+export type CompleteDiscordOAuthLoginError = CompleteDiscordOAuthLoginErrors[keyof CompleteDiscordOAuthLoginErrors];
+export type ExchangeOAuthLoginTicketData = {
+    body: OAuthLoginExchangeRequest;
+    path?: never;
+    query?: never;
+    url: '/api/auth/oauth/exchange';
+};
+export type ExchangeOAuthLoginTicketErrors = {
+    400: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type ExchangeOAuthLoginTicketError = ExchangeOAuthLoginTicketErrors[keyof ExchangeOAuthLoginTicketErrors];
+export type ExchangeOAuthLoginTicketResponses = {
+    200: LoginResponse;
+};
+export type ExchangeOAuthLoginTicketResponse = ExchangeOAuthLoginTicketResponses[keyof ExchangeOAuthLoginTicketResponses];
+export type GetAdminGitHubOAuthLoginSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/github';
+};
+export type GetAdminGitHubOAuthLoginSettingsErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminGitHubOAuthLoginSettingsError = GetAdminGitHubOAuthLoginSettingsErrors[keyof GetAdminGitHubOAuthLoginSettingsErrors];
+export type GetAdminGitHubOAuthLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type GetAdminGitHubOAuthLoginSettingsResponse = GetAdminGitHubOAuthLoginSettingsResponses[keyof GetAdminGitHubOAuthLoginSettingsResponses];
+export type UpdateAdminGitHubOAuthLoginSettingsData = {
+    body: AdminOAuthLoginProviderSettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/github';
+};
+export type UpdateAdminGitHubOAuthLoginSettingsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminGitHubOAuthLoginSettingsError = UpdateAdminGitHubOAuthLoginSettingsErrors[keyof UpdateAdminGitHubOAuthLoginSettingsErrors];
+export type UpdateAdminGitHubOAuthLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type UpdateAdminGitHubOAuthLoginSettingsResponse = UpdateAdminGitHubOAuthLoginSettingsResponses[keyof UpdateAdminGitHubOAuthLoginSettingsResponses];
+export type GetAdminDiscordOAuthLoginSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/discord';
+};
+export type GetAdminDiscordOAuthLoginSettingsErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminDiscordOAuthLoginSettingsError = GetAdminDiscordOAuthLoginSettingsErrors[keyof GetAdminDiscordOAuthLoginSettingsErrors];
+export type GetAdminDiscordOAuthLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type GetAdminDiscordOAuthLoginSettingsResponse = GetAdminDiscordOAuthLoginSettingsResponses[keyof GetAdminDiscordOAuthLoginSettingsResponses];
+export type UpdateAdminDiscordOAuthLoginSettingsData = {
+    body: AdminOAuthLoginProviderSettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/discord';
+};
+export type UpdateAdminDiscordOAuthLoginSettingsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminDiscordOAuthLoginSettingsError = UpdateAdminDiscordOAuthLoginSettingsErrors[keyof UpdateAdminDiscordOAuthLoginSettingsErrors];
+export type UpdateAdminDiscordOAuthLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type UpdateAdminDiscordOAuthLoginSettingsResponse = UpdateAdminDiscordOAuthLoginSettingsResponses[keyof UpdateAdminDiscordOAuthLoginSettingsResponses];
+export type ListAccountOrganizationsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/account/organizations';
+};
+export type ListAccountOrganizationsErrors = {
+    401: ManagementError;
+    500: ManagementError;
+};
+export type ListAccountOrganizationsError = ListAccountOrganizationsErrors[keyof ListAccountOrganizationsErrors];
+export type ListAccountOrganizationsResponses = {
+    200: OrganizationListResponse;
+};
+export type ListAccountOrganizationsResponse = ListAccountOrganizationsResponses[keyof ListAccountOrganizationsResponses];
+export type GetOrganizationOverviewData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}';
+};
+export type GetOrganizationOverviewErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetOrganizationOverviewError = GetOrganizationOverviewErrors[keyof GetOrganizationOverviewErrors];
+export type GetOrganizationOverviewResponses = {
+    200: OrganizationOverviewResponse;
+};
+export type GetOrganizationOverviewResponse = GetOrganizationOverviewResponses[keyof GetOrganizationOverviewResponses];
+export type ListOrganizationInvitationsData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/invitations';
+};
+export type ListOrganizationInvitationsErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationInvitationsError = ListOrganizationInvitationsErrors[keyof ListOrganizationInvitationsErrors];
+export type ListOrganizationInvitationsResponses = {
+    200: OrganizationInvitationListResponse;
+};
+export type ListOrganizationInvitationsResponse = ListOrganizationInvitationsResponses[keyof ListOrganizationInvitationsResponses];
+export type CreateOrganizationInvitationData = {
+    body: OrganizationInvitationCreateRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/invitations';
+};
+export type CreateOrganizationInvitationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type CreateOrganizationInvitationError = CreateOrganizationInvitationErrors[keyof CreateOrganizationInvitationErrors];
+export type CreateOrganizationInvitationResponses = {
+    200: OrganizationInvitationIssuedResponse;
+};
+export type CreateOrganizationInvitationResponse = CreateOrganizationInvitationResponses[keyof CreateOrganizationInvitationResponses];
+export type PreviewOrganizationInvitationsData = {
+    body: OrganizationInvitationPreviewRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/invitations/preview';
+};
+export type PreviewOrganizationInvitationsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type PreviewOrganizationInvitationsError = PreviewOrganizationInvitationsErrors[keyof PreviewOrganizationInvitationsErrors];
+export type PreviewOrganizationInvitationsResponses = {
+    200: OrganizationInvitationPreviewResponse;
+};
+export type PreviewOrganizationInvitationsResponse = PreviewOrganizationInvitationsResponses[keyof PreviewOrganizationInvitationsResponses];
+export type CreateOrganizationInvitationBatchData = {
+    body: OrganizationInvitationBatchRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/invitations/batches';
+};
+export type CreateOrganizationInvitationBatchErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type CreateOrganizationInvitationBatchError = CreateOrganizationInvitationBatchErrors[keyof CreateOrganizationInvitationBatchErrors];
+export type CreateOrganizationInvitationBatchResponses = {
+    200: OrganizationInvitationBatchResponse;
+};
+export type CreateOrganizationInvitationBatchResponse = CreateOrganizationInvitationBatchResponses[keyof CreateOrganizationInvitationBatchResponses];
+export type RevokeOrganizationInvitationData = {
+    body?: never;
+    path: {
+        organization_id: number;
+        invitation_key: string;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/invitations/{invitation_key}/revoke';
+};
+export type RevokeOrganizationInvitationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type RevokeOrganizationInvitationError = RevokeOrganizationInvitationErrors[keyof RevokeOrganizationInvitationErrors];
+export type RevokeOrganizationInvitationResponses = {
+    200: OrganizationInvitationResponse;
+};
+export type RevokeOrganizationInvitationResponse = RevokeOrganizationInvitationResponses[keyof RevokeOrganizationInvitationResponses];
+export type ResendOrganizationInvitationData = {
+    body?: never;
+    path: {
+        organization_id: number;
+        invitation_key: string;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/invitations/{invitation_key}/resend';
+};
+export type ResendOrganizationInvitationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type ResendOrganizationInvitationError = ResendOrganizationInvitationErrors[keyof ResendOrganizationInvitationErrors];
+export type ResendOrganizationInvitationResponses = {
+    200: OrganizationInvitationIssuedResponse;
+};
+export type ResendOrganizationInvitationResponse = ResendOrganizationInvitationResponses[keyof ResendOrganizationInvitationResponses];
+export type AcceptOrganizationInvitationData = {
+    body: OrganizationInvitationAcceptRequest;
+    path?: never;
+    query?: never;
+    url: '/api/account/organization-invitations/accept';
+};
+export type AcceptOrganizationInvitationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type AcceptOrganizationInvitationError = AcceptOrganizationInvitationErrors[keyof AcceptOrganizationInvitationErrors];
+export type AcceptOrganizationInvitationResponses = {
+    200: OrganizationInvitationAcceptResponse;
+};
+export type AcceptOrganizationInvitationResponse = AcceptOrganizationInvitationResponses[keyof AcceptOrganizationInvitationResponses];
+export type ListOrganizationMembersData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        after?: number;
+        limit?: number;
+    };
+    url: '/api/organizations/{organization_id}/members';
+};
+export type ListOrganizationMembersErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationMembersError = ListOrganizationMembersErrors[keyof ListOrganizationMembersErrors];
+export type ListOrganizationMembersResponses = {
+    200: OrganizationMembershipListResponse;
+};
+export type ListOrganizationMembersResponse = ListOrganizationMembersResponses[keyof ListOrganizationMembersResponses];
+export type ChangeOrganizationMemberData = {
+    body: OrganizationMembershipChangeRequest;
+    path: {
+        organization_id: number;
+        membership_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/members/{membership_id}';
+};
+export type ChangeOrganizationMemberErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type ChangeOrganizationMemberError = ChangeOrganizationMemberErrors[keyof ChangeOrganizationMemberErrors];
+export type ChangeOrganizationMemberResponses = {
+    200: OrganizationMembershipResponse;
+};
+export type ChangeOrganizationMemberResponse = ChangeOrganizationMemberResponses[keyof ChangeOrganizationMemberResponses];
+export type TransferOrganizationOwnershipData = {
+    body: OrganizationOwnershipTransferRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/ownership-transfer';
+};
+export type TransferOrganizationOwnershipErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type TransferOrganizationOwnershipError = TransferOrganizationOwnershipErrors[keyof TransferOrganizationOwnershipErrors];
+export type TransferOrganizationOwnershipResponses = {
+    200: OrganizationOwnershipTransferResponse;
+};
+export type TransferOrganizationOwnershipResponse = TransferOrganizationOwnershipResponses[keyof TransferOrganizationOwnershipResponses];
+export type ListOrganizationTeamsData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        after?: number;
+        limit?: number;
+    };
+    url: '/api/organizations/{organization_id}/teams';
+};
+export type ListOrganizationTeamsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationTeamsError = ListOrganizationTeamsErrors[keyof ListOrganizationTeamsErrors];
+export type ListOrganizationTeamsResponses = {
+    200: OrganizationTeamListResponse;
+};
+export type ListOrganizationTeamsResponse = ListOrganizationTeamsResponses[keyof ListOrganizationTeamsResponses];
+export type CreateOrganizationTeamData = {
+    body: OrganizationTeamCreateRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/teams';
+};
+export type CreateOrganizationTeamErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type CreateOrganizationTeamError = CreateOrganizationTeamErrors[keyof CreateOrganizationTeamErrors];
+export type CreateOrganizationTeamResponses = {
+    200: OrganizationTeamResponse;
+};
+export type CreateOrganizationTeamResponse = CreateOrganizationTeamResponses[keyof CreateOrganizationTeamResponses];
+export type ChangeOrganizationTeamData = {
+    body: OrganizationTeamChangeRequest;
+    path: {
+        organization_id: number;
+        team_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/teams/{team_id}';
+};
+export type ChangeOrganizationTeamErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type ChangeOrganizationTeamError = ChangeOrganizationTeamErrors[keyof ChangeOrganizationTeamErrors];
+export type ChangeOrganizationTeamResponses = {
+    200: OrganizationTeamResponse;
+};
+export type ChangeOrganizationTeamResponse = ChangeOrganizationTeamResponses[keyof ChangeOrganizationTeamResponses];
+export type DisableOrganizationTeamData = {
+    body: OrganizationTeamDisableRequest;
+    path: {
+        organization_id: number;
+        team_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/teams/{team_id}/disable';
+};
+export type DisableOrganizationTeamErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type DisableOrganizationTeamError = DisableOrganizationTeamErrors[keyof DisableOrganizationTeamErrors];
+export type DisableOrganizationTeamResponses = {
+    200: OrganizationTeamResponse;
+};
+export type DisableOrganizationTeamResponse = DisableOrganizationTeamResponses[keyof DisableOrganizationTeamResponses];
 export type GetAdminBalanceAlertSettingsData = {
     body?: never;
     path?: never;
@@ -2717,6 +4257,7 @@ export type UpdateAdminSiteSettingsErrors = {
     400: ManagementError;
     401: ManagementError;
     403: ManagementError;
+    409: ManagementError;
     500: ManagementError;
 };
 export type UpdateAdminSiteSettingsError = UpdateAdminSiteSettingsErrors[keyof UpdateAdminSiteSettingsErrors];
@@ -4130,6 +5671,7 @@ export type ListAdminDebugTracesData = {
         limit?: number;
         outcome?: string;
         model?: string;
+        request_id?: string;
     };
     url: '/api/admin/debug-traces';
 };
@@ -4164,6 +5706,26 @@ export type GetAdminDebugTraceResponses = {
     200: AdminDebugTraceDetailResponse;
 };
 export type GetAdminDebugTraceResponse = GetAdminDebugTraceResponses[keyof GetAdminDebugTraceResponses];
+export type ReadAdminDebugTraceSnapshotsData = {
+    body: AdminDebugTraceSnapshotRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/debug-traces/{id}/snapshots';
+};
+export type ReadAdminDebugTraceSnapshotsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ReadAdminDebugTraceSnapshotsError = ReadAdminDebugTraceSnapshotsErrors[keyof ReadAdminDebugTraceSnapshotsErrors];
+export type ReadAdminDebugTraceSnapshotsResponses = {
+    200: AdminDebugTraceSnapshotsResponse;
+};
+export type ReadAdminDebugTraceSnapshotsResponse = ReadAdminDebugTraceSnapshotsResponses[keyof ReadAdminDebugTraceSnapshotsResponses];
 export type ReceivePaymentWebhookData = {
     body?: unknown;
     headers: {
@@ -4185,3 +5747,826 @@ export type ReceivePaymentWebhookErrors = {
 export type ReceivePaymentWebhookResponses = {
     200: unknown;
 };
+export type ReceiveRefundWebhookData = {
+    body?: unknown;
+    headers: {
+        'stripe-signature': string;
+    };
+    path: {
+        provider: string;
+    };
+    query?: never;
+    url: '/api/refund/webhook/{provider}';
+};
+export type ReceiveRefundWebhookErrors = {
+    400: unknown;
+    405: unknown;
+    409: unknown;
+    500: unknown;
+    503: unknown;
+};
+export type ReceiveRefundWebhookResponses = {
+    200: unknown;
+};
+export type GetOrganizationWalletData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/wallet';
+};
+export type GetOrganizationWalletErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetOrganizationWalletError = GetOrganizationWalletErrors[keyof GetOrganizationWalletErrors];
+export type GetOrganizationWalletResponses = {
+    200: OrganizationWalletSummaryResponse;
+};
+export type GetOrganizationWalletResponse = GetOrganizationWalletResponses[keyof GetOrganizationWalletResponses];
+export type ListOrganizationWalletEntriesData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/organizations/{organization_id}/wallet/entries';
+};
+export type ListOrganizationWalletEntriesErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationWalletEntriesError = ListOrganizationWalletEntriesErrors[keyof ListOrganizationWalletEntriesErrors];
+export type ListOrganizationWalletEntriesResponses = {
+    200: OrganizationWalletListResponse;
+};
+export type ListOrganizationWalletEntriesResponse = ListOrganizationWalletEntriesResponses[keyof ListOrganizationWalletEntriesResponses];
+export type AdjustOrganizationWalletData = {
+    body: OrganizationWalletAdjustmentRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/wallet/adjustments';
+};
+export type AdjustOrganizationWalletErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type AdjustOrganizationWalletError = AdjustOrganizationWalletErrors[keyof AdjustOrganizationWalletErrors];
+export type AdjustOrganizationWalletResponses = {
+    200: OrganizationWalletAdjustmentResponse;
+    201: OrganizationWalletAdjustmentResponse;
+};
+export type AdjustOrganizationWalletResponse = AdjustOrganizationWalletResponses[keyof AdjustOrganizationWalletResponses];
+export type CreateOrganizationTopupOrderData = {
+    body: OrganizationTopupOrderCreateRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/topups';
+};
+export type CreateOrganizationTopupOrderErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    502: ManagementError;
+    503: ManagementError;
+};
+export type CreateOrganizationTopupOrderError = CreateOrganizationTopupOrderErrors[keyof CreateOrganizationTopupOrderErrors];
+export type CreateOrganizationTopupOrderResponses = {
+    200: OrganizationTopupOrderResponse;
+    201: OrganizationTopupOrderResponse;
+};
+export type CreateOrganizationTopupOrderResponse = CreateOrganizationTopupOrderResponses[keyof CreateOrganizationTopupOrderResponses];
+export type GetOrganizationBudgetsData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/budgets';
+};
+export type GetOrganizationBudgetsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetOrganizationBudgetsError = GetOrganizationBudgetsErrors[keyof GetOrganizationBudgetsErrors];
+export type GetOrganizationBudgetsResponses = {
+    200: OrganizationBudgetOverviewResponse;
+};
+export type GetOrganizationBudgetsResponse = GetOrganizationBudgetsResponses[keyof GetOrganizationBudgetsResponses];
+export type CreateOrganizationBudgetPolicyData = {
+    body: OrganizationBudgetPolicyCreateRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/budgets';
+};
+export type CreateOrganizationBudgetPolicyErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type CreateOrganizationBudgetPolicyError = CreateOrganizationBudgetPolicyErrors[keyof CreateOrganizationBudgetPolicyErrors];
+export type CreateOrganizationBudgetPolicyResponses = {
+    201: OrganizationBudgetPolicyResponse;
+};
+export type CreateOrganizationBudgetPolicyResponse = CreateOrganizationBudgetPolicyResponses[keyof CreateOrganizationBudgetPolicyResponses];
+export type GetOrganizationBudgetReservationData = {
+    body?: never;
+    path: {
+        organization_id: number;
+        reservation_id: string;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/budgets/reservations/{reservation_id}';
+};
+export type GetOrganizationBudgetReservationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetOrganizationBudgetReservationError = GetOrganizationBudgetReservationErrors[keyof GetOrganizationBudgetReservationErrors];
+export type GetOrganizationBudgetReservationResponses = {
+    200: OrganizationBudgetReservationResponse;
+};
+export type GetOrganizationBudgetReservationResponse = GetOrganizationBudgetReservationResponses[keyof GetOrganizationBudgetReservationResponses];
+export type ListOrganizationTokensData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        after?: number;
+        limit?: number;
+    };
+    url: '/api/organizations/{organization_id}/tokens';
+};
+export type ListOrganizationTokensErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationTokensError = ListOrganizationTokensErrors[keyof ListOrganizationTokensErrors];
+export type ListOrganizationTokensResponses = {
+    200: OrganizationTokenListResponse;
+};
+export type ListOrganizationTokensResponse = ListOrganizationTokensResponses[keyof ListOrganizationTokensResponses];
+export type CreateOrganizationTokenData = {
+    body: OrganizationTokenWriteRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/tokens';
+};
+export type CreateOrganizationTokenErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type CreateOrganizationTokenError = CreateOrganizationTokenErrors[keyof CreateOrganizationTokenErrors];
+export type CreateOrganizationTokenResponses = {
+    201: IssuedOrganizationTokenResponse;
+};
+export type CreateOrganizationTokenResponse = CreateOrganizationTokenResponses[keyof CreateOrganizationTokenResponses];
+export type ListOrganizationTokenDirectoryData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        after?: number;
+        limit?: number;
+    };
+    url: '/api/organizations/{organization_id}/tokens/directory';
+};
+export type ListOrganizationTokenDirectoryErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationTokenDirectoryError = ListOrganizationTokenDirectoryErrors[keyof ListOrganizationTokenDirectoryErrors];
+export type ListOrganizationTokenDirectoryResponses = {
+    200: OrganizationTokenListResponse;
+};
+export type ListOrganizationTokenDirectoryResponse = ListOrganizationTokenDirectoryResponses[keyof ListOrganizationTokenDirectoryResponses];
+export type DisableOwnOrganizationTokenData = {
+    body?: never;
+    path: {
+        organization_id: number;
+        token_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/tokens/{token_id}';
+};
+export type DisableOwnOrganizationTokenErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type DisableOwnOrganizationTokenError = DisableOwnOrganizationTokenErrors[keyof DisableOwnOrganizationTokenErrors];
+export type DisableOwnOrganizationTokenResponses = {
+    200: OrganizationTokenResponse;
+};
+export type DisableOwnOrganizationTokenResponse = DisableOwnOrganizationTokenResponses[keyof DisableOwnOrganizationTokenResponses];
+export type GetOrganizationTokenData = {
+    body?: never;
+    path: {
+        organization_id: number;
+        token_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/tokens/{token_id}';
+};
+export type GetOrganizationTokenErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetOrganizationTokenError = GetOrganizationTokenErrors[keyof GetOrganizationTokenErrors];
+export type GetOrganizationTokenResponses = {
+    200: OrganizationTokenResponse;
+};
+export type GetOrganizationTokenResponse = GetOrganizationTokenResponses[keyof GetOrganizationTokenResponses];
+export type UpdateOrganizationTokenData = {
+    body: OrganizationTokenWriteRequest;
+    path: {
+        organization_id: number;
+        token_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/tokens/{token_id}';
+};
+export type UpdateOrganizationTokenErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type UpdateOrganizationTokenError = UpdateOrganizationTokenErrors[keyof UpdateOrganizationTokenErrors];
+export type UpdateOrganizationTokenResponses = {
+    200: OrganizationTokenResponse;
+};
+export type UpdateOrganizationTokenResponse = UpdateOrganizationTokenResponses[keyof UpdateOrganizationTokenResponses];
+export type DisableOrganizationTokenData = {
+    body?: never;
+    path: {
+        organization_id: number;
+        token_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/tokens/{token_id}/disable';
+};
+export type DisableOrganizationTokenErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type DisableOrganizationTokenError = DisableOrganizationTokenErrors[keyof DisableOrganizationTokenErrors];
+export type DisableOrganizationTokenResponses = {
+    200: OrganizationTokenResponse;
+};
+export type DisableOrganizationTokenResponse = DisableOrganizationTokenResponses[keyof DisableOrganizationTokenResponses];
+export type ListOrganizationUsageLogsData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        scope?: string;
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/organizations/{organization_id}/usage-logs';
+};
+export type ListOrganizationUsageLogsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationUsageLogsError = ListOrganizationUsageLogsErrors[keyof ListOrganizationUsageLogsErrors];
+export type ListOrganizationUsageLogsResponses = {
+    200: OrganizationUsageLogListResponse;
+};
+export type ListOrganizationUsageLogsResponse = ListOrganizationUsageLogsResponses[keyof ListOrganizationUsageLogsResponses];
+export type ListOrganizationAuditLogsData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        before?: number;
+        limit?: number;
+        actor_user_id?: number;
+        operation?: string;
+        target_type?: string;
+        outcome?: string;
+    };
+    url: '/api/organizations/{organization_id}/audit-logs';
+};
+export type ListOrganizationAuditLogsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationAuditLogsError = ListOrganizationAuditLogsErrors[keyof ListOrganizationAuditLogsErrors];
+export type ListOrganizationAuditLogsResponses = {
+    200: OrganizationAuditLogListResponse;
+};
+export type ListOrganizationAuditLogsResponse = ListOrganizationAuditLogsResponses[keyof ListOrganizationAuditLogsResponses];
+export type ListPlatformOrganizationUsageLogsData = {
+    body?: never;
+    headers: {
+        'x-anyflows-platform-reason': string;
+    };
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/platform/organizations/{organization_id}/usage-logs';
+};
+export type ListPlatformOrganizationUsageLogsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListPlatformOrganizationUsageLogsError = ListPlatformOrganizationUsageLogsErrors[keyof ListPlatformOrganizationUsageLogsErrors];
+export type ListPlatformOrganizationUsageLogsResponses = {
+    200: OrganizationUsageLogListResponse;
+};
+export type ListPlatformOrganizationUsageLogsResponse = ListPlatformOrganizationUsageLogsResponses[keyof ListPlatformOrganizationUsageLogsResponses];
+export type ListPlatformOrganizationAuditLogsData = {
+    body?: never;
+    headers: {
+        'x-anyflows-platform-reason': string;
+    };
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        before?: number;
+        limit?: number;
+        actor_user_id?: number;
+        operation?: string;
+        target_type?: string;
+        outcome?: string;
+    };
+    url: '/api/platform/organizations/{organization_id}/audit-logs';
+};
+export type ListPlatformOrganizationAuditLogsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListPlatformOrganizationAuditLogsError = ListPlatformOrganizationAuditLogsErrors[keyof ListPlatformOrganizationAuditLogsErrors];
+export type ListPlatformOrganizationAuditLogsResponses = {
+    200: OrganizationAuditLogListResponse;
+};
+export type ListPlatformOrganizationAuditLogsResponse = ListPlatformOrganizationAuditLogsResponses[keyof ListPlatformOrganizationAuditLogsResponses];
+export type StartPasskeyAuthenticationData = {
+    body: PasskeyAuthenticationOptionsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/auth/passkey/options';
+};
+export type StartPasskeyAuthenticationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type StartPasskeyAuthenticationError = StartPasskeyAuthenticationErrors[keyof StartPasskeyAuthenticationErrors];
+export type StartPasskeyAuthenticationResponses = {
+    200: PasskeyAuthenticationOptionsResponse;
+};
+export type StartPasskeyAuthenticationResponse = StartPasskeyAuthenticationResponses[keyof StartPasskeyAuthenticationResponses];
+export type FinishPasskeyAuthenticationData = {
+    body: PasskeyAuthenticationVerifyRequest;
+    path?: never;
+    query?: never;
+    url: '/api/auth/passkey/verify';
+};
+export type FinishPasskeyAuthenticationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type FinishPasskeyAuthenticationError = FinishPasskeyAuthenticationErrors[keyof FinishPasskeyAuthenticationErrors];
+export type FinishPasskeyAuthenticationResponses = {
+    200: LoginResponse;
+};
+export type FinishPasskeyAuthenticationResponse = FinishPasskeyAuthenticationResponses[keyof FinishPasskeyAuthenticationResponses];
+export type ListAdminPlatformAuditLogsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/admin/audit-logs';
+};
+export type ListAdminPlatformAuditLogsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminPlatformAuditLogsError = ListAdminPlatformAuditLogsErrors[keyof ListAdminPlatformAuditLogsErrors];
+export type ListAdminPlatformAuditLogsResponses = {
+    200: PlatformAuditLogListResponse;
+};
+export type ListAdminPlatformAuditLogsResponse = ListAdminPlatformAuditLogsResponses[keyof ListAdminPlatformAuditLogsResponses];
+export type ListSelfPlatformAuditLogsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/account/audit-logs';
+};
+export type ListSelfPlatformAuditLogsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    500: ManagementError;
+};
+export type ListSelfPlatformAuditLogsError = ListSelfPlatformAuditLogsErrors[keyof ListSelfPlatformAuditLogsErrors];
+export type ListSelfPlatformAuditLogsResponses = {
+    200: PlatformAuditLogListResponse;
+};
+export type ListSelfPlatformAuditLogsResponse = ListSelfPlatformAuditLogsResponses[keyof ListSelfPlatformAuditLogsResponses];
+export type StartOidcLoginData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/auth/oauth/oidc/start';
+};
+export type StartOidcLoginErrors = {
+    409: ManagementError;
+    500: ManagementError;
+};
+export type StartOidcLoginError = StartOidcLoginErrors[keyof StartOidcLoginErrors];
+export type StartOidcLoginResponses = {
+    200: OAuthLoginStartResponse;
+};
+export type StartOidcLoginResponse = StartOidcLoginResponses[keyof StartOidcLoginResponses];
+export type StartLinuxDoLoginData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/auth/oauth/linuxdo/start';
+};
+export type StartLinuxDoLoginErrors = {
+    409: ManagementError;
+    500: ManagementError;
+};
+export type StartLinuxDoLoginError = StartLinuxDoLoginErrors[keyof StartLinuxDoLoginErrors];
+export type StartLinuxDoLoginResponses = {
+    200: OAuthLoginStartResponse;
+};
+export type StartLinuxDoLoginResponse = StartLinuxDoLoginResponses[keyof StartLinuxDoLoginResponses];
+export type StartWeChatOAuthLoginData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/auth/oauth/wechat/start';
+};
+export type StartWeChatOAuthLoginErrors = {
+    409: ManagementError;
+    500: ManagementError;
+};
+export type StartWeChatOAuthLoginError = StartWeChatOAuthLoginErrors[keyof StartWeChatOAuthLoginErrors];
+export type StartWeChatOAuthLoginResponses = {
+    200: OAuthLoginStartResponse;
+};
+export type StartWeChatOAuthLoginResponse = StartWeChatOAuthLoginResponses[keyof StartWeChatOAuthLoginResponses];
+export type StartTelegramLoginData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/auth/oauth/telegram/start';
+};
+export type StartTelegramLoginErrors = {
+    409: ManagementError;
+    500: ManagementError;
+};
+export type StartTelegramLoginError = StartTelegramLoginErrors[keyof StartTelegramLoginErrors];
+export type StartTelegramLoginResponses = {
+    200: OAuthLoginStartResponse;
+};
+export type StartTelegramLoginResponse = StartTelegramLoginResponses[keyof StartTelegramLoginResponses];
+export type StartGoogleLoginData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/auth/oauth/google/start';
+};
+export type StartGoogleLoginErrors = {
+    409: ManagementError;
+    500: ManagementError;
+};
+export type StartGoogleLoginError = StartGoogleLoginErrors[keyof StartGoogleLoginErrors];
+export type StartGoogleLoginResponses = {
+    200: OAuthLoginStartResponse;
+};
+export type StartGoogleLoginResponse = StartGoogleLoginResponses[keyof StartGoogleLoginResponses];
+export type CompleteOidcLoginData = {
+    body?: never;
+    path?: never;
+    query?: {
+        state?: string;
+        code?: string;
+        error?: string;
+    };
+    url: '/api/auth/oauth/oidc/callback';
+};
+export type CompleteOidcLoginErrors = {
+    500: ManagementError;
+};
+export type CompleteOidcLoginError = CompleteOidcLoginErrors[keyof CompleteOidcLoginErrors];
+export type CompleteLinuxDoLoginData = {
+    body?: never;
+    path?: never;
+    query?: {
+        state?: string;
+        code?: string;
+        error?: string;
+    };
+    url: '/api/auth/oauth/linuxdo/callback';
+};
+export type CompleteLinuxDoLoginErrors = {
+    500: ManagementError;
+};
+export type CompleteLinuxDoLoginError = CompleteLinuxDoLoginErrors[keyof CompleteLinuxDoLoginErrors];
+export type CompleteWeChatOAuthLoginData = {
+    body?: never;
+    path?: never;
+    query?: {
+        state?: string;
+        code?: string;
+    };
+    url: '/api/auth/oauth/wechat/callback';
+};
+export type CompleteWeChatOAuthLoginErrors = {
+    500: ManagementError;
+};
+export type CompleteWeChatOAuthLoginError = CompleteWeChatOAuthLoginErrors[keyof CompleteWeChatOAuthLoginErrors];
+export type CompleteTelegramLoginData = {
+    body?: never;
+    path?: never;
+    query?: {
+        state?: string;
+        code?: string;
+        error?: string;
+    };
+    url: '/api/auth/oauth/telegram/callback';
+};
+export type CompleteTelegramLoginErrors = {
+    500: ManagementError;
+};
+export type CompleteTelegramLoginError = CompleteTelegramLoginErrors[keyof CompleteTelegramLoginErrors];
+export type CompleteGoogleLoginData = {
+    body?: never;
+    path?: never;
+    query?: {
+        state?: string;
+        code?: string;
+        error?: string;
+    };
+    url: '/api/auth/oauth/google/callback';
+};
+export type CompleteGoogleLoginErrors = {
+    500: ManagementError;
+};
+export type CompleteGoogleLoginError = CompleteGoogleLoginErrors[keyof CompleteGoogleLoginErrors];
+export type GetAdminOidcLoginSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/oidc';
+};
+export type GetAdminOidcLoginSettingsErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminOidcLoginSettingsError = GetAdminOidcLoginSettingsErrors[keyof GetAdminOidcLoginSettingsErrors];
+export type GetAdminOidcLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type GetAdminOidcLoginSettingsResponse = GetAdminOidcLoginSettingsResponses[keyof GetAdminOidcLoginSettingsResponses];
+export type UpdateAdminOidcLoginSettingsData = {
+    body: AdminOAuthLoginProviderSettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/oidc';
+};
+export type UpdateAdminOidcLoginSettingsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminOidcLoginSettingsError = UpdateAdminOidcLoginSettingsErrors[keyof UpdateAdminOidcLoginSettingsErrors];
+export type UpdateAdminOidcLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type UpdateAdminOidcLoginSettingsResponse = UpdateAdminOidcLoginSettingsResponses[keyof UpdateAdminOidcLoginSettingsResponses];
+export type GetAdminLinuxDoLoginSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/linuxdo';
+};
+export type GetAdminLinuxDoLoginSettingsErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminLinuxDoLoginSettingsError = GetAdminLinuxDoLoginSettingsErrors[keyof GetAdminLinuxDoLoginSettingsErrors];
+export type GetAdminLinuxDoLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type GetAdminLinuxDoLoginSettingsResponse = GetAdminLinuxDoLoginSettingsResponses[keyof GetAdminLinuxDoLoginSettingsResponses];
+export type UpdateAdminLinuxDoLoginSettingsData = {
+    body: AdminOAuthLoginProviderSettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/linuxdo';
+};
+export type UpdateAdminLinuxDoLoginSettingsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminLinuxDoLoginSettingsError = UpdateAdminLinuxDoLoginSettingsErrors[keyof UpdateAdminLinuxDoLoginSettingsErrors];
+export type UpdateAdminLinuxDoLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type UpdateAdminLinuxDoLoginSettingsResponse = UpdateAdminLinuxDoLoginSettingsResponses[keyof UpdateAdminLinuxDoLoginSettingsResponses];
+export type GetAdminWeChatOAuthLoginSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/wechat';
+};
+export type GetAdminWeChatOAuthLoginSettingsErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminWeChatOAuthLoginSettingsError = GetAdminWeChatOAuthLoginSettingsErrors[keyof GetAdminWeChatOAuthLoginSettingsErrors];
+export type GetAdminWeChatOAuthLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type GetAdminWeChatOAuthLoginSettingsResponse = GetAdminWeChatOAuthLoginSettingsResponses[keyof GetAdminWeChatOAuthLoginSettingsResponses];
+export type UpdateAdminWeChatOAuthLoginSettingsData = {
+    body: AdminOAuthLoginProviderSettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/wechat';
+};
+export type UpdateAdminWeChatOAuthLoginSettingsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminWeChatOAuthLoginSettingsError = UpdateAdminWeChatOAuthLoginSettingsErrors[keyof UpdateAdminWeChatOAuthLoginSettingsErrors];
+export type UpdateAdminWeChatOAuthLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type UpdateAdminWeChatOAuthLoginSettingsResponse = UpdateAdminWeChatOAuthLoginSettingsResponses[keyof UpdateAdminWeChatOAuthLoginSettingsResponses];
+export type GetAdminTelegramOAuthLoginSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/telegram';
+};
+export type GetAdminTelegramOAuthLoginSettingsErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminTelegramOAuthLoginSettingsError = GetAdminTelegramOAuthLoginSettingsErrors[keyof GetAdminTelegramOAuthLoginSettingsErrors];
+export type GetAdminTelegramOAuthLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type GetAdminTelegramOAuthLoginSettingsResponse = GetAdminTelegramOAuthLoginSettingsResponses[keyof GetAdminTelegramOAuthLoginSettingsResponses];
+export type UpdateAdminTelegramOAuthLoginSettingsData = {
+    body: AdminOAuthLoginProviderSettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/telegram';
+};
+export type UpdateAdminTelegramOAuthLoginSettingsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminTelegramOAuthLoginSettingsError = UpdateAdminTelegramOAuthLoginSettingsErrors[keyof UpdateAdminTelegramOAuthLoginSettingsErrors];
+export type UpdateAdminTelegramOAuthLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type UpdateAdminTelegramOAuthLoginSettingsResponse = UpdateAdminTelegramOAuthLoginSettingsResponses[keyof UpdateAdminTelegramOAuthLoginSettingsResponses];
+export type GetAdminGoogleOAuthLoginSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/google';
+};
+export type GetAdminGoogleOAuthLoginSettingsErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminGoogleOAuthLoginSettingsError = GetAdminGoogleOAuthLoginSettingsErrors[keyof GetAdminGoogleOAuthLoginSettingsErrors];
+export type GetAdminGoogleOAuthLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type GetAdminGoogleOAuthLoginSettingsResponse = GetAdminGoogleOAuthLoginSettingsResponses[keyof GetAdminGoogleOAuthLoginSettingsResponses];
+export type UpdateAdminGoogleOAuthLoginSettingsData = {
+    body: AdminOAuthLoginProviderSettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/authentication-settings/oauth/google';
+};
+export type UpdateAdminGoogleOAuthLoginSettingsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminGoogleOAuthLoginSettingsError = UpdateAdminGoogleOAuthLoginSettingsErrors[keyof UpdateAdminGoogleOAuthLoginSettingsErrors];
+export type UpdateAdminGoogleOAuthLoginSettingsResponses = {
+    200: AdminOAuthLoginProviderSettings;
+};
+export type UpdateAdminGoogleOAuthLoginSettingsResponse = UpdateAdminGoogleOAuthLoginSettingsResponses[keyof UpdateAdminGoogleOAuthLoginSettingsResponses];

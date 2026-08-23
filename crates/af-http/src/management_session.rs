@@ -1,4 +1,5 @@
 use af_admin::{IssuedSession, LoginCredentials, SessionAuthenticationError};
+use af_domain::UserId;
 use axum::{
     Json,
     extract::{Extension, State},
@@ -18,6 +19,10 @@ pub(crate) struct LoginRequest {
     pub(crate) username: String,
     #[schema(max_length = 4096, format = Password)]
     pub(crate) password: String,
+    #[schema(min_length = 6, max_length = 128, write_only)]
+    pub(crate) totp_code: Option<String>,
+    #[schema(max_length = 2048, write_only)]
+    pub(crate) turnstile_token: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -66,9 +71,19 @@ pub(crate) async fn login_with_credentials(
     username: String,
     password: String,
 ) -> Result<Response, ManagementError> {
-    login_with_authenticator(
+    login_with_credentials_and_totp(state, username, password, None).await
+}
+
+/// 使用用户名密码和可选二次验证码完成认证。
+pub(crate) async fn login_with_credentials_and_totp(
+    state: &HttpState,
+    username: String,
+    password: String,
+    totp_code: Option<String>,
+) -> Result<Response, ManagementError> {
+    login_with_authenticator_and_totp(
         state.session_authenticator.as_ref(),
-        LoginCredentials::new(username, password),
+        LoginCredentials::new(username, password).with_totp_code(totp_code),
     )
     .await
 }
@@ -78,9 +93,29 @@ pub(crate) async fn login_with_authenticator(
     authenticator: &dyn af_admin::SessionAuthenticator,
     credentials: LoginCredentials,
 ) -> Result<Response, ManagementError> {
+    login_with_authenticator_and_totp(authenticator, credentials).await
+}
+
+/// 使用统一认证器签发登录会话，并保留二次验证码的清零边界。
+pub(crate) async fn login_with_authenticator_and_totp(
+    authenticator: &dyn af_admin::SessionAuthenticator,
+    credentials: LoginCredentials,
+) -> Result<Response, ManagementError> {
     let result = authenticator.login(&credentials).await;
     drop(credentials);
     let session = result.map_err(map_session_error)?;
+    Ok(no_store_json(login_response(session)))
+}
+
+/// 为已经通过外部身份校验的用户签发现有 bearer 会话响应。
+pub(crate) async fn issue_session_for_user(
+    authenticator: &dyn af_admin::SessionAuthenticator,
+    user_id: UserId,
+) -> Result<Response, ManagementError> {
+    let session = authenticator
+        .issue_for_user(user_id)
+        .await
+        .map_err(map_session_error)?;
     Ok(no_store_json(login_response(session)))
 }
 
@@ -117,6 +152,8 @@ fn session_user(principal: af_admin::SessionPrincipal) -> SessionUser {
 fn map_session_error(error: SessionAuthenticationError) -> ManagementError {
     match error {
         SessionAuthenticationError::InvalidCredentials => ManagementError::InvalidCredentials,
+        SessionAuthenticationError::TwoFactorRequired => ManagementError::TwoFactorRequired,
+        SessionAuthenticationError::TwoFactorInvalid => ManagementError::TwoFactorInvalid,
         SessionAuthenticationError::InvalidSession => ManagementError::InvalidSession,
         SessionAuthenticationError::Internal => ManagementError::Internal,
     }

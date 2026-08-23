@@ -13,6 +13,7 @@ mod error;
 mod factory;
 mod gemini;
 mod jina;
+mod mimicry;
 mod openai;
 mod request;
 mod responses_websocket_pool;
@@ -46,6 +47,10 @@ pub use factory::{
 };
 pub use gemini::GeminiAdaptor;
 pub use jina::JinaAdaptor;
+pub use mimicry::{
+    BuiltInClientSimulation, ClientSimulationContext, ClientSimulationHeaders,
+    ClientSimulationMiddleware, MAX_CLIENT_SIMULATION_HEADER_VALUE_BYTES, apply_client_simulation,
+};
 pub use openai::OpenAiAdaptor;
 pub use request::{
     MAX_UPSTREAM_REQUEST_BODY_BYTES, MAX_UPSTREAM_REQUEST_HEADER_COUNT,
@@ -74,7 +79,7 @@ pub use vertex::{
 };
 pub use xai_video::XaiVideoAdaptor;
 
-pub use af_domain::{ChannelType, CredentialKind, Operation, Protocol};
+pub use af_domain::{ChannelType, ClientSimulationProfile, CredentialKind, Operation, Protocol};
 pub use af_httpclient::{
     Bytes, HeaderMap, HeaderName, HeaderValue, HttpClientConfig, HttpClientPool, HttpTimeouts,
     Method, PooledClient, PooledClientIdentity, ProxyConfig, RemoteDnsPolicy, StatusCode,

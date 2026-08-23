@@ -83,6 +83,7 @@ pub(crate) async fn non_deleted_token_count(
 ) -> Result<u64, TokenOwnerGuardError> {
     tokens::Entity::find()
         .filter(tokens::Column::UserId.eq(owner_user_id.get()))
+        .filter(tokens::Column::OrganizationId.is_null())
         .filter(tokens::Column::DeletedAt.is_null())
         .count(transaction)
         .await

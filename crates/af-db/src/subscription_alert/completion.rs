@@ -1,17 +1,22 @@
 use std::time::Duration;
 
 use sea_orm::sea_query::Expr;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, entity::prelude::TimeDateTimeWithTimeZone};
+use sea_orm::{
+    ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter,
+    entity::prelude::TimeDateTimeWithTimeZone,
+};
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
     DatabasePool, MAX_BALANCE_ALERT_ATTEMPTS,
     balance_alert::{BalanceAlertCompletionOutcome, BalanceAlertDeliveryFailureKind},
     entity::subscription_balance_alert_events,
+    notification::{NotificationDeliveryState, NotificationKind, update_delivery_state},
 };
 
 use super::{
     STATUS_FAILED, STATUS_PENDING, STATUS_SENDING, STATUS_SENT,
+    storage::{begin, commit, rollback},
     types::{SubscriptionBalanceAlertDeliveryLease, SubscriptionBalanceAlertRepositoryError},
 };
 
@@ -25,6 +30,7 @@ pub(super) async fn mark_sent(
         .version
         .checked_add(1)
         .ok_or(SubscriptionBalanceAlertRepositoryError::Invariant)?;
+    let transaction = begin(pool).await?;
     let result = subscription_balance_alert_events::Entity::update_many()
         .col_expr(
             subscription_balance_alert_events::Column::Status,
@@ -49,11 +55,28 @@ pub(super) async fn mark_sent(
         .filter(subscription_balance_alert_events::Column::Id.eq(lease.event_id))
         .filter(subscription_balance_alert_events::Column::Status.eq(STATUS_SENDING))
         .filter(subscription_balance_alert_events::Column::Version.eq(lease.version))
-        .exec(pool.connection())
+        .exec(&transaction)
         .with_subscriber(NoSubscriber::default())
         .await
         .map_err(|_| SubscriptionBalanceAlertRepositoryError::Query)?;
-    completion_outcome(result.rows_affected)
+    match completion_outcome(result.rows_affected)? {
+        BalanceAlertCompletionOutcome::Stale => {
+            rollback(transaction).await?;
+            Ok(BalanceAlertCompletionOutcome::Stale)
+        }
+        BalanceAlertCompletionOutcome::Completed => {
+            sync_notification_state(
+                &transaction,
+                &lease.notification_source_key,
+                NotificationDeliveryState::Accepted,
+                lease.attempt_count(),
+                sent_at,
+            )
+            .await?;
+            commit(transaction).await?;
+            Ok(BalanceAlertCompletionOutcome::Completed)
+        }
+    }
 }
 
 /// 使用领取版本记录一次失败，并推进到退避重试或终态失败。
@@ -79,6 +102,7 @@ pub(super) async fn record_failure(
         .version
         .checked_add(1)
         .ok_or(SubscriptionBalanceAlertRepositoryError::Invariant)?;
+    let transaction = begin(pool).await?;
     let result = subscription_balance_alert_events::Entity::update_many()
         .col_expr(
             subscription_balance_alert_events::Column::Status,
@@ -107,11 +131,32 @@ pub(super) async fn record_failure(
         .filter(subscription_balance_alert_events::Column::Id.eq(lease.event_id))
         .filter(subscription_balance_alert_events::Column::Status.eq(STATUS_SENDING))
         .filter(subscription_balance_alert_events::Column::Version.eq(lease.version))
-        .exec(pool.connection())
+        .exec(&transaction)
         .with_subscriber(NoSubscriber::default())
         .await
         .map_err(|_| SubscriptionBalanceAlertRepositoryError::Query)?;
-    completion_outcome(result.rows_affected)
+    match completion_outcome(result.rows_affected)? {
+        BalanceAlertCompletionOutcome::Stale => {
+            rollback(transaction).await?;
+            Ok(BalanceAlertCompletionOutcome::Stale)
+        }
+        BalanceAlertCompletionOutcome::Completed => {
+            sync_notification_state(
+                &transaction,
+                &lease.notification_source_key,
+                if terminal {
+                    NotificationDeliveryState::Failed
+                } else {
+                    NotificationDeliveryState::Queued
+                },
+                lease.attempt_count(),
+                failed_at,
+            )
+            .await?;
+            commit(transaction).await?;
+            Ok(BalanceAlertCompletionOutcome::Completed)
+        }
+    }
 }
 
 fn retry_delay(attempt_count: i16) -> Result<Duration, SubscriptionBalanceAlertRepositoryError> {
@@ -141,4 +186,23 @@ fn completion_outcome(
         1 => Ok(BalanceAlertCompletionOutcome::Completed),
         _ => Err(SubscriptionBalanceAlertRepositoryError::Invariant),
     }
+}
+
+async fn sync_notification_state(
+    transaction: &DatabaseTransaction,
+    source_key: &str,
+    state: NotificationDeliveryState,
+    attempts: i16,
+    updated_at: TimeDateTimeWithTimeZone,
+) -> Result<(), SubscriptionBalanceAlertRepositoryError> {
+    update_delivery_state(
+        transaction,
+        NotificationKind::SubscriptionBalanceAlert,
+        source_key,
+        state,
+        attempts,
+        updated_at,
+    )
+    .await
+    .map_err(|_| SubscriptionBalanceAlertRepositoryError::Query)
 }

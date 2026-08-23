@@ -3,7 +3,10 @@
 mod credential_decryption;
 mod credential_encryption;
 mod credential_secret;
+mod diagnostic_snapshot;
+mod login_oauth;
 mod oauth;
+mod organization_invitation;
 mod system_secret;
 
 pub use credential_decryption::{
@@ -17,6 +20,10 @@ pub use credential_secret::{
     MAX_AWS_ACCESS_KEY_ID_BYTES, MAX_AWS_SECRET_ACCESS_KEY_BYTES, MAX_AWS_SESSION_TOKEN_BYTES,
     MAX_GOOGLE_PRIVATE_KEY_BYTES, MAX_GOOGLE_PRIVATE_KEY_ID_BYTES,
     MAX_GOOGLE_SERVICE_ACCOUNT_EMAIL_BYTES, PlainCredentialSecret,
+};
+pub use diagnostic_snapshot::DiagnosticSnapshotCipher;
+pub use login_oauth::{
+    LoginOAuthProvider, OAuthLoginClient, OAuthLoginClientError, OAuthLoginIdentity,
 };
 pub use oauth::{
     CustomOAuth2EndpointBundle, CustomOAuth2EndpointError, DEFAULT_MAX_OAUTH_REFRESH_FLIGHTS,
@@ -38,6 +45,10 @@ pub use oauth::{
     OAuthTokenExchange, OAuthTokenExchangeError, OAuthTokenPersistenceError,
     OAuthTokenPersistenceOutcome, OAuthTokenPersistenceService, OAuthTokenRefreshRequest,
     OAuthTokenRequestEncoding, OAuthTokenSet, UpstreamOAuthProvider,
+};
+pub use organization_invitation::{
+    DecryptedOrganizationInvitationEmail, OrganizationInvitationCipher,
+    OrganizationInvitationCipherError, PlainOrganizationInvitationEmail,
 };
 pub use system_secret::{
     DecryptedSystemSecret, PlainSystemSecret, SystemSecretCipher, SystemSecretError,

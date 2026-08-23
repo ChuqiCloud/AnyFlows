@@ -18,6 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { UserWalletEntry, UserWalletSummary } from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
+import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import { useUserWalletEntries, useUserWalletSummary } from './wallet-api'
 import { WalletRedemptionPanel } from './wallet-redemption-panel'
 import { WalletTopupPanel } from './wallet-topup-panel'
@@ -35,8 +36,8 @@ export function WalletPage() {
   const { i18n, t } = useTranslation()
   const summaryQuery = useUserWalletSummary()
   const entriesQuery = useUserWalletEntries()
+  const { formatQuota } = useBalanceDisplay()
   const locale = i18n.resolvedLanguage === 'zh' ? 'zh-CN' : 'en-US'
-  const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale])
   const timeFormat = useMemo(() => new Intl.DateTimeFormat(locale, {
     dateStyle: 'medium',
     timeStyle: 'short',
@@ -82,7 +83,7 @@ export function WalletPage() {
           onRetry={() => void summaryQuery.refetch()}
         />
       ) : (
-        <WalletSummaryCards summary={summaryQuery.data} formatQuota={numberFormat.format} />
+        <WalletSummaryCards summary={summaryQuery.data} formatQuota={formatQuota} />
       )}
 
       <WalletTopupPanel />
@@ -105,7 +106,7 @@ export function WalletPage() {
           <WalletLedger
             entries={entries}
             query={entriesQuery}
-            formatQuota={numberFormat.format}
+            formatQuota={formatQuota}
             formatTime={(value) => timeFormat.format(value * 1_000)}
           />
         </CardContent>
