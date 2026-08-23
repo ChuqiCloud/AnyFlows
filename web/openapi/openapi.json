@@ -7703,11 +7703,11 @@
           {
             "name": "role_key",
             "in": "path",
+            "description": "企业自定义角色公开标识",
             "required": true,
             "schema": {
               "type": "string"
-            },
-            "description": "企业自定义角色公开标识"
+            }
           }
         ],
         "responses": {
@@ -7798,11 +7798,11 @@
           {
             "name": "role_key",
             "in": "path",
+            "description": "企业自定义角色公开标识",
             "required": true,
             "schema": {
               "type": "string"
-            },
-            "description": "企业自定义角色公开标识"
+            }
           }
         ],
         "requestBody": {
@@ -7915,11 +7915,11 @@
           {
             "name": "role_key",
             "in": "path",
+            "description": "企业自定义角色公开标识",
             "required": true,
             "schema": {
               "type": "string"
-            },
-            "description": "企业自定义角色公开标识"
+            }
           }
         ],
         "requestBody": {
