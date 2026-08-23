@@ -413,7 +413,7 @@ export const listAdminRefundsOptions = (options?: Options<ListAdminRefundsData>)
 });
 export const listAdminRefundsInfiniteQueryKey = (options?: Options<ListAdminRefundsData>): QueryKey<Options<ListAdminRefundsData>> => createQueryKey('listAdminRefunds', options, true);
 export const listAdminRefundsInfiniteOptions = (options?: Options<ListAdminRefundsData>) => {
-    const opts = infiniteQueryOptions<ListAdminRefundsResponse, ListAdminRefundsError, InfiniteData<ListAdminRefundsResponse>, QueryKey<Options<ListAdminRefundsData>>, number | null | Pick<QueryKey<Options<ListAdminRefundsData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
+    const opts = infiniteQueryOptions<ListAdminRefundsResponse, ListAdminRefundsError, InfiniteData<ListAdminRefundsResponse>, QueryKey<Options<ListAdminRefundsData>>, number | Pick<QueryKey<Options<ListAdminRefundsData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
     // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
     {
         queryFn: async ({ pageParam, queryKey, signal }) => {

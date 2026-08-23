@@ -2878,9 +2878,9 @@ export type ListAdminRefundsData = {
     body?: never;
     path?: never;
     query?: {
-        after?: number | null;
-        approval_status?: string | null;
-        limit?: number | null;
+        after?: number;
+        approval_status?: string;
+        limit?: number;
     };
     url: '/api/admin/refunds';
 };
