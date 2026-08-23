@@ -692,6 +692,7 @@ pub struct OrganizationMembershipRecord {
     pub(super) role: OrganizationRole,
     pub(super) team_id: Option<OrganizationTeamId>,
     pub(super) custom_role_id: Option<OrganizationCustomRoleId>,
+    pub(super) custom_role_key: Option<OrganizationCustomRoleKey>,
     pub(super) status: OrganizationMembershipStatus,
     pub(super) joined_at: i64,
     pub(super) suspended_at: Option<i64>,
@@ -741,6 +742,20 @@ impl OrganizationMembershipRecord {
     #[must_use]
     pub const fn custom_role_id(&self) -> Option<OrganizationCustomRoleId> {
         self.custom_role_id
+    }
+
+    /// 返回成员当前绑定的自定义角色公开标识。
+    #[must_use]
+    pub const fn custom_role_key(&self) -> Option<OrganizationCustomRoleKey> {
+        self.custom_role_key
+    }
+
+    pub(super) const fn with_custom_role_key(
+        mut self,
+        custom_role_key: Option<OrganizationCustomRoleKey>,
+    ) -> Self {
+        self.custom_role_key = custom_role_key;
+        self
     }
 
     /// 返回成员 CAS 版本。

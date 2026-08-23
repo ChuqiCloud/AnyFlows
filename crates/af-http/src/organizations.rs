@@ -4,11 +4,13 @@ use af_admin::{
     DEFAULT_ORGANIZATION_INVITATION_TTL_SECONDS, IssuedOrganizationInvitation,
     OrganizationAccessSummary, OrganizationActivityService, OrganizationAuditOutcome,
     OrganizationAuthorizationError, OrganizationAuthorizationService,
-    OrganizationCustomRoleChangeCommand, OrganizationCustomRoleCreateCommand,
-    OrganizationCustomRoleDisableCommand, OrganizationCustomRoleListQuery,
-    OrganizationCustomRoleService, OrganizationCustomRoleServiceError,
-    OrganizationEntitlementSummary, OrganizationInvitationBatchCommand,
-    OrganizationInvitationBatchResult, OrganizationInvitationCommand, OrganizationInvitationError,
+    OrganizationCustomRoleBindingCommand, OrganizationCustomRoleBindingService,
+    OrganizationCustomRoleBindingServiceError, OrganizationCustomRoleChangeCommand,
+    OrganizationCustomRoleCreateCommand, OrganizationCustomRoleDisableCommand,
+    OrganizationCustomRoleListQuery, OrganizationCustomRoleService,
+    OrganizationCustomRoleServiceError, OrganizationEntitlementSummary,
+    OrganizationInvitationBatchCommand, OrganizationInvitationBatchResult,
+    OrganizationInvitationCommand, OrganizationInvitationError,
     OrganizationInvitationPreviewCommand, OrganizationInvitationPreviewResult,
     OrganizationInvitationRecord, OrganizationInvitationService, OrganizationManagementError,
     OrganizationManagementService, OrganizationMembershipChangeCommand,
@@ -51,6 +53,7 @@ pub(crate) struct OrganizationHttpState {
     invitation_service: Option<Arc<dyn OrganizationInvitationService>>,
     management_service: Option<Arc<dyn OrganizationManagementService>>,
     custom_role_service: Option<Arc<dyn OrganizationCustomRoleService>>,
+    custom_role_binding_service: Option<Arc<dyn OrganizationCustomRoleBindingService>>,
     activity_service: Arc<dyn OrganizationActivityService>,
 }
 
@@ -60,6 +63,7 @@ pub fn build_organization_router(
     invitation_service: Option<Arc<dyn OrganizationInvitationService>>,
     management_service: Option<Arc<dyn OrganizationManagementService>>,
     custom_role_service: Option<Arc<dyn OrganizationCustomRoleService>>,
+    custom_role_binding_service: Option<Arc<dyn OrganizationCustomRoleBindingService>>,
     activity_service: Arc<dyn OrganizationActivityService>,
     session_authenticator: Arc<dyn af_admin::SessionAuthenticator>,
 ) -> Router {
@@ -148,6 +152,14 @@ pub fn build_organization_router(
     } else {
         router
     };
+    let router = if custom_role_binding_service.is_some() {
+        router.route(
+            "/api/organizations/{organization_id}/members/{membership_id}/custom-role",
+            patch(set_organization_member_custom_role),
+        )
+    } else {
+        router
+    };
     router
         .layer(authentication)
         .layer(middleware::from_fn(ensure_request_id))
@@ -156,6 +168,7 @@ pub fn build_organization_router(
             invitation_service,
             management_service,
             custom_role_service,
+            custom_role_binding_service,
             activity_service,
         })
 }
@@ -192,6 +205,7 @@ pub struct OrganizationOverviewResponse {
 pub struct OrganizationEntitlementResponse {
     status: &'static str,
     team_management_enabled: bool,
+    custom_roles_enabled: bool,
     seat_limit: i64,
     active_seats: i64,
     remaining_seats: i64,
@@ -358,6 +372,23 @@ pub struct OrganizationCustomRoleDisableRequest {
     expected_version: i64,
 }
 
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationMemberCustomRoleRequest {
+    #[schema(required = true)]
+    role_key: Option<String>,
+    expected_version: i64,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationMemberCustomRoleResponse {
+    membership_id: i64,
+    #[schema(required = true)]
+    custom_role_key: Option<String>,
+    version: i64,
+}
+
 #[derive(Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct OrganizationCustomRoleResponse {
@@ -387,6 +418,8 @@ pub struct OrganizationMembershipResponse {
     user_id: i64,
     role: &'static str,
     team_id: Option<i64>,
+    #[schema(required = true)]
+    custom_role_key: Option<String>,
     status: &'static str,
     joined_at: i64,
     suspended_at: Option<i64>,
@@ -766,6 +799,92 @@ async fn record_custom_role_success(
     .await
 }
 
+/// 按成员版本绑定或清除活动 Member 的自定义角色。
+async fn set_organization_member_custom_role(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path((organization_id, membership_id)): Path<(i64, i64)>,
+    headers: HeaderMap,
+    Json(request): Json<OrganizationMemberCustomRoleRequest>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let membership_id = OrganizationMembershipId::new(membership_id)
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    let role_key = request
+        .role_key
+        .as_deref()
+        .map(parse_custom_role_key)
+        .transpose()?;
+    let operation = if role_key.is_some() {
+        "organization.member.custom_role.bind"
+    } else {
+        "organization.member.custom_role.clear"
+    };
+    let target_identifier = membership_id.get().to_string();
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::RolesAssign,
+        &request_id,
+        &headers,
+        operation,
+        "membership",
+        target_identifier.clone(),
+    )
+    .await?;
+    let service = state
+        .custom_role_binding_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let result = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::RolesAssign,
+        operation,
+        "membership",
+        target_identifier.clone(),
+        service
+            .set(
+                context.clone(),
+                OrganizationCustomRoleBindingCommand::new(
+                    membership_id,
+                    role_key,
+                    request.expected_version,
+                )
+                .map_err(map_custom_role_binding_error)?,
+            )
+            .await
+            .map_err(map_custom_role_binding_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::RolesAssign.code(),
+        operation,
+        "membership",
+        target_identifier,
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({
+            "custom_role_key": result.role_key().map(|key| key.persistence_key()),
+            "version": result.membership_version(),
+        })),
+    )
+    .await?;
+    Ok(no_store_json(OrganizationMemberCustomRoleResponse {
+        membership_id: result.membership_id().get(),
+        custom_role_key: result.role_key().map(|key| key.persistence_key()),
+        version: result.membership_version(),
+    }))
+}
+
 async fn list_organization_members(
     State(state): State<OrganizationHttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
@@ -785,6 +904,7 @@ async fn list_organization_members(
         .management_service
         .as_ref()
         .ok_or(ManagementError::Internal)?;
+    let include_custom_role_key = context.allows(OrganizationPermission::RolesRead);
     let page = service
         .list_members(context, query)
         .await
@@ -793,7 +913,9 @@ async fn list_organization_members(
         members: page
             .records()
             .iter()
-            .map(OrganizationMembershipResponse::from)
+            .map(|record| {
+                OrganizationMembershipResponse::from_record(record, include_custom_role_key)
+            })
             .collect(),
         next_cursor: page.next_cursor().map(OrganizationMembershipId::get),
     }))
@@ -1589,6 +1711,7 @@ impl From<OrganizationEntitlementSummary> for OrganizationEntitlementResponse {
         Self {
             status: summary.status().code(),
             team_management_enabled: summary.team_management_enabled(),
+            custom_roles_enabled: summary.custom_roles_enabled(),
             seat_limit: summary.seat_limit(),
             active_seats: summary.active_seats(),
             remaining_seats: summary.seat_limit().saturating_sub(summary.active_seats()),
@@ -1727,14 +1850,17 @@ impl OrganizationInvitationAcceptResponse {
     }
 }
 
-impl From<&OrganizationMembershipRecord> for OrganizationMembershipResponse {
-    fn from(record: &OrganizationMembershipRecord) -> Self {
+impl OrganizationMembershipResponse {
+    fn from_record(record: &OrganizationMembershipRecord, include_custom_role_key: bool) -> Self {
         Self {
             id: record.id().get(),
             organization_id: record.organization_id().get(),
             user_id: record.user_id().get(),
             role: organization_role_code(record.role()),
             team_id: record.team_id().map(OrganizationTeamId::get),
+            custom_role_key: include_custom_role_key
+                .then(|| record.custom_role_key().map(|key| key.persistence_key()))
+                .flatten(),
             status: organization_membership_status_code(record.status()),
             joined_at: record.joined_at(),
             suspended_at: record.suspended_at(),
@@ -1742,6 +1868,12 @@ impl From<&OrganizationMembershipRecord> for OrganizationMembershipResponse {
             invited_by_user_id: record.invited_by_user_id().map(af_domain::UserId::get),
             version: record.version(),
         }
+    }
+}
+
+impl From<&OrganizationMembershipRecord> for OrganizationMembershipResponse {
+    fn from(record: &OrganizationMembershipRecord) -> Self {
+        Self::from_record(record, false)
     }
 }
 
@@ -1986,6 +2118,27 @@ fn map_custom_role_error(error: OrganizationCustomRoleServiceError) -> Managemen
             ManagementError::OrganizationEntitlementRestricted
         }
         OrganizationCustomRoleServiceError::Internal => ManagementError::Internal,
+    }
+}
+
+fn map_custom_role_binding_error(
+    error: OrganizationCustomRoleBindingServiceError,
+) -> ManagementError {
+    match error {
+        OrganizationCustomRoleBindingServiceError::InvalidInput => ManagementError::InvalidRequest,
+        OrganizationCustomRoleBindingServiceError::Forbidden => ManagementError::Forbidden,
+        OrganizationCustomRoleBindingServiceError::NotFound
+        | OrganizationCustomRoleBindingServiceError::MembershipUnavailable
+        | OrganizationCustomRoleBindingServiceError::RoleUnavailable => {
+            ManagementError::OrganizationNotFound
+        }
+        OrganizationCustomRoleBindingServiceError::Conflict => {
+            ManagementError::OrganizationLifecycleConflict
+        }
+        OrganizationCustomRoleBindingServiceError::EntitlementRestricted => {
+            ManagementError::OrganizationEntitlementRestricted
+        }
+        OrganizationCustomRoleBindingServiceError::Internal => ManagementError::Internal,
     }
 }
 

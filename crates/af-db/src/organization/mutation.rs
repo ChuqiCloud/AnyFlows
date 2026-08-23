@@ -396,7 +396,8 @@ pub(super) async fn change_membership(
     let mut active = current.into_active_model();
     active.role = Set(change.role.code());
     active.team_id = Set(target_team_id);
-    if change.role != OrganizationRole::Member {
+    // 停用或提升固定角色后不得在未来恢复时重新激活旧自定义权限。
+    if change.role != OrganizationRole::Member || !change.status.is_active() {
         active.custom_role_id = Set(None);
     }
     active.status = Set(change.status.code());

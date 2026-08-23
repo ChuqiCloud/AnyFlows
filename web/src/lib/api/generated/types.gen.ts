@@ -1470,6 +1470,7 @@ export type OrganizationCustomRoleResponse = {
 export type OrganizationEntitlementResponse = {
     status: string;
     team_management_enabled: boolean;
+    custom_roles_enabled: boolean;
     seat_limit: number;
     active_seats: number;
     remaining_seats: number;
@@ -1480,6 +1481,15 @@ export type OrganizationEntitlementResponse = {
     audit_retention_days: number;
     valid_until: number;
     grace_until?: number | null;
+};
+export type OrganizationMemberCustomRoleRequest = {
+    role_key: string | null;
+    expected_version: number;
+};
+export type OrganizationMemberCustomRoleResponse = {
+    membership_id: number;
+    custom_role_key: string | null;
+    version: number;
 };
 export type OrganizationInvitationAcceptRequest = {
     token: string;
@@ -1560,6 +1570,7 @@ export type OrganizationMembershipResponse = {
     user_id: number;
     role: string;
     team_id?: number | null;
+    custom_role_key: string | null;
     status: string;
     joined_at: number;
     suspended_at?: number | null;
@@ -4363,6 +4374,28 @@ export type DisableOrganizationCustomRoleResponses = {
     200: OrganizationCustomRoleResponse;
 };
 export type DisableOrganizationCustomRoleResponse = DisableOrganizationCustomRoleResponses[keyof DisableOrganizationCustomRoleResponses];
+export type SetOrganizationMemberCustomRoleData = {
+    body: OrganizationMemberCustomRoleRequest;
+    path: {
+        organization_id: number;
+        membership_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/members/{membership_id}/custom-role';
+};
+export type SetOrganizationMemberCustomRoleErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type SetOrganizationMemberCustomRoleError = SetOrganizationMemberCustomRoleErrors[keyof SetOrganizationMemberCustomRoleErrors];
+export type SetOrganizationMemberCustomRoleResponses = {
+    200: OrganizationMemberCustomRoleResponse;
+};
+export type SetOrganizationMemberCustomRoleResponse = SetOrganizationMemberCustomRoleResponses[keyof SetOrganizationMemberCustomRoleResponses];
 export type GetAdminBalanceAlertSettingsData = {
     body?: never;
     path?: never;

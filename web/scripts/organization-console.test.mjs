@@ -36,6 +36,7 @@ test('企业成员、团队、邀请和钱包使用现有服务端契约', () =>
   const operations = [
     ['/api/organizations/{organization_id}/members', 'get', 'listOrganizationMembers'],
     ['/api/organizations/{organization_id}/members/{membership_id}', 'patch', 'changeOrganizationMember'],
+    ['/api/organizations/{organization_id}/members/{membership_id}/custom-role', 'patch', 'setOrganizationMemberCustomRole'],
     ['/api/organizations/{organization_id}/teams', 'get', 'listOrganizationTeams'],
     ['/api/organizations/{organization_id}/invitations/preview', 'post', 'previewOrganizationInvitations'],
     ['/api/organizations/{organization_id}/wallet', 'get', 'getOrganizationWallet'],
@@ -45,6 +46,22 @@ test('企业成员、团队、邀请和钱包使用现有服务端契约', () =>
   for (const [path, method, operationId] of operations) {
     assert.equal(openapi.paths[path][method].operationId, operationId)
   }
+})
+
+test('成员自定义角色分配遵循服务端授权、CAS 与公开标识边界', async () => {
+  const [apiSource, pageSource, editorSource] = await Promise.all([
+    readFile(new URL('../src/features/organization-members/organization-member-api.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/features/organization-members/organization-member-page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/features/organization-members/organization-member-editor-sheet.tsx', import.meta.url), 'utf8'),
+  ])
+  assert.equal(openapi.components.schemas.OrganizationMembershipResponse.properties.custom_role_key.type[1], 'null')
+  assert.equal(openapi.components.schemas.OrganizationMemberCustomRoleRequest.properties.role_key.type[1], 'null')
+  assert.match(apiSource, /useSetOrganizationMemberCustomRole/)
+  assert.match(apiSource, /setOrganizationMemberCustomRole/)
+  assert.match(pageSource, /organization\.roles\.assign/)
+  assert.match(pageSource, /custom_roles_enabled/)
+  assert.match(editorSource, /expected_version: updated\.version/)
+  assert.match(editorSource, /role_key: customRoleKey \|\| null/)
 })
 
 test('企业充值恢复状态按企业隔离', async () => {
@@ -65,6 +82,8 @@ test('企业控制台具备中英文入口和关键状态文案', async () => {
     assert.equal(typeof locale.nav.organizationWallet, 'string')
     assert.equal(typeof locale.nav.organizationSettings, 'string')
     assert.equal(typeof locale.organizationConsole.workspace.personal, 'string')
+    assert.equal(typeof locale.organizationConsole.members.fields.customRole, 'string')
+    assert.equal(typeof locale.organizationConsole.members.customRoles.disabledByEntitlement, 'string')
     assert.equal(typeof locale.organizationConsole.invitations.batch.preview, 'string')
     assert.equal(typeof locale.organizationConsole.wallet.adjustment.title, 'string')
     assert.equal(typeof locale.invitations.organization.accept, 'string')

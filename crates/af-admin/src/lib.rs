@@ -30,6 +30,7 @@ mod organization;
 mod organization_activity;
 mod organization_budget;
 mod organization_custom_role;
+mod organization_custom_role_binding;
 mod organization_invitation;
 mod organization_management;
 mod organization_token;
@@ -235,6 +236,11 @@ pub use organization_custom_role::{
     OrganizationCustomRoleDisableCommand, OrganizationCustomRoleFuture,
     OrganizationCustomRoleListQuery, OrganizationCustomRolePage, OrganizationCustomRolePageFuture,
     OrganizationCustomRoleService, OrganizationCustomRoleServiceError,
+};
+pub use organization_custom_role_binding::{
+    DatabaseOrganizationCustomRoleBindingService, OrganizationCustomRoleBindingCommand,
+    OrganizationCustomRoleBindingFuture, OrganizationCustomRoleBindingResult,
+    OrganizationCustomRoleBindingService, OrganizationCustomRoleBindingServiceError,
 };
 pub use organization_invitation::{
     AcceptedOrganizationInvitation, DEFAULT_ORGANIZATION_INVITATION_TTL_SECONDS,
