@@ -9,6 +9,7 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        // SQLite 不支持一次 ALTER TABLE 携带多个选项，逐列执行以保持三方言一致。
         manager
             .alter_table(
                 Table::alter()
@@ -19,9 +20,23 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .default(1_i16),
                     )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(refund_requests::Entity)
                     .add_column(
                         ColumnDef::new(refund_requests::Column::ApprovalActorId).big_integer(),
                     )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(refund_requests::Entity)
                     .add_column(
                         ColumnDef::new(refund_requests::Column::ApprovalReason).string_len(512),
                     )
@@ -76,7 +91,21 @@ impl MigrationTrait for Migration {
                 Table::alter()
                     .table(refund_requests::Entity)
                     .drop_column(refund_requests::Column::ApprovalReason)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(refund_requests::Entity)
                     .drop_column(refund_requests::Column::ApprovalActorId)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(refund_requests::Entity)
                     .drop_column(refund_requests::Column::ApprovalStatus)
                     .to_owned(),
             )
