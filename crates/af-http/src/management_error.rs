@@ -212,6 +212,10 @@ pub(crate) enum ManagementError {
     OauthProviderNotConfigured,
     /// 用户登录 OAuth Provider 设置已被其他管理员更新。
     OauthLoginSettingsConflict,
+    /// 自定义 OAuth2 Provider 不存在。
+    CustomOAuth2ProviderNotFound,
+    /// 自定义 OAuth2 Provider 版本已被其他管理员推进。
+    CustomOAuth2ProviderConflict,
     /// 目标 OAuth 凭据已经绑定其他 provider。
     OauthCredentialProviderMismatch,
     /// 单实例待完成 OAuth 授权已达到容量上限。
@@ -984,6 +988,20 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "oauth_login_settings_conflict",
                     message: "OAuth login settings changed",
+                },
+            ),
+            Self::CustomOAuth2ProviderNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "custom_oauth2_provider_not_found",
+                    message: "Custom OAuth2 provider not found",
+                },
+            ),
+            Self::CustomOAuth2ProviderConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "custom_oauth2_provider_conflict",
+                    message: "Custom OAuth2 provider changed",
                 },
             ),
             Self::OauthCredentialProviderMismatch => (

@@ -254,6 +254,8 @@ pub enum PlatformPermission {
     OrganizationUsageLogsReadAll,
     /// 跨企业读取企业管理审计。
     OrganizationAuditReadAll,
+    /// 管理自定义 OAuth2 Provider 配置。
+    CustomOAuth2ProvidersManage,
 }
 
 impl PlatformPermission {
@@ -267,6 +269,7 @@ impl PlatformPermission {
             Self::OrganizationsReadAll => "platform.organizations.read_all",
             Self::OrganizationUsageLogsReadAll => "platform.organization_usage_logs.read_all",
             Self::OrganizationAuditReadAll => "platform.organization_audit.read_all",
+            Self::CustomOAuth2ProvidersManage => "platform.custom_oauth2_providers.manage",
         }
     }
 }

@@ -4,6 +4,7 @@ mod balance_alert_settings;
 mod channels;
 mod credential_proxies;
 mod credentials;
+mod custom_oauth2;
 mod dashboard;
 mod debug_traces;
 mod email_settings;
@@ -102,6 +103,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(channels::document());
     document.merge(credentials::document());
     document.merge(credential_proxies::document());
+    document.merge(custom_oauth2::document());
     document.merge(debug_traces::document());
     document.merge(payment_webhook::document());
     document.merge(refund_webhook::document());
@@ -200,7 +202,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 156);
+        assert_eq!(document.paths.paths.len(), 158);
         let operation_count = document
             .paths
             .paths
@@ -221,7 +223,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 215);
+        assert_eq!(operation_count, 218);
         assert!(
             document
                 .components
@@ -295,6 +297,9 @@ mod tests {
             "updateAdminTelegramOAuthLoginSettings",
             "getAdminGoogleOAuthLoginSettings",
             "updateAdminGoogleOAuthLoginSettings",
+            "listAdminCustomOAuth2Providers",
+            "getAdminCustomOAuth2Provider",
+            "updateAdminCustomOAuth2Provider",
             "confirmPasswordReset",
             "completeAdminOAuthManualCallback",
             "getUserProfile",
@@ -470,7 +475,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 368);
+        assert_eq!(schemas.len(), 371);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminDashboardChannelFlow"));
         assert!(schemas.contains_key("AdminDashboardFailure"));
@@ -614,6 +619,9 @@ mod tests {
         assert!(schemas.contains_key("AdminOAuthManualCallbackRequest"));
         assert!(schemas.contains_key("AdminOAuthCompletionStatus"));
         assert!(schemas.contains_key("AdminOAuthCompletionResponse"));
+        assert!(schemas.contains_key("AdminCustomOAuth2Provider"));
+        assert!(schemas.contains_key("AdminCustomOAuth2ProviderList"));
+        assert!(schemas.contains_key("AdminCustomOAuth2ProviderRequest"));
         assert!(schemas.contains_key("AdminUserCreateRequest"));
         assert!(schemas.contains_key("AdminUserUpdateRequest"));
         assert!(schemas.contains_key("AdminWalletEntry"));

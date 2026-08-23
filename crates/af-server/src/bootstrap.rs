@@ -8,28 +8,30 @@ use af_account::{
 };
 use af_admin::{
     AdminBalanceAlertSettingsService, AdminChannelReader, AdminChannelWriter,
-    AdminCredentialProxyService, AdminEmailSettingsService, AdminGroupReader, AdminGroupWriter,
-    AdminModelPriceService, AdminModelReader, AdminModelSyncService, AdminModelWriter,
-    AdminNetworkSettingsError, AdminRefundService, AdminRouteReader, AdminRouteWriter,
-    AdminTokenReader, AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter,
-    AdminWalletService, BalanceAlertTask, DatabaseAdminBalanceAlertSettingsService,
-    DatabaseAdminChannelReader, DatabaseAdminChannelWriter, DatabaseAdminCredentialProxyService,
-    DatabaseAdminEmailSettingsService, DatabaseAdminGroupReader, DatabaseAdminGroupWriter,
-    DatabaseAdminModelPriceService, DatabaseAdminModelReader, DatabaseAdminModelSyncService,
-    DatabaseAdminModelWriter, DatabaseAdminNetworkSettingsService,
-    DatabaseAdminPaymentSettingsService, DatabaseAdminRefundService, DatabaseAdminRouteReader,
-    DatabaseAdminRouteWriter, DatabaseAdminTokenReader, DatabaseAdminTokenWriter,
-    DatabaseAdminUsageLogReader, DatabaseAdminUserReader, DatabaseAdminUserWriter,
-    DatabaseAdminWalletService, DatabaseInitialSetup, DatabaseOAuthLoginService,
-    DatabaseOrganizationActivityService, DatabaseOrganizationBudgetService,
-    DatabaseOrganizationTokenService, DatabaseOrganizationWalletService,
-    DatabasePasskeyAuthenticationService, DatabasePasswordResetService,
-    DatabasePlatformAuditService, DatabasePlaygroundConversationService,
-    DatabasePlaygroundShareService, DatabaseRedemptionService, DatabaseRegistrationService,
-    DatabaseSessionAuthenticator, DatabaseSiteSettingsService, DatabaseSubscriptionService,
-    DatabaseTokenAuthenticator, DatabaseUserInvitationService, DatabaseUserNotificationService,
-    DatabaseUserProfileService, DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery,
-    InitialSetup, ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
+    AdminCredentialProxyService, AdminCustomOAuth2ProviderService, AdminEmailSettingsService,
+    AdminGroupReader, AdminGroupWriter, AdminModelPriceService, AdminModelReader,
+    AdminModelSyncService, AdminModelWriter, AdminNetworkSettingsError, AdminRefundService,
+    AdminRouteReader, AdminRouteWriter, AdminTokenReader, AdminTokenWriter, AdminUsageLogReader,
+    AdminUserReader, AdminUserWriter, AdminWalletService, BalanceAlertTask,
+    DatabaseAdminBalanceAlertSettingsService, DatabaseAdminChannelReader,
+    DatabaseAdminChannelWriter, DatabaseAdminCredentialProxyService,
+    DatabaseAdminCustomOAuth2ProviderService, DatabaseAdminEmailSettingsService,
+    DatabaseAdminGroupReader, DatabaseAdminGroupWriter, DatabaseAdminModelPriceService,
+    DatabaseAdminModelReader, DatabaseAdminModelSyncService, DatabaseAdminModelWriter,
+    DatabaseAdminNetworkSettingsService, DatabaseAdminPaymentSettingsService,
+    DatabaseAdminRefundService, DatabaseAdminRouteReader, DatabaseAdminRouteWriter,
+    DatabaseAdminTokenReader, DatabaseAdminTokenWriter, DatabaseAdminUsageLogReader,
+    DatabaseAdminUserReader, DatabaseAdminUserWriter, DatabaseAdminWalletService,
+    DatabaseInitialSetup, DatabaseOAuthLoginService, DatabaseOrganizationActivityService,
+    DatabaseOrganizationBudgetService, DatabaseOrganizationTokenService,
+    DatabaseOrganizationWalletService, DatabasePasskeyAuthenticationService,
+    DatabasePasswordResetService, DatabasePlatformAuditService,
+    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
+    DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
+    DatabaseSiteSettingsService, DatabaseSubscriptionService, DatabaseTokenAuthenticator,
+    DatabaseUserInvitationService, DatabaseUserNotificationService, DatabaseUserProfileService,
+    DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery, InitialSetup,
+    ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
     OAuthLoginService, OrganizationActivityService, OrganizationActivityServiceConfigError,
     OrganizationBudgetService, OrganizationTokenService, OrganizationWalletService,
     PasskeyAuthenticationService, PasskeyAuthenticationServiceConfigError, PasswordResetService,
@@ -70,7 +72,8 @@ use af_db::{
     AuthChallengeRepository, AuthChallengeRepositoryConfigError, BalanceAlertRepository,
     BalanceAlertRepositoryConfigError, BalanceAlertSettingsRepository,
     BalanceAlertSettingsRepositoryConfigError, ChannelStateRepository, CredentialProxyRepository,
-    CredentialProxyRepositoryConfigError, CredentialStateRepository, DatabaseError,
+    CredentialProxyRepositoryConfigError, CredentialStateRepository,
+    CustomOAuth2ProviderRepository, CustomOAuth2ProviderRepositoryError, DatabaseError,
     DatabaseOptions, DatabaseOptionsError, DatabasePool, DebugTraceRepository,
     DebugTraceRepositoryConfigError, DebugTraceRepositoryError, DebugTraceSnapshotCipherError,
     EmailSettingsRepository, EmailSettingsRepositoryConfigError, InitialSetupRepository,
@@ -211,6 +214,7 @@ pub struct AuthenticationReady {
     site_settings_repository: SiteSettingsRepository,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
     admin_credential_proxy_service: Arc<dyn AdminCredentialProxyService>,
+    custom_oauth2_provider_repository: CustomOAuth2ProviderRepository,
     network_settings_repository: NetworkSettingsRepository,
     payment_settings_repository: PaymentSettingsRepository,
     system_secret_cipher: SystemSecretCipher,
@@ -451,6 +455,9 @@ pub enum BootstrapError {
     /// 凭据专属代理目录仓储的启动参数无效。
     #[error("专属代理目录仓储启动参数无效")]
     CredentialProxyRepository(#[source] CredentialProxyRepositoryConfigError),
+    /// 自定义 OAuth2 Provider 仓储无法从数据库连接池装配。
+    #[error("自定义 OAuth2 Provider 仓储启动参数无效")]
+    CustomOAuth2ProviderRepository(#[source] CustomOAuth2ProviderRepositoryError),
     /// 余额预警全局设置仓储的启动参数无效。
     #[error("余额预警设置仓储启动参数无效")]
     BalanceAlertSettingsRepository(#[source] BalanceAlertSettingsRepositoryConfigError),
@@ -818,6 +825,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::SiteSettingsRepository)?;
+        let custom_oauth2_provider_repository = CustomOAuth2ProviderRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::CustomOAuth2ProviderRepository)?;
         let balance_alert_settings_repository = BalanceAlertSettingsRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -1133,6 +1145,7 @@ impl Bootstrap<DatabaseReady> {
                 site_settings_repository,
                 admin_email_settings_service: Arc::new(admin_email_settings_service),
                 admin_credential_proxy_service,
+                custom_oauth2_provider_repository,
                 network_settings_repository,
                 payment_settings_repository,
                 system_secret_cipher,
@@ -2165,6 +2178,14 @@ impl Bootstrap<Supervised> {
                 )),
             ));
         let user_topup_service: Arc<dyn UserTopupService> = self.stage.payment_runtime.clone();
+        let custom_oauth2_provider_service: Arc<dyn AdminCustomOAuth2ProviderService> =
+            Arc::new(DatabaseAdminCustomOAuth2ProviderService::new(
+                self.stage
+                    .infrastructure
+                    .custom_oauth2_provider_repository
+                    .clone(),
+                self.stage.infrastructure.system_secret_cipher.clone(),
+            ));
         let payment_webhook_registry: Arc<dyn PaymentWebhookProcessorRegistry> =
             self.stage.payment_runtime.clone();
         let refund_receipt_registry: Arc<dyn RefundReceiptProcessorRegistry> =
@@ -2218,6 +2239,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.subscription_service),
             Arc::clone(&self.stage.infrastructure.user_invitation_service),
             Arc::clone(&self.stage.infrastructure.site_settings_service),
+            Some(custom_oauth2_provider_service),
             Some(Arc::clone(&self.stage.oauth_login_service)),
             self.stage.infrastructure.turnstile_verifier.clone(),
             self.config.turnstile().site_key(),

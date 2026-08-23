@@ -10,6 +10,7 @@ mod channel_read;
 mod channel_write;
 mod credential_proxy;
 mod credential_read;
+mod custom_oauth2;
 mod debug_trace;
 mod email_settings;
 #[cfg(test)]
@@ -108,6 +109,13 @@ pub use credential_proxy::{
 pub use credential_read::{
     AdminCredential, AdminCredentialListQuery, AdminCredentialMultiKeyMode, AdminCredentialPage,
     AdminCredentialQuotaDimension,
+};
+pub use custom_oauth2::{
+    AdminCustomOAuth2Provider, AdminCustomOAuth2ProviderCommand,
+    AdminCustomOAuth2ProviderCommandInput, AdminCustomOAuth2ProviderError,
+    AdminCustomOAuth2ProviderGetFuture, AdminCustomOAuth2ProviderListFuture,
+    AdminCustomOAuth2ProviderService, AdminCustomOAuth2ProviderUpdateFuture,
+    DatabaseAdminCustomOAuth2ProviderService,
 };
 pub use debug_trace::{
     AdminDebugTrace, AdminDebugTraceAttempt, AdminDebugTraceAttemptOutcome,

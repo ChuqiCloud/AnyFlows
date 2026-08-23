@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use af_admin::{
     AdminBalanceAlertSettingsService, AdminChannelReader, AdminChannelWriter,
-    AdminCredentialProxyService, AdminDebugTraceService, AdminEmailSettingsService,
-    AdminGroupReader, AdminGroupWriter, AdminModelPriceService, AdminModelReader,
-    AdminModelSyncService, AdminModelWriter, AdminNetworkSettingsService,
+    AdminCredentialProxyService, AdminCustomOAuth2ProviderService, AdminDebugTraceService,
+    AdminEmailSettingsService, AdminGroupReader, AdminGroupWriter, AdminModelPriceService,
+    AdminModelReader, AdminModelSyncService, AdminModelWriter, AdminNetworkSettingsService,
     AdminPaymentSettingsService, AdminRouteReader, AdminRouteWriter, AdminTokenReader,
     AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, AdminWalletService,
     InitialSetup, ModelCatalogReader, OAuthLoginService, OrganizationActivityService,
@@ -34,6 +34,7 @@ use crate::anthropic_messages::anthropic_messages;
 use crate::authentication::{AuthenticationState, authenticate_api_key};
 use crate::balance_alert_settings::build_balance_alert_settings_router;
 use crate::credential_proxies::build_credential_proxy_router;
+use crate::custom_oauth2::build_custom_oauth2_router;
 use crate::debug_traces::build_debug_trace_router;
 use crate::email_settings::build_email_settings_router;
 use crate::frontend_assets::{FrontendAssetSource, frontend_fallback};
@@ -184,6 +185,7 @@ pub fn build_router(
     subscription_service: Arc<dyn SubscriptionService>,
     user_invitation_service: Arc<dyn UserInvitationService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
+    admin_custom_oauth2_provider_service: Option<Arc<dyn AdminCustomOAuth2ProviderService>>,
     oauth_login_service: Option<Arc<dyn OAuthLoginService>>,
     turnstile_verifier: Option<Arc<dyn crate::TurnstileVerifier>>,
     turnstile_site_key: Option<&str>,
@@ -496,6 +498,11 @@ pub fn build_router(
         turnstile_site_key,
         Arc::clone(&http_state.session_authenticator),
     );
+    let custom_oauth2_routes = admin_custom_oauth2_provider_service
+        .map(|service| {
+            build_custom_oauth2_router(service, Arc::clone(&http_state.session_authenticator))
+        })
+        .unwrap_or_default();
     let oauth_login_routes = oauth_login_service.map(|service| {
         build_oauth_login_router(service, Arc::clone(&http_state.session_authenticator))
     });
@@ -770,6 +777,7 @@ pub fn build_router(
         .merge(subscription_routes)
         .merge(user_invitation_routes)
         .merge(site_settings_routes)
+        .merge(custom_oauth2_routes)
         .merge(email_settings_routes)
         .merge(network_settings_routes)
         .merge(payment_settings_routes)
