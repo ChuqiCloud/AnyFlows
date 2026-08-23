@@ -6,6 +6,152 @@ use url::{Host, Url};
 use super::authorization::validate_scope;
 
 const MAX_SUBJECT_FIELD_BYTES: usize = 64;
+const MAX_PROVIDER_KEY_BYTES: usize = 32;
+const MAX_DISPLAY_NAME_BYTES: usize = 128;
+const MAX_CLIENT_ID_BYTES: usize = 255;
+
+/// 自定义 Provider 的稳定命名空间键；该键同时用于路由和密钥 AAD。
+#[derive(Clone, Eq, Hash, PartialEq)]
+pub struct CustomOAuth2ProviderKey(String);
+
+impl CustomOAuth2ProviderKey {
+    /// 创建受限的 `custom_` 命名空间键，避免覆盖内置 Provider。
+    pub fn new(value: String) -> Result<Self, CustomOAuth2ProviderKeyError> {
+        let value = value.trim().to_owned();
+        if value.len() <= "custom_".len()
+            || value.len() > MAX_PROVIDER_KEY_BYTES
+            || !value.starts_with("custom_")
+            || !value.bytes().all(|byte| {
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_' || byte == b'-'
+            })
+        {
+            return Err(CustomOAuth2ProviderKeyError::Invalid);
+        }
+        Ok(Self(value))
+    }
+
+    /// 返回稳定键；调用方不得把用户输入拼接到端点路径或查询参数中。
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for CustomOAuth2ProviderKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("CustomOAuth2ProviderKey")
+            .field(&self.0)
+            .finish()
+    }
+}
+
+/// 自定义 Provider 的强类型静态配置；不包含 Client Secret 明文。
+#[derive(Clone)]
+pub struct CustomOAuth2ProviderConfig {
+    provider_key: CustomOAuth2ProviderKey,
+    display_name: String,
+    client_id: String,
+    endpoints: CustomOAuth2EndpointBundle,
+    enabled: bool,
+}
+
+impl CustomOAuth2ProviderConfig {
+    /// 校验管理配置；启用状态仍需由后续仓储结合密钥是否存在决定可用性。
+    pub fn new(
+        provider_key: String,
+        display_name: String,
+        client_id: String,
+        endpoints: CustomOAuth2EndpointBundle,
+        enabled: bool,
+    ) -> Result<Self, CustomOAuth2ProviderConfigError> {
+        let provider_key = CustomOAuth2ProviderKey::new(provider_key)
+            .map_err(|_| CustomOAuth2ProviderConfigError::InvalidProviderKey)?;
+        if display_name.is_empty()
+            || display_name.len() > MAX_DISPLAY_NAME_BYTES
+            || display_name.chars().any(char::is_control)
+        {
+            return Err(CustomOAuth2ProviderConfigError::InvalidDisplayName);
+        }
+        if client_id.is_empty()
+            || client_id.len() > MAX_CLIENT_ID_BYTES
+            || !client_id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+        {
+            return Err(CustomOAuth2ProviderConfigError::InvalidClientId);
+        }
+        Ok(Self {
+            provider_key,
+            display_name,
+            client_id,
+            endpoints,
+            enabled,
+        })
+    }
+
+    #[must_use]
+    pub fn provider_key(&self) -> &CustomOAuth2ProviderKey {
+        &self.provider_key
+    }
+
+    #[must_use]
+    pub fn display_name(&self) -> &str {
+        &self.display_name
+    }
+
+    #[must_use]
+    pub fn client_id(&self) -> &str {
+        &self.client_id
+    }
+
+    #[must_use]
+    pub fn endpoints(&self) -> &CustomOAuth2EndpointBundle {
+        &self.endpoints
+    }
+
+    #[must_use]
+    pub const fn enabled(&self) -> bool {
+        self.enabled
+    }
+
+    /// 只有启用且已配置密钥时才允许被后续公开能力投影。
+    #[must_use]
+    pub const fn available(&self, secret_configured: bool) -> bool {
+        self.enabled && secret_configured
+    }
+}
+
+impl fmt::Debug for CustomOAuth2ProviderConfig {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CustomOAuth2ProviderConfig")
+            .field("provider_key", &self.provider_key)
+            .field("display_name", &"<已脱敏>")
+            .field("client_id", &"<已脱敏>")
+            .field("endpoints", &"<已脱敏>")
+            .field("enabled", &self.enabled)
+            .finish()
+    }
+}
+
+/// 自定义 Provider key 校验错误；不回显用户输入。
+#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+pub enum CustomOAuth2ProviderKeyError {
+    #[error("自定义 OAuth2 Provider key 无效")]
+    Invalid,
+}
+
+/// 自定义 Provider 配置校验错误；不回显端点、Client ID 或显示名。
+#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+pub enum CustomOAuth2ProviderConfigError {
+    #[error("自定义 OAuth2 Provider key 无效")]
+    InvalidProviderKey,
+    #[error("自定义 OAuth2 Provider 显示名无效")]
+    InvalidDisplayName,
+    #[error("自定义 OAuth2 Client ID 无效")]
+    InvalidClientId,
+}
 
 /// 自定义 OAuth2 Provider 的静态端点配置；不执行网络请求，也不持有密钥。
 #[derive(Clone)]
@@ -298,6 +444,84 @@ mod tests {
             "secret-scope",
             "secret-subject-field",
         ] {
+            assert!(!debug.contains(private), "Debug 泄露了 {private}");
+        }
+    }
+
+    #[test]
+    fn provider_key_is_limited_to_custom_namespace() {
+        assert_eq!(
+            CustomOAuth2ProviderKey::new("github".to_owned()).unwrap_err(),
+            CustomOAuth2ProviderKeyError::Invalid
+        );
+        assert_eq!(
+            CustomOAuth2ProviderKey::new("custom_GitHub".to_owned()).unwrap_err(),
+            CustomOAuth2ProviderKeyError::Invalid
+        );
+        let key = CustomOAuth2ProviderKey::new("custom_github-main".to_owned()).unwrap();
+        assert_eq!(key.as_str(), "custom_github-main");
+    }
+
+    #[test]
+    fn provider_config_requires_safe_display_name_and_client_id() {
+        let endpoints = bundle(AUTHORIZATION, TOKEN, USERINFO, SCOPE, "sub").unwrap();
+        let config = CustomOAuth2ProviderConfig::new(
+            "custom_github".to_owned(),
+            "企业登录".to_owned(),
+            "client-id_1".to_owned(),
+            endpoints.clone(),
+            false,
+        )
+        .unwrap();
+        assert_eq!(config.provider_key().as_str(), "custom_github");
+        assert_eq!(config.display_name(), "企业登录");
+        assert!(!config.available(true));
+        assert!(!config.available(false));
+
+        assert_eq!(
+            CustomOAuth2ProviderConfig::new(
+                "custom_github".to_owned(),
+                "name\n".to_owned(),
+                "client-id".to_owned(),
+                endpoints.clone(),
+                true,
+            )
+            .unwrap_err(),
+            CustomOAuth2ProviderConfigError::InvalidDisplayName
+        );
+        assert_eq!(
+            CustomOAuth2ProviderConfig::new(
+                "custom_github".to_owned(),
+                "name".to_owned(),
+                "client/id".to_owned(),
+                endpoints,
+                true,
+            )
+            .unwrap_err(),
+            CustomOAuth2ProviderConfigError::InvalidClientId
+        );
+    }
+
+    #[test]
+    fn provider_config_debug_does_not_expose_endpoint_or_client_id() {
+        let endpoints = bundle(
+            "https://login.example.test/tenant-secret/authorize",
+            TOKEN,
+            USERINFO,
+            "openid profile",
+            "sub",
+        )
+        .unwrap();
+        let config = CustomOAuth2ProviderConfig::new(
+            "custom_secret".to_owned(),
+            "Secret Provider".to_owned(),
+            "client-secret-id".to_owned(),
+            endpoints,
+            true,
+        )
+        .unwrap();
+        let debug = format!("{config:?}");
+        for private in ["login.example.test", "tenant-secret", "client-secret-id"] {
             assert!(!debug.contains(private), "Debug 泄露了 {private}");
         }
     }

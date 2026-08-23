@@ -19,7 +19,10 @@ pub use authorization::{
     UpstreamOAuthProvider,
 };
 pub use coordinator::{OAuthConnectionCoordinator, OAuthConnectionError, OAuthConnectionOutcome};
-pub use custom::{CustomOAuth2EndpointBundle, CustomOAuth2EndpointError};
+pub use custom::{
+    CustomOAuth2EndpointBundle, CustomOAuth2EndpointError, CustomOAuth2ProviderConfig,
+    CustomOAuth2ProviderConfigError, CustomOAuth2ProviderKey, CustomOAuth2ProviderKeyError,
+};
 pub use exchange::{
     MAX_OAUTH_TOKEN_RESPONSE_BYTES, OAuthClientAuthenticationMethod, OAuthEndpointErrorCode,
     OAuthRefreshedTokenSet, OAuthTokenExchange, OAuthTokenExchangeError, OAuthTokenRefreshRequest,
