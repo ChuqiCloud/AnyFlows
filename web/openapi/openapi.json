@@ -1722,8 +1722,8 @@
             "required": false,
             "schema": {
               "type": "integer",
-              "format": "int64",
-              "minimum": 0
+              "minimum": 0,
+              "format": "int64"
             }
           }
         ],
