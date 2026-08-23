@@ -220,13 +220,20 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                 {oauthProviders.map((provider) => {
                   const providerId = provider.id as OAuthLoginProvider
                   const isStarting = oauthMutation.isPending && oauthMutation.variables === providerId
+                  const isCustomProvider = provider.id.startsWith('custom_')
+                  const providerLabel = isCustomProvider
+                    ? t('auth.login.oauth.custom', { provider: provider.display_name })
+                    : t(`auth.login.oauth.${provider.id}`)
+                  const startingLabel = isCustomProvider
+                    ? t('auth.login.oauthStarting.custom', { provider: provider.display_name })
+                    : t(`auth.login.oauthStarting.${provider.id}`)
                   return (
                     <Button
                       key={provider.id}
                       type="button"
                       size="lg"
                       variant="secondary"
-                      className="w-full"
+                      className="h-auto min-h-11 w-full whitespace-normal break-words py-3 text-center leading-5"
                       disabled={oauthMutation.isPending || passkeyMutation.isPending}
                       onClick={() => void handleOAuthLogin(providerId)}
                     >
@@ -234,8 +241,8 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                         ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
                         : <OAuthProviderIcon provider={providerId} />}
                       {isStarting
-                        ? t(`auth.login.oauthStarting.${provider.id}`)
-                        : t(`auth.login.oauth.${provider.id}`)}
+                        ? startingLabel
+                        : providerLabel}
                     </Button>
                   )
                 })}

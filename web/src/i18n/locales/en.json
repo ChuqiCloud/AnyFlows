@@ -2936,7 +2936,8 @@
         "linuxdo": "Continue with LinuxDO",
         "wechat": "Continue with WeChat",
         "telegram": "Continue with Telegram",
-        "google": "Continue with Google"
+        "google": "Continue with Google",
+        "custom": "Continue with {{provider}}"
       },
       "oauthStarting": {
         "github": "Opening GitHub",
@@ -2945,7 +2946,8 @@
         "linuxdo": "Opening LinuxDO",
         "wechat": "Opening WeChat QR sign-in",
         "telegram": "Opening Telegram",
-        "google": "Opening Google"
+        "google": "Opening Google",
+        "custom": "Opening {{provider}}"
       },
       "orPassword": "or use a password",
       "orAccount": "or use account sign-in",

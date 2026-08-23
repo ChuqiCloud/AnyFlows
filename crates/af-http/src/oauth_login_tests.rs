@@ -21,7 +21,7 @@ use crate::oauth_login::build_oauth_login_router;
 const TICKET: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
 struct FakeOAuthLoginService {
-    calls: Mutex<Vec<&'static str>>,
+    calls: Mutex<Vec<String>>,
 }
 
 impl FakeOAuthLoginService {
@@ -31,8 +31,8 @@ impl FakeOAuthLoginService {
         }
     }
 
-    fn record(&self, call: &'static str) {
-        self.calls.lock().unwrap().push(call);
+    fn record(&self, call: impl Into<String>) {
+        self.calls.lock().unwrap().push(call.into());
     }
 }
 
@@ -41,8 +41,8 @@ impl OAuthLoginService for FakeOAuthLoginService {
         Box::pin(async { Ok(vec![PublicOAuthLoginProvider::new("github", "GitHub")]) })
     }
 
-    fn begin<'a>(&'a self, _provider: &'a str) -> OAuthLoginServiceFuture<'a, OAuthLoginStart> {
-        self.record("begin");
+    fn begin<'a>(&'a self, provider: &'a str) -> OAuthLoginServiceFuture<'a, OAuthLoginStart> {
+        self.record(format!("begin:{provider}"));
         Box::pin(async {
             Ok(OAuthLoginStart::new(
                 "https://github.com/login/oauth/authorize?state=opaque&redirect_uri=https%3A%2F%2Fconsole.example%2Fapi%2Fauth%2Foauth%2Fgithub%2Fcallback"
@@ -53,11 +53,11 @@ impl OAuthLoginService for FakeOAuthLoginService {
 
     fn complete<'a>(
         &'a self,
-        _provider: &'a str,
+        provider: &'a str,
         _state: String,
         _code: String,
     ) -> OAuthLoginServiceFuture<'a, OAuthLoginCallbackResult> {
-        self.record("complete");
+        self.record(format!("complete:{provider}"));
         Box::pin(async {
             Ok(OAuthLoginCallbackResult::new(format!(
                 "https://console.example/#/oauth/callback?ticket={TICKET}"
@@ -67,10 +67,10 @@ impl OAuthLoginService for FakeOAuthLoginService {
 
     fn cancel<'a>(
         &'a self,
-        _provider: &'a str,
+        provider: &'a str,
         _state: String,
     ) -> OAuthLoginServiceFuture<'a, OAuthLoginCallbackResult> {
-        self.record("cancel");
+        self.record(format!("cancel:{provider}"));
         Box::pin(async {
             Ok(OAuthLoginCallbackResult::new(
                 "https://console.example/#/oauth/callback?error=cancelled".to_owned(),
@@ -231,7 +231,7 @@ async fn discord_routes_use_a_provider_specific_callback_cookie_path() {
     );
     assert_eq!(
         service.calls.lock().unwrap().as_slice(),
-        ["begin", "complete"]
+        ["begin:discord", "complete:discord"]
     );
 }
 
@@ -280,8 +280,87 @@ async fn google_routes_use_a_provider_specific_callback_cookie_path() {
     );
     assert_eq!(
         service.calls.lock().unwrap().as_slice(),
-        ["begin", "complete"]
+        ["begin:google", "complete:google"]
     );
+}
+
+#[tokio::test]
+async fn custom_routes_bind_cookie_and_service_calls_to_the_provider_key() {
+    let service = Arc::new(FakeOAuthLoginService::new());
+    let app = router(Arc::clone(&service));
+    let callback_path = "/api/auth/oauth/custom/custom_enterprise/callback";
+    let start = app
+        .clone()
+        .oneshot(
+            Request::post("/api/auth/oauth/custom/custom_enterprise/start")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(start.status(), StatusCode::OK);
+    assert!(
+        start.headers()[SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .contains(&format!("Path={callback_path}"))
+    );
+    let cookie = start.headers()[SET_COOKIE]
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned();
+    let callback = app
+        .oneshot(
+            Request::get(format!("{callback_path}?state=opaque&code=code"))
+                .header(COOKIE, cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(callback.status(), StatusCode::SEE_OTHER);
+    assert!(
+        callback.headers()[SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .contains(&format!("Path={callback_path}"))
+    );
+    assert_eq!(
+        service.calls.lock().unwrap().as_slice(),
+        ["begin:custom_enterprise", "complete:custom_enterprise"]
+    );
+}
+
+#[tokio::test]
+async fn custom_routes_reject_invalid_provider_keys_before_calling_the_service() {
+    let service = Arc::new(FakeOAuthLoginService::new());
+    let app = router(Arc::clone(&service));
+    let start = app
+        .clone()
+        .oneshot(
+            Request::post("/api/auth/oauth/custom/custom_Invalid/start")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(start.status(), StatusCode::BAD_REQUEST);
+
+    let callback = app
+        .oneshot(
+            Request::get("/api/auth/oauth/custom/custom_Invalid/callback?state=opaque&code=code")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(callback.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(callback.headers()[CACHE_CONTROL], "no-store");
+    assert_eq!(callback.headers()["referrer-policy"], "no-referrer");
+    assert!(service.calls.lock().unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -334,7 +413,12 @@ async fn callback_redirects_with_no_store_and_no_referrer_for_success_and_cancel
     );
     assert_eq!(
         service.calls.lock().unwrap().as_slice(),
-        ["begin", "complete", "begin", "cancel"]
+        [
+            "begin:github",
+            "complete:github",
+            "begin:github",
+            "cancel:github"
+        ]
     );
 }
 
@@ -411,7 +495,7 @@ async fn callback_rejects_duplicate_security_parameters() {
     );
     assert_eq!(
         service.calls.lock().unwrap().as_slice(),
-        ["begin", "failure"]
+        ["begin:github", "failure"]
     );
 }
 

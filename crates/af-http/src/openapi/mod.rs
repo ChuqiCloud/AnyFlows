@@ -202,7 +202,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 158);
+        assert_eq!(document.paths.paths.len(), 160);
         let operation_count = document
             .paths
             .paths
@@ -223,7 +223,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 218);
+        assert_eq!(operation_count, 220);
         assert!(
             document
                 .components
@@ -282,6 +282,8 @@ mod tests {
             "completeTelegramLogin",
             "startGoogleLogin",
             "completeGoogleLogin",
+            "startCustomOAuth2Login",
+            "completeCustomOAuth2Login",
             "exchangeOAuthLoginTicket",
             "getAdminGitHubOAuthLoginSettings",
             "updateAdminGitHubOAuthLoginSettings",

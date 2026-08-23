@@ -17339,6 +17339,69 @@
         }
       }
     },
+    "/api/auth/oauth/custom/{provider_key}/start": {
+      "post": {
+        "tags": [
+          "OAuth 登录"
+        ],
+        "summary": "启动自定义 OAuth2 登录",
+        "operationId": "startCustomOAuth2Login",
+        "parameters": [
+          {
+            "name": "provider_key",
+            "in": "path",
+            "description": "已启用的 custom_ 命名空间 Provider key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^custom_[a-z0-9_-]+$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "服务端按固定配置构造的授权地址",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthLoginStartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Provider key 格式无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Provider 不存在、已禁用或配置不完整",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/oauth/oidc/callback": {
       "get": {
         "tags": [
@@ -17581,6 +17644,79 @@
         "responses": {
           "303": {
             "description": "跳转到前端一次性票据交换页"
+          },
+          "500": {
+            "description": "无法构造安全回调地址",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/oauth/custom/{provider_key}/callback": {
+      "get": {
+        "tags": [
+          "OAuth 登录"
+        ],
+        "summary": "接收自定义 OAuth2 回调",
+        "operationId": "completeCustomOAuth2Login",
+        "parameters": [
+          {
+            "name": "provider_key",
+            "in": "path",
+            "description": "启动登录时固定的 custom_ 命名空间 Provider key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^custom_[a-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "description": "服务端生成的一次性 state",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "description": "第三方授权码",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "description": "第三方拒绝分类",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "303": {
+            "description": "跳转到前端一次性票据交换页"
+          },
+          "400": {
+            "description": "Provider key 格式无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
           },
           "500": {
             "description": "无法构造安全回调地址",
@@ -29353,7 +29489,7 @@
           },
           "display_name": {
             "type": "string",
-            "maxLength": 64
+            "maxLength": 128
           }
         },
         "additionalProperties": false

@@ -72,15 +72,15 @@ use af_db::{
     AuthChallengeRepository, AuthChallengeRepositoryConfigError, BalanceAlertRepository,
     BalanceAlertRepositoryConfigError, BalanceAlertSettingsRepository,
     BalanceAlertSettingsRepositoryConfigError, ChannelStateRepository, CredentialProxyRepository,
-    CredentialProxyRepositoryConfigError, CredentialStateRepository,
-    CustomOAuth2ProviderRepository, CustomOAuth2ProviderRepositoryError, DatabaseError,
-    DatabaseOptions, DatabaseOptionsError, DatabasePool, DebugTraceRepository,
-    DebugTraceRepositoryConfigError, DebugTraceRepositoryError, DebugTraceSnapshotCipherError,
-    EmailSettingsRepository, EmailSettingsRepositoryConfigError, InitialSetupRepository,
-    InitialSetupRepositoryConfigError, MigrationOptions, ModelPriceRepository, ModelSyncRepository,
-    NetworkSettingsMode, NetworkSettingsRecord, NetworkSettingsRepository,
-    NetworkSettingsRepositoryConfigError, OAuthLoginRepository, OAuthLoginRepositoryError,
-    OrganizationAuditRepository, OrganizationBudgetRepository,
+    CredentialProxyRepositoryConfigError, CredentialStateRepository, CustomOAuth2LoginRepository,
+    CustomOAuth2LoginRepositoryError, CustomOAuth2ProviderRepository,
+    CustomOAuth2ProviderRepositoryError, DatabaseError, DatabaseOptions, DatabaseOptionsError,
+    DatabasePool, DebugTraceRepository, DebugTraceRepositoryConfigError, DebugTraceRepositoryError,
+    DebugTraceSnapshotCipherError, EmailSettingsRepository, EmailSettingsRepositoryConfigError,
+    InitialSetupRepository, InitialSetupRepositoryConfigError, MigrationOptions,
+    ModelPriceRepository, ModelSyncRepository, NetworkSettingsMode, NetworkSettingsRecord,
+    NetworkSettingsRepository, NetworkSettingsRepositoryConfigError, OAuthLoginRepository,
+    OAuthLoginRepositoryError, OrganizationAuditRepository, OrganizationBudgetRepository,
     OrganizationBudgetRepositoryConfigError, OrganizationRepository,
     OrganizationRepositoryConfigError, OrganizationTokenRepository,
     OrganizationTokenRepositoryConfigError, OrganizationWalletRepository,
@@ -401,6 +401,9 @@ pub enum BootstrapError {
     /// 用户登录 OAuth 仓储的启动参数无效。
     #[error("用户登录 OAuth 仓储启动参数无效")]
     OAuthLoginRepository(#[source] OAuthLoginRepositoryError),
+    /// 自定义 OAuth2 登录事务仓储的启动参数无效。
+    #[error("自定义 OAuth2 登录仓储启动参数无效")]
+    CustomOAuth2LoginRepository(#[source] CustomOAuth2LoginRepositoryError),
     /// 管理会话 JWT 的启动配置无效或缺失。
     #[error("管理会话启动配置无效")]
     SessionAuthentication(#[source] SessionAuthenticatorConfigError),
@@ -1263,9 +1266,16 @@ impl Bootstrap<AuthenticationReady> {
             Duration::from_secs(config.auth().lookup_timeout_secs()),
         )
         .map_err(BootstrapError::OAuthLoginRepository)?;
+        let custom_oauth2_login_repository = CustomOAuth2LoginRepository::new(
+            authentication.infrastructure.database.clone(),
+            Duration::from_secs(config.auth().lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::CustomOAuth2LoginRepository)?;
         let oauth_login_service: Arc<dyn OAuthLoginService> =
             Arc::new(DatabaseOAuthLoginService::new(
                 oauth_login_repository,
+                authentication.custom_oauth2_provider_repository.clone(),
+                custom_oauth2_login_repository,
                 authentication.site_settings_repository.clone(),
                 authentication.system_secret_cipher.clone(),
                 OAuthLoginClient::new(upstream_clients.clone()),

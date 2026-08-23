@@ -259,6 +259,56 @@ pub(in crate::migration) mod custom_oauth2_providers {
     }
 }
 
+pub(in crate::migration) mod custom_oauth2_identities {
+    use super::DeriveIden;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "custom_oauth2_identities")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        UserId,
+        ProviderKey,
+        Subject,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod custom_oauth2_login_transactions {
+    use super::DeriveIden;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "custom_oauth2_login_transactions")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        ProviderKey,
+        ConfigurationVersion,
+        StateDigest,
+        ExpiresAt,
+        ClaimedAt,
+        UserId,
+        TicketDigest,
+        TicketExpiresAt,
+        ExchangedAt,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
 pub(in crate::migration) mod passkeys {
     use super::DeriveIden;
 

@@ -112,6 +112,27 @@ fn start_telegram_oauth_login() {}
 fn start_google_oauth_login() {}
 
 #[utoipa::path(
+    post,
+    path = "/api/auth/oauth/custom/{provider_key}/start",
+    operation_id = "startCustomOAuth2Login",
+    tag = "OAuth 登录",
+    summary = "启动自定义 OAuth2 登录",
+    params((
+        "provider_key" = String,
+        Path,
+        pattern = "^custom_[a-z0-9_-]+$",
+        description = "已启用的 custom_ 命名空间 Provider key"
+    )),
+    responses(
+        (status = 200, description = "服务端按固定配置构造的授权地址", body = OAuthLoginStartResponse),
+        (status = 400, description = "Provider key 格式无效", body = ManagementErrorBody),
+        (status = 409, description = "Provider 不存在、已禁用或配置不完整", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    )
+)]
+fn start_custom_oauth2_login() {}
+
+#[utoipa::path(
     get,
     path = "/api/auth/oauth/github/callback",
     operation_id = "completeGitHubOAuthLogin",
@@ -235,6 +256,31 @@ fn complete_telegram_oauth_login() {}
     )
 )]
 fn complete_google_oauth_login() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/auth/oauth/custom/{provider_key}/callback",
+    operation_id = "completeCustomOAuth2Login",
+    tag = "OAuth 登录",
+    summary = "接收自定义 OAuth2 回调",
+    params(
+        (
+            "provider_key" = String,
+            Path,
+            pattern = "^custom_[a-z0-9_-]+$",
+            description = "启动登录时固定的 custom_ 命名空间 Provider key"
+        ),
+        ("state" = Option<String>, Query, description = "服务端生成的一次性 state"),
+        ("code" = Option<String>, Query, description = "第三方授权码"),
+        ("error" = Option<String>, Query, description = "第三方拒绝分类")
+    ),
+    responses(
+        (status = 303, description = "跳转到前端一次性票据交换页"),
+        (status = 400, description = "Provider key 格式无效", body = ManagementErrorBody),
+        (status = 500, description = "无法构造安全回调地址", body = ManagementErrorBody)
+    )
+)]
+fn complete_custom_oauth2_login() {}
 
 #[utoipa::path(
     post,
@@ -528,11 +574,13 @@ struct OAuthLoginApi;
     start_wechat_oauth_login,
     start_telegram_oauth_login,
     start_google_oauth_login,
+    start_custom_oauth2_login,
     complete_oidc_oauth_login,
     complete_linuxdo_oauth_login,
     complete_wechat_oauth_login,
     complete_telegram_oauth_login,
     complete_google_oauth_login,
+    complete_custom_oauth2_login,
     get_admin_oidc_oauth_login_settings,
     update_admin_oidc_oauth_login_settings,
     get_admin_linuxdo_oauth_login_settings,

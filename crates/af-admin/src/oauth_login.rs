@@ -1,13 +1,16 @@
 use std::{fmt, future::Future, pin::Pin};
 
 use af_account::{
+    CustomOAuth2EndpointBundle, CustomOAuth2ProviderConfig, CustomOAuth2ProviderKey,
     LoginOAuthProvider, OAuthLoginClient, OAuthLoginClientError, PlainSystemSecret,
     SystemSecretCipher, SystemSecretKind,
 };
 use af_db::{
-    EncryptedCredentialEnvelope, OAuthIdentityCompletion, OAuthLoginProviderRecord,
-    OAuthLoginProviderWriteRecord, OAuthLoginRepository, OAuthLoginRepositoryError,
-    OAuthLoginSecretUpdate, SiteSettingsRepository,
+    CustomOAuth2IdentityCompletion, CustomOAuth2LoginRepository, CustomOAuth2LoginRepositoryError,
+    CustomOAuth2ProviderRecord, CustomOAuth2ProviderRepository,
+    CustomOAuth2ProviderRepositoryError, EncryptedCredentialEnvelope, OAuthIdentityCompletion,
+    OAuthLoginProviderRecord, OAuthLoginProviderWriteRecord, OAuthLoginRepository,
+    OAuthLoginRepositoryError, OAuthLoginSecretUpdate, SiteSettingsRepository,
 };
 use af_domain::UserId;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -24,25 +27,28 @@ const TICKET_TTL_SECONDS: u64 = 2 * 60;
 /// 游客可见的已配置 OAuth 登录 Provider。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PublicOAuthLoginProvider {
-    id: &'static str,
-    display_name: &'static str,
+    id: String,
+    display_name: String,
 }
 
 impl PublicOAuthLoginProvider {
     /// 由受信 Provider 适配器构造公开摘要。
     #[must_use]
-    pub const fn new(id: &'static str, display_name: &'static str) -> Self {
-        Self { id, display_name }
+    pub fn new(id: impl Into<String>, display_name: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            display_name: display_name.into(),
+        }
     }
 
     #[must_use]
-    pub const fn id(&self) -> &'static str {
-        self.id
+    pub fn id(&self) -> &str {
+        &self.id
     }
 
     #[must_use]
-    pub const fn display_name(&self) -> &'static str {
-        self.display_name
+    pub fn display_name(&self) -> &str {
+        &self.display_name
     }
 }
 
@@ -292,9 +298,11 @@ pub trait OAuthLoginService: Send + Sync {
     ) -> OAuthLoginServiceFuture<'a, AdminOAuthLoginProviderSettings>;
 }
 
-/// 使用数据库单次事务、系统密钥和受控 HTTP Client 的内置 OAuth 适配器。
+/// 使用数据库单次事务、系统密钥和受控 HTTP Client 的用户登录 OAuth 适配器。
 pub struct DatabaseOAuthLoginService {
     repository: OAuthLoginRepository,
+    custom_provider_repository: CustomOAuth2ProviderRepository,
+    custom_login_repository: CustomOAuth2LoginRepository,
     site_settings: SiteSettingsRepository,
     cipher: SystemSecretCipher,
     oauth_client: OAuthLoginClient,
@@ -304,12 +312,16 @@ impl DatabaseOAuthLoginService {
     #[must_use]
     pub fn new(
         repository: OAuthLoginRepository,
+        custom_provider_repository: CustomOAuth2ProviderRepository,
+        custom_login_repository: CustomOAuth2LoginRepository,
         site_settings: SiteSettingsRepository,
         cipher: SystemSecretCipher,
         oauth_client: OAuthLoginClient,
     ) -> Self {
         Self {
             repository,
+            custom_provider_repository,
+            custom_login_repository,
             site_settings,
             cipher,
             oauth_client,
@@ -337,10 +349,34 @@ impl DatabaseOAuthLoginService {
                 }
             }
         }
+        for record in self
+            .custom_provider_repository
+            .providers()
+            .await
+            .map_err(map_custom_provider_repository_error)?
+        {
+            if record.available() {
+                match self.custom_redirect_uri(record.provider_key()).await {
+                    Ok(_) => providers.push(PublicOAuthLoginProvider::new(
+                        record.provider_key(),
+                        record.display_name(),
+                    )),
+                    Err(OAuthLoginError::Unavailable) => {}
+                    Err(error) => return Err(error),
+                }
+            }
+        }
         Ok(providers)
     }
 
     async fn begin_inner(&self, provider: &str) -> Result<OAuthLoginStart, OAuthLoginError> {
+        if LoginOAuthProvider::from_id(provider).is_some() {
+            return self.begin_builtin(provider).await;
+        }
+        self.begin_custom(provider).await
+    }
+
+    async fn begin_builtin(&self, provider: &str) -> Result<OAuthLoginStart, OAuthLoginError> {
         let profile = require_provider(provider)?;
         let settings = self.available_provider(profile).await?;
         let client_id = settings.client_id().ok_or(OAuthLoginError::Unavailable)?;
@@ -394,7 +430,51 @@ impl DatabaseOAuthLoginService {
         })
     }
 
+    async fn begin_custom(&self, provider: &str) -> Result<OAuthLoginStart, OAuthLoginError> {
+        let key = custom_provider_key(provider)?;
+        let (record, config) = self.available_custom_provider(&key).await?;
+        let redirect_uri = self.custom_redirect_uri(key.as_str()).await?;
+        let verifier = random_token()?;
+        let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+        let verifier_secret =
+            PlainSystemSecret::new(verifier.to_string()).map_err(|_| OAuthLoginError::Internal)?;
+        let envelope = self
+            .cipher
+            .encrypt(SystemSecretKind::OAuthLoginState, &verifier_secret)
+            .map_err(|_| OAuthLoginError::Internal)?;
+        let state = encode_state_envelope(&envelope);
+        let now = current_timestamp()?;
+        let expires_at = now
+            .checked_add(STATE_TTL_SECONDS)
+            .ok_or(OAuthLoginError::Internal)?;
+        self.custom_login_repository
+            .create_state(
+                key.as_str(),
+                record.version(),
+                &digest("custom-oauth2-login-state-v1", &state),
+                expires_at,
+            )
+            .await
+            .map_err(map_custom_login_repository_error)?;
+        let authorization_url =
+            OAuthLoginClient::custom_authorization_url(&config, &redirect_uri, &state, &challenge)
+                .map_err(map_oauth_client_error)?;
+        Ok(OAuthLoginStart { authorization_url })
+    }
+
     async fn complete_inner(
+        &self,
+        provider: &str,
+        state: String,
+        code: String,
+    ) -> Result<OAuthLoginCallbackResult, OAuthLoginError> {
+        if LoginOAuthProvider::from_id(provider).is_some() {
+            return self.complete_builtin(provider, state, code).await;
+        }
+        self.complete_custom(provider, state, code).await
+    }
+
+    async fn complete_builtin(
         &self,
         provider: &str,
         state: String,
@@ -475,21 +555,111 @@ impl DatabaseOAuthLoginService {
         })
     }
 
+    async fn complete_custom(
+        &self,
+        provider: &str,
+        state: String,
+        code: String,
+    ) -> Result<OAuthLoginCallbackResult, OAuthLoginError> {
+        let key = custom_provider_key(provider)?;
+        validate_state(&state)?;
+        let code = Zeroizing::new(code);
+        validate_code(code.as_str())?;
+        let now = current_timestamp()?;
+        // 先永久领取 state，再读取当前配置并执行任何外部网络请求。
+        let claim = self
+            .custom_login_repository
+            .claim_state(
+                key.as_str(),
+                &digest("custom-oauth2-login-state-v1", &state),
+                now,
+            )
+            .await
+            .map_err(map_custom_login_repository_error)?;
+        let envelope = decode_state_envelope(&state)?;
+        let verifier = self
+            .cipher
+            .decrypt(SystemSecretKind::OAuthLoginState, &envelope)
+            .map_err(|_| OAuthLoginError::Rejected)?;
+        let (record, config) = self.available_custom_provider(&key).await?;
+        if record.version() != claim.configuration_version() {
+            return Err(OAuthLoginError::Rejected);
+        }
+        let client_secret = self
+            .cipher
+            .decrypt_custom_oauth2_client_secret(
+                &key,
+                record.client_secret().ok_or(OAuthLoginError::Unavailable)?,
+            )
+            .map_err(|_| OAuthLoginError::Internal)?;
+        let redirect_uri = self.custom_redirect_uri(key.as_str()).await?;
+        let identity = self
+            .oauth_client
+            .exchange_custom_identity(
+                &config,
+                &client_secret,
+                code.as_str(),
+                verifier.expose_secret(),
+                &redirect_uri,
+            )
+            .await
+            .map_err(map_oauth_client_error)?;
+        drop(client_secret);
+        drop(verifier);
+        let ticket = random_token()?;
+        let ticket_expires_at = now
+            .checked_add(TICKET_TTL_SECONDS)
+            .ok_or(OAuthLoginError::Internal)?;
+        let local_username = custom_local_username(key.as_str(), identity.subject());
+        match self
+            .custom_login_repository
+            .complete_identity(
+                claim,
+                key.as_str(),
+                identity.subject(),
+                &local_username,
+                &digest("custom-oauth2-login-ticket-v1", &ticket),
+                ticket_expires_at,
+                now,
+            )
+            .await
+            .map_err(map_custom_login_repository_error)?
+        {
+            CustomOAuth2IdentityCompletion::Issued(_) => {}
+            CustomOAuth2IdentityCompletion::Rejected => return Err(OAuthLoginError::Rejected),
+        }
+        Ok(OAuthLoginCallbackResult {
+            redirect_url: self.frontend_callback_url(Some(&ticket), None).await?,
+        })
+    }
+
     async fn cancel_inner(
         &self,
         provider: &str,
         state: String,
     ) -> Result<OAuthLoginCallbackResult, OAuthLoginError> {
-        require_provider(provider)?;
         validate_state(&state)?;
-        self.repository
-            .claim_state(
-                provider,
-                &digest("oauth-login-state-v1", &state),
-                current_timestamp()?,
-            )
-            .await
-            .map_err(map_repository_error)?;
+        if LoginOAuthProvider::from_id(provider).is_some() {
+            require_provider(provider)?;
+            self.repository
+                .claim_state(
+                    provider,
+                    &digest("oauth-login-state-v1", &state),
+                    current_timestamp()?,
+                )
+                .await
+                .map_err(map_repository_error)?;
+        } else {
+            let key = custom_provider_key(provider)?;
+            self.custom_login_repository
+                .claim_state(
+                    key.as_str(),
+                    &digest("custom-oauth2-login-state-v1", &state),
+                    current_timestamp()?,
+                )
+                .await
+                .map_err(map_custom_login_repository_error)?;
+        }
         Ok(OAuthLoginCallbackResult {
             redirect_url: self.frontend_callback_url(None, Some("cancelled")).await?,
         })
@@ -503,13 +673,25 @@ impl DatabaseOAuthLoginService {
 
     async fn exchange_ticket_inner(&self, ticket: String) -> Result<UserId, OAuthLoginError> {
         validate_ticket(&ticket)?;
-        self.repository
+        let builtin = self
+            .repository
             .consume_ticket(
                 &digest("oauth-login-ticket-v1", &ticket),
                 current_timestamp()?,
             )
-            .await
-            .map_err(map_repository_error)
+            .await;
+        match builtin {
+            Ok(user_id) => Ok(user_id),
+            Err(OAuthLoginRepositoryError::Rejected) => self
+                .custom_login_repository
+                .consume_ticket(
+                    &digest("custom-oauth2-login-ticket-v1", &ticket),
+                    current_timestamp()?,
+                )
+                .await
+                .map_err(map_custom_login_repository_error),
+            Err(error) => Err(map_repository_error(error)),
+        }
     }
 
     async fn admin_settings_inner(
@@ -568,6 +750,38 @@ impl DatabaseOAuthLoginService {
         }
     }
 
+    async fn available_custom_provider(
+        &self,
+        provider_key: &CustomOAuth2ProviderKey,
+    ) -> Result<(CustomOAuth2ProviderRecord, CustomOAuth2ProviderConfig), OAuthLoginError> {
+        let record = self
+            .custom_provider_repository
+            .provider(provider_key.as_str())
+            .await
+            .map_err(map_custom_provider_repository_error)?
+            .ok_or(OAuthLoginError::Unavailable)?;
+        if !record.available() {
+            return Err(OAuthLoginError::Unavailable);
+        }
+        let endpoints = CustomOAuth2EndpointBundle::new(
+            record.authorization_endpoint().to_owned(),
+            record.token_endpoint().to_owned(),
+            record.userinfo_endpoint().to_owned(),
+            record.scope().to_owned(),
+            record.subject_field().to_owned(),
+        )
+        .map_err(|_| OAuthLoginError::Internal)?;
+        let config = CustomOAuth2ProviderConfig::new(
+            record.provider_key().to_owned(),
+            record.display_name().to_owned(),
+            record.client_id().to_owned(),
+            endpoints,
+            record.enabled(),
+        )
+        .map_err(|_| OAuthLoginError::Internal)?;
+        Ok((record, config))
+    }
+
     fn decrypt_client_secret(
         &self,
         profile: LoginOAuthProvider,
@@ -594,6 +808,22 @@ impl DatabaseOAuthLoginService {
             .ok_or(OAuthLoginError::Unavailable)?;
         let base = Url::parse(base).map_err(|_| OAuthLoginError::Internal)?;
         base.join(&format!("/api/auth/oauth/{}/callback", profile.id()))
+            .map(String::from)
+            .map_err(|_| OAuthLoginError::Internal)
+    }
+
+    async fn custom_redirect_uri(&self, provider_key: &str) -> Result<String, OAuthLoginError> {
+        let key = custom_provider_key(provider_key)?;
+        let settings = self
+            .site_settings
+            .settings()
+            .await
+            .map_err(|_| OAuthLoginError::Internal)?;
+        let base = settings
+            .public_base_url()
+            .ok_or(OAuthLoginError::Unavailable)?;
+        let base = Url::parse(base).map_err(|_| OAuthLoginError::Internal)?;
+        base.join(&format!("/api/auth/oauth/custom/{}/callback", key.as_str()))
             .map(String::from)
             .map_err(|_| OAuthLoginError::Internal)
     }
@@ -771,6 +1001,24 @@ fn local_username(profile: LoginOAuthProvider, login: &str, subject: &str) -> St
     .collect()
 }
 
+fn custom_local_username(provider_key: &str, subject: &str) -> String {
+    let prefix: String = provider_key
+        .trim_start_matches("custom_")
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+        .take(20)
+        .collect();
+    let suffix = digest(
+        "custom-oauth2-login-username-v1",
+        &format!("{provider_key}\0{subject}"),
+    );
+    format!(
+        "custom_{}_{}",
+        if prefix.is_empty() { "user" } else { &prefix },
+        &suffix[..32]
+    )
+}
+
 fn validate_state(state: &str) -> Result<(), OAuthLoginError> {
     if state.len() <= 4_096
         && state.starts_with("ols1.")
@@ -826,6 +1074,10 @@ fn normalize_client_id(client_id: Option<String>) -> Result<Option<String>, OAut
 
 fn require_provider(provider: &str) -> Result<LoginOAuthProvider, OAuthLoginError> {
     LoginOAuthProvider::from_id(provider).ok_or(OAuthLoginError::InvalidInput)
+}
+
+fn custom_provider_key(provider: &str) -> Result<CustomOAuth2ProviderKey, OAuthLoginError> {
+    CustomOAuth2ProviderKey::new(provider.to_owned()).map_err(|_| OAuthLoginError::InvalidInput)
 }
 
 fn client_secret_kind(provider: LoginOAuthProvider) -> SystemSecretKind {
@@ -964,6 +1216,30 @@ fn map_repository_error(error: OAuthLoginRepositoryError) -> OAuthLoginError {
     }
 }
 
+fn map_custom_provider_repository_error(
+    error: CustomOAuth2ProviderRepositoryError,
+) -> OAuthLoginError {
+    match error {
+        CustomOAuth2ProviderRepositoryError::InvalidInput => OAuthLoginError::InvalidInput,
+        CustomOAuth2ProviderRepositoryError::ConcurrentUpdate
+        | CustomOAuth2ProviderRepositoryError::Query
+        | CustomOAuth2ProviderRepositoryError::Timeout
+        | CustomOAuth2ProviderRepositoryError::Invariant => OAuthLoginError::Internal,
+    }
+}
+
+fn map_custom_login_repository_error(error: CustomOAuth2LoginRepositoryError) -> OAuthLoginError {
+    match error {
+        CustomOAuth2LoginRepositoryError::InvalidInput => OAuthLoginError::InvalidInput,
+        CustomOAuth2LoginRepositoryError::Rejected | CustomOAuth2LoginRepositoryError::Conflict => {
+            OAuthLoginError::Rejected
+        }
+        CustomOAuth2LoginRepositoryError::Query
+        | CustomOAuth2LoginRepositoryError::Timeout
+        | CustomOAuth2LoginRepositoryError::Invariant => OAuthLoginError::Internal,
+    }
+}
+
 fn map_oauth_client_error(error: OAuthLoginClientError) -> OAuthLoginError {
     match error {
         OAuthLoginClientError::ClientUnavailable => OAuthLoginError::Internal,
@@ -1051,11 +1327,47 @@ mod tests {
         );
         assert!(discord_username.starts_with("dc_discord_user_"));
         assert!(discord_username.len() <= 64);
+        let custom_username = custom_local_username("custom_enterprise", "external-subject-1");
+        assert!(custom_username.starts_with("custom_enterprise_"));
+        assert!(custom_username.len() <= 64);
+        assert!(!custom_username.contains("external-subject-1"));
+        assert_eq!(
+            custom_username,
+            custom_local_username("custom_enterprise", "external-subject-1")
+        );
+        assert_ne!(
+            custom_username,
+            custom_local_username("custom_partner", "external-subject-1")
+        );
         assert_eq!(require_provider("discord"), Ok(LoginOAuthProvider::Discord));
         assert_eq!(require_provider("wechat"), Ok(LoginOAuthProvider::WeChat));
         assert_eq!(
             require_provider("custom"),
             Err(OAuthLoginError::InvalidInput)
+        );
+        assert_eq!(
+            custom_provider_key("github"),
+            Err(OAuthLoginError::InvalidInput)
+        );
+    }
+
+    #[test]
+    fn custom_repository_errors_keep_public_security_classification() {
+        assert_eq!(
+            map_custom_provider_repository_error(CustomOAuth2ProviderRepositoryError::InvalidInput),
+            OAuthLoginError::InvalidInput
+        );
+        assert_eq!(
+            map_custom_login_repository_error(CustomOAuth2LoginRepositoryError::Rejected),
+            OAuthLoginError::Rejected
+        );
+        assert_eq!(
+            map_custom_login_repository_error(CustomOAuth2LoginRepositoryError::Conflict),
+            OAuthLoginError::Rejected
+        );
+        assert_eq!(
+            map_custom_login_repository_error(CustomOAuth2LoginRepositoryError::Query),
+            OAuthLoginError::Internal
         );
     }
 

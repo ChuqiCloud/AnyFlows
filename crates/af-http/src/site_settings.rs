@@ -61,7 +61,7 @@ pub(crate) struct PublicAuthenticationCapabilitiesResponse {
 pub(crate) struct PublicOAuthLoginProviderResponse {
     #[schema(max_length = 32)]
     id: String,
-    #[schema(max_length = 64)]
+    #[schema(max_length = 128)]
     display_name: String,
 }
 

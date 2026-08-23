@@ -75,6 +75,9 @@ mod credential_state;
 #[cfg(test)]
 mod credential_state_tests;
 mod custom_oauth2;
+mod custom_oauth2_login;
+#[cfg(test)]
+mod custom_oauth2_login_tests;
 #[cfg(test)]
 mod custom_oauth2_tests;
 mod debug_trace;
@@ -347,6 +350,10 @@ pub use custom_oauth2::{
     CustomOAuth2ProviderRecord, CustomOAuth2ProviderRepository,
     CustomOAuth2ProviderRepositoryError, CustomOAuth2ProviderSecretUpdate,
     CustomOAuth2ProviderWriteRecord,
+};
+pub use custom_oauth2_login::{
+    CustomOAuth2IdentityCompletion, CustomOAuth2LoginRepository, CustomOAuth2LoginRepositoryError,
+    CustomOAuth2LoginStateClaim,
 };
 pub use debug_trace::{
     DEFAULT_DEBUG_TRACE_BODY_BYTES, DebugTraceAttemptDiagnosticWrite, DebugTraceAttemptOutcome,
