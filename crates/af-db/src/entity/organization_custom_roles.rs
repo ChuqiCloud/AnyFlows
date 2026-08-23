@@ -31,6 +31,8 @@ pub enum Relation {
     Organization,
     #[sea_orm(has_many = "super::organization_custom_role_permissions::Entity")]
     Permissions,
+    #[sea_orm(has_many = "super::organization_memberships::Entity")]
+    Memberships,
 }
 
 impl Related<super::organizations::Entity> for Entity {
@@ -42,5 +44,11 @@ impl Related<super::organizations::Entity> for Entity {
 impl Related<super::organization_custom_role_permissions::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Permissions.def()
+    }
+}
+
+impl Related<super::organization_memberships::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Memberships.def()
     }
 }

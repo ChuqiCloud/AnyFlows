@@ -2258,6 +2258,7 @@ pub(in crate::migration) mod organization_memberships {
         UserId,
         Role,
         TeamId,
+        CustomRoleId,
         Status,
         JoinedAt,
         SuspendedAt,

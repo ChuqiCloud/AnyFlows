@@ -127,6 +127,9 @@ mod organization_budget;
 #[cfg(test)]
 mod organization_budget_tests;
 mod organization_custom_role;
+mod organization_custom_role_binding;
+#[cfg(test)]
+mod organization_custom_role_binding_tests;
 #[cfg(test)]
 mod organization_custom_role_tests;
 #[cfg(test)]
@@ -480,6 +483,11 @@ pub use organization_custom_role::{
     OrganizationCustomRolePageRecord, OrganizationCustomRoleRecord,
     OrganizationCustomRoleRepository, OrganizationCustomRoleRepositoryConfigError,
     OrganizationCustomRoleRepositoryError, OrganizationCustomRoleUpdate,
+};
+pub use organization_custom_role_binding::{
+    OrganizationCustomRoleBindingRecord, OrganizationCustomRoleBindingRepository,
+    OrganizationCustomRoleBindingRepositoryConfigError,
+    OrganizationCustomRoleBindingRepositoryError,
 };
 pub use organization_token::{
     MAX_ORGANIZATION_TOKEN_PAGE_SIZE, OrganizationTokenCreateRecord,

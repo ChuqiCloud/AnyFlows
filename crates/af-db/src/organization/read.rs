@@ -1,13 +1,14 @@
 use af_domain::{
-    OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationId,
-    OrganizationKey, OrganizationMembershipId, OrganizationMembershipStatus, OrganizationRole,
-    OrganizationStatus, OrganizationTeamId, OrganizationTeamStatus, UserId,
+    OrganizationCustomRoleId, OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot,
+    OrganizationId, OrganizationKey, OrganizationMembershipId, OrganizationMembershipStatus,
+    OrganizationRole, OrganizationStatus, OrganizationTeamId, OrganizationTeamStatus, UserId,
 };
 use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect};
 
 use crate::entity::{
     organization_entitlements, organization_memberships, organization_teams, organizations,
 };
+use crate::organization_custom_role_binding::active_custom_role_permissions;
 
 use super::{
     MAX_ORGANIZATION_DIRECTORY_PAGE_SIZE, OrganizationAccessRecord, OrganizationEntitlementRecord,
@@ -137,11 +138,20 @@ pub(super) async fn authorized_access(
         .await
         .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?
         .ok_or(OrganizationRepositoryError::Invariant)?;
+    let entitlement = entitlement_snapshot(entitlement)?;
+    let custom_role_permissions = active_custom_role_permissions(
+        repository.pool.connection(),
+        &membership,
+        entitlement.custom_roles_enabled(),
+    )
+    .await
+    .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?;
     let (active_seats, active_teams) = capacity_counts(repository, organization_id).await?;
     Ok(OrganizationAccessRecord::new(
         organization_record(organization)?,
         membership_record(membership)?,
-        entitlement_snapshot(entitlement)?,
+        entitlement,
+        custom_role_permissions,
         active_seats,
         active_teams,
     ))
@@ -177,11 +187,20 @@ pub(super) async fn list_authorized_access(
             .await
             .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?
             .ok_or(OrganizationRepositoryError::Invariant)?;
+        let entitlement = entitlement_snapshot(entitlement)?;
+        let custom_role_permissions = active_custom_role_permissions(
+            repository.pool.connection(),
+            &membership,
+            entitlement.custom_roles_enabled(),
+        )
+        .await
+        .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?;
         let (active_seats, active_teams) = capacity_counts(repository, organization_id).await?;
         records.push(OrganizationAccessRecord::new(
             organization_record(organization)?,
             membership_record(membership)?,
-            entitlement_snapshot(entitlement)?,
+            entitlement,
+            custom_role_permissions,
             active_seats,
             active_teams,
         ));
@@ -296,6 +315,11 @@ pub(super) fn membership_record(
             .map(OrganizationTeamId::new)
             .transpose()
             .map_err(|_| invariant())?,
+        custom_role_id: model
+            .custom_role_id
+            .map(OrganizationCustomRoleId::new)
+            .transpose()
+            .map_err(|_| invariant())?,
         status,
         joined_at: model.joined_at.unix_timestamp(),
         suspended_at: model.suspended_at.map(|value| value.unix_timestamp()),
@@ -316,7 +340,11 @@ pub(super) fn membership_record(
         }
         OrganizationMembershipStatus::Removed => record.removed_at.is_some(),
     };
-    if record.version <= 0 || record.joined_at < 0 || !lifecycle_valid {
+    if record.version <= 0
+        || record.joined_at < 0
+        || record.custom_role_id.is_some() && record.role != OrganizationRole::Member
+        || !lifecycle_valid
+    {
         return Err(invariant());
     }
     Ok(record)
