@@ -10,6 +10,7 @@ mod network;
 mod organization;
 mod organization_budget;
 mod organization_entitlement;
+mod organization_sso;
 mod payment;
 mod principal;
 mod quota;
@@ -56,6 +57,11 @@ pub use organization_entitlement::{
     MAX_ORGANIZATION_AUDIT_RETENTION_DAYS, OrganizationEntitlementCapacity,
     OrganizationEntitlementSnapshot, OrganizationEntitlementStateError,
     OrganizationEntitlementStatus,
+};
+pub use organization_sso::{
+    OrganizationSsoDomain, OrganizationSsoDomainError, OrganizationSsoDomainStatus,
+    OrganizationSsoEnforcementPolicy, OrganizationSsoIdentifierError, OrganizationSsoProtocol,
+    OrganizationSsoProviderKey, OrganizationSsoProviderStatus, OrganizationSsoStateCodeError,
 };
 pub use payment::{
     TopupIdentifierError, TopupOrderId, TopupOrderStatus, TopupPaymentEventId,
@@ -117,6 +123,8 @@ mod error_tests;
 mod network_tests;
 #[cfg(test)]
 mod organization_budget_tests;
+#[cfg(test)]
+mod organization_sso_tests;
 #[cfg(test)]
 mod organization_tests;
 #[cfg(test)]
