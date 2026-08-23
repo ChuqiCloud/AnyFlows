@@ -354,13 +354,12 @@ impl DatabaseAdminRefundService {
                 RefundApprovalOutcome::Applied(record)
                 | RefundApprovalOutcome::Existing(record) => record,
             };
-            if approve {
-                if let Some(submitter) = &self.submitter {
-                    if submitter.auto_submit_enabled().await? {
-                        let record = submitter.submit(&record, now_seconds()).await?;
-                        return Ok(to_page_from_record(record));
-                    }
-                }
+            if approve
+                && let Some(submitter) = &self.submitter
+                && submitter.auto_submit_enabled().await?
+            {
+                let record = submitter.submit(&record, now_seconds()).await?;
+                return Ok(to_page_from_record(record));
             }
             Ok(to_page_from_record(record))
         })
