@@ -93,6 +93,9 @@ mod m20260821_000084_create_subscription_orders;
 mod m20260822_000085_create_subscription_payment_events;
 mod m20260822_000086_create_refund_requests;
 mod m20260822_000087_add_refund_provider_receipts;
+mod m20260823_000088_add_refund_settings;
+mod m20260823_000089_add_refund_approval;
+mod m20260823_000090_add_refund_payment_reference;
 mod schema;
 
 #[cfg(test)]
@@ -223,6 +226,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260822_000085_create_subscription_payment_events::Migration),
             Box::new(m20260822_000086_create_refund_requests::Migration),
             Box::new(m20260822_000087_add_refund_provider_receipts::Migration),
+            Box::new(m20260823_000088_add_refund_settings::Migration),
+            Box::new(m20260823_000089_add_refund_approval::Migration),
+            Box::new(m20260823_000090_add_refund_payment_reference::Migration),
         ]
     }
 }

@@ -9,8 +9,10 @@ export type AdminPaymentSettings = {
   epay_gateway_url: string | null
   epay_merchant_id: string | null
   epay_merchant_key_configured: boolean
+  epay_refund_enabled: boolean
   epay_quota_per_cny: number
   epay_wxpay_enabled: boolean
+  refund_auto_submit_enabled: boolean
   stripe_enabled: boolean
   stripe_publishable_key: string | null
   stripe_secret_key_configured: boolean
@@ -29,8 +31,10 @@ export type AdminPaymentSettingsRequest = {
   epay_gateway_url: string | null
   epay_merchant_id: string | null
   epay_merchant_key: string | null
+  epay_refund_enabled: boolean
   epay_quota_per_cny: number
   epay_wxpay_enabled: boolean
+  refund_auto_submit_enabled: boolean
   expected_version: number
   stripe_enabled: boolean
   stripe_publishable_key: string | null

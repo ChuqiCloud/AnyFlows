@@ -54,6 +54,8 @@ pub struct PaymentSettingsRecord {
     epay_merchant_key: Option<EncryptedCredentialEnvelope>,
     epay_alipay_enabled: bool,
     epay_wxpay_enabled: bool,
+    epay_refund_enabled: bool,
+    refund_auto_submit_enabled: bool,
     epay_quota_per_cny: i64,
     version: i64,
 }
@@ -135,6 +137,16 @@ impl PaymentSettingsRecord {
     }
 
     #[must_use]
+    pub const fn epay_refund_enabled(&self) -> bool {
+        self.epay_refund_enabled
+    }
+
+    #[must_use]
+    pub const fn refund_auto_submit_enabled(&self) -> bool {
+        self.refund_auto_submit_enabled
+    }
+
+    #[must_use]
     pub const fn epay_quota_per_cny(&self) -> i64 {
         self.epay_quota_per_cny
     }
@@ -182,6 +194,11 @@ impl fmt::Debug for PaymentSettingsRecord {
             )
             .field("epay_alipay_enabled", &self.epay_alipay_enabled)
             .field("epay_wxpay_enabled", &self.epay_wxpay_enabled)
+            .field("epay_refund_enabled", &self.epay_refund_enabled)
+            .field(
+                "refund_auto_submit_enabled",
+                &self.refund_auto_submit_enabled,
+            )
             .field("epay_quota_per_cny", &self.epay_quota_per_cny)
             .field("version", &self.version)
             .finish()
@@ -202,6 +219,8 @@ pub struct PaymentSettingsWriteRecord {
     epay_merchant_key: PaymentSecretUpdate,
     epay_alipay_enabled: bool,
     epay_wxpay_enabled: bool,
+    epay_refund_enabled: bool,
+    refund_auto_submit_enabled: bool,
     epay_quota_per_cny: i64,
 }
 
@@ -221,6 +240,8 @@ impl PaymentSettingsWriteRecord {
         epay_merchant_key: PaymentSecretUpdate,
         epay_alipay_enabled: bool,
         epay_wxpay_enabled: bool,
+        epay_refund_enabled: bool,
+        refund_auto_submit_enabled: bool,
         epay_quota_per_cny: i64,
     ) -> Self {
         Self {
@@ -236,6 +257,8 @@ impl PaymentSettingsWriteRecord {
             epay_merchant_key,
             epay_alipay_enabled,
             epay_wxpay_enabled,
+            epay_refund_enabled,
+            refund_auto_submit_enabled,
             epay_quota_per_cny,
         }
     }
@@ -248,6 +271,8 @@ impl PaymentSettingsWriteRecord {
             || !valid_optional_gateway_url(self.epay_gateway_url.as_deref())
             || !valid_optional_merchant_id(self.epay_merchant_id.as_deref())
             || (self.epay_enabled && !self.epay_alipay_enabled && !self.epay_wxpay_enabled)
+            || (self.epay_refund_enabled && !self.epay_enabled)
+            || (self.refund_auto_submit_enabled && !self.epay_refund_enabled)
         {
             return Err(PaymentSettingsRepositoryError::InvalidSettings);
         }
@@ -401,6 +426,8 @@ impl PaymentSettingsRepository {
             epay_merchant_key.as_ref(),
             record.epay_alipay_enabled,
             record.epay_wxpay_enabled,
+            record.epay_refund_enabled,
+            record.refund_auto_submit_enabled,
         )?;
 
         let version = existing
@@ -424,6 +451,8 @@ impl PaymentSettingsRepository {
             epay_merchant_key: Set(epay_merchant_key),
             epay_alipay_enabled: Set(record.epay_alipay_enabled),
             epay_wxpay_enabled: Set(record.epay_wxpay_enabled),
+            epay_refund_enabled: Set(record.epay_refund_enabled),
+            refund_auto_submit_enabled: Set(record.refund_auto_submit_enabled),
             epay_quota_per_cny: Set(record.epay_quota_per_cny),
             version: Set(version),
             created_at: Set(existing.created_at),
@@ -496,6 +525,8 @@ impl PaymentSettingsRepository {
                 .transpose()?),
             epay_alipay_enabled: Set(record.epay_alipay_enabled),
             epay_wxpay_enabled: Set(record.epay_wxpay_enabled),
+            epay_refund_enabled: Set(record.epay_refund_enabled),
+            refund_auto_submit_enabled: Set(record.refund_auto_submit_enabled),
             epay_quota_per_cny: Set(record.epay_quota_per_cny),
             version: Set(version),
             created_at: Set(existing.created_at),
@@ -582,6 +613,8 @@ fn record_from_model(
         epay_merchant_key.as_ref(),
         model.epay_alipay_enabled,
         model.epay_wxpay_enabled,
+        model.epay_refund_enabled,
+        model.refund_auto_submit_enabled,
     )
     .map_err(|_| internal(PaymentSettingsRepositoryError::Invariant))?;
     if model.id != PAYMENT_SETTINGS_ID
@@ -607,6 +640,8 @@ fn record_from_model(
         epay_merchant_key,
         epay_alipay_enabled: model.epay_alipay_enabled,
         epay_wxpay_enabled: model.epay_wxpay_enabled,
+        epay_refund_enabled: model.epay_refund_enabled,
+        refund_auto_submit_enabled: model.refund_auto_submit_enabled,
         epay_quota_per_cny: model.epay_quota_per_cny,
         version: model.version,
     })
@@ -638,6 +673,8 @@ fn validate_resolved_shape<T>(
     epay_merchant_key: Option<&T>,
     epay_alipay_enabled: bool,
     epay_wxpay_enabled: bool,
+    epay_refund_enabled: bool,
+    refund_auto_submit_enabled: bool,
 ) -> Result<(), PaymentSettingsRepositoryError> {
     if (stripe_enabled
         && (stripe_publishable_key.is_none()
@@ -648,6 +685,8 @@ fn validate_resolved_shape<T>(
                 || epay_merchant_id.is_none()
                 || epay_merchant_key.is_none()
                 || (!epay_alipay_enabled && !epay_wxpay_enabled)))
+        || (epay_refund_enabled && !epay_enabled)
+        || (refund_auto_submit_enabled && !epay_refund_enabled)
     {
         return Err(PaymentSettingsRepositoryError::InvalidSettings);
     }

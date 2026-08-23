@@ -2009,6 +2009,7 @@ async fn start_server(
         Arc::new(RejectAdminUsers),
         Arc::new(RejectAdminUsers),
         None,
+        None,
         QueryApiKeyPolicy::Deny,
         None,
         None,

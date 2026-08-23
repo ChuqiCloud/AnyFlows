@@ -17,6 +17,8 @@ pub struct Model {
     pub order_key: String,
     #[sea_orm(column_type = "String(StringLen::N(64))")]
     pub provider: String,
+    #[sea_orm(column_type = "String(StringLen::N(128))", nullable)]
+    pub payment_reference: Option<String>,
     #[sea_orm(column_type = "Char(Some(3))")]
     pub currency: String,
     pub original_amount_minor: i64,
@@ -24,6 +26,10 @@ pub struct Model {
     #[sea_orm(column_type = "String(StringLen::N(128))", nullable)]
     pub provider_refund_id: Option<String>,
     pub status: i16,
+    pub approval_status: i16,
+    pub approval_actor_id: Option<i64>,
+    #[sea_orm(column_type = "String(StringLen::N(512))", nullable)]
+    pub approval_reason: Option<String>,
     pub version: i64,
     pub created_at: TimeDateTimeWithTimeZone,
     pub updated_at: TimeDateTimeWithTimeZone,

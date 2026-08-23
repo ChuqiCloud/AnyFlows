@@ -52,6 +52,7 @@
     "users": "用户管理",
     "subscriptionManagement": "订阅管理",
     "redemptionCodes": "兑换码管理",
+    "refunds": "退款审批",
     "siteSettings": "站点设置",
     "authenticationSettings": "认证设置",
     "emailSettings": "邮件设置",
@@ -3778,6 +3779,49 @@
       "copy": "浏览器未允许写入剪贴板，请手动选择内容复制。"
     }
   },
+  "refunds": {
+    "eyebrow": "支付运营",
+    "title": "退款审批",
+    "subtitle": "审核退款请求，并通过已配置的支付 Provider 提交已批准退款。",
+    "loading": "正在加载退款请求",
+    "empty": "当前筛选条件下没有退款请求。",
+    "user": "用户 #{{id}}",
+    "filters": {
+      "label": "审批状态",
+      "pending": "待审批",
+      "all": "全部请求",
+      "approved": "已批准",
+      "rejected": "已拒绝"
+    },
+    "summary": {
+      "pending": "待审批 {{count}}",
+      "approved": "已批准 {{count}}",
+      "succeeded": "已成功 {{count}}"
+    },
+    "orderKinds": { "topup": "充值", "subscription": "订阅" },
+    "statuses": { "requested": "待提交", "submitted": "已提交", "succeeded": "退款成功", "failed": "提交失败", "canceled": "已取消" },
+    "approval": { "pending": "待审批", "approved": "已批准", "rejected": "已拒绝" },
+    "table": { "request": "请求", "order": "订单", "amount": "退款 / 原金额", "status": "Provider 状态", "approval": "审批", "actions": "操作" },
+    "actions": { "refresh": "刷新", "retry": "重试", "approve": "批准", "reject": "拒绝", "submit": "提交退款", "cancel": "取消" },
+    "confirm": {
+      "approveTitle": "批准这笔退款？",
+      "approveBody": "系统会先记录审批事实。若已开启自动提交，将立即使用同一请求提交；Provider 拒绝时审批事实仍会保留。",
+      "rejectTitle": "拒绝这笔退款？",
+      "rejectBody": "请求会被标记为已取消，不会向 Provider 提交退款。",
+      "reasonLabel": "审批理由",
+      "reasonPlaceholder": "可选，填写审批理由"
+    },
+    "errors": {
+      "listTitle": "暂时无法读取退款请求",
+      "listBody": "退款列表加载失败，请稍后重试。",
+      "actionTitle": "退款操作未完成",
+      "refund_auto_submit_failed": "Provider 明确拒绝自动提交。审批已保存，请检查 Provider 后使用人工提交。",
+      "refund_outcome_unknown": "Provider 结果未知，请刷新后复用同一请求重试，不要新建退款。",
+      "refund_unavailable": "退款 Provider 不可用，或支付设置已关闭退款能力。",
+      "refund_conflict": "其他管理员已修改此请求，请刷新列表后再操作。",
+      "unknown": "服务暂时无法完成此操作，请刷新后重试。"
+    }
+  },
   "subscriptions": {
     "eyebrow": "订阅权益",
     "title": "我的订阅",
@@ -4190,7 +4234,8 @@
       "title": "易支付",
       "description": "连接兼容易支付协议的聚合网关，可分别开放支付宝与微信支付。",
       "publicBaseUrlRequired": "启用易支付前需要配置站点公开基址",
-      "publicBaseUrlHint": "异步通知和支付返回地址必须使用外部可访问的稳定地址，不能使用当前本地预览地址。"
+      "publicBaseUrlHint": "异步通知和支付返回地址必须使用外部可访问的稳定地址，不能使用当前本地预览地址。",
+      "refundHint": "易支付服务商未必支持退款；仅在服务商确认支持时开启。退款请求仍需管理员审批，自动提交策略只决定审批通过后的执行方式。"
     },
     "fields": {
       "stripeEnabled": "启用 Stripe",
@@ -4204,7 +4249,9 @@
       "epayMerchantKey": "商户 PKey",
       "epayQuotaPerCny": "每人民币到账额度",
       "alipay": "支付宝",
-      "wxpay": "微信支付"
+      "wxpay": "微信支付",
+      "epayRefundEnabled": "允许易支付退款",
+      "refundAutoSubmitEnabled": "审批通过后自动提交退款"
     },
     "status": {
       "enabled": "已启用",
@@ -4239,6 +4286,7 @@
       "epayMerchantId": "请输入不含空格和控制字符的商户 PID。",
       "epayMerchantKey": "请输入有效商户 PKey；替换与清除不能同时选择。",
       "epayPaymentMethod": "启用易支付时至少开放一种支付方式。",
+      "epayRefund": "易支付退款必须在易支付启用且服务商确认支持后开启。",
       "epayPublicBaseUrl": "启用易支付前必须在站点设置中配置公开基址。",
       "epayQuota": "每人民币到账额度必须是正整数。"
     },

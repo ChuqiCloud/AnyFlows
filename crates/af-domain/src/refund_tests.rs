@@ -38,6 +38,7 @@ fn refund_create_rejects_partial_overflow_and_invalid_order_facts() {
         RefundOrderKind::Topup,
         "01".repeat(16),
         "stripe".to_owned(),
+        "pi_original".to_owned(),
         "USD".to_owned(),
         100,
         50,
@@ -52,6 +53,7 @@ fn refund_create_rejects_partial_overflow_and_invalid_order_facts() {
             RefundOrderKind::Topup,
             "01".repeat(16),
             "stripe".to_owned(),
+            "pi_original".to_owned(),
             "USD".to_owned(),
             100,
             101,
@@ -67,6 +69,7 @@ fn refund_create_rejects_partial_overflow_and_invalid_order_facts() {
             RefundOrderKind::Subscription,
             "AA".repeat(16),
             "stripe".to_owned(),
+            "pi_original".to_owned(),
             "USD".to_owned(),
             100,
             50,
@@ -74,4 +77,47 @@ fn refund_create_rejects_partial_overflow_and_invalid_order_facts() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn persisted_history_without_payment_reference_is_readable_but_not_replayable() {
+    let record = RefundRequestRecord::from_persistence(
+        1,
+        id(3),
+        key(4),
+        UserId::new(7).expect("user"),
+        RefundOrderKind::Topup,
+        "01".repeat(16),
+        "stripe".to_owned(),
+        None,
+        "USD".to_owned(),
+        100,
+        50,
+        None,
+        RefundRequestStatus::Requested,
+        RefundApprovalStatus::Pending,
+        None,
+        None,
+        1,
+        1,
+        1,
+    )
+    .expect("legacy nullable payment reference remains readable");
+    assert_eq!(record.payment_reference(), None);
+
+    let write = RefundRequestCreate::new(
+        id(3),
+        key(4),
+        UserId::new(7).expect("user"),
+        RefundOrderKind::Topup,
+        "01".repeat(16),
+        "stripe".to_owned(),
+        "pi_original".to_owned(),
+        "USD".to_owned(),
+        100,
+        50,
+        1,
+    )
+    .expect("new refund request");
+    assert!(!record.matches_create(&write));
 }

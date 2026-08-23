@@ -44,6 +44,8 @@ fn complete_write(
         epay_merchant_key,
         true,
         true,
+        false,
+        false,
         500_000,
     )
 }
@@ -56,6 +58,8 @@ async fn migration_seeds_one_uninitialized_fixed_record() -> Result<(), Box<dyn 
     assert!(!settings.initialized());
     assert!(!settings.stripe_enabled());
     assert!(!settings.epay_enabled());
+    assert!(!settings.epay_refund_enabled());
+    assert!(!settings.refund_auto_submit_enabled());
     assert_eq!(settings.stripe_signature_tolerance_seconds(), 300);
     assert_eq!(settings.epay_quota_per_cny(), 500_000);
     assert_eq!(settings.version(), 1);
@@ -135,6 +139,8 @@ async fn invalid_enabled_shapes_and_stale_versions_roll_back() -> Result<(), Box
         PaymentSecretUpdate::Keep,
         true,
         true,
+        false,
+        false,
         500_000,
     );
     assert_eq!(
@@ -155,6 +161,8 @@ async fn invalid_enabled_shapes_and_stale_versions_roll_back() -> Result<(), Box
         PaymentSecretUpdate::Replace(envelope(0x41)),
         true,
         false,
+        false,
+        false,
         500_000,
     );
     assert_eq!(
@@ -162,6 +170,50 @@ async fn invalid_enabled_shapes_and_stale_versions_roll_back() -> Result<(), Box
         PaymentSettingsRepositoryError::InvalidSettings
     );
     assert_eq!(repository.settings().await?.version(), 1);
+
+    let refund_without_epay = PaymentSettingsWriteRecord::new(
+        1,
+        false,
+        None,
+        PaymentSecretUpdate::Keep,
+        PaymentSecretUpdate::Keep,
+        300,
+        false,
+        None,
+        None,
+        PaymentSecretUpdate::Keep,
+        true,
+        true,
+        true,
+        false,
+        500_000,
+    );
+    assert_eq!(
+        repository.update(refund_without_epay).await.unwrap_err(),
+        PaymentSettingsRepositoryError::InvalidSettings
+    );
+
+    let auto_without_refund = PaymentSettingsWriteRecord::new(
+        1,
+        false,
+        None,
+        PaymentSecretUpdate::Keep,
+        PaymentSecretUpdate::Keep,
+        300,
+        true,
+        Some("https://pay.example.com".to_owned()),
+        Some("merchant_1001".to_owned()),
+        PaymentSecretUpdate::Replace(envelope(0x40)),
+        true,
+        true,
+        false,
+        true,
+        500_000,
+    );
+    assert_eq!(
+        repository.update(auto_without_refund).await.unwrap_err(),
+        PaymentSettingsRepositoryError::InvalidSettings
+    );
 
     let saved = repository
         .update(complete_write(

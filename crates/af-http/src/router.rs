@@ -66,6 +66,9 @@ use crate::management_model_sync::{
 };
 use crate::management_model_writes::{create_admin_model, delete_admin_model, update_admin_model};
 use crate::management_models::{get_admin_model, list_admin_models};
+use crate::management_refunds::{
+    approve_admin_refund, list_admin_refunds, reject_admin_refund, submit_admin_refund,
+};
 use crate::management_route_writes::{create_admin_route, delete_admin_route, update_admin_route};
 use crate::management_routes::{get_admin_route, list_admin_routes};
 use crate::management_session::current_session;
@@ -209,6 +212,7 @@ pub fn build_router(
     admin_user_reader: Arc<dyn AdminUserReader>,
     admin_user_writer: Arc<dyn AdminUserWriter>,
     admin_wallet_service: Option<Arc<dyn AdminWalletService>>,
+    admin_refund_service: Option<Arc<dyn af_admin::AdminRefundService>>,
     query_api_key_policy: QueryApiKeyPolicy,
     frontend_assets: Option<Arc<dyn FrontendAssetSource>>,
     payment_webhook_routes: Option<Router>,
@@ -276,6 +280,7 @@ pub fn build_router(
     .with_admin_dashboard_reader(admin_dashboard_reader)
     .with_admin_usage_log_reader(admin_usage_log_reader)
     .with_admin_wallet_service(admin_wallet_service)
+    .with_admin_refund_service(admin_refund_service)
     .with_platform_audit_service(platform_audit_service.clone())
     .with_organization_authorization_service(organization_authorization_service)
     .with_organization_invitation_service(organization_invitation_service)
@@ -564,6 +569,30 @@ pub fn build_router(
             post(adjust_admin_wallet)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(wallet_adjustment_authentication),
+        )
+        .route(
+            "/api/admin/refunds",
+            get(list_admin_refunds)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(channel_collection_authentication.clone()),
+        )
+        .route(
+            "/api/admin/refunds/{request_id}/approve",
+            post(approve_admin_refund)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(channel_collection_authentication.clone()),
+        )
+        .route(
+            "/api/admin/refunds/{request_id}/reject",
+            post(reject_admin_refund)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(channel_collection_authentication.clone()),
+        )
+        .route(
+            "/api/admin/refunds/{request_id}/submit",
+            post(submit_admin_refund)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(channel_collection_authentication.clone()),
         )
         .route(
             "/api/admin/groups",

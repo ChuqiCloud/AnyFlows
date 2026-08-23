@@ -1,12 +1,13 @@
 use std::time::Duration;
 
 use af_domain::{
-    RefundOrderKind, RefundRequestCreate, RefundRequestCreateOutcome, RefundRequestId,
-    RefundRequestKey, RefundRequestRecord, RefundRequestStatus, UserId,
+    MAX_REFUND_APPROVAL_REASON_BYTES, RefundApprovalStatus, RefundOrderKind, RefundRequestCreate,
+    RefundRequestCreateOutcome, RefundRequestId, RefundRequestKey, RefundRequestRecord,
+    RefundRequestStatus, UserId,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
-    EntityTrait, QueryFilter, Set, SqlErr, TransactionTrait,
+    EntityTrait, QueryFilter, QueryOrder, QuerySelect, Set, SqlErr, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone, sea_query::Expr,
 };
 use thiserror::Error;
@@ -76,6 +77,62 @@ impl RefundRepository {
         match timeout(self.operation_timeout, operation).await {
             Ok(result) => result,
             Err(_) => Err(RefundRepositoryError::Timeout),
+        }
+    }
+
+    /// 按数据库 ID 倒序分页读取管理员可见的退款请求。
+    pub async fn list_admin_requests(
+        &self,
+        query: RefundAdminListQuery,
+    ) -> Result<RefundAdminPage, RefundRepositoryError> {
+        let operation = list_admin_requests_inner(self.pool.connection(), query);
+        match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result,
+            Err(_) => Err(RefundRepositoryError::Timeout),
+        }
+    }
+
+    /// 以版本和审批状态 CAS 批准退款请求，重复批准只返回已有事实。
+    pub async fn approve_request(
+        &self,
+        request_id: RefundRequestId,
+        actor_id: UserId,
+        reason: Option<String>,
+        updated_at: u64,
+    ) -> Result<RefundApprovalOutcome, RefundRepositoryError> {
+        let operation = apply_approval_inner(
+            self.pool.connection(),
+            request_id,
+            actor_id,
+            reason,
+            RefundApprovalStatus::Approved,
+            updated_at,
+        );
+        match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result,
+            Err(_) => Err(RefundRepositoryError::OutcomeUnknown),
+        }
+    }
+
+    /// 以版本和审批状态 CAS 拒绝退款请求，并关闭尚未提交的 Provider 生命周期。
+    pub async fn reject_request(
+        &self,
+        request_id: RefundRequestId,
+        actor_id: UserId,
+        reason: Option<String>,
+        updated_at: u64,
+    ) -> Result<RefundApprovalOutcome, RefundRepositoryError> {
+        let operation = apply_approval_inner(
+            self.pool.connection(),
+            request_id,
+            actor_id,
+            reason,
+            RefundApprovalStatus::Rejected,
+            updated_at,
+        );
+        match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result,
+            Err(_) => Err(RefundRepositoryError::OutcomeUnknown),
         }
     }
 
@@ -152,8 +209,80 @@ impl RefundRepository {
     }
 }
 
-/// Provider 调用前成功抢到的退款请求快照。
+/// 管理员退款列表默认分页边界。
+pub const DEFAULT_REFUND_ADMIN_PAGE_SIZE: usize = 50;
+pub const MAX_REFUND_ADMIN_PAGE_SIZE: usize = 100;
+
+/// 管理员退款列表查询，使用 ID 游标避免时间戳并列漂移。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RefundAdminListQuery {
+    after_id: Option<i64>,
+    approval_status: Option<RefundApprovalStatus>,
+    limit: usize,
+}
+
+impl RefundAdminListQuery {
+    #[must_use]
+    pub const fn new(
+        after_id: Option<i64>,
+        approval_status: Option<RefundApprovalStatus>,
+        limit: usize,
+    ) -> Self {
+        Self {
+            after_id,
+            approval_status,
+            limit,
+        }
+    }
+    #[must_use]
+    pub const fn after_id(self) -> Option<i64> {
+        self.after_id
+    }
+    #[must_use]
+    pub const fn approval_status(self) -> Option<RefundApprovalStatus> {
+        self.approval_status
+    }
+    #[must_use]
+    pub const fn limit(self) -> usize {
+        self.limit
+    }
+}
+
+impl Default for RefundAdminListQuery {
+    fn default() -> Self {
+        Self::new(None, None, DEFAULT_REFUND_ADMIN_PAGE_SIZE)
+    }
+}
+
+/// 管理员退款列表页，仅返回脱敏领域快照。
 #[derive(Debug)]
+pub struct RefundAdminPage {
+    entries: Vec<RefundRequestRecord>,
+    next_cursor: Option<i64>,
+}
+
+impl RefundAdminPage {
+    #[must_use]
+    pub fn into_parts(self) -> (Vec<RefundRequestRecord>, Option<i64>) {
+        (self.entries, self.next_cursor)
+    }
+    #[must_use]
+    pub fn entries(&self) -> &[RefundRequestRecord] {
+        &self.entries
+    }
+    #[must_use]
+    pub const fn next_cursor(&self) -> Option<i64> {
+        self.next_cursor
+    }
+}
+
+/// 审批 CAS 的结果，重复请求不再次写入或触发资金动作。
+#[derive(Debug)]
+pub enum RefundApprovalOutcome {
+    Applied(RefundRequestRecord),
+    Existing(RefundRequestRecord),
+}
+
 pub enum RefundSubmissionOutcome {
     Applied(RefundRequestRecord),
     Existing(RefundRequestRecord),
@@ -183,6 +312,113 @@ pub enum RefundReceiptOutcome {
     Applied(RefundRequestRecord),
     Existing(RefundRequestRecord),
     NotFound,
+}
+
+async fn list_admin_requests_inner(
+    connection: &DatabaseConnection,
+    query: RefundAdminListQuery,
+) -> Result<RefundAdminPage, RefundRepositoryError> {
+    if query.after_id().is_some_and(|value| value <= 0) {
+        return Err(RefundRepositoryError::Invariant);
+    }
+    let limit = query.limit().clamp(1, MAX_REFUND_ADMIN_PAGE_SIZE);
+    let mut statement = refund_requests::Entity::find();
+    if let Some(after_id) = query.after_id() {
+        statement = statement.filter(refund_requests::Column::Id.lt(after_id));
+    }
+    if let Some(status) = query.approval_status() {
+        statement = statement.filter(refund_requests::Column::ApprovalStatus.eq(status.code()));
+    }
+    let mut models = statement
+        .order_by_desc(refund_requests::Column::Id)
+        .limit((limit + 1) as u64)
+        .all(connection)
+        .await
+        .map_err(map_query)?;
+    let next_cursor = if models.len() > limit {
+        models.pop().map(|model| model.id)
+    } else {
+        None
+    };
+    let entries = models
+        .into_iter()
+        .map(to_record)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(RefundAdminPage {
+        entries,
+        next_cursor,
+    })
+}
+
+async fn apply_approval_inner(
+    connection: &DatabaseConnection,
+    request_id: RefundRequestId,
+    actor_id: UserId,
+    reason: Option<String>,
+    target: RefundApprovalStatus,
+    updated_at: u64,
+) -> Result<RefundApprovalOutcome, RefundRepositoryError> {
+    if reason.as_deref().is_some_and(|value| {
+        value.is_empty()
+            || value.len() > MAX_REFUND_APPROVAL_REASON_BYTES
+            || value.trim() != value
+            || value.chars().any(char::is_control)
+    }) {
+        return Err(RefundRepositoryError::Invariant);
+    }
+    let Some(current) = load_model_by_request_key(connection, request_id).await? else {
+        return Err(RefundRepositoryError::NotFound);
+    };
+    let record = to_record(current.clone())?;
+    if updated_at < record.created_at() {
+        return Err(RefundRepositoryError::Invariant);
+    }
+    if record.approval_status() == target {
+        return Ok(RefundApprovalOutcome::Existing(record));
+    }
+    if record.approval_status() != RefundApprovalStatus::Pending
+        || record.status() != RefundRequestStatus::Requested
+    {
+        return Err(RefundRepositoryError::Conflict);
+    }
+    let next_version = record
+        .version()
+        .checked_add(1)
+        .ok_or(RefundRepositoryError::Invariant)?;
+    let updated_at = to_database_time(updated_at)?;
+    let mut update = refund_requests::Entity::update_many()
+        .filter(refund_requests::Column::Id.eq(record.database_id()))
+        .filter(refund_requests::Column::Version.eq(record.version() as i64))
+        .filter(refund_requests::Column::ApprovalStatus.eq(RefundApprovalStatus::Pending.code()))
+        .filter(refund_requests::Column::Status.eq(RefundRequestStatus::Requested.code()))
+        .col_expr(
+            refund_requests::Column::ApprovalStatus,
+            Expr::value(target.code()),
+        )
+        .col_expr(
+            refund_requests::Column::ApprovalActorId,
+            Expr::value(actor_id.get()),
+        )
+        .col_expr(refund_requests::Column::ApprovalReason, Expr::value(reason))
+        .col_expr(
+            refund_requests::Column::Version,
+            Expr::value(i64::try_from(next_version).map_err(|_| RefundRepositoryError::Invariant)?),
+        )
+        .col_expr(refund_requests::Column::UpdatedAt, Expr::value(updated_at));
+    if target == RefundApprovalStatus::Rejected {
+        update = update.col_expr(
+            refund_requests::Column::Status,
+            Expr::value(RefundRequestStatus::Canceled.code()),
+        );
+    }
+    let result = update.exec(connection).await.map_err(map_query)?;
+    if result.rows_affected != 1 {
+        return Err(RefundRepositoryError::Conflict);
+    }
+    let model = load_model_by_request_key(connection, request_id)
+        .await?
+        .ok_or(RefundRepositoryError::OutcomeUnknown)?;
+    Ok(RefundApprovalOutcome::Applied(to_record(model)?))
 }
 
 async fn claim_submission_inner(
@@ -601,11 +837,15 @@ async fn create_request_inner(
         order_kind: Set(write.order_kind().code()),
         order_key: Set(write.order_key().to_owned()),
         provider: Set(write.provider().to_owned()),
+        payment_reference: Set(Some(write.payment_reference().to_owned())),
         currency: Set(write.currency().to_owned()),
         original_amount_minor: Set(write.original_amount_minor()),
         refund_amount_minor: Set(write.refund_amount_minor()),
         provider_refund_id: Set(None),
         status: Set(RefundRequestStatus::Requested.code()),
+        approval_status: Set(RefundApprovalStatus::Pending.code()),
+        approval_actor_id: Set(None),
+        approval_reason: Set(None),
         version: Set(1),
         created_at: Set(created_at),
         updated_at: Set(created_at),
@@ -718,11 +958,19 @@ fn to_record(model: refund_requests::Model) -> Result<RefundRequestRecord, Refun
         order_kind,
         model.order_key,
         model.provider,
+        model.payment_reference,
         model.currency,
         model.original_amount_minor,
         model.refund_amount_minor,
         model.provider_refund_id,
         status,
+        RefundApprovalStatus::try_from(model.approval_status)
+            .map_err(|_| RefundRepositoryError::Invariant)?,
+        model
+            .approval_actor_id
+            .map(|value| UserId::new(value).map_err(|_| RefundRepositoryError::Invariant))
+            .transpose()?,
+        model.approval_reason,
         model.version,
         created_at,
         updated_at,

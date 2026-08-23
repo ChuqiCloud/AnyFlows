@@ -9,6 +9,8 @@ const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 pub const MAX_REFUND_ORDER_KEY_BYTES: usize = REFUND_KEY_BYTES;
 pub const MAX_REFUND_PROVIDER_BYTES: usize = 64;
 pub const MAX_REFUND_PROVIDER_REFUND_ID_BYTES: usize = 128;
+pub const MAX_REFUND_PAYMENT_REFERENCE_BYTES: usize = 128;
+pub const MAX_REFUND_APPROVAL_REASON_BYTES: usize = 512;
 
 /// 退款业务标识构造错误；不保留外部输入。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
@@ -171,6 +173,35 @@ impl TryFrom<i16> for RefundRequestStatus {
     }
 }
 
+/// 管理员审批状态，与 Provider 退款生命周期独立持久化。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(i16)]
+pub enum RefundApprovalStatus {
+    Pending = 1,
+    Approved = 2,
+    Rejected = 3,
+}
+
+impl RefundApprovalStatus {
+    #[must_use]
+    pub const fn code(self) -> i16 {
+        self as i16
+    }
+}
+
+impl TryFrom<i16> for RefundApprovalStatus {
+    type Error = RefundStateCodeError;
+
+    fn try_from(value: i16) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::Pending),
+            2 => Ok(Self::Approved),
+            3 => Ok(Self::Rejected),
+            _ => Err(RefundStateCodeError::InvalidApprovalStatus),
+        }
+    }
+}
+
 /// 退款状态持久化代码错误。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum RefundStateCodeError {
@@ -180,6 +211,9 @@ pub enum RefundStateCodeError {
     /// 退款状态不属于闭合集合。
     #[error("退款状态无效")]
     InvalidStatus,
+    /// 审批状态不属于固定集合。
+    #[error("退款审批状态无效")]
+    InvalidApprovalStatus,
 }
 
 /// 创建退款请求时固化的订单与金额事实。
@@ -190,6 +224,7 @@ pub struct RefundRequestCreate {
     pub(super) order_kind: RefundOrderKind,
     pub(super) order_key: String,
     pub(super) provider: String,
+    pub(super) payment_reference: String,
     pub(super) currency: String,
     pub(super) original_amount_minor: i64,
     pub(super) refund_amount_minor: i64,
@@ -206,12 +241,16 @@ impl RefundRequestCreate {
         order_kind: RefundOrderKind,
         order_key: String,
         provider: String,
+        payment_reference: String,
         currency: String,
         original_amount_minor: u64,
         refund_amount_minor: u64,
         created_at: u64,
     ) -> Result<Self, RefundRequestInputError> {
-        if !valid_order_key(&order_key) || !valid_provider(&provider) || !valid_currency(&currency)
+        if !valid_order_key(&order_key)
+            || !valid_provider(&provider)
+            || !valid_payment_reference(&payment_reference)
+            || !valid_currency(&currency)
         {
             return Err(RefundRequestInputError::InvalidOrderFact);
         }
@@ -233,6 +272,7 @@ impl RefundRequestCreate {
             order_kind,
             order_key,
             provider,
+            payment_reference,
             currency,
             original_amount_minor,
             refund_amount_minor,
@@ -263,6 +303,10 @@ impl RefundRequestCreate {
     #[must_use]
     pub fn provider(&self) -> &str {
         &self.provider
+    }
+    #[must_use]
+    pub fn payment_reference(&self) -> &str {
+        &self.payment_reference
     }
     #[must_use]
     pub fn currency(&self) -> &str {
@@ -298,11 +342,15 @@ pub struct RefundRequestRecord {
     pub(super) order_kind: RefundOrderKind,
     pub(super) order_key: String,
     pub(super) provider: String,
+    pub(super) payment_reference: Option<String>,
     pub(super) currency: String,
     pub(super) original_amount_minor: i64,
     pub(super) refund_amount_minor: i64,
     pub(super) provider_refund_id: Option<String>,
     pub(super) status: RefundRequestStatus,
+    pub(super) approval_status: RefundApprovalStatus,
+    pub(super) approval_actor_id: Option<UserId>,
+    pub(super) approval_reason: Option<String>,
     pub(super) version: u64,
     pub(super) created_at: u64,
     pub(super) updated_at: u64,
@@ -322,11 +370,15 @@ impl RefundRequestRecord {
         order_kind: RefundOrderKind,
         order_key: String,
         provider: String,
+        payment_reference: Option<String>,
         currency: String,
         original_amount_minor: i64,
         refund_amount_minor: i64,
         provider_refund_id: Option<String>,
         status: RefundRequestStatus,
+        approval_status: RefundApprovalStatus,
+        approval_actor_id: Option<UserId>,
+        approval_reason: Option<String>,
         version: i64,
         created_at: u64,
         updated_at: u64,
@@ -334,21 +386,17 @@ impl RefundRequestRecord {
         if database_id <= 0 || version <= 0 || updated_at < created_at {
             return Err(RefundRequestInputError::InvalidPersistedState);
         }
-        let create = RefundRequestCreate::new(
-            request_id,
-            idempotency_key,
-            user_id,
-            order_kind,
-            order_key,
-            provider,
-            currency,
-            u64::try_from(original_amount_minor)
-                .map_err(|_| RefundRequestInputError::InvalidPersistedState)?,
-            u64::try_from(refund_amount_minor)
-                .map_err(|_| RefundRequestInputError::InvalidPersistedState)?,
-            created_at,
-        )
-        .map_err(|_| RefundRequestInputError::InvalidPersistedState)?;
+        if !valid_order_key(&order_key) || !valid_provider(&provider) || !valid_currency(&currency)
+        {
+            return Err(RefundRequestInputError::InvalidPersistedState);
+        }
+        if original_amount_minor <= 0
+            || refund_amount_minor <= 0
+            || refund_amount_minor > original_amount_minor
+            || created_at > i64::MAX as u64
+        {
+            return Err(RefundRequestInputError::InvalidPersistedState);
+        }
         if provider_refund_id.as_deref().is_some_and(|value| {
             value.is_empty()
                 || value.len() > MAX_REFUND_PROVIDER_REFUND_ID_BYTES
@@ -357,22 +405,48 @@ impl RefundRequestRecord {
         }) {
             return Err(RefundRequestInputError::InvalidPersistedState);
         }
+        if payment_reference
+            .as_deref()
+            .is_some_and(|value| !valid_payment_reference(value))
+        {
+            return Err(RefundRequestInputError::InvalidPersistedState);
+        }
         if status == RefundRequestStatus::Succeeded && provider_refund_id.is_none() {
+            return Err(RefundRequestInputError::InvalidPersistedState);
+        }
+        if approval_reason.as_deref().is_some_and(|value| {
+            value.is_empty()
+                || value.len() > MAX_REFUND_APPROVAL_REASON_BYTES
+                || value.trim() != value
+                || value.chars().any(char::is_control)
+        }) {
+            return Err(RefundRequestInputError::InvalidPersistedState);
+        }
+        if approval_status == RefundApprovalStatus::Pending
+            && (approval_actor_id.is_some() || approval_reason.is_some())
+        {
+            return Err(RefundRequestInputError::InvalidPersistedState);
+        }
+        if approval_status != RefundApprovalStatus::Pending && approval_actor_id.is_none() {
             return Err(RefundRequestInputError::InvalidPersistedState);
         }
         Ok(Self {
             database_id,
-            request_id: create.request_id,
-            idempotency_key: create.idempotency_key,
-            user_id: create.user_id,
-            order_kind: create.order_kind,
-            order_key: create.order_key,
-            provider: create.provider,
-            currency: create.currency,
-            original_amount_minor: create.original_amount_minor,
-            refund_amount_minor: create.refund_amount_minor,
+            request_id,
+            idempotency_key,
+            user_id,
+            order_kind,
+            order_key,
+            provider,
+            payment_reference,
+            currency,
+            original_amount_minor,
+            refund_amount_minor,
             provider_refund_id,
             status,
+            approval_status,
+            approval_actor_id,
+            approval_reason,
             version: u64::try_from(version)
                 .map_err(|_| RefundRequestInputError::InvalidPersistedState)?,
             created_at,
@@ -409,6 +483,10 @@ impl RefundRequestRecord {
         &self.provider
     }
     #[must_use]
+    pub fn payment_reference(&self) -> Option<&str> {
+        self.payment_reference.as_deref()
+    }
+    #[must_use]
     pub fn currency(&self) -> &str {
         &self.currency
     }
@@ -429,6 +507,18 @@ impl RefundRequestRecord {
         self.provider_refund_id.as_deref()
     }
     #[must_use]
+    pub const fn approval_status(&self) -> RefundApprovalStatus {
+        self.approval_status
+    }
+    #[must_use]
+    pub const fn approval_actor_id(&self) -> Option<UserId> {
+        self.approval_actor_id
+    }
+    #[must_use]
+    pub fn approval_reason(&self) -> Option<&str> {
+        self.approval_reason.as_deref()
+    }
+    #[must_use]
     pub const fn version(&self) -> u64 {
         self.version
     }
@@ -447,6 +537,7 @@ impl RefundRequestRecord {
             && self.order_kind == write.order_kind
             && self.order_key == write.order_key
             && self.provider == write.provider
+            && self.payment_reference.as_deref() == Some(write.payment_reference())
             && self.currency == write.currency
             && self.original_amount_minor == write.original_amount_minor
             && self.refund_amount_minor == write.refund_amount_minor
@@ -508,6 +599,13 @@ fn valid_provider(value: &str) -> bool {
         && value.bytes().all(|byte| {
             byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"._-".contains(&byte)
         })
+}
+
+fn valid_payment_reference(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_REFUND_PAYMENT_REFERENCE_BYTES
+        && value.trim() == value
+        && !value.chars().any(char::is_control)
 }
 
 fn valid_currency(value: &str) -> bool {

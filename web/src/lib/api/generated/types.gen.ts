@@ -789,6 +789,8 @@ export type AdminPaymentSettings = {
     epay_merchant_key_configured: boolean;
     epay_alipay_enabled: boolean;
     epay_wxpay_enabled: boolean;
+    epay_refund_enabled: boolean;
+    refund_auto_submit_enabled: boolean;
     epay_quota_per_cny: number;
     version: number;
 };
@@ -805,6 +807,8 @@ export type AdminPaymentSettingsRequest = {
     clear_epay_merchant_key: boolean;
     epay_alipay_enabled: boolean;
     epay_wxpay_enabled: boolean;
+    epay_refund_enabled: boolean;
+    refund_auto_submit_enabled: boolean;
     epay_quota_per_cny: number;
 };
 export type AdminRedemptionAuditBatch = {
@@ -870,6 +874,34 @@ export type AdminRedemptionBatchListResponse = {
     next_cursor: number | null;
 };
 export type AdminRedemptionBatchStatus = 'active' | 'disabled';
+export type AdminRefundApprovalStatus = 'pending' | 'approved' | 'rejected';
+export type AdminRefundDecisionRequest = {
+    reason: string | null;
+};
+export type AdminRefundListResponse = {
+    entries: Array<AdminRefundRequest>;
+    next_cursor: number | null;
+};
+export type AdminRefundOrderKind = 'topup' | 'subscription';
+export type AdminRefundRequest = {
+    request_id: string;
+    user_id: number;
+    order_kind: AdminRefundOrderKind;
+    order_key: string;
+    provider: string;
+    currency: string;
+    original_amount_minor: number;
+    refund_amount_minor: number;
+    provider_refund_id: string | null;
+    status: AdminRefundStatus;
+    approval_status: AdminRefundApprovalStatus;
+    approval_actor_id: number | null;
+    approval_reason: string | null;
+    version: number;
+    created_at: number;
+    updated_at: number;
+};
+export type AdminRefundStatus = 'requested' | 'submitted' | 'succeeded' | 'failed' | 'canceled';
 export type AdminResponsesCompactProbe = {
     result: ResponsesCompactProbeResult;
     checked_at: number | null;
@@ -1198,7 +1230,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'two_factor_required' | 'two_factor_invalid' | 'password_login_disabled' | 'turnstile_rejected' | 'turnstile_unavailable' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'site_settings_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'token_outcome_unknown' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_login_settings_conflict' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'organization_not_found' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'topup_unavailable' | 'topup_provider_rejected' | 'topup_order_conflict' | 'topup_order_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'subscription_plan_not_found' | 'subscription_plan_disabled' | 'subscription_not_found' | 'subscription_transition_invalid' | 'subscription_in_use' | 'subscription_conflict' | 'subscription_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'two_factor_already_enabled' | 'two_factor_not_enabled' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'debug_trace_not_found' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_expression_invalid' | 'model_price_expression_preview_invalid' | 'model_price_expression_evaluation_failed' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'two_factor_required' | 'two_factor_invalid' | 'password_login_disabled' | 'turnstile_rejected' | 'turnstile_unavailable' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'site_settings_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'token_outcome_unknown' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_login_settings_conflict' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'organization_not_found' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'refund_not_found' | 'refund_conflict' | 'refund_unavailable' | 'refund_auto_submit_failed' | 'refund_outcome_unknown' | 'topup_unavailable' | 'topup_provider_rejected' | 'topup_order_conflict' | 'topup_order_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'subscription_plan_not_found' | 'subscription_plan_disabled' | 'subscription_not_found' | 'subscription_transition_invalid' | 'subscription_in_use' | 'subscription_conflict' | 'subscription_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'two_factor_already_enabled' | 'two_factor_not_enabled' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'debug_trace_not_found' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_expression_invalid' | 'model_price_expression_preview_invalid' | 'model_price_expression_evaluation_failed' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
     message: string;
 };
 export type ModelCatalogBillingMode = 'per_token' | 'free';
@@ -2405,6 +2437,8 @@ export type AdminPaymentSettingsRequestWritable = {
     clear_epay_merchant_key: boolean;
     epay_alipay_enabled: boolean;
     epay_wxpay_enabled: boolean;
+    epay_refund_enabled: boolean;
+    refund_auto_submit_enabled: boolean;
     epay_quota_per_cny: number;
 };
 export type LoginRequestWritable = {
@@ -2840,6 +2874,93 @@ export type RedeemUserRedemptionCodeResponses = {
     200: UserRedemptionResult;
 };
 export type RedeemUserRedemptionCodeResponse = RedeemUserRedemptionCodeResponses[keyof RedeemUserRedemptionCodeResponses];
+export type ListAdminRefundsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        after?: number;
+        approval_status?: string;
+        limit?: number;
+    };
+    url: '/api/admin/refunds';
+};
+export type ListAdminRefundsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminRefundsError = ListAdminRefundsErrors[keyof ListAdminRefundsErrors];
+export type ListAdminRefundsResponses = {
+    200: AdminRefundListResponse;
+};
+export type ListAdminRefundsResponse = ListAdminRefundsResponses[keyof ListAdminRefundsResponses];
+export type ApproveAdminRefundData = {
+    body: AdminRefundDecisionRequest;
+    path: {
+        request_id: string;
+    };
+    query?: never;
+    url: '/api/admin/refunds/{request_id}/approve';
+};
+export type ApproveAdminRefundErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    502: ManagementError;
+    503: ManagementError;
+};
+export type ApproveAdminRefundError = ApproveAdminRefundErrors[keyof ApproveAdminRefundErrors];
+export type ApproveAdminRefundResponses = {
+    200: AdminRefundListResponse;
+};
+export type ApproveAdminRefundResponse = ApproveAdminRefundResponses[keyof ApproveAdminRefundResponses];
+export type RejectAdminRefundData = {
+    body: AdminRefundDecisionRequest;
+    path: {
+        request_id: string;
+    };
+    query?: never;
+    url: '/api/admin/refunds/{request_id}/reject';
+};
+export type RejectAdminRefundErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type RejectAdminRefundError = RejectAdminRefundErrors[keyof RejectAdminRefundErrors];
+export type RejectAdminRefundResponses = {
+    200: AdminRefundListResponse;
+};
+export type RejectAdminRefundResponse = RejectAdminRefundResponses[keyof RejectAdminRefundResponses];
+export type SubmitAdminRefundData = {
+    body?: never;
+    path: {
+        request_id: string;
+    };
+    query?: never;
+    url: '/api/admin/refunds/{request_id}/submit';
+};
+export type SubmitAdminRefundErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type SubmitAdminRefundError = SubmitAdminRefundErrors[keyof SubmitAdminRefundErrors];
+export type SubmitAdminRefundResponses = {
+    200: AdminRefundListResponse;
+};
+export type SubmitAdminRefundResponse = SubmitAdminRefundResponses[keyof SubmitAdminRefundResponses];
 export type ListAdminSubscriptionPlansData = {
     body?: never;
     path?: never;

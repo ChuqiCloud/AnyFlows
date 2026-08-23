@@ -30,6 +30,7 @@ mod playground_conversations;
 mod playground_shares;
 mod redemptions;
 mod refund_webhook;
+mod refunds;
 mod registration;
 mod rerank;
 mod responses_compact;
@@ -68,6 +69,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(speech::document());
     document.merge(videos::document());
     document.merge(redemptions::document());
+    document.merge(refunds::document());
     document.merge(subscriptions::document());
     document.merge(password_reset::document());
     document.merge(user_profile::document());
@@ -122,6 +124,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("个人资料与安全"),
         Tag::new("我的钱包"),
         Tag::new("兑换码"),
+        Tag::new("退款审批"),
         Tag::new("订阅管理"),
         Tag::new("邀请中心"),
         Tag::new("站点设置"),
@@ -197,7 +200,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 152);
+        assert_eq!(document.paths.paths.len(), 156);
         let operation_count = document
             .paths
             .paths
@@ -218,7 +221,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 211);
+        assert_eq!(operation_count, 215);
         assert!(
             document
                 .components
@@ -443,6 +446,10 @@ mod tests {
             "updateAdminUser",
             "updateUserToken",
             "adjustAdminWallet",
+            "listAdminRefunds",
+            "approveAdminRefund",
+            "rejectAdminRefund",
+            "submitAdminRefund",
             "bindAdminUserSubscription",
             "transitionAdminUserSubscriptionLifecycle",
             "listAdminWalletEntries",
@@ -463,7 +470,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 362);
+        assert_eq!(schemas.len(), 368);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminDashboardChannelFlow"));
         assert!(schemas.contains_key("AdminDashboardFailure"));
@@ -613,6 +620,12 @@ mod tests {
         assert!(schemas.contains_key("AdminWalletEntryType"));
         assert!(schemas.contains_key("AdminWalletListResponse"));
         assert!(schemas.contains_key("AdminWalletAdjustmentRequest"));
+        assert!(schemas.contains_key("AdminRefundRequest"));
+        assert!(schemas.contains_key("AdminRefundListResponse"));
+        assert!(schemas.contains_key("AdminRefundDecisionRequest"));
+        assert!(schemas.contains_key("AdminRefundOrderKind"));
+        assert!(schemas.contains_key("AdminRefundStatus"));
+        assert!(schemas.contains_key("AdminRefundApprovalStatus"));
         assert!(schemas.contains_key("AdminUsageLogVideoResolution"));
         assert!(schemas.contains_key("AdminRedemptionAuditBatch"));
         assert!(schemas.contains_key("AdminRedemptionAuditListResponse"));
