@@ -1702,10 +1702,7 @@
             "description": "数据库 ID 游标",
             "required": false,
             "schema": {
-              "type": [
-                "integer",
-                "null"
-              ],
+              "type": "integer",
               "format": "int64"
             }
           },
@@ -1715,10 +1712,7 @@
             "description": "pending、approved 或 rejected",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -1727,10 +1721,7 @@
             "description": "每页数量，默认 50，最大 100",
             "required": false,
             "schema": {
-              "type": [
-                "integer",
-                "null"
-              ],
+              "type": "integer",
               "format": "int64"
             }
           }
