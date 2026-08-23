@@ -261,7 +261,8 @@ async fn binding_repository_enforces_scope_member_status_and_cas() -> Result<(),
             ),
         )
         .await?;
-    assert_eq!(suspended.custom_role_id(), Some(replacement.id()));
+    // 停用成员时必须清除绑定，恢复后不得静默恢复旧的自定义权限。
+    assert_eq!(suspended.custom_role_id(), None);
     assert_eq!(
         fixture
             .bindings
@@ -282,7 +283,7 @@ async fn binding_repository_enforces_scope_member_status_and_cas() -> Result<(),
             ),
         )
         .await?;
-    assert_eq!(removed.custom_role_id(), Some(replacement.id()));
+    assert_eq!(removed.custom_role_id(), None);
     assert_eq!(
         fixture
             .bindings
