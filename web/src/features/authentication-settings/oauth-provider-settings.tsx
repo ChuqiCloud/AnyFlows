@@ -11,7 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { ApiError } from '@/lib/api'
 import {
-  type OAuthLoginProvider,
+  type BuiltinOAuthLoginProvider,
   useAdminOAuthLoginSettings,
   useUpdateAdminOAuthLoginSettings,
 } from '@/features/auth/oauth-login-api'
@@ -20,7 +20,7 @@ import { OAuthProviderIcon } from '@/features/auth/oauth-provider-icon'
 type SecretAction = 'keep' | 'replace' | 'clear'
 
 type OAuthProviderSettingsProps = {
-  provider: OAuthLoginProvider
+  provider: BuiltinOAuthLoginProvider
 }
 
 /** 管理内置 OAuth App，密钥只支持保留、轮换和显式清除。 */

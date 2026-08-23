@@ -7,7 +7,7 @@ use af_admin::{
 use axum::{
     Extension, Json, Router,
     body::Body,
-    extract::{RawQuery, State, rejection::JsonRejection},
+    extract::{Path, RawQuery, State, rejection::JsonRejection},
     middleware,
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -162,6 +162,14 @@ pub(crate) fn build_oauth_login_router(
             "/api/auth/oauth/google/callback",
             get(complete_google_login),
         )
+        .route(
+            "/api/auth/oauth/custom/{provider_key}/start",
+            post(start_custom_oauth2_login),
+        )
+        .route(
+            "/api/auth/oauth/custom/{provider_key}/callback",
+            get(complete_custom_oauth2_login),
+        )
         .route("/api/auth/oauth/exchange", post(exchange_oauth_ticket))
         .route(
             "/api/admin/authentication-settings/oauth/github",
@@ -276,6 +284,15 @@ async fn start_google_login(
     State(state): State<OAuthLoginHttpState>,
 ) -> Result<Response, ManagementError> {
     start_login(state, GOOGLE_PROVIDER, GOOGLE_CALLBACK_PATH).await
+}
+
+async fn start_custom_oauth2_login(
+    State(state): State<OAuthLoginHttpState>,
+    Path(provider_key): Path<String>,
+) -> Result<Response, ManagementError> {
+    let callback_path =
+        custom_oauth2_callback_path(&provider_key).map_err(map_oauth_login_error)?;
+    start_login(state, &provider_key, &callback_path).await
 }
 
 async fn start_login(
@@ -396,6 +413,23 @@ async fn complete_google_login(
         GOOGLE_CALLBACK_PATH,
     )
     .await
+}
+
+async fn complete_custom_oauth2_login(
+    State(state): State<OAuthLoginHttpState>,
+    Path(provider_key): Path<String>,
+    headers: HeaderMap,
+    RawQuery(raw_query): RawQuery,
+) -> Response {
+    let callback_path = match custom_oauth2_callback_path(&provider_key) {
+        Ok(callback_path) => callback_path,
+        Err(error) => {
+            let mut response = map_oauth_login_error(error).into_response();
+            harden_oauth_callback_response(&mut response, "/api/auth/oauth/custom");
+            return response;
+        }
+    };
+    complete_login(state, headers, raw_query, &provider_key, &callback_path).await
 }
 
 async fn complete_login(
@@ -736,6 +770,19 @@ fn harden_oauth_callback_response(response: &mut Response, callback_path: &str) 
 
 fn valid_provider_error(error: &str) -> bool {
     !error.is_empty() && error.len() <= 256 && !error.chars().any(char::is_control)
+}
+
+fn custom_oauth2_callback_path(provider_key: &str) -> Result<String, OAuthLoginError> {
+    if provider_key.len() <= "custom_".len()
+        || provider_key.len() > 32
+        || !provider_key.starts_with("custom_")
+        || !provider_key.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'_' | b'-')
+        })
+    {
+        return Err(OAuthLoginError::InvalidInput);
+    }
+    Ok(format!("/api/auth/oauth/custom/{provider_key}/callback"))
 }
 
 fn map_oauth_login_error(error: OAuthLoginError) -> ManagementError {

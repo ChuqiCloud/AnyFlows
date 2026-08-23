@@ -12,6 +12,7 @@ import {
   getAdminTelegramOAuthLoginSettings,
   getAdminGoogleOAuthLoginSettings,
   startDiscordOAuthLogin,
+  startCustomOAuth2Login,
   startGitHubOAuthLogin,
   startLinuxDoLogin,
   startOidcLogin,
@@ -28,7 +29,9 @@ import {
 } from '@/lib/api/generated/sdk.gen'
 import type { AdminOAuthLoginProviderSettingsRequest } from '@/lib/api/generated/types.gen'
 
-export type OAuthLoginProvider = 'github' | 'discord' | 'oidc' | 'linuxdo' | 'wechat' | 'telegram' | 'google'
+export type BuiltinOAuthLoginProvider = 'github' | 'discord' | 'oidc' | 'linuxdo' | 'wechat' | 'telegram' | 'google'
+export type CustomOAuthLoginProvider = `custom_${string}`
+export type OAuthLoginProvider = BuiltinOAuthLoginProvider | CustomOAuthLoginProvider
 
 const startOAuthLogin = {
   github: () => startGitHubOAuthLogin({ client: apiClient }),
@@ -69,13 +72,26 @@ const updateAdminOAuthLoginSettings = {
 
 export const adminOAuthLoginSettingsQueryPrefix = ['admin-oauth-login-settings'] as const
 
-export const adminOAuthLoginSettingsQueryKey = (provider: OAuthLoginProvider) =>
+export const adminOAuthLoginSettingsQueryKey = (provider: BuiltinOAuthLoginProvider) =>
   [...adminOAuthLoginSettingsQueryPrefix, provider] as const
 
-/** 请求服务端生成的固定内置 Provider 授权地址，前端不拼接 OAuth 参数。 */
+/** 请求服务端生成的固定 Provider 授权地址，前端不拼接 OAuth 参数。 */
 export async function beginOAuthLogin(provider: OAuthLoginProvider) {
+  if (isCustomOAuthLoginProvider(provider)) {
+    const { data } = await startCustomOAuth2Login({
+      client: apiClient,
+      path: { provider_key: provider },
+    })
+    return data
+  }
   const { data } = await startOAuthLogin[provider]()
   return data
+}
+
+function isCustomOAuthLoginProvider(
+  provider: OAuthLoginProvider,
+): provider is CustomOAuthLoginProvider {
+  return provider.startsWith('custom_')
 }
 
 /** 用短期单次票据交换现有 bearer 会话。 */
@@ -88,7 +104,7 @@ export async function exchangeOAuthTicket(ticket: string) {
 }
 
 /** 读取脱敏后的内置 OAuth App 管理设置。 */
-export function useAdminOAuthLoginSettings(provider: OAuthLoginProvider) {
+export function useAdminOAuthLoginSettings(provider: BuiltinOAuthLoginProvider) {
   return useQuery({
     queryKey: adminOAuthLoginSettingsQueryKey(provider),
     queryFn: async ({ signal }) => {
@@ -99,7 +115,7 @@ export function useAdminOAuthLoginSettings(provider: OAuthLoginProvider) {
 }
 
 /** 覆盖内置 OAuth App 设置，成功后重新读取公开 Provider 投影。 */
-export function useUpdateAdminOAuthLoginSettings(provider: OAuthLoginProvider) {
+export function useUpdateAdminOAuthLoginSettings(provider: BuiltinOAuthLoginProvider) {
   const queryClient = useQueryClient()
 
   return useMutation({

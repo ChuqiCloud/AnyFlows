@@ -6427,6 +6427,24 @@ export type StartGoogleLoginResponses = {
     200: OAuthLoginStartResponse;
 };
 export type StartGoogleLoginResponse = StartGoogleLoginResponses[keyof StartGoogleLoginResponses];
+export type StartCustomOAuth2LoginData = {
+    body?: never;
+    path: {
+        provider_key: string;
+    };
+    query?: never;
+    url: '/api/auth/oauth/custom/{provider_key}/start';
+};
+export type StartCustomOAuth2LoginErrors = {
+    400: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type StartCustomOAuth2LoginError = StartCustomOAuth2LoginErrors[keyof StartCustomOAuth2LoginErrors];
+export type StartCustomOAuth2LoginResponses = {
+    200: OAuthLoginStartResponse;
+};
+export type StartCustomOAuth2LoginResponse = StartCustomOAuth2LoginResponses[keyof StartCustomOAuth2LoginResponses];
 export type CompleteOidcLoginData = {
     body?: never;
     path?: never;
@@ -6496,6 +6514,23 @@ export type CompleteGoogleLoginErrors = {
     500: ManagementError;
 };
 export type CompleteGoogleLoginError = CompleteGoogleLoginErrors[keyof CompleteGoogleLoginErrors];
+export type CompleteCustomOAuth2LoginData = {
+    body?: never;
+    path: {
+        provider_key: string;
+    };
+    query?: {
+        state?: string;
+        code?: string;
+        error?: string;
+    };
+    url: '/api/auth/oauth/custom/{provider_key}/callback';
+};
+export type CompleteCustomOAuth2LoginErrors = {
+    400: ManagementError;
+    500: ManagementError;
+};
+export type CompleteCustomOAuth2LoginError = CompleteCustomOAuth2LoginErrors[keyof CompleteCustomOAuth2LoginErrors];
 export type GetAdminOidcLoginSettingsData = {
     body?: never;
     path?: never;

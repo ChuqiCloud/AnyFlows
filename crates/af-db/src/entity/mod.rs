@@ -38,6 +38,8 @@ pub(crate) mod channel_groups;
 pub(crate) mod channel_models;
 pub(crate) mod channels;
 pub(crate) mod credentials;
+pub(crate) mod custom_oauth2_identities;
+pub(crate) mod custom_oauth2_login_transactions;
 pub(crate) mod custom_oauth2_providers;
 pub(crate) mod debug_trace_attempts;
 pub(crate) mod debug_trace_settings;
@@ -1946,6 +1948,8 @@ impl_updated_at_behavior!(
     channel_models::ActiveModel => validate_default,
     channels::ActiveModel => validate_channel,
     credentials::ActiveModel => validate_credential,
+    custom_oauth2_identities::ActiveModel => validate_default,
+    custom_oauth2_login_transactions::ActiveModel => validate_default,
     debug_trace_settings::ActiveModel => validate_default,
     email_settings::ActiveModel => validate_default,
     group_model_ratios::ActiveModel => validate_group_model_ratio,
