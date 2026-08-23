@@ -502,7 +502,7 @@ pub fn build_router(
         .map(|service| {
             build_custom_oauth2_router(service, Arc::clone(&http_state.session_authenticator))
         })
-        .unwrap_or_else(Router::new);
+        .unwrap_or_default();
     let oauth_login_routes = oauth_login_service.map(|service| {
         build_oauth_login_router(service, Arc::clone(&http_state.session_authenticator))
     });
