@@ -132,6 +132,9 @@ mod organization_custom_role_binding;
 mod organization_custom_role_binding_tests;
 #[cfg(test)]
 mod organization_custom_role_tests;
+mod organization_sso;
+#[cfg(test)]
+mod organization_sso_tests;
 #[cfg(test)]
 mod organization_tests;
 mod organization_token;
@@ -488,6 +491,15 @@ pub use organization_custom_role_binding::{
     OrganizationCustomRoleBindingRecord, OrganizationCustomRoleBindingRepository,
     OrganizationCustomRoleBindingRepositoryConfigError,
     OrganizationCustomRoleBindingRepositoryError,
+};
+pub use organization_sso::{
+    OrganizationSsoDomainCreate, OrganizationSsoDomainRecord, OrganizationSsoDomainUpdate,
+    OrganizationSsoIdentityCreate, OrganizationSsoIdentityRecord,
+    OrganizationSsoLoginTransactionCreate, OrganizationSsoLoginTransactionRecord,
+    OrganizationSsoLoginTransactionResult, OrganizationSsoProviderCreate,
+    OrganizationSsoProviderRecord, OrganizationSsoProviderRepository,
+    OrganizationSsoProviderRepositoryConfigError, OrganizationSsoProviderSecretChange,
+    OrganizationSsoProviderUpdate, OrganizationSsoRepositoryError,
 };
 pub use organization_token::{
     MAX_ORGANIZATION_TOKEN_PAGE_SIZE, OrganizationTokenCreateRecord,
