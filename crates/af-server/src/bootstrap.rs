@@ -537,6 +537,7 @@ pub enum BootstrapError {
     OrganizationTokenRepository(#[source] OrganizationTokenRepositoryConfigError),
     #[error("浼佷笟 SSO Provider 浠撳偍鍚姩鍙傛暟鏃犳晥")]
     OrganizationSsoProviderRepository(#[source] OrganizationSsoProviderRepositoryConfigError),
+    #[error("企业 SSO DNS 解析器启动参数无效")]
     OrganizationSsoDnsResolver(#[source] OrganizationSsoDnsResolverConfigError),
     /// 企业邀请邮箱和令牌摘要密码学配置无效。
     #[error("企业邀请密码学配置无效")]
