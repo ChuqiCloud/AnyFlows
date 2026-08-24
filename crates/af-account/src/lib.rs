@@ -8,6 +8,7 @@ mod login_oauth;
 mod oauth;
 mod organization_invitation;
 mod organization_sso_dns;
+mod organization_sso_login;
 mod system_secret;
 
 pub use credential_decryption::{
@@ -57,6 +58,11 @@ pub use organization_sso_dns::{
     MAX_ORGANIZATION_SSO_DNS_TXT_ANSWER_BYTES, MAX_ORGANIZATION_SSO_DNS_TXT_ANSWERS,
     MAX_ORGANIZATION_SSO_DNS_TXT_TOTAL_BYTES, OrganizationSsoDnsResolverConfigError,
     OrganizationSsoDnsResolverError, OrganizationSsoDnsTxtResolver,
+};
+pub use organization_sso_login::{
+    ORGANIZATION_SSO_OIDC_CALLBACK_PATH, ORGANIZATION_SSO_SAML_CALLBACK_PATH,
+    OrganizationSsoLoginError, OrganizationSsoLoginStart, OrganizationSsoOidcCallback,
+    OrganizationSsoSamlCallback,
 };
 pub use system_secret::{
     DecryptedSystemSecret, PlainSystemSecret, SystemSecretCipher, SystemSecretError,
