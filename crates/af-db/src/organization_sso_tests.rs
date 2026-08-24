@@ -409,13 +409,21 @@ async fn invited_sso_jit_is_atomic_and_idempotent() -> Result<(), Box<dyn Error>
 #[tokio::test]
 async fn invited_sso_jit_rejects_mismatch_expiry_and_rolls_back_conflict()
 -> Result<(), Box<dyn Error>> {
-    let fixture = fixture().await?;
+    macro_rules! step {
+        ($label:literal, $future:expr) => {
+            ($future)
+                .await
+                .map_err(|error| format!("{}: {error:?}", $label))?
+        };
+    }
+
+    let fixture = step!("创建 JIT 失败回归 fixture", fixture());
     let organization_id = fixture.organizations_ids[0];
-    enable_sso(&fixture, organization_id).await?;
+    step!("启用 SSO 授权", enable_sso(&fixture, organization_id));
     let provider_key = provider_key(5);
-    fixture
-        .sso
-        .create_provider(
+    step!(
+        "创建 JIT 失败回归 Provider",
+        fixture.sso.create_provider(
             organization_id,
             OrganizationSsoProviderCreate::new(
                 provider_key,
@@ -426,26 +434,32 @@ async fn invited_sso_jit_rejects_mismatch_expiry_and_rolls_back_conflict()
                 None,
             ),
         )
-        .await?;
-    add_verified_domain(
-        &fixture,
-        organization_id,
-        provider_key,
-        "failure.example.com",
-    )
-    .await?;
+    );
+    step!(
+        "创建 JIT 失败回归已验证域名",
+        add_verified_domain(
+            &fixture,
+            organization_id,
+            provider_key,
+            "failure.example.com",
+        )
+    );
     let settings = authentication_settings::Entity::find_by_id(1_i16)
         .one(fixture.pool.connection())
-        .await?
+        .await
+        .map_err(|error| format!("读取认证设置: {error:?}"))?
         .expect("认证设置固定行必须存在");
     let mut settings = settings.into_active_model();
     settings.registration_default_group_id = Set(Some(fixture.group_id));
-    settings.update(fixture.pool.connection()).await?;
+    step!(
+        "更新注册默认用户组",
+        settings.update(fixture.pool.connection())
+    );
 
     let now = TimeDateTimeWithTimeZone::now_utc().unix_timestamp();
-    fixture
-        .organizations
-        .create_invitation(
+    step!(
+        "创建邮箱不匹配邀请",
+        fixture.organizations.create_invitation(
             organization_id,
             OrganizationInvitationCreate::new(
                 OrganizationInvitationKey::new([5_u8; 16])?,
@@ -466,7 +480,7 @@ async fn invited_sso_jit_rejects_mismatch_expiry_and_rolls_back_conflict()
                 now.saturating_add(3_600),
             )?,
         )
-        .await?;
+    );
     assert_eq!(
         fixture
             .organizations
@@ -482,9 +496,9 @@ async fn invited_sso_jit_rejects_mismatch_expiry_and_rolls_back_conflict()
         1
     );
 
-    fixture
-        .organizations
-        .create_invitation(
+    step!(
+        "创建过期邀请",
+        fixture.organizations.create_invitation(
             organization_id,
             OrganizationInvitationCreate::new(
                 OrganizationInvitationKey::new([6_u8; 16])?,
@@ -505,7 +519,7 @@ async fn invited_sso_jit_rejects_mismatch_expiry_and_rolls_back_conflict()
                 now.saturating_sub(1),
             )?,
         )
-        .await?;
+    );
     assert_eq!(
         fixture
             .organizations
@@ -515,21 +529,23 @@ async fn invited_sso_jit_rejects_mismatch_expiry_and_rolls_back_conflict()
     );
 
     let collision_digest = digest('c');
-    users::ActiveModel {
-        username: Set(format!("sso_jit_{}", &collision_digest[..56])),
-        email: Set(None),
-        password_hash: Set(None),
-        status: Set(1),
-        default_group_id: Set(fixture.group_id),
-        aff_code: Set("jit-collision-aff".to_owned()),
-        settings: Set(serde_json::json!({})),
-        ..Default::default()
-    }
-    .insert(fixture.pool.connection())
-    .await?;
-    fixture
-        .organizations
-        .create_invitation(
+    step!(
+        "插入 JIT 用户名碰撞用户",
+        users::ActiveModel {
+            username: Set(format!("sso_jit_{}", &collision_digest[..56])),
+            email: Set(None),
+            password_hash: Set(None),
+            status: Set(1),
+            default_group_id: Set(fixture.group_id),
+            aff_code: Set("jit-collision-aff".to_owned()),
+            settings: Set(serde_json::json!({})),
+            ..Default::default()
+        }
+        .insert(fixture.pool.connection())
+    );
+    step!(
+        "创建用户名碰撞邀请",
+        fixture.organizations.create_invitation(
             organization_id,
             OrganizationInvitationCreate::new(
                 OrganizationInvitationKey::new([7_u8; 16])?,
@@ -550,7 +566,7 @@ async fn invited_sso_jit_rejects_mismatch_expiry_and_rolls_back_conflict()
                 now.saturating_add(3_600),
             )?,
         )
-        .await?;
+    );
     assert_eq!(
         fixture
             .organizations
@@ -566,7 +582,8 @@ async fn invited_sso_jit_rejects_mismatch_expiry_and_rolls_back_conflict()
     let invitations = fixture
         .organizations
         .list_invitations(organization_id)
-        .await?;
+        .await
+        .map_err(|error| format!("读取 JIT 失败回归邀请: {error:?}"))?;
     assert_eq!(invitations.len(), 3);
     assert_eq!(
         invitations
@@ -580,13 +597,15 @@ async fn invited_sso_jit_rejects_mismatch_expiry_and_rolls_back_conflict()
         organization_sso_identities::Entity::find()
             .filter(organization_sso_identities::Column::OrganizationId.eq(organization_id.get()))
             .count(fixture.pool.connection())
-            .await?,
+            .await
+            .map_err(|error| format!("统计 JIT 身份: {error:?}"))?,
         0
     );
     assert_eq!(
         users::Entity::find()
             .count(fixture.pool.connection())
-            .await?,
+            .await
+            .map_err(|error| format!("统计用户: {error:?}"))?,
         4
     );
     fixture.pool.close().await?;
