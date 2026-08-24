@@ -34,6 +34,7 @@ mod organization_custom_role_binding;
 mod organization_invitation;
 mod organization_management;
 mod organization_sso;
+mod organization_sso_domain;
 mod organization_sso_login;
 #[cfg(test)]
 mod organization_sso_login_tests;
@@ -271,6 +272,13 @@ pub use organization_sso::{
     OrganizationSsoProviderCommand, OrganizationSsoProviderFuture,
     OrganizationSsoProviderListFuture, OrganizationSsoProviderService,
     OrganizationSsoProviderServiceError,
+};
+pub use organization_sso_domain::{
+    DatabaseOrganizationSsoDomainService, OrganizationSsoDomain,
+    OrganizationSsoDomainCreateCommand, OrganizationSsoDomainCreated,
+    OrganizationSsoDomainCreatedFuture, OrganizationSsoDomainFuture,
+    OrganizationSsoDomainListFuture, OrganizationSsoDomainService,
+    OrganizationSsoDomainServiceError, OrganizationSsoDomainVerifyCommand,
 };
 pub use organization_sso_login::{
     ClaimedOrganizationSsoLoginTransaction, DatabaseOrganizationSsoLoginTransactionService,

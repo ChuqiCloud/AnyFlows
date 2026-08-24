@@ -205,7 +205,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 166);
+        assert_eq!(document.paths.paths.len(), 168);
         let operation_count = document
             .paths
             .paths
@@ -226,7 +226,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 230);
+        assert_eq!(operation_count, 233);
         assert!(
             document
                 .components
@@ -346,6 +346,9 @@ mod tests {
             "createOrganizationSsoProvider",
             "getOrganizationSsoProvider",
             "updateOrganizationSsoProvider",
+            "listOrganizationSsoDomains",
+            "createOrganizationSsoDomain",
+            "verifyOrganizationSsoDomain",
             "getUserTopupConfiguration",
             "getUserWallet",
             "importMissingAdminModels",
@@ -490,7 +493,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 381);
+        assert_eq!(schemas.len(), 386);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminDashboardChannelFlow"));
         assert!(schemas.contains_key("AdminDashboardFailure"));
@@ -507,6 +510,11 @@ mod tests {
         assert!(schemas.contains_key("OrganizationSsoProvider"));
         assert!(schemas.contains_key("OrganizationSsoProviderList"));
         assert!(schemas.contains_key("OrganizationSsoProviderRequest"));
+        assert!(schemas.contains_key("OrganizationSsoDomain"));
+        assert!(schemas.contains_key("OrganizationSsoDomainList"));
+        assert!(schemas.contains_key("OrganizationSsoDomainCreated"));
+        assert!(schemas.contains_key("OrganizationSsoDomainCreateRequest"));
+        assert!(schemas.contains_key("OrganizationSsoDomainVerifyRequest"));
         assert!(schemas.contains_key("OrganizationInvitationAcceptRequest"));
         assert!(schemas.contains_key("OrganizationInvitationResponse"));
         assert!(schemas.contains_key("OrganizationMemberCustomRoleRequest"));

@@ -100,7 +100,7 @@ use crate::organization_activity::{PLATFORM_REASON_HEADER, build_organization_ac
 use crate::organization_budget::build_organization_budget_router;
 use crate::organization_tokens::build_organization_token_router;
 use crate::organization_wallet::build_organization_wallet_router;
-use crate::organizations::build_organization_router;
+use crate::organizations::build_organization_router_with_domain;
 use crate::passkey_auth::build_passkey_authentication_router;
 use crate::password_reset::build_password_reset_router;
 use crate::payment_settings::build_payment_settings_router;
@@ -226,6 +226,7 @@ pub fn build_router(
     >,
     platform_audit_service: Option<Arc<dyn PlatformAuditService>>,
     organization_sso_provider_service: Option<Arc<dyn af_admin::OrganizationSsoProviderService>>,
+    organization_sso_domain_service: Option<Arc<dyn af_admin::OrganizationSsoDomainService>>,
 ) -> HttpRouter {
     let openai_authentication = middleware::from_fn_with_state(
         AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config),
@@ -798,7 +799,7 @@ pub fn build_router(
         organization_activity_service.clone(),
     ) {
         (Some(authorization_service), Some(activity_service)) => {
-            management_routes.merge(build_organization_router(
+            management_routes.merge(build_organization_router_with_domain(
                 authorization_service,
                 http_state.organization_invitation_service.clone(),
                 http_state.organization_management_service.clone(),
@@ -807,6 +808,7 @@ pub fn build_router(
                 activity_service,
                 Arc::clone(&http_state.session_authenticator),
                 organization_sso_provider_service,
+                organization_sso_domain_service,
             ))
         }
         _ => management_routes,

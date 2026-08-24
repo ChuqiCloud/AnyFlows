@@ -16561,6 +16561,332 @@
         ]
       }
     },
+    "/api/organizations/{organization_id}/sso/domains": {
+      "get": {
+        "tags": [
+          "企业 SSO"
+        ],
+        "summary": "列出企业 SSO 域名",
+        "operationId": "listOrganizationSsoDomains",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业内部标识",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "企业 SSO 域名脱敏列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoDomainList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "企业标识无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权查看企业 SSO 域名",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "企业不存在或无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "企业 SSO"
+        ],
+        "summary": "创建企业 SSO 域名证明",
+        "operationId": "createOrganizationSsoDomain",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业内部标识",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationSsoDomainCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "域名证明已创建；TXT 值仅在本次响应返回",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoDomainCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "域名或证明参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权管理企业 SSO 域名",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "企业或 Provider 不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "域名已归属其他企业或状态冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{organization_id}/sso/domains/{domain_id}/verify": {
+      "post": {
+        "tags": [
+          "企业 SSO"
+        ],
+        "summary": "服务端验证企业 SSO 域名",
+        "operationId": "verifyOrganizationSsoDomain",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业内部标识",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "domain_id",
+            "in": "path",
+            "description": "企业域名 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationSsoDomainVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "域名已通过服务端 DNS 验证",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoDomain"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "验证参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权管理企业 SSO 域名",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "域名不存在或无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "域名版本或状态冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "服务端 DNS TXT 证明失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/organizations/{organization_id}/tokens": {
       "get": {
         "tags": [
@@ -27379,6 +27705,10 @@
               "organization_sso_provider_not_found",
               "organization_sso_provider_conflict",
               "organization_sso_provider_transition_invalid",
+              "organization_sso_domain_not_found",
+              "organization_sso_domain_conflict",
+              "organization_sso_domain_transition_invalid",
+              "organization_sso_domain_verification_failed",
               "wallet_event_conflict",
               "wallet_insufficient_quota",
               "wallet_overflow",
@@ -29265,6 +29595,151 @@
           },
           "current_owner": {
             "$ref": "#/components/schemas/OrganizationMembershipResponse"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoDomain": {
+        "type": "object",
+        "required": [
+          "id",
+          "organization_id",
+          "provider_key",
+          "domain",
+          "status",
+          "version"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "organization_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "provider_key": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "proof_expires_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "verified_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "recheck_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "revoked_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoDomainCreateRequest": {
+        "type": "object",
+        "required": [
+          "provider_key",
+          "domain",
+          "ttl_seconds"
+        ],
+        "properties": {
+          "provider_key": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "string"
+          },
+          "ttl_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 604800,
+            "minimum": 900
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoDomainCreated": {
+        "type": "object",
+        "required": [
+          "domain",
+          "txt_record_name",
+          "txt_record_value"
+        ],
+        "properties": {
+          "domain": {
+            "$ref": "#/components/schemas/OrganizationSsoDomain"
+          },
+          "txt_record_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "txt_record_value": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoDomainList": {
+        "type": "object",
+        "required": [
+          "domains"
+        ],
+        "properties": {
+          "domains": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrganizationSsoDomain"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoDomainVerifyRequest": {
+        "type": "object",
+        "required": [
+          "proof_token",
+          "expected_version"
+        ],
+        "properties": {
+          "proof_token": {
+            "type": "string",
+            "format": "password",
+            "writeOnly": true,
+            "maxLength": 64,
+            "minLength": 64
+          },
+          "expected_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
           }
         },
         "additionalProperties": false

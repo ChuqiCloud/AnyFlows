@@ -6,8 +6,10 @@ use utoipa::OpenApi;
 use crate::{
     management_error::ManagementErrorBody,
     organizations::{
-        OrganizationSsoProviderListResponse, OrganizationSsoProviderRequest,
-        OrganizationSsoProviderResponse,
+        OrganizationSsoDomainCreateRequest, OrganizationSsoDomainCreatedResponse,
+        OrganizationSsoDomainListResponse, OrganizationSsoDomainResponse,
+        OrganizationSsoDomainVerifyRequest, OrganizationSsoProviderListResponse,
+        OrganizationSsoProviderRequest, OrganizationSsoProviderResponse,
     },
 };
 
@@ -97,18 +99,91 @@ fn get_organization_sso_provider() {}
 )]
 fn update_organization_sso_provider() {}
 
+#[utoipa::path(
+    get,
+    path = "/api/organizations/{organization_id}/sso/domains",
+    operation_id = "listOrganizationSsoDomains",
+    tag = "企业 SSO",
+    summary = "列出企业 SSO 域名",
+    params(("organization_id" = i64, Path, minimum = 1, description = "企业内部标识")),
+    responses(
+        (status = 200, description = "企业 SSO 域名脱敏列表", body = OrganizationSsoDomainListResponse),
+        (status = 400, description = "企业标识无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "无权查看企业 SSO 域名", body = ManagementErrorBody),
+        (status = 404, description = "企业不存在或无权访问", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn list_organization_sso_domains() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/organizations/{organization_id}/sso/domains",
+    operation_id = "createOrganizationSsoDomain",
+    tag = "企业 SSO",
+    summary = "创建企业 SSO 域名证明",
+    params(("organization_id" = i64, Path, minimum = 1, description = "企业内部标识")),
+    request_body = OrganizationSsoDomainCreateRequest,
+    responses(
+        (status = 200, description = "域名证明已创建；TXT 值仅在本次响应返回", body = OrganizationSsoDomainCreatedResponse),
+        (status = 400, description = "域名或证明参数无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "无权管理企业 SSO 域名", body = ManagementErrorBody),
+        (status = 404, description = "企业或 Provider 不存在", body = ManagementErrorBody),
+        (status = 409, description = "域名已归属其他企业或状态冲突", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn create_organization_sso_domain() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/organizations/{organization_id}/sso/domains/{domain_id}/verify",
+    operation_id = "verifyOrganizationSsoDomain",
+    tag = "企业 SSO",
+    summary = "服务端验证企业 SSO 域名",
+    params(
+        ("organization_id" = i64, Path, minimum = 1, description = "企业内部标识"),
+        ("domain_id" = i64, Path, minimum = 1, description = "企业域名 ID")
+    ),
+    request_body = OrganizationSsoDomainVerifyRequest,
+    responses(
+        (status = 200, description = "域名已通过服务端 DNS 验证", body = OrganizationSsoDomainResponse),
+        (status = 400, description = "验证参数无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "无权管理企业 SSO 域名", body = ManagementErrorBody),
+        (status = 404, description = "域名不存在或无权访问", body = ManagementErrorBody),
+        (status = 409, description = "域名版本或状态冲突", body = ManagementErrorBody),
+        (status = 422, description = "服务端 DNS TXT 证明失败", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn verify_organization_sso_domain() {}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
         list_organization_sso_providers,
         create_organization_sso_provider,
         get_organization_sso_provider,
-        update_organization_sso_provider
+        update_organization_sso_provider,
+        list_organization_sso_domains,
+        create_organization_sso_domain,
+        verify_organization_sso_domain
     ),
     components(schemas(
         OrganizationSsoProviderResponse,
         OrganizationSsoProviderListResponse,
         OrganizationSsoProviderRequest,
+        OrganizationSsoDomainResponse,
+        OrganizationSsoDomainListResponse,
+        OrganizationSsoDomainCreatedResponse,
+        OrganizationSsoDomainCreateRequest,
+        OrganizationSsoDomainVerifyRequest,
         ManagementErrorBody
     ))
 )]

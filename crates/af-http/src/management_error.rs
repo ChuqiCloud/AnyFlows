@@ -60,6 +60,10 @@ pub(crate) enum ManagementError {
     OrganizationSsoProviderNotFound,
     OrganizationSsoProviderConflict,
     OrganizationSsoProviderTransitionInvalid,
+    OrganizationSsoDomainNotFound,
+    OrganizationSsoDomainConflict,
+    OrganizationSsoDomainTransitionInvalid,
+    OrganizationSsoDomainVerificationFailed,
     /// 企业团队容量已用尽。
     OrganizationTeamLimitReached,
     /// 钱包事件键已经绑定不同业务事实。
@@ -459,6 +463,34 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "organization_sso_provider_transition_invalid",
                     message: "Organization SSO provider transition invalid",
+                },
+            ),
+            Self::OrganizationSsoDomainNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "organization_sso_domain_not_found",
+                    message: "Organization SSO domain not found",
+                },
+            ),
+            Self::OrganizationSsoDomainConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_sso_domain_conflict",
+                    message: "Organization SSO domain conflict",
+                },
+            ),
+            Self::OrganizationSsoDomainTransitionInvalid => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_sso_domain_transition_invalid",
+                    message: "Organization SSO domain transition invalid",
+                },
+            ),
+            Self::OrganizationSsoDomainVerificationFailed => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                ManagementErrorBody {
+                    code: "organization_sso_domain_verification_failed",
+                    message: "Organization SSO domain verification failed",
                 },
             ),
             Self::OrganizationTeamLimitReached => (
