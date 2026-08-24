@@ -35,6 +35,10 @@ pub struct OrganizationSsoProvider {
 impl OrganizationSsoProvider {
     /// 从脱敏字段构造 Provider 投影，供 HTTP 适配层序列化响应。
     #[must_use]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "字段与管理端脱敏响应投影一一对应"
+    )]
     pub fn new(
         id: i64,
         organization_id: OrganizationId,
@@ -71,7 +75,7 @@ impl OrganizationSsoProvider {
             protocol: record.protocol(),
             status: record.status(),
             display_name: record.display_name().to_owned(),
-            metadata_projection: record.metadata_projection().cloned().map(Value::from),
+            metadata_projection: record.metadata_projection().cloned(),
             secret_configured: record.secret_configured(),
             version: record.version(),
             created_at: record.created_at(),
