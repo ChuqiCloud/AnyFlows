@@ -1,19 +1,20 @@
 use std::{error::Error, time::Duration};
 
 use af_domain::{
-    OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationId,
-    OrganizationRole, OrganizationSsoDomain, OrganizationSsoDomainStatus, OrganizationSsoProtocol,
-    OrganizationSsoProviderKey, OrganizationSsoProviderStatus, UserId,
+    DEFAULT_ORGANIZATION_SSO_RECHECK_INTERVAL_SECONDS, OrganizationEntitlementCapacity,
+    OrganizationEntitlementSnapshot, OrganizationId, OrganizationRole,
+    OrganizationSsoDnsTxtAnswers, OrganizationSsoDnsVerification, OrganizationSsoDomain,
+    OrganizationSsoDomainProof, OrganizationSsoDomainProofToken, OrganizationSsoDomainStatus,
+    OrganizationSsoProtocol, OrganizationSsoProviderKey, OrganizationSsoProviderStatus, UserId,
 };
 use sea_orm::{ActiveModelTrait, Set, entity::prelude::TimeDateTimeWithTimeZone};
 
 use crate::{
     DatabaseOptions, MigrationOptions, OrganizationCreate, OrganizationEntitlementWrite,
     OrganizationMembershipCreate, OrganizationRepository, OrganizationSsoDomainCreate,
-    OrganizationSsoDomainUpdate, OrganizationSsoIdentityCreate,
-    OrganizationSsoLoginTransactionCreate, OrganizationSsoLoginTransactionResult,
-    OrganizationSsoProviderCreate, OrganizationSsoProviderRepository,
-    OrganizationSsoRepositoryError,
+    OrganizationSsoIdentityCreate, OrganizationSsoLoginTransactionCreate,
+    OrganizationSsoLoginTransactionResult, OrganizationSsoProviderCreate,
+    OrganizationSsoProviderRepository, OrganizationSsoRepositoryError,
     entity::{groups, users},
 };
 
@@ -258,70 +259,145 @@ async fn sso_repository_closes_domain_cas_and_cross_organization_membership()
             ),
         )
         .await?;
+    let now = TimeDateTimeWithTimeZone::now_utc().unix_timestamp();
+    let domain_value = OrganizationSsoDomain::new("example.com")?;
+    let proof = OrganizationSsoDomainProof::from_token(
+        domain_value.clone(),
+        OrganizationSsoDomainProofToken::new(digest('a'))?,
+        now,
+        3_600,
+    )?;
     let domain = fixture
         .sso
         .create_domain(
             organization_id,
             OrganizationSsoDomainCreate::new(
                 key,
-                OrganizationSsoDomain::new("example.com")?,
-                digest('1'),
-                TimeDateTimeWithTimeZone::now_utc().unix_timestamp() + 600,
+                domain_value.clone(),
+                proof.digest(),
+                proof.expires_at(),
             ),
         )
         .await?;
-    let verified_at = TimeDateTimeWithTimeZone::now_utc().unix_timestamp();
+    let forged_proof = OrganizationSsoDomainProof::from_token(
+        domain_value.clone(),
+        OrganizationSsoDomainProofToken::new(digest('b'))?,
+        now,
+        3_600,
+    )?;
+    let forged_verification = OrganizationSsoDnsVerification::verify(
+        &forged_proof,
+        OrganizationSsoDomainStatus::Pending,
+        &OrganizationSsoDnsTxtAnswers::new(vec![digest('b')]),
+        now + 30,
+        DEFAULT_ORGANIZATION_SSO_RECHECK_INTERVAL_SECONDS,
+    )?;
+    assert_eq!(
+        fixture
+            .sso
+            .verify_domain(
+                organization_id,
+                domain.id(),
+                forged_verification,
+                domain.version()
+            )
+            .await,
+        Err(OrganizationSsoRepositoryError::Conflict)
+    );
+
+    let verification = OrganizationSsoDnsVerification::verify(
+        &proof,
+        OrganizationSsoDomainStatus::Pending,
+        &OrganizationSsoDnsTxtAnswers::new(vec![digest('a')]),
+        now + 30,
+        DEFAULT_ORGANIZATION_SSO_RECHECK_INTERVAL_SECONDS,
+    )?;
     let verified = fixture
         .sso
-        .update_domain(
-            organization_id,
-            domain.id(),
-            OrganizationSsoDomainUpdate::new(
-                OrganizationSsoDomainStatus::Verified,
-                None,
-                Some(verified_at),
-                Some(verified_at + 86_400),
-                None,
-                domain.version(),
-            ),
-        )
+        .verify_domain(organization_id, domain.id(), verification, domain.version())
         .await?;
     assert_eq!(verified.status(), OrganizationSsoDomainStatus::Verified);
     assert_eq!(
         fixture
             .sso
-            .update_domain(
+            .verify_domain(
                 organization_id,
                 domain.id(),
-                OrganizationSsoDomainUpdate::new(
-                    OrganizationSsoDomainStatus::Pending,
-                    None,
-                    None,
-                    None,
-                    None,
-                    verified.version(),
-                ),
+                OrganizationSsoDnsVerification::verify(
+                    &proof,
+                    OrganizationSsoDomainStatus::Verified,
+                    &OrganizationSsoDnsTxtAnswers::new(vec![digest('a')]),
+                    now + 60,
+                    DEFAULT_ORGANIZATION_SSO_RECHECK_INTERVAL_SECONDS,
+                )?,
+                domain.version(),
             )
             .await,
-        Err(OrganizationSsoRepositoryError::InvalidTransition)
+        Err(OrganizationSsoRepositoryError::Conflict)
     );
+
+    fixture
+        .sso
+        .create_provider(
+            fixture.organizations_ids[1],
+            OrganizationSsoProviderCreate::new(
+                key,
+                OrganizationSsoProtocol::Saml,
+                OrganizationSsoProviderStatus::Active,
+                "Second Domain SSO".to_owned(),
+                None,
+                None,
+            ),
+        )
+        .await?;
     assert_eq!(
         fixture
             .sso
-            .update_domain(
+            .create_domain(
                 fixture.organizations_ids[1],
-                domain.id(),
-                OrganizationSsoDomainUpdate::new(
-                    OrganizationSsoDomainStatus::Revoked,
-                    None,
-                    None,
-                    None,
-                    Some(verified_at),
-                    verified.version(),
-                ),
+                OrganizationSsoDomainCreate::new(key, domain_value, digest('c'), now + 3_600,),
             )
             .await,
-        Err(OrganizationSsoRepositoryError::NotFound)
+        Err(OrganizationSsoRepositoryError::Conflict)
+    );
+
+    let expired_domain_value = OrganizationSsoDomain::new("expired.example.com")?;
+    let expired_proof = OrganizationSsoDomainProof::from_token(
+        expired_domain_value.clone(),
+        OrganizationSsoDomainProofToken::new(digest('d'))?,
+        now,
+        3_600,
+    )?;
+    let expired_domain = fixture
+        .sso
+        .create_domain(
+            organization_id,
+            OrganizationSsoDomainCreate::new(
+                key,
+                expired_domain_value,
+                expired_proof.digest(),
+                now - 1,
+            ),
+        )
+        .await?;
+    let expired_verification = OrganizationSsoDnsVerification::verify(
+        &expired_proof,
+        OrganizationSsoDomainStatus::Pending,
+        &OrganizationSsoDnsTxtAnswers::new(vec![digest('d')]),
+        now + 30,
+        DEFAULT_ORGANIZATION_SSO_RECHECK_INTERVAL_SECONDS,
+    )?;
+    assert_eq!(
+        fixture
+            .sso
+            .verify_domain(
+                organization_id,
+                expired_domain.id(),
+                expired_verification,
+                expired_domain.version(),
+            )
+            .await,
+        Err(OrganizationSsoRepositoryError::Expired)
     );
     fixture.pool.close().await?;
     Ok(())

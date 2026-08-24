@@ -1,8 +1,9 @@
 use std::{fmt, future::Future, time::Duration};
 
 use af_domain::{
-    OrganizationId, OrganizationMembershipId, OrganizationSsoDomain, OrganizationSsoDomainStatus,
-    OrganizationSsoProtocol, OrganizationSsoProviderKey, OrganizationSsoProviderStatus,
+    OrganizationId, OrganizationMembershipId, OrganizationSsoDnsVerification,
+    OrganizationSsoDomain, OrganizationSsoDomainStatus, OrganizationSsoProtocol,
+    OrganizationSsoProviderKey, OrganizationSsoProviderStatus,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, DbErr,
@@ -763,8 +764,30 @@ impl OrganizationSsoProviderRepository {
         domain_id: i64,
         write: OrganizationSsoDomainUpdate,
     ) -> Result<OrganizationSsoDomainRecord, OrganizationSsoRepositoryError> {
+        // Verified 必须来自受控 DNS 解析结果，禁止通用更新接口伪造认领事实。
+        if write.status == OrganizationSsoDomainStatus::Verified {
+            return Err(OrganizationSsoRepositoryError::InvalidTransition);
+        }
         self.run(self.update_domain_inner(organization_id, domain_id, write))
             .await
+    }
+
+    /// 使用受控 DNS 证明结果以版本 CAS 推进域名认领，并让数据库原子裁决跨企业竞争。
+    pub async fn verify_domain(
+        &self,
+        organization_id: OrganizationId,
+        domain_id: i64,
+        verification: OrganizationSsoDnsVerification,
+        expected_version: i64,
+    ) -> Result<OrganizationSsoDomainRecord, OrganizationSsoRepositoryError> {
+        validate_expected_version(expected_version)?;
+        self.run(self.verify_domain_inner(
+            organization_id,
+            domain_id,
+            verification,
+            expected_version,
+        ))
+        .await
     }
 
     /// 创建唯一的活动身份绑定。
@@ -1113,6 +1136,91 @@ impl OrganizationSsoProviderRepository {
             .exec(&transaction)
             .await
             .map_err(query_error)?;
+        if result.rows_affected != 1 {
+            rollback(transaction).await?;
+            return Err(OrganizationSsoRepositoryError::Conflict);
+        }
+        let model = organization_sso_domains::Entity::find_by_id(domain_id)
+            .one(&transaction)
+            .await
+            .map_err(query_error)?
+            .ok_or_else(invariant)?;
+        let record = domain_record(&transaction, model).await?;
+        commit(transaction).await?;
+        Ok(record)
+    }
+
+    async fn verify_domain_inner(
+        &self,
+        organization_id: OrganizationId,
+        domain_id: i64,
+        verification: OrganizationSsoDnsVerification,
+        expected_version: i64,
+    ) -> Result<OrganizationSsoDomainRecord, OrganizationSsoRepositoryError> {
+        let verified_at = timestamp(verification.verified_at())?;
+        let recheck_at = timestamp(verification.recheck_at())?;
+        validate_digest(verification.proof_digest())?;
+        if verification.recheck_at() <= verification.verified_at() {
+            return Err(OrganizationSsoRepositoryError::InvalidInput);
+        }
+        let transaction = begin(&self.pool).await?;
+        let current = lock_domain(&transaction, organization_id, domain_id).await?;
+        if current.version != expected_version {
+            rollback(transaction).await?;
+            return Err(OrganizationSsoRepositoryError::Conflict);
+        }
+        let current_status =
+            OrganizationSsoDomainStatus::try_from(current.status).map_err(|_| invariant())?;
+        if !matches!(
+            current_status,
+            OrganizationSsoDomainStatus::Pending | OrganizationSsoDomainStatus::Verified
+        ) {
+            rollback(transaction).await?;
+            return Err(OrganizationSsoRepositoryError::InvalidTransition);
+        }
+        if current.proof_digest.as_str() != verification.proof_digest() {
+            rollback(transaction).await?;
+            return Err(OrganizationSsoRepositoryError::Conflict);
+        }
+        if current
+            .proof_expires_at
+            .is_some_and(|expires_at| verified_at >= expires_at)
+        {
+            rollback(transaction).await?;
+            return Err(OrganizationSsoRepositoryError::Expired);
+        }
+        let next_version = current.version.checked_add(1).ok_or_else(invariant)?;
+        let result = organization_sso_domains::Entity::update_many()
+            .filter(organization_sso_domains::Column::Id.eq(domain_id))
+            .filter(organization_sso_domains::Column::OrganizationId.eq(organization_id.get()))
+            .filter(organization_sso_domains::Column::Version.eq(current.version))
+            .col_expr(
+                organization_sso_domains::Column::Status,
+                Expr::value(OrganizationSsoDomainStatus::Verified.code()),
+            )
+            .col_expr(
+                organization_sso_domains::Column::VerifiedAt,
+                Expr::value(Some(verified_at)),
+            )
+            .col_expr(
+                organization_sso_domains::Column::RecheckAt,
+                Expr::value(Some(recheck_at)),
+            )
+            .col_expr(
+                organization_sso_domains::Column::RevokedAt,
+                Expr::value(None::<TimeDateTimeWithTimeZone>),
+            )
+            .col_expr(
+                organization_sso_domains::Column::Version,
+                Expr::value(next_version),
+            )
+            .col_expr(
+                organization_sso_domains::Column::UpdatedAt,
+                Expr::value(TimeDateTimeWithTimeZone::now_utc()),
+            )
+            .exec(&transaction)
+            .await
+            .map_err(map_write_error)?;
         if result.rows_affected != 1 {
             rollback(transaction).await?;
             return Err(OrganizationSsoRepositoryError::Conflict);
