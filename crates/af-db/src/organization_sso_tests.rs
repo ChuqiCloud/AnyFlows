@@ -2,21 +2,28 @@ use std::{error::Error, time::Duration};
 
 use af_domain::{
     DEFAULT_ORGANIZATION_SSO_RECHECK_INTERVAL_SECONDS, OrganizationEntitlementCapacity,
-    OrganizationEntitlementSnapshot, OrganizationId, OrganizationRole,
+    OrganizationEntitlementSnapshot, OrganizationId, OrganizationInvitationKey, OrganizationRole,
     OrganizationSsoDnsTxtAnswers, OrganizationSsoDnsVerification, OrganizationSsoDomain,
     OrganizationSsoDomainProof, OrganizationSsoDomainProofToken, OrganizationSsoDomainStatus,
     OrganizationSsoIdentityBindingMethod, OrganizationSsoIdentityStatus, OrganizationSsoProtocol,
     OrganizationSsoProviderKey, OrganizationSsoProviderStatus, UserId,
 };
-use sea_orm::{ActiveModelTrait, Set, entity::prelude::TimeDateTimeWithTimeZone};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set,
+    entity::prelude::TimeDateTimeWithTimeZone,
+};
 
 use crate::{
-    DatabaseOptions, MigrationOptions, OrganizationCreate, OrganizationEntitlementWrite,
-    OrganizationMembershipCreate, OrganizationRepository, OrganizationSsoDomainCreate,
-    OrganizationSsoIdentityCreate, OrganizationSsoLoginTransactionCreate,
-    OrganizationSsoLoginTransactionResult, OrganizationSsoProviderCreate,
-    OrganizationSsoProviderRepository, OrganizationSsoRepositoryError,
-    entity::{groups, users},
+    DatabaseOptions, EncryptedCredentialEnvelope, MigrationOptions, OrganizationCreate,
+    OrganizationEntitlementWrite, OrganizationInvitationCreate, OrganizationMembershipCreate,
+    OrganizationRepository, OrganizationSsoDomainCreate, OrganizationSsoIdentityCreate,
+    OrganizationSsoLoginTransactionCreate, OrganizationSsoLoginTransactionResult,
+    OrganizationSsoProviderCreate, OrganizationSsoProviderRepository,
+    OrganizationSsoRepositoryError,
+    entity::{
+        authentication_settings, groups, organization_memberships, organization_sso_identities,
+        users,
+    },
 };
 
 struct Fixture {
@@ -25,6 +32,7 @@ struct Fixture {
     sso: OrganizationSsoProviderRepository,
     organizations_ids: [OrganizationId; 2],
     users: [UserId; 3],
+    group_id: i64,
 }
 
 #[tokio::test]
@@ -256,6 +264,334 @@ async fn sso_repository_rejects_identity_conflicts_and_login_replays() -> Result
 }
 
 #[tokio::test]
+async fn invited_sso_jit_is_atomic_and_idempotent() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let organization_id = fixture.organizations_ids[0];
+    let provider_key = provider_key(4);
+    fixture
+        .sso
+        .create_provider(
+            organization_id,
+            OrganizationSsoProviderCreate::new(
+                provider_key,
+                OrganizationSsoProtocol::Oidc,
+                OrganizationSsoProviderStatus::Active,
+                "JIT SSO".to_owned(),
+                None,
+                None,
+            ),
+        )
+        .await?;
+    add_verified_domain(&fixture, organization_id, provider_key, "jit.example.com").await?;
+
+    let settings = authentication_settings::Entity::find_by_id(1_i16)
+        .one(fixture.pool.connection())
+        .await?
+        .expect("认证设置固定行必须存在");
+    let mut settings = settings.into_active_model();
+    settings.registration_default_group_id = Set(Some(fixture.group_id));
+    settings.update(fixture.pool.connection()).await?;
+
+    let fingerprint = [9_u8; 32];
+    fixture
+        .organizations
+        .create_invitation(
+            organization_id,
+            OrganizationInvitationCreate::new(
+                OrganizationInvitationKey::new([4_u8; 16])?,
+                "jit-user@example.com".to_owned(),
+                fingerprint,
+                EncryptedCredentialEnvelope::new(
+                    "jit-test-key".to_owned(),
+                    [4_u8; 24],
+                    vec![4_u8; 16],
+                )?,
+                [8_u8; 32],
+                OrganizationRole::Member,
+                None,
+                fixture.users[0],
+                None,
+                None,
+                None,
+                TimeDateTimeWithTimeZone::now_utc()
+                    .unix_timestamp()
+                    .saturating_add(3_600),
+            )?,
+        )
+        .await?;
+
+    let subject_digest = digest('d');
+    let membership = fixture
+        .organizations
+        .bind_invited_sso_identity(
+            organization_id,
+            provider_key,
+            subject_digest.clone(),
+            fingerprint,
+        )
+        .await?;
+    assert_eq!(
+        membership.status(),
+        af_domain::OrganizationMembershipStatus::Active
+    );
+    assert_eq!(membership.role(), OrganizationRole::Member);
+
+    let user = users::Entity::find_by_id(membership.user_id().get())
+        .one(fixture.pool.connection())
+        .await?
+        .expect("JIT 用户必须存在");
+    assert!(user.email.is_none());
+    assert!(user.password_hash.is_none());
+    assert_eq!(user.default_group_id, fixture.group_id);
+    assert!(user.username.starts_with("sso_jit_"));
+
+    let identity = organization_sso_identities::Entity::find()
+        .filter(organization_sso_identities::Column::OrganizationId.eq(organization_id.get()))
+        .filter(organization_sso_identities::Column::SubjectDigest.eq(subject_digest.clone()))
+        .one(fixture.pool.connection())
+        .await?
+        .expect("JIT 身份必须存在");
+    assert_eq!(
+        identity.status,
+        OrganizationSsoIdentityStatus::Active.code()
+    );
+    assert_eq!(
+        identity.binding_method,
+        OrganizationSsoIdentityBindingMethod::Invited.code()
+    );
+    assert_eq!(identity.organization_membership_id, membership.id().get());
+
+    let invitations = fixture
+        .organizations
+        .list_invitations(organization_id)
+        .await?;
+    assert_eq!(invitations.len(), 1);
+    assert_eq!(
+        invitations[0].status(),
+        af_domain::OrganizationInvitationStatus::Accepted
+    );
+    assert_eq!(
+        invitations[0].accepted_by_user_id(),
+        Some(membership.user_id())
+    );
+
+    let replay = fixture
+        .organizations
+        .bind_invited_sso_identity(organization_id, provider_key, subject_digest, fingerprint)
+        .await?;
+    assert_eq!(replay.id(), membership.id());
+    assert_eq!(replay.user_id(), membership.user_id());
+    assert_eq!(
+        users::Entity::find()
+            .count(fixture.pool.connection())
+            .await?,
+        4
+    );
+    assert_eq!(
+        organization_memberships::Entity::find()
+            .filter(organization_memberships::Column::OrganizationId.eq(organization_id.get()))
+            .count(fixture.pool.connection())
+            .await?,
+        2
+    );
+    assert_eq!(
+        organization_sso_identities::Entity::find()
+            .filter(organization_sso_identities::Column::OrganizationId.eq(organization_id.get()))
+            .count(fixture.pool.connection())
+            .await?,
+        1
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn invited_sso_jit_rejects_mismatch_expiry_and_rolls_back_conflict()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let organization_id = fixture.organizations_ids[0];
+    let provider_key = provider_key(5);
+    fixture
+        .sso
+        .create_provider(
+            organization_id,
+            OrganizationSsoProviderCreate::new(
+                provider_key,
+                OrganizationSsoProtocol::Oidc,
+                OrganizationSsoProviderStatus::Active,
+                "JIT failure SSO".to_owned(),
+                None,
+                None,
+            ),
+        )
+        .await?;
+    add_verified_domain(
+        &fixture,
+        organization_id,
+        provider_key,
+        "failure.example.com",
+    )
+    .await?;
+    let settings = authentication_settings::Entity::find_by_id(1_i16)
+        .one(fixture.pool.connection())
+        .await?
+        .expect("认证设置固定行必须存在");
+    let mut settings = settings.into_active_model();
+    settings.registration_default_group_id = Set(Some(fixture.group_id));
+    settings.update(fixture.pool.connection()).await?;
+
+    let now = TimeDateTimeWithTimeZone::now_utc().unix_timestamp();
+    fixture
+        .organizations
+        .create_invitation(
+            organization_id,
+            OrganizationInvitationCreate::new(
+                OrganizationInvitationKey::new([5_u8; 16])?,
+                "mismatch@example.com".to_owned(),
+                [10_u8; 32],
+                EncryptedCredentialEnvelope::new(
+                    "jit-failure-key".to_owned(),
+                    [5_u8; 24],
+                    vec![5_u8; 16],
+                )?,
+                [9_u8; 32],
+                OrganizationRole::Member,
+                None,
+                fixture.users[0],
+                None,
+                None,
+                None,
+                now.saturating_add(3_600),
+            )?,
+        )
+        .await?;
+    assert_eq!(
+        fixture
+            .organizations
+            .bind_invited_sso_identity(organization_id, provider_key, digest('a'), [11_u8; 32],)
+            .await,
+        Err(crate::OrganizationRepositoryError::NotFound)
+    );
+    assert_eq!(
+        organization_memberships::Entity::find()
+            .filter(organization_memberships::Column::OrganizationId.eq(organization_id.get()))
+            .count(fixture.pool.connection())
+            .await?,
+        1
+    );
+
+    fixture
+        .organizations
+        .create_invitation(
+            organization_id,
+            OrganizationInvitationCreate::new(
+                OrganizationInvitationKey::new([6_u8; 16])?,
+                "expired@example.com".to_owned(),
+                [12_u8; 32],
+                EncryptedCredentialEnvelope::new(
+                    "jit-expired-key".to_owned(),
+                    [6_u8; 24],
+                    vec![6_u8; 16],
+                )?,
+                [10_u8; 32],
+                OrganizationRole::Member,
+                None,
+                fixture.users[0],
+                None,
+                None,
+                None,
+                now.saturating_sub(1),
+            )?,
+        )
+        .await?;
+    assert_eq!(
+        fixture
+            .organizations
+            .bind_invited_sso_identity(organization_id, provider_key, digest('b'), [12_u8; 32],)
+            .await,
+        Err(crate::OrganizationRepositoryError::InvitationExpired)
+    );
+
+    let collision_digest = digest('c');
+    users::ActiveModel {
+        username: Set(format!("sso_jit_{}", &collision_digest[..56])),
+        email: Set(None),
+        password_hash: Set(None),
+        status: Set(1),
+        default_group_id: Set(fixture.group_id),
+        aff_code: Set("jit-collision-aff".to_owned()),
+        settings: Set(serde_json::json!({})),
+        ..Default::default()
+    }
+    .insert(fixture.pool.connection())
+    .await?;
+    fixture
+        .organizations
+        .create_invitation(
+            organization_id,
+            OrganizationInvitationCreate::new(
+                OrganizationInvitationKey::new([7_u8; 16])?,
+                "collision@example.com".to_owned(),
+                [13_u8; 32],
+                EncryptedCredentialEnvelope::new(
+                    "jit-collision-key".to_owned(),
+                    [7_u8; 24],
+                    vec![7_u8; 16],
+                )?,
+                [11_u8; 32],
+                OrganizationRole::Member,
+                None,
+                fixture.users[0],
+                None,
+                None,
+                None,
+                now.saturating_add(3_600),
+            )?,
+        )
+        .await?;
+    assert_eq!(
+        fixture
+            .organizations
+            .bind_invited_sso_identity(
+                organization_id,
+                provider_key,
+                collision_digest,
+                [13_u8; 32],
+            )
+            .await,
+        Err(crate::OrganizationRepositoryError::Conflict)
+    );
+    let invitations = fixture
+        .organizations
+        .list_invitations(organization_id)
+        .await?;
+    assert_eq!(invitations.len(), 3);
+    assert_eq!(
+        invitations
+            .iter()
+            .filter(|invitation| invitation.status()
+                == af_domain::OrganizationInvitationStatus::Pending)
+            .count(),
+        2
+    );
+    assert_eq!(
+        organization_sso_identities::Entity::find()
+            .filter(organization_sso_identities::Column::OrganizationId.eq(organization_id.get()))
+            .count(fixture.pool.connection())
+            .await?,
+        0
+    );
+    assert_eq!(
+        users::Entity::find()
+            .count(fixture.pool.connection())
+            .await?,
+        4
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn sso_repository_closes_domain_cas_and_cross_organization_membership()
 -> Result<(), Box<dyn Error>> {
     let fixture = fixture().await?;
@@ -427,12 +763,52 @@ fn digest(value: char) -> String {
     std::iter::repeat_n(value, 64).collect()
 }
 
+async fn add_verified_domain(
+    fixture: &Fixture,
+    organization_id: OrganizationId,
+    provider_key: OrganizationSsoProviderKey,
+    domain_name: &str,
+) -> Result<(), Box<dyn Error>> {
+    let now = TimeDateTimeWithTimeZone::now_utc().unix_timestamp();
+    let domain_value = OrganizationSsoDomain::new(domain_name)?;
+    let proof = OrganizationSsoDomainProof::from_token(
+        domain_value.clone(),
+        OrganizationSsoDomainProofToken::new(digest('e'))?,
+        now,
+        3_600,
+    )?;
+    let domain = fixture
+        .sso
+        .create_domain(
+            organization_id,
+            OrganizationSsoDomainCreate::new(
+                provider_key,
+                domain_value,
+                proof.digest(),
+                proof.expires_at(),
+            ),
+        )
+        .await?;
+    let verification = OrganizationSsoDnsVerification::verify(
+        &proof,
+        OrganizationSsoDomainStatus::Pending,
+        &OrganizationSsoDnsTxtAnswers::new(vec![digest('e')]),
+        now + 30,
+        DEFAULT_ORGANIZATION_SSO_RECHECK_INTERVAL_SECONDS,
+    )?;
+    fixture
+        .sso
+        .verify_domain(organization_id, domain.id(), verification, domain.version())
+        .await?;
+    Ok(())
+}
+
 fn active_entitlement() -> Result<OrganizationEntitlementWrite, Box<dyn Error>> {
     Ok(OrganizationEntitlementWrite::new(
         OrganizationEntitlementSnapshot::new(
             OrganizationEntitlementCapacity::new(10, 10, 10)?,
             true,
-            false,
+            true,
             false,
             90,
             946_684_800,
@@ -496,5 +872,6 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
         sso,
         organizations_ids: organization_ids.try_into().expect("测试企业数量固定为二"),
         users: user_ids.try_into().expect("测试用户数量固定为三"),
+        group_id: group.id,
     })
 }
