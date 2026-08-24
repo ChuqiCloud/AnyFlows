@@ -29733,8 +29733,8 @@
             "type": "string",
             "format": "password",
             "writeOnly": true,
-            "minLength": 64,
-            "maxLength": 64
+            "maxLength": 64,
+            "minLength": 64
           },
           "expected_version": {
             "type": "integer",

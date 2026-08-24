@@ -614,7 +614,7 @@ pub struct OrganizationSsoDomainCreateRequest {
 #[serde(deny_unknown_fields)]
 #[schema(as = OrganizationSsoDomainVerifyRequest)]
 pub struct OrganizationSsoDomainVerifyRequest {
-    #[schema(min_length = 64, max_length = 64, format = Password, write_only)]
+    #[schema(max_length = 64, min_length = 64, format = Password, write_only)]
     proof_token: String,
     #[schema(minimum = 1)]
     expected_version: i64,
