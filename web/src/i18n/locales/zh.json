@@ -5147,6 +5147,42 @@
       "unavailable": {
         "title": "资料修改与关闭尚未开放",
         "body": "后端当前没有企业改名或关闭接口，因此本页不渲染必然失败的提交表单。"
+      },
+      "sso": {
+        "title": "企业单点登录",
+        "subtitle": "{{organization}} 的 Provider 只展示服务端脱敏事实，不在浏览器推导身份或强制策略。",
+        "enabled": "能力已授权",
+        "disabled": "能力未授权",
+        "configured": "已配置",
+        "notConfigured": "未配置",
+        "protocol": { "oidc": "OpenID Connect", "saml": "SAML 2.0" },
+        "status": { "draft": "草稿", "active": "活动", "disabled": "已停用" },
+        "fields": { "protocol": "协议", "version": "版本", "secret": "密钥", "metadata": "元数据" },
+        "restricted": {
+          "entitlementTitle": "企业 SSO 尚未开放",
+          "entitlementBody": "当前商业授权没有开启企业 SSO，服务端不会读取或接受 Provider 配置。",
+          "permissionTitle": "没有企业 SSO 查看权限",
+          "permissionBody": "当前角色不能读取 Provider 脱敏状态；服务端仍会强制企业边界。"
+        },
+        "errors": {
+          "title": "无法读取企业 SSO Provider",
+          "body": "Provider 状态暂时不可用，请刷新后再继续管理。",
+          "readOnlyBody": "Provider 状态暂时不可用，当前角色只能读取服务端事实。"
+        },
+        "empty": {
+          "title": "尚未配置企业 SSO Provider",
+          "manageBody": "当前角色拥有管理权限，但创建与更新表单将在后续切片接入。",
+          "readBody": "当前企业还没有可读取的 Provider 配置。"
+        },
+        "closure": {
+          "title": "闭环状态",
+          "domains": "域名验证",
+          "policy": "强制策略",
+          "recovery": "恢复入口",
+          "audit": "审计状态",
+          "pending": "待接入",
+          "hint": "域名、策略、恢复与审计接口尚未提供；本页不会把缺失的服务端事实渲染为已验证或可强制。"
+        }
       }
     }
   },
