@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { OrganizationSsoProvider } from '@/lib/api/generated/types.gen'
 import { useOrganizationSsoProviders } from './organization-sso-api'
+import { OrganizationSsoDomains } from './organization-sso-domains'
 
 const SSO_READ = 'organization.sso.read'
 const SSO_MANAGE = 'organization.sso.manage'
@@ -59,10 +60,11 @@ export function OrganizationSsoPanel({
         {ssoEnabled && canRead && query.isError ? <SsoPanelState icon={CircleAlert} title={t('organizationConsole.settings.sso.errors.title')} body={t(canManage ? 'organizationConsole.settings.sso.errors.body' : 'organizationConsole.settings.sso.errors.readOnlyBody')} action={<Button type="button" size="sm" variant="secondary" onClick={() => void query.refetch()}><RefreshCw aria-hidden="true" />{t('organizationConsole.actions.retry')}</Button>} /> : null}
         {ssoEnabled && canRead && query.isSuccess && providers.length === 0 ? <SsoPanelState icon={ShieldCheck} title={t('organizationConsole.settings.sso.empty.title')} body={t(canManage ? 'organizationConsole.settings.sso.empty.manageBody' : 'organizationConsole.settings.sso.empty.readBody')} /> : null}
         {ssoEnabled && canRead && providers.length > 0 ? <div className="divide-y divide-[var(--hairline)]">{providers.map((provider) => <SsoProviderRow key={provider.provider_key} provider={provider} />)}</div> : null}
+        {ssoEnabled && canRead ? <OrganizationSsoDomains organizationId={organizationId} providers={providers} canManage={canManage} providersLoaded={query.isSuccess} /> : null}
         <div className="border-t border-[var(--hairline)] bg-surface-1/25 px-4 py-3">
           <div className="mb-2 text-[0.6875rem] font-medium uppercase tracking-[0.08em] text-muted-foreground">{t('organizationConsole.settings.sso.closure.title')}</div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {(['domains', 'policy', 'recovery', 'audit'] as const).map((item) => (
+            {(['policy', 'recovery', 'audit'] as const).map((item) => (
               <div key={item} className="flex min-w-0 items-center justify-between gap-2 rounded-lg border border-dashed border-[var(--hairline)] px-3 py-2">
                 <span className="truncate text-xs">{t(`organizationConsole.settings.sso.closure.${item}`)}</span>
                 <Badge className="shrink-0 text-muted-foreground">{t('organizationConsole.settings.sso.closure.pending')}</Badge>

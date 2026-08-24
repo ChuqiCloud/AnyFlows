@@ -5158,6 +5158,40 @@
         "protocol": { "oidc": "OpenID Connect", "saml": "SAML 2.0" },
         "status": { "draft": "草稿", "active": "活动", "disabled": "已停用" },
         "fields": { "protocol": "协议", "version": "版本", "secret": "密钥", "metadata": "元数据" },
+        "domains": {
+          "title": "已验证域名",
+          "subtitle": "通过服务端 DNS TXT 检查证明企业对域名的控制权。",
+          "status": { "pending": "等待 TXT", "verified": "已验证", "revoked": "已撤销" },
+          "fields": { "version": "版本", "expires": "证明过期", "verified": "验证时间", "recheck": "下次复验" },
+          "notAvailable": "暂无",
+          "empty": {
+            "title": "尚未添加企业域名",
+            "manageBody": "添加域名后，系统会生成一次性 TXT 记录，并可在此页面发起验证。",
+            "readBody": "当前角色看不到域名验证事实。"
+          },
+          "errors": {
+            "title": "无法加载域名",
+            "body": "域名验证状态暂时不可用，请刷新后再继续。"
+          },
+          "createTitle": "添加域名",
+          "createHint": "创建后只显示一次 TXT 值，请先写入 DNS，再发起验证。",
+          "provider": "Provider",
+          "domain": "域名",
+          "domainPlaceholder": "example.com",
+          "ttl": "证明有效期",
+          "ttlOption": "{{count}} 分钟",
+          "create": "生成证明",
+          "createError": "无法创建域名证明，请检查域名后重试。",
+          "noActiveProvider": "需要先配置活动的 SSO Provider，才能验证域名。",
+          "proofTitle": "{{domain}} 的 TXT 记录",
+          "proofHint": "请按原样发布两个值；关闭此页面后不会再次返回证明令牌。",
+          "txtName": "TXT 名称",
+          "txtValue": "TXT 值",
+          "verify": "验证 DNS",
+          "verifyError": "验证失败，请确认 DNS 已传播，并在证明过期前重试。",
+          "verifySuccess": "域名已验证，服务端将继续使用已记录的验证状态。",
+          "copied": "已复制"
+        },
         "restricted": {
           "entitlementTitle": "企业 SSO 尚未开放",
           "entitlementBody": "当前商业授权没有开启企业 SSO，服务端不会读取或接受 Provider 配置。",
@@ -5181,7 +5215,7 @@
           "recovery": "恢复入口",
           "audit": "审计状态",
           "pending": "待接入",
-          "hint": "域名、策略、恢复与审计接口尚未提供；本页不会把缺失的服务端事实渲染为已验证或可强制。"
+          "hint": "策略、恢复与审计接口尚未提供；本页不会把缺失的服务端事实渲染为已验证或可强制。"
         }
       }
     }
