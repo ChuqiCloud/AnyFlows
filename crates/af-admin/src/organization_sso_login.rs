@@ -33,6 +33,67 @@ pub type OrganizationSsoLoginTransactionFuture<'a, T> = Pin<
     Box<dyn Future<Output = Result<T, OrganizationSsoLoginTransactionServiceError>> + Send + 'a>,
 >;
 
+/// 登录事务启动后可交给 HTTP 层的脱敏绑定摘要。
+///
+/// state、PKCE verifier、nonce 和协议原文不会离开服务层；调用方只能拿到
+/// 用于后续边界校验的摘要、Provider 版本快照与短期过期时间。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrganizationSsoLoginTransactionStart {
+    protocol: OrganizationSsoProtocol,
+    provider_version: i64,
+    state_digest: String,
+    request_digest: String,
+    expires_at: i64,
+}
+
+impl OrganizationSsoLoginTransactionStart {
+    fn new(
+        protocol: OrganizationSsoProtocol,
+        provider_version: i64,
+        state_digest: String,
+        request_digest: String,
+        expires_at: i64,
+    ) -> Self {
+        Self {
+            protocol,
+            provider_version,
+            state_digest,
+            request_digest,
+            expires_at,
+        }
+    }
+
+    /// 返回创建事务时锁定的协议。
+    #[must_use]
+    pub const fn protocol(&self) -> OrganizationSsoProtocol {
+        self.protocol
+    }
+
+    /// 返回创建事务时锁定的 Provider 版本。
+    #[must_use]
+    pub const fn provider_version(&self) -> i64 {
+        self.provider_version
+    }
+
+    /// 返回 state 摘要；不返回 state 明文。
+    #[must_use]
+    pub fn state_digest(&self) -> &str {
+        &self.state_digest
+    }
+
+    /// 返回调用方提交的请求摘要。
+    #[must_use]
+    pub fn request_digest(&self) -> &str {
+        &self.request_digest
+    }
+
+    /// 返回事务过期时间（UTC Unix 秒）。
+    #[must_use]
+    pub const fn expires_at(&self) -> i64 {
+        self.expires_at
+    }
+}
+
 /// 已领取登录事务的安全投影，不包含 state、PKCE verifier、nonce 或断言原文。
 #[derive(Clone, Eq, PartialEq)]
 pub struct ClaimedOrganizationSsoLoginTransaction {
@@ -230,7 +291,7 @@ pub trait OrganizationSsoLoginTransactionService: Send + Sync {
         organization_id: OrganizationId,
         provider_key: String,
         request_digest: String,
-    ) -> OrganizationSsoLoginTransactionFuture<'a, OrganizationSsoLoginStart>;
+    ) -> OrganizationSsoLoginTransactionFuture<'a, OrganizationSsoLoginTransactionStart>;
 
     /// 按企业范围原子领取 state；调用方须在任何外部协议请求前调用此方法。
     fn claim<'a>(
@@ -280,7 +341,8 @@ impl DatabaseOrganizationSsoLoginTransactionService {
         organization_id: OrganizationId,
         provider_key: String,
         request_digest: String,
-    ) -> Result<OrganizationSsoLoginStart, OrganizationSsoLoginTransactionServiceError> {
+    ) -> Result<OrganizationSsoLoginTransactionStart, OrganizationSsoLoginTransactionServiceError>
+    {
         let provider_key = OrganizationSsoProviderKey::from_persistence_key(&provider_key)
             .map_err(|_| OrganizationSsoLoginTransactionServiceError::InvalidInput)?;
         let provider = self
@@ -294,7 +356,8 @@ impl DatabaseOrganizationSsoLoginTransactionService {
         let start =
             OrganizationSsoLoginStart::new(request_digest).map_err(map_login_material_error)?;
         let expires_at = expires_at(LOGIN_TRANSACTION_TTL_SECONDS)?;
-        self.repository
+        let record = self
+            .repository
             .create_login_transaction(
                 organization_id,
                 OrganizationSsoLoginTransactionCreate::new(
@@ -308,7 +371,13 @@ impl DatabaseOrganizationSsoLoginTransactionService {
             )
             .await
             .map_err(map_repository_error)?;
-        Ok(start)
+        Ok(OrganizationSsoLoginTransactionStart::new(
+            record.protocol(),
+            record.provider_version(),
+            record.state_digest().to_owned(),
+            record.request_digest().to_owned(),
+            record.expires_at(),
+        ))
     }
 
     async fn claim_inner(
@@ -406,7 +475,7 @@ impl OrganizationSsoLoginTransactionService for DatabaseOrganizationSsoLoginTran
         organization_id: OrganizationId,
         provider_key: String,
         request_digest: String,
-    ) -> OrganizationSsoLoginTransactionFuture<'a, OrganizationSsoLoginStart> {
+    ) -> OrganizationSsoLoginTransactionFuture<'a, OrganizationSsoLoginTransactionStart> {
         Box::pin(self.begin_inner(organization_id, provider_key, request_digest))
     }
 

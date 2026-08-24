@@ -8,7 +8,8 @@ use crate::{
     organizations::{
         OrganizationSsoDomainCreateRequest, OrganizationSsoDomainCreatedResponse,
         OrganizationSsoDomainListResponse, OrganizationSsoDomainResponse,
-        OrganizationSsoDomainVerifyRequest, OrganizationSsoProviderListResponse,
+        OrganizationSsoDomainVerifyRequest, OrganizationSsoLoginStartRequest,
+        OrganizationSsoLoginStartResponse, OrganizationSsoProviderListResponse,
         OrganizationSsoProviderRequest, OrganizationSsoProviderResponse,
     },
 };
@@ -164,6 +165,27 @@ fn create_organization_sso_domain() {}
 )]
 fn verify_organization_sso_domain() {}
 
+#[utoipa::path(
+    post,
+    path = "/api/organizations/{organization_id}/sso/login/start",
+    operation_id = "startOrganizationSsoLogin",
+    tag = "企业 SSO",
+    summary = "启动企业 SSO 登录事务",
+    params(("organization_id" = i64, Path, minimum = 1, description = "企业内部标识")),
+    request_body = OrganizationSsoLoginStartRequest,
+    responses(
+        (status = 200, description = "返回脱敏的登录事务摘要", body = OrganizationSsoLoginStartResponse),
+        (status = 400, description = "登录事务参数无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "无权启动企业 SSO 登录", body = ManagementErrorBody),
+        (status = 404, description = "Provider 不存在或无权访问", body = ManagementErrorBody),
+        (status = 409, description = "Provider 状态或登录事务冲突", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn start_organization_sso_login() {}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -173,7 +195,8 @@ fn verify_organization_sso_domain() {}
         update_organization_sso_provider,
         list_organization_sso_domains,
         create_organization_sso_domain,
-        verify_organization_sso_domain
+        verify_organization_sso_domain,
+        start_organization_sso_login
     ),
     components(schemas(
         OrganizationSsoProviderResponse,
@@ -184,6 +207,8 @@ fn verify_organization_sso_domain() {}
         OrganizationSsoDomainCreatedResponse,
         OrganizationSsoDomainCreateRequest,
         OrganizationSsoDomainVerifyRequest,
+        OrganizationSsoLoginStartRequest,
+        OrganizationSsoLoginStartResponse,
         ManagementErrorBody
     ))
 )]
