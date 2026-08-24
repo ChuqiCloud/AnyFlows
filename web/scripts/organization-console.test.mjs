@@ -43,6 +43,9 @@ test('企业成员、团队、邀请和钱包使用现有服务端契约', () =>
     ['/api/organizations/{organization_id}/wallet/entries', 'get', 'listOrganizationWalletEntries'],
     ['/api/organizations/{organization_id}/topups', 'post', 'createOrganizationTopupOrder'],
     ['/api/organizations/{organization_id}/sso/providers', 'get', 'listOrganizationSsoProviders'],
+    ['/api/organizations/{organization_id}/sso/domains', 'get', 'listOrganizationSsoDomains'],
+    ['/api/organizations/{organization_id}/sso/domains', 'post', 'createOrganizationSsoDomain'],
+    ['/api/organizations/{organization_id}/sso/domains/{domain_id}/verify', 'post', 'verifyOrganizationSsoDomain'],
   ]
   for (const [path, method, operationId] of operations) {
     assert.equal(openapi.paths[path][method].operationId, operationId)
@@ -50,9 +53,10 @@ test('企业成员、团队、邀请和钱包使用现有服务端契约', () =>
 })
 
 test('企业 SSO 面板只在授权允许时读取 Provider，并显式保留未闭环状态', async () => {
-  const [apiSource, panelSource, pageSource] = await Promise.all([
+  const [apiSource, panelSource, domainsSource, pageSource] = await Promise.all([
     readFile(new URL('../src/features/organization-sso/organization-sso-api.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/features/organization-sso/organization-sso-panel.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/features/organization-sso/organization-sso-domains.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/features/organization-console/organization-settings-page.tsx', import.meta.url), 'utf8'),
   ])
   assert.match(apiSource, /enabled,\n    queryFn/)
@@ -62,7 +66,15 @@ test('企业 SSO 面板只在授权允许时读取 Provider，并显式保留未
   assert.match(panelSource, /query\.isPending/)
   assert.match(panelSource, /query\.isError/)
   assert.match(panelSource, /providers\.length === 0/)
-  assert.match(panelSource, /closure\.pending/)
+  assert.match(panelSource, /OrganizationSsoDomains/)
+  assert.match(domainsSource, /useOrganizationSsoDomains/)
+  assert.match(domainsSource, /useCreateOrganizationSsoDomain/)
+  assert.match(domainsSource, /useVerifyOrganizationSsoDomain/)
+  assert.match(domainsSource, /txt_record_value/)
+  assert.match(domainsSource, /verifyMutation\.isPending/)
+  assert.match(domainsSource, /query\.isError/)
+  assert.match(domainsSource, /query\.data\.length === 0/)
+  assert.match(domainsSource, /organizationConsole\.settings\.sso\.domains\.status/)
   assert.match(pageSource, /organization\.sso\.recovery/)
 })
 
@@ -137,6 +149,8 @@ test('企业控制台具备中英文入口和关键状态文案', async () => {
     assert.equal(typeof locale.organizationConsole.customRoles.disable.description, 'string')
     assert.equal(typeof locale.organizationConsole.permissions.organization.roles.read, 'string')
     assert.equal(typeof locale.organizationConsole.settings.sso.title, 'string')
+    assert.equal(typeof locale.organizationConsole.settings.sso.domains.title, 'string')
+    assert.equal(typeof locale.organizationConsole.settings.sso.domains.verify, 'string')
     assert.equal(typeof locale.organizationConsole.settings.sso.closure.hint, 'string')
     assert.equal(typeof locale.organizationConsole.invitations.batch.preview, 'string')
     assert.equal(typeof locale.organizationConsole.wallet.adjustment.title, 'string')

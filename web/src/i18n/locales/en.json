@@ -5160,6 +5160,40 @@
         "protocol": { "oidc": "OpenID Connect", "saml": "SAML 2.0" },
         "status": { "draft": "Draft", "active": "Active", "disabled": "Disabled" },
         "fields": { "protocol": "Protocol", "version": "Version", "secret": "Secret", "metadata": "Metadata" },
+        "domains": {
+          "title": "Verified domains",
+          "subtitle": "Prove control of an organization domain with a server-side DNS TXT check.",
+          "status": { "pending": "Pending TXT", "verified": "Verified", "revoked": "Revoked" },
+          "fields": { "version": "Version", "expires": "Proof expires", "verified": "Verified at", "recheck": "Next recheck" },
+          "notAvailable": "Not available",
+          "empty": {
+            "title": "No organization domains",
+            "manageBody": "Add a domain to receive a one-time TXT record and verify it from this page.",
+            "readBody": "No domain verification facts are visible to the current role."
+          },
+          "errors": {
+            "title": "Domains could not be loaded",
+            "body": "Domain verification state is temporarily unavailable. Refresh before continuing."
+          },
+          "createTitle": "Add a domain",
+          "createHint": "The TXT value is shown once after creation. Store it in DNS before verifying.",
+          "provider": "Provider",
+          "domain": "Domain",
+          "domainPlaceholder": "example.com",
+          "ttl": "Proof lifetime",
+          "ttlOption": "{{count}} minutes",
+          "create": "Create proof",
+          "createError": "The domain proof could not be created. Check the domain and try again.",
+          "noActiveProvider": "An active SSO Provider is required before a domain can be verified.",
+          "proofTitle": "TXT record for {{domain}}",
+          "proofHint": "Publish both values exactly as shown. The proof token is not returned again after this page is closed.",
+          "txtName": "TXT name",
+          "txtValue": "TXT value",
+          "verify": "Verify DNS",
+          "verifyError": "Verification failed. Confirm DNS propagation and try again before the proof expires.",
+          "verifySuccess": "Domain verified. The server will continue using the recorded verification state.",
+          "copied": "Copied"
+        },
         "restricted": {
           "entitlementTitle": "Organization SSO is not enabled",
           "entitlementBody": "The current commercial entitlement does not enable organization SSO, so the server will not read or accept Provider configuration.",
@@ -5183,7 +5217,7 @@
           "recovery": "Recovery entry",
           "audit": "Audit status",
           "pending": "Pending",
-          "hint": "Domain, policy, recovery, and audit endpoints are not available yet; missing server facts are never rendered as verified or enforceable."
+          "hint": "Policy, recovery, and audit endpoints are not available yet; missing server facts are never rendered as verified or enforceable."
         }
       }
     }
