@@ -133,7 +133,8 @@ impl OrganizationEntitlementSnapshot {
         valid_until: i64,
         grace_until: Option<i64>,
     ) -> Result<Self, OrganizationEntitlementStateError> {
-        if sso_enabled || custom_roles_enabled {
+        // SSO 已进入企业身份绑定交付链路；自定义角色仍须等后续能力切片开放。
+        if custom_roles_enabled {
             return Err(OrganizationEntitlementStateError::UnsupportedFeature);
         }
         if !(1..=MAX_ORGANIZATION_AUDIT_RETENTION_DAYS).contains(&audit_retention_days) {
@@ -290,13 +291,13 @@ mod tests {
     }
 
     #[test]
-    fn 首版未实现能力固定关闭() {
+    fn 自定义角色能力仍固定关闭() {
         assert_eq!(
             OrganizationEntitlementSnapshot::new(
                 OrganizationEntitlementCapacity::new(1, 1, 1).expect("容量有效"),
                 true,
                 true,
-                false,
+                true,
                 90,
                 1,
                 2,

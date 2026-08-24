@@ -1,8 +1,11 @@
 use std::collections::BTreeSet;
 
 use af_domain::{
-    OrganizationId, OrganizationInvitationKey, OrganizationInvitationStatus,
-    OrganizationMembershipStatus, OrganizationRole, OrganizationStatus, OrganizationTeamId, UserId,
+    GroupId, OrganizationId, OrganizationInvitationKey, OrganizationInvitationStatus,
+    OrganizationMembershipStatus, OrganizationRole, OrganizationSsoDomainStatus,
+    OrganizationSsoIdentityBindingMethod, OrganizationSsoIdentityStatus,
+    OrganizationSsoProviderKey, OrganizationSsoProviderStatus, OrganizationStatus,
+    OrganizationTeamId, UserId,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::{
@@ -12,8 +15,13 @@ use sea_orm::{
 };
 
 use crate::{
-    EncryptedCredentialEnvelope,
-    entity::{organization_invitations, organization_memberships, organization_teams, users},
+    AdminUserCreateRecord, AdminUserRepositoryError, EncryptedCredentialEnvelope,
+    admin_user_write::create_user_in_transaction,
+    entity::{
+        authentication_settings, organization_invitations, organization_memberships,
+        organization_sso_domains, organization_sso_identities, organization_sso_providers,
+        organization_teams, users,
+    },
 };
 
 use super::{
@@ -23,6 +31,12 @@ use super::{
     OrganizationInvitationPreviewSnapshot, OrganizationInvitationRecord, OrganizationRepository,
     OrganizationRepositoryError, mutation, read, record_internal_error,
 };
+
+const AUTHENTICATION_SETTINGS_ID: i16 = 1;
+const ACTIVE_USER_STATUS: i16 = 1;
+const STANDARD_USER_ROLE: i16 = 0;
+const JIT_INITIAL_QUOTA: i64 = 0;
+const JIT_USERNAME_PREFIX: &str = "sso_jit_";
 
 pub(super) async fn create(
     repository: &OrganizationRepository,
@@ -399,6 +413,153 @@ pub(super) async fn accept(
     Ok(membership_record)
 }
 
+/// 在同一企业事务内消费受邀请事实，并原子创建无密码的 JIT 成员与身份。
+pub(super) async fn bind_invited_sso_identity(
+    repository: &OrganizationRepository,
+    organization_id: OrganizationId,
+    provider_key: OrganizationSsoProviderKey,
+    subject_digest: String,
+    invitation_email_fingerprint: [u8; 32],
+) -> Result<crate::organization::OrganizationMembershipRecord, OrganizationRepositoryError> {
+    validate_sso_digest(&subject_digest)?;
+    let transaction = mutation::begin(repository).await?;
+    let organization = mutation::lock_organization(&transaction, organization_id).await?;
+    require_active_organization(&organization)?;
+    let entitlement = mutation::lock_entitlement(&transaction, organization_id).await?;
+    ensure_provisioning(&organization, &entitlement)?;
+    if !read::entitlement_snapshot(entitlement.clone())?.sso_enabled() {
+        return Err(OrganizationRepositoryError::EntitlementRestricted);
+    }
+
+    let provider = lock_active_sso_provider(&transaction, organization_id, provider_key).await?;
+    lock_verified_sso_domain(&transaction, organization_id, provider.id, now()).await?;
+
+    // 同一身份的重试只恢复原成员；不能再次消费邀请或创建全局用户。
+    if let Some(identity) =
+        lock_identity_by_subject(&transaction, organization_id, provider.id, &subject_digest)
+            .await?
+    {
+        let status =
+            OrganizationSsoIdentityStatus::try_from(identity.status).map_err(|_| invariant())?;
+        if !status.is_active() {
+            return Err(OrganizationRepositoryError::Conflict);
+        }
+        let membership = lock_active_membership(
+            &transaction,
+            organization_id,
+            identity.organization_membership_id,
+        )
+        .await?;
+        let record = read::membership_record(membership)?;
+        mutation::commit(transaction).await?;
+        return Ok(record);
+    }
+
+    let now = now();
+    let invitation = lock_pending_invitation_by_fingerprint(
+        &transaction,
+        organization_id,
+        &hex(&invitation_email_fingerprint),
+    )
+    .await?;
+    if invitation.expires_at.unix_timestamp() <= now {
+        finalize_invitation(
+            &transaction,
+            invitation,
+            OrganizationInvitationStatus::Expired,
+            None,
+            now,
+        )
+        .await?;
+        mutation::commit(transaction).await?;
+        return Err(OrganizationRepositoryError::InvitationExpired);
+    }
+
+    let settings = authentication_settings::Entity::find_by_id(AUTHENTICATION_SETTINGS_ID)
+        .one(&transaction)
+        .await
+        .map_err(query_error)?
+        .ok_or_else(invariant)?;
+    let default_group_id = settings
+        .registration_default_group_id
+        .map(GroupId::new)
+        .transpose()
+        .map_err(|_| invariant())?
+        .ok_or(OrganizationRepositoryError::InvalidInput)?;
+    let role = OrganizationRole::try_from(invitation.role).map_err(|_| invariant())?;
+    let team_id = invitation
+        .team_id
+        .map(OrganizationTeamId::new)
+        .transpose()
+        .map_err(|_| invariant())?;
+    ensure_team_management(&entitlement, team_id)?;
+    validate_team(&transaction, organization_id, team_id).await?;
+    ensure_capacity(&transaction, organization_id, &entitlement, 0, now).await?;
+
+    let user = create_user_in_transaction(
+        &transaction,
+        AdminUserCreateRecord::new(
+            jit_username(&subject_digest),
+            None,
+            None,
+            STANDARD_USER_ROLE,
+            ACTIVE_USER_STATUS,
+            default_group_id,
+            JIT_INITIAL_QUOTA,
+            None,
+            None,
+        ),
+    )
+    .await
+    .map_err(map_jit_user_error)?;
+
+    let membership = organization_memberships::ActiveModel {
+        organization_id: Set(organization_id.get()),
+        user_id: Set(user.user_id().get()),
+        role: Set(role.code()),
+        team_id: Set(team_id.map(OrganizationTeamId::get)),
+        custom_role_id: Set(None),
+        status: Set(OrganizationMembershipStatus::Active.code()),
+        joined_at: Set(TimeDateTimeWithTimeZone::now_utc()),
+        suspended_at: Set(None),
+        removed_at: Set(None),
+        invited_by_user_id: Set(Some(invitation.invited_by_user_id)),
+        version: Set(1),
+        ..Default::default()
+    }
+    .insert(&transaction)
+    .await
+    .map_err(map_write_error)?;
+    let membership_record = read::membership_record(membership.clone())?;
+
+    organization_sso_identities::ActiveModel {
+        organization_id: Set(organization_id.get()),
+        provider_id: Set(provider.id),
+        subject_digest: Set(subject_digest.into()),
+        organization_membership_id: Set(membership.id),
+        status: Set(OrganizationSsoIdentityStatus::Active.code()),
+        binding_method: Set(OrganizationSsoIdentityBindingMethod::Invited.code()),
+        version: Set(1),
+        created_at: Set(TimeDateTimeWithTimeZone::now_utc()),
+        updated_at: Set(TimeDateTimeWithTimeZone::now_utc()),
+        disabled_at: Set(None),
+        ..Default::default()
+    }
+    .insert(&transaction)
+    .await
+    .map_err(map_write_error)?;
+    finalize_invitation(
+        &transaction,
+        invitation,
+        OrganizationInvitationStatus::Accepted,
+        Some(user.user_id()),
+        now,
+    )
+    .await?;
+    mutation::commit(transaction).await?;
+    Ok(membership_record)
+}
+
 pub(super) async fn revoke(
     repository: &OrganizationRepository,
     organization_id: OrganizationId,
@@ -551,6 +712,126 @@ async fn lock_invitation(
         .await
         .map_err(query_error)?
         .ok_or(OrganizationRepositoryError::NotFound)
+}
+
+async fn lock_active_sso_provider(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+    provider_key: OrganizationSsoProviderKey,
+) -> Result<organization_sso_providers::Model, OrganizationRepositoryError> {
+    let mut query = organization_sso_providers::Entity::find()
+        .filter(organization_sso_providers::Column::OrganizationId.eq(organization_id.get()))
+        .filter(organization_sso_providers::Column::ProviderKey.eq(provider_key.persistence_key()));
+    if transaction.get_database_backend() != DbBackend::Sqlite {
+        query = query.lock(LockType::Update);
+    }
+    let provider = query
+        .one(transaction)
+        .await
+        .map_err(query_error)?
+        .ok_or(OrganizationRepositoryError::NotFound)?;
+    if OrganizationSsoProviderStatus::try_from(provider.status).map_err(|_| invariant())?
+        != OrganizationSsoProviderStatus::Active
+    {
+        return Err(OrganizationRepositoryError::InvalidTransition);
+    }
+    Ok(provider)
+}
+
+async fn lock_verified_sso_domain(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+    provider_id: i64,
+    now: i64,
+) -> Result<organization_sso_domains::Model, OrganizationRepositoryError> {
+    let mut query = organization_sso_domains::Entity::find()
+        .filter(organization_sso_domains::Column::OrganizationId.eq(organization_id.get()))
+        .filter(organization_sso_domains::Column::ProviderId.eq(provider_id))
+        .filter(
+            organization_sso_domains::Column::Status
+                .eq(OrganizationSsoDomainStatus::Verified.code()),
+        )
+        .filter(
+            organization_sso_domains::Column::RecheckAt
+                .gt(TimeDateTimeWithTimeZone::from_unix_timestamp(now).map_err(|_| invariant())?),
+        )
+        .order_by_asc(organization_sso_domains::Column::Id);
+    if transaction.get_database_backend() != DbBackend::Sqlite {
+        query = query.lock(LockType::Update);
+    }
+    query
+        .one(transaction)
+        .await
+        .map_err(query_error)?
+        .ok_or(OrganizationRepositoryError::InvalidTransition)
+}
+
+async fn lock_identity_by_subject(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+    provider_id: i64,
+    subject_digest: &str,
+) -> Result<Option<organization_sso_identities::Model>, OrganizationRepositoryError> {
+    let mut query = organization_sso_identities::Entity::find()
+        .filter(organization_sso_identities::Column::OrganizationId.eq(organization_id.get()))
+        .filter(organization_sso_identities::Column::ProviderId.eq(provider_id))
+        .filter(organization_sso_identities::Column::SubjectDigest.eq(subject_digest));
+    if transaction.get_database_backend() != DbBackend::Sqlite {
+        query = query.lock(LockType::Update);
+    }
+    query.one(transaction).await.map_err(query_error)
+}
+
+async fn lock_active_membership(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+    membership_id: i64,
+) -> Result<organization_memberships::Model, OrganizationRepositoryError> {
+    let mut query = organization_memberships::Entity::find_by_id(membership_id)
+        .filter(organization_memberships::Column::OrganizationId.eq(organization_id.get()));
+    if transaction.get_database_backend() != DbBackend::Sqlite {
+        query = query.lock(LockType::Update);
+    }
+    let membership = query
+        .one(transaction)
+        .await
+        .map_err(query_error)?
+        .ok_or_else(invariant)?;
+    if membership.status != OrganizationMembershipStatus::Active.code()
+        || membership.suspended_at.is_some()
+        || membership.removed_at.is_some()
+    {
+        return Err(OrganizationRepositoryError::Conflict);
+    }
+    let user_id = UserId::new(membership.user_id).map_err(|_| invariant())?;
+    if !mutation::lock_active_user(transaction, user_id).await? {
+        return Err(OrganizationRepositoryError::UserUnavailable);
+    }
+    Ok(membership)
+}
+
+async fn lock_pending_invitation_by_fingerprint(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+    email_fingerprint: &str,
+) -> Result<organization_invitations::Model, OrganizationRepositoryError> {
+    let mut query = organization_invitations::Entity::find()
+        .filter(organization_invitations::Column::OrganizationId.eq(organization_id.get()))
+        .filter(organization_invitations::Column::EmailFingerprint.eq(email_fingerprint))
+        .filter(
+            organization_invitations::Column::Status
+                .eq(OrganizationInvitationStatus::Pending.code()),
+        )
+        .order_by_asc(organization_invitations::Column::Id);
+    if transaction.get_database_backend() != DbBackend::Sqlite {
+        query = query.lock(LockType::Update);
+    }
+    let models = query.all(transaction).await.map_err(query_error)?;
+    match models.as_slice() {
+        [] => Err(OrganizationRepositoryError::NotFound),
+        [model] => Ok(model.clone()),
+        _ => Err(invariant()),
+    }
 }
 
 async fn ensure_no_pending_email(
@@ -802,6 +1083,36 @@ fn map_write_error(error: DbErr) -> OrganizationRepositoryError {
         OrganizationRepositoryError::Conflict
     } else {
         query_error(error)
+    }
+}
+
+fn validate_sso_digest(value: &str) -> Result<(), OrganizationRepositoryError> {
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        Err(OrganizationRepositoryError::InvalidInput)
+    } else {
+        Ok(())
+    }
+}
+
+fn jit_username(subject_digest: &str) -> String {
+    // 用户名只由不透明摘要组成，避免把 subject、邮箱或显示名带入全局用户表。
+    format!("{JIT_USERNAME_PREFIX}{}", &subject_digest[..56])
+}
+
+fn map_jit_user_error(error: AdminUserRepositoryError) -> OrganizationRepositoryError {
+    match error {
+        AdminUserRepositoryError::Conflict => OrganizationRepositoryError::Conflict,
+        AdminUserRepositoryError::InvalidReference => OrganizationRepositoryError::Invariant,
+        AdminUserRepositoryError::Query | AdminUserRepositoryError::Timeout => {
+            OrganizationRepositoryError::Query
+        }
+        AdminUserRepositoryError::Invariant | AdminUserRepositoryError::Entropy => {
+            OrganizationRepositoryError::Invariant
+        }
     }
 }
 

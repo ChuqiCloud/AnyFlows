@@ -1,6 +1,9 @@
 use std::{fmt, future::Future, time::Duration};
 
-use af_domain::{OrganizationId, OrganizationMembershipId, OrganizationTeamId, UserId};
+use af_domain::{
+    OrganizationId, OrganizationMembershipId, OrganizationSsoProviderKey, OrganizationTeamId,
+    UserId,
+};
 use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
@@ -265,6 +268,26 @@ impl OrganizationRepository {
             email_fingerprint,
             user_id,
             normalized_email,
+        ))
+        .await
+    }
+
+    /// 仅凭受控 IdP claim 的企业隔离邮箱指纹消费有效邀请，并原子建立 JIT 用户、成员和 SSO 身份。
+    ///
+    /// 调用方必须先验证协议签名和 claim 语义；此入口不接受邮箱、域名或用户名等可推测关联材料。
+    pub async fn bind_invited_sso_identity(
+        &self,
+        organization_id: OrganizationId,
+        provider_key: OrganizationSsoProviderKey,
+        subject_digest: String,
+        invitation_email_fingerprint: [u8; 32],
+    ) -> Result<OrganizationMembershipRecord, OrganizationRepositoryError> {
+        self.run(invitation::bind_invited_sso_identity(
+            self,
+            organization_id,
+            provider_key,
+            subject_digest,
+            invitation_email_fingerprint,
         ))
         .await
     }
