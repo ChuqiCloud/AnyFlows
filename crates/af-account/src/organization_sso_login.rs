@@ -38,7 +38,7 @@ impl OrganizationSsoLoginStart {
         let state = random_parameter()?;
         let pkce_verifier = random_parameter()?;
         let nonce = random_parameter()?;
-        let state_digest = digest(state.as_bytes());
+        let state_digest = organization_sso_login_state_digest(&state)?;
         let pkce_challenge = digest_base64(pkce_verifier.as_bytes());
         Ok(Self {
             state,
@@ -195,6 +195,10 @@ impl fmt::Debug for OrganizationSsoSamlCallback {
 pub enum OrganizationSsoLoginError {
     #[error("企业 SSO 摘要无效")]
     InvalidDigest,
+    #[error("企业 SSO state 无效")]
+    InvalidState,
+    #[error("企业 SSO 票据无效")]
+    InvalidTicket,
     #[error("企业 SSO 随机材料生成失败")]
     Entropy,
     #[error("企业 SSO 回调字段缺失")]
@@ -203,6 +207,29 @@ pub enum OrganizationSsoLoginError {
     UnexpectedCallbackField,
     #[error("企业 SSO 回调过大")]
     CallbackTooLarge,
+}
+
+/// 计算可持久化的 state 摘要；调用方不得自行复制摘要算法。
+pub fn organization_sso_login_state_digest(
+    state: &str,
+) -> Result<String, OrganizationSsoLoginError> {
+    if !valid_parameter(state) {
+        return Err(OrganizationSsoLoginError::InvalidState);
+    }
+    Ok(digest(state.as_bytes()))
+}
+
+/// 计算短期登录票据的域分离摘要，明文票据只可在本次响应中返回。
+pub fn organization_sso_login_ticket_digest(
+    ticket: &str,
+) -> Result<String, OrganizationSsoLoginError> {
+    if !valid_parameter(ticket) {
+        return Err(OrganizationSsoLoginError::InvalidTicket);
+    }
+    Ok(digest_with_domain(
+        b"organization-sso-login-ticket-v1",
+        ticket.as_bytes(),
+    ))
 }
 
 fn random_parameter() -> Result<String, OrganizationSsoLoginError> {
@@ -214,10 +241,21 @@ fn random_parameter() -> Result<String, OrganizationSsoLoginError> {
 fn digest(value: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(value);
-    let digest = hasher.finalize();
+    encode_digest(&hasher.finalize())
+}
+
+fn digest_with_domain(domain: &[u8], value: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(domain);
+    hasher.update([0]);
+    hasher.update(value);
+    encode_digest(&hasher.finalize())
+}
+
+fn encode_digest(digest: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut output = String::with_capacity(digest.len() * 2);
-    for byte in digest {
+    for &byte in digest {
         output.push(char::from(HEX[usize::from(byte >> 4)]));
         output.push(char::from(HEX[usize::from(byte & 0x0f)]));
     }
@@ -251,13 +289,38 @@ mod tests {
     #[test]
     fn start_material_is_bound_and_redacted() {
         let start = OrganizationSsoLoginStart::new("a".repeat(64)).unwrap();
-        assert_eq!(start.state_digest(), digest(start.state().as_bytes()));
+        assert_eq!(
+            start.state_digest(),
+            organization_sso_login_state_digest(start.state()).unwrap()
+        );
         assert_eq!(
             start.pkce_challenge(),
             digest_base64(start.pkce_verifier().as_bytes())
         );
         assert!(!format!("{start:?}").contains(start.pkce_verifier()));
         assert!(!format!("{start:?}").contains(start.nonce()));
+    }
+
+    #[test]
+    fn state_and_ticket_digests_are_stable_and_domain_separated() {
+        let state = "state-material";
+        let ticket = "ticket-material";
+        assert_eq!(
+            organization_sso_login_state_digest(state).unwrap(),
+            digest(state.as_bytes())
+        );
+        assert_ne!(
+            organization_sso_login_ticket_digest(ticket).unwrap(),
+            digest(ticket.as_bytes())
+        );
+        assert_eq!(
+            organization_sso_login_state_digest(" state"),
+            Err(OrganizationSsoLoginError::InvalidState)
+        );
+        assert_eq!(
+            organization_sso_login_ticket_digest(""),
+            Err(OrganizationSsoLoginError::InvalidTicket)
+        );
     }
 
     #[test]

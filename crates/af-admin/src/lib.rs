@@ -34,6 +34,9 @@ mod organization_custom_role_binding;
 mod organization_invitation;
 mod organization_management;
 mod organization_sso;
+mod organization_sso_login;
+#[cfg(test)]
+mod organization_sso_login_tests;
 mod organization_token;
 mod organization_wallet;
 mod passkey;
@@ -268,6 +271,12 @@ pub use organization_sso::{
     OrganizationSsoProviderCommand, OrganizationSsoProviderFuture,
     OrganizationSsoProviderListFuture, OrganizationSsoProviderService,
     OrganizationSsoProviderServiceError,
+};
+pub use organization_sso_login::{
+    ClaimedOrganizationSsoLoginTransaction, DatabaseOrganizationSsoLoginTransactionService,
+    ExchangedOrganizationSsoLoginTicket, IssuedOrganizationSsoLoginTicket,
+    OrganizationSsoLoginTransactionFuture, OrganizationSsoLoginTransactionService,
+    OrganizationSsoLoginTransactionServiceError,
 };
 pub use organization_token::{
     DEFAULT_ORGANIZATION_TOKEN_PAGE_SIZE, DatabaseOrganizationTokenService,
