@@ -36,8 +36,9 @@ use crate::entity::{
     model_sync_items, model_sync_runs, models, oauth_login_providers, options,
     organization_audit_logs, organization_budget_policies, organization_budget_windows,
     organization_custom_role_permissions, organization_custom_roles, organization_entitlements,
-    organization_invitations, organization_memberships, organization_teams,
-    organization_wallet_ledger_entries, organization_wallets, organizations,
+    organization_invitations, organization_memberships, organization_sso_domains,
+    organization_sso_identities, organization_sso_login_transactions, organization_sso_providers,
+    organization_teams, organization_wallet_ledger_entries, organization_wallets, organizations,
     passkey_authentication_challenges, passkey_registration_challenges, passkeys, payment_settings,
     platform_audit_logs, playground_conversations, playground_shares, redemption_batches,
     redemption_codes, refund_provider_events, refund_requests, registration_rate_limits,
@@ -77,7 +78,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 94;
+const EXPECTED_MIGRATION_COUNT: usize = 95;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -438,6 +439,86 @@ async fn standard_startup_installs_organization_custom_role_schema() -> Result<(
         ),
     ] {
         assert!(manager.has_index(table, index).await?, "缺少索引 {index}");
+    }
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn standard_startup_installs_organization_sso_schema() -> Result<(), Box<dyn Error>> {
+    let database_options = DatabaseOptions::new("sqlite::memory:")?;
+    let pool = crate::connect_and_migrate(&database_options, MigrationOptions::default()).await?;
+    let manager = SchemaManager::new(pool.connection());
+
+    for table in [
+        "organization_sso_providers",
+        "organization_sso_domains",
+        "organization_sso_identities",
+        "organization_sso_login_transactions",
+    ] {
+        assert!(
+            manager.has_table(table).await?,
+            "缺少企业 SSO 数据表 {table}"
+        );
+    }
+    for (table, index) in [
+        (
+            "organization_sso_providers",
+            "uq_organization_sso_providers_scope_key",
+        ),
+        (
+            "organization_sso_providers",
+            "uq_organization_sso_providers_scope_id",
+        ),
+        (
+            "organization_sso_providers",
+            "uq_organization_sso_providers_active",
+        ),
+        (
+            "organization_sso_domains",
+            "uq_organization_sso_domains_scope_id",
+        ),
+        (
+            "organization_sso_domains",
+            "uq_organization_sso_domains_active",
+        ),
+        (
+            "organization_sso_identities",
+            "uq_organization_sso_identities_subject",
+        ),
+        (
+            "organization_sso_identities",
+            "uq_organization_sso_identities_membership",
+        ),
+        (
+            "organization_sso_identities",
+            "uq_organization_sso_identities_scope_id",
+        ),
+        (
+            "organization_sso_login_transactions",
+            "uq_organization_sso_login_transactions_state",
+        ),
+        (
+            "organization_sso_login_transactions",
+            "uq_organization_sso_login_transactions_ticket",
+        ),
+        (
+            "organization_sso_login_transactions",
+            "uq_organization_sso_login_transactions_assertion",
+        ),
+        (
+            "organization_sso_login_transactions",
+            "idx_organization_sso_login_transactions_expires",
+        ),
+        (
+            "organization_sso_login_transactions",
+            "idx_organization_sso_login_transactions_ticket_expires",
+        ),
+    ] {
+        assert!(
+            manager.has_index(table, index).await?,
+            "缺少企业 SSO 索引 {index}"
+        );
     }
     pool.close().await?;
     Ok(())
@@ -1309,7 +1390,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 35);
+    assert_eq!(pending_migrations.len(), 36);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -1449,6 +1530,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[34].name(),
         "m20260823_000094_add_organization_custom_role_bindings"
+    );
+    assert_eq!(
+        pending_migrations[35].name(),
+        "m20260824_000095_create_organization_sso_persistence"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
@@ -3085,6 +3170,23 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     assert_entity_columns::<refund_requests::Column>(&manager, "refund_requests").await?;
     assert_entity_columns::<refund_provider_events::Column>(&manager, "refund_provider_events")
         .await?;
+    assert_entity_columns::<organization_sso_providers::Column>(
+        &manager,
+        "organization_sso_providers",
+    )
+    .await?;
+    assert_entity_columns::<organization_sso_domains::Column>(&manager, "organization_sso_domains")
+        .await?;
+    assert_entity_columns::<organization_sso_identities::Column>(
+        &manager,
+        "organization_sso_identities",
+    )
+    .await?;
+    assert_entity_columns::<organization_sso_login_transactions::Column>(
+        &manager,
+        "organization_sso_login_transactions",
+    )
+    .await?;
     assert_entity_columns::<user_subscriptions::Column>(&manager, "user_subscriptions").await?;
     assert_entity_columns::<invite_rebate_events::Column>(&manager, "invite_rebate_events").await?;
     assert_entity_columns::<balance_alert_settings::Column>(&manager, "balance_alert_settings")
