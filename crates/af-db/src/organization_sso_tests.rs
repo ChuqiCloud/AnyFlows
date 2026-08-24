@@ -815,18 +815,36 @@ async fn enable_sso(
         .one(fixture.pool.connection())
         .await?
         .expect("测试企业必须具备商业授权");
-    let mut entitlement = entitlement.into_active_model();
-    entitlement.sso_enabled = Set(true);
-    entitlement.update(fixture.pool.connection()).await?;
+    fixture
+        .organizations
+        .replace_entitlement(
+            organization_id,
+            active_sso_entitlement(u64::try_from(entitlement.version)?)?,
+        )
+        .await?;
     Ok(())
 }
 
 fn active_entitlement() -> Result<OrganizationEntitlementWrite, Box<dyn Error>> {
+    entitlement(false, None)
+}
+
+/// 构造带当前 CAS 版本的 SSO 授权快照，仅供 JIT 回归准备受信商业能力。
+fn active_sso_entitlement(
+    expected_version: u64,
+) -> Result<OrganizationEntitlementWrite, Box<dyn Error>> {
+    entitlement(true, Some(expected_version))
+}
+
+fn entitlement(
+    sso_enabled: bool,
+    expected_version: Option<u64>,
+) -> Result<OrganizationEntitlementWrite, Box<dyn Error>> {
     Ok(OrganizationEntitlementWrite::new(
         OrganizationEntitlementSnapshot::new(
             OrganizationEntitlementCapacity::new(10, 10, 10)?,
             true,
-            false,
+            sso_enabled,
             false,
             90,
             946_684_800,
@@ -835,7 +853,7 @@ fn active_entitlement() -> Result<OrganizationEntitlementWrite, Box<dyn Error>> 
         )?,
         "sso-test".to_owned(),
         None,
-        None,
+        expected_version,
     )?)
 }
 
