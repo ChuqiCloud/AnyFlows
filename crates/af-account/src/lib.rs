@@ -7,6 +7,7 @@ mod diagnostic_snapshot;
 mod login_oauth;
 mod oauth;
 mod organization_invitation;
+mod organization_sso_dns;
 mod system_secret;
 
 pub use credential_decryption::{
@@ -50,6 +51,12 @@ pub use oauth::{
 pub use organization_invitation::{
     DecryptedOrganizationInvitationEmail, OrganizationInvitationCipher,
     OrganizationInvitationCipherError, PlainOrganizationInvitationEmail,
+};
+pub use organization_sso_dns::{
+    ControlledOrganizationSsoDnsResolver, MAX_ORGANIZATION_SSO_DNS_NAMESERVERS,
+    MAX_ORGANIZATION_SSO_DNS_TXT_ANSWER_BYTES, MAX_ORGANIZATION_SSO_DNS_TXT_ANSWERS,
+    MAX_ORGANIZATION_SSO_DNS_TXT_TOTAL_BYTES, OrganizationSsoDnsResolverConfigError,
+    OrganizationSsoDnsResolverError, OrganizationSsoDnsTxtResolver,
 };
 pub use system_secret::{
     DecryptedSystemSecret, PlainSystemSecret, SystemSecretCipher, SystemSecretError,
