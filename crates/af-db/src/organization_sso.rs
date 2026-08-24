@@ -2,8 +2,9 @@ use std::{fmt, future::Future, time::Duration};
 
 use af_domain::{
     OrganizationId, OrganizationMembershipId, OrganizationSsoDnsVerification,
-    OrganizationSsoDomain, OrganizationSsoDomainStatus, OrganizationSsoProtocol,
-    OrganizationSsoProviderKey, OrganizationSsoProviderStatus,
+    OrganizationSsoDomain, OrganizationSsoDomainStatus, OrganizationSsoIdentityBindingMethod,
+    OrganizationSsoIdentityStatus, OrganizationSsoProtocol, OrganizationSsoProviderKey,
+    OrganizationSsoProviderStatus,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, DbErr,
@@ -24,11 +25,6 @@ use crate::{
         organization_sso_providers,
     },
 };
-
-const IDENTITY_ACTIVE: i16 = 1;
-const IDENTITY_DISABLED: i16 = 2;
-const BINDING_METHOD_EXPLICIT: i16 = 1;
-const BINDING_METHOD_INVITED: i16 = 2;
 
 /// 创建企业 SSO Provider 的配置事实。
 pub struct OrganizationSsoProviderCreate {
@@ -346,7 +342,7 @@ pub struct OrganizationSsoIdentityCreate {
     provider_key: OrganizationSsoProviderKey,
     subject_digest: String,
     membership_id: OrganizationMembershipId,
-    binding_method: i16,
+    binding_method: OrganizationSsoIdentityBindingMethod,
 }
 
 impl OrganizationSsoIdentityCreate {
@@ -356,7 +352,7 @@ impl OrganizationSsoIdentityCreate {
         provider_key: OrganizationSsoProviderKey,
         subject_digest: String,
         membership_id: OrganizationMembershipId,
-        binding_method: i16,
+        binding_method: OrganizationSsoIdentityBindingMethod,
     ) -> Self {
         Self {
             provider_key,
@@ -375,8 +371,8 @@ pub struct OrganizationSsoIdentityRecord {
     provider_id: i64,
     subject_digest: String,
     membership_id: OrganizationMembershipId,
-    status: i16,
-    binding_method: i16,
+    status: OrganizationSsoIdentityStatus,
+    binding_method: OrganizationSsoIdentityBindingMethod,
     version: i64,
     disabled_at: Option<i64>,
 }
@@ -418,11 +414,11 @@ impl OrganizationSsoIdentityRecord {
         self.membership_id
     }
     #[must_use]
-    pub const fn status(&self) -> i16 {
+    pub const fn status(&self) -> OrganizationSsoIdentityStatus {
         self.status
     }
     #[must_use]
-    pub const fn binding_method(&self) -> i16 {
+    pub const fn binding_method(&self) -> OrganizationSsoIdentityBindingMethod {
         self.binding_method
     }
     #[must_use]
@@ -1274,9 +1270,6 @@ impl OrganizationSsoProviderRepository {
         write: OrganizationSsoIdentityCreate,
     ) -> Result<OrganizationSsoIdentityRecord, OrganizationSsoRepositoryError> {
         validate_digest(&write.subject_digest)?;
-        if ![BINDING_METHOD_EXPLICIT, BINDING_METHOD_INVITED].contains(&write.binding_method) {
-            return Err(OrganizationSsoRepositoryError::InvalidInput);
-        }
         let transaction = begin(&self.pool).await?;
         let provider =
             lock_active_provider(&transaction, organization_id, write.provider_key).await?;
@@ -1323,8 +1316,8 @@ impl OrganizationSsoProviderRepository {
             provider_id: Set(provider.id),
             subject_digest: Set(write.subject_digest.into()),
             organization_membership_id: Set(write.membership_id.get()),
-            status: Set(IDENTITY_ACTIVE),
-            binding_method: Set(write.binding_method),
+            status: Set(OrganizationSsoIdentityStatus::Active.code()),
+            binding_method: Set(write.binding_method.code()),
             version: Set(1),
             created_at: Set(now),
             updated_at: Set(now),
@@ -1351,7 +1344,9 @@ impl OrganizationSsoProviderRepository {
             rollback(transaction).await?;
             return Err(OrganizationSsoRepositoryError::Conflict);
         }
-        if current.status != IDENTITY_ACTIVE {
+        let current_status =
+            OrganizationSsoIdentityStatus::try_from(current.status).map_err(|_| invariant())?;
+        if !current_status.is_active() {
             rollback(transaction).await?;
             return Err(OrganizationSsoRepositoryError::InvalidTransition);
         }
@@ -1361,10 +1356,13 @@ impl OrganizationSsoProviderRepository {
             .filter(organization_sso_identities::Column::Id.eq(identity_id))
             .filter(organization_sso_identities::Column::OrganizationId.eq(organization_id.get()))
             .filter(organization_sso_identities::Column::Version.eq(current.version))
-            .filter(organization_sso_identities::Column::Status.eq(IDENTITY_ACTIVE))
+            .filter(
+                organization_sso_identities::Column::Status
+                    .eq(OrganizationSsoIdentityStatus::Active.code()),
+            )
             .col_expr(
                 organization_sso_identities::Column::Status,
-                Expr::value(IDENTITY_DISABLED),
+                Expr::value(OrganizationSsoIdentityStatus::Disabled.code()),
             )
             .col_expr(
                 organization_sso_identities::Column::DisabledAt,
@@ -1856,10 +1854,16 @@ fn identity_record(
     model: organization_sso_identities::Model,
 ) -> Result<OrganizationSsoIdentityRecord, OrganizationSsoRepositoryError> {
     validate_digest(model.subject_digest.as_str()).map_err(|_| invariant())?;
+    let status = OrganizationSsoIdentityStatus::try_from(model.status).map_err(|_| invariant())?;
+    let binding_method = OrganizationSsoIdentityBindingMethod::try_from(model.binding_method)
+        .map_err(|_| invariant())?;
     if model.id <= 0
         || model.version <= 0
-        || ![IDENTITY_ACTIVE, IDENTITY_DISABLED].contains(&model.status)
-        || ![BINDING_METHOD_EXPLICIT, BINDING_METHOD_INVITED].contains(&model.binding_method)
+        || !matches!(
+            (status, model.disabled_at.is_some()),
+            (OrganizationSsoIdentityStatus::Active, false)
+                | (OrganizationSsoIdentityStatus::Disabled, true)
+        )
     {
         return Err(invariant());
     }
@@ -1870,8 +1874,8 @@ fn identity_record(
         subject_digest: model.subject_digest.as_str().to_owned(),
         membership_id: OrganizationMembershipId::new(model.organization_membership_id)
             .map_err(|_| invariant())?,
-        status: model.status,
-        binding_method: model.binding_method,
+        status,
+        binding_method,
         version: model.version,
         disabled_at: model.disabled_at.map(|value| value.unix_timestamp()),
     })

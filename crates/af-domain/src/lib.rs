@@ -12,6 +12,7 @@ mod organization_budget;
 mod organization_entitlement;
 mod organization_sso;
 mod organization_sso_domain_verification;
+mod organization_sso_identity;
 mod payment;
 mod principal;
 mod quota;
@@ -71,6 +72,11 @@ pub use organization_sso_domain_verification::{
     OrganizationSsoDnsVerificationError, OrganizationSsoDomainProof,
     OrganizationSsoDomainProofError, OrganizationSsoDomainProofToken,
     OrganizationSsoDomainSuffixKind, classify_organization_sso_domain_suffix,
+};
+pub use organization_sso_identity::{
+    OrganizationSsoIdentityBindingMethod, OrganizationSsoIdentityLoginFacts,
+    OrganizationSsoIdentityLoginRejection, OrganizationSsoIdentityStateCodeError,
+    OrganizationSsoIdentityStatus, authorize_organization_sso_identity_login,
 };
 pub use payment::{
     TopupIdentifierError, TopupOrderId, TopupOrderStatus, TopupPaymentEventId,
