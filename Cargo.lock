@@ -90,6 +90,7 @@ dependencies = [
  "getrandom 0.4.3",
  "hickory-resolver",
  "jsonwebtoken",
+ "quick-xml",
  "saml-rs",
  "serde",
  "serde_json",
