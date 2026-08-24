@@ -21,8 +21,8 @@ use crate::{
     OrganizationSsoProviderCreate, OrganizationSsoProviderRepository,
     OrganizationSsoRepositoryError,
     entity::{
-        authentication_settings, groups, organization_memberships, organization_sso_identities,
-        users,
+        authentication_settings, groups, organization_entitlements, organization_memberships,
+        organization_sso_identities, users,
     },
 };
 
@@ -267,6 +267,7 @@ async fn sso_repository_rejects_identity_conflicts_and_login_replays() -> Result
 async fn invited_sso_jit_is_atomic_and_idempotent() -> Result<(), Box<dyn Error>> {
     let fixture = fixture().await?;
     let organization_id = fixture.organizations_ids[0];
+    enable_sso(&fixture, organization_id).await?;
     let provider_key = provider_key(4);
     fixture
         .sso
@@ -410,6 +411,7 @@ async fn invited_sso_jit_rejects_mismatch_expiry_and_rolls_back_conflict()
 -> Result<(), Box<dyn Error>> {
     let fixture = fixture().await?;
     let organization_id = fixture.organizations_ids[0];
+    enable_sso(&fixture, organization_id).await?;
     let provider_key = provider_key(5);
     fixture
         .sso
@@ -803,12 +805,28 @@ async fn add_verified_domain(
     Ok(())
 }
 
+/// 仅为 JIT 回归写入已启用的受信 SSO 授权，避免无关仓储测试依赖该商业开关。
+async fn enable_sso(
+    fixture: &Fixture,
+    organization_id: OrganizationId,
+) -> Result<(), Box<dyn Error>> {
+    let entitlement = organization_entitlements::Entity::find()
+        .filter(organization_entitlements::Column::OrganizationId.eq(organization_id.get()))
+        .one(fixture.pool.connection())
+        .await?
+        .expect("测试企业必须具备商业授权");
+    let mut entitlement = entitlement.into_active_model();
+    entitlement.sso_enabled = Set(true);
+    entitlement.update(fixture.pool.connection()).await?;
+    Ok(())
+}
+
 fn active_entitlement() -> Result<OrganizationEntitlementWrite, Box<dyn Error>> {
     Ok(OrganizationEntitlementWrite::new(
         OrganizationEntitlementSnapshot::new(
             OrganizationEntitlementCapacity::new(10, 10, 10)?,
             true,
-            true,
+            false,
             false,
             90,
             946_684_800,
