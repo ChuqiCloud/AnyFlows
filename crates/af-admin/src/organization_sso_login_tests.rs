@@ -1,9 +1,11 @@
 use std::{error::Error, time::Duration};
 
+use af_account::organization_sso_login_state_digest;
 use af_db::{
     DatabaseOptions, InitialSetupOutcome, InitialSetupRecord, InitialSetupRepository,
     MigrationOptions, OrganizationCreate, OrganizationEntitlementWrite, OrganizationRepository,
-    OrganizationSsoProviderCreate, OrganizationSsoProviderRepository,
+    OrganizationSsoLoginTransactionCreate, OrganizationSsoProviderCreate,
+    OrganizationSsoProviderRepository,
 };
 use af_domain::{
     OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationSsoProtocol,
@@ -86,15 +88,28 @@ async fn login_transaction_service_binds_provider_and_consumes_ticket_once()
     assert_eq!(transaction.provider_version(), provider.version());
     assert_eq!(transaction.protocol(), OrganizationSsoProtocol::Oidc);
 
-    let claim = service
-        .claim(first_organization, start.state().to_owned())
+    let claim_state = "known-sso-state".to_owned();
+    let claim_digest = organization_sso_login_state_digest(&claim_state)?;
+    let claim_transaction = repository
+        .create_login_transaction(
+            first_organization,
+            OrganizationSsoLoginTransactionCreate::new(
+                provider_key,
+                OrganizationSsoProtocol::Oidc,
+                provider.version(),
+                claim_digest,
+                "c".repeat(64),
+                4_102_444_800,
+            ),
+        )
         .await?;
-    assert_eq!(claim.transaction_id(), transaction.id());
+    let claim = service
+        .claim(first_organization, claim_state.clone())
+        .await?;
+    assert_eq!(claim.transaction_id(), claim_transaction.id());
     assert_eq!(claim.provider_version(), provider.version());
     assert!(matches!(
-        service
-            .claim(first_organization, start.state().to_owned())
-            .await,
+        service.claim(first_organization, claim_state).await,
         Err(OrganizationSsoLoginTransactionServiceError::AlreadyProcessed)
     ));
 
