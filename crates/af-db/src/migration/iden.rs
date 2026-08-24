@@ -2647,7 +2647,6 @@ pub(in crate::migration) mod organization_sso_providers {
         Version,
         CreatedAt,
         UpdatedAt,
-        ActiveOrganizationId,
     }
 }
 
@@ -2679,7 +2678,6 @@ pub(in crate::migration) mod organization_sso_domains {
         Version,
         CreatedAt,
         UpdatedAt,
-        ActiveDomain,
     }
 }
 

@@ -24,11 +24,6 @@ const TRANSACTION_EXPIRES_INDEX: &str = "idx_organization_sso_login_transactions
 const TRANSACTION_TICKET_EXPIRES_INDEX: &str =
     "idx_organization_sso_login_transactions_ticket_expires";
 
-const MYSQL_PROVIDER_ACTIVE_TRIGGER_INSERT: &str = "trg_org_sso_provider_active_insert";
-const MYSQL_PROVIDER_ACTIVE_TRIGGER_UPDATE: &str = "trg_org_sso_provider_active_update";
-const MYSQL_DOMAIN_ACTIVE_TRIGGER_INSERT: &str = "trg_org_sso_domain_active_insert";
-const MYSQL_DOMAIN_ACTIVE_TRIGGER_UPDATE: &str = "trg_org_sso_domain_active_update";
-
 /// 创建企业 SSO 的独立存储边界；本迁移不开放登录 API 或策略执行。
 #[derive(DeriveMigrationName)]
 pub struct Migration;
