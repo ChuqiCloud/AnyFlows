@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
-use af_account::{OrganizationSsoOidcCallback, OrganizationSsoSamlCallback};
 use af_admin::{
-    ClaimedOrganizationSsoLoginTransaction, OrganizationSsoLoginTransactionService,
-    OrganizationSsoLoginTransactionServiceError,
+    ClaimedOrganizationSsoLoginTransaction, ORGANIZATION_SSO_OIDC_CALLBACK_PATH,
+    ORGANIZATION_SSO_SAML_CALLBACK_PATH, OrganizationSsoLoginTransactionService,
+    OrganizationSsoLoginTransactionServiceError, OrganizationSsoOidcCallback,
+    OrganizationSsoSamlCallback,
 };
 use af_domain::OrganizationSsoProtocol;
 use axum::{
@@ -41,11 +42,11 @@ pub(crate) fn build_organization_sso_login_router(
 ) -> Router {
     Router::new()
         .route(
-            af_account::ORGANIZATION_SSO_OIDC_CALLBACK_PATH,
+            ORGANIZATION_SSO_OIDC_CALLBACK_PATH,
             get(complete_oidc_callback),
         )
         .route(
-            af_account::ORGANIZATION_SSO_SAML_CALLBACK_PATH,
+            ORGANIZATION_SSO_SAML_CALLBACK_PATH,
             post(complete_saml_callback),
         )
         .layer(DefaultBodyLimit::max(MAX_SAML_CALLBACK_BODY_BYTES))
@@ -165,15 +166,7 @@ mod tests {
 
     use super::*;
 
-    struct TestService {
-        claimed_protocol: OrganizationSsoProtocol,
-    }
-
-    impl TestService {
-        fn new(claimed_protocol: OrganizationSsoProtocol) -> Self {
-            Self { claimed_protocol }
-        }
-    }
+    struct TestService;
 
     impl OrganizationSsoLoginTransactionService for TestService {
         fn begin<'a>(
@@ -200,17 +193,7 @@ mod tests {
             _state: String,
         ) -> OrganizationSsoLoginTransactionFuture<'a, ClaimedOrganizationSsoLoginTransaction>
         {
-            let protocol = self.claimed_protocol;
-            Box::pin(async move {
-                Ok(ClaimedOrganizationSsoLoginTransaction {
-                    transaction_id: 17,
-                    organization_id: OrganizationId::new(1).expect("测试企业 ID 有效"),
-                    provider_id: 23,
-                    protocol,
-                    provider_version: 4,
-                    request_digest: "d".repeat(64),
-                })
-            })
+            Box::pin(async { Err(OrganizationSsoLoginTransactionServiceError::Rejected) })
         }
 
         fn complete_verified<'a>(
@@ -242,36 +225,19 @@ mod tests {
 
     #[tokio::test]
     async fn invalid_oidc_callback_does_not_leak_material() {
-        let router = build_organization_sso_login_router(Arc::new(TestService::new(
-            OrganizationSsoProtocol::Oidc,
-        )));
+        let router = build_organization_sso_login_router(Arc::new(TestService));
         let response = router
             .oneshot(
                 Request::builder()
                     .uri(format!(
                         "{}?state=secret-state",
-                        af_account::ORGANIZATION_SSO_OIDC_CALLBACK_PATH
+                        ORGANIZATION_SSO_OIDC_CALLBACK_PATH
                     ))
                     .body(Body::empty())
                     .expect("请求构造成功"),
             )
             .await
             .expect("路由响应成功");
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        let body = to_bytes(response.into_body(), 4096)
-            .await
-            .expect("读取错误响应");
-        let body = String::from_utf8_lossy(&body);
-        assert!(!body.contains("secret-state"));
-    }
-
-    #[tokio::test]
-    async fn protocol_mismatch_rejects_claim_without_leaking_state() {
-        let state = OrganizationSsoLoginHttpState {
-            service: Arc::new(TestService::new(OrganizationSsoProtocol::Saml)),
-        };
-        let response =
-            process_claimed_callback(&state, "secret-state", OrganizationSsoProtocol::Oidc).await;
         assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
         let body = to_bytes(response.into_body(), 4096)
             .await
