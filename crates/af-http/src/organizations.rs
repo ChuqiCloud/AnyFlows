@@ -88,6 +88,7 @@ pub fn build_organization_router(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn build_organization_router_with_domain(
     authorization_service: Arc<dyn OrganizationAuthorizationService>,
     invitation_service: Option<Arc<dyn OrganizationInvitationService>>,
