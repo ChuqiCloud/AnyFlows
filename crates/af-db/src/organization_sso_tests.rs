@@ -5,7 +5,8 @@ use af_domain::{
     OrganizationEntitlementSnapshot, OrganizationId, OrganizationRole,
     OrganizationSsoDnsTxtAnswers, OrganizationSsoDnsVerification, OrganizationSsoDomain,
     OrganizationSsoDomainProof, OrganizationSsoDomainProofToken, OrganizationSsoDomainStatus,
-    OrganizationSsoProtocol, OrganizationSsoProviderKey, OrganizationSsoProviderStatus, UserId,
+    OrganizationSsoIdentityBindingMethod, OrganizationSsoIdentityStatus, OrganizationSsoProtocol,
+    OrganizationSsoProviderKey, OrganizationSsoProviderStatus, UserId,
 };
 use sea_orm::{ActiveModelTrait, Set, entity::prelude::TimeDateTimeWithTimeZone};
 
@@ -129,17 +130,32 @@ async fn sso_repository_rejects_identity_conflicts_and_login_replays() -> Result
         .sso
         .create_identity(
             organization_id,
-            OrganizationSsoIdentityCreate::new(key, digest('a'), membership.id(), 1),
+            OrganizationSsoIdentityCreate::new(
+                key,
+                digest('a'),
+                membership.id(),
+                OrganizationSsoIdentityBindingMethod::Explicit,
+            ),
         )
         .await?;
     assert_eq!(identity.version(), 1);
+    assert_eq!(identity.status(), OrganizationSsoIdentityStatus::Active);
+    assert_eq!(
+        identity.binding_method(),
+        OrganizationSsoIdentityBindingMethod::Explicit
+    );
     assert!(!format!("{identity:?}").contains(&digest('a')));
     assert_eq!(
         fixture
             .sso
             .create_identity(
                 organization_id,
-                OrganizationSsoIdentityCreate::new(key, digest('a'), membership.id(), 1,),
+                OrganizationSsoIdentityCreate::new(
+                    key,
+                    digest('a'),
+                    membership.id(),
+                    OrganizationSsoIdentityBindingMethod::Explicit,
+                ),
             )
             .await,
         Err(OrganizationSsoRepositoryError::Conflict)
@@ -148,7 +164,7 @@ async fn sso_repository_rejects_identity_conflicts_and_login_replays() -> Result
         .sso
         .disable_identity(organization_id, identity.id(), identity.version())
         .await?;
-    assert_eq!(disabled.status(), 2);
+    assert_eq!(disabled.status(), OrganizationSsoIdentityStatus::Disabled);
     assert_eq!(
         fixture
             .sso
