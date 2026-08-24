@@ -17,17 +17,18 @@ use af_admin::{
     OrganizationMembershipListQuery, OrganizationMembershipRecord,
     OrganizationOwnershipTransferCommand, OrganizationSsoDomain as AdminOrganizationSsoDomain,
     OrganizationSsoDomainCreateCommand, OrganizationSsoDomainCreated, OrganizationSsoDomainService,
-    OrganizationSsoDomainServiceError, OrganizationSsoDomainVerifyCommand, OrganizationSsoProvider,
-    OrganizationSsoProviderCommand, OrganizationSsoProviderService,
+    OrganizationSsoDomainServiceError, OrganizationSsoDomainVerifyCommand,
+    OrganizationSsoLoginTransactionService, OrganizationSsoLoginTransactionServiceError,
+    OrganizationSsoProvider, OrganizationSsoProviderCommand, OrganizationSsoProviderService,
     OrganizationSsoProviderServiceError, OrganizationTeamChangeCommand,
     OrganizationTeamCreateCommand, OrganizationTeamDisableCommand, OrganizationTeamListQuery,
     OrganizationTeamRecord, SessionAuthentication,
 };
 use af_domain::{
-    OrganizationCustomRoleKey, OrganizationId, OrganizationInvitationKey,
-    OrganizationInvitationStatus, OrganizationMembershipId, OrganizationMembershipStatus,
-    OrganizationPermission, OrganizationRole, OrganizationSsoProtocol,
-    OrganizationSsoProviderStatus, OrganizationTeamId,
+    OrganizationCustomRoleKey, OrganizationEntitlementStatus, OrganizationId,
+    OrganizationInvitationKey, OrganizationInvitationStatus, OrganizationMembershipId,
+    OrganizationMembershipStatus, OrganizationPermission, OrganizationRole,
+    OrganizationSsoProtocol, OrganizationSsoProviderStatus, OrganizationTeamId,
 };
 use af_telemetry::RequestId;
 use axum::{
@@ -61,6 +62,7 @@ pub(crate) struct OrganizationHttpState {
     custom_role_binding_service: Option<Arc<dyn OrganizationCustomRoleBindingService>>,
     sso_provider_service: Option<Arc<dyn OrganizationSsoProviderService>>,
     sso_domain_service: Option<Arc<dyn OrganizationSsoDomainService>>,
+    sso_login_service: Option<Arc<dyn OrganizationSsoLoginTransactionService>>,
     activity_service: Arc<dyn OrganizationActivityService>,
 }
 
@@ -85,6 +87,7 @@ pub fn build_organization_router(
         session_authenticator,
         sso_provider_service,
         None,
+        None,
     )
 }
 
@@ -99,6 +102,7 @@ pub fn build_organization_router_with_domain(
     session_authenticator: Arc<dyn af_admin::SessionAuthenticator>,
     sso_provider_service: Option<Arc<dyn OrganizationSsoProviderService>>,
     sso_domain_service: Option<Arc<dyn OrganizationSsoDomainService>>,
+    sso_login_service: Option<Arc<dyn OrganizationSsoLoginTransactionService>>,
 ) -> Router {
     let authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(session_authenticator),
@@ -219,6 +223,14 @@ pub fn build_organization_router_with_domain(
     } else {
         router
     };
+    let router = if sso_login_service.is_some() {
+        router.route(
+            "/api/organizations/{organization_id}/sso/login/start",
+            post(start_organization_sso_login),
+        )
+    } else {
+        router
+    };
     router
         .layer(authentication)
         .layer(middleware::from_fn(ensure_request_id))
@@ -230,6 +242,7 @@ pub fn build_organization_router_with_domain(
             custom_role_binding_service,
             sso_provider_service,
             sso_domain_service,
+            sso_login_service,
             activity_service,
         })
 }
@@ -619,6 +632,108 @@ pub struct OrganizationSsoDomainVerifyRequest {
     proof_token: String,
     #[schema(minimum = 1)]
     expected_version: i64,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = OrganizationSsoLoginStartRequest)]
+pub struct OrganizationSsoLoginStartRequest {
+    #[schema(min_length = 1, max_length = 128)]
+    provider_key: String,
+    #[schema(min_length = 64, max_length = 64)]
+    request_digest: String,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = OrganizationSsoLoginStartResponse)]
+pub struct OrganizationSsoLoginStartResponse {
+    protocol: &'static str,
+    provider_version: i64,
+    #[schema(min_length = 64, max_length = 64)]
+    state_digest: String,
+    #[schema(min_length = 64, max_length = 64)]
+    request_digest: String,
+    expires_at: i64,
+}
+
+async fn start_organization_sso_login(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path(organization_id): Path<i64>,
+    headers: HeaderMap,
+    request: Result<Json<OrganizationSsoLoginStartRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::SsoRead,
+        &request_id,
+        &headers,
+        "organization.sso.login.start",
+        "organization",
+        organization_id.get().to_string(),
+    )
+    .await?;
+    if !matches!(
+        context.role(),
+        OrganizationRole::Owner | OrganizationRole::Admin
+    ) {
+        return Err(ManagementError::Forbidden);
+    }
+    if !context.entitlement().sso_enabled()
+        || context.entitlement().status() != OrganizationEntitlementStatus::Active
+    {
+        return Err(ManagementError::OrganizationEntitlementRestricted);
+    }
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let provider_key = request.provider_key.clone();
+    let service = state
+        .sso_login_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let start = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::SsoRead,
+        "organization.sso.login.start",
+        "sso_provider",
+        provider_key.clone(),
+        service
+            .begin(organization_id, provider_key, request.request_digest)
+            .await
+            .map_err(map_sso_login_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::SsoRead.code(),
+        "organization.sso.login.start",
+        "sso_provider",
+        request.provider_key,
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({
+            "protocol": organization_sso_protocol_code(start.protocol()),
+            "provider_version": start.provider_version(),
+        })),
+    )
+    .await?;
+    Ok(no_store_json(OrganizationSsoLoginStartResponse {
+        protocol: organization_sso_protocol_code(start.protocol()),
+        provider_version: start.provider_version(),
+        state_digest: start.state_digest().to_owned(),
+        request_digest: start.request_digest().to_owned(),
+        expires_at: start.expires_at(),
+    }))
 }
 
 async fn list_organization_sso_domains(
@@ -2871,6 +2986,24 @@ fn map_sso_provider_error(error: OrganizationSsoProviderServiceError) -> Managem
             ManagementError::OrganizationSsoProviderTransitionInvalid
         }
         OrganizationSsoProviderServiceError::Internal => ManagementError::Internal,
+    }
+}
+
+fn map_sso_login_error(error: OrganizationSsoLoginTransactionServiceError) -> ManagementError {
+    match error {
+        OrganizationSsoLoginTransactionServiceError::InvalidInput => {
+            ManagementError::InvalidRequest
+        }
+        OrganizationSsoLoginTransactionServiceError::Unavailable
+        | OrganizationSsoLoginTransactionServiceError::AlreadyProcessed
+        | OrganizationSsoLoginTransactionServiceError::Expired
+        | OrganizationSsoLoginTransactionServiceError::InvalidTransition => {
+            ManagementError::OrganizationSsoProviderTransitionInvalid
+        }
+        OrganizationSsoLoginTransactionServiceError::Rejected => {
+            ManagementError::OrganizationSsoProviderNotFound
+        }
+        OrganizationSsoLoginTransactionServiceError::Internal => ManagementError::Internal,
     }
 }
 

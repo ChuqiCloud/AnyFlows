@@ -284,7 +284,7 @@ pub use organization_sso_login::{
     ClaimedOrganizationSsoLoginTransaction, DatabaseOrganizationSsoLoginTransactionService,
     ExchangedOrganizationSsoLoginTicket, IssuedOrganizationSsoLoginTicket,
     OrganizationSsoLoginTransactionFuture, OrganizationSsoLoginTransactionService,
-    OrganizationSsoLoginTransactionServiceError,
+    OrganizationSsoLoginTransactionServiceError, OrganizationSsoLoginTransactionStart,
 };
 pub use organization_token::{
     DEFAULT_ORGANIZATION_TOKEN_PAGE_SIZE, DatabaseOrganizationTokenService,

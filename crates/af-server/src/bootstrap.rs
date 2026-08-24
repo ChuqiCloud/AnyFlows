@@ -26,25 +26,25 @@ use af_admin::{
     DatabaseInitialSetup, DatabaseOAuthLoginService, DatabaseOrganizationActivityService,
     DatabaseOrganizationBudgetService, DatabaseOrganizationCustomRoleBindingService,
     DatabaseOrganizationCustomRoleService, DatabaseOrganizationSsoDomainService,
-    DatabaseOrganizationSsoProviderService, DatabaseOrganizationTokenService,
-    DatabaseOrganizationWalletService, DatabasePasskeyAuthenticationService,
-    DatabasePasswordResetService, DatabasePlatformAuditService,
-    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
-    DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
-    DatabaseSiteSettingsService, DatabaseSubscriptionService, DatabaseTokenAuthenticator,
-    DatabaseUserInvitationService, DatabaseUserNotificationService, DatabaseUserProfileService,
-    DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery, InitialSetup,
-    ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
+    DatabaseOrganizationSsoLoginTransactionService, DatabaseOrganizationSsoProviderService,
+    DatabaseOrganizationTokenService, DatabaseOrganizationWalletService,
+    DatabasePasskeyAuthenticationService, DatabasePasswordResetService,
+    DatabasePlatformAuditService, DatabasePlaygroundConversationService,
+    DatabasePlaygroundShareService, DatabaseRedemptionService, DatabaseRegistrationService,
+    DatabaseSessionAuthenticator, DatabaseSiteSettingsService, DatabaseSubscriptionService,
+    DatabaseTokenAuthenticator, DatabaseUserInvitationService, DatabaseUserNotificationService,
+    DatabaseUserProfileService, DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery,
+    InitialSetup, ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
     OAuthLoginService, OrganizationActivityService, OrganizationActivityServiceConfigError,
     OrganizationBudgetService, OrganizationCustomRoleBindingService, OrganizationCustomRoleService,
-    OrganizationSsoDomainService, OrganizationSsoProviderService, OrganizationTokenService,
-    OrganizationWalletService, PasskeyAuthenticationService,
-    PasskeyAuthenticationServiceConfigError, PasswordResetService, PasswordResetServiceConfigError,
-    PlatformAuditService, PlaygroundConversationService, PlaygroundShareService, RedemptionService,
-    RegistrationService, RegistrationServiceConfigError, RuntimeRefreshingAdminGroupWriter,
-    SessionAuthenticator, SessionAuthenticatorConfigError, SiteSettingsService,
-    SubscriptionService, TokenAuthenticator, UserInvitationService, UserProfileService,
-    UserTokenService, UserTopupService, UserWalletService,
+    OrganizationSsoDomainService, OrganizationSsoLoginTransactionService,
+    OrganizationSsoProviderService, OrganizationTokenService, OrganizationWalletService,
+    PasskeyAuthenticationService, PasskeyAuthenticationServiceConfigError, PasswordResetService,
+    PasswordResetServiceConfigError, PlatformAuditService, PlaygroundConversationService,
+    PlaygroundShareService, RedemptionService, RegistrationService, RegistrationServiceConfigError,
+    RuntimeRefreshingAdminGroupWriter, SessionAuthenticator, SessionAuthenticatorConfigError,
+    SiteSettingsService, SubscriptionService, TokenAuthenticator, UserInvitationService,
+    UserProfileService, UserTokenService, UserTopupService, UserWalletService,
 };
 use af_analytics::{
     AdminDashboardChannelStorage, AdminDashboardReader, SplitAdminDashboardStorage,
@@ -222,6 +222,7 @@ pub struct AuthenticationReady {
     organization_custom_role_binding_service: Arc<dyn OrganizationCustomRoleBindingService>,
     organization_sso_provider_service: Arc<dyn OrganizationSsoProviderService>,
     organization_sso_domain_service: Arc<dyn OrganizationSsoDomainService>,
+    organization_sso_login_service: Arc<dyn OrganizationSsoLoginTransactionService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
     site_settings_repository: SiteSettingsRepository,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
@@ -1217,8 +1218,13 @@ impl Bootstrap<DatabaseReady> {
                 ),
                 organization_sso_domain_service: Arc::new(
                     DatabaseOrganizationSsoDomainService::new(
-                        organization_sso_provider_repository,
+                        organization_sso_provider_repository.clone(),
                         organization_sso_dns_resolver,
+                    ),
+                ),
+                organization_sso_login_service: Arc::new(
+                    DatabaseOrganizationSsoLoginTransactionService::new(
+                        organization_sso_provider_repository,
                     ),
                 ),
                 site_settings_service: Arc::new(DatabaseSiteSettingsService::new(
@@ -2389,6 +2395,9 @@ impl Bootstrap<Supervised> {
             )),
             Some(Arc::clone(
                 &self.stage.infrastructure.organization_sso_domain_service,
+            )),
+            Some(Arc::clone(
+                &self.stage.infrastructure.organization_sso_login_service,
             )),
         );
         let Bootstrap {

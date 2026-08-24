@@ -16887,6 +16887,115 @@
         ]
       }
     },
+    "/api/organizations/{organization_id}/sso/login/start": {
+      "post": {
+        "tags": [
+          "企业 SSO"
+        ],
+        "summary": "启动企业 SSO 登录事务",
+        "operationId": "startOrganizationSsoLogin",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业内部标识",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationSsoLoginStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "返回脱敏的登录事务摘要",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoLoginStartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "登录事务参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权启动企业 SSO 登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Provider 不存在或无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Provider 状态或登录事务冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/organizations/{organization_id}/tokens": {
       "get": {
         "tags": [
@@ -29740,6 +29849,60 @@
             "type": "integer",
             "format": "int64",
             "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoLoginStartRequest": {
+        "type": "object",
+        "required": [
+          "provider_key",
+          "request_digest"
+        ],
+        "properties": {
+          "provider_key": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "request_digest": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoLoginStartResponse": {
+        "type": "object",
+        "required": [
+          "protocol",
+          "provider_version",
+          "state_digest",
+          "request_digest",
+          "expires_at"
+        ],
+        "properties": {
+          "protocol": {
+            "type": "string"
+          },
+          "provider_version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "state_digest": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64
+          },
+          "request_digest": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64"
           }
         },
         "additionalProperties": false

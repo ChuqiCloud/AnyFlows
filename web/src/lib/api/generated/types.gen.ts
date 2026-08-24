@@ -1625,6 +1625,17 @@ export type OrganizationSsoDomainList = {
 export type OrganizationSsoDomainVerifyRequest = {
     expected_version: number;
 };
+export type OrganizationSsoLoginStartRequest = {
+    provider_key: string;
+    request_digest: string;
+};
+export type OrganizationSsoLoginStartResponse = {
+    protocol: string;
+    provider_version: number;
+    state_digest: string;
+    request_digest: string;
+    expires_at: number;
+};
 export type OrganizationSsoProvider = {
     id: number;
     organization_id: number;
@@ -6402,6 +6413,27 @@ export type VerifyOrganizationSsoDomainResponses = {
     200: OrganizationSsoDomain;
 };
 export type VerifyOrganizationSsoDomainResponse = VerifyOrganizationSsoDomainResponses[keyof VerifyOrganizationSsoDomainResponses];
+export type StartOrganizationSsoLoginData = {
+    body: OrganizationSsoLoginStartRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/sso/login/start';
+};
+export type StartOrganizationSsoLoginErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type StartOrganizationSsoLoginError = StartOrganizationSsoLoginErrors[keyof StartOrganizationSsoLoginErrors];
+export type StartOrganizationSsoLoginResponses = {
+    200: OrganizationSsoLoginStartResponse;
+};
+export type StartOrganizationSsoLoginResponse = StartOrganizationSsoLoginResponses[keyof StartOrganizationSsoLoginResponses];
 export type ListOrganizationTokensData = {
     body?: never;
     path: {
