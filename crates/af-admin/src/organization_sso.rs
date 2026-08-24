@@ -33,6 +33,36 @@ pub struct OrganizationSsoProvider {
 }
 
 impl OrganizationSsoProvider {
+    /// 从脱敏字段构造 Provider 投影，供 HTTP 适配层序列化响应。
+    #[must_use]
+    pub fn new(
+        id: i64,
+        organization_id: OrganizationId,
+        provider_key: String,
+        protocol: OrganizationSsoProtocol,
+        status: OrganizationSsoProviderStatus,
+        display_name: String,
+        metadata_projection: Option<Value>,
+        secret_configured: bool,
+        version: i64,
+        created_at: i64,
+        updated_at: i64,
+    ) -> Self {
+        Self {
+            id,
+            organization_id,
+            provider_key,
+            protocol,
+            status,
+            display_name,
+            metadata_projection,
+            secret_configured,
+            version,
+            created_at,
+            updated_at,
+        }
+    }
+
     fn from_record(record: OrganizationSsoProviderRecord) -> Self {
         Self {
             id: record.id(),

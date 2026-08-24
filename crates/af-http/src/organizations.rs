@@ -32,7 +32,7 @@ use axum::{
     extract::{Path, RawQuery, State, rejection::JsonRejection},
     middleware,
     response::Response,
-    routing::{get, patch, post, put},
+    routing::{get, patch, post},
 };
 use http::HeaderMap;
 use serde::{Deserialize, Serialize};
@@ -2627,19 +2627,19 @@ mod sso_provider_tests {
 
     #[test]
     fn sso_provider_response_never_serializes_client_secret() {
-        let provider = OrganizationSsoProvider {
-            id: 1,
-            organization_id: OrganizationId::new(7).unwrap(),
-            provider_key: "sso_0123456789abcdef0123456789abcdef".to_owned(),
-            protocol: OrganizationSsoProtocol::Oidc,
-            status: OrganizationSsoProviderStatus::Active,
-            display_name: "企业登录".to_owned(),
-            metadata_projection: Some(json!({"issuer": "https://id.example.com"})),
-            secret_configured: true,
-            version: 2,
-            created_at: 10,
-            updated_at: 11,
-        };
+        let provider = OrganizationSsoProvider::new(
+            1,
+            OrganizationId::new(7).unwrap(),
+            "sso_0123456789abcdef0123456789abcdef".to_owned(),
+            OrganizationSsoProtocol::Oidc,
+            OrganizationSsoProviderStatus::Active,
+            "企业登录".to_owned(),
+            Some(json!({"issuer": "https://id.example.com"})),
+            true,
+            2,
+            10,
+            11,
+        );
         let rendered =
             serde_json::to_value(OrganizationSsoProviderResponse::from(provider)).unwrap();
         assert_eq!(rendered["secret_configured"], true);
