@@ -344,37 +344,39 @@ impl OrganizationSsoProviderService for DatabaseOrganizationSsoProviderService {
                     .ok_or(OrganizationSsoProviderServiceError::Internal)?,
                 )
             } else {
-                let Some(envelope) = self
+                match self
                     .repository
                     .provider_secret(context.organization_id(), provider_key)
                     .await
                     .map_err(map_repository_error)?
-                else {
-                    OrganizationSsoProviderSecretChange::Keep
-                };
-                let decrypted = self
-                    .cipher
-                    .decrypt_organization_sso_provider_secret(
-                        context.organization_id(),
-                        provider_key,
-                        current.protocol(),
-                        current.version(),
-                        &envelope,
-                    )
-                    .map_err(|_| OrganizationSsoProviderServiceError::Internal)?;
-                let plain = PlainSystemSecret::new(decrypted.expose_secret().to_owned())
-                    .map_err(|_| OrganizationSsoProviderServiceError::Internal)?;
-                OrganizationSsoProviderSecretChange::Replace(
-                    encrypt_secret(
-                        &self.cipher,
-                        context.organization_id(),
-                        provider_key,
-                        command.protocol,
-                        next_version,
-                        Some(plain),
-                    )?
-                    .ok_or(OrganizationSsoProviderServiceError::Internal)?,
-                )
+                {
+                    None => OrganizationSsoProviderSecretChange::Keep,
+                    Some(envelope) => {
+                        let decrypted = self
+                            .cipher
+                            .decrypt_organization_sso_provider_secret(
+                                context.organization_id(),
+                                provider_key,
+                                current.protocol(),
+                                current.version(),
+                                &envelope,
+                            )
+                            .map_err(|_| OrganizationSsoProviderServiceError::Internal)?;
+                        let plain = PlainSystemSecret::new(decrypted.expose_secret().to_owned())
+                            .map_err(|_| OrganizationSsoProviderServiceError::Internal)?;
+                        OrganizationSsoProviderSecretChange::Replace(
+                            encrypt_secret(
+                                &self.cipher,
+                                context.organization_id(),
+                                provider_key,
+                                command.protocol,
+                                next_version,
+                                Some(plain),
+                            )?
+                            .ok_or(OrganizationSsoProviderServiceError::Internal)?,
+                        )
+                    }
+                }
             };
             let record = self
                 .repository
