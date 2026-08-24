@@ -1447,7 +1447,7 @@ impl OrganizationSsoProviderRepository {
         }
         if current
             .ticket_expires_at
-            .map_or(true, |expires| expires <= now)
+            .is_none_or(|expires| expires <= now)
         {
             rollback(transaction).await?;
             return Err(OrganizationSsoRepositoryError::Expired);
