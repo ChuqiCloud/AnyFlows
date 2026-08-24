@@ -9,7 +9,7 @@ use af_domain::{
     OrganizationSsoProviderKey, OrganizationSsoProviderStatus, UserId,
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set,
+    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, Set,
     entity::prelude::TimeDateTimeWithTimeZone,
 };
 
