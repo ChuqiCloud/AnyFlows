@@ -10,6 +10,7 @@ mod organization_invitation;
 mod organization_sso_dns;
 mod organization_sso_login;
 mod organization_sso_oidc;
+mod organization_sso_saml;
 mod system_secret;
 
 pub use credential_decryption::{
@@ -69,6 +70,10 @@ pub use organization_sso_login::{
 pub use organization_sso_oidc::{
     OrganizationSsoOidcIdTokenError, OrganizationSsoOidcIdTokenVerificationConfig,
     OrganizationSsoOidcIdTokenVerifier, VerifiedOrganizationSsoOidcIdentity,
+};
+pub use organization_sso_saml::{
+    OrganizationSsoSamlSignatureError, OrganizationSsoSamlSignatureVerificationConfig,
+    OrganizationSsoSamlSignatureVerifier, VerifiedOrganizationSsoSamlResponse,
 };
 pub use system_secret::{
     DecryptedSystemSecret, PlainSystemSecret, SystemSecretCipher, SystemSecretError,
