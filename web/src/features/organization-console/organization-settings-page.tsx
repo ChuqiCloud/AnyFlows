@@ -10,6 +10,7 @@ import { Select } from '@/components/ui/select'
 import { useOrganizationMemberCatalog } from '@/features/organization-budgets/organization-budget-api'
 import { organizationMemberErrorCode, useTransferOrganizationOwnership } from '@/features/organization-members/organization-member-api'
 import { OrganizationCustomRolePanel } from '@/features/organization-roles/organization-custom-role-panel'
+import { OrganizationSsoPanel } from '@/features/organization-sso/organization-sso-panel'
 import type { OrganizationOverviewResponse } from '@/lib/api/generated/types.gen'
 import {
   OrganizationPageBoundary,
@@ -36,6 +37,9 @@ const permissionCodes = [
   'organization.roles.read',
   'organization.roles.manage',
   'organization.roles.assign',
+  'organization.sso.read',
+  'organization.sso.manage',
+  'organization.sso.recovery',
 ] as const
 
 /** 企业设置只呈现真实资料、授权与权限；当前唯一写接口为所有权转移。 */
@@ -118,6 +122,13 @@ function OrganizationSettingsWorkspace({ organizationId, overview }: { organizat
           <ReadOnlyField label={t('organizationConsole.settings.entitlement.audit')} value={t('organizationConsole.settings.entitlement.days', { count: overview.entitlement.audit_retention_days })} />
         </CardContent>
       </Card>
+
+      <OrganizationSsoPanel
+        organizationId={organizationId}
+        organizationName={overview.name}
+        ssoEnabled={overview.entitlement.sso_enabled}
+        permissions={overview.permissions}
+      />
 
       <OrganizationCustomRolePanel
         organizationId={organizationId}

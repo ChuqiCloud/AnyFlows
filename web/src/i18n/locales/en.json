@@ -5149,6 +5149,42 @@
       "unavailable": {
         "title": "Profile editing and closure are not available yet",
         "body": "The backend does not currently expose organization rename or closure APIs, so this page does not render forms that would always fail."
+      },
+      "sso": {
+        "title": "Organization single sign-on",
+        "subtitle": "Provider state for {{organization}} comes from redacted server facts; the browser never infers identity or enforcement.",
+        "enabled": "Entitled",
+        "disabled": "Not entitled",
+        "configured": "Configured",
+        "notConfigured": "Not configured",
+        "protocol": { "oidc": "OpenID Connect", "saml": "SAML 2.0" },
+        "status": { "draft": "Draft", "active": "Active", "disabled": "Disabled" },
+        "fields": { "protocol": "Protocol", "version": "Version", "secret": "Secret", "metadata": "Metadata" },
+        "restricted": {
+          "entitlementTitle": "Organization SSO is not enabled",
+          "entitlementBody": "The current commercial entitlement does not enable organization SSO, so the server will not read or accept Provider configuration.",
+          "permissionTitle": "Organization SSO read permission is required",
+          "permissionBody": "The current role cannot read redacted Provider state; the server still enforces organization boundaries."
+        },
+        "errors": {
+          "title": "Organization SSO Providers could not be loaded",
+          "body": "Provider state is temporarily unavailable. Refresh before continuing management.",
+          "readOnlyBody": "Provider state is temporarily unavailable, and the current role can only read server facts."
+        },
+        "empty": {
+          "title": "No organization SSO Provider is configured",
+          "manageBody": "The current role can manage SSO, but create and update forms will arrive in a later slice.",
+          "readBody": "This organization has no Provider configuration visible to the current role."
+        },
+        "closure": {
+          "title": "Closure status",
+          "domains": "Domain verification",
+          "policy": "Enforcement policy",
+          "recovery": "Recovery entry",
+          "audit": "Audit status",
+          "pending": "Pending",
+          "hint": "Domain, policy, recovery, and audit endpoints are not available yet; missing server facts are never rendered as verified or enforceable."
+        }
       }
     }
   },
