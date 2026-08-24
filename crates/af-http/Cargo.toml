@@ -6,6 +6,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+af-account = { path = "../af-account", version = "0.1.0" }
 af-admin = { path = "../af-admin", version = "0.1.0" }
 af-analytics = { path = "../af-analytics", version = "0.1.0" }
 af-billing = { path = "../af-billing", version = "0.1.0" }
