@@ -516,10 +516,12 @@ async fn invited_sso_jit_rejects_mismatch_expiry_and_rolls_back_conflict()
                 None,
                 None,
                 None,
-                now.saturating_sub(1),
+                now.saturating_add(3),
             )?,
         )
     );
+    // 通过真实时间推进覆盖过期分支，同时满足 expires_at 必须晚于 created_at 的约束。
+    tokio::time::sleep(Duration::from_secs(4)).await;
     assert_eq!(
         fixture
             .organizations
