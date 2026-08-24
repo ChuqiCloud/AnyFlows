@@ -2620,3 +2620,127 @@ pub(in crate::migration) mod refund_provider_events {
         CreatedAt,
     }
 }
+
+pub(in crate::migration) mod organization_sso_providers {
+    use super::DeriveIden;
+
+    /// 企业 SSO Provider 持久化表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_sso_providers")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// Provider 的稳定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        ProviderKey,
+        Protocol,
+        Status,
+        DisplayName,
+        MetadataProjection,
+        SecretEnvelope,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod organization_sso_domains {
+    use super::DeriveIden;
+
+    /// 企业 SSO 域名持久化表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_sso_domains")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 域名认领与证明状态列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        ProviderId,
+        Domain,
+        Status,
+        ProofDigest,
+        ProofExpiresAt,
+        VerifiedAt,
+        RecheckAt,
+        RevokedAt,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod organization_sso_identities {
+    use super::DeriveIden;
+
+    /// 企业 SSO 身份绑定持久化表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_sso_identities")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 身份摘要、成员绑定和版本列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        ProviderId,
+        SubjectDigest,
+        OrganizationMembershipId,
+        Status,
+        BindingMethod,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+        DisabledAt,
+    }
+}
+
+pub(in crate::migration) mod organization_sso_login_transactions {
+    use super::DeriveIden;
+
+    /// 企业 SSO 短期登录事务持久化表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_sso_login_transactions")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 登录事务状态、摘要和单次票据列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        ProviderId,
+        Protocol,
+        ProviderVersion,
+        StateDigest,
+        RequestDigest,
+        ExpiresAt,
+        ClaimedAt,
+        ResultCode,
+        TicketDigest,
+        TicketExpiresAt,
+        ExchangedAt,
+        AssertionDigest,
+        AssertionExpiresAt,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
