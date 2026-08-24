@@ -606,7 +606,7 @@ pub struct OrganizationSsoDomainCreatedResponse {
 pub struct OrganizationSsoDomainCreateRequest {
     provider_key: String,
     domain: String,
-    #[schema(minimum = 900, maximum = 604_800)]
+    #[schema(maximum = 604_800, minimum = 900)]
     ttl_seconds: i64,
 }
 

@@ -29679,8 +29679,8 @@
           "ttl_seconds": {
             "type": "integer",
             "format": "int64",
-            "minimum": 900,
-            "maximum": 604800
+            "maximum": 604800,
+            "minimum": 900
           }
         },
         "additionalProperties": false
