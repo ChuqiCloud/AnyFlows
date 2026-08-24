@@ -16151,6 +16151,416 @@
         ]
       }
     },
+    "/api/organizations/{organization_id}/sso/providers": {
+      "get": {
+        "tags": [
+          "企业 SSO"
+        ],
+        "summary": "列出企业 SSO Provider",
+        "operationId": "listOrganizationSsoProviders",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业内部标识",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "企业 SSO Provider 脱敏列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoProviderList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "企业标识无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权查看企业 SSO Provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "企业不存在或无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "企业 SSO"
+        ],
+        "summary": "创建企业 SSO Provider",
+        "operationId": "createOrganizationSsoProvider",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业内部标识",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationSsoProviderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "企业 SSO Provider 已创建",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoProvider"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Provider 参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权管理企业 SSO Provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "企业不存在或无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Provider 版本或状态冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{organization_id}/sso/providers/{provider_key}": {
+      "get": {
+        "tags": [
+          "企业 SSO"
+        ],
+        "summary": "读取企业 SSO Provider",
+        "operationId": "getOrganizationSsoProvider",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业内部标识",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "provider_key",
+            "in": "path",
+            "description": "Provider 稳定标识",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "企业 SSO Provider 脱敏详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoProvider"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "企业或 Provider 标识无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权查看企业 SSO Provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Provider 不存在或无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "企业 SSO"
+        ],
+        "summary": "按版本 CAS 更新企业 SSO Provider",
+        "operationId": "updateOrganizationSsoProvider",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业内部标识",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "provider_key",
+            "in": "path",
+            "description": "Provider 稳定标识",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationSsoProviderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "企业 SSO Provider 已更新",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoProvider"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Provider 参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权管理企业 SSO Provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Provider 不存在或无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Provider 版本或状态冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/organizations/{organization_id}/tokens": {
       "get": {
         "tags": [
@@ -26658,7 +27068,7 @@
               "null"
             ],
             "format": "double",
-            "default": 1.0,
+            "default": 1,
             "maximum": 4,
             "minimum": 0.25
           },
@@ -26966,6 +27376,9 @@
               "playground_conversation_conflict",
               "user_conflict",
               "organization_not_found",
+              "organization_sso_provider_not_found",
+              "organization_sso_provider_conflict",
+              "organization_sso_provider_transition_invalid",
               "wallet_event_conflict",
               "wallet_insufficient_quota",
               "wallet_overflow",
@@ -28229,6 +28642,7 @@
         "type": "object",
         "required": [
           "status",
+          "sso_enabled",
           "team_management_enabled",
           "custom_roles_enabled",
           "seat_limit",
@@ -28244,6 +28658,9 @@
         "properties": {
           "status": {
             "type": "string"
+          },
+          "sso_enabled": {
+            "type": "boolean"
           },
           "team_management_enabled": {
             "type": "boolean"
@@ -28848,6 +29265,119 @@
           },
           "current_owner": {
             "$ref": "#/components/schemas/OrganizationMembershipResponse"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoProvider": {
+        "type": "object",
+        "required": [
+          "id",
+          "organization_id",
+          "provider_key",
+          "protocol",
+          "status",
+          "display_name",
+          "secret_configured",
+          "version",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "organization_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "provider_key": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "metadata_projection": {},
+          "secret_configured": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoProviderList": {
+        "type": "object",
+        "required": [
+          "providers"
+        ],
+        "properties": {
+          "providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrganizationSsoProvider"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoProviderRequest": {
+        "type": "object",
+        "required": [
+          "expected_version",
+          "protocol",
+          "status",
+          "display_name",
+          "clear_client_secret"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "protocol": {
+            "type": "string",
+            "example": "oidc"
+          },
+          "status": {
+            "type": "string",
+            "example": "draft"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "metadata_projection": {},
+          "client_secret": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "password",
+            "writeOnly": true,
+            "maxLength": 4096,
+            "minLength": 1
+          },
+          "clear_client_secret": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -33181,6 +33711,9 @@
     },
     {
       "name": "企业预算"
+    },
+    {
+      "name": "企业 SSO"
     },
     {
       "name": "企业 API Key"

@@ -19,6 +19,7 @@ mod oauth_connections;
 mod oauth_login;
 mod organization_activity;
 mod organization_budget;
+mod organization_sso;
 mod organization_tokens;
 mod organization_wallet;
 mod organizations;
@@ -109,6 +110,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(refund_webhook::document());
     document.merge(organization_wallet::document());
     document.merge(organization_budget::document());
+    document.merge(organization_sso::document());
     document.merge(organization_tokens::document());
     document.merge(organization_activity::document());
     document.merge(passkey_auth::document());
@@ -138,6 +140,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("Passkey 登录"),
         Tag::new("企业钱包"),
         Tag::new("企业预算"),
+        Tag::new("企业 SSO"),
         Tag::new("企业 API Key"),
         Tag::new("企业活动"),
         Tag::new("平台企业活动"),
@@ -202,7 +205,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 164);
+        assert_eq!(document.paths.paths.len(), 166);
         let operation_count = document
             .paths
             .paths
@@ -223,7 +226,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 226);
+        assert_eq!(operation_count, 230);
         assert!(
             document
                 .components
@@ -339,6 +342,10 @@ mod tests {
             "createOrganizationCustomRole",
             "updateOrganizationCustomRole",
             "disableOrganizationCustomRole",
+            "listOrganizationSsoProviders",
+            "createOrganizationSsoProvider",
+            "getOrganizationSsoProvider",
+            "updateOrganizationSsoProvider",
             "getUserTopupConfiguration",
             "getUserWallet",
             "importMissingAdminModels",
@@ -483,7 +490,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 378);
+        assert_eq!(schemas.len(), 381);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminDashboardChannelFlow"));
         assert!(schemas.contains_key("AdminDashboardFailure"));
@@ -497,6 +504,9 @@ mod tests {
         assert!(schemas.contains_key("PasskeyAuthenticationVerifyRequest"));
         assert!(schemas.contains_key("OrganizationEntitlementResponse"));
         assert!(schemas.contains_key("OrganizationCustomRoleResponse"));
+        assert!(schemas.contains_key("OrganizationSsoProvider"));
+        assert!(schemas.contains_key("OrganizationSsoProviderList"));
+        assert!(schemas.contains_key("OrganizationSsoProviderRequest"));
         assert!(schemas.contains_key("OrganizationInvitationAcceptRequest"));
         assert!(schemas.contains_key("OrganizationInvitationResponse"));
         assert!(schemas.contains_key("OrganizationMemberCustomRoleRequest"));

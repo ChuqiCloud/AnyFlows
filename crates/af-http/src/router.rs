@@ -225,6 +225,7 @@ pub fn build_router(
         Arc<dyn af_admin::OrganizationCustomRoleBindingService>,
     >,
     platform_audit_service: Option<Arc<dyn PlatformAuditService>>,
+    organization_sso_provider_service: Option<Arc<dyn af_admin::OrganizationSsoProviderService>>,
 ) -> HttpRouter {
     let openai_authentication = middleware::from_fn_with_state(
         AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config),
@@ -805,6 +806,7 @@ pub fn build_router(
                 organization_custom_role_binding_service,
                 activity_service,
                 Arc::clone(&http_state.session_authenticator),
+                organization_sso_provider_service,
             ))
         }
         _ => management_routes,

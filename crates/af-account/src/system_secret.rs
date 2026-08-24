@@ -51,6 +51,13 @@ pub enum SystemSecretKind {
     PasskeyAuthenticationState(af_domain::UserId),
     /// 凭据专属代理认证密码；记录标识参与 AAD，禁止密文跨代理搬用。
     CredentialProxyPassword(af_domain::ProxyId),
+    /// 企业 SSO Provider 敏感材料；企业、Provider、协议和配置版本共同参与 AAD。
+    OrganizationSsoProviderSecret {
+        organization_id: af_domain::OrganizationId,
+        provider_key: af_domain::OrganizationSsoProviderKey,
+        protocol: af_domain::OrganizationSsoProtocol,
+        config_version: i64,
+    },
 }
 
 impl SystemSecretKind {
@@ -73,6 +80,7 @@ impl SystemSecretKind {
             Self::PasskeyRegistrationState(_) => "passkey_registration_state",
             Self::PasskeyAuthenticationState(_) => "passkey_authentication_state",
             Self::CredentialProxyPassword(_) => "credential_proxy_password",
+            Self::OrganizationSsoProviderSecret { .. } => "organization_sso_provider_secret",
         }
     }
 }
@@ -237,6 +245,46 @@ impl SystemSecretCipher {
         self.decrypt_with_aad(&custom_oauth2_system_secret_aad(provider_key), envelope)
     }
 
+    /// 使用企业边界和配置版本绑定的独立 AAD 加密 SSO Provider 密钥。
+    pub fn encrypt_organization_sso_provider_secret(
+        &self,
+        organization_id: af_domain::OrganizationId,
+        provider_key: af_domain::OrganizationSsoProviderKey,
+        protocol: af_domain::OrganizationSsoProtocol,
+        config_version: i64,
+        secret: &PlainSystemSecret,
+    ) -> Result<EncryptedCredentialEnvelope, SystemSecretError> {
+        self.encrypt(
+            SystemSecretKind::OrganizationSsoProviderSecret {
+                organization_id,
+                provider_key,
+                protocol,
+                config_version,
+            },
+            secret,
+        )
+    }
+
+    /// 解密绑定当前企业和配置版本的 SSO Provider 密钥，仅向协议适配器暴露明文。
+    pub fn decrypt_organization_sso_provider_secret(
+        &self,
+        organization_id: af_domain::OrganizationId,
+        provider_key: af_domain::OrganizationSsoProviderKey,
+        protocol: af_domain::OrganizationSsoProtocol,
+        config_version: i64,
+        envelope: &EncryptedCredentialEnvelope,
+    ) -> Result<DecryptedSystemSecret, SystemSecretError> {
+        self.decrypt(
+            SystemSecretKind::OrganizationSsoProviderSecret {
+                organization_id,
+                provider_key,
+                protocol,
+                config_version,
+            },
+            envelope,
+        )
+    }
+
     fn decrypt_with_aad(
         &self,
         aad: &[u8],
@@ -310,6 +358,18 @@ fn system_secret_aad(kind: SystemSecretKind) -> Vec<u8> {
         SystemSecretKind::CredentialProxyPassword(proxy_id) => {
             format!("proxies:{}", proxy_id.get())
         }
+        SystemSecretKind::OrganizationSsoProviderSecret {
+            organization_id,
+            provider_key,
+            protocol,
+            config_version,
+        } => format!(
+            "organizations:{}:sso:providers:{}:protocol={}:version={}",
+            organization_id.get(),
+            provider_key.persistence_key(),
+            protocol.code(),
+            config_version
+        ),
     };
     format!(
         "anyflows:system-secret:v1:record={record}:kind={}",
@@ -533,6 +593,76 @@ mod tests {
         );
         let rendered = format!("{cipher:?}{secret:?}{envelope:?}");
         assert!(!rendered.contains("custom-client-secret"));
+    }
+
+    #[test]
+    fn organization_sso_secret_is_bound_to_org_provider_protocol_and_version() {
+        let cipher = SystemSecretCipher::new(&settings()).unwrap();
+        let organization = af_domain::OrganizationId::new(7).unwrap();
+        let other_organization = af_domain::OrganizationId::new(8).unwrap();
+        let provider = af_domain::OrganizationSsoProviderKey::new([0x51; 16]).unwrap();
+        let other_provider = af_domain::OrganizationSsoProviderKey::new([0x52; 16]).unwrap();
+        let secret = PlainSystemSecret::new("organization-sso-secret".to_owned()).unwrap();
+        let envelope = cipher
+            .encrypt_organization_sso_provider_secret(
+                organization,
+                provider,
+                af_domain::OrganizationSsoProtocol::Oidc,
+                3,
+                &secret,
+            )
+            .unwrap();
+
+        assert_eq!(
+            cipher
+                .decrypt_organization_sso_provider_secret(
+                    organization,
+                    provider,
+                    af_domain::OrganizationSsoProtocol::Oidc,
+                    3,
+                    &envelope,
+                )
+                .unwrap()
+                .expose_secret(),
+            "organization-sso-secret"
+        );
+        for wrong in [
+            (
+                other_organization,
+                provider,
+                af_domain::OrganizationSsoProtocol::Oidc,
+                3,
+            ),
+            (
+                organization,
+                other_provider,
+                af_domain::OrganizationSsoProtocol::Oidc,
+                3,
+            ),
+            (
+                organization,
+                provider,
+                af_domain::OrganizationSsoProtocol::Saml,
+                3,
+            ),
+            (
+                organization,
+                provider,
+                af_domain::OrganizationSsoProtocol::Oidc,
+                4,
+            ),
+        ] {
+            assert_eq!(
+                cipher
+                    .decrypt_organization_sso_provider_secret(
+                        wrong.0, wrong.1, wrong.2, wrong.3, &envelope,
+                    )
+                    .unwrap_err(),
+                SystemSecretError::Decrypt
+            );
+        }
+        let rendered = format!("{cipher:?}{secret:?}{envelope:?}");
+        assert!(!rendered.contains("organization-sso-secret"));
     }
 
     fn settings() -> CredentialEncryptionSettings {

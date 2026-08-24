@@ -217,6 +217,7 @@ async fn sqlite_organization_router()
         None,
         test_organization_activity_service(),
         sessions,
+        None,
     );
     Ok((router, pool, organization.id()))
 }
@@ -732,6 +733,7 @@ async fn acceptance_maps_all_rejection_facts_to_one_public_error() {
         None,
         test_organization_activity_service(),
         sessions,
+        None,
     );
     for token in ["not-found", "conflict", "expired", "email-mismatch"] {
         let response = app
@@ -767,6 +769,7 @@ async fn organization_directory_remains_available_without_invitation_service() {
         None,
         test_organization_activity_service(),
         sessions,
+        None,
     );
     let response = app
         .oneshot(authenticated_request(

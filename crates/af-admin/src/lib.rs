@@ -33,6 +33,7 @@ mod organization_custom_role;
 mod organization_custom_role_binding;
 mod organization_invitation;
 mod organization_management;
+mod organization_sso;
 mod organization_token;
 mod organization_wallet;
 mod passkey;
@@ -261,6 +262,12 @@ pub use organization_management::{
     OrganizationOwnershipTransferResult, OrganizationTeamChangeCommand,
     OrganizationTeamCreateCommand, OrganizationTeamDisableCommand, OrganizationTeamFuture,
     OrganizationTeamListQuery, OrganizationTeamPage, OrganizationTeamPageFuture,
+};
+pub use organization_sso::{
+    DatabaseOrganizationSsoProviderService, OrganizationSsoProvider,
+    OrganizationSsoProviderCommand, OrganizationSsoProviderFuture,
+    OrganizationSsoProviderListFuture, OrganizationSsoProviderService,
+    OrganizationSsoProviderServiceError,
 };
 pub use organization_token::{
     DEFAULT_ORGANIZATION_TOKEN_PAGE_SIZE, DatabaseOrganizationTokenService,

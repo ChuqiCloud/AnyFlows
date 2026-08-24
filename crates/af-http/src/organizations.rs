@@ -15,22 +15,24 @@ use af_admin::{
     OrganizationInvitationRecord, OrganizationInvitationService, OrganizationManagementError,
     OrganizationManagementService, OrganizationMembershipChangeCommand,
     OrganizationMembershipListQuery, OrganizationMembershipRecord,
-    OrganizationOwnershipTransferCommand, OrganizationTeamChangeCommand,
-    OrganizationTeamCreateCommand, OrganizationTeamDisableCommand, OrganizationTeamListQuery,
-    OrganizationTeamRecord, SessionAuthentication,
+    OrganizationOwnershipTransferCommand, OrganizationSsoProvider, OrganizationSsoProviderCommand,
+    OrganizationSsoProviderService, OrganizationSsoProviderServiceError,
+    OrganizationTeamChangeCommand, OrganizationTeamCreateCommand, OrganizationTeamDisableCommand,
+    OrganizationTeamListQuery, OrganizationTeamRecord, SessionAuthentication,
 };
 use af_domain::{
     OrganizationCustomRoleKey, OrganizationId, OrganizationInvitationKey,
     OrganizationInvitationStatus, OrganizationMembershipId, OrganizationMembershipStatus,
-    OrganizationPermission, OrganizationRole, OrganizationTeamId,
+    OrganizationPermission, OrganizationRole, OrganizationSsoProtocol,
+    OrganizationSsoProviderStatus, OrganizationTeamId,
 };
 use af_telemetry::RequestId;
 use axum::{
     Extension, Json, Router,
-    extract::{Path, RawQuery, State},
+    extract::{Path, RawQuery, State, rejection::JsonRejection},
     middleware,
     response::Response,
-    routing::{get, patch, post},
+    routing::{get, patch, post, put},
 };
 use http::HeaderMap;
 use serde::{Deserialize, Serialize};
@@ -54,6 +56,7 @@ pub(crate) struct OrganizationHttpState {
     management_service: Option<Arc<dyn OrganizationManagementService>>,
     custom_role_service: Option<Arc<dyn OrganizationCustomRoleService>>,
     custom_role_binding_service: Option<Arc<dyn OrganizationCustomRoleBindingService>>,
+    sso_provider_service: Option<Arc<dyn OrganizationSsoProviderService>>,
     activity_service: Arc<dyn OrganizationActivityService>,
 }
 
@@ -66,6 +69,7 @@ pub fn build_organization_router(
     custom_role_binding_service: Option<Arc<dyn OrganizationCustomRoleBindingService>>,
     activity_service: Arc<dyn OrganizationActivityService>,
     session_authenticator: Arc<dyn af_admin::SessionAuthenticator>,
+    sso_provider_service: Option<Arc<dyn OrganizationSsoProviderService>>,
 ) -> Router {
     let authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(session_authenticator),
@@ -160,6 +164,19 @@ pub fn build_organization_router(
     } else {
         router
     };
+    let router = if sso_provider_service.is_some() {
+        router
+            .route(
+                "/api/organizations/{organization_id}/sso/providers",
+                get(list_organization_sso_providers).post(create_organization_sso_provider),
+            )
+            .route(
+                "/api/organizations/{organization_id}/sso/providers/{provider_key}",
+                get(get_organization_sso_provider).put(update_organization_sso_provider),
+            )
+    } else {
+        router
+    };
     router
         .layer(authentication)
         .layer(middleware::from_fn(ensure_request_id))
@@ -169,6 +186,7 @@ pub fn build_organization_router(
             management_service,
             custom_role_service,
             custom_role_binding_service,
+            sso_provider_service,
             activity_service,
         })
 }
@@ -204,6 +222,7 @@ pub struct OrganizationOverviewResponse {
 #[serde(deny_unknown_fields)]
 pub struct OrganizationEntitlementResponse {
     status: &'static str,
+    sso_enabled: bool,
     team_management_enabled: bool,
     custom_roles_enabled: bool,
     seat_limit: i64,
@@ -461,6 +480,324 @@ pub struct OrganizationTeamListResponse {
 pub struct OrganizationOwnershipTransferResponse {
     previous_owner: OrganizationMembershipResponse,
     current_owner: OrganizationMembershipResponse,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = OrganizationSsoProvider)]
+pub struct OrganizationSsoProviderResponse {
+    id: i64,
+    organization_id: i64,
+    provider_key: String,
+    protocol: &'static str,
+    status: &'static str,
+    display_name: String,
+    metadata_projection: Option<serde_json::Value>,
+    secret_configured: bool,
+    version: i64,
+    created_at: i64,
+    updated_at: i64,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = OrganizationSsoProviderList)]
+pub struct OrganizationSsoProviderListResponse {
+    providers: Vec<OrganizationSsoProviderResponse>,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = OrganizationSsoProviderRequest)]
+pub struct OrganizationSsoProviderRequest {
+    #[schema(minimum = 0)]
+    expected_version: i64,
+    #[schema(example = "oidc")]
+    protocol: String,
+    #[schema(example = "draft")]
+    status: String,
+    #[schema(max_length = 128)]
+    display_name: String,
+    metadata_projection: Option<serde_json::Value>,
+    #[schema(min_length = 1, max_length = 4096, format = Password, write_only)]
+    client_secret: Option<String>,
+    clear_client_secret: bool,
+}
+
+async fn list_organization_sso_providers(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path(organization_id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::SsoRead,
+        &request_id,
+        &headers,
+        "organization.sso.provider.list",
+        "organization",
+        organization_id.get().to_string(),
+    )
+    .await?;
+    let service = state
+        .sso_provider_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let providers = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::SsoRead,
+        "organization.sso.provider.list",
+        "organization",
+        organization_id.get().to_string(),
+        service
+            .list(context.clone())
+            .await
+            .map_err(map_sso_provider_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::SsoRead.code(),
+        "organization.sso.provider.list",
+        "organization",
+        organization_id.get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({"result_count": providers.len()})),
+    )
+    .await?;
+    Ok(no_store_json(OrganizationSsoProviderListResponse {
+        providers: providers
+            .into_iter()
+            .map(OrganizationSsoProviderResponse::from)
+            .collect(),
+    }))
+}
+
+async fn get_organization_sso_provider(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path((organization_id, provider_key)): Path<(i64, String)>,
+    headers: HeaderMap,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::SsoRead,
+        &request_id,
+        &headers,
+        "organization.sso.provider.read",
+        "sso_provider",
+        provider_key.clone(),
+    )
+    .await?;
+    let service = state
+        .sso_provider_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let provider = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::SsoRead,
+        "organization.sso.provider.read",
+        "sso_provider",
+        provider_key.clone(),
+        service
+            .get(context.clone(), provider_key.clone())
+            .await
+            .map_err(map_sso_provider_error),
+    )
+    .await?;
+    record_sso_provider_success(
+        &state,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::SsoRead,
+        "organization.sso.provider.read",
+        &provider,
+    )
+    .await?;
+    Ok(no_store_json(OrganizationSsoProviderResponse::from(
+        provider,
+    )))
+}
+
+async fn create_organization_sso_provider(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path(organization_id): Path<i64>,
+    headers: HeaderMap,
+    request: Result<Json<OrganizationSsoProviderRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::SsoManage,
+        &request_id,
+        &headers,
+        "organization.sso.provider.create",
+        "sso_provider",
+        "new".to_owned(),
+    )
+    .await?;
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let command = request.into_command()?;
+    let service = state
+        .sso_provider_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let provider = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::SsoManage,
+        "organization.sso.provider.create",
+        "sso_provider",
+        "new".to_owned(),
+        service
+            .create(context.clone(), command)
+            .await
+            .map_err(map_sso_provider_error),
+    )
+    .await?;
+    record_sso_provider_success(
+        &state,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::SsoManage,
+        "organization.sso.provider.create",
+        &provider,
+    )
+    .await?;
+    Ok(no_store_json(OrganizationSsoProviderResponse::from(
+        provider,
+    )))
+}
+
+async fn update_organization_sso_provider(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path((organization_id, provider_key)): Path<(i64, String)>,
+    headers: HeaderMap,
+    request: Result<Json<OrganizationSsoProviderRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::SsoManage,
+        &request_id,
+        &headers,
+        "organization.sso.provider.update",
+        "sso_provider",
+        provider_key.clone(),
+    )
+    .await?;
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let command = request.into_command()?;
+    let service = state
+        .sso_provider_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let provider = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::SsoManage,
+        "organization.sso.provider.update",
+        "sso_provider",
+        provider_key.clone(),
+        service
+            .update(context.clone(), provider_key, command)
+            .await
+            .map_err(map_sso_provider_error),
+    )
+    .await?;
+    record_sso_provider_success(
+        &state,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::SsoManage,
+        "organization.sso.provider.update",
+        &provider,
+    )
+    .await?;
+    Ok(no_store_json(OrganizationSsoProviderResponse::from(
+        provider,
+    )))
+}
+
+async fn record_sso_provider_success(
+    state: &OrganizationHttpState,
+    context: af_admin::OrganizationContext,
+    request_id: &RequestId,
+    headers: &HeaderMap,
+    permission: OrganizationPermission,
+    operation: &'static str,
+    provider: &OrganizationSsoProvider,
+) -> Result<(), ManagementError> {
+    record_organization_action(
+        &state.activity_service,
+        context,
+        request_id,
+        headers,
+        permission.code(),
+        operation,
+        "sso_provider",
+        provider.provider_key().to_owned(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({
+            "protocol": organization_sso_protocol_code(provider.protocol()),
+            "status": organization_sso_provider_status_code(provider.status()),
+            "secret_configured": provider.secret_configured(),
+            "version": provider.version(),
+        })),
+    )
+    .await
+}
+
+impl OrganizationSsoProviderRequest {
+    fn into_command(self) -> Result<OrganizationSsoProviderCommand, ManagementError> {
+        OrganizationSsoProviderCommand::new(
+            self.expected_version,
+            parse_sso_protocol(&self.protocol)?,
+            parse_sso_provider_status(&self.status)?,
+            self.display_name,
+            self.metadata_projection,
+            self.client_secret,
+            self.clear_client_secret,
+        )
+        .map_err(map_sso_provider_error)
+    }
 }
 
 async fn list_organization_custom_roles(
@@ -1710,6 +2047,7 @@ impl From<OrganizationEntitlementSummary> for OrganizationEntitlementResponse {
     fn from(summary: OrganizationEntitlementSummary) -> Self {
         Self {
             status: summary.status().code(),
+            sso_enabled: summary.sso_enabled(),
             team_management_enabled: summary.team_management_enabled(),
             custom_roles_enabled: summary.custom_roles_enabled(),
             seat_limit: summary.seat_limit(),
@@ -1910,6 +2248,58 @@ impl From<&af_admin::OrganizationCustomRoleRecord> for OrganizationCustomRoleRes
             created_at: record.created_at(),
             updated_at: record.updated_at(),
         }
+    }
+}
+
+impl From<OrganizationSsoProvider> for OrganizationSsoProviderResponse {
+    fn from(provider: OrganizationSsoProvider) -> Self {
+        Self {
+            id: provider.id(),
+            organization_id: provider.organization_id().get(),
+            provider_key: provider.provider_key().to_owned(),
+            protocol: organization_sso_protocol_code(provider.protocol()),
+            status: organization_sso_provider_status_code(provider.status()),
+            display_name: provider.display_name().to_owned(),
+            metadata_projection: provider.metadata_projection().cloned(),
+            secret_configured: provider.secret_configured(),
+            version: provider.version(),
+            created_at: provider.created_at(),
+            updated_at: provider.updated_at(),
+        }
+    }
+}
+
+fn organization_sso_protocol_code(protocol: OrganizationSsoProtocol) -> &'static str {
+    match protocol {
+        OrganizationSsoProtocol::Oidc => "oidc",
+        OrganizationSsoProtocol::Saml => "saml",
+    }
+}
+
+fn organization_sso_provider_status_code(status: OrganizationSsoProviderStatus) -> &'static str {
+    match status {
+        OrganizationSsoProviderStatus::Draft => "draft",
+        OrganizationSsoProviderStatus::Active => "active",
+        OrganizationSsoProviderStatus::Disabled => "disabled",
+    }
+}
+
+fn parse_sso_protocol(value: &str) -> Result<OrganizationSsoProtocol, ManagementError> {
+    match value {
+        "oidc" => Ok(OrganizationSsoProtocol::Oidc),
+        "saml" => Ok(OrganizationSsoProtocol::Saml),
+        _ => Err(ManagementError::InvalidRequest),
+    }
+}
+
+fn parse_sso_provider_status(
+    value: &str,
+) -> Result<OrganizationSsoProviderStatus, ManagementError> {
+    match value {
+        "draft" => Ok(OrganizationSsoProviderStatus::Draft),
+        "active" => Ok(OrganizationSsoProviderStatus::Active),
+        "disabled" => Ok(OrganizationSsoProviderStatus::Disabled),
+        _ => Err(ManagementError::InvalidRequest),
     }
 }
 
@@ -2121,6 +2511,26 @@ fn map_custom_role_error(error: OrganizationCustomRoleServiceError) -> Managemen
     }
 }
 
+fn map_sso_provider_error(error: OrganizationSsoProviderServiceError) -> ManagementError {
+    match error {
+        OrganizationSsoProviderServiceError::InvalidInput => ManagementError::InvalidRequest,
+        OrganizationSsoProviderServiceError::Forbidden => ManagementError::Forbidden,
+        OrganizationSsoProviderServiceError::EntitlementRestricted => {
+            ManagementError::OrganizationEntitlementRestricted
+        }
+        OrganizationSsoProviderServiceError::NotFound => {
+            ManagementError::OrganizationSsoProviderNotFound
+        }
+        OrganizationSsoProviderServiceError::Conflict => {
+            ManagementError::OrganizationSsoProviderConflict
+        }
+        OrganizationSsoProviderServiceError::InvalidTransition => {
+            ManagementError::OrganizationSsoProviderTransitionInvalid
+        }
+        OrganizationSsoProviderServiceError::Internal => ManagementError::Internal,
+    }
+}
+
 fn map_custom_role_binding_error(
     error: OrganizationCustomRoleBindingServiceError,
 ) -> ManagementError {
@@ -2209,4 +2619,48 @@ fn current_unix_timestamp() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| i64::try_from(duration.as_secs()).unwrap_or(i64::MAX))
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod sso_provider_tests {
+    use super::*;
+
+    #[test]
+    fn sso_provider_response_never_serializes_client_secret() {
+        let provider = OrganizationSsoProvider {
+            id: 1,
+            organization_id: OrganizationId::new(7).unwrap(),
+            provider_key: "sso_0123456789abcdef0123456789abcdef".to_owned(),
+            protocol: OrganizationSsoProtocol::Oidc,
+            status: OrganizationSsoProviderStatus::Active,
+            display_name: "企业登录".to_owned(),
+            metadata_projection: Some(json!({"issuer": "https://id.example.com"})),
+            secret_configured: true,
+            version: 2,
+            created_at: 10,
+            updated_at: 11,
+        };
+        let rendered =
+            serde_json::to_value(OrganizationSsoProviderResponse::from(provider)).unwrap();
+        assert_eq!(rendered["secret_configured"], true);
+        assert!(rendered.get("client_secret").is_none());
+        assert!(!rendered.to_string().contains("client-secret"));
+    }
+
+    #[test]
+    fn sso_provider_request_rejects_secret_and_clear_together() {
+        let request = OrganizationSsoProviderRequest {
+            expected_version: 1,
+            protocol: "oidc".to_owned(),
+            status: "active".to_owned(),
+            display_name: "企业登录".to_owned(),
+            metadata_projection: None,
+            client_secret: Some("client-secret".to_owned()),
+            clear_client_secret: true,
+        };
+        assert_eq!(
+            request.into_command().unwrap_err(),
+            ManagementError::InvalidRequest
+        );
+    }
 }
