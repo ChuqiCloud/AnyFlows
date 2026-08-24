@@ -17,7 +17,7 @@ use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
-    DatabasePool,
+    DatabasePool, EncryptedCredentialEnvelope,
     entity::{
         EncryptedJson, SensitiveString, organization_memberships, organization_sso_domains,
         organization_sso_identities, organization_sso_login_transactions,
@@ -714,6 +714,39 @@ impl OrganizationSsoProviderRepository {
                 .await
                 .map_err(query_error)?;
             models.into_iter().map(provider_record).collect()
+        })
+        .await
+    }
+
+    /// 仅供受控服务重封装密钥使用；不把密钥 envelope 放入公开 Provider 记录。
+    pub async fn provider_secret(
+        &self,
+        organization_id: OrganizationId,
+        provider_key: OrganizationSsoProviderKey,
+    ) -> Result<Option<EncryptedCredentialEnvelope>, OrganizationSsoRepositoryError> {
+        self.run(async move {
+            let model = organization_sso_providers::Entity::find()
+                .filter(
+                    organization_sso_providers::Column::OrganizationId.eq(organization_id.get()),
+                )
+                .filter(
+                    organization_sso_providers::Column::ProviderKey
+                        .eq(provider_key.persistence_key()),
+                )
+                .one(self.pool.connection())
+                .await
+                .map_err(query_error)?
+                .ok_or(OrganizationSsoRepositoryError::NotFound)?;
+            model
+                .secret_envelope
+                .map(|value| {
+                    let (key_id, nonce, ciphertext) = value
+                        .envelope_parts()
+                        .map_err(|_| OrganizationSsoRepositoryError::InvalidInput)?;
+                    EncryptedCredentialEnvelope::new(key_id, nonce, ciphertext)
+                        .map_err(|_| OrganizationSsoRepositoryError::InvalidInput)
+                })
+                .transpose()
         })
         .await
     }

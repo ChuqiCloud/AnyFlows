@@ -31,6 +31,7 @@ pub struct OrganizationContext {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct OrganizationEntitlementSummary {
     status: OrganizationEntitlementStatus,
+    sso_enabled: bool,
     team_management_enabled: bool,
     custom_roles_enabled: bool,
     seat_limit: i64,
@@ -140,6 +141,7 @@ impl OrganizationEntitlementSummary {
             .unwrap_or_default();
         Self {
             status: snapshot.status(access.organization().status(), now),
+            sso_enabled: snapshot.sso_enabled(),
             team_management_enabled: snapshot.team_management_enabled(),
             custom_roles_enabled: snapshot.custom_roles_enabled(),
             seat_limit: capacity.seat_limit(),
@@ -157,6 +159,11 @@ impl OrganizationEntitlementSummary {
     #[must_use]
     pub const fn status(&self) -> OrganizationEntitlementStatus {
         self.status
+    }
+    /// 返回企业是否具备 SSO 商业能力；服务端仍需同时校验独立 SSO 权限。
+    #[must_use]
+    pub const fn sso_enabled(&self) -> bool {
+        self.sso_enabled
     }
     /// 是否开启团队管理。
     #[must_use]

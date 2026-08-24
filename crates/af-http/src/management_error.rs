@@ -57,6 +57,9 @@ pub(crate) enum ManagementError {
     OrganizationTeamInUse,
     /// 企业授权不允许当前生命周期写入。
     OrganizationEntitlementRestricted,
+    OrganizationSsoProviderNotFound,
+    OrganizationSsoProviderConflict,
+    OrganizationSsoProviderTransitionInvalid,
     /// 企业团队容量已用尽。
     OrganizationTeamLimitReached,
     /// 钱包事件键已经绑定不同业务事实。
@@ -435,6 +438,27 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "organization_entitlement_restricted",
                     message: "Organization entitlement restricts this operation",
+                },
+            ),
+            Self::OrganizationSsoProviderNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "organization_sso_provider_not_found",
+                    message: "Organization SSO provider not found",
+                },
+            ),
+            Self::OrganizationSsoProviderConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_sso_provider_conflict",
+                    message: "Organization SSO provider conflict",
+                },
+            ),
+            Self::OrganizationSsoProviderTransitionInvalid => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_sso_provider_transition_invalid",
+                    message: "Organization SSO provider transition invalid",
                 },
             ),
             Self::OrganizationTeamLimitReached => (

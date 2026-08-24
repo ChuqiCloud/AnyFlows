@@ -308,6 +308,12 @@ pub enum OrganizationPermission {
     RolesManage,
     /// 为企业成员分配自定义角色。
     RolesAssign,
+    /// 读取企业 SSO 的脱敏配置。
+    SsoRead,
+    /// 管理企业 SSO Provider、域名和策略。
+    SsoManage,
+    /// 管理企业 SSO 恢复入口。
+    SsoRecovery,
 }
 
 const CUSTOM_ROLE_GRANTABLE_PERMISSIONS: &[OrganizationPermission] = &[
@@ -348,6 +354,9 @@ impl OrganizationPermission {
             Self::RolesRead => "organization.roles.read",
             Self::RolesManage => "organization.roles.manage",
             Self::RolesAssign => "organization.roles.assign",
+            Self::SsoRead => "organization.sso.read",
+            Self::SsoManage => "organization.sso.manage",
+            Self::SsoRecovery => "organization.sso.recovery",
         }
     }
 
@@ -371,6 +380,9 @@ impl OrganizationPermission {
             "organization.roles.read" => Ok(Self::RolesRead),
             "organization.roles.manage" => Ok(Self::RolesManage),
             "organization.roles.assign" => Ok(Self::RolesAssign),
+            "organization.sso.read" => Ok(Self::SsoRead),
+            "organization.sso.manage" => Ok(Self::SsoManage),
+            "organization.sso.recovery" => Ok(Self::SsoRecovery),
             _ => Err(OrganizationPermissionCodeError::Unknown),
         }
     }
@@ -380,7 +392,13 @@ impl OrganizationPermission {
     pub const fn is_custom_role_grantable(self) -> bool {
         !matches!(
             self,
-            Self::OwnershipTransfer | Self::Close | Self::RolesManage | Self::RolesAssign
+            Self::OwnershipTransfer
+                | Self::Close
+                | Self::RolesManage
+                | Self::RolesAssign
+                | Self::SsoRead
+                | Self::SsoManage
+                | Self::SsoRecovery
         )
     }
 
@@ -462,6 +480,9 @@ impl OrganizationRole {
                 Permission::RolesRead,
                 Permission::RolesManage,
                 Permission::RolesAssign,
+                Permission::SsoRead,
+                Permission::SsoManage,
+                Permission::SsoRecovery,
             ],
             Self::Admin => &[
                 Permission::OverviewRead,
@@ -479,6 +500,8 @@ impl OrganizationRole {
                 Permission::RolesRead,
                 Permission::RolesManage,
                 Permission::RolesAssign,
+                Permission::SsoRead,
+                Permission::SsoManage,
             ],
             Self::Billing => &[
                 Permission::OverviewRead,
