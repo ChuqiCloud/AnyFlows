@@ -11,6 +11,7 @@ mod organization;
 mod organization_budget;
 mod organization_entitlement;
 mod organization_sso;
+mod organization_sso_domain_verification;
 mod payment;
 mod principal;
 mod quota;
@@ -62,6 +63,14 @@ pub use organization_sso::{
     OrganizationSsoDomain, OrganizationSsoDomainError, OrganizationSsoDomainStatus,
     OrganizationSsoEnforcementPolicy, OrganizationSsoIdentifierError, OrganizationSsoProtocol,
     OrganizationSsoProviderKey, OrganizationSsoProviderStatus, OrganizationSsoStateCodeError,
+};
+pub use organization_sso_domain_verification::{
+    DEFAULT_ORGANIZATION_SSO_RECHECK_INTERVAL_SECONDS, MAX_ORGANIZATION_SSO_PROOF_TTL_SECONDS,
+    MIN_ORGANIZATION_SSO_PROOF_TTL_SECONDS, ORGANIZATION_SSO_DNS_PROOF_LABEL,
+    OrganizationSsoDnsTxtAnswers, OrganizationSsoDnsVerification,
+    OrganizationSsoDnsVerificationError, OrganizationSsoDomainProof,
+    OrganizationSsoDomainProofError, OrganizationSsoDomainProofToken,
+    OrganizationSsoDomainSuffixKind, classify_organization_sso_domain_suffix,
 };
 pub use payment::{
     TopupIdentifierError, TopupOrderId, TopupOrderStatus, TopupPaymentEventId,
@@ -123,6 +132,8 @@ mod error_tests;
 mod network_tests;
 #[cfg(test)]
 mod organization_budget_tests;
+#[cfg(test)]
+mod organization_sso_domain_verification_tests;
 #[cfg(test)]
 mod organization_sso_tests;
 #[cfg(test)]
