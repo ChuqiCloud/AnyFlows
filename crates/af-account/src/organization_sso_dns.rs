@@ -7,12 +7,9 @@ use af_domain::{
 use async_trait::async_trait;
 use hickory_resolver::{
     TokioResolver,
-    config::{NameServerConfig, NameServerConfigGroup, ResolveHosts, ResolverConfig, ResolverOpts},
-    name_server::TokioConnectionProvider,
-    proto::{
-        rr::{RData, RecordType},
-        xfer::Protocol,
-    },
+    config::{ConnectionConfig, NameServerConfig, ResolveHosts, ResolverConfig, ResolverOpts},
+    net::runtime::TokioRuntimeProvider,
+    proto::rr::{RData, RecordType},
 };
 use thiserror::Error;
 use tokio::time::timeout;
@@ -76,16 +73,18 @@ impl ControlledOrganizationSsoDnsResolver {
         }
 
         let mut seen = HashSet::with_capacity(nameservers.len());
-        let mut servers = Vec::with_capacity(nameservers.len() * 2);
+        let mut servers = Vec::with_capacity(nameservers.len());
         for address in nameservers {
             if !seen.insert(*address) {
                 return Err(OrganizationSsoDnsResolverConfigError::InvalidNameservers);
             }
-            servers.push(NameServerConfig::new(*address, Protocol::Udp));
-            servers.push(NameServerConfig::new(*address, Protocol::Tcp));
+            let mut udp = ConnectionConfig::udp();
+            udp.port = address.port();
+            let mut tcp = ConnectionConfig::tcp();
+            tcp.port = address.port();
+            servers.push(NameServerConfig::new(address.ip(), true, vec![udp, tcp]));
         }
-        let config =
-            ResolverConfig::from_parts(None, Vec::new(), NameServerConfigGroup::from(servers));
+        let config = ResolverConfig::from_parts(None, Vec::new(), servers);
         let mut options = ResolverOpts::default();
         options.timeout = query_timeout;
         options.attempts = 1;
@@ -93,10 +92,10 @@ impl ControlledOrganizationSsoDnsResolver {
         options.cache_size = 0;
         options.use_hosts_file = ResolveHosts::Never;
         options.ndots = 1;
-        let resolver =
-            TokioResolver::builder_with_config(config, TokioConnectionProvider::default())
-                .with_options(options)
-                .build();
+        let resolver = TokioResolver::builder_with_config(config, TokioRuntimeProvider::default())
+            .with_options(options)
+            .build()
+            .map_err(|_| OrganizationSsoDnsResolverConfigError::InvalidNameservers)?;
 
         Ok(Self {
             resolver,
@@ -119,15 +118,15 @@ impl ControlledOrganizationSsoDnsResolver {
         .map_err(|_| OrganizationSsoDnsResolverError::LookupFailed)?;
         let mut answers = Vec::new();
         let mut total_bytes = 0_usize;
-        for record in lookup.iter() {
-            let RData::TXT(txt) = record else {
+        for record in lookup.answers() {
+            let RData::TXT(txt) = &record.data else {
                 continue;
             };
             if answers.len() >= MAX_ORGANIZATION_SSO_DNS_TXT_ANSWERS {
                 return Err(OrganizationSsoDnsResolverError::TooManyAnswers);
             }
             let mut bytes = Vec::new();
-            for fragment in txt.txt_data() {
+            for fragment in &txt.txt_data {
                 if bytes.len().saturating_add(fragment.len())
                     > MAX_ORGANIZATION_SSO_DNS_TXT_ANSWER_BYTES
                 {
