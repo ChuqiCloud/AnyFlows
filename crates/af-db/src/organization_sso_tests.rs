@@ -332,7 +332,7 @@ fn provider_key(value: u8) -> OrganizationSsoProviderKey {
 }
 
 fn digest(value: char) -> String {
-    std::iter::repeat(value).take(64).collect()
+    std::iter::repeat_n(value, 64).collect()
 }
 
 fn active_entitlement() -> Result<OrganizationEntitlementWrite, Box<dyn Error>> {
@@ -385,12 +385,12 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
     }
     let organizations = OrganizationRepository::new(pool.clone(), Duration::from_secs(5))?;
     let mut organization_ids = Vec::new();
-    for index in 0..2 {
+    for (index, user_id) in user_ids.iter().take(2).enumerate() {
         let (organization, _) = organizations
             .create(OrganizationCreate::new(
                 format!("SSO Lab {index}"),
                 format!("sso-lab-{index}"),
-                user_ids[index],
+                *user_id,
                 active_entitlement()?,
             ))
             .await?
