@@ -9,6 +9,7 @@ mod oauth;
 mod organization_invitation;
 mod organization_sso_dns;
 mod organization_sso_login;
+mod organization_sso_oidc;
 mod system_secret;
 
 pub use credential_decryption::{
@@ -64,6 +65,10 @@ pub use organization_sso_login::{
     OrganizationSsoLoginError, OrganizationSsoLoginStart, OrganizationSsoOidcCallback,
     OrganizationSsoSamlCallback, organization_sso_login_state_digest,
     organization_sso_login_ticket_digest,
+};
+pub use organization_sso_oidc::{
+    OrganizationSsoOidcIdTokenError, OrganizationSsoOidcIdTokenVerificationConfig,
+    OrganizationSsoOidcIdTokenVerifier, VerifiedOrganizationSsoOidcIdentity,
 };
 pub use system_secret::{
     DecryptedSystemSecret, PlainSystemSecret, SystemSecretCipher, SystemSecretError,
