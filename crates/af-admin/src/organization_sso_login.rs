@@ -1,0 +1,520 @@
+use std::{
+    fmt,
+    future::Future,
+    pin::Pin,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+use af_account::{
+    OrganizationSsoLoginError, OrganizationSsoLoginStart, organization_sso_login_state_digest,
+    organization_sso_login_ticket_digest,
+};
+use af_db::{
+    OrganizationSsoLoginTransactionCreate, OrganizationSsoLoginTransactionRecord,
+    OrganizationSsoLoginTransactionResult, OrganizationSsoProviderRepository,
+    OrganizationSsoRepositoryError,
+};
+use af_domain::{
+    OrganizationId, OrganizationSsoProtocol, OrganizationSsoProviderKey,
+    OrganizationSsoProviderStatus,
+};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use thiserror::Error;
+use zeroize::{Zeroize as _, Zeroizing};
+
+const LOGIN_TRANSACTION_TTL_SECONDS: i64 = 10 * 60;
+const LOGIN_TICKET_TTL_SECONDS: i64 = 2 * 60;
+const TICKET_RANDOM_BYTES: usize = 32;
+const VERIFIED_RESULT_CODE: i16 = 1;
+const REJECTED_RESULT_CODE: i16 = 2;
+
+/// 企业 SSO 登录事务服务的异步结果。
+pub type OrganizationSsoLoginTransactionFuture<'a, T> = Pin<
+    Box<dyn Future<Output = Result<T, OrganizationSsoLoginTransactionServiceError>> + Send + 'a>,
+>;
+
+/// 已领取登录事务的安全投影，不包含 state、PKCE verifier、nonce 或断言原文。
+#[derive(Clone, Eq, PartialEq)]
+pub struct ClaimedOrganizationSsoLoginTransaction {
+    transaction_id: i64,
+    provider_id: i64,
+    protocol: OrganizationSsoProtocol,
+    provider_version: i64,
+    request_digest: String,
+}
+
+impl ClaimedOrganizationSsoLoginTransaction {
+    fn from_record(record: OrganizationSsoLoginTransactionRecord) -> Self {
+        Self {
+            transaction_id: record.id(),
+            provider_id: record.provider_id(),
+            protocol: record.protocol(),
+            provider_version: record.provider_version(),
+            request_digest: record.request_digest().to_owned(),
+        }
+    }
+
+    /// 返回单次登录事务的内部标识，只可与同一企业范围共同使用。
+    #[must_use]
+    pub const fn transaction_id(&self) -> i64 {
+        self.transaction_id
+    }
+
+    /// 返回已绑定 Provider 的内部标识，供后续受控回调适配器读取同企业快照。
+    #[must_use]
+    pub const fn provider_id(&self) -> i64 {
+        self.provider_id
+    }
+
+    /// 返回事务创建时固定的协议，回调不得由客户端指定。
+    #[must_use]
+    pub const fn protocol(&self) -> OrganizationSsoProtocol {
+        self.protocol
+    }
+
+    /// 返回事务创建时固定的 Provider 版本，后续回调必须复验该快照。
+    #[must_use]
+    pub const fn provider_version(&self) -> i64 {
+        self.provider_version
+    }
+
+    /// 返回调用方创建的请求摘要，用于与受控请求上下文进行一致性校验。
+    #[must_use]
+    pub fn request_digest(&self) -> &str {
+        &self.request_digest
+    }
+}
+
+impl fmt::Debug for ClaimedOrganizationSsoLoginTransaction {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ClaimedOrganizationSsoLoginTransaction")
+            .field("transaction_id", &self.transaction_id)
+            .field("provider_id", &self.provider_id)
+            .field("protocol", &self.protocol)
+            .field("provider_version", &self.provider_version)
+            .field("request_digest", &"<redacted>")
+            .finish()
+    }
+}
+
+/// 成功完成登录事务后仅返回一次的短期票据；Debug 不输出票据明文。
+#[derive(Eq, PartialEq)]
+pub struct IssuedOrganizationSsoLoginTicket {
+    ticket: String,
+    expires_at: i64,
+}
+
+impl IssuedOrganizationSsoLoginTicket {
+    /// 返回只可进行一次交换的明文票据，调用方不得记录或持久化该值。
+    #[must_use]
+    pub fn ticket(&self) -> &str {
+        &self.ticket
+    }
+
+    /// 返回票据的 UTC Unix 秒过期时间。
+    #[must_use]
+    pub const fn expires_at(&self) -> i64 {
+        self.expires_at
+    }
+}
+
+impl fmt::Debug for IssuedOrganizationSsoLoginTicket {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("IssuedOrganizationSsoLoginTicket")
+            .field("ticket", &"<redacted>")
+            .field("expires_at", &self.expires_at)
+            .finish()
+    }
+}
+
+/// 单次票据交换后的受控事务投影，供后续身份绑定层继续处理。
+#[derive(Clone, Eq, PartialEq)]
+pub struct ExchangedOrganizationSsoLoginTicket {
+    transaction_id: i64,
+    provider_id: i64,
+    protocol: OrganizationSsoProtocol,
+    provider_version: i64,
+    assertion_digest: String,
+}
+
+impl ExchangedOrganizationSsoLoginTicket {
+    fn from_record(
+        record: OrganizationSsoLoginTransactionRecord,
+    ) -> Result<Self, OrganizationSsoLoginTransactionServiceError> {
+        if record.result_code() != Some(VERIFIED_RESULT_CODE) {
+            return Err(OrganizationSsoLoginTransactionServiceError::Internal);
+        }
+        let assertion_digest = record
+            .assertion_digest()
+            .ok_or(OrganizationSsoLoginTransactionServiceError::Internal)?
+            .to_owned();
+        Ok(Self {
+            transaction_id: record.id(),
+            provider_id: record.provider_id(),
+            protocol: record.protocol(),
+            provider_version: record.provider_version(),
+            assertion_digest,
+        })
+    }
+
+    /// 返回事务内部标识，只可与同一企业范围共同使用。
+    #[must_use]
+    pub const fn transaction_id(&self) -> i64 {
+        self.transaction_id
+    }
+
+    /// 返回已绑定 Provider 的内部标识，供后续身份绑定适配器读取同企业快照。
+    #[must_use]
+    pub const fn provider_id(&self) -> i64 {
+        self.provider_id
+    }
+
+    /// 返回事务创建时锁定的协议。
+    #[must_use]
+    pub const fn protocol(&self) -> OrganizationSsoProtocol {
+        self.protocol
+    }
+
+    /// 返回事务创建时锁定的 Provider 版本。
+    #[must_use]
+    pub const fn provider_version(&self) -> i64 {
+        self.provider_version
+    }
+
+    /// 返回经协议验证器计算的断言摘要，不返回断言正文。
+    #[must_use]
+    pub fn assertion_digest(&self) -> &str {
+        &self.assertion_digest
+    }
+}
+
+impl fmt::Debug for ExchangedOrganizationSsoLoginTicket {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ExchangedOrganizationSsoLoginTicket")
+            .field("transaction_id", &self.transaction_id)
+            .field("provider_id", &self.provider_id)
+            .field("protocol", &self.protocol)
+            .field("provider_version", &self.provider_version)
+            .field("assertion_digest", &"<redacted>")
+            .finish()
+    }
+}
+
+/// 企业 SSO 登录事务的稳定错误分类，不携带 state、票据或断言原文。
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum OrganizationSsoLoginTransactionServiceError {
+    #[error("企业 SSO 登录事务输入无效")]
+    InvalidInput,
+    #[error("企业 SSO 登录 Provider 不可用")]
+    Unavailable,
+    #[error("企业 SSO 登录事务不存在或已被拒绝")]
+    Rejected,
+    #[error("企业 SSO 登录事务已过期")]
+    Expired,
+    #[error("企业 SSO 登录事务已处理")]
+    AlreadyProcessed,
+    #[error("企业 SSO 登录事务状态转换无效")]
+    InvalidTransition,
+    #[error("企业 SSO 登录事务服务内部失败")]
+    Internal,
+}
+
+/// 企业 SSO 登录事务协调服务；HTTP 路由必须继续在其外层固定回调地址和响应边界。
+pub trait OrganizationSsoLoginTransactionService: Send + Sync {
+    /// 读取当前 Active Provider 并创建仅含摘要的短期登录事务。
+    fn begin<'a>(
+        &'a self,
+        organization_id: OrganizationId,
+        provider_key: String,
+        request_digest: String,
+    ) -> OrganizationSsoLoginTransactionFuture<'a, OrganizationSsoLoginStart>;
+
+    /// 按企业范围原子领取 state；调用方须在任何外部协议请求前调用此方法。
+    fn claim<'a>(
+        &'a self,
+        organization_id: OrganizationId,
+        state: String,
+    ) -> OrganizationSsoLoginTransactionFuture<'a, ClaimedOrganizationSsoLoginTransaction>;
+
+    /// 在协议签名、配置版本和身份语义均已受控验证后，完成事务并签发单次票据。
+    fn complete_verified<'a>(
+        &'a self,
+        organization_id: OrganizationId,
+        transaction_id: i64,
+        assertion_digest: String,
+    ) -> OrganizationSsoLoginTransactionFuture<'a, IssuedOrganizationSsoLoginTicket>;
+
+    /// 在协议验证拒绝后封存已领取事务，不生成票据或持久化敏感原文。
+    fn complete_rejected<'a>(
+        &'a self,
+        organization_id: OrganizationId,
+        transaction_id: i64,
+    ) -> OrganizationSsoLoginTransactionFuture<'a, ()>;
+
+    /// 按企业范围原子交换一次性票据，供后续身份绑定层继续处理。
+    fn exchange_ticket<'a>(
+        &'a self,
+        organization_id: OrganizationId,
+        ticket: String,
+    ) -> OrganizationSsoLoginTransactionFuture<'a, ExchangedOrganizationSsoLoginTicket>;
+}
+
+/// 使用企业范围仓储协调短期登录事务，不持久化协议敏感材料。
+#[derive(Clone)]
+pub struct DatabaseOrganizationSsoLoginTransactionService {
+    repository: OrganizationSsoProviderRepository,
+}
+
+impl DatabaseOrganizationSsoLoginTransactionService {
+    /// 绑定已配置超时的企业 SSO 仓储。
+    #[must_use]
+    pub const fn new(repository: OrganizationSsoProviderRepository) -> Self {
+        Self { repository }
+    }
+
+    async fn begin_inner(
+        &self,
+        organization_id: OrganizationId,
+        provider_key: String,
+        request_digest: String,
+    ) -> Result<OrganizationSsoLoginStart, OrganizationSsoLoginTransactionServiceError> {
+        let provider_key = OrganizationSsoProviderKey::from_persistence_key(&provider_key)
+            .map_err(|_| OrganizationSsoLoginTransactionServiceError::InvalidInput)?;
+        let provider = self
+            .repository
+            .provider(organization_id, provider_key)
+            .await
+            .map_err(map_repository_error)?;
+        if provider.status() != OrganizationSsoProviderStatus::Active {
+            return Err(OrganizationSsoLoginTransactionServiceError::Unavailable);
+        }
+        let start =
+            OrganizationSsoLoginStart::new(request_digest).map_err(map_login_material_error)?;
+        let expires_at = expires_at(LOGIN_TRANSACTION_TTL_SECONDS)?;
+        self.repository
+            .create_login_transaction(
+                organization_id,
+                OrganizationSsoLoginTransactionCreate::new(
+                    provider_key,
+                    provider.protocol(),
+                    provider.version(),
+                    start.state_digest().to_owned(),
+                    start.request_digest().to_owned(),
+                    expires_at,
+                ),
+            )
+            .await
+            .map_err(map_repository_error)?;
+        Ok(start)
+    }
+
+    async fn claim_inner(
+        &self,
+        organization_id: OrganizationId,
+        state: String,
+    ) -> Result<ClaimedOrganizationSsoLoginTransaction, OrganizationSsoLoginTransactionServiceError>
+    {
+        // 先原子领取再进入协议层，避免同一 state 被并发回调重复消费。
+        let state_digest =
+            organization_sso_login_state_digest(&state).map_err(map_login_material_error)?;
+        let record = self
+            .repository
+            .claim_login_transaction(organization_id, state_digest, current_timestamp()?)
+            .await
+            .map_err(map_repository_error)?;
+        Ok(ClaimedOrganizationSsoLoginTransaction::from_record(record))
+    }
+
+    async fn complete_verified_inner(
+        &self,
+        organization_id: OrganizationId,
+        transaction_id: i64,
+        assertion_digest: String,
+    ) -> Result<IssuedOrganizationSsoLoginTicket, OrganizationSsoLoginTransactionServiceError> {
+        // 明文票据仅在成功完成后返回，数据库始终只接收域分离摘要。
+        let ticket = generate_ticket()?;
+        let ticket_digest =
+            organization_sso_login_ticket_digest(&ticket).map_err(map_login_material_error)?;
+        let expires_at = expires_at(LOGIN_TICKET_TTL_SECONDS)?;
+        self.repository
+            .complete_login_transaction(
+                organization_id,
+                transaction_id,
+                OrganizationSsoLoginTransactionResult::new(
+                    VERIFIED_RESULT_CODE,
+                    Some(ticket_digest),
+                    Some(expires_at),
+                    Some(assertion_digest),
+                    Some(expires_at),
+                ),
+                current_timestamp()?,
+            )
+            .await
+            .map_err(map_repository_error)?;
+        Ok(IssuedOrganizationSsoLoginTicket {
+            ticket: ticket.to_string(),
+            expires_at,
+        })
+    }
+
+    async fn complete_rejected_inner(
+        &self,
+        organization_id: OrganizationId,
+        transaction_id: i64,
+    ) -> Result<(), OrganizationSsoLoginTransactionServiceError> {
+        self.repository
+            .complete_login_transaction(
+                organization_id,
+                transaction_id,
+                OrganizationSsoLoginTransactionResult::new(
+                    REJECTED_RESULT_CODE,
+                    None,
+                    None,
+                    None,
+                    None,
+                ),
+                current_timestamp()?,
+            )
+            .await
+            .map_err(map_repository_error)?;
+        Ok(())
+    }
+
+    async fn exchange_ticket_inner(
+        &self,
+        organization_id: OrganizationId,
+        ticket: String,
+    ) -> Result<ExchangedOrganizationSsoLoginTicket, OrganizationSsoLoginTransactionServiceError>
+    {
+        let ticket_digest =
+            organization_sso_login_ticket_digest(&ticket).map_err(map_login_material_error)?;
+        let record = self
+            .repository
+            .exchange_ticket(organization_id, ticket_digest, current_timestamp()?)
+            .await
+            .map_err(map_repository_error)?;
+        ExchangedOrganizationSsoLoginTicket::from_record(record)
+    }
+}
+
+impl OrganizationSsoLoginTransactionService for DatabaseOrganizationSsoLoginTransactionService {
+    fn begin<'a>(
+        &'a self,
+        organization_id: OrganizationId,
+        provider_key: String,
+        request_digest: String,
+    ) -> OrganizationSsoLoginTransactionFuture<'a, OrganizationSsoLoginStart> {
+        Box::pin(self.begin_inner(organization_id, provider_key, request_digest))
+    }
+
+    fn claim<'a>(
+        &'a self,
+        organization_id: OrganizationId,
+        state: String,
+    ) -> OrganizationSsoLoginTransactionFuture<'a, ClaimedOrganizationSsoLoginTransaction> {
+        Box::pin(self.claim_inner(organization_id, state))
+    }
+
+    fn complete_verified<'a>(
+        &'a self,
+        organization_id: OrganizationId,
+        transaction_id: i64,
+        assertion_digest: String,
+    ) -> OrganizationSsoLoginTransactionFuture<'a, IssuedOrganizationSsoLoginTicket> {
+        Box::pin(self.complete_verified_inner(organization_id, transaction_id, assertion_digest))
+    }
+
+    fn complete_rejected<'a>(
+        &'a self,
+        organization_id: OrganizationId,
+        transaction_id: i64,
+    ) -> OrganizationSsoLoginTransactionFuture<'a, ()> {
+        Box::pin(self.complete_rejected_inner(organization_id, transaction_id))
+    }
+
+    fn exchange_ticket<'a>(
+        &'a self,
+        organization_id: OrganizationId,
+        ticket: String,
+    ) -> OrganizationSsoLoginTransactionFuture<'a, ExchangedOrganizationSsoLoginTicket> {
+        Box::pin(self.exchange_ticket_inner(organization_id, ticket))
+    }
+}
+
+impl fmt::Debug for DatabaseOrganizationSsoLoginTransactionService {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("DatabaseOrganizationSsoLoginTransactionService(<repository>)")
+    }
+}
+
+fn current_timestamp() -> Result<i64, OrganizationSsoLoginTransactionServiceError> {
+    let seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| OrganizationSsoLoginTransactionServiceError::Internal)?
+        .as_secs();
+    i64::try_from(seconds).map_err(|_| OrganizationSsoLoginTransactionServiceError::Internal)
+}
+
+fn expires_at(ttl_seconds: i64) -> Result<i64, OrganizationSsoLoginTransactionServiceError> {
+    current_timestamp()?
+        .checked_add(ttl_seconds)
+        .ok_or(OrganizationSsoLoginTransactionServiceError::Internal)
+}
+
+fn generate_ticket() -> Result<Zeroizing<String>, OrganizationSsoLoginTransactionServiceError> {
+    let mut bytes = [0_u8; TICKET_RANDOM_BYTES];
+    getrandom::fill(&mut bytes)
+        .map_err(|_| OrganizationSsoLoginTransactionServiceError::Internal)?;
+    let ticket = URL_SAFE_NO_PAD.encode(bytes);
+    bytes.zeroize();
+    Ok(Zeroizing::new(ticket))
+}
+
+const fn map_login_material_error(
+    error: OrganizationSsoLoginError,
+) -> OrganizationSsoLoginTransactionServiceError {
+    match error {
+        OrganizationSsoLoginError::InvalidDigest
+        | OrganizationSsoLoginError::InvalidState
+        | OrganizationSsoLoginError::InvalidTicket
+        | OrganizationSsoLoginError::MissingCallbackField
+        | OrganizationSsoLoginError::UnexpectedCallbackField
+        | OrganizationSsoLoginError::CallbackTooLarge => {
+            OrganizationSsoLoginTransactionServiceError::InvalidInput
+        }
+        OrganizationSsoLoginError::Entropy => OrganizationSsoLoginTransactionServiceError::Internal,
+    }
+}
+
+const fn map_repository_error(
+    error: OrganizationSsoRepositoryError,
+) -> OrganizationSsoLoginTransactionServiceError {
+    match error {
+        OrganizationSsoRepositoryError::InvalidInput => {
+            OrganizationSsoLoginTransactionServiceError::InvalidInput
+        }
+        OrganizationSsoRepositoryError::NotFound => {
+            OrganizationSsoLoginTransactionServiceError::Rejected
+        }
+        OrganizationSsoRepositoryError::Conflict | OrganizationSsoRepositoryError::Unavailable => {
+            OrganizationSsoLoginTransactionServiceError::Unavailable
+        }
+        OrganizationSsoRepositoryError::AlreadyProcessed => {
+            OrganizationSsoLoginTransactionServiceError::AlreadyProcessed
+        }
+        OrganizationSsoRepositoryError::Expired => {
+            OrganizationSsoLoginTransactionServiceError::Expired
+        }
+        OrganizationSsoRepositoryError::InvalidTransition => {
+            OrganizationSsoLoginTransactionServiceError::InvalidTransition
+        }
+        OrganizationSsoRepositoryError::Query
+        | OrganizationSsoRepositoryError::Timeout
+        | OrganizationSsoRepositoryError::Invariant => {
+            OrganizationSsoLoginTransactionServiceError::Internal
+        }
+    }
+}
