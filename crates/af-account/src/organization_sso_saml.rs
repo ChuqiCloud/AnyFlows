@@ -218,10 +218,7 @@ impl SAMLInputInspection {
             }
         }
 
-        let inside_signature = self
-            .stack
-            .iter()
-            .any(|kind| *kind == ElementKind::Signature);
+        let inside_signature = self.stack.contains(&ElementKind::Signature);
         if is_signature {
             if !is_dsig || !matches!(parent, Some(ElementKind::Response | ElementKind::Assertion)) {
                 return Err(OrganizationSsoSamlSignatureError::Rejected);
