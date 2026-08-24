@@ -786,6 +786,27 @@ impl OrganizationSsoProviderRepository {
         .await
     }
 
+    /// 按企业范围稳定列出 SSO 域名，不允许通过域名 ID 跨企业读取。
+    pub async fn list_domains(
+        &self,
+        organization_id: OrganizationId,
+    ) -> Result<Vec<OrganizationSsoDomainRecord>, OrganizationSsoRepositoryError> {
+        self.run(async move {
+            let models = organization_sso_domains::Entity::find()
+                .filter(organization_sso_domains::Column::OrganizationId.eq(organization_id.get()))
+                .order_by_asc(organization_sso_domains::Column::Id)
+                .all(self.pool.connection())
+                .await
+                .map_err(query_error)?;
+            let mut records = Vec::with_capacity(models.len());
+            for model in models {
+                records.push(domain_record(self.pool.connection(), model).await?);
+            }
+            Ok(records)
+        })
+        .await
+    }
+
     /// 按 CAS 推进域名 Pending/Verified/Revoked 状态。
     pub async fn update_domain(
         &self,

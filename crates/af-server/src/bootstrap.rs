@@ -1,10 +1,11 @@
 use std::{future::Future, sync::Arc, time::Duration};
 
 use af_account::{
-    CredentialDecryptionError, CredentialDecryptor, CredentialEncryptionError, CredentialEncryptor,
-    DiagnosticSnapshotCipher, OAuthLoginClient, OAuthProviderProfile, OAuthRefreshSupervisor,
-    OrganizationInvitationCipher, PlainSystemSecret, SystemSecretCipher, SystemSecretError,
-    SystemSecretKind,
+    ControlledOrganizationSsoDnsResolver, CredentialDecryptionError, CredentialDecryptor,
+    CredentialEncryptionError, CredentialEncryptor, DiagnosticSnapshotCipher, OAuthLoginClient,
+    OAuthProviderProfile, OAuthRefreshSupervisor, OrganizationInvitationCipher,
+    OrganizationSsoDnsResolverConfigError, PlainSystemSecret, SystemSecretCipher,
+    SystemSecretError, SystemSecretKind,
 };
 use af_admin::{
     AdminBalanceAlertSettingsService, AdminChannelReader, AdminChannelWriter,
@@ -24,24 +25,26 @@ use af_admin::{
     DatabaseAdminUserReader, DatabaseAdminUserWriter, DatabaseAdminWalletService,
     DatabaseInitialSetup, DatabaseOAuthLoginService, DatabaseOrganizationActivityService,
     DatabaseOrganizationBudgetService, DatabaseOrganizationCustomRoleBindingService,
-    DatabaseOrganizationCustomRoleService, DatabaseOrganizationSsoProviderService,
-    DatabaseOrganizationTokenService, DatabaseOrganizationWalletService,
-    DatabasePasskeyAuthenticationService, DatabasePasswordResetService,
-    DatabasePlatformAuditService, DatabasePlaygroundConversationService,
-    DatabasePlaygroundShareService, DatabaseRedemptionService, DatabaseRegistrationService,
-    DatabaseSessionAuthenticator, DatabaseSiteSettingsService, DatabaseSubscriptionService,
-    DatabaseTokenAuthenticator, DatabaseUserInvitationService, DatabaseUserNotificationService,
-    DatabaseUserProfileService, DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery,
-    InitialSetup, ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
+    DatabaseOrganizationCustomRoleService, DatabaseOrganizationSsoDomainService,
+    DatabaseOrganizationSsoProviderService, DatabaseOrganizationTokenService,
+    DatabaseOrganizationWalletService, DatabasePasskeyAuthenticationService,
+    DatabasePasswordResetService, DatabasePlatformAuditService,
+    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
+    DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
+    DatabaseSiteSettingsService, DatabaseSubscriptionService, DatabaseTokenAuthenticator,
+    DatabaseUserInvitationService, DatabaseUserNotificationService, DatabaseUserProfileService,
+    DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery, InitialSetup,
+    ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
     OAuthLoginService, OrganizationActivityService, OrganizationActivityServiceConfigError,
     OrganizationBudgetService, OrganizationCustomRoleBindingService, OrganizationCustomRoleService,
-    OrganizationSsoProviderService, OrganizationTokenService, OrganizationWalletService,
-    PasskeyAuthenticationService, PasskeyAuthenticationServiceConfigError, PasswordResetService,
-    PasswordResetServiceConfigError, PlatformAuditService, PlaygroundConversationService,
-    PlaygroundShareService, RedemptionService, RegistrationService, RegistrationServiceConfigError,
-    RuntimeRefreshingAdminGroupWriter, SessionAuthenticator, SessionAuthenticatorConfigError,
-    SiteSettingsService, SubscriptionService, TokenAuthenticator, UserInvitationService,
-    UserProfileService, UserTokenService, UserTopupService, UserWalletService,
+    OrganizationSsoDomainService, OrganizationSsoProviderService, OrganizationTokenService,
+    OrganizationWalletService, PasskeyAuthenticationService,
+    PasskeyAuthenticationServiceConfigError, PasswordResetService, PasswordResetServiceConfigError,
+    PlatformAuditService, PlaygroundConversationService, PlaygroundShareService, RedemptionService,
+    RegistrationService, RegistrationServiceConfigError, RuntimeRefreshingAdminGroupWriter,
+    SessionAuthenticator, SessionAuthenticatorConfigError, SiteSettingsService,
+    SubscriptionService, TokenAuthenticator, UserInvitationService, UserProfileService,
+    UserTokenService, UserTopupService, UserWalletService,
 };
 use af_analytics::{
     AdminDashboardChannelStorage, AdminDashboardReader, SplitAdminDashboardStorage,
@@ -218,6 +221,7 @@ pub struct AuthenticationReady {
     organization_custom_role_service: Arc<dyn OrganizationCustomRoleService>,
     organization_custom_role_binding_service: Arc<dyn OrganizationCustomRoleBindingService>,
     organization_sso_provider_service: Arc<dyn OrganizationSsoProviderService>,
+    organization_sso_domain_service: Arc<dyn OrganizationSsoDomainService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
     site_settings_repository: SiteSettingsRepository,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
@@ -533,6 +537,7 @@ pub enum BootstrapError {
     OrganizationTokenRepository(#[source] OrganizationTokenRepositoryConfigError),
     #[error("浼佷笟 SSO Provider 浠撳偍鍚姩鍙傛暟鏃犳晥")]
     OrganizationSsoProviderRepository(#[source] OrganizationSsoProviderRepositoryConfigError),
+    OrganizationSsoDnsResolver(#[source] OrganizationSsoDnsResolverConfigError),
     /// 企业邀请邮箱和令牌摘要密码学配置无效。
     #[error("企业邀请密码学配置无效")]
     OrganizationInvitationCipher(#[source] af_account::OrganizationInvitationCipherError),
@@ -967,6 +972,17 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::OrganizationSsoProviderRepository)?;
+        // 使用显式公共 nameserver，解析器关闭系统 hosts、缓存和 search 域影响。
+        let organization_sso_dns_resolver = Arc::new(
+            ControlledOrganizationSsoDnsResolver::new(
+                &[
+                    std::net::SocketAddr::from(([1, 1, 1, 1], 53)),
+                    std::net::SocketAddr::from(([8, 8, 8, 8], 53)),
+                ],
+                Duration::from_secs(5),
+            )
+            .map_err(BootstrapError::OrganizationSsoDnsResolver)?,
+        );
         let organization_invitation_cipher =
             OrganizationInvitationCipher::new(self.config.credential_encryption())
                 .map_err(BootstrapError::OrganizationInvitationCipher)?;
@@ -1194,8 +1210,14 @@ impl Bootstrap<DatabaseReady> {
                 organization_custom_role_binding_service,
                 organization_sso_provider_service: Arc::new(
                     DatabaseOrganizationSsoProviderService::new(
-                        organization_sso_provider_repository,
+                        organization_sso_provider_repository.clone(),
                         system_secret_cipher.clone(),
+                    ),
+                ),
+                organization_sso_domain_service: Arc::new(
+                    DatabaseOrganizationSsoDomainService::new(
+                        organization_sso_provider_repository,
+                        organization_sso_dns_resolver,
                     ),
                 ),
                 site_settings_service: Arc::new(DatabaseSiteSettingsService::new(
@@ -2363,6 +2385,9 @@ impl Bootstrap<Supervised> {
             )),
             Some(Arc::clone(
                 &self.stage.infrastructure.organization_sso_provider_service,
+            )),
+            Some(Arc::clone(
+                &self.stage.infrastructure.organization_sso_domain_service,
             )),
         );
         let Bootstrap {

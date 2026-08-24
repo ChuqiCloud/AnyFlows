@@ -346,6 +346,9 @@ mod tests {
             "createOrganizationSsoProvider",
             "getOrganizationSsoProvider",
             "updateOrganizationSsoProvider",
+            "listOrganizationSsoDomains",
+            "createOrganizationSsoDomain",
+            "verifyOrganizationSsoDomain",
             "getUserTopupConfiguration",
             "getUserWallet",
             "importMissingAdminModels",
@@ -507,6 +510,11 @@ mod tests {
         assert!(schemas.contains_key("OrganizationSsoProvider"));
         assert!(schemas.contains_key("OrganizationSsoProviderList"));
         assert!(schemas.contains_key("OrganizationSsoProviderRequest"));
+        assert!(schemas.contains_key("OrganizationSsoDomain"));
+        assert!(schemas.contains_key("OrganizationSsoDomainList"));
+        assert!(schemas.contains_key("OrganizationSsoDomainCreated"));
+        assert!(schemas.contains_key("OrganizationSsoDomainCreateRequest"));
+        assert!(schemas.contains_key("OrganizationSsoDomainVerifyRequest"));
         assert!(schemas.contains_key("OrganizationInvitationAcceptRequest"));
         assert!(schemas.contains_key("OrganizationInvitationResponse"));
         assert!(schemas.contains_key("OrganizationMemberCustomRoleRequest"));
