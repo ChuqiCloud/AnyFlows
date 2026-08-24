@@ -5,6 +5,7 @@ use utoipa::OpenApi;
 
 use crate::{
     management_error::ManagementErrorBody,
+    organization_sso_login::OrganizationSsoLoginCallbackErrorResponse,
     organizations::{
         OrganizationSsoDomainCreateRequest, OrganizationSsoDomainCreatedResponse,
         OrganizationSsoDomainListResponse, OrganizationSsoDomainResponse,
@@ -186,6 +187,39 @@ fn verify_organization_sso_domain() {}
 )]
 fn start_organization_sso_login() {}
 
+#[utoipa::path(
+    get,
+    path = "/api/auth/organization-sso/oidc/callback",
+    operation_id = "completeOrganizationSsoOidcLogin",
+    tag = "浼佷笟 SSO",
+    summary = "鎺ユ敹浼佷笟 OIDC 鍥炶皟",
+    params(
+        ("code" = String, Query, description = "OIDC 授权码"),
+        ("state" = String, Query, description = "一次性登录 state")
+    ),
+    responses(
+        (status = 400, description = "回调参数无效", body = OrganizationSsoLoginCallbackErrorResponse),
+        (status = 422, description = "回调被拒绝", body = OrganizationSsoLoginCallbackErrorResponse),
+        (status = 503, description = "回调暂不可用", body = OrganizationSsoLoginCallbackErrorResponse)
+    )
+)]
+fn complete_organization_sso_oidc_login() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/auth/organization-sso/saml/callback",
+    operation_id = "completeOrganizationSsoSamlLogin",
+    tag = "浼佷笟 SSO",
+    summary = "鎺ユ敹浼佷笟 SAML 鍥炶皟",
+    request_body = String,
+    responses(
+        (status = 400, description = "回调表单无效", body = OrganizationSsoLoginCallbackErrorResponse),
+        (status = 422, description = "回调被拒绝", body = OrganizationSsoLoginCallbackErrorResponse),
+        (status = 503, description = "回调暂不可用", body = OrganizationSsoLoginCallbackErrorResponse)
+    )
+)]
+fn complete_organization_sso_saml_login() {}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -196,7 +230,9 @@ fn start_organization_sso_login() {}
         list_organization_sso_domains,
         create_organization_sso_domain,
         verify_organization_sso_domain,
-        start_organization_sso_login
+        start_organization_sso_login,
+        complete_organization_sso_oidc_login,
+        complete_organization_sso_saml_login
     ),
     components(schemas(
         OrganizationSsoProviderResponse,
@@ -209,6 +245,7 @@ fn start_organization_sso_login() {}
         OrganizationSsoDomainVerifyRequest,
         OrganizationSsoLoginStartRequest,
         OrganizationSsoLoginStartResponse,
+        OrganizationSsoLoginCallbackErrorResponse,
         ManagementErrorBody
     ))
 )]

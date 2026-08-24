@@ -61,6 +61,7 @@ mod openapi;
 mod operations;
 mod organization_activity;
 mod organization_budget;
+mod organization_sso_login;
 mod organization_tokens;
 mod organization_wallet;
 mod organizations;

@@ -934,6 +934,21 @@ impl OrganizationSsoProviderRepository {
             .await
     }
 
+    /// 在尚不知道企业标识的固定回调入口中原子领取全局唯一 state。
+    ///
+    /// state 摘要由数据库唯一索引约束，领取后仍会锁定同企业 Provider，避免
+    /// 回调层通过猜测企业标识绕过 Provider 范围校验。
+    pub async fn claim_login_transaction_by_state(
+        &self,
+        state_digest: String,
+        now: i64,
+    ) -> Result<OrganizationSsoLoginTransactionRecord, OrganizationSsoRepositoryError> {
+        validate_digest(&state_digest)?;
+        let now = timestamp(now)?;
+        self.run(self.claim_login_transaction_by_state_inner(state_digest, now))
+            .await
+    }
+
     /// 将已领取事务一次性推进到结果并写入短期票据/断言摘要。
     pub async fn complete_login_transaction(
         &self,
@@ -1486,6 +1501,67 @@ impl OrganizationSsoProviderRepository {
                 organization_sso_login_transactions::Column::OrganizationId
                     .eq(organization_id.get()),
             )
+            .filter(organization_sso_login_transactions::Column::ClaimedAt.is_null())
+            .filter(organization_sso_login_transactions::Column::ExpiresAt.gt(now))
+            .col_expr(
+                organization_sso_login_transactions::Column::ClaimedAt,
+                Expr::value(now),
+            )
+            .col_expr(
+                organization_sso_login_transactions::Column::UpdatedAt,
+                Expr::value(now),
+            )
+            .exec(&transaction)
+            .await
+            .map_err(query_error)?;
+        if result.rows_affected != 1 {
+            rollback(transaction).await?;
+            return Err(OrganizationSsoRepositoryError::AlreadyProcessed);
+        }
+        let model = organization_sso_login_transactions::Entity::find_by_id(current.id)
+            .one(&transaction)
+            .await
+            .map_err(query_error)?
+            .ok_or_else(invariant)?;
+        let record = login_transaction_record(model)?;
+        commit(transaction).await?;
+        Ok(record)
+    }
+
+    async fn claim_login_transaction_by_state_inner(
+        &self,
+        state_digest: String,
+        now: TimeDateTimeWithTimeZone,
+    ) -> Result<OrganizationSsoLoginTransactionRecord, OrganizationSsoRepositoryError> {
+        let transaction = begin(&self.pool).await?;
+        let mut query = organization_sso_login_transactions::Entity::find()
+            .filter(organization_sso_login_transactions::Column::StateDigest.eq(&state_digest));
+        if transaction.get_database_backend() != DbBackend::Sqlite {
+            query = query.lock(LockType::Update);
+        }
+        let current = query
+            .one(&transaction)
+            .await
+            .map_err(query_error)?
+            .ok_or(OrganizationSsoRepositoryError::NotFound)?;
+        let organization_id =
+            OrganizationId::new(current.organization_id).map_err(|_| invariant())?;
+        if current.claimed_at.is_some() {
+            rollback(transaction).await?;
+            return Err(OrganizationSsoRepositoryError::AlreadyProcessed);
+        }
+        if current.expires_at <= now {
+            rollback(transaction).await?;
+            return Err(OrganizationSsoRepositoryError::Expired);
+        }
+        lock_active_provider_by_id(&transaction, organization_id, current.provider_id).await?;
+        let result = organization_sso_login_transactions::Entity::update_many()
+            .filter(organization_sso_login_transactions::Column::Id.eq(current.id))
+            .filter(
+                organization_sso_login_transactions::Column::OrganizationId
+                    .eq(organization_id.get()),
+            )
+            .filter(organization_sso_login_transactions::Column::StateDigest.eq(&state_digest))
             .filter(organization_sso_login_transactions::Column::ClaimedAt.is_null())
             .filter(organization_sso_login_transactions::Column::ExpiresAt.gt(now))
             .col_expr(

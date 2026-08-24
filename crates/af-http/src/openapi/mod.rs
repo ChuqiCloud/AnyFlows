@@ -350,6 +350,8 @@ mod tests {
             "createOrganizationSsoDomain",
             "verifyOrganizationSsoDomain",
             "startOrganizationSsoLogin",
+            "completeOrganizationSsoOidcLogin",
+            "completeOrganizationSsoSamlLogin",
             "getUserTopupConfiguration",
             "getUserWallet",
             "importMissingAdminModels",
@@ -518,6 +520,7 @@ mod tests {
         assert!(schemas.contains_key("OrganizationSsoDomainVerifyRequest"));
         assert!(schemas.contains_key("OrganizationSsoLoginStartRequest"));
         assert!(schemas.contains_key("OrganizationSsoLoginStartResponse"));
+        assert!(schemas.contains_key("OrganizationSsoLoginCallbackErrorResponse"));
         assert!(schemas.contains_key("OrganizationInvitationAcceptRequest"));
         assert!(schemas.contains_key("OrganizationInvitationResponse"));
         assert!(schemas.contains_key("OrganizationMemberCustomRoleRequest"));
