@@ -1762,7 +1762,7 @@ impl OrganizationSsoProviderRepository {
                 Expr::value(
                     result
                         .invitation_email_fingerprint
-                        .map(|value| SensitiveString::from(hex(&value))),
+                        .map(|value| SensitiveString::from(encode_digest(&value))),
                 ),
             )
             .col_expr(
@@ -2236,6 +2236,18 @@ fn decode_digest(value: &str) -> Result<[u8; 32], OrganizationSsoRepositoryError
     }
     Ok(output)
 }
+
+/// 将固定长度摘要编码为规范小写十六进制，供敏感持久化字段使用。
+fn encode_digest(value: &[u8; 32]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(64);
+    for byte in value {
+        output.push(HEX[usize::from(byte >> 4)] as char);
+        output.push(HEX[usize::from(byte & 0x0f)] as char);
+    }
+    output
+}
+
 fn hex_nibble(value: u8) -> Result<u8, OrganizationSsoRepositoryError> {
     match value {
         b'0'..=b'9' => Ok(value - b'0'),
