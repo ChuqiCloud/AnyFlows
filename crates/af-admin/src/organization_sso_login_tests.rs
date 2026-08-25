@@ -353,14 +353,16 @@ async fn exchanged_oidc_ticket_binds_invited_identity_once() -> Result<(), Box<d
         &DatabaseOptions::new("sqlite::memory:")?,
         MigrationOptions::default(),
     )
-    .await?;
+    .await
+    .map_err(|error| test_context("连接并迁移测试数据库", error))?;
     let InitialSetupOutcome::Initialized { user_id } =
         InitialSetupRepository::new(pool.clone(), Duration::from_secs(5))?
             .initialize(InitialSetupRecord::new(
                 "sso-jit-owner".to_owned(),
                 "sso jit owner password".to_owned(),
             ))
-            .await?
+            .await
+            .map_err(|error| test_context("完成首次安装", error))?
     else {
         panic!("测试数据库必须完成首次安装");
     };
@@ -372,7 +374,8 @@ async fn exchanged_oidc_ticket_binds_invited_identity_once() -> Result<(), Box<d
             user_id,
             sso_entitlement()?,
         ))
-        .await?
+        .await
+        .map_err(|error| test_context("创建企业组织", error))?
         .into_parts()
         .0
         .id();
@@ -390,14 +393,16 @@ async fn exchanged_oidc_ticket_binds_invited_identity_once() -> Result<(), Box<d
                 None,
             ),
         )
-        .await?;
+        .await
+        .map_err(|error| test_context("创建 OIDC Provider", error))?;
     add_verified_domain(
         &repository,
         organization_id,
         provider_key,
         "jit.example.com",
     )
-    .await?;
+    .await
+    .map_err(|error| test_context("验证企业 SSO 域名", error))?;
 
     let default_group = AdminGroupRepository::new(pool.clone(), Duration::from_secs(5))?
         .list(None, 1)
@@ -482,7 +487,10 @@ async fn exchanged_oidc_ticket_binds_invited_identity_once() -> Result<(), Box<d
         )
         .await
         .map_err(|error| test_context("完成登录事务", error))?;
-    let claimed = service.claim(organization_id, state).await?;
+    let claimed = service
+        .claim(organization_id, state)
+        .await
+        .map_err(|error| test_context("领取登录事务", error))?;
     assert_eq!(claimed.transaction_id(), transaction.id());
 
     let ticket = "sso-jit-ticket-once";
@@ -552,8 +560,12 @@ async fn exchanged_oidc_ticket_binds_invited_identity_once() -> Result<(), Box<d
             )
             .with_login_material_envelope(missing_envelope),
         )
-        .await?;
-    service.claim(organization_id, missing_state).await?;
+        .await
+        .map_err(|error| test_context("创建缺少邮箱指纹的登录事务", error))?;
+    service
+        .claim(organization_id, missing_state)
+        .await
+        .map_err(|error| test_context("领取缺少邮箱指纹的登录事务", error))?;
     let missing_ticket = "sso-jit-ticket-without-email-fingerprint";
     repository
         .complete_login_transaction(
@@ -568,7 +580,8 @@ async fn exchanged_oidc_ticket_binds_invited_identity_once() -> Result<(), Box<d
             ),
             now,
         )
-        .await?;
+        .await
+        .map_err(|error| test_context("完成缺少邮箱指纹的登录事务", error))?;
     assert!(matches!(
         service
             .exchange_ticket_and_bind_invited_identity(organization_id, missing_ticket.to_owned(),)
@@ -609,7 +622,8 @@ async fn add_verified_domain(
                 proof.expires_at(),
             ),
         )
-        .await?;
+        .await
+        .map_err(|error| test_context("创建企业 SSO 域名", error))?;
     let verification = OrganizationSsoDnsVerification::verify(
         &proof,
         OrganizationSsoDomainStatus::Pending,
@@ -619,7 +633,8 @@ async fn add_verified_domain(
     )?;
     repository
         .verify_domain(organization_id, record.id(), verification, record.version())
-        .await?;
+        .await
+        .map_err(|error| test_context("确认企业 SSO 域名", error))?;
     Ok(())
 }
 
