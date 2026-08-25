@@ -99,7 +99,7 @@ async fn login_transaction_service_binds_provider_and_consumes_ticket_once()
     let saml_provider_key = OrganizationSsoProviderKey::new([0x74; 16])?;
     let saml_provider = repository
         .create_provider(
-            first_organization,
+            second_organization,
             OrganizationSsoProviderCreate::new(
                 saml_provider_key,
                 OrganizationSsoProtocol::Saml,
@@ -112,13 +112,13 @@ async fn login_transaction_service_binds_provider_and_consumes_ticket_once()
         .await?;
     let saml_start = service
         .begin(
-            first_organization,
+            second_organization,
             saml_provider_key.persistence_key(),
             "b".repeat(64),
         )
         .await?;
     let saml_transaction = repository
-        .login_transaction(first_organization, saml_start.state_digest().to_owned())
+        .login_transaction(second_organization, saml_start.state_digest().to_owned())
         .await?;
     assert_eq!(saml_transaction.provider_id(), saml_provider.id());
     assert_eq!(saml_transaction.protocol(), OrganizationSsoProtocol::Saml);
