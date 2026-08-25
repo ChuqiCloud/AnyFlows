@@ -291,6 +291,50 @@ impl SystemSecretCipher {
         )
     }
 
+    /// 加密企业 OIDC 登录材料；事务 state 摘要、防止跨登录事务搬用的字段也参与 AAD。
+    pub fn encrypt_organization_sso_login_material(
+        &self,
+        organization_id: af_domain::OrganizationId,
+        provider_id: i64,
+        protocol: af_domain::OrganizationSsoProtocol,
+        config_version: i64,
+        state_digest: &str,
+        secret: &PlainSystemSecret,
+    ) -> Result<EncryptedCredentialEnvelope, SystemSecretError> {
+        self.encrypt_with_aad(
+            &organization_sso_login_material_aad(
+                organization_id,
+                provider_id,
+                protocol,
+                config_version,
+                state_digest,
+            )?,
+            secret,
+        )
+    }
+
+    /// 解密企业 OIDC 登录材料；企业、Provider、协议、版本和 state 摘要任一不一致都会失败。
+    pub fn decrypt_organization_sso_login_material(
+        &self,
+        organization_id: af_domain::OrganizationId,
+        provider_id: i64,
+        protocol: af_domain::OrganizationSsoProtocol,
+        config_version: i64,
+        state_digest: &str,
+        envelope: &EncryptedCredentialEnvelope,
+    ) -> Result<DecryptedSystemSecret, SystemSecretError> {
+        self.decrypt_with_aad(
+            &organization_sso_login_material_aad(
+                organization_id,
+                provider_id,
+                protocol,
+                config_version,
+                state_digest,
+            )?,
+            envelope,
+        )
+    }
+
     fn decrypt_with_aad(
         &self,
         aad: &[u8],
@@ -390,6 +434,31 @@ fn custom_oauth2_system_secret_aad(provider_key: &CustomOAuth2ProviderKey) -> Ve
         provider_key.as_str()
     )
     .into_bytes()
+}
+
+fn organization_sso_login_material_aad(
+    organization_id: af_domain::OrganizationId,
+    provider_id: i64,
+    protocol: af_domain::OrganizationSsoProtocol,
+    config_version: i64,
+    state_digest: &str,
+) -> Result<Vec<u8>, SystemSecretError> {
+    if provider_id <= 0
+        || config_version <= 0
+        || state_digest.len() != 64
+        || !state_digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err(SystemSecretError::InvalidPlaintext);
+    }
+    Ok(format!(
+        "anyflows:system-secret:v1:record=organizations:{}:sso:login-materials:provider={}:protocol={}:version={}:state={}:kind=organization_sso_login_material",
+        organization_id.get(),
+        provider_id,
+        protocol.code(),
+        config_version,
+        state_digest,
+    )
+    .into_bytes())
 }
 
 fn valid_plaintext(value: &str) -> bool {
@@ -667,8 +736,111 @@ mod tests {
                 SystemSecretError::Decrypt
             );
         }
+
         let rendered = format!("{cipher:?}{secret:?}{envelope:?}");
         assert!(!rendered.contains("organization-sso-secret"));
+    }
+
+    #[test]
+    fn organization_sso_login_material_is_bound_to_one_login_transaction() {
+        let cipher = SystemSecretCipher::new(&settings()).unwrap();
+        let organization = af_domain::OrganizationId::new(7).unwrap();
+        let provider_id = 19_i64;
+        let start = crate::OrganizationSsoLoginStart::new("a".repeat(64)).unwrap();
+        let state_digest = start.state_digest().to_owned();
+        let verifier = start.pkce_verifier().to_owned();
+        let nonce = start.nonce().to_owned();
+        let secret = start
+            .into_oidc_material()
+            .into_plain_system_secret()
+            .unwrap();
+        let envelope = cipher
+            .encrypt_organization_sso_login_material(
+                organization,
+                provider_id,
+                af_domain::OrganizationSsoProtocol::Oidc,
+                3,
+                &state_digest,
+                &secret,
+            )
+            .unwrap();
+        let decrypted = cipher
+            .decrypt_organization_sso_login_material(
+                organization,
+                provider_id,
+                af_domain::OrganizationSsoProtocol::Oidc,
+                3,
+                &state_digest,
+                &envelope,
+            )
+            .unwrap();
+        let restored =
+            crate::OrganizationSsoOidcLoginMaterial::from_decrypted_system_secret(decrypted)
+                .unwrap();
+        assert_eq!(restored.pkce_verifier(), verifier);
+        assert_eq!(restored.nonce(), nonce);
+        assert!(!format!("{restored:?}").contains(&verifier));
+        assert!(!format!("{restored:?}").contains(&nonce));
+        assert!(
+            cipher
+                .decrypt_organization_sso_login_material(
+                    af_domain::OrganizationId::new(8).unwrap(),
+                    provider_id,
+                    af_domain::OrganizationSsoProtocol::Oidc,
+                    3,
+                    &state_digest,
+                    &envelope,
+                )
+                .is_err()
+        );
+        assert!(
+            cipher
+                .decrypt_organization_sso_login_material(
+                    organization,
+                    provider_id,
+                    af_domain::OrganizationSsoProtocol::Saml,
+                    3,
+                    &state_digest,
+                    &envelope,
+                )
+                .is_err()
+        );
+        assert!(
+            cipher
+                .decrypt_organization_sso_login_material(
+                    organization,
+                    provider_id,
+                    af_domain::OrganizationSsoProtocol::Oidc,
+                    4,
+                    &state_digest,
+                    &envelope,
+                )
+                .is_err()
+        );
+        assert!(
+            cipher
+                .decrypt_organization_sso_login_material(
+                    organization,
+                    provider_id,
+                    af_domain::OrganizationSsoProtocol::Oidc,
+                    3,
+                    &"b".repeat(64),
+                    &envelope,
+                )
+                .is_err()
+        );
+        assert!(
+            cipher
+                .decrypt_organization_sso_login_material(
+                    organization,
+                    provider_id + 1,
+                    af_domain::OrganizationSsoProtocol::Oidc,
+                    3,
+                    &state_digest,
+                    &envelope,
+                )
+                .is_err()
+        );
     }
 
     fn settings() -> CredentialEncryptionSettings {

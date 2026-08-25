@@ -101,6 +101,7 @@ mod m20260823_000092_create_custom_oauth2_login;
 mod m20260823_000093_create_organization_custom_roles;
 mod m20260823_000094_add_organization_custom_role_bindings;
 mod m20260824_000095_create_organization_sso_persistence;
+mod m20260825_000096_add_organization_sso_login_material;
 mod schema;
 
 #[cfg(test)]
@@ -239,6 +240,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260823_000093_create_organization_custom_roles::Migration),
             Box::new(m20260823_000094_add_organization_custom_role_bindings::Migration),
             Box::new(m20260824_000095_create_organization_sso_persistence::Migration),
+            Box::new(m20260825_000096_add_organization_sso_login_material::Migration),
         ]
     }
 }

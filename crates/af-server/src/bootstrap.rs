@@ -1225,6 +1225,7 @@ impl Bootstrap<DatabaseReady> {
                 organization_sso_login_service: Arc::new(
                     DatabaseOrganizationSsoLoginTransactionService::new(
                         organization_sso_provider_repository,
+                        system_secret_cipher.clone(),
                     ),
                 ),
                 site_settings_service: Arc::new(DatabaseSiteSettingsService::new(

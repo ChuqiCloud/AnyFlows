@@ -1,14 +1,18 @@
 //! 企业 SSO 登录事务的协议材料与固定回调边界。
 //!
-//! 本模块只生成和校验短期内存材料；state、PKCE verifier、nonce 和断言正文
-//! 不应写入日志或数据库，持久化层只接收调用方计算好的摘要。
+//! 本模块只生成和校验短期登录材料；state、PKCE verifier、nonce 和断言正文
+//! 不得写入日志或数据库明文字段，持久化层只能接收摘要或系统密钥保护的封套。
 
-use std::fmt;
+use std::{fmt, mem};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use url::form_urlencoded;
+use zeroize::Zeroizing;
+
+use crate::{DecryptedSystemSecret, PlainSystemSecret};
 
 /// 企业 OIDC 固定回调路径。
 pub const ORGANIZATION_SSO_OIDC_CALLBACK_PATH: &str = "/api/auth/organization-sso/oidc/callback";
@@ -20,13 +24,13 @@ const MAX_CALLBACK_BYTES: usize = 16 * 1024;
 const MAX_SAML_RESPONSE_BYTES: usize = 256 * 1024;
 
 /// 企业 SSO 登录材料；Debug 只显示摘要和长度，不显示秘密原文。
-#[derive(Clone, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub struct OrganizationSsoLoginStart {
-    state: String,
+    state: Zeroizing<String>,
     state_digest: String,
-    pkce_verifier: String,
+    pkce_verifier: Zeroizing<String>,
     pkce_challenge: String,
-    nonce: String,
+    nonce: Zeroizing<String>,
     request_digest: String,
 }
 
@@ -41,18 +45,18 @@ impl OrganizationSsoLoginStart {
         let state_digest = organization_sso_login_state_digest(&state)?;
         let pkce_challenge = digest_base64(pkce_verifier.as_bytes());
         Ok(Self {
-            state,
+            state: Zeroizing::new(state),
             state_digest,
-            pkce_verifier,
+            pkce_verifier: Zeroizing::new(pkce_verifier),
             pkce_challenge,
-            nonce,
+            nonce: Zeroizing::new(nonce),
             request_digest,
         })
     }
 
     #[must_use]
     pub fn state(&self) -> &str {
-        &self.state
+        self.state.as_str()
     }
 
     #[must_use]
@@ -62,7 +66,7 @@ impl OrganizationSsoLoginStart {
 
     #[must_use]
     pub fn pkce_verifier(&self) -> &str {
-        &self.pkce_verifier
+        self.pkce_verifier.as_str()
     }
 
     #[must_use]
@@ -72,12 +76,21 @@ impl OrganizationSsoLoginStart {
 
     #[must_use]
     pub fn nonce(&self) -> &str {
-        &self.nonce
+        self.nonce.as_str()
     }
 
     #[must_use]
     pub fn request_digest(&self) -> &str {
         &self.request_digest
+    }
+
+    /// 消费启动材料并转交 OIDC 回调所需的短期秘密；调用方只能加密保存该对象。
+    #[must_use]
+    pub fn into_oidc_material(mut self) -> OrganizationSsoOidcLoginMaterial {
+        OrganizationSsoOidcLoginMaterial {
+            pkce_verifier: mem::take(&mut self.pkce_verifier),
+            nonce: mem::take(&mut self.nonce),
+        }
     }
 }
 
@@ -92,6 +105,78 @@ impl fmt::Debug for OrganizationSsoLoginStart {
             .field("request_digest", &self.request_digest)
             .finish()
     }
+}
+
+/// OIDC 回调恢复所需的短期秘密；仅可装入系统密钥封套或交给协议适配器。
+#[derive(PartialEq, Eq)]
+pub struct OrganizationSsoOidcLoginMaterial {
+    pkce_verifier: Zeroizing<String>,
+    nonce: Zeroizing<String>,
+}
+
+impl OrganizationSsoOidcLoginMaterial {
+    /// 返回 PKCE verifier；调用方不得记录、复制或持久化该值。
+    #[must_use]
+    pub fn pkce_verifier(&self) -> &str {
+        self.pkce_verifier.as_str()
+    }
+
+    /// 返回 ID Token nonce；调用方不得记录、复制或持久化该值。
+    #[must_use]
+    pub fn nonce(&self) -> &str {
+        self.nonce.as_str()
+    }
+
+    /// 序列化为受系统密钥保护的短期明文，不产生独立的秘密字段副本。
+    pub fn into_plain_system_secret(self) -> Result<PlainSystemSecret, OrganizationSsoLoginError> {
+        let wire = OrganizationSsoOidcLoginMaterialWireRef {
+            pkce_verifier: self.pkce_verifier.as_str(),
+            nonce: self.nonce.as_str(),
+        };
+        let serialized = serde_json::to_string(&wire)
+            .map_err(|_| OrganizationSsoLoginError::InvalidLoginMaterial)?;
+        PlainSystemSecret::new(serialized)
+            .map_err(|_| OrganizationSsoLoginError::InvalidLoginMaterial)
+    }
+
+    /// 从已解密的系统密钥恢复短期材料；未知字段和异常形状一律拒绝。
+    pub fn from_decrypted_system_secret(
+        secret: DecryptedSystemSecret,
+    ) -> Result<Self, OrganizationSsoLoginError> {
+        let serialized = secret.into_zeroizing();
+        let wire: OrganizationSsoOidcLoginMaterialWire = serde_json::from_str(serialized.as_str())
+            .map_err(|_| OrganizationSsoLoginError::InvalidLoginMaterial)?;
+        if !valid_parameter(&wire.pkce_verifier) || !valid_parameter(&wire.nonce) {
+            return Err(OrganizationSsoLoginError::InvalidLoginMaterial);
+        }
+        Ok(Self {
+            pkce_verifier: Zeroizing::new(wire.pkce_verifier),
+            nonce: Zeroizing::new(wire.nonce),
+        })
+    }
+}
+
+impl fmt::Debug for OrganizationSsoOidcLoginMaterial {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OrganizationSsoOidcLoginMaterial")
+            .field("pkce_verifier", &"<redacted>")
+            .field("nonce", &"<redacted>")
+            .finish()
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OrganizationSsoOidcLoginMaterialWire {
+    pkce_verifier: String,
+    nonce: String,
+}
+
+#[derive(Serialize)]
+struct OrganizationSsoOidcLoginMaterialWireRef<'a> {
+    pkce_verifier: &'a str,
+    nonce: &'a str,
 }
 
 /// OIDC 回调中允许的最小材料；授权码只在内存中交给交换客户端。
@@ -201,6 +286,8 @@ pub enum OrganizationSsoLoginError {
     InvalidTicket,
     #[error("企业 SSO 随机材料生成失败")]
     Entropy,
+    #[error("企业 SSO 登录材料无效")]
+    InvalidLoginMaterial,
     #[error("企业 SSO 回调字段缺失")]
     MissingCallbackField,
     #[error("企业 SSO 回调字段不允许")]
