@@ -17024,6 +17024,16 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "OIDC 回调验证成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoLoginCallbackSuccessResponse"
+                }
+              }
+            }
+          },
           "400": {
             "description": "回调参数无效",
             "content": {
@@ -29978,6 +29988,24 @@
           },
           "message": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoLoginCallbackSuccessResponse": {
+        "type": "object",
+        "description": "OIDC 协议验证成功后返回的一次性登录票据；不返回 subject、Token 或 Provider 原文。",
+        "required": [
+          "ticket",
+          "expires_at"
+        ],
+        "properties": {
+          "ticket": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64"
           }
         },
         "additionalProperties": false

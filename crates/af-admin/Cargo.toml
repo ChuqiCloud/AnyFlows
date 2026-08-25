@@ -10,6 +10,7 @@ af-account = { path = "../af-account", version = "0.1.0" }
 af-billing = { path = "../af-billing", version = "0.1.0" }
 af-db = { path = "../af-db", version = "0.1.0" }
 af-domain = { path = "../af-domain", version = "0.1.0" }
+af-httpclient = { path = "../af-httpclient", version = "0.1.0" }
 base64.workspace = true
 getrandom.workspace = true
 hmac.workspace = true

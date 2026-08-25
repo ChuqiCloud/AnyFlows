@@ -14,6 +14,7 @@ use jsonwebtoken::{
     jwk::{Jwk, JwkSet, KeyAlgorithm, KeyOperations, PublicKeyUse},
 };
 use serde::Deserialize;
+use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 use url::Url;
 
@@ -72,6 +73,16 @@ impl VerifiedOrganizationSsoOidcIdentity {
     #[must_use]
     pub fn subject(&self) -> &str {
         &self.subject
+    }
+
+    /// 返回身份断言的域分离摘要；后续绑定只接收摘要，不接收 subject 原文。
+    #[must_use]
+    pub fn assertion_digest(&self) -> String {
+        let mut digest = Sha256::new();
+        digest.update(b"organization-sso-oidc-assertion-v1");
+        digest.update([0]);
+        digest.update(self.subject.as_bytes());
+        encode_digest(&digest.finalize())
     }
 }
 
@@ -299,6 +310,16 @@ fn valid_subject(value: &str) -> bool {
         && !value.chars().any(char::is_control)
 }
 
+fn encode_digest(digest: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(digest.len() * 2);
+    for &byte in digest {
+        output.push(char::from(HEX[usize::from(byte >> 4)]));
+        output.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    output
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -413,6 +434,29 @@ mod tests {
             validate_claims(&invalid, AUDIENCE, NONCE, NOW),
             Err(OrganizationSsoOidcIdTokenError::Rejected)
         );
+    }
+
+    #[test]
+    fn assertion_digest_is_stable_domain_separated_and_redacted() {
+        let identity = VerifiedOrganizationSsoOidcIdentity {
+            subject: "directory-subject-123".to_owned(),
+        };
+        let changed = VerifiedOrganizationSsoOidcIdentity {
+            subject: "directory-subject-456".to_owned(),
+        };
+
+        assert_eq!(identity.assertion_digest(), identity.assertion_digest());
+        assert_ne!(identity.assertion_digest(), changed.assertion_digest());
+        assert_eq!(identity.assertion_digest().len(), 64);
+        assert!(
+            identity
+                .assertion_digest()
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
+        );
+
+        let debug = format!("{identity:?}");
+        assert!(!debug.contains(identity.subject()));
     }
 
     #[test]

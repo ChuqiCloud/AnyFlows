@@ -36,6 +36,14 @@ pub(crate) struct OrganizationSsoLoginCallbackErrorResponse {
     message: &'static str,
 }
 
+/// OIDC 协议验证成功后返回的一次性登录票据；不返回 subject、Token 或 Provider 原文。
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct OrganizationSsoLoginCallbackSuccessResponse {
+    ticket: String,
+    expires_at: i64,
+}
+
 /// 构建不需要登录会话的企业 SSO 固定回调路由。
 pub(crate) fn build_organization_sso_login_router(
     service: Arc<dyn OrganizationSsoLoginTransactionService>,
@@ -62,7 +70,25 @@ async fn complete_oidc_callback(
         Ok(callback) => callback,
         Err(_) => return callback_error(StatusCode::BAD_REQUEST, "invalid_request"),
     };
-    process_claimed_callback(&state, callback.state(), OrganizationSsoProtocol::Oidc).await
+    let claimed = match state
+        .service
+        .claim_callback(callback.state().to_owned())
+        .await
+    {
+        Ok(claimed) => claimed,
+        Err(error) => return map_claim_error(error),
+    };
+    if claimed.protocol() != OrganizationSsoProtocol::Oidc {
+        return reject_claimed_callback(&state, claimed).await;
+    }
+    match state
+        .service
+        .complete_oidc_callback(claimed, callback.code().to_owned())
+        .await
+    {
+        Ok(ticket) => callback_success(ticket),
+        Err(error) => map_claim_error(error),
+    }
 }
 
 async fn complete_saml_callback(
@@ -149,6 +175,23 @@ fn callback_error(status: StatusCode, code: &'static str) -> Response {
     response
 }
 
+fn callback_success(ticket: af_admin::IssuedOrganizationSsoLoginTicket) -> Response {
+    callback_success_response(ticket.ticket(), ticket.expires_at())
+}
+
+/// 以固定的最小投影返回已签发票据，避免回调边界意外扩展敏感字段。
+fn callback_success_response(ticket: &str, expires_at: i64) -> Response {
+    let mut response = no_store_json(OrganizationSsoLoginCallbackSuccessResponse {
+        ticket: ticket.to_owned(),
+        expires_at,
+    });
+    *response.status_mut() = StatusCode::OK;
+    response
+        .headers_mut()
+        .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -162,6 +205,7 @@ mod tests {
         body::{Body, to_bytes},
         http::{Request, StatusCode},
     };
+    use serde_json::Value;
     use tower::ServiceExt as _;
 
     use super::*;
@@ -245,5 +289,33 @@ mod tests {
         let body = String::from_utf8_lossy(&body);
         assert!(!body.contains("secret-code"));
         assert!(!body.contains("secret-state"));
+    }
+
+    #[tokio::test]
+    async fn successful_oidc_callback_response_only_contains_ticket_and_expiry() {
+        let response = callback_success_response("ticket-material", 1_800_000_000);
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(CACHE_CONTROL),
+            Some(&HeaderValue::from_static("no-store"))
+        );
+
+        let body = to_bytes(response.into_body(), 4096)
+            .await
+            .expect("璇诲彇鎴愬姛鍥炶皟鍝嶅簲");
+        let body: Value = serde_json::from_slice(&body).expect("瑙ｆ瀽鎴愬姛鍥炶皟 JSON");
+        let object = body.as_object().expect("鎴愬姛鍥炶皟搴旇鏄璞?");
+        assert_eq!(object.len(), 2);
+        assert_eq!(
+            object.get("ticket").and_then(Value::as_str),
+            Some("ticket-material")
+        );
+        assert_eq!(
+            object.get("expires_at").and_then(Value::as_i64),
+            Some(1_800_000_000)
+        );
+        for sensitive in ["code", "state", "nonce", "token", "subject"] {
+            assert!(!body.to_string().contains(sensitive));
+        }
     }
 }

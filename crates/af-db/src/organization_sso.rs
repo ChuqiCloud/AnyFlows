@@ -714,6 +714,29 @@ impl OrganizationSsoProviderRepository {
         .await
     }
 
+    /// 按已领取事务绑定的数据库 Provider ID 读取同一企业内的配置投影。
+    pub async fn provider_by_id(
+        &self,
+        organization_id: OrganizationId,
+        provider_id: i64,
+    ) -> Result<OrganizationSsoProviderRecord, OrganizationSsoRepositoryError> {
+        if provider_id <= 0 {
+            return Err(OrganizationSsoRepositoryError::InvalidInput);
+        }
+        self.run(async move {
+            let model = organization_sso_providers::Entity::find_by_id(provider_id)
+                .filter(
+                    organization_sso_providers::Column::OrganizationId.eq(organization_id.get()),
+                )
+                .one(self.pool.connection())
+                .await
+                .map_err(query_error)?
+                .ok_or(OrganizationSsoRepositoryError::NotFound)?;
+            provider_record(model)
+        })
+        .await
+    }
+
     /// 按企业稳定 ID 顺序列出 Provider。
     pub async fn list_providers(
         &self,
@@ -747,6 +770,38 @@ impl OrganizationSsoProviderRepository {
                 .filter(
                     organization_sso_providers::Column::ProviderKey
                         .eq(provider_key.persistence_key()),
+                )
+                .one(self.pool.connection())
+                .await
+                .map_err(query_error)?
+                .ok_or(OrganizationSsoRepositoryError::NotFound)?;
+            model
+                .secret_envelope
+                .map(|value| {
+                    let (key_id, nonce, ciphertext) = value
+                        .envelope_parts()
+                        .map_err(|_| OrganizationSsoRepositoryError::InvalidInput)?;
+                    EncryptedCredentialEnvelope::new(key_id, nonce, ciphertext)
+                        .map_err(|_| OrganizationSsoRepositoryError::InvalidInput)
+                })
+                .transpose()
+        })
+        .await
+    }
+
+    /// 按已领取事务绑定的 Provider ID 读取密钥封套，并再次限定企业边界。
+    pub async fn provider_secret_by_id(
+        &self,
+        organization_id: OrganizationId,
+        provider_id: i64,
+    ) -> Result<Option<EncryptedCredentialEnvelope>, OrganizationSsoRepositoryError> {
+        if provider_id <= 0 {
+            return Err(OrganizationSsoRepositoryError::InvalidInput);
+        }
+        self.run(async move {
+            let model = organization_sso_providers::Entity::find_by_id(provider_id)
+                .filter(
+                    organization_sso_providers::Column::OrganizationId.eq(organization_id.get()),
                 )
                 .one(self.pool.connection())
                 .await

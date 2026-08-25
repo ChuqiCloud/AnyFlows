@@ -135,6 +135,7 @@ dependencies = [
  "af-config",
  "af-db",
  "af-domain",
+ "af-httpclient",
  "base64 0.22.1",
  "getrandom 0.4.3",
  "hmac 0.12.1",
