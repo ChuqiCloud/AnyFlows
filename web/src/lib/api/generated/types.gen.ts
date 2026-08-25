@@ -1629,6 +1629,10 @@ export type OrganizationSsoLoginCallbackErrorResponse = {
     code: string;
     message: string;
 };
+export type OrganizationSsoLoginCallbackSuccessResponse = {
+    ticket: string;
+    expires_at: number;
+};
 export type OrganizationSsoLoginStartRequest = {
     provider_key: string;
     request_digest: string;
@@ -6453,6 +6457,10 @@ export type CompleteOrganizationSsoOidcLoginErrors = {
     503: OrganizationSsoLoginCallbackErrorResponse;
 };
 export type CompleteOrganizationSsoOidcLoginError = CompleteOrganizationSsoOidcLoginErrors[keyof CompleteOrganizationSsoOidcLoginErrors];
+export type CompleteOrganizationSsoOidcLoginResponses = {
+    200: OrganizationSsoLoginCallbackSuccessResponse;
+};
+export type CompleteOrganizationSsoOidcLoginResponse = CompleteOrganizationSsoOidcLoginResponses[keyof CompleteOrganizationSsoOidcLoginResponses];
 export type CompleteOrganizationSsoSamlLoginData = {
     body: string;
     path?: never;
