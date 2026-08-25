@@ -27,6 +27,8 @@ pub struct Model {
     #[sea_orm(column_type = "String(StringLen::N(64))", nullable)]
     pub assertion_digest: Option<SensitiveString>,
     pub assertion_expires_at: Option<TimeDateTimeWithTimeZone>,
+    #[sea_orm(column_type = "String(StringLen::N(64))", nullable)]
+    pub invitation_email_fingerprint: Option<SensitiveString>,
     pub created_at: TimeDateTimeWithTimeZone,
     pub updated_at: TimeDateTimeWithTimeZone,
 }

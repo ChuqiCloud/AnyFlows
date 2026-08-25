@@ -18,6 +18,8 @@ use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 use url::Url;
 
+use crate::PlainOrganizationInvitationEmail;
+
 const MAX_ISSUER_BYTES: usize = 2_048;
 const MAX_CLIENT_ID_BYTES: usize = 255;
 const MAX_ID_TOKEN_BYTES: usize = 16 * 1024;
@@ -63,9 +65,9 @@ impl fmt::Debug for OrganizationSsoOidcIdTokenVerificationConfig {
 }
 
 /// 已通过企业 OIDC ID Token 验证的最小身份投影。
-#[derive(Clone, Eq, PartialEq)]
 pub struct VerifiedOrganizationSsoOidcIdentity {
     subject: String,
+    invitation_email: PlainOrganizationInvitationEmail,
 }
 
 impl VerifiedOrganizationSsoOidcIdentity {
@@ -73,6 +75,12 @@ impl VerifiedOrganizationSsoOidcIdentity {
     #[must_use]
     pub fn subject(&self) -> &str {
         &self.subject
+    }
+
+    /// 返回已验证且已规范化的邮箱，只可用于企业邀请指纹计算。
+    #[must_use]
+    pub fn invitation_email(&self) -> &PlainOrganizationInvitationEmail {
+        &self.invitation_email
     }
 
     /// 返回经过验证的 subject 域分离摘要；沿用既有断言摘要域以兼容在途票据。
@@ -183,6 +191,8 @@ impl fmt::Debug for OrganizationSsoOidcIdTokenVerifier {
 #[derive(Deserialize)]
 struct OrganizationSsoOidcIdTokenClaims {
     sub: String,
+    email: String,
+    email_verified: bool,
     aud: OrganizationSsoOidcAudience,
     azp: Option<String>,
     exp: i64,
@@ -210,6 +220,7 @@ fn validate_claims(
         || claims.exp <= now.saturating_sub(CLOCK_SKEW_SECONDS)
         || claims.nonce != expected_nonce
         || !valid_subject(&claims.sub)
+        || !claims.email_verified
     {
         return Err(OrganizationSsoOidcIdTokenError::Rejected);
     }
@@ -227,8 +238,11 @@ fn validate_claims(
                 && claims.azp.as_deref() == Some(expected_audience) => {}
         _ => return Err(OrganizationSsoOidcIdTokenError::Rejected),
     }
+    let invitation_email = PlainOrganizationInvitationEmail::new(claims.email.clone())
+        .map_err(|_| OrganizationSsoOidcIdTokenError::Rejected)?;
     Ok(VerifiedOrganizationSsoOidcIdentity {
         subject: claims.sub.clone(),
+        invitation_email,
     })
 }
 
@@ -344,6 +358,8 @@ mod tests {
     fn claims(aud: OrganizationSsoOidcAudience) -> OrganizationSsoOidcIdTokenClaims {
         OrganizationSsoOidcIdTokenClaims {
             sub: "directory-subject-123".to_owned(),
+            email: "member@example.com".to_owned(),
+            email_verified: true,
             aud,
             azp: None,
             exp: NOW + 300,
@@ -398,6 +414,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(verified.subject(), "directory-subject-123");
+        assert_eq!(
+            verified.invitation_email().expose_email(),
+            "member@example.com"
+        );
         assert!(!format!("{verified:?}").contains(verified.subject()));
 
         let mut multiple = claims(OrganizationSsoOidcAudience::Multiple(vec![
@@ -443,12 +463,37 @@ mod tests {
     }
 
     #[test]
+    fn claims_require_a_verified_normalized_email() {
+        let mut invalid = claims(OrganizationSsoOidcAudience::Single(AUDIENCE.to_owned()));
+        invalid.email_verified = false;
+        assert_eq!(
+            validate_claims(&invalid, AUDIENCE, NONCE, NOW),
+            Err(OrganizationSsoOidcIdTokenError::Rejected)
+        );
+
+        invalid = claims(OrganizationSsoOidcAudience::Single(AUDIENCE.to_owned()));
+        invalid.email = "Member@example.com".to_owned();
+        assert_eq!(
+            validate_claims(&invalid, AUDIENCE, NONCE, NOW),
+            Err(OrganizationSsoOidcIdTokenError::Rejected)
+        );
+    }
+
+    #[test]
     fn assertion_digest_is_stable_domain_separated_and_redacted() {
         let identity = VerifiedOrganizationSsoOidcIdentity {
             subject: "directory-subject-123".to_owned(),
+            invitation_email: PlainOrganizationInvitationEmail::new(
+                "member@example.com".to_owned(),
+            )
+            .unwrap(),
         };
         let changed = VerifiedOrganizationSsoOidcIdentity {
             subject: "directory-subject-456".to_owned(),
+            invitation_email: PlainOrganizationInvitationEmail::new(
+                "member@example.com".to_owned(),
+            )
+            .unwrap(),
         };
 
         assert_eq!(identity.assertion_digest(), identity.assertion_digest());
@@ -520,6 +565,8 @@ mod tests {
         header.kid = Some(TEST_KEY_ID.to_owned());
         let mut claims = json!({
             "sub": "directory-subject-123",
+            "email": "member@example.com",
+            "email_verified": true,
             "aud": audience,
             "azp": AUDIENCE,
             "exp": now + 300,

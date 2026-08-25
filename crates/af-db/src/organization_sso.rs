@@ -479,6 +479,7 @@ pub struct OrganizationSsoLoginTransactionResult {
     ticket_expires_at: Option<i64>,
     assertion_digest: Option<String>,
     assertion_expires_at: Option<i64>,
+    invitation_email_fingerprint: Option<[u8; 32]>,
 }
 
 impl OrganizationSsoLoginTransactionResult {
@@ -497,7 +498,15 @@ impl OrganizationSsoLoginTransactionResult {
             ticket_expires_at,
             assertion_digest,
             assertion_expires_at,
+            invitation_email_fingerprint: None,
         }
+    }
+
+    /// 绑定已验证 OIDC 邮箱的企业隔离指纹；调用方不得传入邮箱原文。
+    #[must_use]
+    pub fn with_invitation_email_fingerprint(mut self, fingerprint: [u8; 32]) -> Self {
+        self.invitation_email_fingerprint = Some(fingerprint);
+        self
     }
 }
 
@@ -520,6 +529,7 @@ pub struct OrganizationSsoLoginTransactionRecord {
     exchanged_at: Option<i64>,
     assertion_digest: Option<String>,
     assertion_expires_at: Option<i64>,
+    invitation_email_fingerprint: Option<[u8; 32]>,
 }
 
 impl fmt::Debug for OrganizationSsoLoginTransactionRecord {
@@ -543,6 +553,10 @@ impl fmt::Debug for OrganizationSsoLoginTransactionRecord {
             .field("exchanged_at", &self.exchanged_at)
             .field("has_assertion", &self.assertion_digest.is_some())
             .field("assertion_expires_at", &self.assertion_expires_at)
+            .field(
+                "has_invitation_email_fingerprint",
+                &self.invitation_email_fingerprint.is_some(),
+            )
             .finish_non_exhaustive()
     }
 }
@@ -612,6 +626,11 @@ impl OrganizationSsoLoginTransactionRecord {
     #[must_use]
     pub const fn assertion_expires_at(&self) -> Option<i64> {
         self.assertion_expires_at
+    }
+    /// 返回已验证 OIDC 邮箱的企业隔离指纹；SAML 与旧 ticket 不具备该投影。
+    #[must_use]
+    pub fn invitation_email_fingerprint(&self) -> Option<&[u8; 32]> {
+        self.invitation_email_fingerprint.as_ref()
     }
 }
 
@@ -1559,6 +1578,7 @@ impl OrganizationSsoProviderRepository {
             exchanged_at: Set(None),
             assertion_digest: Set(None),
             assertion_expires_at: Set(None),
+            invitation_email_fingerprint: Set(None),
             created_at: Set(now),
             updated_at: Set(now),
             ..Default::default()
@@ -1703,6 +1723,13 @@ impl OrganizationSsoProviderRepository {
             rollback(transaction).await?;
             return Err(OrganizationSsoRepositoryError::Expired);
         }
+        // 邮箱指纹只来自已验证的 OIDC ID Token，SAML 事务不得写入该投影。
+        if result.invitation_email_fingerprint.is_some()
+            && current.protocol != OrganizationSsoProtocol::Oidc.code()
+        {
+            rollback(transaction).await?;
+            return Err(OrganizationSsoRepositoryError::InvalidInput);
+        }
         let next = organization_sso_login_transactions::Entity::update_many()
             .filter(organization_sso_login_transactions::Column::Id.eq(transaction_id))
             .filter(
@@ -1729,6 +1756,14 @@ impl OrganizationSsoProviderRepository {
             .col_expr(
                 organization_sso_login_transactions::Column::AssertionExpiresAt,
                 Expr::value(result.assertion_expires_at.map(timestamp).transpose()?),
+            )
+            .col_expr(
+                organization_sso_login_transactions::Column::InvitationEmailFingerprint,
+                Expr::value(
+                    result
+                        .invitation_email_fingerprint
+                        .map(|value| SensitiveString::from(hex(&value))),
+                ),
             )
             .col_expr(
                 organization_sso_login_transactions::Column::UpdatedAt,
@@ -2132,6 +2167,12 @@ fn login_transaction_record(
     if let Some(value) = model.assertion_digest.as_ref() {
         validate_digest(value.as_str()).map_err(|_| invariant())?;
     }
+    let invitation_email_fingerprint = model
+        .invitation_email_fingerprint
+        .as_ref()
+        .map(|value| decode_digest(value.as_str()))
+        .transpose()
+        .map_err(|_| invariant())?;
     if model.id <= 0 || model.provider_version <= 0 {
         return Err(invariant());
     }
@@ -2159,6 +2200,7 @@ fn login_transaction_record(
         assertion_expires_at: model
             .assertion_expires_at
             .map(|value| value.unix_timestamp()),
+        invitation_email_fingerprint,
     })
 }
 
@@ -2182,6 +2224,23 @@ fn validate_digest(value: &str) -> Result<(), OrganizationSsoRepositoryError> {
         Err(OrganizationSsoRepositoryError::InvalidInput)
     } else {
         Ok(())
+    }
+}
+fn decode_digest(value: &str) -> Result<[u8; 32], OrganizationSsoRepositoryError> {
+    validate_digest(value)?;
+    let mut output = [0_u8; 32];
+    for (index, byte) in output.iter_mut().enumerate() {
+        let high = value.as_bytes()[index * 2];
+        let low = value.as_bytes()[index * 2 + 1];
+        *byte = (hex_nibble(high)? << 4) | hex_nibble(low)?;
+    }
+    Ok(output)
+}
+fn hex_nibble(value: u8) -> Result<u8, OrganizationSsoRepositoryError> {
+    match value {
+        b'0'..=b'9' => Ok(value - b'0'),
+        b'a'..=b'f' => Ok(value - b'a' + 10),
+        _ => Err(OrganizationSsoRepositoryError::InvalidInput),
     }
 }
 fn validate_expected_version(value: i64) -> Result<(), OrganizationSsoRepositoryError> {
@@ -2287,6 +2346,9 @@ fn validate_result(
         }
         (None, None) => {}
         _ => return Err(OrganizationSsoRepositoryError::InvalidInput),
+    }
+    if result.invitation_email_fingerprint.is_some() && result.assertion_digest.is_none() {
+        return Err(OrganizationSsoRepositoryError::InvalidInput);
     }
     Ok(())
 }

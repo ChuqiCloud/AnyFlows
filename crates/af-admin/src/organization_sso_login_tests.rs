@@ -1,7 +1,8 @@
 use std::{error::Error, time::Duration};
 
 use af_account::{
-    OrganizationSsoLoginStart, SystemSecretCipher, organization_sso_login_state_digest,
+    OrganizationInvitationCipher, OrganizationSsoLoginStart, SystemSecretCipher,
+    organization_sso_login_state_digest,
 };
 use af_config::{CREDENTIAL_ENCRYPTION_KEY_BYTES, CredentialEncryptionSettings};
 use af_db::{
@@ -79,8 +80,11 @@ async fn login_transaction_service_binds_provider_and_consumes_ticket_once()
         )
         .await?;
     let cipher = cipher();
-    let service =
-        DatabaseOrganizationSsoLoginTransactionService::new(repository.clone(), cipher.clone());
+    let service = DatabaseOrganizationSsoLoginTransactionService::new(
+        repository.clone(),
+        cipher.clone(),
+        invitation_cipher(),
+    );
 
     let start = service
         .begin(
@@ -352,12 +356,19 @@ fn entitlement() -> Result<OrganizationEntitlementWrite, Box<dyn Error>> {
 }
 
 fn cipher() -> SystemSecretCipher {
-    let settings: CredentialEncryptionSettings = serde_json::from_value(json!({
+    SystemSecretCipher::new(&cipher_settings()).expect("测试系统密钥必须有效")
+}
+
+fn invitation_cipher() -> OrganizationInvitationCipher {
+    OrganizationInvitationCipher::new(&cipher_settings()).expect("测试邀请密钥必须有效")
+}
+
+fn cipher_settings() -> CredentialEncryptionSettings {
+    serde_json::from_value(json!({
         "key_id": "organization-sso-login-test-key",
         "key": URL_SAFE_NO_PAD.encode([0x31; CREDENTIAL_ENCRYPTION_KEY_BYTES])
     }))
-    .expect("测试密钥配置必须有效");
-    SystemSecretCipher::new(&settings).expect("测试系统密钥必须有效")
+    .expect("测试密钥配置必须有效")
 }
 
 fn oidc_login_material(
