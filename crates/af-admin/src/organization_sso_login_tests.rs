@@ -146,7 +146,7 @@ async fn login_transaction_service_binds_provider_and_consumes_ticket_once()
         .complete_verified(
             second_organization,
             saml_claim.transaction_id(),
-            "s".repeat(64),
+            "e".repeat(64),
         )
         .await?;
     let saml_exchanged = service
