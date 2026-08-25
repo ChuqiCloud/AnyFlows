@@ -1625,6 +1625,10 @@ export type OrganizationSsoDomainList = {
 export type OrganizationSsoDomainVerifyRequest = {
     expected_version: number;
 };
+export type OrganizationSsoLoginCallbackErrorResponse = {
+    code: string;
+    message: string;
+};
 export type OrganizationSsoLoginStartRequest = {
     provider_key: string;
     request_digest: string;
@@ -6434,6 +6438,33 @@ export type StartOrganizationSsoLoginResponses = {
     200: OrganizationSsoLoginStartResponse;
 };
 export type StartOrganizationSsoLoginResponse = StartOrganizationSsoLoginResponses[keyof StartOrganizationSsoLoginResponses];
+export type CompleteOrganizationSsoOidcLoginData = {
+    body?: never;
+    path?: never;
+    query: {
+        code: string;
+        state: string;
+    };
+    url: '/api/auth/organization-sso/oidc/callback';
+};
+export type CompleteOrganizationSsoOidcLoginErrors = {
+    400: OrganizationSsoLoginCallbackErrorResponse;
+    422: OrganizationSsoLoginCallbackErrorResponse;
+    503: OrganizationSsoLoginCallbackErrorResponse;
+};
+export type CompleteOrganizationSsoOidcLoginError = CompleteOrganizationSsoOidcLoginErrors[keyof CompleteOrganizationSsoOidcLoginErrors];
+export type CompleteOrganizationSsoSamlLoginData = {
+    body: string;
+    path?: never;
+    query?: never;
+    url: '/api/auth/organization-sso/saml/callback';
+};
+export type CompleteOrganizationSsoSamlLoginErrors = {
+    400: OrganizationSsoLoginCallbackErrorResponse;
+    422: OrganizationSsoLoginCallbackErrorResponse;
+    503: OrganizationSsoLoginCallbackErrorResponse;
+};
+export type CompleteOrganizationSsoSamlLoginError = CompleteOrganizationSsoSamlLoginErrors[keyof CompleteOrganizationSsoSamlLoginErrors];
 export type ListOrganizationTokensData = {
     body?: never;
     path: {
