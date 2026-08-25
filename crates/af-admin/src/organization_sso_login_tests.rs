@@ -1,4 +1,7 @@
-use std::{error::Error, time::Duration};
+use std::{
+    error::Error,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use af_account::{
     OrganizationInvitationCipher, OrganizationSsoLoginStart, PlainOrganizationInvitationEmail,
@@ -22,8 +25,7 @@ use af_domain::{
     OrganizationSsoProtocol, OrganizationSsoProviderKey, OrganizationSsoProviderStatus,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use super::{
     DatabaseOrganizationSsoLoginTransactionService, OrganizationSsoLoginTransactionService,
@@ -648,7 +650,10 @@ fn sso_entitlement() -> Result<OrganizationEntitlementWrite, Box<dyn Error>> {
 }
 
 fn now_timestamp() -> i64 {
-    TimeDateTimeWithTimeZone::now_utc().unix_timestamp()
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("系统时间必须不早于 Unix 纪元")
+        .as_secs() as i64
 }
 
 fn cipher() -> SystemSecretCipher {
