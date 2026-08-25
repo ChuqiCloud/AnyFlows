@@ -1,5 +1,6 @@
 use std::{
     error::Error,
+    fmt,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -400,7 +401,8 @@ async fn exchanged_oidc_ticket_binds_invited_identity_once() -> Result<(), Box<d
 
     let default_group = AdminGroupRepository::new(pool.clone(), Duration::from_secs(5))?
         .list(None, 1)
-        .await?
+        .await
+        .map_err(|error| test_context("读取默认分组", error))?
         .into_parts()
         .0
         .into_iter()
@@ -417,7 +419,8 @@ async fn exchanged_oidc_ticket_binds_invited_identity_once() -> Result<(), Box<d
             DEFAULT_REGISTRATION_RATE_LIMIT_ATTEMPTS,
             DEFAULT_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS,
         ))
-        .await?;
+        .await
+        .map_err(|error| test_context("写入注册策略", error))?;
 
     let invitation_cipher = invitation_cipher();
     let invitation_email =
@@ -447,7 +450,8 @@ async fn exchanged_oidc_ticket_binds_invited_identity_once() -> Result<(), Box<d
                 now_timestamp().saturating_add(3_600),
             )?,
         )
-        .await?;
+        .await
+        .map_err(|error| test_context("创建企业邀请", error))?;
 
     let cipher = cipher();
     let service = DatabaseOrganizationSsoLoginTransactionService::new_with_organization_repository(
@@ -476,7 +480,8 @@ async fn exchanged_oidc_ticket_binds_invited_identity_once() -> Result<(), Box<d
             )
             .with_login_material_envelope(envelope),
         )
-        .await?;
+        .await
+        .map_err(|error| test_context("完成登录事务", error))?;
     let claimed = service.claim(organization_id, state).await?;
     assert_eq!(claimed.transaction_id(), transaction.id());
 
@@ -496,17 +501,22 @@ async fn exchanged_oidc_ticket_binds_invited_identity_once() -> Result<(), Box<d
             .with_invitation_email_fingerprint(invitation_fingerprint),
             now,
         )
-        .await?;
+        .await
+        .map_err(|error| test_context("ticket JIT 绑定", error))?;
 
     let membership = service
         .exchange_ticket_and_bind_invited_identity(organization_id, ticket.to_owned())
-        .await?;
+        .await
+        .map_err(|error| test_context("ticket JIT 服务绑定", error))?;
     assert_eq!(membership.role(), OrganizationRole::Member);
     assert_eq!(
         membership.status(),
         af_domain::OrganizationMembershipStatus::Active
     );
-    let invitations = organizations.list_invitations(organization_id).await?;
+    let invitations = organizations
+        .list_invitations(organization_id)
+        .await
+        .map_err(|error| test_context("读取邀请列表", error))?;
     assert_eq!(
         invitations[0].status(),
         af_domain::OrganizationInvitationStatus::Accepted
@@ -654,6 +664,10 @@ fn now_timestamp() -> i64 {
         .duration_since(UNIX_EPOCH)
         .expect("系统时间必须不早于 Unix 纪元")
         .as_secs() as i64
+}
+
+fn test_context(context: &str, error: impl fmt::Debug) -> std::io::Error {
+    std::io::Error::other(format!("{context}失败: {error:?}"))
 }
 
 fn cipher() -> SystemSecretCipher {
