@@ -441,6 +441,8 @@ fn allowed_internal_dependencies(name: &str) -> &'static [&'static str] {
             "af-config",
             "af-db",
             "af-domain",
+            // 企业 SSO 回调编排只能通过受控 HTTP Client 访问 Provider。
+            "af-httpclient",
             "af-scheduler",
         ],
         "af-relay" => &[
