@@ -230,7 +230,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri(format!(
-                        "{}?state=secret-state",
+                        "{}?code=secret-code&state=secret-state",
                         ORGANIZATION_SSO_OIDC_CALLBACK_PATH
                     ))
                     .body(Body::empty())
@@ -243,6 +243,7 @@ mod tests {
             .await
             .expect("读取错误响应");
         let body = String::from_utf8_lossy(&body);
+        assert!(!body.contains("secret-code"));
         assert!(!body.contains("secret-state"));
     }
 }

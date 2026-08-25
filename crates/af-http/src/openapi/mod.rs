@@ -205,7 +205,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 169);
+        assert_eq!(document.paths.paths.len(), 171);
         let operation_count = document
             .paths
             .paths
@@ -226,7 +226,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 234);
+        assert_eq!(operation_count, 236);
         assert!(
             document
                 .components
@@ -496,7 +496,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 388);
+        assert_eq!(schemas.len(), 389);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminDashboardChannelFlow"));
         assert!(schemas.contains_key("AdminDashboardFailure"));
