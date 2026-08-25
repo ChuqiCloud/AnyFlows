@@ -2401,9 +2401,15 @@ impl Bootstrap<Supervised> {
             Some(Arc::clone(
                 &self.stage.infrastructure.organization_sso_domain_service,
             )),
-            Some(Arc::clone(
-                &self.stage.infrastructure.organization_sso_login_service,
-            )),
+            // 路由只暴露事务服务契约，具体实现仍由启动阶段保留以注入共享 Client。
+            Some({
+                let service: Arc<dyn OrganizationSsoLoginTransactionService> = self
+                    .stage
+                    .infrastructure
+                    .organization_sso_login_service
+                    .clone();
+                service
+            }),
         );
         let Bootstrap {
             config,
