@@ -73,8 +73,9 @@ pub use organization_sso_oidc::{
     OrganizationSsoOidcIdTokenVerifier, VerifiedOrganizationSsoOidcIdentity,
 };
 pub use organization_sso_oidc_exchange::{
-    OrganizationSsoOidcTokenExchangeConfig, OrganizationSsoOidcTokenExchangeError,
-    OrganizationSsoOidcTokenExchangeInput,
+    OrganizationSsoOidcTokenExchangeClient, OrganizationSsoOidcTokenExchangeConfig,
+    OrganizationSsoOidcTokenExchangeError, OrganizationSsoOidcTokenExchangeInput,
+    OrganizationSsoOidcTokenSet,
 };
 pub use organization_sso_saml::{
     OrganizationSsoSamlSignatureError, OrganizationSsoSamlSignatureVerificationConfig,

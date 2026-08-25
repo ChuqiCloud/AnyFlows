@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, mem};
 
 use af_config::CredentialEncryptionSettings;
 use af_db::{CREDENTIAL_ENVELOPE_NONCE_BYTES, EncryptedCredentialEnvelope};
@@ -7,7 +7,7 @@ use chacha20poly1305::{
     aead::{Aead as _, KeyInit as _, Payload},
 };
 use thiserror::Error;
-use zeroize::Zeroize as _;
+use zeroize::{Zeroize as _, Zeroizing};
 
 use crate::credential_decryption::{CredentialKey, is_valid_key_id};
 use crate::oauth::CustomOAuth2ProviderKey;
@@ -149,6 +149,12 @@ impl DecryptedSystemSecret {
     #[must_use]
     pub fn expose_secret(&self) -> &str {
         &self.value
+    }
+
+    /// 将明文所有权转交给受控协议适配器，避免产生未清零的中间副本。
+    #[must_use]
+    pub fn into_zeroizing(mut self) -> Zeroizing<String> {
+        Zeroizing::new(mem::take(&mut self.value))
     }
 }
 
