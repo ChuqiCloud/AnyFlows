@@ -98,6 +98,7 @@ use crate::openai_speech::openai_speech;
 use crate::operations::{ReadinessHandle, operations_router};
 use crate::organization_activity::{PLATFORM_REASON_HEADER, build_organization_activity_router};
 use crate::organization_budget::build_organization_budget_router;
+use crate::organization_sso_login::build_organization_sso_login_router;
 use crate::organization_tokens::build_organization_token_router;
 use crate::organization_wallet::build_organization_wallet_router;
 use crate::organizations::build_organization_router_with_domain;
@@ -794,6 +795,10 @@ pub fn build_router(
         .merge(balance_alert_settings_routes);
     let management_routes = match oauth_login_routes {
         Some(routes) => management_routes.merge(routes),
+        None => management_routes,
+    };
+    let management_routes = match organization_sso_login_service.clone() {
+        Some(service) => management_routes.merge(build_organization_sso_login_router(service)),
         None => management_routes,
     };
     let management_routes = management_routes.merge(debug_trace_routes);

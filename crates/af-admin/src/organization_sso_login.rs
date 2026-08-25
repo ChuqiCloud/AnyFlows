@@ -98,6 +98,7 @@ impl OrganizationSsoLoginTransactionStart {
 #[derive(Clone, Eq, PartialEq)]
 pub struct ClaimedOrganizationSsoLoginTransaction {
     transaction_id: i64,
+    organization_id: OrganizationId,
     provider_id: i64,
     protocol: OrganizationSsoProtocol,
     provider_version: i64,
@@ -108,6 +109,7 @@ impl ClaimedOrganizationSsoLoginTransaction {
     fn from_record(record: OrganizationSsoLoginTransactionRecord) -> Self {
         Self {
             transaction_id: record.id(),
+            organization_id: record.organization_id(),
             provider_id: record.provider_id(),
             protocol: record.protocol(),
             provider_version: record.provider_version(),
@@ -119,6 +121,12 @@ impl ClaimedOrganizationSsoLoginTransaction {
     #[must_use]
     pub const fn transaction_id(&self) -> i64 {
         self.transaction_id
+    }
+
+    /// 返回 state 所属企业；固定回调入口只能从已领取事务取得该范围。
+    #[must_use]
+    pub const fn organization_id(&self) -> OrganizationId {
+        self.organization_id
     }
 
     /// 返回已绑定 Provider 的内部标识，供后续受控回调适配器读取同企业快照。
@@ -151,6 +159,7 @@ impl fmt::Debug for ClaimedOrganizationSsoLoginTransaction {
         formatter
             .debug_struct("ClaimedOrganizationSsoLoginTransaction")
             .field("transaction_id", &self.transaction_id)
+            .field("organization_id", &self.organization_id)
             .field("provider_id", &self.provider_id)
             .field("protocol", &self.protocol)
             .field("provider_version", &self.provider_version)
@@ -300,6 +309,12 @@ pub trait OrganizationSsoLoginTransactionService: Send + Sync {
         state: String,
     ) -> OrganizationSsoLoginTransactionFuture<'a, ClaimedOrganizationSsoLoginTransaction>;
 
+    /// 在固定回调路径中按全局唯一 state 原子领取事务并恢复企业范围。
+    fn claim_callback<'a>(
+        &'a self,
+        state: String,
+    ) -> OrganizationSsoLoginTransactionFuture<'a, ClaimedOrganizationSsoLoginTransaction>;
+
     /// 在协议签名、配置版本和身份语义均已受控验证后，完成事务并签发单次票据。
     fn complete_verified<'a>(
         &'a self,
@@ -397,6 +412,22 @@ impl DatabaseOrganizationSsoLoginTransactionService {
         Ok(ClaimedOrganizationSsoLoginTransaction::from_record(record))
     }
 
+    async fn claim_callback_inner(
+        &self,
+        state: String,
+    ) -> Result<ClaimedOrganizationSsoLoginTransaction, OrganizationSsoLoginTransactionServiceError>
+    {
+        // 固定回调没有企业路径参数，必须先由全局唯一 state 恢复并锁定企业范围。
+        let state_digest =
+            organization_sso_login_state_digest(&state).map_err(map_login_material_error)?;
+        let record = self
+            .repository
+            .claim_login_transaction_by_state(state_digest, current_timestamp()?)
+            .await
+            .map_err(map_repository_error)?;
+        Ok(ClaimedOrganizationSsoLoginTransaction::from_record(record))
+    }
+
     async fn complete_verified_inner(
         &self,
         organization_id: OrganizationId,
@@ -485,6 +516,13 @@ impl OrganizationSsoLoginTransactionService for DatabaseOrganizationSsoLoginTran
         state: String,
     ) -> OrganizationSsoLoginTransactionFuture<'a, ClaimedOrganizationSsoLoginTransaction> {
         Box::pin(self.claim_inner(organization_id, state))
+    }
+
+    fn claim_callback<'a>(
+        &'a self,
+        state: String,
+    ) -> OrganizationSsoLoginTransactionFuture<'a, ClaimedOrganizationSsoLoginTransaction> {
+        Box::pin(self.claim_callback_inner(state))
     }
 
     fn complete_verified<'a>(

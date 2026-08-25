@@ -113,6 +113,34 @@ async fn login_transaction_service_binds_provider_and_consumes_ticket_once()
         Err(OrganizationSsoLoginTransactionServiceError::AlreadyProcessed)
     ));
 
+    let callback_state = "fixed-callback-state".to_owned();
+    let callback_digest = organization_sso_login_state_digest(&callback_state)?;
+    let callback_transaction = repository
+        .create_login_transaction(
+            first_organization,
+            OrganizationSsoLoginTransactionCreate::new(
+                provider_key,
+                OrganizationSsoProtocol::Oidc,
+                provider.version(),
+                callback_digest,
+                "d".repeat(64),
+                4_102_444_800,
+            ),
+        )
+        .await?;
+    let callback_claim = service.claim_callback(callback_state.clone()).await?;
+    assert_eq!(callback_claim.transaction_id(), callback_transaction.id());
+    assert_eq!(callback_claim.organization_id(), first_organization);
+    assert_eq!(callback_claim.protocol(), OrganizationSsoProtocol::Oidc);
+    assert!(matches!(
+        service.claim_callback(callback_state.clone()).await,
+        Err(OrganizationSsoLoginTransactionServiceError::AlreadyProcessed)
+    ));
+    assert!(matches!(
+        service.claim(second_organization, callback_state).await,
+        Err(OrganizationSsoLoginTransactionServiceError::Rejected)
+    ));
+
     let assertion_digest = "b".repeat(64);
     let ticket = service
         .complete_verified(
