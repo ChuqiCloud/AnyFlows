@@ -16996,6 +16996,118 @@
         ]
       }
     },
+    "/api/auth/organization-sso/oidc/callback": {
+      "get": {
+        "tags": [
+          "浼佷笟 SSO"
+        ],
+        "summary": "鎺ユ敹浼佷笟 OIDC 鍥炶皟",
+        "operationId": "completeOrganizationSsoOidcLogin",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "description": "OIDC 授权码",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "description": "一次性登录 state",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "回调参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoLoginCallbackErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "回调被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoLoginCallbackErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "回调暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoLoginCallbackErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/organization-sso/saml/callback": {
+      "post": {
+        "tags": [
+          "浼佷笟 SSO"
+        ],
+        "summary": "鎺ユ敹浼佷笟 SAML 鍥炶皟",
+        "operationId": "completeOrganizationSsoSamlLogin",
+        "requestBody": {
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "400": {
+            "description": "回调表单无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoLoginCallbackErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "回调被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoLoginCallbackErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "回调暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoLoginCallbackErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/organizations/{organization_id}/tokens": {
       "get": {
         "tags": [
@@ -29849,6 +29961,23 @@
             "type": "integer",
             "format": "int64",
             "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoLoginCallbackErrorResponse": {
+        "type": "object",
+        "description": "企业 SSO 回调当前只返回稳定错误投影，不返回 state、授权码或断言原文。",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
           }
         },
         "additionalProperties": false
