@@ -222,7 +222,7 @@ pub struct AuthenticationReady {
     organization_custom_role_binding_service: Arc<dyn OrganizationCustomRoleBindingService>,
     organization_sso_provider_service: Arc<dyn OrganizationSsoProviderService>,
     organization_sso_domain_service: Arc<dyn OrganizationSsoDomainService>,
-    organization_sso_login_service: Arc<dyn OrganizationSsoLoginTransactionService>,
+    organization_sso_login_service: Arc<DatabaseOrganizationSsoLoginTransactionService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
     site_settings_repository: SiteSettingsRepository,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
@@ -1307,6 +1307,10 @@ impl Bootstrap<AuthenticationReady> {
         let (startup_config, max_cached_clients) = build_http_client_parts(&config)?;
         let upstream_clients = HttpClientProvider::new(startup_config.clone(), max_cached_clients)
             .map_err(BootstrapError::HttpClient)?;
+        // 回调编排只复用已完成 SSRF、代理和超时基线的共享 Client。
+        authentication
+            .organization_sso_login_service
+            .set_http_clients(upstream_clients.clone());
         if let Some(settings) = config.clickhouse_analytics() {
             let clickhouse_config =
                 crate::admin_dashboard_storage::ClickHouseAdminDashboardConfig::new(

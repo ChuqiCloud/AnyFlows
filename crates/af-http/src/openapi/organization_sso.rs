@@ -5,7 +5,9 @@ use utoipa::OpenApi;
 
 use crate::{
     management_error::ManagementErrorBody,
-    organization_sso_login::OrganizationSsoLoginCallbackErrorResponse,
+    organization_sso_login::{
+        OrganizationSsoLoginCallbackErrorResponse, OrganizationSsoLoginCallbackSuccessResponse,
+    },
     organizations::{
         OrganizationSsoDomainCreateRequest, OrganizationSsoDomainCreatedResponse,
         OrganizationSsoDomainListResponse, OrganizationSsoDomainResponse,
@@ -198,6 +200,7 @@ fn start_organization_sso_login() {}
         ("state" = String, Query, description = "一次性登录 state")
     ),
     responses(
+        (status = 200, description = "OIDC 回调验证成功", body = OrganizationSsoLoginCallbackSuccessResponse),
         (status = 400, description = "回调参数无效", body = OrganizationSsoLoginCallbackErrorResponse),
         (status = 422, description = "回调被拒绝", body = OrganizationSsoLoginCallbackErrorResponse),
         (status = 503, description = "回调暂不可用", body = OrganizationSsoLoginCallbackErrorResponse)
@@ -246,6 +249,7 @@ fn complete_organization_sso_saml_login() {}
         OrganizationSsoLoginStartRequest,
         OrganizationSsoLoginStartResponse,
         OrganizationSsoLoginCallbackErrorResponse,
+        OrganizationSsoLoginCallbackSuccessResponse,
         ManagementErrorBody
     ))
 )]

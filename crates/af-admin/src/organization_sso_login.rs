@@ -2,12 +2,17 @@ use std::{
     fmt,
     future::Future,
     pin::Pin,
+    sync::{Arc, RwLock},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use af_account::{
-    OrganizationSsoLoginError, OrganizationSsoLoginStart, OrganizationSsoOidcLoginMaterial,
-    SystemSecretCipher, organization_sso_login_state_digest, organization_sso_login_ticket_digest,
+    OrganizationSsoLoginError, OrganizationSsoLoginStart,
+    OrganizationSsoOidcIdTokenVerificationConfig, OrganizationSsoOidcIdTokenVerifier,
+    OrganizationSsoOidcJwksClient, OrganizationSsoOidcLoginMaterial,
+    OrganizationSsoOidcTokenExchangeClient, OrganizationSsoOidcTokenExchangeConfig,
+    OrganizationSsoOidcTokenExchangeInput, SystemSecretCipher, organization_sso_login_state_digest,
+    organization_sso_login_ticket_digest,
 };
 use af_db::{
     EncryptedCredentialEnvelope, OrganizationSsoLoginTransactionCreate,
@@ -18,6 +23,7 @@ use af_domain::{
     OrganizationId, OrganizationSsoProtocol, OrganizationSsoProviderKey,
     OrganizationSsoProviderStatus,
 };
+use af_httpclient::HttpClientProvider;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::{Value, json};
 use thiserror::Error;
@@ -352,6 +358,16 @@ pub trait OrganizationSsoLoginTransactionService: Send + Sync {
         organization_id: OrganizationId,
         ticket: String,
     ) -> OrganizationSsoLoginTransactionFuture<'a, ExchangedOrganizationSsoLoginTicket>;
+
+    /// 完成受控 OIDC 回调；只有交换、签名、声明和 nonce 全部通过后才签发一次性票据。
+    fn complete_oidc_callback<'a>(
+        &'a self,
+        claimed: ClaimedOrganizationSsoLoginTransaction,
+        code: String,
+    ) -> OrganizationSsoLoginTransactionFuture<'a, IssuedOrganizationSsoLoginTicket> {
+        let _ = (claimed, code);
+        Box::pin(async { Err(OrganizationSsoLoginTransactionServiceError::Unavailable) })
+    }
 }
 
 /// 使用企业范围仓储协调短期登录事务，不持久化协议敏感材料。
@@ -359,13 +375,134 @@ pub trait OrganizationSsoLoginTransactionService: Send + Sync {
 pub struct DatabaseOrganizationSsoLoginTransactionService {
     repository: OrganizationSsoProviderRepository,
     cipher: SystemSecretCipher,
+    http_clients: Arc<RwLock<Option<HttpClientProvider>>>,
 }
 
 impl DatabaseOrganizationSsoLoginTransactionService {
     /// 绑定企业 SSO 仓储和启动期系统密钥；密钥仅用于短期 OIDC 材料封套。
     #[must_use]
     pub fn new(repository: OrganizationSsoProviderRepository, cipher: SystemSecretCipher) -> Self {
-        Self { repository, cipher }
+        Self {
+            repository,
+            cipher,
+            http_clients: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    /// 注入已完成安全基线配置的共享 HTTP Client；只在服务器进入 relay 阶段后调用。
+    pub fn set_http_clients(&self, http_clients: HttpClientProvider) {
+        if let Ok(mut slot) = self.http_clients.write() {
+            *slot = Some(http_clients);
+        }
+    }
+
+    /// 编排受控 OIDC 回调；任一内部步骤失败都会封存已领取事务。
+    async fn complete_oidc_callback_inner(
+        &self,
+        claimed: ClaimedOrganizationSsoLoginTransaction,
+        code: String,
+    ) -> Result<IssuedOrganizationSsoLoginTicket, OrganizationSsoLoginTransactionServiceError> {
+        let organization_id = claimed.organization_id();
+        let transaction_id = claimed.transaction_id();
+        match self.complete_oidc_callback_attempt(&claimed, code).await {
+            Ok(ticket) => Ok(ticket),
+            Err(error) => match self
+                .complete_rejected_inner(organization_id, transaction_id)
+                .await
+            {
+                Ok(()) => Err(error),
+                Err(_) => Err(OrganizationSsoLoginTransactionServiceError::Internal),
+            },
+        }
+    }
+
+    /// 执行一次 OIDC 回调验证尝试，不在此方法中持久化失败结果。
+    async fn complete_oidc_callback_attempt(
+        &self,
+        claimed: &ClaimedOrganizationSsoLoginTransaction,
+        code: String,
+    ) -> Result<IssuedOrganizationSsoLoginTicket, OrganizationSsoLoginTransactionServiceError> {
+        if claimed.protocol() != OrganizationSsoProtocol::Oidc {
+            return Err(OrganizationSsoLoginTransactionServiceError::Rejected);
+        }
+        // 先复制短期材料，释放事务借用后再执行 Provider 和网络编排。
+        let organization_id = claimed.organization_id();
+        let transaction_id = claimed.transaction_id();
+        let provider_id = claimed.provider_id();
+        let provider_version = claimed.provider_version();
+        let (pkce_verifier, nonce) = {
+            let material = claimed
+                .oidc_login_material()
+                .ok_or(OrganizationSsoLoginTransactionServiceError::Rejected)?;
+            (
+                Zeroizing::new(material.pkce_verifier().to_owned()),
+                Zeroizing::new(material.nonce().to_owned()),
+            )
+        };
+        let provider = self
+            .repository
+            .provider_by_id(organization_id, provider_id)
+            .await
+            .map_err(map_repository_error)?;
+        if provider.protocol() != OrganizationSsoProtocol::Oidc
+            || provider.version() != provider_version
+            || provider.status() != OrganizationSsoProviderStatus::Active
+        {
+            return Err(OrganizationSsoLoginTransactionServiceError::Rejected);
+        }
+        let projection = provider
+            .metadata_projection()
+            .ok_or(OrganizationSsoLoginTransactionServiceError::Rejected)?;
+        let config = OrganizationSsoOidcTokenExchangeConfig::from_metadata_projection(
+            provider_version,
+            projection,
+        )
+        .map_err(|_| OrganizationSsoLoginTransactionServiceError::Rejected)?;
+        let envelope = self
+            .repository
+            .provider_secret_by_id(organization_id, provider_id)
+            .await
+            .map_err(map_repository_error)?
+            .ok_or(OrganizationSsoLoginTransactionServiceError::Unavailable)?;
+        let exchange = OrganizationSsoOidcTokenExchangeClient::from_encrypted_secret(
+            &self.cipher,
+            organization_id,
+            provider.provider_key(),
+            config.clone(),
+            &envelope,
+        )
+        .map_err(|_| OrganizationSsoLoginTransactionServiceError::Unavailable)?;
+        let http_clients = self
+            .http_clients
+            .read()
+            .ok()
+            .and_then(|slot| slot.clone())
+            .ok_or(OrganizationSsoLoginTransactionServiceError::Unavailable)?;
+        let http_client = http_clients
+            .get(None)
+            .map_err(|_| OrganizationSsoLoginTransactionServiceError::Unavailable)?;
+        let input = OrganizationSsoOidcTokenExchangeInput::new(code, pkce_verifier.to_string())
+            .map_err(|_| OrganizationSsoLoginTransactionServiceError::Rejected)?;
+        let token_set = exchange
+            .exchange(&http_client, input)
+            .await
+            .map_err(|_| OrganizationSsoLoginTransactionServiceError::Rejected)?;
+        let jwks = OrganizationSsoOidcJwksClient::from_token_exchange_config(&config)
+            .fetch(&http_client)
+            .await
+            .map_err(|_| OrganizationSsoLoginTransactionServiceError::Rejected)?;
+        let verifier = OrganizationSsoOidcIdTokenVerifier::new(
+            OrganizationSsoOidcIdTokenVerificationConfig::new(
+                config.issuer().to_string(),
+                config.audience().to_owned(),
+            )
+            .map_err(|_| OrganizationSsoLoginTransactionServiceError::Rejected)?,
+        );
+        let identity = verifier
+            .verify(token_set.id_token(), &jwks, nonce.as_str())
+            .map_err(|_| OrganizationSsoLoginTransactionServiceError::Rejected)?;
+        self.complete_verified(organization_id, transaction_id, identity.assertion_digest())
+            .await
     }
 
     async fn begin_inner(
@@ -635,6 +772,14 @@ impl OrganizationSsoLoginTransactionService for DatabaseOrganizationSsoLoginTran
         ticket: String,
     ) -> OrganizationSsoLoginTransactionFuture<'a, ExchangedOrganizationSsoLoginTicket> {
         Box::pin(self.exchange_ticket_inner(organization_id, ticket))
+    }
+
+    fn complete_oidc_callback<'a>(
+        &'a self,
+        claimed: ClaimedOrganizationSsoLoginTransaction,
+        code: String,
+    ) -> OrganizationSsoLoginTransactionFuture<'a, IssuedOrganizationSsoLoginTicket> {
+        Box::pin(self.complete_oidc_callback_inner(claimed, code))
     }
 }
 

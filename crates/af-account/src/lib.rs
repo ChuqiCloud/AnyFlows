@@ -11,6 +11,7 @@ mod organization_sso_dns;
 mod organization_sso_login;
 mod organization_sso_oidc;
 mod organization_sso_oidc_exchange;
+mod organization_sso_oidc_jwks;
 mod organization_sso_saml;
 mod system_secret;
 
@@ -77,6 +78,7 @@ pub use organization_sso_oidc_exchange::{
     OrganizationSsoOidcTokenExchangeError, OrganizationSsoOidcTokenExchangeInput,
     OrganizationSsoOidcTokenSet,
 };
+pub use organization_sso_oidc_jwks::{OrganizationSsoOidcJwksClient, OrganizationSsoOidcJwksError};
 pub use organization_sso_saml::{
     OrganizationSsoSamlSignatureError, OrganizationSsoSamlSignatureVerificationConfig,
     OrganizationSsoSamlSignatureVerifier, VerifiedOrganizationSsoSamlResponse,

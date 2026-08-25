@@ -35,6 +35,7 @@ pub struct OrganizationSsoOidcTokenExchangeConfig {
     provider_version: i64,
     issuer: Url,
     token_endpoint: Url,
+    jwks_uri: Url,
     client_id: String,
     audience: String,
     redirect_uri: Url,
@@ -46,6 +47,7 @@ impl OrganizationSsoOidcTokenExchangeConfig {
         provider_version: i64,
         issuer: String,
         token_endpoint: String,
+        jwks_uri: String,
         client_id: String,
         audience: String,
         redirect_uri: String,
@@ -55,6 +57,7 @@ impl OrganizationSsoOidcTokenExchangeConfig {
         }
         let issuer = parse_https_url(&issuer)?;
         let token_endpoint = parse_https_url(&token_endpoint)?;
+        let jwks_uri = parse_https_url(&jwks_uri)?;
         let redirect_uri = parse_https_url(&redirect_uri)?;
         if redirect_uri.path() != ORGANIZATION_SSO_OIDC_CALLBACK_PATH
             || redirect_uri.query().is_some()
@@ -71,6 +74,7 @@ impl OrganizationSsoOidcTokenExchangeConfig {
             provider_version,
             issuer,
             token_endpoint,
+            jwks_uri,
             client_id,
             audience,
             redirect_uri,
@@ -90,6 +94,12 @@ impl OrganizationSsoOidcTokenExchangeConfig {
     #[must_use]
     pub fn token_endpoint(&self) -> &Url {
         &self.token_endpoint
+    }
+
+    /// 返回与当前 Provider 版本绑定的受控 JWKS 地址。
+    #[must_use]
+    pub fn jwks_uri(&self) -> &Url {
+        &self.jwks_uri
     }
 
     #[must_use]
@@ -115,9 +125,10 @@ impl OrganizationSsoOidcTokenExchangeConfig {
         let object = projection
             .as_object()
             .ok_or(OrganizationSsoOidcTokenExchangeError::InvalidConfiguration)?;
-        const KEYS: [&str; 6] = [
+        const KEYS: [&str; 7] = [
             "issuer",
             "token_endpoint",
+            "jwks_uri",
             "client_id",
             "audience",
             "redirect_uri",
@@ -140,6 +151,7 @@ impl OrganizationSsoOidcTokenExchangeConfig {
             provider_version,
             string("issuer")?,
             string("token_endpoint")?,
+            string("jwks_uri")?,
             string("client_id")?,
             string("audience")?,
             string("redirect_uri")?,
@@ -154,6 +166,7 @@ impl fmt::Debug for OrganizationSsoOidcTokenExchangeConfig {
             .field("provider_version", &self.provider_version)
             .field("issuer", &"<redacted>")
             .field("token_endpoint", &"<redacted>")
+            .field("jwks_uri", &"<redacted>")
             .field("client_id", &"<redacted>")
             .field("audience", &"<redacted>")
             .field("redirect_uri", &"<redacted>")
@@ -584,6 +597,7 @@ mod tests {
             7,
             "https://idp.example.test/".to_owned(),
             "https://idp.example.test/oauth2/token".to_owned(),
+            "https://idp.example.test/oauth2/jwks".to_owned(),
             "client-id".to_owned(),
             "client-id".to_owned(),
             "https://app.example.test/api/auth/organization-sso/oidc/callback".to_owned(),
@@ -601,6 +615,7 @@ mod tests {
                 7,
                 "https://idp.example.test".to_owned(),
                 "https://idp.example.test/oauth2/token?unsafe=1".to_owned(),
+                "https://idp.example.test/oauth2/jwks".to_owned(),
                 "client-id".to_owned(),
                 "client-id".to_owned(),
                 "https://app.example.test/api/auth/organization-sso/oidc/callback".to_owned(),
@@ -612,6 +627,7 @@ mod tests {
                 7,
                 "https://idp.example.test".to_owned(),
                 "https://127.0.0.1/oauth2/token".to_owned(),
+                "https://idp.example.test/oauth2/jwks".to_owned(),
                 "client-id".to_owned(),
                 "client-id".to_owned(),
                 "https://app.example.test/api/auth/organization-sso/oidc/callback".to_owned(),
@@ -623,6 +639,7 @@ mod tests {
                 7,
                 "https://idp.example.test".to_owned(),
                 "https://idp.example.test/oauth2/token".to_owned(),
+                "https://idp.example.test/oauth2/jwks".to_owned(),
                 "client-id".to_owned(),
                 "client-id".to_owned(),
                 "https://app.example.test/unsafe-callback".to_owned(),
@@ -650,6 +667,7 @@ mod tests {
         let projection = json!({
             "issuer": "https://idp.example.test/",
             "token_endpoint": "https://idp.example.test/oauth2/token",
+            "jwks_uri": "https://idp.example.test/oauth2/jwks",
             "client_id": "client-id",
             "audience": "client-id",
             "redirect_uri": "https://app.example.test/api/auth/organization-sso/oidc/callback",
@@ -664,6 +682,7 @@ mod tests {
             json!({
                 "issuer": "https://idp.example.test/",
                 "token_endpoint": "https://idp.example.test/oauth2/token",
+                "jwks_uri": "https://idp.example.test/oauth2/jwks",
                 "client_id": "client-id",
                 "audience": "client-id",
                 "redirect_uri": "https://app.example.test/api/auth/organization-sso/oidc/callback",
