@@ -372,13 +372,17 @@ async fn exchanged_oidc_ticket_binds_invited_identity_once() -> Result<(), Box<d
             "SSO JIT Organization".to_owned(),
             "sso-jit-organization".to_owned(),
             user_id,
-            sso_entitlement()?,
+            entitlement()?,
         ))
         .await
         .map_err(|error| test_context("创建企业组织", error))?
         .into_parts()
         .0
         .id();
+    organizations
+        .replace_entitlement(organization_id, sso_entitlement(Some(1))?)
+        .await
+        .map_err(|error| test_context("开启企业 SSO 授权", error))?;
     let repository = OrganizationSsoProviderRepository::new(pool.clone(), Duration::from_secs(5))?;
     let provider_key = OrganizationSsoProviderKey::new([0x75; 16])?;
     let provider = repository
@@ -656,7 +660,9 @@ fn entitlement() -> Result<OrganizationEntitlementWrite, Box<dyn Error>> {
     )?)
 }
 
-fn sso_entitlement() -> Result<OrganizationEntitlementWrite, Box<dyn Error>> {
+fn sso_entitlement(
+    expected_version: Option<u64>,
+) -> Result<OrganizationEntitlementWrite, Box<dyn Error>> {
     Ok(OrganizationEntitlementWrite::new(
         OrganizationEntitlementSnapshot::new(
             OrganizationEntitlementCapacity::new(10, 10, 10)?,
@@ -670,7 +676,7 @@ fn sso_entitlement() -> Result<OrganizationEntitlementWrite, Box<dyn Error>> {
         )?,
         "organization-sso-jit-test".to_owned(),
         None,
-        None,
+        expected_version,
     )?)
 }
 
