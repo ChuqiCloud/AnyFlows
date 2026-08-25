@@ -513,6 +513,8 @@ fn encrypt_secret(
 
 fn envelope_json(envelope: &EncryptedCredentialEnvelope) -> Value {
     json!({
+        "version": 1,
+        "algorithm": "xchacha20poly1305",
         "key_id": envelope.key_id(),
         "nonce": URL_SAFE_NO_PAD.encode(envelope.nonce()),
         "ciphertext": URL_SAFE_NO_PAD.encode(envelope.ciphertext()),

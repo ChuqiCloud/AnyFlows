@@ -438,6 +438,7 @@ pub struct OrganizationSsoLoginTransactionCreate {
     provider_version: i64,
     state_digest: String,
     request_digest: String,
+    login_material_envelope: Option<Json>,
     expires_at: i64,
 }
 
@@ -458,8 +459,16 @@ impl OrganizationSsoLoginTransactionCreate {
             provider_version,
             state_digest,
             request_digest,
+            login_material_envelope: None,
             expires_at,
         }
+    }
+
+    /// 绑定仅含 PKCE verifier 与 nonce 的加密封套；仓储会再次校验固定封套形状。
+    #[must_use]
+    pub fn with_login_material_envelope(mut self, envelope: Json) -> Self {
+        self.login_material_envelope = Some(envelope);
+        self
     }
 }
 
@@ -502,6 +511,7 @@ pub struct OrganizationSsoLoginTransactionRecord {
     provider_version: i64,
     state_digest: String,
     request_digest: String,
+    login_material_envelope: Option<EncryptedCredentialEnvelope>,
     expires_at: i64,
     claimed_at: Option<i64>,
     result_code: Option<i16>,
@@ -521,6 +531,10 @@ impl fmt::Debug for OrganizationSsoLoginTransactionRecord {
             .field("provider_id", &self.provider_id)
             .field("protocol", &self.protocol)
             .field("provider_version", &self.provider_version)
+            .field(
+                "has_login_material",
+                &self.login_material_envelope.is_some(),
+            )
             .field("expires_at", &self.expires_at)
             .field("claimed_at", &self.claimed_at)
             .field("result_code", &self.result_code)
@@ -561,6 +575,11 @@ impl OrganizationSsoLoginTransactionRecord {
     #[must_use]
     pub fn request_digest(&self) -> &str {
         &self.request_digest
+    }
+    /// 返回受校验的短期登录材料封套；调用方只能交给对应 AAD 的系统密钥解密器。
+    #[must_use]
+    pub fn login_material_envelope(&self) -> Option<&EncryptedCredentialEnvelope> {
+        self.login_material_envelope.as_ref()
     }
     #[must_use]
     pub const fn expires_at(&self) -> i64 {
@@ -966,6 +985,20 @@ impl OrganizationSsoProviderRepository {
             now,
         ))
         .await
+    }
+
+    /// 封存已领取但未完成的事务，不产生票据或断言；即使刚好过期也必须允许失败补偿。
+    pub async fn reject_login_transaction(
+        &self,
+        organization_id: OrganizationId,
+        transaction_id: i64,
+        result_code: i16,
+    ) -> Result<OrganizationSsoLoginTransactionRecord, OrganizationSsoRepositoryError> {
+        if result_code <= 0 {
+            return Err(OrganizationSsoRepositoryError::InvalidInput);
+        }
+        self.run(self.reject_login_transaction_inner(organization_id, transaction_id, result_code))
+            .await
     }
 
     /// 原子交换一次性票据；票据过期或重复交换均拒绝。
@@ -1437,6 +1470,10 @@ impl OrganizationSsoProviderRepository {
         validate_expected_version(write.provider_version)?;
         validate_digest(&write.state_digest)?;
         validate_digest(&write.request_digest)?;
+        let login_material_envelope = write
+            .login_material_envelope
+            .map(parse_secret)
+            .transpose()?;
         let expires_at = timestamp(write.expires_at)?;
         let transaction = begin(&self.pool).await?;
         let provider =
@@ -1458,6 +1495,7 @@ impl OrganizationSsoProviderRepository {
             provider_version: Set(write.provider_version),
             state_digest: Set(write.state_digest.into()),
             request_digest: Set(write.request_digest.into()),
+            login_material_envelope: Set(login_material_envelope),
             expires_at: Set(expires_at),
             claimed_at: Set(None),
             result_code: Set(None),
@@ -1636,6 +1674,56 @@ impl OrganizationSsoProviderRepository {
             .col_expr(
                 organization_sso_login_transactions::Column::AssertionExpiresAt,
                 Expr::value(result.assertion_expires_at.map(timestamp).transpose()?),
+            )
+            .col_expr(
+                organization_sso_login_transactions::Column::UpdatedAt,
+                Expr::value(now),
+            )
+            .exec(&transaction)
+            .await
+            .map_err(query_error)?;
+        if next.rows_affected != 1 {
+            rollback(transaction).await?;
+            return Err(OrganizationSsoRepositoryError::Conflict);
+        }
+        let model = organization_sso_login_transactions::Entity::find_by_id(transaction_id)
+            .one(&transaction)
+            .await
+            .map_err(query_error)?
+            .ok_or_else(invariant)?;
+        let record = login_transaction_record(model)?;
+        commit(transaction).await?;
+        Ok(record)
+    }
+
+    async fn reject_login_transaction_inner(
+        &self,
+        organization_id: OrganizationId,
+        transaction_id: i64,
+        result_code: i16,
+    ) -> Result<OrganizationSsoLoginTransactionRecord, OrganizationSsoRepositoryError> {
+        let transaction = begin(&self.pool).await?;
+        let current = lock_login(&transaction, organization_id, transaction_id).await?;
+        if current.claimed_at.is_none() {
+            rollback(transaction).await?;
+            return Err(OrganizationSsoRepositoryError::InvalidTransition);
+        }
+        if current.result_code.is_some() {
+            rollback(transaction).await?;
+            return Err(OrganizationSsoRepositoryError::AlreadyProcessed);
+        }
+        // 解密失败发生在领取之后时仍须封存，不能因刚好越过短期过期线留下半完成事务。
+        let now = TimeDateTimeWithTimeZone::now_utc();
+        let next = organization_sso_login_transactions::Entity::update_many()
+            .filter(organization_sso_login_transactions::Column::Id.eq(transaction_id))
+            .filter(
+                organization_sso_login_transactions::Column::OrganizationId
+                    .eq(organization_id.get()),
+            )
+            .filter(organization_sso_login_transactions::Column::ResultCode.is_null())
+            .col_expr(
+                organization_sso_login_transactions::Column::ResultCode,
+                Expr::value(result_code),
             )
             .col_expr(
                 organization_sso_login_transactions::Column::UpdatedAt,
@@ -2000,6 +2088,10 @@ fn login_transaction_record(
         provider_version: model.provider_version,
         state_digest: model.state_digest.as_str().to_owned(),
         request_digest: model.request_digest.as_str().to_owned(),
+        login_material_envelope: model
+            .login_material_envelope
+            .map(encrypted_envelope)
+            .transpose()?,
         expires_at: model.expires_at.unix_timestamp(),
         claimed_at: model.claimed_at.map(|value| value.unix_timestamp()),
         result_code: model.result_code,
@@ -2050,6 +2142,13 @@ fn timestamp(value: i64) -> Result<TimeDateTimeWithTimeZone, OrganizationSsoRepo
 }
 fn parse_secret(value: Json) -> Result<EncryptedJson, OrganizationSsoRepositoryError> {
     EncryptedJson::from_envelope(value).map_err(|_| OrganizationSsoRepositoryError::InvalidInput)
+}
+
+fn encrypted_envelope(
+    value: EncryptedJson,
+) -> Result<EncryptedCredentialEnvelope, OrganizationSsoRepositoryError> {
+    let (key_id, nonce, ciphertext) = value.envelope_parts().map_err(|_| invariant())?;
+    EncryptedCredentialEnvelope::new(key_id, nonce, ciphertext).map_err(|_| invariant())
 }
 
 fn validate_domain_update(

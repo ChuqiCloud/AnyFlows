@@ -1,7 +1,7 @@
 //! 企业 SSO 单次登录事务实体；仅保存摘要、版本快照和短期票据状态。
 use sea_orm::entity::prelude::*;
 
-use super::SensitiveString;
+use super::{EncryptedJson, SensitiveString};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "organization_sso_login_transactions")]
@@ -16,6 +16,7 @@ pub struct Model {
     pub state_digest: SensitiveString,
     #[sea_orm(column_type = "String(StringLen::N(64))")]
     pub request_digest: SensitiveString,
+    pub login_material_envelope: Option<EncryptedJson>,
     pub expires_at: TimeDateTimeWithTimeZone,
     pub claimed_at: Option<TimeDateTimeWithTimeZone>,
     pub result_code: Option<i16>,

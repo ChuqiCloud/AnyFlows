@@ -6,19 +6,20 @@ use std::{
 };
 
 use af_account::{
-    OrganizationSsoLoginError, OrganizationSsoLoginStart, organization_sso_login_state_digest,
-    organization_sso_login_ticket_digest,
+    OrganizationSsoLoginError, OrganizationSsoLoginStart, OrganizationSsoOidcLoginMaterial,
+    SystemSecretCipher, organization_sso_login_state_digest, organization_sso_login_ticket_digest,
 };
 use af_db::{
-    OrganizationSsoLoginTransactionCreate, OrganizationSsoLoginTransactionRecord,
-    OrganizationSsoLoginTransactionResult, OrganizationSsoProviderRepository,
-    OrganizationSsoRepositoryError,
+    EncryptedCredentialEnvelope, OrganizationSsoLoginTransactionCreate,
+    OrganizationSsoLoginTransactionRecord, OrganizationSsoLoginTransactionResult,
+    OrganizationSsoProviderRepository, OrganizationSsoRepositoryError,
 };
 use af_domain::{
     OrganizationId, OrganizationSsoProtocol, OrganizationSsoProviderKey,
     OrganizationSsoProviderStatus,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use serde_json::{Value, json};
 use thiserror::Error;
 use zeroize::{Zeroize as _, Zeroizing};
 
@@ -94,8 +95,8 @@ impl OrganizationSsoLoginTransactionStart {
     }
 }
 
-/// 已领取登录事务的安全投影，不包含 state、PKCE verifier、nonce 或断言原文。
-#[derive(Clone, Eq, PartialEq)]
+/// 已领取登录事务的安全投影；OIDC 短期材料仅在内部持有，Debug 和外部投影均不暴露。
+#[derive(Eq, PartialEq)]
 pub struct ClaimedOrganizationSsoLoginTransaction {
     transaction_id: i64,
     organization_id: OrganizationId,
@@ -103,10 +104,14 @@ pub struct ClaimedOrganizationSsoLoginTransaction {
     protocol: OrganizationSsoProtocol,
     provider_version: i64,
     request_digest: String,
+    oidc_login_material: Option<OrganizationSsoOidcLoginMaterial>,
 }
 
 impl ClaimedOrganizationSsoLoginTransaction {
-    fn from_record(record: OrganizationSsoLoginTransactionRecord) -> Self {
+    fn from_record(
+        record: OrganizationSsoLoginTransactionRecord,
+        oidc_login_material: Option<OrganizationSsoOidcLoginMaterial>,
+    ) -> Self {
         Self {
             transaction_id: record.id(),
             organization_id: record.organization_id(),
@@ -114,6 +119,7 @@ impl ClaimedOrganizationSsoLoginTransaction {
             protocol: record.protocol(),
             provider_version: record.provider_version(),
             request_digest: record.request_digest().to_owned(),
+            oidc_login_material,
         }
     }
 
@@ -152,6 +158,12 @@ impl ClaimedOrganizationSsoLoginTransaction {
     pub fn request_digest(&self) -> &str {
         &self.request_digest
     }
+
+    /// 返回仅用于 OIDC token 交换与 ID Token nonce 校验的短期材料，不得复制或记录。
+    #[must_use]
+    pub fn oidc_login_material(&self) -> Option<&OrganizationSsoOidcLoginMaterial> {
+        self.oidc_login_material.as_ref()
+    }
 }
 
 impl fmt::Debug for ClaimedOrganizationSsoLoginTransaction {
@@ -164,6 +176,10 @@ impl fmt::Debug for ClaimedOrganizationSsoLoginTransaction {
             .field("protocol", &self.protocol)
             .field("provider_version", &self.provider_version)
             .field("request_digest", &"<redacted>")
+            .field(
+                "has_oidc_login_material",
+                &self.oidc_login_material.is_some(),
+            )
             .finish()
     }
 }
@@ -342,13 +358,14 @@ pub trait OrganizationSsoLoginTransactionService: Send + Sync {
 #[derive(Clone)]
 pub struct DatabaseOrganizationSsoLoginTransactionService {
     repository: OrganizationSsoProviderRepository,
+    cipher: SystemSecretCipher,
 }
 
 impl DatabaseOrganizationSsoLoginTransactionService {
-    /// 绑定已配置超时的企业 SSO 仓储。
+    /// 绑定企业 SSO 仓储和启动期系统密钥；密钥仅用于短期 OIDC 材料封套。
     #[must_use]
-    pub const fn new(repository: OrganizationSsoProviderRepository) -> Self {
-        Self { repository }
+    pub fn new(repository: OrganizationSsoProviderRepository, cipher: SystemSecretCipher) -> Self {
+        Self { repository, cipher }
     }
 
     async fn begin_inner(
@@ -371,19 +388,45 @@ impl DatabaseOrganizationSsoLoginTransactionService {
         let start =
             OrganizationSsoLoginStart::new(request_digest).map_err(map_login_material_error)?;
         let expires_at = expires_at(LOGIN_TRANSACTION_TTL_SECONDS)?;
+        let state_digest = start.state_digest().to_owned();
+        let request_digest = start.request_digest().to_owned();
+        let login_material_envelope = match provider.protocol() {
+            OrganizationSsoProtocol::Oidc => {
+                let secret = start
+                    .into_oidc_material()
+                    .into_plain_system_secret()
+                    .map_err(map_login_material_error)?;
+                let envelope = self
+                    .cipher
+                    .encrypt_organization_sso_login_material(
+                        organization_id,
+                        provider.id(),
+                        provider.protocol(),
+                        provider.version(),
+                        &state_digest,
+                        &secret,
+                    )
+                    .map_err(|_| OrganizationSsoLoginTransactionServiceError::Internal)?;
+                Some(envelope_json(&envelope))
+            }
+            OrganizationSsoProtocol::Saml => None,
+        };
+        let write = OrganizationSsoLoginTransactionCreate::new(
+            provider_key,
+            provider.protocol(),
+            provider.version(),
+            state_digest,
+            request_digest,
+            expires_at,
+        );
+        let write = if let Some(envelope) = login_material_envelope {
+            write.with_login_material_envelope(envelope)
+        } else {
+            write
+        };
         let record = self
             .repository
-            .create_login_transaction(
-                organization_id,
-                OrganizationSsoLoginTransactionCreate::new(
-                    provider_key,
-                    provider.protocol(),
-                    provider.version(),
-                    start.state_digest().to_owned(),
-                    start.request_digest().to_owned(),
-                    expires_at,
-                ),
-            )
+            .create_login_transaction(organization_id, write)
             .await
             .map_err(map_repository_error)?;
         Ok(OrganizationSsoLoginTransactionStart::new(
@@ -409,7 +452,7 @@ impl DatabaseOrganizationSsoLoginTransactionService {
             .claim_login_transaction(organization_id, state_digest, current_timestamp()?)
             .await
             .map_err(map_repository_error)?;
-        Ok(ClaimedOrganizationSsoLoginTransaction::from_record(record))
+        self.recover_claimed_login_transaction(record).await
     }
 
     async fn claim_callback_inner(
@@ -425,7 +468,62 @@ impl DatabaseOrganizationSsoLoginTransactionService {
             .claim_login_transaction_by_state(state_digest, current_timestamp()?)
             .await
             .map_err(map_repository_error)?;
-        Ok(ClaimedOrganizationSsoLoginTransaction::from_record(record))
+        self.recover_claimed_login_transaction(record).await
+    }
+
+    async fn recover_claimed_login_transaction(
+        &self,
+        record: OrganizationSsoLoginTransactionRecord,
+    ) -> Result<ClaimedOrganizationSsoLoginTransaction, OrganizationSsoLoginTransactionServiceError>
+    {
+        let oidc_login_material = if record.protocol() == OrganizationSsoProtocol::Oidc {
+            match self.decrypt_oidc_login_material(&record) {
+                Ok(material) => Some(material),
+                Err(()) => {
+                    self.reject_claimed_login_transaction(&record).await?;
+                    return Err(OrganizationSsoLoginTransactionServiceError::Rejected);
+                }
+            }
+        } else {
+            None
+        };
+        Ok(ClaimedOrganizationSsoLoginTransaction::from_record(
+            record,
+            oidc_login_material,
+        ))
+    }
+
+    fn decrypt_oidc_login_material(
+        &self,
+        record: &OrganizationSsoLoginTransactionRecord,
+    ) -> Result<OrganizationSsoOidcLoginMaterial, ()> {
+        let envelope = record.login_material_envelope().ok_or(())?;
+        let secret = self
+            .cipher
+            .decrypt_organization_sso_login_material(
+                record.organization_id(),
+                record.provider_id(),
+                record.protocol(),
+                record.provider_version(),
+                record.state_digest(),
+                envelope,
+            )
+            .map_err(|_| ())?;
+        OrganizationSsoOidcLoginMaterial::from_decrypted_system_secret(secret).map_err(|_| ())
+    }
+
+    async fn reject_claimed_login_transaction(
+        &self,
+        record: &OrganizationSsoLoginTransactionRecord,
+    ) -> Result<(), OrganizationSsoLoginTransactionServiceError> {
+        match self
+            .repository
+            .reject_login_transaction(record.organization_id(), record.id(), REJECTED_RESULT_CODE)
+            .await
+        {
+            Ok(_) | Err(OrganizationSsoRepositoryError::AlreadyProcessed) => Ok(()),
+            Err(error) => Err(map_repository_error(error)),
+        }
     }
 
     async fn complete_verified_inner(
@@ -466,18 +564,7 @@ impl DatabaseOrganizationSsoLoginTransactionService {
         transaction_id: i64,
     ) -> Result<(), OrganizationSsoLoginTransactionServiceError> {
         self.repository
-            .complete_login_transaction(
-                organization_id,
-                transaction_id,
-                OrganizationSsoLoginTransactionResult::new(
-                    REJECTED_RESULT_CODE,
-                    None,
-                    None,
-                    None,
-                    None,
-                ),
-                current_timestamp()?,
-            )
+            .reject_login_transaction(organization_id, transaction_id, REJECTED_RESULT_CODE)
             .await
             .map_err(map_repository_error)?;
         Ok(())
@@ -557,6 +644,16 @@ impl fmt::Debug for DatabaseOrganizationSsoLoginTransactionService {
     }
 }
 
+fn envelope_json(envelope: &EncryptedCredentialEnvelope) -> Value {
+    json!({
+        "version": 1,
+        "algorithm": "xchacha20poly1305",
+        "key_id": envelope.key_id(),
+        "nonce": URL_SAFE_NO_PAD.encode(envelope.nonce()),
+        "ciphertext": URL_SAFE_NO_PAD.encode(envelope.ciphertext()),
+    })
+}
+
 fn current_timestamp() -> Result<i64, OrganizationSsoLoginTransactionServiceError> {
     let seconds = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -587,6 +684,7 @@ const fn map_login_material_error(
         OrganizationSsoLoginError::InvalidDigest
         | OrganizationSsoLoginError::InvalidState
         | OrganizationSsoLoginError::InvalidTicket
+        | OrganizationSsoLoginError::InvalidLoginMaterial
         | OrganizationSsoLoginError::MissingCallbackField
         | OrganizationSsoLoginError::UnexpectedCallbackField
         | OrganizationSsoLoginError::CallbackTooLarge => {

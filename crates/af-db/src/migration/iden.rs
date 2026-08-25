@@ -2722,7 +2722,7 @@ pub(in crate::migration) mod organization_sso_login_transactions {
 
     pub(in crate::migration) use Table::Name as Entity;
 
-    /// 登录事务状态、摘要和单次票据列标识。
+    /// 登录事务状态、摘要、加密材料和单次票据列标识。
     #[derive(Clone, Copy, DeriveIden)]
     pub(in crate::migration) enum Column {
         Id,
@@ -2732,6 +2732,7 @@ pub(in crate::migration) mod organization_sso_login_transactions {
         ProviderVersion,
         StateDigest,
         RequestDigest,
+        LoginMaterialEnvelope,
         ExpiresAt,
         ClaimedAt,
         ResultCode,
