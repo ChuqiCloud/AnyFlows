@@ -3,7 +3,7 @@
 //! 本模块只负责在协议适配器边界校验配置和一次性材料，不发起网络请求，
 //! 不持久化授权码、PKCE verifier 或 Token，也不负责身份绑定。
 
-use std::fmt;
+use std::{fmt, net::IpAddr};
 
 use thiserror::Error;
 use url::Url;
@@ -176,10 +176,19 @@ fn parse_https_url(value: &str) -> Result<Url, OrganizationSsoOidcTokenExchangeE
         || url.password().is_some()
         || url.query().is_some()
         || url.fragment().is_some()
+        || blocked_endpoint_host(url.host_str().unwrap_or_default())
     {
         return Err(OrganizationSsoOidcTokenExchangeError::InvalidConfiguration);
     }
     Ok(url)
+}
+
+fn blocked_endpoint_host(host: &str) -> bool {
+    let normalized = host.trim_end_matches('.').to_ascii_lowercase();
+    normalized == "localhost"
+        || normalized.ends_with(".localhost")
+        || normalized == "localhost.localdomain"
+        || normalized.parse::<IpAddr>().is_ok()
 }
 
 fn valid_ascii(value: &str, max_bytes: usize) -> bool {
@@ -215,6 +224,17 @@ mod tests {
                 7,
                 "https://idp.example.test".to_owned(),
                 "https://idp.example.test/oauth2/token?unsafe=1".to_owned(),
+                "client-id".to_owned(),
+                "client-id".to_owned(),
+                "https://app.example.test/api/auth/organization-sso/oidc/callback".to_owned(),
+            )
+            .is_err()
+        );
+        assert!(
+            OrganizationSsoOidcTokenExchangeConfig::new(
+                7,
+                "https://idp.example.test".to_owned(),
+                "https://127.0.0.1/oauth2/token".to_owned(),
                 "client-id".to_owned(),
                 "client-id".to_owned(),
                 "https://app.example.test/api/auth/organization-sso/oidc/callback".to_owned(),
