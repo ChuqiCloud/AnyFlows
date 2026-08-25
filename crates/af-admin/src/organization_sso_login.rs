@@ -7,7 +7,7 @@ use std::{
 };
 
 use af_account::{
-    OrganizationSsoLoginError, OrganizationSsoLoginStart,
+    OrganizationInvitationCipher, OrganizationSsoLoginError, OrganizationSsoLoginStart,
     OrganizationSsoOidcIdTokenVerificationConfig, OrganizationSsoOidcIdTokenVerifier,
     OrganizationSsoOidcJwksClient, OrganizationSsoOidcLoginMaterial,
     OrganizationSsoOidcTokenExchangeClient, OrganizationSsoOidcTokenExchangeConfig,
@@ -230,6 +230,7 @@ pub struct ExchangedOrganizationSsoLoginTicket {
     provider_version: i64,
     assertion_digest: String,
     subject_digest: Option<String>,
+    invitation_email_fingerprint: Option<[u8; 32]>,
 }
 
 impl ExchangedOrganizationSsoLoginTicket {
@@ -246,6 +247,13 @@ impl ExchangedOrganizationSsoLoginTicket {
         // 当前只把 OIDC 验证器产生的 subject 摘要交给身份绑定层；SAML 仍保持关闭。
         let subject_digest =
             (record.protocol() == OrganizationSsoProtocol::Oidc).then(|| assertion_digest.clone());
+        let invitation_email_fingerprint = match record.protocol() {
+            OrganizationSsoProtocol::Oidc => record.invitation_email_fingerprint().copied(),
+            OrganizationSsoProtocol::Saml if record.invitation_email_fingerprint().is_some() => {
+                return Err(OrganizationSsoLoginTransactionServiceError::Internal);
+            }
+            OrganizationSsoProtocol::Saml => None,
+        };
         Ok(Self {
             transaction_id: record.id(),
             provider_id: record.provider_id(),
@@ -253,6 +261,7 @@ impl ExchangedOrganizationSsoLoginTicket {
             provider_version: record.provider_version(),
             assertion_digest,
             subject_digest,
+            invitation_email_fingerprint,
         })
     }
 
@@ -291,6 +300,12 @@ impl ExchangedOrganizationSsoLoginTicket {
     pub fn subject_digest(&self) -> Option<&str> {
         self.subject_digest.as_deref()
     }
+
+    /// 返回已验证 OIDC 邮箱的企业隔离指纹；仅供后续受邀请 JIT 绑定消费。
+    #[must_use]
+    pub fn invitation_email_fingerprint(&self) -> Option<&[u8; 32]> {
+        self.invitation_email_fingerprint.as_ref()
+    }
 }
 
 impl fmt::Debug for ExchangedOrganizationSsoLoginTicket {
@@ -303,6 +318,10 @@ impl fmt::Debug for ExchangedOrganizationSsoLoginTicket {
             .field("provider_version", &self.provider_version)
             .field("assertion_digest", &"<redacted>")
             .field("has_subject_digest", &self.subject_digest.is_some())
+            .field(
+                "has_invitation_email_fingerprint",
+                &self.invitation_email_fingerprint.is_some(),
+            )
             .finish()
     }
 }
@@ -387,16 +406,22 @@ pub trait OrganizationSsoLoginTransactionService: Send + Sync {
 pub struct DatabaseOrganizationSsoLoginTransactionService {
     repository: OrganizationSsoProviderRepository,
     cipher: SystemSecretCipher,
+    invitation_cipher: OrganizationInvitationCipher,
     http_clients: Arc<RwLock<Option<HttpClientProvider>>>,
 }
 
 impl DatabaseOrganizationSsoLoginTransactionService {
-    /// 绑定企业 SSO 仓储和启动期系统密钥；密钥仅用于短期 OIDC 材料封套。
+    /// 绑定企业 SSO 仓储及启动期密钥；邮件指纹只使用邀请密码学边界派生。
     #[must_use]
-    pub fn new(repository: OrganizationSsoProviderRepository, cipher: SystemSecretCipher) -> Self {
+    pub fn new(
+        repository: OrganizationSsoProviderRepository,
+        cipher: SystemSecretCipher,
+        invitation_cipher: OrganizationInvitationCipher,
+    ) -> Self {
         Self {
             repository,
             cipher,
+            invitation_cipher,
             http_clients: Arc::new(RwLock::new(None)),
         }
     }
@@ -513,8 +538,17 @@ impl DatabaseOrganizationSsoLoginTransactionService {
         let identity = verifier
             .verify(token_set.id_token(), &jwks, nonce.as_str())
             .map_err(|_| OrganizationSsoLoginTransactionServiceError::Rejected)?;
-        self.complete_verified(organization_id, transaction_id, identity.assertion_digest())
-            .await
+        let assertion_digest = identity.assertion_digest();
+        let invitation_email_fingerprint = self
+            .invitation_cipher
+            .email_fingerprint(organization_id, identity.invitation_email());
+        self.complete_verified_inner(
+            organization_id,
+            transaction_id,
+            assertion_digest,
+            Some(invitation_email_fingerprint),
+        )
+        .await
     }
 
     async fn begin_inner(
@@ -680,23 +714,29 @@ impl DatabaseOrganizationSsoLoginTransactionService {
         organization_id: OrganizationId,
         transaction_id: i64,
         assertion_digest: String,
+        invitation_email_fingerprint: Option<[u8; 32]>,
     ) -> Result<IssuedOrganizationSsoLoginTicket, OrganizationSsoLoginTransactionServiceError> {
         // 明文票据仅在成功完成后返回，数据库始终只接收域分离摘要。
         let ticket = generate_ticket()?;
         let ticket_digest =
             organization_sso_login_ticket_digest(&ticket).map_err(map_login_material_error)?;
         let expires_at = expires_at(LOGIN_TICKET_TTL_SECONDS)?;
+        let result = OrganizationSsoLoginTransactionResult::new(
+            VERIFIED_RESULT_CODE,
+            Some(ticket_digest),
+            Some(expires_at),
+            Some(assertion_digest),
+            Some(expires_at),
+        );
+        let result = match invitation_email_fingerprint {
+            Some(fingerprint) => result.with_invitation_email_fingerprint(fingerprint),
+            None => result,
+        };
         self.repository
             .complete_login_transaction(
                 organization_id,
                 transaction_id,
-                OrganizationSsoLoginTransactionResult::new(
-                    VERIFIED_RESULT_CODE,
-                    Some(ticket_digest),
-                    Some(expires_at),
-                    Some(assertion_digest),
-                    Some(expires_at),
-                ),
+                result,
                 current_timestamp()?,
             )
             .await
@@ -767,7 +807,12 @@ impl OrganizationSsoLoginTransactionService for DatabaseOrganizationSsoLoginTran
         transaction_id: i64,
         assertion_digest: String,
     ) -> OrganizationSsoLoginTransactionFuture<'a, IssuedOrganizationSsoLoginTicket> {
-        Box::pin(self.complete_verified_inner(organization_id, transaction_id, assertion_digest))
+        Box::pin(self.complete_verified_inner(
+            organization_id,
+            transaction_id,
+            assertion_digest,
+            None,
+        ))
     }
 
     fn complete_rejected<'a>(

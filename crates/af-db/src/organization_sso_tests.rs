@@ -219,17 +219,20 @@ async fn sso_repository_rejects_identity_conflicts_and_login_replays() -> Result
                 Some(now + 300),
                 Some(digest('e')),
                 Some(now + 300),
-            ),
+            )
+            .with_invitation_email_fingerprint([0x5a; 32]),
             now,
         )
         .await?;
     assert_eq!(completed.result_code(), Some(1));
+    assert_eq!(completed.invitation_email_fingerprint(), Some(&[0x5a; 32]));
     assert!(!format!("{completed:?}").contains(&digest('b')));
     let exchanged = fixture
         .sso
         .exchange_ticket(organization_id, digest('d'), now + 1)
         .await?;
     assert!(exchanged.exchanged_at().is_some());
+    assert_eq!(exchanged.invitation_email_fingerprint(), Some(&[0x5a; 32]));
     assert_eq!(
         fixture
             .sso
@@ -237,6 +240,66 @@ async fn sso_repository_rejects_identity_conflicts_and_login_replays() -> Result
             .await,
         Err(OrganizationSsoRepositoryError::AlreadyProcessed)
     );
+
+    let saml_organization_id = fixture.organizations_ids[1];
+    let saml_key = provider_key(3);
+    let saml_provider = fixture
+        .sso
+        .create_provider(
+            saml_organization_id,
+            OrganizationSsoProviderCreate::new(
+                saml_key,
+                OrganizationSsoProtocol::Saml,
+                OrganizationSsoProviderStatus::Active,
+                "SAML Login SSO".to_owned(),
+                None,
+                None,
+            ),
+        )
+        .await?;
+    let saml_transaction = fixture
+        .sso
+        .create_login_transaction(
+            saml_organization_id,
+            OrganizationSsoLoginTransactionCreate::new(
+                saml_key,
+                OrganizationSsoProtocol::Saml,
+                saml_provider.version(),
+                digest('9'),
+                digest('8'),
+                now + 3_600,
+            ),
+        )
+        .await?;
+    fixture
+        .sso
+        .claim_login_transaction(saml_organization_id, digest('9'), now)
+        .await?;
+    assert_eq!(
+        fixture
+            .sso
+            .complete_login_transaction(
+                saml_organization_id,
+                saml_transaction.id(),
+                OrganizationSsoLoginTransactionResult::new(
+                    1,
+                    Some(digest('7')),
+                    Some(now + 300),
+                    Some(digest('6')),
+                    Some(now + 300),
+                )
+                .with_invitation_email_fingerprint([0x5a; 32]),
+                now,
+            )
+            .await,
+        Err(OrganizationSsoRepositoryError::InvalidInput)
+    );
+    let saml_after_rejection = fixture
+        .sso
+        .login_transaction(saml_organization_id, digest('9'))
+        .await?;
+    assert_eq!(saml_after_rejection.result_code(), None);
+    assert_eq!(saml_after_rejection.invitation_email_fingerprint(), None);
 
     let expired = fixture
         .sso

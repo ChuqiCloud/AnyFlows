@@ -1200,7 +1200,7 @@ impl Bootstrap<DatabaseReady> {
                 organization_invitation_service: Arc::new(
                     af_admin::DatabaseOrganizationInvitationService::new(
                         Arc::clone(&organization_repository),
-                        organization_invitation_cipher,
+                        organization_invitation_cipher.clone(),
                     ),
                 ),
                 organization_management_service: Arc::new(
@@ -1226,6 +1226,7 @@ impl Bootstrap<DatabaseReady> {
                     DatabaseOrganizationSsoLoginTransactionService::new(
                         organization_sso_provider_repository,
                         system_secret_cipher.clone(),
+                        organization_invitation_cipher,
                     ),
                 ),
                 site_settings_service: Arc::new(DatabaseSiteSettingsService::new(

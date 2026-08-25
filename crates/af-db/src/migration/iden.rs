@@ -2741,6 +2741,7 @@ pub(in crate::migration) mod organization_sso_login_transactions {
         ExchangedAt,
         AssertionDigest,
         AssertionExpiresAt,
+        InvitationEmailFingerprint,
         CreatedAt,
         UpdatedAt,
     }
