@@ -241,11 +241,12 @@ async fn sso_repository_rejects_identity_conflicts_and_login_replays() -> Result
         Err(OrganizationSsoRepositoryError::AlreadyProcessed)
     );
 
+    let saml_organization_id = fixture.organizations_ids[1];
     let saml_key = provider_key(3);
     let saml_provider = fixture
         .sso
         .create_provider(
-            organization_id,
+            saml_organization_id,
             OrganizationSsoProviderCreate::new(
                 saml_key,
                 OrganizationSsoProtocol::Saml,
@@ -259,7 +260,7 @@ async fn sso_repository_rejects_identity_conflicts_and_login_replays() -> Result
     let saml_transaction = fixture
         .sso
         .create_login_transaction(
-            organization_id,
+            saml_organization_id,
             OrganizationSsoLoginTransactionCreate::new(
                 saml_key,
                 OrganizationSsoProtocol::Saml,
@@ -272,13 +273,13 @@ async fn sso_repository_rejects_identity_conflicts_and_login_replays() -> Result
         .await?;
     fixture
         .sso
-        .claim_login_transaction(organization_id, digest('9'), now)
+        .claim_login_transaction(saml_organization_id, digest('9'), now)
         .await?;
     assert_eq!(
         fixture
             .sso
             .complete_login_transaction(
-                organization_id,
+                saml_organization_id,
                 saml_transaction.id(),
                 OrganizationSsoLoginTransactionResult::new(
                     1,
@@ -295,7 +296,7 @@ async fn sso_repository_rejects_identity_conflicts_and_login_replays() -> Result
     );
     let saml_after_rejection = fixture
         .sso
-        .login_transaction(organization_id, digest('9'))
+        .login_transaction(saml_organization_id, digest('9'))
         .await?;
     assert_eq!(saml_after_rejection.result_code(), None);
     assert_eq!(saml_after_rejection.invitation_email_fingerprint(), None);
