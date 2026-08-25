@@ -75,14 +75,20 @@ impl VerifiedOrganizationSsoOidcIdentity {
         &self.subject
     }
 
-    /// 返回身份断言的域分离摘要；后续绑定只接收摘要，不接收 subject 原文。
+    /// 返回经过验证的 subject 域分离摘要；沿用既有断言摘要域以兼容在途票据。
     #[must_use]
-    pub fn assertion_digest(&self) -> String {
+    pub fn subject_digest(&self) -> String {
         let mut digest = Sha256::new();
         digest.update(b"organization-sso-oidc-assertion-v1");
         digest.update([0]);
         digest.update(self.subject.as_bytes());
         encode_digest(&digest.finalize())
+    }
+
+    /// 返回身份断言摘要；保留该名称供已有回调完成路径兼容使用。
+    #[must_use]
+    pub fn assertion_digest(&self) -> String {
+        self.subject_digest()
     }
 }
 
@@ -446,6 +452,7 @@ mod tests {
         };
 
         assert_eq!(identity.assertion_digest(), identity.assertion_digest());
+        assert_eq!(identity.assertion_digest(), identity.subject_digest());
         assert_ne!(identity.assertion_digest(), changed.assertion_digest());
         assert_eq!(identity.assertion_digest().len(), 64);
         assert!(
