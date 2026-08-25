@@ -474,7 +474,7 @@ async fn exchanged_oidc_ticket_binds_invited_identity_once() -> Result<(), Box<d
         organization_id,
         provider.id(),
         provider.version(),
-        "j".repeat(64),
+        "c".repeat(64),
     )?;
     let transaction = repository
         .create_login_transaction(
@@ -484,7 +484,7 @@ async fn exchanged_oidc_ticket_binds_invited_identity_once() -> Result<(), Box<d
                 OrganizationSsoProtocol::Oidc,
                 provider.version(),
                 state_digest,
-                "j".repeat(64),
+                "c".repeat(64),
                 now_timestamp().saturating_add(3_600),
             )
             .with_login_material_envelope(envelope),
@@ -549,7 +549,7 @@ async fn exchanged_oidc_ticket_binds_invited_identity_once() -> Result<(), Box<d
         organization_id,
         provider.id(),
         provider.version(),
-        "m".repeat(64),
+        "d".repeat(64),
     )?;
     let missing_transaction = repository
         .create_login_transaction(
@@ -559,7 +559,7 @@ async fn exchanged_oidc_ticket_binds_invited_identity_once() -> Result<(), Box<d
                 OrganizationSsoProtocol::Oidc,
                 provider.version(),
                 missing_state_digest,
-                "m".repeat(64),
+                "d".repeat(64),
                 now + 600,
             )
             .with_login_material_envelope(missing_envelope),
