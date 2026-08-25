@@ -6,11 +6,13 @@ use af_account::{
 };
 use af_config::{CREDENTIAL_ENCRYPTION_KEY_BYTES, CredentialEncryptionSettings};
 use af_db::{
-    DatabaseOptions, InitialSetupOutcome, InitialSetupRecord, InitialSetupRepository,
-    MigrationOptions, OrganizationCreate, OrganizationEntitlementWrite,
-    OrganizationInvitationCreate, OrganizationRepository, OrganizationSsoDomainCreate,
-    OrganizationSsoLoginTransactionCreate, OrganizationSsoLoginTransactionResult,
-    OrganizationSsoProviderCreate, OrganizationSsoProviderRepository,
+    AdminGroupRepository, DEFAULT_REGISTRATION_RATE_LIMIT_ATTEMPTS,
+    DEFAULT_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS, DatabaseOptions, InitialSetupOutcome,
+    InitialSetupRecord, InitialSetupRepository, MigrationOptions, OrganizationCreate,
+    OrganizationEntitlementWrite, OrganizationInvitationCreate, OrganizationRepository,
+    OrganizationSsoDomainCreate, OrganizationSsoLoginTransactionCreate,
+    OrganizationSsoLoginTransactionResult, OrganizationSsoProviderCreate,
+    OrganizationSsoProviderRepository, RegistrationPolicyWriteRecord, RegistrationRepository,
 };
 use af_domain::{
     DEFAULT_ORGANIZATION_SSO_RECHECK_INTERVAL_SECONDS, OrganizationEntitlementCapacity,
@@ -20,10 +22,8 @@ use af_domain::{
     OrganizationSsoProtocol, OrganizationSsoProviderKey, OrganizationSsoProviderStatus,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use sea_orm::{
-    ActiveModelTrait, EntityTrait, IntoActiveModel, Set, entity::prelude::TimeDateTimeWithTimeZone,
-};
-use serde_json::{Value, json};
+use sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
+use serde_json::Value;
 
 use super::{
     DatabaseOrganizationSsoLoginTransactionService, OrganizationSsoLoginTransactionService,
@@ -396,21 +396,26 @@ async fn exchanged_oidc_ticket_binds_invited_identity_once() -> Result<(), Box<d
     )
     .await?;
 
-    let group = af_db::entity::groups::ActiveModel {
-        name: Set("sso-jit-default".to_owned()),
-        display_name: Set("SSO JIT default group".to_owned()),
-        flags: Set(json!({})),
-        ..Default::default()
-    }
-    .insert(pool.connection())
-    .await?;
-    let settings = af_db::entity::authentication_settings::Entity::find_by_id(1_i16)
-        .one(pool.connection())
+    let default_group = AdminGroupRepository::new(pool.clone(), Duration::from_secs(5))?
+        .list(None, 1)
         .await?
-        .expect("认证设置必须存在");
-    let mut settings = settings.into_active_model();
-    settings.registration_default_group_id = Set(Some(group.id));
-    settings.update(pool.connection()).await?;
+        .into_parts()
+        .0
+        .into_iter()
+        .next()
+        .expect("首次安装必须创建默认分组");
+    RegistrationRepository::new(pool.clone(), Duration::from_secs(5))?
+        .update_policy(RegistrationPolicyWriteRecord::new(
+            true,
+            true,
+            default_group.group_id(),
+            0,
+            0,
+            false,
+            DEFAULT_REGISTRATION_RATE_LIMIT_ATTEMPTS,
+            DEFAULT_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS,
+        ))
+        .await?;
 
     let invitation_cipher = invitation_cipher();
     let invitation_email =
