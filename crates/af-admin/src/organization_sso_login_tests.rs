@@ -507,7 +507,7 @@ async fn exchanged_oidc_ticket_binds_invited_identity_once() -> Result<(), Box<d
                 1,
                 Some(organization_sso_login_ticket_digest(ticket)?),
                 Some(now + 600),
-                Some("k".repeat(64)),
+                Some("a".repeat(64)),
                 Some(now + 600),
             )
             .with_invitation_email_fingerprint(invitation_fingerprint),
@@ -579,7 +579,7 @@ async fn exchanged_oidc_ticket_binds_invited_identity_once() -> Result<(), Box<d
                 1,
                 Some(organization_sso_login_ticket_digest(missing_ticket)?),
                 Some(now + 600),
-                Some("n".repeat(64)),
+                Some("b".repeat(64)),
                 Some(now + 600),
             ),
             now,
