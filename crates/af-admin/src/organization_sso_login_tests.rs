@@ -124,6 +124,36 @@ async fn login_transaction_service_binds_provider_and_consumes_ticket_once()
     assert_eq!(saml_transaction.protocol(), OrganizationSsoProtocol::Saml);
     assert!(saml_transaction.login_material_envelope().is_none());
 
+    // 启动响应只返回 state 摘要；票据交换回归需要独立保留原始 state 才能模拟受控回调。
+    let saml_claim_start = OrganizationSsoLoginStart::new("d".repeat(64))?;
+    let saml_claim_state = saml_claim_start.state().to_owned();
+    let saml_claim_transaction = repository
+        .create_login_transaction(
+            second_organization,
+            OrganizationSsoLoginTransactionCreate::new(
+                saml_provider_key,
+                OrganizationSsoProtocol::Saml,
+                saml_provider.version(),
+                saml_claim_start.state_digest().to_owned(),
+                "d".repeat(64),
+                4_102_444_800,
+            ),
+        )
+        .await?;
+    let saml_claim = service.claim(second_organization, saml_claim_state).await?;
+    assert_eq!(saml_claim.transaction_id(), saml_claim_transaction.id());
+    let saml_ticket = service
+        .complete_verified(
+            second_organization,
+            saml_claim.transaction_id(),
+            "e".repeat(64),
+        )
+        .await?;
+    let saml_exchanged = service
+        .exchange_ticket(second_organization, saml_ticket.ticket().to_owned())
+        .await?;
+    assert_eq!(saml_exchanged.subject_digest(), None);
+
     let (claim_state, claim_digest, claim_envelope, claim_verifier, claim_nonce) =
         oidc_login_material(
             &cipher,
@@ -292,6 +322,7 @@ async fn login_transaction_service_binds_provider_and_consumes_ticket_once()
         .await?;
     assert_eq!(exchanged.transaction_id(), claim.transaction_id());
     assert_eq!(exchanged.assertion_digest(), assertion_digest);
+    assert_eq!(exchanged.subject_digest(), Some(assertion_digest.as_str()));
     assert!(matches!(
         service
             .exchange_ticket(first_organization, ticket.ticket().to_owned())

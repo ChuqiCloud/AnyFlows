@@ -229,6 +229,7 @@ pub struct ExchangedOrganizationSsoLoginTicket {
     protocol: OrganizationSsoProtocol,
     provider_version: i64,
     assertion_digest: String,
+    subject_digest: Option<String>,
 }
 
 impl ExchangedOrganizationSsoLoginTicket {
@@ -242,12 +243,16 @@ impl ExchangedOrganizationSsoLoginTicket {
             .assertion_digest()
             .ok_or(OrganizationSsoLoginTransactionServiceError::Internal)?
             .to_owned();
+        // 当前只把 OIDC 验证器产生的 subject 摘要交给身份绑定层；SAML 仍保持关闭。
+        let subject_digest =
+            (record.protocol() == OrganizationSsoProtocol::Oidc).then(|| assertion_digest.clone());
         Ok(Self {
             transaction_id: record.id(),
             provider_id: record.provider_id(),
             protocol: record.protocol(),
             provider_version: record.provider_version(),
             assertion_digest,
+            subject_digest,
         })
     }
 
@@ -280,6 +285,12 @@ impl ExchangedOrganizationSsoLoginTicket {
     pub fn assertion_digest(&self) -> &str {
         &self.assertion_digest
     }
+
+    /// 返回 OIDC 验证器产生的 subject 摘要；SAML 尚未开放身份绑定，因此返回空值。
+    #[must_use]
+    pub fn subject_digest(&self) -> Option<&str> {
+        self.subject_digest.as_deref()
+    }
 }
 
 impl fmt::Debug for ExchangedOrganizationSsoLoginTicket {
@@ -291,6 +302,7 @@ impl fmt::Debug for ExchangedOrganizationSsoLoginTicket {
             .field("protocol", &self.protocol)
             .field("provider_version", &self.provider_version)
             .field("assertion_digest", &"<redacted>")
+            .field("has_subject_digest", &self.subject_digest.is_some())
             .finish()
     }
 }
