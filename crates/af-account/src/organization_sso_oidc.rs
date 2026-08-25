@@ -424,59 +424,59 @@ mod tests {
             AUDIENCE.to_owned(),
             "another-client".to_owned(),
         ]));
-        assert_eq!(
+        assert!(matches!(
             validate_claims(&multiple, AUDIENCE, NONCE, NOW),
             Err(OrganizationSsoOidcIdTokenError::Rejected)
-        );
+        ));
         multiple.azp = Some(AUDIENCE.to_owned());
         assert!(validate_claims(&multiple, AUDIENCE, NONCE, NOW).is_ok());
 
         multiple.nonce = "different-nonce".to_owned();
-        assert_eq!(
+        assert!(matches!(
             validate_claims(&multiple, AUDIENCE, NONCE, NOW),
             Err(OrganizationSsoOidcIdTokenError::Rejected)
-        );
+        ));
     }
 
     #[test]
     fn claims_fail_closed_for_invalid_time_or_subject() {
         let mut invalid = claims(OrganizationSsoOidcAudience::Single(AUDIENCE.to_owned()));
         invalid.exp = NOW - CLOCK_SKEW_SECONDS;
-        assert_eq!(
+        assert!(matches!(
             validate_claims(&invalid, AUDIENCE, NONCE, NOW),
             Err(OrganizationSsoOidcIdTokenError::Rejected)
-        );
+        ));
 
         invalid = claims(OrganizationSsoOidcAudience::Single(AUDIENCE.to_owned()));
         invalid.iat = NOW + CLOCK_SKEW_SECONDS + 1;
-        assert_eq!(
+        assert!(matches!(
             validate_claims(&invalid, AUDIENCE, NONCE, NOW),
             Err(OrganizationSsoOidcIdTokenError::Rejected)
-        );
+        ));
 
         invalid = claims(OrganizationSsoOidcAudience::Single(AUDIENCE.to_owned()));
         invalid.sub = " subject".to_owned();
-        assert_eq!(
+        assert!(matches!(
             validate_claims(&invalid, AUDIENCE, NONCE, NOW),
             Err(OrganizationSsoOidcIdTokenError::Rejected)
-        );
+        ));
     }
 
     #[test]
     fn claims_require_a_verified_normalized_email() {
         let mut invalid = claims(OrganizationSsoOidcAudience::Single(AUDIENCE.to_owned()));
         invalid.email_verified = false;
-        assert_eq!(
+        assert!(matches!(
             validate_claims(&invalid, AUDIENCE, NONCE, NOW),
             Err(OrganizationSsoOidcIdTokenError::Rejected)
-        );
+        ));
 
         invalid = claims(OrganizationSsoOidcAudience::Single(AUDIENCE.to_owned()));
         invalid.email = "Member@example.com".to_owned();
-        assert_eq!(
+        assert!(matches!(
             validate_claims(&invalid, AUDIENCE, NONCE, NOW),
             Err(OrganizationSsoOidcIdTokenError::Rejected)
-        );
+        ));
     }
 
     #[test]
@@ -538,25 +538,25 @@ mod tests {
             .unwrap(),
         );
         let token = signed_token(None, json!(AUDIENCE), json!(NONCE));
-        assert_eq!(
+        assert!(matches!(
             verifier.verify(&token, &test_jwks(json!({})), NONCE),
             Err(OrganizationSsoOidcIdTokenError::Rejected)
-        );
+        ));
 
         let token = signed_token(Some(json!(ISSUER)), json!(AUDIENCE), json!(NONCE));
-        assert_eq!(
+        assert!(matches!(
             verifier.verify(&token, &test_jwks(json!({"use": "enc"})), NONCE),
             Err(OrganizationSsoOidcIdTokenError::Rejected)
-        );
+        ));
         let mut first_jwks = test_jwks(json!({}));
         let mut second_jwks = test_jwks(json!({}));
         let duplicate_jwks = JwkSet {
             keys: vec![first_jwks.keys.remove(0), second_jwks.keys.remove(0)],
         };
-        assert_eq!(
+        assert!(matches!(
             verifier.verify(&token, &duplicate_jwks, NONCE),
             Err(OrganizationSsoOidcIdTokenError::Rejected)
-        );
+        ));
     }
 
     fn signed_token(issuer: Option<Value>, audience: Value, nonce: Value) -> String {
