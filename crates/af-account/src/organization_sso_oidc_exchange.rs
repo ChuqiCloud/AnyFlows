@@ -205,7 +205,7 @@ mod tests {
     fn config() -> OrganizationSsoOidcTokenExchangeConfig {
         OrganizationSsoOidcTokenExchangeConfig::new(
             7,
-            "https://idp.example.test".to_owned(),
+            "https://idp.example.test/".to_owned(),
             "https://idp.example.test/oauth2/token".to_owned(),
             "client-id".to_owned(),
             "client-id".to_owned(),
