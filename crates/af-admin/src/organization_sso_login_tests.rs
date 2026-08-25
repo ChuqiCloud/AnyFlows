@@ -1,21 +1,28 @@
 use std::{error::Error, time::Duration};
 
 use af_account::{
-    OrganizationInvitationCipher, OrganizationSsoLoginStart, SystemSecretCipher,
-    organization_sso_login_state_digest,
+    OrganizationInvitationCipher, OrganizationSsoLoginStart, PlainOrganizationInvitationEmail,
+    SystemSecretCipher, organization_sso_login_state_digest, organization_sso_login_ticket_digest,
 };
 use af_config::{CREDENTIAL_ENCRYPTION_KEY_BYTES, CredentialEncryptionSettings};
 use af_db::{
     DatabaseOptions, InitialSetupOutcome, InitialSetupRecord, InitialSetupRepository,
-    MigrationOptions, OrganizationCreate, OrganizationEntitlementWrite, OrganizationRepository,
-    OrganizationSsoLoginTransactionCreate, OrganizationSsoProviderCreate,
-    OrganizationSsoProviderRepository,
+    MigrationOptions, OrganizationCreate, OrganizationEntitlementWrite,
+    OrganizationInvitationCreate, OrganizationRepository, OrganizationSsoDomainCreate,
+    OrganizationSsoLoginTransactionCreate, OrganizationSsoLoginTransactionResult,
+    OrganizationSsoProviderCreate, OrganizationSsoProviderRepository,
 };
 use af_domain::{
-    OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationSsoProtocol,
-    OrganizationSsoProviderKey, OrganizationSsoProviderStatus,
+    DEFAULT_ORGANIZATION_SSO_RECHECK_INTERVAL_SECONDS, OrganizationEntitlementCapacity,
+    OrganizationEntitlementSnapshot, OrganizationId, OrganizationInvitationKey, OrganizationRole,
+    OrganizationSsoDnsTxtAnswers, OrganizationSsoDnsVerification, OrganizationSsoDomain,
+    OrganizationSsoDomainProof, OrganizationSsoDomainProofToken, OrganizationSsoDomainStatus,
+    OrganizationSsoProtocol, OrganizationSsoProviderKey, OrganizationSsoProviderStatus,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use sea_orm::{
+    ActiveModelTrait, EntityTrait, IntoActiveModel, Set, entity::prelude::TimeDateTimeWithTimeZone,
+};
 use serde_json::{Value, json};
 
 use super::{
@@ -337,6 +344,268 @@ async fn login_transaction_service_binds_provider_and_consumes_ticket_once()
     Ok(())
 }
 
+#[tokio::test]
+async fn exchanged_oidc_ticket_binds_invited_identity_once() -> Result<(), Box<dyn Error>> {
+    let pool = af_db::connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
+    let InitialSetupOutcome::Initialized { user_id } =
+        InitialSetupRepository::new(pool.clone(), Duration::from_secs(5))?
+            .initialize(InitialSetupRecord::new(
+                "sso-jit-owner".to_owned(),
+                "sso jit owner password".to_owned(),
+            ))
+            .await?
+    else {
+        panic!("测试数据库必须完成首次安装");
+    };
+    let organizations = OrganizationRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let organization_id = organizations
+        .create(OrganizationCreate::new(
+            "SSO JIT Organization".to_owned(),
+            "sso-jit-organization".to_owned(),
+            user_id,
+            sso_entitlement()?,
+        ))
+        .await?
+        .into_parts()
+        .0
+        .id();
+    let repository = OrganizationSsoProviderRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let provider_key = OrganizationSsoProviderKey::new([0x75; 16])?;
+    let provider = repository
+        .create_provider(
+            organization_id,
+            OrganizationSsoProviderCreate::new(
+                provider_key,
+                OrganizationSsoProtocol::Oidc,
+                OrganizationSsoProviderStatus::Active,
+                "JIT OIDC Provider".to_owned(),
+                None,
+                None,
+            ),
+        )
+        .await?;
+    add_verified_domain(
+        &repository,
+        organization_id,
+        provider_key,
+        "jit.example.com",
+    )
+    .await?;
+
+    let group = af_db::entity::groups::ActiveModel {
+        name: Set("sso-jit-default".to_owned()),
+        display_name: Set("SSO JIT default group".to_owned()),
+        flags: Set(json!({})),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+    let settings = af_db::entity::authentication_settings::Entity::find_by_id(1_i16)
+        .one(pool.connection())
+        .await?
+        .expect("认证设置必须存在");
+    let mut settings = settings.into_active_model();
+    settings.registration_default_group_id = Set(Some(group.id));
+    settings.update(pool.connection()).await?;
+
+    let invitation_cipher = invitation_cipher();
+    let invitation_email =
+        PlainOrganizationInvitationEmail::new("jit-user@example.com".to_owned())?;
+    let invitation_fingerprint =
+        invitation_cipher.email_fingerprint(organization_id, &invitation_email);
+    let invitation_key = OrganizationInvitationKey::new([0x76; 16])?;
+    organizations
+        .create_invitation(
+            organization_id,
+            OrganizationInvitationCreate::new(
+                invitation_key,
+                invitation_email.expose_email().to_owned(),
+                invitation_fingerprint,
+                invitation_cipher.encrypt_email(
+                    organization_id,
+                    invitation_key,
+                    &invitation_email,
+                )?,
+                [0x77; 32],
+                OrganizationRole::Member,
+                None,
+                user_id,
+                None,
+                None,
+                None,
+                now_timestamp().saturating_add(3_600),
+            )?,
+        )
+        .await?;
+
+    let cipher = cipher();
+    let service = DatabaseOrganizationSsoLoginTransactionService::new_with_organization_repository(
+        repository.clone(),
+        organizations.clone(),
+        cipher.clone(),
+        invitation_cipher,
+    );
+    let (state, state_digest, envelope, _, _) = oidc_login_material(
+        &cipher,
+        organization_id,
+        provider.id(),
+        provider.version(),
+        "j".repeat(64),
+    )?;
+    let transaction = repository
+        .create_login_transaction(
+            organization_id,
+            OrganizationSsoLoginTransactionCreate::new(
+                provider_key,
+                OrganizationSsoProtocol::Oidc,
+                provider.version(),
+                state_digest,
+                "j".repeat(64),
+                now_timestamp().saturating_add(3_600),
+            )
+            .with_login_material_envelope(envelope),
+        )
+        .await?;
+    let claimed = service.claim(organization_id, state).await?;
+    assert_eq!(claimed.transaction_id(), transaction.id());
+
+    let ticket = "sso-jit-ticket-once";
+    let now = now_timestamp();
+    repository
+        .complete_login_transaction(
+            organization_id,
+            transaction.id(),
+            OrganizationSsoLoginTransactionResult::new(
+                1,
+                Some(organization_sso_login_ticket_digest(ticket)?),
+                Some(now + 600),
+                Some("k".repeat(64)),
+                Some(now + 600),
+            )
+            .with_invitation_email_fingerprint(invitation_fingerprint),
+            now,
+        )
+        .await?;
+
+    let membership = service
+        .exchange_ticket_and_bind_invited_identity(organization_id, ticket.to_owned())
+        .await?;
+    assert_eq!(membership.role(), OrganizationRole::Member);
+    assert_eq!(
+        membership.status(),
+        af_domain::OrganizationMembershipStatus::Active
+    );
+    let invitations = organizations.list_invitations(organization_id).await?;
+    assert_eq!(
+        invitations[0].status(),
+        af_domain::OrganizationInvitationStatus::Accepted
+    );
+    assert_eq!(
+        invitations[0].accepted_by_user_id(),
+        Some(membership.user_id())
+    );
+    assert!(matches!(
+        service
+            .exchange_ticket_and_bind_invited_identity(organization_id, ticket.to_owned())
+            .await,
+        Err(OrganizationSsoLoginTransactionServiceError::AlreadyProcessed)
+    ));
+
+    let (missing_state, missing_state_digest, missing_envelope, _, _) = oidc_login_material(
+        &cipher,
+        organization_id,
+        provider.id(),
+        provider.version(),
+        "m".repeat(64),
+    )?;
+    let missing_transaction = repository
+        .create_login_transaction(
+            organization_id,
+            OrganizationSsoLoginTransactionCreate::new(
+                provider_key,
+                OrganizationSsoProtocol::Oidc,
+                provider.version(),
+                missing_state_digest,
+                "m".repeat(64),
+                now + 600,
+            )
+            .with_login_material_envelope(missing_envelope),
+        )
+        .await?;
+    service.claim(organization_id, missing_state).await?;
+    let missing_ticket = "sso-jit-ticket-without-email-fingerprint";
+    repository
+        .complete_login_transaction(
+            organization_id,
+            missing_transaction.id(),
+            OrganizationSsoLoginTransactionResult::new(
+                1,
+                Some(organization_sso_login_ticket_digest(missing_ticket)?),
+                Some(now + 600),
+                Some("n".repeat(64)),
+                Some(now + 600),
+            ),
+            now,
+        )
+        .await?;
+    assert!(matches!(
+        service
+            .exchange_ticket_and_bind_invited_identity(organization_id, missing_ticket.to_owned(),)
+            .await,
+        Err(OrganizationSsoLoginTransactionServiceError::Rejected)
+    ));
+    assert!(matches!(
+        service
+            .exchange_ticket_and_bind_invited_identity(organization_id, missing_ticket.to_owned(),)
+            .await,
+        Err(OrganizationSsoLoginTransactionServiceError::AlreadyProcessed)
+    ));
+    pool.close().await?;
+    Ok(())
+}
+
+async fn add_verified_domain(
+    repository: &OrganizationSsoProviderRepository,
+    organization_id: OrganizationId,
+    provider_key: OrganizationSsoProviderKey,
+    domain_name: &str,
+) -> Result<(), Box<dyn Error>> {
+    let now = now_timestamp();
+    let domain = OrganizationSsoDomain::new(domain_name)?;
+    let proof = OrganizationSsoDomainProof::from_token(
+        domain.clone(),
+        OrganizationSsoDomainProofToken::new("e".repeat(64))?,
+        now,
+        3_600,
+    )?;
+    let record = repository
+        .create_domain(
+            organization_id,
+            OrganizationSsoDomainCreate::new(
+                provider_key,
+                domain,
+                proof.digest(),
+                proof.expires_at(),
+            ),
+        )
+        .await?;
+    let verification = OrganizationSsoDnsVerification::verify(
+        &proof,
+        OrganizationSsoDomainStatus::Pending,
+        &OrganizationSsoDnsTxtAnswers::new(vec!["e".repeat(64)]),
+        now + 30,
+        DEFAULT_ORGANIZATION_SSO_RECHECK_INTERVAL_SECONDS,
+    )?;
+    repository
+        .verify_domain(organization_id, record.id(), verification, record.version())
+        .await?;
+    Ok(())
+}
+
 fn entitlement() -> Result<OrganizationEntitlementWrite, Box<dyn Error>> {
     Ok(OrganizationEntitlementWrite::new(
         OrganizationEntitlementSnapshot::new(
@@ -353,6 +622,28 @@ fn entitlement() -> Result<OrganizationEntitlementWrite, Box<dyn Error>> {
         None,
         None,
     )?)
+}
+
+fn sso_entitlement() -> Result<OrganizationEntitlementWrite, Box<dyn Error>> {
+    Ok(OrganizationEntitlementWrite::new(
+        OrganizationEntitlementSnapshot::new(
+            OrganizationEntitlementCapacity::new(10, 10, 10)?,
+            true,
+            true,
+            false,
+            90,
+            946_684_800,
+            4_102_444_800,
+            Some(4_102_444_800),
+        )?,
+        "organization-sso-jit-test".to_owned(),
+        None,
+        None,
+    )?)
+}
+
+fn now_timestamp() -> i64 {
+    TimeDateTimeWithTimeZone::now_utc().unix_timestamp()
 }
 
 fn cipher() -> SystemSecretCipher {

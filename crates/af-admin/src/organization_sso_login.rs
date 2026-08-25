@@ -15,7 +15,8 @@ use af_account::{
     organization_sso_login_ticket_digest,
 };
 use af_db::{
-    EncryptedCredentialEnvelope, OrganizationSsoLoginTransactionCreate,
+    EncryptedCredentialEnvelope, OrganizationMembershipRecord, OrganizationRepository,
+    OrganizationRepositoryError, OrganizationSsoLoginTransactionCreate,
     OrganizationSsoLoginTransactionRecord, OrganizationSsoLoginTransactionResult,
     OrganizationSsoProviderRepository, OrganizationSsoRepositoryError,
 };
@@ -390,6 +391,16 @@ pub trait OrganizationSsoLoginTransactionService: Send + Sync {
         ticket: String,
     ) -> OrganizationSsoLoginTransactionFuture<'a, ExchangedOrganizationSsoLoginTicket>;
 
+    /// 交换一次性 ticket 并消费受邀请 JIT 事实；仅允许已验证 OIDC 投影进入绑定仓储。
+    fn exchange_ticket_and_bind_invited_identity<'a>(
+        &'a self,
+        organization_id: OrganizationId,
+        ticket: String,
+    ) -> OrganizationSsoLoginTransactionFuture<'a, OrganizationMembershipRecord> {
+        let _ = (organization_id, ticket);
+        Box::pin(async { Err(OrganizationSsoLoginTransactionServiceError::Unavailable) })
+    }
+
     /// 完成受控 OIDC 回调；只有交换、签名、声明和 nonce 全部通过后才签发一次性票据。
     fn complete_oidc_callback<'a>(
         &'a self,
@@ -405,6 +416,7 @@ pub trait OrganizationSsoLoginTransactionService: Send + Sync {
 #[derive(Clone)]
 pub struct DatabaseOrganizationSsoLoginTransactionService {
     repository: OrganizationSsoProviderRepository,
+    organization_repository: Option<OrganizationRepository>,
     cipher: SystemSecretCipher,
     invitation_cipher: OrganizationInvitationCipher,
     http_clients: Arc<RwLock<Option<HttpClientProvider>>>,
@@ -420,6 +432,24 @@ impl DatabaseOrganizationSsoLoginTransactionService {
     ) -> Self {
         Self {
             repository,
+            organization_repository: None,
+            cipher,
+            invitation_cipher,
+            http_clients: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    /// 注入组织仓储，启用受邀请 SSO ticket 的 JIT 消费入口。
+    #[must_use]
+    pub fn new_with_organization_repository(
+        repository: OrganizationSsoProviderRepository,
+        organization_repository: OrganizationRepository,
+        cipher: SystemSecretCipher,
+        invitation_cipher: OrganizationInvitationCipher,
+    ) -> Self {
+        Self {
+            repository,
+            organization_repository: Some(organization_repository),
             cipher,
             invitation_cipher,
             http_clients: Arc::new(RwLock::new(None)),
@@ -774,6 +804,49 @@ impl DatabaseOrganizationSsoLoginTransactionService {
             .map_err(map_repository_error)?;
         ExchangedOrganizationSsoLoginTicket::from_record(record)
     }
+
+    async fn exchange_ticket_and_bind_invited_identity_inner(
+        &self,
+        organization_id: OrganizationId,
+        ticket: String,
+    ) -> Result<OrganizationMembershipRecord, OrganizationSsoLoginTransactionServiceError> {
+        let exchanged = self.exchange_ticket_inner(organization_id, ticket).await?;
+        if exchanged.protocol() != OrganizationSsoProtocol::Oidc {
+            return Err(OrganizationSsoLoginTransactionServiceError::Rejected);
+        }
+        let subject_digest = exchanged
+            .subject_digest()
+            .ok_or(OrganizationSsoLoginTransactionServiceError::Rejected)?
+            .to_owned();
+        let invitation_email_fingerprint = exchanged
+            .invitation_email_fingerprint()
+            .copied()
+            .ok_or(OrganizationSsoLoginTransactionServiceError::Rejected)?;
+        let organization_repository = self
+            .organization_repository
+            .as_ref()
+            .ok_or(OrganizationSsoLoginTransactionServiceError::Unavailable)?;
+        let provider = self
+            .repository
+            .provider_by_id(organization_id, exchanged.provider_id())
+            .await
+            .map_err(map_repository_error)?;
+        if provider.protocol() != OrganizationSsoProtocol::Oidc
+            || provider.version() != exchanged.provider_version()
+            || provider.status() != OrganizationSsoProviderStatus::Active
+        {
+            return Err(OrganizationSsoLoginTransactionServiceError::Rejected);
+        }
+        organization_repository
+            .bind_invited_sso_identity(
+                organization_id,
+                provider.provider_key(),
+                subject_digest,
+                invitation_email_fingerprint,
+            )
+            .await
+            .map_err(map_invited_binding_error)
+    }
 }
 
 impl OrganizationSsoLoginTransactionService for DatabaseOrganizationSsoLoginTransactionService {
@@ -829,6 +902,14 @@ impl OrganizationSsoLoginTransactionService for DatabaseOrganizationSsoLoginTran
         ticket: String,
     ) -> OrganizationSsoLoginTransactionFuture<'a, ExchangedOrganizationSsoLoginTicket> {
         Box::pin(self.exchange_ticket_inner(organization_id, ticket))
+    }
+
+    fn exchange_ticket_and_bind_invited_identity<'a>(
+        &'a self,
+        organization_id: OrganizationId,
+        ticket: String,
+    ) -> OrganizationSsoLoginTransactionFuture<'a, OrganizationMembershipRecord> {
+        Box::pin(self.exchange_ticket_and_bind_invited_identity_inner(organization_id, ticket))
     }
 
     fn complete_oidc_callback<'a>(
@@ -921,6 +1002,35 @@ const fn map_repository_error(
         OrganizationSsoRepositoryError::Query
         | OrganizationSsoRepositoryError::Timeout
         | OrganizationSsoRepositoryError::Invariant => {
+            OrganizationSsoLoginTransactionServiceError::Internal
+        }
+    }
+}
+
+const fn map_invited_binding_error(
+    error: OrganizationRepositoryError,
+) -> OrganizationSsoLoginTransactionServiceError {
+    match error {
+        OrganizationRepositoryError::InvalidInput
+        | OrganizationRepositoryError::NotFound
+        | OrganizationRepositoryError::UserUnavailable
+        | OrganizationRepositoryError::Conflict
+        | OrganizationRepositoryError::InvalidTransition
+        | OrganizationRepositoryError::LastOwner
+        | OrganizationRepositoryError::TeamHasActiveMembers
+        | OrganizationRepositoryError::EntitlementRestricted
+        | OrganizationRepositoryError::SeatLimitReached
+        | OrganizationRepositoryError::InvitationExpired
+        | OrganizationRepositoryError::InvitationNotPending
+        | OrganizationRepositoryError::InvitationEmailMismatch
+        | OrganizationRepositoryError::InvitationBatchConflict
+        | OrganizationRepositoryError::TeamLimitReached => {
+            OrganizationSsoLoginTransactionServiceError::Rejected
+        }
+        OrganizationRepositoryError::EntropyUnavailable
+        | OrganizationRepositoryError::Query
+        | OrganizationRepositoryError::Timeout
+        | OrganizationRepositoryError::Invariant => {
             OrganizationSsoLoginTransactionServiceError::Internal
         }
     }
