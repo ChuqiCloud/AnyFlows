@@ -14,6 +14,9 @@ use crate::{
     ExchangedOrganizationSsoLoginTicket, SessionPrincipal, UserProfileError, UserProfileService,
     UserSecurityStepUpCommand,
 };
+use crate::{
+    PasskeyAuthenticationCommand, PasskeyAuthenticationError, PasskeyAuthenticationService,
+};
 
 /// 显式绑定成功后的脱敏身份投影，不返回 OIDC subject 摘要。
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -113,6 +116,15 @@ pub type OrganizationSsoExplicitIdentityBindingFuture<'a> = Pin<
     >,
 >;
 
+/// 显式身份绑定使用的二次验证证明。
+#[derive(Debug)]
+pub enum OrganizationSsoIdentityBindingStepUp {
+    /// 当前密码以及已启用的 TOTP 或备份码。
+    PasswordAndSecondFactor(UserSecurityStepUpCommand),
+    /// 已消费的一次性 Passkey 认证挑战。
+    Passkey(PasskeyAuthenticationCommand),
+}
+
 /// 将已验证 SSO ticket 绑定到当前已登录成员的受控服务边界。
 pub trait OrganizationSsoIdentityBindingService: Send + Sync {
     /// 完成当前成员的密码加已启用二次因子确认，并写入显式身份绑定。
@@ -123,12 +135,31 @@ pub trait OrganizationSsoIdentityBindingService: Send + Sync {
         ticket: ExchangedOrganizationSsoLoginTicket,
         step_up: UserSecurityStepUpCommand,
     ) -> OrganizationSsoExplicitIdentityBindingFuture<'a>;
+
+    /// 使用密码/TOTP/备份码或 Passkey 完成显式绑定前的二次验证。
+    fn bind_explicit_identity_with_step_up<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        organization_id: OrganizationId,
+        ticket: ExchangedOrganizationSsoLoginTicket,
+        step_up: OrganizationSsoIdentityBindingStepUp,
+    ) -> OrganizationSsoExplicitIdentityBindingFuture<'a> {
+        match step_up {
+            OrganizationSsoIdentityBindingStepUp::PasswordAndSecondFactor(command) => {
+                self.bind_explicit_identity(principal, organization_id, ticket, command)
+            }
+            OrganizationSsoIdentityBindingStepUp::Passkey(_) => {
+                Box::pin(async { Err(OrganizationSsoIdentityBindingServiceError::Internal) })
+            }
+        }
+    }
 }
 
 /// 基于当前会话、已验证 ticket 和企业事务的显式身份绑定实现。
 #[derive(Clone)]
 pub struct DatabaseOrganizationSsoIdentityBindingService {
     user_profile_service: Arc<dyn UserProfileService>,
+    passkey_authentication_service: Option<Arc<dyn PasskeyAuthenticationService>>,
     repository: OrganizationSsoProviderRepository,
 }
 
@@ -141,8 +172,19 @@ impl DatabaseOrganizationSsoIdentityBindingService {
     ) -> Self {
         Self {
             user_profile_service,
+            passkey_authentication_service: None,
             repository,
         }
+    }
+
+    /// 注入可选的 Passkey 认证服务；未注入时 Passkey step-up 失败关闭。
+    #[must_use]
+    pub fn with_passkey_authentication_service(
+        mut self,
+        service: Arc<dyn PasskeyAuthenticationService>,
+    ) -> Self {
+        self.passkey_authentication_service = Some(service);
+        self
     }
 
     async fn bind_explicit_identity_inner(
@@ -150,7 +192,7 @@ impl DatabaseOrganizationSsoIdentityBindingService {
         principal: SessionPrincipal,
         organization_id: OrganizationId,
         ticket: ExchangedOrganizationSsoLoginTicket,
-        step_up: UserSecurityStepUpCommand,
+        step_up: OrganizationSsoIdentityBindingStepUp,
     ) -> Result<OrganizationSsoExplicitIdentityBinding, OrganizationSsoIdentityBindingServiceError>
     {
         // SAML 尚未具备受控 subject 投影，不能通过本入口绑定身份。
@@ -161,10 +203,21 @@ impl DatabaseOrganizationSsoIdentityBindingService {
             .subject_digest()
             .ok_or(OrganizationSsoIdentityBindingServiceError::InvalidInput)?
             .to_owned();
-        self.user_profile_service
-            .step_up(principal, step_up)
-            .await
-            .map_err(map_user_profile_error)?;
+        match step_up {
+            OrganizationSsoIdentityBindingStepUp::PasswordAndSecondFactor(command) => self
+                .user_profile_service
+                .step_up(principal, command)
+                .await
+                .map_err(map_user_profile_error)?,
+            OrganizationSsoIdentityBindingStepUp::Passkey(command) => {
+                verify_passkey_step_up(
+                    self.passkey_authentication_service.as_deref(),
+                    principal,
+                    command,
+                )
+                .await?;
+            }
+        }
         let record = self
             .repository
             .bind_explicit_identity(
@@ -186,6 +239,21 @@ impl OrganizationSsoIdentityBindingService for DatabaseOrganizationSsoIdentityBi
         organization_id: OrganizationId,
         ticket: ExchangedOrganizationSsoLoginTicket,
         step_up: UserSecurityStepUpCommand,
+    ) -> OrganizationSsoExplicitIdentityBindingFuture<'a> {
+        Box::pin(self.bind_explicit_identity_inner(
+            principal,
+            organization_id,
+            ticket,
+            OrganizationSsoIdentityBindingStepUp::PasswordAndSecondFactor(step_up),
+        ))
+    }
+
+    fn bind_explicit_identity_with_step_up<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        organization_id: OrganizationId,
+        ticket: ExchangedOrganizationSsoLoginTicket,
+        step_up: OrganizationSsoIdentityBindingStepUp,
     ) -> OrganizationSsoExplicitIdentityBindingFuture<'a> {
         Box::pin(self.bind_explicit_identity_inner(principal, organization_id, ticket, step_up))
     }
@@ -215,6 +283,37 @@ fn map_user_profile_error(error: UserProfileError) -> OrganizationSsoIdentityBin
     }
 }
 
+async fn verify_passkey_step_up(
+    service: Option<&dyn PasskeyAuthenticationService>,
+    principal: SessionPrincipal,
+    command: PasskeyAuthenticationCommand,
+) -> Result<(), OrganizationSsoIdentityBindingServiceError> {
+    let service = service.ok_or(OrganizationSsoIdentityBindingServiceError::Internal)?;
+    let authenticated_user = service
+        .finish(command)
+        .await
+        .map_err(map_passkey_authentication_error)?;
+    if authenticated_user != principal.user_id() {
+        return Err(OrganizationSsoIdentityBindingServiceError::Rejected);
+    }
+    Ok(())
+}
+
+fn map_passkey_authentication_error(
+    error: PasskeyAuthenticationError,
+) -> OrganizationSsoIdentityBindingServiceError {
+    match error {
+        PasskeyAuthenticationError::InvalidInput
+        | PasskeyAuthenticationError::LoginDisabled
+        | PasskeyAuthenticationError::Rejected => {
+            OrganizationSsoIdentityBindingServiceError::Rejected
+        }
+        PasskeyAuthenticationError::Internal => {
+            OrganizationSsoIdentityBindingServiceError::Internal
+        }
+    }
+}
+
 fn map_repository_error(
     error: OrganizationSsoRepositoryError,
 ) -> OrganizationSsoIdentityBindingServiceError {
@@ -235,5 +334,84 @@ fn map_repository_error(
         | OrganizationSsoRepositoryError::Invariant => {
             OrganizationSsoIdentityBindingServiceError::Internal
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use af_domain::{TrustedClientIp, UserId};
+    use serde_json::json;
+
+    use super::{
+        OrganizationSsoIdentityBindingServiceError, PasskeyAuthenticationCommand,
+        PasskeyAuthenticationError, SessionPrincipal, verify_passkey_step_up,
+    };
+    use crate::{
+        PasskeyAuthenticationFuture, PasskeyAuthenticationOptionsFuture,
+        PasskeyAuthenticationService, SessionRole,
+    };
+
+    #[derive(Clone, Copy)]
+    struct MockPasskeyService {
+        result: Result<UserId, PasskeyAuthenticationError>,
+    }
+
+    impl PasskeyAuthenticationService for MockPasskeyService {
+        fn start<'a>(
+            &'a self,
+            _client_ip: TrustedClientIp,
+            _username: &'a str,
+        ) -> PasskeyAuthenticationOptionsFuture<'a> {
+            Box::pin(async { Err(PasskeyAuthenticationError::Internal) })
+        }
+
+        fn finish<'a>(
+            &'a self,
+            _command: PasskeyAuthenticationCommand,
+        ) -> PasskeyAuthenticationFuture<'a> {
+            let result = self.result;
+            Box::pin(async move { result })
+        }
+    }
+
+    #[tokio::test]
+    async fn passkey_step_up_requires_the_current_session_user() {
+        let principal = SessionPrincipal::new(UserId::new(7).unwrap(), SessionRole::User);
+        let command = PasskeyAuthenticationCommand::new(json!({})).unwrap();
+        let service = MockPasskeyService {
+            result: Ok(UserId::new(7).unwrap()),
+        };
+        assert_eq!(
+            verify_passkey_step_up(Some(&service), principal, command).await,
+            Ok(())
+        );
+
+        let other = MockPasskeyService {
+            result: Ok(UserId::new(8).unwrap()),
+        };
+        let command = PasskeyAuthenticationCommand::new(json!({})).unwrap();
+        assert_eq!(
+            verify_passkey_step_up(Some(&other), principal, command).await,
+            Err(OrganizationSsoIdentityBindingServiceError::Rejected)
+        );
+    }
+
+    #[tokio::test]
+    async fn passkey_step_up_fails_closed_without_service_or_on_authentication_failure() {
+        let principal = SessionPrincipal::new(UserId::new(7).unwrap(), SessionRole::User);
+        let command = PasskeyAuthenticationCommand::new(json!({})).unwrap();
+        assert_eq!(
+            verify_passkey_step_up(None, principal, command).await,
+            Err(OrganizationSsoIdentityBindingServiceError::Internal)
+        );
+
+        let service = MockPasskeyService {
+            result: Err(PasskeyAuthenticationError::Rejected),
+        };
+        let command = PasskeyAuthenticationCommand::new(json!({})).unwrap();
+        assert_eq!(
+            verify_passkey_step_up(Some(&service), principal, command).await,
+            Err(OrganizationSsoIdentityBindingServiceError::Rejected)
+        );
     }
 }
