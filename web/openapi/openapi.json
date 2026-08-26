@@ -30316,45 +30316,6 @@
         },
         "additionalProperties": false
       },
-      "OrganizationSsoSessionExchangeRequest": {
-        "type": "object",
-        "required": [
-          "organization_id",
-          "ticket"
-        ],
-        "properties": {
-          "organization_id": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          },
-          "ticket": {
-            "type": "string",
-            "format": "password",
-            "writeOnly": true,
-            "maxLength": 4096,
-            "minLength": 1
-          }
-        },
-        "additionalProperties": false
-      },
-      "OrganizationSsoSessionExchangeErrorResponse": {
-        "type": "object",
-        "description": "企业 SSO 会话交换失败的稳定响应，不回显 ticket、subject 或依赖错误。",
-        "required": [
-          "code",
-          "message"
-        ],
-        "properties": {
-          "code": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false
-      },
       "OrganizationSsoProvider": {
         "type": "object",
         "required": [
@@ -30464,6 +30425,45 @@
           },
           "clear_client_secret": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoSessionExchangeRequest": {
+        "type": "object",
+        "required": [
+          "organization_id",
+          "ticket"
+        ],
+        "properties": {
+          "organization_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "ticket": {
+            "type": "string",
+            "format": "password",
+            "writeOnly": true,
+            "maxLength": 4096,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoSessionExchangeErrorResponse": {
+        "type": "object",
+        "description": "企业 SSO 会话交换失败的稳定响应，不回显 ticket、subject 或依赖错误。",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
           }
         },
         "additionalProperties": false

@@ -1656,13 +1656,6 @@ export type OrganizationSsoLoginStartResponse = {
     request_digest: string;
     expires_at: number;
 };
-export type OrganizationSsoSessionExchangeRequest = {
-    organization_id: number;
-};
-export type OrganizationSsoSessionExchangeErrorResponse = {
-    code: string;
-    message: string;
-};
 export type OrganizationSsoProvider = {
     id: number;
     organization_id: number;
@@ -1686,6 +1679,13 @@ export type OrganizationSsoProviderRequest = {
     display_name: string;
     metadata_projection?: unknown;
     clear_client_secret: boolean;
+};
+export type OrganizationSsoSessionExchangeRequest = {
+    organization_id: number;
+};
+export type OrganizationSsoSessionExchangeErrorResponse = {
+    code: string;
+    message: string;
 };
 export type OrganizationSummaryResponse = {
     id: number;
@@ -2630,10 +2630,6 @@ export type OrganizationSsoIdentityBindingRequestWritable = {
     totp_code?: string | null;
     credential?: unknown;
 };
-export type OrganizationSsoSessionExchangeRequestWritable = {
-    organization_id: number;
-    ticket: string;
-};
 export type OrganizationSsoProviderRequestWritable = {
     expected_version: number;
     protocol: string;
@@ -2642,6 +2638,10 @@ export type OrganizationSsoProviderRequestWritable = {
     metadata_projection?: unknown;
     client_secret?: string | null;
     clear_client_secret: boolean;
+};
+export type OrganizationSsoSessionExchangeRequestWritable = {
+    organization_id: number;
+    ticket: string;
 };
 export type OrganizationTopupOrderResponseWritable = {
     order_id: string;
