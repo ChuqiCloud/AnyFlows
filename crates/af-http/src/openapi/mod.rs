@@ -226,7 +226,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 238);
+        assert_eq!(operation_count, 240);
         assert!(
             document
                 .components
