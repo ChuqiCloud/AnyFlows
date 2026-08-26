@@ -60,6 +60,10 @@ pub(crate) enum ManagementError {
     OrganizationSsoProviderNotFound,
     OrganizationSsoProviderConflict,
     OrganizationSsoProviderTransitionInvalid,
+    /// 当前会话、ticket 或二次验证不满足显式身份绑定前提。
+    OrganizationSsoIdentityBindingRejected,
+    /// 显式身份绑定已存在同一 Provider 或成员事实。
+    OrganizationSsoIdentityBindingConflict,
     OrganizationSsoDomainNotFound,
     OrganizationSsoDomainConflict,
     OrganizationSsoDomainTransitionInvalid,
@@ -463,6 +467,20 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "organization_sso_provider_transition_invalid",
                     message: "Organization SSO provider transition invalid",
+                },
+            ),
+            Self::OrganizationSsoIdentityBindingRejected => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                ManagementErrorBody {
+                    code: "organization_sso_identity_binding_rejected",
+                    message: "Organization SSO identity binding rejected",
+                },
+            ),
+            Self::OrganizationSsoIdentityBindingConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_sso_identity_binding_conflict",
+                    message: "Organization SSO identity binding conflict",
                 },
             ),
             Self::OrganizationSsoDomainNotFound => (

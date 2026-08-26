@@ -16996,6 +16996,116 @@
         ]
       }
     },
+    "/api/organizations/{organization_id}/sso/identities/bind": {
+      "post": {
+        "tags": [
+          "企业 SSO"
+        ],
+        "summary": "完成企业 SSO 显式身份绑定",
+        "description": "要求当前登录会话和一次性 OIDC ticket，并使用密码加二次因素或 Passkey 完成 step-up。响应不包含 subject、ticket 或原始认证材料。",
+        "operationId": "bindOrganizationSsoIdentity",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业内部标识",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationSsoIdentityBindingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "身份绑定已完成",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoIdentityBindingResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "绑定请求或 step-up 参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是企业活动成员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "身份绑定已存在或发生并发冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "ticket 或 step-up 未通过校验",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/auth/organization-sso/oidc/callback": {
       "get": {
         "tags": [
@@ -27936,6 +28046,8 @@
               "organization_sso_provider_not_found",
               "organization_sso_provider_conflict",
               "organization_sso_provider_transition_invalid",
+              "organization_sso_identity_binding_rejected",
+              "organization_sso_identity_binding_conflict",
               "organization_sso_domain_not_found",
               "organization_sso_domain_conflict",
               "organization_sso_domain_transition_invalid",
@@ -29971,6 +30083,90 @@
             "type": "integer",
             "format": "int64",
             "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoIdentityBindingRequest": {
+        "type": "object",
+        "required": [
+          "ticket",
+          "method"
+        ],
+        "properties": {
+          "ticket": {
+            "type": "string",
+            "format": "password",
+            "writeOnly": true,
+            "maxLength": 512,
+            "minLength": 1
+          },
+          "method": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "pattern": "^(password|passkey)$"
+          },
+          "current_password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "password",
+            "writeOnly": true,
+            "maxLength": 4096
+          },
+          "totp_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "password",
+            "writeOnly": true,
+            "maxLength": 128
+          },
+          "credential": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "writeOnly": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoIdentityBindingResponse": {
+        "type": "object",
+        "required": [
+          "identity_id",
+          "organization_id",
+          "membership_id",
+          "status",
+          "binding_method",
+          "version"
+        ],
+        "properties": {
+          "identity_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "organization_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "membership_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "type": "string"
+          },
+          "binding_method": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
           }
         },
         "additionalProperties": false

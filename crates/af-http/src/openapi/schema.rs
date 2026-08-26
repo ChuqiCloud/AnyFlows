@@ -678,6 +678,8 @@ pub(crate) enum ManagementErrorCodeSchema {
     OrganizationSsoProviderNotFound,
     OrganizationSsoProviderConflict,
     OrganizationSsoProviderTransitionInvalid,
+    OrganizationSsoIdentityBindingRejected,
+    OrganizationSsoIdentityBindingConflict,
     OrganizationSsoDomainNotFound,
     OrganizationSsoDomainConflict,
     OrganizationSsoDomainTransitionInvalid,

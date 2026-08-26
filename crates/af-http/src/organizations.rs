@@ -18,8 +18,10 @@ use af_admin::{
     OrganizationOwnershipTransferCommand, OrganizationSsoDomain as AdminOrganizationSsoDomain,
     OrganizationSsoDomainCreateCommand, OrganizationSsoDomainCreated, OrganizationSsoDomainService,
     OrganizationSsoDomainServiceError, OrganizationSsoDomainVerifyCommand,
-    OrganizationSsoLoginTransactionService, OrganizationSsoLoginTransactionServiceError,
-    OrganizationSsoProvider, OrganizationSsoProviderCommand, OrganizationSsoProviderService,
+    OrganizationSsoIdentityBindingService, OrganizationSsoIdentityBindingServiceError,
+    OrganizationSsoIdentityBindingStepUp, OrganizationSsoLoginTransactionService,
+    OrganizationSsoLoginTransactionServiceError, OrganizationSsoProvider,
+    OrganizationSsoProviderCommand, OrganizationSsoProviderService,
     OrganizationSsoProviderServiceError, OrganizationTeamChangeCommand,
     OrganizationTeamCreateCommand, OrganizationTeamDisableCommand, OrganizationTeamListQuery,
     OrganizationTeamRecord, SessionAuthentication,
@@ -40,7 +42,7 @@ use axum::{
 };
 use http::HeaderMap;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{Value, json};
 use utoipa::ToSchema;
 
 use crate::{
@@ -63,6 +65,7 @@ pub(crate) struct OrganizationHttpState {
     sso_provider_service: Option<Arc<dyn OrganizationSsoProviderService>>,
     sso_domain_service: Option<Arc<dyn OrganizationSsoDomainService>>,
     sso_login_service: Option<Arc<dyn OrganizationSsoLoginTransactionService>>,
+    sso_identity_binding_service: Option<Arc<dyn OrganizationSsoIdentityBindingService>>,
     activity_service: Arc<dyn OrganizationActivityService>,
 }
 
@@ -88,6 +91,7 @@ pub fn build_organization_router(
         sso_provider_service,
         None,
         None,
+        None,
     )
 }
 
@@ -103,6 +107,7 @@ pub fn build_organization_router_with_domain(
     sso_provider_service: Option<Arc<dyn OrganizationSsoProviderService>>,
     sso_domain_service: Option<Arc<dyn OrganizationSsoDomainService>>,
     sso_login_service: Option<Arc<dyn OrganizationSsoLoginTransactionService>>,
+    sso_identity_binding_service: Option<Arc<dyn OrganizationSsoIdentityBindingService>>,
 ) -> Router {
     let authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(session_authenticator),
@@ -231,6 +236,14 @@ pub fn build_organization_router_with_domain(
     } else {
         router
     };
+    let router = if sso_login_service.is_some() && sso_identity_binding_service.is_some() {
+        router.route(
+            "/api/organizations/{organization_id}/sso/identities/bind",
+            post(bind_organization_sso_identity),
+        )
+    } else {
+        router
+    };
     router
         .layer(authentication)
         .layer(middleware::from_fn(ensure_request_id))
@@ -243,6 +256,7 @@ pub fn build_organization_router_with_domain(
             sso_provider_service,
             sso_domain_service,
             sso_login_service,
+            sso_identity_binding_service,
             activity_service,
         })
 }
@@ -734,6 +748,158 @@ async fn start_organization_sso_login(
         request_digest: start.request_digest().to_owned(),
         expires_at: start.expires_at(),
     }))
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = OrganizationSsoIdentityBindingRequest)]
+pub struct OrganizationSsoIdentityBindingRequest {
+    #[schema(min_length = 1, max_length = 512, format = Password, write_only)]
+    ticket: String,
+    #[schema(min_length = 1, max_length = 32, pattern = "^(password|passkey)$")]
+    method: String,
+    #[schema(max_length = 4096, format = Password, write_only, required = false)]
+    current_password: Option<String>,
+    #[schema(max_length = 128, format = Password, write_only, required = false)]
+    totp_code: Option<String>,
+    #[schema(required = false, write_only)]
+    credential: Option<Value>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = OrganizationSsoIdentityBindingResponse)]
+pub struct OrganizationSsoIdentityBindingResponse {
+    identity_id: i64,
+    organization_id: i64,
+    membership_id: i64,
+    status: &'static str,
+    binding_method: &'static str,
+    version: i64,
+}
+
+/// 交换一次性 ticket 并完成当前成员的显式企业 SSO 身份绑定。
+async fn bind_organization_sso_identity(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path(organization_id): Path<i64>,
+    headers: HeaderMap,
+    request: Result<Json<OrganizationSsoIdentityBindingRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::OverviewRead,
+        &request_id,
+        &headers,
+        "organization.sso.identity.bind",
+        "organization",
+        organization_id.get().to_string(),
+    )
+    .await?;
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let step_up = parse_identity_binding_step_up(&request)?;
+    let login_service = state
+        .sso_login_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let binding_service = state
+        .sso_identity_binding_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let ticket = request.ticket;
+    let binding = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::OverviewRead,
+        "organization.sso.identity.bind",
+        "sso_identity",
+        "new".to_owned(),
+        async {
+            let exchanged = login_service
+                .exchange_ticket(organization_id, ticket)
+                .await
+                .map_err(map_sso_login_error)?;
+            binding_service
+                .bind_explicit_identity_with_step_up(
+                    authentication.principal(),
+                    organization_id,
+                    exchanged,
+                    step_up,
+                )
+                .await
+                .map_err(map_sso_identity_binding_error)
+        }
+        .await,
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::OverviewRead.code(),
+        "organization.sso.identity.bind",
+        "sso_identity",
+        binding.id().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({
+            "membership_id": binding.membership_id().get(),
+            "status": organization_sso_identity_status_code(binding.status()),
+            "binding_method": organization_sso_identity_binding_method_code(binding.binding_method()),
+            "version": binding.version(),
+        })),
+    )
+    .await?;
+    Ok(no_store_json(OrganizationSsoIdentityBindingResponse {
+        identity_id: binding.id(),
+        organization_id: binding.organization_id().get(),
+        membership_id: binding.membership_id().get(),
+        status: organization_sso_identity_status_code(binding.status()),
+        binding_method: organization_sso_identity_binding_method_code(binding.binding_method()),
+        version: binding.version(),
+    }))
+}
+
+fn parse_identity_binding_step_up(
+    request: &OrganizationSsoIdentityBindingRequest,
+) -> Result<OrganizationSsoIdentityBindingStepUp, ManagementError> {
+    match request.method.as_str() {
+        "password" => {
+            if request.credential.is_some() {
+                return Err(ManagementError::InvalidRequest);
+            }
+            let current_password = request
+                .current_password
+                .clone()
+                .ok_or(ManagementError::InvalidRequest)?;
+            let command = af_admin::UserSecurityStepUpCommand::new(
+                current_password,
+                request.totp_code.clone(),
+            )
+            .map_err(|_| ManagementError::InvalidRequest)?;
+            Ok(OrganizationSsoIdentityBindingStepUp::PasswordAndSecondFactor(command))
+        }
+        "passkey" => {
+            if request.current_password.is_some() || request.totp_code.is_some() {
+                return Err(ManagementError::InvalidRequest);
+            }
+            let credential = request
+                .credential
+                .clone()
+                .ok_or(ManagementError::InvalidRequest)?;
+            let command = af_admin::PasskeyAuthenticationCommand::new(credential)
+                .map_err(|_| ManagementError::InvalidRequest)?;
+            Ok(OrganizationSsoIdentityBindingStepUp::Passkey(command))
+        }
+        _ => Err(ManagementError::InvalidRequest),
+    }
 }
 
 async fn list_organization_sso_domains(
@@ -3007,6 +3173,39 @@ fn map_sso_login_error(error: OrganizationSsoLoginTransactionServiceError) -> Ma
     }
 }
 
+fn map_sso_identity_binding_error(
+    error: OrganizationSsoIdentityBindingServiceError,
+) -> ManagementError {
+    match error {
+        OrganizationSsoIdentityBindingServiceError::InvalidInput => ManagementError::InvalidRequest,
+        OrganizationSsoIdentityBindingServiceError::Rejected => {
+            ManagementError::OrganizationSsoIdentityBindingRejected
+        }
+        OrganizationSsoIdentityBindingServiceError::Conflict => {
+            ManagementError::OrganizationSsoIdentityBindingConflict
+        }
+        OrganizationSsoIdentityBindingServiceError::Internal => ManagementError::Internal,
+    }
+}
+
+fn organization_sso_identity_status_code(
+    status: af_domain::OrganizationSsoIdentityStatus,
+) -> &'static str {
+    match status {
+        af_domain::OrganizationSsoIdentityStatus::Active => "active",
+        af_domain::OrganizationSsoIdentityStatus::Disabled => "disabled",
+    }
+}
+
+fn organization_sso_identity_binding_method_code(
+    method: af_domain::OrganizationSsoIdentityBindingMethod,
+) -> &'static str {
+    match method {
+        af_domain::OrganizationSsoIdentityBindingMethod::Explicit => "explicit",
+        af_domain::OrganizationSsoIdentityBindingMethod::Invited => "invited",
+    }
+}
+
 fn map_sso_domain_error(error: OrganizationSsoDomainServiceError) -> ManagementError {
     match error {
         OrganizationSsoDomainServiceError::InvalidInput => ManagementError::InvalidRequest,
@@ -3161,5 +3360,73 @@ mod sso_provider_tests {
             request.into_command().unwrap_err(),
             ManagementError::InvalidRequest
         );
+    }
+}
+
+#[cfg(test)]
+mod sso_identity_binding_tests {
+    use super::*;
+
+    fn request(method: &str) -> OrganizationSsoIdentityBindingRequest {
+        OrganizationSsoIdentityBindingRequest {
+            ticket: "ticket-value".to_owned(),
+            method: method.to_owned(),
+            current_password: None,
+            totp_code: None,
+            credential: None,
+        }
+    }
+
+    #[test]
+    fn binding_request_rejects_unknown_fields() {
+        let result = serde_json::from_value::<OrganizationSsoIdentityBindingRequest>(json!({
+            "ticket": "ticket-value",
+            "method": "password",
+            "current_password": "current-password",
+            "unexpected": true
+        }));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn binding_request_requires_matching_step_up_material() {
+        let mut password = request("password");
+        password.current_password = Some("current-password".to_owned());
+        password.credential = Some(json!({"id": "credential"}));
+        assert_eq!(
+            parse_identity_binding_step_up(&password).unwrap_err(),
+            ManagementError::InvalidRequest
+        );
+
+        let mut passkey = request("passkey");
+        passkey.current_password = Some("current-password".to_owned());
+        assert_eq!(
+            parse_identity_binding_step_up(&passkey).unwrap_err(),
+            ManagementError::InvalidRequest
+        );
+    }
+
+    #[test]
+    fn binding_response_excludes_authentication_material() {
+        let response = serde_json::to_value(OrganizationSsoIdentityBindingResponse {
+            identity_id: 1,
+            organization_id: 2,
+            membership_id: 3,
+            status: "active",
+            binding_method: "explicit",
+            version: 4,
+        })
+        .unwrap();
+        for field in [
+            "ticket",
+            "subject",
+            "credential",
+            "current_password",
+            "totp_code",
+        ] {
+            assert!(response.get(field).is_none(), "发现敏感响应字段: {field}");
+        }
+        assert_eq!(response["identity_id"], 1);
+        assert_eq!(response["binding_method"], "explicit");
     }
 }

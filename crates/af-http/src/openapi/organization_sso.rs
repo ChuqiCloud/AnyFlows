@@ -11,7 +11,8 @@ use crate::{
     organizations::{
         OrganizationSsoDomainCreateRequest, OrganizationSsoDomainCreatedResponse,
         OrganizationSsoDomainListResponse, OrganizationSsoDomainResponse,
-        OrganizationSsoDomainVerifyRequest, OrganizationSsoLoginStartRequest,
+        OrganizationSsoDomainVerifyRequest, OrganizationSsoIdentityBindingRequest,
+        OrganizationSsoIdentityBindingResponse, OrganizationSsoLoginStartRequest,
         OrganizationSsoLoginStartResponse, OrganizationSsoProviderListResponse,
         OrganizationSsoProviderRequest, OrganizationSsoProviderResponse,
     },
@@ -190,6 +191,28 @@ fn verify_organization_sso_domain() {}
 fn start_organization_sso_login() {}
 
 #[utoipa::path(
+    post,
+    path = "/api/organizations/{organization_id}/sso/identities/bind",
+    operation_id = "bindOrganizationSsoIdentity",
+    tag = "企业 SSO",
+    summary = "完成企业 SSO 显式身份绑定",
+    description = "要求当前登录会话和一次性 OIDC ticket，并使用密码加二次因素或 Passkey 完成 step-up。响应不包含 subject、ticket 或原始认证材料。",
+    params(("organization_id" = i64, Path, minimum = 1, description = "企业内部标识")),
+    request_body = OrganizationSsoIdentityBindingRequest,
+    responses(
+        (status = 200, description = "身份绑定已完成", body = OrganizationSsoIdentityBindingResponse),
+        (status = 400, description = "绑定请求或 step-up 参数无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "当前用户不是企业活动成员", body = ManagementErrorBody),
+        (status = 409, description = "身份绑定已存在或发生并发冲突", body = ManagementErrorBody),
+        (status = 422, description = "ticket 或 step-up 未通过校验", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn bind_organization_sso_identity() {}
+
+#[utoipa::path(
     get,
     path = "/api/auth/organization-sso/oidc/callback",
     operation_id = "completeOrganizationSsoOidcLogin",
@@ -234,6 +257,7 @@ fn complete_organization_sso_saml_login() {}
         create_organization_sso_domain,
         verify_organization_sso_domain,
         start_organization_sso_login,
+        bind_organization_sso_identity,
         complete_organization_sso_oidc_login,
         complete_organization_sso_saml_login
     ),
@@ -248,6 +272,8 @@ fn complete_organization_sso_saml_login() {}
         OrganizationSsoDomainVerifyRequest,
         OrganizationSsoLoginStartRequest,
         OrganizationSsoLoginStartResponse,
+        OrganizationSsoIdentityBindingRequest,
+        OrganizationSsoIdentityBindingResponse,
         OrganizationSsoLoginCallbackErrorResponse,
         OrganizationSsoLoginCallbackSuccessResponse,
         ManagementErrorBody
