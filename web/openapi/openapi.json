@@ -30462,9 +30462,9 @@
           "ticket": {
             "type": "string",
             "writeOnly": true,
-            "format": "password",
             "maxLength": 4096,
-            "minLength": 1
+            "minLength": 1,
+            "format": "password"
           }
         },
         "additionalProperties": false
