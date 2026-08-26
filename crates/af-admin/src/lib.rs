@@ -35,6 +35,7 @@ mod organization_invitation;
 mod organization_management;
 mod organization_sso;
 mod organization_sso_domain;
+mod organization_sso_identity_binding;
 mod organization_sso_login;
 #[cfg(test)]
 mod organization_sso_login_tests;
@@ -284,6 +285,11 @@ pub use organization_sso_domain::{
     OrganizationSsoDomainListFuture, OrganizationSsoDomainService,
     OrganizationSsoDomainServiceError, OrganizationSsoDomainVerifyCommand,
 };
+pub use organization_sso_identity_binding::{
+    DatabaseOrganizationSsoIdentityBindingService, OrganizationSsoExplicitIdentityBinding,
+    OrganizationSsoExplicitIdentityBindingFuture, OrganizationSsoIdentityBindingService,
+    OrganizationSsoIdentityBindingServiceError,
+};
 pub use organization_sso_login::{
     ClaimedOrganizationSsoLoginTransaction, DatabaseOrganizationSsoLoginTransactionService,
     ExchangedOrganizationSsoLoginTicket, IssuedOrganizationSsoLoginTicket,
@@ -451,9 +457,9 @@ pub use user_profile::{
     UserPasskeyRegistrationFuture, UserPasskeyRegistrationOptionsFuture, UserPasskeyRenameFuture,
     UserPasskeyRevokeFuture, UserPasswordChangeCommand, UserPasswordChangeFuture, UserProfile,
     UserProfileError, UserProfileReadFuture, UserProfileService, UserProfileUpdateCommand,
-    UserProfileUpdateFuture, UserTwoFactorDisableCommand, UserTwoFactorDisableFuture,
-    UserTwoFactorEnableCommand, UserTwoFactorEnableFuture, UserTwoFactorReadFuture,
-    UserTwoFactorStatus,
+    UserProfileUpdateFuture, UserSecurityStepUpCommand, UserSecurityStepUpFuture,
+    UserTwoFactorDisableCommand, UserTwoFactorDisableFuture, UserTwoFactorEnableCommand,
+    UserTwoFactorEnableFuture, UserTwoFactorReadFuture, UserTwoFactorStatus,
 };
 pub use user_read::{
     AdminUser, AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserPage,

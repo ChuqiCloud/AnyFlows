@@ -2,9 +2,10 @@ use std::{error::Error, time::Duration};
 
 use af_domain::{
     DEFAULT_ORGANIZATION_SSO_RECHECK_INTERVAL_SECONDS, OrganizationEntitlementCapacity,
-    OrganizationEntitlementSnapshot, OrganizationId, OrganizationInvitationKey, OrganizationRole,
-    OrganizationSsoDnsTxtAnswers, OrganizationSsoDnsVerification, OrganizationSsoDomain,
-    OrganizationSsoDomainProof, OrganizationSsoDomainProofToken, OrganizationSsoDomainStatus,
+    OrganizationEntitlementSnapshot, OrganizationId, OrganizationInvitationKey,
+    OrganizationMembershipStatus, OrganizationRole, OrganizationSsoDnsTxtAnswers,
+    OrganizationSsoDnsVerification, OrganizationSsoDomain, OrganizationSsoDomainProof,
+    OrganizationSsoDomainProofToken, OrganizationSsoDomainStatus,
     OrganizationSsoIdentityBindingMethod, OrganizationSsoIdentityStatus, OrganizationSsoProtocol,
     OrganizationSsoProviderKey, OrganizationSsoProviderStatus, UserId,
 };
@@ -322,6 +323,275 @@ async fn sso_repository_rejects_identity_conflicts_and_login_replays() -> Result
             .await,
         Err(OrganizationSsoRepositoryError::Expired)
     );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn explicit_identity_binding_rechecks_all_organization_facts() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let organization_id = fixture.organizations_ids[0];
+    let user_id = fixture.users[1];
+    let key = provider_key(12);
+    let provider = fixture
+        .sso
+        .create_provider(
+            organization_id,
+            OrganizationSsoProviderCreate::new(
+                key,
+                OrganizationSsoProtocol::Oidc,
+                OrganizationSsoProviderStatus::Active,
+                "Explicit SSO".to_owned(),
+                None,
+                None,
+            ),
+        )
+        .await?;
+    add_verified_domain(&fixture, organization_id, key, "explicit.example.com").await?;
+    let membership = fixture
+        .organizations
+        .add_membership(
+            organization_id,
+            OrganizationMembershipCreate::new(
+                user_id,
+                OrganizationRole::Member,
+                None,
+                Some(fixture.users[0]),
+            ),
+        )
+        .await?;
+
+    assert_eq!(
+        fixture
+            .sso
+            .bind_explicit_identity(organization_id, user_id, provider.id(), digest('q'))
+            .await,
+        Err(OrganizationSsoRepositoryError::Unavailable)
+    );
+    enable_sso(&fixture, organization_id).await?;
+    let identity = fixture
+        .sso
+        .bind_explicit_identity(organization_id, user_id, provider.id(), digest('q'))
+        .await?;
+    assert_eq!(identity.membership_id(), membership.id());
+    assert_eq!(
+        identity.binding_method(),
+        OrganizationSsoIdentityBindingMethod::Explicit
+    );
+    assert_eq!(
+        fixture
+            .sso
+            .bind_explicit_identity(organization_id, user_id, provider.id(), digest('r'))
+            .await,
+        Err(OrganizationSsoRepositoryError::Conflict)
+    );
+
+    let no_domain_key = provider_key(13);
+    let no_domain_provider = fixture
+        .sso
+        .create_provider(
+            organization_id,
+            OrganizationSsoProviderCreate::new(
+                no_domain_key,
+                OrganizationSsoProtocol::Oidc,
+                OrganizationSsoProviderStatus::Active,
+                "No Domain SSO".to_owned(),
+                None,
+                None,
+            ),
+        )
+        .await?;
+    assert_eq!(
+        fixture
+            .sso
+            .bind_explicit_identity(
+                organization_id,
+                user_id,
+                no_domain_provider.id(),
+                digest('s'),
+            )
+            .await,
+        Err(OrganizationSsoRepositoryError::Unavailable)
+    );
+
+    let disabled_key = provider_key(14);
+    let disabled_provider = fixture
+        .sso
+        .create_provider(
+            organization_id,
+            OrganizationSsoProviderCreate::new(
+                disabled_key,
+                OrganizationSsoProtocol::Oidc,
+                OrganizationSsoProviderStatus::Disabled,
+                "Disabled SSO".to_owned(),
+                None,
+                None,
+            ),
+        )
+        .await?;
+    assert_eq!(
+        fixture
+            .sso
+            .bind_explicit_identity(
+                organization_id,
+                user_id,
+                disabled_provider.id(),
+                digest('t'),
+            )
+            .await,
+        Err(OrganizationSsoRepositoryError::Unavailable)
+    );
+
+    let suspended_user_id = fixture.users[2];
+    let suspended_membership = fixture
+        .organizations
+        .add_membership(
+            organization_id,
+            OrganizationMembershipCreate::new(
+                suspended_user_id,
+                OrganizationRole::Member,
+                None,
+                Some(fixture.users[0]),
+            ),
+        )
+        .await?;
+    let suspended_key = provider_key(15);
+    let suspended_provider = fixture
+        .sso
+        .create_provider(
+            organization_id,
+            OrganizationSsoProviderCreate::new(
+                suspended_key,
+                OrganizationSsoProtocol::Oidc,
+                OrganizationSsoProviderStatus::Active,
+                "Suspended Membership SSO".to_owned(),
+                None,
+                None,
+            ),
+        )
+        .await?;
+    add_verified_domain(
+        &fixture,
+        organization_id,
+        suspended_key,
+        "suspended.example.com",
+    )
+    .await?;
+    let current = organization_memberships::Entity::find_by_id(suspended_membership.id().get())
+        .one(fixture.pool.connection())
+        .await?
+        .expect("测试成员必须存在");
+    let mut update = current.into_active_model();
+    update.status = Set(OrganizationMembershipStatus::Suspended.code());
+    update.suspended_at = Set(Some(TimeDateTimeWithTimeZone::now_utc()));
+    update.update(fixture.pool.connection()).await?;
+    assert_eq!(
+        fixture
+            .sso
+            .bind_explicit_identity(
+                organization_id,
+                suspended_user_id,
+                suspended_provider.id(),
+                digest('u'),
+            )
+            .await,
+        Err(OrganizationSsoRepositoryError::Unavailable)
+    );
+
+    let saml_key = provider_key(17);
+    let saml_provider = fixture
+        .sso
+        .create_provider(
+            organization_id,
+            OrganizationSsoProviderCreate::new(
+                saml_key,
+                OrganizationSsoProtocol::Saml,
+                OrganizationSsoProviderStatus::Active,
+                "SAML Explicit SSO".to_owned(),
+                None,
+                None,
+            ),
+        )
+        .await?;
+    add_verified_domain(
+        &fixture,
+        organization_id,
+        saml_key,
+        "saml-explicit.example.com",
+    )
+    .await?;
+    assert_eq!(
+        fixture
+            .sso
+            .bind_explicit_identity(organization_id, user_id, saml_provider.id(), digest('w'),)
+            .await,
+        Err(OrganizationSsoRepositoryError::Unavailable)
+    );
+
+    let expired_organization_id = fixture.organizations_ids[1];
+    enable_sso(&fixture, expired_organization_id).await?;
+    let expired_key = provider_key(16);
+    let expired_provider = fixture
+        .sso
+        .create_provider(
+            expired_organization_id,
+            OrganizationSsoProviderCreate::new(
+                expired_key,
+                OrganizationSsoProtocol::Oidc,
+                OrganizationSsoProviderStatus::Active,
+                "Expired Entitlement SSO".to_owned(),
+                None,
+                None,
+            ),
+        )
+        .await?;
+    add_verified_domain(
+        &fixture,
+        expired_organization_id,
+        expired_key,
+        "expired-entitlement.example.com",
+    )
+    .await?;
+    let entitlement = organization_entitlements::Entity::find()
+        .filter(organization_entitlements::Column::OrganizationId.eq(expired_organization_id.get()))
+        .one(fixture.pool.connection())
+        .await?
+        .expect("测试企业必须具备商业授权");
+    let now = TimeDateTimeWithTimeZone::now_utc().unix_timestamp();
+    fixture
+        .organizations
+        .replace_entitlement(
+            expired_organization_id,
+            OrganizationEntitlementWrite::new(
+                OrganizationEntitlementSnapshot::new(
+                    OrganizationEntitlementCapacity::new(10, 10, 10)?,
+                    true,
+                    true,
+                    false,
+                    90,
+                    now - 7_200,
+                    now - 3_600,
+                    None,
+                )?,
+                "expired-sso-test".to_owned(),
+                None,
+                Some(u64::try_from(entitlement.version)?),
+            )?,
+        )
+        .await?;
+    assert_eq!(
+        fixture
+            .sso
+            .bind_explicit_identity(
+                expired_organization_id,
+                fixture.users[1],
+                expired_provider.id(),
+                digest('v'),
+            )
+            .await,
+        Err(OrganizationSsoRepositoryError::Unavailable)
+    );
+
     fixture.pool.close().await?;
     Ok(())
 }
