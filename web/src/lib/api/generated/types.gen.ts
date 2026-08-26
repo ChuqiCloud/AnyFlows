@@ -1680,12 +1680,12 @@ export type OrganizationSsoProviderRequest = {
     metadata_projection?: unknown;
     clear_client_secret: boolean;
 };
-export type OrganizationSsoSessionExchangeRequest = {
-    organization_id: number;
-};
 export type OrganizationSsoSessionExchangeErrorResponse = {
     code: string;
     message: string;
+};
+export type OrganizationSsoSessionExchangeRequest = {
+    organization_id: number;
 };
 export type OrganizationSummaryResponse = {
     id: number;
