@@ -1627,6 +1627,7 @@ export type OrganizationSsoDomainVerifyRequest = {
 };
 export type OrganizationSsoIdentityBindingRequest = {
     method: string;
+    credential?: unknown;
 };
 export type OrganizationSsoIdentityBindingResponse = {
     identity_id: number;
