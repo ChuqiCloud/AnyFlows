@@ -344,11 +344,12 @@ mod tests {
 
     use super::{
         OrganizationSsoIdentityBindingServiceError, PasskeyAuthenticationCommand,
-        PasskeyAuthenticationError, PasskeyAuthenticationFuture,
-        PasskeyAuthenticationOptionsFuture, PasskeyAuthenticationService, SessionPrincipal,
-        verify_passkey_step_up,
+        PasskeyAuthenticationError, SessionPrincipal, verify_passkey_step_up,
     };
-    use crate::SessionRole;
+    use crate::{
+        PasskeyAuthenticationFuture, PasskeyAuthenticationOptionsFuture,
+        PasskeyAuthenticationService, SessionRole,
+    };
 
     #[derive(Clone, Copy)]
     struct MockPasskeyService {
