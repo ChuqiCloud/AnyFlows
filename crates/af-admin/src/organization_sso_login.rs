@@ -391,6 +391,16 @@ pub trait OrganizationSsoLoginTransactionService: Send + Sync {
         ticket: String,
     ) -> OrganizationSsoLoginTransactionFuture<'a, ExchangedOrganizationSsoLoginTicket>;
 
+    /// 交换一次性 ticket 并解析活动企业成员；邀请事实只允许进入受控 JIT 绑定。
+    fn exchange_ticket_and_resolve_identity<'a>(
+        &'a self,
+        organization_id: OrganizationId,
+        ticket: String,
+    ) -> OrganizationSsoLoginTransactionFuture<'a, OrganizationMembershipRecord> {
+        let _ = (organization_id, ticket);
+        Box::pin(async { Err(OrganizationSsoLoginTransactionServiceError::Unavailable) })
+    }
+
     /// 交换一次性 ticket 并消费受邀请 JIT 事实；仅允许已验证 OIDC 投影进入绑定仓储。
     fn exchange_ticket_and_bind_invited_identity<'a>(
         &'a self,
@@ -805,6 +815,93 @@ impl DatabaseOrganizationSsoLoginTransactionService {
         ExchangedOrganizationSsoLoginTicket::from_record(record)
     }
 
+    async fn exchange_ticket_and_resolve_identity_inner(
+        &self,
+        organization_id: OrganizationId,
+        ticket: String,
+    ) -> Result<OrganizationMembershipRecord, OrganizationSsoLoginTransactionServiceError> {
+        let exchanged = self.exchange_ticket_inner(organization_id, ticket).await?;
+        if exchanged.protocol() != OrganizationSsoProtocol::Oidc {
+            return Err(OrganizationSsoLoginTransactionServiceError::Rejected);
+        }
+        let subject_digest = exchanged
+            .subject_digest()
+            .ok_or(OrganizationSsoLoginTransactionServiceError::Rejected)?
+            .to_owned();
+        let provider = self
+            .repository
+            .provider_by_id(organization_id, exchanged.provider_id())
+            .await
+            .map_err(map_repository_error)?;
+        if provider.protocol() != OrganizationSsoProtocol::Oidc
+            || provider.version() != exchanged.provider_version()
+            || provider.status() != OrganizationSsoProviderStatus::Active
+        {
+            return Err(OrganizationSsoLoginTransactionServiceError::Rejected);
+        }
+        let organization_repository = self
+            .organization_repository
+            .as_ref()
+            .ok_or(OrganizationSsoLoginTransactionServiceError::Unavailable)?;
+
+        // 邀请邮箱指纹是唯一允许创建 JIT 成员的事实，不能退化为邮箱匹配。
+        let membership =
+            if let Some(fingerprint) = exchanged.invitation_email_fingerprint().copied() {
+                organization_repository
+                    .bind_invited_sso_identity(
+                        organization_id,
+                        provider.provider_key(),
+                        subject_digest.clone(),
+                        fingerprint,
+                    )
+                    .await
+                    .map_err(map_invited_binding_error)?
+            } else {
+                let identity = self
+                    .repository
+                    .identity(organization_id, provider.provider_key(), subject_digest)
+                    .await
+                    .map_err(map_repository_error)?;
+                if identity.status() != af_domain::OrganizationSsoIdentityStatus::Active {
+                    return Err(OrganizationSsoLoginTransactionServiceError::Rejected);
+                }
+                organization_repository
+                    .membership(organization_id, identity.membership_id())
+                    .await
+                    .map_err(map_invited_binding_error)?
+            };
+        if membership.organization_id() != organization_id
+            || membership.status() != af_domain::OrganizationMembershipStatus::Active
+        {
+            return Err(OrganizationSsoLoginTransactionServiceError::Rejected);
+        }
+        let access = organization_repository
+            .authorized_access(organization_id, membership.user_id())
+            .await
+            .map_err(map_invited_binding_error)?;
+        if !access.entitlement().sso_enabled() {
+            return Err(OrganizationSsoLoginTransactionServiceError::Rejected);
+        }
+        let now = current_timestamp()?;
+        let has_valid_domain = self
+            .repository
+            .list_domains(organization_id)
+            .await
+            .map_err(map_repository_error)?
+            .into_iter()
+            .any(|domain| {
+                domain.provider_id() == provider.id()
+                    && domain.status() == af_domain::OrganizationSsoDomainStatus::Verified
+                    && domain
+                        .recheck_at()
+                        .is_some_and(|recheck_at| recheck_at > now)
+            });
+        if !has_valid_domain {
+            return Err(OrganizationSsoLoginTransactionServiceError::Rejected);
+        }
+        Ok(membership)
+    }
+
     async fn exchange_ticket_and_bind_invited_identity_inner(
         &self,
         organization_id: OrganizationId,
@@ -902,6 +999,14 @@ impl OrganizationSsoLoginTransactionService for DatabaseOrganizationSsoLoginTran
         ticket: String,
     ) -> OrganizationSsoLoginTransactionFuture<'a, ExchangedOrganizationSsoLoginTicket> {
         Box::pin(self.exchange_ticket_inner(organization_id, ticket))
+    }
+
+    fn exchange_ticket_and_resolve_identity<'a>(
+        &'a self,
+        organization_id: OrganizationId,
+        ticket: String,
+    ) -> OrganizationSsoLoginTransactionFuture<'a, OrganizationMembershipRecord> {
+        Box::pin(self.exchange_ticket_and_resolve_identity_inner(organization_id, ticket))
     }
 
     fn exchange_ticket_and_bind_invited_identity<'a>(

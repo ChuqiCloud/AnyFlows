@@ -4,12 +4,12 @@ use af_admin::{
     ClaimedOrganizationSsoLoginTransaction, ORGANIZATION_SSO_OIDC_CALLBACK_PATH,
     ORGANIZATION_SSO_SAML_CALLBACK_PATH, OrganizationSsoLoginTransactionService,
     OrganizationSsoLoginTransactionServiceError, OrganizationSsoOidcCallback,
-    OrganizationSsoSamlCallback,
+    OrganizationSsoSamlCallback, OrganizationSsoSessionService, OrganizationSsoSessionServiceError,
 };
-use af_domain::OrganizationSsoProtocol;
+use af_domain::{OrganizationId, OrganizationSsoProtocol};
 use axum::{
-    Router,
-    extract::{DefaultBodyLimit, RawQuery, State},
+    Json, Router,
+    extract::{DefaultBodyLimit, RawQuery, State, rejection::JsonRejection},
     response::Response,
     routing::{get, post},
 };
@@ -21,10 +21,12 @@ use utoipa::ToSchema;
 use crate::management_session::no_store_json;
 
 const MAX_SAML_CALLBACK_BODY_BYTES: usize = 256 * 1024;
+const ORGANIZATION_SSO_SESSION_EXCHANGE_PATH: &str = "/api/auth/organization-sso/session/exchange";
 
 #[derive(Clone)]
 struct OrganizationSsoLoginHttpState {
     service: Arc<dyn OrganizationSsoLoginTransactionService>,
+    session_service: Option<Arc<dyn OrganizationSsoSessionService>>,
 }
 
 /// 企业 SSO 回调当前只返回稳定错误投影，不返回 state、授权码或断言原文。
@@ -44,11 +46,30 @@ pub(crate) struct OrganizationSsoLoginCallbackSuccessResponse {
     expires_at: i64,
 }
 
+/// 同源交换一次性企业 SSO ticket 的请求；ticket 不会写入响应或日志。
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct OrganizationSsoSessionExchangeRequest {
+    #[schema(minimum = 1)]
+    organization_id: i64,
+    #[schema(min_length = 1, max_length = 4096, write_only)]
+    ticket: String,
+}
+
+/// 企业 SSO 会话交换失败的稳定响应，不回显 ticket、subject 或依赖错误。
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct OrganizationSsoSessionExchangeErrorResponse {
+    code: &'static str,
+    message: &'static str,
+}
+
 /// 构建不需要登录会话的企业 SSO 固定回调路由。
 pub(crate) fn build_organization_sso_login_router(
     service: Arc<dyn OrganizationSsoLoginTransactionService>,
+    session_service: Option<Arc<dyn OrganizationSsoSessionService>>,
 ) -> Router {
-    Router::new()
+    let mut router = Router::new()
         .route(
             ORGANIZATION_SSO_OIDC_CALLBACK_PATH,
             get(complete_oidc_callback),
@@ -58,8 +79,46 @@ pub(crate) fn build_organization_sso_login_router(
             post(complete_saml_callback),
         )
         .layer(DefaultBodyLimit::max(MAX_SAML_CALLBACK_BODY_BYTES))
-        .layer(RequestBodyLimitLayer::new(MAX_SAML_CALLBACK_BODY_BYTES))
-        .with_state(OrganizationSsoLoginHttpState { service })
+        .layer(RequestBodyLimitLayer::new(MAX_SAML_CALLBACK_BODY_BYTES));
+    if session_service.is_some() {
+        router = router.route(
+            ORGANIZATION_SSO_SESSION_EXCHANGE_PATH,
+            post(exchange_organization_sso_session),
+        );
+    }
+    router.with_state(OrganizationSsoLoginHttpState {
+        service,
+        session_service,
+    })
+}
+
+/// 在同源 POST 边界消费一次性 ticket，并返回既有站点会话。
+async fn exchange_organization_sso_session(
+    State(state): State<OrganizationSsoLoginHttpState>,
+    request: Result<Json<OrganizationSsoSessionExchangeRequest>, JsonRejection>,
+) -> Response {
+    let Json(request) = match request {
+        Ok(request) => request,
+        Err(_) => return session_exchange_error(StatusCode::BAD_REQUEST, "invalid_request"),
+    };
+    let organization_id = match OrganizationId::new(request.organization_id) {
+        Ok(organization_id) => organization_id,
+        Err(_) => return session_exchange_error(StatusCode::BAD_REQUEST, "invalid_request"),
+    };
+    if request.ticket.is_empty() || request.ticket.len() > 4_096 {
+        return session_exchange_error(StatusCode::BAD_REQUEST, "invalid_request");
+    }
+    let session_service = match state.session_service.as_ref() {
+        Some(service) => service,
+        None => return session_exchange_error(StatusCode::SERVICE_UNAVAILABLE, "unavailable"),
+    };
+    match session_service
+        .exchange_ticket(organization_id, request.ticket)
+        .await
+    {
+        Ok(session) => crate::management_session::issued_session_response(session),
+        Err(error) => map_session_exchange_error(error),
+    }
 }
 
 async fn complete_oidc_callback(
@@ -192,15 +251,46 @@ fn callback_success_response(ticket: &str, expires_at: i64) -> Response {
     response
 }
 
+fn map_session_exchange_error(error: OrganizationSsoSessionServiceError) -> Response {
+    let (status, code) = match error {
+        OrganizationSsoSessionServiceError::InvalidInput => {
+            (StatusCode::BAD_REQUEST, "invalid_request")
+        }
+        OrganizationSsoSessionServiceError::Rejected => {
+            (StatusCode::UNPROCESSABLE_ENTITY, "rejected")
+        }
+        OrganizationSsoSessionServiceError::Unavailable => {
+            (StatusCode::SERVICE_UNAVAILABLE, "unavailable")
+        }
+        OrganizationSsoSessionServiceError::Internal => {
+            (StatusCode::SERVICE_UNAVAILABLE, "unavailable")
+        }
+    };
+    session_exchange_error(status, code)
+}
+
+fn session_exchange_error(status: StatusCode, code: &'static str) -> Response {
+    let message = match code {
+        "invalid_request" => "企业 SSO 会话交换请求无效",
+        "rejected" => "企业 SSO 会话交换已拒绝",
+        _ => "企业 SSO 会话交换暂不可用",
+    };
+    let mut response = no_store_json(OrganizationSsoSessionExchangeErrorResponse { code, message });
+    *response.status_mut() = status;
+    response
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
     use af_admin::{
-        ExchangedOrganizationSsoLoginTicket, IssuedOrganizationSsoLoginTicket,
+        ExchangedOrganizationSsoLoginTicket, IssuedOrganizationSsoLoginTicket, IssuedSession,
         OrganizationSsoLoginTransactionFuture, OrganizationSsoLoginTransactionStart,
+        OrganizationSsoSessionFuture, OrganizationSsoSessionService,
+        OrganizationSsoSessionServiceError, SessionPrincipal, SessionRole, SessionToken,
     };
-    use af_domain::OrganizationId;
+    use af_domain::{OrganizationId, UserId};
     use axum::{
         body::{Body, to_bytes},
         http::{Request, StatusCode},
@@ -211,6 +301,37 @@ mod tests {
     use super::*;
 
     struct TestService;
+
+    #[derive(Clone, Copy)]
+    enum TestSessionOutcome {
+        Error(OrganizationSsoSessionServiceError),
+        Success,
+    }
+
+    struct TestSessionService(TestSessionOutcome);
+
+    impl OrganizationSsoSessionService for TestSessionService {
+        fn exchange_ticket<'a>(
+            &'a self,
+            _organization_id: OrganizationId,
+            _ticket: String,
+        ) -> OrganizationSsoSessionFuture<'a> {
+            let outcome = self.0;
+            Box::pin(async move {
+                match outcome {
+                    TestSessionOutcome::Error(error) => Err(error),
+                    TestSessionOutcome::Success => Ok(IssuedSession::from_parts(
+                        SessionToken::from_string("access-token".to_owned()),
+                        SessionPrincipal::new(
+                            UserId::new(42).expect("测试用户标识"),
+                            SessionRole::User,
+                        ),
+                        1_800_000_000,
+                    )),
+                }
+            })
+        }
+    }
 
     impl OrganizationSsoLoginTransactionService for TestService {
         fn begin<'a>(
@@ -269,7 +390,7 @@ mod tests {
 
     #[tokio::test]
     async fn invalid_oidc_callback_does_not_leak_material() {
-        let router = build_organization_sso_login_router(Arc::new(TestService));
+        let router = build_organization_sso_login_router(Arc::new(TestService), None);
         let response = router
             .oneshot(
                 Request::builder()
@@ -315,6 +436,146 @@ mod tests {
             Some(1_800_000_000)
         );
         for sensitive in ["code", "state", "nonce", "token", "subject"] {
+            assert!(!body.to_string().contains(sensitive));
+        }
+    }
+
+    #[tokio::test]
+    async fn session_exchange_rejects_invalid_input_without_echoing_ticket() {
+        let router = build_organization_sso_login_router(
+            Arc::new(TestService),
+            Some(Arc::new(TestSessionService(TestSessionOutcome::Error(
+                OrganizationSsoSessionServiceError::Rejected,
+            )))),
+        );
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(ORGANIZATION_SSO_SESSION_EXCHANGE_PATH)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"organization_id":1,"ticket":"ticket-material"}"#,
+                    ))
+                    .expect("请求构造成功"),
+            )
+            .await
+            .expect("路由响应成功");
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            response.headers().get(CACHE_CONTROL),
+            Some(&HeaderValue::from_static("no-store"))
+        );
+        let body = to_bytes(response.into_body(), 4096)
+            .await
+            .expect("读取错误响应");
+        let body = String::from_utf8_lossy(&body);
+        assert!(!body.contains("ticket-material"));
+        assert!(!body.contains("subject"));
+    }
+
+    #[tokio::test]
+    async fn session_exchange_rejects_invalid_json_and_empty_ticket() {
+        let router = build_organization_sso_login_router(
+            Arc::new(TestService),
+            Some(Arc::new(TestSessionService(TestSessionOutcome::Error(
+                OrganizationSsoSessionServiceError::Rejected,
+            )))),
+        );
+        let invalid_json = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(ORGANIZATION_SSO_SESSION_EXCHANGE_PATH)
+                    .header("content-type", "application/json")
+                    .body(Body::from("{"))
+                    .expect("请求构造成功"),
+            )
+            .await
+            .expect("路由响应成功");
+        assert_eq!(invalid_json.status(), StatusCode::BAD_REQUEST);
+
+        let empty_ticket = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(ORGANIZATION_SSO_SESSION_EXCHANGE_PATH)
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"organization_id":1,"ticket":""}"#))
+                    .expect("请求构造成功"),
+            )
+            .await
+            .expect("路由响应成功");
+        assert_eq!(empty_ticket.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn session_exchange_maps_unavailable_without_leaking_material() {
+        let router = build_organization_sso_login_router(
+            Arc::new(TestService),
+            Some(Arc::new(TestSessionService(TestSessionOutcome::Error(
+                OrganizationSsoSessionServiceError::Unavailable,
+            )))),
+        );
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(ORGANIZATION_SSO_SESSION_EXCHANGE_PATH)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"organization_id":1,"ticket":"ticket-material"}"#,
+                    ))
+                    .expect("请求构造成功"),
+            )
+            .await
+            .expect("路由响应成功");
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            response.headers().get(CACHE_CONTROL),
+            Some(&HeaderValue::from_static("no-store"))
+        );
+        let body = to_bytes(response.into_body(), 4096)
+            .await
+            .expect("读取错误响应");
+        let body = String::from_utf8_lossy(&body);
+        assert!(!body.contains("ticket-material"));
+        assert!(!body.contains("subject"));
+    }
+
+    #[tokio::test]
+    async fn successful_session_exchange_returns_only_existing_login_response() {
+        let router = build_organization_sso_login_router(
+            Arc::new(TestService),
+            Some(Arc::new(TestSessionService(TestSessionOutcome::Success))),
+        );
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(ORGANIZATION_SSO_SESSION_EXCHANGE_PATH)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"organization_id":1,"ticket":"ticket-material"}"#,
+                    ))
+                    .expect("请求构造成功"),
+            )
+            .await
+            .expect("路由响应成功");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(CACHE_CONTROL),
+            Some(&HeaderValue::from_static("no-store"))
+        );
+        let body = to_bytes(response.into_body(), 4096)
+            .await
+            .expect("读取成功响应");
+        let body: Value = serde_json::from_slice(&body).expect("解析成功响应 JSON");
+        assert_eq!(body["access_token"], "access-token");
+        assert_eq!(body["token_type"], "Bearer");
+        assert_eq!(body["user"]["id"], 42);
+        for sensitive in ["ticket-material", "subject", "provider"] {
             assert!(!body.to_string().contains(sensitive));
         }
     }

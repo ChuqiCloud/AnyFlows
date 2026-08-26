@@ -205,7 +205,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 172);
+        assert_eq!(document.paths.paths.len(), 173);
         let operation_count = document
             .paths
             .paths
@@ -226,7 +226,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 237);
+        assert_eq!(operation_count, 238);
         assert!(
             document
                 .components
@@ -353,6 +353,7 @@ mod tests {
             "bindOrganizationSsoIdentity",
             "completeOrganizationSsoOidcLogin",
             "completeOrganizationSsoSamlLogin",
+            "exchangeOrganizationSsoSession",
             "getUserTopupConfiguration",
             "getUserWallet",
             "importMissingAdminModels",
@@ -497,7 +498,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 392);
+        assert_eq!(schemas.len(), 394);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminDashboardChannelFlow"));
         assert!(schemas.contains_key("AdminDashboardFailure"));
@@ -524,6 +525,8 @@ mod tests {
         assert!(schemas.contains_key("OrganizationSsoIdentityBindingRequest"));
         assert!(schemas.contains_key("OrganizationSsoIdentityBindingResponse"));
         assert!(schemas.contains_key("OrganizationSsoLoginCallbackErrorResponse"));
+        assert!(schemas.contains_key("OrganizationSsoSessionExchangeRequest"));
+        assert!(schemas.contains_key("OrganizationSsoSessionExchangeErrorResponse"));
         assert!(schemas.contains_key("OrganizationInvitationAcceptRequest"));
         assert!(schemas.contains_key("OrganizationInvitationResponse"));
         assert!(schemas.contains_key("OrganizationMemberCustomRoleRequest"));

@@ -1680,6 +1680,13 @@ export type OrganizationSsoProviderRequest = {
     metadata_projection?: unknown;
     clear_client_secret: boolean;
 };
+export type OrganizationSsoSessionExchangeErrorResponse = {
+    code: string;
+    message: string;
+};
+export type OrganizationSsoSessionExchangeRequest = {
+    organization_id: number;
+};
 export type OrganizationSummaryResponse = {
     id: number;
     name: string;
@@ -2631,6 +2638,10 @@ export type OrganizationSsoProviderRequestWritable = {
     metadata_projection?: unknown;
     client_secret?: string | null;
     clear_client_secret: boolean;
+};
+export type OrganizationSsoSessionExchangeRequestWritable = {
+    organization_id: number;
+    ticket: string;
 };
 export type OrganizationTopupOrderResponseWritable = {
     order_id: string;
@@ -6513,6 +6524,22 @@ export type CompleteOrganizationSsoSamlLoginErrors = {
     503: OrganizationSsoLoginCallbackErrorResponse;
 };
 export type CompleteOrganizationSsoSamlLoginError = CompleteOrganizationSsoSamlLoginErrors[keyof CompleteOrganizationSsoSamlLoginErrors];
+export type ExchangeOrganizationSsoSessionData = {
+    body: OrganizationSsoSessionExchangeRequestWritable;
+    path?: never;
+    query?: never;
+    url: '/api/auth/organization-sso/session/exchange';
+};
+export type ExchangeOrganizationSsoSessionErrors = {
+    400: OrganizationSsoSessionExchangeErrorResponse;
+    422: OrganizationSsoSessionExchangeErrorResponse;
+    503: OrganizationSsoSessionExchangeErrorResponse;
+};
+export type ExchangeOrganizationSsoSessionError = ExchangeOrganizationSsoSessionErrors[keyof ExchangeOrganizationSsoSessionErrors];
+export type ExchangeOrganizationSsoSessionResponses = {
+    200: LoginResponse;
+};
+export type ExchangeOrganizationSsoSessionResponse = ExchangeOrganizationSsoSessionResponses[keyof ExchangeOrganizationSsoSessionResponses];
 export type ListOrganizationTokensData = {
     body?: never;
     path: {

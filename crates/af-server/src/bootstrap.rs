@@ -225,6 +225,7 @@ pub struct AuthenticationReady {
     organization_sso_provider_service: Arc<dyn OrganizationSsoProviderService>,
     organization_sso_domain_service: Arc<dyn OrganizationSsoDomainService>,
     organization_sso_login_service: Arc<DatabaseOrganizationSsoLoginTransactionService>,
+    organization_sso_session_service: Arc<dyn af_admin::OrganizationSsoSessionService>,
     organization_sso_identity_binding_service: Arc<dyn OrganizationSsoIdentityBindingService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
     site_settings_repository: SiteSettingsRepository,
@@ -1171,6 +1172,23 @@ impl Bootstrap<DatabaseReady> {
                 None => service,
             }
         });
+        let session_authenticator: Arc<dyn SessionAuthenticator> = Arc::new(session_authenticator);
+        let organization_sso_login_service = Arc::new(
+            DatabaseOrganizationSsoLoginTransactionService::new_with_organization_repository(
+                organization_sso_provider_repository.clone(),
+                organization_repository.as_ref().clone(),
+                system_secret_cipher.clone(),
+                organization_invitation_cipher.clone(),
+            ),
+        );
+        let organization_sso_login_service_trait: Arc<
+            dyn af_admin::OrganizationSsoLoginTransactionService,
+        > = organization_sso_login_service.clone();
+        let organization_sso_session_service: Arc<dyn af_admin::OrganizationSsoSessionService> =
+            Arc::new(af_admin::DatabaseOrganizationSsoSessionService::new(
+                organization_sso_login_service_trait,
+                Arc::clone(&session_authenticator),
+            ));
         Ok(Bootstrap {
             config,
             shutdown_timeout,
@@ -1181,7 +1199,7 @@ impl Bootstrap<DatabaseReady> {
                     database_authenticator,
                     Arc::new(token_request_admission_repository),
                 )),
-                session_authenticator: Arc::new(session_authenticator),
+                session_authenticator,
                 initial_setup: Arc::new(DatabaseInitialSetup::new(initial_setup_repository)),
                 registration_service,
                 passkey_authentication_service,
@@ -1238,14 +1256,8 @@ impl Bootstrap<DatabaseReady> {
                         organization_sso_dns_resolver,
                     ),
                 ),
-                organization_sso_login_service: Arc::new(
-                    DatabaseOrganizationSsoLoginTransactionService::new_with_organization_repository(
-                        organization_sso_provider_repository,
-                        organization_repository.as_ref().clone(),
-                        system_secret_cipher.clone(),
-                        organization_invitation_cipher,
-                    ),
-                ),
+                organization_sso_login_service,
+                organization_sso_session_service,
                 organization_sso_identity_binding_service,
                 site_settings_service: Arc::new(DatabaseSiteSettingsService::new(
                     site_settings_repository.clone(),
@@ -2429,6 +2441,9 @@ impl Bootstrap<Supervised> {
                     .clone();
                 service
             }),
+            Some(Arc::clone(
+                &self.stage.infrastructure.organization_sso_session_service,
+            )),
             Some(Arc::clone(
                 &self
                     .stage
