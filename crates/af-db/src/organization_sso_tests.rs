@@ -364,14 +364,14 @@ async fn explicit_identity_binding_rechecks_all_organization_facts() -> Result<(
     assert_eq!(
         fixture
             .sso
-            .bind_explicit_identity(organization_id, user_id, provider.id(), digest('q'))
+            .bind_explicit_identity(organization_id, user_id, provider.id(), digest('a'))
             .await,
         Err(OrganizationSsoRepositoryError::Unavailable)
     );
     enable_sso(&fixture, organization_id).await?;
     let identity = fixture
         .sso
-        .bind_explicit_identity(organization_id, user_id, provider.id(), digest('q'))
+        .bind_explicit_identity(organization_id, user_id, provider.id(), digest('a'))
         .await?;
     assert_eq!(identity.membership_id(), membership.id());
     assert_eq!(
@@ -381,7 +381,7 @@ async fn explicit_identity_binding_rechecks_all_organization_facts() -> Result<(
     assert_eq!(
         fixture
             .sso
-            .bind_explicit_identity(organization_id, user_id, provider.id(), digest('r'))
+            .bind_explicit_identity(organization_id, user_id, provider.id(), digest('b'))
             .await,
         Err(OrganizationSsoRepositoryError::Conflict)
     );
@@ -408,7 +408,7 @@ async fn explicit_identity_binding_rechecks_all_organization_facts() -> Result<(
                 organization_id,
                 user_id,
                 no_domain_provider.id(),
-                digest('s'),
+                digest('c'),
             )
             .await,
         Err(OrganizationSsoRepositoryError::Unavailable)
@@ -436,7 +436,7 @@ async fn explicit_identity_binding_rechecks_all_organization_facts() -> Result<(
                 organization_id,
                 user_id,
                 disabled_provider.id(),
-                digest('t'),
+                digest('d'),
             )
             .await,
         Err(OrganizationSsoRepositoryError::Unavailable)
@@ -492,7 +492,7 @@ async fn explicit_identity_binding_rechecks_all_organization_facts() -> Result<(
                 organization_id,
                 suspended_user_id,
                 suspended_provider.id(),
-                digest('u'),
+                digest('e'),
             )
             .await,
         Err(OrganizationSsoRepositoryError::Unavailable)
@@ -523,7 +523,7 @@ async fn explicit_identity_binding_rechecks_all_organization_facts() -> Result<(
     assert_eq!(
         fixture
             .sso
-            .bind_explicit_identity(organization_id, user_id, saml_provider.id(), digest('w'),)
+            .bind_explicit_identity(organization_id, user_id, saml_provider.id(), digest('0'),)
             .await,
         Err(OrganizationSsoRepositoryError::Unavailable)
     );
@@ -586,7 +586,7 @@ async fn explicit_identity_binding_rechecks_all_organization_facts() -> Result<(
                 expired_organization_id,
                 fixture.users[1],
                 expired_provider.id(),
-                digest('v'),
+                digest('f'),
             )
             .await,
         Err(OrganizationSsoRepositoryError::Unavailable)
