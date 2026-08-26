@@ -288,7 +288,7 @@ pub use organization_sso_domain::{
 pub use organization_sso_identity_binding::{
     DatabaseOrganizationSsoIdentityBindingService, OrganizationSsoExplicitIdentityBinding,
     OrganizationSsoExplicitIdentityBindingFuture, OrganizationSsoIdentityBindingService,
-    OrganizationSsoIdentityBindingServiceError,
+    OrganizationSsoIdentityBindingServiceError, OrganizationSsoIdentityBindingStepUp,
 };
 pub use organization_sso_login::{
     ClaimedOrganizationSsoLoginTransaction, DatabaseOrganizationSsoLoginTransactionService,
