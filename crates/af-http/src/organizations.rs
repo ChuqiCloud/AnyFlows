@@ -22,15 +22,17 @@ use af_admin::{
     OrganizationSsoIdentityBindingStepUp, OrganizationSsoLoginTransactionService,
     OrganizationSsoLoginTransactionServiceError, OrganizationSsoProvider,
     OrganizationSsoProviderCommand, OrganizationSsoProviderService,
-    OrganizationSsoProviderServiceError, OrganizationTeamChangeCommand,
-    OrganizationTeamCreateCommand, OrganizationTeamDisableCommand, OrganizationTeamListQuery,
-    OrganizationTeamRecord, SessionAuthentication,
+    OrganizationSsoProviderServiceError, OrganizationSsoRecoveryCommand,
+    OrganizationSsoRecoveryService, OrganizationSsoRecoveryServiceError,
+    OrganizationTeamChangeCommand, OrganizationTeamCreateCommand, OrganizationTeamDisableCommand,
+    OrganizationTeamListQuery, OrganizationTeamRecord, SessionAuthentication,
 };
 use af_domain::{
     OrganizationCustomRoleKey, OrganizationEntitlementStatus, OrganizationId,
     OrganizationInvitationKey, OrganizationInvitationStatus, OrganizationMembershipId,
     OrganizationMembershipStatus, OrganizationPermission, OrganizationRole,
-    OrganizationSsoProtocol, OrganizationSsoProviderStatus, OrganizationTeamId,
+    OrganizationSsoEnforcementPolicy, OrganizationSsoProtocol, OrganizationSsoProviderStatus,
+    OrganizationTeamId,
 };
 use af_telemetry::RequestId;
 use axum::{
@@ -43,7 +45,13 @@ use axum::{
 use http::HeaderMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use utoipa::ToSchema;
+use utoipa::{
+    ToSchema,
+    openapi::{
+        RefOr,
+        schema::{ObjectBuilder, Schema, Type},
+    },
+};
 
 use crate::{
     management_auth::{ManagementAuthenticationState, authenticate_management_session},
@@ -66,6 +74,7 @@ pub(crate) struct OrganizationHttpState {
     sso_domain_service: Option<Arc<dyn OrganizationSsoDomainService>>,
     sso_login_service: Option<Arc<dyn OrganizationSsoLoginTransactionService>>,
     sso_identity_binding_service: Option<Arc<dyn OrganizationSsoIdentityBindingService>>,
+    sso_recovery_service: Option<Arc<dyn OrganizationSsoRecoveryService>>,
     activity_service: Arc<dyn OrganizationActivityService>,
 }
 
@@ -92,6 +101,7 @@ pub fn build_organization_router(
         None,
         None,
         None,
+        None,
     )
 }
 
@@ -108,6 +118,7 @@ pub fn build_organization_router_with_domain(
     sso_domain_service: Option<Arc<dyn OrganizationSsoDomainService>>,
     sso_login_service: Option<Arc<dyn OrganizationSsoLoginTransactionService>>,
     sso_identity_binding_service: Option<Arc<dyn OrganizationSsoIdentityBindingService>>,
+    sso_recovery_service: Option<Arc<dyn OrganizationSsoRecoveryService>>,
 ) -> Router {
     let authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(session_authenticator),
@@ -244,6 +255,19 @@ pub fn build_organization_router_with_domain(
     } else {
         router
     };
+    let router = if sso_recovery_service.is_some() {
+        router
+            .route(
+                "/api/organizations/{organization_id}/sso/recovery/establish",
+                post(establish_organization_sso_recovery),
+            )
+            .route(
+                "/api/organizations/{organization_id}/sso/recovery/suspend-required",
+                post(suspend_organization_sso_required),
+            )
+    } else {
+        router
+    };
     router
         .layer(authentication)
         .layer(middleware::from_fn(ensure_request_id))
@@ -257,6 +281,7 @@ pub fn build_organization_router_with_domain(
             sso_domain_service,
             sso_login_service,
             sso_identity_binding_service,
+            sso_recovery_service,
             activity_service,
         })
 }
@@ -864,6 +889,168 @@ async fn bind_organization_sso_identity(
         binding_method: organization_sso_identity_binding_method_code(binding.binding_method()),
         version: binding.version(),
     }))
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = OrganizationSsoRecoveryRequest)]
+pub struct OrganizationSsoRecoveryRequest {
+    #[schema(minimum = 1)]
+    expected_version: i64,
+    #[schema(min_length = 1, max_length = 4096, format = Password, write_only)]
+    current_password: String,
+    #[schema(max_length = 128, format = Password, write_only, required = false)]
+    totp_code: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = OrganizationSsoRecoveryResponse)]
+pub struct OrganizationSsoRecoveryResponse {
+    #[schema(schema_with = organization_sso_recovery_policy_schema)]
+    policy: &'static str,
+    recovery_ready: bool,
+    #[schema(minimum = 1)]
+    version: i64,
+}
+
+/// 保持策略响应为字符串枚举，并兼容 utoipa 的字段级 Schema 构造器。
+fn organization_sso_recovery_policy_schema() -> RefOr<Schema> {
+    ObjectBuilder::new()
+        .schema_type(Type::String)
+        .enum_values(Some(["optional", "required"]))
+        .build()
+        .into()
+}
+
+/// 完成 Owner break-glass 恢复登记，并仅返回脱敏后的策略快照。
+async fn establish_organization_sso_recovery(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path(organization_id): Path<i64>,
+    headers: HeaderMap,
+    request: Result<Json<OrganizationSsoRecoveryRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    execute_organization_sso_recovery(
+        state,
+        authentication,
+        request_id,
+        headers,
+        organization_id,
+        request,
+        false,
+    )
+    .await
+}
+
+/// 暂停 Required 策略，保留恢复事实并返回脱敏后的策略快照。
+async fn suspend_organization_sso_required(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path(organization_id): Path<i64>,
+    headers: HeaderMap,
+    request: Result<Json<OrganizationSsoRecoveryRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    execute_organization_sso_recovery(
+        state,
+        authentication,
+        request_id,
+        headers,
+        organization_id,
+        request,
+        true,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn execute_organization_sso_recovery(
+    state: OrganizationHttpState,
+    authentication: SessionAuthentication,
+    request_id: RequestId,
+    headers: HeaderMap,
+    organization_id: i64,
+    request: Result<Json<OrganizationSsoRecoveryRequest>, JsonRejection>,
+    suspend_required: bool,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let operation = if suspend_required {
+        "organization.sso.recovery.suspend_required"
+    } else {
+        "organization.sso.recovery.establish"
+    };
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::SsoRecovery,
+        &request_id,
+        &headers,
+        operation,
+        "sso_recovery",
+        organization_id.get().to_string(),
+    )
+    .await?;
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let command = recovery_command(request)?;
+    let service = state
+        .sso_recovery_service
+        .as_ref()
+        .ok_or(ManagementError::OrganizationSsoRecoveryUnavailable)?;
+    let result = if suspend_required {
+        service.suspend_required(authentication.principal(), context.clone(), command)
+    } else {
+        service.establish(authentication.principal(), context.clone(), command)
+    }
+    .await
+    .map_err(map_sso_recovery_error);
+    let recovery = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::SsoRecovery,
+        operation,
+        "sso_recovery",
+        organization_id.get().to_string(),
+        result,
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::SsoRecovery.code(),
+        operation,
+        "sso_recovery",
+        organization_id.get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({
+            "policy": organization_sso_recovery_policy_code(recovery.policy()),
+            "recovery_ready": recovery.recovery_ready(),
+            "version": recovery.version(),
+        })),
+    )
+    .await?;
+    Ok(no_store_json(OrganizationSsoRecoveryResponse {
+        policy: organization_sso_recovery_policy_code(recovery.policy()),
+        recovery_ready: recovery.recovery_ready(),
+        version: recovery.version(),
+    }))
+}
+
+fn recovery_command(
+    request: OrganizationSsoRecoveryRequest,
+) -> Result<OrganizationSsoRecoveryCommand, ManagementError> {
+    let step_up =
+        af_admin::UserSecurityStepUpCommand::new(request.current_password, request.totp_code)
+            .map_err(|_| ManagementError::InvalidRequest)?;
+    OrganizationSsoRecoveryCommand::new(step_up, request.expected_version)
+        .map_err(map_sso_recovery_error)
 }
 
 fn parse_identity_binding_step_up(
@@ -2889,6 +3076,13 @@ fn organization_sso_protocol_code(protocol: OrganizationSsoProtocol) -> &'static
     }
 }
 
+fn organization_sso_recovery_policy_code(policy: OrganizationSsoEnforcementPolicy) -> &'static str {
+    match policy {
+        OrganizationSsoEnforcementPolicy::Optional => "optional",
+        OrganizationSsoEnforcementPolicy::Required => "required",
+    }
+}
+
 fn organization_sso_provider_status_code(status: OrganizationSsoProviderStatus) -> &'static str {
     match status {
         OrganizationSsoProviderStatus::Draft => "draft",
@@ -3187,6 +3381,26 @@ fn map_sso_identity_binding_error(
     }
 }
 
+fn map_sso_recovery_error(error: OrganizationSsoRecoveryServiceError) -> ManagementError {
+    match error {
+        OrganizationSsoRecoveryServiceError::InvalidInput => ManagementError::InvalidRequest,
+        OrganizationSsoRecoveryServiceError::Forbidden => ManagementError::Forbidden,
+        OrganizationSsoRecoveryServiceError::EntitlementRestricted => {
+            ManagementError::OrganizationEntitlementRestricted
+        }
+        OrganizationSsoRecoveryServiceError::Rejected => {
+            ManagementError::OrganizationSsoRecoveryRejected
+        }
+        OrganizationSsoRecoveryServiceError::Conflict => {
+            ManagementError::OrganizationSsoRecoveryConflict
+        }
+        OrganizationSsoRecoveryServiceError::Unavailable => {
+            ManagementError::OrganizationSsoRecoveryUnavailable
+        }
+        OrganizationSsoRecoveryServiceError::Internal => ManagementError::Internal,
+    }
+}
+
 fn organization_sso_identity_status_code(
     status: af_domain::OrganizationSsoIdentityStatus,
 ) -> &'static str {
@@ -3427,5 +3641,67 @@ mod sso_identity_binding_tests {
         }
         assert_eq!(response["identity_id"], 1);
         assert_eq!(response["binding_method"], "explicit");
+    }
+}
+
+#[cfg(test)]
+mod sso_recovery_tests {
+    use super::*;
+
+    #[test]
+    fn recovery_request_rejects_unknown_fields_and_invalid_step_up() {
+        let unknown = serde_json::from_value::<OrganizationSsoRecoveryRequest>(json!({
+            "expected_version": 1,
+            "current_password": "current-password",
+            "unexpected": true
+        }));
+        assert!(unknown.is_err());
+
+        let invalid = OrganizationSsoRecoveryRequest {
+            expected_version: 0,
+            current_password: String::new(),
+            totp_code: None,
+        };
+        assert_eq!(
+            recovery_command(invalid).unwrap_err(),
+            ManagementError::InvalidRequest
+        );
+    }
+
+    #[test]
+    fn recovery_response_is_redacted_and_policy_is_stable() {
+        let response = serde_json::to_value(OrganizationSsoRecoveryResponse {
+            policy: "required",
+            recovery_ready: true,
+            version: 2,
+        })
+        .unwrap();
+        assert_eq!(response["policy"], "required");
+        assert_eq!(response["recovery_ready"], true);
+        assert_eq!(response["version"], 2);
+        for field in [
+            "current_password",
+            "totp_code",
+            "recovery_material",
+            "secret",
+        ] {
+            assert!(response.get(field).is_none(), "发现敏感响应字段: {field}");
+        }
+    }
+
+    #[test]
+    fn recovery_errors_map_to_stable_management_codes() {
+        assert_eq!(
+            map_sso_recovery_error(OrganizationSsoRecoveryServiceError::Rejected),
+            ManagementError::OrganizationSsoRecoveryRejected
+        );
+        assert_eq!(
+            map_sso_recovery_error(OrganizationSsoRecoveryServiceError::Conflict),
+            ManagementError::OrganizationSsoRecoveryConflict
+        );
+        assert_eq!(
+            map_sso_recovery_error(OrganizationSsoRecoveryServiceError::Unavailable),
+            ManagementError::OrganizationSsoRecoveryUnavailable
+        );
     }
 }

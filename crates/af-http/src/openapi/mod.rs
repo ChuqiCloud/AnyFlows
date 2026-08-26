@@ -205,7 +205,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 173);
+        assert_eq!(document.paths.paths.len(), 175);
         let operation_count = document
             .paths
             .paths
@@ -226,7 +226,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 238);
+        assert_eq!(operation_count, 240);
         assert!(
             document
                 .components
@@ -351,6 +351,8 @@ mod tests {
             "verifyOrganizationSsoDomain",
             "startOrganizationSsoLogin",
             "bindOrganizationSsoIdentity",
+            "establishOrganizationSsoRecovery",
+            "suspendOrganizationSsoRequired",
             "completeOrganizationSsoOidcLogin",
             "completeOrganizationSsoSamlLogin",
             "exchangeOrganizationSsoSession",
@@ -498,7 +500,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 394);
+        assert_eq!(schemas.len(), 396);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminDashboardChannelFlow"));
         assert!(schemas.contains_key("AdminDashboardFailure"));
@@ -524,6 +526,8 @@ mod tests {
         assert!(schemas.contains_key("OrganizationSsoLoginStartResponse"));
         assert!(schemas.contains_key("OrganizationSsoIdentityBindingRequest"));
         assert!(schemas.contains_key("OrganizationSsoIdentityBindingResponse"));
+        assert!(schemas.contains_key("OrganizationSsoRecoveryRequest"));
+        assert!(schemas.contains_key("OrganizationSsoRecoveryResponse"));
         assert!(schemas.contains_key("OrganizationSsoLoginCallbackErrorResponse"));
         assert!(schemas.contains_key("OrganizationSsoSessionExchangeRequest"));
         assert!(schemas.contains_key("OrganizationSsoSessionExchangeErrorResponse"));

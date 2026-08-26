@@ -17106,6 +17106,246 @@
         ]
       }
     },
+    "/api/organizations/{organization_id}/sso/recovery/establish": {
+      "post": {
+        "tags": [
+          "企业 SSO"
+        ],
+        "summary": "完成企业 SSO Owner break-glass 恢复登记",
+        "description": "要求当前企业 Owner 使用当前密码与 TOTP/备用码完成 step-up。响应仅返回脱敏策略快照，不包含密码、TOTP 或恢复材料。",
+        "operationId": "establishOrganizationSsoRecovery",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业内部标识",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationSsoRecoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "恢复登记已完成",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoRecoveryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "恢复请求参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是企业 Owner 或缺少恢复权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "企业授权或策略版本不允许本次操作",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "当前密码或二次因子未通过校验",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "恢复事实暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{organization_id}/sso/recovery/suspend-required": {
+      "post": {
+        "tags": [
+          "企业 SSO"
+        ],
+        "summary": "暂停企业 SSO Required 策略",
+        "description": "要求当前企业 Owner 使用当前密码与 TOTP/备用码完成 step-up。仅将 Required 暂停为 Optional，不删除恢复事实。",
+        "operationId": "suspendOrganizationSsoRequired",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业内部标识",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationSsoRecoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Required 策略已暂停",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoRecoveryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "恢复请求参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是企业 Owner 或缺少恢复权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "企业授权或策略版本不允许本次操作",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "当前密码或二次因子未通过校验",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "恢复事实暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/auth/organization-sso/oidc/callback": {
       "get": {
         "tags": [
@@ -28110,6 +28350,9 @@
               "organization_sso_provider_transition_invalid",
               "organization_sso_identity_binding_rejected",
               "organization_sso_identity_binding_conflict",
+              "organization_sso_recovery_rejected",
+              "organization_sso_recovery_conflict",
+              "organization_sso_recovery_unavailable",
               "organization_sso_domain_not_found",
               "organization_sso_domain_conflict",
               "organization_sso_domain_transition_invalid",
@@ -30425,6 +30668,63 @@
           },
           "clear_client_secret": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoRecoveryRequest": {
+        "type": "object",
+        "required": [
+          "expected_version",
+          "current_password"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "current_password": {
+            "type": "string",
+            "format": "password",
+            "writeOnly": true,
+            "maxLength": 4096,
+            "minLength": 1
+          },
+          "totp_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "password",
+            "writeOnly": true,
+            "maxLength": 128
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoRecoveryResponse": {
+        "type": "object",
+        "required": [
+          "policy",
+          "recovery_ready",
+          "version"
+        ],
+        "properties": {
+          "policy": {
+            "type": "string",
+            "enum": [
+              "optional",
+              "required"
+            ]
+          },
+          "recovery_ready": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
           }
         },
         "additionalProperties": false
