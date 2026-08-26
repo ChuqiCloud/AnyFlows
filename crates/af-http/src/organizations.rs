@@ -45,7 +45,13 @@ use axum::{
 use http::HeaderMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use utoipa::ToSchema;
+use utoipa::{
+    ToSchema,
+    openapi::{
+        RefOr,
+        schema::{ObjectBuilder, Schema, Type},
+    },
+};
 
 use crate::{
     management_auth::{ManagementAuthenticationState, authenticate_management_session},
@@ -901,11 +907,20 @@ pub struct OrganizationSsoRecoveryRequest {
 #[serde(deny_unknown_fields)]
 #[schema(as = OrganizationSsoRecoveryResponse)]
 pub struct OrganizationSsoRecoveryResponse {
-    #[schema(enum_values = ["optional", "required"])]
+    #[schema(schema_with = organization_sso_recovery_policy_schema)]
     policy: &'static str,
     recovery_ready: bool,
     #[schema(minimum = 1)]
     version: i64,
+}
+
+/// 保持策略响应为字符串枚举，并兼容 utoipa 的字段级 Schema 构造器。
+fn organization_sso_recovery_policy_schema() -> RefOr<Schema> {
+    ObjectBuilder::new()
+        .schema_type(Type::String)
+        .enum_values(Some(["optional", "required"]))
+        .build()
+        .into()
 }
 
 /// 完成 Owner break-glass 恢复登记，并仅返回脱敏后的策略快照。
