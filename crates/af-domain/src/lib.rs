@@ -64,11 +64,14 @@ pub use organization_entitlement::{
 pub use organization_scim::{
     MAX_ORGANIZATION_SCIM_DISPLAY_NAME_BYTES, MAX_ORGANIZATION_SCIM_GROUP_MEMBER_COUNT,
     MAX_ORGANIZATION_SCIM_RESOURCE_ID_BYTES, OrganizationScimGroupResource,
-    OrganizationScimResourceError, OrganizationScimResourceId, OrganizationScimResourceKey,
-    OrganizationScimResourceKind, OrganizationScimResourceSet, OrganizationScimResourceVersion,
-    OrganizationScimSyncDisposition, OrganizationScimToken, OrganizationScimTokenDigest,
-    OrganizationScimTokenError, OrganizationScimTokenKey, OrganizationScimTokenStatus,
-    OrganizationScimUserResource, classify_organization_scim_sync,
+    OrganizationScimLifecycleDisposition, OrganizationScimLifecycleFacts,
+    OrganizationScimLifecycleFactsError, OrganizationScimLifecycleIntent,
+    OrganizationScimLifecycleRejection, OrganizationScimResourceError, OrganizationScimResourceId,
+    OrganizationScimResourceKey, OrganizationScimResourceKind, OrganizationScimResourceSet,
+    OrganizationScimResourceVersion, OrganizationScimSyncDisposition, OrganizationScimToken,
+    OrganizationScimTokenDigest, OrganizationScimTokenError, OrganizationScimTokenKey,
+    OrganizationScimTokenStatus, OrganizationScimUserResource,
+    classify_organization_scim_lifecycle, classify_organization_scim_sync,
 };
 pub use organization_sso::{
     OrganizationSsoDomain, OrganizationSsoDomainError, OrganizationSsoDomainStatus,

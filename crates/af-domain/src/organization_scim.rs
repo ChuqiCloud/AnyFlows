@@ -1,6 +1,9 @@
 use std::{collections::HashSet, fmt};
 
-use crate::OrganizationId;
+use crate::{
+    OrganizationId, organization::OrganizationMembershipStatus,
+    organization_entitlement::OrganizationEntitlementStatus,
+};
 use getrandom::fill;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -368,6 +371,194 @@ pub const fn classify_organization_scim_sync(
                 OrganizationScimSyncDisposition::RejectStale
             }
         }
+    }
+}
+
+/// SCIM 用户资源希望落入的企业成员生命周期状态。
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum OrganizationScimLifecycleIntent {
+    /// 目录声明用户可以进入企业。
+    Active,
+    /// 目录声明用户暂时停用，但保留企业归属。
+    Suspended,
+    /// 目录明确删除用户；只允许把已有成员标记为不可逆移除。
+    Removed,
+}
+
+impl OrganizationScimLifecycleIntent {
+    /// 从 SCIM 用户的活动标记构造受限意图；删除必须由独立的强类型命令表达。
+    #[must_use]
+    pub const fn from_active(active: bool) -> Self {
+        if active {
+            Self::Active
+        } else {
+            Self::Suspended
+        }
+    }
+}
+
+/// 生命周期判定所需的企业授权和席位事实。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OrganizationScimLifecycleFacts {
+    entitlement_status: OrganizationEntitlementStatus,
+    active_member_count: i64,
+    seat_limit: i64,
+}
+
+/// 生命周期事实构造失败时的关闭式错误。
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum OrganizationScimLifecycleFactsError {
+    /// 活动成员数或席位上限不满足非负且有界不变量。
+    #[error("企业 SCIM 席位事实无效")]
+    InvalidSeatFacts,
+}
+
+impl OrganizationScimLifecycleFacts {
+    /// 构造只读事实，拒绝损坏的席位快照。
+    pub const fn new(
+        entitlement_status: OrganizationEntitlementStatus,
+        active_member_count: i64,
+        seat_limit: i64,
+    ) -> Result<Self, OrganizationScimLifecycleFactsError> {
+        if seat_limit <= 0 || active_member_count < 0 || active_member_count > seat_limit {
+            return Err(OrganizationScimLifecycleFactsError::InvalidSeatFacts);
+        }
+        Ok(Self {
+            entitlement_status,
+            active_member_count,
+            seat_limit,
+        })
+    }
+
+    /// 返回当前商业授权状态。
+    #[must_use]
+    pub const fn entitlement_status(self) -> OrganizationEntitlementStatus {
+        self.entitlement_status
+    }
+
+    /// 返回已占用的活动成员席位。
+    #[must_use]
+    pub const fn active_member_count(self) -> i64 {
+        self.active_member_count
+    }
+
+    /// 返回授权席位上限。
+    #[must_use]
+    pub const fn seat_limit(self) -> i64 {
+        self.seat_limit
+    }
+
+    /// 判断是否仍有席位可供新成员或恢复成员使用。
+    #[must_use]
+    pub const fn has_available_seat(self) -> bool {
+        self.active_member_count < self.seat_limit
+    }
+}
+
+/// SCIM 生命周期拒绝原因；不携带用户、组织或目录原文。
+#[derive(Clone, Copy, Debug, Eq, Error, Hash, PartialEq)]
+pub enum OrganizationScimLifecycleRejection {
+    /// 商业授权不是可写状态，所有 SCIM 生命周期写入均失败关闭。
+    #[error("企业 SCIM 商业授权不可用")]
+    EntitlementUnavailable,
+    /// 当前席位已满，不能入职或恢复成员。
+    #[error("企业 SCIM 席位已满")]
+    SeatCapacityExceeded,
+    /// 非活动目录资源不能首次创建企业成员。
+    #[error("企业 SCIM 非活动资源不能入职")]
+    InactiveResourceCannotProvision,
+    /// 已移除成员不可通过后续同步恢复。
+    #[error("企业 SCIM 已移除成员不可恢复")]
+    RemovedMembershipImmutable,
+    /// 不存在的成员不能直接执行删除。
+    #[error("企业 SCIM 不存在的成员不能删除")]
+    MissingMembershipForRemoval,
+}
+
+/// 企业 SCIM 用户生命周期的下一步判定。
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum OrganizationScimLifecycleDisposition {
+    /// 当前成员状态已经满足目录意图，重复请求不产生写入。
+    Noop,
+    /// 为活动目录用户创建企业成员关系；不创建个人用户。
+    Provision,
+    /// 将活动成员停用并保留企业归属和审计事实。
+    Suspend,
+    /// 将已停用成员恢复为活动成员。
+    Restore,
+    /// 将已有成员标记为不可逆软删除。
+    SoftDelete,
+    /// 由于授权、席位或生命周期不变量拒绝请求。
+    Reject(OrganizationScimLifecycleRejection),
+}
+
+/// 比较 SCIM 生命周期意图与企业成员状态；不执行数据库、个人用户或团队写入。
+#[must_use]
+pub const fn classify_organization_scim_lifecycle(
+    current: Option<OrganizationMembershipStatus>,
+    intent: OrganizationScimLifecycleIntent,
+    facts: OrganizationScimLifecycleFacts,
+) -> OrganizationScimLifecycleDisposition {
+    if !matches!(
+        facts.entitlement_status,
+        OrganizationEntitlementStatus::Active
+    ) {
+        return OrganizationScimLifecycleDisposition::Reject(
+            OrganizationScimLifecycleRejection::EntitlementUnavailable,
+        );
+    }
+
+    match (current, intent) {
+        (None, OrganizationScimLifecycleIntent::Active) if facts.has_available_seat() => {
+            OrganizationScimLifecycleDisposition::Provision
+        }
+        (None, OrganizationScimLifecycleIntent::Active) => {
+            OrganizationScimLifecycleDisposition::Reject(
+                OrganizationScimLifecycleRejection::SeatCapacityExceeded,
+            )
+        }
+        (None, OrganizationScimLifecycleIntent::Suspended) => {
+            OrganizationScimLifecycleDisposition::Reject(
+                OrganizationScimLifecycleRejection::InactiveResourceCannotProvision,
+            )
+        }
+        (None, OrganizationScimLifecycleIntent::Removed) => {
+            OrganizationScimLifecycleDisposition::Reject(
+                OrganizationScimLifecycleRejection::MissingMembershipForRemoval,
+            )
+        }
+        (Some(OrganizationMembershipStatus::Active), OrganizationScimLifecycleIntent::Active)
+        | (
+            Some(OrganizationMembershipStatus::Suspended),
+            OrganizationScimLifecycleIntent::Suspended,
+        )
+        | (Some(OrganizationMembershipStatus::Removed), OrganizationScimLifecycleIntent::Removed) => {
+            OrganizationScimLifecycleDisposition::Noop
+        }
+        (
+            Some(OrganizationMembershipStatus::Active),
+            OrganizationScimLifecycleIntent::Suspended,
+        ) => OrganizationScimLifecycleDisposition::Suspend,
+        (
+            Some(OrganizationMembershipStatus::Suspended),
+            OrganizationScimLifecycleIntent::Active,
+        ) if facts.has_available_seat() => OrganizationScimLifecycleDisposition::Restore,
+        (
+            Some(OrganizationMembershipStatus::Suspended),
+            OrganizationScimLifecycleIntent::Active,
+        ) => OrganizationScimLifecycleDisposition::Reject(
+            OrganizationScimLifecycleRejection::SeatCapacityExceeded,
+        ),
+        (
+            Some(OrganizationMembershipStatus::Active | OrganizationMembershipStatus::Suspended),
+            OrganizationScimLifecycleIntent::Removed,
+        ) => OrganizationScimLifecycleDisposition::SoftDelete,
+        (
+            Some(OrganizationMembershipStatus::Removed),
+            OrganizationScimLifecycleIntent::Active | OrganizationScimLifecycleIntent::Suspended,
+        ) => OrganizationScimLifecycleDisposition::Reject(
+            OrganizationScimLifecycleRejection::RemovedMembershipImmutable,
+        ),
     }
 }
 

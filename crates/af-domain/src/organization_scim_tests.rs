@@ -170,3 +170,160 @@ fn scim_group_rejects_duplicate_or_oversized_members() {
         OrganizationScimResourceError::TooManyGroupMembers
     );
 }
+
+#[test]
+fn scim_lifecycle_facts_reject_invalid_seat_snapshots() {
+    assert_eq!(
+        OrganizationScimLifecycleFacts::new(OrganizationEntitlementStatus::Active, -1, 4),
+        Err(OrganizationScimLifecycleFactsError::InvalidSeatFacts)
+    );
+    assert_eq!(
+        OrganizationScimLifecycleFacts::new(OrganizationEntitlementStatus::Active, 5, 4),
+        Err(OrganizationScimLifecycleFactsError::InvalidSeatFacts)
+    );
+    assert_eq!(
+        OrganizationScimLifecycleFacts::new(OrganizationEntitlementStatus::Active, 0, 0),
+        Err(OrganizationScimLifecycleFactsError::InvalidSeatFacts)
+    );
+}
+
+#[test]
+fn scim_lifecycle_distinguishes_provision_suspend_restore_and_delete() {
+    let available =
+        OrganizationScimLifecycleFacts::new(OrganizationEntitlementStatus::Active, 2, 3).unwrap();
+    assert!(available.has_available_seat());
+    assert_eq!(available.active_member_count(), 2);
+    assert_eq!(available.seat_limit(), 3);
+    assert_eq!(
+        classify_organization_scim_lifecycle(
+            None,
+            OrganizationScimLifecycleIntent::from_active(true),
+            available,
+        ),
+        OrganizationScimLifecycleDisposition::Provision
+    );
+    assert_eq!(
+        classify_organization_scim_lifecycle(
+            None,
+            OrganizationScimLifecycleIntent::from_active(false),
+            available,
+        ),
+        OrganizationScimLifecycleDisposition::Reject(
+            OrganizationScimLifecycleRejection::InactiveResourceCannotProvision
+        )
+    );
+    assert_eq!(
+        classify_organization_scim_lifecycle(
+            Some(OrganizationMembershipStatus::Active),
+            OrganizationScimLifecycleIntent::Suspended,
+            available,
+        ),
+        OrganizationScimLifecycleDisposition::Suspend
+    );
+    assert_eq!(
+        classify_organization_scim_lifecycle(
+            Some(OrganizationMembershipStatus::Suspended),
+            OrganizationScimLifecycleIntent::Active,
+            available,
+        ),
+        OrganizationScimLifecycleDisposition::Restore
+    );
+    assert_eq!(
+        classify_organization_scim_lifecycle(
+            Some(OrganizationMembershipStatus::Active),
+            OrganizationScimLifecycleIntent::Removed,
+            available,
+        ),
+        OrganizationScimLifecycleDisposition::SoftDelete
+    );
+    assert_eq!(
+        classify_organization_scim_lifecycle(
+            Some(OrganizationMembershipStatus::Suspended),
+            OrganizationScimLifecycleIntent::Removed,
+            available,
+        ),
+        OrganizationScimLifecycleDisposition::SoftDelete
+    );
+}
+
+#[test]
+fn scim_lifecycle_is_idempotent_and_never_revives_removed_members() {
+    let available =
+        OrganizationScimLifecycleFacts::new(OrganizationEntitlementStatus::Active, 1, 2).unwrap();
+    assert_eq!(
+        classify_organization_scim_lifecycle(
+            Some(OrganizationMembershipStatus::Active),
+            OrganizationScimLifecycleIntent::Active,
+            available,
+        ),
+        OrganizationScimLifecycleDisposition::Noop
+    );
+    assert_eq!(
+        classify_organization_scim_lifecycle(
+            Some(OrganizationMembershipStatus::Suspended),
+            OrganizationScimLifecycleIntent::Suspended,
+            available,
+        ),
+        OrganizationScimLifecycleDisposition::Noop
+    );
+    assert_eq!(
+        classify_organization_scim_lifecycle(
+            Some(OrganizationMembershipStatus::Removed),
+            OrganizationScimLifecycleIntent::Removed,
+            available,
+        ),
+        OrganizationScimLifecycleDisposition::Noop
+    );
+    assert_eq!(
+        classify_organization_scim_lifecycle(
+            Some(OrganizationMembershipStatus::Removed),
+            OrganizationScimLifecycleIntent::Active,
+            available,
+        ),
+        OrganizationScimLifecycleDisposition::Reject(
+            OrganizationScimLifecycleRejection::RemovedMembershipImmutable
+        )
+    );
+}
+
+#[test]
+fn scim_lifecycle_rechecks_entitlement_and_seat_capacity() {
+    let full =
+        OrganizationScimLifecycleFacts::new(OrganizationEntitlementStatus::Active, 2, 2).unwrap();
+    assert!(!full.has_available_seat());
+    assert_eq!(
+        classify_organization_scim_lifecycle(None, OrganizationScimLifecycleIntent::Active, full,),
+        OrganizationScimLifecycleDisposition::Reject(
+            OrganizationScimLifecycleRejection::SeatCapacityExceeded
+        )
+    );
+    assert_eq!(
+        classify_organization_scim_lifecycle(
+            Some(OrganizationMembershipStatus::Suspended),
+            OrganizationScimLifecycleIntent::Active,
+            full,
+        ),
+        OrganizationScimLifecycleDisposition::Reject(
+            OrganizationScimLifecycleRejection::SeatCapacityExceeded
+        )
+    );
+
+    for status in [
+        OrganizationEntitlementStatus::Grace,
+        OrganizationEntitlementStatus::ReadOnly,
+        OrganizationEntitlementStatus::Suspended,
+        OrganizationEntitlementStatus::Closed,
+    ] {
+        let facts = OrganizationScimLifecycleFacts::new(status, 0, 1).unwrap();
+        assert_eq!(
+            classify_organization_scim_lifecycle(
+                None,
+                OrganizationScimLifecycleIntent::Active,
+                facts,
+            ),
+            OrganizationScimLifecycleDisposition::Reject(
+                OrganizationScimLifecycleRejection::EntitlementUnavailable
+            )
+        );
+    }
+}
