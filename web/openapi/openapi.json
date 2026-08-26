@@ -30310,28 +30310,6 @@
         },
         "additionalProperties": false
       },
-      "OrganizationSsoDomainCreated": {
-        "type": "object",
-        "required": [
-          "domain",
-          "txt_record_name",
-          "txt_record_value"
-        ],
-        "properties": {
-          "domain": {
-            "$ref": "#/components/schemas/OrganizationSsoDomain"
-          },
-          "txt_record_name": {
-            "type": "string",
-            "minLength": 1
-          },
-          "txt_record_value": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "additionalProperties": false
-      },
       "OrganizationSsoDomainCreateRequest": {
         "type": "object",
         "required": [
@@ -30351,6 +30329,28 @@
             "format": "int64",
             "maximum": 604800,
             "minimum": 900
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoDomainCreated": {
+        "type": "object",
+        "required": [
+          "domain",
+          "txt_record_name",
+          "txt_record_value"
+        ],
+        "properties": {
+          "domain": {
+            "$ref": "#/components/schemas/OrganizationSsoDomain"
+          },
+          "txt_record_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "txt_record_value": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "additionalProperties": false
