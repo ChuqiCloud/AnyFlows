@@ -10,6 +10,7 @@ mod network;
 mod organization;
 mod organization_budget;
 mod organization_entitlement;
+mod organization_scim;
 mod organization_sso;
 mod organization_sso_domain_verification;
 mod organization_sso_identity;
@@ -60,6 +61,11 @@ pub use organization_entitlement::{
     OrganizationEntitlementSnapshot, OrganizationEntitlementStateError,
     OrganizationEntitlementStatus,
 };
+pub use organization_scim::{
+    OrganizationScimResourceKind, OrganizationScimResourceSet, OrganizationScimToken,
+    OrganizationScimTokenDigest, OrganizationScimTokenError, OrganizationScimTokenKey,
+    OrganizationScimTokenStatus,
+};
 pub use organization_sso::{
     OrganizationSsoDomain, OrganizationSsoDomainError, OrganizationSsoDomainStatus,
     OrganizationSsoEnforcementFacts, OrganizationSsoEnforcementPolicy,
@@ -86,8 +92,8 @@ pub use payment::{
 pub use principal::{
     ChannelId, CredentialId, GatewayPrincipal, GroupId, ModelId, OrganizationBudgetPolicyId,
     OrganizationBudgetWindowId, OrganizationCustomRoleId, OrganizationGatewayPrincipal,
-    OrganizationId, OrganizationMembershipId, OrganizationTeamId, PrincipalIdError, ProxyId,
-    RouteChannelId, RouteId, TokenId, UserId,
+    OrganizationId, OrganizationMembershipId, OrganizationScimTokenId, OrganizationTeamId,
+    PrincipalIdError, ProxyId, RouteChannelId, RouteId, TokenId, UserId,
 };
 pub use quota::{Quota, QuotaDelta, QuotaError};
 pub use redemption::{
@@ -139,6 +145,8 @@ mod error_tests;
 mod network_tests;
 #[cfg(test)]
 mod organization_budget_tests;
+#[cfg(test)]
+mod organization_scim_tests;
 #[cfg(test)]
 mod organization_sso_domain_verification_tests;
 #[cfg(test)]

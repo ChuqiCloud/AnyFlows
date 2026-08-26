@@ -124,6 +124,11 @@ principal_id! {
     OrganizationBudgetWindowId
 }
 
+principal_id! {
+    /// 企业 SCIM 令牌的持久化标识。
+    OrganizationScimTokenId
+}
+
 /// 已完成令牌、用户与有效分组校验的网关请求主体。
 ///
 /// 该值只携带稳定标识，不包含 API Key、摘要、展示前缀或可变授权策略，且不实现

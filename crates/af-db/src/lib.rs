@@ -132,6 +132,9 @@ mod organization_custom_role_binding;
 mod organization_custom_role_binding_tests;
 #[cfg(test)]
 mod organization_custom_role_tests;
+mod organization_scim;
+#[cfg(test)]
+mod organization_scim_tests;
 mod organization_sso;
 #[cfg(test)]
 mod organization_sso_tests;
@@ -491,6 +494,10 @@ pub use organization_custom_role_binding::{
     OrganizationCustomRoleBindingRecord, OrganizationCustomRoleBindingRepository,
     OrganizationCustomRoleBindingRepositoryConfigError,
     OrganizationCustomRoleBindingRepositoryError,
+};
+pub use organization_scim::{
+    OrganizationScimTokenCreateRecord, OrganizationScimTokenIssued, OrganizationScimTokenRecord,
+    OrganizationScimTokenRepository, OrganizationScimTokenRepositoryError,
 };
 pub use organization_sso::{
     OrganizationSsoDomainCreate, OrganizationSsoDomainRecord, OrganizationSsoDomainUpdate,
