@@ -119,6 +119,11 @@ pub(crate) async fn issue_session_for_user(
     Ok(no_store_json(login_response(session)))
 }
 
+/// 将已经完成外部身份校验的会话统一投影为不可缓存登录响应。
+pub(crate) fn issued_session_response(session: IssuedSession) -> Response {
+    no_store_json(login_response(session))
+}
+
 /// 返回 JWT 对应的当前用户状态，角色来自请求期间的数据库回查。
 pub(crate) async fn current_session(
     State(_state): State<HttpState>,

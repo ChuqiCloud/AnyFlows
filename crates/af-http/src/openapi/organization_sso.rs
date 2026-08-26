@@ -5,8 +5,10 @@ use utoipa::OpenApi;
 
 use crate::{
     management_error::ManagementErrorBody,
+    management_session::LoginResponse,
     organization_sso_login::{
         OrganizationSsoLoginCallbackErrorResponse, OrganizationSsoLoginCallbackSuccessResponse,
+        OrganizationSsoSessionExchangeErrorResponse, OrganizationSsoSessionExchangeRequest,
     },
     organizations::{
         OrganizationSsoDomainCreateRequest, OrganizationSsoDomainCreatedResponse,
@@ -246,6 +248,23 @@ fn complete_organization_sso_oidc_login() {}
 )]
 fn complete_organization_sso_saml_login() {}
 
+#[utoipa::path(
+    post,
+    path = "/api/auth/organization-sso/session/exchange",
+    operation_id = "exchangeOrganizationSsoSession",
+    tag = "企业 SSO",
+    summary = "交换企业 SSO ticket 为同源站点会话",
+    description = "仅消费一次性有效 OIDC ticket，重新校验企业授权、组织边界、身份绑定和域名状态后签发既有 bearer 会话。请求和响应均不记录 ticket、subject 或 Provider 原文，此路径不支持 SAML、强制策略和恢复入口。",
+    request_body = OrganizationSsoSessionExchangeRequest,
+    responses(
+        (status = 200, description = "已成功换取站点会话", body = LoginResponse),
+        (status = 400, description = "请求无效", body = OrganizationSsoSessionExchangeErrorResponse),
+        (status = 422, description = "ticket 或 SSO 身份已被拒绝", body = OrganizationSsoSessionExchangeErrorResponse),
+        (status = 503, description = "SSO 服务暂不可用", body = OrganizationSsoSessionExchangeErrorResponse)
+    )
+)]
+fn exchange_organization_sso_session() {}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -259,7 +278,8 @@ fn complete_organization_sso_saml_login() {}
         start_organization_sso_login,
         bind_organization_sso_identity,
         complete_organization_sso_oidc_login,
-        complete_organization_sso_saml_login
+        complete_organization_sso_saml_login,
+        exchange_organization_sso_session
     ),
     components(schemas(
         OrganizationSsoProviderResponse,
@@ -276,6 +296,9 @@ fn complete_organization_sso_saml_login() {}
         OrganizationSsoIdentityBindingResponse,
         OrganizationSsoLoginCallbackErrorResponse,
         OrganizationSsoLoginCallbackSuccessResponse,
+        OrganizationSsoSessionExchangeRequest,
+        OrganizationSsoSessionExchangeErrorResponse,
+        LoginResponse,
         ManagementErrorBody
     ))
 )]

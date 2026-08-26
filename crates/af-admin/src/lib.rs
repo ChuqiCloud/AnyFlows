@@ -39,6 +39,7 @@ mod organization_sso_identity_binding;
 mod organization_sso_login;
 #[cfg(test)]
 mod organization_sso_login_tests;
+mod organization_sso_session;
 mod organization_token;
 mod organization_wallet;
 mod passkey;
@@ -295,6 +296,10 @@ pub use organization_sso_login::{
     ExchangedOrganizationSsoLoginTicket, IssuedOrganizationSsoLoginTicket,
     OrganizationSsoLoginTransactionFuture, OrganizationSsoLoginTransactionService,
     OrganizationSsoLoginTransactionServiceError, OrganizationSsoLoginTransactionStart,
+};
+pub use organization_sso_session::{
+    DatabaseOrganizationSsoSessionService, OrganizationSsoSessionFuture,
+    OrganizationSsoSessionService, OrganizationSsoSessionServiceError,
 };
 pub use organization_token::{
     DEFAULT_ORGANIZATION_TOKEN_PAGE_SIZE, DatabaseOrganizationTokenService,

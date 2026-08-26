@@ -17228,6 +17228,68 @@
         }
       }
     },
+    "/api/auth/organization-sso/session/exchange": {
+      "post": {
+        "tags": [
+          "企业 SSO"
+        ],
+        "summary": "交换企业 SSO ticket 为同源站点会话",
+        "description": "仅消费一次性有效 OIDC ticket，重新校验企业授权、组织边界、身份绑定和域名状态后签发既有 bearer 会话。请求和响应均不记录 ticket、subject 或 Provider 原文，此路径不支持 SAML、强制策略和恢复入口。",
+        "operationId": "exchangeOrganizationSsoSession",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationSsoSessionExchangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "已成功换取站点会话",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoSessionExchangeErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "ticket 或 SSO 身份已被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoSessionExchangeErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "SSO 服务暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoSessionExchangeErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/organizations/{organization_id}/tokens": {
       "get": {
         "tags": [
@@ -30196,6 +30258,45 @@
           "expires_at": {
             "type": "integer",
             "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoSessionExchangeRequest": {
+        "type": "object",
+        "required": [
+          "organization_id",
+          "ticket"
+        ],
+        "properties": {
+          "organization_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "ticket": {
+            "type": "string",
+            "format": "password",
+            "writeOnly": true,
+            "maxLength": 4096,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoSessionExchangeErrorResponse": {
+        "type": "object",
+        "description": "企业 SSO 会话交换失败的稳定响应，不回显 ticket、subject 或依赖错误。",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
           }
         },
         "additionalProperties": false

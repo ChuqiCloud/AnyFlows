@@ -231,6 +231,7 @@ pub fn build_router(
     organization_sso_login_service: Option<
         Arc<dyn af_admin::OrganizationSsoLoginTransactionService>,
     >,
+    organization_sso_session_service: Option<Arc<dyn af_admin::OrganizationSsoSessionService>>,
     organization_sso_identity_binding_service: Option<
         Arc<dyn af_admin::OrganizationSsoIdentityBindingService>,
     >,
@@ -801,7 +802,10 @@ pub fn build_router(
         None => management_routes,
     };
     let management_routes = match organization_sso_login_service.clone() {
-        Some(service) => management_routes.merge(build_organization_sso_login_router(service)),
+        Some(service) => management_routes.merge(build_organization_sso_login_router(
+            service,
+            organization_sso_session_service,
+        )),
         None => management_routes,
     };
     let management_routes = management_routes.merge(debug_trace_routes);
