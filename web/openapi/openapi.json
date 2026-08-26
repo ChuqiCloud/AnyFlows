@@ -30463,8 +30463,7 @@
             "type": "string",
             "writeOnly": true,
             "maxLength": 4096,
-            "minLength": 1,
-            "format": "password"
+            "minLength": 1
           }
         },
         "additionalProperties": false
