@@ -30461,8 +30461,8 @@
           },
           "ticket": {
             "type": "string",
-            "format": "password",
             "writeOnly": true,
+            "format": "password",
             "maxLength": 4096,
             "minLength": 1
           }
