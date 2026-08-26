@@ -79,25 +79,39 @@ impl MigrationTrait for Migration {
                             .on_update(ForeignKeyAction::Restrict)
                             .on_delete(ForeignKeyAction::Restrict),
                     )
-                    .index(
-                        Index::create()
-                            .name("uq_organization_scim_tokens_token_key")
-                            .col(token_iden::Column::TokenKey)
-                            .unique(),
-                    )
-                    .index(
-                        Index::create()
-                            .name("uq_organization_scim_tokens_token_digest")
-                            .col(token_iden::Column::TokenDigest)
-                            .unique(),
-                    )
-                    .index(
-                        Index::create()
-                            .name("idx_organization_scim_tokens_organization_status_id")
-                            .col(token_iden::Column::OrganizationId)
-                            .col(token_iden::Column::Status)
-                            .col(token_iden::Column::Id),
-                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // 索引单独创建，避免 PostgreSQL 将索引片段误拼进建表 DDL。
+        manager
+            .create_index(
+                Index::create()
+                    .name("uq_organization_scim_tokens_token_key")
+                    .table(token_iden::Entity)
+                    .col(token_iden::Column::TokenKey)
+                    .unique()
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .name("uq_organization_scim_tokens_token_digest")
+                    .table(token_iden::Entity)
+                    .col(token_iden::Column::TokenDigest)
+                    .unique()
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_organization_scim_tokens_organization_status_id")
+                    .table(token_iden::Entity)
+                    .col(token_iden::Column::OrganizationId)
+                    .col(token_iden::Column::Status)
+                    .col(token_iden::Column::Id)
                     .to_owned(),
             )
             .await
