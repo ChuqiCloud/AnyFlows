@@ -212,7 +212,7 @@ impl OrganizationScimResourceSet {
 
     /// 从持久化位掩码恢复资源集合，拒绝未知位和空集合。
     pub const fn from_code(code: i16) -> Result<Self, OrganizationScimTokenError> {
-        if (1..=3).contains(&code) {
+        if code >= 1 && code <= 3 {
             Ok(Self(code as u8))
         } else {
             Err(OrganizationScimTokenError::InvalidEncoding)
