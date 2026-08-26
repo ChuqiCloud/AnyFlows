@@ -1,5 +1,6 @@
-use std::fmt;
+use std::{collections::HashSet, fmt};
 
+use crate::OrganizationId;
 use getrandom::fill;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -12,6 +13,13 @@ const SCIM_TOKEN_DIGEST_CONTEXT: &[u8] = b"anyflows-enterprise-scim-token-v1";
 const SCIM_TOKEN_KEY_BYTES: usize = 16;
 const SCIM_TOKEN_KEY_HEX_BYTES: usize = SCIM_TOKEN_KEY_BYTES * 2;
 const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
+
+/// SCIM 外部资源标识的最大字节数；更大的标识不能进入同步边界。
+pub const MAX_ORGANIZATION_SCIM_RESOURCE_ID_BYTES: usize = 256;
+/// SCIM 用户名和组名的最大字节数。
+pub const MAX_ORGANIZATION_SCIM_DISPLAY_NAME_BYTES: usize = 256;
+/// 单个 SCIM 组允许携带的成员引用数量上限。
+pub const MAX_ORGANIZATION_SCIM_GROUP_MEMBER_COUNT: usize = 1024;
 
 /// 企业 SCIM 令牌构造错误；错误中不携带令牌或摘要原文。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
@@ -244,6 +252,351 @@ pub enum OrganizationScimTokenStatus {
     Active = 1,
     /// 令牌已撤销且不可恢复。
     Revoked = 2,
+}
+
+/// SCIM 资源字段构造错误；错误中不携带外部目录原文。
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum OrganizationScimResourceError {
+    /// 资源标识为空、过长或包含路径/控制字符。
+    #[error("企业 SCIM 资源标识无效")]
+    InvalidResourceId,
+    /// 同步版本必须是非零的单调数值。
+    #[error("企业 SCIM 资源版本无效")]
+    InvalidVersion,
+    /// 用户名为空、过长或包含首尾空白。
+    #[error("企业 SCIM 用户名无效")]
+    InvalidUserName,
+    /// 展示名称为空、过长或包含控制字符。
+    #[error("企业 SCIM 展示名称无效")]
+    InvalidDisplayName,
+    /// 组成员引用数量超过固定上限。
+    #[error("企业 SCIM 组成员数量超限")]
+    TooManyGroupMembers,
+    /// 同一个组内不能重复引用同一资源。
+    #[error("企业 SCIM 组成员引用重复")]
+    DuplicateGroupMember,
+}
+
+/// 外部目录资源的稳定标识；不允许把路径、查询或片段语法带入同步键。
+#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct OrganizationScimResourceId(String);
+
+impl OrganizationScimResourceId {
+    /// 校验资源标识，不做大小写或 Unicode 归一化，避免幂等键漂移。
+    pub fn new(value: impl Into<String>) -> Result<Self, OrganizationScimResourceError> {
+        let value = value.into();
+        if value.is_empty()
+            || value.len() > MAX_ORGANIZATION_SCIM_RESOURCE_ID_BYTES
+            || value.trim() != value
+            || value.chars().any(char::is_control)
+            || value
+                .chars()
+                .any(|character| matches!(character, '/' | '\\' | '?' | '#' | '%'))
+        {
+            return Err(OrganizationScimResourceError::InvalidResourceId);
+        }
+        Ok(Self(value))
+    }
+
+    /// 返回企业内同步和后续持久化共用的规范资源标识。
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for OrganizationScimResourceId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("OrganizationScimResourceId(<redacted>)")
+    }
+}
+
+/// 由目录适配器归一化后的单调资源版本；零值不能作为幂等事实。
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct OrganizationScimResourceVersion(u64);
+
+impl OrganizationScimResourceVersion {
+    /// 创建非零版本。
+    pub const fn new(value: u64) -> Result<Self, OrganizationScimResourceError> {
+        if value == 0 {
+            Err(OrganizationScimResourceError::InvalidVersion)
+        } else {
+            Ok(Self(value))
+        }
+    }
+
+    /// 从数据库整数恢复版本，拒绝负数和零。
+    pub const fn from_persistence(value: i64) -> Result<Self, OrganizationScimResourceError> {
+        if value <= 0 {
+            return Err(OrganizationScimResourceError::InvalidVersion);
+        }
+        Ok(Self(value as u64))
+    }
+
+    /// 返回用于比较和持久化的数值。
+    #[must_use]
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+/// 按资源版本判定同步请求，重复请求不重复写入，旧版本失败关闭。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OrganizationScimSyncDisposition {
+    /// 当前资源不存在或请求版本更新，应进入后续原子写入。
+    Apply,
+    /// 请求版本与已保存版本相同，可安全视为幂等重放。
+    Noop,
+    /// 请求版本早于已保存版本，不能覆盖较新的目录事实。
+    RejectStale,
+}
+
+/// 比较目录请求版本与已保存版本；不执行任何数据库或成员写入。
+#[must_use]
+pub const fn classify_organization_scim_sync(
+    current: Option<OrganizationScimResourceVersion>,
+    incoming: OrganizationScimResourceVersion,
+) -> OrganizationScimSyncDisposition {
+    match current {
+        None => OrganizationScimSyncDisposition::Apply,
+        Some(current) => {
+            if incoming.get() > current.get() {
+                OrganizationScimSyncDisposition::Apply
+            } else if incoming.get() == current.get() {
+                OrganizationScimSyncDisposition::Noop
+            } else {
+                OrganizationScimSyncDisposition::RejectStale
+            }
+        }
+    }
+}
+
+/// 企业范围的 SCIM 资源键；资源类型和组织标识共同构成幂等边界。
+#[derive(Clone, Eq, Hash, PartialEq)]
+pub struct OrganizationScimResourceKey {
+    organization_id: OrganizationId,
+    kind: OrganizationScimResourceKind,
+    resource_id: OrganizationScimResourceId,
+}
+
+impl OrganizationScimResourceKey {
+    /// 组合已经通过企业范围校验的资源键。
+    #[must_use]
+    pub fn new(
+        organization_id: OrganizationId,
+        kind: OrganizationScimResourceKind,
+        resource_id: OrganizationScimResourceId,
+    ) -> Self {
+        Self {
+            organization_id,
+            kind,
+            resource_id,
+        }
+    }
+
+    /// 返回资源所属企业。
+    #[must_use]
+    pub const fn organization_id(&self) -> OrganizationId {
+        self.organization_id
+    }
+
+    /// 返回固定的 SCIM 资源种类。
+    #[must_use]
+    pub const fn kind(&self) -> OrganizationScimResourceKind {
+        self.kind
+    }
+
+    /// 返回外部目录资源标识。
+    #[must_use]
+    pub fn resource_id(&self) -> &OrganizationScimResourceId {
+        &self.resource_id
+    }
+}
+
+impl fmt::Debug for OrganizationScimResourceKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OrganizationScimResourceKey")
+            .field("organization_id", &self.organization_id)
+            .field("kind", &self.kind)
+            .field("resource_id", &self.resource_id)
+            .finish()
+    }
+}
+
+/// 企业 SCIM 用户资源；字段仅覆盖后续成员同步所需的受限投影。
+#[derive(Clone, Eq, PartialEq)]
+pub struct OrganizationScimUserResource {
+    key: OrganizationScimResourceKey,
+    user_name: String,
+    display_name: Option<String>,
+    active: bool,
+    version: OrganizationScimResourceVersion,
+}
+
+impl OrganizationScimUserResource {
+    /// 构造用户资源，不接受邮箱、个人 Key 或任意 JSON 扩展字段。
+    pub fn new(
+        organization_id: OrganizationId,
+        resource_id: OrganizationScimResourceId,
+        version: OrganizationScimResourceVersion,
+        user_name: String,
+        display_name: Option<String>,
+        active: bool,
+    ) -> Result<Self, OrganizationScimResourceError> {
+        validate_scim_text(&user_name, OrganizationScimResourceError::InvalidUserName)?;
+        if let Some(display_name) = display_name.as_deref() {
+            validate_scim_text(
+                display_name,
+                OrganizationScimResourceError::InvalidDisplayName,
+            )?;
+        }
+        Ok(Self {
+            key: OrganizationScimResourceKey::new(
+                organization_id,
+                OrganizationScimResourceKind::Users,
+                resource_id,
+            ),
+            user_name,
+            display_name,
+            active,
+            version,
+        })
+    }
+
+    /// 返回企业范围的资源键。
+    #[must_use]
+    pub fn key(&self) -> &OrganizationScimResourceKey {
+        &self.key
+    }
+
+    /// 返回目录用户名。
+    #[must_use]
+    pub fn user_name(&self) -> &str {
+        &self.user_name
+    }
+
+    /// 返回可选展示名称。
+    #[must_use]
+    pub fn display_name(&self) -> Option<&str> {
+        self.display_name.as_deref()
+    }
+
+    /// 返回目录声明的活动状态；不直接映射为个人用户状态。
+    #[must_use]
+    pub const fn active(&self) -> bool {
+        self.active
+    }
+
+    /// 返回用于幂等比较的资源版本。
+    #[must_use]
+    pub const fn version(&self) -> OrganizationScimResourceVersion {
+        self.version
+    }
+}
+
+impl fmt::Debug for OrganizationScimUserResource {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OrganizationScimUserResource")
+            .field("key", &self.key)
+            .field("active", &self.active)
+            .field("version", &self.version)
+            .finish_non_exhaustive()
+    }
+}
+
+/// 企业 SCIM 组资源；成员引用只保留外部资源标识，不携带个人空间身份。
+#[derive(Clone, Eq, PartialEq)]
+pub struct OrganizationScimGroupResource {
+    key: OrganizationScimResourceKey,
+    display_name: String,
+    member_ids: Vec<OrganizationScimResourceId>,
+    version: OrganizationScimResourceVersion,
+}
+
+impl OrganizationScimGroupResource {
+    /// 构造组资源并拒绝重复成员引用，确保后续同步可以稳定重放。
+    pub fn new(
+        organization_id: OrganizationId,
+        resource_id: OrganizationScimResourceId,
+        version: OrganizationScimResourceVersion,
+        display_name: String,
+        member_ids: Vec<OrganizationScimResourceId>,
+    ) -> Result<Self, OrganizationScimResourceError> {
+        validate_scim_text(
+            &display_name,
+            OrganizationScimResourceError::InvalidDisplayName,
+        )?;
+        if member_ids.len() > MAX_ORGANIZATION_SCIM_GROUP_MEMBER_COUNT {
+            return Err(OrganizationScimResourceError::TooManyGroupMembers);
+        }
+        let mut seen = HashSet::with_capacity(member_ids.len());
+        for member_id in &member_ids {
+            if !seen.insert(member_id) {
+                return Err(OrganizationScimResourceError::DuplicateGroupMember);
+            }
+        }
+        Ok(Self {
+            key: OrganizationScimResourceKey::new(
+                organization_id,
+                OrganizationScimResourceKind::Groups,
+                resource_id,
+            ),
+            display_name,
+            member_ids,
+            version,
+        })
+    }
+
+    /// 返回企业范围的组资源键。
+    #[must_use]
+    pub fn key(&self) -> &OrganizationScimResourceKey {
+        &self.key
+    }
+
+    /// 返回组展示名称。
+    #[must_use]
+    pub fn display_name(&self) -> &str {
+        &self.display_name
+    }
+
+    /// 返回去重后的外部成员引用。
+    #[must_use]
+    pub fn member_ids(&self) -> &[OrganizationScimResourceId] {
+        &self.member_ids
+    }
+
+    /// 返回用于幂等比较的资源版本。
+    #[must_use]
+    pub const fn version(&self) -> OrganizationScimResourceVersion {
+        self.version
+    }
+}
+
+impl fmt::Debug for OrganizationScimGroupResource {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OrganizationScimGroupResource")
+            .field("key", &self.key)
+            .field("member_count", &self.member_ids.len())
+            .field("version", &self.version)
+            .finish_non_exhaustive()
+    }
+}
+
+fn validate_scim_text(
+    value: &str,
+    error: OrganizationScimResourceError,
+) -> Result<(), OrganizationScimResourceError> {
+    if value.is_empty()
+        || value.len() > MAX_ORGANIZATION_SCIM_DISPLAY_NAME_BYTES
+        || value.trim() != value
+        || value.chars().any(char::is_control)
+    {
+        return Err(error);
+    }
+    Ok(())
 }
 
 impl OrganizationScimTokenStatus {
