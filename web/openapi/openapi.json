@@ -30448,6 +30448,7 @@
       },
       "OrganizationSsoSessionExchangeRequest": {
         "type": "object",
+        "description": "同源交换一次性企业 SSO ticket 的请求；ticket 不会写入响应或日志。",
         "required": [
           "organization_id",
           "ticket"
