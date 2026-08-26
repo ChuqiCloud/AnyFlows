@@ -4,7 +4,7 @@ use sea_orm::entity::prelude::*;
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "organization_sso_policies")]
 pub struct Model {
-    #[sea_orm(primary_key)]
+    #[sea_orm(primary_key, auto_increment = false)]
     pub organization_id: i64,
     pub enforcement_policy: i16,
     pub recovery_ready: bool,

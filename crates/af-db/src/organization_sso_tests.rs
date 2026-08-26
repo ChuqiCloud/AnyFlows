@@ -135,7 +135,7 @@ async fn sso_policy_repository_persists_and_gates_required() -> Result<(), Box<d
         Err(OrganizationSsoRepositoryError::Unavailable)
     );
 
-    let provider = fixture
+    fixture
         .sso
         .update_provider(
             organization_id,
