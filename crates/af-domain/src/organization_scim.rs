@@ -359,9 +359,15 @@ pub const fn classify_organization_scim_sync(
 ) -> OrganizationScimSyncDisposition {
     match current {
         None => OrganizationScimSyncDisposition::Apply,
-        Some(current) if incoming > current => OrganizationScimSyncDisposition::Apply,
-        Some(current) if incoming == current => OrganizationScimSyncDisposition::Noop,
-        Some(_) => OrganizationScimSyncDisposition::RejectStale,
+        Some(current) => {
+            if incoming.get() > current.get() {
+                OrganizationScimSyncDisposition::Apply
+            } else if incoming.get() == current.get() {
+                OrganizationScimSyncDisposition::Noop
+            } else {
+                OrganizationScimSyncDisposition::RejectStale
+            }
+        }
     }
 }
 
