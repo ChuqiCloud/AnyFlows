@@ -1140,13 +1140,14 @@ impl Bootstrap<DatabaseReady> {
         } = self;
         let database_authenticator: Arc<dyn TokenAuthenticator> =
             Arc::new(DatabaseTokenAuthenticator::new(repository));
-        let user_profile_service = Arc::new(build_user_profile_service(
-            user_profile_repository,
-            balance_alert_settings_repository,
-            passkey_repository,
-            system_secret_cipher.clone(),
-            stage.passkey_public_base_url.as_deref(),
-        ));
+        let user_profile_service: Arc<dyn UserProfileService> =
+            Arc::new(build_user_profile_service(
+                user_profile_repository,
+                balance_alert_settings_repository,
+                passkey_repository,
+                system_secret_cipher.clone(),
+                stage.passkey_public_base_url.as_deref(),
+            ));
         // 角色目录与成员绑定共用同一服务实例，保证授权边界和配置一致。
         let organization_custom_role_service: Arc<dyn OrganizationCustomRoleService> =
             Arc::new(DatabaseOrganizationCustomRoleService::new(Arc::clone(

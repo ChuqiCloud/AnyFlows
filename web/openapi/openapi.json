@@ -30126,10 +30126,6 @@
             "maxLength": 128
           },
           "credential": {
-            "type": [
-              "object",
-              "null"
-            ],
             "writeOnly": true
           }
         },

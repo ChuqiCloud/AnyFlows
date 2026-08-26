@@ -2620,9 +2620,7 @@ export type OrganizationSsoIdentityBindingRequestWritable = {
     method: string;
     current_password?: string | null;
     totp_code?: string | null;
-    credential?: {
-        [key: string]: unknown;
-    } | null;
+    credential?: unknown;
 };
 export type OrganizationSsoProviderRequestWritable = {
     expected_version: number;
