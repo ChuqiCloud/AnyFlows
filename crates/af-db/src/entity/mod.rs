@@ -2110,6 +2110,9 @@ impl ActiveModelBehavior for organization_entitlements::ActiveModel {
 impl ActiveModelBehavior for organization_invitations::ActiveModel {}
 
 #[async_trait::async_trait]
+impl ActiveModelBehavior for organization_scim_tokens::ActiveModel {}
+
+#[async_trait::async_trait]
 impl ActiveModelBehavior for organization_memberships::ActiveModel {
     async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
     where
