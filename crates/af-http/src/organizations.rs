@@ -20,7 +20,8 @@ use af_admin::{
     OrganizationSsoDomainServiceError, OrganizationSsoDomainVerifyCommand,
     OrganizationSsoIdentityBindingService, OrganizationSsoIdentityBindingServiceError,
     OrganizationSsoIdentityBindingStepUp, OrganizationSsoLoginTransactionService,
-    OrganizationSsoLoginTransactionServiceError, OrganizationSsoProvider,
+    OrganizationSsoLoginTransactionServiceError, OrganizationSsoPolicyCommand,
+    OrganizationSsoPolicyService, OrganizationSsoPolicyServiceError, OrganizationSsoProvider,
     OrganizationSsoProviderCommand, OrganizationSsoProviderService,
     OrganizationSsoProviderServiceError, OrganizationSsoRecoveryCommand,
     OrganizationSsoRecoveryService, OrganizationSsoRecoveryServiceError,
@@ -74,6 +75,7 @@ pub(crate) struct OrganizationHttpState {
     sso_domain_service: Option<Arc<dyn OrganizationSsoDomainService>>,
     sso_login_service: Option<Arc<dyn OrganizationSsoLoginTransactionService>>,
     sso_identity_binding_service: Option<Arc<dyn OrganizationSsoIdentityBindingService>>,
+    sso_policy_service: Option<Arc<dyn OrganizationSsoPolicyService>>,
     sso_recovery_service: Option<Arc<dyn OrganizationSsoRecoveryService>>,
     activity_service: Arc<dyn OrganizationActivityService>,
 }
@@ -102,6 +104,7 @@ pub fn build_organization_router(
         None,
         None,
         None,
+        None,
     )
 }
 
@@ -115,6 +118,7 @@ pub fn build_organization_router_with_domain(
     activity_service: Arc<dyn OrganizationActivityService>,
     session_authenticator: Arc<dyn af_admin::SessionAuthenticator>,
     sso_provider_service: Option<Arc<dyn OrganizationSsoProviderService>>,
+    sso_policy_service: Option<Arc<dyn OrganizationSsoPolicyService>>,
     sso_domain_service: Option<Arc<dyn OrganizationSsoDomainService>>,
     sso_login_service: Option<Arc<dyn OrganizationSsoLoginTransactionService>>,
     sso_identity_binding_service: Option<Arc<dyn OrganizationSsoIdentityBindingService>>,
@@ -268,6 +272,14 @@ pub fn build_organization_router_with_domain(
     } else {
         router
     };
+    let router = if sso_policy_service.is_some() {
+        router.route(
+            "/api/organizations/{organization_id}/sso/policy",
+            get(get_organization_sso_policy).put(update_organization_sso_policy),
+        )
+    } else {
+        router
+    };
     router
         .layer(authentication)
         .layer(middleware::from_fn(ensure_request_id))
@@ -281,6 +293,7 @@ pub fn build_organization_router_with_domain(
             sso_domain_service,
             sso_login_service,
             sso_identity_binding_service,
+            sso_policy_service,
             sso_recovery_service,
             activity_service,
         })
@@ -914,6 +927,27 @@ pub struct OrganizationSsoRecoveryResponse {
     version: i64,
 }
 
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = OrganizationSsoPolicyRequest)]
+pub struct OrganizationSsoPolicyRequest {
+    #[schema(minimum = 1)]
+    expected_version: i64,
+    #[schema(schema_with = organization_sso_recovery_policy_schema)]
+    policy: String,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = OrganizationSsoPolicyResponse)]
+pub struct OrganizationSsoPolicyResponse {
+    #[schema(schema_with = organization_sso_recovery_policy_schema)]
+    policy: &'static str,
+    recovery_ready: bool,
+    #[schema(minimum = 1)]
+    version: i64,
+}
+
 /// 保持策略响应为字符串枚举，并兼容 utoipa 的字段级 Schema 构造器。
 fn organization_sso_recovery_policy_schema() -> RefOr<Schema> {
     ObjectBuilder::new()
@@ -921,6 +955,139 @@ fn organization_sso_recovery_policy_schema() -> RefOr<Schema> {
         .enum_values(Some(["optional", "required"]))
         .build()
         .into()
+}
+
+async fn get_organization_sso_policy(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path(organization_id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::SsoRead,
+        &request_id,
+        &headers,
+        "organization.sso.policy.read",
+        "sso_policy",
+        organization_id.get().to_string(),
+    )
+    .await?;
+    let service = state
+        .sso_policy_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let policy = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::SsoRead,
+        "organization.sso.policy.read",
+        "sso_policy",
+        organization_id.get().to_string(),
+        service
+            .get(context.clone())
+            .await
+            .map_err(map_sso_policy_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::SsoRead.code(),
+        "organization.sso.policy.read",
+        "sso_policy",
+        organization_id.get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({
+            "policy": organization_sso_recovery_policy_code(policy.policy()),
+            "recovery_ready": policy.recovery_ready(),
+            "version": policy.version(),
+        })),
+    )
+    .await?;
+    Ok(no_store_json(OrganizationSsoPolicyResponse {
+        policy: organization_sso_recovery_policy_code(policy.policy()),
+        recovery_ready: policy.recovery_ready(),
+        version: policy.version(),
+    }))
+}
+
+async fn update_organization_sso_policy(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path(organization_id): Path<i64>,
+    headers: HeaderMap,
+    request: Result<Json<OrganizationSsoPolicyRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::SsoRecovery,
+        &request_id,
+        &headers,
+        "organization.sso.policy.update",
+        "sso_policy",
+        organization_id.get().to_string(),
+    )
+    .await?;
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let policy = parse_sso_enforcement_policy(&request.policy)?;
+    let command = OrganizationSsoPolicyCommand::new(policy, request.expected_version)
+        .map_err(map_sso_policy_error)?;
+    let service = state
+        .sso_policy_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let policy = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::SsoRecovery,
+        "organization.sso.policy.update",
+        "sso_policy",
+        organization_id.get().to_string(),
+        service
+            .update(context.clone(), command)
+            .await
+            .map_err(map_sso_policy_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::SsoRecovery.code(),
+        "organization.sso.policy.update",
+        "sso_policy",
+        organization_id.get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({
+            "policy": organization_sso_recovery_policy_code(policy.policy()),
+            "recovery_ready": policy.recovery_ready(),
+            "version": policy.version(),
+        })),
+    )
+    .await?;
+    Ok(no_store_json(OrganizationSsoPolicyResponse {
+        policy: organization_sso_recovery_policy_code(policy.policy()),
+        recovery_ready: policy.recovery_ready(),
+        version: policy.version(),
+    }))
 }
 
 /// 完成 Owner break-glass 恢复登记，并仅返回脱敏后的策略快照。
@@ -3083,6 +3250,16 @@ fn organization_sso_recovery_policy_code(policy: OrganizationSsoEnforcementPolic
     }
 }
 
+fn parse_sso_enforcement_policy(
+    value: &str,
+) -> Result<OrganizationSsoEnforcementPolicy, ManagementError> {
+    match value {
+        "optional" => Ok(OrganizationSsoEnforcementPolicy::Optional),
+        "required" => Ok(OrganizationSsoEnforcementPolicy::Required),
+        _ => Err(ManagementError::InvalidRequest),
+    }
+}
+
 fn organization_sso_provider_status_code(status: OrganizationSsoProviderStatus) -> &'static str {
     match status {
         OrganizationSsoProviderStatus::Draft => "draft",
@@ -3398,6 +3575,24 @@ fn map_sso_recovery_error(error: OrganizationSsoRecoveryServiceError) -> Managem
             ManagementError::OrganizationSsoRecoveryUnavailable
         }
         OrganizationSsoRecoveryServiceError::Internal => ManagementError::Internal,
+    }
+}
+
+fn map_sso_policy_error(error: OrganizationSsoPolicyServiceError) -> ManagementError {
+    match error {
+        OrganizationSsoPolicyServiceError::InvalidInput => ManagementError::InvalidRequest,
+        OrganizationSsoPolicyServiceError::Forbidden => ManagementError::Forbidden,
+        OrganizationSsoPolicyServiceError::EntitlementRestricted => {
+            ManagementError::OrganizationEntitlementRestricted
+        }
+        OrganizationSsoPolicyServiceError::NotFound
+        | OrganizationSsoPolicyServiceError::Unavailable => {
+            ManagementError::OrganizationSsoRecoveryUnavailable
+        }
+        OrganizationSsoPolicyServiceError::Conflict => {
+            ManagementError::OrganizationSsoRecoveryConflict
+        }
+        OrganizationSsoPolicyServiceError::Internal => ManagementError::Internal,
     }
 }
 

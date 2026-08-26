@@ -9,9 +9,15 @@ import { Skeleton } from '@/components/ui/skeleton'
 import type { OrganizationSsoProvider } from '@/lib/api/generated/types.gen'
 import { useOrganizationSsoProviders } from './organization-sso-api'
 import { OrganizationSsoDomains } from './organization-sso-domains'
+import { OrganizationSsoPolicyPanel } from './organization-sso-policy'
 
 const SSO_READ = 'organization.sso.read'
 const SSO_MANAGE = 'organization.sso.manage'
+const SSO_CLOSURE_ITEMS = [
+  { id: 'policy', status: 'available' },
+  { id: 'recovery', status: 'available' },
+  { id: 'audit', status: 'pending' },
+] as const
 
 /** 企业设置中的 SSO 脱敏状态面板；所有状态都来自服务端权限和事实投影。 */
 export function OrganizationSsoPanel({
@@ -61,13 +67,14 @@ export function OrganizationSsoPanel({
         {ssoEnabled && canRead && query.isSuccess && providers.length === 0 ? <SsoPanelState icon={ShieldCheck} title={t('organizationConsole.settings.sso.empty.title')} body={t(canManage ? 'organizationConsole.settings.sso.empty.manageBody' : 'organizationConsole.settings.sso.empty.readBody')} /> : null}
         {ssoEnabled && canRead && providers.length > 0 ? <div className="divide-y divide-[var(--hairline)]">{providers.map((provider) => <SsoProviderRow key={provider.provider_key} provider={provider} />)}</div> : null}
         {ssoEnabled && canRead ? <OrganizationSsoDomains organizationId={organizationId} providers={providers} canManage={canManage} providersLoaded={query.isSuccess} /> : null}
+        {ssoEnabled && canRead ? <OrganizationSsoPolicyPanel organizationId={organizationId} ssoEnabled={ssoEnabled} permissions={permissions} /> : null}
         <div className="border-t border-[var(--hairline)] bg-surface-1/25 px-4 py-3">
           <div className="mb-2 text-[0.6875rem] font-medium uppercase tracking-[0.08em] text-muted-foreground">{t('organizationConsole.settings.sso.closure.title')}</div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {(['policy', 'recovery', 'audit'] as const).map((item) => (
-              <div key={item} className="flex min-w-0 items-center justify-between gap-2 rounded-lg border border-dashed border-[var(--hairline)] px-3 py-2">
-                <span className="truncate text-xs">{t(`organizationConsole.settings.sso.closure.${item}`)}</span>
-                <Badge className="shrink-0 text-muted-foreground">{t('organizationConsole.settings.sso.closure.pending')}</Badge>
+            {SSO_CLOSURE_ITEMS.map((item) => (
+              <div key={item.id} className="flex min-w-0 items-center justify-between gap-2 rounded-lg border border-dashed border-[var(--hairline)] px-3 py-2">
+                <span className="truncate text-xs">{t(`organizationConsole.settings.sso.closure.${item.id}`)}</span>
+                <Badge className={item.status === 'available' ? 'shrink-0 text-success' : 'shrink-0 text-muted-foreground'}>{t(`organizationConsole.settings.sso.closure.${item.status}`)}</Badge>
               </div>
             ))}
           </div>

@@ -5192,6 +5192,32 @@
           "verifySuccess": "域名已验证，服务端将继续使用已记录的验证状态。",
           "copied": "已复制"
         },
+        "policy": {
+          "title": "SSO 强制策略",
+          "subtitle": "只有 Owner 恢复入口就绪后，才能启用 Required 登录。",
+          "mode": { "optional": "Optional（可选）", "required": "Required（强制）" },
+          "fields": { "mode": "策略模式", "version": "版本", "recovery": "恢复状态" },
+          "modeLabel": "登录策略",
+          "save": "保存策略",
+          "ready": "已就绪",
+          "notReady": "未就绪",
+          "recoveryRequired": "请先完成 Owner 恢复登记，再启用 Required。",
+          "password": "当前密码",
+          "totp": "TOTP 或备用码",
+          "establish": "登记恢复入口",
+          "suspend": "暂停 Required",
+          "saved": "策略状态已保存。",
+          "readOnly": "只有具备恢复权限的 Owner 可以修改此策略。",
+          "restrictedTitle": "无法查看 SSO 策略",
+          "restrictedBody": "当前角色没有读取企业 SSO 策略事实的权限。",
+          "errors": {
+            "title": "无法加载 SSO 策略",
+            "body": "策略状态暂时不可用，请刷新后再继续。",
+            "conflict": "策略已在其他位置发生变化，请刷新最新版本后重试。",
+            "rejected": "当前密码或二次因子校验未通过。",
+            "mutation": "策略操作失败，请刷新最新事实后重试。"
+          }
+        },
         "restricted": {
           "entitlementTitle": "企业 SSO 尚未开放",
           "entitlementBody": "当前商业授权没有开启企业 SSO，服务端不会读取或接受 Provider 配置。",
@@ -5214,8 +5240,9 @@
           "policy": "强制策略",
           "recovery": "恢复入口",
           "audit": "审计状态",
+          "available": "已接入",
           "pending": "待接入",
-          "hint": "策略、恢复与审计接口尚未提供；本页不会把缺失的服务端事实渲染为已验证或可强制。"
+          "hint": "策略与恢复状态已接入；审计明细仍由独立的只读页面提供。"
         }
       }
     }

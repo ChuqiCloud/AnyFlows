@@ -15,7 +15,8 @@ use crate::{
         OrganizationSsoDomainListResponse, OrganizationSsoDomainResponse,
         OrganizationSsoDomainVerifyRequest, OrganizationSsoIdentityBindingRequest,
         OrganizationSsoIdentityBindingResponse, OrganizationSsoLoginStartRequest,
-        OrganizationSsoLoginStartResponse, OrganizationSsoProviderListResponse,
+        OrganizationSsoLoginStartResponse, OrganizationSsoPolicyRequest,
+        OrganizationSsoPolicyResponse, OrganizationSsoProviderListResponse,
         OrganizationSsoProviderRequest, OrganizationSsoProviderResponse,
         OrganizationSsoRecoveryRequest, OrganizationSsoRecoveryResponse,
     },
@@ -216,6 +217,46 @@ fn start_organization_sso_login() {}
 fn bind_organization_sso_identity() {}
 
 #[utoipa::path(
+    get,
+    path = "/api/organizations/{organization_id}/sso/policy",
+    operation_id = "getOrganizationSsoPolicy",
+    tag = "企业 SSO",
+    summary = "读取企业 SSO 强制策略",
+    params(("organization_id" = i64, Path, minimum = 1, description = "企业内部标识")),
+    responses(
+        (status = 200, description = "企业 SSO 策略与恢复就绪状态", body = OrganizationSsoPolicyResponse),
+        (status = 400, description = "企业标识无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "无权查看企业 SSO 策略", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody),
+        (status = 503, description = "企业 SSO 策略暂不可用", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn get_organization_sso_policy() {}
+
+#[utoipa::path(
+    put,
+    path = "/api/organizations/{organization_id}/sso/policy",
+    operation_id = "updateOrganizationSsoPolicy",
+    tag = "企业 SSO",
+    summary = "按版本 CAS 更新企业 SSO 强制策略",
+    params(("organization_id" = i64, Path, minimum = 1, description = "企业内部标识")),
+    request_body = OrganizationSsoPolicyRequest,
+    responses(
+        (status = 200, description = "企业 SSO 策略已更新", body = OrganizationSsoPolicyResponse),
+        (status = 400, description = "策略参数无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "无权更新企业 SSO 策略", body = ManagementErrorBody),
+        (status = 409, description = "策略版本冲突", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody),
+        (status = 503, description = "企业 SSO 策略暂不可用", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn update_organization_sso_policy() {}
+
+#[utoipa::path(
     post,
     path = "/api/organizations/{organization_id}/sso/recovery/establish",
     operation_id = "establishOrganizationSsoRecovery",
@@ -324,6 +365,8 @@ fn exchange_organization_sso_session() {}
         verify_organization_sso_domain,
         start_organization_sso_login,
         bind_organization_sso_identity,
+        get_organization_sso_policy,
+        update_organization_sso_policy,
         establish_organization_sso_recovery,
         suspend_organization_sso_required,
         complete_organization_sso_oidc_login,
@@ -343,6 +386,8 @@ fn exchange_organization_sso_session() {}
         OrganizationSsoLoginStartResponse,
         OrganizationSsoIdentityBindingRequest,
         OrganizationSsoIdentityBindingResponse,
+        OrganizationSsoPolicyRequest,
+        OrganizationSsoPolicyResponse,
         OrganizationSsoRecoveryRequest,
         OrganizationSsoRecoveryResponse,
         OrganizationSsoLoginCallbackErrorResponse,

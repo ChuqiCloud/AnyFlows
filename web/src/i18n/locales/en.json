@@ -5194,6 +5194,32 @@
           "verifySuccess": "Domain verified. The server will continue using the recorded verification state.",
           "copied": "Copied"
         },
+        "policy": {
+          "title": "Enforcement policy",
+          "subtitle": "Required sign-in is enabled only after the Owner recovery path is ready.",
+          "mode": { "optional": "Optional", "required": "Required" },
+          "fields": { "mode": "Mode", "version": "Version", "recovery": "Recovery" },
+          "modeLabel": "Sign-in policy",
+          "save": "Save policy",
+          "ready": "Ready",
+          "notReady": "Not ready",
+          "recoveryRequired": "Complete Owner recovery registration before enabling Required.",
+          "password": "Current password",
+          "totp": "TOTP or backup code",
+          "establish": "Register recovery",
+          "suspend": "Suspend Required",
+          "saved": "Policy state saved.",
+          "readOnly": "Only the Owner with the recovery permission can change this policy.",
+          "restrictedTitle": "SSO policy is not visible",
+          "restrictedBody": "The current role cannot read organization SSO policy facts.",
+          "errors": {
+            "title": "SSO policy could not be loaded",
+            "body": "Policy state is temporarily unavailable. Refresh before continuing.",
+            "conflict": "The policy changed elsewhere. Refresh the latest version and try again.",
+            "rejected": "The current password or second factor was rejected.",
+            "mutation": "The policy action failed. Refresh the latest facts and try again."
+          }
+        },
         "restricted": {
           "entitlementTitle": "Organization SSO is not enabled",
           "entitlementBody": "The current commercial entitlement does not enable organization SSO, so the server will not read or accept Provider configuration.",
@@ -5216,8 +5242,9 @@
           "policy": "Enforcement policy",
           "recovery": "Recovery entry",
           "audit": "Audit status",
+          "available": "Live",
           "pending": "Pending",
-          "hint": "Policy, recovery, and audit endpoints are not available yet; missing server facts are never rendered as verified or enforceable."
+          "hint": "Policy and recovery state are live. Audit details remain a separate read-only surface."
         }
       }
     }

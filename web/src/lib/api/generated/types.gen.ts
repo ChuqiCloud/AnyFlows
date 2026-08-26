@@ -1656,6 +1656,15 @@ export type OrganizationSsoLoginStartResponse = {
     request_digest: string;
     expires_at: number;
 };
+export type OrganizationSsoPolicyRequest = {
+    expected_version: number;
+    policy: 'optional' | 'required';
+};
+export type OrganizationSsoPolicyResponse = {
+    policy: 'optional' | 'required';
+    recovery_ready: boolean;
+    version: number;
+};
 export type OrganizationSsoProvider = {
     id: number;
     organization_id: number;
@@ -6506,6 +6515,47 @@ export type BindOrganizationSsoIdentityResponses = {
     200: OrganizationSsoIdentityBindingResponse;
 };
 export type BindOrganizationSsoIdentityResponse = BindOrganizationSsoIdentityResponses[keyof BindOrganizationSsoIdentityResponses];
+export type GetOrganizationSsoPolicyData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/sso/policy';
+};
+export type GetOrganizationSsoPolicyErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type GetOrganizationSsoPolicyError = GetOrganizationSsoPolicyErrors[keyof GetOrganizationSsoPolicyErrors];
+export type GetOrganizationSsoPolicyResponses = {
+    200: OrganizationSsoPolicyResponse;
+};
+export type GetOrganizationSsoPolicyResponse = GetOrganizationSsoPolicyResponses[keyof GetOrganizationSsoPolicyResponses];
+export type UpdateOrganizationSsoPolicyData = {
+    body: OrganizationSsoPolicyRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/sso/policy';
+};
+export type UpdateOrganizationSsoPolicyErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type UpdateOrganizationSsoPolicyError = UpdateOrganizationSsoPolicyErrors[keyof UpdateOrganizationSsoPolicyErrors];
+export type UpdateOrganizationSsoPolicyResponses = {
+    200: OrganizationSsoPolicyResponse;
+};
+export type UpdateOrganizationSsoPolicyResponse = UpdateOrganizationSsoPolicyResponses[keyof UpdateOrganizationSsoPolicyResponses];
 export type EstablishOrganizationSsoRecoveryData = {
     body: OrganizationSsoRecoveryRequestWritable;
     path: {

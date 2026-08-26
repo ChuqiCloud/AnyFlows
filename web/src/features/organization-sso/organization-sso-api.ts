@@ -1,16 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { organizationQueryKey } from '@/features/organization-budgets/organization-budget-api'
-import { apiClient } from '@/lib/api'
+import { apiClient, ApiError } from '@/lib/api'
 import {
   createOrganizationSsoDomain,
   listOrganizationSsoDomains,
   listOrganizationSsoProviders,
+  getOrganizationSsoPolicy,
+  updateOrganizationSsoPolicy,
+  establishOrganizationSsoRecovery,
+  suspendOrganizationSsoRequired,
   verifyOrganizationSsoDomain,
 } from '@/lib/api/generated/sdk.gen'
 import type {
   OrganizationSsoDomainCreateRequest,
   OrganizationSsoDomainVerifyRequestWritable,
+  OrganizationSsoPolicyRequest,
+  OrganizationSsoRecoveryRequestWritable,
 } from '@/lib/api/generated/types.gen'
 
 /** 按企业权限读取脱敏 SSO Provider；未授权时不发起请求。 */
@@ -27,6 +33,83 @@ export function useOrganizationSsoProviders(organizationId: number, enabled: boo
       return data.providers
     },
   })
+}
+
+/** 读取企业 SSO 策略与恢复就绪事实，权限不足时不发起请求。 */
+export function useOrganizationSsoPolicy(organizationId: number, enabled: boolean) {
+  return useQuery({
+    queryKey: organizationQueryKey(organizationId, 'sso', 'policy'),
+    enabled,
+    queryFn: async ({ signal }) => {
+      const { data } = await getOrganizationSsoPolicy({
+        client: apiClient,
+        path: { organization_id: organizationId },
+        signal,
+      })
+      return data
+    },
+  })
+}
+
+/** 按服务端版本更新策略，成功后刷新策略与组织概览事实。 */
+export function useUpdateOrganizationSsoPolicy(organizationId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (body: OrganizationSsoPolicyRequest) => {
+      const { data } = await updateOrganizationSsoPolicy({
+        body,
+        client: apiClient,
+        path: { organization_id: organizationId },
+      })
+      return data
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(organizationQueryKey(organizationId, 'sso', 'policy'), data)
+      void queryClient.invalidateQueries({ queryKey: organizationQueryKey(organizationId, 'overview') })
+    },
+  })
+}
+
+/** 登记 Owner 恢复能力；密码与二次因子只在请求体内短暂存在。 */
+export function useEstablishOrganizationSsoRecovery(organizationId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (body: OrganizationSsoRecoveryRequestWritable) => {
+      const { data } = await establishOrganizationSsoRecovery({
+        body,
+        client: apiClient,
+        path: { organization_id: organizationId },
+      })
+      return data
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(organizationQueryKey(organizationId, 'sso', 'policy'), data)
+    },
+  })
+}
+
+/** 暂停 Required 策略，保留恢复就绪事实以便后续重新启用。 */
+export function useSuspendOrganizationSsoRequired(organizationId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (body: OrganizationSsoRecoveryRequestWritable) => {
+      const { data } = await suspendOrganizationSsoRequired({
+        body,
+        client: apiClient,
+        path: { organization_id: organizationId },
+      })
+      return data
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(organizationQueryKey(organizationId, 'sso', 'policy'), data)
+    },
+  })
+}
+
+export function organizationSsoErrorCode(error: unknown) {
+  if (!(error instanceof ApiError) || typeof error.details !== 'object' || error.details === null) return undefined
+  const code = (error.details as { code?: unknown }).code
+  return typeof code === 'string' ? code : undefined
 }
 
 /** 按企业范围读取域名验证事实；未授权时不发起请求。 */
