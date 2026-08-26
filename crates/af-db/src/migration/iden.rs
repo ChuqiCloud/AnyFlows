@@ -2746,3 +2746,27 @@ pub(in crate::migration) mod organization_sso_login_transactions {
         UpdatedAt,
     }
 }
+
+pub(in crate::migration) mod organization_sso_policies {
+    use super::DeriveIden;
+
+    /// 企业 SSO 强制策略持久化表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_sso_policies")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 策略、恢复事实和 CAS 版本列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        OrganizationId,
+        EnforcementPolicy,
+        RecoveryReady,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}

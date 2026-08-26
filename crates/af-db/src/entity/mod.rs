@@ -70,6 +70,7 @@ pub(crate) mod organization_memberships;
 pub(crate) mod organization_sso_domains;
 pub(crate) mod organization_sso_identities;
 pub(crate) mod organization_sso_login_transactions;
+pub(crate) mod organization_sso_policies;
 pub(crate) mod organization_sso_providers;
 pub(crate) mod organization_teams;
 pub(crate) mod organization_wallet_ledger_entries;
@@ -2058,6 +2059,7 @@ impl_updated_at_behavior!(
     organization_sso_domains::ActiveModel => validate_default,
     organization_sso_identities::ActiveModel => validate_default,
     organization_sso_login_transactions::ActiveModel => validate_default,
+    organization_sso_policies::ActiveModel => validate_default,
     organization_sso_providers::ActiveModel => validate_default,
     registration_rate_limits::ActiveModel => validate_default,
     route_channels::ActiveModel => validate_route_channel,
