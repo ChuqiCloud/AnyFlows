@@ -17,6 +17,7 @@ use crate::{
         OrganizationSsoIdentityBindingResponse, OrganizationSsoLoginStartRequest,
         OrganizationSsoLoginStartResponse, OrganizationSsoProviderListResponse,
         OrganizationSsoProviderRequest, OrganizationSsoProviderResponse,
+        OrganizationSsoRecoveryRequest, OrganizationSsoRecoveryResponse,
     },
 };
 
@@ -215,6 +216,52 @@ fn start_organization_sso_login() {}
 fn bind_organization_sso_identity() {}
 
 #[utoipa::path(
+    post,
+    path = "/api/organizations/{organization_id}/sso/recovery/establish",
+    operation_id = "establishOrganizationSsoRecovery",
+    tag = "企业 SSO",
+    summary = "完成企业 SSO Owner break-glass 恢复登记",
+    description = "要求当前企业 Owner 使用当前密码与 TOTP/备用码完成 step-up。响应仅返回脱敏策略快照，不包含密码、TOTP 或恢复材料。",
+    params(("organization_id" = i64, Path, minimum = 1, description = "企业内部标识")),
+    request_body = OrganizationSsoRecoveryRequest,
+    responses(
+        (status = 200, description = "恢复登记已完成", body = OrganizationSsoRecoveryResponse),
+        (status = 400, description = "恢复请求参数无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "当前用户不是企业 Owner 或缺少恢复权限", body = ManagementErrorBody),
+        (status = 409, description = "企业授权或策略版本不允许本次操作", body = ManagementErrorBody),
+        (status = 422, description = "当前密码或二次因子未通过校验", body = ManagementErrorBody),
+        (status = 503, description = "恢复事实暂不可用", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn establish_organization_sso_recovery() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/organizations/{organization_id}/sso/recovery/suspend-required",
+    operation_id = "suspendOrganizationSsoRequired",
+    tag = "企业 SSO",
+    summary = "暂停企业 SSO Required 策略",
+    description = "要求当前企业 Owner 使用当前密码与 TOTP/备用码完成 step-up。仅将 Required 暂停为 Optional，不删除恢复事实。",
+    params(("organization_id" = i64, Path, minimum = 1, description = "企业内部标识")),
+    request_body = OrganizationSsoRecoveryRequest,
+    responses(
+        (status = 200, description = "Required 策略已暂停", body = OrganizationSsoRecoveryResponse),
+        (status = 400, description = "恢复请求参数无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "当前用户不是企业 Owner 或缺少恢复权限", body = ManagementErrorBody),
+        (status = 409, description = "企业授权或策略版本不允许本次操作", body = ManagementErrorBody),
+        (status = 422, description = "当前密码或二次因子未通过校验", body = ManagementErrorBody),
+        (status = 503, description = "恢复事实暂不可用", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn suspend_organization_sso_required() {}
+
+#[utoipa::path(
     get,
     path = "/api/auth/organization-sso/oidc/callback",
     operation_id = "completeOrganizationSsoOidcLogin",
@@ -277,6 +324,8 @@ fn exchange_organization_sso_session() {}
         verify_organization_sso_domain,
         start_organization_sso_login,
         bind_organization_sso_identity,
+        establish_organization_sso_recovery,
+        suspend_organization_sso_required,
         complete_organization_sso_oidc_login,
         complete_organization_sso_saml_login,
         exchange_organization_sso_session
@@ -294,6 +343,8 @@ fn exchange_organization_sso_session() {}
         OrganizationSsoLoginStartResponse,
         OrganizationSsoIdentityBindingRequest,
         OrganizationSsoIdentityBindingResponse,
+        OrganizationSsoRecoveryRequest,
+        OrganizationSsoRecoveryResponse,
         OrganizationSsoLoginCallbackErrorResponse,
         OrganizationSsoLoginCallbackSuccessResponse,
         OrganizationSsoSessionExchangeRequest,

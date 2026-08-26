@@ -64,6 +64,12 @@ pub(crate) enum ManagementError {
     OrganizationSsoIdentityBindingRejected,
     /// 显式身份绑定已存在同一 Provider 或成员事实。
     OrganizationSsoIdentityBindingConflict,
+    /// Owner break-glass 的当前密码或二次因子未通过校验。
+    OrganizationSsoRecoveryRejected,
+    /// Owner break-glass 的策略版本已被其他操作推进。
+    OrganizationSsoRecoveryConflict,
+    /// Owner break-glass 恢复事实暂时不可写入。
+    OrganizationSsoRecoveryUnavailable,
     OrganizationSsoDomainNotFound,
     OrganizationSsoDomainConflict,
     OrganizationSsoDomainTransitionInvalid,
@@ -481,6 +487,27 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "organization_sso_identity_binding_conflict",
                     message: "Organization SSO identity binding conflict",
+                },
+            ),
+            Self::OrganizationSsoRecoveryRejected => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                ManagementErrorBody {
+                    code: "organization_sso_recovery_rejected",
+                    message: "Organization SSO recovery rejected",
+                },
+            ),
+            Self::OrganizationSsoRecoveryConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_sso_recovery_conflict",
+                    message: "Organization SSO recovery conflict",
+                },
+            ),
+            Self::OrganizationSsoRecoveryUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "organization_sso_recovery_unavailable",
+                    message: "Organization SSO recovery unavailable",
                 },
             ),
             Self::OrganizationSsoDomainNotFound => (
