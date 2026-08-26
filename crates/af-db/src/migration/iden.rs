@@ -2770,3 +2770,33 @@ pub(in crate::migration) mod organization_sso_policies {
         UpdatedAt,
     }
 }
+
+pub(in crate::migration) mod organization_scim_tokens {
+    use super::DeriveIden;
+
+    /// 企业 SCIM 令牌持久化表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_scim_tokens")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// SCIM 令牌摘要、资源范围和生命周期列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        TokenKey,
+        TokenPrefix,
+        TokenDigest,
+        Name,
+        ResourceScope,
+        Status,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+        RevokedAt,
+    }
+}

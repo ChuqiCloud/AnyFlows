@@ -67,6 +67,7 @@ pub(crate) mod organization_custom_roles;
 pub(crate) mod organization_entitlements;
 pub(crate) mod organization_invitations;
 pub(crate) mod organization_memberships;
+pub(crate) mod organization_scim_tokens;
 pub(crate) mod organization_sso_domains;
 pub(crate) mod organization_sso_identities;
 pub(crate) mod organization_sso_login_transactions;
@@ -2107,6 +2108,9 @@ impl ActiveModelBehavior for organization_entitlements::ActiveModel {
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for organization_invitations::ActiveModel {}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_scim_tokens::ActiveModel {}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for organization_memberships::ActiveModel {
