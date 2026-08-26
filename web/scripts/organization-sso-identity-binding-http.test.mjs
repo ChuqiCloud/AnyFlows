@@ -39,9 +39,10 @@ test('身份绑定请求只接受闭合 step-up 材料，响应和错误不泄�
   ])
   assert.deepEqual(requestSchema.required.sort(), ['method', 'ticket'])
   assert.equal(requestSchema.properties.method.pattern, '^(password|passkey)$')
-  for (const field of ['ticket', 'current_password', 'totp_code', 'credential']) {
+  for (const field of ['ticket', 'current_password', 'totp_code']) {
     assert.equal(requestSchema.properties[field].writeOnly, true)
   }
+  assert.deepEqual(requestSchema.properties.credential, {})
   assert.deepEqual(Object.keys(responseSchema.properties).sort(), [
     'binding_method',
     'identity_id',

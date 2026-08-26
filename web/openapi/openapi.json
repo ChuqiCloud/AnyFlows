@@ -30125,9 +30125,7 @@
             "writeOnly": true,
             "maxLength": 128
           },
-          "credential": {
-            "writeOnly": true
-          }
+          "credential": {}
         },
         "additionalProperties": false
       },

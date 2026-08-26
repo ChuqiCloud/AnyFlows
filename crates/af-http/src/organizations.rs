@@ -762,7 +762,6 @@ pub struct OrganizationSsoIdentityBindingRequest {
     current_password: Option<String>,
     #[schema(max_length = 128, format = Password, write_only, required = false)]
     totp_code: Option<String>,
-    #[schema(required = false, write_only)]
     credential: Option<Value>,
 }
 
