@@ -2302,7 +2302,7 @@ async fn required_enforcement_facts(
             && provider
                 .secret_envelope
                 .as_ref()
-                .is_some_and(|value| parse_secret(value.clone()).is_ok())
+                .is_some_and(|value| value.envelope_parts().is_ok())
         {
             active_provider_ids.push(provider.id);
             active_provider_ready = true;
