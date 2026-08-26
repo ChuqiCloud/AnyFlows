@@ -1,10 +1,12 @@
 use std::{fmt, future::Future, time::Duration};
 
 use af_domain::{
-    OrganizationId, OrganizationMembershipId, OrganizationSsoDnsVerification,
+    OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationId,
+    OrganizationMembershipId, OrganizationMembershipStatus, OrganizationSsoDnsVerification,
     OrganizationSsoDomain, OrganizationSsoDomainStatus, OrganizationSsoIdentityBindingMethod,
-    OrganizationSsoIdentityStatus, OrganizationSsoProtocol, OrganizationSsoProviderKey,
-    OrganizationSsoProviderStatus,
+    OrganizationSsoIdentityLoginFacts, OrganizationSsoIdentityStatus, OrganizationSsoProtocol,
+    OrganizationSsoProviderKey, OrganizationSsoProviderStatus, OrganizationStatus, UserId,
+    authorize_organization_sso_identity_login,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, DbErr,
@@ -20,9 +22,9 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 use crate::{
     DatabasePool, EncryptedCredentialEnvelope,
     entity::{
-        EncryptedJson, SensitiveString, organization_memberships, organization_sso_domains,
-        organization_sso_identities, organization_sso_login_transactions,
-        organization_sso_providers,
+        EncryptedJson, SensitiveString, organization_entitlements, organization_memberships,
+        organization_sso_domains, organization_sso_identities, organization_sso_login_transactions,
+        organization_sso_providers, organizations,
     },
 };
 
@@ -943,6 +945,27 @@ impl OrganizationSsoProviderRepository {
             .await
     }
 
+    /// 仅为已登录成员写入经二次验证确认的显式 SSO 身份绑定。
+    pub async fn bind_explicit_identity(
+        &self,
+        organization_id: OrganizationId,
+        user_id: UserId,
+        provider_id: i64,
+        subject_digest: String,
+    ) -> Result<OrganizationSsoIdentityRecord, OrganizationSsoRepositoryError> {
+        if provider_id <= 0 {
+            return Err(OrganizationSsoRepositoryError::InvalidInput);
+        }
+        validate_digest(&subject_digest)?;
+        self.run(self.bind_explicit_identity_inner(
+            organization_id,
+            user_id,
+            provider_id,
+            subject_digest,
+        ))
+        .await
+    }
+
     /// 按企业、Provider 和 subject 摘要读取身份绑定。
     pub async fn identity(
         &self,
@@ -1475,6 +1498,84 @@ impl OrganizationSsoProviderRepository {
         Ok(record)
     }
 
+    async fn bind_explicit_identity_inner(
+        &self,
+        organization_id: OrganizationId,
+        user_id: UserId,
+        provider_id: i64,
+        subject_digest: String,
+    ) -> Result<OrganizationSsoIdentityRecord, OrganizationSsoRepositoryError> {
+        let transaction = begin(&self.pool).await?;
+        let organization = lock_organization(&transaction, organization_id).await?;
+        let entitlement = lock_entitlement(&transaction, organization_id).await?;
+        let provider =
+            lock_active_provider_by_id(&transaction, organization_id, provider_id).await?;
+        if OrganizationSsoProtocol::try_from(provider.protocol).map_err(|_| invariant())?
+            != OrganizationSsoProtocol::Oidc
+        {
+            return Err(OrganizationSsoRepositoryError::Unavailable);
+        }
+        let domain = lock_verified_domain(&transaction, organization_id, provider.id).await?;
+        let membership =
+            lock_active_membership_by_user(&transaction, organization_id, user_id).await?;
+
+        let organization_status =
+            OrganizationStatus::try_from(organization.status).map_err(|_| invariant())?;
+        let entitlement_snapshot = entitlement_snapshot(&entitlement)?;
+        let now = TimeDateTimeWithTimeZone::now_utc().unix_timestamp();
+        let entitlement_status = entitlement_snapshot.status(organization_status, now);
+        let provider_status =
+            OrganizationSsoProviderStatus::try_from(provider.status).map_err(|_| invariant())?;
+        let domain_status =
+            OrganizationSsoDomainStatus::try_from(domain.status).map_err(|_| invariant())?;
+        let membership_status =
+            OrganizationMembershipStatus::try_from(membership.status).map_err(|_| invariant())?;
+        authorize_organization_sso_identity_login(OrganizationSsoIdentityLoginFacts::new(
+            organization_status,
+            entitlement_status,
+            entitlement_snapshot.sso_enabled(),
+            provider_status,
+            domain_status,
+            OrganizationSsoIdentityStatus::Active,
+            membership_status,
+        ))
+        .map_err(|_| OrganizationSsoRepositoryError::Unavailable)?;
+
+        if identity_exists(&transaction, organization_id, provider.id, &subject_digest).await?
+            || identity_exists_for_membership(
+                &transaction,
+                organization_id,
+                provider.id,
+                membership.id,
+            )
+            .await?
+        {
+            rollback(transaction).await?;
+            return Err(OrganizationSsoRepositoryError::Conflict);
+        }
+
+        let timestamp = TimeDateTimeWithTimeZone::now_utc();
+        let model = organization_sso_identities::ActiveModel {
+            organization_id: Set(organization_id.get()),
+            provider_id: Set(provider.id),
+            subject_digest: Set(subject_digest.into()),
+            organization_membership_id: Set(membership.id),
+            status: Set(OrganizationSsoIdentityStatus::Active.code()),
+            binding_method: Set(OrganizationSsoIdentityBindingMethod::Explicit.code()),
+            version: Set(1),
+            created_at: Set(timestamp),
+            updated_at: Set(timestamp),
+            disabled_at: Set(None),
+            ..Default::default()
+        }
+        .insert(&transaction)
+        .await
+        .map_err(map_write_error)?;
+        let record = identity_record(model)?;
+        commit(transaction).await?;
+        Ok(record)
+    }
+
     async fn disable_identity_inner(
         &self,
         organization_id: OrganizationId,
@@ -1914,7 +2015,7 @@ async fn organization_exists(
     transaction: &DatabaseTransaction,
     organization_id: OrganizationId,
 ) -> Result<(), OrganizationSsoRepositoryError> {
-    if crate::entity::organizations::Entity::find_by_id(organization_id.get())
+    if organizations::Entity::find_by_id(organization_id.get())
         .count(transaction)
         .await
         .map_err(query_error)?
@@ -1923,6 +2024,149 @@ async fn organization_exists(
         return Err(OrganizationSsoRepositoryError::NotFound);
     }
     Ok(())
+}
+
+/// 锁定企业主体，避免授权和成员校验与企业状态变更交错。
+async fn lock_organization(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+) -> Result<organizations::Model, OrganizationSsoRepositoryError> {
+    let mut query = organizations::Entity::find_by_id(organization_id.get());
+    if transaction.get_database_backend() != DbBackend::Sqlite {
+        query = query.lock(LockType::Update);
+    }
+    query
+        .one(transaction)
+        .await
+        .map_err(query_error)?
+        .ok_or(OrganizationSsoRepositoryError::NotFound)
+}
+
+/// 锁定企业商业授权，缺失或损坏的授权均不允许身份绑定。
+async fn lock_entitlement(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+) -> Result<organization_entitlements::Model, OrganizationSsoRepositoryError> {
+    let mut query = organization_entitlements::Entity::find()
+        .filter(organization_entitlements::Column::OrganizationId.eq(organization_id.get()));
+    if transaction.get_database_backend() != DbBackend::Sqlite {
+        query = query.lock(LockType::Update);
+    }
+    let models = query.all(transaction).await.map_err(query_error)?;
+    match models.as_slice() {
+        [model] => Ok(model.clone()),
+        [] => Err(OrganizationSsoRepositoryError::Unavailable),
+        _ => Err(invariant()),
+    }
+}
+
+/// 将持久化授权完整投影为领域快照，禁止用裸字段绕过时间和能力约束。
+fn entitlement_snapshot(
+    model: &organization_entitlements::Model,
+) -> Result<OrganizationEntitlementSnapshot, OrganizationSsoRepositoryError> {
+    let capacity = OrganizationEntitlementCapacity::new(
+        model.seat_limit,
+        model.team_limit,
+        model.organization_key_limit,
+    )
+    .map_err(|_| invariant())?;
+    OrganizationEntitlementSnapshot::new(
+        capacity,
+        model.team_management_enabled,
+        model.sso_enabled,
+        model.custom_roles_enabled,
+        model.audit_retention_days,
+        model.valid_from.unix_timestamp(),
+        model.valid_until.unix_timestamp(),
+        model.grace_until.map(|value| value.unix_timestamp()),
+    )
+    .map_err(|_| invariant())
+}
+
+/// 锁定尚未超过复验期限的已验证域名，避免撤销或过期域名继续放行绑定。
+async fn lock_verified_domain(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+    provider_id: i64,
+) -> Result<organization_sso_domains::Model, OrganizationSsoRepositoryError> {
+    let now = TimeDateTimeWithTimeZone::now_utc();
+    let mut query = organization_sso_domains::Entity::find()
+        .filter(organization_sso_domains::Column::OrganizationId.eq(organization_id.get()))
+        .filter(organization_sso_domains::Column::ProviderId.eq(provider_id))
+        .filter(
+            organization_sso_domains::Column::Status
+                .eq(OrganizationSsoDomainStatus::Verified.code()),
+        )
+        .filter(organization_sso_domains::Column::RecheckAt.gt(now))
+        .order_by_asc(organization_sso_domains::Column::Id);
+    if transaction.get_database_backend() != DbBackend::Sqlite {
+        query = query.lock(LockType::Update);
+    }
+    query
+        .one(transaction)
+        .await
+        .map_err(query_error)?
+        .ok_or(OrganizationSsoRepositoryError::Unavailable)
+}
+
+/// 锁定当前用户在企业内的成员事实，并拒绝已暂停或已移除关系。
+async fn lock_active_membership_by_user(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+    user_id: UserId,
+) -> Result<organization_memberships::Model, OrganizationSsoRepositoryError> {
+    let mut query = organization_memberships::Entity::find()
+        .filter(organization_memberships::Column::OrganizationId.eq(organization_id.get()))
+        .filter(organization_memberships::Column::UserId.eq(user_id.get()));
+    if transaction.get_database_backend() != DbBackend::Sqlite {
+        query = query.lock(LockType::Update);
+    }
+    let models = query.all(transaction).await.map_err(query_error)?;
+    let membership = match models.as_slice() {
+        [membership] => membership.clone(),
+        [] => return Err(OrganizationSsoRepositoryError::NotFound),
+        _ => return Err(invariant()),
+    };
+    if OrganizationMembershipStatus::try_from(membership.status).map_err(|_| invariant())?
+        != OrganizationMembershipStatus::Active
+        || membership.suspended_at.is_some()
+        || membership.removed_at.is_some()
+    {
+        return Err(OrganizationSsoRepositoryError::Unavailable);
+    }
+    Ok(membership)
+}
+
+async fn identity_exists(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+    provider_id: i64,
+    subject_digest: &str,
+) -> Result<bool, OrganizationSsoRepositoryError> {
+    organization_sso_identities::Entity::find()
+        .filter(organization_sso_identities::Column::OrganizationId.eq(organization_id.get()))
+        .filter(organization_sso_identities::Column::ProviderId.eq(provider_id))
+        .filter(organization_sso_identities::Column::SubjectDigest.eq(subject_digest))
+        .one(transaction)
+        .await
+        .map_err(query_error)
+        .map(|identity| identity.is_some())
+}
+
+async fn identity_exists_for_membership(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+    provider_id: i64,
+    membership_id: i64,
+) -> Result<bool, OrganizationSsoRepositoryError> {
+    organization_sso_identities::Entity::find()
+        .filter(organization_sso_identities::Column::OrganizationId.eq(organization_id.get()))
+        .filter(organization_sso_identities::Column::ProviderId.eq(provider_id))
+        .filter(organization_sso_identities::Column::OrganizationMembershipId.eq(membership_id))
+        .one(transaction)
+        .await
+        .map_err(query_error)
+        .map(|identity| identity.is_some())
 }
 
 async fn provider_by_key<C: ConnectionTrait>(

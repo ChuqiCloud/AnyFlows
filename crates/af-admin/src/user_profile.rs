@@ -303,6 +303,44 @@ impl fmt::Debug for UserTwoFactorEnableCommand {
 /// 停用 TOTP 与启用使用同一份当前密码边界。
 pub type UserTwoFactorDisableCommand = UserTwoFactorEnableCommand;
 
+/// 高风险账户操作所需的当前密码与可选二次验证码。
+pub struct UserSecurityStepUpCommand {
+    current_password: Zeroizing<String>,
+    totp_code: Option<Zeroizing<String>>,
+}
+
+impl UserSecurityStepUpCommand {
+    /// 校验密码和可选 TOTP/备份码边界，并在内存中使用可清零容器保存。
+    pub fn new(
+        current_password: String,
+        totp_code: Option<String>,
+    ) -> Result<Self, UserProfileError> {
+        if current_password.is_empty()
+            || current_password.len() > 4_096
+            || current_password.chars().any(char::is_control)
+            || totp_code.as_deref().is_some_and(|code| {
+                code.is_empty() || code.len() > 128 || code.chars().any(char::is_control)
+            })
+        {
+            return Err(UserProfileError::InvalidInput);
+        }
+        Ok(Self {
+            current_password: Zeroizing::new(current_password),
+            totp_code: totp_code.map(Zeroizing::new),
+        })
+    }
+
+    fn into_parts(self) -> (Zeroizing<String>, Option<Zeroizing<String>>) {
+        (self.current_password, self.totp_code)
+    }
+}
+
+impl fmt::Debug for UserSecurityStepUpCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("UserSecurityStepUpCommand(<redacted>)")
+    }
+}
+
 /// 个人资料应用服务错误分类。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum UserProfileError {
@@ -367,6 +405,10 @@ pub type UserTwoFactorEnableFuture<'a> =
 
 /// 停用二次验证的对象安全 Future。
 pub type UserTwoFactorDisableFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<(), UserProfileError>> + Send + 'a>>;
+
+/// 执行当前账户二次验证的对象安全 Future。
+pub type UserSecurityStepUpFuture<'a> =
     Pin<Box<dyn Future<Output = Result<(), UserProfileError>> + Send + 'a>>;
 
 /// 当前用户 Passkey 目录查询 Future。
@@ -435,6 +477,15 @@ pub trait UserProfileService: Send + Sync {
         _principal: SessionPrincipal,
         _command: UserTwoFactorDisableCommand,
     ) -> UserTwoFactorDisableFuture<'a> {
+        Box::pin(async { Err(UserProfileError::Internal) })
+    }
+
+    /// 用当前密码和已启用的 TOTP/备份码确认高风险账户操作。
+    fn step_up<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _command: UserSecurityStepUpCommand,
+    ) -> UserSecurityStepUpFuture<'a> {
         Box::pin(async { Err(UserProfileError::Internal) })
     }
 
@@ -682,6 +733,22 @@ impl UserProfileService for DatabaseUserProfileService {
         })
     }
 
+    fn step_up<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        command: UserSecurityStepUpCommand,
+    ) -> UserSecurityStepUpFuture<'a> {
+        Box::pin(async move {
+            let (current_password, totp_code) = command.into_parts();
+            self.verify_security_step_up(
+                principal,
+                current_password.as_bytes(),
+                totp_code.as_ref().map(|code| code.as_str()),
+            )
+            .await
+        })
+    }
+
     fn list_passkeys<'a>(&'a self, principal: SessionPrincipal) -> UserPasskeyListFuture<'a> {
         Box::pin(async move {
             let repository = self
@@ -860,45 +927,12 @@ impl UserProfileService for DatabaseUserProfileService {
                 .as_ref()
                 .ok_or(UserProfileError::Internal)?;
             let (current_password, totp_code) = command.into_parts();
-            let factors = repository
-                .security_factors(principal.user_id())
-                .await
-                .map_err(map_passkey_repository_error)?
-                .ok_or(UserProfileError::InvalidSession)?;
-            if factors.totp_secret().is_some() {
-                let code = totp_code.ok_or(UserProfileError::TwoFactorRequired)?;
-                let cipher = self
-                    .system_secret_cipher
-                    .as_ref()
-                    .ok_or(UserProfileError::Internal)?;
-                match two_factor::verify_login_code(
-                    cipher,
-                    principal.user_id(),
-                    factors.totp_secret().ok_or(UserProfileError::Internal)?,
-                    code.as_str(),
-                    unix_now_seconds(),
-                )
-                .map_err(|_| UserProfileError::TwoFactorInvalid)?
-                {
-                    two_factor::LoginFactorResult::Totp => {}
-                    two_factor::LoginFactorResult::Backup { replacement } => {
-                        let consumed = repository
-                            .consume_totp_backup_code(
-                                principal.user_id(),
-                                factors
-                                    .totp_secret()
-                                    .ok_or(UserProfileError::Internal)?
-                                    .clone(),
-                                replacement,
-                            )
-                            .await
-                            .map_err(map_passkey_repository_error)?;
-                        if !consumed {
-                            return Err(UserProfileError::TwoFactorInvalid);
-                        }
-                    }
-                }
-            }
+            self.verify_security_step_up(
+                principal,
+                current_password.as_bytes(),
+                totp_code.as_ref().map(|code| code.as_str()),
+            )
+            .await?;
             match repository
                 .revoke(
                     principal.user_id(),
@@ -927,6 +961,57 @@ impl DatabaseUserProfileService {
             .settings()
             .await
             .map_err(map_balance_alert_settings_error)
+    }
+
+    /// 在密码确认后校验已启用 TOTP；备份码只在密码正确时原子消费。
+    async fn verify_security_step_up(
+        &self,
+        principal: SessionPrincipal,
+        current_password: &[u8],
+        totp_code: Option<&str>,
+    ) -> Result<(), UserProfileError> {
+        let repository = self
+            .passkey_repository
+            .as_ref()
+            .ok_or(UserProfileError::Internal)?;
+        let factors = repository
+            .security_factors(principal.user_id())
+            .await
+            .map_err(map_passkey_repository_error)?
+            .ok_or(UserProfileError::InvalidSession)?;
+        if !factors.verify_password(current_password) {
+            return Err(UserProfileError::CurrentPasswordInvalid);
+        }
+        let Some(totp_secret) = factors.totp_secret() else {
+            return Ok(());
+        };
+        let code = totp_code.ok_or(UserProfileError::TwoFactorRequired)?;
+        let cipher = self
+            .system_secret_cipher
+            .as_ref()
+            .ok_or(UserProfileError::Internal)?;
+        match two_factor::verify_login_code(
+            cipher,
+            principal.user_id(),
+            totp_secret,
+            code,
+            unix_now_seconds(),
+        )
+        .map_err(|_| UserProfileError::TwoFactorInvalid)?
+        {
+            two_factor::LoginFactorResult::Totp => Ok(()),
+            two_factor::LoginFactorResult::Backup { replacement } => {
+                let consumed = repository
+                    .consume_totp_backup_code(principal.user_id(), totp_secret.clone(), replacement)
+                    .await
+                    .map_err(map_passkey_repository_error)?;
+                if consumed {
+                    Ok(())
+                } else {
+                    Err(UserProfileError::TwoFactorInvalid)
+                }
+            }
+        }
     }
 }
 
@@ -1056,6 +1141,25 @@ mod tests {
         assert!(!format!("{command:?}").contains("new secure password"));
         assert_eq!(
             UserPasswordChangeCommand::new("old".to_owned(), "short".to_owned()).unwrap_err(),
+            UserProfileError::InvalidInput
+        );
+        let step_up = UserSecurityStepUpCommand::new(
+            "current secure password".to_owned(),
+            Some("123456".to_owned()),
+        )
+        .unwrap();
+        assert_eq!(
+            format!("{step_up:?}"),
+            "UserSecurityStepUpCommand(<redacted>)"
+        );
+        assert!(!format!("{step_up:?}").contains("123456"));
+        assert_eq!(
+            UserSecurityStepUpCommand::new("".to_owned(), None).unwrap_err(),
+            UserProfileError::InvalidInput
+        );
+        assert_eq!(
+            UserSecurityStepUpCommand::new("current".to_owned(), Some("\n".to_owned()))
+                .unwrap_err(),
             UserProfileError::InvalidInput
         );
         assert!(UserNotificationPreferencesCommand::new(false, true, None).is_ok());
