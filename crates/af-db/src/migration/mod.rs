@@ -103,6 +103,7 @@ mod m20260823_000094_add_organization_custom_role_bindings;
 mod m20260824_000095_create_organization_sso_persistence;
 mod m20260825_000096_add_organization_sso_login_material;
 mod m20260825_000097_add_organization_sso_ticket_email_fingerprint;
+mod m20260826_000098_create_organization_sso_policies;
 mod schema;
 
 #[cfg(test)]
@@ -243,6 +244,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260824_000095_create_organization_sso_persistence::Migration),
             Box::new(m20260825_000096_add_organization_sso_login_material::Migration),
             Box::new(m20260825_000097_add_organization_sso_ticket_email_fingerprint::Migration),
+            Box::new(m20260826_000098_create_organization_sso_policies::Migration),
         ]
     }
 }

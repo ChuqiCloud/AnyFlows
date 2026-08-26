@@ -11,8 +11,8 @@ use sea_orm::{
 };
 
 use crate::entity::{
-    organization_entitlements, organization_memberships, organization_teams, organization_wallets,
-    organizations, tokens, users,
+    organization_entitlements, organization_memberships, organization_sso_policies,
+    organization_teams, organization_wallets, organizations, tokens, users,
 };
 
 const ENABLED_TOKEN_STATUS: i16 = 1;
@@ -92,6 +92,22 @@ pub(super) async fn create(
         created_at: Set(now),
         updated_at: Set(now),
         ..Default::default()
+    })
+    .insert(&transaction)
+    .await
+    {
+        let mapped = map_write_error(&error);
+        rollback(transaction).await?;
+        return Err(mapped);
+    }
+
+    if let Err(error) = (organization_sso_policies::ActiveModel {
+        organization_id: Set(organization.id),
+        enforcement_policy: Set(af_domain::OrganizationSsoEnforcementPolicy::Optional.code()),
+        recovery_ready: Set(false),
+        version: Set(1),
+        created_at: Set(now),
+        updated_at: Set(now),
     })
     .insert(&transaction)
     .await

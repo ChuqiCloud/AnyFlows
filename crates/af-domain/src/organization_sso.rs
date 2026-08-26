@@ -225,6 +225,88 @@ pub enum OrganizationSsoEnforcementPolicy {
     Required = 2,
 }
 
+impl OrganizationSsoEnforcementPolicy {
+    /// 判断策略是否要求企业成员只能通过 SSO 登录。
+    #[must_use]
+    pub const fn is_required(self) -> bool {
+        matches!(self, Self::Required)
+    }
+}
+
+/// Required 策略启用前必须由服务端原子确认的事实集合。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OrganizationSsoEnforcementFacts {
+    organization_active: bool,
+    entitlement_active: bool,
+    sso_enabled: bool,
+    active_provider_ready: bool,
+    verified_domain_ready: bool,
+    recovery_ready: bool,
+}
+
+impl OrganizationSsoEnforcementFacts {
+    /// 组装 Required 策略的服务端校验事实，不接受客户端声明。
+    #[must_use]
+    pub const fn new(
+        organization_active: bool,
+        entitlement_active: bool,
+        sso_enabled: bool,
+        active_provider_ready: bool,
+        verified_domain_ready: bool,
+        recovery_ready: bool,
+    ) -> Self {
+        Self {
+            organization_active,
+            entitlement_active,
+            sso_enabled,
+            active_provider_ready,
+            verified_domain_ready,
+            recovery_ready,
+        }
+    }
+
+    /// 判断 Required 是否满足全部依赖；任一事实缺失即关闭。
+    #[must_use]
+    pub const fn allows_required(self) -> bool {
+        self.organization_active
+            && self.entitlement_active
+            && self.sso_enabled
+            && self.active_provider_ready
+            && self.verified_domain_ready
+            && self.recovery_ready
+    }
+
+    #[must_use]
+    pub const fn organization_active(self) -> bool {
+        self.organization_active
+    }
+
+    #[must_use]
+    pub const fn entitlement_active(self) -> bool {
+        self.entitlement_active
+    }
+
+    #[must_use]
+    pub const fn sso_enabled(self) -> bool {
+        self.sso_enabled
+    }
+
+    #[must_use]
+    pub const fn active_provider_ready(self) -> bool {
+        self.active_provider_ready
+    }
+
+    #[must_use]
+    pub const fn verified_domain_ready(self) -> bool {
+        self.verified_domain_ready
+    }
+
+    #[must_use]
+    pub const fn recovery_ready(self) -> bool {
+        self.recovery_ready
+    }
+}
+
 macro_rules! sso_state_code {
     ($type:ty, $error:expr, {$($code:literal => $variant:expr),+ $(,)?}) => {
         impl $type {

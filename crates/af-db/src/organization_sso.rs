@@ -1,11 +1,13 @@
 use std::{fmt, future::Future, time::Duration};
 
 use af_domain::{
-    OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationId,
-    OrganizationMembershipId, OrganizationMembershipStatus, OrganizationSsoDnsVerification,
-    OrganizationSsoDomain, OrganizationSsoDomainStatus, OrganizationSsoIdentityBindingMethod,
-    OrganizationSsoIdentityLoginFacts, OrganizationSsoIdentityStatus, OrganizationSsoProtocol,
-    OrganizationSsoProviderKey, OrganizationSsoProviderStatus, OrganizationStatus, UserId,
+    OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot,
+    OrganizationEntitlementStatus, OrganizationId, OrganizationMembershipId,
+    OrganizationMembershipStatus, OrganizationSsoDnsVerification, OrganizationSsoDomain,
+    OrganizationSsoDomainStatus, OrganizationSsoEnforcementFacts, OrganizationSsoEnforcementPolicy,
+    OrganizationSsoIdentityBindingMethod, OrganizationSsoIdentityLoginFacts,
+    OrganizationSsoIdentityStatus, OrganizationSsoProtocol, OrganizationSsoProviderKey,
+    OrganizationSsoProviderStatus, OrganizationStatus, UserId,
     authorize_organization_sso_identity_login,
 };
 use sea_orm::{
@@ -24,7 +26,7 @@ use crate::{
     entity::{
         EncryptedJson, SensitiveString, organization_entitlements, organization_memberships,
         organization_sso_domains, organization_sso_identities, organization_sso_login_transactions,
-        organization_sso_providers, organizations,
+        organization_sso_policies, organization_sso_providers, organizations,
     },
 };
 
@@ -636,6 +638,81 @@ impl OrganizationSsoLoginTransactionRecord {
     }
 }
 
+/// 企业 SSO 强制策略的 CAS 更新命令。
+pub struct OrganizationSsoPolicyUpdate {
+    policy: OrganizationSsoEnforcementPolicy,
+    expected_version: i64,
+}
+
+impl OrganizationSsoPolicyUpdate {
+    /// 构造策略更新；版本必须是当前持久化版本。
+    pub fn new(
+        policy: OrganizationSsoEnforcementPolicy,
+        expected_version: i64,
+    ) -> Result<Self, OrganizationSsoRepositoryError> {
+        if expected_version <= 0 || expected_version == i64::MAX {
+            return Err(OrganizationSsoRepositoryError::InvalidInput);
+        }
+        Ok(Self {
+            policy,
+            expected_version,
+        })
+    }
+}
+
+impl fmt::Debug for OrganizationSsoPolicyUpdate {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OrganizationSsoPolicyUpdate")
+            .field("policy", &self.policy)
+            .field("expected_version", &self.expected_version)
+            .finish()
+    }
+}
+
+/// 已持久化的企业 SSO 策略及受控恢复事实。
+#[derive(Clone, Debug, PartialEq)]
+pub struct OrganizationSsoPolicyRecord {
+    organization_id: OrganizationId,
+    policy: OrganizationSsoEnforcementPolicy,
+    recovery_ready: bool,
+    version: i64,
+    created_at: i64,
+    updated_at: i64,
+}
+
+impl OrganizationSsoPolicyRecord {
+    #[must_use]
+    pub const fn organization_id(&self) -> OrganizationId {
+        self.organization_id
+    }
+
+    #[must_use]
+    pub const fn policy(&self) -> OrganizationSsoEnforcementPolicy {
+        self.policy
+    }
+
+    #[must_use]
+    pub const fn recovery_ready(&self) -> bool {
+        self.recovery_ready
+    }
+
+    #[must_use]
+    pub const fn version(&self) -> i64 {
+        self.version
+    }
+
+    #[must_use]
+    pub const fn created_at(&self) -> i64 {
+        self.created_at
+    }
+
+    #[must_use]
+    pub const fn updated_at(&self) -> i64 {
+        self.updated_at
+    }
+}
+
 /// SSO 仓储构造错误。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum OrganizationSsoProviderRepositoryConfigError {
@@ -699,6 +776,32 @@ impl OrganizationSsoProviderRepository {
             pool,
             operation_timeout,
         })
+    }
+
+    /// 读取企业 SSO 策略；迁移和企业创建都会写入 Optional 默认行。
+    pub async fn policy(
+        &self,
+        organization_id: OrganizationId,
+    ) -> Result<OrganizationSsoPolicyRecord, OrganizationSsoRepositoryError> {
+        self.run(async move {
+            let model = organization_sso_policies::Entity::find_by_id(organization_id.get())
+                .one(self.pool.connection())
+                .await
+                .map_err(query_error)?
+                .ok_or(OrganizationSsoRepositoryError::NotFound)?;
+            policy_record(model)
+        })
+        .await
+    }
+
+    /// 在企业事务内按 CAS 更新策略，并原子校验 Required 的全部启用条件。
+    pub async fn update_policy(
+        &self,
+        organization_id: OrganizationId,
+        write: OrganizationSsoPolicyUpdate,
+    ) -> Result<OrganizationSsoPolicyRecord, OrganizationSsoRepositoryError> {
+        self.run(self.update_policy_inner(organization_id, write))
+            .await
     }
 
     /// 在企业范围创建 Provider。
@@ -1126,6 +1229,71 @@ impl OrganizationSsoProviderRepository {
                 OrganizationSsoRepositoryError::Timeout,
             )),
         }
+    }
+
+    async fn update_policy_inner(
+        &self,
+        organization_id: OrganizationId,
+        write: OrganizationSsoPolicyUpdate,
+    ) -> Result<OrganizationSsoPolicyRecord, OrganizationSsoRepositoryError> {
+        let transaction = begin(&self.pool).await?;
+        let organization = lock_organization(&transaction, organization_id).await?;
+        let entitlement = lock_entitlement(&transaction, organization_id).await?;
+        let current = lock_policy(&transaction, organization_id).await?;
+        if current.version != write.expected_version {
+            rollback(transaction).await?;
+            return Err(OrganizationSsoRepositoryError::Conflict);
+        }
+
+        if write.policy.is_required() {
+            let facts = required_enforcement_facts(
+                &transaction,
+                &organization,
+                &entitlement,
+                current.recovery_ready,
+            )
+            .await?;
+            if !facts.allows_required() {
+                rollback(transaction).await?;
+                return Err(OrganizationSsoRepositoryError::Unavailable);
+            }
+        }
+
+        let next_version = write
+            .expected_version
+            .checked_add(1)
+            .ok_or(OrganizationSsoRepositoryError::InvalidInput)?;
+        let now = TimeDateTimeWithTimeZone::now_utc();
+        let result = organization_sso_policies::Entity::update_many()
+            .filter(organization_sso_policies::Column::OrganizationId.eq(organization_id.get()))
+            .filter(organization_sso_policies::Column::Version.eq(write.expected_version))
+            .col_expr(
+                organization_sso_policies::Column::EnforcementPolicy,
+                Expr::value(write.policy.code()),
+            )
+            .col_expr(
+                organization_sso_policies::Column::Version,
+                Expr::value(next_version),
+            )
+            .col_expr(
+                organization_sso_policies::Column::UpdatedAt,
+                Expr::value(now),
+            )
+            .exec(&transaction)
+            .await
+            .map_err(query_error)?;
+        if result.rows_affected != 1 {
+            rollback(transaction).await?;
+            return Err(OrganizationSsoRepositoryError::Conflict);
+        }
+        let model = organization_sso_policies::Entity::find_by_id(organization_id.get())
+            .one(&transaction)
+            .await
+            .map_err(query_error)?
+            .ok_or_else(invariant)?;
+        let record = policy_record(model)?;
+        commit(transaction).await?;
+        Ok(record)
     }
 
     async fn create_provider_inner(
@@ -2060,6 +2228,22 @@ async fn lock_entitlement(
     }
 }
 
+/// 锁定企业 SSO 策略，迁移保证每个企业恰有一行策略记录。
+async fn lock_policy(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+) -> Result<organization_sso_policies::Model, OrganizationSsoRepositoryError> {
+    let mut query = organization_sso_policies::Entity::find_by_id(organization_id.get());
+    if transaction.get_database_backend() != DbBackend::Sqlite {
+        query = query.lock(LockType::Update);
+    }
+    query
+        .one(transaction)
+        .await
+        .map_err(query_error)?
+        .ok_or_else(invariant)
+}
+
 /// 将持久化授权完整投影为领域快照，禁止用裸字段绕过时间和能力约束。
 fn entitlement_snapshot(
     model: &organization_entitlements::Model,
@@ -2081,6 +2265,84 @@ fn entitlement_snapshot(
         model.grace_until.map(|value| value.unix_timestamp()),
     )
     .map_err(|_| invariant())
+}
+
+/// 在策略事务内计算 Required 的全部启用事实；任一持久化枚举损坏都拒绝继续。
+async fn required_enforcement_facts(
+    transaction: &DatabaseTransaction,
+    organization: &organizations::Model,
+    entitlement: &organization_entitlements::Model,
+    recovery_ready: bool,
+) -> Result<OrganizationSsoEnforcementFacts, OrganizationSsoRepositoryError> {
+    let organization_status =
+        OrganizationStatus::try_from(organization.status).map_err(|_| invariant())?;
+    let snapshot = entitlement_snapshot(entitlement)?;
+    let entitlement_status = snapshot.status(
+        organization_status,
+        TimeDateTimeWithTimeZone::now_utc().unix_timestamp(),
+    );
+
+    let providers = organization_sso_providers::Entity::find()
+        .filter(organization_sso_providers::Column::OrganizationId.eq(organization.id))
+        .all(transaction)
+        .await
+        .map_err(query_error)?;
+    let mut active_provider_ids = Vec::new();
+    let mut active_provider_ready = false;
+    for provider in &providers {
+        let status =
+            OrganizationSsoProviderStatus::try_from(provider.status).map_err(|_| invariant())?;
+        let _protocol =
+            OrganizationSsoProtocol::try_from(provider.protocol).map_err(|_| invariant())?;
+        if status == OrganizationSsoProviderStatus::Active
+            && provider
+                .metadata_projection
+                .as_ref()
+                .is_some_and(|value| matches!(value, Json::Object(_)))
+            && provider
+                .secret_envelope
+                .as_ref()
+                .is_some_and(|value| parse_secret(value.clone()).is_ok())
+        {
+            active_provider_ids.push(provider.id);
+            active_provider_ready = true;
+        }
+    }
+
+    let domains = organization_sso_domains::Entity::find()
+        .filter(organization_sso_domains::Column::OrganizationId.eq(organization.id))
+        .all(transaction)
+        .await
+        .map_err(query_error)?;
+    let now = TimeDateTimeWithTimeZone::now_utc();
+    let verified_domain_ready = domains.iter().any(|domain| {
+        let status = match OrganizationSsoDomainStatus::try_from(domain.status) {
+            Ok(status) => status,
+            Err(_) => return false,
+        };
+        active_provider_ids.contains(&domain.provider_id)
+            && status == OrganizationSsoDomainStatus::Verified
+            && domain.verified_at.is_some()
+            && domain.revoked_at.is_none()
+            && domain
+                .proof_expires_at
+                .as_ref()
+                .is_some_and(|value| *value > now)
+            && domain.recheck_at.as_ref().is_some_and(|value| *value > now)
+    });
+    // 上面的 any 只负责筛选，先完整解析所有域名状态以拒绝未知值。
+    for domain in &domains {
+        OrganizationSsoDomainStatus::try_from(domain.status).map_err(|_| invariant())?;
+    }
+
+    Ok(OrganizationSsoEnforcementFacts::new(
+        organization_status == OrganizationStatus::Active,
+        entitlement_status == OrganizationEntitlementStatus::Active,
+        snapshot.sso_enabled(),
+        active_provider_ready,
+        verified_domain_ready,
+        recovery_ready,
+    ))
 }
 
 /// 锁定尚未超过复验期限的已验证域名，避免撤销或过期域名继续放行绑定。
@@ -2363,6 +2625,23 @@ fn provider_record(
         display_name: model.display_name,
         metadata_projection: model.metadata_projection,
         secret_configured: model.secret_envelope.is_some(),
+        version: model.version,
+        created_at: model.created_at.unix_timestamp(),
+        updated_at: model.updated_at.unix_timestamp(),
+    })
+}
+
+fn policy_record(
+    model: organization_sso_policies::Model,
+) -> Result<OrganizationSsoPolicyRecord, OrganizationSsoRepositoryError> {
+    if model.organization_id <= 0 || model.version <= 0 {
+        return Err(invariant());
+    }
+    Ok(OrganizationSsoPolicyRecord {
+        organization_id: OrganizationId::new(model.organization_id).map_err(|_| invariant())?,
+        policy: OrganizationSsoEnforcementPolicy::try_from(model.enforcement_policy)
+            .map_err(|_| invariant())?,
+        recovery_ready: model.recovery_ready,
         version: model.version,
         created_at: model.created_at.unix_timestamp(),
         updated_at: model.updated_at.unix_timestamp(),

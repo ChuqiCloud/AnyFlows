@@ -5,7 +5,7 @@ use af_domain::{
     OrganizationEntitlementSnapshot, OrganizationId, OrganizationInvitationKey,
     OrganizationMembershipStatus, OrganizationRole, OrganizationSsoDnsTxtAnswers,
     OrganizationSsoDnsVerification, OrganizationSsoDomain, OrganizationSsoDomainProof,
-    OrganizationSsoDomainProofToken, OrganizationSsoDomainStatus,
+    OrganizationSsoDomainProofToken, OrganizationSsoDomainStatus, OrganizationSsoEnforcementPolicy,
     OrganizationSsoIdentityBindingMethod, OrganizationSsoIdentityStatus, OrganizationSsoProtocol,
     OrganizationSsoProviderKey, OrganizationSsoProviderStatus, UserId,
 };
@@ -23,9 +23,10 @@ use crate::{
     OrganizationSsoRepositoryError,
     entity::{
         authentication_settings, groups, organization_entitlements, organization_memberships,
-        organization_sso_identities, users,
+        organization_sso_identities, organization_sso_policies, users,
     },
 };
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 
 struct Fixture {
     pool: crate::DatabasePool,
@@ -34,6 +35,158 @@ struct Fixture {
     organizations_ids: [OrganizationId; 2],
     users: [UserId; 3],
     group_id: i64,
+}
+
+#[tokio::test]
+async fn sso_policy_repository_persists_and_gates_required() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let organization_id = fixture.organizations_ids[0];
+    let initial = fixture.sso.policy(organization_id).await?;
+    assert_eq!(initial.organization_id(), organization_id);
+    assert_eq!(initial.policy(), OrganizationSsoEnforcementPolicy::Optional);
+    assert!(!initial.recovery_ready());
+    assert_eq!(initial.version(), 1);
+
+    let optional = fixture
+        .sso
+        .update_policy(
+            organization_id,
+            crate::OrganizationSsoPolicyUpdate::new(
+                OrganizationSsoEnforcementPolicy::Optional,
+                initial.version(),
+            )?,
+        )
+        .await?;
+    assert_eq!(optional.version(), 2);
+    let other = fixture.sso.policy(fixture.organizations_ids[1]).await?;
+    assert_eq!(
+        fixture
+            .sso
+            .update_policy(
+                fixture.organizations_ids[1],
+                crate::OrganizationSsoPolicyUpdate::new(
+                    OrganizationSsoEnforcementPolicy::Required,
+                    optional.version(),
+                )?,
+            )
+            .await,
+        Err(OrganizationSsoRepositoryError::Conflict)
+    );
+    assert_eq!(
+        fixture.sso.policy(fixture.organizations_ids[1]).await?,
+        other
+    );
+    assert_eq!(
+        fixture
+            .sso
+            .update_policy(
+                organization_id,
+                crate::OrganizationSsoPolicyUpdate::new(
+                    OrganizationSsoEnforcementPolicy::Optional,
+                    initial.version(),
+                )?,
+            )
+            .await,
+        Err(OrganizationSsoRepositoryError::Conflict)
+    );
+
+    assert_eq!(
+        fixture
+            .sso
+            .update_policy(
+                organization_id,
+                crate::OrganizationSsoPolicyUpdate::new(
+                    OrganizationSsoEnforcementPolicy::Required,
+                    optional.version(),
+                )?,
+            )
+            .await,
+        Err(OrganizationSsoRepositoryError::Unavailable)
+    );
+
+    enable_sso(&fixture, organization_id).await?;
+    let provider_key = provider_key(31);
+    let provider = fixture
+        .sso
+        .create_provider(
+            organization_id,
+            OrganizationSsoProviderCreate::new(
+                provider_key,
+                OrganizationSsoProtocol::Oidc,
+                OrganizationSsoProviderStatus::Active,
+                "Required SSO".to_owned(),
+                None,
+                None,
+            ),
+        )
+        .await?;
+    let current = fixture.sso.policy(organization_id).await?;
+    assert_eq!(
+        fixture
+            .sso
+            .update_policy(
+                organization_id,
+                crate::OrganizationSsoPolicyUpdate::new(
+                    OrganizationSsoEnforcementPolicy::Required,
+                    current.version(),
+                )?,
+            )
+            .await,
+        Err(OrganizationSsoRepositoryError::Unavailable)
+    );
+
+    let provider = fixture
+        .sso
+        .update_provider(
+            organization_id,
+            provider_key,
+            crate::OrganizationSsoProviderUpdate::new(
+                OrganizationSsoProtocol::Oidc,
+                OrganizationSsoProviderStatus::Active,
+                "Required SSO".to_owned(),
+                Some(serde_json::json!({"issuer": "https://sso.example.com"})),
+                crate::OrganizationSsoProviderSecretChange::Replace(provider_secret(31)),
+                provider.version(),
+            ),
+        )
+        .await?;
+    add_verified_domain(
+        &fixture,
+        organization_id,
+        provider_key,
+        "required.example.com",
+    )
+    .await?;
+
+    let policy_model = organization_sso_policies::Entity::find_by_id(organization_id.get())
+        .one(fixture.pool.connection())
+        .await?
+        .expect("Required 策略记录必须存在")
+        .into_active_model();
+    let mut policy_model = policy_model;
+    policy_model.recovery_ready = Set(true);
+    policy_model.update(fixture.pool.connection()).await?;
+
+    let current = fixture.sso.policy(organization_id).await?;
+    let required = fixture
+        .sso
+        .update_policy(
+            organization_id,
+            crate::OrganizationSsoPolicyUpdate::new(
+                OrganizationSsoEnforcementPolicy::Required,
+                current.version(),
+            )?,
+        )
+        .await?;
+    assert_eq!(
+        required.policy(),
+        OrganizationSsoEnforcementPolicy::Required
+    );
+    assert_eq!(required.version(), current.version() + 1);
+    assert!(required.recovery_ready());
+
+    fixture.pool.close().await?;
+    Ok(())
 }
 
 #[tokio::test]
@@ -1163,6 +1316,16 @@ fn provider_key(value: u8) -> OrganizationSsoProviderKey {
 
 fn digest(value: char) -> String {
     std::iter::repeat_n(value, 64).collect()
+}
+
+fn provider_secret(marker: u8) -> serde_json::Value {
+    serde_json::json!({
+        "version": 1,
+        "algorithm": "xchacha20poly1305",
+        "key_id": "primary-key",
+        "nonce": URL_SAFE_NO_PAD.encode([marker; crate::CREDENTIAL_ENVELOPE_NONCE_BYTES]),
+        "ciphertext": URL_SAFE_NO_PAD.encode(vec![marker; crate::CREDENTIAL_ENVELOPE_TAG_BYTES]),
+    })
 }
 
 async fn add_verified_domain(

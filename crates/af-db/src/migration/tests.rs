@@ -37,16 +37,16 @@ use crate::entity::{
     organization_audit_logs, organization_budget_policies, organization_budget_windows,
     organization_custom_role_permissions, organization_custom_roles, organization_entitlements,
     organization_invitations, organization_memberships, organization_sso_domains,
-    organization_sso_identities, organization_sso_login_transactions, organization_sso_providers,
-    organization_teams, organization_wallet_ledger_entries, organization_wallets, organizations,
-    passkey_authentication_challenges, passkey_registration_challenges, passkeys, payment_settings,
-    platform_audit_logs, playground_conversations, playground_shares, redemption_batches,
-    redemption_codes, refund_provider_events, refund_requests, registration_rate_limits,
-    request_outcome_logs, scheduler_outbox_events, site_settings,
-    subscription_balance_alert_events, subscription_orders, subscription_payment_events,
-    subscription_plan_prices, subscription_plans, tokens, topup_orders, topup_payment_events,
-    usage_logs, user_notification_events, user_notification_receipts, user_subscriptions, users,
-    wallet_ledger_entries,
+    organization_sso_identities, organization_sso_login_transactions, organization_sso_policies,
+    organization_sso_providers, organization_teams, organization_wallet_ledger_entries,
+    organization_wallets, organizations, passkey_authentication_challenges,
+    passkey_registration_challenges, passkeys, payment_settings, platform_audit_logs,
+    playground_conversations, playground_shares, redemption_batches, redemption_codes,
+    refund_provider_events, refund_requests, registration_rate_limits, request_outcome_logs,
+    scheduler_outbox_events, site_settings, subscription_balance_alert_events, subscription_orders,
+    subscription_payment_events, subscription_plan_prices, subscription_plans, tokens,
+    topup_orders, topup_payment_events, usage_logs, user_notification_events,
+    user_notification_receipts, user_subscriptions, users, wallet_ledger_entries,
 };
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
@@ -78,7 +78,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 97;
+const EXPECTED_MIGRATION_COUNT: usize = 98;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -97,7 +97,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 79] = [
+const CORE_TABLES: [&str; 80] = [
     "groups",
     "users",
     "passkeys",
@@ -170,6 +170,7 @@ const CORE_TABLES: [&str; 79] = [
     "organization_budget_windows",
     "billing_organization_reservations",
     "organization_audit_logs",
+    "organization_sso_policies",
     "platform_audit_logs",
     "request_outcome_logs",
     "user_notification_events",
@@ -215,6 +216,53 @@ async fn standard_startup_installs_core_schema() -> Result<(), Box<dyn Error>> {
 
     assert!(manager.has_table("seaql_migrations").await?);
     assert!(manager.has_table("users").await?);
+    assert!(manager.has_table("organization_sso_policies").await?);
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn organization_sso_policy_migration_backfills_existing_organizations()
+-> Result<(), Box<dyn Error>> {
+    let database_options = DatabaseOptions::new("sqlite::memory:")?;
+    let pool = connect(&database_options).await?;
+    Migrator::up(pool.connection(), Some(97)).await?;
+
+    let group = group_active_model("organization-policy-backfill", "策略回填测试分组")
+        .insert(pool.connection())
+        .await?;
+    let mut owner = user_active_model(
+        group.id,
+        "organization-policy-backfill-owner",
+        "organization-policy-backfill@example.com",
+        "organization-policy-backfill-aff",
+    );
+    owner.status = Set(1);
+    let owner = owner.insert(pool.connection()).await?;
+    let now = TimeDateTimeWithTimeZone::now_utc();
+    let organization = organizations::ActiveModel {
+        organization_key: Set("11111111111111111111111111111111".to_owned()),
+        name: Set("Policy Backfill".to_owned()),
+        slug: Set("policy-backfill".to_owned()),
+        status: Set(1),
+        created_by_user_id: Set(owner.id),
+        version: Set(1),
+        created_at: Set(now),
+        updated_at: Set(now),
+        closed_at: Set(None),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+
+    Migrator::up(pool.connection(), Some(98)).await?;
+    let policy = organization_sso_policies::Entity::find_by_id(organization.id)
+        .one(pool.connection())
+        .await?
+        .expect("历史企业必须回填 SSO 策略");
+    assert_eq!(policy.enforcement_policy, 1);
+    assert!(!policy.recovery_ready);
+    assert_eq!(policy.version, 1);
     pool.close().await?;
     Ok(())
 }
@@ -1390,7 +1438,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 38);
+    assert_eq!(pending_migrations.len(), 39);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -1542,6 +1590,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[37].name(),
         "m20260825_000097_add_organization_sso_ticket_email_fingerprint"
+    );
+    assert_eq!(
+        pending_migrations[38].name(),
+        "m20260826_000098_create_organization_sso_policies"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
@@ -3070,6 +3122,11 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     assert_entity_columns::<organization_entitlements::Column>(
         &manager,
         "organization_entitlements",
+    )
+    .await?;
+    assert_entity_columns::<organization_sso_policies::Column>(
+        &manager,
+        "organization_sso_policies",
     )
     .await?;
     assert_entity_columns::<organization_audit_logs::Column>(&manager, "organization_audit_logs")

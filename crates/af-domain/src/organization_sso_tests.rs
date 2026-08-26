@@ -1,7 +1,8 @@
 use crate::{
     OrganizationSsoDomain, OrganizationSsoDomainError, OrganizationSsoDomainStatus,
-    OrganizationSsoEnforcementPolicy, OrganizationSsoIdentifierError, OrganizationSsoProtocol,
-    OrganizationSsoProviderKey, OrganizationSsoProviderStatus, OrganizationSsoStateCodeError,
+    OrganizationSsoEnforcementFacts, OrganizationSsoEnforcementPolicy,
+    OrganizationSsoIdentifierError, OrganizationSsoProtocol, OrganizationSsoProviderKey,
+    OrganizationSsoProviderStatus, OrganizationSsoStateCodeError,
 };
 
 #[test]
@@ -141,4 +142,21 @@ fn organization_sso_state_codes_are_stable_and_closed() {
         OrganizationSsoEnforcementPolicy::try_from(3),
         Err(OrganizationSsoStateCodeError::InvalidEnforcementPolicy)
     );
+}
+
+#[test]
+fn required_enforcement_facts_fail_closed_when_any_dependency_is_missing() {
+    let complete = OrganizationSsoEnforcementFacts::new(true, true, true, true, true, true);
+    assert!(complete.allows_required());
+
+    for index in 0..6 {
+        let mut facts = [true; 6];
+        facts[index] = false;
+        let facts = OrganizationSsoEnforcementFacts::new(
+            facts[0], facts[1], facts[2], facts[3], facts[4], facts[5],
+        );
+        assert!(!facts.allows_required());
+    }
+    assert!(OrganizationSsoEnforcementPolicy::Required.is_required());
+    assert!(!OrganizationSsoEnforcementPolicy::Optional.is_required());
 }

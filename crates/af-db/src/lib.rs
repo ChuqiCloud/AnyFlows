@@ -496,10 +496,11 @@ pub use organization_sso::{
     OrganizationSsoDomainCreate, OrganizationSsoDomainRecord, OrganizationSsoDomainUpdate,
     OrganizationSsoIdentityCreate, OrganizationSsoIdentityRecord,
     OrganizationSsoLoginTransactionCreate, OrganizationSsoLoginTransactionRecord,
-    OrganizationSsoLoginTransactionResult, OrganizationSsoProviderCreate,
-    OrganizationSsoProviderRecord, OrganizationSsoProviderRepository,
-    OrganizationSsoProviderRepositoryConfigError, OrganizationSsoProviderSecretChange,
-    OrganizationSsoProviderUpdate, OrganizationSsoRepositoryError,
+    OrganizationSsoLoginTransactionResult, OrganizationSsoPolicyRecord,
+    OrganizationSsoPolicyUpdate, OrganizationSsoProviderCreate, OrganizationSsoProviderRecord,
+    OrganizationSsoProviderRepository, OrganizationSsoProviderRepositoryConfigError,
+    OrganizationSsoProviderSecretChange, OrganizationSsoProviderUpdate,
+    OrganizationSsoRepositoryError,
 };
 pub use organization_token::{
     MAX_ORGANIZATION_TOKEN_PAGE_SIZE, OrganizationTokenCreateRecord,

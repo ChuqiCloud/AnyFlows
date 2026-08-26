@@ -62,8 +62,9 @@ pub use organization_entitlement::{
 };
 pub use organization_sso::{
     OrganizationSsoDomain, OrganizationSsoDomainError, OrganizationSsoDomainStatus,
-    OrganizationSsoEnforcementPolicy, OrganizationSsoIdentifierError, OrganizationSsoProtocol,
-    OrganizationSsoProviderKey, OrganizationSsoProviderStatus, OrganizationSsoStateCodeError,
+    OrganizationSsoEnforcementFacts, OrganizationSsoEnforcementPolicy,
+    OrganizationSsoIdentifierError, OrganizationSsoProtocol, OrganizationSsoProviderKey,
+    OrganizationSsoProviderStatus, OrganizationSsoStateCodeError,
 };
 pub use organization_sso_domain_verification::{
     DEFAULT_ORGANIZATION_SSO_RECHECK_INTERVAL_SECONDS, MAX_ORGANIZATION_SSO_PROOF_TTL_SECONDS,
