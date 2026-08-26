@@ -40,6 +40,7 @@ mod organization_sso_login;
 #[cfg(test)]
 mod organization_sso_login_tests;
 mod organization_sso_policy;
+mod organization_sso_recovery;
 mod organization_sso_session;
 mod organization_token;
 mod organization_wallet;
@@ -301,6 +302,11 @@ pub use organization_sso_login::{
 pub use organization_sso_policy::{
     DatabaseOrganizationSsoPolicyService, OrganizationSsoPolicy, OrganizationSsoPolicyCommand,
     OrganizationSsoPolicyFuture, OrganizationSsoPolicyService, OrganizationSsoPolicyServiceError,
+};
+pub use organization_sso_recovery::{
+    DatabaseOrganizationSsoRecoveryService, OrganizationSsoRecovery,
+    OrganizationSsoRecoveryCommand, OrganizationSsoRecoveryFuture, OrganizationSsoRecoveryService,
+    OrganizationSsoRecoveryServiceError,
 };
 pub use organization_sso_session::{
     DatabaseOrganizationSsoSessionService, OrganizationSsoSessionFuture,
