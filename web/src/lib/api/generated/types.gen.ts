@@ -1645,13 +1645,6 @@ export type OrganizationSsoLoginCallbackSuccessResponse = {
     ticket: string;
     expires_at: number;
 };
-export type OrganizationSsoSessionExchangeRequest = {
-    organization_id: number;
-};
-export type OrganizationSsoSessionExchangeErrorResponse = {
-    code: string;
-    message: string;
-};
 export type OrganizationSsoLoginStartRequest = {
     provider_key: string;
     request_digest: string;
@@ -1662,6 +1655,13 @@ export type OrganizationSsoLoginStartResponse = {
     state_digest: string;
     request_digest: string;
     expires_at: number;
+};
+export type OrganizationSsoSessionExchangeRequest = {
+    organization_id: number;
+};
+export type OrganizationSsoSessionExchangeErrorResponse = {
+    code: string;
+    message: string;
 };
 export type OrganizationSsoProvider = {
     id: number;
