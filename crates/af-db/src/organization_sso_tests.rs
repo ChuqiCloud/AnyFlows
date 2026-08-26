@@ -385,6 +385,22 @@ async fn explicit_identity_binding_rechecks_all_organization_facts() -> Result<(
             .await,
         Err(OrganizationSsoRepositoryError::Conflict)
     );
+    // 企业同一时间只允许一个活动 Provider；切换测试场景前按 CAS 关闭当前 Provider。
+    fixture
+        .sso
+        .update_provider(
+            organization_id,
+            key,
+            crate::OrganizationSsoProviderUpdate::new(
+                OrganizationSsoProtocol::Oidc,
+                OrganizationSsoProviderStatus::Disabled,
+                "Explicit SSO Disabled".to_owned(),
+                None,
+                crate::OrganizationSsoProviderSecretChange::Keep,
+                provider.version(),
+            ),
+        )
+        .await?;
 
     let no_domain_key = provider_key(13);
     let no_domain_provider = fixture
@@ -443,6 +459,21 @@ async fn explicit_identity_binding_rechecks_all_organization_facts() -> Result<(
     );
 
     let suspended_user_id = fixture.users[2];
+    fixture
+        .sso
+        .update_provider(
+            organization_id,
+            no_domain_key,
+            crate::OrganizationSsoProviderUpdate::new(
+                OrganizationSsoProtocol::Oidc,
+                OrganizationSsoProviderStatus::Disabled,
+                "No Domain SSO Disabled".to_owned(),
+                None,
+                crate::OrganizationSsoProviderSecretChange::Keep,
+                no_domain_provider.version(),
+            ),
+        )
+        .await?;
     let suspended_membership = fixture
         .organizations
         .add_membership(
@@ -497,6 +528,21 @@ async fn explicit_identity_binding_rechecks_all_organization_facts() -> Result<(
             .await,
         Err(OrganizationSsoRepositoryError::Unavailable)
     );
+    fixture
+        .sso
+        .update_provider(
+            organization_id,
+            suspended_key,
+            crate::OrganizationSsoProviderUpdate::new(
+                OrganizationSsoProtocol::Oidc,
+                OrganizationSsoProviderStatus::Disabled,
+                "Suspended Membership SSO Disabled".to_owned(),
+                None,
+                crate::OrganizationSsoProviderSecretChange::Keep,
+                suspended_provider.version(),
+            ),
+        )
+        .await?;
 
     let saml_key = provider_key(17);
     let saml_provider = fixture
