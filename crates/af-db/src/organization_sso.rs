@@ -692,6 +692,30 @@ impl fmt::Debug for OrganizationSsoRecoveryUpdate {
     }
 }
 
+/// Owner break-glass 暂停 Required 策略的版本 CAS 命令。
+pub struct OrganizationSsoRecoverySuspend {
+    expected_version: i64,
+}
+
+impl OrganizationSsoRecoverySuspend {
+    /// 构造恢复暂停命令并校验策略版本边界。
+    pub fn new(expected_version: i64) -> Result<Self, OrganizationSsoRepositoryError> {
+        if expected_version <= 0 || expected_version == i64::MAX {
+            return Err(OrganizationSsoRepositoryError::InvalidInput);
+        }
+        Ok(Self { expected_version })
+    }
+}
+
+impl fmt::Debug for OrganizationSsoRecoverySuspend {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OrganizationSsoRecoverySuspend")
+            .field("expected_version", &self.expected_version)
+            .finish()
+    }
+}
+
 /// 已持久化的企业 SSO 策略及受控恢复事实。
 #[derive(Clone, Debug, PartialEq)]
 pub struct OrganizationSsoPolicyRecord {
@@ -833,6 +857,16 @@ impl OrganizationSsoProviderRepository {
         write: OrganizationSsoRecoveryUpdate,
     ) -> Result<OrganizationSsoPolicyRecord, OrganizationSsoRepositoryError> {
         self.run(self.mark_recovery_ready_inner(organization_id, write))
+            .await
+    }
+
+    /// 在企业事务内以版本 CAS 暂停 Required；已是 Optional 时幂等返回原记录。
+    pub async fn suspend_required(
+        &self,
+        organization_id: OrganizationId,
+        write: OrganizationSsoRecoverySuspend,
+    ) -> Result<OrganizationSsoPolicyRecord, OrganizationSsoRepositoryError> {
+        self.run(self.suspend_required_inner(organization_id, write))
             .await
     }
 
@@ -1356,6 +1390,66 @@ impl OrganizationSsoProviderRepository {
             .col_expr(
                 organization_sso_policies::Column::RecoveryReady,
                 Expr::value(true),
+            )
+            .col_expr(
+                organization_sso_policies::Column::Version,
+                Expr::value(next_version),
+            )
+            .col_expr(
+                organization_sso_policies::Column::UpdatedAt,
+                Expr::value(now),
+            )
+            .exec(&transaction)
+            .await
+            .map_err(query_error)?;
+        if result.rows_affected != 1 {
+            rollback(transaction).await?;
+            return Err(OrganizationSsoRepositoryError::Conflict);
+        }
+        let model = organization_sso_policies::Entity::find_by_id(organization_id.get())
+            .one(&transaction)
+            .await
+            .map_err(query_error)?
+            .ok_or_else(invariant)?;
+        let record = policy_record(model)?;
+        commit(transaction).await?;
+        Ok(record)
+    }
+
+    async fn suspend_required_inner(
+        &self,
+        organization_id: OrganizationId,
+        write: OrganizationSsoRecoverySuspend,
+    ) -> Result<OrganizationSsoPolicyRecord, OrganizationSsoRepositoryError> {
+        let transaction = begin(&self.pool).await?;
+        organization_exists(&transaction, organization_id).await?;
+        let current = lock_policy(&transaction, organization_id).await?;
+        if current.version != write.expected_version {
+            rollback(transaction).await?;
+            return Err(OrganizationSsoRepositoryError::Conflict);
+        }
+        let policy = OrganizationSsoEnforcementPolicy::try_from(current.enforcement_policy)
+            .map_err(|_| invariant())?;
+        if !policy.is_required() {
+            let record = policy_record(current)?;
+            commit(transaction).await?;
+            return Ok(record);
+        }
+        let next_version = write
+            .expected_version
+            .checked_add(1)
+            .ok_or(OrganizationSsoRepositoryError::InvalidInput)?;
+        let now = TimeDateTimeWithTimeZone::now_utc();
+        let result = organization_sso_policies::Entity::update_many()
+            .filter(organization_sso_policies::Column::OrganizationId.eq(organization_id.get()))
+            .filter(organization_sso_policies::Column::Version.eq(write.expected_version))
+            .filter(
+                organization_sso_policies::Column::EnforcementPolicy
+                    .eq(OrganizationSsoEnforcementPolicy::Required.code()),
+            )
+            .col_expr(
+                organization_sso_policies::Column::EnforcementPolicy,
+                Expr::value(OrganizationSsoEnforcementPolicy::Optional.code()),
             )
             .col_expr(
                 organization_sso_policies::Column::Version,

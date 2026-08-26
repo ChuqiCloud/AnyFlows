@@ -185,6 +185,39 @@ async fn sso_policy_repository_persists_and_gates_required() -> Result<(), Box<d
     assert_eq!(required.version(), current.version() + 1);
     assert!(required.recovery_ready());
 
+    let suspended = fixture
+        .sso
+        .suspend_required(
+            organization_id,
+            crate::OrganizationSsoRecoverySuspend::new(required.version())?,
+        )
+        .await?;
+    assert_eq!(
+        suspended.policy(),
+        OrganizationSsoEnforcementPolicy::Optional
+    );
+    assert_eq!(suspended.version(), required.version() + 1);
+    assert!(suspended.recovery_ready());
+
+    let repeated = fixture
+        .sso
+        .suspend_required(
+            organization_id,
+            crate::OrganizationSsoRecoverySuspend::new(suspended.version())?,
+        )
+        .await?;
+    assert_eq!(repeated, suspended);
+    assert_eq!(
+        fixture
+            .sso
+            .suspend_required(
+                organization_id,
+                crate::OrganizationSsoRecoverySuspend::new(required.version())?,
+            )
+            .await,
+        Err(OrganizationSsoRepositoryError::Conflict)
+    );
+
     fixture.pool.close().await?;
     Ok(())
 }
