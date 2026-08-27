@@ -2026,6 +2026,19 @@ export type RerankUsage = {
     total_tokens: number;
     completion_tokens?: number;
 };
+export type ResourceTypeListResponse = {
+    schemas: Array<string>;
+    totalResults: number;
+    Resources: Array<ResourceTypeResponse>;
+    startIndex: number;
+    itemsPerPage: number;
+};
+export type ResourceTypeResponse = {
+    id: string;
+    name: string;
+    endpoint: string;
+    schema: string;
+};
 export type ResponsesCompactError = {
     error: ResponsesCompactErrorBody;
 };
@@ -2064,6 +2077,40 @@ export type ResponsesCompactUsage = {
     output_tokens: number;
     output_tokens_details: ResponsesCompactOutputUsageDetails;
     total_tokens: number;
+};
+export type ScimAuthenticationSchemeResponse = {
+    type: string;
+    name: string;
+    description: string;
+    specUri: string;
+    documentationUri: string;
+};
+export type ScimBulkResponse = {
+    supported: boolean;
+    maxOperations: number;
+    maxPayloadSize: number;
+};
+export type ScimErrorResponse = {
+    schemas: Array<string>;
+    detail: string;
+    status: string;
+};
+export type ScimFilterResponse = {
+    supported: boolean;
+    maxResults: number;
+};
+export type ScimSupportResponse = {
+    supported: boolean;
+};
+export type ServiceProviderConfigResponse = {
+    schemas: Array<string>;
+    patch: ScimSupportResponse;
+    bulk: ScimBulkResponse;
+    filter: ScimFilterResponse;
+    changePassword: ScimSupportResponse;
+    sort: ScimSupportResponse;
+    etag: ScimSupportResponse;
+    authenticationSchemes: Array<ScimAuthenticationSchemeResponse>;
 };
 export type SessionResponse = {
     user: SessionUser;
@@ -6909,6 +6956,40 @@ export type ListPlatformOrganizationAuditLogsResponses = {
     200: OrganizationAuditLogListResponse;
 };
 export type ListPlatformOrganizationAuditLogsResponse = ListPlatformOrganizationAuditLogsResponses[keyof ListPlatformOrganizationAuditLogsResponses];
+export type GetScimServiceProviderConfigData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/scim/v2/{organization_id}/ServiceProviderConfig';
+};
+export type GetScimServiceProviderConfigErrors = {
+    401: ScimErrorResponse;
+    503: ScimErrorResponse;
+};
+export type GetScimServiceProviderConfigError = GetScimServiceProviderConfigErrors[keyof GetScimServiceProviderConfigErrors];
+export type GetScimServiceProviderConfigResponses = {
+    200: ServiceProviderConfigResponse;
+};
+export type GetScimServiceProviderConfigResponse = GetScimServiceProviderConfigResponses[keyof GetScimServiceProviderConfigResponses];
+export type ListScimResourceTypesData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/scim/v2/{organization_id}/ResourceTypes';
+};
+export type ListScimResourceTypesErrors = {
+    401: ScimErrorResponse;
+    503: ScimErrorResponse;
+};
+export type ListScimResourceTypesError = ListScimResourceTypesErrors[keyof ListScimResourceTypesErrors];
+export type ListScimResourceTypesResponses = {
+    200: ResourceTypeListResponse;
+};
+export type ListScimResourceTypesResponse = ListScimResourceTypesResponses[keyof ListScimResourceTypesResponses];
 export type StartPasskeyAuthenticationData = {
     body: PasskeyAuthenticationOptionsRequest;
     path?: never;
