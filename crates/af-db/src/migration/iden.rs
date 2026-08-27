@@ -2825,3 +2825,30 @@ pub(in crate::migration) mod organization_scim_user_resources {
         UpdatedAt,
     }
 }
+
+pub(in crate::migration) mod organization_scim_group_resources {
+    use super::DeriveIden;
+
+    /// 企业 SCIM 组资源绑定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_scim_group_resources")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 组资源绑定、版本和删除状态列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        ResourceId,
+        TeamId,
+        ResourceVersion,
+        Status,
+        CreatedAt,
+        UpdatedAt,
+        DeletedAt,
+    }
+}

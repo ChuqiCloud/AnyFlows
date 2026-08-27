@@ -1,14 +1,15 @@
 use std::{fmt, time::Duration};
 
 use af_domain::{
-    OrganizationEntitlementCapacity, OrganizationId, OrganizationMembershipStatus,
-    OrganizationRole, OrganizationScimLifecycleDisposition, OrganizationScimLifecycleFacts,
+    OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationId,
+    OrganizationMembershipStatus, OrganizationRole, OrganizationScimGroupResource,
+    OrganizationScimLifecycleDisposition, OrganizationScimLifecycleFacts,
     OrganizationScimResourceId, OrganizationScimResourceKind, OrganizationScimResourceSet,
     OrganizationScimResourceVersion, OrganizationScimSyncDisposition, OrganizationScimToken,
     OrganizationScimTokenDigest, OrganizationScimTokenError, OrganizationScimTokenId,
     OrganizationScimTokenKey, OrganizationScimTokenStatus, OrganizationScimUserResource,
-    OrganizationStatus, UserId, classify_organization_scim_lifecycle,
-    classify_organization_scim_sync,
+    OrganizationStatus, OrganizationTeamId, OrganizationTeamStatus, UserId,
+    classify_organization_scim_lifecycle, classify_organization_scim_sync,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, DbErr,
@@ -24,7 +25,8 @@ use crate::{
     DatabasePool,
     entity::{
         SensitiveString, organization_entitlements, organization_memberships,
-        organization_scim_tokens, organization_scim_user_resources, organizations, tokens, users,
+        organization_scim_group_resources, organization_scim_tokens,
+        organization_scim_user_resources, organization_teams, organizations, tokens, users,
     },
 };
 
@@ -555,6 +557,671 @@ pub struct OrganizationScimUserRepository {
     operation_timeout: Duration,
 }
 
+/// SCIM 组资源绑定的安全投影；不返回目录组成员原文。
+pub struct OrganizationScimGroupRecord {
+    organization_id: OrganizationId,
+    resource_id: OrganizationScimResourceId,
+    team_id: OrganizationTeamId,
+    resource_version: OrganizationScimResourceVersion,
+    status: OrganizationScimGroupStatus,
+}
+
+impl OrganizationScimGroupRecord {
+    #[must_use]
+    pub const fn organization_id(&self) -> OrganizationId {
+        self.organization_id
+    }
+    #[must_use]
+    pub fn resource_id(&self) -> &OrganizationScimResourceId {
+        &self.resource_id
+    }
+    #[must_use]
+    pub const fn team_id(&self) -> OrganizationTeamId {
+        self.team_id
+    }
+    #[must_use]
+    pub const fn resource_version(&self) -> OrganizationScimResourceVersion {
+        self.resource_version
+    }
+    #[must_use]
+    pub const fn status(&self) -> OrganizationScimGroupStatus {
+        self.status
+    }
+}
+
+impl fmt::Debug for OrganizationScimGroupRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OrganizationScimGroupRecord")
+            .field("organization_id", &self.organization_id)
+            .field("resource_id", &self.resource_id)
+            .field("team_id", &self.team_id)
+            .field("resource_version", &self.resource_version)
+            .field("status", &self.status)
+            .finish()
+    }
+}
+
+/// SCIM 组资源是否仍可接受写入。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OrganizationScimGroupStatus {
+    Active,
+    Removed,
+}
+
+/// SCIM 组同步是否推进了资源版本。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OrganizationScimGroupSyncOutcome {
+    Applied,
+    Noop,
+}
+
+/// SCIM 组同步结果；成员和团队名称只在事务内部使用。
+pub struct OrganizationScimGroupSyncResult {
+    record: OrganizationScimGroupRecord,
+    outcome: OrganizationScimGroupSyncOutcome,
+}
+
+impl OrganizationScimGroupSyncResult {
+    #[must_use]
+    pub const fn record(&self) -> &OrganizationScimGroupRecord {
+        &self.record
+    }
+    #[must_use]
+    pub const fn outcome(&self) -> OrganizationScimGroupSyncOutcome {
+        self.outcome
+    }
+}
+
+impl fmt::Debug for OrganizationScimGroupSyncResult {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OrganizationScimGroupSyncResult")
+            .field("record", &self.record)
+            .field("outcome", &self.outcome)
+            .finish()
+    }
+}
+
+/// SCIM 组资源同步错误；跨企业、陈旧版本和删除恢复统一关闭。
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum OrganizationScimGroupRepositoryError {
+    #[error("企业 SCIM 组同步令牌不可用")]
+    Restricted,
+    #[error("企业 SCIM 组同步范围不足")]
+    Forbidden,
+    #[error("企业 SCIM 组同步版本或绑定冲突")]
+    Conflict,
+    #[error("企业 SCIM 组同步成员不可用")]
+    MemberUnavailable,
+    #[error("企业 SCIM 组同步团队不可用")]
+    TeamUnavailable,
+    #[error("企业 SCIM 组同步生命周期被拒绝")]
+    LifecycleRejected,
+    #[error("企业 SCIM 组同步数据库操作失败")]
+    Query,
+    #[error("企业 SCIM 组同步操作超时")]
+    Timeout,
+    #[error("企业 SCIM 组同步持久化状态损坏")]
+    Invariant,
+}
+
+/// 在单个企业锁内推进 SCIM 组资源、团队和成员归属。
+#[derive(Clone)]
+pub struct OrganizationScimGroupRepository {
+    pool: DatabasePool,
+    operation_timeout: Duration,
+}
+
+impl OrganizationScimGroupRepository {
+    /// 创建组同步仓储；零超时会被拒绝。
+    pub fn new(
+        pool: DatabasePool,
+        operation_timeout: Duration,
+    ) -> Result<Self, OrganizationScimGroupRepositoryError> {
+        if operation_timeout.is_zero() {
+            return Err(OrganizationScimGroupRepositoryError::Invariant);
+        }
+        Ok(Self {
+            pool,
+            operation_timeout,
+        })
+    }
+
+    /// 创建或更新企业组资源，并原子投影团队成员。
+    pub async fn synchronize(
+        &self,
+        token: OrganizationScimTokenRecord,
+        resource: OrganizationScimGroupResource,
+    ) -> Result<OrganizationScimGroupSyncResult, OrganizationScimGroupRepositoryError> {
+        timeout(
+            self.operation_timeout,
+            self.synchronize_inner(token, resource),
+        )
+        .await
+        .map_err(|_| OrganizationScimGroupRepositoryError::Timeout)?
+    }
+
+    /// 按 If-Match 版本删除组；删除后的团队和资源绑定不可恢复。
+    pub async fn delete(
+        &self,
+        token: OrganizationScimTokenRecord,
+        resource_id: OrganizationScimResourceId,
+        expected_version: OrganizationScimResourceVersion,
+    ) -> Result<OrganizationScimGroupSyncResult, OrganizationScimGroupRepositoryError> {
+        timeout(
+            self.operation_timeout,
+            self.delete_inner(token, resource_id, expected_version),
+        )
+        .await
+        .map_err(|_| OrganizationScimGroupRepositoryError::Timeout)?
+    }
+
+    async fn synchronize_inner(
+        &self,
+        token: OrganizationScimTokenRecord,
+        resource: OrganizationScimGroupResource,
+    ) -> Result<OrganizationScimGroupSyncResult, OrganizationScimGroupRepositoryError> {
+        let organization_id = resource.key().organization_id();
+        if token.organization_id() != organization_id {
+            return Err(OrganizationScimGroupRepositoryError::Restricted);
+        }
+        if !token
+            .resource_scope()
+            .contains(OrganizationScimResourceKind::Groups)
+        {
+            return Err(OrganizationScimGroupRepositoryError::Forbidden);
+        }
+        let transaction = self
+            .pool
+            .connection()
+            .begin()
+            .await
+            .map_err(|_| OrganizationScimGroupRepositoryError::Query)?;
+        let organization = lock_organization_for_scim(&transaction, organization_id)
+            .await
+            .map_err(map_group_user_error)?;
+        ensure_active_organization(&organization).map_err(map_group_user_error)?;
+        lock_scim_token_for_resource_sync(
+            &transaction,
+            &token,
+            OrganizationScimResourceKind::Groups,
+        )
+        .await
+        .map_err(map_group_user_error)?;
+        let entitlement = lock_scim_entitlement(&transaction, organization_id)
+            .await
+            .map_err(map_group_user_error)?;
+        let now = TimeDateTimeWithTimeZone::now_utc();
+        let capacity = OrganizationEntitlementCapacity::new(
+            entitlement.seat_limit,
+            entitlement.team_limit,
+            entitlement.organization_key_limit,
+        )
+        .map_err(|_| OrganizationScimGroupRepositoryError::Invariant)?;
+        let snapshot = OrganizationEntitlementSnapshot::new(
+            capacity,
+            entitlement.team_management_enabled,
+            entitlement.sso_enabled,
+            entitlement.custom_roles_enabled,
+            entitlement.audit_retention_days,
+            entitlement.valid_from.unix_timestamp(),
+            entitlement.valid_until.unix_timestamp(),
+            entitlement.grace_until.map(|value| value.unix_timestamp()),
+        )
+        .map_err(|_| OrganizationScimGroupRepositoryError::Invariant)?;
+        let org_status = OrganizationStatus::try_from(organization.status)
+            .map_err(|_| OrganizationScimGroupRepositoryError::Invariant)?;
+        if !snapshot.team_management_enabled()
+            || !snapshot
+                .status(org_status, now.unix_timestamp())
+                .allows_provisioning()
+        {
+            return Err(OrganizationScimGroupRepositoryError::LifecycleRejected);
+        }
+        let existing =
+            lock_scim_group_resource(&transaction, organization_id, resource.key().resource_id())
+                .await?;
+        let (binding, team) = match existing {
+            Some(binding) => {
+                let status = group_status(binding.status)?;
+                if status == OrganizationScimGroupStatus::Removed {
+                    return Err(OrganizationScimGroupRepositoryError::LifecycleRejected);
+                }
+                match classify_organization_scim_sync(
+                    Some(
+                        OrganizationScimResourceVersion::from_persistence(binding.resource_version)
+                            .map_err(|_| OrganizationScimGroupRepositoryError::Invariant)?,
+                    ),
+                    resource.version(),
+                ) {
+                    OrganizationScimSyncDisposition::RejectStale => {
+                        return Err(OrganizationScimGroupRepositoryError::Conflict);
+                    }
+                    OrganizationScimSyncDisposition::Noop => {
+                        let record = group_record_from_model(binding)?;
+                        transaction
+                            .commit()
+                            .await
+                            .map_err(|_| OrganizationScimGroupRepositoryError::Query)?;
+                        return Ok(OrganizationScimGroupSyncResult {
+                            record,
+                            outcome: OrganizationScimGroupSyncOutcome::Noop,
+                        });
+                    }
+                    OrganizationScimSyncDisposition::Apply => {}
+                }
+                let team = lock_active_scim_team(
+                    &transaction,
+                    organization_id,
+                    OrganizationTeamId::new(binding.team_id)
+                        .map_err(|_| OrganizationScimGroupRepositoryError::Invariant)?,
+                )
+                .await?;
+                (Some(binding), team)
+            }
+            None => {
+                let active_teams = organization_teams::Entity::find()
+                    .filter(organization_teams::Column::OrganizationId.eq(organization_id.get()))
+                    .filter(
+                        organization_teams::Column::Status
+                            .eq(OrganizationTeamStatus::Active.code()),
+                    )
+                    .count(&transaction)
+                    .await
+                    .map_err(|_| OrganizationScimGroupRepositoryError::Query)?;
+                if i64::try_from(active_teams)
+                    .map_err(|_| OrganizationScimGroupRepositoryError::Invariant)?
+                    >= snapshot.capacity().team_limit()
+                {
+                    return Err(OrganizationScimGroupRepositoryError::LifecycleRejected);
+                }
+                let team = organization_teams::ActiveModel {
+                    organization_id: Set(organization_id.get()),
+                    name: Set(resource.display_name().to_owned()),
+                    description: Set(None),
+                    status: Set(OrganizationTeamStatus::Active.code()),
+                    version: Set(1),
+                    created_at: Set(now),
+                    updated_at: Set(now),
+                    deleted_at: Set(None),
+                    ..Default::default()
+                }
+                .insert(&transaction)
+                .await
+                .map_err(map_group_db_error)?;
+                (None, team)
+            }
+        };
+        let member_user_ids =
+            resolve_group_members(&transaction, organization_id, resource.member_ids()).await?;
+        project_group_members(&transaction, organization_id, team.id, &member_user_ids).await?;
+        let team = if team.name != resource.display_name() {
+            let next_version = team
+                .version
+                .checked_add(1)
+                .ok_or(OrganizationScimGroupRepositoryError::Invariant)?;
+            let mut active = team.into_active_model();
+            active.name = Set(resource.display_name().to_owned());
+            active.version = Set(next_version);
+            active.updated_at = Set(now);
+            active
+                .update(&transaction)
+                .await
+                .map_err(map_group_db_error)?
+        } else {
+            team
+        };
+        let model = match binding {
+            Some(binding) => {
+                let mut active = binding.into_active_model();
+                active.resource_version = Set(i64::try_from(resource.version().get())
+                    .map_err(|_| OrganizationScimGroupRepositoryError::Invariant)?);
+                active.updated_at = Set(now);
+                active
+                    .update(&transaction)
+                    .await
+                    .map_err(map_group_db_error)?
+            }
+            None => organization_scim_group_resources::ActiveModel {
+                organization_id: Set(organization_id.get()),
+                resource_id: Set(resource.key().resource_id().as_str().to_owned()),
+                team_id: Set(team.id),
+                resource_version: Set(i64::try_from(resource.version().get())
+                    .map_err(|_| OrganizationScimGroupRepositoryError::Invariant)?),
+                status: Set(1),
+                created_at: Set(now),
+                updated_at: Set(now),
+                deleted_at: Set(None),
+                ..Default::default()
+            }
+            .insert(&transaction)
+            .await
+            .map_err(map_group_db_error)?,
+        };
+        let record = group_record_from_model(model)?;
+        transaction
+            .commit()
+            .await
+            .map_err(|_| OrganizationScimGroupRepositoryError::Query)?;
+        Ok(OrganizationScimGroupSyncResult {
+            record,
+            outcome: OrganizationScimGroupSyncOutcome::Applied,
+        })
+    }
+
+    async fn delete_inner(
+        &self,
+        token: OrganizationScimTokenRecord,
+        resource_id: OrganizationScimResourceId,
+        expected_version: OrganizationScimResourceVersion,
+    ) -> Result<OrganizationScimGroupSyncResult, OrganizationScimGroupRepositoryError> {
+        let organization_id = token.organization_id();
+        if !token
+            .resource_scope()
+            .contains(OrganizationScimResourceKind::Groups)
+        {
+            return Err(OrganizationScimGroupRepositoryError::Forbidden);
+        }
+        let transaction = self
+            .pool
+            .connection()
+            .begin()
+            .await
+            .map_err(|_| OrganizationScimGroupRepositoryError::Query)?;
+        let organization = lock_organization_for_scim(&transaction, organization_id)
+            .await
+            .map_err(map_group_user_error)?;
+        ensure_active_organization(&organization).map_err(map_group_user_error)?;
+        lock_scim_token_for_resource_sync(
+            &transaction,
+            &token,
+            OrganizationScimResourceKind::Groups,
+        )
+        .await
+        .map_err(map_group_user_error)?;
+        let Some(binding) =
+            lock_scim_group_resource(&transaction, organization_id, &resource_id).await?
+        else {
+            return Err(OrganizationScimGroupRepositoryError::TeamUnavailable);
+        };
+        let current_version =
+            OrganizationScimResourceVersion::from_persistence(binding.resource_version)
+                .map_err(|_| OrganizationScimGroupRepositoryError::Invariant)?;
+        // DELETE 的 If-Match 是严格 CAS；未来版本也必须拒绝，不能沿用同步的单调推进规则。
+        if expected_version != current_version {
+            return Err(OrganizationScimGroupRepositoryError::Conflict);
+        }
+        if group_status(binding.status)? == OrganizationScimGroupStatus::Removed {
+            let record = group_record_from_model(binding)?;
+            transaction
+                .commit()
+                .await
+                .map_err(|_| OrganizationScimGroupRepositoryError::Query)?;
+            return Ok(OrganizationScimGroupSyncResult {
+                record,
+                outcome: OrganizationScimGroupSyncOutcome::Noop,
+            });
+        }
+        let team_id = OrganizationTeamId::new(binding.team_id)
+            .map_err(|_| OrganizationScimGroupRepositoryError::Invariant)?;
+        let team = lock_scim_team(&transaction, organization_id, team_id).await?;
+        let now = TimeDateTimeWithTimeZone::now_utc();
+        if group_status(binding.status)? == OrganizationScimGroupStatus::Active {
+            organization_memberships::Entity::update_many()
+                .filter(organization_memberships::Column::OrganizationId.eq(organization_id.get()))
+                .filter(organization_memberships::Column::TeamId.eq(team_id.get()))
+                .col_expr(
+                    organization_memberships::Column::TeamId,
+                    Expr::value(Option::<i64>::None),
+                )
+                .col_expr(
+                    organization_memberships::Column::Version,
+                    Expr::col(organization_memberships::Column::Version).add(1_i64),
+                )
+                .exec(&transaction)
+                .await
+                .map_err(|_| OrganizationScimGroupRepositoryError::Query)?;
+        }
+        let next_team_version = team
+            .version
+            .checked_add(1)
+            .ok_or(OrganizationScimGroupRepositoryError::Invariant)?;
+        let mut team_active = team.into_active_model();
+        team_active.status = Set(OrganizationTeamStatus::Disabled.code());
+        team_active.version = Set(next_team_version);
+        team_active.updated_at = Set(now);
+        team_active.deleted_at = Set(Some(now));
+        team_active
+            .update(&transaction)
+            .await
+            .map_err(map_group_db_error)?;
+        let mut active = binding.into_active_model();
+        active.status = Set(2);
+        active.updated_at = Set(now);
+        active.deleted_at = Set(Some(now));
+        let model = active
+            .update(&transaction)
+            .await
+            .map_err(map_group_db_error)?;
+        let record = group_record_from_model(model)?;
+        transaction
+            .commit()
+            .await
+            .map_err(|_| OrganizationScimGroupRepositoryError::Query)?;
+        Ok(OrganizationScimGroupSyncResult {
+            record,
+            outcome: OrganizationScimGroupSyncOutcome::Applied,
+        })
+    }
+}
+
+impl fmt::Debug for OrganizationScimGroupRepository {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("OrganizationScimGroupRepository(<pool>)")
+    }
+}
+
+fn group_status(
+    value: i16,
+) -> Result<OrganizationScimGroupStatus, OrganizationScimGroupRepositoryError> {
+    match value {
+        1 => Ok(OrganizationScimGroupStatus::Active),
+        2 => Ok(OrganizationScimGroupStatus::Removed),
+        _ => Err(OrganizationScimGroupRepositoryError::Invariant),
+    }
+}
+
+fn group_record_from_model(
+    model: organization_scim_group_resources::Model,
+) -> Result<OrganizationScimGroupRecord, OrganizationScimGroupRepositoryError> {
+    Ok(OrganizationScimGroupRecord {
+        organization_id: OrganizationId::new(model.organization_id)
+            .map_err(|_| OrganizationScimGroupRepositoryError::Invariant)?,
+        resource_id: OrganizationScimResourceId::new(model.resource_id)
+            .map_err(|_| OrganizationScimGroupRepositoryError::Invariant)?,
+        team_id: OrganizationTeamId::new(model.team_id)
+            .map_err(|_| OrganizationScimGroupRepositoryError::Invariant)?,
+        resource_version: OrganizationScimResourceVersion::from_persistence(model.resource_version)
+            .map_err(|_| OrganizationScimGroupRepositoryError::Invariant)?,
+        status: group_status(model.status)?,
+    })
+}
+
+async fn lock_scim_group_resource(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+    resource_id: &OrganizationScimResourceId,
+) -> Result<Option<organization_scim_group_resources::Model>, OrganizationScimGroupRepositoryError>
+{
+    let mut query = organization_scim_group_resources::Entity::find()
+        .filter(organization_scim_group_resources::Column::OrganizationId.eq(organization_id.get()))
+        .filter(organization_scim_group_resources::Column::ResourceId.eq(resource_id.as_str()));
+    if transaction.get_database_backend() != DbBackend::Sqlite {
+        query = query.lock(LockType::Update);
+    }
+    query
+        .one(transaction)
+        .await
+        .map_err(|_| OrganizationScimGroupRepositoryError::Query)
+}
+
+async fn lock_scim_team(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+    team_id: OrganizationTeamId,
+) -> Result<organization_teams::Model, OrganizationScimGroupRepositoryError> {
+    let mut query = organization_teams::Entity::find_by_id(team_id.get())
+        .filter(organization_teams::Column::OrganizationId.eq(organization_id.get()));
+    if transaction.get_database_backend() != DbBackend::Sqlite {
+        query = query.lock(LockType::Update);
+    }
+    query
+        .one(transaction)
+        .await
+        .map_err(|_| OrganizationScimGroupRepositoryError::Query)?
+        .ok_or(OrganizationScimGroupRepositoryError::TeamUnavailable)
+}
+
+async fn lock_active_scim_team(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+    team_id: OrganizationTeamId,
+) -> Result<organization_teams::Model, OrganizationScimGroupRepositoryError> {
+    let team = lock_scim_team(transaction, organization_id, team_id).await?;
+    if team.status != OrganizationTeamStatus::Active.code() || team.deleted_at.is_some() {
+        return Err(OrganizationScimGroupRepositoryError::TeamUnavailable);
+    }
+    Ok(team)
+}
+
+async fn resolve_group_members(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+    member_ids: &[OrganizationScimResourceId],
+) -> Result<Vec<i64>, OrganizationScimGroupRepositoryError> {
+    if member_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let ids = member_ids
+        .iter()
+        .map(OrganizationScimResourceId::as_str)
+        .collect::<Vec<_>>();
+    let bindings = organization_scim_user_resources::Entity::find()
+        .filter(organization_scim_user_resources::Column::OrganizationId.eq(organization_id.get()))
+        .filter(organization_scim_user_resources::Column::ResourceId.is_in(ids))
+        .all(transaction)
+        .await
+        .map_err(|_| OrganizationScimGroupRepositoryError::Query)?;
+    if bindings.len() != member_ids.len() {
+        return Err(OrganizationScimGroupRepositoryError::MemberUnavailable);
+    }
+    let mut user_ids = Vec::with_capacity(bindings.len());
+    for binding in bindings {
+        let membership = organization_memberships::Entity::find()
+            .filter(organization_memberships::Column::OrganizationId.eq(organization_id.get()))
+            .filter(organization_memberships::Column::UserId.eq(binding.user_id))
+            .one(transaction)
+            .await
+            .map_err(|_| OrganizationScimGroupRepositoryError::Query)?
+            .ok_or(OrganizationScimGroupRepositoryError::MemberUnavailable)?;
+        if membership.status != OrganizationMembershipStatus::Active.code() {
+            return Err(OrganizationScimGroupRepositoryError::MemberUnavailable);
+        }
+        user_ids.push(binding.user_id);
+    }
+    Ok(user_ids)
+}
+
+async fn project_group_members(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+    team_id: i64,
+    user_ids: &[i64],
+) -> Result<(), OrganizationScimGroupRepositoryError> {
+    let current = organization_memberships::Entity::find()
+        .filter(organization_memberships::Column::OrganizationId.eq(organization_id.get()))
+        .filter(organization_memberships::Column::TeamId.eq(team_id))
+        .all(transaction)
+        .await
+        .map_err(|_| OrganizationScimGroupRepositoryError::Query)?;
+    for membership in current {
+        if !user_ids.contains(&membership.user_id) {
+            let next_version = membership
+                .version
+                .checked_add(1)
+                .ok_or(OrganizationScimGroupRepositoryError::Invariant)?;
+            let mut active = membership.into_active_model();
+            active.team_id = Set(None);
+            active.version = Set(next_version);
+            active
+                .update(transaction)
+                .await
+                .map_err(|_| OrganizationScimGroupRepositoryError::Query)?;
+        }
+    }
+    for user_id in user_ids {
+        let membership = organization_memberships::Entity::find()
+            .filter(organization_memberships::Column::OrganizationId.eq(organization_id.get()))
+            .filter(organization_memberships::Column::UserId.eq(*user_id))
+            .one(transaction)
+            .await
+            .map_err(|_| OrganizationScimGroupRepositoryError::Query)?
+            .ok_or(OrganizationScimGroupRepositoryError::MemberUnavailable)?;
+        if membership.team_id != Some(team_id) {
+            let next_version = membership
+                .version
+                .checked_add(1)
+                .ok_or(OrganizationScimGroupRepositoryError::Invariant)?;
+            let mut active = membership.into_active_model();
+            active.team_id = Set(Some(team_id));
+            active.version = Set(next_version);
+            active
+                .update(transaction)
+                .await
+                .map_err(|_| OrganizationScimGroupRepositoryError::Query)?;
+        }
+    }
+    Ok(())
+}
+
+fn map_group_user_error(
+    error: OrganizationScimUserRepositoryError,
+) -> OrganizationScimGroupRepositoryError {
+    match error {
+        OrganizationScimUserRepositoryError::Restricted => {
+            OrganizationScimGroupRepositoryError::Restricted
+        }
+        OrganizationScimUserRepositoryError::Forbidden => {
+            OrganizationScimGroupRepositoryError::Forbidden
+        }
+        OrganizationScimUserRepositoryError::Conflict => {
+            OrganizationScimGroupRepositoryError::Conflict
+        }
+        OrganizationScimUserRepositoryError::UserUnavailable => {
+            OrganizationScimGroupRepositoryError::MemberUnavailable
+        }
+        OrganizationScimUserRepositoryError::LifecycleRejected => {
+            OrganizationScimGroupRepositoryError::LifecycleRejected
+        }
+        OrganizationScimUserRepositoryError::Query => OrganizationScimGroupRepositoryError::Query,
+        OrganizationScimUserRepositoryError::Timeout => {
+            OrganizationScimGroupRepositoryError::Timeout
+        }
+        OrganizationScimUserRepositoryError::Invariant => {
+            OrganizationScimGroupRepositoryError::Invariant
+        }
+    }
+}
+
+fn map_group_db_error(error: DbErr) -> OrganizationScimGroupRepositoryError {
+    if matches!(error.sql_err(), Some(SqlErr::UniqueConstraintViolation(_))) {
+        OrganizationScimGroupRepositoryError::Conflict
+    } else {
+        OrganizationScimGroupRepositoryError::Query
+    }
+}
+
 impl OrganizationScimUserRepository {
     /// 创建用户同步仓储；零超时会被拒绝，避免目录写入无限等待。
     pub fn new(
@@ -608,7 +1275,12 @@ impl OrganizationScimUserRepository {
             .map_err(|_| OrganizationScimUserRepositoryError::Query)?;
         let organization = lock_organization_for_scim(&transaction, organization_id).await?;
         ensure_active_organization(&organization)?;
-        lock_scim_token_for_user_sync(&transaction, &token).await?;
+        lock_scim_token_for_resource_sync(
+            &transaction,
+            &token,
+            OrganizationScimResourceKind::Users,
+        )
+        .await?;
 
         let entitlement = lock_scim_entitlement(&transaction, organization_id).await?;
         let now = TimeDateTimeWithTimeZone::now_utc();
@@ -823,9 +1495,10 @@ fn ensure_active_organization(
     Ok(())
 }
 
-async fn lock_scim_token_for_user_sync(
+async fn lock_scim_token_for_resource_sync(
     transaction: &DatabaseTransaction,
     token: &OrganizationScimTokenRecord,
+    resource_kind: OrganizationScimResourceKind,
 ) -> Result<(), OrganizationScimUserRepositoryError> {
     let mut query = organization_scim_tokens::Entity::find_by_id(token.id().get())
         .filter(organization_scim_tokens::Column::OrganizationId.eq(token.organization_id().get()));
@@ -845,10 +1518,7 @@ async fn lock_scim_token_for_user_sync(
     {
         return Err(OrganizationScimUserRepositoryError::Restricted);
     }
-    if !stored
-        .resource_scope()
-        .contains(OrganizationScimResourceKind::Users)
-    {
+    if !stored.resource_scope().contains(resource_kind) {
         return Err(OrganizationScimUserRepositoryError::Forbidden);
     }
     Ok(())

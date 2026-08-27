@@ -93,7 +93,8 @@ use af_db::{
     OrganizationBudgetRepositoryConfigError, OrganizationCustomRoleBindingRepository,
     OrganizationCustomRoleBindingRepositoryConfigError, OrganizationCustomRoleRepository,
     OrganizationCustomRoleRepositoryConfigError, OrganizationRepository,
-    OrganizationRepositoryConfigError, OrganizationScimTokenRepository,
+    OrganizationRepositoryConfigError, OrganizationScimGroupRepository,
+    OrganizationScimGroupRepositoryError, OrganizationScimTokenRepository,
     OrganizationScimTokenRepositoryError, OrganizationScimUserRepository,
     OrganizationScimUserRepositoryError, OrganizationSsoProviderRepository,
     OrganizationSsoProviderRepositoryConfigError, OrganizationTokenRepository,
@@ -553,6 +554,9 @@ pub enum BootstrapError {
     /// 企业 SCIM 用户同步仓储的启动参数无效。
     #[error("企业 SCIM 用户同步仓储启动参数无效")]
     OrganizationScimUserRepository(#[source] OrganizationScimUserRepositoryError),
+    /// 企业 SCIM 组同步仓储的启动参数无效。
+    #[error("企业 SCIM 组同步仓储启动参数无效")]
+    OrganizationScimGroupRepository(#[source] OrganizationScimGroupRepositoryError),
     #[error("浼佷笟 SSO Provider 浠撳偍鍚姩鍙傛暟鏃犳晥")]
     OrganizationSsoProviderRepository(#[source] OrganizationSsoProviderRepositoryConfigError),
     #[error("企业 SSO DNS 解析器启动参数无效")]
@@ -1000,6 +1004,13 @@ impl Bootstrap<DatabaseReady> {
             )
             .map_err(BootstrapError::OrganizationScimUserRepository)?,
         );
+        let organization_scim_group_repository = Arc::new(
+            OrganizationScimGroupRepository::new(
+                self.stage.database.clone(),
+                Duration::from_secs(auth.lookup_timeout_secs()),
+            )
+            .map_err(BootstrapError::OrganizationScimGroupRepository)?,
+        );
         let organization_sso_provider_repository = OrganizationSsoProviderRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -1258,6 +1269,7 @@ impl Bootstrap<DatabaseReady> {
                 organization_scim_service: Arc::new(DatabaseOrganizationScimService::new(
                     organization_scim_token_repository,
                     organization_scim_user_repository,
+                    organization_scim_group_repository,
                 )),
                 organization_activity_service,
                 platform_audit_service,

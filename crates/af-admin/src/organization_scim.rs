@@ -1,11 +1,15 @@
 use std::{future::Future, pin::Pin, sync::Arc};
 
 use af_db::{
-    OrganizationScimTokenRecord, OrganizationScimTokenRepository,
+    OrganizationScimGroupRepository, OrganizationScimGroupRepositoryError,
+    OrganizationScimGroupSyncResult, OrganizationScimTokenRecord, OrganizationScimTokenRepository,
     OrganizationScimTokenRepositoryError, OrganizationScimUserRepository,
     OrganizationScimUserRepositoryError, OrganizationScimUserSyncResult,
 };
-use af_domain::{OrganizationId, OrganizationScimToken, OrganizationScimUserResource};
+use af_domain::{
+    OrganizationId, OrganizationScimGroupResource, OrganizationScimResourceId,
+    OrganizationScimResourceVersion, OrganizationScimToken, OrganizationScimUserResource,
+};
 use thiserror::Error;
 
 /// SCIM Bearer 令牌认证服务返回的边界错误，不向 HTTP 层暴露数据库细节。
@@ -36,6 +40,25 @@ pub enum OrganizationScimUserSyncError {
     Internal,
 }
 
+/// SCIM 组资源同步服务向 HTTP 层暴露的稳定错误。
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum OrganizationScimGroupSyncError {
+    #[error("SCIM 组同步令牌不可用")]
+    Restricted,
+    #[error("SCIM 组同步范围不足")]
+    Forbidden,
+    #[error("SCIM 组同步版本或绑定冲突")]
+    Conflict,
+    #[error("SCIM 组同步成员不可用")]
+    MemberUnavailable,
+    #[error("SCIM 组同步团队不可用")]
+    TeamUnavailable,
+    #[error("SCIM 组同步生命周期被拒绝")]
+    LifecycleRejected,
+    #[error("SCIM 组同步服务暂不可用")]
+    Internal,
+}
+
 pub type OrganizationScimAuthenticationFuture<'a> = Pin<
     Box<
         dyn Future<
@@ -48,6 +71,14 @@ pub type OrganizationScimAuthenticationFuture<'a> = Pin<
 pub type OrganizationScimUserSyncFuture<'a> = Pin<
     Box<
         dyn Future<Output = Result<OrganizationScimUserSyncResult, OrganizationScimUserSyncError>>
+            + Send
+            + 'a,
+    >,
+>;
+
+pub type OrganizationScimGroupSyncFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<OrganizationScimGroupSyncResult, OrganizationScimGroupSyncError>>
             + Send
             + 'a,
     >,
@@ -66,12 +97,26 @@ pub trait OrganizationScimService: Send + Sync {
         token: OrganizationScimTokenRecord,
         resource: OrganizationScimUserResource,
     ) -> OrganizationScimUserSyncFuture<'a>;
+
+    fn synchronize_group<'a>(
+        &'a self,
+        token: OrganizationScimTokenRecord,
+        resource: OrganizationScimGroupResource,
+    ) -> OrganizationScimGroupSyncFuture<'a>;
+
+    fn delete_group<'a>(
+        &'a self,
+        token: OrganizationScimTokenRecord,
+        resource_id: OrganizationScimResourceId,
+        expected_version: OrganizationScimResourceVersion,
+    ) -> OrganizationScimGroupSyncFuture<'a>;
 }
 
 /// 使用数据库令牌仓储实现受控 SCIM 认证。
 pub struct DatabaseOrganizationScimService {
     repository: Arc<OrganizationScimTokenRepository>,
     user_repository: Arc<OrganizationScimUserRepository>,
+    group_repository: Arc<OrganizationScimGroupRepository>,
 }
 
 impl DatabaseOrganizationScimService {
@@ -79,10 +124,12 @@ impl DatabaseOrganizationScimService {
     pub fn new(
         repository: Arc<OrganizationScimTokenRepository>,
         user_repository: Arc<OrganizationScimUserRepository>,
+        group_repository: Arc<OrganizationScimGroupRepository>,
     ) -> Self {
         Self {
             repository,
             user_repository,
+            group_repository,
         }
     }
 }
@@ -111,6 +158,33 @@ impl OrganizationScimService for DatabaseOrganizationScimService {
                 .synchronize(token, resource)
                 .await
                 .map_err(map_user_repository_error)
+        })
+    }
+
+    fn synchronize_group<'a>(
+        &'a self,
+        token: OrganizationScimTokenRecord,
+        resource: OrganizationScimGroupResource,
+    ) -> OrganizationScimGroupSyncFuture<'a> {
+        Box::pin(async move {
+            self.group_repository
+                .synchronize(token, resource)
+                .await
+                .map_err(map_group_repository_error)
+        })
+    }
+
+    fn delete_group<'a>(
+        &'a self,
+        token: OrganizationScimTokenRecord,
+        resource_id: OrganizationScimResourceId,
+        expected_version: OrganizationScimResourceVersion,
+    ) -> OrganizationScimGroupSyncFuture<'a> {
+        Box::pin(async move {
+            self.group_repository
+                .delete(token, resource_id, expected_version)
+                .await
+                .map_err(map_group_repository_error)
         })
     }
 }
@@ -157,6 +231,34 @@ fn map_user_repository_error(
         OrganizationScimUserRepositoryError::Query
         | OrganizationScimUserRepositoryError::Timeout
         | OrganizationScimUserRepositoryError::Invariant => OrganizationScimUserSyncError::Internal,
+    }
+}
+
+fn map_group_repository_error(
+    error: OrganizationScimGroupRepositoryError,
+) -> OrganizationScimGroupSyncError {
+    match error {
+        OrganizationScimGroupRepositoryError::Restricted => {
+            OrganizationScimGroupSyncError::Restricted
+        }
+        OrganizationScimGroupRepositoryError::Forbidden => {
+            OrganizationScimGroupSyncError::Forbidden
+        }
+        OrganizationScimGroupRepositoryError::Conflict => OrganizationScimGroupSyncError::Conflict,
+        OrganizationScimGroupRepositoryError::MemberUnavailable => {
+            OrganizationScimGroupSyncError::MemberUnavailable
+        }
+        OrganizationScimGroupRepositoryError::TeamUnavailable => {
+            OrganizationScimGroupSyncError::TeamUnavailable
+        }
+        OrganizationScimGroupRepositoryError::LifecycleRejected => {
+            OrganizationScimGroupSyncError::LifecycleRejected
+        }
+        OrganizationScimGroupRepositoryError::Query
+        | OrganizationScimGroupRepositoryError::Timeout
+        | OrganizationScimGroupRepositoryError::Invariant => {
+            OrganizationScimGroupSyncError::Internal
+        }
     }
 }
 

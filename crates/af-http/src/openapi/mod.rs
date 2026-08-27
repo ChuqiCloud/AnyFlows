@@ -523,6 +523,9 @@ mod tests {
             "listScimResourceTypes",
             "createScimUser",
             "replaceScimUser",
+            "createScimGroup",
+            "replaceScimGroup",
+            "deleteScimGroup",
         ]
         .into_iter()
         .map(str::to_owned)
@@ -530,7 +533,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 409);
+        assert_eq!(schemas.len(), 413);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminDashboardChannelFlow"));
         assert!(schemas.contains_key("AdminDashboardFailure"));
@@ -607,6 +610,10 @@ mod tests {
         assert!(schemas.contains_key("ScimFilterResponse"));
         assert!(schemas.contains_key("ScimAuthenticationSchemeResponse"));
         assert!(schemas.contains_key("ScimErrorResponse"));
+        assert!(schemas.contains_key("ScimGroupWriteRequest"));
+        assert!(schemas.contains_key("ScimGroupMember"));
+        assert!(schemas.contains_key("ScimGroupMeta"));
+        assert!(schemas.contains_key("ScimGroupResponse"));
         assert!(schemas.contains_key("OrganizationAuditLogListResponse"));
         assert!(schemas.contains_key("OrganizationAuditLogResponse"));
         assert!(schemas.contains_key("OrganizationAuditOutcomeResponse"));

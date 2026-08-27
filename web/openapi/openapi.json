@@ -19409,6 +19409,358 @@
         ]
       }
     },
+    "/scim/v2/{organization_id}/Groups": {
+      "post": {
+        "tags": [
+          "企业 SCIM"
+        ],
+        "operationId": "createScimGroup",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/scim+json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScimGroupWriteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "创建 SCIM 组资源",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimGroupResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "SCIM 目录资源请求无效",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "SCIM Bearer 令牌无效",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "SCIM 组资源范围不足",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SCIM 组成员或团队不可用",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "SCIM 组资源版本或绑定冲突",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "SCIM 组资源生命周期被拒绝",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "SCIM 服务暂不可用",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "scimBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/scim/v2/{organization_id}/Groups/{resource_id}": {
+      "put": {
+        "tags": [
+          "企业 SCIM"
+        ],
+        "operationId": "replaceScimGroup",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "resource_id",
+            "in": "path",
+            "description": "SCIM 组资源 ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/scim+json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScimGroupWriteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "替换 SCIM 组资源",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimGroupResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "SCIM 目录资源请求无效",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "SCIM Bearer 令牌无效",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "SCIM 组资源范围不足",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SCIM 组成员或团队不可用",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "SCIM 组资源版本或绑定冲突",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "SCIM 组资源生命周期被拒绝",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "SCIM 服务暂不可用",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "scimBearerAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "企业 SCIM"
+        ],
+        "operationId": "deleteScimGroup",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "resource_id",
+            "in": "path",
+            "description": "SCIM 组资源 ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "description": "待删除资源的精确版本，例如 \"1\"",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "删除 SCIM 组资源"
+          },
+          "400": {
+            "description": "SCIM 目录资源请求无效",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "SCIM Bearer 令牌无效",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "SCIM 组资源范围不足",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SCIM 组资源或团队不可用",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "SCIM 组资源版本冲突",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "SCIM 服务暂不可用",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "scimBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/auth/passkey/options": {
       "post": {
         "tags": [
@@ -33566,6 +33918,90 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "ScimGroupMember": {
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "properties": {
+          "value": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ScimGroupMeta": {
+        "type": "object",
+        "required": [
+          "version"
+        ],
+        "properties": {
+          "version": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ScimGroupResponse": {
+        "type": "object",
+        "required": [
+          "schemas",
+          "id",
+          "displayName",
+          "members",
+          "meta"
+        ],
+        "properties": {
+          "schemas": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScimGroupMember"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ScimGroupMeta"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ScimGroupWriteRequest": {
+        "type": "object",
+        "required": [
+          "id",
+          "displayName",
+          "meta"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScimGroupMember"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ScimGroupMeta"
           }
         },
         "additionalProperties": false

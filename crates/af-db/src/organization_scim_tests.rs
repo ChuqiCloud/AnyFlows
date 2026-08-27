@@ -2,20 +2,23 @@ use std::{error::Error, time::Duration};
 
 use af_domain::{
     OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationId,
-    OrganizationMembershipStatus, OrganizationScimResourceId, OrganizationScimResourceSet,
-    OrganizationScimResourceVersion, OrganizationScimTokenStatus, OrganizationScimUserResource,
-    UserId,
+    OrganizationMembershipStatus, OrganizationScimGroupResource, OrganizationScimResourceId,
+    OrganizationScimResourceSet, OrganizationScimResourceVersion, OrganizationScimTokenStatus,
+    OrganizationScimUserResource, UserId,
 };
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, Set};
 
 use crate::{
     DatabaseOptions, MigrationOptions, OrganizationCreate, OrganizationEntitlementWrite,
-    OrganizationRepository, OrganizationScimTokenCreateRecord, OrganizationScimTokenRepository,
+    OrganizationRepository, OrganizationScimGroupRepository, OrganizationScimGroupRepositoryError,
+    OrganizationScimGroupStatus, OrganizationScimGroupSyncOutcome,
+    OrganizationScimTokenCreateRecord, OrganizationScimTokenRepository,
     OrganizationScimTokenRepositoryError, OrganizationScimUserRepository,
     OrganizationScimUserRepositoryError, OrganizationScimUserSyncOutcome,
     entity::{
-        groups, organization_entitlements, organization_memberships, organization_scim_tokens,
-        organization_scim_user_resources, organizations, users,
+        groups, organization_entitlements, organization_memberships,
+        organization_scim_group_resources, organization_scim_tokens,
+        organization_scim_user_resources, organization_teams, organizations, users,
     },
 };
 
@@ -501,6 +504,215 @@ async fn scim_user_sync_rechecks_token_status_and_version() -> Result<(), Box<dy
     ));
     fixture.pool.close().await?;
     Ok(())
+}
+
+#[tokio::test]
+async fn scim_group_sync_projects_team_lifecycle_and_never_revives_removed_group()
+-> Result<(), Box<dyn Error>> {
+    let pool = crate::connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
+    let group = groups::ActiveModel {
+        name: Set("scim-group-test-group".to_owned()),
+        display_name: Set("SCIM Group Test".to_owned()),
+        flags: Set(serde_json::json!({})),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+    let owner = insert_scim_user(&pool, group.id, "scim-group-owner").await?;
+    let target = insert_scim_user(&pool, group.id, "scim-group-target").await?;
+    let organizations = OrganizationRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let (organization, _) = organizations
+        .create(OrganizationCreate::new(
+            "SCIM Group Test Organization".to_owned(),
+            "scim-group-test-org".to_owned(),
+            UserId::new(owner.id)?,
+            active_entitlement()?,
+        ))
+        .await?
+        .into_parts();
+    let token_repository =
+        OrganizationScimTokenRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let issued = token_repository
+        .create(OrganizationScimTokenCreateRecord::new(
+            organization.id(),
+            "Group directory".to_owned(),
+            OrganizationScimResourceSet::users_and_groups(),
+        ))
+        .await?;
+    let (token, _) = issued.into_parts();
+    let user_repository =
+        OrganizationScimUserRepository::new(pool.clone(), Duration::from_secs(5))?;
+    user_repository
+        .synchronize(
+            token.clone(),
+            scim_user_resource(
+                organization.id(),
+                "directory-group-user-1",
+                1,
+                "scim-group-target",
+                true,
+            )?,
+        )
+        .await?;
+    let group_repository =
+        OrganizationScimGroupRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let first = group_repository
+        .synchronize(
+            token.clone(),
+            scim_group_resource(
+                organization.id(),
+                "directory-group-1",
+                1,
+                "Engineering",
+                &["directory-group-user-1"],
+            )?,
+        )
+        .await?;
+    assert_eq!(first.outcome(), OrganizationScimGroupSyncOutcome::Applied);
+    assert_eq!(first.record().status(), OrganizationScimGroupStatus::Active);
+    let team_id = first.record().team_id();
+    let membership = organization_memberships::Entity::find()
+        .filter(organization_memberships::Column::OrganizationId.eq(organization.id().get()))
+        .filter(organization_memberships::Column::UserId.eq(target.id))
+        .one(pool.connection())
+        .await?
+        .expect("SCIM 成员关系必须存在");
+    assert_eq!(membership.team_id, Some(team_id.get()));
+
+    let noop = group_repository
+        .synchronize(
+            token.clone(),
+            scim_group_resource(
+                organization.id(),
+                "directory-group-1",
+                1,
+                "Changed but same version",
+                &[],
+            )?,
+        )
+        .await?;
+    assert_eq!(noop.outcome(), OrganizationScimGroupSyncOutcome::Noop);
+    assert!(matches!(
+        group_repository
+            .synchronize(
+                token.clone(),
+                scim_group_resource(
+                    organization.id(),
+                    "directory-group-1",
+                    1,
+                    "Engineering",
+                    &[],
+                )?,
+            )
+            .await,
+        Err(OrganizationScimGroupRepositoryError::Conflict)
+    ));
+
+    let updated = group_repository
+        .synchronize(
+            token.clone(),
+            scim_group_resource(
+                organization.id(),
+                "directory-group-1",
+                2,
+                "Engineering",
+                &[],
+            )?,
+        )
+        .await?;
+    assert_eq!(updated.record().resource_version().get(), 2);
+    let membership = organization_memberships::Entity::find()
+        .filter(organization_memberships::Column::OrganizationId.eq(organization.id().get()))
+        .filter(organization_memberships::Column::UserId.eq(target.id))
+        .one(pool.connection())
+        .await?
+        .expect("SCIM 成员关系必须保留");
+    assert_eq!(membership.team_id, None);
+
+    assert!(matches!(
+        group_repository
+            .delete(
+                token.clone(),
+                updated.record().resource_id().clone(),
+                OrganizationScimResourceVersion::new(3)?,
+            )
+            .await,
+        Err(OrganizationScimGroupRepositoryError::Conflict)
+    ));
+
+    let removed = group_repository
+        .delete(
+            token.clone(),
+            updated.record().resource_id().clone(),
+            updated.record().resource_version(),
+        )
+        .await?;
+    assert_eq!(
+        removed.record().status(),
+        OrganizationScimGroupStatus::Removed
+    );
+    let team = organization_teams::Entity::find_by_id(team_id.get())
+        .one(pool.connection())
+        .await?
+        .expect("SCIM 团队必须保留删除事实");
+    assert_eq!(team.status, 2);
+    assert!(team.deleted_at.is_some());
+    let repeated = group_repository
+        .delete(
+            token.clone(),
+            updated.record().resource_id().clone(),
+            updated.record().resource_version(),
+        )
+        .await?;
+    assert_eq!(repeated.outcome(), OrganizationScimGroupSyncOutcome::Noop);
+    assert!(matches!(
+        group_repository
+            .synchronize(
+                token,
+                scim_group_resource(
+                    organization.id(),
+                    "directory-group-1",
+                    3,
+                    "Engineering",
+                    &[],
+                )?,
+            )
+            .await,
+        Err(OrganizationScimGroupRepositoryError::LifecycleRejected)
+    ));
+    let binding = organization_scim_group_resources::Entity::find()
+        .filter(
+            organization_scim_group_resources::Column::OrganizationId.eq(organization.id().get()),
+        )
+        .one(pool.connection())
+        .await?
+        .expect("SCIM 组资源绑定必须存在");
+    assert_eq!(binding.resource_version, 2);
+    pool.close().await?;
+    Ok(())
+}
+
+fn scim_group_resource(
+    organization_id: OrganizationId,
+    resource_id: &str,
+    version: u64,
+    display_name: &str,
+    member_ids: &[&str],
+) -> Result<OrganizationScimGroupResource, Box<dyn Error>> {
+    Ok(OrganizationScimGroupResource::new(
+        organization_id,
+        OrganizationScimResourceId::new(resource_id.to_owned())?,
+        OrganizationScimResourceVersion::new(version)?,
+        display_name.to_owned(),
+        member_ids
+            .iter()
+            .map(|value| OrganizationScimResourceId::new((*value).to_owned()))
+            .collect::<Result<Vec<_>, _>>()?,
+    )?)
 }
 
 fn active_entitlement() -> Result<OrganizationEntitlementWrite, Box<dyn Error>> {
