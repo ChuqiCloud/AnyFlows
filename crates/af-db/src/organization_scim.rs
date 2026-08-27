@@ -309,6 +309,16 @@ impl OrganizationScimTokenRepository {
             .await
             .map_err(|_| OrganizationScimTokenRepositoryError::Query)?
             .ok_or(OrganizationScimTokenRepositoryError::NotFound)?;
+        // SCIM 入口必须随企业生命周期关闭，避免暂停或关闭的企业继续使用有效令牌。
+        let organization_is_active = organizations::Entity::find_by_id(organization_id.get())
+            .filter(organizations::Column::Status.eq(1_i16))
+            .one(self.pool.connection())
+            .await
+            .map_err(|_| OrganizationScimTokenRepositoryError::Query)?
+            .is_some();
+        if !organization_is_active {
+            return Err(OrganizationScimTokenRepositoryError::Restricted);
+        }
         record_from_model(model)
     }
 

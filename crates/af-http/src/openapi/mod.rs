@@ -38,6 +38,7 @@ mod rerank;
 mod responses_compact;
 mod routes;
 pub(crate) mod schema;
+mod scim;
 mod session;
 mod setup;
 mod site_settings;
@@ -113,6 +114,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(organization_sso::document());
     document.merge(organization_tokens::document());
     document.merge(organization_activity::document());
+    document.merge(scim::document());
     document.merge(passkey_auth::document());
     document.merge(platform_audit::document());
     document.merge(oauth_login::oidc_document());
@@ -143,6 +145,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("企业 SSO"),
         Tag::new("企业 API Key"),
         Tag::new("企业活动"),
+        Tag::new("企业 SCIM"),
         Tag::new("平台企业活动"),
         Tag::new("平台管理审计"),
         Tag::new("余额预警"),
@@ -194,6 +197,19 @@ pub fn openapi_document() -> OpenApi {
             ),
         );
     document
+        .components
+        .get_or_insert_with(Components::new)
+        .add_security_scheme(
+            "scimBearerAuth",
+            SecurityScheme::Http(
+                HttpBuilder::new()
+                    .scheme(HttpAuthScheme::Bearer)
+                    .bearer_format("SCIM Token")
+                    .description(Some("企业绑定的 SCIM Bearer 令牌"))
+                    .build(),
+            ),
+        );
+    document
 }
 
 #[cfg(test)]
@@ -205,7 +221,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 176);
+        assert_eq!(document.paths.paths.len(), 178);
         let operation_count = document
             .paths
             .paths
@@ -226,7 +242,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 242);
+        assert_eq!(operation_count, 244);
         assert!(
             document
                 .components
@@ -238,6 +254,14 @@ mod tests {
                 .components
                 .as_ref()
                 .is_some_and(|components| components.security_schemes.contains_key("apiKeyAuth"))
+        );
+        assert!(
+            document
+                .components
+                .as_ref()
+                .is_some_and(|components| components
+                    .security_schemes
+                    .contains_key("scimBearerAuth"))
         );
     }
 
@@ -495,6 +519,8 @@ mod tests {
             "finishUserPasskeyRegistration",
             "renameUserPasskey",
             "revokeUserPasskey",
+            "getScimServiceProviderConfig",
+            "listScimResourceTypes",
         ]
         .into_iter()
         .map(str::to_owned)
@@ -502,7 +528,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 398);
+        assert_eq!(schemas.len(), 406);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminDashboardChannelFlow"));
         assert!(schemas.contains_key("AdminDashboardFailure"));
@@ -571,6 +597,14 @@ mod tests {
         assert!(schemas.contains_key("OrganizationTokenResponse"));
         assert!(schemas.contains_key("OrganizationTokenListResponse"));
         assert!(schemas.contains_key("IssuedOrganizationTokenResponse"));
+        assert!(schemas.contains_key("ServiceProviderConfigResponse"));
+        assert!(schemas.contains_key("ResourceTypeListResponse"));
+        assert!(schemas.contains_key("ResourceTypeResponse"));
+        assert!(schemas.contains_key("ScimSupportResponse"));
+        assert!(schemas.contains_key("ScimBulkResponse"));
+        assert!(schemas.contains_key("ScimFilterResponse"));
+        assert!(schemas.contains_key("ScimAuthenticationSchemeResponse"));
+        assert!(schemas.contains_key("ScimErrorResponse"));
         assert!(schemas.contains_key("OrganizationAuditLogListResponse"));
         assert!(schemas.contains_key("OrganizationAuditLogResponse"));
         assert!(schemas.contains_key("OrganizationAuditOutcomeResponse"));

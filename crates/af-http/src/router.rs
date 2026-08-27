@@ -8,11 +8,12 @@ use af_admin::{
     AdminPaymentSettingsService, AdminRouteReader, AdminRouteWriter, AdminTokenReader,
     AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, AdminWalletService,
     InitialSetup, ModelCatalogReader, OAuthLoginService, OrganizationActivityService,
-    OrganizationBudgetService, OrganizationTokenService, OrganizationWalletService,
-    PasskeyAuthenticationService, PasswordResetService, PlatformAuditService,
-    PlaygroundConversationService, PlaygroundShareService, RedemptionService, RegistrationService,
-    SessionAuthenticator, SiteSettingsService, SubscriptionService, TokenAuthenticator,
-    UserInvitationService, UserNotificationService, UserTopupService, UserWalletService,
+    OrganizationBudgetService, OrganizationScimService, OrganizationTokenService,
+    OrganizationWalletService, PasskeyAuthenticationService, PasswordResetService,
+    PlatformAuditService, PlaygroundConversationService, PlaygroundShareService, RedemptionService,
+    RegistrationService, SessionAuthenticator, SiteSettingsService, SubscriptionService,
+    TokenAuthenticator, UserInvitationService, UserNotificationService, UserTopupService,
+    UserWalletService,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -111,6 +112,7 @@ use crate::playground_shares::build_playground_share_router;
 use crate::redemption::build_redemption_router;
 use crate::registration::build_registration_router;
 use crate::rerank::rerank as rerank_request;
+use crate::scim::build_scim_router;
 use crate::site_settings::build_site_settings_router;
 use crate::subscriptions::build_subscription_router;
 use crate::user_profile::build_user_profile_router;
@@ -181,6 +183,7 @@ pub fn build_router(
     organization_wallet_service: Option<Arc<dyn OrganizationWalletService>>,
     organization_budget_service: Option<Arc<dyn OrganizationBudgetService>>,
     organization_token_service: Option<Arc<dyn OrganizationTokenService>>,
+    organization_scim_service: Option<Arc<dyn OrganizationScimService>>,
     user_topup_service: Option<Arc<dyn UserTopupService>>,
     redemption_service: Arc<dyn RedemptionService>,
     subscription_service: Arc<dyn SubscriptionService>,
@@ -886,6 +889,10 @@ pub fn build_router(
             Arc::clone(&http_state.session_authenticator),
         )),
         None => management_routes,
+    };
+    let public_routes = match organization_scim_service {
+        Some(service) => public_routes.merge(build_scim_router(service)),
+        None => public_routes,
     };
     let management_routes = match oauth_connection_routes {
         Some(routes) => management_routes.merge(routes),

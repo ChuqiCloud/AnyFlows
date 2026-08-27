@@ -19056,6 +19056,124 @@
         ]
       }
     },
+    "/scim/v2/{organization_id}/ServiceProviderConfig": {
+      "get": {
+        "tags": [
+          "企业 SCIM"
+        ],
+        "summary": "读取企业 SCIM 服务发现配置",
+        "operationId": "getScimServiceProviderConfig",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SCIM 服务发现配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceProviderConfigResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "SCIM Bearer 令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "SCIM 认证服务暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "scimBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/scim/v2/{organization_id}/ResourceTypes": {
+      "get": {
+        "tags": [
+          "企业 SCIM"
+        ],
+        "summary": "读取企业 SCIM 资源类型发现",
+        "operationId": "listScimResourceTypes",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SCIM 资源类型列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceTypeListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "SCIM Bearer 令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "SCIM 认证服务暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "scimBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/auth/passkey/options": {
       "post": {
         "tags": [
@@ -32846,6 +32964,70 @@
           }
         }
       },
+      "ResourceTypeListResponse": {
+        "type": "object",
+        "required": [
+          "schemas",
+          "totalResults",
+          "Resources",
+          "startIndex",
+          "itemsPerPage"
+        ],
+        "properties": {
+          "schemas": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "totalResults": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "Resources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceTypeResponse"
+            }
+          },
+          "startIndex": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResourceTypeResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "endpoint",
+          "schema"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "schema": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "ResponsesCompactError": {
         "type": "object",
         "description": "OpenAI 兼容错误信封。",
@@ -33056,6 +33238,157 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "ScimAuthenticationSchemeResponse": {
+        "type": "object",
+        "required": [
+          "type",
+          "name",
+          "description",
+          "specUri",
+          "documentationUri"
+        ],
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "specUri": {
+            "type": "string"
+          },
+          "documentationUri": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ScimBulkResponse": {
+        "type": "object",
+        "required": [
+          "supported",
+          "maxOperations",
+          "maxPayloadSize"
+        ],
+        "properties": {
+          "supported": {
+            "type": "boolean"
+          },
+          "maxOperations": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "maxPayloadSize": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "ScimErrorResponse": {
+        "type": "object",
+        "required": [
+          "schemas",
+          "detail",
+          "status"
+        ],
+        "properties": {
+          "schemas": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "detail": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ScimFilterResponse": {
+        "type": "object",
+        "required": [
+          "supported",
+          "maxResults"
+        ],
+        "properties": {
+          "supported": {
+            "type": "boolean"
+          },
+          "maxResults": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "ScimSupportResponse": {
+        "type": "object",
+        "required": [
+          "supported"
+        ],
+        "properties": {
+          "supported": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ServiceProviderConfigResponse": {
+        "type": "object",
+        "required": [
+          "schemas",
+          "patch",
+          "bulk",
+          "filter",
+          "changePassword",
+          "sort",
+          "etag",
+          "authenticationSchemes"
+        ],
+        "properties": {
+          "schemas": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "patch": {
+            "$ref": "#/components/schemas/ScimSupportResponse"
+          },
+          "bulk": {
+            "$ref": "#/components/schemas/ScimBulkResponse"
+          },
+          "filter": {
+            "$ref": "#/components/schemas/ScimFilterResponse"
+          },
+          "changePassword": {
+            "$ref": "#/components/schemas/ScimSupportResponse"
+          },
+          "sort": {
+            "$ref": "#/components/schemas/ScimSupportResponse"
+          },
+          "etag": {
+            "$ref": "#/components/schemas/ScimSupportResponse"
+          },
+          "authenticationSchemes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScimAuthenticationSchemeResponse"
+            }
           }
         },
         "additionalProperties": false
@@ -35272,6 +35605,12 @@
         "scheme": "bearer",
         "bearerFormat": "JWT",
         "description": "登录会话 Bearer JWT"
+      },
+      "scimBearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "SCIM Token",
+        "description": "企业绑定的 SCIM Bearer 令牌"
       }
     }
   },
@@ -35350,6 +35689,9 @@
     },
     {
       "name": "企业活动"
+    },
+    {
+      "name": "企业 SCIM"
     },
     {
       "name": "平台企业活动"

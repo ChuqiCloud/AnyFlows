@@ -25,21 +25,21 @@ use af_admin::{
     DatabaseAdminUserReader, DatabaseAdminUserWriter, DatabaseAdminWalletService,
     DatabaseInitialSetup, DatabaseOAuthLoginService, DatabaseOrganizationActivityService,
     DatabaseOrganizationBudgetService, DatabaseOrganizationCustomRoleBindingService,
-    DatabaseOrganizationCustomRoleService, DatabaseOrganizationSsoDomainService,
-    DatabaseOrganizationSsoIdentityBindingService, DatabaseOrganizationSsoLoginTransactionService,
-    DatabaseOrganizationSsoPolicyService, DatabaseOrganizationSsoProviderService,
-    DatabaseOrganizationSsoRecoveryService, DatabaseOrganizationTokenService,
-    DatabaseOrganizationWalletService, DatabasePasskeyAuthenticationService,
-    DatabasePasswordResetService, DatabasePlatformAuditService,
-    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
-    DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
-    DatabaseSiteSettingsService, DatabaseSubscriptionService, DatabaseTokenAuthenticator,
-    DatabaseUserInvitationService, DatabaseUserNotificationService, DatabaseUserProfileService,
-    DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery, InitialSetup,
-    ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
+    DatabaseOrganizationCustomRoleService, DatabaseOrganizationScimService,
+    DatabaseOrganizationSsoDomainService, DatabaseOrganizationSsoIdentityBindingService,
+    DatabaseOrganizationSsoLoginTransactionService, DatabaseOrganizationSsoPolicyService,
+    DatabaseOrganizationSsoProviderService, DatabaseOrganizationSsoRecoveryService,
+    DatabaseOrganizationTokenService, DatabaseOrganizationWalletService,
+    DatabasePasskeyAuthenticationService, DatabasePasswordResetService,
+    DatabasePlatformAuditService, DatabasePlaygroundConversationService,
+    DatabasePlaygroundShareService, DatabaseRedemptionService, DatabaseRegistrationService,
+    DatabaseSessionAuthenticator, DatabaseSiteSettingsService, DatabaseSubscriptionService,
+    DatabaseTokenAuthenticator, DatabaseUserInvitationService, DatabaseUserNotificationService,
+    DatabaseUserProfileService, DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery,
+    InitialSetup, ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
     OAuthLoginService, OrganizationActivityService, OrganizationActivityServiceConfigError,
     OrganizationBudgetService, OrganizationCustomRoleBindingService, OrganizationCustomRoleService,
-    OrganizationSsoDomainService, OrganizationSsoIdentityBindingService,
+    OrganizationScimService, OrganizationSsoDomainService, OrganizationSsoIdentityBindingService,
     OrganizationSsoLoginTransactionService, OrganizationSsoPolicyService,
     OrganizationSsoProviderService, OrganizationSsoRecoveryService, OrganizationTokenService,
     OrganizationWalletService, PasskeyAuthenticationService,
@@ -93,7 +93,8 @@ use af_db::{
     OrganizationBudgetRepositoryConfigError, OrganizationCustomRoleBindingRepository,
     OrganizationCustomRoleBindingRepositoryConfigError, OrganizationCustomRoleRepository,
     OrganizationCustomRoleRepositoryConfigError, OrganizationRepository,
-    OrganizationRepositoryConfigError, OrganizationSsoProviderRepository,
+    OrganizationRepositoryConfigError, OrganizationScimTokenRepository,
+    OrganizationScimTokenRepositoryError, OrganizationSsoProviderRepository,
     OrganizationSsoProviderRepositoryConfigError, OrganizationTokenRepository,
     OrganizationTokenRepositoryConfigError, OrganizationWalletRepository,
     OrganizationWalletRepositoryConfigError, PasskeyRepository, PasswordResetRepository,
@@ -213,6 +214,7 @@ pub struct AuthenticationReady {
     organization_wallet_service: Arc<dyn OrganizationWalletService>,
     organization_budget_service: Arc<dyn OrganizationBudgetService>,
     organization_token_service: Arc<dyn OrganizationTokenService>,
+    organization_scim_service: Arc<dyn OrganizationScimService>,
     organization_activity_service: Arc<dyn OrganizationActivityService>,
     platform_audit_service: Arc<dyn PlatformAuditService>,
     redemption_service: Arc<dyn RedemptionService>,
@@ -544,6 +546,9 @@ pub enum BootstrapError {
     /// 企业 API Key 仓储的启动参数无效。
     #[error("企业 API Key 仓储启动参数无效")]
     OrganizationTokenRepository(#[source] OrganizationTokenRepositoryConfigError),
+    /// 企业 SCIM 令牌仓储的启动参数无效。
+    #[error("企业 SCIM 令牌仓储启动参数无效")]
+    OrganizationScimTokenRepository(#[source] OrganizationScimTokenRepositoryError),
     #[error("浼佷笟 SSO Provider 浠撳偍鍚姩鍙傛暟鏃犳晥")]
     OrganizationSsoProviderRepository(#[source] OrganizationSsoProviderRepositoryConfigError),
     #[error("企业 SSO DNS 解析器启动参数无效")]
@@ -977,6 +982,13 @@ impl Bootstrap<DatabaseReady> {
             )
             .map_err(BootstrapError::OrganizationTokenRepository)?,
         );
+        let organization_scim_token_repository = Arc::new(
+            OrganizationScimTokenRepository::new(
+                self.stage.database.clone(),
+                Duration::from_secs(auth.lookup_timeout_secs()),
+            )
+            .map_err(BootstrapError::OrganizationScimTokenRepository)?,
+        );
         let organization_sso_provider_repository = OrganizationSsoProviderRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -1231,6 +1243,9 @@ impl Bootstrap<DatabaseReady> {
                 )),
                 organization_token_service: Arc::new(DatabaseOrganizationTokenService::new(
                     organization_token_repository,
+                )),
+                organization_scim_service: Arc::new(DatabaseOrganizationScimService::new(
+                    organization_scim_token_repository,
                 )),
                 organization_activity_service,
                 platform_audit_service,
@@ -2378,6 +2393,9 @@ impl Bootstrap<Supervised> {
             )),
             Some(Arc::clone(
                 &self.stage.infrastructure.organization_token_service,
+            )),
+            Some(Arc::clone(
+                &self.stage.infrastructure.organization_scim_service,
             )),
             Some(user_topup_service),
             Arc::clone(&self.stage.infrastructure.redemption_service),
