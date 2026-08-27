@@ -285,7 +285,7 @@ fn scim_json<T: Serialize>(value: T) -> Response {
     response
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum ScimError {
     Unauthorized,
     Unavailable,
