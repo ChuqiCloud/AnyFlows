@@ -1,0 +1,374 @@
+use std::sync::Arc;
+
+use af_admin::{OrganizationScimAuthenticationError, OrganizationScimService};
+use af_domain::{OrganizationId, OrganizationScimResourceSet, OrganizationScimToken};
+use axum::{
+    Extension, Json, Router,
+    extract::{Path, Request, State},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
+    routing::get,
+};
+use http::{
+    HeaderValue, StatusCode,
+    header::{AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE, WWW_AUTHENTICATE},
+};
+use serde::Serialize;
+use utoipa::ToSchema;
+
+const SERVICE_PROVIDER_CONFIG_SCHEMA: &str =
+    "urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig";
+const RESOURCE_TYPE_LIST_SCHEMA: &str = "urn:ietf:params:scim:api:messages:2.0:ListResponse";
+const RESOURCE_TYPE_SCHEMA: &str = "urn:ietf:params:scim:schemas:core:2.0:ResourceType";
+
+#[derive(Clone)]
+struct ScimHttpState {
+    service: Arc<dyn OrganizationScimService>,
+}
+
+#[derive(Clone, Copy)]
+struct ScimAuthentication {
+    organization_id: OrganizationId,
+    _resource_scope: OrganizationScimResourceSet,
+}
+
+/// 构建企业绑定的 SCIM 只读发现路由，目录资源写入留待后续切片。
+pub fn build_scim_router(service: Arc<dyn OrganizationScimService>) -> Router {
+    let state = ScimHttpState { service };
+    let authentication = middleware::from_fn_with_state(state.clone(), authenticate_scim);
+    Router::new()
+        .route(
+            "/scim/v2/{organization_id}/ServiceProviderConfig",
+            get(get_service_provider_config),
+        )
+        .route(
+            "/scim/v2/{organization_id}/ResourceTypes",
+            get(list_resource_types),
+        )
+        .route_layer(authentication)
+        .with_state(state)
+}
+
+async fn authenticate_scim(
+    State(state): State<ScimHttpState>,
+    mut request: Request,
+    next: Next,
+) -> Response {
+    let organization_id = match parse_organization_id(request.uri().path()) {
+        Some(value) => value,
+        None => return ScimError::Unauthorized.into_response(),
+    };
+    let token = match extract_bearer_token(&mut request) {
+        Ok(value) => value,
+        Err(error) => return error.into_response(),
+    };
+    let token = match OrganizationScimToken::new(token) {
+        Ok(value) => value,
+        Err(_) => return ScimError::Unauthorized.into_response(),
+    };
+    match state.service.authenticate(organization_id, token).await {
+        Ok(record) => {
+            request.extensions_mut().insert(ScimAuthentication {
+                organization_id,
+                _resource_scope: record.resource_scope(),
+            });
+            next.run(request).await
+        }
+        Err(OrganizationScimAuthenticationError::InvalidToken) => {
+            ScimError::Unauthorized.into_response()
+        }
+        Err(OrganizationScimAuthenticationError::Internal) => {
+            ScimError::Unavailable.into_response()
+        }
+    }
+}
+
+fn extract_bearer_token(request: &mut Request) -> Result<String, ScimError> {
+    let values = request.headers().get_all(AUTHORIZATION);
+    let mut iter = values.iter();
+    let Some(value) = iter.next() else {
+        return Err(ScimError::Unauthorized);
+    };
+    if iter.next().is_some() {
+        return Err(ScimError::Unauthorized);
+    }
+    let raw = value.to_str().map_err(|_| ScimError::Unauthorized)?;
+    let Some((scheme, token)) = raw.split_once(' ') else {
+        return Err(ScimError::Unauthorized);
+    };
+    if !scheme.eq_ignore_ascii_case("Bearer")
+        || token.is_empty()
+        || token.chars().any(char::is_whitespace)
+    {
+        return Err(ScimError::Unauthorized);
+    }
+    request.headers_mut().remove(AUTHORIZATION);
+    Ok(token.to_owned())
+}
+
+fn parse_organization_id(path: &str) -> Option<OrganizationId> {
+    let mut segments = path.split('/');
+    if segments.next() != Some("")
+        || segments.next() != Some("scim")
+        || segments.next() != Some("v2")
+    {
+        return None;
+    }
+    segments
+        .next()?
+        .parse()
+        .ok()
+        .and_then(|value| OrganizationId::new(value).ok())
+}
+
+async fn get_service_provider_config(
+    Path(organization_id): Path<i64>,
+    Extension(authentication): Extension<ScimAuthentication>,
+) -> Response {
+    let Some(organization_id) = OrganizationId::new(organization_id).ok() else {
+        return ScimError::Unauthorized.into_response();
+    };
+    if authentication.organization_id != organization_id {
+        return ScimError::Unauthorized.into_response();
+    }
+    scim_json(ServiceProviderConfigResponse::new())
+}
+
+async fn list_resource_types(
+    Path(organization_id): Path<i64>,
+    Extension(authentication): Extension<ScimAuthentication>,
+) -> Response {
+    let Some(organization_id) = OrganizationId::new(organization_id).ok() else {
+        return ScimError::Unauthorized.into_response();
+    };
+    if authentication.organization_id != organization_id {
+        return ScimError::Unauthorized.into_response();
+    }
+    scim_json(ResourceTypeListResponse::new(organization_id))
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ServiceProviderConfigResponse {
+    schemas: Vec<String>,
+    patch: ScimSupportResponse,
+    bulk: ScimBulkResponse,
+    filter: ScimFilterResponse,
+    change_password: ScimSupportResponse,
+    sort: ScimSupportResponse,
+    etag: ScimSupportResponse,
+    authentication_schemes: Vec<ScimAuthenticationSchemeResponse>,
+}
+
+impl ServiceProviderConfigResponse {
+    fn new() -> Self {
+        Self {
+            schemas: vec![SERVICE_PROVIDER_CONFIG_SCHEMA.to_owned()],
+            patch: ScimSupportResponse { supported: false },
+            bulk: ScimBulkResponse {
+                supported: false,
+                max_operations: 0,
+                max_payload_size: 0,
+            },
+            filter: ScimFilterResponse {
+                supported: false,
+                max_results: 0,
+            },
+            change_password: ScimSupportResponse { supported: false },
+            sort: ScimSupportResponse { supported: false },
+            etag: ScimSupportResponse { supported: false },
+            authentication_schemes: vec![ScimAuthenticationSchemeResponse {
+                r#type: "oauthbearertoken".to_owned(),
+                name: "SCIM Bearer Token".to_owned(),
+                description: "企业绑定的 SCIM Bearer 令牌".to_owned(),
+                spec_uri: "https://www.rfc-editor.org/rfc/rfc6750".to_owned(),
+                documentation_uri: String::new(),
+            }],
+        }
+    }
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ScimSupportResponse {
+    supported: bool,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ScimBulkResponse {
+    supported: bool,
+    max_operations: u32,
+    max_payload_size: u32,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ScimFilterResponse {
+    supported: bool,
+    max_results: u32,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ScimAuthenticationSchemeResponse {
+    #[serde(rename = "type")]
+    r#type: String,
+    name: String,
+    description: String,
+    spec_uri: String,
+    documentation_uri: String,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ResourceTypeListResponse {
+    schemas: Vec<String>,
+    #[serde(rename = "totalResults")]
+    total_results: u32,
+    #[serde(rename = "Resources")]
+    resources: Vec<ResourceTypeResponse>,
+    #[serde(rename = "startIndex")]
+    start_index: u32,
+    #[serde(rename = "itemsPerPage")]
+    items_per_page: u32,
+}
+
+impl ResourceTypeListResponse {
+    fn new(organization_id: OrganizationId) -> Self {
+        let base = format!("/scim/v2/{}/", organization_id.get());
+        let resources = [
+            (
+                "ServiceProviderConfig",
+                "ServiceProviderConfig",
+                SERVICE_PROVIDER_CONFIG_SCHEMA,
+            ),
+            ("ResourceType", "ResourceTypes", RESOURCE_TYPE_SCHEMA),
+        ]
+        .into_iter()
+        .map(|(name, endpoint_name, schema)| ResourceTypeResponse {
+            id: name.to_owned(),
+            name: name.to_owned(),
+            endpoint: format!("{base}{endpoint_name}"),
+            schema: schema.to_owned(),
+        })
+        .collect::<Vec<_>>();
+        Self {
+            schemas: vec![RESOURCE_TYPE_LIST_SCHEMA.to_owned()],
+            total_results: resources.len() as u32,
+            resources,
+            start_index: 1,
+            items_per_page: 2,
+        }
+    }
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ResourceTypeResponse {
+    id: String,
+    name: String,
+    endpoint: String,
+    schema: String,
+}
+
+fn scim_json<T: Serialize>(value: T) -> Response {
+    let mut response = Json(value).into_response();
+    response.headers_mut().insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("application/scim+json"),
+    );
+    response
+        .headers_mut()
+        .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+}
+
+#[derive(Clone, Copy)]
+enum ScimError {
+    Unauthorized,
+    Unavailable,
+}
+
+impl IntoResponse for ScimError {
+    fn into_response(self) -> Response {
+        let (status, detail, challenge) = match self {
+            Self::Unauthorized => (StatusCode::UNAUTHORIZED, "SCIM Bearer 令牌无效", true),
+            Self::Unavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "SCIM 认证服务暂不可用",
+                false,
+            ),
+        };
+        let mut response = Json(ScimErrorResponse {
+            schemas: vec!["urn:ietf:params:scim:api:messages:2.0:Error".to_owned()],
+            detail: detail.to_owned(),
+            status: status.as_u16().to_string(),
+        })
+        .into_response();
+        response.headers_mut().insert(
+            CONTENT_TYPE,
+            HeaderValue::from_static("application/scim+json"),
+        );
+        response
+            .headers_mut()
+            .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        if challenge {
+            response
+                .headers_mut()
+                .insert(WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
+        }
+        response
+    }
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ScimErrorResponse {
+    schemas: Vec<String>,
+    detail: String,
+    status: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::{body::Body, http::Request};
+
+    use super::*;
+
+    #[test]
+    fn bearer_extraction_is_single_header_and_removes_secret() {
+        let mut request = Request::builder()
+            .header(AUTHORIZATION, "bEaReR scim_token")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(extract_bearer_token(&mut request).unwrap(), "scim_token");
+        assert!(!request.headers().contains_key(AUTHORIZATION));
+        for value in ["Bearer", "Basic token", "Bearer ", "Bearer token value"] {
+            let mut request = Request::builder()
+                .header(AUTHORIZATION, value)
+                .body(Body::empty())
+                .unwrap();
+            assert!(matches!(
+                extract_bearer_token(&mut request),
+                Err(ScimError::Unauthorized)
+            ));
+        }
+    }
+
+    #[test]
+    fn discovery_responses_are_scim_json_without_resource_payloads() {
+        let config = serde_json::to_value(ServiceProviderConfigResponse::new()).unwrap();
+        assert_eq!(config["schemas"][0], SERVICE_PROVIDER_CONFIG_SCHEMA);
+        assert_eq!(config["patch"]["supported"], false);
+        assert!(config.get("email").is_none());
+        let resources = ResourceTypeListResponse::new(OrganizationId::new(7).unwrap());
+        assert_eq!(resources.total_results, 2);
+        assert!(
+            resources
+                .resources
+                .iter()
+                .all(|resource| resource.schema != "")
+        );
+    }
+}

@@ -79,6 +79,7 @@ mod rerank;
 mod rerank_service;
 mod responses_compact_service;
 mod router;
+mod scim;
 mod serve;
 mod site_settings;
 mod speech_service;

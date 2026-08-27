@@ -4,13 +4,13 @@ use af_domain::{
     OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationScimResourceSet,
     OrganizationScimTokenStatus, UserId,
 };
-use sea_orm::{ActiveModelTrait, EntityTrait, Set};
+use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, Set};
 
 use crate::{
     DatabaseOptions, MigrationOptions, OrganizationCreate, OrganizationEntitlementWrite,
     OrganizationRepository, OrganizationScimTokenCreateRecord, OrganizationScimTokenRepository,
     OrganizationScimTokenRepositoryError,
-    entity::{groups, organization_scim_tokens, users},
+    entity::{groups, organization_scim_tokens, organizations, users},
 };
 
 #[tokio::test]
@@ -73,6 +73,20 @@ async fn scim_token_is_digest_only_and_organization_scoped() -> Result<(), Box<d
         .authenticate_for_organization(organization.id(), token.clone())
         .await?;
     assert_eq!(authenticated.id(), record.id());
+
+    let organization_model = organizations::Entity::find_by_id(organization.id().get())
+        .one(pool.connection())
+        .await?
+        .expect("浼佷笟瀹炰綋蹇呴』瀛樺湪")
+        .into_active_model();
+    let mut suspended_organization = organization_model;
+    suspended_organization.status = Set(2);
+    suspended_organization.update(pool.connection()).await?;
+    assert!(matches!(
+        scim.authenticate_for_organization(organization.id(), token.clone())
+            .await,
+        Err(OrganizationScimTokenRepositoryError::Restricted)
+    ));
     assert!(matches!(
         scim.authenticate_for_organization(
             af_domain::OrganizationId::new(organization.id().get() + 1)?,
