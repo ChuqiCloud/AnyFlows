@@ -3,12 +3,12 @@ use std::{future::Future, pin::Pin, sync::Arc};
 use af_db::{
     OrganizationScimAuditRepository, OrganizationScimAuditRepositoryError,
     OrganizationScimAuditWriteOutcome, OrganizationScimGroupRepository,
-    OrganizationScimGroupRepositoryError, OrganizationScimGroupSyncOutcome,
-    OrganizationScimGroupSyncResult, OrganizationScimTokenRecord, OrganizationScimTokenRepository,
+    OrganizationScimGroupRepositoryError, OrganizationScimGroupSyncResult,
+    OrganizationScimTokenRecord, OrganizationScimTokenRepository,
     OrganizationScimTokenRepositoryError, OrganizationScimUserRepository,
-    OrganizationScimUserRepositoryError, OrganizationScimUserSyncOutcome,
-    OrganizationScimUserSyncResult,
+    OrganizationScimUserRepositoryError, OrganizationScimUserSyncResult,
 };
+pub use af_db::{OrganizationScimGroupSyncOutcome, OrganizationScimUserSyncOutcome};
 use af_domain::{
     DEFAULT_ORGANIZATION_SCIM_RATE_LIMIT, DEFAULT_ORGANIZATION_SCIM_RATE_LIMIT_WINDOW_SECONDS,
     DEFAULT_TOKEN_SCIM_RATE_LIMIT, OrganizationId, OrganizationScimAuditFacts,
