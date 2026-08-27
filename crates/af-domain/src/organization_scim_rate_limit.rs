@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::{future::Future, num::NonZeroU32, pin::Pin};
 
 use thiserror::Error;
 
@@ -6,6 +6,12 @@ use crate::{OrganizationId, OrganizationScimTokenKey};
 
 /// SCIM 固定窗口允许的最大长度；具体计数由后续 Redis 适配器原子维护。
 pub const MAX_ORGANIZATION_SCIM_RATE_LIMIT_WINDOW_SECONDS: u32 = 7 * 24 * 60 * 60;
+/// SCIM 企业共享窗口的默认请求上限。
+pub const DEFAULT_ORGANIZATION_SCIM_RATE_LIMIT: u32 = 600;
+/// SCIM 单令牌窗口的默认请求上限。
+pub const DEFAULT_TOKEN_SCIM_RATE_LIMIT: u32 = 300;
+/// SCIM 默认固定窗口长度。
+pub const DEFAULT_ORGANIZATION_SCIM_RATE_LIMIT_WINDOW_SECONDS: u32 = 60;
 
 /// SCIM 限流主体；令牌主体必须在类型中携带所属企业。
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -212,6 +218,19 @@ pub enum OrganizationScimRateLimitDecision {
     },
     /// 无法安全确认限流状态，必须失败关闭。
     Rejected(OrganizationScimRateLimitRejection),
+}
+
+/// SCIM Redis 限流适配器的异步调用约定。
+pub type OrganizationScimRateLimitFuture<'a> =
+    Pin<Box<dyn Future<Output = OrganizationScimRateLimitDecision> + Send + 'a>>;
+
+/// 以企业和令牌为边界执行原子限流的存储抽象。
+pub trait OrganizationScimRateLimitStore: Send + Sync {
+    /// 原子检查并递增所有规则；任一规则受限时不得递增其他规则。
+    fn admit<'a>(
+        &'a self,
+        rules: &'a [OrganizationScimRateLimitRule],
+    ) -> OrganizationScimRateLimitFuture<'a>;
 }
 
 /// 根据固定窗口快照判定 SCIM 请求；不执行 Redis、数据库或网络 IO。

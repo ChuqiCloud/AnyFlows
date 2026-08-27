@@ -7,7 +7,11 @@ use af_db::{
     OrganizationScimUserRepositoryError, OrganizationScimUserSyncResult,
 };
 use af_domain::{
-    OrganizationId, OrganizationScimGroupResource, OrganizationScimResourceId,
+    DEFAULT_ORGANIZATION_SCIM_RATE_LIMIT, DEFAULT_ORGANIZATION_SCIM_RATE_LIMIT_WINDOW_SECONDS,
+    DEFAULT_TOKEN_SCIM_RATE_LIMIT, OrganizationId, OrganizationScimGroupResource,
+    OrganizationScimRateLimitDecision, OrganizationScimRateLimitFuture,
+    OrganizationScimRateLimitRule, OrganizationScimRateLimitStore,
+    OrganizationScimRateLimitSubject, OrganizationScimRateLimitWindow, OrganizationScimResourceId,
     OrganizationScimResourceVersion, OrganizationScimToken, OrganizationScimUserResource,
 };
 use thiserror::Error;
@@ -84,8 +88,16 @@ pub type OrganizationScimGroupSyncFuture<'a> = Pin<
     >,
 >;
 
+pub type OrganizationScimRateLimitAdmissionFuture<'a> = OrganizationScimRateLimitFuture<'a>;
+
 /// 以企业路径为边界校验 SCIM 令牌的服务契约。
 pub trait OrganizationScimService: Send + Sync {
+    fn admit_rate_limit<'a>(
+        &'a self,
+        organization_id: OrganizationId,
+        token: &'a OrganizationScimTokenRecord,
+    ) -> OrganizationScimRateLimitAdmissionFuture<'a>;
+
     fn authenticate<'a>(
         &'a self,
         organization_id: OrganizationId,
@@ -117,6 +129,7 @@ pub struct DatabaseOrganizationScimService {
     repository: Arc<OrganizationScimTokenRepository>,
     user_repository: Arc<OrganizationScimUserRepository>,
     group_repository: Arc<OrganizationScimGroupRepository>,
+    rate_limit_store: Option<Arc<dyn OrganizationScimRateLimitStore>>,
 }
 
 impl DatabaseOrganizationScimService {
@@ -125,16 +138,67 @@ impl DatabaseOrganizationScimService {
         repository: Arc<OrganizationScimTokenRepository>,
         user_repository: Arc<OrganizationScimUserRepository>,
         group_repository: Arc<OrganizationScimGroupRepository>,
+        rate_limit_store: Option<Arc<dyn OrganizationScimRateLimitStore>>,
     ) -> Self {
         Self {
             repository,
             user_repository,
             group_repository,
+            rate_limit_store,
         }
     }
 }
 
 impl OrganizationScimService for DatabaseOrganizationScimService {
+    fn admit_rate_limit<'a>(
+        &'a self,
+        organization_id: OrganizationId,
+        token: &'a OrganizationScimTokenRecord,
+    ) -> OrganizationScimRateLimitAdmissionFuture<'a> {
+        Box::pin(async move {
+            let Some(store) = self.rate_limit_store.as_ref() else {
+                return OrganizationScimRateLimitDecision::Rejected(
+                    af_domain::OrganizationScimRateLimitRejection::StorageUnavailable,
+                );
+            };
+            let Ok(window) = OrganizationScimRateLimitWindow::new(
+                DEFAULT_ORGANIZATION_SCIM_RATE_LIMIT_WINDOW_SECONDS,
+            ) else {
+                return OrganizationScimRateLimitDecision::Rejected(
+                    af_domain::OrganizationScimRateLimitRejection::InvalidFact,
+                );
+            };
+            let Some(organization_limit) =
+                std::num::NonZeroU32::new(DEFAULT_ORGANIZATION_SCIM_RATE_LIMIT)
+            else {
+                return OrganizationScimRateLimitDecision::Rejected(
+                    af_domain::OrganizationScimRateLimitRejection::InvalidFact,
+                );
+            };
+            let Some(token_limit) = std::num::NonZeroU32::new(DEFAULT_TOKEN_SCIM_RATE_LIMIT) else {
+                return OrganizationScimRateLimitDecision::Rejected(
+                    af_domain::OrganizationScimRateLimitRejection::InvalidFact,
+                );
+            };
+            let rules = [
+                OrganizationScimRateLimitRule::new(
+                    OrganizationScimRateLimitSubject::Organization(organization_id),
+                    organization_limit,
+                    window,
+                ),
+                OrganizationScimRateLimitRule::new(
+                    OrganizationScimRateLimitSubject::Token {
+                        organization_id,
+                        token_key: token.token_key().clone(),
+                    },
+                    token_limit,
+                    window,
+                ),
+            ];
+            store.admit(&rules).await
+        })
+    }
+
     fn authenticate<'a>(
         &'a self,
         organization_id: OrganizationId,

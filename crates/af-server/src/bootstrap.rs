@@ -65,8 +65,8 @@ use af_billing::{
 };
 use af_cache::{
     CacheError, RedisConcurrencyConfig, RedisConcurrencyStore, RedisConfig, RedisHealthConfig,
-    RedisHealthStore, RedisRequestRateLimitConfig, RedisRequestRateLimitStore,
-    RedisStickySessionConfig, RedisStickySessionStore,
+    RedisHealthStore, RedisOrganizationScimRateLimitStore, RedisRequestRateLimitConfig,
+    RedisRequestRateLimitStore, RedisStickySessionConfig, RedisStickySessionStore,
 };
 use af_config::{AppConfig, ConfigError};
 use af_db::{
@@ -1011,6 +1011,18 @@ impl Bootstrap<DatabaseReady> {
             )
             .map_err(BootstrapError::OrganizationScimGroupRepository)?,
         );
+        let organization_scim_rate_limit_store = if let Some(redis_url) = self.config.redis().url()
+        {
+            let store = RedisOrganizationScimRateLimitStore::connect(
+                RedisConfig::new(redis_url.expose().to_owned()),
+                "anyflows.organization.scim.rate.v1",
+            )
+            .await
+            .map_err(BootstrapError::RequestRateLimit)?;
+            Some(Arc::new(store) as Arc<dyn af_domain::OrganizationScimRateLimitStore>)
+        } else {
+            None
+        };
         let organization_sso_provider_repository = OrganizationSsoProviderRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -1270,6 +1282,7 @@ impl Bootstrap<DatabaseReady> {
                     organization_scim_token_repository,
                     organization_scim_user_repository,
                     organization_scim_group_repository,
+                    organization_scim_rate_limit_store,
                 )),
                 organization_activity_service,
                 platform_audit_service,
