@@ -82,9 +82,10 @@ pub use organization_scim_audit::{
 };
 pub use organization_scim_rate_limit::{
     MAX_ORGANIZATION_SCIM_RATE_LIMIT_WINDOW_SECONDS, OrganizationScimRateLimitDecision,
-    OrganizationScimRateLimitError, OrganizationScimRateLimitRejection,
-    OrganizationScimRateLimitRule, OrganizationScimRateLimitSnapshot,
-    OrganizationScimRateLimitState, OrganizationScimRateLimitSubject,
+    OrganizationScimRateLimitError, OrganizationScimRateLimitFuture,
+    OrganizationScimRateLimitRejection, OrganizationScimRateLimitRule,
+    OrganizationScimRateLimitSnapshot, OrganizationScimRateLimitState,
+    OrganizationScimRateLimitStore, OrganizationScimRateLimitSubject,
     OrganizationScimRateLimitWindow, classify_organization_scim_rate_limit,
 };
 pub use organization_sso::{
