@@ -498,6 +498,9 @@ pub use organization_custom_role_binding::{
 pub use organization_scim::{
     OrganizationScimTokenCreateRecord, OrganizationScimTokenIssued, OrganizationScimTokenRecord,
     OrganizationScimTokenRepository, OrganizationScimTokenRepositoryError,
+    OrganizationScimUserRecord, OrganizationScimUserRepository,
+    OrganizationScimUserRepositoryError, OrganizationScimUserSyncOutcome,
+    OrganizationScimUserSyncResult,
 };
 pub use organization_sso::{
     OrganizationSsoDomainCreate, OrganizationSsoDomainRecord, OrganizationSsoDomainUpdate,

@@ -2800,3 +2800,28 @@ pub(in crate::migration) mod organization_scim_tokens {
         RevokedAt,
     }
 }
+
+pub(in crate::migration) mod organization_scim_user_resources {
+    use super::DeriveIden;
+
+    /// 企业 SCIM 用户资源绑定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_scim_user_resources")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 受控绑定、同步版本和审计时间列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        ResourceId,
+        UserId,
+        ResourceVersion,
+        CreatedAt,
+        UpdatedAt,
+    }
+}

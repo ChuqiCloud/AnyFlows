@@ -19080,7 +19080,7 @@
           "200": {
             "description": "SCIM 服务发现配置",
             "content": {
-              "application/json": {
+              "application/scim+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ServiceProviderConfigResponse"
                 }
@@ -19090,7 +19090,7 @@
           "401": {
             "description": "SCIM Bearer 令牌无效",
             "content": {
-              "application/json": {
+              "application/scim+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ScimErrorResponse"
                 }
@@ -19100,7 +19100,7 @@
           "503": {
             "description": "SCIM 认证服务暂不可用",
             "content": {
-              "application/json": {
+              "application/scim+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ScimErrorResponse"
                 }
@@ -19139,7 +19139,7 @@
           "200": {
             "description": "SCIM 资源类型列表",
             "content": {
-              "application/json": {
+              "application/scim+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ResourceTypeListResponse"
                 }
@@ -19149,7 +19149,7 @@
           "401": {
             "description": "SCIM Bearer 令牌无效",
             "content": {
-              "application/json": {
+              "application/scim+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ScimErrorResponse"
                 }
@@ -19159,7 +19159,242 @@
           "503": {
             "description": "SCIM 认证服务暂不可用",
             "content": {
-              "application/json": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "scimBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/scim/v2/{organization_id}/Users": {
+      "post": {
+        "tags": [
+          "企业 SCIM"
+        ],
+        "operationId": "createScimUser",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/scim+json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScimUserWriteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "创建 SCIM 用户资源",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimUserResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "SCIM 用户资源请求无效",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "SCIM Bearer 令牌无效",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "SCIM 用户资源范围不足",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "SCIM 用户资源版本或绑定冲突",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "SCIM 用户资源生命周期被拒绝",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "SCIM 服务暂不可用",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "scimBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/scim/v2/{organization_id}/Users/{resource_id}": {
+      "put": {
+        "tags": [
+          "企业 SCIM"
+        ],
+        "operationId": "replaceScimUser",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "resource_id",
+            "in": "path",
+            "description": "SCIM 用户资源 ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/scim+json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScimUserWriteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "替换 SCIM 用户资源",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimUserResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "SCIM 用户资源请求无效",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "SCIM Bearer 令牌无效",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "SCIM 用户资源范围不足",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SCIM 用户资源目标不可用",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "SCIM 用户资源版本或绑定冲突",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "SCIM 用户资源生命周期被拒绝",
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "SCIM 服务暂不可用",
+            "content": {
+              "application/scim+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ScimErrorResponse"
                 }
@@ -33343,6 +33578,85 @@
         "properties": {
           "supported": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ScimUserMeta": {
+        "type": "object",
+        "required": [
+          "version"
+        ],
+        "properties": {
+          "version": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ScimUserResponse": {
+        "type": "object",
+        "required": [
+          "schemas",
+          "id",
+          "userName",
+          "active",
+          "meta"
+        ],
+        "properties": {
+          "schemas": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "userName": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ScimUserMeta"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ScimUserWriteRequest": {
+        "type": "object",
+        "required": [
+          "id",
+          "userName",
+          "active",
+          "meta"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "userName": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ScimUserMeta"
           }
         },
         "additionalProperties": false

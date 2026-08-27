@@ -256,6 +256,7 @@ dependencies = [
  "af-analytics",
  "af-billing",
  "af-config",
+ "af-db",
  "af-domain",
  "af-protocol",
  "af-relay",

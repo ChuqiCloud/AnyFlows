@@ -6,8 +6,8 @@ use crate::{
     management_error::ManagementErrorBody,
     scim::{
         ResourceTypeListResponse, ResourceTypeResponse, ScimAuthenticationSchemeResponse,
-        ScimBulkResponse, ScimErrorResponse, ScimFilterResponse, ScimSupportResponse,
-        ServiceProviderConfigResponse,
+        ScimBulkResponse, ScimErrorResponse, ScimFilterResponse, ScimSupportResponse, ScimUserMeta,
+        ScimUserResponse, ScimUserWriteRequest, ServiceProviderConfigResponse,
     },
 };
 
@@ -19,9 +19,9 @@ use crate::{
     summary = "读取企业 SCIM 服务发现配置",
     params(("organization_id" = i64, Path, minimum = 1, description = "企业 ID")),
     responses(
-        (status = 200, description = "SCIM 服务发现配置", body = ServiceProviderConfigResponse),
-        (status = 401, description = "SCIM Bearer 令牌无效", body = ScimErrorResponse),
-        (status = 503, description = "SCIM 认证服务暂不可用", body = ScimErrorResponse)
+        (status = 200, description = "SCIM 服务发现配置", body = ServiceProviderConfigResponse, content_type = "application/scim+json"),
+        (status = 401, description = "SCIM Bearer 令牌无效", body = ScimErrorResponse, content_type = "application/scim+json"),
+        (status = 503, description = "SCIM 认证服务暂不可用", body = ScimErrorResponse, content_type = "application/scim+json")
     ),
     security(("scimBearerAuth" = []))
 )]
@@ -35,17 +35,66 @@ fn get_scim_service_provider_config() {}
     summary = "读取企业 SCIM 资源类型发现",
     params(("organization_id" = i64, Path, minimum = 1, description = "企业 ID")),
     responses(
-        (status = 200, description = "SCIM 资源类型列表", body = ResourceTypeListResponse),
-        (status = 401, description = "SCIM Bearer 令牌无效", body = ScimErrorResponse),
-        (status = 503, description = "SCIM 认证服务暂不可用", body = ScimErrorResponse)
+        (status = 200, description = "SCIM 资源类型列表", body = ResourceTypeListResponse, content_type = "application/scim+json"),
+        (status = 401, description = "SCIM Bearer 令牌无效", body = ScimErrorResponse, content_type = "application/scim+json"),
+        (status = 503, description = "SCIM 认证服务暂不可用", body = ScimErrorResponse, content_type = "application/scim+json")
     ),
     security(("scimBearerAuth" = []))
 )]
 fn list_scim_resource_types() {}
 
+#[utoipa::path(
+    post,
+    path = "/scim/v2/{organization_id}/Users",
+    operation_id = "createScimUser",
+    tag = "企业 SCIM",
+    request_body(content = ScimUserWriteRequest, content_type = "application/scim+json"),
+    params(("organization_id" = i64, Path, minimum = 1, description = "企业 ID")),
+    responses(
+        (status = 201, description = "创建 SCIM 用户资源", body = ScimUserResponse, content_type = "application/scim+json"),
+        (status = 400, description = "SCIM 用户资源请求无效", body = ScimErrorResponse, content_type = "application/scim+json"),
+        (status = 401, description = "SCIM Bearer 令牌无效", body = ScimErrorResponse, content_type = "application/scim+json"),
+        (status = 403, description = "SCIM 用户资源范围不足", body = ScimErrorResponse, content_type = "application/scim+json"),
+        (status = 409, description = "SCIM 用户资源版本或绑定冲突", body = ScimErrorResponse, content_type = "application/scim+json"),
+        (status = 422, description = "SCIM 用户资源生命周期被拒绝", body = ScimErrorResponse, content_type = "application/scim+json"),
+        (status = 503, description = "SCIM 服务暂不可用", body = ScimErrorResponse, content_type = "application/scim+json")
+    ),
+    security(("scimBearerAuth" = []))
+)]
+fn create_scim_user() {}
+
+#[utoipa::path(
+    put,
+    path = "/scim/v2/{organization_id}/Users/{resource_id}",
+    operation_id = "replaceScimUser",
+    tag = "企业 SCIM",
+    request_body(content = ScimUserWriteRequest, content_type = "application/scim+json"),
+    params(
+        ("organization_id" = i64, Path, minimum = 1, description = "企业 ID"),
+        ("resource_id" = String, Path, description = "SCIM 用户资源 ID")
+    ),
+    responses(
+        (status = 200, description = "替换 SCIM 用户资源", body = ScimUserResponse, content_type = "application/scim+json"),
+        (status = 400, description = "SCIM 用户资源请求无效", body = ScimErrorResponse, content_type = "application/scim+json"),
+        (status = 401, description = "SCIM Bearer 令牌无效", body = ScimErrorResponse, content_type = "application/scim+json"),
+        (status = 403, description = "SCIM 用户资源范围不足", body = ScimErrorResponse, content_type = "application/scim+json"),
+        (status = 404, description = "SCIM 用户资源目标不可用", body = ScimErrorResponse, content_type = "application/scim+json"),
+        (status = 409, description = "SCIM 用户资源版本或绑定冲突", body = ScimErrorResponse, content_type = "application/scim+json"),
+        (status = 422, description = "SCIM 用户资源生命周期被拒绝", body = ScimErrorResponse, content_type = "application/scim+json"),
+        (status = 503, description = "SCIM 服务暂不可用", body = ScimErrorResponse, content_type = "application/scim+json")
+    ),
+    security(("scimBearerAuth" = []))
+)]
+fn replace_scim_user() {}
+
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_scim_service_provider_config, list_scim_resource_types),
+    paths(
+        get_scim_service_provider_config,
+        list_scim_resource_types,
+        create_scim_user,
+        replace_scim_user
+    ),
     components(schemas(
         ServiceProviderConfigResponse,
         ScimSupportResponse,
@@ -54,6 +103,9 @@ fn list_scim_resource_types() {}
         ScimAuthenticationSchemeResponse,
         ResourceTypeListResponse,
         ResourceTypeResponse,
+        ScimUserWriteRequest,
+        ScimUserMeta,
+        ScimUserResponse,
         ScimErrorResponse,
         ManagementErrorBody
     ))

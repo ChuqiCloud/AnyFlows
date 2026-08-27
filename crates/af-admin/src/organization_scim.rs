@@ -2,9 +2,10 @@ use std::{future::Future, pin::Pin, sync::Arc};
 
 use af_db::{
     OrganizationScimTokenRecord, OrganizationScimTokenRepository,
-    OrganizationScimTokenRepositoryError,
+    OrganizationScimTokenRepositoryError, OrganizationScimUserRepository,
+    OrganizationScimUserRepositoryError, OrganizationScimUserSyncResult,
 };
-use af_domain::{OrganizationId, OrganizationScimToken};
+use af_domain::{OrganizationId, OrganizationScimToken, OrganizationScimUserResource};
 use thiserror::Error;
 
 /// SCIM Bearer 令牌认证服务返回的边界错误，不向 HTTP 层暴露数据库细节。
@@ -18,11 +19,36 @@ pub enum OrganizationScimAuthenticationError {
     Internal,
 }
 
+/// SCIM 用户资源同步服务向 HTTP 层暴露的稳定错误。
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum OrganizationScimUserSyncError {
+    #[error("SCIM 用户同步令牌不可用")]
+    Restricted,
+    #[error("SCIM 用户同步范围不足")]
+    Forbidden,
+    #[error("SCIM 用户同步版本或绑定冲突")]
+    Conflict,
+    #[error("SCIM 用户同步目标不可用")]
+    UserUnavailable,
+    #[error("SCIM 用户同步生命周期被拒绝")]
+    LifecycleRejected,
+    #[error("SCIM 用户同步服务暂不可用")]
+    Internal,
+}
+
 pub type OrganizationScimAuthenticationFuture<'a> = Pin<
     Box<
         dyn Future<
                 Output = Result<OrganizationScimTokenRecord, OrganizationScimAuthenticationError>,
             > + Send
+            + 'a,
+    >,
+>;
+
+pub type OrganizationScimUserSyncFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<OrganizationScimUserSyncResult, OrganizationScimUserSyncError>>
+            + Send
             + 'a,
     >,
 >;
@@ -34,17 +60,30 @@ pub trait OrganizationScimService: Send + Sync {
         organization_id: OrganizationId,
         token: OrganizationScimToken,
     ) -> OrganizationScimAuthenticationFuture<'a>;
+
+    fn synchronize_user<'a>(
+        &'a self,
+        token: OrganizationScimTokenRecord,
+        resource: OrganizationScimUserResource,
+    ) -> OrganizationScimUserSyncFuture<'a>;
 }
 
 /// 使用数据库令牌仓储实现受控 SCIM 认证。
 pub struct DatabaseOrganizationScimService {
     repository: Arc<OrganizationScimTokenRepository>,
+    user_repository: Arc<OrganizationScimUserRepository>,
 }
 
 impl DatabaseOrganizationScimService {
     #[must_use]
-    pub fn new(repository: Arc<OrganizationScimTokenRepository>) -> Self {
-        Self { repository }
+    pub fn new(
+        repository: Arc<OrganizationScimTokenRepository>,
+        user_repository: Arc<OrganizationScimUserRepository>,
+    ) -> Self {
+        Self {
+            repository,
+            user_repository,
+        }
     }
 }
 
@@ -59,6 +98,19 @@ impl OrganizationScimService for DatabaseOrganizationScimService {
                 .authenticate_for_organization(organization_id, token)
                 .await
                 .map_err(map_repository_error)
+        })
+    }
+
+    fn synchronize_user<'a>(
+        &'a self,
+        token: OrganizationScimTokenRecord,
+        resource: OrganizationScimUserResource,
+    ) -> OrganizationScimUserSyncFuture<'a> {
+        Box::pin(async move {
+            self.user_repository
+                .synchronize(token, resource)
+                .await
+                .map_err(map_user_repository_error)
         })
     }
 }
@@ -84,6 +136,27 @@ fn map_repository_error(
         | OrganizationScimTokenRepositoryError::Invariant => {
             OrganizationScimAuthenticationError::Internal
         }
+    }
+}
+
+fn map_user_repository_error(
+    error: OrganizationScimUserRepositoryError,
+) -> OrganizationScimUserSyncError {
+    match error {
+        OrganizationScimUserRepositoryError::Restricted => {
+            OrganizationScimUserSyncError::Restricted
+        }
+        OrganizationScimUserRepositoryError::Forbidden => OrganizationScimUserSyncError::Forbidden,
+        OrganizationScimUserRepositoryError::Conflict => OrganizationScimUserSyncError::Conflict,
+        OrganizationScimUserRepositoryError::UserUnavailable => {
+            OrganizationScimUserSyncError::UserUnavailable
+        }
+        OrganizationScimUserRepositoryError::LifecycleRejected => {
+            OrganizationScimUserSyncError::LifecycleRejected
+        }
+        OrganizationScimUserRepositoryError::Query
+        | OrganizationScimUserRepositoryError::Timeout
+        | OrganizationScimUserRepositoryError::Invariant => OrganizationScimUserSyncError::Internal,
     }
 }
 
