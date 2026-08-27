@@ -138,6 +138,9 @@ mod organization_scim_audit;
 mod organization_scim_audit_tests;
 #[cfg(test)]
 mod organization_scim_tests;
+mod organization_service_account;
+#[cfg(test)]
+mod organization_service_account_tests;
 mod organization_sso;
 #[cfg(test)]
 mod organization_sso_tests;
@@ -512,6 +515,11 @@ pub use organization_scim_audit::{
     OrganizationScimAuditPageRecord, OrganizationScimAuditQuery, OrganizationScimAuditRecord,
     OrganizationScimAuditRepository, OrganizationScimAuditRepositoryError,
     OrganizationScimAuditWriteOutcome,
+};
+pub use organization_service_account::{
+    OrganizationServiceAccountIssued, OrganizationServiceAccountKeyRecord,
+    OrganizationServiceAccountRecord, OrganizationServiceAccountRepository,
+    OrganizationServiceAccountRepositoryError,
 };
 pub use organization_sso::{
     OrganizationSsoDomainCreate, OrganizationSsoDomainRecord, OrganizationSsoDomainUpdate,

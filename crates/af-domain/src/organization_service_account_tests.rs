@@ -17,6 +17,27 @@ fn service_account_public_key_is_canonical_and_redacted() {
 }
 
 #[test]
+fn service_account_secret_is_high_entropy_and_persisted_only_as_digest() {
+    let secret = OrganizationServiceAccountSecret::new(
+        "sa_1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+    )
+    .unwrap();
+    let digest = secret.digest();
+    assert_eq!(secret.prefix(), "sa_");
+    assert_eq!(digest.as_str().len(), 64);
+    assert_eq!(
+        format!("{secret:?}{digest:?}"),
+        "OrganizationServiceAccountSecret(<redacted>)OrganizationServiceAccountSecretDigest(<redacted>)"
+    );
+    assert_eq!(
+        OrganizationServiceAccountSecretDigest::from_persistence_key(digest.as_str()).unwrap(),
+        digest
+    );
+    assert!(OrganizationServiceAccountSecret::new("sa_".to_owned()).is_err());
+    assert!(OrganizationServiceAccountSecretDigest::from_persistence_key("A".repeat(64)).is_err());
+}
+
+#[test]
 fn service_account_name_is_bounded_and_debug_redacted() {
     let name = OrganizationServiceAccountName::new("billing-worker").unwrap();
     assert_eq!(name.as_str(), "billing-worker");

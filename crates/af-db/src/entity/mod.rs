@@ -71,6 +71,8 @@ pub(crate) mod organization_scim_audit_logs;
 pub(crate) mod organization_scim_group_resources;
 pub(crate) mod organization_scim_tokens;
 pub(crate) mod organization_scim_user_resources;
+pub(crate) mod organization_service_account_keys;
+pub(crate) mod organization_service_accounts;
 pub(crate) mod organization_sso_domains;
 pub(crate) mod organization_sso_identities;
 pub(crate) mod organization_sso_login_transactions;
@@ -2133,6 +2135,12 @@ impl ActiveModelBehavior for organization_scim_audit_logs::ActiveModel {
         Ok(self)
     }
 }
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_service_accounts::ActiveModel {}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_service_account_keys::ActiveModel {}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for organization_memberships::ActiveModel {
