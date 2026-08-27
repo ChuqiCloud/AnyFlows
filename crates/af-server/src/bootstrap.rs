@@ -3202,7 +3202,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn configured_redis_failure_rejects_oauth_refresh_startup() {
+    async fn configured_redis_failure_rejects_scim_rate_limit_startup() {
         let path = config_file("sqlite::memory:");
         let contents = fs::read_to_string(&path).unwrap();
         fs::write(
@@ -3214,31 +3214,24 @@ mod tests {
         let wal_directory = billing_wal_directory(&path);
         let _ = fs::remove_file(path);
 
-        let relay = Bootstrap::new(config)
+        let Err(error) = Bootstrap::new(config)
             .unwrap()
             .init_telemetry()
             .unwrap()
             .connect_database()
             .await
-            .unwrap()
-            .init_authentication()
-            .unwrap()
-            .init_relay()
-            .unwrap();
-        let Err(error) = relay.init_billing().await else {
-            panic!("已配置但不可用的 Redis 必须阻止 OAuth 刷新任务启动");
+        else {
+            panic!("已配置但不可用的 Redis 必须阻止 SCIM 限流启动");
         };
-        assert!(matches!(
-            &error,
-            BootstrapError::OAuthRuntime(OAuthRuntimeConfigError::RefreshLease(_))
-        ));
+        assert!(matches!(&error, BootstrapError::RequestRateLimit(_)));
         let rendered = format!("{error:?}{error}");
         assert!(!rendered.contains("not-a-redis-url"));
         let _ = fs::remove_dir_all(wal_directory);
     }
 
     #[tokio::test]
-    async fn configured_redis_failure_rejects_snapshot_broadcast_when_oauth_refresh_is_disabled() {
+    async fn configured_redis_failure_rejects_scim_rate_limit_startup_when_oauth_refresh_is_disabled()
+     {
         let path = config_file("sqlite::memory:");
         let contents = fs::read_to_string(&path).unwrap();
         fs::write(
@@ -3252,24 +3245,16 @@ mod tests {
         let wal_directory = billing_wal_directory(&path);
         let _ = fs::remove_file(path);
 
-        let relay = Bootstrap::new(config)
+        let Err(error) = Bootstrap::new(config)
             .unwrap()
             .init_telemetry()
             .unwrap()
             .connect_database()
             .await
-            .unwrap()
-            .init_authentication()
-            .unwrap()
-            .init_relay()
-            .unwrap();
-        let Err(error) = relay.init_billing().await else {
-            panic!("已配置但不可用的 Redis 必须阻止快照广播启动");
+        else {
+            panic!("已配置但不可用的 Redis 必须阻止 SCIM 限流启动");
         };
-        assert!(matches!(
-            &error,
-            BootstrapError::SchedulerInvalidation(SchedulerInvalidationRuntimeError::Cache(_))
-        ));
+        assert!(matches!(&error, BootstrapError::RequestRateLimit(_)));
         let rendered = format!("{error:?}{error}");
         assert!(!rendered.contains("not-a-redis-url"));
         let _ = fs::remove_dir_all(wal_directory);
