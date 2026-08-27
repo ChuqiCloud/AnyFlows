@@ -105,7 +105,7 @@ async fn scim_audit_is_redacted_append_only_and_idempotent() -> Result<(), Box<d
         .expect("SCIM 审计事实必须持久化");
     assert_eq!(stored.event_type, "resource_synchronized");
     assert_eq!(stored.resource_digest.as_deref().unwrap().len(), 64);
-    assert_eq!(stored.request_fingerprint, "42".repeat(64));
+    assert_eq!(stored.request_fingerprint, "42".repeat(32));
     assert!(!format!("{stored:?}").contains("directory-user-1"));
     assert!(!format!("{stored:?}").contains("example.com"));
     let mut update = stored.clone().into_active_model();
