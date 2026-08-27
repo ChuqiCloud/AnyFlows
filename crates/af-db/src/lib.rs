@@ -496,6 +496,9 @@ pub use organization_custom_role_binding::{
     OrganizationCustomRoleBindingRepositoryError,
 };
 pub use organization_scim::{
+    OrganizationScimGroupRecord, OrganizationScimGroupRepository,
+    OrganizationScimGroupRepositoryError, OrganizationScimGroupStatus,
+    OrganizationScimGroupSyncOutcome, OrganizationScimGroupSyncResult,
     OrganizationScimTokenCreateRecord, OrganizationScimTokenIssued, OrganizationScimTokenRecord,
     OrganizationScimTokenRepository, OrganizationScimTokenRepositoryError,
     OrganizationScimUserRecord, OrganizationScimUserRepository,

@@ -2099,6 +2099,25 @@ export type ScimFilterResponse = {
     supported: boolean;
     maxResults: number;
 };
+export type ScimGroupMember = {
+    value: string;
+};
+export type ScimGroupMeta = {
+    version: string;
+};
+export type ScimGroupResponse = {
+    schemas: Array<string>;
+    id: string;
+    displayName: string;
+    members: Array<ScimGroupMember>;
+    meta: ScimGroupMeta;
+};
+export type ScimGroupWriteRequest = {
+    id: string;
+    displayName: string;
+    members?: Array<ScimGroupMember>;
+    meta: ScimGroupMeta;
+};
 export type ScimSupportResponse = {
     supported: boolean;
 };
@@ -7052,6 +7071,76 @@ export type ReplaceScimUserResponses = {
     200: ScimUserResponse;
 };
 export type ReplaceScimUserResponse = ReplaceScimUserResponses[keyof ReplaceScimUserResponses];
+export type CreateScimGroupData = {
+    body: ScimGroupWriteRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/scim/v2/{organization_id}/Groups';
+};
+export type CreateScimGroupErrors = {
+    400: ScimErrorResponse;
+    401: ScimErrorResponse;
+    403: ScimErrorResponse;
+    404: ScimErrorResponse;
+    409: ScimErrorResponse;
+    422: ScimErrorResponse;
+    503: ScimErrorResponse;
+};
+export type CreateScimGroupError = CreateScimGroupErrors[keyof CreateScimGroupErrors];
+export type CreateScimGroupResponses = {
+    201: ScimGroupResponse;
+};
+export type CreateScimGroupResponse = CreateScimGroupResponses[keyof CreateScimGroupResponses];
+export type DeleteScimGroupData = {
+    body?: never;
+    headers: {
+        'if-match': string;
+    };
+    path: {
+        organization_id: number;
+        resource_id: string;
+    };
+    query?: never;
+    url: '/scim/v2/{organization_id}/Groups/{resource_id}';
+};
+export type DeleteScimGroupErrors = {
+    400: ScimErrorResponse;
+    401: ScimErrorResponse;
+    403: ScimErrorResponse;
+    404: ScimErrorResponse;
+    409: ScimErrorResponse;
+    503: ScimErrorResponse;
+};
+export type DeleteScimGroupError = DeleteScimGroupErrors[keyof DeleteScimGroupErrors];
+export type DeleteScimGroupResponses = {
+    204: void;
+};
+export type DeleteScimGroupResponse = DeleteScimGroupResponses[keyof DeleteScimGroupResponses];
+export type ReplaceScimGroupData = {
+    body: ScimGroupWriteRequest;
+    path: {
+        organization_id: number;
+        resource_id: string;
+    };
+    query?: never;
+    url: '/scim/v2/{organization_id}/Groups/{resource_id}';
+};
+export type ReplaceScimGroupErrors = {
+    400: ScimErrorResponse;
+    401: ScimErrorResponse;
+    403: ScimErrorResponse;
+    404: ScimErrorResponse;
+    409: ScimErrorResponse;
+    422: ScimErrorResponse;
+    503: ScimErrorResponse;
+};
+export type ReplaceScimGroupError = ReplaceScimGroupErrors[keyof ReplaceScimGroupErrors];
+export type ReplaceScimGroupResponses = {
+    200: ScimGroupResponse;
+};
+export type ReplaceScimGroupResponse = ReplaceScimGroupResponses[keyof ReplaceScimGroupResponses];
 export type StartPasskeyAuthenticationData = {
     body: PasskeyAuthenticationOptionsRequest;
     path?: never;

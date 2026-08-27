@@ -279,7 +279,8 @@ pub use organization_management::{
 };
 pub use organization_scim::{
     DatabaseOrganizationScimService, OrganizationScimAuthenticationError,
-    OrganizationScimAuthenticationFuture, OrganizationScimService, OrganizationScimUserSyncError,
+    OrganizationScimAuthenticationFuture, OrganizationScimGroupSyncError,
+    OrganizationScimGroupSyncFuture, OrganizationScimService, OrganizationScimUserSyncError,
     OrganizationScimUserSyncFuture,
 };
 pub use organization_sso::{
