@@ -66,7 +66,7 @@ impl RedisOrganizationScimRateLimitStore {
         })
     }
 
-    fn key(&self, rule: OrganizationScimRateLimitRule) -> Result<String, CacheError> {
+    fn key(&self, rule: &OrganizationScimRateLimitRule) -> Result<String, CacheError> {
         let subject = rule.subject();
         let suffix = match subject {
             OrganizationScimRateLimitSubject::Organization(id) => {
@@ -101,7 +101,6 @@ impl OrganizationScimRateLimitStore for RedisOrganizationScimRateLimitStore {
             }
             let keys = match rules
                 .iter()
-                .copied()
                 .map(|rule| self.key(rule))
                 .collect::<Result<Vec<_>, _>>()
             {
