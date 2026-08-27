@@ -9,7 +9,6 @@ publish.workspace = true
 af-admin = { path = "../af-admin", version = "0.1.0" }
 af-analytics = { path = "../af-analytics", version = "0.1.0" }
 af-billing = { path = "../af-billing", version = "0.1.0" }
-af-db = { path = "../af-db", version = "0.1.0" }
 af-config = { path = "../af-config", version = "0.1.0" }
 af-domain = { path = "../af-domain", version = "0.1.0" }
 af-protocol = { path = "../af-protocol", version = "0.1.0" }

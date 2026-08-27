@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use af_admin::{
-    OrganizationScimAuthenticationError, OrganizationScimService, OrganizationScimUserSyncError,
+    OrganizationScimAuthenticationError, OrganizationScimService, OrganizationScimTokenRecord,
+    OrganizationScimUserSyncError,
 };
 use af_domain::{
     OrganizationId, OrganizationScimResourceId, OrganizationScimResourceVersion,
@@ -35,7 +36,7 @@ struct ScimHttpState {
 #[derive(Clone)]
 struct ScimAuthentication {
     organization_id: OrganizationId,
-    token: af_db::OrganizationScimTokenRecord,
+    token: OrganizationScimTokenRecord,
 }
 
 /// 构建企业绑定的 SCIM 只读发现路由，目录资源写入留待后续切片。
