@@ -13,6 +13,7 @@ mod organization_entitlement;
 mod organization_scim;
 mod organization_scim_audit;
 mod organization_scim_rate_limit;
+mod organization_service_account;
 mod organization_sso;
 mod organization_sso_domain_verification;
 mod organization_sso_identity;
@@ -90,6 +91,13 @@ pub use organization_scim_rate_limit::{
     OrganizationScimRateLimitSubject, OrganizationScimRateLimitWindow,
     classify_organization_scim_rate_limit,
 };
+pub use organization_service_account::{
+    OrganizationServiceAccount, OrganizationServiceAccountIdentifierError,
+    OrganizationServiceAccountKey, OrganizationServiceAccountLifecycleDisposition,
+    OrganizationServiceAccountLifecycleError, OrganizationServiceAccountLocator,
+    OrganizationServiceAccountName, OrganizationServiceAccountNameError,
+    OrganizationServiceAccountStatus, classify_organization_service_account_lifecycle,
+};
 pub use organization_sso::{
     OrganizationSsoDomain, OrganizationSsoDomainError, OrganizationSsoDomainStatus,
     OrganizationSsoEnforcementFacts, OrganizationSsoEnforcementPolicy,
@@ -116,8 +124,9 @@ pub use payment::{
 pub use principal::{
     ChannelId, CredentialId, GatewayPrincipal, GroupId, ModelId, OrganizationBudgetPolicyId,
     OrganizationBudgetWindowId, OrganizationCustomRoleId, OrganizationGatewayPrincipal,
-    OrganizationId, OrganizationMembershipId, OrganizationScimTokenId, OrganizationTeamId,
-    PrincipalIdError, ProxyId, RouteChannelId, RouteId, TokenId, UserId,
+    OrganizationId, OrganizationMembershipId, OrganizationScimTokenId,
+    OrganizationServiceAccountId, OrganizationTeamId, PrincipalIdError, ProxyId, RouteChannelId,
+    RouteId, TokenId, UserId,
 };
 pub use quota::{Quota, QuotaDelta, QuotaError};
 pub use redemption::{
@@ -175,6 +184,8 @@ mod organization_scim_audit_tests;
 mod organization_scim_rate_limit_tests;
 #[cfg(test)]
 mod organization_scim_tests;
+#[cfg(test)]
+mod organization_service_account_tests;
 #[cfg(test)]
 mod organization_sso_domain_verification_tests;
 #[cfg(test)]
