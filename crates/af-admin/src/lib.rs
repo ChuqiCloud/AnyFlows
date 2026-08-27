@@ -96,6 +96,9 @@ pub use af_db::{
     OrganizationMembershipRecord, OrganizationTeamRecord, OrganizationWalletLedgerEntryType,
 };
 pub use af_db::{OrganizationAuditOutcome, PlatformAuditOutcome};
+pub use af_db::{
+    OrganizationScimAuditPageRecord, OrganizationScimAuditQuery, OrganizationScimAuditRecord,
+};
 pub use api_key::{
     ApiKeyDigest, ApiKeyGenerationError, ApiKeyParseError, ApiKeyPrefix, IssuedApiKey,
     PresentedApiKey,
@@ -279,6 +282,7 @@ pub use organization_management::{
 };
 pub use organization_scim::{
     DatabaseOrganizationScimService, OrganizationScimAuditError, OrganizationScimAuditFuture,
+    OrganizationScimAuditListFuture, OrganizationScimAuditReadError,
     OrganizationScimAuthenticationError, OrganizationScimAuthenticationFuture,
     OrganizationScimGroupSyncError, OrganizationScimGroupSyncFuture,
     OrganizationScimGroupSyncOutcome, OrganizationScimService, OrganizationScimUserSyncError,

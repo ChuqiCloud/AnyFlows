@@ -24,6 +24,8 @@ test('页面按企业权限裁剪调用范围与审计页签', async () => {
   assert.match(workspaceSource, /clearOrganizationWorkspaceCache/)
   assert.match(pageSource, /hidden=\{activeTab !== 'usage'\}/)
   assert.match(pageSource, /hidden=\{activeTab !== 'audit'\}/)
+  assert.match(pageSource, /hidden=\{activeTab !== 'scim'\}/)
+  assert.match(pageSource, /OrganizationScimAuditPanel/)
 })
 
 test('企业日志查询绑定组织、范围、游标和服务端审计筛选', async () => {
@@ -36,6 +38,10 @@ test('企业日志查询绑定组织、范围、游标和服务端审计筛选',
   assert.match(apiSource, /operation: filters\.operation/)
   assert.match(apiSource, /target_type: filters\.targetType/)
   assert.match(apiSource, /outcome: filters\.outcome/)
+  assert.match(apiSource, /listOrganizationScimAuditLogs/)
+  assert.match(apiSource, /event_type: filters\.eventType/)
+  assert.match(apiSource, /resource_kind: filters\.resourceKind/)
+  assert.match(apiSource, /token_key: filters\.tokenKey/)
 })
 
 test('企业调用表复用高密度明细且不开放平台管理动作', async () => {
@@ -61,12 +67,17 @@ test('企业活动 OpenAPI、平台代理接口与中英文入口保持同步', 
   assert.ok(openapi.paths['/api/organizations/{organization_id}/audit-logs'])
   assert.ok(openapi.paths['/api/platform/organizations/{organization_id}/usage-logs'])
   assert.ok(openapi.paths['/api/platform/organizations/{organization_id}/audit-logs'])
+  assert.ok(openapi.paths['/api/organizations/{organization_id}/scim/audit-logs'])
   assert.ok(openapi.components.schemas.OrganizationUsageLogListResponse)
   assert.ok(openapi.components.schemas.OrganizationAuditLogResponse)
+  assert.ok(openapi.components.schemas.OrganizationScimAuditLogListResponse)
   for (const locale of [zh, en]) {
     assert.equal(typeof locale.nav.organizationActivity, 'string')
     assert.equal(typeof locale.organizationActivity.tabs.usage, 'string')
     assert.equal(typeof locale.organizationActivity.audit.filters.operation, 'string')
     assert.equal(typeof locale.organizationActivity.errors.auditBody, 'string')
+    assert.equal(typeof locale.organizationActivity.tabs.scim, 'string')
+    assert.equal(typeof locale.organizationActivity.scim.events.token_issued, 'string')
+    assert.equal(typeof locale.organizationActivity.errors.scimBody, 'string')
   }
 })

@@ -4612,7 +4612,8 @@
     "tabs": {
       "label": "企业活动视图",
       "usage": "调用日志",
-      "audit": "管理审计"
+      "audit": "管理审计",
+      "scim": "SCIM 审计"
     },
     "actions": {
       "refresh": "刷新",
@@ -4680,6 +4681,72 @@
       "emptyFilteredTitle": "没有符合筛选条件的审计",
       "emptyFilteredBody": "调整动作、操作者、目标或结果后重新应用筛选。"
     },
+    "scim": {
+      "loaded": "本页 {{count}} 条",
+      "privacy": "只展示脱敏 SCIM 事实；令牌、资源正文、Header、邮箱和请求原文均不会暴露。",
+      "listLabel": "企业 SCIM 审计列表",
+      "redacted": "已隐藏",
+      "token": "令牌",
+      "version": "版本 {{version}}",
+      "retryAfter": "{{seconds}} 秒后重试",
+      "filters": {
+        "label": "服务端 SCIM 筛选",
+        "event": "事件",
+        "result": "结果",
+        "reason": "原因",
+        "resource": "资源",
+        "token": "令牌公开标识",
+        "tokenPlaceholder": "32 位公开标识",
+        "allEvents": "全部事件",
+        "allResults": "全部结果",
+        "allReasons": "全部原因",
+        "allResources": "全部资源",
+        "tokenInvalid": "令牌公开标识必须是 32 位小写十六进制字符。"
+      },
+      "events": {
+        "token_issued": "令牌签发",
+        "token_revoked": "令牌撤销",
+        "request_accepted": "请求通过",
+        "request_rejected": "请求拒绝",
+        "resource_synchronized": "资源同步",
+        "lifecycle_transition": "生命周期变更",
+        "rate_limit_rejected": "限流拒绝"
+      },
+      "results": {
+        "applied": "已应用",
+        "noop": "幂等重放",
+        "rejected": "已拒绝",
+        "failed": "失败"
+      },
+      "reasons": {
+        "invalid_token": "令牌无效",
+        "token_revoked": "令牌已撤销",
+        "token_expired": "令牌已过期",
+        "cross_organization": "跨企业请求",
+        "stale_resource": "资源版本过期",
+        "entitlement_unavailable": "企业授权不可用",
+        "seat_capacity_exceeded": "成员容量已满",
+        "rate_limit_exceeded": "超过限流",
+        "storage_unavailable": "存储不可用",
+        "invalid_request": "请求无效",
+        "internal_failure": "内部失败"
+      },
+      "resources": {
+        "users": "用户",
+        "groups": "团队"
+      },
+      "columns": {
+        "time": "时间",
+        "event": "事件",
+        "result": "结果",
+        "resource": "资源",
+        "trace": "追踪"
+      },
+      "emptyTitle": "还没有 SCIM 审计记录",
+      "emptyBody": "SCIM 令牌活动、请求决策和资源生命周期事实会在同步开始后显示在这里。",
+      "emptyFilteredTitle": "没有符合条件的 SCIM 审计",
+      "emptyFilteredBody": "调整事件、结果、原因、资源或令牌筛选后重新应用。"
+    },
     "errors": {
       "directoryTitle": "无法加载企业目录",
       "directoryBody": "服务没有返回当前账号的企业成员关系，请稍后重试。",
@@ -4690,7 +4757,9 @@
       "usageTitle": "无法加载企业调用日志",
       "usageBody": "调用日志服务暂时不可用，请保留当前范围和筛选后重试。",
       "auditTitle": "无法加载企业管理审计",
-      "auditBody": "审计服务暂时不可用，请保留当前筛选后重试。"
+      "auditBody": "审计服务暂时不可用，请保留当前筛选后重试。",
+      "scimTitle": "无法加载企业 SCIM 审计",
+      "scimBody": "SCIM 审计服务暂时不可用，请保留当前筛选后重试。"
     }
   },
   "organizationConsole": {

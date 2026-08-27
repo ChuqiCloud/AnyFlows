@@ -4613,7 +4613,8 @@
     "tabs": {
       "label": "Organization activity view",
       "usage": "Usage logs",
-      "audit": "Management audit"
+      "audit": "Management audit",
+      "scim": "SCIM audit"
     },
     "actions": {
       "refresh": "Refresh",
@@ -4681,6 +4682,72 @@
       "emptyFilteredTitle": "No audit records match these filters",
       "emptyFilteredBody": "Adjust the action, actor, target, or outcome and apply the filters again."
     },
+    "scim": {
+      "loaded": "{{count}} on this page",
+      "privacy": "Only redacted SCIM facts are shown. Tokens, resource bodies, headers, emails, and request text are never exposed.",
+      "listLabel": "Organization SCIM audit list",
+      "redacted": "Redacted",
+      "token": "Token",
+      "version": "Version {{version}}",
+      "retryAfter": "Retry after {{seconds}}s",
+      "filters": {
+        "label": "Server-side SCIM filters",
+        "event": "Event",
+        "result": "Result",
+        "reason": "Reason",
+        "resource": "Resource",
+        "token": "Token public key",
+        "tokenPlaceholder": "32-character public key",
+        "allEvents": "All events",
+        "allResults": "All results",
+        "allReasons": "All reasons",
+        "allResources": "All resources",
+        "tokenInvalid": "The token public key must be 32 lowercase hexadecimal characters."
+      },
+      "events": {
+        "token_issued": "Token issued",
+        "token_revoked": "Token revoked",
+        "request_accepted": "Request accepted",
+        "request_rejected": "Request rejected",
+        "resource_synchronized": "Resource synchronized",
+        "lifecycle_transition": "Lifecycle transition",
+        "rate_limit_rejected": "Rate limit rejected"
+      },
+      "results": {
+        "applied": "Applied",
+        "noop": "No-op",
+        "rejected": "Rejected",
+        "failed": "Failed"
+      },
+      "reasons": {
+        "invalid_token": "Invalid token",
+        "token_revoked": "Token revoked",
+        "token_expired": "Token expired",
+        "cross_organization": "Cross-organization request",
+        "stale_resource": "Stale resource",
+        "entitlement_unavailable": "Entitlement unavailable",
+        "seat_capacity_exceeded": "Seat capacity exceeded",
+        "rate_limit_exceeded": "Rate limit exceeded",
+        "storage_unavailable": "Storage unavailable",
+        "invalid_request": "Invalid request",
+        "internal_failure": "Internal failure"
+      },
+      "resources": {
+        "users": "Users",
+        "groups": "Groups"
+      },
+      "columns": {
+        "time": "Time",
+        "event": "Event",
+        "result": "Result",
+        "resource": "Resource",
+        "trace": "Trace"
+      },
+      "emptyTitle": "No SCIM audit records yet",
+      "emptyBody": "SCIM token activity, request decisions, and resource lifecycle facts appear here after synchronization begins.",
+      "emptyFilteredTitle": "No SCIM audit records match",
+      "emptyFilteredBody": "Adjust the event, result, reason, resource, or token filter and apply it again."
+    },
     "errors": {
       "directoryTitle": "Organization directory could not be loaded",
       "directoryBody": "The service did not return this account's organization memberships. Try again shortly.",
@@ -4691,7 +4758,9 @@
       "usageTitle": "Organization usage logs could not be loaded",
       "usageBody": "The usage-log service is temporarily unavailable. Keep the current scope and filters, then retry.",
       "auditTitle": "Organization management audit could not be loaded",
-      "auditBody": "The audit service is temporarily unavailable. Keep the current filters, then retry."
+      "auditBody": "The audit service is temporarily unavailable. Keep the current filters, then retry.",
+      "scimTitle": "Organization SCIM audit could not be loaded",
+      "scimBody": "The SCIM audit service is temporarily unavailable. Keep the current filters, then retry."
     }
   },
   "organizationConsole": {
