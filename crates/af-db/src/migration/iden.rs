@@ -2852,3 +2852,33 @@ pub(in crate::migration) mod organization_scim_group_resources {
         DeletedAt,
     }
 }
+
+pub(in crate::migration) mod organization_scim_audit_logs {
+    use super::DeriveIden;
+
+    /// SCIM 脱敏审计事实表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_scim_audit_logs")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 审计事实字段标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        TokenKey,
+        EventType,
+        Result,
+        Reason,
+        ResourceKind,
+        ResourceDigest,
+        ResourceVersion,
+        RequestFingerprint,
+        RetryAfterSeconds,
+        CreatedAt,
+    }
+}

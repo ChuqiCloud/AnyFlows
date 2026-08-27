@@ -278,10 +278,11 @@ pub use organization_management::{
     OrganizationTeamListQuery, OrganizationTeamPage, OrganizationTeamPageFuture,
 };
 pub use organization_scim::{
-    DatabaseOrganizationScimService, OrganizationScimAuthenticationError,
-    OrganizationScimAuthenticationFuture, OrganizationScimGroupSyncError,
-    OrganizationScimGroupSyncFuture, OrganizationScimService, OrganizationScimUserSyncError,
-    OrganizationScimUserSyncFuture,
+    DatabaseOrganizationScimService, OrganizationScimAuditError, OrganizationScimAuditFuture,
+    OrganizationScimAuthenticationError, OrganizationScimAuthenticationFuture,
+    OrganizationScimGroupSyncError, OrganizationScimGroupSyncFuture,
+    OrganizationScimGroupSyncOutcome, OrganizationScimService, OrganizationScimUserSyncError,
+    OrganizationScimUserSyncFuture, OrganizationScimUserSyncOutcome,
 };
 pub use organization_sso::{
     DatabaseOrganizationSsoProviderService, OrganizationSsoProvider,

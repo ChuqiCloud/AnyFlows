@@ -67,6 +67,7 @@ pub(crate) mod organization_custom_roles;
 pub(crate) mod organization_entitlements;
 pub(crate) mod organization_invitations;
 pub(crate) mod organization_memberships;
+pub(crate) mod organization_scim_audit_logs;
 pub(crate) mod organization_scim_group_resources;
 pub(crate) mod organization_scim_tokens;
 pub(crate) mod organization_scim_user_resources;
@@ -2119,6 +2120,19 @@ impl ActiveModelBehavior for organization_scim_user_resources::ActiveModel {}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for organization_scim_group_resources::ActiveModel {}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_scim_audit_logs::ActiveModel {
+    async fn before_save<C>(self, _database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        if !insert {
+            return Err(DbErr::Custom("SCIM 审计事实只允许追加".to_owned()));
+        }
+        Ok(self)
+    }
+}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for organization_memberships::ActiveModel {

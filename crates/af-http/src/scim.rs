@@ -1,14 +1,19 @@
 use std::sync::Arc;
 
 use af_admin::{
-    OrganizationScimAuthenticationError, OrganizationScimGroupSyncError, OrganizationScimService,
-    OrganizationScimTokenRecord, OrganizationScimUserSyncError,
+    OrganizationScimAuthenticationError, OrganizationScimGroupSyncError,
+    OrganizationScimGroupSyncOutcome, OrganizationScimService, OrganizationScimTokenRecord,
+    OrganizationScimUserSyncError, OrganizationScimUserSyncOutcome,
 };
 use af_domain::{
-    OrganizationId, OrganizationScimGroupResource, OrganizationScimRateLimitDecision,
-    OrganizationScimRateLimitRejection, OrganizationScimResourceId,
-    OrganizationScimResourceVersion, OrganizationScimToken, OrganizationScimUserResource,
+    OrganizationId, OrganizationScimAuditEventType, OrganizationScimAuditFacts,
+    OrganizationScimAuditReason, OrganizationScimAuditResource, OrganizationScimAuditResult,
+    OrganizationScimGroupResource, OrganizationScimRateLimitDecision,
+    OrganizationScimRateLimitRejection, OrganizationScimRequestFingerprint,
+    OrganizationScimResourceId, OrganizationScimResourceKind, OrganizationScimResourceVersion,
+    OrganizationScimToken, OrganizationScimUserResource,
 };
+use af_telemetry::RequestId;
 use axum::{
     Extension, Json, Router,
     extract::{Path, Request, State, rejection::JsonRejection},
@@ -21,7 +26,9 @@ use http::{
     header::{AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE, WWW_AUTHENTICATE},
 };
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 const SERVICE_PROVIDER_CONFIG_SCHEMA: &str =
     "urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig";
@@ -39,6 +46,7 @@ struct ScimHttpState {
 struct ScimAuthentication {
     organization_id: OrganizationId,
     token: OrganizationScimTokenRecord,
+    request_fingerprint: OrganizationScimRequestFingerprint,
 }
 
 /// 构建企业绑定的 SCIM 发现与目录资源写入路由。
@@ -77,13 +85,40 @@ async fn authenticate_scim(
         Some(value) => value,
         None => return ScimError::Unauthorized.into_response(),
     };
+    let request_fingerprint = scim_request_fingerprint(&request);
     let token = match extract_bearer_token(&mut request) {
         Ok(value) => value,
-        Err(error) => return error.into_response(),
+        Err(error) => {
+            if !record_rejected_audit(
+                &state.service,
+                organization_id,
+                None,
+                request_fingerprint,
+                OrganizationScimAuditReason::InvalidToken,
+            )
+            .await
+            {
+                return ScimError::Unavailable.into_response();
+            }
+            return error.into_response();
+        }
     };
     let token = match OrganizationScimToken::new(token) {
         Ok(value) => value,
-        Err(_) => return ScimError::Unauthorized.into_response(),
+        Err(_) => {
+            if !record_rejected_audit(
+                &state.service,
+                organization_id,
+                None,
+                request_fingerprint,
+                OrganizationScimAuditReason::InvalidToken,
+            )
+            .await
+            {
+                return ScimError::Unavailable.into_response();
+            }
+            return ScimError::Unauthorized.into_response();
+        }
     };
     match state.service.authenticate(organization_id, token).await {
         Ok(record) => {
@@ -96,23 +131,93 @@ async fn authenticate_scim(
                 OrganizationScimRateLimitDecision::Limited {
                     retry_after_seconds,
                     ..
-                } => return ScimError::RateLimited(retry_after_seconds).into_response(),
-                OrganizationScimRateLimitDecision::Rejected(
-                    OrganizationScimRateLimitRejection::StorageUnavailable
-                    | OrganizationScimRateLimitRejection::InvalidFact
-                    | OrganizationScimRateLimitRejection::InvalidTimestamp,
-                ) => return ScimError::Unavailable.into_response(),
+                } => {
+                    let reason = OrganizationScimAuditReason::RateLimitExceeded;
+                    let facts = OrganizationScimAuditFacts::new(
+                        organization_id,
+                        Some(record.token_key().clone()),
+                        OrganizationScimAuditEventType::RateLimitRejected,
+                        OrganizationScimAuditResult::Rejected,
+                        None,
+                        request_fingerprint.clone(),
+                        Some(reason),
+                        Some(retry_after_seconds),
+                    );
+                    if !record_audit(&state.service, facts).await {
+                        return ScimError::Unavailable.into_response();
+                    }
+                    return ScimError::RateLimited(retry_after_seconds).into_response();
+                }
+                OrganizationScimRateLimitDecision::Rejected(rejection) => {
+                    let reason = match rejection {
+                        OrganizationScimRateLimitRejection::StorageUnavailable
+                        | OrganizationScimRateLimitRejection::InvalidFact
+                        | OrganizationScimRateLimitRejection::InvalidTimestamp => {
+                            OrganizationScimAuditReason::StorageUnavailable
+                        }
+                    };
+                    let facts = OrganizationScimAuditFacts::new(
+                        organization_id,
+                        Some(record.token_key().clone()),
+                        OrganizationScimAuditEventType::RequestRejected,
+                        OrganizationScimAuditResult::Failed,
+                        None,
+                        request_fingerprint.clone(),
+                        Some(reason),
+                        None,
+                    );
+                    if !record_audit(&state.service, facts).await {
+                        return ScimError::Unavailable.into_response();
+                    }
+                    return ScimError::Unavailable.into_response();
+                }
+            }
+            let accepted = OrganizationScimAuditFacts::new(
+                organization_id,
+                Some(record.token_key().clone()),
+                OrganizationScimAuditEventType::RequestAccepted,
+                OrganizationScimAuditResult::Applied,
+                None,
+                request_fingerprint.clone(),
+                None,
+                None,
+            );
+            if !record_audit(&state.service, accepted).await {
+                return ScimError::Unavailable.into_response();
             }
             request.extensions_mut().insert(ScimAuthentication {
                 organization_id,
                 token: record,
+                request_fingerprint,
             });
             next.run(request).await
         }
         Err(OrganizationScimAuthenticationError::InvalidToken) => {
+            if !record_rejected_audit(
+                &state.service,
+                organization_id,
+                None,
+                request_fingerprint,
+                OrganizationScimAuditReason::InvalidToken,
+            )
+            .await
+            {
+                return ScimError::Unavailable.into_response();
+            }
             ScimError::Unauthorized.into_response()
         }
         Err(OrganizationScimAuthenticationError::Internal) => {
+            if !record_failed_audit(
+                &state.service,
+                organization_id,
+                None,
+                request_fingerprint,
+                OrganizationScimAuditReason::InternalFailure,
+            )
+            .await
+            {
+                return ScimError::Unavailable.into_response();
+            }
             ScimError::Unavailable.into_response()
         }
     }
@@ -166,18 +271,59 @@ async fn write_user(
     if authentication.organization_id != organization_id {
         return ScimError::Unauthorized.into_response();
     }
+    let request_fingerprint = authentication.request_fingerprint.clone();
+    let token_key = authentication.token.token_key().clone();
     let Json(request) = match request {
         Ok(value) => value,
-        Err(_) => return ScimError::BadRequest.into_response(),
+        Err(_) => {
+            if !record_rejected_audit(
+                &state.service,
+                organization_id,
+                Some(token_key.clone()),
+                request_fingerprint.clone(),
+                OrganizationScimAuditReason::InvalidRequest,
+            )
+            .await
+            {
+                return ScimError::Unavailable.into_response();
+            }
+            return ScimError::BadRequest.into_response();
+        }
     };
     let resource_id = match path_resource_id {
         Some(path_id) if path_id == request.id => path_id,
-        Some(_) => return ScimError::Conflict.into_response(),
+        Some(_) => {
+            if !record_rejected_audit(
+                &state.service,
+                organization_id,
+                Some(token_key.clone()),
+                request_fingerprint.clone(),
+                OrganizationScimAuditReason::CrossOrganization,
+            )
+            .await
+            {
+                return ScimError::Unavailable.into_response();
+            }
+            return ScimError::Conflict.into_response();
+        }
         None => request.id.clone(),
     };
     let resource_id = match OrganizationScimResourceId::new(resource_id) {
         Ok(value) => value,
-        Err(_) => return ScimError::BadRequest.into_response(),
+        Err(_) => {
+            if !record_rejected_audit(
+                &state.service,
+                organization_id,
+                Some(token_key.clone()),
+                request_fingerprint.clone(),
+                OrganizationScimAuditReason::InvalidRequest,
+            )
+            .await
+            {
+                return ScimError::Unavailable.into_response();
+            }
+            return ScimError::BadRequest.into_response();
+        }
     };
     let version = match request
         .meta
@@ -187,7 +333,20 @@ async fn write_user(
         .and_then(|value| OrganizationScimResourceVersion::new(value).ok())
     {
         Some(value) => value,
-        None => return ScimError::BadRequest.into_response(),
+        None => {
+            if !record_rejected_audit(
+                &state.service,
+                organization_id,
+                Some(token_key.clone()),
+                request_fingerprint.clone(),
+                OrganizationScimAuditReason::InvalidRequest,
+            )
+            .await
+            {
+                return ScimError::Unavailable.into_response();
+            }
+            return ScimError::BadRequest.into_response();
+        }
     };
     let resource = match OrganizationScimUserResource::new(
         organization_id,
@@ -198,14 +357,64 @@ async fn write_user(
         request.active,
     ) {
         Ok(value) => value,
-        Err(_) => return ScimError::BadRequest.into_response(),
+        Err(_) => {
+            if !record_rejected_audit(
+                &state.service,
+                organization_id,
+                Some(token_key.clone()),
+                request_fingerprint.clone(),
+                OrganizationScimAuditReason::InvalidRequest,
+            )
+            .await
+            {
+                return ScimError::Unavailable.into_response();
+            }
+            return ScimError::BadRequest.into_response();
+        }
     };
-    if let Err(error) = state
+    let audit_resource = audit_resource(
+        organization_id,
+        OrganizationScimResourceKind::Users,
+        resource.key().resource_id(),
+        resource.version(),
+    );
+    let result = match state
         .service
         .synchronize_user(authentication.token, resource)
         .await
     {
-        return map_user_sync_error(error).into_response();
+        Ok(value) => value,
+        Err(error) => {
+            if !record_sync_error_audit(
+                &state.service,
+                organization_id,
+                Some(token_key),
+                request_fingerprint,
+                audit_resource,
+                user_sync_audit_reason(error),
+            )
+            .await
+            {
+                return ScimError::Unavailable.into_response();
+            }
+            return map_user_sync_error(error).into_response();
+        }
+    };
+    let audit_result = match result.outcome() {
+        OrganizationScimUserSyncOutcome::Applied => OrganizationScimAuditResult::Applied,
+        OrganizationScimUserSyncOutcome::Noop => OrganizationScimAuditResult::Noop,
+    };
+    if !record_audit_result(
+        &state.service,
+        organization_id,
+        Some(token_key),
+        request_fingerprint,
+        audit_resource,
+        audit_result,
+    )
+    .await
+    {
+        return ScimError::Unavailable.into_response();
     }
     let mut response = scim_json(ScimUserResponse::from_request(&request));
     *response.status_mut() = success_status;
@@ -271,18 +480,59 @@ async fn write_group(
     if authentication.organization_id != organization_id {
         return ScimError::Unauthorized.into_response();
     }
+    let request_fingerprint = authentication.request_fingerprint.clone();
+    let token_key = authentication.token.token_key().clone();
     let Json(request) = match request {
         Ok(value) => value,
-        Err(_) => return ScimError::BadRequest.into_response(),
+        Err(_) => {
+            if !record_rejected_audit(
+                &state.service,
+                organization_id,
+                Some(token_key.clone()),
+                request_fingerprint.clone(),
+                OrganizationScimAuditReason::InvalidRequest,
+            )
+            .await
+            {
+                return ScimError::Unavailable.into_response();
+            }
+            return ScimError::BadRequest.into_response();
+        }
     };
     let resource_id = match path_resource_id {
         Some(path_id) if path_id == request.id => path_id,
-        Some(_) => return ScimError::Conflict.into_response(),
+        Some(_) => {
+            if !record_rejected_audit(
+                &state.service,
+                organization_id,
+                Some(token_key.clone()),
+                request_fingerprint.clone(),
+                OrganizationScimAuditReason::CrossOrganization,
+            )
+            .await
+            {
+                return ScimError::Unavailable.into_response();
+            }
+            return ScimError::Conflict.into_response();
+        }
         None => request.id.clone(),
     };
     let resource_id = match OrganizationScimResourceId::new(resource_id) {
         Ok(value) => value,
-        Err(_) => return ScimError::BadRequest.into_response(),
+        Err(_) => {
+            if !record_rejected_audit(
+                &state.service,
+                organization_id,
+                Some(token_key.clone()),
+                request_fingerprint.clone(),
+                OrganizationScimAuditReason::InvalidRequest,
+            )
+            .await
+            {
+                return ScimError::Unavailable.into_response();
+            }
+            return ScimError::BadRequest.into_response();
+        }
     };
     let version = match request
         .meta
@@ -292,7 +542,20 @@ async fn write_group(
         .and_then(|value| OrganizationScimResourceVersion::new(value).ok())
     {
         Some(value) => value,
-        None => return ScimError::BadRequest.into_response(),
+        None => {
+            if !record_rejected_audit(
+                &state.service,
+                organization_id,
+                Some(token_key.clone()),
+                request_fingerprint.clone(),
+                OrganizationScimAuditReason::InvalidRequest,
+            )
+            .await
+            {
+                return ScimError::Unavailable.into_response();
+            }
+            return ScimError::BadRequest.into_response();
+        }
     };
     let member_ids = request
         .members
@@ -301,7 +564,20 @@ async fn write_group(
         .collect::<Result<Vec<_>, _>>();
     let member_ids = match member_ids {
         Ok(value) => value,
-        Err(_) => return ScimError::BadRequest.into_response(),
+        Err(_) => {
+            if !record_rejected_audit(
+                &state.service,
+                organization_id,
+                Some(token_key.clone()),
+                request_fingerprint.clone(),
+                OrganizationScimAuditReason::InvalidRequest,
+            )
+            .await
+            {
+                return ScimError::Unavailable.into_response();
+            }
+            return ScimError::BadRequest.into_response();
+        }
     };
     let resource = match OrganizationScimGroupResource::new(
         organization_id,
@@ -311,14 +587,64 @@ async fn write_group(
         member_ids,
     ) {
         Ok(value) => value,
-        Err(_) => return ScimError::BadRequest.into_response(),
+        Err(_) => {
+            if !record_rejected_audit(
+                &state.service,
+                organization_id,
+                Some(token_key.clone()),
+                request_fingerprint.clone(),
+                OrganizationScimAuditReason::InvalidRequest,
+            )
+            .await
+            {
+                return ScimError::Unavailable.into_response();
+            }
+            return ScimError::BadRequest.into_response();
+        }
     };
-    if let Err(error) = state
+    let audit_resource = audit_resource(
+        organization_id,
+        OrganizationScimResourceKind::Groups,
+        resource.key().resource_id(),
+        resource.version(),
+    );
+    let result = match state
         .service
         .synchronize_group(authentication.token, resource)
         .await
     {
-        return map_group_sync_error(error).into_response();
+        Ok(value) => value,
+        Err(error) => {
+            if !record_sync_error_audit(
+                &state.service,
+                organization_id,
+                Some(token_key),
+                request_fingerprint,
+                audit_resource,
+                group_sync_audit_reason(error),
+            )
+            .await
+            {
+                return ScimError::Unavailable.into_response();
+            }
+            return map_group_sync_error(error).into_response();
+        }
+    };
+    let audit_result = match result.outcome() {
+        OrganizationScimGroupSyncOutcome::Applied => OrganizationScimAuditResult::Applied,
+        OrganizationScimGroupSyncOutcome::Noop => OrganizationScimAuditResult::Noop,
+    };
+    if !record_audit_result(
+        &state.service,
+        organization_id,
+        Some(token_key),
+        request_fingerprint,
+        audit_resource,
+        audit_result,
+    )
+    .await
+    {
+        return ScimError::Unavailable.into_response();
     }
     let mut response = scim_json(ScimGroupResponse::from_request(&request));
     *response.status_mut() = success_status;
@@ -337,20 +663,84 @@ async fn delete_group(
     if authentication.organization_id != organization_id {
         return ScimError::Unauthorized.into_response();
     }
+    let request_fingerprint = authentication.request_fingerprint.clone();
+    let token_key = authentication.token.token_key().clone();
     let resource_id = match OrganizationScimResourceId::new(resource_id) {
         Ok(value) => value,
-        Err(_) => return ScimError::BadRequest.into_response(),
+        Err(_) => {
+            if !record_rejected_audit(
+                &state.service,
+                organization_id,
+                Some(token_key.clone()),
+                request_fingerprint.clone(),
+                OrganizationScimAuditReason::InvalidRequest,
+            )
+            .await
+            {
+                return ScimError::Unavailable.into_response();
+            }
+            return ScimError::BadRequest.into_response();
+        }
     };
     let expected_version = match parse_if_match_version(&headers) {
         Ok(value) => value,
-        Err(error) => return error.into_response(),
+        Err(error) => {
+            if !record_rejected_audit(
+                &state.service,
+                organization_id,
+                Some(token_key.clone()),
+                request_fingerprint.clone(),
+                OrganizationScimAuditReason::InvalidRequest,
+            )
+            .await
+            {
+                return ScimError::Unavailable.into_response();
+            }
+            return error.into_response();
+        }
     };
-    if let Err(error) = state
+    let audit_resource = audit_resource(
+        organization_id,
+        OrganizationScimResourceKind::Groups,
+        &resource_id,
+        expected_version,
+    );
+    let result = match state
         .service
         .delete_group(authentication.token, resource_id, expected_version)
         .await
     {
-        return map_group_sync_error(error).into_response();
+        Ok(value) => value,
+        Err(error) => {
+            if !record_sync_error_audit(
+                &state.service,
+                organization_id,
+                Some(token_key),
+                request_fingerprint,
+                audit_resource,
+                group_sync_audit_reason(error),
+            )
+            .await
+            {
+                return ScimError::Unavailable.into_response();
+            }
+            return map_group_sync_error(error).into_response();
+        }
+    };
+    if !record_audit_result(
+        &state.service,
+        organization_id,
+        Some(token_key),
+        request_fingerprint,
+        audit_resource,
+        match result.outcome() {
+            OrganizationScimGroupSyncOutcome::Applied => OrganizationScimAuditResult::Applied,
+            OrganizationScimGroupSyncOutcome::Noop => OrganizationScimAuditResult::Noop,
+        },
+    )
+    .await
+    {
+        return ScimError::Unavailable.into_response();
     }
     scim_empty(StatusCode::NO_CONTENT)
 }
@@ -378,6 +768,177 @@ fn parse_if_match_version(
         .ok()
         .and_then(|value| OrganizationScimResourceVersion::new(value).ok())
         .ok_or(ScimError::BadRequest)
+}
+
+fn scim_request_fingerprint(request: &Request) -> OrganizationScimRequestFingerprint {
+    let mut hasher = Sha256::new();
+    hasher.update(b"anyflows-scim-request-fingerprint-v1");
+    if let Some(request_id) = request.extensions().get::<RequestId>() {
+        hasher.update(request_id.as_str().as_bytes());
+    } else {
+        hasher.update(Uuid::new_v4().as_bytes());
+    }
+    hasher.update(request.method().as_str().as_bytes());
+    hasher.update(request.uri().path().as_bytes());
+    OrganizationScimRequestFingerprint::new(hasher.finalize().into())
+        .expect("SHA-256 请求指纹不应为全零")
+}
+
+fn audit_resource(
+    organization_id: OrganizationId,
+    kind: OrganizationScimResourceKind,
+    resource_id: &OrganizationScimResourceId,
+    version: OrganizationScimResourceVersion,
+) -> OrganizationScimAuditResource {
+    OrganizationScimAuditResource::new(
+        kind,
+        af_domain::OrganizationScimResourceDigest::from_resource(
+            organization_id,
+            kind,
+            resource_id,
+        ),
+        version,
+    )
+}
+
+async fn record_audit(
+    service: &Arc<dyn OrganizationScimService>,
+    facts: Result<OrganizationScimAuditFacts, af_domain::OrganizationScimAuditFactsError>,
+) -> bool {
+    let Ok(facts) = facts else {
+        return false;
+    };
+    service.record_audit(facts).await.is_ok()
+}
+
+async fn record_rejected_audit(
+    service: &Arc<dyn OrganizationScimService>,
+    organization_id: OrganizationId,
+    token_key: Option<af_domain::OrganizationScimTokenKey>,
+    request_fingerprint: OrganizationScimRequestFingerprint,
+    reason: OrganizationScimAuditReason,
+) -> bool {
+    record_audit(
+        service,
+        OrganizationScimAuditFacts::new(
+            organization_id,
+            token_key,
+            OrganizationScimAuditEventType::RequestRejected,
+            OrganizationScimAuditResult::Rejected,
+            None,
+            request_fingerprint,
+            Some(reason),
+            None,
+        ),
+    )
+    .await
+}
+
+async fn record_failed_audit(
+    service: &Arc<dyn OrganizationScimService>,
+    organization_id: OrganizationId,
+    token_key: Option<af_domain::OrganizationScimTokenKey>,
+    request_fingerprint: OrganizationScimRequestFingerprint,
+    reason: OrganizationScimAuditReason,
+) -> bool {
+    record_audit(
+        service,
+        OrganizationScimAuditFacts::new(
+            organization_id,
+            token_key,
+            OrganizationScimAuditEventType::RequestRejected,
+            OrganizationScimAuditResult::Failed,
+            None,
+            request_fingerprint,
+            Some(reason),
+            None,
+        ),
+    )
+    .await
+}
+
+async fn record_audit_result(
+    service: &Arc<dyn OrganizationScimService>,
+    organization_id: OrganizationId,
+    token_key: Option<af_domain::OrganizationScimTokenKey>,
+    request_fingerprint: OrganizationScimRequestFingerprint,
+    resource: OrganizationScimAuditResource,
+    result: OrganizationScimAuditResult,
+) -> bool {
+    record_audit(
+        service,
+        OrganizationScimAuditFacts::new(
+            organization_id,
+            token_key,
+            OrganizationScimAuditEventType::ResourceSynchronized,
+            result,
+            Some(resource),
+            request_fingerprint,
+            None,
+            None,
+        ),
+    )
+    .await
+}
+
+async fn record_sync_error_audit(
+    service: &Arc<dyn OrganizationScimService>,
+    organization_id: OrganizationId,
+    token_key: Option<af_domain::OrganizationScimTokenKey>,
+    request_fingerprint: OrganizationScimRequestFingerprint,
+    resource: OrganizationScimAuditResource,
+    reason: OrganizationScimAuditReason,
+) -> bool {
+    let result = if matches!(reason, OrganizationScimAuditReason::InternalFailure) {
+        OrganizationScimAuditResult::Failed
+    } else {
+        OrganizationScimAuditResult::Rejected
+    };
+    record_audit(
+        service,
+        OrganizationScimAuditFacts::new(
+            organization_id,
+            token_key,
+            OrganizationScimAuditEventType::ResourceSynchronized,
+            result,
+            Some(resource),
+            request_fingerprint,
+            Some(reason),
+            None,
+        ),
+    )
+    .await
+}
+
+fn user_sync_audit_reason(error: OrganizationScimUserSyncError) -> OrganizationScimAuditReason {
+    match error {
+        OrganizationScimUserSyncError::Restricted => OrganizationScimAuditReason::TokenRevoked,
+        OrganizationScimUserSyncError::Forbidden => OrganizationScimAuditReason::InvalidRequest,
+        OrganizationScimUserSyncError::Conflict => OrganizationScimAuditReason::StaleResource,
+        OrganizationScimUserSyncError::UserUnavailable => {
+            OrganizationScimAuditReason::InvalidRequest
+        }
+        OrganizationScimUserSyncError::LifecycleRejected => {
+            OrganizationScimAuditReason::EntitlementUnavailable
+        }
+        OrganizationScimUserSyncError::Internal => OrganizationScimAuditReason::InternalFailure,
+    }
+}
+
+fn group_sync_audit_reason(error: OrganizationScimGroupSyncError) -> OrganizationScimAuditReason {
+    match error {
+        OrganizationScimGroupSyncError::Restricted => OrganizationScimAuditReason::TokenRevoked,
+        OrganizationScimGroupSyncError::Forbidden => OrganizationScimAuditReason::InvalidRequest,
+        OrganizationScimGroupSyncError::Conflict => OrganizationScimAuditReason::StaleResource,
+        OrganizationScimGroupSyncError::MemberUnavailable
+        | OrganizationScimGroupSyncError::TeamUnavailable => {
+            OrganizationScimAuditReason::InvalidRequest
+        }
+        OrganizationScimGroupSyncError::LifecycleRejected => {
+            OrganizationScimAuditReason::EntitlementUnavailable
+        }
+        OrganizationScimGroupSyncError::Internal => OrganizationScimAuditReason::InternalFailure,
+    }
 }
 
 fn map_group_sync_error(error: OrganizationScimGroupSyncError) -> ScimError {
