@@ -221,7 +221,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 178);
+        assert_eq!(document.paths.paths.len(), 180);
         let operation_count = document
             .paths
             .paths
@@ -242,7 +242,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 244);
+        assert_eq!(operation_count, 246);
         assert!(
             document
                 .components
@@ -521,6 +521,8 @@ mod tests {
             "revokeUserPasskey",
             "getScimServiceProviderConfig",
             "listScimResourceTypes",
+            "createScimUser",
+            "replaceScimUser",
         ]
         .into_iter()
         .map(str::to_owned)
@@ -528,7 +530,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 406);
+        assert_eq!(schemas.len(), 409);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminDashboardChannelFlow"));
         assert!(schemas.contains_key("AdminDashboardFailure"));

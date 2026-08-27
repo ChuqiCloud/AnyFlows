@@ -390,15 +390,12 @@ async fn scim_user_sync_rejects_missing_users_and_cross_organization_resources()
 #[tokio::test]
 async fn scim_user_sync_rejects_seat_and_entitlement_boundaries() -> Result<(), Box<dyn Error>> {
     let fixture = scim_user_fixture().await?;
-    let entitlement = organization_entitlements::Entity::find()
-        .filter(organization_entitlements::Column::OrganizationId.eq(fixture.organization_id.get()))
-        .one(fixture.pool.connection())
-        .await?
-        .expect("商业授权必须存在")
-        .into_active_model();
-    let mut seat_limited = entitlement;
-    seat_limited.seat_limit = Set(1);
-    seat_limited.update(fixture.pool.connection()).await?;
+    replace_scim_entitlement(
+        &fixture,
+        OrganizationEntitlementCapacity::new(1, 10, 10)?,
+        4_102_444_800,
+    )
+    .await?;
     assert!(matches!(
         fixture
             .repository
@@ -416,16 +413,12 @@ async fn scim_user_sync_rejects_seat_and_entitlement_boundaries() -> Result<(), 
         Err(OrganizationScimUserRepositoryError::LifecycleRejected)
     ));
 
-    let entitlement = organization_entitlements::Entity::find()
-        .filter(organization_entitlements::Column::OrganizationId.eq(fixture.organization_id.get()))
-        .one(fixture.pool.connection())
-        .await?
-        .expect("商业授权必须存在")
-        .into_active_model();
-    let mut expired = entitlement;
-    expired.valid_until =
-        Set(sea_orm::entity::prelude::TimeDateTimeWithTimeZone::from_unix_timestamp(946_684_800)?);
-    expired.update(fixture.pool.connection()).await?;
+    replace_scim_entitlement(
+        &fixture,
+        OrganizationEntitlementCapacity::new(1, 10, 10)?,
+        946_684_801,
+    )
+    .await?;
     assert!(matches!(
         fixture
             .repository
@@ -443,6 +436,38 @@ async fn scim_user_sync_rejects_seat_and_entitlement_boundaries() -> Result<(), 
         Err(OrganizationScimUserRepositoryError::LifecycleRejected)
     ));
     fixture.pool.close().await?;
+    Ok(())
+}
+
+async fn replace_scim_entitlement(
+    fixture: &ScimUserFixture,
+    capacity: OrganizationEntitlementCapacity,
+    valid_until: i64,
+) -> Result<(), Box<dyn Error>> {
+    let current = organization_entitlements::Entity::find()
+        .filter(organization_entitlements::Column::OrganizationId.eq(fixture.organization_id.get()))
+        .one(fixture.pool.connection())
+        .await?
+        .expect("SCIM 测试授权必须存在");
+    let snapshot = OrganizationEntitlementSnapshot::new(
+        capacity,
+        current.team_management_enabled,
+        current.sso_enabled,
+        current.custom_roles_enabled,
+        current.audit_retention_days,
+        current.valid_from.unix_timestamp(),
+        valid_until,
+        Some(valid_until),
+    )?;
+    let write = OrganizationEntitlementWrite::new(
+        snapshot,
+        "scim-test".to_owned(),
+        None,
+        Some(u64::try_from(current.version)?),
+    )?;
+    OrganizationRepository::new(fixture.pool.clone(), Duration::from_secs(5))?
+        .replace_entitlement(fixture.organization_id, write)
+        .await?;
     Ok(())
 }
 
