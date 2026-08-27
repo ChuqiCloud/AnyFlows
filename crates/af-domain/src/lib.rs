@@ -81,12 +81,14 @@ pub use organization_scim_audit::{
     OrganizationScimRequestFingerprint, OrganizationScimResourceDigest,
 };
 pub use organization_scim_rate_limit::{
-    MAX_ORGANIZATION_SCIM_RATE_LIMIT_WINDOW_SECONDS, OrganizationScimRateLimitDecision,
-    OrganizationScimRateLimitError, OrganizationScimRateLimitFuture,
-    OrganizationScimRateLimitRejection, OrganizationScimRateLimitRule,
-    OrganizationScimRateLimitSnapshot, OrganizationScimRateLimitState,
-    OrganizationScimRateLimitStore, OrganizationScimRateLimitSubject,
-    OrganizationScimRateLimitWindow, classify_organization_scim_rate_limit,
+    DEFAULT_ORGANIZATION_SCIM_RATE_LIMIT, DEFAULT_ORGANIZATION_SCIM_RATE_LIMIT_WINDOW_SECONDS,
+    DEFAULT_TOKEN_SCIM_RATE_LIMIT, MAX_ORGANIZATION_SCIM_RATE_LIMIT_WINDOW_SECONDS,
+    OrganizationScimRateLimitDecision, OrganizationScimRateLimitError,
+    OrganizationScimRateLimitFuture, OrganizationScimRateLimitRejection,
+    OrganizationScimRateLimitRule, OrganizationScimRateLimitSnapshot,
+    OrganizationScimRateLimitState, OrganizationScimRateLimitStore,
+    OrganizationScimRateLimitSubject, OrganizationScimRateLimitWindow,
+    classify_organization_scim_rate_limit,
 };
 pub use organization_sso::{
     OrganizationSsoDomain, OrganizationSsoDomainError, OrganizationSsoDomainStatus,
