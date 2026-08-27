@@ -799,6 +799,29 @@ impl OrganizationScimGroupRepository {
                         return Err(OrganizationScimGroupRepositoryError::Conflict);
                     }
                     OrganizationScimSyncDisposition::Noop => {
+                        let team_id = OrganizationTeamId::new(binding.team_id)
+                            .map_err(|_| OrganizationScimGroupRepositoryError::Invariant)?;
+                        let team =
+                            lock_active_scim_team(&transaction, organization_id, team_id).await?;
+                        if team.name == resource.display_name() {
+                            let members_match = match group_members_match(
+                                &transaction,
+                                organization_id,
+                                team_id,
+                                resource.member_ids(),
+                            )
+                            .await
+                            {
+                                Ok(value) => value,
+                                Err(OrganizationScimGroupRepositoryError::MemberUnavailable) => {
+                                    return Err(OrganizationScimGroupRepositoryError::Conflict);
+                                }
+                                Err(error) => return Err(error),
+                            };
+                            if !members_match {
+                                return Err(OrganizationScimGroupRepositoryError::Conflict);
+                            }
+                        }
                         let record = group_record_from_model(binding)?;
                         transaction
                             .commit()
@@ -1183,6 +1206,31 @@ async fn project_group_members(
         }
     }
     Ok(())
+}
+
+async fn group_members_match(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+    team_id: OrganizationTeamId,
+    member_ids: &[OrganizationScimResourceId],
+) -> Result<bool, OrganizationScimGroupRepositoryError> {
+    let mut expected = resolve_group_members(transaction, organization_id, member_ids).await?;
+    let mut actual = organization_memberships::Entity::find()
+        .filter(organization_memberships::Column::OrganizationId.eq(organization_id.get()))
+        .filter(organization_memberships::Column::TeamId.eq(team_id.get()))
+        .filter(
+            organization_memberships::Column::Status
+                .eq(OrganizationMembershipStatus::Active.code()),
+        )
+        .all(transaction)
+        .await
+        .map_err(|_| OrganizationScimGroupRepositoryError::Query)?
+        .into_iter()
+        .map(|membership| membership.user_id)
+        .collect::<Vec<_>>();
+    expected.sort_unstable();
+    actual.sort_unstable();
+    Ok(expected == actual)
 }
 
 fn map_group_user_error(
