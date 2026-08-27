@@ -108,6 +108,7 @@ mod m20260827_000099_create_organization_scim_tokens;
 mod m20260827_000100_create_organization_scim_user_resources;
 mod m20260827_000101_create_organization_scim_group_resources;
 mod m20260828_000102_create_organization_scim_audit_logs;
+mod m20260828_000103_create_organization_service_accounts;
 mod schema;
 
 #[cfg(test)]
@@ -253,6 +254,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260827_000100_create_organization_scim_user_resources::Migration),
             Box::new(m20260827_000101_create_organization_scim_group_resources::Migration),
             Box::new(m20260828_000102_create_organization_scim_audit_logs::Migration),
+            Box::new(m20260828_000103_create_organization_service_accounts::Migration),
         ]
     }
 }

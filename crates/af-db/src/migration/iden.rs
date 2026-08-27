@@ -2853,6 +2853,61 @@ pub(in crate::migration) mod organization_scim_group_resources {
     }
 }
 
+pub(in crate::migration) mod organization_service_accounts {
+    use super::DeriveIden;
+
+    /// 企业服务账号主体持久化表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_service_accounts")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 服务账号企业边界、公开标识和生命周期列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        PublicKey,
+        Name,
+        Status,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+        RevokedAt,
+    }
+}
+
+pub(in crate::migration) mod organization_service_account_keys {
+    use super::DeriveIden;
+
+    /// 企业服务账号密钥摘要和轮换事实表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_service_account_keys")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 密钥标识、摘要、生命周期与轮换时间列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        ServiceAccountId,
+        KeyKey,
+        KeyPrefix,
+        KeyDigest,
+        Status,
+        Version,
+        CreatedAt,
+        RevokedAt,
+    }
+}
+
 pub(in crate::migration) mod organization_scim_audit_logs {
     use super::DeriveIden;
 

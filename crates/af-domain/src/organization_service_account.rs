@@ -1,6 +1,7 @@
 use std::fmt;
 
 use getrandom::fill;
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::{OrganizationId, OrganizationServiceAccountId};
@@ -9,6 +10,13 @@ const SERVICE_ACCOUNT_KEY_BYTES: usize = 16;
 const SERVICE_ACCOUNT_KEY_HEX_BYTES: usize = SERVICE_ACCOUNT_KEY_BYTES * 2;
 const MAX_SERVICE_ACCOUNT_NAME_BYTES: usize = 128;
 const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
+const SERVICE_ACCOUNT_SECRET_PREFIX: &str = "sa_";
+const SERVICE_ACCOUNT_SECRET_BYTES: usize = 32;
+const SERVICE_ACCOUNT_SECRET_HEX_BYTES: usize = SERVICE_ACCOUNT_SECRET_BYTES * 2;
+const SERVICE_ACCOUNT_SECRET_TOTAL_BYTES: usize =
+    SERVICE_ACCOUNT_SECRET_PREFIX.len() + SERVICE_ACCOUNT_SECRET_HEX_BYTES;
+const SERVICE_ACCOUNT_SECRET_DIGEST_CONTEXT: &[u8] =
+    b"anyflows-enterprise-service-account-secret-v1";
 
 /// 企业服务账号公开标识的构造错误；错误信息不携带外部输入。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
@@ -22,6 +30,115 @@ pub enum OrganizationServiceAccountIdentifierError {
     /// 操作系统没有提供安全随机源。
     #[error("企业服务账号公开标识随机数不可用")]
     EntropyUnavailable,
+    /// 服务账号密钥格式不符合固定前缀和十六进制边界。
+    #[error("企业服务账号密钥格式无效")]
+    InvalidSecretEncoding,
+}
+
+/// 仅在内存中保留的服务账号密钥明文；持久化层只能接收摘要。
+#[derive(Clone, Eq, PartialEq)]
+pub struct OrganizationServiceAccountSecret(String);
+
+impl OrganizationServiceAccountSecret {
+    /// 生成带固定前缀的高熵服务账号密钥。
+    pub fn generate() -> Result<Self, OrganizationServiceAccountIdentifierError> {
+        let mut bytes = [0_u8; SERVICE_ACCOUNT_SECRET_BYTES];
+        fill(&mut bytes)
+            .map_err(|_| OrganizationServiceAccountIdentifierError::EntropyUnavailable)?;
+        let mut value = String::with_capacity(SERVICE_ACCOUNT_SECRET_TOTAL_BYTES);
+        value.push_str(SERVICE_ACCOUNT_SECRET_PREFIX);
+        for byte in bytes {
+            value.push(char::from(HEX_DIGITS[usize::from(byte >> 4)]));
+            value.push(char::from(HEX_DIGITS[usize::from(byte & 0x0f)]));
+        }
+        Self::new(value)
+    }
+
+    /// 从受控输入恢复密钥；调用方不得将返回值写入数据库或日志。
+    pub fn new(
+        value: impl Into<String>,
+    ) -> Result<Self, OrganizationServiceAccountIdentifierError> {
+        let value = value.into();
+        let Some(entropy) = value.strip_prefix(SERVICE_ACCOUNT_SECRET_PREFIX) else {
+            return Err(OrganizationServiceAccountIdentifierError::InvalidSecretEncoding);
+        };
+        if value.len() != SERVICE_ACCOUNT_SECRET_TOTAL_BYTES
+            || entropy.len() != SERVICE_ACCOUNT_SECRET_HEX_BYTES
+            || !entropy
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            || entropy.bytes().all(|byte| byte == b'0')
+        {
+            return Err(OrganizationServiceAccountIdentifierError::InvalidSecretEncoding);
+        }
+        Ok(Self(value))
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    #[must_use]
+    pub const fn prefix(&self) -> &'static str {
+        SERVICE_ACCOUNT_SECRET_PREFIX
+    }
+
+    /// 计算带领域分隔的 SHA-256 摘要；数据库只保存该摘要文本。
+    #[must_use]
+    pub fn digest(&self) -> OrganizationServiceAccountSecretDigest {
+        let mut hasher = Sha256::new();
+        hasher.update(SERVICE_ACCOUNT_SECRET_DIGEST_CONTEXT);
+        hasher.update([0]);
+        hasher.update(self.0.as_bytes());
+        OrganizationServiceAccountSecretDigest::from_bytes(hasher.finalize().into())
+    }
+}
+
+impl fmt::Debug for OrganizationServiceAccountSecret {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("OrganizationServiceAccountSecret(<redacted>)")
+    }
+}
+
+/// 服务账号密钥的固定长度持久化摘要。
+#[derive(Clone, Eq, PartialEq)]
+pub struct OrganizationServiceAccountSecretDigest(String);
+
+impl OrganizationServiceAccountSecretDigest {
+    fn from_bytes(bytes: [u8; 32]) -> Self {
+        let mut value = String::with_capacity(64);
+        for byte in bytes {
+            value.push(char::from(HEX_DIGITS[usize::from(byte >> 4)]));
+            value.push(char::from(HEX_DIGITS[usize::from(byte & 0x0f)]));
+        }
+        Self(value)
+    }
+
+    pub fn from_persistence_key(
+        value: impl Into<String>,
+    ) -> Result<Self, OrganizationServiceAccountIdentifierError> {
+        let value = value.into();
+        if value.len() != 64
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err(OrganizationServiceAccountIdentifierError::InvalidSecretEncoding);
+        }
+        Ok(Self(value))
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for OrganizationServiceAccountSecretDigest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("OrganizationServiceAccountSecretDigest(<redacted>)")
+    }
 }
 
 /// 不暴露数据库自增顺序的企业服务账号公开标识。
