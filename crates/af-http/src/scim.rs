@@ -369,7 +369,7 @@ mod tests {
             resources
                 .resources
                 .iter()
-                .all(|resource| resource.schema != "")
+                .all(|resource| !resource.schema.is_empty())
         );
     }
 }
