@@ -2102,6 +2102,24 @@ export type ScimFilterResponse = {
 export type ScimSupportResponse = {
     supported: boolean;
 };
+export type ScimUserMeta = {
+    version: string;
+};
+export type ScimUserResponse = {
+    schemas: Array<string>;
+    id: string;
+    userName: string;
+    displayName?: string | null;
+    active: boolean;
+    meta: ScimUserMeta;
+};
+export type ScimUserWriteRequest = {
+    id: string;
+    userName: string;
+    displayName?: string | null;
+    active: boolean;
+    meta: ScimUserMeta;
+};
 export type ServiceProviderConfigResponse = {
     schemas: Array<string>;
     patch: ScimSupportResponse;
@@ -6990,6 +7008,50 @@ export type ListScimResourceTypesResponses = {
     200: ResourceTypeListResponse;
 };
 export type ListScimResourceTypesResponse = ListScimResourceTypesResponses[keyof ListScimResourceTypesResponses];
+export type CreateScimUserData = {
+    body: ScimUserWriteRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/scim/v2/{organization_id}/Users';
+};
+export type CreateScimUserErrors = {
+    400: ScimErrorResponse;
+    401: ScimErrorResponse;
+    403: ScimErrorResponse;
+    409: ScimErrorResponse;
+    422: ScimErrorResponse;
+    503: ScimErrorResponse;
+};
+export type CreateScimUserError = CreateScimUserErrors[keyof CreateScimUserErrors];
+export type CreateScimUserResponses = {
+    201: ScimUserResponse;
+};
+export type CreateScimUserResponse = CreateScimUserResponses[keyof CreateScimUserResponses];
+export type ReplaceScimUserData = {
+    body: ScimUserWriteRequest;
+    path: {
+        organization_id: number;
+        resource_id: string;
+    };
+    query?: never;
+    url: '/scim/v2/{organization_id}/Users/{resource_id}';
+};
+export type ReplaceScimUserErrors = {
+    400: ScimErrorResponse;
+    401: ScimErrorResponse;
+    403: ScimErrorResponse;
+    404: ScimErrorResponse;
+    409: ScimErrorResponse;
+    422: ScimErrorResponse;
+    503: ScimErrorResponse;
+};
+export type ReplaceScimUserError = ReplaceScimUserErrors[keyof ReplaceScimUserErrors];
+export type ReplaceScimUserResponses = {
+    200: ScimUserResponse;
+};
+export type ReplaceScimUserResponse = ReplaceScimUserResponses[keyof ReplaceScimUserResponses];
 export type StartPasskeyAuthenticationData = {
     body: PasskeyAuthenticationOptionsRequest;
     path?: never;

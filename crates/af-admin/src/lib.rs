@@ -87,6 +87,7 @@ pub use af_account::{
     ORGANIZATION_SSO_OIDC_CALLBACK_PATH, ORGANIZATION_SSO_SAML_CALLBACK_PATH,
     OrganizationSsoOidcCallback, OrganizationSsoSamlCallback,
 };
+pub use af_db::OrganizationScimTokenRecord;
 pub use af_db::{
     CredentialProxyScheme, DatabaseTimestamp, NetworkSettingsMode,
     OrganizationBillingReservationRecord, OrganizationBillingReservationStatus,
@@ -278,7 +279,8 @@ pub use organization_management::{
 };
 pub use organization_scim::{
     DatabaseOrganizationScimService, OrganizationScimAuthenticationError,
-    OrganizationScimAuthenticationFuture, OrganizationScimService,
+    OrganizationScimAuthenticationFuture, OrganizationScimService, OrganizationScimUserSyncError,
+    OrganizationScimUserSyncFuture,
 };
 pub use organization_sso::{
     DatabaseOrganizationSsoProviderService, OrganizationSsoProvider,

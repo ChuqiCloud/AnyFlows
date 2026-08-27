@@ -1,13 +1,19 @@
 use std::sync::Arc;
 
-use af_admin::{OrganizationScimAuthenticationError, OrganizationScimService};
-use af_domain::{OrganizationId, OrganizationScimResourceSet, OrganizationScimToken};
+use af_admin::{
+    OrganizationScimAuthenticationError, OrganizationScimService, OrganizationScimTokenRecord,
+    OrganizationScimUserSyncError,
+};
+use af_domain::{
+    OrganizationId, OrganizationScimResourceId, OrganizationScimResourceVersion,
+    OrganizationScimToken, OrganizationScimUserResource,
+};
 use axum::{
     Extension, Json, Router,
-    extract::{Path, Request, State},
+    extract::{Path, Request, State, rejection::JsonRejection},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post, put},
 };
 use http::{
     HeaderValue, StatusCode,
@@ -20,16 +26,17 @@ const SERVICE_PROVIDER_CONFIG_SCHEMA: &str =
     "urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig";
 const RESOURCE_TYPE_LIST_SCHEMA: &str = "urn:ietf:params:scim:api:messages:2.0:ListResponse";
 const RESOURCE_TYPE_SCHEMA: &str = "urn:ietf:params:scim:schemas:core:2.0:ResourceType";
+const USER_RESOURCE_SCHEMA: &str = "urn:ietf:params:scim:schemas:core:2.0:User";
 
 #[derive(Clone)]
 struct ScimHttpState {
     service: Arc<dyn OrganizationScimService>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct ScimAuthentication {
     organization_id: OrganizationId,
-    _resource_scope: OrganizationScimResourceSet,
+    token: OrganizationScimTokenRecord,
 }
 
 /// 构建企业绑定的 SCIM 只读发现路由，目录资源写入留待后续切片。
@@ -44,6 +51,11 @@ pub fn build_scim_router(service: Arc<dyn OrganizationScimService>) -> Router {
         .route(
             "/scim/v2/{organization_id}/ResourceTypes",
             get(list_resource_types),
+        )
+        .route("/scim/v2/{organization_id}/Users", post(create_user))
+        .route(
+            "/scim/v2/{organization_id}/Users/{resource_id}",
+            put(replace_user),
         )
         .route_layer(authentication)
         .with_state(state)
@@ -70,7 +82,7 @@ async fn authenticate_scim(
         Ok(record) => {
             request.extensions_mut().insert(ScimAuthentication {
                 organization_id,
-                _resource_scope: record.resource_scope(),
+                token: record,
             });
             next.run(request).await
         }
@@ -80,6 +92,111 @@ async fn authenticate_scim(
         Err(OrganizationScimAuthenticationError::Internal) => {
             ScimError::Unavailable.into_response()
         }
+    }
+}
+
+async fn create_user(
+    Path(organization_id): Path<i64>,
+    Extension(authentication): Extension<ScimAuthentication>,
+    State(state): State<ScimHttpState>,
+    request: Result<Json<ScimUserWriteRequest>, JsonRejection>,
+) -> Response {
+    write_user(
+        organization_id,
+        None,
+        authentication,
+        state,
+        request,
+        StatusCode::CREATED,
+    )
+    .await
+}
+
+async fn replace_user(
+    Path((organization_id, resource_id)): Path<(i64, String)>,
+    Extension(authentication): Extension<ScimAuthentication>,
+    State(state): State<ScimHttpState>,
+    request: Result<Json<ScimUserWriteRequest>, JsonRejection>,
+) -> Response {
+    write_user(
+        organization_id,
+        Some(resource_id),
+        authentication,
+        state,
+        request,
+        StatusCode::OK,
+    )
+    .await
+}
+
+async fn write_user(
+    organization_id: i64,
+    path_resource_id: Option<String>,
+    authentication: ScimAuthentication,
+    state: ScimHttpState,
+    request: Result<Json<ScimUserWriteRequest>, JsonRejection>,
+    success_status: StatusCode,
+) -> Response {
+    let Some(organization_id) = OrganizationId::new(organization_id).ok() else {
+        return ScimError::Unauthorized.into_response();
+    };
+    if authentication.organization_id != organization_id {
+        return ScimError::Unauthorized.into_response();
+    }
+    let Json(request) = match request {
+        Ok(value) => value,
+        Err(_) => return ScimError::BadRequest.into_response(),
+    };
+    let resource_id = match path_resource_id {
+        Some(path_id) if path_id == request.id => path_id,
+        Some(_) => return ScimError::Conflict.into_response(),
+        None => request.id.clone(),
+    };
+    let resource_id = match OrganizationScimResourceId::new(resource_id) {
+        Ok(value) => value,
+        Err(_) => return ScimError::BadRequest.into_response(),
+    };
+    let version = match request
+        .meta
+        .version
+        .parse::<u64>()
+        .ok()
+        .and_then(|value| OrganizationScimResourceVersion::new(value).ok())
+    {
+        Some(value) => value,
+        None => return ScimError::BadRequest.into_response(),
+    };
+    let resource = match OrganizationScimUserResource::new(
+        organization_id,
+        resource_id,
+        version,
+        request.user_name.clone(),
+        request.display_name.clone(),
+        request.active,
+    ) {
+        Ok(value) => value,
+        Err(_) => return ScimError::BadRequest.into_response(),
+    };
+    if let Err(error) = state
+        .service
+        .synchronize_user(authentication.token, resource)
+        .await
+    {
+        return map_user_sync_error(error).into_response();
+    }
+    let mut response = scim_json(ScimUserResponse::from_request(&request));
+    *response.status_mut() = success_status;
+    response
+}
+
+fn map_user_sync_error(error: OrganizationScimUserSyncError) -> ScimError {
+    match error {
+        OrganizationScimUserSyncError::Restricted => ScimError::Unauthorized,
+        OrganizationScimUserSyncError::Forbidden => ScimError::Forbidden,
+        OrganizationScimUserSyncError::Conflict => ScimError::Conflict,
+        OrganizationScimUserSyncError::UserUnavailable => ScimError::NotFound,
+        OrganizationScimUserSyncError::LifecycleRejected => ScimError::Unprocessable,
+        OrganizationScimUserSyncError::Internal => ScimError::Unavailable,
     }
 }
 
@@ -245,6 +362,7 @@ impl ResourceTypeListResponse {
                 SERVICE_PROVIDER_CONFIG_SCHEMA,
             ),
             ("ResourceType", "ResourceTypes", RESOURCE_TYPE_SCHEMA),
+            ("User", "Users", USER_RESOURCE_SCHEMA),
         ]
         .into_iter()
         .map(|(name, endpoint_name, schema)| ResourceTypeResponse {
@@ -254,12 +372,13 @@ impl ResourceTypeListResponse {
             schema: schema.to_owned(),
         })
         .collect::<Vec<_>>();
+        let items_per_page = resources.len() as u32;
         Self {
             schemas: vec![RESOURCE_TYPE_LIST_SCHEMA.to_owned()],
-            total_results: resources.len() as u32,
+            total_results: items_per_page,
             resources,
             start_index: 1,
-            items_per_page: 2,
+            items_per_page,
         }
     }
 }
@@ -271,6 +390,52 @@ pub(crate) struct ResourceTypeResponse {
     name: String,
     endpoint: String,
     schema: String,
+}
+
+#[derive(serde::Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ScimUserWriteRequest {
+    id: String,
+    #[serde(rename = "userName")]
+    user_name: String,
+    #[serde(default)]
+    display_name: Option<String>,
+    active: bool,
+    meta: ScimUserMeta,
+}
+
+#[derive(serde::Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ScimUserMeta {
+    version: String,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ScimUserResponse {
+    schemas: Vec<String>,
+    id: String,
+    #[serde(rename = "userName")]
+    user_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    display_name: Option<String>,
+    active: bool,
+    meta: ScimUserMeta,
+}
+
+impl ScimUserResponse {
+    fn from_request(request: &ScimUserWriteRequest) -> Self {
+        Self {
+            schemas: vec!["urn:ietf:params:scim:schemas:core:2.0:User".to_owned()],
+            id: request.id.clone(),
+            user_name: request.user_name.clone(),
+            display_name: request.display_name.clone(),
+            active: request.active,
+            meta: ScimUserMeta {
+                version: request.meta.version.clone(),
+            },
+        }
+    }
 }
 
 fn scim_json<T: Serialize>(value: T) -> Response {
@@ -288,6 +453,11 @@ fn scim_json<T: Serialize>(value: T) -> Response {
 #[derive(Clone, Copy, Debug)]
 enum ScimError {
     Unauthorized,
+    BadRequest,
+    Forbidden,
+    Conflict,
+    NotFound,
+    Unprocessable,
     Unavailable,
 }
 
@@ -295,6 +465,15 @@ impl IntoResponse for ScimError {
     fn into_response(self) -> Response {
         let (status, detail, challenge) = match self {
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "SCIM Bearer 令牌无效", true),
+            Self::BadRequest => (StatusCode::BAD_REQUEST, "SCIM 用户资源请求无效", false),
+            Self::Forbidden => (StatusCode::FORBIDDEN, "SCIM 用户资源范围不足", false),
+            Self::Conflict => (StatusCode::CONFLICT, "SCIM 用户资源版本或绑定冲突", false),
+            Self::NotFound => (StatusCode::NOT_FOUND, "SCIM 用户资源目标不可用", false),
+            Self::Unprocessable => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "SCIM 用户资源生命周期被拒绝",
+                false,
+            ),
             Self::Unavailable => (
                 StatusCode::SERVICE_UNAVAILABLE,
                 "SCIM 认证服务暂不可用",
@@ -364,7 +543,7 @@ mod tests {
         assert_eq!(config["patch"]["supported"], false);
         assert!(config.get("email").is_none());
         let resources = ResourceTypeListResponse::new(OrganizationId::new(7).unwrap());
-        assert_eq!(resources.total_results, 2);
+        assert_eq!(resources.total_results, 3);
         assert!(
             resources
                 .resources

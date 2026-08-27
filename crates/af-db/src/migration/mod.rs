@@ -105,6 +105,7 @@ mod m20260825_000096_add_organization_sso_login_material;
 mod m20260825_000097_add_organization_sso_ticket_email_fingerprint;
 mod m20260826_000098_create_organization_sso_policies;
 mod m20260827_000099_create_organization_scim_tokens;
+mod m20260827_000100_create_organization_scim_user_resources;
 mod schema;
 
 #[cfg(test)]
@@ -247,6 +248,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260825_000097_add_organization_sso_ticket_email_fingerprint::Migration),
             Box::new(m20260826_000098_create_organization_sso_policies::Migration),
             Box::new(m20260827_000099_create_organization_scim_tokens::Migration),
+            Box::new(m20260827_000100_create_organization_scim_user_resources::Migration),
         ]
     }
 }
