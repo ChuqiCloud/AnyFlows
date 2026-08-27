@@ -65,8 +65,8 @@ use af_billing::{
 };
 use af_cache::{
     CacheError, RedisConcurrencyConfig, RedisConcurrencyStore, RedisConfig, RedisHealthConfig,
-    RedisHealthStore, RedisRequestRateLimitConfig, RedisRequestRateLimitStore,
-    RedisStickySessionConfig, RedisStickySessionStore,
+    RedisHealthStore, RedisOrganizationScimRateLimitStore, RedisRequestRateLimitConfig,
+    RedisRequestRateLimitStore, RedisStickySessionConfig, RedisStickySessionStore,
 };
 use af_config::{AppConfig, ConfigError};
 use af_db::{
@@ -199,6 +199,7 @@ pub struct DatabaseReady {
     _telemetry: TelemetryReady,
     database: DatabasePool,
     passkey_public_base_url: Option<String>,
+    organization_scim_rate_limit_store: Option<Arc<dyn af_domain::OrganizationScimRateLimitStore>>,
 }
 
 /// 已使用数据库连接池装配令牌认证服务。
@@ -785,6 +786,18 @@ impl Bootstrap<TelemetryReady> {
             .map_err(BootstrapError::SiteSettingsRead)?
             .public_base_url()
             .map(str::to_owned);
+        let organization_scim_rate_limit_store = if let Some(redis_url) = self.config.redis().url()
+        {
+            let store = RedisOrganizationScimRateLimitStore::connect(
+                RedisConfig::new(redis_url.expose().to_owned()),
+                "anyflows.organization.scim.rate.v1",
+            )
+            .await
+            .map_err(BootstrapError::RequestRateLimit)?;
+            Some(Arc::new(store) as Arc<dyn af_domain::OrganizationScimRateLimitStore>)
+        } else {
+            None
+        };
         let Bootstrap {
             config,
             shutdown_timeout,
@@ -799,6 +812,7 @@ impl Bootstrap<TelemetryReady> {
                 _telemetry: stage,
                 database,
                 passkey_public_base_url,
+                organization_scim_rate_limit_store,
             },
         })
     }
@@ -1177,6 +1191,7 @@ impl Bootstrap<DatabaseReady> {
             shutdown,
             stage,
         } = self;
+        let organization_scim_rate_limit_store = stage.organization_scim_rate_limit_store.clone();
         let database_authenticator: Arc<dyn TokenAuthenticator> =
             Arc::new(DatabaseTokenAuthenticator::new(repository));
         let user_profile_service: Arc<dyn UserProfileService> =
@@ -1270,6 +1285,7 @@ impl Bootstrap<DatabaseReady> {
                     organization_scim_token_repository,
                     organization_scim_user_repository,
                     organization_scim_group_repository,
+                    organization_scim_rate_limit_store,
                 )),
                 organization_activity_service,
                 platform_audit_service,
@@ -3186,7 +3202,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn configured_redis_failure_rejects_oauth_refresh_startup() {
+    async fn configured_redis_failure_rejects_scim_rate_limit_startup() {
         let path = config_file("sqlite::memory:");
         let contents = fs::read_to_string(&path).unwrap();
         fs::write(
@@ -3198,31 +3214,24 @@ mod tests {
         let wal_directory = billing_wal_directory(&path);
         let _ = fs::remove_file(path);
 
-        let relay = Bootstrap::new(config)
+        let Err(error) = Bootstrap::new(config)
             .unwrap()
             .init_telemetry()
             .unwrap()
             .connect_database()
             .await
-            .unwrap()
-            .init_authentication()
-            .unwrap()
-            .init_relay()
-            .unwrap();
-        let Err(error) = relay.init_billing().await else {
-            panic!("已配置但不可用的 Redis 必须阻止 OAuth 刷新任务启动");
+        else {
+            panic!("已配置但不可用的 Redis 必须阻止 SCIM 限流启动");
         };
-        assert!(matches!(
-            &error,
-            BootstrapError::OAuthRuntime(OAuthRuntimeConfigError::RefreshLease(_))
-        ));
+        assert!(matches!(&error, BootstrapError::RequestRateLimit(_)));
         let rendered = format!("{error:?}{error}");
         assert!(!rendered.contains("not-a-redis-url"));
         let _ = fs::remove_dir_all(wal_directory);
     }
 
     #[tokio::test]
-    async fn configured_redis_failure_rejects_snapshot_broadcast_when_oauth_refresh_is_disabled() {
+    async fn configured_redis_failure_rejects_scim_rate_limit_startup_when_oauth_refresh_is_disabled()
+     {
         let path = config_file("sqlite::memory:");
         let contents = fs::read_to_string(&path).unwrap();
         fs::write(
@@ -3236,24 +3245,16 @@ mod tests {
         let wal_directory = billing_wal_directory(&path);
         let _ = fs::remove_file(path);
 
-        let relay = Bootstrap::new(config)
+        let Err(error) = Bootstrap::new(config)
             .unwrap()
             .init_telemetry()
             .unwrap()
             .connect_database()
             .await
-            .unwrap()
-            .init_authentication()
-            .unwrap()
-            .init_relay()
-            .unwrap();
-        let Err(error) = relay.init_billing().await else {
-            panic!("已配置但不可用的 Redis 必须阻止快照广播启动");
+        else {
+            panic!("已配置但不可用的 Redis 必须阻止 SCIM 限流启动");
         };
-        assert!(matches!(
-            &error,
-            BootstrapError::SchedulerInvalidation(SchedulerInvalidationRuntimeError::Cache(_))
-        ));
+        assert!(matches!(&error, BootstrapError::RequestRateLimit(_)));
         let rendered = format!("{error:?}{error}");
         assert!(!rendered.contains("not-a-redis-url"));
         let _ = fs::remove_dir_all(wal_directory);

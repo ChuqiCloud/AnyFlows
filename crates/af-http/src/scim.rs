@@ -5,7 +5,8 @@ use af_admin::{
     OrganizationScimTokenRecord, OrganizationScimUserSyncError,
 };
 use af_domain::{
-    OrganizationId, OrganizationScimGroupResource, OrganizationScimResourceId,
+    OrganizationId, OrganizationScimGroupResource, OrganizationScimRateLimitDecision,
+    OrganizationScimRateLimitRejection, OrganizationScimResourceId,
     OrganizationScimResourceVersion, OrganizationScimToken, OrganizationScimUserResource,
 };
 use axum::{
@@ -86,6 +87,22 @@ async fn authenticate_scim(
     };
     match state.service.authenticate(organization_id, token).await {
         Ok(record) => {
+            match state
+                .service
+                .admit_rate_limit(organization_id, &record)
+                .await
+            {
+                OrganizationScimRateLimitDecision::Admitted { .. } => {}
+                OrganizationScimRateLimitDecision::Limited {
+                    retry_after_seconds,
+                    ..
+                } => return ScimError::RateLimited(retry_after_seconds).into_response(),
+                OrganizationScimRateLimitDecision::Rejected(
+                    OrganizationScimRateLimitRejection::StorageUnavailable
+                    | OrganizationScimRateLimitRejection::InvalidFact
+                    | OrganizationScimRateLimitRejection::InvalidTimestamp,
+                ) => return ScimError::Unavailable.into_response(),
+            }
             request.extensions_mut().insert(ScimAuthentication {
                 organization_id,
                 token: record,
@@ -693,6 +710,7 @@ enum ScimError {
     NotFound,
     Unprocessable,
     Unavailable,
+    RateLimited(u32),
 }
 
 impl IntoResponse for ScimError {
@@ -713,6 +731,11 @@ impl IntoResponse for ScimError {
                 "SCIM 认证服务暂不可用",
                 false,
             ),
+            Self::RateLimited(_) => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "SCIM 请求频率超出限制",
+                false,
+            ),
         };
         let mut response = Json(ScimErrorResponse {
             schemas: vec!["urn:ietf:params:scim:api:messages:2.0:Error".to_owned()],
@@ -727,6 +750,11 @@ impl IntoResponse for ScimError {
         response
             .headers_mut()
             .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        if let Self::RateLimited(retry_after_seconds) = self
+            && let Ok(value) = HeaderValue::from_str(&retry_after_seconds.to_string())
+        {
+            response.headers_mut().insert("retry-after", value);
+        }
         if challenge {
             response
                 .headers_mut()
