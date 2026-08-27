@@ -6,7 +6,7 @@ use af_domain::{
     OrganizationScimResourceVersion, OrganizationScimTokenStatus, OrganizationScimUserResource,
     UserId,
 };
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, Set};
 
 use crate::{
     DatabaseOptions, MigrationOptions, OrganizationCreate, OrganizationEntitlementWrite,
