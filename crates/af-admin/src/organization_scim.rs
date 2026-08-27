@@ -1,10 +1,15 @@
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use af_db::{
-    OrganizationScimAuditRepository, OrganizationScimAuditRepositoryError,
-    OrganizationScimAuditWriteOutcome, OrganizationScimGroupRepository,
-    OrganizationScimGroupRepositoryError, OrganizationScimGroupSyncResult,
-    OrganizationScimTokenRecord, OrganizationScimTokenRepository,
+    OrganizationScimAuditPageRecord, OrganizationScimAuditQuery, OrganizationScimAuditRepository,
+    OrganizationScimAuditRepositoryError, OrganizationScimAuditWriteOutcome,
+    OrganizationScimGroupRepository, OrganizationScimGroupRepositoryError,
+    OrganizationScimGroupSyncResult, OrganizationScimTokenRecord, OrganizationScimTokenRepository,
     OrganizationScimTokenRepositoryError, OrganizationScimUserRepository,
     OrganizationScimUserRepositoryError, OrganizationScimUserSyncResult,
 };
@@ -73,6 +78,13 @@ pub enum OrganizationScimAuditError {
     Internal,
 }
 
+/// 管理端读取 SCIM 脱敏审计的稳定错误。
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum OrganizationScimAuditReadError {
+    #[error("SCIM 审计读取服务暂不可用")]
+    Internal,
+}
+
 pub type OrganizationScimAuthenticationFuture<'a> = Pin<
     Box<
         dyn Future<
@@ -108,12 +120,28 @@ pub type OrganizationScimAuditFuture<'a> = Pin<
     >,
 >;
 
+pub type OrganizationScimAuditListFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<OrganizationScimAuditPageRecord, OrganizationScimAuditReadError>>
+            + Send
+            + 'a,
+    >,
+>;
+
 /// 以企业路径为边界校验 SCIM 令牌的服务契约。
 pub trait OrganizationScimService: Send + Sync {
     fn record_audit<'a>(
         &'a self,
         facts: OrganizationScimAuditFacts,
     ) -> OrganizationScimAuditFuture<'a>;
+
+    /// 按企业范围读取已脱敏的 SCIM 审计事实。
+    fn list_audit<'a>(
+        &'a self,
+        organization_id: OrganizationId,
+        query: OrganizationScimAuditQuery,
+        retention_days: i64,
+    ) -> OrganizationScimAuditListFuture<'a>;
 
     fn admit_rate_limit<'a>(
         &'a self,
@@ -185,6 +213,40 @@ impl OrganizationScimService for DatabaseOrganizationScimService {
                 .record(&facts)
                 .await
                 .map_err(map_audit_repository_error)
+        })
+    }
+
+    fn list_audit<'a>(
+        &'a self,
+        organization_id: OrganizationId,
+        query: OrganizationScimAuditQuery,
+        retention_days: i64,
+    ) -> OrganizationScimAuditListFuture<'a> {
+        Box::pin(async move {
+            if !(1..=3650).contains(&retention_days) {
+                return Err(OrganizationScimAuditReadError::Internal);
+            }
+            let now: i64 = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_err(|_| OrganizationScimAuditReadError::Internal)?
+                .as_secs()
+                .try_into()
+                .map_err(|_| OrganizationScimAuditReadError::Internal)?;
+            let cutoff = now
+                .checked_sub(
+                    retention_days
+                        .checked_mul(24 * 60 * 60)
+                        .ok_or(OrganizationScimAuditReadError::Internal)?,
+                )
+                .ok_or(OrganizationScimAuditReadError::Internal)?;
+            self.audit_repository
+                .prune_before(organization_id, cutoff)
+                .await
+                .map_err(|_| OrganizationScimAuditReadError::Internal)?;
+            self.audit_repository
+                .list(organization_id, &query)
+                .await
+                .map_err(|_| OrganizationScimAuditReadError::Internal)
         })
     }
 

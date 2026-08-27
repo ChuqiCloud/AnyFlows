@@ -19,6 +19,7 @@ mod oauth_connections;
 mod oauth_login;
 mod organization_activity;
 mod organization_budget;
+mod organization_scim_audit;
 mod organization_sso;
 mod organization_tokens;
 mod organization_wallet;
@@ -114,6 +115,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(organization_sso::document());
     document.merge(organization_tokens::document());
     document.merge(organization_activity::document());
+    document.merge(organization_scim_audit::document());
     document.merge(scim::document());
     document.merge(passkey_auth::document());
     document.merge(platform_audit::document());
@@ -221,7 +223,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 182);
+        assert_eq!(document.paths.paths.len(), 183);
         let operation_count = document
             .paths
             .paths
@@ -242,7 +244,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 249);
+        assert_eq!(operation_count, 250);
         assert!(
             document
                 .components
@@ -457,6 +459,7 @@ mod tests {
             "listAdminPlatformAuditLogs",
             "listOrganizationUsageLogs",
             "listOrganizationAuditLogs",
+            "listOrganizationScimAuditLogs",
             "listPlatformOrganizationUsageLogs",
             "listPlatformOrganizationAuditLogs",
             "listUserUsageLogs",
@@ -533,7 +536,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 413);
+        assert_eq!(schemas.len(), 415);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminDashboardChannelFlow"));
         assert!(schemas.contains_key("AdminDashboardFailure"));
@@ -617,6 +620,8 @@ mod tests {
         assert!(schemas.contains_key("OrganizationAuditLogListResponse"));
         assert!(schemas.contains_key("OrganizationAuditLogResponse"));
         assert!(schemas.contains_key("OrganizationAuditOutcomeResponse"));
+        assert!(schemas.contains_key("OrganizationScimAuditLogListResponse"));
+        assert!(schemas.contains_key("OrganizationScimAuditLogResponse"));
         assert!(schemas.contains_key("PlatformAuditLogListResponse"));
         assert!(schemas.contains_key("PlatformAuditLog"));
         assert!(schemas.contains_key("PlatformAuditOutcome"));

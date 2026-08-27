@@ -1597,6 +1597,23 @@ export type OrganizationOwnershipTransferResponse = {
     previous_owner: OrganizationMembershipResponse;
     current_owner: OrganizationMembershipResponse;
 };
+export type OrganizationScimAuditLogListResponse = {
+    logs: Array<OrganizationScimAuditLogResponse>;
+    nextCursor: number | null;
+};
+export type OrganizationScimAuditLogResponse = {
+    id: number;
+    tokenKey?: string | null;
+    eventType: string;
+    result: string;
+    reason?: string | null;
+    resourceKind?: string | null;
+    resourceDigest?: string | null;
+    resourceVersion?: number | null;
+    requestFingerprint: string;
+    retryAfterSeconds?: number | null;
+    createdAt: number;
+};
 export type OrganizationSsoDomain = {
     id: number;
     organization_id: number;
@@ -6993,6 +7010,34 @@ export type ListPlatformOrganizationAuditLogsResponses = {
     200: OrganizationAuditLogListResponse;
 };
 export type ListPlatformOrganizationAuditLogsResponse = ListPlatformOrganizationAuditLogsResponses[keyof ListPlatformOrganizationAuditLogsResponses];
+export type ListOrganizationScimAuditLogsData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        before?: number;
+        limit?: number;
+        event_type?: string;
+        result?: string;
+        reason?: string;
+        token_key?: string;
+        resource_kind?: string;
+    };
+    url: '/api/organizations/{organization_id}/scim/audit-logs';
+};
+export type ListOrganizationScimAuditLogsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationScimAuditLogsError = ListOrganizationScimAuditLogsErrors[keyof ListOrganizationScimAuditLogsErrors];
+export type ListOrganizationScimAuditLogsResponses = {
+    200: OrganizationScimAuditLogListResponse;
+};
+export type ListOrganizationScimAuditLogsResponse = ListOrganizationScimAuditLogsResponses[keyof ListOrganizationScimAuditLogsResponses];
 export type GetScimServiceProviderConfigData = {
     body?: never;
     path: {

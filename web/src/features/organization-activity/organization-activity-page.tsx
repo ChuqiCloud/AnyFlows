@@ -15,13 +15,14 @@ import { OrganizationMobileWorkspaceSelect } from '@/features/organization-conso
 import type { OrganizationOverviewResponse } from '@/lib/api/generated/types.gen'
 import type { OrganizationUsageScope } from './organization-activity-api'
 import { OrganizationAuditPanel } from './organization-audit-panel'
+import { OrganizationScimAuditPanel } from './organization-scim-audit-panel'
 import { OrganizationUsagePanel } from './organization-usage-panel'
 
 const USAGE_READ_ALL = 'organization.usage_logs.read_all'
 const USAGE_READ_SELF = 'organization.usage_logs.read_self'
 const AUDIT_READ = 'organization.audit.read'
 
-type ActivityTab = 'audit' | 'usage'
+type ActivityTab = 'audit' | 'scim' | 'usage'
 
 /** 企业活动入口；企业切换会取消旧请求并通过 keyed workspace 清空页签、筛选和游标。 */
 export function OrganizationActivityPage() {
@@ -86,6 +87,7 @@ function OrganizationActivityWorkspace({ organizationId }: { organizationId: num
   const availableTabs: ActivityTab[] = [
     ...(scopes.length > 0 ? ['usage' as const] : []),
     ...(canAudit ? ['audit' as const] : []),
+    ...(canAudit ? ['scim' as const] : []),
   ]
   const activeTab = availableTabs.includes(tab) ? tab : availableTabs[0]
 
@@ -143,6 +145,16 @@ function OrganizationActivityWorkspace({ organizationId }: { organizationId: num
           hidden={activeTab !== 'audit'}
         >
           <OrganizationAuditPanel organizationId={organizationId} />
+        </section>
+      ) : null}
+      {canAudit ? (
+        <section
+          id="organization-activity-panel-scim"
+          role="tabpanel"
+          aria-labelledby="organization-activity-tab-scim"
+          hidden={activeTab !== 'scim'}
+        >
+          <OrganizationScimAuditPanel organizationId={organizationId} />
         </section>
       ) : null}
     </div>

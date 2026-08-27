@@ -19056,6 +19056,162 @@
         ]
       }
     },
+    "/api/organizations/{organization_id}/scim/audit-logs": {
+      "get": {
+        "tags": [
+          "企业 SCIM"
+        ],
+        "summary": "读取企业 SCIM 脱敏审计",
+        "operationId": "listOrganizationScimAuditLogs",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "description": "倒序游标",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "返回数量",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "event_type",
+            "in": "query",
+            "description": "闭合 SCIM 事件码",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "result",
+            "in": "query",
+            "description": "闭合 SCIM 结果码",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "reason",
+            "in": "query",
+            "description": "闭合 SCIM 原因码",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "token_key",
+            "in": "query",
+            "description": "令牌公开标识",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resource_kind",
+            "in": "query",
+            "description": "资源种类 users/groups",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "企业范围的脱敏 SCIM 审计事实",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationScimAuditLogListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "查询参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "管理会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "缺少企业审计读取权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "企业不存在或不可访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "SCIM 审计读取服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/scim/v2/{organization_id}/ServiceProviderConfig": {
       "get": {
         "tags": [
@@ -31144,6 +31300,99 @@
           },
           "current_owner": {
             "$ref": "#/components/schemas/OrganizationMembershipResponse"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationScimAuditLogListResponse": {
+        "type": "object",
+        "required": [
+          "logs",
+          "nextCursor"
+        ],
+        "properties": {
+          "logs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrganizationScimAuditLogResponse"
+            },
+            "maxItems": 100
+          },
+          "nextCursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationScimAuditLogResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "eventType",
+          "result",
+          "requestFingerprint",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "tokenKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "eventType": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resourceKind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resourceDigest": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resourceVersion": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "requestFingerprint": {
+            "type": "string"
+          },
+          "retryAfterSeconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "createdAt": {
+            "type": "integer",
+            "format": "int64"
           }
         },
         "additionalProperties": false

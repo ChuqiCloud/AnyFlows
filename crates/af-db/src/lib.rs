@@ -509,6 +509,7 @@ pub use organization_scim::{
     OrganizationScimUserSyncResult,
 };
 pub use organization_scim_audit::{
+    OrganizationScimAuditPageRecord, OrganizationScimAuditQuery, OrganizationScimAuditRecord,
     OrganizationScimAuditRepository, OrganizationScimAuditRepositoryError,
     OrganizationScimAuditWriteOutcome,
 };
