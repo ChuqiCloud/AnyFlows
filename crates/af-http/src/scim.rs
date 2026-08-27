@@ -102,8 +102,9 @@ fn extract_bearer_token(request: &mut Request) -> Result<String, ScimError> {
     {
         return Err(ScimError::Unauthorized);
     }
+    let token = token.to_owned();
     request.headers_mut().remove(AUTHORIZATION);
-    Ok(token.to_owned())
+    Ok(token)
 }
 
 fn parse_organization_id(path: &str) -> Option<OrganizationId> {
