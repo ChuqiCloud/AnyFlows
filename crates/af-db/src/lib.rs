@@ -133,6 +133,9 @@ mod organization_custom_role_binding_tests;
 #[cfg(test)]
 mod organization_custom_role_tests;
 mod organization_scim;
+mod organization_scim_audit;
+#[cfg(test)]
+mod organization_scim_audit_tests;
 #[cfg(test)]
 mod organization_scim_tests;
 mod organization_sso;
@@ -504,6 +507,10 @@ pub use organization_scim::{
     OrganizationScimUserRecord, OrganizationScimUserRepository,
     OrganizationScimUserRepositoryError, OrganizationScimUserSyncOutcome,
     OrganizationScimUserSyncResult,
+};
+pub use organization_scim_audit::{
+    OrganizationScimAuditRepository, OrganizationScimAuditRepositoryError,
+    OrganizationScimAuditWriteOutcome,
 };
 pub use organization_sso::{
     OrganizationSsoDomainCreate, OrganizationSsoDomainRecord, OrganizationSsoDomainUpdate,

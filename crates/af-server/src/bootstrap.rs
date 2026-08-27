@@ -93,7 +93,8 @@ use af_db::{
     OrganizationBudgetRepositoryConfigError, OrganizationCustomRoleBindingRepository,
     OrganizationCustomRoleBindingRepositoryConfigError, OrganizationCustomRoleRepository,
     OrganizationCustomRoleRepositoryConfigError, OrganizationRepository,
-    OrganizationRepositoryConfigError, OrganizationScimGroupRepository,
+    OrganizationRepositoryConfigError, OrganizationScimAuditRepository,
+    OrganizationScimAuditRepositoryError, OrganizationScimGroupRepository,
     OrganizationScimGroupRepositoryError, OrganizationScimTokenRepository,
     OrganizationScimTokenRepositoryError, OrganizationScimUserRepository,
     OrganizationScimUserRepositoryError, OrganizationSsoProviderRepository,
@@ -552,6 +553,9 @@ pub enum BootstrapError {
     /// 企业 SCIM 令牌仓储的启动参数无效。
     #[error("企业 SCIM 令牌仓储启动参数无效")]
     OrganizationScimTokenRepository(#[source] OrganizationScimTokenRepositoryError),
+    /// SCIM 审计仓储初始化失败。
+    #[error("初始化 SCIM 审计仓储失败")]
+    OrganizationScimAuditRepository(#[source] OrganizationScimAuditRepositoryError),
     /// 企业 SCIM 用户同步仓储的启动参数无效。
     #[error("企业 SCIM 用户同步仓储启动参数无效")]
     OrganizationScimUserRepository(#[source] OrganizationScimUserRepositoryError),
@@ -1025,6 +1029,13 @@ impl Bootstrap<DatabaseReady> {
             )
             .map_err(BootstrapError::OrganizationScimGroupRepository)?,
         );
+        let organization_scim_audit_repository = Arc::new(
+            OrganizationScimAuditRepository::new(
+                self.stage.database.clone(),
+                Duration::from_secs(auth.lookup_timeout_secs()),
+            )
+            .map_err(BootstrapError::OrganizationScimAuditRepository)?,
+        );
         let organization_sso_provider_repository = OrganizationSsoProviderRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -1285,6 +1296,7 @@ impl Bootstrap<DatabaseReady> {
                     organization_scim_token_repository,
                     organization_scim_user_repository,
                     organization_scim_group_repository,
+                    organization_scim_audit_repository,
                     organization_scim_rate_limit_store,
                 )),
                 organization_activity_service,

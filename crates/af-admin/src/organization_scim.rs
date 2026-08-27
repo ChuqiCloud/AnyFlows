@@ -1,16 +1,19 @@
 use std::{future::Future, pin::Pin, sync::Arc};
 
 use af_db::{
-    OrganizationScimGroupRepository, OrganizationScimGroupRepositoryError,
+    OrganizationScimAuditRepository, OrganizationScimAuditRepositoryError,
+    OrganizationScimAuditWriteOutcome, OrganizationScimGroupRepository,
+    OrganizationScimGroupRepositoryError, OrganizationScimGroupSyncOutcome,
     OrganizationScimGroupSyncResult, OrganizationScimTokenRecord, OrganizationScimTokenRepository,
     OrganizationScimTokenRepositoryError, OrganizationScimUserRepository,
-    OrganizationScimUserRepositoryError, OrganizationScimUserSyncResult,
+    OrganizationScimUserRepositoryError, OrganizationScimUserSyncOutcome,
+    OrganizationScimUserSyncResult,
 };
 use af_domain::{
     DEFAULT_ORGANIZATION_SCIM_RATE_LIMIT, DEFAULT_ORGANIZATION_SCIM_RATE_LIMIT_WINDOW_SECONDS,
-    DEFAULT_TOKEN_SCIM_RATE_LIMIT, OrganizationId, OrganizationScimGroupResource,
-    OrganizationScimRateLimitDecision, OrganizationScimRateLimitFuture,
-    OrganizationScimRateLimitRule, OrganizationScimRateLimitStore,
+    DEFAULT_TOKEN_SCIM_RATE_LIMIT, OrganizationId, OrganizationScimAuditFacts,
+    OrganizationScimGroupResource, OrganizationScimRateLimitDecision,
+    OrganizationScimRateLimitFuture, OrganizationScimRateLimitRule, OrganizationScimRateLimitStore,
     OrganizationScimRateLimitSubject, OrganizationScimRateLimitWindow, OrganizationScimResourceId,
     OrganizationScimResourceVersion, OrganizationScimToken, OrganizationScimUserResource,
 };
@@ -63,6 +66,13 @@ pub enum OrganizationScimGroupSyncError {
     Internal,
 }
 
+/// SCIM 脱敏审计写入错误；审计不可用时调用方必须失败关闭。
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum OrganizationScimAuditError {
+    #[error("SCIM 审计服务暂不可用")]
+    Internal,
+}
+
 pub type OrganizationScimAuthenticationFuture<'a> = Pin<
     Box<
         dyn Future<
@@ -90,8 +100,21 @@ pub type OrganizationScimGroupSyncFuture<'a> = Pin<
 
 pub type OrganizationScimRateLimitAdmissionFuture<'a> = OrganizationScimRateLimitFuture<'a>;
 
+pub type OrganizationScimAuditFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<OrganizationScimAuditWriteOutcome, OrganizationScimAuditError>>
+            + Send
+            + 'a,
+    >,
+>;
+
 /// 以企业路径为边界校验 SCIM 令牌的服务契约。
 pub trait OrganizationScimService: Send + Sync {
+    fn record_audit<'a>(
+        &'a self,
+        facts: OrganizationScimAuditFacts,
+    ) -> OrganizationScimAuditFuture<'a>;
+
     fn admit_rate_limit<'a>(
         &'a self,
         organization_id: OrganizationId,
@@ -129,6 +152,7 @@ pub struct DatabaseOrganizationScimService {
     repository: Arc<OrganizationScimTokenRepository>,
     user_repository: Arc<OrganizationScimUserRepository>,
     group_repository: Arc<OrganizationScimGroupRepository>,
+    audit_repository: Arc<OrganizationScimAuditRepository>,
     rate_limit_store: Option<Arc<dyn OrganizationScimRateLimitStore>>,
 }
 
@@ -138,18 +162,32 @@ impl DatabaseOrganizationScimService {
         repository: Arc<OrganizationScimTokenRepository>,
         user_repository: Arc<OrganizationScimUserRepository>,
         group_repository: Arc<OrganizationScimGroupRepository>,
+        audit_repository: Arc<OrganizationScimAuditRepository>,
         rate_limit_store: Option<Arc<dyn OrganizationScimRateLimitStore>>,
     ) -> Self {
         Self {
             repository,
             user_repository,
             group_repository,
+            audit_repository,
             rate_limit_store,
         }
     }
 }
 
 impl OrganizationScimService for DatabaseOrganizationScimService {
+    fn record_audit<'a>(
+        &'a self,
+        facts: OrganizationScimAuditFacts,
+    ) -> OrganizationScimAuditFuture<'a> {
+        Box::pin(async move {
+            self.audit_repository
+                .record(&facts)
+                .await
+                .map_err(map_audit_repository_error)
+        })
+    }
+
     fn admit_rate_limit<'a>(
         &'a self,
         organization_id: OrganizationId,
@@ -275,6 +313,12 @@ fn map_repository_error(
             OrganizationScimAuthenticationError::Internal
         }
     }
+}
+
+fn map_audit_repository_error(
+    _error: OrganizationScimAuditRepositoryError,
+) -> OrganizationScimAuditError {
+    OrganizationScimAuditError::Internal
 }
 
 fn map_user_repository_error(
