@@ -1,7 +1,7 @@
 use std::{error::Error, time::Duration};
 
 use af_domain::{
-    OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationId,
+    OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot,
     OrganizationScimAuditEventType, OrganizationScimAuditFacts, OrganizationScimAuditResource,
     OrganizationScimAuditResult, OrganizationScimRequestFingerprint,
     OrganizationScimResourceDigest, OrganizationScimResourceId, OrganizationScimResourceKind,
