@@ -199,6 +199,7 @@ pub struct DatabaseReady {
     _telemetry: TelemetryReady,
     database: DatabasePool,
     passkey_public_base_url: Option<String>,
+    organization_scim_rate_limit_store: Option<Arc<dyn af_domain::OrganizationScimRateLimitStore>>,
 }
 
 /// 已使用数据库连接池装配令牌认证服务。
@@ -785,6 +786,18 @@ impl Bootstrap<TelemetryReady> {
             .map_err(BootstrapError::SiteSettingsRead)?
             .public_base_url()
             .map(str::to_owned);
+        let organization_scim_rate_limit_store = if let Some(redis_url) = self.config.redis().url()
+        {
+            let store = RedisOrganizationScimRateLimitStore::connect(
+                RedisConfig::new(redis_url.expose().to_owned()),
+                "anyflows.organization.scim.rate.v1",
+            )
+            .await
+            .map_err(BootstrapError::RequestRateLimit)?;
+            Some(Arc::new(store) as Arc<dyn af_domain::OrganizationScimRateLimitStore>)
+        } else {
+            None
+        };
         let Bootstrap {
             config,
             shutdown_timeout,
@@ -799,6 +812,7 @@ impl Bootstrap<TelemetryReady> {
                 _telemetry: stage,
                 database,
                 passkey_public_base_url,
+                organization_scim_rate_limit_store,
             },
         })
     }
@@ -1011,18 +1025,6 @@ impl Bootstrap<DatabaseReady> {
             )
             .map_err(BootstrapError::OrganizationScimGroupRepository)?,
         );
-        let organization_scim_rate_limit_store = if let Some(redis_url) = self.config.redis().url()
-        {
-            let store = RedisOrganizationScimRateLimitStore::connect(
-                RedisConfig::new(redis_url.expose().to_owned()),
-                "anyflows.organization.scim.rate.v1",
-            )
-            .await
-            .map_err(BootstrapError::RequestRateLimit)?;
-            Some(Arc::new(store) as Arc<dyn af_domain::OrganizationScimRateLimitStore>)
-        } else {
-            None
-        };
         let organization_sso_provider_repository = OrganizationSsoProviderRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -1189,6 +1191,7 @@ impl Bootstrap<DatabaseReady> {
             shutdown,
             stage,
         } = self;
+        let organization_scim_rate_limit_store = stage.organization_scim_rate_limit_store.clone();
         let database_authenticator: Arc<dyn TokenAuthenticator> =
             Arc::new(DatabaseTokenAuthenticator::new(repository));
         let user_profile_service: Arc<dyn UserProfileService> =
