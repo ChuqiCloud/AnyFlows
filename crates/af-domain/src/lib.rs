@@ -11,6 +11,8 @@ mod organization;
 mod organization_budget;
 mod organization_entitlement;
 mod organization_scim;
+mod organization_scim_audit;
+mod organization_scim_rate_limit;
 mod organization_sso;
 mod organization_sso_domain_verification;
 mod organization_sso_identity;
@@ -72,6 +74,18 @@ pub use organization_scim::{
     OrganizationScimTokenDigest, OrganizationScimTokenError, OrganizationScimTokenKey,
     OrganizationScimTokenStatus, OrganizationScimUserResource,
     classify_organization_scim_lifecycle, classify_organization_scim_sync,
+};
+pub use organization_scim_audit::{
+    OrganizationScimAuditEventType, OrganizationScimAuditFacts, OrganizationScimAuditFactsError,
+    OrganizationScimAuditReason, OrganizationScimAuditResource, OrganizationScimAuditResult,
+    OrganizationScimRequestFingerprint, OrganizationScimResourceDigest,
+};
+pub use organization_scim_rate_limit::{
+    MAX_ORGANIZATION_SCIM_RATE_LIMIT_WINDOW_SECONDS, OrganizationScimRateLimitDecision,
+    OrganizationScimRateLimitError, OrganizationScimRateLimitRejection,
+    OrganizationScimRateLimitRule, OrganizationScimRateLimitSnapshot,
+    OrganizationScimRateLimitState, OrganizationScimRateLimitSubject,
+    OrganizationScimRateLimitWindow, classify_organization_scim_rate_limit,
 };
 pub use organization_sso::{
     OrganizationSsoDomain, OrganizationSsoDomainError, OrganizationSsoDomainStatus,
@@ -152,6 +166,10 @@ mod error_tests;
 mod network_tests;
 #[cfg(test)]
 mod organization_budget_tests;
+#[cfg(test)]
+mod organization_scim_audit_tests;
+#[cfg(test)]
+mod organization_scim_rate_limit_tests;
 #[cfg(test)]
 mod organization_scim_tests;
 #[cfg(test)]

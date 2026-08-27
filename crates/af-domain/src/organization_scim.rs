@@ -143,7 +143,7 @@ impl fmt::Debug for OrganizationScimTokenDigest {
 }
 
 /// 不暴露数据库自增序号的 SCIM 令牌公开标识。
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub struct OrganizationScimTokenKey(String);
 
 impl OrganizationScimTokenKey {
