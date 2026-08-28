@@ -3,8 +3,9 @@ use std::{collections::HashMap, fmt, time::Duration};
 use af_domain::{
     MAX_ORGANIZATION_DEPARTMENT_DEPTH, OrganizationDepartmentDisableFacts,
     OrganizationDepartmentDisableRejection, OrganizationDepartmentId, OrganizationDepartmentKey,
-    OrganizationDepartmentNode, OrganizationDepartmentStatus, OrganizationDepartmentTreeError,
-    OrganizationId, validate_organization_department_move, validate_organization_department_tree,
+    OrganizationDepartmentMembershipStatus, OrganizationDepartmentNode,
+    OrganizationDepartmentStatus, OrganizationDepartmentTreeError, OrganizationId,
+    validate_organization_department_move, validate_organization_department_tree,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, DbErr,
@@ -17,7 +18,7 @@ use tokio::time::timeout;
 
 use crate::{
     DatabasePool,
-    entity::{organization_departments, organizations},
+    entity::{organization_department_memberships, organization_departments, organizations},
 };
 
 const ACTIVE_ORGANIZATION: i16 = 1;
@@ -563,11 +564,25 @@ impl OrganizationDepartmentRepository {
         let has_active_children = models.iter().any(|model| {
             model.parent_department_id == Some(department.id) && model.status == ACTIVE_DEPARTMENT
         });
+        let has_active_members = organization_department_memberships::Entity::find()
+            .filter(
+                organization_department_memberships::Column::OrganizationId
+                    .eq(organization_id.get()),
+            )
+            .filter(organization_department_memberships::Column::DepartmentId.eq(department.id))
+            .filter(
+                organization_department_memberships::Column::Status
+                    .eq(OrganizationDepartmentMembershipStatus::Active.code()),
+            )
+            .one(&transaction)
+            .await
+            .map_err(query_error)?
+            .is_some();
         OrganizationDepartmentDisableFacts::new(
             OrganizationDepartmentStatus::try_from(department.status)
                 .map_err(|_| OrganizationDepartmentRepositoryError::Invariant)?,
             has_active_children,
-            false,
+            has_active_members,
             false,
             false,
         )

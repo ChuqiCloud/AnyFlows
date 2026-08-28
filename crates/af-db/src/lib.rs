@@ -133,6 +133,9 @@ mod organization_custom_role_binding_tests;
 #[cfg(test)]
 mod organization_custom_role_tests;
 mod organization_department;
+mod organization_department_membership;
+#[cfg(test)]
+mod organization_department_membership_tests;
 #[cfg(test)]
 mod organization_department_tests;
 mod organization_scim;
@@ -515,6 +518,12 @@ pub use organization_department::{
     OrganizationDepartmentCreate, OrganizationDepartmentCursor, OrganizationDepartmentPageRecord,
     OrganizationDepartmentRecord, OrganizationDepartmentRepository,
     OrganizationDepartmentRepositoryConfigError, OrganizationDepartmentRepositoryError,
+};
+pub use organization_department_membership::{
+    OrganizationDepartmentMembershipCreate, OrganizationDepartmentMembershipRecord,
+    OrganizationDepartmentMembershipRepository,
+    OrganizationDepartmentMembershipRepositoryConfigError,
+    OrganizationDepartmentMembershipRepositoryError,
 };
 pub use organization_scim::{
     OrganizationScimGroupRecord, OrganizationScimGroupRepository,

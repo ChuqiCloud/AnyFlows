@@ -65,6 +65,7 @@ pub(crate) mod organization_budget_policies;
 pub(crate) mod organization_budget_windows;
 pub(crate) mod organization_custom_role_permissions;
 pub(crate) mod organization_custom_roles;
+pub(crate) mod organization_department_memberships;
 pub(crate) mod organization_departments;
 pub(crate) mod organization_entitlements;
 pub(crate) mod organization_invitations;

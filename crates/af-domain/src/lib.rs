@@ -64,9 +64,10 @@ pub use organization_budget::{
 pub use organization_department::{
     MAX_ORGANIZATION_DEPARTMENT_DEPTH, OrganizationDepartmentDisableFacts,
     OrganizationDepartmentDisableRejection, OrganizationDepartmentKey,
-    OrganizationDepartmentKeyError, OrganizationDepartmentNode, OrganizationDepartmentStatus,
-    OrganizationDepartmentTreeError, validate_organization_department_move,
-    validate_organization_department_tree,
+    OrganizationDepartmentKeyError, OrganizationDepartmentMembership,
+    OrganizationDepartmentMembershipError, OrganizationDepartmentMembershipStatus,
+    OrganizationDepartmentNode, OrganizationDepartmentStatus, OrganizationDepartmentTreeError,
+    validate_organization_department_move, validate_organization_department_tree,
 };
 pub use organization_entitlement::{
     MAX_ORGANIZATION_AUDIT_RETENTION_DAYS, OrganizationEntitlementCapacity,

@@ -2991,6 +2991,34 @@ pub(in crate::migration) mod organization_departments {
     }
 }
 
+pub(in crate::migration) mod organization_department_memberships {
+    use super::DeriveIden;
+
+    /// 企业成员与部门关联事实表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_department_memberships")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 部门成员归属状态、主部门和时间列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        MembershipId,
+        DepartmentId,
+        IsPrimary,
+        Status,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+        RemovedAt,
+    }
+}
+
 pub(in crate::migration) mod organization_scim_audit_logs {
     use super::DeriveIden;
 
