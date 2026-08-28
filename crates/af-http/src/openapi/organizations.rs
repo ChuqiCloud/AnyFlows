@@ -18,6 +18,9 @@ use crate::{
         OrganizationMembershipChangeRequest, OrganizationMembershipListResponse,
         OrganizationMembershipResponse, OrganizationOverviewResponse,
         OrganizationOwnershipTransferRequest, OrganizationOwnershipTransferResponse,
+        OrganizationServiceAccountCreateRequest, OrganizationServiceAccountIssuedResponse,
+        OrganizationServiceAccountListResponse, OrganizationServiceAccountResponse,
+        OrganizationServiceAccountRotateRequest, OrganizationServiceAccountStatusRequest,
         OrganizationTeamChangeRequest, OrganizationTeamCreateRequest,
         OrganizationTeamDisableRequest, OrganizationTeamListResponse, OrganizationTeamResponse,
     },
@@ -476,6 +479,68 @@ fn update_organization_custom_role() {}
 fn disable_organization_custom_role() {}
 
 #[utoipa::path(
+    get,
+    path = "/api/organizations/{organization_id}/service-accounts",
+    operation_id = "listOrganizationServiceAccounts",
+    tag = "企业服务账号",
+    params(
+        ("organization_id" = i64, Path, minimum = 1),
+        ("after" = Option<String>, Query, description = "上一页最后一项的服务账号随机公开标识"),
+        ("limit" = Option<usize>, Query, minimum = 1, maximum = 100)
+    ),
+    responses((status = 200, body = OrganizationServiceAccountListResponse), (status = 400, body = ManagementErrorBody), (status = 401, body = ManagementErrorBody), (status = 403, body = ManagementErrorBody), (status = 404, body = ManagementErrorBody), (status = 500, body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn list_organization_service_accounts() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/organizations/{organization_id}/service-accounts/{service_account_key}",
+    operation_id = "getOrganizationServiceAccount",
+    tag = "企业服务账号",
+    params(("organization_id" = i64, Path, minimum = 1), ("service_account_key" = String, Path, description = "服务账号随机公开标识")),
+    responses((status = 200, body = OrganizationServiceAccountResponse), (status = 400, body = ManagementErrorBody), (status = 401, body = ManagementErrorBody), (status = 403, body = ManagementErrorBody), (status = 404, body = ManagementErrorBody), (status = 500, body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn get_organization_service_account() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/organizations/{organization_id}/service-accounts",
+    operation_id = "createOrganizationServiceAccount",
+    tag = "企业服务账号",
+    params(("organization_id" = i64, Path, minimum = 1)),
+    request_body = OrganizationServiceAccountCreateRequest,
+    responses((status = 200, body = OrganizationServiceAccountIssuedResponse), (status = 400, body = ManagementErrorBody), (status = 401, body = ManagementErrorBody), (status = 403, body = ManagementErrorBody), (status = 404, body = ManagementErrorBody), (status = 500, body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn create_organization_service_account() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/organizations/{organization_id}/service-accounts/{service_account_key}/status",
+    operation_id = "changeOrganizationServiceAccountStatus",
+    tag = "企业服务账号",
+    params(("organization_id" = i64, Path, minimum = 1), ("service_account_key" = String, Path, description = "服务账号随机公开标识")),
+    request_body = OrganizationServiceAccountStatusRequest,
+    responses((status = 200, body = OrganizationServiceAccountResponse), (status = 400, body = ManagementErrorBody), (status = 401, body = ManagementErrorBody), (status = 403, body = ManagementErrorBody), (status = 404, body = ManagementErrorBody), (status = 409, body = ManagementErrorBody), (status = 500, body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn change_organization_service_account_status() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/organizations/{organization_id}/service-accounts/{service_account_key}/rotate-key",
+    operation_id = "rotateOrganizationServiceAccountKey",
+    tag = "企业服务账号",
+    params(("organization_id" = i64, Path, minimum = 1), ("service_account_key" = String, Path, description = "服务账号随机公开标识")),
+    request_body = OrganizationServiceAccountRotateRequest,
+    responses((status = 200, body = OrganizationServiceAccountIssuedResponse), (status = 400, body = ManagementErrorBody), (status = 401, body = ManagementErrorBody), (status = 403, body = ManagementErrorBody), (status = 404, body = ManagementErrorBody), (status = 409, body = ManagementErrorBody), (status = 500, body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn rotate_organization_service_account_key() {}
+
+#[utoipa::path(
     patch,
     path = "/api/organizations/{organization_id}/members/{membership_id}/custom-role",
     operation_id = "setOrganizationMemberCustomRole",
@@ -523,6 +588,11 @@ fn set_organization_member_custom_role() {}
         create_organization_custom_role,
         update_organization_custom_role,
         disable_organization_custom_role,
+        list_organization_service_accounts,
+        get_organization_service_account,
+        create_organization_service_account,
+        change_organization_service_account_status,
+        rotate_organization_service_account_key,
         set_organization_member_custom_role
     ),
     components(schemas(
@@ -557,6 +627,12 @@ fn set_organization_member_custom_role() {}
         OrganizationMemberCustomRoleRequest,
         OrganizationMemberCustomRoleResponse,
         OrganizationCustomRoleListResponse,
+        OrganizationServiceAccountCreateRequest,
+        OrganizationServiceAccountStatusRequest,
+        OrganizationServiceAccountRotateRequest,
+        OrganizationServiceAccountResponse,
+        OrganizationServiceAccountIssuedResponse,
+        OrganizationServiceAccountListResponse,
         ManagementErrorBody
     ))
 )]

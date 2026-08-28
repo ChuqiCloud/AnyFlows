@@ -90,6 +90,11 @@ fn organization_roles_use_the_fixed_permission_matrix() {
     assert!(OrganizationRole::Viewer.allows(OrganizationPermission::AuditRead));
     assert!(OrganizationRole::Owner.allows(OrganizationPermission::RolesAssign));
     assert!(OrganizationRole::Admin.allows(OrganizationPermission::RolesManage));
+    assert!(OrganizationRole::Owner.allows(OrganizationPermission::ServiceAccountsRead));
+    assert!(OrganizationRole::Owner.allows(OrganizationPermission::ServiceAccountsManage));
+    assert!(OrganizationRole::Admin.allows(OrganizationPermission::ServiceAccountsRead));
+    assert!(OrganizationRole::Admin.allows(OrganizationPermission::ServiceAccountsManage));
+    assert!(!OrganizationRole::Billing.allows(OrganizationPermission::ServiceAccountsRead));
     assert!(!OrganizationRole::Billing.allows(OrganizationPermission::RolesRead));
     assert_eq!(
         OrganizationPermission::MembersManage.code(),
@@ -131,6 +136,8 @@ fn custom_role_permissions_use_a_closed_server_allowlist() {
         OrganizationPermission::Close,
         OrganizationPermission::RolesManage,
         OrganizationPermission::RolesAssign,
+        OrganizationPermission::ServiceAccountsRead,
+        OrganizationPermission::ServiceAccountsManage,
     ] {
         assert!(!reserved.is_custom_role_grantable());
         assert_eq!(

@@ -9,7 +9,7 @@ use af_domain::{
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
-    QueryFilter, QuerySelect, Set, TransactionTrait,
+    QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Expr, LockType},
 };
@@ -28,6 +28,9 @@ const ACTIVE_ACCOUNT: i16 = OrganizationServiceAccountStatus::Active.code();
 const ACTIVE_KEY: i16 = 1;
 const REVOKED_KEY: i16 = 2;
 
+/// 企业服务账号目录单页最大记录数。
+pub const MAX_ORGANIZATION_SERVICE_ACCOUNT_PAGE_SIZE: usize = 100;
+
 /// 已持久化的服务账号主体及其版本事实。
 #[derive(Clone, PartialEq)]
 pub struct OrganizationServiceAccountRecord {
@@ -36,6 +39,25 @@ pub struct OrganizationServiceAccountRecord {
     created_at: i64,
     updated_at: i64,
     revoked_at: Option<i64>,
+}
+
+/// 企业范围服务账号稳定游标分页结果。
+#[derive(Clone, Debug, PartialEq)]
+pub struct OrganizationServiceAccountPageRecord {
+    items: Vec<OrganizationServiceAccountRecord>,
+    next_cursor: Option<OrganizationServiceAccountKey>,
+}
+
+impl OrganizationServiceAccountPageRecord {
+    #[must_use]
+    pub fn items(&self) -> &[OrganizationServiceAccountRecord] {
+        &self.items
+    }
+
+    #[must_use]
+    pub const fn next_cursor(&self) -> Option<OrganizationServiceAccountKey> {
+        self.next_cursor
+    }
 }
 
 impl OrganizationServiceAccountRecord {
@@ -216,6 +238,106 @@ impl OrganizationServiceAccountRepository {
         timeout(self.operation_timeout, self.get_inner(locator))
             .await
             .map_err(|_| OrganizationServiceAccountRepositoryError::Timeout)?
+    }
+
+    /// 按企业和随机公开标识读取主体，避免把数据库自增 ID 暴露到管理接口。
+    pub async fn get_by_public_key(
+        &self,
+        organization_id: OrganizationId,
+        public_key: OrganizationServiceAccountKey,
+    ) -> Result<OrganizationServiceAccountRecord, OrganizationServiceAccountRepositoryError> {
+        timeout(self.operation_timeout, async {
+            let model = organization_service_accounts::Entity::find()
+                .filter(
+                    organization_service_accounts::Column::OrganizationId.eq(organization_id.get()),
+                )
+                .filter(
+                    organization_service_accounts::Column::PublicKey
+                        .eq(public_key.persistence_key()),
+                )
+                .one(self.pool.connection())
+                .await
+                .map_err(|_| OrganizationServiceAccountRepositoryError::Query)?
+                .ok_or(OrganizationServiceAccountRepositoryError::NotFound)?;
+            account_record_from_model(model)
+                .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)
+        })
+        .await
+        .map_err(|_| OrganizationServiceAccountRepositoryError::Timeout)?
+    }
+
+    /// 按内部 ID 稳定排序、以随机公开标识承载游标列出同一企业的服务账号主体。
+    pub async fn list(
+        &self,
+        organization_id: OrganizationId,
+        after: Option<OrganizationServiceAccountKey>,
+        limit: usize,
+    ) -> Result<OrganizationServiceAccountPageRecord, OrganizationServiceAccountRepositoryError>
+    {
+        if limit == 0 || limit > MAX_ORGANIZATION_SERVICE_ACCOUNT_PAGE_SIZE {
+            return Err(OrganizationServiceAccountRepositoryError::InvalidInput);
+        }
+        let fetch_limit = u64::try_from(limit)
+            .ok()
+            .and_then(|value| value.checked_add(1))
+            .ok_or(OrganizationServiceAccountRepositoryError::InvalidInput)?;
+        timeout(self.operation_timeout, async {
+            let after_id = if let Some(after) = after {
+                let model = organization_service_accounts::Entity::find()
+                    .filter(
+                        organization_service_accounts::Column::OrganizationId
+                            .eq(organization_id.get()),
+                    )
+                    .filter(
+                        organization_service_accounts::Column::PublicKey
+                            .eq(after.persistence_key()),
+                    )
+                    .one(self.pool.connection())
+                    .await
+                    .map_err(|_| OrganizationServiceAccountRepositoryError::Query)?
+                    .ok_or(OrganizationServiceAccountRepositoryError::NotFound)?;
+                Some(
+                    OrganizationServiceAccountId::new(model.id)
+                        .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)?,
+                )
+            } else {
+                None
+            };
+            let mut query = organization_service_accounts::Entity::find()
+                .filter(
+                    organization_service_accounts::Column::OrganizationId.eq(organization_id.get()),
+                )
+                .order_by_asc(organization_service_accounts::Column::Id)
+                .limit(fetch_limit);
+            if let Some(after_id) = after_id {
+                query = query.filter(organization_service_accounts::Column::Id.gt(after_id.get()));
+            }
+            let mut models = query
+                .all(self.pool.connection())
+                .await
+                .map_err(|_| OrganizationServiceAccountRepositoryError::Query)?;
+            let has_more = models.len() > limit;
+            models.truncate(limit);
+            let next_cursor = if has_more {
+                models
+                    .last()
+                    .map(|model| {
+                        OrganizationServiceAccountKey::from_persistence_key(&model.public_key)
+                    })
+                    .transpose()
+                    .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)?
+            } else {
+                None
+            };
+            let items = models
+                .into_iter()
+                .map(account_record_from_model)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)?;
+            Ok(OrganizationServiceAccountPageRecord { items, next_cursor })
+        })
+        .await
+        .map_err(|_| OrganizationServiceAccountRepositoryError::Timeout)?
     }
 
     /// 使用企业与当前版本原子变更主体生命周期。

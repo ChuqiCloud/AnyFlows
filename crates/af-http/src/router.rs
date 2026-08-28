@@ -229,6 +229,9 @@ pub fn build_router(
     organization_custom_role_binding_service: Option<
         Arc<dyn af_admin::OrganizationCustomRoleBindingService>,
     >,
+    organization_service_account_service: Option<
+        Arc<dyn af_admin::OrganizationServiceAccountService>,
+    >,
     platform_audit_service: Option<Arc<dyn PlatformAuditService>>,
     organization_sso_provider_service: Option<Arc<dyn af_admin::OrganizationSsoProviderService>>,
     organization_sso_policy_service: Option<Arc<dyn af_admin::OrganizationSsoPolicyService>>,
@@ -834,6 +837,7 @@ pub fn build_router(
                 organization_sso_login_service,
                 organization_sso_identity_binding_service,
                 organization_sso_recovery_service,
+                organization_service_account_service,
             ))
         }
         _ => management_routes,

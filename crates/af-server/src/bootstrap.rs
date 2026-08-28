@@ -97,7 +97,8 @@ use af_db::{
     OrganizationScimAuditRepositoryError, OrganizationScimGroupRepository,
     OrganizationScimGroupRepositoryError, OrganizationScimTokenRepository,
     OrganizationScimTokenRepositoryError, OrganizationScimUserRepository,
-    OrganizationScimUserRepositoryError, OrganizationSsoProviderRepository,
+    OrganizationScimUserRepositoryError, OrganizationServiceAccountRepository,
+    OrganizationServiceAccountRepositoryError, OrganizationSsoProviderRepository,
     OrganizationSsoProviderRepositoryConfigError, OrganizationTokenRepository,
     OrganizationTokenRepositoryConfigError, OrganizationWalletRepository,
     OrganizationWalletRepositoryConfigError, PasskeyRepository, PasswordResetRepository,
@@ -230,6 +231,7 @@ pub struct AuthenticationReady {
     organization_management_service: Arc<dyn af_admin::OrganizationManagementService>,
     organization_custom_role_service: Arc<dyn OrganizationCustomRoleService>,
     organization_custom_role_binding_service: Arc<dyn OrganizationCustomRoleBindingService>,
+    organization_service_account_service: Arc<dyn af_admin::OrganizationServiceAccountService>,
     organization_sso_provider_service: Arc<dyn OrganizationSsoProviderService>,
     organization_sso_domain_service: Arc<dyn OrganizationSsoDomainService>,
     organization_sso_login_service: Arc<DatabaseOrganizationSsoLoginTransactionService>,
@@ -466,6 +468,9 @@ pub enum BootstrapError {
     OrganizationCustomRoleBindingRepository(
         #[source] OrganizationCustomRoleBindingRepositoryConfigError,
     ),
+    /// 企业服务账号仓储的启动参数无效。
+    #[error("企业服务账号仓储启动参数无效")]
+    OrganizationServiceAccountRepository(#[source] OrganizationServiceAccountRepositoryError),
     /// 站点设置仓储的启动参数无效。
     #[error("站点设置仓储启动参数无效")]
     SiteSettingsRepository(#[source] SiteSettingsRepositoryConfigError),
@@ -986,6 +991,13 @@ impl Bootstrap<DatabaseReady> {
             )
             .map_err(BootstrapError::OrganizationCustomRoleBindingRepository)?,
         );
+        let organization_service_account_repository = Arc::new(
+            OrganizationServiceAccountRepository::new(
+                self.stage.database.clone(),
+                Duration::from_secs(auth.lookup_timeout_secs()),
+            )
+            .map_err(BootstrapError::OrganizationServiceAccountRepository)?,
+        );
         let organization_wallet_repository = Arc::new(
             OrganizationWalletRepository::new(
                 self.stage.database.clone(),
@@ -1224,6 +1236,11 @@ impl Bootstrap<DatabaseReady> {
             organization_custom_role_binding_repository,
             Arc::clone(&organization_custom_role_service),
         ));
+        let organization_service_account_service: Arc<
+            dyn af_admin::OrganizationServiceAccountService,
+        > = Arc::new(af_admin::DatabaseOrganizationServiceAccountService::new(
+            organization_service_account_repository,
+        ));
         let organization_sso_identity_binding_service: Arc<
             dyn OrganizationSsoIdentityBindingService,
         > = Arc::new({
@@ -1323,6 +1340,7 @@ impl Bootstrap<DatabaseReady> {
                 ),
                 organization_custom_role_service,
                 organization_custom_role_binding_service,
+                organization_service_account_service,
                 organization_sso_provider_service: Arc::new(
                     DatabaseOrganizationSsoProviderService::new(
                         organization_sso_provider_repository.clone(),
@@ -2506,6 +2524,12 @@ impl Bootstrap<Supervised> {
                     .stage
                     .infrastructure
                     .organization_custom_role_binding_service,
+            )),
+            Some(Arc::clone(
+                &self
+                    .stage
+                    .infrastructure
+                    .organization_service_account_service,
             )),
             Some(Arc::clone(
                 &self.stage.infrastructure.platform_audit_service,

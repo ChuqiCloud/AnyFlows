@@ -314,6 +314,10 @@ pub enum OrganizationPermission {
     SsoManage,
     /// 管理企业 SSO 恢复入口。
     SsoRecovery,
+    /// 查看企业服务账号目录。
+    ServiceAccountsRead,
+    /// 管理企业服务账号生命周期与密钥。
+    ServiceAccountsManage,
 }
 
 const CUSTOM_ROLE_GRANTABLE_PERMISSIONS: &[OrganizationPermission] = &[
@@ -357,6 +361,8 @@ impl OrganizationPermission {
             Self::SsoRead => "organization.sso.read",
             Self::SsoManage => "organization.sso.manage",
             Self::SsoRecovery => "organization.sso.recovery",
+            Self::ServiceAccountsRead => "organization.service_accounts.read",
+            Self::ServiceAccountsManage => "organization.service_accounts.manage",
         }
     }
 
@@ -383,6 +389,8 @@ impl OrganizationPermission {
             "organization.sso.read" => Ok(Self::SsoRead),
             "organization.sso.manage" => Ok(Self::SsoManage),
             "organization.sso.recovery" => Ok(Self::SsoRecovery),
+            "organization.service_accounts.read" => Ok(Self::ServiceAccountsRead),
+            "organization.service_accounts.manage" => Ok(Self::ServiceAccountsManage),
             _ => Err(OrganizationPermissionCodeError::Unknown),
         }
     }
@@ -399,6 +407,8 @@ impl OrganizationPermission {
                 | Self::SsoRead
                 | Self::SsoManage
                 | Self::SsoRecovery
+                | Self::ServiceAccountsRead
+                | Self::ServiceAccountsManage
         )
     }
 
@@ -483,6 +493,8 @@ impl OrganizationRole {
                 Permission::SsoRead,
                 Permission::SsoManage,
                 Permission::SsoRecovery,
+                Permission::ServiceAccountsRead,
+                Permission::ServiceAccountsManage,
             ],
             Self::Admin => &[
                 Permission::OverviewRead,
@@ -502,6 +514,8 @@ impl OrganizationRole {
                 Permission::RolesAssign,
                 Permission::SsoRead,
                 Permission::SsoManage,
+                Permission::ServiceAccountsRead,
+                Permission::ServiceAccountsManage,
             ],
             Self::Billing => &[
                 Permission::OverviewRead,
