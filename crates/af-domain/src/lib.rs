@@ -9,6 +9,7 @@ mod error;
 mod network;
 mod organization;
 mod organization_budget;
+mod organization_department;
 mod organization_entitlement;
 mod organization_scim;
 mod organization_scim_audit;
@@ -59,6 +60,13 @@ pub use organization_budget::{
     MAX_ORGANIZATION_BUDGET_FIXED_PERIOD_SECONDS, MIN_ORGANIZATION_BUDGET_FIXED_PERIOD_SECONDS,
     OrganizationBudgetLimit, OrganizationBudgetPeriod, OrganizationBudgetPolicyError,
     OrganizationBudgetScopeKind,
+};
+pub use organization_department::{
+    MAX_ORGANIZATION_DEPARTMENT_DEPTH, OrganizationDepartmentDisableFacts,
+    OrganizationDepartmentDisableRejection, OrganizationDepartmentKey,
+    OrganizationDepartmentKeyError, OrganizationDepartmentNode, OrganizationDepartmentStatus,
+    OrganizationDepartmentTreeError, validate_organization_department_move,
+    validate_organization_department_tree,
 };
 pub use organization_entitlement::{
     MAX_ORGANIZATION_AUDIT_RETENTION_DAYS, OrganizationEntitlementCapacity,
@@ -130,10 +138,10 @@ pub use payment::{
 };
 pub use principal::{
     ChannelId, CredentialId, GatewayPrincipal, GroupId, ModelId, OrganizationBudgetPolicyId,
-    OrganizationBudgetWindowId, OrganizationCustomRoleId, OrganizationGatewayPrincipal,
-    OrganizationId, OrganizationMembershipId, OrganizationScimTokenId,
-    OrganizationServiceAccountId, OrganizationTeamId, PrincipalIdError, ProxyId, RouteChannelId,
-    RouteId, TokenId, UserId,
+    OrganizationBudgetWindowId, OrganizationCustomRoleId, OrganizationDepartmentId,
+    OrganizationGatewayPrincipal, OrganizationId, OrganizationMembershipId,
+    OrganizationScimTokenId, OrganizationServiceAccountId, OrganizationTeamId, PrincipalIdError,
+    ProxyId, RouteChannelId, RouteId, TokenId, UserId,
 };
 pub use quota::{Quota, QuotaDelta, QuotaError};
 pub use redemption::{
@@ -185,6 +193,8 @@ mod error_tests;
 mod network_tests;
 #[cfg(test)]
 mod organization_budget_tests;
+#[cfg(test)]
+mod organization_department_tests;
 #[cfg(test)]
 mod organization_scim_audit_tests;
 #[cfg(test)]

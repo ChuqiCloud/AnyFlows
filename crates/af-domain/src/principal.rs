@@ -110,6 +110,11 @@ principal_id! {
 }
 
 principal_id! {
+    /// 已通过组织范围校验的企业部门标识。
+    OrganizationDepartmentId
+}
+
+principal_id! {
     /// 已通过组织范围校验的企业自定义角色内部标识。
     OrganizationCustomRoleId
 }
