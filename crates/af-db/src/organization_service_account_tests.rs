@@ -122,7 +122,7 @@ async fn service_account_persistence_rotation_and_cas_are_enterprise_scoped()
     );
     assert_eq!(
         repository
-            .authenticate_secret(record.locator(), rotated_secret)
+            .authenticate_secret(record.locator(), rotated_secret.clone())
             .await?
             .key_key(),
         rotated_key.key_key()
