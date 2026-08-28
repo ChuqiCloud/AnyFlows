@@ -6,7 +6,11 @@ use std::{
     },
 };
 
-use af_domain::{BillingReservationId, GatewayPrincipal, GroupId, Quota, TokenId, UserId};
+use af_domain::{
+    BillingReservationId, GatewayPrincipal, GroupId, OrganizationId, OrganizationServiceAccountId,
+    OrganizationServiceAccountKey, OrganizationServiceAccountLocator,
+    OrganizationServiceAccountRuntimeIdentity, Quota, TokenId, UserId,
+};
 use af_protocol::{AudioDuration, TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource};
 use rust_decimal::Decimal;
 
@@ -155,6 +159,38 @@ async fn free_request_skips_reservation_and_settlement_but_records_usage_once() 
     assert_eq!(first.usage(), actual);
     assert_eq!(first.usage_record().event_id(), event_id);
     assert_eq!(usage_port.records(), vec![first.usage_record()]);
+}
+
+#[tokio::test]
+async fn service_account_identity_is_carried_into_billing_completion() {
+    let measured = usage(20, 7);
+    let identity = OrganizationServiceAccountRuntimeIdentity::new(
+        OrganizationServiceAccountLocator::new(
+            OrganizationId::new(44).unwrap(),
+            OrganizationServiceAccountId::new(55).unwrap(),
+        ),
+        OrganizationServiceAccountKey::new([1; 16]).unwrap(),
+        OrganizationServiceAccountKey::new([2; 16]).unwrap(),
+    );
+    let usage_port = Arc::new(RecordingUsagePort::default());
+    let plan = BillingRequestPlan::prepare(Arc::new(RatioPricingResolver::free()), &measured)
+        .expect("免费定价必须可准备");
+    let mut lifecycle = plan
+        .start_free(principal(), reservation_id(6), usage_port.clone())
+        .unwrap()
+        .with_service_account_identity(identity);
+
+    let completion = lifecycle.complete(measured).await.unwrap();
+
+    assert_eq!(completion.service_account_identity(), Some(identity));
+    assert_eq!(
+        completion.usage_record().service_account_identity(),
+        Some(identity)
+    );
+    assert_eq!(
+        usage_port.records()[0].service_account_identity(),
+        Some(identity)
+    );
 }
 
 #[tokio::test]

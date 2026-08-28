@@ -2936,6 +2936,31 @@ pub(in crate::migration) mod organization_service_account_budget_bindings {
     }
 }
 
+pub(in crate::migration) mod organization_service_account_audit_logs {
+    use super::DeriveIden;
+
+    /// 企业服务账号调用身份审计投影表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_service_account_audit_logs")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 调用身份与已落库用量事件的关联列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        EventId,
+        OrganizationId,
+        ServiceAccountId,
+        ServiceAccountKey,
+        CredentialKey,
+        CreatedAt,
+    }
+}
+
 pub(in crate::migration) mod organization_scim_audit_logs {
     use super::DeriveIden;
 

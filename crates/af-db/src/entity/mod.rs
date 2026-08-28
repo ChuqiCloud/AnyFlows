@@ -12,11 +12,11 @@ use sea_orm::{ActiveValue, EntityTrait, Set, entity::prelude::*};
 use af_domain::{
     BillingReservationId, ChannelTimeout, MAX_ROUTE_MODEL_PATTERN_BYTES, OrganizationCustomRoleKey,
     OrganizationCustomRoleStatus, OrganizationKey, OrganizationMembershipStatus,
-    OrganizationPermission, OrganizationRole, OrganizationStatus, OrganizationTeamStatus, Quota,
-    QuotaDelta, RedemptionBatchId, RedemptionBatchStatus, RedemptionCodeId, RedemptionCodeStatus,
-    RouteMode, RouteStrategy, SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus,
-    SubscriptionWindow, UserSubscriptionId, UserSubscriptionStatus, WalletEventId,
-    validate_route_model_pattern,
+    OrganizationPermission, OrganizationRole, OrganizationServiceAccountKey, OrganizationStatus,
+    OrganizationTeamStatus, Quota, QuotaDelta, RedemptionBatchId, RedemptionBatchStatus,
+    RedemptionCodeId, RedemptionCodeStatus, RouteMode, RouteStrategy, SubscriptionCycle,
+    SubscriptionPlanId, SubscriptionPlanStatus, SubscriptionWindow, UserSubscriptionId,
+    UserSubscriptionStatus, WalletEventId, validate_route_model_pattern,
 };
 
 pub(crate) mod abilities;
@@ -71,6 +71,7 @@ pub(crate) mod organization_scim_audit_logs;
 pub(crate) mod organization_scim_group_resources;
 pub(crate) mod organization_scim_tokens;
 pub(crate) mod organization_scim_user_resources;
+pub(crate) mod organization_service_account_audit_logs;
 pub(crate) mod organization_service_account_budget_bindings;
 pub(crate) mod organization_service_account_keys;
 pub(crate) mod organization_service_accounts;
@@ -2610,6 +2611,42 @@ impl ActiveModelBehavior for usage_logs::ActiveModel {
         C: ConnectionTrait,
     {
         validate_usage_log(&self, database, insert).await?;
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_service_account_audit_logs::ActiveModel {
+    async fn before_save<C>(self, _database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        // 身份投影只允许追加，且只保存公开标识，不接受密钥摘要或明文。
+        if !insert {
+            return Err(DbErr::Custom("服务账号调用审计投影不允许更新".to_owned()));
+        }
+        let event_id = self.event_id.try_as_ref().map(String::as_str);
+        let service_account_key = self.service_account_key.try_as_ref().map(String::as_str);
+        let credential_key = self.credential_key.try_as_ref().map(String::as_str);
+        if event_id.is_none_or(|value| BillingReservationId::from_persistence_key(value).is_err())
+            || self
+                .organization_id
+                .try_as_ref()
+                .is_none_or(|value| *value <= 0)
+            || self
+                .service_account_id
+                .try_as_ref()
+                .is_none_or(|value| *value <= 0)
+            || service_account_key.is_none_or(|value| {
+                OrganizationServiceAccountKey::from_persistence_key(value).is_err()
+            })
+            || credential_key.is_none_or(|value| {
+                OrganizationServiceAccountKey::from_persistence_key(value).is_err()
+            })
+            || self.created_at.try_as_ref().is_none()
+        {
+            return Err(DbErr::Custom("服务账号调用审计投影状态无效".to_owned()));
+        }
         Ok(self)
     }
 }

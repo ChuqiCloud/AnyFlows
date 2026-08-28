@@ -38,18 +38,18 @@ use crate::entity::{
     organization_custom_role_permissions, organization_custom_roles, organization_entitlements,
     organization_invitations, organization_memberships, organization_scim_audit_logs,
     organization_scim_group_resources, organization_scim_tokens, organization_scim_user_resources,
-    organization_service_account_budget_bindings, organization_service_account_keys,
-    organization_service_accounts, organization_sso_domains, organization_sso_identities,
-    organization_sso_login_transactions, organization_sso_policies, organization_sso_providers,
-    organization_teams, organization_wallet_ledger_entries, organization_wallets, organizations,
-    passkey_authentication_challenges, passkey_registration_challenges, passkeys, payment_settings,
-    platform_audit_logs, playground_conversations, playground_shares, redemption_batches,
-    redemption_codes, refund_provider_events, refund_requests, registration_rate_limits,
-    request_outcome_logs, scheduler_outbox_events, site_settings,
-    subscription_balance_alert_events, subscription_orders, subscription_payment_events,
-    subscription_plan_prices, subscription_plans, tokens, topup_orders, topup_payment_events,
-    usage_logs, user_notification_events, user_notification_receipts, user_subscriptions, users,
-    wallet_ledger_entries,
+    organization_service_account_audit_logs, organization_service_account_budget_bindings,
+    organization_service_account_keys, organization_service_accounts, organization_sso_domains,
+    organization_sso_identities, organization_sso_login_transactions, organization_sso_policies,
+    organization_sso_providers, organization_teams, organization_wallet_ledger_entries,
+    organization_wallets, organizations, passkey_authentication_challenges,
+    passkey_registration_challenges, passkeys, payment_settings, platform_audit_logs,
+    playground_conversations, playground_shares, redemption_batches, redemption_codes,
+    refund_provider_events, refund_requests, registration_rate_limits, request_outcome_logs,
+    scheduler_outbox_events, site_settings, subscription_balance_alert_events, subscription_orders,
+    subscription_payment_events, subscription_plan_prices, subscription_plans, tokens,
+    topup_orders, topup_payment_events, usage_logs, user_notification_events,
+    user_notification_receipts, user_subscriptions, users, wallet_ledger_entries,
 };
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
@@ -81,7 +81,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 104;
+const EXPECTED_MIGRATION_COUNT: usize = 105;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -100,7 +100,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 87] = [
+const CORE_TABLES: [&str; 88] = [
     "groups",
     "users",
     "passkeys",
@@ -181,6 +181,7 @@ const CORE_TABLES: [&str; 87] = [
     "organization_service_accounts",
     "organization_service_account_keys",
     "organization_service_account_budget_bindings",
+    "organization_service_account_audit_logs",
     "platform_audit_logs",
     "request_outcome_logs",
     "user_notification_events",
@@ -1448,7 +1449,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 45);
+    assert_eq!(pending_migrations.len(), 46);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -1628,6 +1629,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[44].name(),
         "m20260828_000104_create_organization_service_account_budget_bindings"
+    );
+    assert_eq!(
+        pending_migrations[45].name(),
+        "m20260828_000105_create_organization_service_account_audit_logs"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
@@ -3195,6 +3200,11 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         "organization_service_account_budget_bindings",
     )
     .await?;
+    assert_entity_columns::<organization_service_account_audit_logs::Column>(
+        &manager,
+        "organization_service_account_audit_logs",
+    )
+    .await?;
     assert_entity_columns::<organization_audit_logs::Column>(&manager, "organization_audit_logs")
         .await?;
     assert_entity_columns::<platform_audit_logs::Column>(&manager, "platform_audit_logs").await?;
@@ -3673,6 +3683,18 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
             "idx_org_audit_organization_created",
         ),
         ("organization_audit_logs", "idx_org_audit_platform_id"),
+        (
+            "organization_service_account_audit_logs",
+            "uq_service_account_audit_event_id",
+        ),
+        (
+            "organization_service_account_audit_logs",
+            "idx_service_account_audit_organization_account_id",
+        ),
+        (
+            "organization_service_account_audit_logs",
+            "idx_service_account_audit_organization_credential_id",
+        ),
         ("platform_audit_logs", "uq_platform_audit_request_action"),
         ("platform_audit_logs", "idx_platform_audit_operator_id"),
         ("platform_audit_logs", "idx_platform_audit_route_id"),

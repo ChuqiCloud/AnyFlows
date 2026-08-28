@@ -1,8 +1,10 @@
 use std::fmt;
 
 use af_db::{
-    UsageLogBillingMode, UsageLogRepository, UsageLogRepositoryError, UsageLogSemantics,
-    UsageLogSource, UsageLogUsage, UsageLogVideoResolution, UsageLogWrite,
+    OrganizationServiceAccountAuditRepository, OrganizationServiceAccountAuditRepositoryError,
+    OrganizationServiceAccountAuditWrite, UsageLogBillingMode, UsageLogRepository,
+    UsageLogRepositoryError, UsageLogSemantics, UsageLogSource, UsageLogUsage,
+    UsageLogVideoResolution, UsageLogWrite,
 };
 use af_protocol::{ReasoningEffort, UsageSemantics, UsageSource, VideoResolution};
 
@@ -14,13 +16,27 @@ use crate::{
 #[derive(Clone)]
 pub struct DatabaseUsageRecordSink {
     repository: UsageLogRepository,
+    service_account_audit_repository: Option<OrganizationServiceAccountAuditRepository>,
 }
 
 impl DatabaseUsageRecordSink {
     /// 包装已完成数据库迁移与连接配置的用量日志仓储。
     #[must_use]
     pub fn new(repository: UsageLogRepository) -> Self {
-        Self { repository }
+        Self {
+            repository,
+            service_account_audit_repository: None,
+        }
+    }
+
+    /// 开启服务账号调用身份投影；个人/API Key 用量仍只写入原有日志。
+    #[must_use]
+    pub fn with_service_account_audit_projection(
+        mut self,
+        repository: OrganizationServiceAccountAuditRepository,
+    ) -> Self {
+        self.service_account_audit_repository = Some(repository);
+        self
     }
 }
 
@@ -31,8 +47,19 @@ impl UsageRecordSink for DatabaseUsageRecordSink {
             self.repository
                 .record(&write)
                 .await
-                .map(|_| ())
-                .map_err(map_repository_error)
+                .map_err(map_repository_error)?;
+            if let (Some(repository), Some(identity)) = (
+                self.service_account_audit_repository.as_ref(),
+                record.service_account_identity(),
+            ) {
+                let projection =
+                    OrganizationServiceAccountAuditWrite::new(record.event_id(), identity);
+                repository
+                    .record(&projection)
+                    .await
+                    .map_err(map_service_account_audit_repository_error)?;
+            }
+            Ok(())
         })
     }
 }
@@ -158,6 +185,26 @@ fn map_repository_error(error: UsageLogRepositoryError) -> UsageRecordSinkError 
         UsageLogRepositoryError::Conflict => UsageRecordSinkError::Conflict,
         UsageLogRepositoryError::Invariant => UsageRecordSinkError::Invariant,
         _ => UsageRecordSinkError::Invariant,
+    }
+}
+
+fn map_service_account_audit_repository_error(
+    error: OrganizationServiceAccountAuditRepositoryError,
+) -> UsageRecordSinkError {
+    match error {
+        OrganizationServiceAccountAuditRepositoryError::OutcomeUnknown
+        | OrganizationServiceAccountAuditRepositoryError::Query
+        | OrganizationServiceAccountAuditRepositoryError::Timeout
+        | OrganizationServiceAccountAuditRepositoryError::UsageNotFound
+        | OrganizationServiceAccountAuditRepositoryError::AccountNotFound
+        | OrganizationServiceAccountAuditRepositoryError::CredentialNotFound => {
+            UsageRecordSinkError::Unavailable
+        }
+        OrganizationServiceAccountAuditRepositoryError::Conflict => UsageRecordSinkError::Conflict,
+        OrganizationServiceAccountAuditRepositoryError::InvalidInput
+        | OrganizationServiceAccountAuditRepositoryError::Invariant => {
+            UsageRecordSinkError::Invariant
+        }
     }
 }
 
