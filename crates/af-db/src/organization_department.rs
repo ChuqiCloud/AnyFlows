@@ -469,7 +469,8 @@ impl OrganizationDepartmentRepository {
             if model.id == moving.id || !is_descendant(model.id, moving.id, &by_id) {
                 continue;
             }
-            let depth = i16::from(model.depth)
+            let depth = model
+                .depth
                 .checked_add(delta)
                 .filter(|value| (1..=i16::from(MAX_ORGANIZATION_DEPARTMENT_DEPTH)).contains(value))
                 .ok_or(OrganizationDepartmentRepositoryError::DepthExceeded)?;
