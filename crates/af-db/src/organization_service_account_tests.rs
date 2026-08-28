@@ -1,16 +1,17 @@
 use std::{error::Error, time::Duration};
 
 use af_domain::{
-    OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationId,
-    OrganizationServiceAccountLocator, OrganizationServiceAccountName,
+    OrganizationDepartmentId, OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot,
+    OrganizationId, OrganizationServiceAccountLocator, OrganizationServiceAccountName,
     OrganizationServiceAccountStatus, UserId,
 };
 use sea_orm::{ActiveModelTrait, Set};
 
 use crate::entity::{groups, users};
 use crate::{
-    DatabaseOptions, MigrationOptions, OrganizationCreate, OrganizationEntitlementWrite,
-    OrganizationRepository, OrganizationServiceAccountRepository,
+    DatabaseOptions, MigrationOptions, OrganizationCreate, OrganizationDepartmentCreate,
+    OrganizationDepartmentRepository, OrganizationEntitlementWrite, OrganizationRepository,
+    OrganizationServiceAccountRepository,
 };
 
 #[tokio::test]
@@ -66,6 +67,13 @@ async fn service_account_persistence_rotation_and_cas_are_enterprise_scoped()
         .await?
         .into_parts()
         .0;
+    let departments = OrganizationDepartmentRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let department = departments
+        .create(
+            organization.id(),
+            OrganizationDepartmentCreate::new("服务账号部门".to_owned(), None, 1),
+        )
+        .await?;
     let repository =
         OrganizationServiceAccountRepository::new(pool.clone(), Duration::from_secs(5))?;
     let issued = repository
@@ -160,6 +168,51 @@ async fn service_account_persistence_rotation_and_cas_are_enterprise_scoped()
     assert!(matches!(
         repository.get(wrong_scope).await,
         Err(crate::OrganizationServiceAccountRepositoryError::NotFound)
+    ));
+
+    let departmental_issued = repository
+        .create_with_department(
+            organization.id(),
+            department.id(),
+            OrganizationServiceAccountName::new("department-automation")?,
+        )
+        .await?;
+    let (departmental_record, departmental_key, departmental_secret) =
+        departmental_issued.into_parts();
+    assert_eq!(
+        departmental_record.locator().department_id(),
+        Some(department.id())
+    );
+    assert_eq!(departmental_key.locator(), departmental_record.locator());
+    let departmental_auth = repository
+        .authenticate_secret_for_organization(organization.id(), departmental_secret.clone())
+        .await?;
+    assert_eq!(
+        departmental_auth.identity().locator(),
+        departmental_record.locator()
+    );
+    assert_eq!(
+        departmental_auth.key().locator(),
+        departmental_record.locator()
+    );
+    assert!(matches!(
+        repository
+            .get(OrganizationServiceAccountLocator::with_department(
+                organization.id(),
+                departmental_record.locator().service_account_id(),
+                OrganizationDepartmentId::new(department.id().get() + 1)?,
+            ))
+            .await,
+        Err(crate::OrganizationServiceAccountRepositoryError::Restricted)
+    ));
+    departments
+        .disable(organization.id(), department.id(), department.version())
+        .await?;
+    assert!(matches!(
+        repository
+            .authenticate_secret_for_organization(organization.id(), departmental_secret)
+            .await,
+        Err(crate::OrganizationServiceAccountRepositoryError::Restricted)
     ));
     pool.close().await?;
     Ok(())

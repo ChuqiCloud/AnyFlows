@@ -1,6 +1,7 @@
 use std::{fmt, time::Duration};
 
 use af_domain::{
+    OrganizationDepartmentId, OrganizationDepartmentMembershipStatus, OrganizationDepartmentStatus,
     OrganizationEntitlementStatus, OrganizationId, OrganizationMembershipId,
     OrganizationMembershipStatus, OrganizationStatus, OrganizationTeamId, OrganizationTeamStatus,
     TokenId, UserId,
@@ -19,7 +20,8 @@ use crate::{
     AdminTokenRecord, DatabasePool,
     admin_token::base_query,
     entity::{
-        TokenHash, TokenIpAllowlist, TokenModelAllowlist, groups, organization_entitlements,
+        TokenHash, TokenIpAllowlist, TokenModelAllowlist, groups,
+        organization_department_memberships, organization_departments, organization_entitlements,
         organization_memberships, organization_teams, organizations, tokens, users,
     },
 };
@@ -83,6 +85,7 @@ impl fmt::Debug for OrganizationTokenWriteRecord {
 pub struct OrganizationTokenCreateRecord {
     organization_id: OrganizationId,
     membership_id: OrganizationMembershipId,
+    department_id: Option<OrganizationDepartmentId>,
     owner_user_id: UserId,
     key_hash: String,
     key_prefix: String,
@@ -102,6 +105,29 @@ impl OrganizationTokenCreateRecord {
         Self {
             organization_id,
             membership_id,
+            department_id: None,
+            owner_user_id,
+            key_hash,
+            key_prefix,
+            fields,
+        }
+    }
+
+    /// 构造带部门归属快照的企业 Key 写入事实。
+    #[must_use]
+    pub fn new_with_department(
+        organization_id: OrganizationId,
+        membership_id: OrganizationMembershipId,
+        department_id: OrganizationDepartmentId,
+        owner_user_id: UserId,
+        key_hash: String,
+        key_prefix: String,
+        fields: OrganizationTokenWriteRecord,
+    ) -> Self {
+        Self {
+            organization_id,
+            membership_id,
+            department_id: Some(department_id),
             owner_user_id,
             key_hash,
             key_prefix,
@@ -122,6 +148,7 @@ pub struct OrganizationTokenRecord {
     organization_id: OrganizationId,
     membership_id: OrganizationMembershipId,
     team_id: Option<OrganizationTeamId>,
+    department_id: Option<OrganizationDepartmentId>,
 }
 
 impl OrganizationTokenRecord {
@@ -143,6 +170,11 @@ impl OrganizationTokenRecord {
     #[must_use]
     pub const fn team_id(&self) -> Option<OrganizationTeamId> {
         self.team_id
+    }
+
+    #[must_use]
+    pub const fn department_id(&self) -> Option<OrganizationDepartmentId> {
+        self.department_id
     }
 }
 
@@ -385,6 +417,7 @@ impl OrganizationTokenRepository {
             &transaction,
             record.organization_id,
             record.membership_id,
+            record.department_id,
             record.owner_user_id,
         )
         .await?;
@@ -399,6 +432,9 @@ impl OrganizationTokenRepository {
             organization_id: Set(Some(record.organization_id.get())),
             organization_membership_id: Set(Some(record.membership_id.get())),
             organization_team_id: Set(provision.team_id.map(OrganizationTeamId::get)),
+            organization_department_id: Set(provision
+                .department_id
+                .map(OrganizationDepartmentId::get)),
             remain_quota: Set(fields.remain_quota),
             unlimited_quota: Set(fields.unlimited_quota),
             expired_at: Set(fields.expired_at),
@@ -623,12 +659,14 @@ impl TryFrom<OrganizationTokenWriteRecord> for StoredFields {
 
 struct ProvisioningSnapshot {
     team_id: Option<OrganizationTeamId>,
+    department_id: Option<OrganizationDepartmentId>,
 }
 
 async fn validate_provisioning(
     transaction: &DatabaseTransaction,
     organization_id: OrganizationId,
     membership_id: OrganizationMembershipId,
+    department_id: Option<OrganizationDepartmentId>,
     user_id: UserId,
 ) -> Result<ProvisioningSnapshot, OrganizationTokenRepositoryError> {
     let organization = lock_organization(transaction, organization_id).await?;
@@ -708,7 +746,45 @@ async fn validate_provisioning(
             return Err(OrganizationTokenRepositoryError::Restricted);
         }
     }
-    Ok(ProvisioningSnapshot { team_id })
+    if let Some(department_id) = department_id {
+        let department = organization_departments::Entity::find_by_id(department_id.get())
+            .filter(organization_departments::Column::OrganizationId.eq(organization_id.get()))
+            .one(transaction)
+            .await
+            .map_err(|_| OrganizationTokenRepositoryError::Query)?
+            .ok_or(OrganizationTokenRepositoryError::Restricted)?;
+        if OrganizationDepartmentStatus::try_from(department.status)
+            .map_err(|_| OrganizationTokenRepositoryError::Invariant)?
+            != OrganizationDepartmentStatus::Active
+        {
+            return Err(OrganizationTokenRepositoryError::Restricted);
+        }
+        let binding = organization_department_memberships::Entity::find()
+            .filter(
+                organization_department_memberships::Column::OrganizationId
+                    .eq(organization_id.get()),
+            )
+            .filter(
+                organization_department_memberships::Column::MembershipId.eq(membership_id.get()),
+            )
+            .filter(
+                organization_department_memberships::Column::DepartmentId.eq(department_id.get()),
+            )
+            .filter(
+                organization_department_memberships::Column::Status
+                    .eq(OrganizationDepartmentMembershipStatus::Active.code()),
+            )
+            .one(transaction)
+            .await
+            .map_err(|_| OrganizationTokenRepositoryError::Query)?;
+        if binding.is_none() {
+            return Err(OrganizationTokenRepositoryError::Restricted);
+        }
+    }
+    Ok(ProvisioningSnapshot {
+        team_id,
+        department_id,
+    })
 }
 
 async fn validate_existing_member(
@@ -803,6 +879,10 @@ fn organization_query(backend: DbBackend) -> sea_orm::sea_query::SelectStatement
             Expr::col((tokens::Entity, tokens::Column::OrganizationTeamId)),
             Alias::new("organization_team_id"),
         )
+        .expr_as(
+            Expr::col((tokens::Entity, tokens::Column::OrganizationDepartmentId)),
+            Alias::new("organization_department_id"),
+        )
         .to_owned()
 }
 
@@ -827,11 +907,18 @@ fn record_from_row(
         .map(OrganizationTeamId::new)
         .transpose()
         .map_err(|_| OrganizationTokenRepositoryError::Invariant)?;
+    let department_id = row
+        .try_get::<Option<i64>>("", "organization_department_id")
+        .map_err(|_| OrganizationTokenRepositoryError::Invariant)?
+        .map(OrganizationDepartmentId::new)
+        .transpose()
+        .map_err(|_| OrganizationTokenRepositoryError::Invariant)?;
     Ok(OrganizationTokenRecord {
         token,
         organization_id,
         membership_id,
         team_id,
+        department_id,
     })
 }
 

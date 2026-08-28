@@ -1,12 +1,12 @@
 use std::{fmt, time::Duration};
 
 use af_domain::{
-    OrganizationId, OrganizationServiceAccount, OrganizationServiceAccountId,
-    OrganizationServiceAccountKey, OrganizationServiceAccountLifecycleDisposition,
-    OrganizationServiceAccountLocator, OrganizationServiceAccountName,
-    OrganizationServiceAccountRuntimeIdentity, OrganizationServiceAccountSecret,
-    OrganizationServiceAccountSecretDigest, OrganizationServiceAccountStatus,
-    classify_organization_service_account_lifecycle,
+    OrganizationDepartmentStatus, OrganizationId, OrganizationServiceAccount,
+    OrganizationServiceAccountId, OrganizationServiceAccountKey,
+    OrganizationServiceAccountLifecycleDisposition, OrganizationServiceAccountLocator,
+    OrganizationServiceAccountName, OrganizationServiceAccountRuntimeIdentity,
+    OrganizationServiceAccountSecret, OrganizationServiceAccountSecretDigest,
+    OrganizationServiceAccountStatus, classify_organization_service_account_lifecycle,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
@@ -20,8 +20,8 @@ use tokio::time::timeout;
 use crate::{
     DatabasePool,
     entity::{
-        SensitiveString, organization_service_account_keys, organization_service_accounts,
-        organizations,
+        SensitiveString, organization_departments, organization_service_account_keys,
+        organization_service_accounts, organizations,
     },
 };
 
@@ -260,7 +260,7 @@ impl OrganizationServiceAccountRepository {
     ) -> Result<OrganizationServiceAccountIssued, OrganizationServiceAccountRepositoryError> {
         timeout(
             self.operation_timeout,
-            self.create_inner(organization_id, name),
+            self.create_inner(organization_id, name, None),
         )
         .await
         .map_err(|_| OrganizationServiceAccountRepositoryError::Timeout)?
@@ -273,6 +273,21 @@ impl OrganizationServiceAccountRepository {
         timeout(self.operation_timeout, self.get_inner(locator))
             .await
             .map_err(|_| OrganizationServiceAccountRepositoryError::Timeout)?
+    }
+
+    /// 在活动企业内创建带部门归属快照的服务账号主体。
+    pub async fn create_with_department(
+        &self,
+        organization_id: OrganizationId,
+        department_id: af_domain::OrganizationDepartmentId,
+        name: OrganizationServiceAccountName,
+    ) -> Result<OrganizationServiceAccountIssued, OrganizationServiceAccountRepositoryError> {
+        timeout(
+            self.operation_timeout,
+            self.create_inner(organization_id, name, Some(department_id)),
+        )
+        .await
+        .map_err(|_| OrganizationServiceAccountRepositoryError::Timeout)?
     }
 
     /// 按企业和随机公开标识读取主体，避免把数据库自增 ID 暴露到管理接口。
@@ -444,6 +459,7 @@ impl OrganizationServiceAccountRepository {
         &self,
         organization_id: OrganizationId,
         name: OrganizationServiceAccountName,
+        department_id: Option<af_domain::OrganizationDepartmentId>,
     ) -> Result<OrganizationServiceAccountIssued, OrganizationServiceAccountRepositoryError> {
         let transaction = self
             .pool
@@ -459,6 +475,20 @@ impl OrganizationServiceAccountRepository {
         if organization.status != 1 || organization.closed_at.is_some() {
             return Err(OrganizationServiceAccountRepositoryError::Restricted);
         }
+        if let Some(department_id) = department_id {
+            let department = organization_departments::Entity::find_by_id(department_id.get())
+                .filter(organization_departments::Column::OrganizationId.eq(organization_id.get()))
+                .one(&transaction)
+                .await
+                .map_err(|_| OrganizationServiceAccountRepositoryError::Query)?
+                .ok_or(OrganizationServiceAccountRepositoryError::Restricted)?;
+            if OrganizationDepartmentStatus::try_from(department.status)
+                .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)?
+                != OrganizationDepartmentStatus::Active
+            {
+                return Err(OrganizationServiceAccountRepositoryError::Restricted);
+            }
+        }
         let account_key = OrganizationServiceAccountKey::generate()
             .map_err(|_| OrganizationServiceAccountRepositoryError::Query)?;
         let secret = OrganizationServiceAccountSecret::generate()
@@ -466,6 +496,7 @@ impl OrganizationServiceAccountRepository {
         let now = TimeDateTimeWithTimeZone::now_utc();
         let account = organization_service_accounts::ActiveModel {
             organization_id: Set(organization_id.get()),
+            organization_department_id: Set(department_id.map(|value| value.get())),
             public_key: Set(account_key.persistence_key()),
             name: Set(name.as_str().to_owned()),
             status: Set(ACTIVE_ACCOUNT),
@@ -503,7 +534,7 @@ impl OrganizationServiceAccountRepository {
             .map_err(|_| OrganizationServiceAccountRepositoryError::Query)?;
         let account = account_record_from_model(account)
             .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)?;
-        let key = key_record_from_model(key)
+        let key = key_record_from_model(key, account.locator().department_id())
             .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)?;
         Ok(OrganizationServiceAccountIssued {
             account,
@@ -526,8 +557,10 @@ impl OrganizationServiceAccountRepository {
                 .await
                 .map_err(|_| OrganizationServiceAccountRepositoryError::Query)?
                 .ok_or(OrganizationServiceAccountRepositoryError::NotFound)?;
-        account_record_from_model(model)
-            .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)
+        let record = account_record_from_model(model)
+            .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)?;
+        ensure_locator_department(locator, record.locator())?;
+        Ok(record)
     }
 
     async fn set_status_inner(
@@ -545,6 +578,7 @@ impl OrganizationServiceAccountRepository {
         let current = lock_account(&transaction, locator).await?;
         let current_record = account_record_from_model(current.clone())
             .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)?;
+        ensure_locator_department(locator, current_record.locator())?;
         match classify_organization_service_account_lifecycle(
             current_record.account.status(),
             target,
@@ -633,6 +667,7 @@ impl OrganizationServiceAccountRepository {
         let current = lock_account(&transaction, locator).await?;
         let current_record = account_record_from_model(current.clone())
             .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)?;
+        ensure_locator_department(locator, current_record.locator())?;
         if current_record.version() != expected_version {
             return Err(OrganizationServiceAccountRepositoryError::Conflict);
         }
@@ -712,15 +747,16 @@ impl OrganizationServiceAccountRepository {
                 .await
                 .map_err(|_| OrganizationServiceAccountRepositoryError::Query)?
                 .ok_or(OrganizationServiceAccountRepositoryError::Invariant)?;
+        let account = account_record_from_model(account)
+            .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)?;
         transaction
             .commit()
             .await
             .map_err(|_| OrganizationServiceAccountRepositoryError::Query)?;
         Ok(OrganizationServiceAccountIssued {
-            account: account_record_from_model(account)
+            key: key_record_from_model(key, account.locator().department_id())
                 .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)?,
-            key: key_record_from_model(key)
-                .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)?,
+            account,
             secret,
         })
     }
@@ -743,6 +779,7 @@ impl OrganizationServiceAccountRepository {
                 .ok_or(OrganizationServiceAccountRepositoryError::NotFound)?;
         let account = account_record_from_model(account)
             .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)?;
+        ensure_locator_department(locator, account.locator())?;
         if !account.account.status().is_usable() {
             return Err(OrganizationServiceAccountRepositoryError::Restricted);
         }
@@ -764,7 +801,8 @@ impl OrganizationServiceAccountRepository {
             .await
             .map_err(|_| OrganizationServiceAccountRepositoryError::Query)?
             .ok_or(OrganizationServiceAccountRepositoryError::NotFound)?;
-        key_record_from_model(key).map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)
+        key_record_from_model(key, account.locator().department_id())
+            .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)
     }
 
     async fn authenticate_secret_for_organization_inner(
@@ -808,6 +846,20 @@ impl OrganizationServiceAccountRepository {
         if account_model.status != ACTIVE_ACCOUNT || account_model.revoked_at.is_some() {
             return Err(OrganizationServiceAccountRepositoryError::Restricted);
         }
+        if let Some(department_id) = account_model.organization_department_id {
+            let department = organization_departments::Entity::find_by_id(department_id)
+                .filter(organization_departments::Column::OrganizationId.eq(organization_id.get()))
+                .one(&transaction)
+                .await
+                .map_err(|_| OrganizationServiceAccountRepositoryError::Query)?
+                .ok_or(OrganizationServiceAccountRepositoryError::Restricted)?;
+            if OrganizationDepartmentStatus::try_from(department.status)
+                .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)?
+                != OrganizationDepartmentStatus::Active
+            {
+                return Err(OrganizationServiceAccountRepositoryError::Restricted);
+            }
+        }
         let key = organization_service_account_keys::Entity::find()
             .filter(
                 organization_service_account_keys::Column::OrganizationId.eq(organization_id.get()),
@@ -827,7 +879,8 @@ impl OrganizationServiceAccountRepository {
             .ok_or(OrganizationServiceAccountRepositoryError::NotFound)?;
         let account = account_record_from_model(account_model)
             .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)?;
-        let key = key_record_from_model(key)
+        let locator = account.locator();
+        let key = key_record_from_model(key, locator.department_id())
             .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)?;
         let identity = OrganizationServiceAccountRuntimeIdentity::new(
             locator,
@@ -880,12 +933,15 @@ fn account_record_from_model(
     {
         return Err(());
     }
-    let account = OrganizationServiceAccount::from_persistence(
-        OrganizationServiceAccountLocator::new(organization_id, service_account_id),
-        public_key,
-        name,
-        status,
-    );
+    let locator = match model.organization_department_id {
+        Some(department_id) => OrganizationServiceAccountLocator::with_department(
+            organization_id,
+            service_account_id,
+            af_domain::OrganizationDepartmentId::new(department_id).map_err(|_| ())?,
+        ),
+        None => OrganizationServiceAccountLocator::new(organization_id, service_account_id),
+    };
+    let account = OrganizationServiceAccount::from_persistence(locator, public_key, name, status);
     Ok(OrganizationServiceAccountRecord {
         account,
         version: model.version,
@@ -895,8 +951,19 @@ fn account_record_from_model(
     })
 }
 
+fn ensure_locator_department(
+    requested: OrganizationServiceAccountLocator,
+    actual: OrganizationServiceAccountLocator,
+) -> Result<(), OrganizationServiceAccountRepositoryError> {
+    if requested.department_id().is_some() && requested.department_id() != actual.department_id() {
+        return Err(OrganizationServiceAccountRepositoryError::Restricted);
+    }
+    Ok(())
+}
+
 fn key_record_from_model(
     model: organization_service_account_keys::Model,
+    department_id: Option<af_domain::OrganizationDepartmentId>,
 ) -> Result<OrganizationServiceAccountKeyRecord, ()> {
     let organization_id = OrganizationId::new(model.organization_id).map_err(|_| ())?;
     let service_account_id =
@@ -912,8 +979,16 @@ fn key_record_from_model(
     if (model.status == REVOKED_KEY) != model.revoked_at.is_some() {
         return Err(());
     }
+    let locator = match department_id {
+        Some(department_id) => OrganizationServiceAccountLocator::with_department(
+            organization_id,
+            service_account_id,
+            department_id,
+        ),
+        None => OrganizationServiceAccountLocator::new(organization_id, service_account_id),
+    };
     Ok(OrganizationServiceAccountKeyRecord {
-        locator: OrganizationServiceAccountLocator::new(organization_id, service_account_id),
+        locator,
         key_key,
         key_prefix: model.key_prefix,
         status: model.status,

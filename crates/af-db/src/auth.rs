@@ -1,11 +1,12 @@
 use std::{fmt, num::NonZeroU32, time::Duration};
 
 use af_domain::{
-    ConcurrencyLimit, GatewayPrincipal, GroupId, OrganizationEntitlementCapacity,
-    OrganizationEntitlementSnapshot, OrganizationGatewayPrincipal, OrganizationId,
-    OrganizationMembershipId, OrganizationMembershipStatus, OrganizationStatus, OrganizationTeamId,
-    OrganizationTeamStatus, PLAYGROUND_TOKEN_NAME, TokenId, TokenModelPolicy, TrustedClientIp,
-    UserId,
+    ConcurrencyLimit, GatewayPrincipal, GroupId, OrganizationDepartmentId,
+    OrganizationDepartmentMembershipStatus, OrganizationDepartmentStatus,
+    OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationGatewayPrincipal,
+    OrganizationId, OrganizationMembershipId, OrganizationMembershipStatus, OrganizationStatus,
+    OrganizationTeamId, OrganizationTeamStatus, PLAYGROUND_TOKEN_NAME, TokenId, TokenModelPolicy,
+    TrustedClientIp, UserId,
 };
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DbBackend, DbErr, EntityTrait, PaginatorTrait, QueryFilter,
@@ -21,7 +22,8 @@ use crate::{
     DatabasePool,
     entity::{
         MAX_TOKEN_IP_ALLOWLIST_SERIALIZED_BYTES, MAX_TOKEN_MODEL_ALLOWLIST_SERIALIZED_BYTES,
-        TokenHash, TokenIpAllowlist, TokenModelAllowlist, groups, organization_entitlements,
+        TokenHash, TokenIpAllowlist, TokenModelAllowlist, groups,
+        organization_department_memberships, organization_departments, organization_entitlements,
         organization_memberships, organization_teams, organizations, tokens, users,
     },
 };
@@ -208,6 +210,10 @@ fn lookup_query(database_backend: DbBackend, lookup: &TokenAuthLookup) -> Select
         .expr_as(
             Expr::col((tokens::Entity, tokens::Column::OrganizationTeamId)),
             Alias::new("token_organization_team_id"),
+        )
+        .expr_as(
+            Expr::col((tokens::Entity, tokens::Column::OrganizationDepartmentId)),
+            Alias::new("token_organization_department_id"),
         )
         .expr_as(
             Expr::case(
@@ -475,6 +481,7 @@ struct TokenAuthRow {
     token_organization_id: Option<i64>,
     token_organization_membership_id: Option<i64>,
     token_organization_team_id: Option<i64>,
+    token_organization_department_id: Option<i64>,
     token_model_limits: Option<TokenModelAllowlist>,
     token_model_limits_oversized: bool,
     token_allow_ips: Option<TokenIpAllowlist>,
@@ -519,6 +526,8 @@ impl TokenAuthRow {
             token_organization_membership_id: result
                 .try_get("", "token_organization_membership_id")?,
             token_organization_team_id: result.try_get("", "token_organization_team_id")?,
+            token_organization_department_id: result
+                .try_get("", "token_organization_department_id")?,
             token_model_limits: result.try_get("", "token_model_limits")?,
             token_model_limits_oversized: result.try_get("", "token_model_limits_oversized")?,
             token_allow_ips: result.try_get("", "token_allow_ips")?,
@@ -633,6 +642,7 @@ impl TokenAuthRow {
         let Some(organization_value) = self.token_organization_id else {
             if self.token_organization_membership_id.is_some()
                 || self.token_organization_team_id.is_some()
+                || self.token_organization_department_id.is_some()
             {
                 return Err(record_internal_error(TokenAuthRepositoryError::Invariant));
             }
@@ -721,6 +731,48 @@ impl TokenAuthRow {
             }
             None => None,
         };
+        let department_id = match self.token_organization_department_id {
+            Some(value) => {
+                let department_id = OrganizationDepartmentId::new(value)
+                    .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
+                let department = organization_departments::Entity::find_by_id(value)
+                    .filter(organization_departments::Column::OrganizationId.eq(organization_value))
+                    .one(connection)
+                    .await
+                    .map_err(|_| record_internal_error(TokenAuthRepositoryError::Query))?;
+                let Some(department) = department else {
+                    return Ok(None);
+                };
+                if OrganizationDepartmentStatus::try_from(department.status)
+                    .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?
+                    != OrganizationDepartmentStatus::Active
+                {
+                    return Ok(None);
+                }
+                let binding = organization_department_memberships::Entity::find()
+                    .filter(
+                        organization_department_memberships::Column::OrganizationId
+                            .eq(organization_value),
+                    )
+                    .filter(
+                        organization_department_memberships::Column::MembershipId
+                            .eq(membership_value),
+                    )
+                    .filter(organization_department_memberships::Column::DepartmentId.eq(value))
+                    .filter(
+                        organization_department_memberships::Column::Status
+                            .eq(OrganizationDepartmentMembershipStatus::Active.code()),
+                    )
+                    .one(connection)
+                    .await
+                    .map_err(|_| record_internal_error(TokenAuthRepositoryError::Query))?;
+                if binding.is_none() {
+                    return Ok(None);
+                }
+                Some(department_id)
+            }
+            None => None,
+        };
         let key_count = tokens::Entity::find()
             .filter(tokens::Column::OrganizationId.eq(organization_value))
             .filter(tokens::Column::DeletedAt.is_null())
@@ -734,11 +786,15 @@ impl TokenAuthRow {
         }
         let membership_id = OrganizationMembershipId::new(membership_value)
             .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
-        Ok(Some(OrganizationGatewayPrincipal::new(
-            organization_id,
-            membership_id,
-            team_id,
-        )))
+        Ok(Some(match department_id {
+            Some(department_id) => OrganizationGatewayPrincipal::with_department(
+                organization_id,
+                membership_id,
+                team_id,
+                department_id,
+            ),
+            None => OrganizationGatewayPrincipal::new(organization_id, membership_id, team_id),
+        }))
     }
 }
 

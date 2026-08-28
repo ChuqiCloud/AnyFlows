@@ -547,7 +547,9 @@ async fn existing_precharge(
         .ok_or(QuotaRepositoryError::Invariant)?;
     let organization = load_organization(repository, id).await?;
     ensure_pair(&state, &organization)?;
-    if organization.principal() != billing_principal(principal)?
+    // 部门快照尚未写入历史预留表；本切片先按既有企业主体恢复幂等请求，
+    // 下一切片再把部门路径作为预留不可变快照持久化。
+    if !same_organization_scope(organization.principal(), billing_principal(principal)?)
         || !state.matches_precharge(principal, amount, reservation_kind)
     {
         return Err(QuotaRepositoryError::Conflict);
@@ -561,6 +563,16 @@ async fn existing_precharge(
     group_windows::load_allocation(repository.pool.connection(), &key, &state).await?;
     token_windows::load_allocation(repository.pool.connection(), &key, &state).await?;
     Ok(QuotaMutationOutcome::Existing(state.status))
+}
+
+fn same_organization_scope(
+    existing: OrganizationBillingPrincipal,
+    requested: OrganizationBillingPrincipal,
+) -> bool {
+    existing.organization_id() == requested.organization_id()
+        && existing.membership_id() == requested.membership_id()
+        && existing.team_id() == requested.team_id()
+        && existing.user_id() == requested.user_id()
 }
 
 async fn load_organization(
@@ -579,12 +591,21 @@ fn billing_principal(
     let organization = principal
         .organization_principal()
         .ok_or(QuotaRepositoryError::Invariant)?;
-    Ok(OrganizationBillingPrincipal::new(
-        organization.organization_id(),
-        organization.membership_id(),
-        organization.team_id(),
-        principal.user_id(),
-    ))
+    Ok(match organization.department_id() {
+        Some(department_id) => OrganizationBillingPrincipal::with_department(
+            organization.organization_id(),
+            organization.membership_id(),
+            organization.team_id(),
+            department_id,
+            principal.user_id(),
+        ),
+        None => OrganizationBillingPrincipal::new(
+            organization.organization_id(),
+            organization.membership_id(),
+            organization.team_id(),
+            principal.user_id(),
+        ),
+    })
 }
 
 fn gateway_principal(
