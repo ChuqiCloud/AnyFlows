@@ -222,26 +222,16 @@ pub fn validate_organization_department_tree(
     let by_id = index_nodes(nodes)?;
     for node in nodes {
         let mut current = *node;
-        let mut expected_depth = node.depth;
+        let mut path = Vec::with_capacity(usize::from(node.depth));
         let mut visited = HashSet::with_capacity(usize::from(node.depth));
         loop {
             if !visited.insert(current.department_id) {
                 return Err(OrganizationDepartmentTreeError::CycleDetected);
             }
-            if current.depth != expected_depth {
-                return Err(OrganizationDepartmentTreeError::DepthExceeded);
-            }
+            path.push(current);
             match current.parent_id {
-                None => {
-                    if expected_depth != 1 {
-                        return Err(OrganizationDepartmentTreeError::DepthExceeded);
-                    }
-                    break;
-                }
+                None => break,
                 Some(parent_id) => {
-                    expected_depth = expected_depth
-                        .checked_sub(1)
-                        .ok_or(OrganizationDepartmentTreeError::DepthExceeded)?;
                     let parent = by_id
                         .get(&parent_id)
                         .ok_or(OrganizationDepartmentTreeError::ParentNotFound)?;
@@ -253,6 +243,13 @@ pub fn validate_organization_department_tree(
                     }
                     current = *parent;
                 }
+            }
+        }
+        for (index, ancestor) in path.iter().enumerate() {
+            let expected_depth = u8::try_from(path.len() - index)
+                .map_err(|_| OrganizationDepartmentTreeError::DepthExceeded)?;
+            if ancestor.depth != expected_depth {
+                return Err(OrganizationDepartmentTreeError::DepthExceeded);
             }
         }
     }
