@@ -11,12 +11,13 @@ use sea_orm::{ActiveValue, EntityTrait, Set, entity::prelude::*};
 
 use af_domain::{
     BillingReservationId, ChannelTimeout, MAX_ROUTE_MODEL_PATTERN_BYTES, OrganizationCustomRoleKey,
-    OrganizationCustomRoleStatus, OrganizationKey, OrganizationMembershipStatus,
-    OrganizationPermission, OrganizationRole, OrganizationServiceAccountKey, OrganizationStatus,
-    OrganizationTeamStatus, Quota, QuotaDelta, RedemptionBatchId, RedemptionBatchStatus,
-    RedemptionCodeId, RedemptionCodeStatus, RouteMode, RouteStrategy, SubscriptionCycle,
-    SubscriptionPlanId, SubscriptionPlanStatus, SubscriptionWindow, UserSubscriptionId,
-    UserSubscriptionStatus, WalletEventId, validate_route_model_pattern,
+    OrganizationCustomRoleStatus, OrganizationDepartmentKey, OrganizationDepartmentStatus,
+    OrganizationKey, OrganizationMembershipStatus, OrganizationPermission, OrganizationRole,
+    OrganizationServiceAccountKey, OrganizationStatus, OrganizationTeamStatus, Quota, QuotaDelta,
+    RedemptionBatchId, RedemptionBatchStatus, RedemptionCodeId, RedemptionCodeStatus, RouteMode,
+    RouteStrategy, SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus,
+    SubscriptionWindow, UserSubscriptionId, UserSubscriptionStatus, WalletEventId,
+    validate_route_model_pattern,
 };
 
 pub(crate) mod abilities;
@@ -64,6 +65,7 @@ pub(crate) mod organization_budget_policies;
 pub(crate) mod organization_budget_windows;
 pub(crate) mod organization_custom_role_permissions;
 pub(crate) mod organization_custom_roles;
+pub(crate) mod organization_departments;
 pub(crate) mod organization_entitlements;
 pub(crate) mod organization_invitations;
 pub(crate) mod organization_memberships;
@@ -244,6 +246,66 @@ where
         if disabled != deleted_at.is_some() {
             return Err(DbErr::Custom("企业团队状态与删除时间不一致".to_owned()));
         }
+    }
+    Ok(())
+}
+
+async fn validate_organization_department<C>(
+    model: &organization_departments::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    let key = model.department_key.try_as_ref().map(String::as_str);
+    let name = model.name.try_as_ref().map(String::as_str);
+    if insert
+        && (model.organization_id.try_as_ref().is_none()
+            || key.is_none()
+            || name.is_none()
+            || model.depth.try_as_ref().is_none())
+    {
+        return Err(DbErr::Custom("企业部门基础字段缺失".to_owned()));
+    }
+    if model
+        .organization_id
+        .try_as_ref()
+        .is_some_and(|value| *value <= 0)
+        || key.is_some_and(|value| OrganizationDepartmentKey::from_persistence_key(value).is_err())
+        || name.is_some_and(|value| !valid_organization_text(value, 128))
+        || model
+            .parent_department_id
+            .try_as_ref()
+            .is_some_and(|value| value.is_some_and(|parent_id| parent_id <= 0))
+        || model
+            .depth
+            .try_as_ref()
+            .is_some_and(|value| !(1..=8).contains(value))
+        || model
+            .status
+            .try_as_ref()
+            .is_some_and(|value| OrganizationDepartmentStatus::try_from(*value).is_err())
+        || model.version.try_as_ref().is_some_and(|value| *value <= 0)
+    {
+        return Err(DbErr::Custom("企业部门字段无效".to_owned()));
+    }
+    if let (Some(status), Some(disabled_at)) = (
+        model.status.try_as_ref().copied(),
+        model.disabled_at.try_as_ref(),
+    ) {
+        let disabled = status == OrganizationDepartmentStatus::Disabled.code();
+        if disabled != disabled_at.is_some() {
+            return Err(DbErr::Custom("企业部门状态与禁用时间不一致".to_owned()));
+        }
+    }
+    if let Some(parent_id) = model
+        .parent_department_id
+        .try_as_ref()
+        .and_then(Option::as_ref)
+        .copied()
+    {
+        validate_not_self_reference(&model.id, parent_id, "企业部门父级")?;
     }
     Ok(())
 }
@@ -2063,6 +2125,7 @@ impl_updated_at_behavior!(
     options::ActiveModel => validate_default,
     organizations::ActiveModel => validate_organization,
     organization_teams::ActiveModel => validate_organization_team,
+    organization_departments::ActiveModel => validate_organization_department,
     organization_custom_roles::ActiveModel => validate_organization_custom_role,
     organization_sso_domains::ActiveModel => validate_default,
     organization_sso_identities::ActiveModel => validate_default,
