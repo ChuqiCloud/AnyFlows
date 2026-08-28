@@ -112,6 +112,7 @@ mod m20260828_000103_create_organization_service_accounts;
 mod m20260828_000104_create_organization_service_account_budget_bindings;
 mod m20260828_000105_create_organization_service_account_audit_logs;
 mod m20260829_000106_create_organization_departments;
+mod m20260829_000107_create_organization_department_memberships;
 mod schema;
 
 #[cfg(test)]
@@ -263,6 +264,7 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(m20260828_000105_create_organization_service_account_audit_logs::Migration),
             Box::new(m20260829_000106_create_organization_departments::Migration),
+            Box::new(m20260829_000107_create_organization_department_memberships::Migration),
         ]
     }
 }

@@ -5,7 +5,7 @@ use std::{
 
 use thiserror::Error;
 
-use crate::{OrganizationDepartmentId, OrganizationId};
+use crate::{OrganizationDepartmentId, OrganizationId, OrganizationMembershipId};
 
 /// 部门树允许的最大层级，根部门为第 1 层。
 pub const MAX_ORGANIZATION_DEPARTMENT_DEPTH: u8 = 8;
@@ -388,6 +388,130 @@ pub enum OrganizationDepartmentDisableRejection {
     ActiveBudgetBindings,
     #[error("企业部门仍有活动服务账号归属")]
     ActiveServiceAccountBindings,
+}
+
+/// 企业成员部门归属的生命周期状态。
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[repr(i16)]
+pub enum OrganizationDepartmentMembershipStatus {
+    /// 当前归属可参与主部门选择和请求归属快照。
+    Active = 1,
+    /// 归属已解除，仅保留历史事实。
+    Removed = 2,
+}
+
+impl OrganizationDepartmentMembershipStatus {
+    /// 返回数据库使用的稳定数值。
+    #[must_use]
+    pub const fn code(self) -> i16 {
+        self as i16
+    }
+
+    /// 判断归属是否仍然生效。
+    #[must_use]
+    pub const fn is_active(self) -> bool {
+        matches!(self, Self::Active)
+    }
+}
+
+impl TryFrom<i16> for OrganizationDepartmentMembershipStatus {
+    type Error = OrganizationDepartmentMembershipError;
+
+    fn try_from(value: i16) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::Active),
+            2 => Ok(Self::Removed),
+            _ => Err(OrganizationDepartmentMembershipError::InvalidStatus),
+        }
+    }
+}
+
+/// 部门成员归属事实的领域校验错误。
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum OrganizationDepartmentMembershipError {
+    /// 归属标识必须是正数且属于同一企业。
+    #[error("企业部门成员归属标识无效")]
+    InvalidIdentifier,
+    /// 归属状态不属于闭合集合。
+    #[error("企业部门成员归属状态无效")]
+    InvalidStatus,
+    /// 版本必须是可递增的正数。
+    #[error("企业部门成员归属版本无效")]
+    InvalidVersion,
+    /// 已解除的归属不能继续标记为主部门。
+    #[error("已解除的企业部门成员归属不能作为主部门")]
+    RemovedPrimary,
+}
+
+/// 已通过领域边界校验的部门成员归属快照。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OrganizationDepartmentMembership {
+    organization_id: OrganizationId,
+    membership_id: OrganizationMembershipId,
+    department_id: OrganizationDepartmentId,
+    is_primary: bool,
+    status: OrganizationDepartmentMembershipStatus,
+    version: i64,
+}
+
+impl OrganizationDepartmentMembership {
+    /// 构造归属事实并校验状态、主部门和版本组合。
+    pub fn new(
+        organization_id: OrganizationId,
+        membership_id: OrganizationMembershipId,
+        department_id: OrganizationDepartmentId,
+        is_primary: bool,
+        status: OrganizationDepartmentMembershipStatus,
+        version: i64,
+    ) -> Result<Self, OrganizationDepartmentMembershipError> {
+        if organization_id.get() <= 0 || membership_id.get() <= 0 || department_id.get() <= 0 {
+            return Err(OrganizationDepartmentMembershipError::InvalidIdentifier);
+        }
+        if version <= 0 || version == i64::MAX {
+            return Err(OrganizationDepartmentMembershipError::InvalidVersion);
+        }
+        if !status.is_active() && is_primary {
+            return Err(OrganizationDepartmentMembershipError::RemovedPrimary);
+        }
+        Ok(Self {
+            organization_id,
+            membership_id,
+            department_id,
+            is_primary,
+            status,
+            version,
+        })
+    }
+
+    #[must_use]
+    pub const fn organization_id(self) -> OrganizationId {
+        self.organization_id
+    }
+
+    #[must_use]
+    pub const fn membership_id(self) -> OrganizationMembershipId {
+        self.membership_id
+    }
+
+    #[must_use]
+    pub const fn department_id(self) -> OrganizationDepartmentId {
+        self.department_id
+    }
+
+    #[must_use]
+    pub const fn is_primary(self) -> bool {
+        self.is_primary
+    }
+
+    #[must_use]
+    pub const fn status(self) -> OrganizationDepartmentMembershipStatus {
+        self.status
+    }
+
+    #[must_use]
+    pub const fn version(self) -> i64 {
+        self.version
+    }
 }
 
 fn index_nodes(
