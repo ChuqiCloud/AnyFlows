@@ -67,7 +67,6 @@ impl OrganizationDepartmentBudgetPath {
     }
 
     /// 返回路径中的部门标识，供预算窗口按顺序扣减。
-    #[must_use]
     pub fn department_ids(&self) -> impl Iterator<Item = OrganizationDepartmentId> + '_ {
         self.nodes.iter().map(|node| node.department_id())
     }
