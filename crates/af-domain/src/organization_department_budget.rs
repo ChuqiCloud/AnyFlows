@@ -33,7 +33,7 @@ impl OrganizationDepartmentBudgetPath {
             let expected_parent = index
                 .checked_sub(1)
                 .and_then(|parent_index| nodes.get(parent_index))
-                .map(OrganizationDepartmentNode::department_id);
+                .map(|parent| parent.department_id());
             if node.parent_id() != expected_parent {
                 return Err(OrganizationDepartmentBudgetPathError::Disconnected);
             }
@@ -69,9 +69,7 @@ impl OrganizationDepartmentBudgetPath {
     /// 返回路径中的部门标识，供预算窗口按顺序扣减。
     #[must_use]
     pub fn department_ids(&self) -> impl Iterator<Item = OrganizationDepartmentId> + '_ {
-        self.nodes
-            .iter()
-            .map(OrganizationDepartmentNode::department_id)
+        self.nodes.iter().map(|node| node.department_id())
     }
 }
 
