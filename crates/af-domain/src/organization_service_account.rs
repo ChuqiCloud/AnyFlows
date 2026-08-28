@@ -350,6 +350,57 @@ impl OrganizationServiceAccountLocator {
     }
 }
 
+/// 已通过企业与活动密钥校验的运行时服务账号身份。
+///
+/// 该身份只携带企业、服务账号和密钥事实，不包含自然人用户、成员角色、个人钱包
+/// 或密钥明文；后续计费和审计必须以此双重边界继续寻址。
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+pub struct OrganizationServiceAccountRuntimeIdentity {
+    locator: OrganizationServiceAccountLocator,
+    account_key: OrganizationServiceAccountKey,
+    credential_key: OrganizationServiceAccountKey,
+}
+
+impl OrganizationServiceAccountRuntimeIdentity {
+    /// 组合已经由持久化层同时校验的运行时身份事实。
+    #[must_use]
+    pub const fn new(
+        locator: OrganizationServiceAccountLocator,
+        account_key: OrganizationServiceAccountKey,
+        credential_key: OrganizationServiceAccountKey,
+    ) -> Self {
+        Self {
+            locator,
+            account_key,
+            credential_key,
+        }
+    }
+
+    /// 返回企业与服务账号双重边界。
+    #[must_use]
+    pub const fn locator(self) -> OrganizationServiceAccountLocator {
+        self.locator
+    }
+
+    /// 返回服务账号公开标识。
+    #[must_use]
+    pub const fn account_key(self) -> OrganizationServiceAccountKey {
+        self.account_key
+    }
+
+    /// 返回当前活动密钥的内部公开标识。
+    #[must_use]
+    pub const fn credential_key(self) -> OrganizationServiceAccountKey {
+        self.credential_key
+    }
+}
+
+impl fmt::Debug for OrganizationServiceAccountRuntimeIdentity {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("OrganizationServiceAccountRuntimeIdentity(<redacted>)")
+    }
+}
+
 /// 不绑定自然人身份的企业服务账号记录。
 #[derive(Clone, Eq, PartialEq)]
 pub struct OrganizationServiceAccount {

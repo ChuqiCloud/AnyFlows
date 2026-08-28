@@ -96,8 +96,9 @@ pub use organization_service_account::{
     OrganizationServiceAccountKey, OrganizationServiceAccountLifecycleDisposition,
     OrganizationServiceAccountLifecycleError, OrganizationServiceAccountLocator,
     OrganizationServiceAccountName, OrganizationServiceAccountNameError,
-    OrganizationServiceAccountSecret, OrganizationServiceAccountSecretDigest,
-    OrganizationServiceAccountStatus, classify_organization_service_account_lifecycle,
+    OrganizationServiceAccountRuntimeIdentity, OrganizationServiceAccountSecret,
+    OrganizationServiceAccountSecretDigest, OrganizationServiceAccountStatus,
+    classify_organization_service_account_lifecycle,
 };
 pub use organization_sso::{
     OrganizationSsoDomain, OrganizationSsoDomainError, OrganizationSsoDomainStatus,

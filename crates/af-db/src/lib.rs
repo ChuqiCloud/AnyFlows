@@ -517,10 +517,10 @@ pub use organization_scim_audit::{
     OrganizationScimAuditWriteOutcome,
 };
 pub use organization_service_account::{
-    MAX_ORGANIZATION_SERVICE_ACCOUNT_PAGE_SIZE, OrganizationServiceAccountIssued,
-    OrganizationServiceAccountKeyRecord, OrganizationServiceAccountPageRecord,
-    OrganizationServiceAccountRecord, OrganizationServiceAccountRepository,
-    OrganizationServiceAccountRepositoryError,
+    MAX_ORGANIZATION_SERVICE_ACCOUNT_PAGE_SIZE, OrganizationServiceAccountAuthentication,
+    OrganizationServiceAccountIssued, OrganizationServiceAccountKeyRecord,
+    OrganizationServiceAccountPageRecord, OrganizationServiceAccountRecord,
+    OrganizationServiceAccountRepository, OrganizationServiceAccountRepositoryError,
 };
 pub use organization_sso::{
     OrganizationSsoDomainCreate, OrganizationSsoDomainRecord, OrganizationSsoDomainUpdate,
