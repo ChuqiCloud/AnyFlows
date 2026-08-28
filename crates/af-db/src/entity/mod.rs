@@ -11,8 +11,9 @@ use sea_orm::{ActiveValue, EntityTrait, Set, entity::prelude::*};
 
 use af_domain::{
     BillingReservationId, ChannelTimeout, MAX_ROUTE_MODEL_PATTERN_BYTES, OrganizationCustomRoleKey,
-    OrganizationCustomRoleStatus, OrganizationDepartmentKey, OrganizationDepartmentStatus,
-    OrganizationKey, OrganizationMembershipStatus, OrganizationPermission, OrganizationRole,
+    OrganizationCustomRoleStatus, OrganizationDepartmentKey,
+    OrganizationDepartmentMembershipStatus, OrganizationDepartmentStatus, OrganizationKey,
+    OrganizationMembershipStatus, OrganizationPermission, OrganizationRole,
     OrganizationServiceAccountKey, OrganizationStatus, OrganizationTeamStatus, Quota, QuotaDelta,
     RedemptionBatchId, RedemptionBatchStatus, RedemptionCodeId, RedemptionCodeStatus, RouteMode,
     RouteStrategy, SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus,
@@ -307,6 +308,72 @@ where
         .copied()
     {
         validate_not_self_reference(&model.id, parent_id, "企业部门父级")?;
+    }
+    Ok(())
+}
+
+async fn validate_organization_department_membership<C>(
+    model: &organization_department_memberships::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    if insert
+        && (model.organization_id.try_as_ref().is_none()
+            || model.membership_id.try_as_ref().is_none()
+            || model.department_id.try_as_ref().is_none())
+    {
+        return Err(DbErr::Custom("企业部门成员归属基础字段缺失".to_owned()));
+    }
+    if model
+        .organization_id
+        .try_as_ref()
+        .is_some_and(|value| *value <= 0)
+        || model
+            .membership_id
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || model
+            .department_id
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || model
+            .is_primary
+            .try_as_ref()
+            .is_some_and(|value| !(*value == 0 || *value == 1))
+        || model
+            .status
+            .try_as_ref()
+            .is_some_and(|value| OrganizationDepartmentMembershipStatus::try_from(*value).is_err())
+        || model.version.try_as_ref().is_some_and(|value| *value <= 0)
+    {
+        return Err(DbErr::Custom("企业部门成员归属字段无效".to_owned()));
+    }
+    if let (Some(status), Some(removed_at)) = (
+        model.status.try_as_ref().copied(),
+        model.removed_at.try_as_ref(),
+    ) {
+        let removed = status == OrganizationDepartmentMembershipStatus::Removed.code();
+        if removed != removed_at.is_some() {
+            return Err(DbErr::Custom(
+                "企业部门成员归属状态与解除时间不一致".to_owned(),
+            ));
+        }
+    }
+    if model
+        .status
+        .try_as_ref()
+        .is_some_and(|value| *value == OrganizationDepartmentMembershipStatus::Removed.code())
+        && model
+            .is_primary
+            .try_as_ref()
+            .is_some_and(|value| *value != 0)
+    {
+        return Err(DbErr::Custom(
+            "已解除的企业部门成员归属不能作为主部门".to_owned(),
+        ));
     }
     Ok(())
 }
@@ -2127,6 +2194,7 @@ impl_updated_at_behavior!(
     organizations::ActiveModel => validate_organization,
     organization_teams::ActiveModel => validate_organization_team,
     organization_departments::ActiveModel => validate_organization_department,
+    organization_department_memberships::ActiveModel => validate_organization_department_membership,
     organization_custom_roles::ActiveModel => validate_organization_custom_role,
     organization_sso_domains::ActiveModel => validate_default,
     organization_sso_identities::ActiveModel => validate_default,
