@@ -371,6 +371,9 @@ impl OrganizationDepartmentMembershipRepository {
             return Err(OrganizationDepartmentMembershipRepositoryError::Invariant);
         }
         if target.is_primary != 0 {
+            if membership.version != expected_membership_version {
+                return Err(OrganizationDepartmentMembershipRepositoryError::Conflict);
+            }
             let record = record_from_model(target)?;
             transaction.commit().await.map_err(query_error)?;
             return Ok(record);
