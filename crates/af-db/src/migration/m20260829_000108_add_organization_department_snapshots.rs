@@ -230,13 +230,18 @@ async fn create_sqlite_reference_triggers(manager: &SchemaManager<'_>) -> Result
     Ok(())
 }
 
-async fn add_snapshot_column(
+async fn add_snapshot_column<T, C>(
     manager: &SchemaManager<'_>,
-    table: impl IntoIden,
-    column: impl IntoIden,
+    table: T,
+    column: C,
     check: Option<SimpleExpr>,
-) -> Result<(), DbErr> {
-    let mut definition = ColumnDef::new(column).big_integer();
+) -> Result<(), DbErr>
+where
+    T: IntoIden + 'static,
+    C: IntoIden + 'static,
+{
+    let mut definition = ColumnDef::new(column);
+    definition.big_integer();
     // MySQL 不允许列级 CHECK 引用同表其他列，统一在列就绪后追加表级约束。
     if manager.get_database_backend() != DbBackend::MySql {
         if let Some(check) = check {
