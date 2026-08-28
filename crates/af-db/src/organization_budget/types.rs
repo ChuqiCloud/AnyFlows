@@ -3,7 +3,8 @@ use std::fmt;
 use af_domain::{
     BillingReservationId, GroupId, OrganizationBudgetLimit, OrganizationBudgetPeriod,
     OrganizationBudgetPolicyId, OrganizationBudgetScopeKind, OrganizationBudgetWindowId,
-    OrganizationId, OrganizationMembershipId, OrganizationTeamId, Quota, TokenId, UserId,
+    OrganizationDepartmentId, OrganizationId, OrganizationMembershipId, OrganizationTeamId, Quota,
+    TokenId, UserId,
 };
 use sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
 use thiserror::Error;
@@ -212,6 +213,7 @@ pub struct OrganizationBillingPrincipal {
     organization_id: OrganizationId,
     membership_id: OrganizationMembershipId,
     team_id: Option<OrganizationTeamId>,
+    department_id: Option<OrganizationDepartmentId>,
     user_id: UserId,
 }
 
@@ -227,6 +229,25 @@ impl OrganizationBillingPrincipal {
             organization_id,
             membership_id,
             team_id,
+            department_id: None,
+            user_id,
+        }
+    }
+
+    /// 构造带请求归属部门快照的企业计费主体。
+    #[must_use]
+    pub const fn with_department(
+        organization_id: OrganizationId,
+        membership_id: OrganizationMembershipId,
+        team_id: Option<OrganizationTeamId>,
+        department_id: OrganizationDepartmentId,
+        user_id: UserId,
+    ) -> Self {
+        Self {
+            organization_id,
+            membership_id,
+            team_id,
+            department_id: Some(department_id),
             user_id,
         }
     }
@@ -244,6 +265,11 @@ impl OrganizationBillingPrincipal {
     #[must_use]
     pub const fn team_id(self) -> Option<OrganizationTeamId> {
         self.team_id
+    }
+
+    #[must_use]
+    pub const fn department_id(self) -> Option<OrganizationDepartmentId> {
+        self.department_id
     }
 
     #[must_use]

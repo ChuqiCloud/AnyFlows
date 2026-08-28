@@ -4,7 +4,7 @@ use getrandom::fill;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
-use crate::{OrganizationId, OrganizationServiceAccountId};
+use crate::{OrganizationDepartmentId, OrganizationId, OrganizationServiceAccountId};
 
 const SERVICE_ACCOUNT_KEY_BYTES: usize = 16;
 const SERVICE_ACCOUNT_KEY_HEX_BYTES: usize = SERVICE_ACCOUNT_KEY_BYTES * 2;
@@ -316,6 +316,7 @@ impl OrganizationServiceAccountStatus {
 pub struct OrganizationServiceAccountLocator {
     organization_id: OrganizationId,
     service_account_id: OrganizationServiceAccountId,
+    department_id: Option<OrganizationDepartmentId>,
 }
 
 impl OrganizationServiceAccountLocator {
@@ -328,6 +329,21 @@ impl OrganizationServiceAccountLocator {
         Self {
             organization_id,
             service_account_id,
+            department_id: None,
+        }
+    }
+
+    /// 构造带固定部门归属的服务账号定位器。
+    #[must_use]
+    pub const fn with_department(
+        organization_id: OrganizationId,
+        service_account_id: OrganizationServiceAccountId,
+        department_id: OrganizationDepartmentId,
+    ) -> Self {
+        Self {
+            organization_id,
+            service_account_id,
+            department_id: Some(department_id),
         }
     }
 
@@ -343,6 +359,12 @@ impl OrganizationServiceAccountLocator {
         self.service_account_id
     }
 
+    /// 返回服务账号创建/认证时固化的部门归属。
+    #[must_use]
+    pub const fn department_id(self) -> Option<OrganizationDepartmentId> {
+        self.department_id
+    }
+
     /// 仅允许同一企业的定位器参与后续资源操作。
     #[must_use]
     pub const fn belongs_to(self, organization_id: OrganizationId) -> bool {
@@ -352,8 +374,8 @@ impl OrganizationServiceAccountLocator {
 
 /// 已通过企业与活动密钥校验的运行时服务账号身份。
 ///
-/// 该身份只携带企业、服务账号和密钥事实，不包含自然人用户、成员角色、个人钱包
-/// 或密钥明文；后续计费和审计必须以此双重边界继续寻址。
+/// 该身份只携带企业、服务账号、可选部门和密钥事实，不包含自然人用户、成员角色、
+/// 个人钱包或密钥明文；后续计费和审计必须以此固定边界继续寻址。
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub struct OrganizationServiceAccountRuntimeIdentity {
     locator: OrganizationServiceAccountLocator,

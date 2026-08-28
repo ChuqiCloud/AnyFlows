@@ -573,6 +573,7 @@ pub(in crate::migration) mod tokens {
         OrganizationId,
         OrganizationMembershipId,
         OrganizationTeamId,
+        OrganizationDepartmentId,
         RemainQuota,
         UnlimitedQuota,
         UsedQuota,
@@ -2870,6 +2871,7 @@ pub(in crate::migration) mod organization_service_accounts {
     pub(in crate::migration) enum Column {
         Id,
         OrganizationId,
+        OrganizationDepartmentId,
         PublicKey,
         Name,
         Status,

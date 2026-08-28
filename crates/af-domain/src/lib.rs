@@ -10,6 +10,7 @@ mod network;
 mod organization;
 mod organization_budget;
 mod organization_department;
+mod organization_department_budget;
 mod organization_entitlement;
 mod organization_scim;
 mod organization_scim_audit;
@@ -68,6 +69,10 @@ pub use organization_department::{
     OrganizationDepartmentMembershipError, OrganizationDepartmentMembershipStatus,
     OrganizationDepartmentNode, OrganizationDepartmentStatus, OrganizationDepartmentTreeError,
     validate_organization_department_move, validate_organization_department_tree,
+};
+pub use organization_department_budget::{
+    MAX_ORGANIZATION_DEPARTMENT_BUDGET_PATH, OrganizationDepartmentBudgetPath,
+    OrganizationDepartmentBudgetPathError,
 };
 pub use organization_entitlement::{
     MAX_ORGANIZATION_AUDIT_RETENTION_DAYS, OrganizationEntitlementCapacity,
@@ -194,6 +199,8 @@ mod error_tests;
 mod network_tests;
 #[cfg(test)]
 mod organization_budget_tests;
+#[cfg(test)]
+mod organization_department_budget_tests;
 #[cfg(test)]
 mod organization_department_tests;
 #[cfg(test)]

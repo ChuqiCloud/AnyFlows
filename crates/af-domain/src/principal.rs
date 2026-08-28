@@ -158,6 +158,7 @@ pub struct OrganizationGatewayPrincipal {
     organization_id: OrganizationId,
     membership_id: OrganizationMembershipId,
     team_id: Option<OrganizationTeamId>,
+    department_id: Option<OrganizationDepartmentId>,
 }
 
 impl OrganizationGatewayPrincipal {
@@ -172,6 +173,23 @@ impl OrganizationGatewayPrincipal {
             organization_id,
             membership_id,
             team_id,
+            department_id: None,
+        }
+    }
+
+    /// 组合已通过成员归属和部门状态校验的企业请求主体。
+    #[must_use]
+    pub const fn with_department(
+        organization_id: OrganizationId,
+        membership_id: OrganizationMembershipId,
+        team_id: Option<OrganizationTeamId>,
+        department_id: OrganizationDepartmentId,
+    ) -> Self {
+        Self {
+            organization_id,
+            membership_id,
+            team_id,
+            department_id: Some(department_id),
         }
     }
 
@@ -191,6 +209,12 @@ impl OrganizationGatewayPrincipal {
     #[must_use]
     pub const fn team_id(self) -> Option<OrganizationTeamId> {
         self.team_id
+    }
+
+    /// 返回企业 Key 创建/认证时固化的部门归属。
+    #[must_use]
+    pub const fn department_id(self) -> Option<OrganizationDepartmentId> {
+        self.department_id
     }
 }
 
