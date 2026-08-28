@@ -1614,6 +1614,36 @@ export type OrganizationScimAuditLogResponse = {
     retryAfterSeconds?: number | null;
     createdAt: number;
 };
+export type OrganizationServiceAccountCreateRequest = {
+    name: string;
+};
+export type OrganizationServiceAccountIssuedResponse = {
+    service_account: OrganizationServiceAccountResponse;
+    key_key: string;
+    key_prefix: string;
+    secret: string;
+};
+export type OrganizationServiceAccountListResponse = {
+    service_accounts: Array<OrganizationServiceAccountResponse>;
+    next_cursor?: string | null;
+};
+export type OrganizationServiceAccountResponse = {
+    service_account_key: string;
+    organization_id: number;
+    name: string;
+    status: string;
+    version: number;
+    created_at: number;
+    updated_at: number;
+    revoked_at?: number | null;
+};
+export type OrganizationServiceAccountRotateRequest = {
+    expected_version: number;
+};
+export type OrganizationServiceAccountStatusRequest = {
+    status: string;
+    expected_version: number;
+};
 export type OrganizationSsoDomain = {
     id: number;
     organization_id: number;
@@ -4612,6 +4642,114 @@ export type DisableOrganizationCustomRoleResponses = {
     200: OrganizationCustomRoleResponse;
 };
 export type DisableOrganizationCustomRoleResponse = DisableOrganizationCustomRoleResponses[keyof DisableOrganizationCustomRoleResponses];
+export type ListOrganizationServiceAccountsData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        after?: string;
+        limit?: number;
+    };
+    url: '/api/organizations/{organization_id}/service-accounts';
+};
+export type ListOrganizationServiceAccountsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationServiceAccountsError = ListOrganizationServiceAccountsErrors[keyof ListOrganizationServiceAccountsErrors];
+export type ListOrganizationServiceAccountsResponses = {
+    200: OrganizationServiceAccountListResponse;
+};
+export type ListOrganizationServiceAccountsResponse = ListOrganizationServiceAccountsResponses[keyof ListOrganizationServiceAccountsResponses];
+export type CreateOrganizationServiceAccountData = {
+    body: OrganizationServiceAccountCreateRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/service-accounts';
+};
+export type CreateOrganizationServiceAccountErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type CreateOrganizationServiceAccountError = CreateOrganizationServiceAccountErrors[keyof CreateOrganizationServiceAccountErrors];
+export type CreateOrganizationServiceAccountResponses = {
+    200: OrganizationServiceAccountIssuedResponse;
+};
+export type CreateOrganizationServiceAccountResponse = CreateOrganizationServiceAccountResponses[keyof CreateOrganizationServiceAccountResponses];
+export type GetOrganizationServiceAccountData = {
+    body?: never;
+    path: {
+        organization_id: number;
+        service_account_key: string;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/service-accounts/{service_account_key}';
+};
+export type GetOrganizationServiceAccountErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetOrganizationServiceAccountError = GetOrganizationServiceAccountErrors[keyof GetOrganizationServiceAccountErrors];
+export type GetOrganizationServiceAccountResponses = {
+    200: OrganizationServiceAccountResponse;
+};
+export type GetOrganizationServiceAccountResponse = GetOrganizationServiceAccountResponses[keyof GetOrganizationServiceAccountResponses];
+export type ChangeOrganizationServiceAccountStatusData = {
+    body: OrganizationServiceAccountStatusRequest;
+    path: {
+        organization_id: number;
+        service_account_key: string;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/service-accounts/{service_account_key}/status';
+};
+export type ChangeOrganizationServiceAccountStatusErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type ChangeOrganizationServiceAccountStatusError = ChangeOrganizationServiceAccountStatusErrors[keyof ChangeOrganizationServiceAccountStatusErrors];
+export type ChangeOrganizationServiceAccountStatusResponses = {
+    200: OrganizationServiceAccountResponse;
+};
+export type ChangeOrganizationServiceAccountStatusResponse = ChangeOrganizationServiceAccountStatusResponses[keyof ChangeOrganizationServiceAccountStatusResponses];
+export type RotateOrganizationServiceAccountKeyData = {
+    body: OrganizationServiceAccountRotateRequest;
+    path: {
+        organization_id: number;
+        service_account_key: string;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/service-accounts/{service_account_key}/rotate-key';
+};
+export type RotateOrganizationServiceAccountKeyErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type RotateOrganizationServiceAccountKeyError = RotateOrganizationServiceAccountKeyErrors[keyof RotateOrganizationServiceAccountKeyErrors];
+export type RotateOrganizationServiceAccountKeyResponses = {
+    200: OrganizationServiceAccountIssuedResponse;
+};
+export type RotateOrganizationServiceAccountKeyResponse = RotateOrganizationServiceAccountKeyResponses[keyof RotateOrganizationServiceAccountKeyResponses];
 export type SetOrganizationMemberCustomRoleData = {
     body: OrganizationMemberCustomRoleRequest;
     path: {
