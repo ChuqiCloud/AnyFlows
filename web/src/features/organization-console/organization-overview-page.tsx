@@ -1,5 +1,6 @@
 import {
   Activity,
+  Bot,
   Building2,
   ChartNoAxesColumnIncreasing,
   KeyRound,
@@ -178,6 +179,7 @@ function OrganizationOverviewWorkspace({
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <QuickLink icon={UsersRound} href="#/console/organization-members" label={t('organizationConsole.overview.links.members')} />
         <QuickLink icon={KeyRound} href="#/console/organization-api-keys" label={t('organizationConsole.overview.links.keys')} />
+        <QuickLink icon={Bot} href="#/console/organization-service-accounts" label={t('organizationConsole.overview.links.serviceAccounts')} />
         <QuickLink icon={WalletCards} href="#/console/organization-wallet" label={t('organizationConsole.overview.links.wallet')} />
         <QuickLink icon={ChartNoAxesColumnIncreasing} href="#/console/organization-budgets" label={t('organizationConsole.overview.links.budgets')} />
         <QuickLink icon={Activity} href="#/console/organization-activity" label={t('organizationConsole.overview.links.activity')} />

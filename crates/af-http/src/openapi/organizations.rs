@@ -18,11 +18,13 @@ use crate::{
         OrganizationMembershipChangeRequest, OrganizationMembershipListResponse,
         OrganizationMembershipResponse, OrganizationOverviewResponse,
         OrganizationOwnershipTransferRequest, OrganizationOwnershipTransferResponse,
-        OrganizationServiceAccountCreateRequest, OrganizationServiceAccountIssuedResponse,
-        OrganizationServiceAccountListResponse, OrganizationServiceAccountResponse,
-        OrganizationServiceAccountRotateRequest, OrganizationServiceAccountStatusRequest,
-        OrganizationTeamChangeRequest, OrganizationTeamCreateRequest,
-        OrganizationTeamDisableRequest, OrganizationTeamListResponse, OrganizationTeamResponse,
+        OrganizationServiceAccountBudgetBindingRequest,
+        OrganizationServiceAccountBudgetBindingResponse, OrganizationServiceAccountCreateRequest,
+        OrganizationServiceAccountIssuedResponse, OrganizationServiceAccountListResponse,
+        OrganizationServiceAccountResponse, OrganizationServiceAccountRotateRequest,
+        OrganizationServiceAccountStatusRequest, OrganizationTeamChangeRequest,
+        OrganizationTeamCreateRequest, OrganizationTeamDisableRequest,
+        OrganizationTeamListResponse, OrganizationTeamResponse,
     },
 };
 
@@ -541,6 +543,31 @@ fn change_organization_service_account_status() {}
 fn rotate_organization_service_account_key() {}
 
 #[utoipa::path(
+    get,
+    path = "/api/organizations/{organization_id}/service-accounts/{service_account_key}/budget-binding",
+    operation_id = "getOrganizationServiceAccountBudgetBinding",
+    tag = "企业服务账号",
+    summary = "读取服务账号预算绑定",
+    params(("organization_id" = i64, Path, minimum = 1), ("service_account_key" = String, Path, description = "服务账号随机公开标识")),
+    responses((status = 200, body = OrganizationServiceAccountBudgetBindingResponse), (status = 400, body = ManagementErrorBody), (status = 401, body = ManagementErrorBody), (status = 403, body = ManagementErrorBody), (status = 404, body = ManagementErrorBody), (status = 500, body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn get_organization_service_account_budget_binding() {}
+
+#[utoipa::path(
+    put,
+    path = "/api/organizations/{organization_id}/service-accounts/{service_account_key}/budget-binding",
+    operation_id = "setOrganizationServiceAccountBudgetBinding",
+    tag = "企业服务账号",
+    summary = "按 CAS 设置服务账号预算绑定",
+    params(("organization_id" = i64, Path, minimum = 1), ("service_account_key" = String, Path, description = "服务账号随机公开标识")),
+    request_body = OrganizationServiceAccountBudgetBindingRequest,
+    responses((status = 200, body = OrganizationServiceAccountBudgetBindingResponse), (status = 400, body = ManagementErrorBody), (status = 401, body = ManagementErrorBody), (status = 403, body = ManagementErrorBody), (status = 404, body = ManagementErrorBody), (status = 409, body = ManagementErrorBody), (status = 500, body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn set_organization_service_account_budget_binding() {}
+
+#[utoipa::path(
     patch,
     path = "/api/organizations/{organization_id}/members/{membership_id}/custom-role",
     operation_id = "setOrganizationMemberCustomRole",
@@ -593,6 +620,8 @@ fn set_organization_member_custom_role() {}
         create_organization_service_account,
         change_organization_service_account_status,
         rotate_organization_service_account_key,
+        get_organization_service_account_budget_binding,
+        set_organization_service_account_budget_binding,
         set_organization_member_custom_role
     ),
     components(schemas(
@@ -633,6 +662,8 @@ fn set_organization_member_custom_role() {}
         OrganizationServiceAccountResponse,
         OrganizationServiceAccountIssuedResponse,
         OrganizationServiceAccountListResponse,
+        OrganizationServiceAccountBudgetBindingRequest,
+        OrganizationServiceAccountBudgetBindingResponse,
         ManagementErrorBody
     ))
 )]

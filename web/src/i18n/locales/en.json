@@ -39,6 +39,7 @@
     "videoTasks": "Video tasks",
     "apiKeys": "My API keys",
     "organizationApiKeys": "Organization API keys",
+    "organizationServiceAccounts": "Service accounts",
     "organizationBudgets": "Organization budgets",
     "organizationActivity": "Organization logs & audit",
     "organizationOverview": "Organization overview",
@@ -4413,6 +4414,108 @@
       "tokensBody": "Your keys or the redacted directory are temporarily unavailable. Existing server-side key state is unaffected by this read failure."
     }
   },
+  "organizationServiceAccounts": {
+    "eyebrow": "Organization workspace",
+    "title": "Service accounts",
+    "subtitle": "Create non-human identities for automation. Keys are shown only once and never represent a member or personal wallet.",
+    "summary": {
+      "page": "{{count}} service account(s) on page {{page}}",
+      "pageNumber": "Page {{page}}"
+    },
+    "columns": {
+      "account": "Account",
+      "status": "Status",
+      "created": "Created",
+      "updated": "Updated",
+      "version": "Version",
+      "actions": "Actions"
+    },
+    "status": {
+      "active": "Active",
+      "suspended": "Suspended",
+      "revoked": "Revoked"
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Try again",
+      "create": "Create account",
+      "cancel": "Cancel",
+      "done": "Done",
+      "saveBudget": "Save budget",
+      "previous": "Previous",
+      "next": "Next",
+      "budget": "Budget binding",
+      "rotate": "Rotate key",
+      "active": "Resume",
+      "suspended": "Suspend",
+      "revoke": "Revoke",
+      "confirmStatus": "Confirm change"
+    },
+    "readOnly": "You can view this directory but do not have permission to change service accounts.",
+    "empty": {
+      "title": "No service accounts yet",
+      "body": "Create a service account for a job, integration, or scheduled task. The secret is displayed once after creation."
+    },
+    "editor": {
+      "title": "Create service account",
+      "description": "This identity is bound to the current organization and does not inherit a member role.",
+      "name": "Display name",
+      "namePlaceholder": "e.g. nightly-sync",
+      "nameHint": "Use a stable name that identifies the workload, not a person.",
+      "nameRequired": "Enter a display name."
+    },
+    "keyDialog": {
+      "title": "Save the service account secret",
+      "description": "This secret is shown once. Store it in a secret manager before closing this dialog.",
+      "secretLabel": "Secret",
+      "prefix": "Key prefix",
+      "keyId": "Key identifier",
+      "copy": "Copy",
+      "copied": "Copied",
+      "warning": "For security, the full secret will not be shown again after this dialog is closed."
+    },
+    "budget": {
+      "eyebrow": "Budget control",
+      "title": "Service account budget",
+      "description": "Bind {{name}} to one active organization or team policy.",
+      "permission": "Budget policy choices require the organization budget management permission.",
+      "policy": "Active policy",
+      "policyHint": "Member policies and expired or future policies cannot be used by a service account.",
+      "selectPolicy": "Select a policy",
+      "noPolicies": "No eligible policies",
+      "organizationPolicy": "Organization policy",
+      "teamPolicy": "Team: {{team}}",
+      "fixedPeriod": "Fixed {{seconds}} sec",
+      "current": "Binding version {{version}}, policy version {{policyVersion}}.",
+      "unbound": "No budget binding exists yet. Saving will create version 1.",
+      "conflict": "The binding changed in another session. Refresh the page and review the current policy.",
+      "loadError": "The current budget binding could not be loaded.",
+      "saveError": "The budget binding could not be saved. Refresh and try again."
+    },
+    "statusDialog": {
+      "title": "Change service account status",
+      "description": {
+        "active": "Resume {{name}}? New requests will be accepted after the server confirms the version.",
+        "suspended": "Suspend {{name}}? Runtime authentication will fail closed until it is resumed.",
+        "revoked": "Revoke {{name}}? This is permanent and all current keys will stop working."
+      }
+    },
+    "rotateDialog": {
+      "title": "Rotate service account key",
+      "description": "Rotate {{name}}? The old key is revoked immediately and the new secret is shown once."
+    },
+    "errors": {
+      "permissionTitle": "Service account access is unavailable",
+      "permissionBody": "Only organization owners or administrators with service account read permission can view this directory.",
+      "listTitle": "Service accounts could not be loaded",
+      "listBody": "The service did not return a reliable directory. Try again shortly.",
+      "create": "The service account could not be created. Check the name and try again.",
+      "entitlement": "The organization entitlement does not allow service account changes.",
+      "status": "The status could not be changed. Refresh and try again.",
+      "rotate": "The key could not be rotated. Refresh and try again.",
+      "conflict": "The account changed in another session. Refresh before trying again."
+    }
+  },
   "organizationBudgets": {
     "eyebrow": "Organization workspace",
     "title": "Organization budgets",
@@ -4905,6 +5008,7 @@
       "links": {
         "members": "Members and teams",
         "keys": "Organization API keys",
+        "serviceAccounts": "Service accounts",
         "wallet": "Organization wallet and ledger",
         "budgets": "Layered budgets",
         "activity": "Usage logs and audit",

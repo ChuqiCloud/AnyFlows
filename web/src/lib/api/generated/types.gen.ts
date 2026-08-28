@@ -1614,6 +1614,19 @@ export type OrganizationScimAuditLogResponse = {
     retryAfterSeconds?: number | null;
     createdAt: number;
 };
+export type OrganizationServiceAccountBudgetBindingRequest = {
+    policy_id: number;
+    expected_version?: number | null;
+};
+export type OrganizationServiceAccountBudgetBindingResponse = {
+    service_account_key: string;
+    organization_id: number;
+    policy_id: number;
+    policy_version: number;
+    scope: string;
+    team_id?: number | null;
+    version: number;
+};
 export type OrganizationServiceAccountCreateRequest = {
     name: string;
 };
@@ -4754,6 +4767,49 @@ export type RotateOrganizationServiceAccountKeyResponses = {
     200: OrganizationServiceAccountIssuedResponse;
 };
 export type RotateOrganizationServiceAccountKeyResponse = RotateOrganizationServiceAccountKeyResponses[keyof RotateOrganizationServiceAccountKeyResponses];
+export type GetOrganizationServiceAccountBudgetBindingData = {
+    body?: never;
+    path: {
+        organization_id: number;
+        service_account_key: string;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/service-accounts/{service_account_key}/budget-binding';
+};
+export type GetOrganizationServiceAccountBudgetBindingErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetOrganizationServiceAccountBudgetBindingError = GetOrganizationServiceAccountBudgetBindingErrors[keyof GetOrganizationServiceAccountBudgetBindingErrors];
+export type GetOrganizationServiceAccountBudgetBindingResponses = {
+    200: OrganizationServiceAccountBudgetBindingResponse;
+};
+export type GetOrganizationServiceAccountBudgetBindingResponse = GetOrganizationServiceAccountBudgetBindingResponses[keyof GetOrganizationServiceAccountBudgetBindingResponses];
+export type SetOrganizationServiceAccountBudgetBindingData = {
+    body: OrganizationServiceAccountBudgetBindingRequest;
+    path: {
+        organization_id: number;
+        service_account_key: string;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/service-accounts/{service_account_key}/budget-binding';
+};
+export type SetOrganizationServiceAccountBudgetBindingErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type SetOrganizationServiceAccountBudgetBindingError = SetOrganizationServiceAccountBudgetBindingErrors[keyof SetOrganizationServiceAccountBudgetBindingErrors];
+export type SetOrganizationServiceAccountBudgetBindingResponses = {
+    200: OrganizationServiceAccountBudgetBindingResponse;
+};
+export type SetOrganizationServiceAccountBudgetBindingResponse = SetOrganizationServiceAccountBudgetBindingResponses[keyof SetOrganizationServiceAccountBudgetBindingResponses];
 export type SetOrganizationMemberCustomRoleData = {
     body: OrganizationMemberCustomRoleRequest;
     path: {

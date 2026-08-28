@@ -395,6 +395,8 @@ mod tests {
             "createOrganizationServiceAccount",
             "changeOrganizationServiceAccountStatus",
             "rotateOrganizationServiceAccountKey",
+            "getOrganizationServiceAccountBudgetBinding",
+            "setOrganizationServiceAccountBudgetBinding",
             "authenticateOrganizationServiceAccountRuntime",
             "listOrganizationSsoProviders",
             "createOrganizationSsoProvider",
@@ -584,6 +586,8 @@ mod tests {
         assert!(schemas.contains_key("OrganizationServiceAccountResponse"));
         assert!(schemas.contains_key("OrganizationServiceAccountIssuedResponse"));
         assert!(schemas.contains_key("OrganizationServiceAccountListResponse"));
+        assert!(schemas.contains_key("OrganizationServiceAccountBudgetBindingRequest"));
+        assert!(schemas.contains_key("OrganizationServiceAccountBudgetBindingResponse"));
         assert!(schemas.contains_key("OrganizationServiceAccountRuntimeErrorResponse"));
         assert!(schemas.contains_key("OrganizationSsoProvider"));
         assert!(schemas.contains_key("OrganizationSsoProviderList"));

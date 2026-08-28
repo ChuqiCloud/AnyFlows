@@ -15,29 +15,30 @@ use af_admin::{
     OrganizationInvitationRecord, OrganizationInvitationService, OrganizationManagementError,
     OrganizationManagementService, OrganizationMembershipChangeCommand,
     OrganizationMembershipListQuery, OrganizationMembershipRecord,
-    OrganizationOwnershipTransferCommand, OrganizationServiceAccountCreateCommand,
-    OrganizationServiceAccountIssued, OrganizationServiceAccountListQuery,
-    OrganizationServiceAccountRotateCommand, OrganizationServiceAccountService,
-    OrganizationServiceAccountServiceError, OrganizationServiceAccountStatusCommand,
-    OrganizationSsoDomain as AdminOrganizationSsoDomain, OrganizationSsoDomainCreateCommand,
-    OrganizationSsoDomainCreated, OrganizationSsoDomainService, OrganizationSsoDomainServiceError,
-    OrganizationSsoDomainVerifyCommand, OrganizationSsoIdentityBindingService,
-    OrganizationSsoIdentityBindingServiceError, OrganizationSsoIdentityBindingStepUp,
-    OrganizationSsoLoginTransactionService, OrganizationSsoLoginTransactionServiceError,
-    OrganizationSsoPolicyCommand, OrganizationSsoPolicyService, OrganizationSsoPolicyServiceError,
-    OrganizationSsoProvider, OrganizationSsoProviderCommand, OrganizationSsoProviderService,
+    OrganizationOwnershipTransferCommand, OrganizationServiceAccountBudgetBindingCommand,
+    OrganizationServiceAccountCreateCommand, OrganizationServiceAccountIssued,
+    OrganizationServiceAccountListQuery, OrganizationServiceAccountRotateCommand,
+    OrganizationServiceAccountService, OrganizationServiceAccountServiceError,
+    OrganizationServiceAccountStatusCommand, OrganizationSsoDomain as AdminOrganizationSsoDomain,
+    OrganizationSsoDomainCreateCommand, OrganizationSsoDomainCreated, OrganizationSsoDomainService,
+    OrganizationSsoDomainServiceError, OrganizationSsoDomainVerifyCommand,
+    OrganizationSsoIdentityBindingService, OrganizationSsoIdentityBindingServiceError,
+    OrganizationSsoIdentityBindingStepUp, OrganizationSsoLoginTransactionService,
+    OrganizationSsoLoginTransactionServiceError, OrganizationSsoPolicyCommand,
+    OrganizationSsoPolicyService, OrganizationSsoPolicyServiceError, OrganizationSsoProvider,
+    OrganizationSsoProviderCommand, OrganizationSsoProviderService,
     OrganizationSsoProviderServiceError, OrganizationSsoRecoveryCommand,
     OrganizationSsoRecoveryService, OrganizationSsoRecoveryServiceError,
     OrganizationTeamChangeCommand, OrganizationTeamCreateCommand, OrganizationTeamDisableCommand,
     OrganizationTeamListQuery, OrganizationTeamRecord, SessionAuthentication,
 };
 use af_domain::{
-    OrganizationCustomRoleKey, OrganizationEntitlementStatus, OrganizationId,
-    OrganizationInvitationKey, OrganizationInvitationStatus, OrganizationMembershipId,
-    OrganizationMembershipStatus, OrganizationPermission, OrganizationRole,
-    OrganizationServiceAccountKey, OrganizationServiceAccountStatus,
-    OrganizationSsoEnforcementPolicy, OrganizationSsoProtocol, OrganizationSsoProviderStatus,
-    OrganizationTeamId,
+    OrganizationBudgetPolicyId, OrganizationCustomRoleKey, OrganizationEntitlementStatus,
+    OrganizationId, OrganizationInvitationKey, OrganizationInvitationStatus,
+    OrganizationMembershipId, OrganizationMembershipStatus, OrganizationPermission,
+    OrganizationRole, OrganizationServiceAccountBudgetScope, OrganizationServiceAccountKey,
+    OrganizationServiceAccountStatus, OrganizationSsoEnforcementPolicy, OrganizationSsoProtocol,
+    OrganizationSsoProviderStatus, OrganizationTeamId,
 };
 use af_telemetry::RequestId;
 use axum::{
@@ -304,6 +305,11 @@ pub fn build_organization_router_with_domain(
             .route(
                 "/api/organizations/{organization_id}/service-accounts/{service_account_key}/rotate-key",
                 post(rotate_organization_service_account_key),
+            )
+            .route(
+                "/api/organizations/{organization_id}/service-accounts/{service_account_key}/budget-binding",
+                get(get_organization_service_account_budget_binding)
+                    .put(set_organization_service_account_budget_binding),
             )
     } else {
         router
@@ -605,6 +611,25 @@ pub struct OrganizationServiceAccountIssuedResponse {
 pub struct OrganizationServiceAccountListResponse {
     service_accounts: Vec<OrganizationServiceAccountResponse>,
     next_cursor: Option<String>,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationServiceAccountBudgetBindingRequest {
+    policy_id: i64,
+    expected_version: Option<i64>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationServiceAccountBudgetBindingResponse {
+    service_account_key: String,
+    organization_id: i64,
+    policy_id: i64,
+    policy_version: i64,
+    scope: &'static str,
+    team_id: Option<i64>,
+    version: i64,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -2449,6 +2474,149 @@ async fn rotate_organization_service_account_key(
     Ok(no_store_json(response))
 }
 
+async fn get_organization_service_account_budget_binding(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path((organization_id, service_account_key)): Path<(i64, String)>,
+    headers: HeaderMap,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let service_account_key = parse_service_account_key(&service_account_key)?;
+    let identifier = service_account_key.persistence_key();
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::ServiceAccountsRead,
+        &request_id,
+        &headers,
+        "organization.service_account.budget_binding.read",
+        "service_account",
+        identifier.clone(),
+    )
+    .await?;
+    let service = state
+        .service_account_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let binding = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::ServiceAccountsRead,
+        "organization.service_account.budget_binding.read",
+        "service_account",
+        identifier.clone(),
+        service
+            .get_budget_binding(context.clone(), service_account_key)
+            .await
+            .map_err(map_service_account_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::ServiceAccountsRead.code(),
+        "organization.service_account.budget_binding.read",
+        "service_account",
+        identifier,
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({
+            "policy_id": binding.policy_id().get(),
+            "policy_version": binding.policy_version(),
+            "version": binding.version(),
+        })),
+    )
+    .await?;
+    Ok(no_store_json(
+        OrganizationServiceAccountBudgetBindingResponse::from_binding(
+            service_account_key,
+            &binding,
+        ),
+    ))
+}
+
+async fn set_organization_service_account_budget_binding(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path((organization_id, service_account_key)): Path<(i64, String)>,
+    headers: HeaderMap,
+    Json(request): Json<OrganizationServiceAccountBudgetBindingRequest>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let service_account_key = parse_service_account_key(&service_account_key)?;
+    let identifier = service_account_key.persistence_key();
+    let policy_id = OrganizationBudgetPolicyId::new(request.policy_id)
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    let command = OrganizationServiceAccountBudgetBindingCommand::new(
+        service_account_key,
+        policy_id,
+        request.expected_version,
+    )
+    .map_err(map_service_account_error)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::ServiceAccountsManage,
+        &request_id,
+        &headers,
+        "organization.service_account.budget_binding.set",
+        "service_account",
+        identifier.clone(),
+    )
+    .await?;
+    let service = state
+        .service_account_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let binding = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::ServiceAccountsManage,
+        "organization.service_account.budget_binding.set",
+        "service_account",
+        identifier.clone(),
+        service
+            .set_budget_binding(context.clone(), command)
+            .await
+            .map_err(map_service_account_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::ServiceAccountsManage.code(),
+        "organization.service_account.budget_binding.set",
+        "service_account",
+        identifier,
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({
+            "policy_id": binding.policy_id().get(),
+            "policy_version": binding.policy_version(),
+            "version": binding.version(),
+        })),
+    )
+    .await?;
+    Ok(no_store_json(
+        OrganizationServiceAccountBudgetBindingResponse::from_binding(
+            service_account_key,
+            &binding,
+        ),
+    ))
+}
+
 async fn record_custom_role_success(
     state: &OrganizationHttpState,
     context: af_admin::OrganizationContext,
@@ -3911,6 +4079,27 @@ impl OrganizationServiceAccountIssuedResponse {
             key_key,
             key_prefix,
             secret,
+        }
+    }
+}
+
+impl OrganizationServiceAccountBudgetBindingResponse {
+    fn from_binding(
+        service_account_key: OrganizationServiceAccountKey,
+        binding: &af_domain::OrganizationServiceAccountBudgetBinding,
+    ) -> Self {
+        let (scope, team_id) = match binding.scope() {
+            OrganizationServiceAccountBudgetScope::Organization => ("organization", None),
+            OrganizationServiceAccountBudgetScope::Team(team_id) => ("team", Some(team_id.get())),
+        };
+        Self {
+            service_account_key: service_account_key.persistence_key(),
+            organization_id: binding.organization_id().get(),
+            policy_id: binding.policy_id().get(),
+            policy_version: binding.policy_version(),
+            scope,
+            team_id,
+            version: binding.version(),
         }
     }
 }
