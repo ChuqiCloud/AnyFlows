@@ -100,6 +100,7 @@ use crate::operations::{ReadinessHandle, operations_router};
 use crate::organization_activity::{PLATFORM_REASON_HEADER, build_organization_activity_router};
 use crate::organization_budget::build_organization_budget_router;
 use crate::organization_scim_audit::build_organization_scim_audit_router;
+use crate::organization_service_account_runtime::build_organization_service_account_runtime_router;
 use crate::organization_sso_login::build_organization_sso_login_router;
 use crate::organization_tokens::build_organization_token_router;
 use crate::organization_wallet::build_organization_wallet_router;
@@ -231,6 +232,9 @@ pub fn build_router(
     >,
     organization_service_account_service: Option<
         Arc<dyn af_admin::OrganizationServiceAccountService>,
+    >,
+    organization_service_account_runtime_authenticator: Option<
+        Arc<dyn af_admin::OrganizationServiceAccountRuntimeAuthenticator>,
     >,
     platform_audit_service: Option<Arc<dyn PlatformAuditService>>,
     organization_sso_provider_service: Option<Arc<dyn af_admin::OrganizationSsoProviderService>>,
@@ -910,6 +914,12 @@ pub fn build_router(
     };
     let public_routes = match organization_scim_service {
         Some(service) => public_routes.merge(build_scim_router(service)),
+        None => public_routes,
+    };
+    let public_routes = match organization_service_account_runtime_authenticator {
+        Some(authenticator) => public_routes.merge(
+            build_organization_service_account_runtime_router(authenticator),
+        ),
         None => public_routes,
     };
     let management_routes = match oauth_connection_routes {

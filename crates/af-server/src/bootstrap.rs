@@ -232,6 +232,8 @@ pub struct AuthenticationReady {
     organization_custom_role_service: Arc<dyn OrganizationCustomRoleService>,
     organization_custom_role_binding_service: Arc<dyn OrganizationCustomRoleBindingService>,
     organization_service_account_service: Arc<dyn af_admin::OrganizationServiceAccountService>,
+    organization_service_account_runtime_authenticator:
+        Arc<dyn af_admin::OrganizationServiceAccountRuntimeAuthenticator>,
     organization_sso_provider_service: Arc<dyn OrganizationSsoProviderService>,
     organization_sso_domain_service: Arc<dyn OrganizationSsoDomainService>,
     organization_sso_login_service: Arc<DatabaseOrganizationSsoLoginTransactionService>,
@@ -1236,11 +1238,10 @@ impl Bootstrap<DatabaseReady> {
             organization_custom_role_binding_repository,
             Arc::clone(&organization_custom_role_service),
         ));
-        let organization_service_account_service: Arc<
-            dyn af_admin::OrganizationServiceAccountService,
-        > = Arc::new(af_admin::DatabaseOrganizationServiceAccountService::new(
-            organization_service_account_repository,
-        ));
+        let organization_service_account_service =
+            Arc::new(af_admin::DatabaseOrganizationServiceAccountService::new(
+                organization_service_account_repository,
+            ));
         let organization_sso_identity_binding_service: Arc<
             dyn OrganizationSsoIdentityBindingService,
         > = Arc::new({
@@ -1340,7 +1341,9 @@ impl Bootstrap<DatabaseReady> {
                 ),
                 organization_custom_role_service,
                 organization_custom_role_binding_service,
-                organization_service_account_service,
+                organization_service_account_service: organization_service_account_service.clone(),
+                organization_service_account_runtime_authenticator:
+                    organization_service_account_service.clone(),
                 organization_sso_provider_service: Arc::new(
                     DatabaseOrganizationSsoProviderService::new(
                         organization_sso_provider_repository.clone(),
@@ -2530,6 +2533,12 @@ impl Bootstrap<Supervised> {
                     .stage
                     .infrastructure
                     .organization_service_account_service,
+            )),
+            Some(Arc::clone(
+                &self
+                    .stage
+                    .infrastructure
+                    .organization_service_account_runtime_authenticator,
             )),
             Some(Arc::clone(
                 &self.stage.infrastructure.platform_audit_service,

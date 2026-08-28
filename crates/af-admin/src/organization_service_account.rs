@@ -7,9 +7,10 @@ use af_db::{
     OrganizationServiceAccountRepositoryError,
 };
 use af_domain::{
-    OrganizationEntitlementStatus, OrganizationPermission, OrganizationServiceAccountKey,
-    OrganizationServiceAccountLocator, OrganizationServiceAccountName,
-    OrganizationServiceAccountStatus,
+    OrganizationEntitlementStatus, OrganizationId, OrganizationPermission,
+    OrganizationServiceAccountKey, OrganizationServiceAccountLocator,
+    OrganizationServiceAccountName, OrganizationServiceAccountRuntimeIdentity,
+    OrganizationServiceAccountSecret, OrganizationServiceAccountStatus,
 };
 use thiserror::Error;
 
@@ -222,7 +223,37 @@ pub type OrganizationServiceAccountIssuedFuture<'a> = Pin<
     >,
 >;
 
-/// 企业服务账号管理端口；运行时认证和预算绑定留在后续切片。
+/// 运行时服务账号密钥认证的失败分类；不携带主体、摘要或密钥材料。
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum OrganizationServiceAccountRuntimeAuthenticationError {
+    #[error("服务账号凭据无效")]
+    InvalidCredentials,
+    #[error("服务账号认证服务内部错误")]
+    Internal,
+}
+
+pub type OrganizationServiceAccountRuntimeAuthenticationFuture<'a> = Pin<
+    Box<
+        dyn Future<
+                Output = Result<
+                    OrganizationServiceAccountRuntimeIdentity,
+                    OrganizationServiceAccountRuntimeAuthenticationError,
+                >,
+            > + Send
+            + 'a,
+    >,
+>;
+
+/// 企业范围运行时服务账号认证端口；不创建管理会话或成员身份。
+pub trait OrganizationServiceAccountRuntimeAuthenticator: Send + Sync {
+    fn authenticate<'a>(
+        &'a self,
+        organization_id: OrganizationId,
+        secret: OrganizationServiceAccountSecret,
+    ) -> OrganizationServiceAccountRuntimeAuthenticationFuture<'a>;
+}
+
+/// 企业服务账号管理端口；与运行时认证端口保持分离，预算绑定留在后续切片。
 pub trait OrganizationServiceAccountService: Send + Sync {
     fn list<'a>(
         &'a self,
@@ -372,6 +403,34 @@ impl OrganizationServiceAccountService for DatabaseOrganizationServiceAccountSer
                 .await
                 .map_err(map_repository_error)?;
             Ok(issued_from_db(issued))
+        })
+    }
+}
+
+impl OrganizationServiceAccountRuntimeAuthenticator for DatabaseOrganizationServiceAccountService {
+    fn authenticate<'a>(
+        &'a self,
+        organization_id: OrganizationId,
+        secret: OrganizationServiceAccountSecret,
+    ) -> OrganizationServiceAccountRuntimeAuthenticationFuture<'a> {
+        Box::pin(async move {
+            self.repository
+                .authenticate_secret_for_organization(organization_id, secret)
+                .await
+                .map(|authentication| authentication.identity())
+                .map_err(|error| match error {
+                    OrganizationServiceAccountRepositoryError::InvalidInput
+                    | OrganizationServiceAccountRepositoryError::NotFound
+                    | OrganizationServiceAccountRepositoryError::Restricted => {
+                        OrganizationServiceAccountRuntimeAuthenticationError::InvalidCredentials
+                    }
+                    OrganizationServiceAccountRepositoryError::Conflict
+                    | OrganizationServiceAccountRepositoryError::Query
+                    | OrganizationServiceAccountRepositoryError::Timeout
+                    | OrganizationServiceAccountRepositoryError::Invariant => {
+                        OrganizationServiceAccountRuntimeAuthenticationError::Internal
+                    }
+                })
         })
     }
 }

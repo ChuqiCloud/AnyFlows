@@ -62,6 +62,7 @@ mod operations;
 mod organization_activity;
 mod organization_budget;
 mod organization_scim_audit;
+mod organization_service_account_runtime;
 mod organization_sso_login;
 mod organization_tokens;
 mod organization_wallet;
@@ -126,6 +127,7 @@ pub use operations::{
 pub use organization_activity::build_organization_activity_router;
 pub use organization_budget::build_organization_budget_router;
 pub use organization_scim_audit::build_organization_scim_audit_router;
+pub use organization_service_account_runtime::build_organization_service_account_runtime_router;
 pub use organization_tokens::build_organization_token_router;
 pub use organization_wallet::build_organization_wallet_router;
 pub use organizations::build_organization_router;

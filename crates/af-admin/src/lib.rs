@@ -295,7 +295,9 @@ pub use organization_service_account::{
     OrganizationServiceAccountIssued, OrganizationServiceAccountIssuedFuture,
     OrganizationServiceAccountListQuery, OrganizationServiceAccountPage,
     OrganizationServiceAccountPageFuture, OrganizationServiceAccountRecord,
-    OrganizationServiceAccountRotateCommand, OrganizationServiceAccountService,
+    OrganizationServiceAccountRotateCommand, OrganizationServiceAccountRuntimeAuthenticationError,
+    OrganizationServiceAccountRuntimeAuthenticationFuture,
+    OrganizationServiceAccountRuntimeAuthenticator, OrganizationServiceAccountService,
     OrganizationServiceAccountServiceError, OrganizationServiceAccountStatusCommand,
 };
 pub use organization_sso::{

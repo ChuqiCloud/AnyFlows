@@ -1640,6 +1640,10 @@ export type OrganizationServiceAccountResponse = {
 export type OrganizationServiceAccountRotateRequest = {
     expected_version: number;
 };
+export type OrganizationServiceAccountRuntimeErrorResponse = {
+    code: string;
+    message: string;
+};
 export type OrganizationServiceAccountStatusRequest = {
     status: string;
     expected_version: number;
@@ -7176,6 +7180,23 @@ export type ListOrganizationScimAuditLogsResponses = {
     200: OrganizationScimAuditLogListResponse;
 };
 export type ListOrganizationScimAuditLogsResponse = ListOrganizationScimAuditLogsResponses[keyof ListOrganizationScimAuditLogsResponses];
+export type AuthenticateOrganizationServiceAccountRuntimeData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/service-accounts/runtime/authenticate';
+};
+export type AuthenticateOrganizationServiceAccountRuntimeErrors = {
+    401: OrganizationServiceAccountRuntimeErrorResponse;
+    503: OrganizationServiceAccountRuntimeErrorResponse;
+};
+export type AuthenticateOrganizationServiceAccountRuntimeError = AuthenticateOrganizationServiceAccountRuntimeErrors[keyof AuthenticateOrganizationServiceAccountRuntimeErrors];
+export type AuthenticateOrganizationServiceAccountRuntimeResponses = {
+    204: void;
+};
+export type AuthenticateOrganizationServiceAccountRuntimeResponse = AuthenticateOrganizationServiceAccountRuntimeResponses[keyof AuthenticateOrganizationServiceAccountRuntimeResponses];
 export type GetScimServiceProviderConfigData = {
     body?: never;
     path: {

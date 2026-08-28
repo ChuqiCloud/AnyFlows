@@ -20,6 +20,7 @@ mod oauth_login;
 mod organization_activity;
 mod organization_budget;
 mod organization_scim_audit;
+mod organization_service_account_runtime;
 mod organization_sso;
 mod organization_tokens;
 mod organization_wallet;
@@ -116,6 +117,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(organization_tokens::document());
     document.merge(organization_activity::document());
     document.merge(organization_scim_audit::document());
+    document.merge(organization_service_account_runtime::document());
     document.merge(scim::document());
     document.merge(passkey_auth::document());
     document.merge(platform_audit::document());
@@ -213,6 +215,19 @@ pub fn openapi_document() -> OpenApi {
             ),
         );
     document
+        .components
+        .get_or_insert_with(Components::new)
+        .add_security_scheme(
+            "serviceAccountBearerAuth",
+            SecurityScheme::Http(
+                HttpBuilder::new()
+                    .scheme(HttpAuthScheme::Bearer)
+                    .bearer_format("Service Account Secret")
+                    .description(Some("企业服务账号运行时 Bearer 密钥"))
+                    .build(),
+            ),
+        );
+    document
 }
 
 #[cfg(test)]
@@ -224,7 +239,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 187);
+        assert_eq!(document.paths.paths.len(), 188);
         let operation_count = document
             .paths
             .paths
@@ -246,7 +261,7 @@ mod tests {
             })
             .sum::<usize>();
         // 服务账号管理接口扩展了既有管理面，保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 255);
+        assert_eq!(operation_count, 256);
         assert!(
             document
                 .components
@@ -267,6 +282,11 @@ mod tests {
                     .security_schemes
                     .contains_key("scimBearerAuth"))
         );
+        assert!(document.components.as_ref().is_some_and(|components| {
+            components
+                .security_schemes
+                .contains_key("serviceAccountBearerAuth")
+        }));
     }
 
     #[test]
@@ -375,6 +395,7 @@ mod tests {
             "createOrganizationServiceAccount",
             "changeOrganizationServiceAccountStatus",
             "rotateOrganizationServiceAccountKey",
+            "authenticateOrganizationServiceAccountRuntime",
             "listOrganizationSsoProviders",
             "createOrganizationSsoProvider",
             "getOrganizationSsoProvider",
@@ -543,7 +564,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 421);
+        assert_eq!(schemas.len(), 422);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminDashboardChannelFlow"));
         assert!(schemas.contains_key("AdminDashboardFailure"));
@@ -563,6 +584,7 @@ mod tests {
         assert!(schemas.contains_key("OrganizationServiceAccountResponse"));
         assert!(schemas.contains_key("OrganizationServiceAccountIssuedResponse"));
         assert!(schemas.contains_key("OrganizationServiceAccountListResponse"));
+        assert!(schemas.contains_key("OrganizationServiceAccountRuntimeErrorResponse"));
         assert!(schemas.contains_key("OrganizationSsoProvider"));
         assert!(schemas.contains_key("OrganizationSsoProviderList"));
         assert!(schemas.contains_key("OrganizationSsoProviderRequest"));

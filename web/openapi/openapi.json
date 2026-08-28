@@ -19741,6 +19741,58 @@
         ]
       }
     },
+    "/api/organizations/{organization_id}/service-accounts/runtime/authenticate": {
+      "post": {
+        "tags": [
+          "企业服务账号"
+        ],
+        "summary": "使用企业服务账号密钥建立运行时身份",
+        "operationId": "authenticateOrganizationServiceAccountRuntime",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业内部标识",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "凭据有效，运行时身份已建立"
+          },
+          "401": {
+            "description": "服务账号密钥无效、缺失或不属于该企业",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationServiceAccountRuntimeErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "服务账号认证依赖暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationServiceAccountRuntimeErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "serviceAccountBearerAuth": []
+          }
+        ]
+      }
+    },
     "/scim/v2/{organization_id}/ServiceProviderConfig": {
       "get": {
         "tags": [
@@ -32043,6 +32095,22 @@
         },
         "additionalProperties": false
       },
+      "OrganizationServiceAccountRuntimeErrorResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "OrganizationServiceAccountStatusRequest": {
         "type": "object",
         "required": [
@@ -37273,6 +37341,12 @@
         "scheme": "bearer",
         "bearerFormat": "SCIM Token",
         "description": "企业绑定的 SCIM Bearer 令牌"
+      },
+      "serviceAccountBearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "Service Account Secret",
+        "description": "企业服务账号运行时 Bearer 密钥"
       }
     }
   },
