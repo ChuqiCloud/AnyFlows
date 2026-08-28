@@ -132,6 +132,9 @@ mod organization_custom_role_binding;
 mod organization_custom_role_binding_tests;
 #[cfg(test)]
 mod organization_custom_role_tests;
+mod organization_department;
+#[cfg(test)]
+mod organization_department_tests;
 mod organization_scim;
 mod organization_scim_audit;
 #[cfg(test)]
@@ -506,6 +509,12 @@ pub use organization_custom_role_binding::{
     OrganizationCustomRoleBindingRecord, OrganizationCustomRoleBindingRepository,
     OrganizationCustomRoleBindingRepositoryConfigError,
     OrganizationCustomRoleBindingRepositoryError,
+};
+pub use organization_department::{
+    MAX_ORGANIZATION_DEPARTMENT_NAME_BYTES, MAX_ORGANIZATION_DEPARTMENT_PAGE_SIZE,
+    OrganizationDepartmentCreate, OrganizationDepartmentCursor, OrganizationDepartmentPageRecord,
+    OrganizationDepartmentRecord, OrganizationDepartmentRepository,
+    OrganizationDepartmentRepositoryConfigError, OrganizationDepartmentRepositoryError,
 };
 pub use organization_scim::{
     OrganizationScimGroupRecord, OrganizationScimGroupRepository,
