@@ -139,6 +139,9 @@ mod organization_scim_audit_tests;
 #[cfg(test)]
 mod organization_scim_tests;
 mod organization_service_account;
+mod organization_service_account_budget;
+#[cfg(test)]
+mod organization_service_account_budget_tests;
 #[cfg(test)]
 mod organization_service_account_tests;
 mod organization_sso;
@@ -521,6 +524,11 @@ pub use organization_service_account::{
     OrganizationServiceAccountIssued, OrganizationServiceAccountKeyRecord,
     OrganizationServiceAccountPageRecord, OrganizationServiceAccountRecord,
     OrganizationServiceAccountRepository, OrganizationServiceAccountRepositoryError,
+};
+pub use organization_service_account_budget::{
+    OrganizationServiceAccountBudgetBindingRepository,
+    OrganizationServiceAccountBudgetBindingRepositoryConfigError,
+    OrganizationServiceAccountBudgetBindingRepositoryError,
 };
 pub use organization_sso::{
     OrganizationSsoDomainCreate, OrganizationSsoDomainRecord, OrganizationSsoDomainUpdate,

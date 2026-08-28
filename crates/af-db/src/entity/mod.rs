@@ -71,6 +71,7 @@ pub(crate) mod organization_scim_audit_logs;
 pub(crate) mod organization_scim_group_resources;
 pub(crate) mod organization_scim_tokens;
 pub(crate) mod organization_scim_user_resources;
+pub(crate) mod organization_service_account_budget_bindings;
 pub(crate) mod organization_service_account_keys;
 pub(crate) mod organization_service_accounts;
 pub(crate) mod organization_sso_domains;

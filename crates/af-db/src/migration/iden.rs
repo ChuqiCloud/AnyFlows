@@ -2908,6 +2908,34 @@ pub(in crate::migration) mod organization_service_account_keys {
     }
 }
 
+pub(in crate::migration) mod organization_service_account_budget_bindings {
+    use super::DeriveIden;
+
+    /// 企业服务账号预算绑定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_service_account_budget_bindings")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 服务账号、策略作用域和 CAS 版本列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        ServiceAccountId,
+        PolicyId,
+        PolicyVersion,
+        ScopeKind,
+        TeamId,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
 pub(in crate::migration) mod organization_scim_audit_logs {
     use super::DeriveIden;
 
