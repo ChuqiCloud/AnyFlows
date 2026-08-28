@@ -4,7 +4,9 @@ use std::{
     sync::Arc,
 };
 
-use af_domain::{BillingReservationId, GatewayPrincipal, Quota};
+use af_domain::{
+    BillingReservationId, GatewayPrincipal, OrganizationServiceAccountRuntimeIdentity, Quota,
+};
 use af_protocol::Usage;
 use thiserror::Error;
 
@@ -101,6 +103,7 @@ impl BillingRequestPlan {
         }
         Ok(BillingRequestLifecycle {
             principal,
+            service_account_identity: None,
             event_id,
             resolver: self.resolver,
             state: LifecycleState::Free,
@@ -123,6 +126,7 @@ impl BillingRequestPlan {
         };
         Ok(BillingRequestLifecycle {
             principal,
+            service_account_identity: None,
             event_id: reservation_id,
             resolver: self.resolver,
             state: LifecycleState::Metered {
@@ -181,6 +185,7 @@ pub enum BillingLifecycleState {
 #[must_use = "请求计费生命周期必须保留到完成结算或触发 RAII 退款责任"]
 pub struct BillingRequestLifecycle {
     principal: GatewayPrincipal,
+    service_account_identity: Option<OrganizationServiceAccountRuntimeIdentity>,
     event_id: BillingReservationId,
     resolver: Arc<dyn PricingResolver>,
     state: LifecycleState,
@@ -203,6 +208,17 @@ impl BillingRequestLifecycle {
             LifecycleState::UsagePending(_) => BillingLifecycleState::UsagePending,
             LifecycleState::Completed(_) => BillingLifecycleState::Completed,
         }
+    }
+
+    /// 绑定已由运行时鉴权固定的服务账号身份，后续完成时写入企业审计投影。
+    ///
+    /// 该方法只设置脱敏身份，不改变现有个人/API Key 主体；应在首次完成请求前调用。
+    pub const fn with_service_account_identity(
+        mut self,
+        identity: OrganizationServiceAccountRuntimeIdentity,
+    ) -> Self {
+        self.service_account_identity = Some(identity);
+        self
     }
 
     /// 用最终 usage 完成免费记录或按量结算；相同 usage 的终态重放不会重复副作用。
@@ -273,6 +289,7 @@ impl BillingRequestLifecycle {
                     price.billing_mode(),
                     price.quota(),
                 )
+                .with_service_account_identity_opt(self.service_account_identity)
                 .with_observation(observation),
             )
         };

@@ -139,6 +139,9 @@ mod organization_scim_audit_tests;
 #[cfg(test)]
 mod organization_scim_tests;
 mod organization_service_account;
+mod organization_service_account_audit;
+#[cfg(test)]
+mod organization_service_account_audit_tests;
 mod organization_service_account_budget;
 #[cfg(test)]
 mod organization_service_account_budget_tests;
@@ -524,6 +527,12 @@ pub use organization_service_account::{
     OrganizationServiceAccountIssued, OrganizationServiceAccountKeyRecord,
     OrganizationServiceAccountPageRecord, OrganizationServiceAccountRecord,
     OrganizationServiceAccountRepository, OrganizationServiceAccountRepositoryError,
+};
+pub use organization_service_account_audit::{
+    MAX_ORGANIZATION_SERVICE_ACCOUNT_AUDIT_PAGE_SIZE, OrganizationServiceAccountAuditPage,
+    OrganizationServiceAccountAuditQuery, OrganizationServiceAccountAuditRecord,
+    OrganizationServiceAccountAuditRepository, OrganizationServiceAccountAuditRepositoryError,
+    OrganizationServiceAccountAuditWrite,
 };
 pub use organization_service_account_budget::{
     OrganizationServiceAccountBudgetBindingRepository,

@@ -1,6 +1,9 @@
 use std::fmt;
 
-use af_domain::{BillingReservationId, GatewayPrincipal, Operation, Protocol, Quota};
+use af_domain::{
+    BillingReservationId, GatewayPrincipal, Operation, OrganizationServiceAccountRuntimeIdentity,
+    Protocol, Quota,
+};
 use af_protocol::{
     AudioDuration, ReasoningEffort, TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource,
     VideoDuration, VideoResolution,
@@ -290,6 +293,7 @@ impl BillingUsageDimensions {
 pub struct BillingUsageRecord {
     event_id: BillingReservationId,
     principal: GatewayPrincipal,
+    service_account_identity: Option<OrganizationServiceAccountRuntimeIdentity>,
     usage: Usage,
     dimensions: BillingUsageDimensions,
     observation: BillingUsageObservation,
@@ -327,6 +331,7 @@ impl BillingUsageRecord {
         Self {
             event_id,
             principal,
+            service_account_identity: None,
             usage,
             dimensions,
             observation: BillingUsageObservation::empty(),
@@ -381,6 +386,35 @@ impl BillingUsageRecord {
     #[must_use]
     pub const fn principal(self) -> GatewayPrincipal {
         self.principal
+    }
+
+    /// 返回可选的脱敏服务账号运行时身份；个人/API Key 调用保持为空。
+    #[must_use]
+    pub const fn service_account_identity(
+        self,
+    ) -> Option<OrganizationServiceAccountRuntimeIdentity> {
+        self.service_account_identity
+    }
+
+    /// 绑定已完成企业与活动密钥校验的服务账号身份，供用量审计投影使用。
+    ///
+    /// 身份只包含企业、服务账号公开标识和密钥公开标识，不含密钥明文、摘要或自然人
+    /// 身份；调用方应在生命周期完成前设置该值。
+    #[must_use]
+    pub const fn with_service_account_identity(
+        mut self,
+        identity: OrganizationServiceAccountRuntimeIdentity,
+    ) -> Self {
+        self.service_account_identity = Some(identity);
+        self
+    }
+
+    pub(crate) const fn with_service_account_identity_opt(
+        mut self,
+        identity: Option<OrganizationServiceAccountRuntimeIdentity>,
+    ) -> Self {
+        self.service_account_identity = identity;
+        self
     }
 
     /// 返回本次请求的最终规范化用量。
@@ -452,6 +486,14 @@ impl BillingCompletion {
     #[must_use]
     pub const fn dimensions(self) -> BillingUsageDimensions {
         self.record.dimensions()
+    }
+
+    /// 返回已固化的脱敏服务账号运行时身份。
+    #[must_use]
+    pub const fn service_account_identity(
+        self,
+    ) -> Option<OrganizationServiceAccountRuntimeIdentity> {
+        self.record.service_account_identity()
     }
 
     /// 返回已进入可靠记录队列的调用观测。

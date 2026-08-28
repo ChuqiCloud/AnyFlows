@@ -97,29 +97,30 @@ use af_db::{
     OrganizationScimAuditRepositoryError, OrganizationScimGroupRepository,
     OrganizationScimGroupRepositoryError, OrganizationScimTokenRepository,
     OrganizationScimTokenRepositoryError, OrganizationScimUserRepository,
-    OrganizationScimUserRepositoryError, OrganizationServiceAccountRepository,
-    OrganizationServiceAccountRepositoryError, OrganizationSsoProviderRepository,
-    OrganizationSsoProviderRepositoryConfigError, OrganizationTokenRepository,
-    OrganizationTokenRepositoryConfigError, OrganizationWalletRepository,
-    OrganizationWalletRepositoryConfigError, PasskeyRepository, PasswordResetRepository,
-    PasswordResetRepositoryConfigError, PaymentSecretUpdate, PaymentSettingsRepository,
-    PaymentSettingsRepositoryConfigError, PaymentSettingsRepositoryError,
-    PaymentSettingsWriteRecord, PlatformAuditRepository, PlaygroundConversationRepository,
-    PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
-    PlaygroundShareRepositoryConfigError, QuotaRepository, RedemptionRepository,
-    RedemptionRepositoryConfigError, RefundRepository, RefundRepositoryConfigError,
-    RegistrationRepository, RegistrationRepositoryConfigError, RequestOutcomeRepository,
-    SiteSettingsRepository, SiteSettingsRepositoryConfigError, SiteSettingsRepositoryError,
-    SmartRouteRuntimeRepository, SmartRouteRuntimeRepositoryConfigError,
-    SubscriptionBalanceAlertRepository, SubscriptionBalanceAlertRepositoryConfigError,
-    SubscriptionRepository, SubscriptionRepositoryConfigError, TokenAuthRepository,
-    TokenAuthRepositoryConfigError, TokenRequestAdmissionRepository,
-    TokenRequestAdmissionRepositoryConfigError, TopupRepository, TopupRepositoryConfigError,
-    UsageLogRepository, UserInvitationRepository, UserInvitationRepositoryConfigError,
-    UserNotificationRepository, UserNotificationRepositoryConfigError, UserProfileRepository,
-    UserProfileRepositoryConfigError, UserSessionRepository, UserSessionRepositoryConfigError,
-    UserTokenRepository, UserTokenRepositoryConfigError, WalletLedgerRepository,
-    WalletLedgerRepositoryConfigError, connect_and_migrate,
+    OrganizationScimUserRepositoryError, OrganizationServiceAccountAuditRepository,
+    OrganizationServiceAccountRepository, OrganizationServiceAccountRepositoryError,
+    OrganizationSsoProviderRepository, OrganizationSsoProviderRepositoryConfigError,
+    OrganizationTokenRepository, OrganizationTokenRepositoryConfigError,
+    OrganizationWalletRepository, OrganizationWalletRepositoryConfigError, PasskeyRepository,
+    PasswordResetRepository, PasswordResetRepositoryConfigError, PaymentSecretUpdate,
+    PaymentSettingsRepository, PaymentSettingsRepositoryConfigError,
+    PaymentSettingsRepositoryError, PaymentSettingsWriteRecord, PlatformAuditRepository,
+    PlaygroundConversationRepository, PlaygroundConversationRepositoryConfigError,
+    PlaygroundShareRepository, PlaygroundShareRepositoryConfigError, QuotaRepository,
+    RedemptionRepository, RedemptionRepositoryConfigError, RefundRepository,
+    RefundRepositoryConfigError, RegistrationRepository, RegistrationRepositoryConfigError,
+    RequestOutcomeRepository, SiteSettingsRepository, SiteSettingsRepositoryConfigError,
+    SiteSettingsRepositoryError, SmartRouteRuntimeRepository,
+    SmartRouteRuntimeRepositoryConfigError, SubscriptionBalanceAlertRepository,
+    SubscriptionBalanceAlertRepositoryConfigError, SubscriptionRepository,
+    SubscriptionRepositoryConfigError, TokenAuthRepository, TokenAuthRepositoryConfigError,
+    TokenRequestAdmissionRepository, TokenRequestAdmissionRepositoryConfigError, TopupRepository,
+    TopupRepositoryConfigError, UsageLogRepository, UserInvitationRepository,
+    UserInvitationRepositoryConfigError, UserNotificationRepository,
+    UserNotificationRepositoryConfigError, UserProfileRepository, UserProfileRepositoryConfigError,
+    UserSessionRepository, UserSessionRepositoryConfigError, UserTokenRepository,
+    UserTokenRepositoryConfigError, WalletLedgerRepository, WalletLedgerRepositoryConfigError,
+    connect_and_migrate,
 };
 use af_http::{
     AdminChannelProbe, AdminOAuthConnectionService, AudioService, ChatService, EmbeddingService,
@@ -1835,8 +1836,13 @@ impl Bootstrap<RelayReady> {
                         .clone()
                         .with_analytics_export(repository.clone())
                 });
-        let usage_record_sink: Arc<dyn UsageRecordSink> =
-            Arc::new(DatabaseUsageRecordSink::new(usage_repository));
+        let service_account_audit_repository = OrganizationServiceAccountAuditRepository::new(
+            self.stage.infrastructure.infrastructure.database.clone(),
+        );
+        let usage_record_sink: Arc<dyn UsageRecordSink> = Arc::new(
+            DatabaseUsageRecordSink::new(usage_repository)
+                .with_service_account_audit_projection(service_account_audit_repository),
+        );
         let usage_record_consumer = UsageRecordConsumer::new(
             usage_record_receiver,
             Arc::clone(&usage_record_sink),
