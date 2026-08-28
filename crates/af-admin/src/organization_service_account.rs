@@ -2,15 +2,17 @@ use std::{future::Future, pin::Pin, sync::Arc};
 
 pub use af_db::OrganizationServiceAccountRecord;
 use af_db::{
-    MAX_ORGANIZATION_SERVICE_ACCOUNT_PAGE_SIZE, OrganizationServiceAccountIssued as DbIssued,
-    OrganizationServiceAccountPageRecord, OrganizationServiceAccountRepository,
-    OrganizationServiceAccountRepositoryError,
+    MAX_ORGANIZATION_SERVICE_ACCOUNT_PAGE_SIZE, OrganizationServiceAccountBudgetBindingRepository,
+    OrganizationServiceAccountBudgetBindingRepositoryError,
+    OrganizationServiceAccountIssued as DbIssued, OrganizationServiceAccountPageRecord,
+    OrganizationServiceAccountRepository, OrganizationServiceAccountRepositoryError,
 };
 use af_domain::{
-    OrganizationEntitlementStatus, OrganizationId, OrganizationPermission,
-    OrganizationServiceAccountKey, OrganizationServiceAccountLocator,
-    OrganizationServiceAccountName, OrganizationServiceAccountRuntimeIdentity,
-    OrganizationServiceAccountSecret, OrganizationServiceAccountStatus,
+    OrganizationBudgetPolicyId, OrganizationEntitlementStatus, OrganizationId,
+    OrganizationPermission, OrganizationServiceAccountBudgetBinding, OrganizationServiceAccountKey,
+    OrganizationServiceAccountLocator, OrganizationServiceAccountName,
+    OrganizationServiceAccountRuntimeIdentity, OrganizationServiceAccountSecret,
+    OrganizationServiceAccountStatus,
 };
 use thiserror::Error;
 
@@ -99,6 +101,31 @@ impl OrganizationServiceAccountStatusCommand {
 pub struct OrganizationServiceAccountRotateCommand {
     service_account_key: OrganizationServiceAccountKey,
     expected_version: i64,
+}
+
+/// 按服务账号版本 CAS 设置企业或团队预算策略绑定。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OrganizationServiceAccountBudgetBindingCommand {
+    service_account_key: OrganizationServiceAccountKey,
+    policy_id: OrganizationBudgetPolicyId,
+    expected_version: Option<i64>,
+}
+
+impl OrganizationServiceAccountBudgetBindingCommand {
+    pub fn new(
+        service_account_key: OrganizationServiceAccountKey,
+        policy_id: OrganizationBudgetPolicyId,
+        expected_version: Option<i64>,
+    ) -> Result<Self, OrganizationServiceAccountServiceError> {
+        if expected_version.is_some_and(|version| version <= 0 || version == i64::MAX) {
+            return Err(OrganizationServiceAccountServiceError::InvalidInput);
+        }
+        Ok(Self {
+            service_account_key,
+            policy_id,
+            expected_version,
+        })
+    }
 }
 
 impl OrganizationServiceAccountRotateCommand {
@@ -222,6 +249,17 @@ pub type OrganizationServiceAccountIssuedFuture<'a> = Pin<
             + 'a,
     >,
 >;
+pub type OrganizationServiceAccountBudgetBindingFuture<'a> = Pin<
+    Box<
+        dyn Future<
+                Output = Result<
+                    OrganizationServiceAccountBudgetBinding,
+                    OrganizationServiceAccountServiceError,
+                >,
+            > + Send
+            + 'a,
+    >,
+>;
 
 /// 运行时服务账号密钥认证的失败分类；不携带主体、摘要或密钥材料。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
@@ -284,17 +322,36 @@ pub trait OrganizationServiceAccountService: Send + Sync {
         context: OrganizationContext,
         command: OrganizationServiceAccountRotateCommand,
     ) -> OrganizationServiceAccountIssuedFuture<'a>;
+
+    fn get_budget_binding<'a>(
+        &'a self,
+        context: OrganizationContext,
+        service_account_key: OrganizationServiceAccountKey,
+    ) -> OrganizationServiceAccountBudgetBindingFuture<'a>;
+
+    fn set_budget_binding<'a>(
+        &'a self,
+        context: OrganizationContext,
+        command: OrganizationServiceAccountBudgetBindingCommand,
+    ) -> OrganizationServiceAccountBudgetBindingFuture<'a>;
 }
 
 /// 使用数据库仓储实现企业范围、固定角色和商业授权边界。
 pub struct DatabaseOrganizationServiceAccountService {
     repository: Arc<OrganizationServiceAccountRepository>,
+    budget_binding_repository: Arc<OrganizationServiceAccountBudgetBindingRepository>,
 }
 
 impl DatabaseOrganizationServiceAccountService {
     #[must_use]
-    pub fn new(repository: Arc<OrganizationServiceAccountRepository>) -> Self {
-        Self { repository }
+    pub fn new(
+        repository: Arc<OrganizationServiceAccountRepository>,
+        budget_binding_repository: Arc<OrganizationServiceAccountBudgetBindingRepository>,
+    ) -> Self {
+        Self {
+            repository,
+            budget_binding_repository,
+        }
     }
 }
 
@@ -403,6 +460,52 @@ impl OrganizationServiceAccountService for DatabaseOrganizationServiceAccountSer
                 .await
                 .map_err(map_repository_error)?;
             Ok(issued_from_db(issued))
+        })
+    }
+
+    fn get_budget_binding<'a>(
+        &'a self,
+        context: OrganizationContext,
+        service_account_key: OrganizationServiceAccountKey,
+    ) -> OrganizationServiceAccountBudgetBindingFuture<'a> {
+        Box::pin(async move {
+            require_read_access(&context)?;
+            let account = self
+                .repository
+                .get_by_public_key(context.organization_id(), service_account_key)
+                .await
+                .map_err(map_repository_error)?;
+            self.budget_binding_repository
+                .resolve_binding(
+                    context.organization_id(),
+                    account.locator().service_account_id(),
+                )
+                .await
+                .map_err(map_budget_binding_error)
+        })
+    }
+
+    fn set_budget_binding<'a>(
+        &'a self,
+        context: OrganizationContext,
+        command: OrganizationServiceAccountBudgetBindingCommand,
+    ) -> OrganizationServiceAccountBudgetBindingFuture<'a> {
+        Box::pin(async move {
+            require_manage_access(&context)?;
+            let account = self
+                .repository
+                .get_by_public_key(context.organization_id(), command.service_account_key)
+                .await
+                .map_err(map_repository_error)?;
+            self.budget_binding_repository
+                .set_binding(
+                    context.organization_id(),
+                    account.locator().service_account_id(),
+                    command.policy_id,
+                    command.expected_version,
+                )
+                .await
+                .map_err(map_budget_binding_error)
         })
     }
 }
@@ -516,6 +619,32 @@ fn map_repository_error(
         OrganizationServiceAccountRepositoryError::Query
         | OrganizationServiceAccountRepositoryError::Timeout
         | OrganizationServiceAccountRepositoryError::Invariant => {
+            OrganizationServiceAccountServiceError::Internal
+        }
+    }
+}
+
+fn map_budget_binding_error(
+    error: OrganizationServiceAccountBudgetBindingRepositoryError,
+) -> OrganizationServiceAccountServiceError {
+    match error {
+        OrganizationServiceAccountBudgetBindingRepositoryError::InvalidInput => {
+            OrganizationServiceAccountServiceError::InvalidInput
+        }
+        OrganizationServiceAccountBudgetBindingRepositoryError::NotFound => {
+            OrganizationServiceAccountServiceError::NotFound
+        }
+        OrganizationServiceAccountBudgetBindingRepositoryError::AccountUnavailable
+        | OrganizationServiceAccountBudgetBindingRepositoryError::PolicyUnavailable
+        | OrganizationServiceAccountBudgetBindingRepositoryError::TeamUnavailable => {
+            OrganizationServiceAccountServiceError::InvalidTransition
+        }
+        OrganizationServiceAccountBudgetBindingRepositoryError::Conflict => {
+            OrganizationServiceAccountServiceError::Conflict
+        }
+        OrganizationServiceAccountBudgetBindingRepositoryError::Query
+        | OrganizationServiceAccountBudgetBindingRepositoryError::Timeout
+        | OrganizationServiceAccountBudgetBindingRepositoryError::Invariant => {
             OrganizationServiceAccountServiceError::Internal
         }
     }

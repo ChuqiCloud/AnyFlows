@@ -10,6 +10,7 @@ export type NavKey =
   | 'organizationMembers'
   | 'organizationOverview'
   | 'organizationSettings'
+  | 'organizationServiceAccounts'
   | 'organizationWallet'
   | 'wallet'
   | 'subscriptions'
@@ -39,7 +40,7 @@ export type AdminSectionKey = 'personal' | 'organization' | 'operations' | 'gate
 
 export const userNavigationGroups = [
   { key: 'use', items: ['models', 'playground', 'videoTasks'] },
-  { key: 'organization', items: ['organizationOverview', 'organizationMembers', 'organizationApiKeys', 'organizationBudgets', 'organizationWallet', 'organizationActivity', 'organizationSettings'] },
+  { key: 'organization', items: ['organizationOverview', 'organizationMembers', 'organizationApiKeys', 'organizationServiceAccounts', 'organizationBudgets', 'organizationWallet', 'organizationActivity', 'organizationSettings'] },
   { key: 'account', items: ['apiKeys', 'wallet', 'usage', 'subscriptions', 'invitations', 'profile'] },
 ] as const satisfies ReadonlyArray<{ key: 'use' | 'organization' | 'account'; items: readonly NavKey[] }>
 
@@ -47,7 +48,7 @@ export const adminWorkspaceItems = ['overview', 'usage', 'models', 'playground',
 
 export const adminNavigationSections = [
   { key: 'personal', items: ['apiKeys', 'wallet', 'subscriptions', 'invitations', 'profile'] },
-  { key: 'organization', items: ['organizationOverview', 'organizationMembers', 'organizationApiKeys', 'organizationBudgets', 'organizationWallet', 'organizationActivity', 'organizationSettings'] },
+  { key: 'organization', items: ['organizationOverview', 'organizationMembers', 'organizationApiKeys', 'organizationServiceAccounts', 'organizationBudgets', 'organizationWallet', 'organizationActivity', 'organizationSettings'] },
   { key: 'operations', items: ['users', 'subscriptionManagement', 'redemptionCodes', 'refunds', 'paymentSettings', 'billingSettings'] },
   { key: 'gateway', items: ['modelSettings', 'groupSettings', 'channels', 'credentials', 'credentialProxies', 'routes'] },
   { key: 'platform', items: ['siteSettings', 'authenticationSettings', 'emailSettings', 'networkSettings', 'keys'] },
@@ -75,6 +76,7 @@ export const activeKeyByView: Readonly<Record<string, NavKey>> = {
   'organization-members': 'organizationMembers',
   'organization-overview': 'organizationOverview',
   'organization-settings': 'organizationSettings',
+  'organization-service-accounts': 'organizationServiceAccounts',
   'organization-wallet': 'organizationWallet',
   wallet: 'wallet',
   subscriptions: 'subscriptions',

@@ -239,7 +239,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 188);
+        assert_eq!(document.paths.paths.len(), 189);
         let operation_count = document
             .paths
             .paths
@@ -261,7 +261,7 @@ mod tests {
             })
             .sum::<usize>();
         // 服务账号管理接口扩展了既有管理面，保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 256);
+        assert_eq!(operation_count, 258);
         assert!(
             document
                 .components
@@ -395,6 +395,8 @@ mod tests {
             "createOrganizationServiceAccount",
             "changeOrganizationServiceAccountStatus",
             "rotateOrganizationServiceAccountKey",
+            "getOrganizationServiceAccountBudgetBinding",
+            "setOrganizationServiceAccountBudgetBinding",
             "authenticateOrganizationServiceAccountRuntime",
             "listOrganizationSsoProviders",
             "createOrganizationSsoProvider",
@@ -564,7 +566,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 422);
+        assert_eq!(schemas.len(), 424);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminDashboardChannelFlow"));
         assert!(schemas.contains_key("AdminDashboardFailure"));
@@ -584,6 +586,8 @@ mod tests {
         assert!(schemas.contains_key("OrganizationServiceAccountResponse"));
         assert!(schemas.contains_key("OrganizationServiceAccountIssuedResponse"));
         assert!(schemas.contains_key("OrganizationServiceAccountListResponse"));
+        assert!(schemas.contains_key("OrganizationServiceAccountBudgetBindingRequest"));
+        assert!(schemas.contains_key("OrganizationServiceAccountBudgetBindingResponse"));
         assert!(schemas.contains_key("OrganizationServiceAccountRuntimeErrorResponse"));
         assert!(schemas.contains_key("OrganizationSsoProvider"));
         assert!(schemas.contains_key("OrganizationSsoProviderList"));

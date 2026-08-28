@@ -30,6 +30,7 @@ import { OrganizationBudgetPage } from '@/features/organization-budgets/organiza
 import { OrganizationMemberPage } from '@/features/organization-members/organization-member-page'
 import { OrganizationOverviewPage } from '@/features/organization-console/organization-overview-page'
 import { OrganizationSettingsPage } from '@/features/organization-console/organization-settings-page'
+import { OrganizationServiceAccountPage } from '@/features/organization-service-accounts/organization-service-account-page'
 import { OrganizationWalletPage } from '@/features/organization-wallet/organization-wallet-page'
 import { OrganizationWorkspaceProvider } from '@/features/organization-console/organization-workspace-context'
 import { PaymentSettingsPage } from '@/features/payment-settings/payment-settings-page'
@@ -178,6 +179,8 @@ function ManagementEntry({
                   ? 'organizationConsole.overview.title'
                 : view === 'organization-settings'
                   ? 'organizationConsole.settings.title'
+                : view === 'organization-service-accounts'
+                  ? 'organizationServiceAccounts.title'
                 : view === 'organization-wallet'
                   ? 'organizationConsole.wallet.title'
               : view === 'wallet'
@@ -247,6 +250,8 @@ function ManagementEntry({
                   ? <OrganizationOverviewPage />
                 : view === 'organization-settings'
                   ? <OrganizationSettingsPage />
+                : view === 'organization-service-accounts'
+                  ? <OrganizationServiceAccountPage />
                 : view === 'organization-wallet'
                   ? <OrganizationWalletPage />
               : view === 'wallet'
@@ -276,6 +281,7 @@ function ManagementEntry({
     && view !== 'organization-members'
     && view !== 'organization-overview'
     && view !== 'organization-settings'
+    && view !== 'organization-service-accounts'
     && view !== 'organization-wallet'
     && view !== 'wallet'
     && view !== 'subscriptions'

@@ -98,6 +98,8 @@ use af_db::{
     OrganizationScimGroupRepositoryError, OrganizationScimTokenRepository,
     OrganizationScimTokenRepositoryError, OrganizationScimUserRepository,
     OrganizationScimUserRepositoryError, OrganizationServiceAccountAuditRepository,
+    OrganizationServiceAccountBudgetBindingRepository,
+    OrganizationServiceAccountBudgetBindingRepositoryConfigError,
     OrganizationServiceAccountRepository, OrganizationServiceAccountRepositoryError,
     OrganizationSsoProviderRepository, OrganizationSsoProviderRepositoryConfigError,
     OrganizationTokenRepository, OrganizationTokenRepositoryConfigError,
@@ -474,6 +476,11 @@ pub enum BootstrapError {
     /// 企业服务账号仓储的启动参数无效。
     #[error("企业服务账号仓储启动参数无效")]
     OrganizationServiceAccountRepository(#[source] OrganizationServiceAccountRepositoryError),
+    /// 企业服务账号预算绑定仓储的启动参数无效。
+    #[error("企业服务账号预算绑定仓储启动参数无效")]
+    OrganizationServiceAccountBudgetBindingRepository(
+        #[source] OrganizationServiceAccountBudgetBindingRepositoryConfigError,
+    ),
     /// 站点设置仓储的启动参数无效。
     #[error("站点设置仓储启动参数无效")]
     SiteSettingsRepository(#[source] SiteSettingsRepositoryConfigError),
@@ -1001,6 +1008,13 @@ impl Bootstrap<DatabaseReady> {
             )
             .map_err(BootstrapError::OrganizationServiceAccountRepository)?,
         );
+        let organization_service_account_budget_binding_repository = Arc::new(
+            OrganizationServiceAccountBudgetBindingRepository::new(
+                self.stage.database.clone(),
+                Duration::from_secs(auth.lookup_timeout_secs()),
+            )
+            .map_err(BootstrapError::OrganizationServiceAccountBudgetBindingRepository)?,
+        );
         let organization_wallet_repository = Arc::new(
             OrganizationWalletRepository::new(
                 self.stage.database.clone(),
@@ -1242,6 +1256,7 @@ impl Bootstrap<DatabaseReady> {
         let organization_service_account_service =
             Arc::new(af_admin::DatabaseOrganizationServiceAccountService::new(
                 organization_service_account_repository,
+                organization_service_account_budget_binding_repository,
             ));
         let organization_sso_identity_binding_service: Arc<
             dyn OrganizationSsoIdentityBindingService,

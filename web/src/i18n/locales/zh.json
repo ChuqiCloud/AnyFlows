@@ -39,6 +39,7 @@
     "videoTasks": "视频任务",
     "apiKeys": "我的 API Key",
     "organizationApiKeys": "企业 API Key",
+    "organizationServiceAccounts": "服务账号",
     "organizationBudgets": "企业预算",
     "organizationActivity": "企业日志与审计",
     "organizationOverview": "企业概览",
@@ -4412,6 +4413,108 @@
       "tokensBody": "本人 Key 或企业脱敏目录暂时不可用，已有 Key 的服务端状态不受本次读取失败影响。"
     }
   },
+  "organizationServiceAccounts": {
+    "eyebrow": "企业空间",
+    "title": "服务账号",
+    "subtitle": "为自动化任务创建不绑定自然人的受控身份。密钥只展示一次，不代表成员或个人钱包。",
+    "summary": {
+      "page": "第 {{page}} 页，本页 {{count}} 个服务账号",
+      "pageNumber": "第 {{page}} 页"
+    },
+    "columns": {
+      "account": "账号",
+      "status": "状态",
+      "created": "创建时间",
+      "updated": "更新时间",
+      "version": "版本",
+      "actions": "操作"
+    },
+    "status": {
+      "active": "启用",
+      "suspended": "暂停",
+      "revoked": "已撤销"
+    },
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试",
+      "create": "创建账号",
+      "cancel": "取消",
+      "done": "完成",
+      "saveBudget": "保存预算",
+      "previous": "上一页",
+      "next": "下一页",
+      "budget": "预算绑定",
+      "rotate": "轮换密钥",
+      "active": "恢复",
+      "suspended": "暂停",
+      "revoke": "撤销",
+      "confirmStatus": "确认变更"
+    },
+    "readOnly": "你可以查看服务账号目录，但没有修改服务账号的权限。",
+    "empty": {
+      "title": "还没有服务账号",
+      "body": "为作业、集成或定时任务创建服务账号。创建后密钥只展示一次。"
+    },
+    "editor": {
+      "title": "创建服务账号",
+      "description": "此身份绑定当前企业，不继承成员角色。",
+      "name": "显示名称",
+      "namePlaceholder": "例如：nightly-sync",
+      "nameHint": "使用能识别工作负载的稳定名称，不要填写个人姓名。",
+      "nameRequired": "请输入显示名称。"
+    },
+    "keyDialog": {
+      "title": "保存服务账号密钥",
+      "description": "密钥只展示一次。关闭前请将它保存到密钥管理器。",
+      "secretLabel": "密钥",
+      "prefix": "密钥前缀",
+      "keyId": "密钥标识",
+      "copy": "复制",
+      "copied": "已复制",
+      "warning": "为保障安全，关闭此对话框后不会再次展示完整密钥。"
+    },
+    "budget": {
+      "eyebrow": "预算控制",
+      "title": "服务账号预算",
+      "description": "将 {{name}} 绑定到一个有效的企业或团队策略。",
+      "permission": "预算策略选项需要企业预算管理权限。",
+      "policy": "有效策略",
+      "policyHint": "服务账号不能使用成员策略、已过期策略或未来生效策略。",
+      "selectPolicy": "选择策略",
+      "noPolicies": "没有可用策略",
+      "organizationPolicy": "企业策略",
+      "teamPolicy": "团队：{{team}}",
+      "fixedPeriod": "固定 {{seconds}} 秒",
+      "current": "绑定版本 {{version}}，策略版本 {{policyVersion}}。",
+      "unbound": "尚未建立预算绑定，保存后将创建版本 1。",
+      "conflict": "绑定已在其他会话中变更，请刷新页面后确认当前策略。",
+      "loadError": "当前预算绑定加载失败。",
+      "saveError": "预算绑定保存失败，请刷新后重试。"
+    },
+    "statusDialog": {
+      "title": "变更服务账号状态",
+      "description": {
+        "active": "恢复 {{name}}？服务端确认版本后将接受新请求。",
+        "suspended": "暂停 {{name}}？恢复前运行时认证将失败关闭。",
+        "revoked": "撤销 {{name}}？此操作不可逆，现有密钥都会立即失效。"
+      }
+    },
+    "rotateDialog": {
+      "title": "轮换服务账号密钥",
+      "description": "轮换 {{name}}？旧密钥会立即撤销，新密钥只展示一次。"
+    },
+    "errors": {
+      "permissionTitle": "无法访问服务账号",
+      "permissionBody": "只有企业 Owner 或拥有服务账号读取权限的 Admin 才能查看此目录。",
+      "listTitle": "服务账号加载失败",
+      "listBody": "服务端没有返回可靠目录，请稍后重试。",
+      "create": "服务账号创建失败，请检查名称后重试。",
+      "entitlement": "当前企业商业授权不允许修改服务账号。",
+      "status": "状态变更失败，请刷新后重试。",
+      "rotate": "密钥轮换失败，请刷新后重试。",
+      "conflict": "账号已在其他会话中变更，请刷新后再试。"
+    }
+  },
   "organizationBudgets": {
     "eyebrow": "企业空间",
     "title": "企业预算",
@@ -4904,6 +5007,7 @@
       "links": {
         "members": "成员与团队",
         "keys": "企业 API Key",
+        "serviceAccounts": "服务账号",
         "wallet": "企业钱包与账本",
         "budgets": "分层预算",
         "activity": "调用日志与审计",

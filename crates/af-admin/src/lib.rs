@@ -291,6 +291,7 @@ pub use organization_scim::{
 };
 pub use organization_service_account::{
     DEFAULT_ORGANIZATION_SERVICE_ACCOUNT_PAGE_SIZE, DatabaseOrganizationServiceAccountService,
+    OrganizationServiceAccountBudgetBindingCommand, OrganizationServiceAccountBudgetBindingFuture,
     OrganizationServiceAccountCreateCommand, OrganizationServiceAccountFuture,
     OrganizationServiceAccountIssued, OrganizationServiceAccountIssuedFuture,
     OrganizationServiceAccountListQuery, OrganizationServiceAccountPage,

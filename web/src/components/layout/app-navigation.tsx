@@ -1,6 +1,7 @@
 import {
   Activity,
   Boxes,
+  Bot,
   BriefcaseBusiness,
   Building2,
   CalendarRange,
@@ -89,6 +90,7 @@ const navItems = {
   organizationMembers: { key: 'organizationMembers', icon: UsersRound, href: '#/console/organization-members' },
   organizationOverview: { key: 'organizationOverview', icon: Gauge, href: '#/console/organization' },
   organizationSettings: { key: 'organizationSettings', icon: Settings2, href: '#/console/organization-settings' },
+  organizationServiceAccounts: { key: 'organizationServiceAccounts', icon: Bot, href: '#/console/organization-service-accounts' },
   organizationWallet: { key: 'organizationWallet', icon: WalletCards, href: '#/console/organization-wallet' },
   wallet: { key: 'wallet', icon: WalletCards, href: '#/console/wallet' },
   subscriptions: { key: 'subscriptions', icon: CalendarRange, href: '#/console/subscriptions' },
