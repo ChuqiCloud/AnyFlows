@@ -83,21 +83,6 @@ impl MigrationTrait for Migration {
                             .col(department_iden::Column::DepartmentKey)
                             .unique(),
                     )
-                    .index(
-                        Index::create()
-                            .name("idx_organization_departments_scope_sort")
-                            .col(department_iden::Column::OrganizationId)
-                            .col(department_iden::Column::SortOrder)
-                            .col(department_iden::Column::Id),
-                    )
-                    .index(
-                        Index::create()
-                            .name("idx_organization_departments_scope_parent_status")
-                            .col(department_iden::Column::OrganizationId)
-                            .col(department_iden::Column::ParentDepartmentId)
-                            .col(department_iden::Column::Status)
-                            .col(department_iden::Column::Id),
-                    )
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk_organization_departments_organization")
@@ -146,7 +131,27 @@ impl MigrationTrait for Migration {
                     .check(department_key_format_check(manager.get_database_backend()))
                     .to_owned(),
             )
-            .await
+            .await?;
+        for index in [
+            Index::create()
+                .name("idx_organization_departments_scope_sort")
+                .table(department_iden::Entity)
+                .col(department_iden::Column::OrganizationId)
+                .col(department_iden::Column::SortOrder)
+                .col(department_iden::Column::Id)
+                .to_owned(),
+            Index::create()
+                .name("idx_organization_departments_scope_parent_status")
+                .table(department_iden::Entity)
+                .col(department_iden::Column::OrganizationId)
+                .col(department_iden::Column::ParentDepartmentId)
+                .col(department_iden::Column::Status)
+                .col(department_iden::Column::Id)
+                .to_owned(),
+        ] {
+            manager.create_index(index).await?;
+        }
+        Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
