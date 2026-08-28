@@ -146,6 +146,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("企业预算"),
         Tag::new("企业 SSO"),
         Tag::new("企业 API Key"),
+        Tag::new("企业服务账号"),
         Tag::new("企业活动"),
         Tag::new("企业 SCIM"),
         Tag::new("平台企业活动"),
@@ -223,7 +224,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 183);
+        assert_eq!(document.paths.paths.len(), 187);
         let operation_count = document
             .paths
             .paths
@@ -244,7 +245,8 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 250);
+        // 服务账号管理接口扩展了既有管理面，保持操作总数与生成文档同步。
+        assert_eq!(operation_count, 255);
         assert!(
             document
                 .components
@@ -368,6 +370,11 @@ mod tests {
             "createOrganizationCustomRole",
             "updateOrganizationCustomRole",
             "disableOrganizationCustomRole",
+            "listOrganizationServiceAccounts",
+            "getOrganizationServiceAccount",
+            "createOrganizationServiceAccount",
+            "changeOrganizationServiceAccountStatus",
+            "rotateOrganizationServiceAccountKey",
             "listOrganizationSsoProviders",
             "createOrganizationSsoProvider",
             "getOrganizationSsoProvider",
@@ -536,7 +543,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 415);
+        assert_eq!(schemas.len(), 421);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminDashboardChannelFlow"));
         assert!(schemas.contains_key("AdminDashboardFailure"));
@@ -550,6 +557,12 @@ mod tests {
         assert!(schemas.contains_key("PasskeyAuthenticationVerifyRequest"));
         assert!(schemas.contains_key("OrganizationEntitlementResponse"));
         assert!(schemas.contains_key("OrganizationCustomRoleResponse"));
+        assert!(schemas.contains_key("OrganizationServiceAccountCreateRequest"));
+        assert!(schemas.contains_key("OrganizationServiceAccountStatusRequest"));
+        assert!(schemas.contains_key("OrganizationServiceAccountRotateRequest"));
+        assert!(schemas.contains_key("OrganizationServiceAccountResponse"));
+        assert!(schemas.contains_key("OrganizationServiceAccountIssuedResponse"));
+        assert!(schemas.contains_key("OrganizationServiceAccountListResponse"));
         assert!(schemas.contains_key("OrganizationSsoProvider"));
         assert!(schemas.contains_key("OrganizationSsoProviderList"));
         assert!(schemas.contains_key("OrganizationSsoProviderRequest"));

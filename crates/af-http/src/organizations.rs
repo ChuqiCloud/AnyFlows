@@ -15,14 +15,17 @@ use af_admin::{
     OrganizationInvitationRecord, OrganizationInvitationService, OrganizationManagementError,
     OrganizationManagementService, OrganizationMembershipChangeCommand,
     OrganizationMembershipListQuery, OrganizationMembershipRecord,
-    OrganizationOwnershipTransferCommand, OrganizationSsoDomain as AdminOrganizationSsoDomain,
-    OrganizationSsoDomainCreateCommand, OrganizationSsoDomainCreated, OrganizationSsoDomainService,
-    OrganizationSsoDomainServiceError, OrganizationSsoDomainVerifyCommand,
-    OrganizationSsoIdentityBindingService, OrganizationSsoIdentityBindingServiceError,
-    OrganizationSsoIdentityBindingStepUp, OrganizationSsoLoginTransactionService,
-    OrganizationSsoLoginTransactionServiceError, OrganizationSsoPolicyCommand,
-    OrganizationSsoPolicyService, OrganizationSsoPolicyServiceError, OrganizationSsoProvider,
-    OrganizationSsoProviderCommand, OrganizationSsoProviderService,
+    OrganizationOwnershipTransferCommand, OrganizationServiceAccountCreateCommand,
+    OrganizationServiceAccountIssued, OrganizationServiceAccountListQuery,
+    OrganizationServiceAccountRotateCommand, OrganizationServiceAccountService,
+    OrganizationServiceAccountServiceError, OrganizationServiceAccountStatusCommand,
+    OrganizationSsoDomain as AdminOrganizationSsoDomain, OrganizationSsoDomainCreateCommand,
+    OrganizationSsoDomainCreated, OrganizationSsoDomainService, OrganizationSsoDomainServiceError,
+    OrganizationSsoDomainVerifyCommand, OrganizationSsoIdentityBindingService,
+    OrganizationSsoIdentityBindingServiceError, OrganizationSsoIdentityBindingStepUp,
+    OrganizationSsoLoginTransactionService, OrganizationSsoLoginTransactionServiceError,
+    OrganizationSsoPolicyCommand, OrganizationSsoPolicyService, OrganizationSsoPolicyServiceError,
+    OrganizationSsoProvider, OrganizationSsoProviderCommand, OrganizationSsoProviderService,
     OrganizationSsoProviderServiceError, OrganizationSsoRecoveryCommand,
     OrganizationSsoRecoveryService, OrganizationSsoRecoveryServiceError,
     OrganizationTeamChangeCommand, OrganizationTeamCreateCommand, OrganizationTeamDisableCommand,
@@ -32,6 +35,7 @@ use af_domain::{
     OrganizationCustomRoleKey, OrganizationEntitlementStatus, OrganizationId,
     OrganizationInvitationKey, OrganizationInvitationStatus, OrganizationMembershipId,
     OrganizationMembershipStatus, OrganizationPermission, OrganizationRole,
+    OrganizationServiceAccountKey, OrganizationServiceAccountStatus,
     OrganizationSsoEnforcementPolicy, OrganizationSsoProtocol, OrganizationSsoProviderStatus,
     OrganizationTeamId,
 };
@@ -77,6 +81,7 @@ pub(crate) struct OrganizationHttpState {
     sso_identity_binding_service: Option<Arc<dyn OrganizationSsoIdentityBindingService>>,
     sso_policy_service: Option<Arc<dyn OrganizationSsoPolicyService>>,
     sso_recovery_service: Option<Arc<dyn OrganizationSsoRecoveryService>>,
+    service_account_service: Option<Arc<dyn OrganizationServiceAccountService>>,
     activity_service: Arc<dyn OrganizationActivityService>,
 }
 
@@ -105,6 +110,7 @@ pub fn build_organization_router(
         None,
         None,
         None,
+        None,
     )
 }
 
@@ -123,6 +129,7 @@ pub fn build_organization_router_with_domain(
     sso_login_service: Option<Arc<dyn OrganizationSsoLoginTransactionService>>,
     sso_identity_binding_service: Option<Arc<dyn OrganizationSsoIdentityBindingService>>,
     sso_recovery_service: Option<Arc<dyn OrganizationSsoRecoveryService>>,
+    service_account_service: Option<Arc<dyn OrganizationServiceAccountService>>,
 ) -> Router {
     let authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(session_authenticator),
@@ -280,6 +287,27 @@ pub fn build_organization_router_with_domain(
     } else {
         router
     };
+    let router = if service_account_service.is_some() {
+        router
+            .route(
+                "/api/organizations/{organization_id}/service-accounts",
+                get(list_organization_service_accounts).post(create_organization_service_account),
+            )
+            .route(
+                "/api/organizations/{organization_id}/service-accounts/{service_account_key}",
+                get(get_organization_service_account),
+            )
+            .route(
+                "/api/organizations/{organization_id}/service-accounts/{service_account_key}/status",
+                post(change_organization_service_account_status),
+            )
+            .route(
+                "/api/organizations/{organization_id}/service-accounts/{service_account_key}/rotate-key",
+                post(rotate_organization_service_account_key),
+            )
+    } else {
+        router
+    };
     router
         .layer(authentication)
         .layer(middleware::from_fn(ensure_request_id))
@@ -295,6 +323,7 @@ pub fn build_organization_router_with_domain(
             sso_identity_binding_service,
             sso_policy_service,
             sso_recovery_service,
+            service_account_service,
             activity_service,
         })
 }
@@ -528,6 +557,54 @@ pub struct OrganizationCustomRoleResponse {
     created_by_user_id: i64,
     created_at: i64,
     updated_at: i64,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationServiceAccountCreateRequest {
+    name: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationServiceAccountStatusRequest {
+    status: String,
+    expected_version: i64,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationServiceAccountRotateRequest {
+    expected_version: i64,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationServiceAccountResponse {
+    service_account_key: String,
+    organization_id: i64,
+    name: String,
+    status: &'static str,
+    version: i64,
+    created_at: i64,
+    updated_at: i64,
+    revoked_at: Option<i64>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationServiceAccountIssuedResponse {
+    service_account: OrganizationServiceAccountResponse,
+    key_key: String,
+    key_prefix: String,
+    secret: String,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationServiceAccountListResponse {
+    service_accounts: Vec<OrganizationServiceAccountResponse>,
+    next_cursor: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -2049,6 +2126,329 @@ async fn disable_organization_custom_role(
     Ok(no_store_json(OrganizationCustomRoleResponse::from(&role)))
 }
 
+async fn list_organization_service_accounts(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path(organization_id): Path<i64>,
+    headers: HeaderMap,
+    RawQuery(raw_query): RawQuery,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::ServiceAccountsRead,
+        &request_id,
+        &headers,
+        "organization.service_account.list",
+        "organization",
+        organization_id.get().to_string(),
+    )
+    .await?;
+    let query = parse_service_account_list_query(raw_query.as_deref())?;
+    let service = state
+        .service_account_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let page = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::ServiceAccountsRead,
+        "organization.service_account.list",
+        "organization",
+        organization_id.get().to_string(),
+        service
+            .list(context.clone(), query)
+            .await
+            .map_err(map_service_account_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::ServiceAccountsRead.code(),
+        "organization.service_account.list",
+        "organization",
+        organization_id.get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({
+            "result_count": page.records().len(),
+            "has_next_cursor": page.next_cursor().is_some(),
+        })),
+    )
+    .await?;
+    Ok(no_store_json(OrganizationServiceAccountListResponse {
+        service_accounts: page
+            .records()
+            .iter()
+            .map(OrganizationServiceAccountResponse::from)
+            .collect(),
+        next_cursor: page
+            .next_cursor()
+            .map(OrganizationServiceAccountKey::persistence_key),
+    }))
+}
+
+async fn get_organization_service_account(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path((organization_id, service_account_key)): Path<(i64, String)>,
+    headers: HeaderMap,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let service_account_key = parse_service_account_key(&service_account_key)?;
+    let identifier = service_account_key.persistence_key();
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::ServiceAccountsRead,
+        &request_id,
+        &headers,
+        "organization.service_account.read",
+        "service_account",
+        identifier.clone(),
+    )
+    .await?;
+    let service = state
+        .service_account_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let account = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::ServiceAccountsRead,
+        "organization.service_account.read",
+        "service_account",
+        identifier.clone(),
+        service
+            .get(context.clone(), service_account_key)
+            .await
+            .map_err(map_service_account_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::ServiceAccountsRead.code(),
+        "organization.service_account.read",
+        "service_account",
+        identifier,
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({"version": account.version()})),
+    )
+    .await?;
+    Ok(no_store_json(OrganizationServiceAccountResponse::from(
+        &account,
+    )))
+}
+
+async fn create_organization_service_account(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path(organization_id): Path<i64>,
+    headers: HeaderMap,
+    Json(request): Json<OrganizationServiceAccountCreateRequest>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::ServiceAccountsManage,
+        &request_id,
+        &headers,
+        "organization.service_account.create",
+        "service_account",
+        "new".to_owned(),
+    )
+    .await?;
+    let service = state
+        .service_account_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let issued = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::ServiceAccountsManage,
+        "organization.service_account.create",
+        "service_account",
+        "new".to_owned(),
+        service
+            .create(
+                context.clone(),
+                OrganizationServiceAccountCreateCommand::new(request.name),
+            )
+            .await
+            .map_err(map_service_account_error),
+    )
+    .await?;
+    let identifier = issued.account().account().public_key().persistence_key();
+    let response = OrganizationServiceAccountIssuedResponse::from_issued(issued);
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::ServiceAccountsManage.code(),
+        "organization.service_account.create",
+        "service_account",
+        identifier,
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({"version": response.service_account.version})),
+    )
+    .await?;
+    Ok(no_store_json(response))
+}
+
+async fn change_organization_service_account_status(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path((organization_id, service_account_key)): Path<(i64, String)>,
+    headers: HeaderMap,
+    Json(request): Json<OrganizationServiceAccountStatusRequest>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let service_account_key = parse_service_account_key(&service_account_key)?;
+    let identifier = service_account_key.persistence_key();
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::ServiceAccountsManage,
+        &request_id,
+        &headers,
+        "organization.service_account.status",
+        "service_account",
+        identifier.clone(),
+    )
+    .await?;
+    let target = parse_service_account_status(&request.status)?;
+    let command = OrganizationServiceAccountStatusCommand::new(
+        service_account_key,
+        request.expected_version,
+        target,
+    )
+    .map_err(map_service_account_error)?;
+    let service = state
+        .service_account_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let account = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::ServiceAccountsManage,
+        "organization.service_account.status",
+        "service_account",
+        identifier.clone(),
+        service
+            .set_status(context.clone(), command)
+            .await
+            .map_err(map_service_account_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::ServiceAccountsManage.code(),
+        "organization.service_account.status",
+        "service_account",
+        identifier,
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({"status": service_account_status_code(account.account().status()), "version": account.version()})),
+    )
+    .await?;
+    Ok(no_store_json(OrganizationServiceAccountResponse::from(
+        &account,
+    )))
+}
+
+async fn rotate_organization_service_account_key(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path((organization_id, service_account_key)): Path<(i64, String)>,
+    headers: HeaderMap,
+    Json(request): Json<OrganizationServiceAccountRotateRequest>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let service_account_key = parse_service_account_key(&service_account_key)?;
+    let identifier = service_account_key.persistence_key();
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::ServiceAccountsManage,
+        &request_id,
+        &headers,
+        "organization.service_account.rotate_key",
+        "service_account",
+        identifier.clone(),
+    )
+    .await?;
+    let command =
+        OrganizationServiceAccountRotateCommand::new(service_account_key, request.expected_version)
+            .map_err(map_service_account_error)?;
+    let service = state
+        .service_account_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let issued = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::ServiceAccountsManage,
+        "organization.service_account.rotate_key",
+        "service_account",
+        identifier.clone(),
+        service
+            .rotate_key(context.clone(), command)
+            .await
+            .map_err(map_service_account_error),
+    )
+    .await?;
+    let response = OrganizationServiceAccountIssuedResponse::from_issued(issued);
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::ServiceAccountsManage.code(),
+        "organization.service_account.rotate_key",
+        "service_account",
+        identifier,
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({"version": response.service_account.version})),
+    )
+    .await?;
+    Ok(no_store_json(response))
+}
+
 async fn record_custom_role_success(
     state: &OrganizationHttpState,
     context: af_admin::OrganizationContext,
@@ -3484,6 +3884,107 @@ fn custom_role_status_code(status: af_domain::OrganizationCustomRoleStatus) -> &
     match status {
         af_domain::OrganizationCustomRoleStatus::Active => "active",
         af_domain::OrganizationCustomRoleStatus::Disabled => "disabled",
+    }
+}
+
+impl From<&af_admin::OrganizationServiceAccountRecord> for OrganizationServiceAccountResponse {
+    fn from(record: &af_admin::OrganizationServiceAccountRecord) -> Self {
+        let account = record.account();
+        Self {
+            service_account_key: account.public_key().persistence_key(),
+            organization_id: record.locator().organization_id().get(),
+            name: account.name().as_str().to_owned(),
+            status: service_account_status_code(account.status()),
+            version: record.version(),
+            created_at: record.created_at(),
+            updated_at: record.updated_at(),
+            revoked_at: record.revoked_at(),
+        }
+    }
+}
+
+impl OrganizationServiceAccountIssuedResponse {
+    fn from_issued(issued: OrganizationServiceAccountIssued) -> Self {
+        let (account, key_key, key_prefix, secret) = issued.into_parts();
+        Self {
+            service_account: OrganizationServiceAccountResponse::from(&account),
+            key_key,
+            key_prefix,
+            secret,
+        }
+    }
+}
+
+fn service_account_status_code(status: OrganizationServiceAccountStatus) -> &'static str {
+    match status {
+        OrganizationServiceAccountStatus::Active => "active",
+        OrganizationServiceAccountStatus::Suspended => "suspended",
+        OrganizationServiceAccountStatus::Revoked => "revoked",
+    }
+}
+
+fn parse_service_account_key(
+    value: &str,
+) -> Result<OrganizationServiceAccountKey, ManagementError> {
+    OrganizationServiceAccountKey::from_persistence_key(value)
+        .map_err(|_| ManagementError::InvalidRequest)
+}
+
+fn parse_service_account_list_query(
+    raw_query: Option<&str>,
+) -> Result<OrganizationServiceAccountListQuery, ManagementError> {
+    let Some(raw_query) = raw_query.filter(|value| !value.is_empty()) else {
+        return Ok(OrganizationServiceAccountListQuery::default());
+    };
+    let mut after = None;
+    let mut limit = None;
+    for (key, value) in url::form_urlencoded::parse(raw_query.as_bytes()) {
+        if key.contains('\u{fffd}') || value.contains('\u{fffd}') {
+            return Err(ManagementError::InvalidRequest);
+        }
+        match key.as_ref() {
+            "after" if after.is_none() => after = Some(parse_service_account_key(&value)?),
+            "limit" if limit.is_none() => {
+                limit = Some(
+                    parse_positive_i64(&value)?
+                        .try_into()
+                        .map_err(|_| ManagementError::InvalidRequest)?,
+                )
+            }
+            _ => return Err(ManagementError::InvalidRequest),
+        }
+    }
+    let after = after;
+    let limit = limit.unwrap_or(af_admin::DEFAULT_ORGANIZATION_SERVICE_ACCOUNT_PAGE_SIZE);
+    OrganizationServiceAccountListQuery::new(after, limit).map_err(map_service_account_error)
+}
+
+fn parse_service_account_status(
+    value: &str,
+) -> Result<OrganizationServiceAccountStatus, ManagementError> {
+    match value {
+        "active" => Ok(OrganizationServiceAccountStatus::Active),
+        "suspended" => Ok(OrganizationServiceAccountStatus::Suspended),
+        "revoked" => Ok(OrganizationServiceAccountStatus::Revoked),
+        _ => Err(ManagementError::InvalidRequest),
+    }
+}
+
+fn map_service_account_error(error: OrganizationServiceAccountServiceError) -> ManagementError {
+    match error {
+        OrganizationServiceAccountServiceError::InvalidInput => ManagementError::InvalidRequest,
+        OrganizationServiceAccountServiceError::Forbidden => ManagementError::Forbidden,
+        OrganizationServiceAccountServiceError::NotFound => ManagementError::OrganizationNotFound,
+        OrganizationServiceAccountServiceError::Conflict => {
+            ManagementError::OrganizationLifecycleConflict
+        }
+        OrganizationServiceAccountServiceError::InvalidTransition => {
+            ManagementError::OrganizationLifecycleTransitionInvalid
+        }
+        OrganizationServiceAccountServiceError::EntitlementRestricted => {
+            ManagementError::OrganizationEntitlementRestricted
+        }
+        OrganizationServiceAccountServiceError::Internal => ManagementError::Internal,
     }
 }
 

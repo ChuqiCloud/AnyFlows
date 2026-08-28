@@ -517,7 +517,8 @@ pub use organization_scim_audit::{
     OrganizationScimAuditWriteOutcome,
 };
 pub use organization_service_account::{
-    OrganizationServiceAccountIssued, OrganizationServiceAccountKeyRecord,
+    MAX_ORGANIZATION_SERVICE_ACCOUNT_PAGE_SIZE, OrganizationServiceAccountIssued,
+    OrganizationServiceAccountKeyRecord, OrganizationServiceAccountPageRecord,
     OrganizationServiceAccountRecord, OrganizationServiceAccountRepository,
     OrganizationServiceAccountRepositoryError,
 };

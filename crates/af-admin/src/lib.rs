@@ -34,6 +34,7 @@ mod organization_custom_role_binding;
 mod organization_invitation;
 mod organization_management;
 mod organization_scim;
+mod organization_service_account;
 mod organization_sso;
 mod organization_sso_domain;
 mod organization_sso_identity_binding;
@@ -287,6 +288,15 @@ pub use organization_scim::{
     OrganizationScimGroupSyncError, OrganizationScimGroupSyncFuture,
     OrganizationScimGroupSyncOutcome, OrganizationScimService, OrganizationScimUserSyncError,
     OrganizationScimUserSyncFuture, OrganizationScimUserSyncOutcome,
+};
+pub use organization_service_account::{
+    DEFAULT_ORGANIZATION_SERVICE_ACCOUNT_PAGE_SIZE, DatabaseOrganizationServiceAccountService,
+    OrganizationServiceAccountCreateCommand, OrganizationServiceAccountFuture,
+    OrganizationServiceAccountIssued, OrganizationServiceAccountIssuedFuture,
+    OrganizationServiceAccountListQuery, OrganizationServiceAccountPage,
+    OrganizationServiceAccountPageFuture, OrganizationServiceAccountRecord,
+    OrganizationServiceAccountRotateCommand, OrganizationServiceAccountService,
+    OrganizationServiceAccountServiceError, OrganizationServiceAccountStatusCommand,
 };
 pub use organization_sso::{
     DatabaseOrganizationSsoProviderService, OrganizationSsoProvider,
