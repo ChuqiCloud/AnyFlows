@@ -3678,7 +3678,7 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         ),
         (
             "organization_department_memberships",
-            "uq_organization_department_memberships_scope_membership_department",
+            "uq_org_dept_membership_scope",
         ),
         (
             "organization_department_memberships",

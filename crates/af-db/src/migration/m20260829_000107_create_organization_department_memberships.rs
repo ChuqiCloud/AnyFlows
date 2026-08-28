@@ -114,7 +114,7 @@ impl MigrationTrait for Migration {
 
         for index in [
             Index::create()
-                .name("uq_organization_department_memberships_scope_membership_department")
+                .name("uq_org_dept_membership_scope")
                 .table(binding::Entity)
                 .col(binding::Column::OrganizationId)
                 .col(binding::Column::MembershipId)
