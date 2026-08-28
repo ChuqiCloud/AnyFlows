@@ -14,6 +14,7 @@ mod organization_scim;
 mod organization_scim_audit;
 mod organization_scim_rate_limit;
 mod organization_service_account;
+mod organization_service_account_budget;
 mod organization_sso;
 mod organization_sso_domain_verification;
 mod organization_sso_identity;
@@ -99,6 +100,10 @@ pub use organization_service_account::{
     OrganizationServiceAccountRuntimeIdentity, OrganizationServiceAccountSecret,
     OrganizationServiceAccountSecretDigest, OrganizationServiceAccountStatus,
     classify_organization_service_account_lifecycle,
+};
+pub use organization_service_account_budget::{
+    OrganizationServiceAccountBudgetBinding, OrganizationServiceAccountBudgetBindingError,
+    OrganizationServiceAccountBudgetScope,
 };
 pub use organization_sso::{
     OrganizationSsoDomain, OrganizationSsoDomainError, OrganizationSsoDomainStatus,
