@@ -245,7 +245,8 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 250);
+        // 服务账号管理接口扩展了既有管理面，保持操作总数与生成文档同步。
+        assert_eq!(operation_count, 255);
         assert!(
             document
                 .components
