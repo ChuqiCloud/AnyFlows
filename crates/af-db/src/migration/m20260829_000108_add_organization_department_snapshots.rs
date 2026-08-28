@@ -8,6 +8,8 @@ const SERVICE_ACCOUNT_DEPARTMENT_INDEX: &str =
     "idx_organization_service_accounts_department_status";
 const TOKEN_DEPARTMENT_FOREIGN_KEY: &str = "fk_tokens_organization_department";
 const SERVICE_ACCOUNT_DEPARTMENT_FOREIGN_KEY: &str = "fk_organization_service_accounts_department";
+const TOKEN_DEPARTMENT_CHECK: &str = "ck_tokens_organization_department";
+const SERVICE_ACCOUNT_DEPARTMENT_CHECK: &str = "ck_service_accounts_organization_department";
 const SQLITE_TRIGGERS: [&str; 6] = [
     "trg_tokens_organization_department_insert",
     "trg_tokens_organization_department_update",
@@ -148,6 +150,23 @@ impl MigrationTrait for Migration {
                     .await?;
             }
         } else {
+            // MySQL 的表级 CHECK 会锁住引用列，回滚时必须先解除约束再删列。
+            if manager.get_database_backend() == DbBackend::MySql {
+                for (table, constraint) in [
+                    ("tokens", TOKEN_DEPARTMENT_CHECK),
+                    (
+                        "organization_service_accounts",
+                        SERVICE_ACCOUNT_DEPARTMENT_CHECK,
+                    ),
+                ] {
+                    manager
+                        .get_connection()
+                        .execute_unprepared(&format!(
+                            "ALTER TABLE `{table}` DROP CHECK `{constraint}`"
+                        ))
+                        .await?;
+                }
+            }
             manager
                 .drop_foreign_key(
                     ForeignKey::drop()
@@ -243,10 +262,10 @@ where
     let mut definition = ColumnDef::new(column);
     definition.big_integer();
     // MySQL 不允许列级 CHECK 引用同表其他列，统一在列就绪后追加表级约束。
-    if manager.get_database_backend() != DbBackend::MySql {
-        if let Some(check) = check {
-            definition.check(check);
-        }
+    if manager.get_database_backend() != DbBackend::MySql
+        && let Some(check) = check
+    {
+        definition.check(check);
     }
     manager
         .alter_table(
