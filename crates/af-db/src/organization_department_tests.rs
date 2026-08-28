@@ -98,6 +98,12 @@ async fn department_repository_enforces_scope_cas_depth_and_stable_cursor()
             .await,
         Err(OrganizationDepartmentRepositoryError::CycleDetected)
     );
+    assert_eq!(
+        departments
+            .disable(organization.id(), root.id(), root.version())
+            .await,
+        Err(OrganizationDepartmentRepositoryError::ActiveChildren)
+    );
     let moved = departments
         .move_department(organization.id(), child.id(), None, child.version())
         .await?;
@@ -110,12 +116,6 @@ async fn department_repository_enforces_scope_cas_depth_and_stable_cursor()
         Err(OrganizationDepartmentRepositoryError::Conflict)
     );
 
-    assert_eq!(
-        departments
-            .disable(organization.id(), root.id(), root.version())
-            .await,
-        Err(OrganizationDepartmentRepositoryError::ActiveChildren)
-    );
     let disabled = departments
         .disable(organization.id(), child.id(), moved.version())
         .await?;
