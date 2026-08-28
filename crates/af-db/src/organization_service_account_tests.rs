@@ -88,6 +88,26 @@ async fn service_account_persistence_rotation_and_cas_are_enterprise_scoped()
             .key_key(),
         key.key_key()
     );
+    let authenticated = repository
+        .authenticate_secret_for_organization(organization.id(), secret.clone())
+        .await?;
+    assert_eq!(authenticated.account().locator(), record.locator());
+    assert_eq!(authenticated.key().key_key(), key.key_key());
+    assert_eq!(authenticated.identity().locator(), record.locator());
+    assert_eq!(
+        authenticated.identity().account_key(),
+        record.account().public_key()
+    );
+    assert!(format!("{authenticated:?}").contains("<redacted>"));
+    assert!(matches!(
+        repository
+            .authenticate_secret_for_organization(
+                OrganizationId::new(organization.id().get() + 1)?,
+                secret.clone(),
+            )
+            .await,
+        Err(crate::OrganizationServiceAccountRepositoryError::NotFound)
+    ));
     assert!(format!("{record:?}{key:?}{secret:?}").contains("<redacted>"));
 
     let rotated = repository.rotate_key(record.locator(), 1).await?;
@@ -123,6 +143,12 @@ async fn service_account_persistence_rotation_and_cas_are_enterprise_scoped()
         suspended.account().status(),
         OrganizationServiceAccountStatus::Suspended
     );
+    assert!(matches!(
+        repository
+            .authenticate_secret_for_organization(organization.id(), rotated_secret)
+            .await,
+        Err(crate::OrganizationServiceAccountRepositoryError::Restricted)
+    ));
     assert!(matches!(
         repository.rotate_key(record.locator(), 3).await,
         Err(crate::OrganizationServiceAccountRepositoryError::Restricted)

@@ -4,8 +4,9 @@ use af_domain::{
     OrganizationId, OrganizationServiceAccount, OrganizationServiceAccountId,
     OrganizationServiceAccountKey, OrganizationServiceAccountLifecycleDisposition,
     OrganizationServiceAccountLocator, OrganizationServiceAccountName,
-    OrganizationServiceAccountSecret, OrganizationServiceAccountSecretDigest,
-    OrganizationServiceAccountStatus, classify_organization_service_account_lifecycle,
+    OrganizationServiceAccountRuntimeIdentity, OrganizationServiceAccountSecret,
+    OrganizationServiceAccountSecretDigest, OrganizationServiceAccountStatus,
+    classify_organization_service_account_lifecycle,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
@@ -138,6 +139,40 @@ impl OrganizationServiceAccountKeyRecord {
     #[must_use]
     pub const fn revoked_at(&self) -> Option<i64> {
         self.revoked_at
+    }
+}
+
+/// 运行时服务账号认证成功后的脱敏主体与密钥事实。
+#[derive(Clone, PartialEq)]
+pub struct OrganizationServiceAccountAuthentication {
+    account: OrganizationServiceAccountRecord,
+    key: OrganizationServiceAccountKeyRecord,
+    identity: OrganizationServiceAccountRuntimeIdentity,
+}
+
+impl OrganizationServiceAccountAuthentication {
+    /// 返回持久化主体记录。
+    #[must_use]
+    pub const fn account(&self) -> &OrganizationServiceAccountRecord {
+        &self.account
+    }
+
+    /// 返回活动密钥记录，不含摘要或明文。
+    #[must_use]
+    pub const fn key(&self) -> &OrganizationServiceAccountKeyRecord {
+        &self.key
+    }
+
+    /// 返回后续计费和审计使用的运行时身份。
+    #[must_use]
+    pub const fn identity(&self) -> OrganizationServiceAccountRuntimeIdentity {
+        self.identity
+    }
+}
+
+impl fmt::Debug for OrganizationServiceAccountAuthentication {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("OrganizationServiceAccountAuthentication(<redacted>)")
     }
 }
 
@@ -385,6 +420,21 @@ impl OrganizationServiceAccountRepository {
         timeout(
             self.operation_timeout,
             self.authenticate_secret_inner(locator, secret.digest()),
+        )
+        .await
+        .map_err(|_| OrganizationServiceAccountRepositoryError::Timeout)?
+    }
+
+    /// 按企业和密钥摘要认证服务账号，返回不含敏感材料的运行时身份。
+    pub async fn authenticate_secret_for_organization(
+        &self,
+        organization_id: OrganizationId,
+        secret: OrganizationServiceAccountSecret,
+    ) -> Result<OrganizationServiceAccountAuthentication, OrganizationServiceAccountRepositoryError>
+    {
+        timeout(
+            self.operation_timeout,
+            self.authenticate_secret_for_organization_inner(organization_id, secret.digest()),
         )
         .await
         .map_err(|_| OrganizationServiceAccountRepositoryError::Timeout)?
@@ -715,6 +765,84 @@ impl OrganizationServiceAccountRepository {
             .map_err(|_| OrganizationServiceAccountRepositoryError::Query)?
             .ok_or(OrganizationServiceAccountRepositoryError::NotFound)?;
         key_record_from_model(key).map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)
+    }
+
+    async fn authenticate_secret_for_organization_inner(
+        &self,
+        organization_id: OrganizationId,
+        digest: OrganizationServiceAccountSecretDigest,
+    ) -> Result<OrganizationServiceAccountAuthentication, OrganizationServiceAccountRepositoryError>
+    {
+        let transaction = self
+            .pool
+            .connection()
+            .begin()
+            .await
+            .map_err(|_| OrganizationServiceAccountRepositoryError::Query)?;
+        let organization = organizations::Entity::find_by_id(organization_id.get())
+            .one(&transaction)
+            .await
+            .map_err(|_| OrganizationServiceAccountRepositoryError::Query)?
+            .ok_or(OrganizationServiceAccountRepositoryError::NotFound)?;
+        if organization.status != 1 || organization.closed_at.is_some() {
+            return Err(OrganizationServiceAccountRepositoryError::Restricted);
+        }
+        let key = organization_service_account_keys::Entity::find()
+            .filter(
+                organization_service_account_keys::Column::OrganizationId.eq(organization_id.get()),
+            )
+            .filter(
+                organization_service_account_keys::Column::KeyDigest
+                    .eq(SensitiveString::from(digest.as_str())),
+            )
+            .filter(organization_service_account_keys::Column::Status.eq(ACTIVE_KEY))
+            .one(&transaction)
+            .await
+            .map_err(|_| OrganizationServiceAccountRepositoryError::Query)?
+            .ok_or(OrganizationServiceAccountRepositoryError::NotFound)?;
+        let service_account_id = OrganizationServiceAccountId::new(key.service_account_id)
+            .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)?;
+        let locator = OrganizationServiceAccountLocator::new(organization_id, service_account_id);
+        // 先锁定主体，再重新读取密钥，避免轮换提交与认证交错造成旧密钥短暂通过。
+        let account_model = lock_account(&transaction, locator).await?;
+        if account_model.status != ACTIVE_ACCOUNT || account_model.revoked_at.is_some() {
+            return Err(OrganizationServiceAccountRepositoryError::Restricted);
+        }
+        let key = organization_service_account_keys::Entity::find()
+            .filter(
+                organization_service_account_keys::Column::OrganizationId.eq(organization_id.get()),
+            )
+            .filter(
+                organization_service_account_keys::Column::ServiceAccountId
+                    .eq(service_account_id.get()),
+            )
+            .filter(
+                organization_service_account_keys::Column::KeyDigest
+                    .eq(SensitiveString::from(digest.as_str())),
+            )
+            .filter(organization_service_account_keys::Column::Status.eq(ACTIVE_KEY))
+            .one(&transaction)
+            .await
+            .map_err(|_| OrganizationServiceAccountRepositoryError::Query)?
+            .ok_or(OrganizationServiceAccountRepositoryError::NotFound)?;
+        let account = account_record_from_model(account_model)
+            .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)?;
+        let key = key_record_from_model(key)
+            .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)?;
+        let identity = OrganizationServiceAccountRuntimeIdentity::new(
+            locator,
+            account.account().public_key(),
+            key.key_key(),
+        );
+        transaction
+            .commit()
+            .await
+            .map_err(|_| OrganizationServiceAccountRepositoryError::Query)?;
+        Ok(OrganizationServiceAccountAuthentication {
+            account,
+            key,
+            identity,
+        })
     }
 }
 
