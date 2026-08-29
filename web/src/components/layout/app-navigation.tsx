@@ -87,6 +87,7 @@ const navItems = {
   organizationApiKeys: { key: 'organizationApiKeys', icon: KeyRound, href: '#/console/organization-api-keys' },
   organizationActivity: { key: 'organizationActivity', icon: History, href: '#/console/organization-activity' },
   organizationBudgets: { key: 'organizationBudgets', icon: Building2, href: '#/console/organization-budgets' },
+  organizationContractPrices: { key: 'organizationContractPrices', icon: CircleDollarSign, href: '#/console/organization-contract-prices' },
   organizationMembers: { key: 'organizationMembers', icon: UsersRound, href: '#/console/organization-members' },
   organizationDepartments: { key: 'organizationDepartments', icon: Building2, href: '#/console/organization-departments' },
   organizationOverview: { key: 'organizationOverview', icon: Gauge, href: '#/console/organization' },
