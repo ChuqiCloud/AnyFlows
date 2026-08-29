@@ -8,11 +8,11 @@ pub struct Migration;
 
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
-    async fn up(&self, manager: &SchemaManager<'_>) -> Result<(), DbErr> {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         create_organization_credit_invoices(manager).await
     }
 
-    async fn down(&self, manager: &SchemaManager<'_>) -> Result<(), DbErr> {
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         drop_organization_credit_invoices(manager).await
     }
 }
