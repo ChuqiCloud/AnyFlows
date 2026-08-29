@@ -10,7 +10,7 @@ use thiserror::Error;
 use crate::{
     BillingMode, GroupPricingCache, GroupPricingCacheError, GroupPricingLookupError,
     ModelPriceCache, ModelPriceCacheError, ModelPriceMode, PricingRatio, PricingRatios,
-    PricingResolver, RatioPricingResolver,
+    PricingResolver, RatioPricingResolver, TokenPrices,
 };
 
 /// 从进程内不可变目录同步固定一次请求的完整定价事实。
