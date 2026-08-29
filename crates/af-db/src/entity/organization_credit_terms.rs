@@ -52,6 +52,3 @@ impl Related<super::users::Entity> for Entity {
         Relation::CreatedBy.def()
     }
 }
-
-#[async_trait::async_trait]
-impl ActiveModelBehavior for ActiveModel {}
