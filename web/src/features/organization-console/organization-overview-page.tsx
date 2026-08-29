@@ -178,6 +178,7 @@ function OrganizationOverviewWorkspace({
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <QuickLink icon={UsersRound} href="#/console/organization-members" label={t('organizationConsole.overview.links.members')} />
+        <QuickLink icon={Building2} href="#/console/organization-departments" label={t('organizationConsole.overview.links.departments')} />
         <QuickLink icon={KeyRound} href="#/console/organization-api-keys" label={t('organizationConsole.overview.links.keys')} />
         <QuickLink icon={Bot} href="#/console/organization-service-accounts" label={t('organizationConsole.overview.links.serviceAccounts')} />
         <QuickLink icon={WalletCards} href="#/console/organization-wallet" label={t('organizationConsole.overview.links.wallet')} />

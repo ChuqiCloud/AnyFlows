@@ -28,6 +28,7 @@ import { OrganizationActivityPage } from '@/features/organization-activity/organ
 import { OrganizationApiKeyPage } from '@/features/organization-api-keys/organization-api-key-page'
 import { OrganizationBudgetPage } from '@/features/organization-budgets/organization-budget-page'
 import { OrganizationMemberPage } from '@/features/organization-members/organization-member-page'
+import { OrganizationDepartmentPage } from '@/features/organization-departments/organization-department-page'
 import { OrganizationOverviewPage } from '@/features/organization-console/organization-overview-page'
 import { OrganizationSettingsPage } from '@/features/organization-console/organization-settings-page'
 import { OrganizationServiceAccountPage } from '@/features/organization-service-accounts/organization-service-account-page'
@@ -175,6 +176,8 @@ function ManagementEntry({
                   ? 'organizationBudgets.title'
                 : view === 'organization-members'
                   ? 'organizationConsole.members.title'
+                : view === 'organization-departments'
+                  ? 'organizationDepartments.title'
                 : view === 'organization-overview'
                   ? 'organizationConsole.overview.title'
                 : view === 'organization-settings'
@@ -246,6 +249,8 @@ function ManagementEntry({
                   ? <OrganizationBudgetPage />
                 : view === 'organization-members'
                   ? <OrganizationMemberPage />
+                : view === 'organization-departments'
+                  ? <OrganizationDepartmentPage />
                 : view === 'organization-overview'
                   ? <OrganizationOverviewPage />
                 : view === 'organization-settings'
@@ -279,6 +284,7 @@ function ManagementEntry({
     && view !== 'organization-activity'
     && view !== 'organization-budgets'
     && view !== 'organization-members'
+    && view !== 'organization-departments'
     && view !== 'organization-overview'
     && view !== 'organization-settings'
     && view !== 'organization-service-accounts'

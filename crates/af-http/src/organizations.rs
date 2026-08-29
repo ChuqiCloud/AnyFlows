@@ -8,7 +8,10 @@ use af_admin::{
     OrganizationCustomRoleBindingServiceError, OrganizationCustomRoleChangeCommand,
     OrganizationCustomRoleCreateCommand, OrganizationCustomRoleDisableCommand,
     OrganizationCustomRoleListQuery, OrganizationCustomRoleService,
-    OrganizationCustomRoleServiceError, OrganizationEntitlementSummary,
+    OrganizationCustomRoleServiceError, OrganizationDepartmentCreateCommand,
+    OrganizationDepartmentCursor, OrganizationDepartmentDisableCommand,
+    OrganizationDepartmentListQuery, OrganizationDepartmentMoveCommand,
+    OrganizationDepartmentRecord, OrganizationEntitlementSummary,
     OrganizationInvitationBatchCommand, OrganizationInvitationBatchResult,
     OrganizationInvitationCommand, OrganizationInvitationError,
     OrganizationInvitationPreviewCommand, OrganizationInvitationPreviewResult,
@@ -33,12 +36,13 @@ use af_admin::{
     OrganizationTeamListQuery, OrganizationTeamRecord, SessionAuthentication,
 };
 use af_domain::{
-    OrganizationBudgetPolicyId, OrganizationCustomRoleKey, OrganizationEntitlementStatus,
-    OrganizationId, OrganizationInvitationKey, OrganizationInvitationStatus,
-    OrganizationMembershipId, OrganizationMembershipStatus, OrganizationPermission,
-    OrganizationRole, OrganizationServiceAccountBudgetScope, OrganizationServiceAccountKey,
-    OrganizationServiceAccountStatus, OrganizationSsoEnforcementPolicy, OrganizationSsoProtocol,
-    OrganizationSsoProviderStatus, OrganizationTeamId,
+    OrganizationBudgetPolicyId, OrganizationCustomRoleKey, OrganizationDepartmentId,
+    OrganizationEntitlementStatus, OrganizationId, OrganizationInvitationKey,
+    OrganizationInvitationStatus, OrganizationMembershipId, OrganizationMembershipStatus,
+    OrganizationPermission, OrganizationRole, OrganizationServiceAccountBudgetScope,
+    OrganizationServiceAccountKey, OrganizationServiceAccountStatus,
+    OrganizationSsoEnforcementPolicy, OrganizationSsoProtocol, OrganizationSsoProviderStatus,
+    OrganizationTeamId,
 };
 use af_telemetry::RequestId;
 use axum::{
@@ -196,6 +200,22 @@ pub fn build_organization_router_with_domain(
             .route(
                 "/api/organizations/{organization_id}/teams/{team_id}/disable",
                 post(disable_organization_team),
+            )
+            .route(
+                "/api/organizations/{organization_id}/departments",
+                get(list_organization_departments).post(create_organization_department),
+            )
+            .route(
+                "/api/organizations/{organization_id}/departments/{department_id}",
+                get(get_organization_department),
+            )
+            .route(
+                "/api/organizations/{organization_id}/departments/{department_id}/move",
+                post(move_organization_department),
+            )
+            .route(
+                "/api/organizations/{organization_id}/departments/{department_id}/disable",
+                post(disable_organization_department),
             )
     } else {
         router
@@ -683,6 +703,56 @@ pub struct OrganizationTeamResponse {
 pub struct OrganizationTeamListResponse {
     teams: Vec<OrganizationTeamResponse>,
     next_cursor: Option<i64>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationDepartmentResponse {
+    id: i64,
+    organization_id: i64,
+    department_key: String,
+    parent_department_id: Option<i64>,
+    name: String,
+    sort_order: i64,
+    depth: u8,
+    status: &'static str,
+    version: i64,
+    created_at: i64,
+    updated_at: i64,
+    disabled_at: Option<i64>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationDepartmentListResponse {
+    departments: Vec<OrganizationDepartmentResponse>,
+    next_cursor: Option<String>,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationDepartmentCreateRequest {
+    #[schema(min_length = 1, max_length = 128)]
+    name: String,
+    #[schema(minimum = 1, required = true)]
+    parent_department_id: Option<i64>,
+    sort_order: i64,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationDepartmentMoveRequest {
+    #[schema(minimum = 1, required = true)]
+    parent_department_id: Option<i64>,
+    #[schema(minimum = 1)]
+    expected_version: i64,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationDepartmentDisableRequest {
+    #[schema(minimum = 1)]
+    expected_version: i64,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -3131,6 +3201,271 @@ async fn disable_organization_team(
     Ok(no_store_json(OrganizationTeamResponse::from(&team)))
 }
 
+async fn list_organization_departments(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Path(organization_id): Path<i64>,
+    RawQuery(raw_query): RawQuery,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let context = authorize_lifecycle_context(
+        &state,
+        &authentication,
+        organization_id,
+        OrganizationPermission::DepartmentsRead,
+    )
+    .await?;
+    let query = parse_department_list_query(raw_query.as_deref())?;
+    let service = state
+        .management_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let page = service
+        .list_departments(context, query)
+        .await
+        .map_err(map_management_lifecycle_error)?;
+    Ok(no_store_json(OrganizationDepartmentListResponse {
+        departments: page
+            .records()
+            .iter()
+            .map(OrganizationDepartmentResponse::from)
+            .collect(),
+        next_cursor: page.next_cursor().map(format_department_cursor),
+    }))
+}
+
+async fn get_organization_department(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Path((organization_id, department_id)): Path<(i64, i64)>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let department_id = OrganizationDepartmentId::new(department_id)
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    let context = authorize_lifecycle_context(
+        &state,
+        &authentication,
+        organization_id,
+        OrganizationPermission::DepartmentsRead,
+    )
+    .await?;
+    let service = state
+        .management_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let department = service
+        .get_department(context, department_id)
+        .await
+        .map_err(map_management_lifecycle_error)?;
+    Ok(no_store_json(OrganizationDepartmentResponse::from(
+        &department,
+    )))
+}
+
+async fn create_organization_department(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path(organization_id): Path<i64>,
+    headers: HeaderMap,
+    Json(request): Json<OrganizationDepartmentCreateRequest>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let parent_id = request
+        .parent_department_id
+        .map(OrganizationDepartmentId::new)
+        .transpose()
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::DepartmentsManage,
+        &request_id,
+        &headers,
+        "organization.department.create",
+        "department",
+        "new".to_owned(),
+    )
+    .await?;
+    let service = state
+        .management_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let department = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::DepartmentsManage,
+        "organization.department.create",
+        "department",
+        "new".to_owned(),
+        service
+            .create_department(
+                context.clone(),
+                OrganizationDepartmentCreateCommand::new(
+                    request.name,
+                    parent_id,
+                    request.sort_order,
+                ),
+            )
+            .await
+            .map_err(map_management_lifecycle_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::DepartmentsManage.code(),
+        "organization.department.create",
+        "department",
+        department.id().get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({"version": department.version(), "parent_department_id": department.parent_id().map(OrganizationDepartmentId::get)})),
+    )
+    .await?;
+    Ok(no_store_json(OrganizationDepartmentResponse::from(
+        &department,
+    )))
+}
+
+async fn move_organization_department(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path((organization_id, department_id)): Path<(i64, i64)>,
+    headers: HeaderMap,
+    Json(request): Json<OrganizationDepartmentMoveRequest>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let department_id = OrganizationDepartmentId::new(department_id)
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    let parent_id = request
+        .parent_department_id
+        .map(OrganizationDepartmentId::new)
+        .transpose()
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::DepartmentsManage,
+        &request_id,
+        &headers,
+        "organization.department.move",
+        "department",
+        department_id.get().to_string(),
+    )
+    .await?;
+    let command =
+        OrganizationDepartmentMoveCommand::new(department_id, parent_id, request.expected_version)
+            .map_err(map_management_lifecycle_error)?;
+    let service = state
+        .management_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let department = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::DepartmentsManage,
+        "organization.department.move",
+        "department",
+        department_id.get().to_string(),
+        service
+            .move_department(context.clone(), command)
+            .await
+            .map_err(map_management_lifecycle_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::DepartmentsManage.code(),
+        "organization.department.move",
+        "department",
+        department.id().get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({"version": department.version(), "parent_department_id": department.parent_id().map(OrganizationDepartmentId::get)})),
+    )
+    .await?;
+    Ok(no_store_json(OrganizationDepartmentResponse::from(
+        &department,
+    )))
+}
+
+async fn disable_organization_department(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path((organization_id, department_id)): Path<(i64, i64)>,
+    headers: HeaderMap,
+    Json(request): Json<OrganizationDepartmentDisableRequest>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let department_id = OrganizationDepartmentId::new(department_id)
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::DepartmentsManage,
+        &request_id,
+        &headers,
+        "organization.department.disable",
+        "department",
+        department_id.get().to_string(),
+    )
+    .await?;
+    let command =
+        OrganizationDepartmentDisableCommand::new(department_id, request.expected_version)
+            .map_err(map_management_lifecycle_error)?;
+    let service = state
+        .management_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let department = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::DepartmentsManage,
+        "organization.department.disable",
+        "department",
+        department_id.get().to_string(),
+        service
+            .disable_department(context.clone(), command)
+            .await
+            .map_err(map_management_lifecycle_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::DepartmentsManage.code(),
+        "organization.department.disable",
+        "department",
+        department.id().get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({"version": department.version(), "status": "disabled"})),
+    )
+    .await?;
+    Ok(no_store_json(OrganizationDepartmentResponse::from(
+        &department,
+    )))
+}
+
 async fn list_organizations(
     State(state): State<OrganizationHttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
@@ -3739,6 +4074,25 @@ impl From<&OrganizationTeamRecord> for OrganizationTeamResponse {
     }
 }
 
+impl From<&OrganizationDepartmentRecord> for OrganizationDepartmentResponse {
+    fn from(record: &OrganizationDepartmentRecord) -> Self {
+        Self {
+            id: record.id().get(),
+            organization_id: record.organization_id().get(),
+            department_key: record.department_key().persistence_key(),
+            parent_department_id: record.parent_id().map(OrganizationDepartmentId::get),
+            name: record.name().to_owned(),
+            sort_order: record.sort_order(),
+            depth: record.depth(),
+            status: organization_department_status_code(record.status()),
+            version: record.version(),
+            created_at: record.created_at(),
+            updated_at: record.updated_at(),
+            disabled_at: record.disabled_at(),
+        }
+    }
+}
+
 impl From<&af_admin::OrganizationCustomRoleRecord> for OrganizationCustomRoleResponse {
     fn from(record: &af_admin::OrganizationCustomRoleRecord) -> Self {
         Self {
@@ -3922,6 +4276,70 @@ fn parse_team_list_query(
     OrganizationTeamListQuery::new(after, limit).map_err(map_management_lifecycle_error)
 }
 
+fn parse_department_list_query(
+    raw_query: Option<&str>,
+) -> Result<OrganizationDepartmentListQuery, ManagementError> {
+    let Some(raw_query) = raw_query.filter(|value| !value.is_empty()) else {
+        return Ok(OrganizationDepartmentListQuery::default());
+    };
+    let mut after = None;
+    let mut limit = None;
+    for (key, value) in url::form_urlencoded::parse(raw_query.as_bytes()) {
+        if key.contains('\u{fffd}') || value.contains('\u{fffd}') {
+            return Err(ManagementError::InvalidRequest);
+        }
+        match key.as_ref() {
+            "after" if after.is_none() => {
+                let mut parts = value.split(':');
+                let sort_order = parts
+                    .next()
+                    .ok_or(ManagementError::InvalidRequest)
+                    .and_then(parse_signed_i64)?;
+                let id = parts
+                    .next()
+                    .ok_or(ManagementError::InvalidRequest)
+                    .and_then(parse_positive_i64)?;
+                if parts.next().is_some() {
+                    return Err(ManagementError::InvalidRequest);
+                }
+                after = Some(OrganizationDepartmentCursor::new(
+                    sort_order,
+                    OrganizationDepartmentId::new(id)
+                        .map_err(|_| ManagementError::InvalidRequest)?,
+                ));
+            }
+            "limit" if limit.is_none() => {
+                limit = Some(
+                    parse_positive_i64(&value)?
+                        .try_into()
+                        .map_err(|_| ManagementError::InvalidRequest)?,
+                );
+            }
+            _ => return Err(ManagementError::InvalidRequest),
+        }
+    }
+    OrganizationDepartmentListQuery::new(
+        after,
+        limit.unwrap_or(af_admin::DEFAULT_ORGANIZATION_DIRECTORY_PAGE_SIZE),
+    )
+    .map_err(map_management_lifecycle_error)
+}
+
+fn parse_signed_i64(value: &str) -> Result<i64, ManagementError> {
+    if value.is_empty()
+        || (value.starts_with('-') && value.len() == 1)
+        || !value
+            .bytes()
+            .enumerate()
+            .all(|(index, byte)| byte.is_ascii_digit() || (index == 0 && byte == b'-'))
+    {
+        return Err(ManagementError::InvalidRequest);
+    }
+    value
+        .parse::<i64>()
+        .map_err(|_| ManagementError::InvalidRequest)
+}
+
 fn parse_custom_role_list_query(
     raw_query: Option<&str>,
 ) -> Result<OrganizationCustomRoleListQuery, ManagementError> {
@@ -4046,6 +4464,19 @@ fn organization_team_status_code(status: af_domain::OrganizationTeamStatus) -> &
         af_domain::OrganizationTeamStatus::Active => "active",
         af_domain::OrganizationTeamStatus::Disabled => "disabled",
     }
+}
+
+fn organization_department_status_code(
+    status: af_domain::OrganizationDepartmentStatus,
+) -> &'static str {
+    match status {
+        af_domain::OrganizationDepartmentStatus::Active => "active",
+        af_domain::OrganizationDepartmentStatus::Disabled => "disabled",
+    }
+}
+
+fn format_department_cursor(cursor: OrganizationDepartmentCursor) -> String {
+    format!("{}:{}", cursor.sort_order(), cursor.id().get())
 }
 
 fn custom_role_status_code(status: af_domain::OrganizationCustomRoleStatus) -> &'static str {

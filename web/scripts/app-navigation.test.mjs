@@ -15,7 +15,7 @@ import {
 const expectedAdminItems = [
   'overview', 'models', 'playground', 'videoTasks',
   'apiKeys', 'wallet', 'subscriptions', 'invitations', 'profile',
-  'organizationOverview', 'organizationMembers', 'organizationApiKeys', 'organizationServiceAccounts', 'organizationBudgets',
+  'organizationOverview', 'organizationMembers', 'organizationDepartments', 'organizationApiKeys', 'organizationServiceAccounts', 'organizationBudgets',
   'organizationWallet', 'organizationActivity', 'organizationSettings',
   'users', 'subscriptionManagement', 'redemptionCodes', 'refunds', 'paymentSettings', 'billingSettings',
   'modelSettings', 'groupSettings', 'channels', 'credentials', 'credentialProxies', 'routes',
@@ -46,7 +46,7 @@ test('普通用户导航增加独立企业空间且保留原账户入口', () =>
   assert.deepEqual(userNavigationGroups.map((group) => group.key), ['use', 'organization', 'account'])
   assert.deepEqual(userNavigationItems, [
     'models', 'playground', 'videoTasks',
-    'organizationOverview', 'organizationMembers', 'organizationApiKeys', 'organizationServiceAccounts', 'organizationBudgets',
+    'organizationOverview', 'organizationMembers', 'organizationDepartments', 'organizationApiKeys', 'organizationServiceAccounts', 'organizationBudgets',
     'organizationWallet', 'organizationActivity', 'organizationSettings',
     'apiKeys', 'wallet', 'usage', 'subscriptions', 'invitations', 'profile',
   ])

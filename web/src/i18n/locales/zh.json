@@ -44,6 +44,7 @@
     "organizationActivity": "企业日志与审计",
     "organizationOverview": "企业概览",
     "organizationMembers": "成员与团队",
+    "organizationDepartments": "部门目录",
     "organizationWallet": "企业钱包",
     "organizationSettings": "企业设置",
     "wallet": "我的钱包",
@@ -4413,6 +4414,22 @@
       "tokensBody": "本人 Key 或企业脱敏目录暂时不可用，已有 Key 的服务端状态不受本次读取失败影响。"
     }
   },
+  "organizationDepartments": {
+    "eyebrow": "企业空间",
+    "title": "部门目录",
+    "subtitle": "按明确的父级、排序和版本控制维护企业部门树。",
+    "actions": {"refresh": "刷新", "retry": "重试", "create": "新建部门", "move": "移动", "disable": "停用", "cancel": "取消", "loading": "正在加载", "loadMore": "加载更多"},
+    "fields": {"name": "部门名称", "parent": "上级部门", "root": "企业根部门", "sortOrder": "排序值"},
+    "status": {"active": "活动", "disabled": "已停用"},
+    "row": {"depth": "深度 {{depth}}", "version": "版本 {{version}}"},
+    "list": {"title": "部门目录", "description": "稳定游标保证树结构变化时的排序一致。已停用部门仍保留用于审计，不能恢复。"},
+    "create": {"title": "新增部门", "description": "新部门创建后立即处于活动状态，且只属于当前企业。"},
+    "move": {"title": "移动 {{name}}", "description": "服务端会在移动子树前校验深度、循环、活动状态和当前版本。"},
+    "disable": {"title": "停用部门", "description": "确定停用 {{name}} 吗？此操作不可恢复。存在活动成员、子部门、预算或服务账号时，服务端会拒绝请求。"},
+    "empty": {"title": "还没有部门", "body": "创建第一个部门后即可开始组织成员和预算归属。"},
+    "restricted": {"title": "无权访问部门目录", "body": "当前企业角色不包含读取部门的权限。"},
+    "errors": {"listTitle": "无法读取部门目录", "listBody": "部门目录暂时不可用，企业现有状态不受影响。", "conflict": "部门已被其他操作更新，请刷新目录后按最新版本重新提交。", "mutation": "操作没有返回可靠结果，请刷新目录后重试。"}
+  },
   "organizationServiceAccounts": {
     "eyebrow": "企业空间",
     "title": "服务账号",
@@ -5005,7 +5022,8 @@
         "limitOnly": "上限 {{limit}}"
       },
       "links": {
-        "members": "成员与团队",
+      "members": "成员与团队",
+      "departments": "部门目录",
         "keys": "企业 API Key",
         "serviceAccounts": "服务账号",
         "wallet": "企业钱包与账本",

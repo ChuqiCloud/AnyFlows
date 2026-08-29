@@ -136,6 +136,7 @@ fn custom_role_permissions_use_a_closed_server_allowlist() {
         OrganizationPermission::Close,
         OrganizationPermission::RolesManage,
         OrganizationPermission::RolesAssign,
+        OrganizationPermission::DepartmentsManage,
         OrganizationPermission::ServiceAccountsRead,
         OrganizationPermission::ServiceAccountsManage,
     ] {

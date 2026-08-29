@@ -286,6 +286,10 @@ pub enum OrganizationPermission {
     MembersManage,
     /// 管理团队及成员归属。
     TeamsManage,
+    /// 查看企业部门目录。
+    DepartmentsRead,
+    /// 创建、移动和禁用企业部门。
+    DepartmentsManage,
     /// 查看企业钱包、订单和成本摘要。
     WalletRead,
     /// 充值并管理企业预算。
@@ -325,6 +329,7 @@ const CUSTOM_ROLE_GRANTABLE_PERMISSIONS: &[OrganizationPermission] = &[
     OrganizationPermission::ProfileWrite,
     OrganizationPermission::MembersManage,
     OrganizationPermission::TeamsManage,
+    OrganizationPermission::DepartmentsRead,
     OrganizationPermission::WalletRead,
     OrganizationPermission::WalletManage,
     OrganizationPermission::BudgetsManage,
@@ -347,6 +352,8 @@ impl OrganizationPermission {
             Self::Close => "organization.close",
             Self::MembersManage => "organization.members.manage",
             Self::TeamsManage => "organization.teams.manage",
+            Self::DepartmentsRead => "organization.departments.read",
+            Self::DepartmentsManage => "organization.departments.manage",
             Self::WalletRead => "organization.wallet.read",
             Self::WalletManage => "organization.wallet.manage",
             Self::BudgetsManage => "organization.budgets.manage",
@@ -375,6 +382,8 @@ impl OrganizationPermission {
             "organization.close" => Ok(Self::Close),
             "organization.members.manage" => Ok(Self::MembersManage),
             "organization.teams.manage" => Ok(Self::TeamsManage),
+            "organization.departments.read" => Ok(Self::DepartmentsRead),
+            "organization.departments.manage" => Ok(Self::DepartmentsManage),
             "organization.wallet.read" => Ok(Self::WalletRead),
             "organization.wallet.manage" => Ok(Self::WalletManage),
             "organization.budgets.manage" => Ok(Self::BudgetsManage),
@@ -404,6 +413,7 @@ impl OrganizationPermission {
                 | Self::Close
                 | Self::RolesManage
                 | Self::RolesAssign
+                | Self::DepartmentsManage
                 | Self::SsoRead
                 | Self::SsoManage
                 | Self::SsoRecovery
@@ -479,6 +489,8 @@ impl OrganizationRole {
                 Permission::Close,
                 Permission::MembersManage,
                 Permission::TeamsManage,
+                Permission::DepartmentsRead,
+                Permission::DepartmentsManage,
                 Permission::WalletRead,
                 Permission::WalletManage,
                 Permission::BudgetsManage,
@@ -501,6 +513,8 @@ impl OrganizationRole {
                 Permission::ProfileWrite,
                 Permission::MembersManage,
                 Permission::TeamsManage,
+                Permission::DepartmentsRead,
+                Permission::DepartmentsManage,
                 Permission::WalletRead,
                 Permission::WalletManage,
                 Permission::BudgetsManage,
@@ -533,6 +547,7 @@ impl OrganizationRole {
             ],
             Self::Viewer => &[
                 Permission::OverviewRead,
+                Permission::DepartmentsRead,
                 Permission::UsageLogsReadSelf,
                 Permission::AuditRead,
             ],
