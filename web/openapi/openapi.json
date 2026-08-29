@@ -31197,6 +31197,25 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "required": [
+              "department_id",
+              "kind"
+            ],
+            "properties": {
+              "department_id": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "department"
+                ]
+              }
+            }
           }
         ]
       },
@@ -31250,6 +31269,25 @@
                 "type": "string",
                 "enum": [
                   "member"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "department_id",
+              "kind"
+            ],
+            "properties": {
+              "department_id": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "department"
                 ]
               }
             }

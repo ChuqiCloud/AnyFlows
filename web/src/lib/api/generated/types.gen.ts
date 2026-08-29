@@ -1414,6 +1414,9 @@ export type OrganizationBudgetScopeRequest = {
 } | {
     membership_id: number;
     kind: 'member';
+} | {
+    department_id: number;
+    kind: 'department';
 };
 export type OrganizationBudgetScopeResponse = {
     kind: 'organization';
@@ -1423,6 +1426,9 @@ export type OrganizationBudgetScopeResponse = {
 } | {
     membership_id: number;
     kind: 'member';
+} | {
+    department_id: number;
+    kind: 'department';
 };
 export type OrganizationBudgetWindowResponse = {
     id: number;
