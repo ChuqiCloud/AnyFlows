@@ -14,7 +14,7 @@ const CONTRACT_PRICE_LOOKUP_INDEX: &str = "idx_organization_contract_prices_look
 pub(in crate::migration) async fn create_organization_contract_prices(
     manager: &SchemaManager<'_>,
 ) -> Result<(), DbErr> {
-    let mut statement = table(manager, organization_contract_prices::Entity)
+    let statement = table(manager, organization_contract_prices::Entity)
         .if_not_exists()
         .col(auto_id(organization_contract_prices::Column::Id))
         .col(
