@@ -88,6 +88,7 @@ const navItems = {
   organizationActivity: { key: 'organizationActivity', icon: History, href: '#/console/organization-activity' },
   organizationBudgets: { key: 'organizationBudgets', icon: Building2, href: '#/console/organization-budgets' },
   organizationMembers: { key: 'organizationMembers', icon: UsersRound, href: '#/console/organization-members' },
+  organizationDepartments: { key: 'organizationDepartments', icon: Building2, href: '#/console/organization-departments' },
   organizationOverview: { key: 'organizationOverview', icon: Gauge, href: '#/console/organization' },
   organizationSettings: { key: 'organizationSettings', icon: Settings2, href: '#/console/organization-settings' },
   organizationServiceAccounts: { key: 'organizationServiceAccounts', icon: Bot, href: '#/console/organization-service-accounts' },

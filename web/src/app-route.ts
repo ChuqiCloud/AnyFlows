@@ -18,6 +18,7 @@ export type AppView =
   | 'organization-activity'
   | 'organization-budgets'
   | 'organization-members'
+  | 'organization-departments'
   | 'organization-overview'
   | 'organization-settings'
   | 'organization-service-accounts'
@@ -120,6 +121,7 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash.startsWith('#/console/organization-activity')) return { view: 'organization-activity' }
   if (hash.startsWith('#/console/organization-budgets')) return { view: 'organization-budgets' }
   if (hash.startsWith('#/console/organization-members')) return { view: 'organization-members' }
+  if (hash.startsWith('#/console/organization-departments')) return { view: 'organization-departments' }
   if (hash.startsWith('#/console/organization-wallet')) return { view: 'organization-wallet' }
   if (hash.startsWith('#/console/organization-settings')) return { view: 'organization-settings' }
   if (hash.startsWith('#/console/organization-service-accounts')) return { view: 'organization-service-accounts' }

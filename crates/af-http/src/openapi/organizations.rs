@@ -7,18 +7,20 @@ use crate::{
     organizations::{
         OrganizationCustomRoleChangeRequest, OrganizationCustomRoleCreateRequest,
         OrganizationCustomRoleDisableRequest, OrganizationCustomRoleListResponse,
-        OrganizationCustomRoleResponse, OrganizationEntitlementResponse,
-        OrganizationInvitationAcceptRequest, OrganizationInvitationAcceptResponse,
-        OrganizationInvitationBatchRequest, OrganizationInvitationBatchResponse,
-        OrganizationInvitationCreateRequest, OrganizationInvitationIssuedResponse,
-        OrganizationInvitationListResponse, OrganizationInvitationPreviewItemResponse,
-        OrganizationInvitationPreviewRequest, OrganizationInvitationPreviewResponse,
-        OrganizationInvitationResponse, OrganizationListResponse,
-        OrganizationMemberCustomRoleRequest, OrganizationMemberCustomRoleResponse,
-        OrganizationMembershipChangeRequest, OrganizationMembershipListResponse,
-        OrganizationMembershipResponse, OrganizationOverviewResponse,
-        OrganizationOwnershipTransferRequest, OrganizationOwnershipTransferResponse,
-        OrganizationServiceAccountBudgetBindingRequest,
+        OrganizationCustomRoleResponse, OrganizationDepartmentCreateRequest,
+        OrganizationDepartmentDisableRequest, OrganizationDepartmentListResponse,
+        OrganizationDepartmentMoveRequest, OrganizationDepartmentResponse,
+        OrganizationEntitlementResponse, OrganizationInvitationAcceptRequest,
+        OrganizationInvitationAcceptResponse, OrganizationInvitationBatchRequest,
+        OrganizationInvitationBatchResponse, OrganizationInvitationCreateRequest,
+        OrganizationInvitationIssuedResponse, OrganizationInvitationListResponse,
+        OrganizationInvitationPreviewItemResponse, OrganizationInvitationPreviewRequest,
+        OrganizationInvitationPreviewResponse, OrganizationInvitationResponse,
+        OrganizationListResponse, OrganizationMemberCustomRoleRequest,
+        OrganizationMemberCustomRoleResponse, OrganizationMembershipChangeRequest,
+        OrganizationMembershipListResponse, OrganizationMembershipResponse,
+        OrganizationOverviewResponse, OrganizationOwnershipTransferRequest,
+        OrganizationOwnershipTransferResponse, OrganizationServiceAccountBudgetBindingRequest,
         OrganizationServiceAccountBudgetBindingResponse, OrganizationServiceAccountCreateRequest,
         OrganizationServiceAccountIssuedResponse, OrganizationServiceAccountListResponse,
         OrganizationServiceAccountResponse, OrganizationServiceAccountRotateRequest,
@@ -61,6 +63,120 @@ fn list_account_organizations() {}
     security(("bearerAuth" = []))
 )]
 fn get_organization_overview() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/organizations/{organization_id}/departments",
+    operation_id = "listOrganizationDepartments",
+    tag = "企业部门",
+    summary = "按稳定游标列出企业部门",
+    params(
+        ("organization_id" = i64, Path, minimum = 1),
+        ("after" = Option<String>, Query, description = "排序键游标，格式为 sort_order:id"),
+        ("limit" = Option<usize>, Query, minimum = 1, maximum = 100)
+    ),
+    responses(
+        (status = 200, body = OrganizationDepartmentListResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn list_organization_departments() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/organizations/{organization_id}/departments/{department_id}",
+    operation_id = "getOrganizationDepartment",
+    tag = "企业部门",
+    summary = "读取企业部门详情",
+    params(
+        ("organization_id" = i64, Path, minimum = 1),
+        ("department_id" = i64, Path, minimum = 1)
+    ),
+    responses(
+        (status = 200, body = OrganizationDepartmentResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn get_organization_department() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/organizations/{organization_id}/departments",
+    operation_id = "createOrganizationDepartment",
+    tag = "企业部门",
+    summary = "创建企业部门",
+    params(("organization_id" = i64, Path, minimum = 1)),
+    request_body = OrganizationDepartmentCreateRequest,
+    responses(
+        (status = 200, body = OrganizationDepartmentResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 409, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn create_organization_department() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/organizations/{organization_id}/departments/{department_id}/move",
+    operation_id = "moveOrganizationDepartment",
+    tag = "企业部门",
+    summary = "按版本 CAS 移动企业部门",
+    params(
+        ("organization_id" = i64, Path, minimum = 1),
+        ("department_id" = i64, Path, minimum = 1)
+    ),
+    request_body = OrganizationDepartmentMoveRequest,
+    responses(
+        (status = 200, body = OrganizationDepartmentResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 409, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn move_organization_department() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/organizations/{organization_id}/departments/{department_id}/disable",
+    operation_id = "disableOrganizationDepartment",
+    tag = "企业部门",
+    summary = "按版本 CAS 不可逆禁用企业部门",
+    params(
+        ("organization_id" = i64, Path, minimum = 1),
+        ("department_id" = i64, Path, minimum = 1)
+    ),
+    request_body = OrganizationDepartmentDisableRequest,
+    responses(
+        (status = 200, body = OrganizationDepartmentResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 409, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn disable_organization_department() {}
 
 #[utoipa::path(
     get,
@@ -596,6 +712,11 @@ fn set_organization_member_custom_role() {}
     paths(
         list_account_organizations,
         get_organization_overview,
+        list_organization_departments,
+        get_organization_department,
+        create_organization_department,
+        move_organization_department,
+        disable_organization_department,
         list_organization_invitations,
         create_organization_invitation,
         preview_organization_invitations,
@@ -628,6 +749,11 @@ fn set_organization_member_custom_role() {}
         OrganizationListResponse,
         OrganizationOverviewResponse,
         OrganizationEntitlementResponse,
+        OrganizationDepartmentResponse,
+        OrganizationDepartmentListResponse,
+        OrganizationDepartmentCreateRequest,
+        OrganizationDepartmentMoveRequest,
+        OrganizationDepartmentDisableRequest,
         OrganizationInvitationCreateRequest,
         OrganizationInvitationPreviewRequest,
         OrganizationInvitationBatchRequest,

@@ -273,7 +273,10 @@ pub use organization_invitation::{
 };
 pub use organization_management::{
     DEFAULT_ORGANIZATION_DIRECTORY_PAGE_SIZE, DatabaseOrganizationManagementService,
-    OrganizationManagementError, OrganizationManagementService,
+    OrganizationDepartmentCreateCommand, OrganizationDepartmentDisableCommand,
+    OrganizationDepartmentFuture, OrganizationDepartmentListQuery,
+    OrganizationDepartmentMoveCommand, OrganizationDepartmentPage,
+    OrganizationDepartmentPageFuture, OrganizationManagementError, OrganizationManagementService,
     OrganizationMembershipChangeCommand, OrganizationMembershipFuture,
     OrganizationMembershipListQuery, OrganizationMembershipPage, OrganizationMembershipPageFuture,
     OrganizationOwnershipTransferCommand, OrganizationOwnershipTransferFuture,

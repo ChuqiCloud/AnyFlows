@@ -1473,6 +1473,36 @@ export type OrganizationCustomRoleResponse = {
     created_at: number;
     updated_at: number;
 };
+export type OrganizationDepartmentCreateRequest = {
+    name: string;
+    parent_department_id: number | null;
+    sort_order: number;
+};
+export type OrganizationDepartmentDisableRequest = {
+    expected_version: number;
+};
+export type OrganizationDepartmentListResponse = {
+    departments: Array<OrganizationDepartmentResponse>;
+    next_cursor?: string | null;
+};
+export type OrganizationDepartmentMoveRequest = {
+    parent_department_id: number | null;
+    expected_version: number;
+};
+export type OrganizationDepartmentResponse = {
+    id: number;
+    organization_id: number;
+    department_key: string;
+    parent_department_id?: number | null;
+    name: string;
+    sort_order: number;
+    depth: number;
+    status: string;
+    version: number;
+    created_at: number;
+    updated_at: number;
+    disabled_at?: number | null;
+};
 export type OrganizationEntitlementResponse = {
     status: string;
     sso_enabled: boolean;
@@ -4260,6 +4290,115 @@ export type GetOrganizationOverviewResponses = {
     200: OrganizationOverviewResponse;
 };
 export type GetOrganizationOverviewResponse = GetOrganizationOverviewResponses[keyof GetOrganizationOverviewResponses];
+export type ListOrganizationDepartmentsData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        after?: string;
+        limit?: number;
+    };
+    url: '/api/organizations/{organization_id}/departments';
+};
+export type ListOrganizationDepartmentsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationDepartmentsError = ListOrganizationDepartmentsErrors[keyof ListOrganizationDepartmentsErrors];
+export type ListOrganizationDepartmentsResponses = {
+    200: OrganizationDepartmentListResponse;
+};
+export type ListOrganizationDepartmentsResponse = ListOrganizationDepartmentsResponses[keyof ListOrganizationDepartmentsResponses];
+export type CreateOrganizationDepartmentData = {
+    body: OrganizationDepartmentCreateRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/departments';
+};
+export type CreateOrganizationDepartmentErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type CreateOrganizationDepartmentError = CreateOrganizationDepartmentErrors[keyof CreateOrganizationDepartmentErrors];
+export type CreateOrganizationDepartmentResponses = {
+    200: OrganizationDepartmentResponse;
+};
+export type CreateOrganizationDepartmentResponse = CreateOrganizationDepartmentResponses[keyof CreateOrganizationDepartmentResponses];
+export type GetOrganizationDepartmentData = {
+    body?: never;
+    path: {
+        organization_id: number;
+        department_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/departments/{department_id}';
+};
+export type GetOrganizationDepartmentErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetOrganizationDepartmentError = GetOrganizationDepartmentErrors[keyof GetOrganizationDepartmentErrors];
+export type GetOrganizationDepartmentResponses = {
+    200: OrganizationDepartmentResponse;
+};
+export type GetOrganizationDepartmentResponse = GetOrganizationDepartmentResponses[keyof GetOrganizationDepartmentResponses];
+export type MoveOrganizationDepartmentData = {
+    body: OrganizationDepartmentMoveRequest;
+    path: {
+        organization_id: number;
+        department_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/departments/{department_id}/move';
+};
+export type MoveOrganizationDepartmentErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type MoveOrganizationDepartmentError = MoveOrganizationDepartmentErrors[keyof MoveOrganizationDepartmentErrors];
+export type MoveOrganizationDepartmentResponses = {
+    200: OrganizationDepartmentResponse;
+};
+export type MoveOrganizationDepartmentResponse = MoveOrganizationDepartmentResponses[keyof MoveOrganizationDepartmentResponses];
+export type DisableOrganizationDepartmentData = {
+    body: OrganizationDepartmentDisableRequest;
+    path: {
+        organization_id: number;
+        department_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/departments/{department_id}/disable';
+};
+export type DisableOrganizationDepartmentErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type DisableOrganizationDepartmentError = DisableOrganizationDepartmentErrors[keyof DisableOrganizationDepartmentErrors];
+export type DisableOrganizationDepartmentResponses = {
+    200: OrganizationDepartmentResponse;
+};
+export type DisableOrganizationDepartmentResponse = DisableOrganizationDepartmentResponses[keyof DisableOrganizationDepartmentResponses];
 export type ListOrganizationInvitationsData = {
     body?: never;
     path: {
