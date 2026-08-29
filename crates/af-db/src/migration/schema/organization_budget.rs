@@ -105,11 +105,12 @@ async fn create_policies(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
                 .not_null()
                 .check(
                     Expr::col(organization_budget_policies::Column::ScopeKind)
-                        .is_in([1_i16, 2_i16, 3_i16]),
+                        .is_in([1_i16, 2_i16, 3_i16, 4_i16]),
                 ),
         )
         .col(ColumnDef::new(organization_budget_policies::Column::TeamId).big_integer())
         .col(ColumnDef::new(organization_budget_policies::Column::MembershipId).big_integer())
+        .col(ColumnDef::new(organization_budget_policies::Column::DepartmentId).big_integer())
         .col(
             ColumnDef::new(organization_budget_policies::Column::PeriodKind)
                 .small_integer()
@@ -235,11 +236,12 @@ async fn create_windows(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
                 .not_null()
                 .check(
                     Expr::col(organization_budget_windows::Column::ScopeKind)
-                        .is_in([1_i16, 2_i16, 3_i16]),
+                        .is_in([1_i16, 2_i16, 3_i16, 4_i16]),
                 ),
         )
         .col(ColumnDef::new(organization_budget_windows::Column::TeamId).big_integer())
         .col(ColumnDef::new(organization_budget_windows::Column::MembershipId).big_integer())
+        .col(ColumnDef::new(organization_budget_windows::Column::DepartmentId).big_integer())
         .col(
             ColumnDef::new(organization_budget_windows::Column::PolicyVersion)
                 .big_integer()
@@ -370,6 +372,7 @@ async fn create_reservations(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
         )
         .col(ColumnDef::new(Column::TeamId).big_integer())
         .col(ColumnDef::new(Column::UserId).big_integer().not_null())
+        .col(ColumnDef::new(Column::DepartmentPath).string_len(255))
         .col(
             ColumnDef::new(Column::Status)
                 .small_integer()
@@ -520,14 +523,22 @@ fn policy_subject_shape() -> SimpleExpr {
         .eq(1_i16)
         .and(Expr::col(Column::TeamId).is_null())
         .and(Expr::col(Column::MembershipId).is_null())
+        .and(Expr::col(Column::DepartmentId).is_null())
         .or(Expr::col(Column::ScopeKind)
             .eq(2_i16)
             .and(Expr::col(Column::TeamId).is_not_null())
-            .and(Expr::col(Column::MembershipId).is_null()))
+            .and(Expr::col(Column::MembershipId).is_null())
+            .and(Expr::col(Column::DepartmentId).is_null()))
         .or(Expr::col(Column::ScopeKind)
             .eq(3_i16)
             .and(Expr::col(Column::TeamId).is_null())
-            .and(Expr::col(Column::MembershipId).is_not_null()))
+            .and(Expr::col(Column::MembershipId).is_not_null())
+            .and(Expr::col(Column::DepartmentId).is_null()))
+        .or(Expr::col(Column::ScopeKind)
+            .eq(4_i16)
+            .and(Expr::col(Column::TeamId).is_null())
+            .and(Expr::col(Column::MembershipId).is_null())
+            .and(Expr::col(Column::DepartmentId).is_not_null()))
 }
 
 fn policy_period_shape() -> SimpleExpr {
@@ -546,14 +557,22 @@ fn window_subject_shape() -> SimpleExpr {
         .eq(1_i16)
         .and(Expr::col(Column::TeamId).is_null())
         .and(Expr::col(Column::MembershipId).is_null())
+        .and(Expr::col(Column::DepartmentId).is_null())
         .or(Expr::col(Column::ScopeKind)
             .eq(2_i16)
             .and(Expr::col(Column::TeamId).is_not_null())
-            .and(Expr::col(Column::MembershipId).is_null()))
+            .and(Expr::col(Column::MembershipId).is_null())
+            .and(Expr::col(Column::DepartmentId).is_null()))
         .or(Expr::col(Column::ScopeKind)
             .eq(3_i16)
             .and(Expr::col(Column::TeamId).is_null())
-            .and(Expr::col(Column::MembershipId).is_not_null()))
+            .and(Expr::col(Column::MembershipId).is_not_null())
+            .and(Expr::col(Column::DepartmentId).is_null()))
+        .or(Expr::col(Column::ScopeKind)
+            .eq(4_i16)
+            .and(Expr::col(Column::TeamId).is_null())
+            .and(Expr::col(Column::MembershipId).is_null())
+            .and(Expr::col(Column::DepartmentId).is_not_null()))
 }
 
 #[derive(Clone, Copy)]

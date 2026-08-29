@@ -9,6 +9,10 @@ fn organization_budget_codes_and_limits_are_closed() {
         Ok(OrganizationBudgetScopeKind::Team)
     );
     assert_eq!(
+        OrganizationBudgetScopeKind::try_from(4),
+        Ok(OrganizationBudgetScopeKind::Department)
+    );
+    assert_eq!(
         OrganizationBudgetPeriod::from_persistence(4, Some(3_600)),
         Ok(OrganizationBudgetPeriod::Fixed { seconds: 3_600 })
     );

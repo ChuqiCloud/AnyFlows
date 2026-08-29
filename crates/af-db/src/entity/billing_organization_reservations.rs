@@ -12,6 +12,8 @@ pub struct Model {
     pub membership_id: i64,
     pub team_id: Option<i64>,
     pub user_id: i64,
+    /// 部门路径使用根到叶的逗号分隔内部 ID；空值表示历史主体未绑定部门。
+    pub department_path: Option<String>,
     pub token_id: Option<i64>,
     pub group_id: Option<i64>,
     pub reservation_kind: i16,

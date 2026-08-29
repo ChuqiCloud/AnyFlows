@@ -29,12 +29,13 @@ use crate::entity::{
     analytics_export_outbox_events, auth_challenge_rate_limits, auth_challenges,
     authentication_settings, balance_alert_events, balance_alert_settings,
     billing_batch_checkpoints, billing_group_window_reservations,
-    billing_organization_reservations, billing_reservations, billing_subscription_reservations,
-    billing_token_window_reservations, channel_groups, channel_models, channels, credentials,
-    debug_trace_attempts, debug_trace_snapshot_access_audits, debug_trace_snapshots, debug_traces,
-    email_settings, group_model_ratios, groups, invite_rebate_events, model_prices,
-    model_sync_items, model_sync_runs, models, oauth_login_providers, options,
-    organization_audit_logs, organization_budget_policies, organization_budget_windows,
+    billing_organization_reservation_departments, billing_organization_reservations,
+    billing_reservations, billing_subscription_reservations, billing_token_window_reservations,
+    channel_groups, channel_models, channels, credentials, debug_trace_attempts,
+    debug_trace_snapshot_access_audits, debug_trace_snapshots, debug_traces, email_settings,
+    group_model_ratios, groups, invite_rebate_events, model_prices, model_sync_items,
+    model_sync_runs, models, oauth_login_providers, options, organization_audit_logs,
+    organization_budget_policies, organization_budget_windows,
     organization_custom_role_permissions, organization_custom_roles,
     organization_department_memberships, organization_departments, organization_entitlements,
     organization_invitations, organization_memberships, organization_scim_audit_logs,
@@ -82,7 +83,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 108;
+const EXPECTED_MIGRATION_COUNT: usize = 109;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -101,7 +102,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 90] = [
+const CORE_TABLES: [&str; 91] = [
     "groups",
     "users",
     "passkeys",
@@ -175,6 +176,7 @@ const CORE_TABLES: [&str; 90] = [
     "organization_budget_policies",
     "organization_budget_windows",
     "billing_organization_reservations",
+    "billing_organization_reservation_departments",
     "organization_audit_logs",
     "organization_sso_policies",
     "organization_scim_tokens",
@@ -455,6 +457,7 @@ async fn standard_startup_installs_organization_budget_schema() -> Result<(), Bo
         "organization_budget_policies",
         "organization_budget_windows",
         "billing_organization_reservations",
+        "billing_organization_reservation_departments",
     ] {
         assert!(manager.has_table(table).await?, "缺少数据表 {table}");
     }
@@ -1452,7 +1455,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 49);
+    assert_eq!(pending_migrations.len(), 50);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -1648,6 +1651,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[48].name(),
         "m20260829_000108_add_organization_department_snapshots"
+    );
+    assert_eq!(
+        pending_migrations[49].name(),
+        "m20260829_000109_add_department_budget_snapshots"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
@@ -3266,6 +3273,11 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         "billing_organization_reservations",
     )
     .await?;
+    assert_entity_columns::<billing_organization_reservation_departments::Column>(
+        &manager,
+        "billing_organization_reservation_departments",
+    )
+    .await?;
     assert_entity_columns::<channels::Column>(&manager, "channels").await?;
     assert_entity_columns::<credentials::Column>(&manager, "credentials").await?;
     assert_entity_columns::<tokens::Column>(&manager, "tokens").await?;
@@ -3599,6 +3611,14 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         (
             "organization_budget_policies",
             "uq_organization_budget_policies_scope_id",
+        ),
+        (
+            "billing_organization_reservation_departments",
+            "idx_billing_org_reservation_departments",
+        ),
+        (
+            "organization_budget_windows",
+            "uq_organization_budget_windows_scope_id",
         ),
         (
             "organization_service_account_budget_bindings",

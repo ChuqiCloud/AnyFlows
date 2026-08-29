@@ -1,7 +1,7 @@
 use af_domain::{
     OrganizationBudgetPeriod, OrganizationBudgetPolicyId, OrganizationBudgetScopeKind,
-    OrganizationBudgetWindowId, OrganizationId, OrganizationMembershipId, OrganizationTeamId,
-    Quota, SubscriptionCycle, SubscriptionWindow, UserId,
+    OrganizationBudgetWindowId, OrganizationDepartmentId, OrganizationId, OrganizationMembershipId,
+    OrganizationTeamId, Quota, SubscriptionCycle, SubscriptionWindow, UserId,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
@@ -223,6 +223,7 @@ async fn load_or_create(
         scope_kind: Set(policy.scope_kind),
         team_id: Set(policy.team_id),
         membership_id: Set(policy.membership_id),
+        department_id: Set(policy.department_id),
         policy_version: Set(policy.version),
         limit_snapshot: Set(limit.units()),
         used_quota: Set(0),
@@ -302,6 +303,7 @@ fn validate_window(
         || window.scope_kind != policy.scope_kind
         || window.team_id != policy.team_id
         || window.membership_id != policy.membership_id
+        || window.department_id != policy.department_id
         || window.policy_version != policy.version
         || window.limit_snapshot != policy.quota_limit.unwrap_or_default()
         || window.used_quota < 0
@@ -319,9 +321,23 @@ fn validate_allocation(
     window: &organization_budget_windows::Model,
     allocation: OrganizationBudgetAllocationRecord,
 ) -> Result<(), OrganizationBudgetRepositoryError> {
+    let department_matches = match (
+        window.scope_kind,
+        window.department_id,
+        allocation.department_id,
+    ) {
+        (4, Some(window_department), Some(allocation_department))
+            if window_department == allocation_department.get() =>
+        {
+            true
+        }
+        (1..=3, None, None) => true,
+        _ => false,
+    };
     if window.id != allocation.window_id.get()
         || window.policy_id != allocation.policy_id.get()
         || window.policy_version != allocation.policy_version
+        || !department_matches
         || allocation.window_version <= 0
         || window.version < allocation.window_version
         || allocation.reserved_quota.is_zero()
@@ -338,6 +354,11 @@ fn allocation(
     reserved_quota: Quota,
 ) -> Result<OrganizationBudgetAllocationRecord, OrganizationBudgetRepositoryError> {
     Ok(OrganizationBudgetAllocationRecord {
+        department_id: window
+            .department_id
+            .map(OrganizationDepartmentId::new)
+            .transpose()
+            .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
         policy_id: OrganizationBudgetPolicyId::new(window.policy_id)
             .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
         window_id: OrganizationBudgetWindowId::new(window.id)
@@ -353,17 +374,30 @@ fn window_record(
 ) -> Result<OrganizationBudgetWindowRecord, OrganizationBudgetRepositoryError> {
     let kind = OrganizationBudgetScopeKind::try_from(model.scope_kind)
         .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?;
-    let scope = match (kind, model.team_id, model.membership_id) {
-        (OrganizationBudgetScopeKind::Organization, None, None) => {
+    let scope = match (
+        kind,
+        model.team_id,
+        model.membership_id,
+        model.department_id,
+    ) {
+        (OrganizationBudgetScopeKind::Organization, None, None, None) => {
             OrganizationBudgetScope::Organization
         }
-        (OrganizationBudgetScopeKind::Team, Some(team_id), None) => OrganizationBudgetScope::Team(
-            OrganizationTeamId::new(team_id)
-                .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
-        ),
-        (OrganizationBudgetScopeKind::Member, None, Some(membership_id)) => {
+        (OrganizationBudgetScopeKind::Team, Some(team_id), None, None) => {
+            OrganizationBudgetScope::Team(
+                OrganizationTeamId::new(team_id)
+                    .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
+            )
+        }
+        (OrganizationBudgetScopeKind::Member, None, Some(membership_id), None) => {
             OrganizationBudgetScope::Member(
                 OrganizationMembershipId::new(membership_id)
+                    .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
+            )
+        }
+        (OrganizationBudgetScopeKind::Department, None, None, Some(department_id)) => {
+            OrganizationBudgetScope::Department(
+                OrganizationDepartmentId::new(department_id)
                     .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
             )
         }

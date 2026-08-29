@@ -10,7 +10,7 @@ pub const MAX_ORGANIZATION_BUDGET_FIXED_PERIOD_SECONDS: u32 = 366 * 24 * 60 * 60
 /// 企业预算策略输入或持久化值错误；错误中不保留额度与主体标识。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum OrganizationBudgetPolicyError {
-    /// 预算作用域不属于企业、团队、成员闭合集合。
+    /// 预算作用域不属于企业、团队、成员或部门闭合集合。
     #[error("企业预算作用域无效")]
     InvalidScope,
     /// 周期编码与固定周期秒数不匹配。
@@ -34,6 +34,8 @@ pub enum OrganizationBudgetScopeKind {
     Team = 2,
     /// 企业内单个成员独享的消费上限。
     Member = 3,
+    /// 企业内单个部门（从根到叶路径中的一层）共享的消费上限。
+    Department = 4,
 }
 
 impl OrganizationBudgetScopeKind {
@@ -52,6 +54,7 @@ impl TryFrom<i16> for OrganizationBudgetScopeKind {
             1 => Ok(Self::Organization),
             2 => Ok(Self::Team),
             3 => Ok(Self::Member),
+            4 => Ok(Self::Department),
             _ => Err(OrganizationBudgetPolicyError::InvalidScope),
         }
     }

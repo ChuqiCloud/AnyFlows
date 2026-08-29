@@ -15,15 +15,18 @@ use super::{
     DatabaseOptions, MigrationOptions, OrganizationBillingMutationOutcome,
     OrganizationBillingPrincipal, OrganizationBillingReservationStatus,
     OrganizationBudgetPolicyWrite, OrganizationBudgetRepository, OrganizationBudgetRepositoryError,
-    OrganizationBudgetScope, OrganizationCreate, OrganizationEntitlementWrite,
-    OrganizationMembershipCreate, OrganizationRepository, OrganizationTeamCreate,
-    OrganizationTokenCreateRecord, OrganizationTokenRepository, OrganizationTokenWriteRecord,
-    QuotaRepository, QuotaRepositoryError,
+    OrganizationBudgetScope, OrganizationCreate, OrganizationDepartmentCreate,
+    OrganizationDepartmentMembershipCreate, OrganizationDepartmentMembershipRepository,
+    OrganizationDepartmentRepository, OrganizationEntitlementWrite, OrganizationMembershipCreate,
+    OrganizationRepository, OrganizationTeamCreate, OrganizationTokenCreateRecord,
+    OrganizationTokenRepository, OrganizationTokenWriteRecord, QuotaRepository,
+    QuotaRepositoryError,
 };
 use crate::{
     OrganizationWalletLedgerEntryType,
     entity::{
-        BillingReservationKey, billing_organization_reservations, billing_reservations, groups,
+        BillingReservationKey, billing_organization_reservation_departments,
+        billing_organization_reservations, billing_reservations, groups,
         organization_budget_windows, organization_wallet_ledger_entries, organization_wallets,
         tokens, users,
     },
@@ -211,6 +214,123 @@ async fn insufficient_member_budget_rolls_back_the_whole_reservation() -> Result
             .count(fixture.pool.connection())
             .await?,
         0
+    );
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn department_budget_reservation_keeps_path_and_layer_snapshots_after_move()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let scenario = scenario(&fixture, 40, 0, 1).await?;
+    let departments =
+        OrganizationDepartmentRepository::new(fixture.pool.clone(), Duration::from_secs(5))?;
+    let department_memberships = OrganizationDepartmentMembershipRepository::new(
+        fixture.pool.clone(),
+        Duration::from_secs(5),
+    )?;
+    let root = departments
+        .create(
+            scenario.organization_id,
+            OrganizationDepartmentCreate::new("根部门".to_owned(), None, 0),
+        )
+        .await?;
+    let leaf = departments
+        .create(
+            scenario.organization_id,
+            OrganizationDepartmentCreate::new("叶部门".to_owned(), Some(root.id()), 0),
+        )
+        .await?;
+    let moved_root = departments
+        .create(
+            scenario.organization_id,
+            OrganizationDepartmentCreate::new("新根部门".to_owned(), None, 1),
+        )
+        .await?;
+    department_memberships
+        .add(
+            scenario.organization_id,
+            scenario.membership_id,
+            OrganizationDepartmentMembershipCreate::new(leaf.id(), true, Some(1)),
+        )
+        .await?;
+    credit_wallet(&fixture, scenario, 500, 0x36).await?;
+    install_three_layers(&fixture, scenario, [400, 300, 200]).await?;
+    for (department_id, limit) in [(root.id(), 350_i64), (leaf.id(), 250_i64)] {
+        fixture
+            .budgets
+            .create_policy(policy(
+                scenario,
+                OrganizationBudgetScope::Department(department_id),
+                limit,
+                scenario.owner_user_id,
+            )?)
+            .await?;
+    }
+
+    let principal = OrganizationBillingPrincipal::with_department(
+        scenario.organization_id,
+        scenario.membership_id,
+        Some(scenario.team_id),
+        leaf.id(),
+        scenario.member_user_id,
+    );
+    assert_eq!(
+        fixture
+            .budgets
+            .reserve(reservation_id(0x49)?, principal, Quota::new(260)?)
+            .await,
+        Err(OrganizationBudgetRepositoryError::BudgetQuotaInsufficient)
+    );
+    assert_eq!(
+        organization_budget_windows::Entity::find()
+            .filter(
+                organization_budget_windows::Column::OrganizationId
+                    .eq(scenario.organization_id.get()),
+            )
+            .count(fixture.pool.connection())
+            .await?,
+        0
+    );
+    let id = reservation_id(0x48)?;
+    fixture
+        .budgets
+        .reserve(id, principal, Quota::new(80)?)
+        .await?;
+    let reservation = fixture.budgets.reservation(id).await?;
+    assert_eq!(reservation.principal(), principal);
+    assert_eq!(reservation.department_path(), &[root.id(), leaf.id()]);
+    assert_eq!(reservation.department_allocations().len(), 2);
+    assert_eq!(
+        billing_organization_reservation_departments::Entity::find()
+            .filter(
+                billing_organization_reservation_departments::Column::IdempotencyKey
+                    .eq(id.persistence_key()),
+            )
+            .count(fixture.pool.connection())
+            .await?,
+        2
+    );
+
+    departments
+        .move_department(
+            scenario.organization_id,
+            leaf.id(),
+            Some(moved_root.id()),
+            leaf.version(),
+        )
+        .await?;
+    let after_move = fixture.budgets.reservation(id).await?;
+    assert_eq!(after_move.department_path(), &[root.id(), leaf.id()]);
+    assert_eq!(
+        fixture.budgets.settle(id, Quota::new(60)?).await?,
+        OrganizationBillingMutationOutcome::Applied(OrganizationBillingReservationStatus::Settled)
+    );
+    assert_eq!(
+        fixture.budgets.reservation(id).await?.department_path(),
+        &[root.id(), leaf.id()]
     );
 
     fixture.pool.close().await?;

@@ -9,12 +9,13 @@ use af_domain::{
 use sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
 use thiserror::Error;
 
-/// 预算策略作用主体；枚举形状保证团队与成员标识不会同时出现。
+/// 预算策略作用主体；枚举形状保证团队、成员与部门标识不会同时出现。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OrganizationBudgetScope {
     Organization,
     Team(OrganizationTeamId),
     Member(OrganizationMembershipId),
+    Department(OrganizationDepartmentId),
 }
 
 impl OrganizationBudgetScope {
@@ -23,20 +24,28 @@ impl OrganizationBudgetScope {
             Self::Organization => OrganizationBudgetScopeKind::Organization,
             Self::Team(_) => OrganizationBudgetScopeKind::Team,
             Self::Member(_) => OrganizationBudgetScopeKind::Member,
+            Self::Department(_) => OrganizationBudgetScopeKind::Department,
         }
     }
 
     pub(crate) const fn team_id(self) -> Option<OrganizationTeamId> {
         match self {
             Self::Team(id) => Some(id),
-            Self::Organization | Self::Member(_) => None,
+            Self::Organization | Self::Member(_) | Self::Department(_) => None,
         }
     }
 
     pub(crate) const fn membership_id(self) -> Option<OrganizationMembershipId> {
         match self {
             Self::Member(id) => Some(id),
-            Self::Organization | Self::Team(_) => None,
+            Self::Organization | Self::Team(_) | Self::Department(_) => None,
+        }
+    }
+
+    pub(crate) const fn department_id(self) -> Option<OrganizationDepartmentId> {
+        match self {
+            Self::Department(id) => Some(id),
+            Self::Organization | Self::Team(_) | Self::Member(_) => None,
         }
     }
 }
@@ -320,6 +329,7 @@ pub enum OrganizationBillingMutationOutcome {
 /// 企业预留固化的一层预算窗口快照。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct OrganizationBudgetAllocationRecord {
+    pub(crate) department_id: Option<OrganizationDepartmentId>,
     pub(crate) policy_id: OrganizationBudgetPolicyId,
     pub(crate) window_id: OrganizationBudgetWindowId,
     pub(crate) policy_version: i64,
@@ -337,6 +347,8 @@ pub struct OrganizationBillingReservationRecord {
     pub(crate) actual_quota: Option<Quota>,
     pub(crate) gateway: Option<OrganizationBillingGatewayRecord>,
     pub(crate) organization: Option<OrganizationBudgetAllocationRecord>,
+    pub(crate) department_path: Vec<OrganizationDepartmentId>,
+    pub(crate) departments: Vec<OrganizationBudgetAllocationRecord>,
     pub(crate) team: Option<OrganizationBudgetAllocationRecord>,
     pub(crate) member: Option<OrganizationBudgetAllocationRecord>,
 }
@@ -384,6 +396,18 @@ impl OrganizationBillingReservationRecord {
         self.organization
     }
 
+    /// 返回根到叶顺序的部门路径快照，不读取当前部门树。
+    #[must_use]
+    pub fn department_path(&self) -> &[OrganizationDepartmentId] {
+        &self.department_path
+    }
+
+    /// 返回部门路径上逐层固化的预算窗口快照。
+    #[must_use]
+    pub fn department_allocations(&self) -> &[OrganizationBudgetAllocationRecord] {
+        &self.departments
+    }
+
     #[must_use]
     pub const fn team_allocation(&self) -> Option<OrganizationBudgetAllocationRecord> {
         self.team
@@ -396,6 +420,11 @@ impl OrganizationBillingReservationRecord {
 }
 
 impl OrganizationBudgetAllocationRecord {
+    #[must_use]
+    pub const fn department_id(self) -> Option<OrganizationDepartmentId> {
+        self.department_id
+    }
+
     #[must_use]
     pub const fn policy_id(self) -> OrganizationBudgetPolicyId {
         self.policy_id
