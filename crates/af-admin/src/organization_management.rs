@@ -1,16 +1,20 @@
 use std::{future::Future, pin::Pin, sync::Arc};
 
 use af_db::{
-    MAX_ORGANIZATION_DIRECTORY_PAGE_SIZE, OrganizationDepartmentRepository,
-    OrganizationDepartmentRepositoryError, OrganizationMembershipChange,
-    OrganizationMembershipRecord, OrganizationOwnershipTransfer, OrganizationRepository,
-    OrganizationRepositoryError, OrganizationTeamChange, OrganizationTeamCreate,
-    OrganizationTeamRecord,
+    MAX_ORGANIZATION_DIRECTORY_PAGE_SIZE, OrganizationDepartmentMembershipCreate,
+    OrganizationDepartmentMembershipRepository, OrganizationDepartmentMembershipRepositoryError,
+    OrganizationDepartmentRepository, OrganizationDepartmentRepositoryError,
+    OrganizationMembershipChange, OrganizationMembershipRecord, OrganizationOwnershipTransfer,
+    OrganizationRepository, OrganizationRepositoryError, OrganizationTeamChange,
+    OrganizationTeamCreate, OrganizationTeamRecord,
 };
-pub use af_db::{OrganizationDepartmentCursor, OrganizationDepartmentRecord};
+pub use af_db::{
+    OrganizationDepartmentCursor, OrganizationDepartmentMembershipRecord,
+    OrganizationDepartmentRecord,
+};
 use af_domain::{
-    OrganizationMembershipId, OrganizationMembershipStatus, OrganizationPermission,
-    OrganizationRole, OrganizationTeamId,
+    OrganizationDepartmentId, OrganizationMembershipId, OrganizationMembershipStatus,
+    OrganizationPermission, OrganizationRole, OrganizationTeamId,
 };
 use thiserror::Error;
 
@@ -138,6 +142,47 @@ impl OrganizationDepartmentPage {
     #[must_use]
     pub const fn next_cursor(&self) -> Option<OrganizationDepartmentCursor> {
         self.next_cursor
+    }
+}
+
+/// 成员部门归属新增命令；主部门写入必须携带成员版本。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OrganizationDepartmentMembershipAddCommand {
+    department_id: OrganizationDepartmentId,
+    is_primary: bool,
+    expected_membership_version: Option<i64>,
+}
+
+impl OrganizationDepartmentMembershipAddCommand {
+    /// 构造部门归属新增命令并校验可选 CAS 版本。
+    pub fn new(
+        department_id: OrganizationDepartmentId,
+        is_primary: bool,
+        expected_membership_version: Option<i64>,
+    ) -> Result<Self, OrganizationManagementError> {
+        if expected_membership_version.is_some_and(|version| version <= 0)
+            || (is_primary && expected_membership_version.is_none())
+        {
+            return Err(OrganizationManagementError::InvalidInput);
+        }
+        Ok(Self {
+            department_id,
+            is_primary,
+            expected_membership_version,
+        })
+    }
+}
+
+/// 已校验的成员部门归属列表。
+#[derive(Debug, PartialEq)]
+pub struct OrganizationDepartmentMembershipPage {
+    records: Vec<OrganizationDepartmentMembershipRecord>,
+}
+
+impl OrganizationDepartmentMembershipPage {
+    #[must_use]
+    pub fn records(&self) -> &[OrganizationDepartmentMembershipRecord] {
+        &self.records
     }
 }
 
@@ -460,6 +505,25 @@ pub type OrganizationDepartmentFuture<'a> = Pin<
             + 'a,
     >,
 >;
+pub type OrganizationDepartmentMembershipPageFuture<'a> = Pin<
+    Box<
+        dyn Future<
+                Output = Result<OrganizationDepartmentMembershipPage, OrganizationManagementError>,
+            > + Send
+            + 'a,
+    >,
+>;
+pub type OrganizationDepartmentMembershipFuture<'a> = Pin<
+    Box<
+        dyn Future<
+                Output = Result<
+                    OrganizationDepartmentMembershipRecord,
+                    OrganizationManagementError,
+                >,
+            > + Send
+            + 'a,
+    >,
+>;
 
 /// 企业成员与团队生命周期端口；调用方必须传入已校验的企业上下文。
 pub trait OrganizationManagementService: Send + Sync {
@@ -539,12 +603,46 @@ pub trait OrganizationManagementService: Send + Sync {
         context: OrganizationContext,
         command: OrganizationDepartmentDisableCommand,
     ) -> OrganizationDepartmentFuture<'a>;
+
+    /// 读取成员的活动与历史部门归属。
+    fn list_department_memberships<'a>(
+        &'a self,
+        context: OrganizationContext,
+        membership_id: OrganizationMembershipId,
+    ) -> OrganizationDepartmentMembershipPageFuture<'a>;
+
+    /// 添加成员部门归属，可选地同时设为主部门。
+    fn add_department_membership<'a>(
+        &'a self,
+        context: OrganizationContext,
+        membership_id: OrganizationMembershipId,
+        command: OrganizationDepartmentMembershipAddCommand,
+    ) -> OrganizationDepartmentMembershipFuture<'a>;
+
+    /// 按成员版本 CAS 切换主部门。
+    fn set_primary_department_membership<'a>(
+        &'a self,
+        context: OrganizationContext,
+        membership_id: OrganizationMembershipId,
+        department_id: OrganizationDepartmentId,
+        expected_membership_version: i64,
+    ) -> OrganizationDepartmentMembershipFuture<'a>;
+
+    /// 解除非主部门归属并保留历史事实。
+    fn remove_department_membership<'a>(
+        &'a self,
+        context: OrganizationContext,
+        membership_id: OrganizationMembershipId,
+        department_id: OrganizationDepartmentId,
+        expected_version: i64,
+    ) -> OrganizationDepartmentMembershipFuture<'a>;
 }
 
 /// 使用组织仓储实现企业生命周期和固定角色约束。
 pub struct DatabaseOrganizationManagementService {
     repository: Arc<OrganizationRepository>,
     department_repository: Option<Arc<OrganizationDepartmentRepository>>,
+    department_membership_repository: Option<Arc<OrganizationDepartmentMembershipRepository>>,
 }
 
 impl DatabaseOrganizationManagementService {
@@ -553,6 +651,7 @@ impl DatabaseOrganizationManagementService {
         Self {
             repository,
             department_repository: None,
+            department_membership_repository: None,
         }
     }
 
@@ -563,6 +662,16 @@ impl DatabaseOrganizationManagementService {
         department_repository: Arc<OrganizationDepartmentRepository>,
     ) -> Self {
         self.department_repository = Some(department_repository);
+        self
+    }
+
+    /// 注入成员部门归属仓储，保持旧构造方式兼容。
+    #[must_use]
+    pub fn with_department_membership_repository(
+        mut self,
+        department_membership_repository: Arc<OrganizationDepartmentMembershipRepository>,
+    ) -> Self {
+        self.department_membership_repository = Some(department_membership_repository);
         self
     }
 }
@@ -841,6 +950,102 @@ impl OrganizationManagementService for DatabaseOrganizationManagementService {
                 .map_err(map_department_repository_error)
         })
     }
+
+    fn list_department_memberships<'a>(
+        &'a self,
+        context: OrganizationContext,
+        membership_id: OrganizationMembershipId,
+    ) -> OrganizationDepartmentMembershipPageFuture<'a> {
+        Box::pin(async move {
+            require_permission(&context, OrganizationPermission::DepartmentsRead)?;
+            let repository = self
+                .department_membership_repository
+                .as_ref()
+                .ok_or(OrganizationManagementError::Internal)?;
+            let records = repository
+                .list(context.organization_id(), membership_id)
+                .await
+                .map_err(map_department_membership_repository_error)?;
+            Ok(OrganizationDepartmentMembershipPage { records })
+        })
+    }
+
+    fn add_department_membership<'a>(
+        &'a self,
+        context: OrganizationContext,
+        membership_id: OrganizationMembershipId,
+        command: OrganizationDepartmentMembershipAddCommand,
+    ) -> OrganizationDepartmentMembershipFuture<'a> {
+        Box::pin(async move {
+            require_permission(&context, OrganizationPermission::DepartmentsManage)?;
+            let repository = self
+                .department_membership_repository
+                .as_ref()
+                .ok_or(OrganizationManagementError::Internal)?;
+            repository
+                .add(
+                    context.organization_id(),
+                    membership_id,
+                    OrganizationDepartmentMembershipCreate::new(
+                        command.department_id,
+                        command.is_primary,
+                        command.expected_membership_version,
+                    ),
+                )
+                .await
+                .map_err(map_department_membership_repository_error)
+        })
+    }
+
+    fn set_primary_department_membership<'a>(
+        &'a self,
+        context: OrganizationContext,
+        membership_id: OrganizationMembershipId,
+        department_id: OrganizationDepartmentId,
+        expected_membership_version: i64,
+    ) -> OrganizationDepartmentMembershipFuture<'a> {
+        Box::pin(async move {
+            require_permission(&context, OrganizationPermission::DepartmentsManage)?;
+            let repository = self
+                .department_membership_repository
+                .as_ref()
+                .ok_or(OrganizationManagementError::Internal)?;
+            repository
+                .set_primary(
+                    context.organization_id(),
+                    membership_id,
+                    department_id,
+                    expected_membership_version,
+                )
+                .await
+                .map_err(map_department_membership_repository_error)
+        })
+    }
+
+    fn remove_department_membership<'a>(
+        &'a self,
+        context: OrganizationContext,
+        membership_id: OrganizationMembershipId,
+        department_id: OrganizationDepartmentId,
+        expected_version: i64,
+    ) -> OrganizationDepartmentMembershipFuture<'a> {
+        Box::pin(async move {
+            require_permission(&context, OrganizationPermission::DepartmentsManage)?;
+            let repository = self
+                .department_membership_repository
+                .as_ref()
+                .ok_or(OrganizationManagementError::Internal)?;
+            repository
+                .remove(
+                    context.organization_id(),
+                    membership_id,
+                    department_id,
+                    expected_version,
+                )
+                .await
+                .map_err(map_department_membership_repository_error)
+        })
+    }
 }
 
 impl std::fmt::Debug for DatabaseOrganizationManagementService {
@@ -933,5 +1138,38 @@ fn map_department_repository_error(
         | OrganizationDepartmentRepositoryError::Query
         | OrganizationDepartmentRepositoryError::Timeout
         | OrganizationDepartmentRepositoryError::Invariant => OrganizationManagementError::Internal,
+    }
+}
+
+fn map_department_membership_repository_error(
+    error: OrganizationDepartmentMembershipRepositoryError,
+) -> OrganizationManagementError {
+    match error {
+        OrganizationDepartmentMembershipRepositoryError::InvalidInput => {
+            OrganizationManagementError::InvalidInput
+        }
+        OrganizationDepartmentMembershipRepositoryError::Conflict
+        | OrganizationDepartmentMembershipRepositoryError::AlreadyAssigned
+        | OrganizationDepartmentMembershipRepositoryError::AlreadyRemoved => {
+            OrganizationManagementError::Conflict
+        }
+        OrganizationDepartmentMembershipRepositoryError::PrimaryRemoval => {
+            OrganizationManagementError::InvalidTransition
+        }
+        OrganizationDepartmentMembershipRepositoryError::OrganizationUnavailable
+        | OrganizationDepartmentMembershipRepositoryError::MembershipNotFound
+        | OrganizationDepartmentMembershipRepositoryError::MembershipOrganizationMismatch
+        | OrganizationDepartmentMembershipRepositoryError::MembershipUnavailable
+        | OrganizationDepartmentMembershipRepositoryError::DepartmentNotFound
+        | OrganizationDepartmentMembershipRepositoryError::DepartmentOrganizationMismatch
+        | OrganizationDepartmentMembershipRepositoryError::DepartmentUnavailable
+        | OrganizationDepartmentMembershipRepositoryError::NotFound => {
+            OrganizationManagementError::NotFound
+        }
+        OrganizationDepartmentMembershipRepositoryError::Invariant
+        | OrganizationDepartmentMembershipRepositoryError::Query
+        | OrganizationDepartmentMembershipRepositoryError::Timeout => {
+            OrganizationManagementError::Internal
+        }
     }
 }

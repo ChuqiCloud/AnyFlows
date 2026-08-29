@@ -12,7 +12,7 @@ import {
   UsersRound,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useOrganizationTeamCatalog } from '@/features/organization-budgets/organization-budget-api'
+import { useOrganizationDepartments } from '@/features/organization-departments/organization-department-api'
 import type { OrganizationInvitationResponse, OrganizationMembershipResponse, OrganizationOverviewResponse, OrganizationTeamResponse } from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
 import {
@@ -47,6 +48,8 @@ import { useOrganizationCustomRoles } from '@/features/organization-roles/organi
 const MEMBERS_MANAGE = 'organization.members.manage'
 const TEAMS_MANAGE = 'organization.teams.manage'
 const ROLES_ASSIGN = 'organization.roles.assign'
+const DEPARTMENTS_READ = 'organization.departments.read'
+const DEPARTMENTS_MANAGE = 'organization.departments.manage'
 type MemberTab = 'invitations' | 'members' | 'teams'
 
 /** 企业成员域集中管理成员、团队和邀请，所有写入均由服务端权限与 CAS 再校验。 */
@@ -69,6 +72,8 @@ function OrganizationMemberWorkspace({ organizationId, overview }: { organizatio
   const canManageMembers = overview.permissions.includes(MEMBERS_MANAGE)
   const canManageTeams = overview.permissions.includes(TEAMS_MANAGE)
   const canAssignCustomRoles = overview.permissions.includes(ROLES_ASSIGN)
+  const canReadDepartments = overview.permissions.includes(DEPARTMENTS_READ)
+  const canManageDepartments = overview.permissions.includes(DEPARTMENTS_MANAGE)
   return (
     <>
       <section className="grid gap-3 sm:grid-cols-3">
@@ -85,23 +90,30 @@ function OrganizationMemberWorkspace({ organizationId, overview }: { organizatio
         ))}
       </div>
 
-      {tab === 'members' ? <MembersPanel organizationId={organizationId} organizationName={overview.name} canManage={canManageMembers} canAssignCustomRoles={canAssignCustomRoles} customRolesEnabled={overview.entitlement.custom_roles_enabled} /> : null}
+      {tab === 'members' ? <MembersPanel organizationId={organizationId} organizationName={overview.name} canManage={canManageMembers} canAssignCustomRoles={canAssignCustomRoles} customRolesEnabled={overview.entitlement.custom_roles_enabled} canReadDepartments={canReadDepartments} canManageDepartments={canManageDepartments} /> : null}
       {tab === 'teams' ? <TeamsPanel organizationId={organizationId} organizationName={overview.name} canManage={canManageTeams} enabled={overview.entitlement.team_management_enabled} /> : null}
       {tab === 'invitations' ? <InvitationsPanel organizationId={organizationId} organizationName={overview.name} canManage={canManageMembers} /> : null}
     </>
   )
 }
 
-function MembersPanel({ organizationId, organizationName, canManage, canAssignCustomRoles, customRolesEnabled }: { organizationId: number; organizationName: string; canManage: boolean; canAssignCustomRoles: boolean; customRolesEnabled: boolean }) {
+function MembersPanel({ organizationId, organizationName, canManage, canAssignCustomRoles, customRolesEnabled, canReadDepartments, canManageDepartments }: { organizationId: number; organizationName: string; canManage: boolean; canAssignCustomRoles: boolean; customRolesEnabled: boolean; canReadDepartments: boolean; canManageDepartments: boolean }) {
   const { t } = useTranslation()
   const query = useOrganizationMembers(organizationId)
   const teamCatalog = useOrganizationTeamCatalog(organizationId, canManage)
   const customRoleCatalog = useOrganizationCustomRoles(organizationId, customRolesEnabled && canAssignCustomRoles)
+  const departmentCatalog = useOrganizationDepartments(organizationId, canReadDepartments)
   const [editing, setEditing] = useState<OrganizationMembershipResponse>()
-  const members = query.data?.pages.flatMap((page) => page.members) ?? []
+  const members = useMemo(() => query.data?.pages.flatMap((page) => page.members) ?? [], [query.data])
   const teamNames = useMemo(() => new Map((teamCatalog.data ?? []).map((team) => [team.id, team.name])), [teamCatalog.data])
   const customRoles = useMemo(() => customRoleCatalog.data?.pages.flatMap((page) => page.roles) ?? [], [customRoleCatalog.data])
+  const departments = useMemo(() => departmentCatalog.data?.pages.flatMap((page) => page.departments) ?? [], [departmentCatalog.data])
   const customRoleNames = useMemo(() => new Map(customRoles.map((role) => [role.role_key, role.name])), [customRoles])
+  useEffect(() => {
+    if (!editing) return
+    const refreshed = members.find((member) => member.id === editing.id)
+    if (refreshed && refreshed.version !== editing.version) setEditing(refreshed)
+  }, [editing, members])
   return (
     <Card className="overflow-hidden">
       <PanelHeader icon={UsersRound} title={t('organizationConsole.members.list.title')} subtitle={t('organizationConsole.members.list.subtitle')} count={members.length} refreshing={query.isFetching} onRefresh={() => void query.refetch()} />
@@ -126,7 +138,7 @@ function MembersPanel({ organizationId, organizationName, canManage, canAssignCu
           </div>
         </PagedContent>
       </CardContent>
-      <OrganizationMemberEditorSheet organizationId={organizationId} organizationName={organizationName} member={editing} teams={teamCatalog.data ?? []} customRoles={customRoles} customRolesReady={customRoleCatalog.isSuccess} customRolesEnabled={customRolesEnabled} canAssignCustomRoles={canAssignCustomRoles} open={editing !== undefined} onOpenChange={(open) => { if (!open) setEditing(undefined) }} />
+      <OrganizationMemberEditorSheet organizationId={organizationId} organizationName={organizationName} member={editing} teams={teamCatalog.data ?? []} customRoles={customRoles} customRolesReady={customRoleCatalog.isSuccess} customRolesEnabled={customRolesEnabled} canAssignCustomRoles={canAssignCustomRoles} departments={departments} departmentsReady={departmentCatalog.isSuccess} canReadDepartments={canReadDepartments} canManageDepartments={canManageDepartments} open={editing !== undefined} onOpenChange={(open) => { if (!open) setEditing(undefined) }} />
     </Card>
   )
 }

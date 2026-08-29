@@ -5065,6 +5065,23 @@
         "assignmentRestricted": "Your organization role cannot assign custom roles.",
         "loading": "Loading roles available to this organization."
       },
+      "departments": {
+        "title": "Department memberships",
+        "description": "Manage this member's active and historical department facts. The server protects organization boundaries and member-version conflicts.",
+        "loading": "Loading department memberships",
+        "empty": "This member has no department memberships.",
+        "unknown": "Department #{{id}}",
+        "primary": "Primary",
+        "status": {"active": "Active", "removed": "Removed"},
+        "version": "Fact version {{version}}",
+        "select": "Select a department",
+        "add": "Add",
+        "addAsPrimary": "Make this the primary department",
+        "setPrimary": "Set as primary department",
+        "remove": "Remove department membership",
+        "primaryProtected": "Primary department cannot be removed directly. Set another department as primary first.",
+        "errors": {"load": "Department memberships could not be loaded.", "mutation": "The department membership changed concurrently or the operation was rejected. Refresh the member and try again."}
+      },
       "list": {
         "title": "Member directory",
         "subtitle": "Stable cursors load organization members. Owners can only change through ownership transfer.",

@@ -1485,6 +1485,32 @@ export type OrganizationDepartmentListResponse = {
     departments: Array<OrganizationDepartmentResponse>;
     next_cursor?: string | null;
 };
+export type OrganizationDepartmentMembershipAddRequest = {
+    department_id: number;
+    is_primary: boolean;
+    expected_membership_version: number | null;
+};
+export type OrganizationDepartmentMembershipListResponse = {
+    department_memberships: Array<OrganizationDepartmentMembershipResponse>;
+};
+export type OrganizationDepartmentMembershipPrimaryRequest = {
+    expected_membership_version: number;
+};
+export type OrganizationDepartmentMembershipRemoveRequest = {
+    expected_version: number;
+};
+export type OrganizationDepartmentMembershipResponse = {
+    id: number;
+    organization_id: number;
+    membership_id: number;
+    department_id: number;
+    is_primary: boolean;
+    status: string;
+    version: number;
+    created_at: number;
+    updated_at: number;
+    removed_at?: number | null;
+};
 export type OrganizationDepartmentMoveRequest = {
     parent_department_id: number | null;
     expected_version: number;
@@ -4586,6 +4612,95 @@ export type ChangeOrganizationMemberResponses = {
     200: OrganizationMembershipResponse;
 };
 export type ChangeOrganizationMemberResponse = ChangeOrganizationMemberResponses[keyof ChangeOrganizationMemberResponses];
+export type ListOrganizationMemberDepartmentMembershipsData = {
+    body?: never;
+    path: {
+        organization_id: number;
+        membership_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/members/{membership_id}/department-memberships';
+};
+export type ListOrganizationMemberDepartmentMembershipsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationMemberDepartmentMembershipsError = ListOrganizationMemberDepartmentMembershipsErrors[keyof ListOrganizationMemberDepartmentMembershipsErrors];
+export type ListOrganizationMemberDepartmentMembershipsResponses = {
+    200: OrganizationDepartmentMembershipListResponse;
+};
+export type ListOrganizationMemberDepartmentMembershipsResponse = ListOrganizationMemberDepartmentMembershipsResponses[keyof ListOrganizationMemberDepartmentMembershipsResponses];
+export type AddOrganizationMemberDepartmentMembershipData = {
+    body: OrganizationDepartmentMembershipAddRequest;
+    path: {
+        organization_id: number;
+        membership_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/members/{membership_id}/department-memberships';
+};
+export type AddOrganizationMemberDepartmentMembershipErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type AddOrganizationMemberDepartmentMembershipError = AddOrganizationMemberDepartmentMembershipErrors[keyof AddOrganizationMemberDepartmentMembershipErrors];
+export type AddOrganizationMemberDepartmentMembershipResponses = {
+    200: OrganizationDepartmentMembershipResponse;
+};
+export type AddOrganizationMemberDepartmentMembershipResponse = AddOrganizationMemberDepartmentMembershipResponses[keyof AddOrganizationMemberDepartmentMembershipResponses];
+export type SetPrimaryOrganizationMemberDepartmentMembershipData = {
+    body: OrganizationDepartmentMembershipPrimaryRequest;
+    path: {
+        organization_id: number;
+        membership_id: number;
+        department_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/members/{membership_id}/department-memberships/{department_id}/primary';
+};
+export type SetPrimaryOrganizationMemberDepartmentMembershipErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type SetPrimaryOrganizationMemberDepartmentMembershipError = SetPrimaryOrganizationMemberDepartmentMembershipErrors[keyof SetPrimaryOrganizationMemberDepartmentMembershipErrors];
+export type SetPrimaryOrganizationMemberDepartmentMembershipResponses = {
+    200: OrganizationDepartmentMembershipResponse;
+};
+export type SetPrimaryOrganizationMemberDepartmentMembershipResponse = SetPrimaryOrganizationMemberDepartmentMembershipResponses[keyof SetPrimaryOrganizationMemberDepartmentMembershipResponses];
+export type RemoveOrganizationMemberDepartmentMembershipData = {
+    body: OrganizationDepartmentMembershipRemoveRequest;
+    path: {
+        organization_id: number;
+        membership_id: number;
+        department_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/members/{membership_id}/department-memberships/{department_id}';
+};
+export type RemoveOrganizationMemberDepartmentMembershipErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type RemoveOrganizationMemberDepartmentMembershipError = RemoveOrganizationMemberDepartmentMembershipErrors[keyof RemoveOrganizationMemberDepartmentMembershipErrors];
+export type RemoveOrganizationMemberDepartmentMembershipResponses = {
+    200: OrganizationDepartmentMembershipResponse;
+};
+export type RemoveOrganizationMemberDepartmentMembershipResponse = RemoveOrganizationMemberDepartmentMembershipResponses[keyof RemoveOrganizationMemberDepartmentMembershipResponses];
 export type TransferOrganizationOwnershipData = {
     body: OrganizationOwnershipTransferRequest;
     path: {
