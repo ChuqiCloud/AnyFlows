@@ -25,13 +25,17 @@ async fn add_columns_billing(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
     add_column(
         manager,
         billing_reservations::Entity,
-        ColumnDef::new(Column::ContractPriceId).big_integer(),
+        ColumnDef::new(Column::ContractPriceId)
+            .big_integer()
+            .to_owned(),
     )
     .await?;
     add_column(
         manager,
         billing_reservations::Entity,
-        ColumnDef::new(Column::ContractPriceVersion).big_integer(),
+        ColumnDef::new(Column::ContractPriceVersion)
+            .big_integer()
+            .to_owned(),
     )
     .await?;
     add_column(
@@ -71,13 +75,17 @@ async fn add_columns_organization(manager: &SchemaManager<'_>) -> Result<(), DbE
     add_column(
         manager,
         billing_organization_reservations::Entity,
-        ColumnDef::new(Column::ContractPriceId).big_integer(),
+        ColumnDef::new(Column::ContractPriceId)
+            .big_integer()
+            .to_owned(),
     )
     .await?;
     add_column(
         manager,
         billing_organization_reservations::Entity,
-        ColumnDef::new(Column::ContractPriceVersion).big_integer(),
+        ColumnDef::new(Column::ContractPriceVersion)
+            .big_integer()
+            .to_owned(),
     )
     .await?;
     add_column(
