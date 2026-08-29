@@ -135,6 +135,11 @@ principal_id! {
 }
 
 principal_id! {
+    /// 企业授信与账期策略事实的持久化标识。
+    OrganizationCreditTermId
+}
+
+principal_id! {
     /// 企业 SCIM 令牌的持久化标识。
     OrganizationScimTokenId
 }

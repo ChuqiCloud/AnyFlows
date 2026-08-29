@@ -36,7 +36,7 @@ use crate::entity::{
     group_model_ratios, groups, invite_rebate_events, model_prices, model_sync_items,
     model_sync_runs, models, oauth_login_providers, options, organization_audit_logs,
     organization_budget_policies, organization_budget_windows, organization_contract_prices,
-    organization_custom_role_permissions, organization_custom_roles,
+    organization_credit_terms, organization_custom_role_permissions, organization_custom_roles,
     organization_department_memberships, organization_departments, organization_entitlements,
     organization_invitations, organization_memberships, organization_scim_audit_logs,
     organization_scim_group_resources, organization_scim_tokens, organization_scim_user_resources,
@@ -83,7 +83,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 111;
+const EXPECTED_MIGRATION_COUNT: usize = 112;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -102,7 +102,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 92] = [
+const CORE_TABLES: [&str; 93] = [
     "groups",
     "users",
     "passkeys",
@@ -167,6 +167,7 @@ const CORE_TABLES: [&str; 92] = [
     "organization_departments",
     "organization_department_memberships",
     "organization_contract_prices",
+    "organization_credit_terms",
     "organization_memberships",
     "organization_custom_roles",
     "organization_custom_role_permissions",
@@ -582,6 +583,139 @@ async fn organization_contract_price_constraints_reject_invalid_rows() -> Result
     invalid_window.version = Set(5);
     assert!(
         organization_contract_prices::Entity::insert(invalid_window)
+            .exec_without_returning(pool.connection())
+            .await
+            .is_err()
+    );
+
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn organization_credit_terms_constraints_reject_invalid_rows() -> Result<(), Box<dyn Error>> {
+    let database_options = DatabaseOptions::new("sqlite::memory:")?;
+    let pool = crate::connect_and_migrate(&database_options, MigrationOptions::default()).await?;
+    let manager = SchemaManager::new(pool.connection());
+    assert!(manager.has_table("organization_credit_terms").await?);
+    assert_entity_columns::<organization_credit_terms::Column>(
+        &manager,
+        "organization_credit_terms",
+    )
+    .await?;
+    for index in [
+        "uq_organization_credit_terms_scope_version",
+        "idx_organization_credit_terms_lookup",
+    ] {
+        assert!(
+            manager
+                .has_index("organization_credit_terms", index)
+                .await?,
+            "缺少授信策略索引 {index}"
+        );
+    }
+
+    let group = group_active_model("credit-terms-group", "授信策略测试分组")
+        .insert(pool.connection())
+        .await?;
+    let owner = user_active_model(
+        group.id,
+        "credit-terms-owner",
+        "credit-terms-owner@example.com",
+        "credit-terms-owner-aff",
+    )
+    .insert(pool.connection())
+    .await?;
+    let now = TimeDateTimeWithTimeZone::now_utc();
+    let organization = organizations::ActiveModel {
+        organization_key: Set("33333333333333333333333333333333".to_owned()),
+        name: Set("Credit Terms Test".to_owned()),
+        slug: Set("credit-terms-test".to_owned()),
+        status: Set(1),
+        created_by_user_id: Set(owner.id),
+        version: Set(1),
+        created_at: Set(now),
+        updated_at: Set(now),
+        closed_at: Set(None),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+    let effective_from = TimeDateTimeWithTimeZone::from_unix_timestamp(1_893_456_000)?;
+    let effective_until = TimeDateTimeWithTimeZone::from_unix_timestamp(1_893_456_001)?;
+    let valid_terms = || organization_credit_terms::ActiveModel {
+        organization_id: Set(organization.id),
+        currency: Set("USD".to_owned()),
+        credit_limit: Set(10_000),
+        period_kind: Set(1),
+        period_days: Set(Some(30)),
+        status: Set(1),
+        effective_from: Set(effective_from),
+        effective_until: Set(Some(effective_until)),
+        version: Set(1),
+        created_by_user_id: Set(owner.id),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    };
+    organization_credit_terms::Entity::insert(valid_terms())
+        .exec_without_returning(pool.connection())
+        .await?;
+
+    let mut invalid_limit = valid_terms();
+    invalid_limit.credit_limit = Set(-1);
+    invalid_limit.version = Set(2);
+    assert!(
+        organization_credit_terms::Entity::insert(invalid_limit)
+            .exec_without_returning(pool.connection())
+            .await
+            .is_err()
+    );
+
+    let mut invalid_currency = valid_terms();
+    invalid_currency.currency = Set("usd".to_owned());
+    invalid_currency.version = Set(6);
+    assert!(
+        organization_credit_terms::Entity::insert(invalid_currency)
+            .exec_without_returning(pool.connection())
+            .await
+            .is_err()
+    );
+
+    let mut invalid_period = valid_terms();
+    invalid_period.period_kind = Set(2);
+    invalid_period.version = Set(3);
+    assert!(
+        organization_credit_terms::Entity::insert(invalid_period)
+            .exec_without_returning(pool.connection())
+            .await
+            .is_err()
+    );
+
+    let mut invalid_status = valid_terms();
+    invalid_status.status = Set(4);
+    invalid_status.version = Set(4);
+    assert!(
+        organization_credit_terms::Entity::insert(invalid_status)
+            .exec_without_returning(pool.connection())
+            .await
+            .is_err()
+    );
+
+    let mut invalid_window = valid_terms();
+    invalid_window.effective_until = Set(Some(effective_from));
+    invalid_window.version = Set(5);
+    assert!(
+        organization_credit_terms::Entity::insert(invalid_window)
+            .exec_without_returning(pool.connection())
+            .await
+            .is_err()
+    );
+
+    let mut duplicate_version = valid_terms();
+    duplicate_version.credit_limit = Set(20_000);
+    assert!(
+        organization_credit_terms::Entity::insert(duplicate_version)
             .exec_without_returning(pool.connection())
             .await
             .is_err()
@@ -1581,7 +1715,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 52);
+    assert_eq!(pending_migrations.len(), 53);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -1789,6 +1923,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[51].name(),
         "m20260829_000111_add_contract_price_snapshots"
+    );
+    assert_eq!(
+        pending_migrations[52].name(),
+        "m20260830_000112_create_organization_credit_terms"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
@@ -3316,6 +3454,11 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         "organization_contract_prices",
     )
     .await?;
+    assert_entity_columns::<organization_credit_terms::Column>(
+        &manager,
+        "organization_credit_terms",
+    )
+    .await?;
     assert_entity_columns::<organization_custom_roles::Column>(
         &manager,
         "organization_custom_roles",
@@ -3758,6 +3901,14 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         (
             "organization_contract_prices",
             "idx_organization_contract_prices_lookup",
+        ),
+        (
+            "organization_credit_terms",
+            "uq_organization_credit_terms_scope_version",
+        ),
+        (
+            "organization_credit_terms",
+            "idx_organization_credit_terms_lookup",
         ),
         (
             "billing_organization_reservation_departments",

@@ -10,8 +10,9 @@ use rust_decimal::Decimal;
 use sea_orm::{ActiveValue, EntityTrait, Set, entity::prelude::*};
 
 use af_domain::{
-    BillingReservationId, ChannelTimeout, MAX_ROUTE_MODEL_PATTERN_BYTES, OrganizationCustomRoleKey,
-    OrganizationCustomRoleStatus, OrganizationDepartmentKey,
+    BillingReservationId, ChannelTimeout, MAX_ROUTE_MODEL_PATTERN_BYTES,
+    OrganizationCreditCurrency, OrganizationCreditTermPeriod, OrganizationCreditTermStatus,
+    OrganizationCustomRoleKey, OrganizationCustomRoleStatus, OrganizationDepartmentKey,
     OrganizationDepartmentMembershipStatus, OrganizationDepartmentStatus, OrganizationKey,
     OrganizationMembershipStatus, OrganizationPermission, OrganizationRole,
     OrganizationServiceAccountKey, OrganizationStatus, OrganizationTeamStatus, Quota, QuotaDelta,
@@ -66,6 +67,7 @@ pub(crate) mod organization_audit_logs;
 pub(crate) mod organization_budget_policies;
 pub(crate) mod organization_budget_windows;
 pub(crate) mod organization_contract_prices;
+pub(crate) mod organization_credit_terms;
 pub(crate) mod organization_custom_role_permissions;
 pub(crate) mod organization_custom_roles;
 pub(crate) mod organization_department_memberships;
@@ -593,6 +595,66 @@ where
         || grace_until.is_some_and(|grace| valid_until.is_some_and(|until| grace < until))
     {
         return Err(DbErr::Custom("企业授权字段无效".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_organization_credit_terms<C>(
+    model: &organization_credit_terms::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    if insert
+        && (model.organization_id.try_as_ref().is_none()
+            || model.currency.try_as_ref().is_none()
+            || model.credit_limit.try_as_ref().is_none()
+            || model.period_kind.try_as_ref().is_none()
+            || model.status.try_as_ref().is_none()
+            || model.effective_from.try_as_ref().is_none()
+            || model.version.try_as_ref().is_none()
+            || model.created_by_user_id.try_as_ref().is_none())
+    {
+        return Err(DbErr::Custom("企业授信策略基础字段缺失".to_owned()));
+    }
+    let currency = model.currency.try_as_ref().map(String::as_str);
+    let period_kind = model.period_kind.try_as_ref().copied();
+    let period_days_raw = model.period_days.try_as_ref().copied().flatten();
+    let status = model.status.try_as_ref().copied();
+    let effective_from = model.effective_from.try_as_ref().copied();
+    let effective_until = model.effective_until.try_as_ref().copied().flatten();
+    if model
+        .organization_id
+        .try_as_ref()
+        .is_some_and(|value| *value <= 0)
+        || currency.is_some_and(|value| OrganizationCreditCurrency::new(value).is_err())
+        || model
+            .credit_limit
+            .try_as_ref()
+            .is_some_and(|value| *value < 0)
+        || period_kind.is_some_and(|value| match period_days_raw {
+            Some(raw_days) => match u16::try_from(raw_days) {
+                Ok(days) if i64::from(days) == raw_days => {
+                    OrganizationCreditTermPeriod::from_persistence(value, Some(days)).is_err()
+                }
+                _ => true,
+            },
+            None => OrganizationCreditTermPeriod::from_persistence(value, None).is_err(),
+        })
+        || status.is_some_and(|value| OrganizationCreditTermStatus::try_from(value).is_err())
+        || effective_from.is_some_and(|value| value.unix_timestamp() < 0)
+        || effective_from
+            .zip(effective_until)
+            .is_some_and(|(from, until)| until <= from)
+        || model.version.try_as_ref().is_some_and(|value| *value <= 0)
+        || model
+            .created_by_user_id
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+    {
+        return Err(DbErr::Custom("企业授信策略字段无效".to_owned()));
     }
     Ok(())
 }
@@ -2197,6 +2259,7 @@ impl_updated_at_behavior!(
     organization_teams::ActiveModel => validate_organization_team,
     organization_departments::ActiveModel => validate_organization_department,
     organization_department_memberships::ActiveModel => validate_organization_department_membership,
+    organization_credit_terms::ActiveModel => validate_organization_credit_terms,
     organization_custom_roles::ActiveModel => validate_organization_custom_role,
     organization_sso_domains::ActiveModel => validate_default,
     organization_sso_identities::ActiveModel => validate_default,
