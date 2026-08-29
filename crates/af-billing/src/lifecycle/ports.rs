@@ -1,6 +1,9 @@
 use std::{future::Future, pin::Pin};
 
-use af_db::{QuotaMutationOutcome, QuotaRepository, QuotaRepositoryError, QuotaReservationStatus};
+use af_db::{
+    OrganizationContractPriceSnapshot, QuotaMutationOutcome, QuotaRepository, QuotaRepositoryError,
+    QuotaReservationStatus,
+};
 use af_domain::{BillingReservationId, GatewayPrincipal, Quota, QuotaWindowRetryAfter};
 use thiserror::Error;
 
@@ -31,6 +34,18 @@ pub trait BillingPrechargePort: Send + Sync + 'static {
         principal: GatewayPrincipal,
         amount: Quota,
     ) -> BillingPrechargeFuture<'a>;
+
+    /// 使用同一预留绑定可选合同价快照；未覆盖的实现兼容旧预扣入口。
+    fn precharge_with_snapshot<'a>(
+        &'a self,
+        reservation_id: BillingReservationId,
+        principal: GatewayPrincipal,
+        amount: Quota,
+        contract_price: Option<OrganizationContractPriceSnapshot>,
+    ) -> BillingPrechargeFuture<'a> {
+        let _ = contract_price;
+        self.precharge(reservation_id, principal, amount)
+    }
 }
 
 /// 持久化预扣的闭合结果；不携带主体、预留标识或额度。
@@ -71,6 +86,35 @@ impl BillingPrechargePort for QuotaRepository {
             let outcome = QuotaRepository::precharge(self, reservation_id, principal, amount)
                 .await
                 .map_err(map_quota_repository_precharge_error)?;
+            match outcome {
+                QuotaMutationOutcome::Applied
+                | QuotaMutationOutcome::Existing(QuotaReservationStatus::Reserved) => Ok(()),
+                QuotaMutationOutcome::Existing(
+                    QuotaReservationStatus::SettlementPending
+                    | QuotaReservationStatus::Settled
+                    | QuotaReservationStatus::Refunded,
+                ) => Err(BillingPrechargeError::Conflict),
+            }
+        })
+    }
+
+    fn precharge_with_snapshot<'a>(
+        &'a self,
+        reservation_id: BillingReservationId,
+        principal: GatewayPrincipal,
+        amount: Quota,
+        contract_price: Option<OrganizationContractPriceSnapshot>,
+    ) -> BillingPrechargeFuture<'a> {
+        Box::pin(async move {
+            let outcome = QuotaRepository::precharge_with_contract_price(
+                self,
+                reservation_id,
+                principal,
+                amount,
+                contract_price,
+            )
+            .await
+            .map_err(map_quota_repository_precharge_error)?;
             match outcome {
                 QuotaMutationOutcome::Applied
                 | QuotaMutationOutcome::Existing(QuotaReservationStatus::Reserved) => Ok(()),

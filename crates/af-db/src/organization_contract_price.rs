@@ -85,6 +85,79 @@ pub struct OrganizationContractPriceRecord {
     updated_at: TimeDateTimeWithTimeZone,
 }
 
+/// 绑定到单次计费预留的合同价快照；结算阶段不得重新读取合同价目录。
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct OrganizationContractPriceSnapshot {
+    organization_id: OrganizationId,
+    id: OrganizationContractPriceId,
+    version: i64,
+    prices: [Decimal; 5],
+}
+
+impl OrganizationContractPriceSnapshot {
+    /// 从已校验的合同价记录提取不可变快照。
+    #[must_use]
+    pub fn from_record(record: &OrganizationContractPriceRecord) -> Self {
+        Self {
+            organization_id: record.organization_id,
+            id: record.id,
+            version: record.version,
+            prices: record.prices,
+        }
+    }
+
+    pub(crate) fn from_parts(
+        organization_id: i64,
+        id: i64,
+        version: i64,
+        prices: [Decimal; 5],
+    ) -> Result<Self, ()> {
+        let organization_id = OrganizationId::new(organization_id).map_err(|_| ())?;
+        let id = OrganizationContractPriceId::new(id).map_err(|_| ())?;
+        if version <= 0 || prices.into_iter().any(|price| price < Decimal::ZERO) {
+            return Err(());
+        }
+        Ok(Self {
+            organization_id,
+            id,
+            version,
+            prices,
+        })
+    }
+
+    #[must_use]
+    pub const fn organization_id(self) -> OrganizationId {
+        self.organization_id
+    }
+
+    #[must_use]
+    pub const fn id(self) -> OrganizationContractPriceId {
+        self.id
+    }
+
+    #[must_use]
+    pub const fn version(self) -> i64 {
+        self.version
+    }
+
+    /// 按输入、输出、缓存读取、5 分钟缓存创建、1 小时缓存创建顺序返回单价。
+    #[must_use]
+    pub const fn prices(self) -> [Decimal; 5] {
+        self.prices
+    }
+}
+
+impl fmt::Debug for OrganizationContractPriceSnapshot {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OrganizationContractPriceSnapshot")
+            .field("organization_id", &self.organization_id)
+            .field("id", &self.id)
+            .field("version", &self.version)
+            .finish_non_exhaustive()
+    }
+}
+
 impl OrganizationContractPriceRecord {
     #[must_use]
     pub const fn id(&self) -> OrganizationContractPriceId {
@@ -209,6 +282,21 @@ impl OrganizationContractPriceRepository {
         id: OrganizationContractPriceId,
     ) -> Result<OrganizationContractPriceRecord, OrganizationContractPriceRepositoryError> {
         self.run(self.get_inner(organization_id, id)).await
+    }
+
+    /// 按请求时间解析企业范围内唯一有效的合同价版本。
+    ///
+    /// 未命中返回 `None`，个人请求不会调用此方法；查询始终带企业条件，避免跨企业泄露。
+    pub async fn resolve(
+        &self,
+        organization_id: OrganizationId,
+        model: &str,
+        protocol: Protocol,
+        request_time: TimeDateTimeWithTimeZone,
+    ) -> Result<Option<OrganizationContractPriceSnapshot>, OrganizationContractPriceRepositoryError>
+    {
+        self.run(self.resolve_inner(organization_id, model, protocol, request_time))
+            .await
     }
 
     /// 按记录版本 CAS 关闭合同价区间。
@@ -337,6 +425,41 @@ impl OrganizationContractPriceRepository {
             .map_err(query_error)?
             .ok_or(OrganizationContractPriceRepositoryError::NotFound)?;
         record_from_model(model)
+    }
+
+    async fn resolve_inner(
+        &self,
+        organization_id: OrganizationId,
+        model: &str,
+        protocol: Protocol,
+        request_time: TimeDateTimeWithTimeZone,
+    ) -> Result<Option<OrganizationContractPriceSnapshot>, OrganizationContractPriceRepositoryError>
+    {
+        if model.is_empty() || model.len() > 256 {
+            return Err(OrganizationContractPriceRepositoryError::InvalidInput);
+        }
+        ensure_active_organization(&self.pool, organization_id).await?;
+        let model = organization_contract_prices::Entity::find()
+            .filter(organization_contract_prices::Column::OrganizationId.eq(organization_id.get()))
+            .filter(organization_contract_prices::Column::Model.eq(model))
+            .filter(organization_contract_prices::Column::Protocol.eq(protocol.as_str()))
+            .filter(organization_contract_prices::Column::EffectiveFrom.lte(request_time))
+            .filter(
+                organization_contract_prices::Column::EffectiveUntil
+                    .is_null()
+                    .or(organization_contract_prices::Column::EffectiveUntil.gt(request_time)),
+            )
+            .order_by_desc(organization_contract_prices::Column::EffectiveFrom)
+            .order_by_desc(organization_contract_prices::Column::Version)
+            .order_by_desc(organization_contract_prices::Column::Id)
+            .one(self.pool.connection())
+            .await
+            .map_err(query_error)?;
+        model.map(record_from_model).transpose().map(|record| {
+            record
+                .as_ref()
+                .map(OrganizationContractPriceSnapshot::from_record)
+        })
     }
 
     async fn close_inner(

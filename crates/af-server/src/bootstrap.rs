@@ -1068,6 +1068,7 @@ impl Bootstrap<DatabaseReady> {
             )
             .map_err(BootstrapError::OrganizationContractPriceRepository)?,
         );
+        let billing_contract_price_repository = Arc::clone(&organization_contract_price_repository);
         let organization_token_repository = Arc::new(
             OrganizationTokenRepository::new(
                 self.stage.database.clone(),
@@ -1854,10 +1855,10 @@ impl Bootstrap<RelayReady> {
             Arc::new(route_service.clone());
         let video_task_runtime = route_service.clone();
         let route_planner: Arc<dyn ChatRoutePlanner> = Arc::new(route_service);
-        let pricing_source = Arc::new(CachedRequestPricingSnapshotSource::new(
-            model_prices.clone(),
-            group_pricing.clone(),
-        ));
+        let pricing_source = Arc::new(
+            CachedRequestPricingSnapshotSource::new(model_prices.clone(), group_pricing.clone())
+                .with_contract_prices(billing_contract_price_repository),
+        );
         let model_catalog_reader: Arc<dyn ModelCatalogReader> =
             Arc::new(RuntimeModelCatalogReader::new(
                 channel_index.clone(),

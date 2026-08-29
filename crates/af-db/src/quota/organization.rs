@@ -1,6 +1,7 @@
 use af_domain::{BillingReservationId, GatewayPrincipal, Quota};
 use sea_orm::{ConnectionTrait, TransactionTrait, entity::prelude::TimeDateTimeWithTimeZone};
 
+use crate::OrganizationContractPriceSnapshot;
 use crate::organization_budget::{
     OrganizationBillingMutationOutcome, OrganizationBillingPrincipal,
     OrganizationBillingReservationRecord, OrganizationBillingReservationStatus,
@@ -24,8 +25,14 @@ pub(super) async fn precharge(
     principal: GatewayPrincipal,
     amount: Quota,
     reservation_kind: QuotaReservationKind,
+    contract_price: Option<OrganizationContractPriceSnapshot>,
 ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
     let organization = billing_principal(principal)?;
+    if contract_price
+        .is_some_and(|snapshot| snapshot.organization_id() != organization.organization_id())
+    {
+        return Err(QuotaRepositoryError::Invariant);
+    }
     let key = id.persistence_key();
     let (now, expires_at) = super::reservation_times(repository.reservation_ttl)?;
     let transaction = repository
@@ -48,6 +55,7 @@ pub(super) async fn precharge(
         principal.group_id(),
         amount,
         expires_at,
+        contract_price,
     )
     .await
     {
@@ -62,7 +70,15 @@ pub(super) async fn precharge(
                 .rollback()
                 .await
                 .map_err(|_| QuotaRepositoryError::OutcomeUnknown)?;
-            return existing_precharge(repository, id, principal, amount, reservation_kind).await;
+            return existing_precharge(
+                repository,
+                id,
+                principal,
+                amount,
+                reservation_kind,
+                contract_price,
+            )
+            .await;
         }
         Err(error) => {
             return rollback_with_error(transaction, map_organization_error(error)).await;
@@ -90,6 +106,7 @@ pub(super) async fn precharge(
             reservation_kind,
             now,
             expires_at,
+            contract_price,
         )))
         .await
     {
@@ -100,7 +117,15 @@ pub(super) async fn precharge(
                 .rollback()
                 .await
                 .map_err(|_| QuotaRepositoryError::OutcomeUnknown)?;
-            return existing_precharge(repository, id, principal, amount, reservation_kind).await;
+            return existing_precharge(
+                repository,
+                id,
+                principal,
+                amount,
+                reservation_kind,
+                contract_price,
+            )
+            .await;
         }
         Err(_) => return rollback_with_error(transaction, QuotaRepositoryError::Query).await,
     }
@@ -540,6 +565,7 @@ async fn existing_precharge(
     principal: GatewayPrincipal,
     amount: Quota,
     reservation_kind: QuotaReservationKind,
+    contract_price: Option<OrganizationContractPriceSnapshot>,
 ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
     let key = id.persistence_key();
     let state = load_reservation(repository.pool.connection(), key.clone(), false)
@@ -550,6 +576,7 @@ async fn existing_precharge(
     // 恢复幂等请求时同时比较部门归属，避免同一 Key 被重放到另一条预算路径。
     if !same_organization_scope(organization.principal(), billing_principal(principal)?)
         || !state.matches_precharge(principal, amount, reservation_kind)
+        || state.contract_price != contract_price
     {
         return Err(QuotaRepositoryError::Conflict);
     }
@@ -667,6 +694,7 @@ fn ensure_pair(
         || shared.reserved_quota != organization.reserved_quota().units()
         || shared.token_reserved_quota != gateway.token_reserved_quota.units()
         || shared.actual_quota != organization.actual_quota().map(Quota::units)
+        || shared.contract_price != organization.contract_price()
         || !status_matches
     {
         return Err(QuotaRepositoryError::Invariant);

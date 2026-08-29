@@ -8,6 +8,7 @@ use sea_orm::{
     },
 };
 
+use crate::OrganizationContractPriceSnapshot;
 use crate::entity::{billing_reservations, groups, tokens, users};
 
 use super::state::{QuotaFundingSource, QuotaReservationKind, QuotaReservationStatus};
@@ -19,7 +20,9 @@ pub(crate) fn insert_reservation(
     reservation_kind: QuotaReservationKind,
     now: TimeDateTimeWithTimeZone,
     expires_at: TimeDateTimeWithTimeZone,
+    contract_price: Option<OrganizationContractPriceSnapshot>,
 ) -> InsertStatement {
+    let contract_prices = contract_price.map(|snapshot| snapshot.prices());
     Query::insert()
         .into_table(billing_reservations::Entity)
         .columns([
@@ -28,6 +31,13 @@ pub(crate) fn insert_reservation(
             billing_reservations::Column::TokenId,
             billing_reservations::Column::GroupId,
             billing_reservations::Column::OrganizationId,
+            billing_reservations::Column::ContractPriceId,
+            billing_reservations::Column::ContractPriceVersion,
+            billing_reservations::Column::ContractInputPrice,
+            billing_reservations::Column::ContractOutputPrice,
+            billing_reservations::Column::ContractCacheReadPrice,
+            billing_reservations::Column::ContractCacheCreation5mPrice,
+            billing_reservations::Column::ContractCacheCreation1hPrice,
             billing_reservations::Column::Status,
             billing_reservations::Column::ReservationKind,
             billing_reservations::Column::FundingSource,
@@ -48,6 +58,13 @@ pub(crate) fn insert_reservation(
                 .organization_principal()
                 .map(|organization| organization.organization_id().get())
                 .into(),
+            contract_price.map(|snapshot| snapshot.id().get()).into(),
+            contract_price.map(|snapshot| snapshot.version()).into(),
+            contract_prices.map(|prices| prices[0]).into(),
+            contract_prices.map(|prices| prices[1]).into(),
+            contract_prices.map(|prices| prices[2]).into(),
+            contract_prices.map(|prices| prices[3]).into(),
+            contract_prices.map(|prices| prices[4]).into(),
             QuotaReservationStatus::Reserved.code().into(),
             reservation_kind.code().into(),
             QuotaFundingSource::Wallet.code().into(),
@@ -70,6 +87,13 @@ pub(crate) fn reservation_state(key: String, lock: bool) -> SelectStatement {
             billing_reservations::Column::TokenId,
             billing_reservations::Column::GroupId,
             billing_reservations::Column::OrganizationId,
+            billing_reservations::Column::ContractPriceId,
+            billing_reservations::Column::ContractPriceVersion,
+            billing_reservations::Column::ContractInputPrice,
+            billing_reservations::Column::ContractOutputPrice,
+            billing_reservations::Column::ContractCacheReadPrice,
+            billing_reservations::Column::ContractCacheCreation5mPrice,
+            billing_reservations::Column::ContractCacheCreation1hPrice,
             billing_reservations::Column::Status,
             billing_reservations::Column::ReservationKind,
             billing_reservations::Column::FundingSource,

@@ -235,15 +235,21 @@ impl BillingChatService {
         let pricing_model = planned.pricing_model().to_owned();
         let snapshot = self
             .pricing_source
-            .capture(
+            .capture_for_request(
                 &pricing_model,
                 source_group_id,
                 target_group_id,
+                principal
+                    .organization_principal()
+                    .map(|organization| organization.organization_id()),
+                response_protocol,
                 crate::utc_time::current_utc_day_second().ok_or(AfError::Internal)?,
             )
+            .await
             .map_err(map_snapshot_error)?;
         let plan = BillingRequestPlan::prepare(snapshot.resolver(), &upper_bound)
-            .map_err(map_lifecycle_error)?;
+            .map_err(map_lifecycle_error)?
+            .with_contract_price(snapshot.contract_price());
         let reservation_id = new_reservation_id()?;
         let mut lifecycle = match plan.precharge_quota() {
             None => plan
@@ -253,7 +259,14 @@ impl BillingChatService {
                 let precharge = self.precharge.as_ref().ok_or(AfError::Internal)?;
                 let refund = self.refund.as_ref().ok_or(AfError::Internal)?;
                 let settlement = self.settlement.as_ref().ok_or(AfError::Internal)?;
-                precharge_with_retries(precharge, reservation_id, *principal, amount).await?;
+                precharge_with_retries(
+                    precharge,
+                    reservation_id,
+                    *principal,
+                    amount,
+                    snapshot.contract_price(),
+                )
+                .await?;
                 match plan.start_reserved(
                     *principal,
                     reservation_id,
@@ -480,10 +493,14 @@ pub(crate) async fn precharge_with_retries(
     reservation_id: BillingReservationId,
     principal: GatewayPrincipal,
     amount: af_domain::Quota,
+    contract_price: Option<af_db::OrganizationContractPriceSnapshot>,
 ) -> Result<(), AfError> {
     let mut attempts = 0;
     loop {
-        match port.precharge(reservation_id, principal, amount).await {
+        match port
+            .precharge_with_snapshot(reservation_id, principal, amount, contract_price)
+            .await
+        {
             Ok(()) => return Ok(()),
             Err(BillingPrechargeError::OutcomeUnknown) if attempts + 1 < MAX_PRECHARGE_ATTEMPTS => {
                 attempts += 1;

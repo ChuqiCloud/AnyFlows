@@ -1,7 +1,7 @@
 //! 企业钱包与多层预算的持久化预留快照实体。
 use sea_orm::entity::prelude::*;
 
-use super::BillingReservationKey;
+use super::{BillingReservationKey, SensitiveDecimal};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "billing_organization_reservations")]
@@ -12,6 +12,13 @@ pub struct Model {
     pub membership_id: i64,
     pub team_id: Option<i64>,
     pub user_id: i64,
+    pub contract_price_id: Option<i64>,
+    pub contract_price_version: Option<i64>,
+    pub contract_input_price: Option<SensitiveDecimal>,
+    pub contract_output_price: Option<SensitiveDecimal>,
+    pub contract_cache_read_price: Option<SensitiveDecimal>,
+    pub contract_cache_creation_5m_price: Option<SensitiveDecimal>,
+    pub contract_cache_creation_1h_price: Option<SensitiveDecimal>,
     /// 部门路径使用根到叶的逗号分隔内部 ID；空值表示历史主体未绑定部门。
     pub department_path: Option<String>,
     pub token_id: Option<i64>,

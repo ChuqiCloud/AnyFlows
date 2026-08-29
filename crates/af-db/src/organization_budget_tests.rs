@@ -6,6 +6,7 @@ use af_domain::{
     OrganizationGatewayPrincipal, OrganizationId, OrganizationMembershipId, OrganizationRole,
     OrganizationTeamId, Quota, TokenId, UserId, WalletEventId,
 };
+use rust_decimal::Decimal;
 use sea_orm::{
     ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
@@ -15,12 +16,12 @@ use super::{
     DatabaseOptions, MigrationOptions, OrganizationBillingMutationOutcome,
     OrganizationBillingPrincipal, OrganizationBillingReservationStatus,
     OrganizationBudgetPolicyWrite, OrganizationBudgetRepository, OrganizationBudgetRepositoryError,
-    OrganizationBudgetScope, OrganizationCreate, OrganizationDepartmentCreate,
-    OrganizationDepartmentMembershipCreate, OrganizationDepartmentMembershipRepository,
-    OrganizationDepartmentRepository, OrganizationEntitlementWrite, OrganizationMembershipCreate,
-    OrganizationRepository, OrganizationTeamCreate, OrganizationTokenCreateRecord,
-    OrganizationTokenRepository, OrganizationTokenWriteRecord, QuotaRepository,
-    QuotaRepositoryError,
+    OrganizationBudgetScope, OrganizationContractPriceSnapshot, OrganizationCreate,
+    OrganizationDepartmentCreate, OrganizationDepartmentMembershipCreate,
+    OrganizationDepartmentMembershipRepository, OrganizationDepartmentRepository,
+    OrganizationEntitlementWrite, OrganizationMembershipCreate, OrganizationRepository,
+    OrganizationTeamCreate, OrganizationTokenCreateRecord, OrganizationTokenRepository,
+    OrganizationTokenWriteRecord, QuotaRepository, QuotaRepositoryError,
 };
 use crate::{
     OrganizationWalletLedgerEntryType,
@@ -538,6 +539,68 @@ async fn gateway_quota_uses_enterprise_funds_and_replays_all_terminal_operations
         QuotaReservationStatus::Refunded,
     )
     .await?;
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn gateway_contract_price_snapshot_is_org_scoped_and_idempotent() -> Result<(), Box<dyn Error>>
+{
+    let fixture = fixture().await?;
+    let first = scenario(&fixture, 9, 0, 1).await?;
+    let second = scenario(&fixture, 10, 2, 1).await?;
+    credit_wallet(&fixture, first, 500, 0x91).await?;
+    let principal = create_gateway_principal(&fixture, first, 200, 0x92).await?;
+    let repository = QuotaRepository::new(fixture.pool.clone());
+    let foreign_snapshot = OrganizationContractPriceSnapshot::from_parts(
+        second.organization_id.get(),
+        901,
+        3,
+        [Decimal::ONE; 5],
+    )
+    .expect("测试合同价快照应有效");
+    let id = reservation_id(0x93)?;
+
+    assert_eq!(
+        repository
+            .precharge_with_contract_price(id, principal, Quota::new(80)?, Some(foreign_snapshot),)
+            .await,
+        Err(QuotaRepositoryError::Invariant)
+    );
+
+    let snapshot = OrganizationContractPriceSnapshot::from_parts(
+        first.organization_id.get(),
+        902,
+        4,
+        [Decimal::new(2, 0); 5],
+    )
+    .expect("测试合同价快照应有效");
+    assert_eq!(
+        repository
+            .precharge_with_contract_price(id, principal, Quota::new(80)?, Some(snapshot))
+            .await?,
+        QuotaMutationOutcome::Applied
+    );
+    assert_eq!(
+        repository
+            .precharge_with_contract_price(id, principal, Quota::new(80)?, Some(snapshot))
+            .await?,
+        QuotaMutationOutcome::Existing(QuotaReservationStatus::Reserved)
+    );
+
+    let key = BillingReservationKey::parse(&id.persistence_key())?;
+    let shared = billing_reservations::Entity::find_by_id(key)
+        .one(fixture.pool.connection())
+        .await?
+        .expect("共享预留应存在");
+    assert_eq!(shared.organization_id, Some(first.organization_id.get()));
+    assert_eq!(shared.contract_price_id, Some(902));
+    assert_eq!(shared.contract_price_version, Some(4));
+    assert_eq!(
+        shared.contract_input_price.map(|price| price.expose()),
+        Some(Decimal::new(2, 0))
+    );
 
     fixture.pool.close().await?;
     Ok(())
