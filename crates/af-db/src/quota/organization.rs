@@ -17,7 +17,7 @@ use super::{
     subscription, token_matches_principal, token_windows,
 };
 
-/// 在同一事务中冻结平台窗口、企业钱包、三层预算与企业 Key 额度。
+/// 在同一事务中冻结平台窗口、企业钱包、部门路径预算与企业 Key 额度。
 pub(super) async fn precharge(
     repository: &QuotaRepository,
     id: BillingReservationId,
@@ -547,8 +547,7 @@ async fn existing_precharge(
         .ok_or(QuotaRepositoryError::Invariant)?;
     let organization = load_organization(repository, id).await?;
     ensure_pair(&state, &organization)?;
-    // 部门快照尚未写入历史预留表；本切片先按既有企业主体恢复幂等请求，
-    // 下一切片再把部门路径作为预留不可变快照持久化。
+    // 恢复幂等请求时同时比较部门归属，避免同一 Key 被重放到另一条预算路径。
     if !same_organization_scope(organization.principal(), billing_principal(principal)?)
         || !state.matches_precharge(principal, amount, reservation_kind)
     {
@@ -572,6 +571,7 @@ fn same_organization_scope(
     existing.organization_id() == requested.organization_id()
         && existing.membership_id() == requested.membership_id()
         && existing.team_id() == requested.team_id()
+        && existing.department_id() == requested.department_id()
         && existing.user_id() == requested.user_id()
 }
 
@@ -615,15 +615,24 @@ fn gateway_principal(
         .gateway()
         .ok_or(QuotaRepositoryError::Invariant)?;
     let organization = reservation.principal();
-    Ok(GatewayPrincipal::organization(
-        gateway.token_id,
-        organization.user_id(),
-        gateway.group_id,
-        af_domain::OrganizationGatewayPrincipal::new(
+    let organization_principal = match organization.department_id() {
+        Some(department_id) => af_domain::OrganizationGatewayPrincipal::with_department(
+            organization.organization_id(),
+            organization.membership_id(),
+            organization.team_id(),
+            department_id,
+        ),
+        None => af_domain::OrganizationGatewayPrincipal::new(
             organization.organization_id(),
             organization.membership_id(),
             organization.team_id(),
         ),
+    };
+    Ok(GatewayPrincipal::organization(
+        gateway.token_id,
+        organization.user_id(),
+        gateway.group_id,
+        organization_principal,
     ))
 }
 

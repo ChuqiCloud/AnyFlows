@@ -1,7 +1,7 @@
 use af_domain::{
     OrganizationBudgetLimit, OrganizationBudgetPeriod, OrganizationBudgetPolicyId,
-    OrganizationBudgetScopeKind, OrganizationId, OrganizationMembershipId, OrganizationPermission,
-    OrganizationRole, OrganizationTeamId, Quota,
+    OrganizationBudgetScopeKind, OrganizationDepartmentId, OrganizationId,
+    OrganizationMembershipId, OrganizationPermission, OrganizationRole, OrganizationTeamId, Quota,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
@@ -50,6 +50,10 @@ pub(super) async fn create(
             .scope
             .membership_id()
             .map(OrganizationMembershipId::get)),
+        department_id: Set(write
+            .scope
+            .department_id()
+            .map(OrganizationDepartmentId::get)),
         period_kind: Set(write.period.code()),
         fixed_period_seconds: Set(write.period.fixed_seconds().map(i64::from)),
         quota_limit: Set(write.limit.quota().map(Quota::units)),
@@ -87,6 +91,7 @@ pub(super) async fn list(
         .order_by_asc(organization_budget_policies::Column::ScopeKind)
         .order_by_asc(organization_budget_policies::Column::TeamId)
         .order_by_asc(organization_budget_policies::Column::MembershipId)
+        .order_by_asc(organization_budget_policies::Column::DepartmentId)
         .order_by_desc(organization_budget_policies::Column::EffectiveFrom)
         .all(transaction)
         .await
@@ -153,13 +158,20 @@ fn scoped_query(
     match scope {
         OrganizationBudgetScope::Organization => query
             .filter(organization_budget_policies::Column::TeamId.is_null())
-            .filter(organization_budget_policies::Column::MembershipId.is_null()),
+            .filter(organization_budget_policies::Column::MembershipId.is_null())
+            .filter(organization_budget_policies::Column::DepartmentId.is_null()),
         OrganizationBudgetScope::Team(team_id) => query
             .filter(organization_budget_policies::Column::TeamId.eq(team_id.get()))
-            .filter(organization_budget_policies::Column::MembershipId.is_null()),
+            .filter(organization_budget_policies::Column::MembershipId.is_null())
+            .filter(organization_budget_policies::Column::DepartmentId.is_null()),
         OrganizationBudgetScope::Member(membership_id) => query
             .filter(organization_budget_policies::Column::TeamId.is_null())
-            .filter(organization_budget_policies::Column::MembershipId.eq(membership_id.get())),
+            .filter(organization_budget_policies::Column::MembershipId.eq(membership_id.get()))
+            .filter(organization_budget_policies::Column::DepartmentId.is_null()),
+        OrganizationBudgetScope::Department(department_id) => query
+            .filter(organization_budget_policies::Column::TeamId.is_null())
+            .filter(organization_budget_policies::Column::MembershipId.is_null())
+            .filter(organization_budget_policies::Column::DepartmentId.eq(department_id.get())),
     }
 }
 
@@ -271,6 +283,16 @@ async fn validate_scope(
                 .map_err(|_| OrganizationBudgetRepositoryError::Query)?
                 .is_some()
         }
+        OrganizationBudgetScope::Department(department_id) => {
+            use crate::entity::organization_departments;
+            organization_departments::Entity::find_by_id(department_id.get())
+                .filter(organization_departments::Column::OrganizationId.eq(organization_id.get()))
+                .filter(organization_departments::Column::Status.eq(1_i16))
+                .one(transaction)
+                .await
+                .map_err(|_| OrganizationBudgetRepositoryError::Query)?
+                .is_some()
+        }
     };
     valid
         .then_some(())
@@ -282,17 +304,30 @@ pub(super) fn record(
 ) -> Result<OrganizationBudgetPolicyRecord, OrganizationBudgetRepositoryError> {
     let kind = OrganizationBudgetScopeKind::try_from(model.scope_kind)
         .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?;
-    let scope = match (kind, model.team_id, model.membership_id) {
-        (OrganizationBudgetScopeKind::Organization, None, None) => {
+    let scope = match (
+        kind,
+        model.team_id,
+        model.membership_id,
+        model.department_id,
+    ) {
+        (OrganizationBudgetScopeKind::Organization, None, None, None) => {
             OrganizationBudgetScope::Organization
         }
-        (OrganizationBudgetScopeKind::Team, Some(team_id), None) => OrganizationBudgetScope::Team(
-            OrganizationTeamId::new(team_id)
-                .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
-        ),
-        (OrganizationBudgetScopeKind::Member, None, Some(membership_id)) => {
+        (OrganizationBudgetScopeKind::Team, Some(team_id), None, None) => {
+            OrganizationBudgetScope::Team(
+                OrganizationTeamId::new(team_id)
+                    .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
+            )
+        }
+        (OrganizationBudgetScopeKind::Member, None, Some(membership_id), None) => {
             OrganizationBudgetScope::Member(
                 OrganizationMembershipId::new(membership_id)
+                    .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
+            )
+        }
+        (OrganizationBudgetScopeKind::Department, None, None, Some(department_id)) => {
+            OrganizationBudgetScope::Department(
+                OrganizationDepartmentId::new(department_id)
                     .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
             )
         }

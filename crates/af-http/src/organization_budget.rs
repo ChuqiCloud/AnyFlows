@@ -12,8 +12,9 @@ use af_admin::{
     OrganizationBudgetPolicyRecord, OrganizationBudgetScope, OrganizationBudgetWindowRecord,
 };
 use af_domain::{
-    BillingReservationId, OrganizationBudgetLimit, OrganizationBudgetPeriod, OrganizationId,
-    OrganizationMembershipId, OrganizationPermission, OrganizationTeamId, Quota,
+    BillingReservationId, OrganizationBudgetLimit, OrganizationBudgetPeriod,
+    OrganizationDepartmentId, OrganizationId, OrganizationMembershipId, OrganizationPermission,
+    OrganizationTeamId, Quota,
 };
 use af_telemetry::RequestId;
 use axum::{
@@ -79,6 +80,7 @@ pub(crate) enum OrganizationBudgetScopeRequest {
     Organization,
     Team { team_id: i64 },
     Member { membership_id: i64 },
+    Department { department_id: i64 },
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -107,6 +109,7 @@ pub(crate) enum OrganizationBudgetScopeResponse {
     Organization,
     Team { team_id: i64 },
     Member { membership_id: i64 },
+    Department { department_id: i64 },
 }
 
 #[derive(Serialize, ToSchema)]
@@ -349,6 +352,12 @@ impl OrganizationBudgetPolicyCreateRequest {
                         .map_err(|_| OrganizationBudgetServiceError::InvalidRequest)?,
                 )
             }
+            OrganizationBudgetScopeRequest::Department { department_id } => {
+                OrganizationBudgetScope::Department(
+                    OrganizationDepartmentId::new(department_id)
+                        .map_err(|_| OrganizationBudgetServiceError::InvalidRequest)?,
+                )
+            }
         };
         let period = match self.period {
             OrganizationBudgetPeriodRequest::UtcDay => OrganizationBudgetPeriod::UtcDay,
@@ -411,6 +420,7 @@ impl OrganizationBudgetWindowResponse {
 }
 
 impl OrganizationBudgetScopeResponse {
+    /// 将领域作用域转换为公开 DTO，保留部门、团队和成员的具体标识。
     fn from_scope(scope: OrganizationBudgetScope) -> Self {
         match scope {
             OrganizationBudgetScope::Organization => Self::Organization,
@@ -419,6 +429,9 @@ impl OrganizationBudgetScopeResponse {
             },
             OrganizationBudgetScope::Member(membership_id) => Self::Member {
                 membership_id: membership_id.get(),
+            },
+            OrganizationBudgetScope::Department(department_id) => Self::Department {
+                department_id: department_id.get(),
             },
         }
     }
@@ -528,4 +541,29 @@ fn no_store_status_json(status: StatusCode, value: impl Serialize) -> Response {
         .headers_mut()
         .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use af_domain::OrganizationDepartmentId;
+    use serde_json::json;
+
+    #[test]
+    fn department_scope_dto_preserves_department_id() {
+        let request: OrganizationBudgetScopeRequest =
+            serde_json::from_value(json!({"kind": "department", "department_id": 7}))
+                .expect("部门预算请求应能解析");
+        assert!(matches!(
+            request,
+            OrganizationBudgetScopeRequest::Department { department_id: 7 }
+        ));
+
+        let scope = OrganizationBudgetScope::Department(
+            OrganizationDepartmentId::new(7).expect("部门标识应为正数"),
+        );
+        let response = serde_json::to_value(OrganizationBudgetScopeResponse::from_scope(scope))
+            .expect("部门预算响应应能序列化");
+        assert_eq!(response, json!({"kind": "department", "department_id": 7}));
+    }
 }

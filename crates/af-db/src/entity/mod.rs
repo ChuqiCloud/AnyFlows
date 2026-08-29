@@ -33,6 +33,7 @@ pub(crate) mod balance_alert_events;
 pub(crate) mod balance_alert_settings;
 pub(crate) mod billing_batch_checkpoints;
 pub(crate) mod billing_group_window_reservations;
+pub(crate) mod billing_organization_reservation_departments;
 pub(crate) mod billing_organization_reservations;
 pub(crate) mod billing_reservations;
 pub(crate) mod billing_subscription_reservations;

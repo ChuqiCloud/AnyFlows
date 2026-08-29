@@ -11,6 +11,7 @@ pub struct Model {
     pub scope_kind: i16,
     pub team_id: Option<i64>,
     pub membership_id: Option<i64>,
+    pub department_id: Option<i64>,
     pub policy_version: i64,
     pub limit_snapshot: i64,
     pub used_quota: i64,

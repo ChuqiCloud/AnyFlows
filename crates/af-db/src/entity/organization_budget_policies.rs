@@ -10,6 +10,7 @@ pub struct Model {
     pub scope_kind: i16,
     pub team_id: Option<i64>,
     pub membership_id: Option<i64>,
+    pub department_id: Option<i64>,
     pub period_kind: i16,
     pub fixed_period_seconds: Option<i64>,
     pub quota_limit: Option<i64>,

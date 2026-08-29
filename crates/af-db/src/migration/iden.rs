@@ -2383,6 +2383,7 @@ pub(in crate::migration) mod organization_budget_policies {
         ScopeKind,
         TeamId,
         MembershipId,
+        DepartmentId,
         PeriodKind,
         FixedPeriodSeconds,
         QuotaLimit,
@@ -2414,6 +2415,7 @@ pub(in crate::migration) mod organization_budget_windows {
         ScopeKind,
         TeamId,
         MembershipId,
+        DepartmentId,
         PolicyVersion,
         LimitSnapshot,
         UsedQuota,
@@ -2444,6 +2446,7 @@ pub(in crate::migration) mod billing_organization_reservations {
         MembershipId,
         TeamId,
         UserId,
+        DepartmentPath,
         TokenId,
         GroupId,
         ReservationKind,
@@ -2468,6 +2471,35 @@ pub(in crate::migration) mod billing_organization_reservations {
         MemberReservedQuota,
         ExpiresAt,
         FinalizedAt,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod billing_organization_reservation_departments {
+    use super::DeriveIden;
+
+    /// 企业预留部门路径逐层预算快照表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "billing_organization_reservation_departments")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 部门路径序号、策略窗口版本与预留额度列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        IdempotencyKey,
+        PathIndex,
+        OrganizationId,
+        DepartmentId,
+        PolicyId,
+        WindowId,
+        PolicyVersion,
+        WindowVersion,
+        ReservedQuota,
         CreatedAt,
         UpdatedAt,
     }

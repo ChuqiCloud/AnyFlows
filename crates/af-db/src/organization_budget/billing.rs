@@ -1,18 +1,23 @@
+use std::collections::{HashMap, HashSet};
+
 use af_domain::{
     BillingReservationId, GroupId, OrganizationBudgetPolicyId, OrganizationBudgetWindowId,
-    OrganizationId, OrganizationMembershipId, OrganizationMembershipStatus, OrganizationTeamId,
-    Quota, TokenId, UserId,
+    OrganizationDepartmentBudgetPath, OrganizationDepartmentId,
+    OrganizationDepartmentMembershipStatus, OrganizationDepartmentNode,
+    OrganizationDepartmentStatus, OrganizationId, OrganizationMembershipId,
+    OrganizationMembershipStatus, OrganizationTeamId, Quota, TokenId, UserId,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
-    QueryFilter, QuerySelect, Set,
+    QueryFilter, QueryOrder, QuerySelect, Set,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Expr, LockType},
 };
 
 use crate::entity::{
-    BillingReservationKey, billing_organization_reservations, organization_memberships,
-    organization_wallets, organizations,
+    BillingReservationKey, billing_organization_reservation_departments,
+    billing_organization_reservations, organization_department_memberships,
+    organization_departments, organization_memberships, organization_wallets, organizations,
 };
 use crate::organization_wallet;
 
@@ -37,7 +42,7 @@ pub(super) async fn reserve(
     reserve_with_gateway(transaction, id, principal, amount, expires_at, None).await
 }
 
-/// 在网关统一事务内冻结企业钱包与三层预算，并固化 Key 和平台分组主体。
+/// 在网关统一事务内冻结企业钱包与全部适用预算层，并固化 Key 和平台分组主体。
 pub(crate) async fn reserve_gateway(
     transaction: &DatabaseTransaction,
     id: BillingReservationId,
@@ -90,6 +95,29 @@ async fn reserve_with_gateway(
         now,
     )
     .await?;
+    let (department_path, departments) = match principal.department_id() {
+        Some(department_id) => {
+            let path =
+                load_department_path(transaction, principal.organization_id(), department_id)
+                    .await?;
+            let mut allocations = Vec::with_capacity(path.nodes().len());
+            for department_id in path.department_ids() {
+                if let Some(allocation) = reserve_scope(
+                    transaction,
+                    principal.organization_id(),
+                    OrganizationBudgetScope::Department(department_id),
+                    amount,
+                    now,
+                )
+                .await?
+                {
+                    allocations.push(allocation);
+                }
+            }
+            (Some(path), allocations)
+        }
+        None => (None, Vec::new()),
+    };
     let team = match principal.team_id() {
         Some(team_id) => {
             reserve_scope(
@@ -116,11 +144,12 @@ async fn reserve_with_gateway(
     let key = BillingReservationKey::parse(&id.persistence_key())
         .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?;
     billing_organization_reservations::ActiveModel {
-        idempotency_key: Set(key),
+        idempotency_key: Set(key.clone()),
         organization_id: Set(principal.organization_id().get()),
         membership_id: Set(principal.membership_id().get()),
         team_id: Set(principal.team_id().map(OrganizationTeamId::get)),
         user_id: Set(principal.user_id().get()),
+        department_path: Set(department_path.as_ref().map(encode_department_path)),
         token_id: Set(gateway.map(|(token_id, _)| token_id.get())),
         group_id: Set(gateway.map(|(_, group_id)| group_id.get())),
         reservation_kind: Set(if gateway.is_some() { 2 } else { 1 }),
@@ -160,6 +189,35 @@ async fn reserve_with_gateway(
             OrganizationBudgetRepositoryError::Query
         }
     })?;
+    for allocation in &departments {
+        let department_id = allocation
+            .department_id()
+            .ok_or(OrganizationBudgetRepositoryError::Invariant)?;
+        let path_index = department_path
+            .as_ref()
+            .and_then(|path| {
+                path.department_ids()
+                    .position(|candidate| candidate == department_id)
+            })
+            .ok_or(OrganizationBudgetRepositoryError::Invariant)?;
+        billing_organization_reservation_departments::ActiveModel {
+            idempotency_key: Set(key.clone()),
+            path_index: Set(i16::try_from(path_index)
+                .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?),
+            organization_id: Set(principal.organization_id().get()),
+            department_id: Set(department_id.get()),
+            policy_id: Set(allocation.policy_id().get()),
+            window_id: Set(allocation.window_id().get()),
+            policy_version: Set(allocation.policy_version()),
+            window_version: Set(allocation.window_version()),
+            reserved_quota: Set(allocation.reserved_quota().units()),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(transaction)
+        .await
+        .map_err(|_| OrganizationBudgetRepositoryError::Query)?;
+    }
     Ok(OrganizationBillingMutationOutcome::Applied(
         OrganizationBillingReservationStatus::Reserved,
     ))
@@ -206,7 +264,7 @@ pub(crate) async fn settle(
     let now = TimeDateTimeWithTimeZone::now_utc();
     let wallet = lock_wallet(transaction, observed.principal.organization_id()).await?;
     // 先锁定并核对预留状态，避免重放请求先改写预算窗口再返回冲突。
-    let current = record(lock_reservation(transaction, observed.id).await?)?;
+    let current = lock_reservation_record(transaction, observed.id).await?;
     if !same_snapshot(&current, observed) {
         return Err(OrganizationBudgetRepositoryError::Invariant);
     }
@@ -235,6 +293,9 @@ pub(crate) async fn settle(
 
     if let Some(allocation) = observed.organization {
         window::settle(transaction, allocation, actual, now).await?;
+    }
+    for allocation in &observed.departments {
+        window::settle(transaction, *allocation, actual, now).await?;
     }
     if let Some(allocation) = observed.team {
         window::settle(transaction, allocation, actual, now).await?;
@@ -309,7 +370,7 @@ pub(crate) async fn release(
     let now = TimeDateTimeWithTimeZone::now_utc();
     let wallet = lock_wallet(transaction, observed.principal.organization_id()).await?;
     // 释放是终态操作，必须先确认预留仍处于可释放状态。
-    let current = record(lock_reservation(transaction, observed.id).await?)?;
+    let current = lock_reservation_record(transaction, observed.id).await?;
     if !same_snapshot(&current, observed) {
         return Err(OrganizationBudgetRepositoryError::Invariant);
     }
@@ -327,6 +388,9 @@ pub(crate) async fn release(
     }
     if let Some(allocation) = observed.organization {
         window::release(transaction, allocation, now).await?;
+    }
+    for allocation in &observed.departments {
+        window::release(transaction, *allocation, now).await?;
     }
     if let Some(allocation) = observed.team {
         window::release(transaction, allocation, now).await?;
@@ -374,7 +438,7 @@ pub(crate) async fn mark_pending_and_protect(
 ) -> Result<(), OrganizationBudgetRepositoryError> {
     let now = TimeDateTimeWithTimeZone::now_utc();
     let wallet = lock_wallet(transaction, observed.principal.organization_id()).await?;
-    let current = record(lock_reservation(transaction, observed.id).await?)?;
+    let current = lock_reservation_record(transaction, observed.id).await?;
     if !same_snapshot(&current, observed) {
         return Err(OrganizationBudgetRepositoryError::Invariant);
     }
@@ -447,15 +511,26 @@ pub(crate) async fn load<C>(
 where
     C: sea_orm::ConnectionTrait,
 {
-    billing_organization_reservations::Entity::find_by_id(
+    let model = billing_organization_reservations::Entity::find_by_id(
         BillingReservationKey::parse(&id.persistence_key())
             .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
     )
     .one(connection)
     .await
-    .map_err(|_| OrganizationBudgetRepositoryError::Query)?
-    .map(record)
-    .transpose()
+    .map_err(|_| OrganizationBudgetRepositoryError::Query)?;
+    let Some(model) = model else {
+        return Ok(None);
+    };
+    let departments = billing_organization_reservation_departments::Entity::find()
+        .filter(
+            billing_organization_reservation_departments::Column::IdempotencyKey
+                .eq(model.idempotency_key.clone()),
+        )
+        .order_by_asc(billing_organization_reservation_departments::Column::PathIndex)
+        .all(connection)
+        .await
+        .map_err(|_| OrganizationBudgetRepositoryError::Query)?;
+    record(model, departments).map(Some)
 }
 
 async fn reserve_scope(
@@ -469,6 +544,72 @@ async fn reserve_scope(
         Some(policy) => window::reserve(transaction, policy, amount, now).await,
         None => Ok(None),
     }
+}
+
+/// 在预留事务开始时读取并校验成员的根到叶部门路径。
+async fn load_department_path(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+    leaf_id: OrganizationDepartmentId,
+) -> Result<OrganizationDepartmentBudgetPath, OrganizationBudgetRepositoryError> {
+    let mut query = organization_departments::Entity::find()
+        .filter(organization_departments::Column::OrganizationId.eq(organization_id.get()));
+    if transaction.get_database_backend() != DbBackend::Sqlite {
+        query = query.lock(LockType::Update);
+    }
+    let models = query
+        .all(transaction)
+        .await
+        .map_err(|_| OrganizationBudgetRepositoryError::Query)?;
+    let mut nodes = HashMap::with_capacity(models.len());
+    for model in &models {
+        let department_id = OrganizationDepartmentId::new(model.id)
+            .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?;
+        let parent_id = model
+            .parent_department_id
+            .map(OrganizationDepartmentId::new)
+            .transpose()
+            .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?;
+        let depth =
+            u8::try_from(model.depth).map_err(|_| OrganizationBudgetRepositoryError::Invariant)?;
+        let status = OrganizationDepartmentStatus::try_from(model.status)
+            .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?;
+        let node = OrganizationDepartmentNode::new(
+            organization_id,
+            department_id,
+            parent_id,
+            depth,
+            status,
+            model.version,
+        )
+        .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?;
+        if nodes.insert(department_id, node).is_some() {
+            return Err(OrganizationBudgetRepositoryError::Invariant);
+        }
+    }
+    let mut current = leaf_id;
+    let mut visited = HashSet::new();
+    let mut path = Vec::new();
+    loop {
+        if !visited.insert(current) || path.len() >= 8 {
+            return Err(OrganizationBudgetRepositoryError::Invariant);
+        }
+        let node = nodes
+            .get(&current)
+            .copied()
+            .ok_or(OrganizationBudgetRepositoryError::NotFound)?;
+        if !node.status().is_active() {
+            return Err(OrganizationBudgetRepositoryError::NotFound);
+        }
+        path.push(node);
+        let Some(parent_id) = node.parent_id() else {
+            break;
+        };
+        current = parent_id;
+    }
+    path.reverse();
+    OrganizationDepartmentBudgetPath::new(organization_id, path)
+        .map_err(|_| OrganizationBudgetRepositoryError::Invariant)
 }
 
 async fn validate_principal(
@@ -489,6 +630,30 @@ async fn validate_principal(
     if !status.is_active() || membership.team_id != principal.team_id().map(OrganizationTeamId::get)
     {
         return Err(OrganizationBudgetRepositoryError::NotFound);
+    }
+    if let Some(department_id) = principal.department_id() {
+        let binding = organization_department_memberships::Entity::find()
+            .filter(
+                organization_department_memberships::Column::OrganizationId
+                    .eq(principal.organization_id().get()),
+            )
+            .filter(
+                organization_department_memberships::Column::MembershipId
+                    .eq(principal.membership_id().get()),
+            )
+            .filter(
+                organization_department_memberships::Column::DepartmentId.eq(department_id.get()),
+            )
+            .filter(
+                organization_department_memberships::Column::Status
+                    .eq(OrganizationDepartmentMembershipStatus::Active.code()),
+            )
+            .one(transaction)
+            .await
+            .map_err(|_| OrganizationBudgetRepositoryError::Query)?;
+        if binding.is_none() {
+            return Err(OrganizationBudgetRepositoryError::NotFound);
+        }
     }
     Ok(())
 }
@@ -556,6 +721,23 @@ async fn lock_reservation(
         .await
         .map_err(|_| OrganizationBudgetRepositoryError::Query)?
         .ok_or(OrganizationBudgetRepositoryError::NotFound)
+}
+
+async fn lock_reservation_record(
+    transaction: &DatabaseTransaction,
+    id: BillingReservationId,
+) -> Result<OrganizationBillingReservationRecord, OrganizationBudgetRepositoryError> {
+    let model = lock_reservation(transaction, id).await?;
+    let departments = billing_organization_reservation_departments::Entity::find()
+        .filter(
+            billing_organization_reservation_departments::Column::IdempotencyKey
+                .eq(model.idempotency_key.clone()),
+        )
+        .order_by_asc(billing_organization_reservation_departments::Column::PathIndex)
+        .all(transaction)
+        .await
+        .map_err(|_| OrganizationBudgetRepositoryError::Query)?;
+    record(model, departments)
 }
 
 async fn update_wallet_reserve(
@@ -743,21 +925,32 @@ async fn clear_protection_if_safe(
 
 fn record(
     model: billing_organization_reservations::Model,
+    department_models: Vec<billing_organization_reservation_departments::Model>,
 ) -> Result<OrganizationBillingReservationRecord, OrganizationBudgetRepositoryError> {
     let id = BillingReservationId::from_persistence_key(model.idempotency_key.as_str())
         .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?;
-    let principal = OrganizationBillingPrincipal::new(
-        OrganizationId::new(model.organization_id)
-            .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
-        OrganizationMembershipId::new(model.membership_id)
-            .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
-        model
-            .team_id
-            .map(OrganizationTeamId::new)
-            .transpose()
-            .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
-        UserId::new(model.user_id).map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
-    );
+    let organization_id = OrganizationId::new(model.organization_id)
+        .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?;
+    let membership_id = OrganizationMembershipId::new(model.membership_id)
+        .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?;
+    let team_id = model
+        .team_id
+        .map(OrganizationTeamId::new)
+        .transpose()
+        .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?;
+    let user_id =
+        UserId::new(model.user_id).map_err(|_| OrganizationBudgetRepositoryError::Invariant)?;
+    let department_path = decode_department_path(model.department_path.as_deref())?;
+    let principal = match department_path.last().copied() {
+        Some(department_id) => OrganizationBillingPrincipal::with_department(
+            organization_id,
+            membership_id,
+            team_id,
+            department_id,
+            user_id,
+        ),
+        None => OrganizationBillingPrincipal::new(organization_id, membership_id, team_id, user_id),
+    };
     let status = OrganizationBillingReservationStatus::from_code(model.status)?;
     let reserved_quota = Quota::new(model.reserved_quota)
         .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?;
@@ -810,13 +1003,49 @@ fn record(
         actual_quota,
         gateway,
         organization: allocation_record(
+            None,
             model.organization_policy_id,
             model.organization_window_id,
             model.organization_policy_version,
             model.organization_window_version,
             model.organization_reserved_quota,
         )?,
+        departments: {
+            let mut snapshots = Vec::with_capacity(department_models.len());
+            let mut previous_index = None;
+            for department in department_models {
+                if previous_index.is_some_and(|previous| department.path_index <= previous)
+                    || department.path_index < 0
+                {
+                    return Err(OrganizationBudgetRepositoryError::Invariant);
+                }
+                let index = usize::try_from(department.path_index)
+                    .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?;
+                let department_id = *department_path
+                    .get(index)
+                    .ok_or(OrganizationBudgetRepositoryError::Invariant)?;
+                if department.organization_id != model.organization_id
+                    || department.department_id != department_id.get()
+                {
+                    return Err(OrganizationBudgetRepositoryError::Invariant);
+                }
+                let allocation = allocation_record(
+                    Some(department_id),
+                    Some(department.policy_id),
+                    Some(department.window_id),
+                    Some(department.policy_version),
+                    Some(department.window_version),
+                    Some(department.reserved_quota),
+                )?
+                .ok_or(OrganizationBudgetRepositoryError::Invariant)?;
+                snapshots.push(allocation);
+                previous_index = Some(department.path_index);
+            }
+            snapshots
+        },
+        department_path,
         team: allocation_record(
+            None,
             model.team_policy_id,
             model.team_window_id,
             model.team_policy_version,
@@ -824,6 +1053,7 @@ fn record(
             model.team_reserved_quota,
         )?,
         member: allocation_record(
+            None,
             model.member_policy_id,
             model.member_window_id,
             model.member_policy_version,
@@ -834,6 +1064,7 @@ fn record(
 }
 
 fn allocation_record(
+    department_id: Option<OrganizationDepartmentId>,
     policy_id: Option<i64>,
     window_id: Option<i64>,
     policy_version: Option<i64>,
@@ -856,6 +1087,7 @@ fn allocation_record(
             Some(quota),
         ) if policy_version > 0 && window_version > 0 && quota > 0 => {
             Ok(Some(OrganizationBudgetAllocationRecord {
+                department_id,
                 policy_id: OrganizationBudgetPolicyId::new(policy_id)
                     .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
                 window_id: OrganizationBudgetWindowId::new(window_id)
@@ -870,6 +1102,40 @@ fn allocation_record(
     }
 }
 
+fn encode_department_path(path: &OrganizationDepartmentBudgetPath) -> String {
+    path.department_ids()
+        .map(|department_id| department_id.get().to_string())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn decode_department_path(
+    encoded: Option<&str>,
+) -> Result<Vec<OrganizationDepartmentId>, OrganizationBudgetRepositoryError> {
+    let Some(encoded) = encoded else {
+        return Ok(Vec::new());
+    };
+    if encoded.is_empty() {
+        return Err(OrganizationBudgetRepositoryError::Invariant);
+    }
+    let mut ids = Vec::new();
+    for segment in encoded.split(',') {
+        if segment.is_empty() || !segment.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err(OrganizationBudgetRepositoryError::Invariant);
+        }
+        let value = segment
+            .parse::<i64>()
+            .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?;
+        let id = OrganizationDepartmentId::new(value)
+            .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?;
+        if ids.contains(&id) || ids.len() >= 8 {
+            return Err(OrganizationBudgetRepositoryError::Invariant);
+        }
+        ids.push(id);
+    }
+    Ok(ids)
+}
+
 fn same_snapshot(
     left: &OrganizationBillingReservationRecord,
     right: &OrganizationBillingReservationRecord,
@@ -879,6 +1145,8 @@ fn same_snapshot(
         && left.reserved_quota == right.reserved_quota
         && left.gateway == right.gateway
         && left.organization == right.organization
+        && left.department_path == right.department_path
+        && left.departments == right.departments
         && left.team == right.team
         && left.member == right.member
 }
