@@ -9,8 +9,9 @@ use af_admin::{
     OrganizationCustomRoleCreateCommand, OrganizationCustomRoleDisableCommand,
     OrganizationCustomRoleListQuery, OrganizationCustomRoleService,
     OrganizationCustomRoleServiceError, OrganizationDepartmentCreateCommand,
-    OrganizationDepartmentDisableCommand, OrganizationDepartmentListQuery,
-    OrganizationDepartmentMoveCommand, OrganizationEntitlementSummary,
+    OrganizationDepartmentCursor, OrganizationDepartmentDisableCommand,
+    OrganizationDepartmentListQuery, OrganizationDepartmentMoveCommand,
+    OrganizationDepartmentRecord, OrganizationEntitlementSummary,
     OrganizationInvitationBatchCommand, OrganizationInvitationBatchResult,
     OrganizationInvitationCommand, OrganizationInvitationError,
     OrganizationInvitationPreviewCommand, OrganizationInvitationPreviewResult,
@@ -4073,8 +4074,8 @@ impl From<&OrganizationTeamRecord> for OrganizationTeamResponse {
     }
 }
 
-impl From<&af_db::OrganizationDepartmentRecord> for OrganizationDepartmentResponse {
-    fn from(record: &af_db::OrganizationDepartmentRecord) -> Self {
+impl From<&OrganizationDepartmentRecord> for OrganizationDepartmentResponse {
+    fn from(record: &OrganizationDepartmentRecord) -> Self {
         Self {
             id: record.id().get(),
             organization_id: record.organization_id().get(),
@@ -4301,7 +4302,7 @@ fn parse_department_list_query(
                 if parts.next().is_some() {
                     return Err(ManagementError::InvalidRequest);
                 }
-                after = Some(af_db::OrganizationDepartmentCursor::new(
+                after = Some(OrganizationDepartmentCursor::new(
                     sort_order,
                     OrganizationDepartmentId::new(id)
                         .map_err(|_| ManagementError::InvalidRequest)?,
@@ -4474,7 +4475,7 @@ fn organization_department_status_code(
     }
 }
 
-fn format_department_cursor(cursor: af_db::OrganizationDepartmentCursor) -> String {
+fn format_department_cursor(cursor: OrganizationDepartmentCursor) -> String {
     format!("{}:{}", cursor.sort_order(), cursor.id().get())
 }
 

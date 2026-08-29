@@ -1,13 +1,13 @@
 use std::{future::Future, pin::Pin, sync::Arc};
 
 use af_db::{
-    MAX_ORGANIZATION_DIRECTORY_PAGE_SIZE, OrganizationDepartmentCursor,
-    OrganizationDepartmentRecord, OrganizationDepartmentRepository,
+    MAX_ORGANIZATION_DIRECTORY_PAGE_SIZE, OrganizationDepartmentRepository,
     OrganizationDepartmentRepositoryError, OrganizationMembershipChange,
     OrganizationMembershipRecord, OrganizationOwnershipTransfer, OrganizationRepository,
     OrganizationRepositoryError, OrganizationTeamChange, OrganizationTeamCreate,
     OrganizationTeamRecord,
 };
+pub use af_db::{OrganizationDepartmentCursor, OrganizationDepartmentRecord};
 use af_domain::{
     OrganizationMembershipId, OrganizationMembershipStatus, OrganizationPermission,
     OrganizationRole, OrganizationTeamId,

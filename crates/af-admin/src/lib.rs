@@ -273,16 +273,17 @@ pub use organization_invitation::{
 };
 pub use organization_management::{
     DEFAULT_ORGANIZATION_DIRECTORY_PAGE_SIZE, DatabaseOrganizationManagementService,
-    OrganizationDepartmentCreateCommand, OrganizationDepartmentDisableCommand,
-    OrganizationDepartmentFuture, OrganizationDepartmentListQuery,
-    OrganizationDepartmentMoveCommand, OrganizationDepartmentPage,
-    OrganizationDepartmentPageFuture, OrganizationManagementError, OrganizationManagementService,
-    OrganizationMembershipChangeCommand, OrganizationMembershipFuture,
-    OrganizationMembershipListQuery, OrganizationMembershipPage, OrganizationMembershipPageFuture,
-    OrganizationOwnershipTransferCommand, OrganizationOwnershipTransferFuture,
-    OrganizationOwnershipTransferResult, OrganizationTeamChangeCommand,
-    OrganizationTeamCreateCommand, OrganizationTeamDisableCommand, OrganizationTeamFuture,
-    OrganizationTeamListQuery, OrganizationTeamPage, OrganizationTeamPageFuture,
+    OrganizationDepartmentCreateCommand, OrganizationDepartmentCursor,
+    OrganizationDepartmentDisableCommand, OrganizationDepartmentFuture,
+    OrganizationDepartmentListQuery, OrganizationDepartmentMoveCommand, OrganizationDepartmentPage,
+    OrganizationDepartmentPageFuture, OrganizationDepartmentRecord, OrganizationManagementError,
+    OrganizationManagementService, OrganizationMembershipChangeCommand,
+    OrganizationMembershipFuture, OrganizationMembershipListQuery, OrganizationMembershipPage,
+    OrganizationMembershipPageFuture, OrganizationOwnershipTransferCommand,
+    OrganizationOwnershipTransferFuture, OrganizationOwnershipTransferResult,
+    OrganizationTeamChangeCommand, OrganizationTeamCreateCommand, OrganizationTeamDisableCommand,
+    OrganizationTeamFuture, OrganizationTeamListQuery, OrganizationTeamPage,
+    OrganizationTeamPageFuture,
 };
 pub use organization_scim::{
     DatabaseOrganizationScimService, OrganizationScimAuditError, OrganizationScimAuditFuture,
