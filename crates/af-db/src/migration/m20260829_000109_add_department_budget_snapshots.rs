@@ -278,7 +278,9 @@ async fn upgrade_budget_scope_checks(manager: &SchemaManager<'_>) -> Result<(), 
                     let escaped = constraint.replace('"', "\"\"");
                     let statement = match manager.get_database_backend() {
                         DbBackend::Postgres => {
-                            format!("ALTER TABLE \"{table}\" DROP CONSTRAINT \"{escaped}\"")
+                            format!(
+                                "ALTER TABLE \"{table}\" DROP CONSTRAINT IF EXISTS \"{escaped}\""
+                            )
                         }
                         DbBackend::MySql => format!(
                             "ALTER TABLE `{table}` DROP CHECK `{}`",
@@ -348,7 +350,7 @@ async fn downgrade_budget_scope_checks(manager: &SchemaManager<'_>) -> Result<()
                 for constraint in load_scope_constraints(manager, table).await? {
                     let statement = match manager.get_database_backend() {
                         DbBackend::Postgres => format!(
-                            "ALTER TABLE \"{table}\" DROP CONSTRAINT \"{}\"",
+                            "ALTER TABLE \"{table}\" DROP CONSTRAINT IF EXISTS \"{}\"",
                             constraint.replace('"', "\"\"")
                         ),
                         DbBackend::MySql => format!(
