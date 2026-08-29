@@ -25,6 +25,7 @@ mod network;
 mod organization;
 mod organization_audit;
 mod organization_budget;
+mod organization_credit_terms;
 mod organization_entitlement;
 mod organization_invitation;
 mod organization_wallet;
@@ -153,6 +154,7 @@ pub(super) use organization_audit::{
 pub(super) use organization_budget::{
     create_organization_budget_storage, drop_organization_budget_storage,
 };
+pub(super) use organization_credit_terms::create_organization_credit_terms;
 pub(super) use organization_entitlement::create_organization_entitlements;
 pub(super) use organization_invitation::create_organization_invitations;
 pub(super) use organization_wallet::{

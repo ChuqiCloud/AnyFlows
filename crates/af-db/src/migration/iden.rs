@@ -2114,6 +2114,37 @@ pub(in crate::migration) mod organization_contract_prices {
     }
 }
 
+pub(in crate::migration) mod organization_credit_terms {
+    use super::DeriveIden;
+
+    /// 企业授信与账期策略事实表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_credit_terms")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业授信与账期策略事实的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        Currency,
+        CreditLimit,
+        PeriodKind,
+        PeriodDays,
+        Status,
+        EffectiveFrom,
+        EffectiveUntil,
+        Version,
+        CreatedByUserId,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
 pub(in crate::migration) mod organization_custom_roles {
     use super::DeriveIden;
 
