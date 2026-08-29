@@ -2145,6 +2145,43 @@ pub(in crate::migration) mod organization_credit_terms {
     }
 }
 
+pub(in crate::migration) mod organization_credit_invoices {
+    use super::DeriveIden;
+
+    /// 企业账期账单事实表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_credit_invoices")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业账期账单固定字段标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        InvoiceKey,
+        OrganizationId,
+        SourceKind,
+        SourceKey,
+        Currency,
+        AmountMinor,
+        TermVersion,
+        PeriodKind,
+        PeriodDays,
+        IssuedAt,
+        DueAt,
+        Status,
+        StatusChangedAt,
+        Version,
+        SettledAt,
+        VoidedAt,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
 pub(in crate::migration) mod organization_custom_roles {
     use super::DeriveIden;
 

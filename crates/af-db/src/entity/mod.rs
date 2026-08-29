@@ -11,7 +11,8 @@ use sea_orm::{ActiveValue, EntityTrait, Set, entity::prelude::*};
 
 use af_domain::{
     BillingReservationId, ChannelTimeout, MAX_ROUTE_MODEL_PATTERN_BYTES,
-    OrganizationCreditCurrency, OrganizationCreditTermPeriod, OrganizationCreditTermStatus,
+    OrganizationCreditCurrency, OrganizationCreditInvoiceSourceKind,
+    OrganizationCreditInvoiceStatus, OrganizationCreditTermPeriod, OrganizationCreditTermStatus,
     OrganizationCustomRoleKey, OrganizationCustomRoleStatus, OrganizationDepartmentKey,
     OrganizationDepartmentMembershipStatus, OrganizationDepartmentStatus, OrganizationKey,
     OrganizationMembershipStatus, OrganizationPermission, OrganizationRole,
@@ -67,6 +68,7 @@ pub(crate) mod organization_audit_logs;
 pub(crate) mod organization_budget_policies;
 pub(crate) mod organization_budget_windows;
 pub(crate) mod organization_contract_prices;
+pub(crate) mod organization_credit_invoices;
 pub(crate) mod organization_credit_terms;
 pub(crate) mod organization_custom_role_permissions;
 pub(crate) mod organization_custom_roles;
@@ -655,6 +657,111 @@ where
             .is_some_and(|value| *value <= 0)
     {
         return Err(DbErr::Custom("企业授信策略字段无效".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_organization_credit_invoices<C>(
+    model: &organization_credit_invoices::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    if insert
+        && (model.invoice_key.try_as_ref().is_none()
+            || model.organization_id.try_as_ref().is_none()
+            || model.source_kind.try_as_ref().is_none()
+            || model.source_key.try_as_ref().is_none()
+            || model.currency.try_as_ref().is_none()
+            || model.amount_minor.try_as_ref().is_none()
+            || model.term_version.try_as_ref().is_none()
+            || model.period_kind.try_as_ref().is_none()
+            || model.issued_at.try_as_ref().is_none()
+            || model.due_at.try_as_ref().is_none()
+            || model.status.try_as_ref().is_none()
+            || model.status_changed_at.try_as_ref().is_none()
+            || model.version.try_as_ref().is_none())
+    {
+        return Err(DbErr::Custom("企业账期账单基础字段缺失".to_owned()));
+    }
+
+    let invoice_key = model.invoice_key.try_as_ref().map(String::as_str);
+    let source_key = model.source_key.try_as_ref().map(String::as_str);
+    let source_kind = model.source_kind.try_as_ref().copied();
+    let currency = model.currency.try_as_ref().map(String::as_str);
+    let period_kind = model.period_kind.try_as_ref().copied();
+    let period_days = model.period_days.try_as_ref().copied().flatten();
+    let issued_at = model.issued_at.try_as_ref().copied();
+    let due_at = model.due_at.try_as_ref().copied();
+    let status = model.status.try_as_ref().copied();
+    let status_changed_at = model.status_changed_at.try_as_ref().copied();
+    let settled_at = model.settled_at.try_as_ref().copied().flatten();
+    let voided_at = model.voided_at.try_as_ref().copied().flatten();
+    let created_at = model.created_at.try_as_ref().copied();
+    let updated_at = model.updated_at.try_as_ref().copied();
+
+    if invoice_key.is_some_and(|value| !valid_hex(value, 32, true))
+        || source_key.is_some_and(|value| !valid_hex(value, 32, true))
+        || model
+            .organization_id
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || source_kind
+            .is_some_and(|value| OrganizationCreditInvoiceSourceKind::try_from(value).is_err())
+        || currency.is_some_and(|value| OrganizationCreditCurrency::new(value).is_err())
+        || model
+            .amount_minor
+            .try_as_ref()
+            .is_some_and(|value| *value < 0)
+        || model
+            .term_version
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || period_kind.is_some_and(|value| match period_days {
+            Some(raw_days) => match u16::try_from(raw_days) {
+                Ok(days) if i64::from(days) == raw_days => {
+                    OrganizationCreditTermPeriod::from_persistence(value, Some(days)).is_err()
+                }
+                _ => true,
+            },
+            None => OrganizationCreditTermPeriod::from_persistence(value, None).is_err(),
+        })
+        || issued_at.is_some_and(|value| value.unix_timestamp() < 0)
+        || due_at.is_some_and(|value| value.unix_timestamp() < 0)
+        || issued_at
+            .zip(due_at)
+            .is_some_and(|(issued, due)| due <= issued)
+        || status.is_some_and(|value| OrganizationCreditInvoiceStatus::try_from(value).is_err())
+        || status_changed_at.is_some_and(|value| value.unix_timestamp() < 0)
+        || issued_at
+            .zip(status_changed_at)
+            .is_some_and(|(issued, changed)| changed < issued)
+        || status.is_some_and(
+            |value| match OrganizationCreditInvoiceStatus::try_from(value) {
+                Ok(OrganizationCreditInvoiceStatus::Settled) => {
+                    settled_at.is_none() || voided_at.is_some()
+                }
+                Ok(OrganizationCreditInvoiceStatus::Voided) => {
+                    voided_at.is_none() || settled_at.is_some()
+                }
+                Ok(
+                    OrganizationCreditInvoiceStatus::Due | OrganizationCreditInvoiceStatus::Overdue,
+                ) => settled_at.is_some() || voided_at.is_some(),
+                Err(_) => true,
+            },
+        )
+        || settled_at.is_some_and(|value| value.unix_timestamp() < 0)
+        || voided_at.is_some_and(|value| value.unix_timestamp() < 0)
+        || model.version.try_as_ref().is_some_and(|value| *value <= 0)
+        || created_at.is_some_and(|value| value.unix_timestamp() < 0)
+        || updated_at.is_some_and(|value| value.unix_timestamp() < 0)
+        || created_at
+            .zip(updated_at)
+            .is_some_and(|(created, updated)| updated < created)
+    {
+        return Err(DbErr::Custom("企业账期账单字段无效".to_owned()));
     }
     Ok(())
 }
@@ -2260,6 +2367,7 @@ impl_updated_at_behavior!(
     organization_departments::ActiveModel => validate_organization_department,
     organization_department_memberships::ActiveModel => validate_organization_department_membership,
     organization_credit_terms::ActiveModel => validate_organization_credit_terms,
+    organization_credit_invoices::ActiveModel => validate_organization_credit_invoices,
     organization_custom_roles::ActiveModel => validate_organization_custom_role,
     organization_sso_domains::ActiveModel => validate_default,
     organization_sso_identities::ActiveModel => validate_default,

@@ -9,6 +9,7 @@ mod error;
 mod network;
 mod organization;
 mod organization_budget;
+mod organization_credit_invoices;
 mod organization_credit_terms;
 mod organization_department;
 mod organization_department_budget;
@@ -62,6 +63,12 @@ pub use organization_budget::{
     MAX_ORGANIZATION_BUDGET_FIXED_PERIOD_SECONDS, MIN_ORGANIZATION_BUDGET_FIXED_PERIOD_SECONDS,
     OrganizationBudgetLimit, OrganizationBudgetPeriod, OrganizationBudgetPolicyError,
     OrganizationBudgetScopeKind,
+};
+pub use organization_credit_invoices::{
+    OrganizationCreditInvoiceAmount, OrganizationCreditInvoiceError, OrganizationCreditInvoiceKey,
+    OrganizationCreditInvoiceKeyError, OrganizationCreditInvoiceSnapshot,
+    OrganizationCreditInvoiceSourceKey, OrganizationCreditInvoiceSourceKind,
+    OrganizationCreditInvoiceStatus,
 };
 pub use organization_credit_terms::{
     OrganizationCreditCurrency, OrganizationCreditLimit, OrganizationCreditTermPeriod,
@@ -149,11 +156,11 @@ pub use payment::{
 };
 pub use principal::{
     ChannelId, CredentialId, GatewayPrincipal, GroupId, ModelId, OrganizationBudgetPolicyId,
-    OrganizationBudgetWindowId, OrganizationContractPriceId, OrganizationCreditTermId,
-    OrganizationCustomRoleId, OrganizationDepartmentId, OrganizationGatewayPrincipal,
-    OrganizationId, OrganizationMembershipId, OrganizationScimTokenId,
-    OrganizationServiceAccountId, OrganizationTeamId, PrincipalIdError, ProxyId, RouteChannelId,
-    RouteId, TokenId, UserId,
+    OrganizationBudgetWindowId, OrganizationContractPriceId, OrganizationCreditInvoiceId,
+    OrganizationCreditTermId, OrganizationCustomRoleId, OrganizationDepartmentId,
+    OrganizationGatewayPrincipal, OrganizationId, OrganizationMembershipId,
+    OrganizationScimTokenId, OrganizationServiceAccountId, OrganizationTeamId, PrincipalIdError,
+    ProxyId, RouteChannelId, RouteId, TokenId, UserId,
 };
 pub use quota::{Quota, QuotaDelta, QuotaError};
 pub use redemption::{
