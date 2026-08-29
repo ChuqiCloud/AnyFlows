@@ -226,6 +226,7 @@ pub struct AuthenticationReady {
     user_notification_service: Arc<dyn af_admin::UserNotificationService>,
     organization_wallet_service: Arc<dyn OrganizationWalletService>,
     organization_budget_service: Arc<dyn OrganizationBudgetService>,
+    organization_contract_price_repository: Arc<OrganizationContractPriceRepository>,
     organization_contract_price_service: Arc<dyn OrganizationContractPriceService>,
     organization_token_service: Arc<dyn OrganizationTokenService>,
     organization_scim_service: Arc<dyn OrganizationScimService>,
@@ -1068,7 +1069,6 @@ impl Bootstrap<DatabaseReady> {
             )
             .map_err(BootstrapError::OrganizationContractPriceRepository)?,
         );
-        let billing_contract_price_repository = Arc::clone(&organization_contract_price_repository);
         let organization_token_repository = Arc::new(
             OrganizationTokenRepository::new(
                 self.stage.database.clone(),
@@ -1362,6 +1362,9 @@ impl Bootstrap<DatabaseReady> {
                 organization_budget_service: Arc::new(DatabaseOrganizationBudgetService::new(
                     organization_budget_repository,
                 )),
+                organization_contract_price_repository: Arc::clone(
+                    &organization_contract_price_repository,
+                ),
                 organization_contract_price_service: Arc::new(
                     DatabaseOrganizationContractPriceService::new(
                         organization_contract_price_repository,
@@ -1857,7 +1860,12 @@ impl Bootstrap<RelayReady> {
         let route_planner: Arc<dyn ChatRoutePlanner> = Arc::new(route_service);
         let pricing_source = Arc::new(
             CachedRequestPricingSnapshotSource::new(model_prices.clone(), group_pricing.clone())
-                .with_contract_prices(billing_contract_price_repository),
+                .with_contract_prices(Arc::clone(
+                    &self
+                        .stage
+                        .infrastructure
+                        .organization_contract_price_repository,
+                )),
         );
         let model_catalog_reader: Arc<dyn ModelCatalogReader> =
             Arc::new(RuntimeModelCatalogReader::new(
