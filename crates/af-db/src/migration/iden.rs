@@ -2070,6 +2070,41 @@ pub(in crate::migration) mod organizations {
     }
 }
 
+pub(in crate::migration) mod organization_contract_prices {
+    use super::DeriveIden;
+
+    /// 企业合同价版本事实表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_contract_prices")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业合同价版本事实的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        Model,
+        Protocol,
+        InputPrice,
+        OutputPrice,
+        CacheReadPrice,
+        #[sea_orm(iden = "cache_creation_5m_price")]
+        CacheCreation5mPrice,
+        #[sea_orm(iden = "cache_creation_1h_price")]
+        CacheCreation1hPrice,
+        EffectiveFrom,
+        EffectiveUntil,
+        Version,
+        CreatedByUserId,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
 pub(in crate::migration) mod organization_custom_roles {
     use super::DeriveIden;
 

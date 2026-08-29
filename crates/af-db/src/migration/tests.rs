@@ -35,7 +35,7 @@ use crate::entity::{
     debug_trace_snapshot_access_audits, debug_trace_snapshots, debug_traces, email_settings,
     group_model_ratios, groups, invite_rebate_events, model_prices, model_sync_items,
     model_sync_runs, models, oauth_login_providers, options, organization_audit_logs,
-    organization_budget_policies, organization_budget_windows,
+    organization_budget_policies, organization_budget_windows, organization_contract_prices,
     organization_custom_role_permissions, organization_custom_roles,
     organization_department_memberships, organization_departments, organization_entitlements,
     organization_invitations, organization_memberships, organization_scim_audit_logs,
@@ -83,7 +83,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 109;
+const EXPECTED_MIGRATION_COUNT: usize = 110;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -102,7 +102,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 91] = [
+const CORE_TABLES: [&str; 92] = [
     "groups",
     "users",
     "passkeys",
@@ -166,6 +166,7 @@ const CORE_TABLES: [&str; 91] = [
     "organization_teams",
     "organization_departments",
     "organization_department_memberships",
+    "organization_contract_prices",
     "organization_memberships",
     "organization_custom_roles",
     "organization_custom_role_permissions",
@@ -461,6 +462,131 @@ async fn standard_startup_installs_organization_budget_schema() -> Result<(), Bo
     ] {
         assert!(manager.has_table(table).await?, "缺少数据表 {table}");
     }
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn organization_contract_price_constraints_reject_invalid_rows() -> Result<(), Box<dyn Error>>
+{
+    let database_options = DatabaseOptions::new("sqlite::memory:")?;
+    let pool = crate::connect_and_migrate(&database_options, MigrationOptions::default()).await?;
+    let manager = SchemaManager::new(pool.connection());
+    assert!(manager.has_table("organization_contract_prices").await?);
+    assert_entity_columns::<organization_contract_prices::Column>(
+        &manager,
+        "organization_contract_prices",
+    )
+    .await?;
+    for index in [
+        "uq_organization_contract_prices_scope_version",
+        "idx_organization_contract_prices_lookup",
+    ] {
+        assert!(
+            manager
+                .has_index("organization_contract_prices", index)
+                .await?,
+            "缺少合同价索引 {index}"
+        );
+    }
+    let group = group_active_model("contract-price-group", "合同价测试分组")
+        .insert(pool.connection())
+        .await?;
+    let owner = user_active_model(
+        group.id,
+        "contract-price-owner",
+        "contract-price-owner@example.com",
+        "contract-price-owner-aff",
+    )
+    .insert(pool.connection())
+    .await?;
+    let now = TimeDateTimeWithTimeZone::now_utc();
+    let organization = organizations::ActiveModel {
+        organization_key: Set("22222222222222222222222222222222".to_owned()),
+        name: Set("Contract Price Test".to_owned()),
+        slug: Set("contract-price-test".to_owned()),
+        status: Set(1),
+        created_by_user_id: Set(owner.id),
+        version: Set(1),
+        created_at: Set(now),
+        updated_at: Set(now),
+        closed_at: Set(None),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+    let effective_from = TimeDateTimeWithTimeZone::from_unix_timestamp(1_893_456_000)?;
+    let effective_until = TimeDateTimeWithTimeZone::from_unix_timestamp(1_893_456_001)?;
+    let valid_price = || organization_contract_prices::ActiveModel {
+        organization_id: Set(organization.id),
+        model: Set(SensitiveString::from("gpt-contract")),
+        protocol: Set("openai_chat".to_owned()),
+        input_price: Set(SensitiveDecimal::from(Decimal::new(1, 0))),
+        output_price: Set(SensitiveDecimal::from(Decimal::new(2, 0))),
+        cache_read_price: Set(SensitiveDecimal::from(Decimal::new(0, 0))),
+        cache_creation_5m_price: Set(SensitiveDecimal::from(Decimal::new(0, 0))),
+        cache_creation_1h_price: Set(SensitiveDecimal::from(Decimal::new(0, 0))),
+        effective_from: Set(effective_from),
+        effective_until: Set(Some(effective_until)),
+        version: Set(1),
+        created_by_user_id: Set(owner.id),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    };
+    organization_contract_prices::Entity::insert(valid_price())
+        .exec_without_returning(pool.connection())
+        .await?;
+
+    let mut invalid_model = valid_price();
+    invalid_model.model = Set(SensitiveString::from(""));
+    invalid_model.version = Set(2);
+    assert!(
+        organization_contract_prices::Entity::insert(invalid_model)
+            .exec_without_returning(pool.connection())
+            .await
+            .is_err()
+    );
+
+    let mut invalid_protocol = valid_price();
+    invalid_protocol.protocol = Set("unknown_protocol".to_owned());
+    invalid_protocol.version = Set(3);
+    assert!(
+        organization_contract_prices::Entity::insert(invalid_protocol)
+            .exec_without_returning(pool.connection())
+            .await
+            .is_err()
+    );
+
+    let mut invalid_price = valid_price();
+    invalid_price.input_price = Set(SensitiveDecimal::from(Decimal::new(-1, 0)));
+    invalid_price.version = Set(4);
+    assert!(
+        organization_contract_prices::Entity::insert(invalid_price)
+            .exec_without_returning(pool.connection())
+            .await
+            .is_err()
+    );
+
+    let mut invalid_version = valid_price();
+    invalid_version.version = Set(0);
+    assert!(
+        organization_contract_prices::Entity::insert(invalid_version)
+            .exec_without_returning(pool.connection())
+            .await
+            .is_err()
+    );
+
+    let mut invalid_window = valid_price();
+    invalid_window.effective_until = Set(Some(effective_from));
+    invalid_window.version = Set(5);
+    assert!(
+        organization_contract_prices::Entity::insert(invalid_window)
+            .exec_without_returning(pool.connection())
+            .await
+            .is_err()
+    );
+
     pool.close().await?;
     Ok(())
 }
@@ -1455,7 +1581,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 50);
+    assert_eq!(pending_migrations.len(), 51);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -1655,6 +1781,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[49].name(),
         "m20260829_000109_add_department_budget_snapshots"
+    );
+    assert_eq!(
+        pending_migrations[50].name(),
+        "m20260829_000110_create_organization_contract_prices"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
@@ -3177,6 +3307,11 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         "organization_department_memberships",
     )
     .await?;
+    assert_entity_columns::<organization_contract_prices::Column>(
+        &manager,
+        "organization_contract_prices",
+    )
+    .await?;
     assert_entity_columns::<organization_custom_roles::Column>(
         &manager,
         "organization_custom_roles",
@@ -3611,6 +3746,14 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         (
             "organization_budget_policies",
             "uq_organization_budget_policies_scope_id",
+        ),
+        (
+            "organization_contract_prices",
+            "uq_organization_contract_prices_scope_version",
+        ),
+        (
+            "organization_contract_prices",
+            "idx_organization_contract_prices_lookup",
         ),
         (
             "billing_organization_reservation_departments",
