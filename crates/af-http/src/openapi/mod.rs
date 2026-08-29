@@ -239,7 +239,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 189);
+        assert_eq!(document.paths.paths.len(), 193);
         let operation_count = document
             .paths
             .paths
@@ -260,8 +260,8 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        // 服务账号管理接口扩展了既有管理面，保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 258);
+        // 部门目录管理接口扩展了既有管理面，保持操作总数与生成文档同步。
+        assert_eq!(operation_count, 263);
         assert!(
             document
                 .components
@@ -358,6 +358,11 @@ mod tests {
             "getUserProfile",
             "listAccountOrganizations",
             "getOrganizationOverview",
+            "listOrganizationDepartments",
+            "createOrganizationDepartment",
+            "getOrganizationDepartment",
+            "moveOrganizationDepartment",
+            "disableOrganizationDepartment",
             "getOrganizationWallet",
             "getOrganizationBudgets",
             "createOrganizationBudgetPolicy",
@@ -566,7 +571,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 424);
+        assert_eq!(schemas.len(), 429);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminDashboardChannelFlow"));
         assert!(schemas.contains_key("AdminDashboardFailure"));
@@ -579,6 +584,11 @@ mod tests {
         assert!(schemas.contains_key("PasskeyAuthenticationOptionsResponse"));
         assert!(schemas.contains_key("PasskeyAuthenticationVerifyRequest"));
         assert!(schemas.contains_key("OrganizationEntitlementResponse"));
+        assert!(schemas.contains_key("OrganizationDepartmentCreateRequest"));
+        assert!(schemas.contains_key("OrganizationDepartmentDisableRequest"));
+        assert!(schemas.contains_key("OrganizationDepartmentListResponse"));
+        assert!(schemas.contains_key("OrganizationDepartmentMoveRequest"));
+        assert!(schemas.contains_key("OrganizationDepartmentResponse"));
         assert!(schemas.contains_key("OrganizationCustomRoleResponse"));
         assert!(schemas.contains_key("OrganizationServiceAccountCreateRequest"));
         assert!(schemas.contains_key("OrganizationServiceAccountStatusRequest"));

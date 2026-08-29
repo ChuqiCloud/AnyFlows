@@ -330,7 +330,6 @@ const CUSTOM_ROLE_GRANTABLE_PERMISSIONS: &[OrganizationPermission] = &[
     OrganizationPermission::MembersManage,
     OrganizationPermission::TeamsManage,
     OrganizationPermission::DepartmentsRead,
-    OrganizationPermission::DepartmentsManage,
     OrganizationPermission::WalletRead,
     OrganizationPermission::WalletManage,
     OrganizationPermission::BudgetsManage,
