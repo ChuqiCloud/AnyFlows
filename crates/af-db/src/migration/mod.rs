@@ -116,6 +116,7 @@ mod m20260829_000107_create_organization_department_memberships;
 mod m20260829_000108_add_organization_department_snapshots;
 mod m20260829_000109_add_department_budget_snapshots;
 mod m20260829_000110_create_organization_contract_prices;
+mod m20260829_000111_add_contract_price_snapshots;
 mod schema;
 
 #[cfg(test)]
@@ -271,6 +272,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260829_000108_add_organization_department_snapshots::Migration),
             Box::new(m20260829_000109_add_department_budget_snapshots::Migration),
             Box::new(m20260829_000110_create_organization_contract_prices::Migration),
+            Box::new(m20260829_000111_add_contract_price_snapshots::Migration),
         ]
     }
 }

@@ -14,8 +14,9 @@ use sea_orm::{
     sea_query::{Expr, LockType},
 };
 
+use crate::OrganizationContractPriceSnapshot;
 use crate::entity::{
-    BillingReservationKey, billing_organization_reservation_departments,
+    BillingReservationKey, SensitiveDecimal, billing_organization_reservation_departments,
     billing_organization_reservations, organization_department_memberships,
     organization_departments, organization_memberships, organization_wallets, organizations,
 };
@@ -39,7 +40,7 @@ pub(super) async fn reserve(
     amount: Quota,
     expires_at: TimeDateTimeWithTimeZone,
 ) -> Result<OrganizationBillingMutationOutcome, OrganizationBudgetRepositoryError> {
-    reserve_with_gateway(transaction, id, principal, amount, expires_at, None).await
+    reserve_with_gateway(transaction, id, principal, amount, expires_at, None, None).await
 }
 
 /// 在网关统一事务内冻结企业钱包与全部适用预算层，并固化 Key 和平台分组主体。
@@ -51,6 +52,7 @@ pub(crate) async fn reserve_gateway(
     group_id: GroupId,
     amount: Quota,
     expires_at: TimeDateTimeWithTimeZone,
+    contract_price: Option<OrganizationContractPriceSnapshot>,
 ) -> Result<OrganizationBillingMutationOutcome, OrganizationBudgetRepositoryError> {
     reserve_with_gateway(
         transaction,
@@ -59,6 +61,7 @@ pub(crate) async fn reserve_gateway(
         amount,
         expires_at,
         Some((token_id, group_id)),
+        contract_price,
     )
     .await
 }
@@ -70,6 +73,7 @@ async fn reserve_with_gateway(
     amount: Quota,
     expires_at: TimeDateTimeWithTimeZone,
     gateway: Option<(TokenId, GroupId)>,
+    contract_price: Option<OrganizationContractPriceSnapshot>,
 ) -> Result<OrganizationBillingMutationOutcome, OrganizationBudgetRepositoryError> {
     if amount.is_zero() {
         return Err(OrganizationBudgetRepositoryError::InvalidInput);
@@ -149,6 +153,23 @@ async fn reserve_with_gateway(
         membership_id: Set(principal.membership_id().get()),
         team_id: Set(principal.team_id().map(OrganizationTeamId::get)),
         user_id: Set(principal.user_id().get()),
+        contract_price_id: Set(contract_price.map(|value| value.id().get())),
+        contract_price_version: Set(contract_price.map(|value| value.version())),
+        contract_input_price: Set(
+            contract_price.map(|value| SensitiveDecimal::from(value.prices()[0]))
+        ),
+        contract_output_price: Set(
+            contract_price.map(|value| SensitiveDecimal::from(value.prices()[1]))
+        ),
+        contract_cache_read_price: Set(
+            contract_price.map(|value| SensitiveDecimal::from(value.prices()[2]))
+        ),
+        contract_cache_creation_5m_price: Set(
+            contract_price.map(|value| SensitiveDecimal::from(value.prices()[3]))
+        ),
+        contract_cache_creation_1h_price: Set(
+            contract_price.map(|value| SensitiveDecimal::from(value.prices()[4]))
+        ),
         department_path: Set(department_path.as_ref().map(encode_department_path)),
         token_id: Set(gateway.map(|(token_id, _)| token_id.get())),
         group_id: Set(gateway.map(|(_, group_id)| group_id.get())),
@@ -962,6 +983,41 @@ fn record(
         .map(Quota::new)
         .transpose()
         .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?;
+    let contract_price = match (
+        model.contract_price_id,
+        model.contract_price_version,
+        model.contract_input_price.map(SensitiveDecimal::expose),
+        model.contract_output_price.map(SensitiveDecimal::expose),
+        model
+            .contract_cache_read_price
+            .map(SensitiveDecimal::expose),
+        model
+            .contract_cache_creation_5m_price
+            .map(SensitiveDecimal::expose),
+        model
+            .contract_cache_creation_1h_price
+            .map(SensitiveDecimal::expose),
+    ) {
+        (None, None, None, None, None, None, None) => None,
+        (
+            Some(id),
+            Some(version),
+            Some(input),
+            Some(output),
+            Some(cache_read),
+            Some(cache_5m),
+            Some(cache_1h),
+        ) => Some(
+            OrganizationContractPriceSnapshot::from_parts(
+                model.organization_id,
+                id,
+                version,
+                [input, output, cache_read, cache_5m, cache_1h],
+            )
+            .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
+        ),
+        _ => return Err(OrganizationBudgetRepositoryError::Invariant),
+    };
     let gateway = match (
         model.reservation_kind,
         model.token_id,
@@ -1001,6 +1057,7 @@ fn record(
         status,
         reserved_quota,
         actual_quota,
+        contract_price,
         gateway,
         organization: allocation_record(
             None,
@@ -1143,6 +1200,7 @@ fn same_snapshot(
     left.id == right.id
         && left.principal == right.principal
         && left.reserved_quota == right.reserved_quota
+        && left.contract_price == right.contract_price
         && left.gateway == right.gateway
         && left.organization == right.organization
         && left.department_path == right.department_path

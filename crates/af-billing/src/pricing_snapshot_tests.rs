@@ -9,7 +9,8 @@ use crate::{
     GroupModelRatioSourceRecord, GroupPricingCache, GroupPricingSource, GroupPricingSourceCatalog,
     GroupPricingSourceFuture, GroupPricingSourceRecord, ModelPriceCache, ModelPriceMode,
     ModelPriceSource, ModelPriceSourceFuture, ModelPriceSourceRecord, PricingContext, PricingRatio,
-    RequestPricingSnapshotError, RequestPricingSnapshotSource, TokenPrices,
+    PricingRatios, PricingResolver, RatioPricingResolver, RequestPricingSnapshotError,
+    RequestPricingSnapshotSource, TokenPrices,
 };
 
 struct ModelSource;
@@ -150,6 +151,45 @@ async fn expression_snapshot_freezes_ratios_and_executes_through_the_unified_res
         .unwrap();
     assert_eq!(price.quota(), Quota::new(450_000).unwrap());
     assert!(!price.is_free());
+}
+
+#[test]
+fn contract_price_override_does_not_apply_platform_group_ratios() {
+    let resolver = RatioPricingResolver::metered(
+        TokenPrices::new(
+            Decimal::ONE,
+            Decimal::ZERO,
+            Decimal::ZERO,
+            Decimal::ZERO,
+            Decimal::ZERO,
+        )
+        .unwrap(),
+        PricingRatios::new(
+            PricingRatio::new(1_200_000).unwrap(),
+            PricingRatio::new(750_000).unwrap(),
+            PricingRatio::ONE,
+        ),
+    );
+    let platform_price = resolver
+        .resolve(&PricingContext::new(&million_input_usage()))
+        .unwrap();
+    assert_eq!(platform_price.quota(), Quota::new(450_000).unwrap());
+
+    let contract_resolver = RatioPricingResolver::metered(
+        TokenPrices::new(
+            Decimal::ONE,
+            Decimal::ZERO,
+            Decimal::ZERO,
+            Decimal::ZERO,
+            Decimal::ZERO,
+        )
+        .unwrap(),
+        PricingRatios::new(PricingRatio::ONE, PricingRatio::ONE, PricingRatio::ONE),
+    );
+    let contract_price = contract_resolver
+        .resolve(&PricingContext::new(&million_input_usage()))
+        .unwrap();
+    assert_eq!(contract_price.quota(), Quota::new(500_000).unwrap());
 }
 
 fn million_input_usage() -> Usage {

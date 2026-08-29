@@ -720,6 +720,15 @@ pub(in crate::migration) mod billing_reservations {
         TokenId,
         GroupId,
         OrganizationId,
+        ContractPriceId,
+        ContractPriceVersion,
+        ContractInputPrice,
+        ContractOutputPrice,
+        ContractCacheReadPrice,
+        #[sea_orm(iden = "contract_cache_creation_5m_price")]
+        ContractCacheCreation5mPrice,
+        #[sea_orm(iden = "contract_cache_creation_1h_price")]
+        ContractCacheCreation1hPrice,
         Status,
         ReservationKind,
         FundingSource,
@@ -2481,6 +2490,15 @@ pub(in crate::migration) mod billing_organization_reservations {
         MembershipId,
         TeamId,
         UserId,
+        ContractPriceId,
+        ContractPriceVersion,
+        ContractInputPrice,
+        ContractOutputPrice,
+        ContractCacheReadPrice,
+        #[sea_orm(iden = "contract_cache_creation_5m_price")]
+        ContractCacheCreation5mPrice,
+        #[sea_orm(iden = "contract_cache_creation_1h_price")]
+        ContractCacheCreation1hPrice,
         DepartmentPath,
         TokenId,
         GroupId,

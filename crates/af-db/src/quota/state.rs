@@ -1,4 +1,6 @@
+use crate::OrganizationContractPriceSnapshot;
 use af_domain::{GatewayPrincipal, Quota, QuotaWindowRetryAfter};
+use rust_decimal::Decimal;
 use sea_orm::{QueryResult, entity::prelude::TimeDateTimeWithTimeZone};
 use thiserror::Error;
 
@@ -164,22 +166,26 @@ pub(crate) struct ReservationState {
     pub(crate) reserved_quota: i64,
     pub(crate) token_reserved_quota: i64,
     pub(crate) actual_quota: Option<i64>,
+    pub(crate) contract_price: Option<OrganizationContractPriceSnapshot>,
 }
 
 impl ReservationState {
     pub(crate) fn try_from_result(result: &QueryResult) -> Result<Self, QuotaRepositoryError> {
         let status = QuotaReservationStatus::from_code(get(result, "status")?)?;
+        let organization_id: Option<i64> = get(result, "organization_id")?;
+        let contract_price = contract_price_from_result(result, organization_id)?;
         let state = Self {
             user_id: get(result, "user_id")?,
             token_id: get(result, "token_id")?,
             group_id: get(result, "group_id")?,
-            organization_id: get(result, "organization_id")?,
+            organization_id,
             status,
             reservation_kind: QuotaReservationKind::from_code(get(result, "reservation_kind")?)?,
             funding_source: QuotaFundingSource::from_code(get(result, "funding_source")?)?,
             reserved_quota: get(result, "reserved_quota")?,
             token_reserved_quota: get(result, "token_reserved_quota")?,
             actual_quota: get(result, "actual_quota")?,
+            contract_price,
         };
         let finalized_at: Option<TimeDateTimeWithTimeZone> = get(result, "finalized_at")?;
         state.validate(finalized_at.is_some())?;
@@ -217,6 +223,7 @@ impl ReservationState {
             && self.funding_source == observed.funding_source
             && self.reserved_quota == observed.reserved_quota
             && self.token_reserved_quota == observed.token_reserved_quota
+            && self.contract_price == observed.contract_price
     }
 
     fn validate(&self, finalized: bool) -> Result<(), QuotaRepositoryError> {
@@ -235,6 +242,9 @@ impl ReservationState {
             || self.reserved_quota <= 0
             || (self.token_reserved_quota != 0 && self.token_reserved_quota != self.reserved_quota)
             || self.actual_quota.is_some_and(|value| value < 0)
+            || self
+                .contract_price
+                .is_some_and(|price| self.organization_id != Some(price.organization_id().get()))
             || !valid_funding
             || !valid_actual
         {
@@ -300,6 +310,43 @@ impl GroupQuotaState {
             return Err(QuotaRepositoryError::Invariant);
         }
         Ok(state)
+    }
+}
+
+fn contract_price_from_result(
+    result: &QueryResult,
+    organization_id: Option<i64>,
+) -> Result<Option<OrganizationContractPriceSnapshot>, QuotaRepositoryError> {
+    let id: Option<i64> = get(result, "contract_price_id")?;
+    let version: Option<i64> = get(result, "contract_price_version")?;
+    let prices = [
+        get::<Option<Decimal>>(result, "contract_input_price")?,
+        get::<Option<Decimal>>(result, "contract_output_price")?,
+        get::<Option<Decimal>>(result, "contract_cache_read_price")?,
+        get::<Option<Decimal>>(result, "contract_cache_creation_5m_price")?,
+        get::<Option<Decimal>>(result, "contract_cache_creation_1h_price")?,
+    ];
+    match (id, version, prices) {
+        (None, None, [None, None, None, None, None]) => Ok(None),
+        (
+            Some(id),
+            Some(version),
+            [
+                Some(input),
+                Some(output),
+                Some(cache_read),
+                Some(cache_5m),
+                Some(cache_1h),
+            ],
+        ) => OrganizationContractPriceSnapshot::from_parts(
+            organization_id.ok_or(QuotaRepositoryError::Invariant)?,
+            id,
+            version,
+            [input, output, cache_read, cache_5m, cache_1h],
+        )
+        .map(Some)
+        .map_err(|_| QuotaRepositoryError::Invariant),
+        _ => Err(QuotaRepositoryError::Invariant),
     }
 }
 

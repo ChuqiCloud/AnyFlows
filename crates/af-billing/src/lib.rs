@@ -93,7 +93,7 @@ pub use pricing::{
 };
 pub use pricing_snapshot::{
     CachedRequestPricingSnapshotSource, RequestPricingSnapshot, RequestPricingSnapshotError,
-    RequestPricingSnapshotSource,
+    RequestPricingSnapshotFuture, RequestPricingSnapshotSource,
 };
 pub use quota_math::quota_from_cny_minor;
 pub use refund::{

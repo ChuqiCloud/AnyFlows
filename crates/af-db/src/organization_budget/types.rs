@@ -1,5 +1,6 @@
 use std::fmt;
 
+use crate::OrganizationContractPriceSnapshot;
 use af_domain::{
     BillingReservationId, GroupId, OrganizationBudgetLimit, OrganizationBudgetPeriod,
     OrganizationBudgetPolicyId, OrganizationBudgetScopeKind, OrganizationBudgetWindowId,
@@ -345,6 +346,7 @@ pub struct OrganizationBillingReservationRecord {
     pub(crate) status: OrganizationBillingReservationStatus,
     pub(crate) reserved_quota: Quota,
     pub(crate) actual_quota: Option<Quota>,
+    pub(crate) contract_price: Option<OrganizationContractPriceSnapshot>,
     pub(crate) gateway: Option<OrganizationBillingGatewayRecord>,
     pub(crate) organization: Option<OrganizationBudgetAllocationRecord>,
     pub(crate) department_path: Vec<OrganizationDepartmentId>,
@@ -385,6 +387,11 @@ impl OrganizationBillingReservationRecord {
     #[must_use]
     pub const fn actual_quota(&self) -> Option<Quota> {
         self.actual_quota
+    }
+
+    #[must_use]
+    pub(crate) const fn contract_price(&self) -> Option<OrganizationContractPriceSnapshot> {
+        self.contract_price
     }
 
     pub(crate) const fn gateway(&self) -> Option<OrganizationBillingGatewayRecord> {

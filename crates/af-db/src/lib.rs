@@ -507,7 +507,7 @@ pub use organization_budget::{
 pub use organization_contract_price::{
     OrganizationContractPriceRecord, OrganizationContractPriceRepository,
     OrganizationContractPriceRepositoryConfigError, OrganizationContractPriceRepositoryError,
-    OrganizationContractPriceWrite,
+    OrganizationContractPriceSnapshot, OrganizationContractPriceWrite,
 };
 pub use organization_custom_role::{
     MAX_ORGANIZATION_CUSTOM_ROLE_DESCRIPTION_BYTES, MAX_ORGANIZATION_CUSTOM_ROLE_NAME_BYTES,

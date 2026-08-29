@@ -4,6 +4,7 @@ use std::{
     sync::Arc,
 };
 
+use af_db::OrganizationContractPriceSnapshot;
 use af_domain::{
     BillingReservationId, GatewayPrincipal, OrganizationServiceAccountRuntimeIdentity, Quota,
 };
@@ -45,6 +46,7 @@ enum PlanMode {
 pub struct BillingRequestPlan {
     resolver: Arc<dyn PricingResolver>,
     mode: PlanMode,
+    contract_price: Option<OrganizationContractPriceSnapshot>,
 }
 
 impl BillingRequestPlan {
@@ -68,7 +70,27 @@ impl BillingRequestPlan {
                 },
             },
         };
-        Ok(Self { resolver, mode })
+        Ok(Self {
+            resolver,
+            mode,
+            contract_price: None,
+        })
+    }
+
+    /// 绑定请求快照命中的企业合同价，随后只能随本计划进入预扣。
+    #[must_use = "必须保留绑定合同价后的计费计划"]
+    pub const fn with_contract_price(
+        mut self,
+        contract_price: Option<OrganizationContractPriceSnapshot>,
+    ) -> Self {
+        self.contract_price = contract_price;
+        self
+    }
+
+    /// 返回本计划固定的合同价快照。
+    #[must_use]
+    pub const fn contract_price(&self) -> Option<OrganizationContractPriceSnapshot> {
+        self.contract_price
     }
 
     /// 返回计划固定的计费模式。

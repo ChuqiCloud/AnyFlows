@@ -1,12 +1,16 @@
-use std::{fmt, sync::Arc};
+use std::{fmt, future::Future, pin::Pin, sync::Arc};
 
-use af_domain::GroupId;
+use af_db::{
+    OrganizationContractPriceRepository, OrganizationContractPriceRepositoryError,
+    OrganizationContractPriceSnapshot,
+};
+use af_domain::{GroupId, OrganizationId, Protocol};
 use thiserror::Error;
 
 use crate::{
     BillingMode, GroupPricingCache, GroupPricingCacheError, GroupPricingLookupError,
-    ModelPriceCache, ModelPriceCacheError, ModelPriceMode, PricingRatios, PricingResolver,
-    RatioPricingResolver,
+    ModelPriceCache, ModelPriceCacheError, ModelPriceMode, PricingRatio, PricingRatios,
+    PricingResolver, RatioPricingResolver, TokenPrices,
 };
 
 /// 从进程内不可变目录同步固定一次请求的完整定价事实。
@@ -19,7 +23,32 @@ pub trait RequestPricingSnapshotSource: Send + Sync + 'static {
         target_group_id: GroupId,
         current_second: u32,
     ) -> Result<RequestPricingSnapshot, RequestPricingSnapshotError>;
+
+    /// 捕获带企业合同价覆盖的请求快照；个人请求始终跳过合同价解析。
+    fn capture_for_request<'a>(
+        &'a self,
+        model: &'a str,
+        source_group_id: GroupId,
+        target_group_id: GroupId,
+        organization_id: Option<OrganizationId>,
+        protocol: Protocol,
+        current_second: u32,
+    ) -> RequestPricingSnapshotFuture<'a> {
+        Box::pin(async move {
+            let _ = (organization_id, protocol);
+            self.capture(model, source_group_id, target_group_id, current_second)
+        })
+    }
 }
+
+/// 请求级定价快照异步捕获结果。
+pub type RequestPricingSnapshotFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<RequestPricingSnapshot, RequestPricingSnapshotError>>
+            + Send
+            + 'a,
+    >,
+>;
 
 /// 一次请求从预扣到最终结算始终复用的不可变定价快照。
 #[must_use = "请求定价快照必须用于构造同一生命周期的解析器"]
@@ -33,6 +62,7 @@ pub struct RequestPricingSnapshot {
     ratios: PricingRatios,
     model_generation: u64,
     group_generation: u64,
+    contract_price: Option<OrganizationContractPriceSnapshot>,
 }
 
 impl RequestPricingSnapshot {
@@ -66,6 +96,12 @@ impl RequestPricingSnapshot {
         self.group_generation
     }
 
+    /// 返回企业合同价快照；个人请求和未命中合同价时为空。
+    #[must_use]
+    pub const fn contract_price(&self) -> Option<OrganizationContractPriceSnapshot> {
+        self.contract_price
+    }
+
     /// 返回请求固定的三层倍率，供审计与回归验证使用。
     #[must_use]
     pub const fn ratios(&self) -> PricingRatios {
@@ -93,6 +129,7 @@ impl fmt::Debug for RequestPricingSnapshot {
             .field("model_version", &self.model_version())
             .field("model_generation", &self.model_generation)
             .field("group_generation", &self.group_generation)
+            .field("contract_price", &self.contract_price)
             .finish_non_exhaustive()
     }
 }
@@ -128,6 +165,9 @@ pub enum RequestPricingSnapshotError {
     /// 表达式定义无法构造请求级执行快照。
     #[error("请求模型的表达式定价不可用")]
     ExpressionPricingUnavailable,
+    /// 企业合同价目录读取失败。
+    #[error(transparent)]
+    ContractPrice(#[from] OrganizationContractPriceRepositoryError),
 }
 
 /// 组合模型价格与分组倍率缓存的同步请求快照来源。
@@ -135,6 +175,7 @@ pub enum RequestPricingSnapshotError {
 pub struct CachedRequestPricingSnapshotSource {
     model_prices: ModelPriceCache,
     group_pricing: GroupPricingCache,
+    contract_prices: Option<Arc<OrganizationContractPriceRepository>>,
 }
 
 impl CachedRequestPricingSnapshotSource {
@@ -144,7 +185,18 @@ impl CachedRequestPricingSnapshotSource {
         Self {
             model_prices,
             group_pricing,
+            contract_prices: None,
         }
+    }
+
+    /// 接入企业合同价仓储；未绑定仓储时保持原有平台定价行为。
+    #[must_use]
+    pub fn with_contract_prices(
+        mut self,
+        repository: Arc<OrganizationContractPriceRepository>,
+    ) -> Self {
+        self.contract_prices = Some(repository);
+        self
     }
 
     /// 返回模型价格缓存，供监听器标记失效与触发刷新。
@@ -198,6 +250,50 @@ impl RequestPricingSnapshotSource for CachedRequestPricingSnapshotSource {
             ratios,
             model_generation: model_snapshot.generation(),
             group_generation: group_snapshot.generation(),
+            contract_price: None,
+        })
+    }
+
+    fn capture_for_request<'a>(
+        &'a self,
+        model: &'a str,
+        source_group_id: GroupId,
+        target_group_id: GroupId,
+        organization_id: Option<OrganizationId>,
+        protocol: Protocol,
+        current_second: u32,
+    ) -> RequestPricingSnapshotFuture<'a> {
+        Box::pin(async move {
+            let mut snapshot =
+                self.capture(model, source_group_id, target_group_id, current_second)?;
+            let (Some(organization_id), Some(repository)) =
+                (organization_id, self.contract_prices.as_ref())
+            else {
+                return Ok(snapshot);
+            };
+            let Some(contract_price) = repository
+                .resolve(
+                    organization_id,
+                    model,
+                    protocol,
+                    af_db::DatabaseTimestamp::now_utc(),
+                )
+                .await?
+            else {
+                return Ok(snapshot);
+            };
+            let prices = contract_price.prices();
+            let prices = TokenPrices::new(prices[0], prices[1], prices[2], prices[3], prices[4])
+                .map_err(|_| RequestPricingSnapshotError::ExpressionPricingUnavailable)?;
+            snapshot.model_mode = ModelPriceMode::PerToken;
+            snapshot.billing_mode = BillingMode::PerToken;
+            // 合同价是企业覆盖价，平台分组倍率仅作为独立审计快照保留，不叠加到合同单价。
+            let neutral_ratios =
+                PricingRatios::new(PricingRatio::ONE, PricingRatio::ONE, PricingRatio::ONE);
+            snapshot.ratio_resolver = Some(RatioPricingResolver::metered(prices, neutral_ratios));
+            snapshot.resolver = Arc::new(RatioPricingResolver::metered(prices, neutral_ratios));
+            snapshot.contract_price = Some(contract_price);
+            Ok(snapshot)
         })
     }
 }

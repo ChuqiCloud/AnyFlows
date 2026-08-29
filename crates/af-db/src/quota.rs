@@ -14,7 +14,7 @@ use sea_orm::{
 use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
-use crate::DatabasePool;
+use crate::{DatabasePool, OrganizationContractPriceSnapshot};
 
 mod group_windows;
 mod organization;
@@ -94,8 +94,26 @@ impl QuotaRepository {
         principal: GatewayPrincipal,
         amount: Quota,
     ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
-        self.reserve_with_kind(id, principal, amount, QuotaReservationKind::Request)
+        self.reserve_with_kind(id, principal, amount, QuotaReservationKind::Request, None)
             .await
+    }
+
+    /// 创建绑定企业合同价快照的请求预留；快照只在预留首次写入时采纳。
+    pub async fn precharge_with_contract_price(
+        &self,
+        id: BillingReservationId,
+        principal: GatewayPrincipal,
+        amount: Quota,
+        contract_price: Option<OrganizationContractPriceSnapshot>,
+    ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
+        self.reserve_with_kind(
+            id,
+            principal,
+            amount,
+            QuotaReservationKind::Request,
+            contract_price,
+        )
+        .await
     }
 
     /// 为异步批量任务冻结钱包余额与有限令牌额度；不使用订阅，也不允许后续补扣。
@@ -105,7 +123,7 @@ impl QuotaRepository {
         principal: GatewayPrincipal,
         amount: Quota,
     ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
-        self.reserve_with_kind(id, principal, amount, QuotaReservationKind::BatchTask)
+        self.reserve_with_kind(id, principal, amount, QuotaReservationKind::BatchTask, None)
             .await
     }
 
@@ -115,12 +133,21 @@ impl QuotaRepository {
         principal: GatewayPrincipal,
         amount: Quota,
         reservation_kind: QuotaReservationKind,
+        contract_price: Option<OrganizationContractPriceSnapshot>,
     ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
+        if let Some(contract_price) = contract_price {
+            let Some(organization) = principal.organization_principal() else {
+                return Err(QuotaRepositoryError::Invariant);
+            };
+            if contract_price.organization_id() != organization.organization_id() {
+                return Err(QuotaRepositoryError::Invariant);
+            }
+        }
         if amount.is_zero() {
             return Err(QuotaRepositoryError::ZeroAmount);
         }
         let operation = self
-            .precharge_inner(id, principal, amount, reservation_kind)
+            .precharge_inner(id, principal, amount, reservation_kind, contract_price)
             .with_subscriber(NoSubscriber::default());
         match timeout(self.operation_timeout, operation).await {
             Ok(result) => self.finish_operation(result, QuotaRepositoryOperation::Precharge),
@@ -219,9 +246,18 @@ impl QuotaRepository {
         principal: GatewayPrincipal,
         amount: Quota,
         reservation_kind: QuotaReservationKind,
+        contract_price: Option<OrganizationContractPriceSnapshot>,
     ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
         if principal.organization_principal().is_some() {
-            return organization::precharge(self, id, principal, amount, reservation_kind).await;
+            return organization::precharge(
+                self,
+                id,
+                principal,
+                amount,
+                reservation_kind,
+                contract_price,
+            )
+            .await;
         }
         let key = id.persistence_key();
         let (now, expires_at) = reservation_times(self.reservation_ttl)?;
@@ -254,6 +290,7 @@ impl QuotaRepository {
                 reservation_kind,
                 now,
                 expires_at,
+                contract_price,
             )))
             .await
         {
@@ -267,7 +304,7 @@ impl QuotaRepository {
                     .await
                     .map_err(|_| QuotaRepositoryError::OutcomeUnknown)?;
                 return self
-                    .existing_precharge(key, principal, amount, reservation_kind)
+                    .existing_precharge(key, principal, amount, reservation_kind, contract_price)
                     .await;
             }
             Err(_) => {
@@ -362,6 +399,7 @@ impl QuotaRepository {
         principal: GatewayPrincipal,
         amount: Quota,
         reservation_kind: QuotaReservationKind,
+        contract_price: Option<OrganizationContractPriceSnapshot>,
     ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
         let result = query_one(
             self.pool.connection(),
@@ -375,7 +413,9 @@ impl QuotaRepository {
         subscription::load_allocation(self.pool.connection(), &key, &state).await?;
         group_windows::load_allocation(self.pool.connection(), &key, &state).await?;
         token_windows::load_allocation(self.pool.connection(), &key, &state).await?;
-        if state.matches_precharge(principal, amount, reservation_kind) {
+        if state.matches_precharge(principal, amount, reservation_kind)
+            && state.contract_price == contract_price
+        {
             Ok(QuotaMutationOutcome::Existing(state.status))
         } else {
             Err(QuotaRepositoryError::Conflict)

@@ -137,15 +137,21 @@ impl BillingSpeechService {
             .await?;
         let snapshot = self
             .pricing_source
-            .capture(
+            .capture_for_request(
                 &model,
                 principal.group_id(),
                 planned.target_group_id(),
+                principal
+                    .organization_principal()
+                    .map(|organization| organization.organization_id()),
+                af_domain::Protocol::OpenAiSpeech,
                 crate::utc_time::current_utc_day_second().ok_or(AfError::Internal)?,
             )
+            .await
             .map_err(map_snapshot_error)?;
         let plan = BillingRequestPlan::prepare(snapshot.resolver(), &upper_bound)
-            .map_err(map_lifecycle_error)?;
+            .map_err(map_lifecycle_error)?
+            .with_contract_price(snapshot.contract_price());
         let reservation_id = new_reservation_id()?;
         let mut lifecycle = start_lifecycle(self, plan, *principal, reservation_id).await?;
 
@@ -204,6 +210,7 @@ async fn start_lifecycle(
     principal: GatewayPrincipal,
     reservation_id: af_domain::BillingReservationId,
 ) -> Result<BillingRequestLifecycle, AfError> {
+    let contract_price = plan.contract_price();
     match plan.precharge_quota() {
         None => plan
             .start_free(principal, reservation_id, service.usage.clone())
@@ -212,7 +219,8 @@ async fn start_lifecycle(
             let precharge = service.precharge.as_ref().ok_or(AfError::Internal)?;
             let refund = service.refund.as_ref().ok_or(AfError::Internal)?;
             let settlement = service.settlement.as_ref().ok_or(AfError::Internal)?;
-            precharge_with_retries(precharge, reservation_id, principal, amount).await?;
+            precharge_with_retries(precharge, reservation_id, principal, amount, contract_price)
+                .await?;
             match plan.start_reserved(
                 principal,
                 reservation_id,
