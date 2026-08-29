@@ -8,12 +8,12 @@ use af_admin::{
     AdminPaymentSettingsService, AdminRouteReader, AdminRouteWriter, AdminTokenReader,
     AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, AdminWalletService,
     InitialSetup, ModelCatalogReader, OAuthLoginService, OrganizationActivityService,
-    OrganizationBudgetService, OrganizationScimService, OrganizationTokenService,
-    OrganizationWalletService, PasskeyAuthenticationService, PasswordResetService,
-    PlatformAuditService, PlaygroundConversationService, PlaygroundShareService, RedemptionService,
-    RegistrationService, SessionAuthenticator, SiteSettingsService, SubscriptionService,
-    TokenAuthenticator, UserInvitationService, UserNotificationService, UserTopupService,
-    UserWalletService,
+    OrganizationBudgetService, OrganizationContractPriceService, OrganizationScimService,
+    OrganizationTokenService, OrganizationWalletService, PasskeyAuthenticationService,
+    PasswordResetService, PlatformAuditService, PlaygroundConversationService,
+    PlaygroundShareService, RedemptionService, RegistrationService, SessionAuthenticator,
+    SiteSettingsService, SubscriptionService, TokenAuthenticator, UserInvitationService,
+    UserNotificationService, UserTopupService, UserWalletService,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -99,6 +99,7 @@ use crate::openai_speech::openai_speech;
 use crate::operations::{ReadinessHandle, operations_router};
 use crate::organization_activity::{PLATFORM_REASON_HEADER, build_organization_activity_router};
 use crate::organization_budget::build_organization_budget_router;
+use crate::organization_contract_price::build_organization_contract_price_router;
 use crate::organization_scim_audit::build_organization_scim_audit_router;
 use crate::organization_service_account_runtime::build_organization_service_account_runtime_router;
 use crate::organization_sso_login::build_organization_sso_login_router;
@@ -184,6 +185,7 @@ pub fn build_router(
     organization_activity_service: Option<Arc<dyn OrganizationActivityService>>,
     organization_wallet_service: Option<Arc<dyn OrganizationWalletService>>,
     organization_budget_service: Option<Arc<dyn OrganizationBudgetService>>,
+    organization_contract_price_service: Option<Arc<dyn OrganizationContractPriceService>>,
     organization_token_service: Option<Arc<dyn OrganizationTokenService>>,
     organization_scim_service: Option<Arc<dyn OrganizationScimService>>,
     user_topup_service: Option<Arc<dyn UserTopupService>>,
@@ -842,6 +844,21 @@ pub fn build_router(
                 organization_sso_identity_binding_service,
                 organization_sso_recovery_service,
                 organization_service_account_service,
+            ))
+        }
+        _ => management_routes,
+    };
+    let management_routes = match (
+        http_state.organization_authorization_service.clone(),
+        organization_contract_price_service,
+        organization_activity_service.clone(),
+    ) {
+        (Some(authorization_service), Some(contract_price_service), Some(activity_service)) => {
+            management_routes.merge(build_organization_contract_price_router(
+                authorization_service,
+                contract_price_service,
+                activity_service,
+                Arc::clone(&http_state.session_authenticator),
             ))
         }
         _ => management_routes,

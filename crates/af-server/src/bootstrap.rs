@@ -24,22 +24,24 @@ use af_admin::{
     DatabaseAdminTokenReader, DatabaseAdminTokenWriter, DatabaseAdminUsageLogReader,
     DatabaseAdminUserReader, DatabaseAdminUserWriter, DatabaseAdminWalletService,
     DatabaseInitialSetup, DatabaseOAuthLoginService, DatabaseOrganizationActivityService,
-    DatabaseOrganizationBudgetService, DatabaseOrganizationCustomRoleBindingService,
-    DatabaseOrganizationCustomRoleService, DatabaseOrganizationScimService,
-    DatabaseOrganizationSsoDomainService, DatabaseOrganizationSsoIdentityBindingService,
-    DatabaseOrganizationSsoLoginTransactionService, DatabaseOrganizationSsoPolicyService,
-    DatabaseOrganizationSsoProviderService, DatabaseOrganizationSsoRecoveryService,
-    DatabaseOrganizationTokenService, DatabaseOrganizationWalletService,
-    DatabasePasskeyAuthenticationService, DatabasePasswordResetService,
-    DatabasePlatformAuditService, DatabasePlaygroundConversationService,
-    DatabasePlaygroundShareService, DatabaseRedemptionService, DatabaseRegistrationService,
-    DatabaseSessionAuthenticator, DatabaseSiteSettingsService, DatabaseSubscriptionService,
-    DatabaseTokenAuthenticator, DatabaseUserInvitationService, DatabaseUserNotificationService,
-    DatabaseUserProfileService, DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery,
-    InitialSetup, ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
+    DatabaseOrganizationBudgetService, DatabaseOrganizationContractPriceService,
+    DatabaseOrganizationCustomRoleBindingService, DatabaseOrganizationCustomRoleService,
+    DatabaseOrganizationScimService, DatabaseOrganizationSsoDomainService,
+    DatabaseOrganizationSsoIdentityBindingService, DatabaseOrganizationSsoLoginTransactionService,
+    DatabaseOrganizationSsoPolicyService, DatabaseOrganizationSsoProviderService,
+    DatabaseOrganizationSsoRecoveryService, DatabaseOrganizationTokenService,
+    DatabaseOrganizationWalletService, DatabasePasskeyAuthenticationService,
+    DatabasePasswordResetService, DatabasePlatformAuditService,
+    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
+    DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
+    DatabaseSiteSettingsService, DatabaseSubscriptionService, DatabaseTokenAuthenticator,
+    DatabaseUserInvitationService, DatabaseUserNotificationService, DatabaseUserProfileService,
+    DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery, InitialSetup,
+    ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
     OAuthLoginService, OrganizationActivityService, OrganizationActivityServiceConfigError,
-    OrganizationBudgetService, OrganizationCustomRoleBindingService, OrganizationCustomRoleService,
-    OrganizationScimService, OrganizationSsoDomainService, OrganizationSsoIdentityBindingService,
+    OrganizationBudgetService, OrganizationContractPriceService,
+    OrganizationCustomRoleBindingService, OrganizationCustomRoleService, OrganizationScimService,
+    OrganizationSsoDomainService, OrganizationSsoIdentityBindingService,
     OrganizationSsoLoginTransactionService, OrganizationSsoPolicyService,
     OrganizationSsoProviderService, OrganizationSsoRecoveryService, OrganizationTokenService,
     OrganizationWalletService, PasskeyAuthenticationService,
@@ -90,7 +92,8 @@ use af_db::{
     ModelPriceRepository, ModelSyncRepository, NetworkSettingsMode, NetworkSettingsRecord,
     NetworkSettingsRepository, NetworkSettingsRepositoryConfigError, OAuthLoginRepository,
     OAuthLoginRepositoryError, OrganizationAuditRepository, OrganizationBudgetRepository,
-    OrganizationBudgetRepositoryConfigError, OrganizationCustomRoleBindingRepository,
+    OrganizationBudgetRepositoryConfigError, OrganizationContractPriceRepository,
+    OrganizationContractPriceRepositoryConfigError, OrganizationCustomRoleBindingRepository,
     OrganizationCustomRoleBindingRepositoryConfigError, OrganizationCustomRoleRepository,
     OrganizationCustomRoleRepositoryConfigError, OrganizationDepartmentMembershipRepository,
     OrganizationDepartmentMembershipRepositoryConfigError, OrganizationDepartmentRepository,
@@ -223,6 +226,7 @@ pub struct AuthenticationReady {
     user_notification_service: Arc<dyn af_admin::UserNotificationService>,
     organization_wallet_service: Arc<dyn OrganizationWalletService>,
     organization_budget_service: Arc<dyn OrganizationBudgetService>,
+    organization_contract_price_service: Arc<dyn OrganizationContractPriceService>,
     organization_token_service: Arc<dyn OrganizationTokenService>,
     organization_scim_service: Arc<dyn OrganizationScimService>,
     organization_activity_service: Arc<dyn OrganizationActivityService>,
@@ -572,6 +576,9 @@ pub enum BootstrapError {
     /// 企业预算仓储的启动参数无效。
     #[error("企业预算仓储启动参数无效")]
     OrganizationBudgetRepository(#[source] OrganizationBudgetRepositoryConfigError),
+    /// 企业合同价仓储的启动参数无效。
+    #[error("企业合同价仓储启动参数无效")]
+    OrganizationContractPriceRepository(#[source] OrganizationContractPriceRepositoryConfigError),
     /// 企业 API Key 仓储的启动参数无效。
     #[error("企业 API Key 仓储启动参数无效")]
     OrganizationTokenRepository(#[source] OrganizationTokenRepositoryConfigError),
@@ -1054,6 +1061,13 @@ impl Bootstrap<DatabaseReady> {
             )
             .map_err(BootstrapError::OrganizationBudgetRepository)?,
         );
+        let organization_contract_price_repository = Arc::new(
+            OrganizationContractPriceRepository::new(
+                self.stage.database.clone(),
+                Duration::from_secs(auth.lookup_timeout_secs()),
+            )
+            .map_err(BootstrapError::OrganizationContractPriceRepository)?,
+        );
         let organization_token_repository = Arc::new(
             OrganizationTokenRepository::new(
                 self.stage.database.clone(),
@@ -1347,6 +1361,11 @@ impl Bootstrap<DatabaseReady> {
                 organization_budget_service: Arc::new(DatabaseOrganizationBudgetService::new(
                     organization_budget_repository,
                 )),
+                organization_contract_price_service: Arc::new(
+                    DatabaseOrganizationContractPriceService::new(
+                        organization_contract_price_repository,
+                    ),
+                ),
                 organization_token_service: Arc::new(DatabaseOrganizationTokenService::new(
                     organization_token_repository,
                 )),
@@ -2512,6 +2531,12 @@ impl Bootstrap<Supervised> {
             )),
             Some(Arc::clone(
                 &self.stage.infrastructure.organization_budget_service,
+            )),
+            Some(Arc::clone(
+                &self
+                    .stage
+                    .infrastructure
+                    .organization_contract_price_service,
             )),
             Some(Arc::clone(
                 &self.stage.infrastructure.organization_token_service,

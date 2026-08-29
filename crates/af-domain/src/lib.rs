@@ -144,10 +144,10 @@ pub use payment::{
 };
 pub use principal::{
     ChannelId, CredentialId, GatewayPrincipal, GroupId, ModelId, OrganizationBudgetPolicyId,
-    OrganizationBudgetWindowId, OrganizationCustomRoleId, OrganizationDepartmentId,
-    OrganizationGatewayPrincipal, OrganizationId, OrganizationMembershipId,
-    OrganizationScimTokenId, OrganizationServiceAccountId, OrganizationTeamId, PrincipalIdError,
-    ProxyId, RouteChannelId, RouteId, TokenId, UserId,
+    OrganizationBudgetWindowId, OrganizationContractPriceId, OrganizationCustomRoleId,
+    OrganizationDepartmentId, OrganizationGatewayPrincipal, OrganizationId,
+    OrganizationMembershipId, OrganizationScimTokenId, OrganizationServiceAccountId,
+    OrganizationTeamId, PrincipalIdError, ProxyId, RouteChannelId, RouteId, TokenId, UserId,
 };
 pub use quota::{Quota, QuotaDelta, QuotaError};
 pub use redemption::{

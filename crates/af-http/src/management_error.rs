@@ -57,6 +57,14 @@ pub(crate) enum ManagementError {
     OrganizationTeamInUse,
     /// 企业授权不允许当前生命周期写入。
     OrganizationEntitlementRestricted,
+    /// 企业合同价记录不存在或不属于路径企业。
+    OrganizationContractPriceNotFound,
+    /// 企业合同价有效区间与同模型协议事实冲突。
+    OrganizationContractPriceIntervalConflict,
+    /// 企业合同价版本 CAS 冲突。
+    OrganizationContractPriceConflict,
+    /// 企业合同价已经关闭或不能再次关闭。
+    OrganizationContractPriceTransitionInvalid,
     OrganizationSsoProviderNotFound,
     OrganizationSsoProviderConflict,
     OrganizationSsoProviderTransitionInvalid,
@@ -452,6 +460,34 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "organization_entitlement_restricted",
                     message: "Organization entitlement restricts this operation",
+                },
+            ),
+            Self::OrganizationContractPriceNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "organization_contract_price_not_found",
+                    message: "Organization contract price not found",
+                },
+            ),
+            Self::OrganizationContractPriceIntervalConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_contract_price_interval_conflict",
+                    message: "Organization contract price interval conflict",
+                },
+            ),
+            Self::OrganizationContractPriceConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_contract_price_conflict",
+                    message: "Organization contract price version conflict",
+                },
+            ),
+            Self::OrganizationContractPriceTransitionInvalid => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_contract_price_transition_invalid",
+                    message: "Organization contract price transition invalid",
                 },
             ),
             Self::OrganizationSsoProviderNotFound => (

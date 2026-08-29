@@ -19,6 +19,7 @@ mod oauth_connections;
 mod oauth_login;
 mod organization_activity;
 mod organization_budget;
+mod organization_contract_price;
 mod organization_scim_audit;
 mod organization_service_account_runtime;
 mod organization_sso;
@@ -113,6 +114,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(refund_webhook::document());
     document.merge(organization_wallet::document());
     document.merge(organization_budget::document());
+    document.merge(organization_contract_price::document());
     document.merge(organization_sso::document());
     document.merge(organization_tokens::document());
     document.merge(organization_activity::document());
@@ -146,6 +148,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("Passkey 登录"),
         Tag::new("企业钱包"),
         Tag::new("企业预算"),
+        Tag::new("企业合同价"),
         Tag::new("企业 SSO"),
         Tag::new("企业 API Key"),
         Tag::new("企业服务账号"),
@@ -239,7 +242,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 196);
+        assert_eq!(document.paths.paths.len(), 199);
         let operation_count = document
             .paths
             .paths
@@ -261,7 +264,7 @@ mod tests {
             })
             .sum::<usize>();
         // 部门目录与成员归属管理接口扩展了既有管理面，保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 267);
+        assert_eq!(operation_count, 271);
         assert!(
             document
                 .components
@@ -365,6 +368,10 @@ mod tests {
             "disableOrganizationDepartment",
             "getOrganizationWallet",
             "getOrganizationBudgets",
+            "listOrganizationContractPrices",
+            "getOrganizationContractPrice",
+            "createOrganizationContractPrice",
+            "closeOrganizationContractPrice",
             "createOrganizationBudgetPolicy",
             "getOrganizationBudgetReservation",
             "listOrganizationTokens",
@@ -575,7 +582,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 434);
+        assert_eq!(schemas.len(), 440);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminDashboardChannelFlow"));
         assert!(schemas.contains_key("AdminDashboardFailure"));
@@ -584,6 +591,12 @@ mod tests {
         assert!(schemas.contains_key("AdminDashboardPerformance"));
         assert!(schemas.contains_key("ClientSimulationProfile"));
         assert!(schemas.contains_key("ClientSimulationResult"));
+        assert!(schemas.contains_key("ContractPriceCloseRequest"));
+        assert!(schemas.contains_key("ContractPriceCreateRequest"));
+        assert!(schemas.contains_key("ContractPriceListResponse"));
+        assert!(schemas.contains_key("ContractPriceProtocol"));
+        assert!(schemas.contains_key("ContractPriceResponse"));
+        assert!(schemas.contains_key("ContractPriceValues"));
         assert!(schemas.contains_key("PasskeyAuthenticationOptionsRequest"));
         assert!(schemas.contains_key("PasskeyAuthenticationOptionsResponse"));
         assert!(schemas.contains_key("PasskeyAuthenticationVerifyRequest"));

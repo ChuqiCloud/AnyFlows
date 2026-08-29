@@ -130,6 +130,11 @@ principal_id! {
 }
 
 principal_id! {
+    /// 企业合同价版本事实的持久化标识。
+    OrganizationContractPriceId
+}
+
+principal_id! {
     /// 企业 SCIM 令牌的持久化标识。
     OrganizationScimTokenId
 }
