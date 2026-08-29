@@ -19,6 +19,7 @@ mod oauth_connections;
 mod oauth_login;
 mod organization_activity;
 mod organization_budget;
+mod organization_contract_price;
 mod organization_scim_audit;
 mod organization_service_account_runtime;
 mod organization_sso;
@@ -113,6 +114,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(refund_webhook::document());
     document.merge(organization_wallet::document());
     document.merge(organization_budget::document());
+    document.merge(organization_contract_price::document());
     document.merge(organization_sso::document());
     document.merge(organization_tokens::document());
     document.merge(organization_activity::document());
@@ -146,6 +148,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("Passkey 登录"),
         Tag::new("企业钱包"),
         Tag::new("企业预算"),
+        Tag::new("企业合同价"),
         Tag::new("企业 SSO"),
         Tag::new("企业 API Key"),
         Tag::new("企业服务账号"),

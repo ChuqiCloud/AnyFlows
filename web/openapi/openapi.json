@@ -17909,6 +17909,422 @@
         ]
       }
     },
+    "/api/organizations/{organization_id}/contract-prices": {
+      "get": {
+        "tags": [
+          "企业合同价"
+        ],
+        "summary": "读取企业合同价版本",
+        "operationId": "listOrganizationContractPrices",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业内部标识",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "企业合同价历史事实",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractPriceListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "企业标识无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权读取企业合同价",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "企业不存在或无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "企业合同价"
+        ],
+        "summary": "创建企业合同价版本",
+        "operationId": "createOrganizationContractPrice",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业内部标识",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContractPriceCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "合同价版本已创建",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractPriceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "合同价参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权管理企业合同价",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "企业或创建者不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "区间或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{organization_id}/contract-prices/{price_id}": {
+      "get": {
+        "tags": [
+          "企业合同价"
+        ],
+        "summary": "读取企业合同价详情",
+        "operationId": "getOrganizationContractPrice",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业内部标识",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "price_id",
+            "in": "path",
+            "description": "合同价内部标识",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "企业合同价详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractPriceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "标识无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权读取企业合同价",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "合同价不存在或不属于该企业",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{organization_id}/contract-prices/{price_id}/close": {
+      "post": {
+        "tags": [
+          "企业合同价"
+        ],
+        "summary": "按版本关闭企业合同价区间",
+        "operationId": "closeOrganizationContractPrice",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业内部标识",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "price_id",
+            "in": "path",
+            "description": "合同价内部标识",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContractPriceCloseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "合同价区间已关闭",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractPriceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "关闭参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权管理企业合同价",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "合同价不存在或不属于该企业",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "版本或状态冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/organizations/{organization_id}/sso/providers": {
       "get": {
         "tags": [
@@ -31007,6 +31423,205 @@
           "failed"
         ]
       },
+      "ContractPriceCloseRequest": {
+        "type": "object",
+        "required": [
+          "effective_until",
+          "expected_version"
+        ],
+        "properties": {
+          "effective_until": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "expected_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractPriceCreateRequest": {
+        "type": "object",
+        "required": [
+          "model",
+          "protocol",
+          "prices",
+          "effective_from",
+          "effective_until",
+          "expected_version"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1
+          },
+          "protocol": {
+            "$ref": "#/components/schemas/ContractPriceProtocol"
+          },
+          "prices": {
+            "$ref": "#/components/schemas/ContractPriceValues"
+          },
+          "effective_from": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "effective_until": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "expected_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractPriceListResponse": {
+        "type": "object",
+        "required": [
+          "prices"
+        ],
+        "properties": {
+          "prices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContractPriceResponse"
+            },
+            "maxItems": 1000
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractPriceProtocol": {
+        "type": "string",
+        "enum": [
+          "openai_chat",
+          "openai_responses",
+          "openai_embeddings",
+          "openai_images",
+          "openai_audio",
+          "openai_speech",
+          "jina_rerank",
+          "cohere_rerank",
+          "xai_video",
+          "anthropic",
+          "gemini"
+        ]
+      },
+      "ContractPriceResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "organization_id",
+          "model",
+          "protocol",
+          "prices",
+          "effective_from",
+          "effective_until",
+          "version",
+          "created_by_user_id",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "organization_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "model": {
+            "type": "string"
+          },
+          "protocol": {
+            "$ref": "#/components/schemas/ContractPriceProtocol"
+          },
+          "prices": {
+            "$ref": "#/components/schemas/ContractPriceValues"
+          },
+          "effective_from": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "effective_until": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "created_by_user_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractPriceValues": {
+        "type": "object",
+        "required": [
+          "input",
+          "output",
+          "cache_read",
+          "cache_creation_5m",
+          "cache_creation_1h"
+        ],
+        "properties": {
+          "input": {
+            "type": "string",
+            "maxLength": 39,
+            "pattern": "^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,28})?$"
+          },
+          "output": {
+            "type": "string",
+            "maxLength": 39,
+            "pattern": "^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,28})?$"
+          },
+          "cache_read": {
+            "type": "string",
+            "maxLength": 39,
+            "pattern": "^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,28})?$"
+          },
+          "cache_creation_5m": {
+            "type": "string",
+            "maxLength": 39,
+            "pattern": "^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,28})?$"
+          },
+          "cache_creation_1h": {
+            "type": "string",
+            "maxLength": 39,
+            "pattern": "^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,28})?$"
+          }
+        },
+        "additionalProperties": false
+      },
       "IssuedAdminRedemptionBatch": {
         "type": "object",
         "description": "批次创建响应；完整兑换码只在本次响应中出现。",
@@ -31212,6 +31827,10 @@
               "playground_conversation_conflict",
               "user_conflict",
               "organization_not_found",
+              "organization_contract_price_not_found",
+              "organization_contract_price_interval_conflict",
+              "organization_contract_price_conflict",
+              "organization_contract_price_transition_invalid",
               "organization_sso_provider_not_found",
               "organization_sso_provider_conflict",
               "organization_sso_provider_transition_invalid",
@@ -39030,6 +39649,9 @@
     },
     {
       "name": "企业预算"
+    },
+    {
+      "name": "企业合同价"
     },
     {
       "name": "企业 SSO"

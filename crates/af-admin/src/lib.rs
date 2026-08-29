@@ -29,6 +29,7 @@ mod oauth_login;
 mod organization;
 mod organization_activity;
 mod organization_budget;
+mod organization_contract_price;
 mod organization_custom_role;
 mod organization_custom_role_binding;
 mod organization_invitation;
@@ -88,6 +89,7 @@ pub use af_account::{
     ORGANIZATION_SSO_OIDC_CALLBACK_PATH, ORGANIZATION_SSO_SAML_CALLBACK_PATH,
     OrganizationSsoOidcCallback, OrganizationSsoSamlCallback,
 };
+pub use af_db::OrganizationContractPriceRecord;
 pub use af_db::OrganizationScimTokenRecord;
 pub use af_db::{
     CredentialProxyScheme, DatabaseTimestamp, NetworkSettingsMode,
@@ -248,6 +250,12 @@ pub use organization_budget::{
     OrganizationBudgetPolicyCreateCommand, OrganizationBudgetPolicyFuture,
     OrganizationBudgetReservationFuture, OrganizationBudgetService, OrganizationBudgetServiceError,
     OrganizationBudgetWindowsFuture,
+};
+pub use organization_contract_price::{
+    DatabaseOrganizationContractPriceService, OrganizationContractPriceCloseCommand,
+    OrganizationContractPriceCreateCommand, OrganizationContractPriceFuture,
+    OrganizationContractPriceListFuture, OrganizationContractPriceService,
+    OrganizationContractPriceServiceError,
 };
 pub use organization_custom_role::{
     DEFAULT_ORGANIZATION_CUSTOM_ROLE_PAGE_SIZE, DatabaseOrganizationCustomRoleService,
