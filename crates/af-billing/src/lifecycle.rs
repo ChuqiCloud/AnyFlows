@@ -78,7 +78,7 @@ impl BillingRequestPlan {
     }
 
     /// 绑定请求快照命中的企业合同价，随后只能随本计划进入预扣。
-    #[must_use]
+    #[must_use = "必须保留绑定合同价后的计费计划"]
     pub const fn with_contract_price(
         mut self,
         contract_price: Option<OrganizationContractPriceSnapshot>,
