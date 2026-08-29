@@ -41,6 +41,7 @@
     "organizationApiKeys": "Organization API keys",
     "organizationServiceAccounts": "Service accounts",
     "organizationBudgets": "Organization budgets",
+    "organizationContractPrices": "Contract prices",
     "organizationActivity": "Organization logs & audit",
     "organizationOverview": "Organization overview",
     "organizationMembers": "Members and teams",
@@ -4413,6 +4414,24 @@
       "tokensTitle": "Organization API keys could not be loaded",
       "tokensBody": "Your keys or the redacted directory are temporarily unavailable. Existing server-side key state is unaffected by this read failure."
     }
+  },
+  "organizationContractPrices": {
+    "eyebrow": "Organization workspace",
+    "title": "Contract prices",
+    "subtitle": "Versioned model pricing for this organization. In-flight requests keep their server-side price snapshot.",
+    "summary": { "count": "{{count}} price version(s)" },
+    "columns": { "model": "Model", "protocol": "Protocol", "prices": "Input / output", "effective": "Effective interval", "version": "Version", "actions": "Actions" },
+    "protocol": { "openai_chat": "OpenAI Chat", "openai_responses": "OpenAI Responses", "openai_embeddings": "OpenAI embeddings", "openai_images": "OpenAI images", "openai_audio": "OpenAI audio", "openai_speech": "OpenAI speech", "jina_rerank": "Jina rerank", "cohere_rerank": "Cohere rerank", "xai_video": "xAI video", "anthropic": "Anthropic", "gemini": "Gemini" },
+    "current": "currently open",
+    "scheduled": "scheduled",
+    "pricePair": "Input {{input}} · output {{output}}",
+    "actions": { "refresh": "Refresh", "retry": "Try again", "verify": "Refresh facts", "create": "Create price", "creating": "Creating…", "close": "Close interval", "cancel": "Cancel" },
+    "readOnly": "You can view contract prices but do not have permission to create or close versions.",
+    "empty": { "title": "No contract prices yet", "body": "Create a version to apply organization pricing to future requests." },
+    "restricted": { "title": "Contract price access is restricted", "body": "Your organization role does not include permission to read contract prices." },
+    "form": { "title": "Create contract price", "subtitle": "The server validates the model interval and creates an immutable version.", "model": "Model", "protocol": "Protocol", "input": "Input price", "output": "Output price", "cache_read": "Cache read price", "cache_creation_5m": "Cache creation (5m)", "cache_creation_1h": "Cache creation (1h)", "effectiveFrom": "Effective from", "effectiveUntil": "Effective until (optional)", "effectiveUntilHint": "Leave empty to keep this interval open.", "expectedVersion": "Next version will be checked against v{{version}}." },
+    "close": { "title": "Close contract price interval", "description": "Close {{model}} ({{protocol}}) at the current time? The server will verify version {{version}} and this cannot reopen the interval." },
+    "errors": { "listTitle": "Contract prices could not be loaded", "listBody": "The service did not return a reliable price history. Try again shortly.", "forbiddenTitle": "Contract price access was denied", "forbiddenBody": "The membership or organization entitlement no longer allows this read.", "intervalConflict": "This model and protocol interval overlaps another version. Choose a later effective time.", "conflict": "The price changed in another session. Refresh and submit against the latest version.", "mutation": "The operation did not return a reliable result. Refresh the price history and try again." }
   },
   "organizationDepartments": {
     "eyebrow": "Organization workspace",
