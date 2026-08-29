@@ -10,7 +10,8 @@ use af_admin::{
     OrganizationCustomRoleListQuery, OrganizationCustomRoleService,
     OrganizationCustomRoleServiceError, OrganizationDepartmentCreateCommand,
     OrganizationDepartmentCursor, OrganizationDepartmentDisableCommand,
-    OrganizationDepartmentListQuery, OrganizationDepartmentMoveCommand,
+    OrganizationDepartmentListQuery, OrganizationDepartmentMembershipAddCommand,
+    OrganizationDepartmentMembershipRecord, OrganizationDepartmentMoveCommand,
     OrganizationDepartmentRecord, OrganizationEntitlementSummary,
     OrganizationInvitationBatchCommand, OrganizationInvitationBatchResult,
     OrganizationInvitationCommand, OrganizationInvitationError,
@@ -50,7 +51,7 @@ use axum::{
     extract::{Path, RawQuery, State, rejection::JsonRejection},
     middleware,
     response::Response,
-    routing::{get, patch, post},
+    routing::{delete, get, patch, post},
 };
 use http::HeaderMap;
 use serde::{Deserialize, Serialize};
@@ -216,6 +217,19 @@ pub fn build_organization_router_with_domain(
             .route(
                 "/api/organizations/{organization_id}/departments/{department_id}/disable",
                 post(disable_organization_department),
+            )
+            .route(
+                "/api/organizations/{organization_id}/members/{membership_id}/department-memberships",
+                get(list_organization_department_memberships)
+                    .post(add_organization_department_membership),
+            )
+            .route(
+                "/api/organizations/{organization_id}/members/{membership_id}/department-memberships/{department_id}/primary",
+                post(set_primary_organization_department_membership),
+            )
+            .route(
+                "/api/organizations/{organization_id}/members/{membership_id}/department-memberships/{department_id}",
+                delete(remove_organization_department_membership),
             )
     } else {
         router
@@ -504,6 +518,30 @@ pub struct OrganizationMembershipChangeRequest {
 
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
+pub struct OrganizationDepartmentMembershipAddRequest {
+    #[schema(minimum = 1)]
+    department_id: i64,
+    is_primary: bool,
+    #[schema(minimum = 1, required = true)]
+    expected_membership_version: Option<i64>,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationDepartmentMembershipPrimaryRequest {
+    #[schema(minimum = 1)]
+    expected_membership_version: i64,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationDepartmentMembershipRemoveRequest {
+    #[schema(minimum = 1)]
+    expected_version: i64,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct OrganizationOwnershipTransferRequest {
     target_membership_id: i64,
     current_owner_version: i64,
@@ -682,6 +720,27 @@ pub struct OrganizationMembershipResponse {
 pub struct OrganizationMembershipListResponse {
     members: Vec<OrganizationMembershipResponse>,
     next_cursor: Option<i64>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationDepartmentMembershipResponse {
+    id: i64,
+    organization_id: i64,
+    membership_id: i64,
+    department_id: i64,
+    is_primary: bool,
+    status: &'static str,
+    version: i64,
+    created_at: i64,
+    updated_at: i64,
+    removed_at: Option<i64>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationDepartmentMembershipListResponse {
+    department_memberships: Vec<OrganizationDepartmentMembershipResponse>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -2912,6 +2971,257 @@ async fn change_organization_member(
     Ok(no_store_json(OrganizationMembershipResponse::from(&member)))
 }
 
+async fn list_organization_department_memberships(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Path((organization_id, membership_id)): Path<(i64, i64)>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let membership_id = OrganizationMembershipId::new(membership_id)
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    let context = authorize_lifecycle_context(
+        &state,
+        &authentication,
+        organization_id,
+        OrganizationPermission::DepartmentsRead,
+    )
+    .await?;
+    let service = state
+        .management_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let page = service
+        .list_department_memberships(context, membership_id)
+        .await
+        .map_err(map_management_lifecycle_error)?;
+    Ok(no_store_json(
+        OrganizationDepartmentMembershipListResponse {
+            department_memberships: page
+                .records()
+                .iter()
+                .map(OrganizationDepartmentMembershipResponse::from)
+                .collect(),
+        },
+    ))
+}
+
+async fn add_organization_department_membership(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path((organization_id, membership_id)): Path<(i64, i64)>,
+    headers: HeaderMap,
+    Json(request): Json<OrganizationDepartmentMembershipAddRequest>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let membership_id = OrganizationMembershipId::new(membership_id)
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    let department_id = OrganizationDepartmentId::new(request.department_id)
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::DepartmentsManage,
+        &request_id,
+        &headers,
+        "organization.member.department.add",
+        "membership",
+        membership_id.get().to_string(),
+    )
+    .await?;
+    let command = OrganizationDepartmentMembershipAddCommand::new(
+        department_id,
+        request.is_primary,
+        request.expected_membership_version,
+    )
+    .map_err(map_management_lifecycle_error)?;
+    let service = state
+        .management_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let record = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::DepartmentsManage,
+        "organization.member.department.add",
+        "membership",
+        membership_id.get().to_string(),
+        service
+            .add_department_membership(context.clone(), membership_id, command)
+            .await
+            .map_err(map_management_lifecycle_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::DepartmentsManage.code(),
+        "organization.member.department.add",
+        "department_membership",
+        format!("{}:{}", membership_id.get(), department_id.get()),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({
+            "department_id": record.department_id().get(),
+            "is_primary": record.is_primary(),
+            "version": record.version(),
+        })),
+    )
+    .await?;
+    Ok(no_store_json(
+        OrganizationDepartmentMembershipResponse::from(&record),
+    ))
+}
+
+async fn set_primary_organization_department_membership(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path((organization_id, membership_id, department_id)): Path<(i64, i64, i64)>,
+    headers: HeaderMap,
+    Json(request): Json<OrganizationDepartmentMembershipPrimaryRequest>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let membership_id = OrganizationMembershipId::new(membership_id)
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    let department_id = OrganizationDepartmentId::new(department_id)
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::DepartmentsManage,
+        &request_id,
+        &headers,
+        "organization.member.department.primary",
+        "membership",
+        membership_id.get().to_string(),
+    )
+    .await?;
+    let service = state
+        .management_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let record = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::DepartmentsManage,
+        "organization.member.department.primary",
+        "membership",
+        membership_id.get().to_string(),
+        service
+            .set_primary_department_membership(
+                context.clone(),
+                membership_id,
+                department_id,
+                request.expected_membership_version,
+            )
+            .await
+            .map_err(map_management_lifecycle_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::DepartmentsManage.code(),
+        "organization.member.department.primary",
+        "department_membership",
+        format!("{}:{}", membership_id.get(), department_id.get()),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({
+            "department_id": record.department_id().get(),
+            "is_primary": record.is_primary(),
+            "version": record.version(),
+        })),
+    )
+    .await?;
+    Ok(no_store_json(
+        OrganizationDepartmentMembershipResponse::from(&record),
+    ))
+}
+
+async fn remove_organization_department_membership(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path((organization_id, membership_id, department_id)): Path<(i64, i64, i64)>,
+    headers: HeaderMap,
+    Json(request): Json<OrganizationDepartmentMembershipRemoveRequest>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let membership_id = OrganizationMembershipId::new(membership_id)
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    let department_id = OrganizationDepartmentId::new(department_id)
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::DepartmentsManage,
+        &request_id,
+        &headers,
+        "organization.member.department.remove",
+        "membership",
+        membership_id.get().to_string(),
+    )
+    .await?;
+    let service = state
+        .management_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let record = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::DepartmentsManage,
+        "organization.member.department.remove",
+        "membership",
+        membership_id.get().to_string(),
+        service
+            .remove_department_membership(
+                context.clone(),
+                membership_id,
+                department_id,
+                request.expected_version,
+            )
+            .await
+            .map_err(map_management_lifecycle_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::DepartmentsManage.code(),
+        "organization.member.department.remove",
+        "department_membership",
+        format!("{}:{}", membership_id.get(), department_id.get()),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({
+            "department_id": record.department_id().get(),
+            "status": organization_department_membership_status_code(record.status()),
+            "version": record.version(),
+        })),
+    )
+    .await?;
+    Ok(no_store_json(
+        OrganizationDepartmentMembershipResponse::from(&record),
+    ))
+}
+
 async fn transfer_organization_ownership(
     State(state): State<OrganizationHttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
@@ -4093,6 +4403,23 @@ impl From<&OrganizationDepartmentRecord> for OrganizationDepartmentResponse {
     }
 }
 
+impl From<&OrganizationDepartmentMembershipRecord> for OrganizationDepartmentMembershipResponse {
+    fn from(record: &OrganizationDepartmentMembershipRecord) -> Self {
+        Self {
+            id: record.id(),
+            organization_id: record.organization_id().get(),
+            membership_id: record.membership_id().get(),
+            department_id: record.department_id().get(),
+            is_primary: record.is_primary(),
+            status: organization_department_membership_status_code(record.status()),
+            version: record.version(),
+            created_at: record.created_at(),
+            updated_at: record.updated_at(),
+            removed_at: record.removed_at(),
+        }
+    }
+}
+
 impl From<&af_admin::OrganizationCustomRoleRecord> for OrganizationCustomRoleResponse {
     fn from(record: &af_admin::OrganizationCustomRoleRecord) -> Self {
         Self {
@@ -4472,6 +4799,15 @@ fn organization_department_status_code(
     match status {
         af_domain::OrganizationDepartmentStatus::Active => "active",
         af_domain::OrganizationDepartmentStatus::Disabled => "disabled",
+    }
+}
+
+fn organization_department_membership_status_code(
+    status: af_domain::OrganizationDepartmentMembershipStatus,
+) -> &'static str {
+    match status {
+        af_domain::OrganizationDepartmentMembershipStatus::Active => "active",
+        af_domain::OrganizationDepartmentMembershipStatus::Removed => "removed",
     }
 }
 

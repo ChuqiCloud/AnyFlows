@@ -9,6 +9,9 @@ use crate::{
         OrganizationCustomRoleDisableRequest, OrganizationCustomRoleListResponse,
         OrganizationCustomRoleResponse, OrganizationDepartmentCreateRequest,
         OrganizationDepartmentDisableRequest, OrganizationDepartmentListResponse,
+        OrganizationDepartmentMembershipAddRequest, OrganizationDepartmentMembershipListResponse,
+        OrganizationDepartmentMembershipPrimaryRequest,
+        OrganizationDepartmentMembershipRemoveRequest, OrganizationDepartmentMembershipResponse,
         OrganizationDepartmentMoveRequest, OrganizationDepartmentResponse,
         OrganizationEntitlementResponse, OrganizationInvitationAcceptRequest,
         OrganizationInvitationAcceptResponse, OrganizationInvitationBatchRequest,
@@ -370,6 +373,102 @@ fn list_organization_members() {}
 fn change_organization_member() {}
 
 #[utoipa::path(
+    get,
+    path = "/api/organizations/{organization_id}/members/{membership_id}/department-memberships",
+    operation_id = "listOrganizationMemberDepartmentMemberships",
+    tag = "企业部门",
+    summary = "读取成员的活动与历史部门归属",
+    params(
+        ("organization_id" = i64, Path, minimum = 1),
+        ("membership_id" = i64, Path, minimum = 1)
+    ),
+    responses(
+        (status = 200, body = OrganizationDepartmentMembershipListResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn list_organization_member_department_memberships() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/organizations/{organization_id}/members/{membership_id}/department-memberships",
+    operation_id = "addOrganizationMemberDepartmentMembership",
+    tag = "企业部门",
+    summary = "添加成员部门归属",
+    params(
+        ("organization_id" = i64, Path, minimum = 1),
+        ("membership_id" = i64, Path, minimum = 1)
+    ),
+    request_body = OrganizationDepartmentMembershipAddRequest,
+    responses(
+        (status = 200, body = OrganizationDepartmentMembershipResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 409, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn add_organization_member_department_membership() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/organizations/{organization_id}/members/{membership_id}/department-memberships/{department_id}/primary",
+    operation_id = "setPrimaryOrganizationMemberDepartmentMembership",
+    tag = "企业部门",
+    summary = "按成员版本 CAS 设置主部门",
+    params(
+        ("organization_id" = i64, Path, minimum = 1),
+        ("membership_id" = i64, Path, minimum = 1),
+        ("department_id" = i64, Path, minimum = 1)
+    ),
+    request_body = OrganizationDepartmentMembershipPrimaryRequest,
+    responses(
+        (status = 200, body = OrganizationDepartmentMembershipResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 409, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn set_primary_organization_member_department_membership() {}
+
+#[utoipa::path(
+    delete,
+    path = "/api/organizations/{organization_id}/members/{membership_id}/department-memberships/{department_id}",
+    operation_id = "removeOrganizationMemberDepartmentMembership",
+    tag = "企业部门",
+    summary = "解除非主部门归属并保留历史",
+    params(
+        ("organization_id" = i64, Path, minimum = 1),
+        ("membership_id" = i64, Path, minimum = 1),
+        ("department_id" = i64, Path, minimum = 1)
+    ),
+    request_body = OrganizationDepartmentMembershipRemoveRequest,
+    responses(
+        (status = 200, body = OrganizationDepartmentMembershipResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 409, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn remove_organization_member_department_membership() {}
+
+#[utoipa::path(
     post,
     path = "/api/organizations/{organization_id}/ownership-transfer",
     operation_id = "transferOrganizationOwnership",
@@ -726,6 +825,10 @@ fn set_organization_member_custom_role() {}
         accept_organization_invitation,
         list_organization_members,
         change_organization_member,
+        list_organization_member_department_memberships,
+        add_organization_member_department_membership,
+        set_primary_organization_member_department_membership,
+        remove_organization_member_department_membership,
         transfer_organization_ownership,
         list_organization_teams,
         create_organization_team,
@@ -766,6 +869,11 @@ fn set_organization_member_custom_role() {}
         OrganizationInvitationPreviewResponse,
         OrganizationInvitationAcceptResponse,
         OrganizationMembershipChangeRequest,
+        OrganizationDepartmentMembershipAddRequest,
+        OrganizationDepartmentMembershipPrimaryRequest,
+        OrganizationDepartmentMembershipRemoveRequest,
+        OrganizationDepartmentMembershipResponse,
+        OrganizationDepartmentMembershipListResponse,
         OrganizationOwnershipTransferRequest,
         OrganizationTeamCreateRequest,
         OrganizationTeamChangeRequest,

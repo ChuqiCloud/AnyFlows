@@ -12,6 +12,10 @@ import {
   createOrganizationInvitationBatch,
   createOrganizationTeam,
   disableOrganizationTeam,
+  addOrganizationMemberDepartmentMembership,
+  listOrganizationMemberDepartmentMemberships,
+  removeOrganizationMemberDepartmentMembership,
+  setPrimaryOrganizationMemberDepartmentMembership,
   listOrganizationInvitations,
   listOrganizationMembers,
   listOrganizationTeams,
@@ -26,6 +30,9 @@ import type {
   OrganizationInvitationCreateRequest,
   OrganizationInvitationPreviewRequest,
   OrganizationMemberCustomRoleRequest,
+  OrganizationDepartmentMembershipAddRequest,
+  OrganizationDepartmentMembershipPrimaryRequest,
+  OrganizationDepartmentMembershipRemoveRequest,
   OrganizationMembershipChangeRequest,
   OrganizationOwnershipTransferRequest,
   OrganizationTeamChangeRequest,
@@ -65,6 +72,70 @@ export function useOrganizationTeams(organizationId: number, enabled = true) {
       return data
     },
     getNextPageParam: (page) => page.next_cursor ?? undefined,
+  })
+}
+
+/** 读取成员的活动与历史部门归属，跨企业边界由服务端再次校验。 */
+export function useOrganizationMemberDepartmentMemberships(organizationId: number, membershipId: number | undefined, enabled = true) {
+  return useQuery({
+    queryKey: organizationQueryKey(organizationId, 'member-departments', membershipId),
+    enabled: enabled && membershipId !== undefined,
+    queryFn: async ({ signal }) => {
+      const { data } = await listOrganizationMemberDepartmentMemberships({
+        client: apiClient,
+        path: { organization_id: organizationId, membership_id: membershipId! },
+        signal,
+      })
+      return data
+    },
+  })
+}
+
+export function useAddOrganizationMemberDepartmentMembership(organizationId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ membershipId, body }: { membershipId: number; body: OrganizationDepartmentMembershipAddRequest }) => {
+      const { data } = await addOrganizationMemberDepartmentMembership({
+        body,
+        client: apiClient,
+        path: { organization_id: organizationId, membership_id: membershipId },
+      })
+      return data
+    },
+    onSuccess: (_data, variables) => invalidateMemberDepartments(queryClient, organizationId, variables.membershipId),
+  })
+}
+
+export function useSetPrimaryOrganizationMemberDepartmentMembership(organizationId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ membershipId, departmentId, body }: { membershipId: number; departmentId: number; body: OrganizationDepartmentMembershipPrimaryRequest }) => {
+      const { data } = await setPrimaryOrganizationMemberDepartmentMembership({
+        body,
+        client: apiClient,
+        path: { organization_id: organizationId, membership_id: membershipId, department_id: departmentId },
+      })
+      return data
+    },
+    onSuccess: (_data, variables) => Promise.all([
+      invalidateMemberDepartments(queryClient, organizationId, variables.membershipId),
+      invalidateMembers(queryClient, organizationId),
+    ]),
+  })
+}
+
+export function useRemoveOrganizationMemberDepartmentMembership(organizationId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ membershipId, departmentId, body }: { membershipId: number; departmentId: number; body: OrganizationDepartmentMembershipRemoveRequest }) => {
+      const { data } = await removeOrganizationMemberDepartmentMembership({
+        body,
+        client: apiClient,
+        path: { organization_id: organizationId, membership_id: membershipId, department_id: departmentId },
+      })
+      return data
+    },
+    onSuccess: (_data, variables) => invalidateMemberDepartments(queryClient, organizationId, variables.membershipId),
   })
 }
 
@@ -260,6 +331,13 @@ function invalidateMembers(queryClient: ReturnType<typeof useQueryClient>, organ
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: organizationQueryKey(organizationId, 'members') }),
     queryClient.invalidateQueries({ queryKey: organizationQueryKey(organizationId, 'overview') }),
+  ])
+}
+
+function invalidateMemberDepartments(queryClient: ReturnType<typeof useQueryClient>, organizationId: number, membershipId: number) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: organizationQueryKey(organizationId, 'member-departments', membershipId) }),
+    queryClient.invalidateQueries({ queryKey: organizationQueryKey(organizationId, 'members') }),
   ])
 }
 

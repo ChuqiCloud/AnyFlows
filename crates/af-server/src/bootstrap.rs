@@ -92,7 +92,8 @@ use af_db::{
     OAuthLoginRepositoryError, OrganizationAuditRepository, OrganizationBudgetRepository,
     OrganizationBudgetRepositoryConfigError, OrganizationCustomRoleBindingRepository,
     OrganizationCustomRoleBindingRepositoryConfigError, OrganizationCustomRoleRepository,
-    OrganizationCustomRoleRepositoryConfigError, OrganizationDepartmentRepository,
+    OrganizationCustomRoleRepositoryConfigError, OrganizationDepartmentMembershipRepository,
+    OrganizationDepartmentMembershipRepositoryConfigError, OrganizationDepartmentRepository,
     OrganizationDepartmentRepositoryConfigError, OrganizationRepository,
     OrganizationRepositoryConfigError, OrganizationScimAuditRepository,
     OrganizationScimAuditRepositoryError, OrganizationScimGroupRepository,
@@ -560,6 +561,11 @@ pub enum BootstrapError {
     /// 企业部门目录仓储的启动参数无效。
     #[error("企业部门目录仓储启动参数无效")]
     OrganizationDepartmentRepository(#[source] OrganizationDepartmentRepositoryConfigError),
+    /// 企业部门成员归属仓储的启动参数无效。
+    #[error("企业部门成员归属仓储启动参数无效")]
+    OrganizationDepartmentMembershipRepository(
+        #[source] OrganizationDepartmentMembershipRepositoryConfigError,
+    ),
     /// 企业钱包仓储的启动参数无效。
     #[error("企业钱包仓储启动参数无效")]
     OrganizationWalletRepository(#[source] OrganizationWalletRepositoryConfigError),
@@ -998,6 +1004,13 @@ impl Bootstrap<DatabaseReady> {
             )
             .map_err(BootstrapError::OrganizationDepartmentRepository)?,
         );
+        let organization_department_membership_repository = Arc::new(
+            OrganizationDepartmentMembershipRepository::new(
+                self.stage.database.clone(),
+                Duration::from_secs(auth.lookup_timeout_secs()),
+            )
+            .map_err(BootstrapError::OrganizationDepartmentMembershipRepository)?,
+        );
         let organization_custom_role_repository = Arc::new(
             OrganizationCustomRoleRepository::new(
                 self.stage.database.clone(),
@@ -1365,7 +1378,10 @@ impl Bootstrap<DatabaseReady> {
                     af_admin::DatabaseOrganizationManagementService::new(Arc::clone(
                         &organization_repository,
                     ))
-                    .with_department_repository(organization_department_repository),
+                    .with_department_repository(organization_department_repository)
+                    .with_department_membership_repository(
+                        organization_department_membership_repository,
+                    ),
                 ),
                 organization_custom_role_service,
                 organization_custom_role_binding_service,
