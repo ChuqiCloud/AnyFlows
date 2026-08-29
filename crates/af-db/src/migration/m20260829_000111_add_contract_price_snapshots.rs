@@ -15,65 +15,216 @@ impl MigrationTrait for Migration {
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        drop_columns(manager, billing_organization_reservations::Entity).await?;
-        drop_columns(manager, billing_reservations::Entity).await
+        drop_organization_columns(manager).await?;
+        drop_billing_columns(manager).await
     }
 }
 
 async fn add_columns_billing(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
     use billing_reservations::Column;
-    manager
-        .alter_table(
-            Table::alter()
-                .table(billing_reservations::Entity)
-                .add_column(ColumnDef::new(Column::ContractPriceId).big_integer())
-                .add_column(ColumnDef::new(Column::ContractPriceVersion).big_integer())
-                .add_column(price(manager, Column::ContractInputPrice))
-                .add_column(price(manager, Column::ContractOutputPrice))
-                .add_column(price(manager, Column::ContractCacheReadPrice))
-                .add_column(price(manager, Column::ContractCacheCreation5mPrice))
-                .add_column(price(manager, Column::ContractCacheCreation1hPrice))
-                .to_owned(),
-        )
-        .await
+    add_column(
+        manager,
+        billing_reservations::Entity,
+        ColumnDef::new(Column::ContractPriceId).big_integer(),
+    )
+    .await?;
+    add_column(
+        manager,
+        billing_reservations::Entity,
+        ColumnDef::new(Column::ContractPriceVersion).big_integer(),
+    )
+    .await?;
+    add_column(
+        manager,
+        billing_reservations::Entity,
+        price(manager, Column::ContractInputPrice),
+    )
+    .await?;
+    add_column(
+        manager,
+        billing_reservations::Entity,
+        price(manager, Column::ContractOutputPrice),
+    )
+    .await?;
+    add_column(
+        manager,
+        billing_reservations::Entity,
+        price(manager, Column::ContractCacheReadPrice),
+    )
+    .await?;
+    add_column(
+        manager,
+        billing_reservations::Entity,
+        price(manager, Column::ContractCacheCreation5mPrice),
+    )
+    .await?;
+    add_column(
+        manager,
+        billing_reservations::Entity,
+        price(manager, Column::ContractCacheCreation1hPrice),
+    )
+    .await
 }
 
 async fn add_columns_organization(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
     use billing_organization_reservations::Column;
-    manager
-        .alter_table(
-            Table::alter()
-                .table(billing_organization_reservations::Entity)
-                .add_column(ColumnDef::new(Column::ContractPriceId).big_integer())
-                .add_column(ColumnDef::new(Column::ContractPriceVersion).big_integer())
-                .add_column(price(manager, Column::ContractInputPrice))
-                .add_column(price(manager, Column::ContractOutputPrice))
-                .add_column(price(manager, Column::ContractCacheReadPrice))
-                .add_column(price(manager, Column::ContractCacheCreation5mPrice))
-                .add_column(price(manager, Column::ContractCacheCreation1hPrice))
-                .to_owned(),
-        )
-        .await
+    add_column(
+        manager,
+        billing_organization_reservations::Entity,
+        ColumnDef::new(Column::ContractPriceId).big_integer(),
+    )
+    .await?;
+    add_column(
+        manager,
+        billing_organization_reservations::Entity,
+        ColumnDef::new(Column::ContractPriceVersion).big_integer(),
+    )
+    .await?;
+    add_column(
+        manager,
+        billing_organization_reservations::Entity,
+        price(manager, Column::ContractInputPrice),
+    )
+    .await?;
+    add_column(
+        manager,
+        billing_organization_reservations::Entity,
+        price(manager, Column::ContractOutputPrice),
+    )
+    .await?;
+    add_column(
+        manager,
+        billing_organization_reservations::Entity,
+        price(manager, Column::ContractCacheReadPrice),
+    )
+    .await?;
+    add_column(
+        manager,
+        billing_organization_reservations::Entity,
+        price(manager, Column::ContractCacheCreation5mPrice),
+    )
+    .await?;
+    add_column(
+        manager,
+        billing_organization_reservations::Entity,
+        price(manager, Column::ContractCacheCreation1hPrice),
+    )
+    .await
 }
 
-async fn drop_columns<T>(manager: &SchemaManager<'_>, table: T) -> Result<(), DbErr>
+async fn drop_billing_columns(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
+    use billing_reservations::Column;
+    drop_column(
+        manager,
+        billing_reservations::Entity,
+        Column::ContractCacheCreation1hPrice,
+    )
+    .await?;
+    drop_column(
+        manager,
+        billing_reservations::Entity,
+        Column::ContractCacheCreation5mPrice,
+    )
+    .await?;
+    drop_column(
+        manager,
+        billing_reservations::Entity,
+        Column::ContractCacheReadPrice,
+    )
+    .await?;
+    drop_column(
+        manager,
+        billing_reservations::Entity,
+        Column::ContractOutputPrice,
+    )
+    .await?;
+    drop_column(
+        manager,
+        billing_reservations::Entity,
+        Column::ContractInputPrice,
+    )
+    .await?;
+    drop_column(
+        manager,
+        billing_reservations::Entity,
+        Column::ContractPriceVersion,
+    )
+    .await?;
+    drop_column(
+        manager,
+        billing_reservations::Entity,
+        Column::ContractPriceId,
+    )
+    .await
+}
+
+async fn drop_organization_columns(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
+    use billing_organization_reservations::Column;
+    drop_column(
+        manager,
+        billing_organization_reservations::Entity,
+        Column::ContractCacheCreation1hPrice,
+    )
+    .await?;
+    drop_column(
+        manager,
+        billing_organization_reservations::Entity,
+        Column::ContractCacheCreation5mPrice,
+    )
+    .await?;
+    drop_column(
+        manager,
+        billing_organization_reservations::Entity,
+        Column::ContractCacheReadPrice,
+    )
+    .await?;
+    drop_column(
+        manager,
+        billing_organization_reservations::Entity,
+        Column::ContractOutputPrice,
+    )
+    .await?;
+    drop_column(
+        manager,
+        billing_organization_reservations::Entity,
+        Column::ContractInputPrice,
+    )
+    .await?;
+    drop_column(
+        manager,
+        billing_organization_reservations::Entity,
+        Column::ContractPriceVersion,
+    )
+    .await?;
+    drop_column(
+        manager,
+        billing_organization_reservations::Entity,
+        Column::ContractPriceId,
+    )
+    .await
+}
+
+/// SQLite 仅允许一次 ALTER TABLE 变更一个列，所有方言统一走单列操作。
+async fn add_column<T>(
+    manager: &SchemaManager<'_>,
+    table: T,
+    column: ColumnDef,
+) -> Result<(), DbErr>
 where
     T: IntoIden + 'static,
 {
-    use billing_reservations::Column;
     manager
-        .alter_table(
-            Table::alter()
-                .table(table)
-                .drop_column(Column::ContractCacheCreation1hPrice)
-                .drop_column(Column::ContractCacheCreation5mPrice)
-                .drop_column(Column::ContractCacheReadPrice)
-                .drop_column(Column::ContractOutputPrice)
-                .drop_column(Column::ContractInputPrice)
-                .drop_column(Column::ContractPriceVersion)
-                .drop_column(Column::ContractPriceId)
-                .to_owned(),
-        )
+        .alter_table(Table::alter().table(table).add_column(column).to_owned())
+        .await
+}
+
+async fn drop_column<T, C>(manager: &SchemaManager<'_>, table: T, column: C) -> Result<(), DbErr>
+where
+    T: IntoIden + 'static,
+    C: IntoIden + 'static,
+{
+    manager
+        .alter_table(Table::alter().table(table).drop_column(column).to_owned())
         .await
 }
 
