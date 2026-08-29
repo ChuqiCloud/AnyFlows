@@ -13,6 +13,7 @@ mod billing_batch;
 mod billing_group_window;
 mod billing_subscription;
 mod billing_token_window;
+mod contract_pricing;
 mod debug_trace;
 mod email;
 mod identity;
@@ -138,6 +139,9 @@ pub(super) use billing_subscription::create_billing_subscription_reservations;
 pub(super) use billing_token_window::{
     backfill_active_billing_token_window_reservations, create_billing_token_window_reservations,
     create_billing_token_window_reservations_index,
+};
+pub(super) use contract_pricing::{
+    create_organization_contract_prices, drop_organization_contract_prices,
 };
 pub(super) use model::create_models;
 pub(super) use model_sync::create_model_sync_audit;
