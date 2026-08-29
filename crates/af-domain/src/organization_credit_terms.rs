@@ -268,32 +268,32 @@ impl OrganizationCreditTermsSnapshot {
     }
 
     #[must_use]
-    pub const fn credit_limit(self) -> OrganizationCreditLimit {
+    pub const fn credit_limit(&self) -> OrganizationCreditLimit {
         self.credit_limit
     }
 
     #[must_use]
-    pub const fn period(self) -> OrganizationCreditTermPeriod {
+    pub const fn period(&self) -> OrganizationCreditTermPeriod {
         self.period
     }
 
     #[must_use]
-    pub const fn status(self) -> OrganizationCreditTermStatus {
+    pub const fn status(&self) -> OrganizationCreditTermStatus {
         self.status
     }
 
     #[must_use]
-    pub const fn effective_from(self) -> i64 {
+    pub const fn effective_from(&self) -> i64 {
         self.effective_from
     }
 
     #[must_use]
-    pub const fn effective_until(self) -> Option<i64> {
+    pub const fn effective_until(&self) -> Option<i64> {
         self.effective_until
     }
 
     #[must_use]
-    pub const fn version(self) -> i64 {
+    pub const fn version(&self) -> i64 {
         self.version
     }
 }
