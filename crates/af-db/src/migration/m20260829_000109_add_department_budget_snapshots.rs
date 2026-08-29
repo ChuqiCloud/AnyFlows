@@ -148,6 +148,22 @@ impl MigrationTrait for Migration {
                         .to_owned(),
                 )
                 .await?;
+            // MySQL 不允许删除仍被外键使用的索引，回滚时先解除快照表的全部引用。
+            for name in [
+                RESERVATION_PARENT_FK,
+                RESERVATION_DEPARTMENT_FK,
+                "fk_billing_org_reservation_department_policy",
+                "fk_billing_org_reservation_department_window",
+            ] {
+                manager
+                    .drop_foreign_key(
+                        ForeignKey::drop()
+                            .name(name)
+                            .table(reservation_departments::Entity)
+                            .to_owned(),
+                    )
+                    .await?;
+            }
         }
         downgrade_budget_scope_checks(manager).await?;
         manager
