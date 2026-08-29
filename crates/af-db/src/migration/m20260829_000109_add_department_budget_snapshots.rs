@@ -6,7 +6,7 @@ use super::iden::{
     billing_organization_reservations, organization_budget_policies, organization_budget_windows,
     organization_departments,
 };
-use super::schema::timestamp;
+use super::schema::{table, timestamp};
 
 const POLICY_DEPARTMENT_FK: &str = "fk_organization_budget_policy_department";
 const WINDOW_DEPARTMENT_FK: &str = "fk_organization_budget_window_department";
@@ -631,9 +631,9 @@ fn matching_parenthesis(sql: &str, open: usize) -> Option<usize> {
 
 async fn create_reservation_departments(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
     use reservation_departments::Column;
-    let mut table = Table::create();
-    table
-        .table(reservation_departments::Entity)
+    // 继承统一的 MySQL 字符集与排序规则，确保幂等键外键与父表二进制兼容。
+    let mut statement = table(manager, reservation_departments::Entity);
+    statement
         .if_not_exists()
         .col(
             ColumnDef::new(Column::IdempotencyKey)
@@ -757,7 +757,7 @@ async fn create_reservation_departments(manager: &SchemaManager<'_>) -> Result<(
                 .on_update(ForeignKeyAction::Restrict)
                 .on_delete(ForeignKeyAction::Restrict),
         );
-    manager.create_table(table.to_owned()).await?;
+    manager.create_table(statement.to_owned()).await?;
     Ok(())
 }
 
