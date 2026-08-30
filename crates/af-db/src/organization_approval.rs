@@ -948,7 +948,10 @@ impl OrganizationApprovalRepository {
         )
         .map_err(|_| OrganizationApprovalRepositoryError::InvalidInput)?;
         match self
-            .record_decision_inner(OrganizationApprovalDecisionWrite::new(decision))
+            .record_decision_inner_with_commit_policy(
+                OrganizationApprovalDecisionWrite::new(decision),
+                true,
+            )
             .await
         {
             Ok(OrganizationApprovalDecisionOutcome::Created(record)) => {
@@ -1116,6 +1119,15 @@ impl OrganizationApprovalRepository {
         &self,
         write: OrganizationApprovalDecisionWrite,
     ) -> Result<OrganizationApprovalDecisionOutcome, OrganizationApprovalRepositoryError> {
+        self.record_decision_inner_with_commit_policy(write, false)
+            .await
+    }
+
+    async fn record_decision_inner_with_commit_policy(
+        &self,
+        write: OrganizationApprovalDecisionWrite,
+        commit_outcome_unknown: bool,
+    ) -> Result<OrganizationApprovalDecisionOutcome, OrganizationApprovalRepositoryError> {
         let decision = write.decision;
         if let Some(existing) = find_decision_by_key(
             &self.pool,
@@ -1208,7 +1220,13 @@ impl OrganizationApprovalRepository {
             }
         };
         let record = decision_record(model)?;
-        commit(transaction).await?;
+        if let Err(error) = commit(transaction).await {
+            return Err(if commit_outcome_unknown {
+                OrganizationApprovalRepositoryError::OutcomeUnknown
+            } else {
+                error
+            });
+        }
         Ok(OrganizationApprovalDecisionOutcome::Created(record))
     }
 }
