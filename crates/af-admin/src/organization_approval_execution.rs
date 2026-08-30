@@ -5,13 +5,19 @@ use af_db::{
     OrganizationApprovalBudgetExecutionWrite, OrganizationApprovalExecutionRepository,
     OrganizationApprovalExecutionRepositoryError, OrganizationApprovalMemberExecutionOutcome,
     OrganizationApprovalMemberExecutionRecord, OrganizationApprovalMemberExecutionWrite,
-    OrganizationBudgetScope, organization_approval_budget_resource_summary,
-    organization_approval_member_resource_summary,
+    OrganizationApprovalServiceAccountExecutionAction,
+    OrganizationApprovalServiceAccountExecutionOutcome,
+    OrganizationApprovalServiceAccountExecutionRecord,
+    OrganizationApprovalServiceAccountExecutionWrite, OrganizationBudgetScope,
+    organization_approval_budget_resource_summary, organization_approval_member_resource_summary,
+    organization_approval_service_account_budget_binding_resource_summary,
+    organization_approval_service_account_status_resource_summary,
 };
 use af_domain::{
     OrganizationApprovalRequestId, OrganizationBudgetLimit, OrganizationBudgetPeriod,
-    OrganizationMembershipId, OrganizationMembershipStatus, OrganizationPermission,
-    OrganizationRole, OrganizationTeamId,
+    OrganizationBudgetPolicyId, OrganizationDepartmentId, OrganizationMembershipId,
+    OrganizationMembershipStatus, OrganizationPermission, OrganizationRole,
+    OrganizationServiceAccountId, OrganizationServiceAccountStatus, OrganizationTeamId,
 };
 use thiserror::Error;
 
@@ -74,6 +80,25 @@ pub struct OrganizationApprovalMemberExecutionResult {
 pub struct OrganizationApprovalBudgetExecutionResult {
     record: OrganizationApprovalBudgetExecutionRecord,
     replayed: bool,
+}
+
+/// 应用层服务账号审批执行结果，明确标记是否为幂等恢复。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrganizationApprovalServiceAccountExecutionResult {
+    record: OrganizationApprovalServiceAccountExecutionRecord,
+    replayed: bool,
+}
+
+impl OrganizationApprovalServiceAccountExecutionResult {
+    #[must_use]
+    pub const fn record(&self) -> &OrganizationApprovalServiceAccountExecutionRecord {
+        &self.record
+    }
+
+    #[must_use]
+    pub const fn replayed(&self) -> bool {
+        self.replayed
+    }
 }
 
 impl OrganizationApprovalBudgetExecutionResult {
@@ -151,6 +176,18 @@ pub type OrganizationApprovalBudgetExecutionFuture<'a> = Pin<
     >,
 >;
 
+pub type OrganizationApprovalServiceAccountExecutionFuture<'a> = Pin<
+    Box<
+        dyn Future<
+                Output = Result<
+                    OrganizationApprovalServiceAccountExecutionResult,
+                    OrganizationApprovalExecutionError,
+                >,
+            > + Send
+            + 'a,
+    >,
+>;
+
 /// 预算审批执行命令；策略字段与版本均来自申请时的完整快照。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct OrganizationApprovalBudgetPolicyCommand {
@@ -196,6 +233,99 @@ impl OrganizationApprovalBudgetPolicyCommand {
     }
 }
 
+/// 服务账号生命周期审批命令；部门和主体版本来自申请时快照。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OrganizationApprovalServiceAccountStatusCommand {
+    service_account_id: OrganizationServiceAccountId,
+    department_id: Option<OrganizationDepartmentId>,
+    target_status: OrganizationServiceAccountStatus,
+    expected_account_version: i64,
+}
+
+impl OrganizationApprovalServiceAccountStatusCommand {
+    pub fn new(
+        service_account_id: OrganizationServiceAccountId,
+        department_id: Option<OrganizationDepartmentId>,
+        target_status: OrganizationServiceAccountStatus,
+        expected_account_version: i64,
+    ) -> Result<Self, OrganizationApprovalExecutionError> {
+        if expected_account_version <= 0 || expected_account_version == i64::MAX {
+            return Err(OrganizationApprovalExecutionError::InvalidRequest);
+        }
+        Ok(Self {
+            service_account_id,
+            department_id,
+            target_status,
+            expected_account_version,
+        })
+    }
+
+    /// 生成创建审批申请时必须使用的命令摘要。
+    #[must_use]
+    pub fn resource_summary(&self, context: &OrganizationContext) -> String {
+        organization_approval_service_account_status_resource_summary(
+            context.organization_id(),
+            self.service_account_id,
+            self.department_id,
+            self.target_status,
+            self.expected_account_version,
+        )
+    }
+}
+
+/// 服务账号预算绑定审批命令；主体、策略和绑定版本都必须复验。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OrganizationApprovalServiceAccountBudgetBindingCommand {
+    service_account_id: OrganizationServiceAccountId,
+    department_id: Option<OrganizationDepartmentId>,
+    policy_id: OrganizationBudgetPolicyId,
+    expected_policy_version: i64,
+    expected_binding_version: Option<i64>,
+    expected_account_version: i64,
+}
+
+impl OrganizationApprovalServiceAccountBudgetBindingCommand {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        service_account_id: OrganizationServiceAccountId,
+        department_id: Option<OrganizationDepartmentId>,
+        policy_id: OrganizationBudgetPolicyId,
+        expected_policy_version: i64,
+        expected_binding_version: Option<i64>,
+        expected_account_version: i64,
+    ) -> Result<Self, OrganizationApprovalExecutionError> {
+        if expected_policy_version <= 0
+            || expected_account_version <= 0
+            || expected_account_version == i64::MAX
+            || expected_binding_version.is_some_and(|version| version <= 0 || version == i64::MAX)
+        {
+            return Err(OrganizationApprovalExecutionError::InvalidRequest);
+        }
+        Ok(Self {
+            service_account_id,
+            department_id,
+            policy_id,
+            expected_policy_version,
+            expected_binding_version,
+            expected_account_version,
+        })
+    }
+
+    /// 生成创建审批申请时必须使用的命令摘要。
+    #[must_use]
+    pub fn resource_summary(&self, context: &OrganizationContext) -> String {
+        organization_approval_service_account_budget_binding_resource_summary(
+            context.organization_id(),
+            self.service_account_id,
+            self.department_id,
+            self.policy_id,
+            self.expected_policy_version,
+            self.expected_binding_version,
+            self.expected_account_version,
+        )
+    }
+}
+
 /// 企业审批资源执行端口；按资源类型提供受控适配器，不接受宽泛资源载荷。
 pub trait OrganizationApprovalExecutionService: Send + Sync {
     fn execute_member_change<'a>(
@@ -211,6 +341,20 @@ pub trait OrganizationApprovalExecutionService: Send + Sync {
         request_id: OrganizationApprovalRequestId,
         command: OrganizationApprovalBudgetPolicyCommand,
     ) -> OrganizationApprovalBudgetExecutionFuture<'a>;
+
+    fn execute_service_account_status<'a>(
+        &'a self,
+        context: OrganizationContext,
+        request_id: OrganizationApprovalRequestId,
+        command: OrganizationApprovalServiceAccountStatusCommand,
+    ) -> OrganizationApprovalServiceAccountExecutionFuture<'a>;
+
+    fn execute_service_account_budget_binding<'a>(
+        &'a self,
+        context: OrganizationContext,
+        request_id: OrganizationApprovalRequestId,
+        command: OrganizationApprovalServiceAccountBudgetBindingCommand,
+    ) -> OrganizationApprovalServiceAccountExecutionFuture<'a>;
 }
 
 /// 使用数据库原子复验仓储实现成员审批执行。
@@ -298,6 +442,77 @@ impl OrganizationApprovalExecutionService for DatabaseOrganizationApprovalExecut
             Ok(OrganizationApprovalBudgetExecutionResult { record, replayed })
         })
     }
+
+    fn execute_service_account_status<'a>(
+        &'a self,
+        context: OrganizationContext,
+        request_id: OrganizationApprovalRequestId,
+        command: OrganizationApprovalServiceAccountStatusCommand,
+    ) -> OrganizationApprovalServiceAccountExecutionFuture<'a> {
+        Box::pin(async move {
+            if !context.allows(OrganizationPermission::ServiceAccountsManage) {
+                return Err(OrganizationApprovalExecutionError::Forbidden);
+            }
+            let write = OrganizationApprovalServiceAccountExecutionWrite::new(
+                context.organization_id(),
+                request_id,
+                command.service_account_id,
+                command.department_id,
+                OrganizationApprovalServiceAccountExecutionAction::SetStatus {
+                    target_status: command.target_status,
+                    expected_account_version: command.expected_account_version,
+                },
+                context.membership_id(),
+                context.user_id(),
+            )
+            .map_err(map_repository_error)?;
+            execute_service_account(&self.repository, write).await
+        })
+    }
+
+    fn execute_service_account_budget_binding<'a>(
+        &'a self,
+        context: OrganizationContext,
+        request_id: OrganizationApprovalRequestId,
+        command: OrganizationApprovalServiceAccountBudgetBindingCommand,
+    ) -> OrganizationApprovalServiceAccountExecutionFuture<'a> {
+        Box::pin(async move {
+            if !context.allows(OrganizationPermission::ServiceAccountsManage) {
+                return Err(OrganizationApprovalExecutionError::Forbidden);
+            }
+            let write = OrganizationApprovalServiceAccountExecutionWrite::new(
+                context.organization_id(),
+                request_id,
+                command.service_account_id,
+                command.department_id,
+                OrganizationApprovalServiceAccountExecutionAction::SetBudgetBinding {
+                    policy_id: command.policy_id,
+                    expected_policy_version: command.expected_policy_version,
+                    expected_binding_version: command.expected_binding_version,
+                    expected_account_version: command.expected_account_version,
+                },
+                context.membership_id(),
+                context.user_id(),
+            )
+            .map_err(map_repository_error)?;
+            execute_service_account(&self.repository, write).await
+        })
+    }
+}
+
+async fn execute_service_account(
+    repository: &OrganizationApprovalExecutionRepository,
+    write: OrganizationApprovalServiceAccountExecutionWrite,
+) -> Result<OrganizationApprovalServiceAccountExecutionResult, OrganizationApprovalExecutionError> {
+    let (record, replayed) = match repository
+        .execute_service_account(write)
+        .await
+        .map_err(map_repository_error)?
+    {
+        OrganizationApprovalServiceAccountExecutionOutcome::Applied(record) => (record, false),
+        OrganizationApprovalServiceAccountExecutionOutcome::Existing(record) => (record, true),
+    };
+    Ok(OrganizationApprovalServiceAccountExecutionResult { record, replayed })
 }
 
 impl fmt::Debug for DatabaseOrganizationApprovalExecutionService {

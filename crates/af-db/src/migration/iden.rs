@@ -2382,6 +2382,41 @@ pub(in crate::migration) mod organization_approval_budget_executions {
     }
 }
 
+pub(in crate::migration) mod organization_approval_service_account_executions {
+    use super::DeriveIden;
+
+    /// 服务账号审批执行事实表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_approval_service_account_executions")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 服务账号审批执行动作、版本和企业边界字段标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        RequestId,
+        DecisionId,
+        ServiceAccountId,
+        ServiceAccountDepartmentId,
+        ActionKind,
+        TargetStatus,
+        PolicyId,
+        ExpectedAccountVersion,
+        AppliedAccountVersion,
+        ExpectedPolicyVersion,
+        AppliedPolicyVersion,
+        ExpectedBindingVersion,
+        AppliedBindingVersion,
+        ExecutedByMembershipId,
+        ExecutedAt,
+    }
+}
+
 pub(in crate::migration) mod organization_custom_roles {
     use super::DeriveIden;
 

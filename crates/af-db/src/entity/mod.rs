@@ -19,11 +19,11 @@ use af_domain::{
     OrganizationCustomRoleStatus, OrganizationDepartmentKey,
     OrganizationDepartmentMembershipStatus, OrganizationDepartmentStatus, OrganizationKey,
     OrganizationMembershipStatus, OrganizationPermission, OrganizationRole,
-    OrganizationServiceAccountKey, OrganizationStatus, OrganizationTeamStatus, Quota, QuotaDelta,
-    RedemptionBatchId, RedemptionBatchStatus, RedemptionCodeId, RedemptionCodeStatus, RouteMode,
-    RouteStrategy, SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus,
-    SubscriptionWindow, UserSubscriptionId, UserSubscriptionStatus, WalletEventId,
-    validate_route_model_pattern,
+    OrganizationServiceAccountKey, OrganizationServiceAccountStatus, OrganizationStatus,
+    OrganizationTeamStatus, Quota, QuotaDelta, RedemptionBatchId, RedemptionBatchStatus,
+    RedemptionCodeId, RedemptionCodeStatus, RouteMode, RouteStrategy, SubscriptionCycle,
+    SubscriptionPlanId, SubscriptionPlanStatus, SubscriptionWindow, UserSubscriptionId,
+    UserSubscriptionStatus, WalletEventId, validate_route_model_pattern,
 };
 
 pub(crate) mod abilities;
@@ -71,6 +71,7 @@ pub(crate) mod organization_approval_budget_executions;
 pub(crate) mod organization_approval_decisions;
 pub(crate) mod organization_approval_member_executions;
 pub(crate) mod organization_approval_requests;
+pub(crate) mod organization_approval_service_account_executions;
 pub(crate) mod organization_approval_templates;
 pub(crate) mod organization_audit_logs;
 pub(crate) mod organization_budget_policies;
@@ -1211,6 +1212,130 @@ where
         || executed_at.is_none_or(|value| value.unix_timestamp() < 0)
     {
         return Err(DbErr::Custom("预算审批执行事实字段无效".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_organization_approval_service_account_executions<C>(
+    model: &organization_approval_service_account_executions::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    if !insert {
+        return Err(DbErr::Custom("服务账号审批执行事实只允许追加".to_owned()));
+    }
+    let action_kind = model.action_kind.try_as_ref().copied();
+    let target_status = model.target_status.try_as_ref();
+    let policy_id = model.policy_id.try_as_ref();
+    let expected_account_version = model.expected_account_version.try_as_ref();
+    let applied_account_version = model.applied_account_version.try_as_ref();
+    let expected_policy_version = model.expected_policy_version.try_as_ref();
+    let applied_policy_version = model.applied_policy_version.try_as_ref();
+    let expected_binding_version = model.expected_binding_version.try_as_ref();
+    let applied_binding_version = model.applied_binding_version.try_as_ref();
+    let action_shape = match action_kind {
+        Some(1) => {
+            target_status.is_some_and(|value| {
+                value.is_some_and(|status| {
+                    OrganizationServiceAccountStatus::from_code(status).is_ok()
+                })
+            }) && policy_id.is_some_and(Option::is_none)
+                && expected_policy_version.is_some_and(Option::is_none)
+                && applied_policy_version.is_some_and(Option::is_none)
+                && expected_binding_version.is_some_and(Option::is_none)
+                && applied_binding_version.is_some_and(Option::is_none)
+        }
+        Some(2) => {
+            target_status.is_some_and(Option::is_none)
+                && policy_id.is_some_and(|value| value.is_some_and(|id| id > 0))
+                && expected_policy_version
+                    .is_some_and(|value| value.is_some_and(|version| version > 0))
+                && applied_policy_version
+                    .is_some_and(|value| value.is_some_and(|version| version > 0))
+                && expected_binding_version.is_some_and(|value| {
+                    value.is_none_or(|version| version > 0 && version < i64::MAX)
+                })
+                && applied_binding_version
+                    .is_some_and(|value| value.is_some_and(|version| version > 0))
+        }
+        _ => false,
+    };
+    let versions_valid = match action_kind {
+        Some(1) => expected_account_version
+            .zip(applied_account_version)
+            .is_some_and(|(expected, applied)| {
+                *expected == *applied || expected.checked_add(1) == Some(*applied)
+            }),
+        Some(2) => expected_account_version
+            .zip(applied_account_version)
+            .is_some_and(|(expected, applied)| expected == applied),
+        _ => false,
+    };
+    let policy_versions_valid = match action_kind {
+        Some(2) => expected_policy_version
+            .zip(applied_policy_version)
+            .is_some_and(|(expected, applied)| expected == applied),
+        Some(1) => {
+            expected_policy_version.is_some_and(Option::is_none)
+                && applied_policy_version.is_some_and(Option::is_none)
+        }
+        _ => false,
+    };
+    let binding_versions_valid = match action_kind {
+        Some(1) => {
+            expected_binding_version.is_some_and(Option::is_none)
+                && applied_binding_version.is_some_and(Option::is_none)
+        }
+        Some(2) => expected_binding_version.is_some_and(|expected| match *expected {
+            None => applied_binding_version.is_some_and(|applied| *applied == Some(1)),
+            Some(expected) => applied_binding_version.is_some_and(|applied| {
+                *applied == Some(expected)
+                    || expected
+                        .checked_add(1)
+                        .is_some_and(|next| *applied == Some(next))
+            }),
+        }),
+        _ => false,
+    };
+    if model
+        .organization_id
+        .try_as_ref()
+        .is_none_or(|value| *value <= 0)
+        || model
+            .request_id
+            .try_as_ref()
+            .is_none_or(|value| *value <= 0)
+        || model
+            .decision_id
+            .try_as_ref()
+            .is_none_or(|value| *value <= 0)
+        || model
+            .service_account_id
+            .try_as_ref()
+            .is_none_or(|value| *value <= 0)
+        || model
+            .service_account_department_id
+            .try_as_ref()
+            .is_some_and(|value| value.is_some_and(|department_id| department_id <= 0))
+        || expected_account_version.is_none_or(|value| *value <= 0 || *value == i64::MAX)
+        || applied_account_version.is_none_or(|value| *value <= 0)
+        || model
+            .executed_by_membership_id
+            .try_as_ref()
+            .is_none_or(|value| *value <= 0)
+        || model
+            .executed_at
+            .try_as_ref()
+            .is_none_or(|value| value.unix_timestamp() < 0)
+        || !action_shape
+        || !versions_valid
+        || !policy_versions_valid
+        || !binding_versions_valid
+    {
+        return Err(DbErr::Custom("服务账号审批执行事实字段无效".to_owned()));
     }
     Ok(())
 }
@@ -2965,6 +3090,17 @@ impl ActiveModelBehavior for organization_approval_budget_executions::ActiveMode
         C: ConnectionTrait,
     {
         validate_organization_approval_budget_executions(&self, database, insert).await?;
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_approval_service_account_executions::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_organization_approval_service_account_executions(&self, database, insert).await?;
         Ok(self)
     }
 }

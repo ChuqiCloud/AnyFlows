@@ -20,6 +20,10 @@ use crate::organization_approval_budget_execution::{
     OrganizationApprovalBudgetExecutionOutcome, OrganizationApprovalBudgetExecutionWrite,
     execute_budget_policy_transaction,
 };
+use crate::organization_approval_service_account_execution::{
+    OrganizationApprovalServiceAccountExecutionOutcome,
+    OrganizationApprovalServiceAccountExecutionWrite, execute_service_account_transaction,
+};
 use crate::{
     DatabasePool, OrganizationMembershipChange, OrganizationRepositoryError,
     entity::{
@@ -254,6 +258,23 @@ impl OrganizationApprovalExecutionRepository {
         .map_err(|_| OrganizationApprovalExecutionRepositoryError::Timeout)?
     }
 
+    /// 执行或幂等恢复一个已批准的服务账号受控动作。
+    pub async fn execute_service_account(
+        &self,
+        write: OrganizationApprovalServiceAccountExecutionWrite,
+    ) -> Result<
+        OrganizationApprovalServiceAccountExecutionOutcome,
+        OrganizationApprovalExecutionRepositoryError,
+    > {
+        timeout(
+            self.operation_timeout,
+            self.execute_service_account_inner(write)
+                .with_subscriber(NoSubscriber::default()),
+        )
+        .await
+        .map_err(|_| OrganizationApprovalExecutionRepositoryError::Timeout)?
+    }
+
     async fn execute_member_change_inner(
         &self,
         write: OrganizationApprovalMemberExecutionWrite,
@@ -284,6 +305,27 @@ impl OrganizationApprovalExecutionRepository {
     > {
         let transaction = self.pool.connection().begin().await.map_err(query_error)?;
         let result = execute_budget_policy_transaction(&transaction, write).await;
+        match result {
+            Ok(outcome) => {
+                transaction.commit().await.map_err(query_error)?;
+                Ok(outcome)
+            }
+            Err(error) => {
+                transaction.rollback().await.map_err(query_error)?;
+                Err(error)
+            }
+        }
+    }
+
+    async fn execute_service_account_inner(
+        &self,
+        write: OrganizationApprovalServiceAccountExecutionWrite,
+    ) -> Result<
+        OrganizationApprovalServiceAccountExecutionOutcome,
+        OrganizationApprovalExecutionRepositoryError,
+    > {
+        let transaction = self.pool.connection().begin().await.map_err(query_error)?;
+        let result = execute_service_account_transaction(&transaction, write).await;
         match result {
             Ok(outcome) => {
                 transaction.commit().await.map_err(query_error)?;

@@ -1,9 +1,10 @@
 use std::{fmt, time::Duration};
 
 use af_domain::{
-    OrganizationBudgetPolicyId, OrganizationId, OrganizationServiceAccountBudgetBinding,
-    OrganizationServiceAccountBudgetBindingError, OrganizationServiceAccountBudgetScope,
-    OrganizationServiceAccountId, OrganizationServiceAccountStatus, OrganizationTeamId,
+    OrganizationBudgetPolicyId, OrganizationDepartmentId, OrganizationId,
+    OrganizationServiceAccountBudgetBinding, OrganizationServiceAccountBudgetBindingError,
+    OrganizationServiceAccountBudgetScope, OrganizationServiceAccountId,
+    OrganizationServiceAccountStatus, OrganizationTeamId,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, DbErr,
@@ -132,115 +133,22 @@ impl OrganizationServiceAccountBudgetBindingRepository {
         OrganizationServiceAccountBudgetBindingRepositoryError,
     > {
         let transaction = self.pool.connection().begin().await.map_err(query_error)?;
-        lock_organization(&transaction, organization_id).await?;
-        let account = lock_account(&transaction, organization_id, service_account_id).await?;
-        validate_account(&account)?;
-        let policy = lock_policy(&transaction, organization_id, policy_id).await?;
-        let now = TimeDateTimeWithTimeZone::now_utc();
-        let scope = validate_policy(&transaction, &policy, organization_id, now).await?;
-        let current = lock_binding(&transaction, organization_id, service_account_id).await?;
-
-        match current {
-            Some(current) => {
-                if expected_version != Some(current.version) {
-                    rollback(transaction).await?;
-                    return Err(OrganizationServiceAccountBudgetBindingRepositoryError::Conflict);
-                }
-                let current_binding = binding_record(current.clone())?;
-                if current_binding.policy_id() == policy_id {
-                    let record = binding_record_with_policy(current, scope, policy.version)?;
-                    commit(transaction).await?;
-                    return Ok(record);
-                }
-                let version = current.version.checked_add(1).ok_or_else(invariant)?;
-                let result = organization_service_account_budget_bindings::Entity::update_many()
-                    .filter(organization_service_account_budget_bindings::Column::Id.eq(current.id))
-                    .filter(
-                        organization_service_account_budget_bindings::Column::OrganizationId
-                            .eq(organization_id.get()),
-                    )
-                    .filter(
-                        organization_service_account_budget_bindings::Column::ServiceAccountId
-                            .eq(service_account_id.get()),
-                    )
-                    .filter(
-                        organization_service_account_budget_bindings::Column::Version
-                            .eq(current.version),
-                    )
-                    .col_expr(
-                        organization_service_account_budget_bindings::Column::PolicyId,
-                        Expr::value(policy_id.get()),
-                    )
-                    .col_expr(
-                        organization_service_account_budget_bindings::Column::PolicyVersion,
-                        Expr::value(policy.version),
-                    )
-                    .col_expr(
-                        organization_service_account_budget_bindings::Column::ScopeKind,
-                        Expr::value(scope.code()),
-                    )
-                    .col_expr(
-                        organization_service_account_budget_bindings::Column::TeamId,
-                        Expr::value(scope.team_id().map(OrganizationTeamId::get)),
-                    )
-                    .col_expr(
-                        organization_service_account_budget_bindings::Column::Version,
-                        Expr::value(version),
-                    )
-                    .col_expr(
-                        organization_service_account_budget_bindings::Column::UpdatedAt,
-                        Expr::value(now),
-                    )
-                    .exec(&transaction)
-                    .await
-                    .map_err(query_error)?;
-                if result.rows_affected != 1 {
-                    rollback(transaction).await?;
-                    return Err(OrganizationServiceAccountBudgetBindingRepositoryError::Conflict);
-                }
-                let updated =
-                    organization_service_account_budget_bindings::Entity::find_by_id(current.id)
-                        .filter(
-                            organization_service_account_budget_bindings::Column::OrganizationId
-                                .eq(organization_id.get()),
-                        )
-                        .one(&transaction)
-                        .await
-                        .map_err(query_error)?
-                        .ok_or_else(invariant)?;
-                let record = binding_record_with_policy(updated, scope, policy.version)?;
+        let result = set_binding_in_transaction(
+            &transaction,
+            organization_id,
+            service_account_id,
+            policy_id,
+            expected_version,
+        )
+        .await;
+        match result {
+            Ok(record) => {
                 commit(transaction).await?;
                 Ok(record)
             }
-            None => {
-                if expected_version.is_some() {
-                    rollback(transaction).await?;
-                    return Err(OrganizationServiceAccountBudgetBindingRepositoryError::Conflict);
-                }
-                let model = organization_service_account_budget_bindings::ActiveModel {
-                    organization_id: Set(organization_id.get()),
-                    service_account_id: Set(service_account_id.get()),
-                    policy_id: Set(policy_id.get()),
-                    policy_version: Set(policy.version),
-                    scope_kind: Set(scope.code()),
-                    team_id: Set(scope.team_id().map(OrganizationTeamId::get)),
-                    version: Set(1),
-                    created_at: Set(now),
-                    updated_at: Set(now),
-                    ..Default::default()
-                }
-                .insert(&transaction)
-                .await
-                .map_err(|error| {
-                    if is_unique_violation(&error) {
-                        OrganizationServiceAccountBudgetBindingRepositoryError::Conflict
-                    } else {
-                        query_error(error)
-                    }
-                })?;
-                let record = binding_record_with_policy(model, scope, policy.version)?;
-                commit(transaction).await?;
-                Ok(record)
+            Err(error) => {
+                rollback(transaction).await?;
+                Err(error)
             }
         }
     }
@@ -276,6 +184,154 @@ impl OrganizationServiceAccountBudgetBindingRepository {
         let record = binding_record_with_policy(binding, scope, policy.version)?;
         commit(transaction).await?;
         Ok(record)
+    }
+}
+
+/// 在调用方事务内按企业 → 服务账号 → 策略 → 绑定的固定顺序更新预算绑定。
+pub(crate) async fn set_binding_in_transaction(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+    service_account_id: OrganizationServiceAccountId,
+    policy_id: OrganizationBudgetPolicyId,
+    expected_version: Option<i64>,
+) -> Result<
+    OrganizationServiceAccountBudgetBinding,
+    OrganizationServiceAccountBudgetBindingRepositoryError,
+> {
+    set_binding_in_transaction_with_account_version(
+        transaction,
+        organization_id,
+        service_account_id,
+        policy_id,
+        expected_version,
+        None,
+        None,
+    )
+    .await
+}
+
+/// 在调用方事务内额外复验服务账号主体版本，再更新预算绑定。
+pub(crate) async fn set_binding_in_transaction_with_account_version(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+    service_account_id: OrganizationServiceAccountId,
+    policy_id: OrganizationBudgetPolicyId,
+    expected_version: Option<i64>,
+    expected_account_version: Option<i64>,
+    expected_department_id: Option<Option<OrganizationDepartmentId>>,
+) -> Result<
+    OrganizationServiceAccountBudgetBinding,
+    OrganizationServiceAccountBudgetBindingRepositoryError,
+> {
+    lock_organization(transaction, organization_id).await?;
+    let account = lock_account(transaction, organization_id, service_account_id).await?;
+    validate_account(&account)?;
+    if expected_account_version.is_some_and(|version| version != account.version) {
+        return Err(OrganizationServiceAccountBudgetBindingRepositoryError::Conflict);
+    }
+    if expected_department_id.is_some_and(|department_id| {
+        department_id.map(OrganizationDepartmentId::get) != account.organization_department_id
+    }) {
+        return Err(OrganizationServiceAccountBudgetBindingRepositoryError::Conflict);
+    }
+    let policy = lock_policy(transaction, organization_id, policy_id).await?;
+    let now = TimeDateTimeWithTimeZone::now_utc();
+    let scope = validate_policy(transaction, &policy, organization_id, now).await?;
+    let current = lock_binding(transaction, organization_id, service_account_id).await?;
+
+    match current {
+        Some(current) => {
+            if expected_version != Some(current.version) {
+                return Err(OrganizationServiceAccountBudgetBindingRepositoryError::Conflict);
+            }
+            let current_binding = binding_record(current.clone())?;
+            if current_binding.policy_id() == policy_id {
+                return binding_record_with_policy(current, scope, policy.version);
+            }
+            let version = current.version.checked_add(1).ok_or_else(invariant)?;
+            let result = organization_service_account_budget_bindings::Entity::update_many()
+                .filter(organization_service_account_budget_bindings::Column::Id.eq(current.id))
+                .filter(
+                    organization_service_account_budget_bindings::Column::OrganizationId
+                        .eq(organization_id.get()),
+                )
+                .filter(
+                    organization_service_account_budget_bindings::Column::ServiceAccountId
+                        .eq(service_account_id.get()),
+                )
+                .filter(
+                    organization_service_account_budget_bindings::Column::Version
+                        .eq(current.version),
+                )
+                .col_expr(
+                    organization_service_account_budget_bindings::Column::PolicyId,
+                    Expr::value(policy_id.get()),
+                )
+                .col_expr(
+                    organization_service_account_budget_bindings::Column::PolicyVersion,
+                    Expr::value(policy.version),
+                )
+                .col_expr(
+                    organization_service_account_budget_bindings::Column::ScopeKind,
+                    Expr::value(scope.code()),
+                )
+                .col_expr(
+                    organization_service_account_budget_bindings::Column::TeamId,
+                    Expr::value(scope.team_id().map(OrganizationTeamId::get)),
+                )
+                .col_expr(
+                    organization_service_account_budget_bindings::Column::Version,
+                    Expr::value(version),
+                )
+                .col_expr(
+                    organization_service_account_budget_bindings::Column::UpdatedAt,
+                    Expr::value(now),
+                )
+                .exec(transaction)
+                .await
+                .map_err(query_error)?;
+            if result.rows_affected != 1 {
+                return Err(OrganizationServiceAccountBudgetBindingRepositoryError::Conflict);
+            }
+            let updated =
+                organization_service_account_budget_bindings::Entity::find_by_id(current.id)
+                    .filter(
+                        organization_service_account_budget_bindings::Column::OrganizationId
+                            .eq(organization_id.get()),
+                    )
+                    .one(transaction)
+                    .await
+                    .map_err(query_error)?
+                    .ok_or_else(invariant)?;
+            binding_record_with_policy(updated, scope, policy.version)
+        }
+        None => {
+            if expected_version.is_some() {
+                return Err(OrganizationServiceAccountBudgetBindingRepositoryError::Conflict);
+            }
+            let model = organization_service_account_budget_bindings::ActiveModel {
+                organization_id: Set(organization_id.get()),
+                service_account_id: Set(service_account_id.get()),
+                policy_id: Set(policy_id.get()),
+                policy_version: Set(policy.version),
+                scope_kind: Set(scope.code()),
+                team_id: Set(scope.team_id().map(OrganizationTeamId::get)),
+                version: Set(1),
+                created_at: Set(now),
+                updated_at: Set(now),
+                ..Default::default()
+            }
+            .insert(transaction)
+            .await
+            .map_err(|error| {
+                if is_unique_violation(&error) {
+                    OrganizationServiceAccountBudgetBindingRepositoryError::Conflict
+                } else {
+                    query_error(error)
+                }
+            })?;
+            binding_record_with_policy(model, scope, policy.version)
+        }
     }
 }
 
