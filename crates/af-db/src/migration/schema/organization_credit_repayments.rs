@@ -263,9 +263,9 @@ async fn create_allocations(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
 
 fn fixed_lower_hex_check<C>(backend: DbBackend, column: C, non_zero: bool) -> SimpleExpr
 where
-    C: Iden + ToString,
+    C: Iden,
 {
-    let name = column.to_string();
+    let name = Iden::to_string(&column);
     let zeros = "0".repeat(32);
     match backend {
         DbBackend::Postgres => Expr::cust(format!(

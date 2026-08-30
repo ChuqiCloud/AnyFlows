@@ -407,7 +407,7 @@ async fn lock_repayment(
             .filter(organization_credit_repayments::Column::RepaymentKey.eq(&key))
             .col_expr(
                 organization_credit_repayments::Column::Id,
-                Expr::col(organization_credit_repayments::Column::Id),
+                Expr::col(organization_credit_repayments::Column::Id).into(),
             )
             .exec(transaction)
             .await
@@ -441,7 +441,7 @@ async fn lock_invoice(
             .filter(organization_credit_invoices::Column::InvoiceKey.eq(&key))
             .col_expr(
                 organization_credit_invoices::Column::Id,
-                Expr::col(organization_credit_invoices::Column::Id),
+                Expr::col(organization_credit_invoices::Column::Id).into(),
             )
             .exec(transaction)
             .await
