@@ -850,10 +850,44 @@ pub(crate) async fn set_status_in_transaction(
     expected_version: i64,
     target: OrganizationServiceAccountStatus,
 ) -> Result<OrganizationServiceAccountRecord, OrganizationServiceAccountRepositoryError> {
+    set_status_in_transaction_inner(transaction, locator, expected_version, target, None).await
+}
+
+/// 在审批执行中按申请时保存的部门快照锁定并变更服务账号。
+pub(crate) async fn set_status_in_transaction_with_department_snapshot(
+    transaction: &DatabaseTransaction,
+    locator: OrganizationServiceAccountLocator,
+    expected_version: i64,
+    target: OrganizationServiceAccountStatus,
+    expected_department_id: Option<af_domain::OrganizationDepartmentId>,
+) -> Result<OrganizationServiceAccountRecord, OrganizationServiceAccountRepositoryError> {
+    set_status_in_transaction_inner(
+        transaction,
+        locator,
+        expected_version,
+        target,
+        Some(expected_department_id),
+    )
+    .await
+}
+
+async fn set_status_in_transaction_inner(
+    transaction: &DatabaseTransaction,
+    locator: OrganizationServiceAccountLocator,
+    expected_version: i64,
+    target: OrganizationServiceAccountStatus,
+    expected_department_id: Option<Option<af_domain::OrganizationDepartmentId>>,
+) -> Result<OrganizationServiceAccountRecord, OrganizationServiceAccountRepositoryError> {
     let current = lock_account(transaction, locator).await?;
     let current_record = account_record_from_model(current)
         .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)?;
-    ensure_locator_department(locator, current_record.locator())?;
+    if let Some(expected_department_id) = expected_department_id {
+        if current_record.locator().department_id() != expected_department_id {
+            return Err(OrganizationServiceAccountRepositoryError::Restricted);
+        }
+    } else {
+        ensure_locator_department(locator, current_record.locator())?;
+    }
     match classify_organization_service_account_lifecycle(current_record.account.status(), target) {
         OrganizationServiceAccountLifecycleDisposition::Reject(_) => {
             return Err(OrganizationServiceAccountRepositoryError::Restricted);

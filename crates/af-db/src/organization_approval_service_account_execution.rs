@@ -6,7 +6,8 @@ use crate::{
         require_current_member_permission,
     },
     organization_service_account::{
-        OrganizationServiceAccountRepositoryError, set_status_in_transaction,
+        OrganizationServiceAccountRepositoryError,
+        set_status_in_transaction_with_department_snapshot,
     },
     organization_service_account_budget::{
         OrganizationServiceAccountBudgetBindingRepositoryError,
@@ -305,11 +306,12 @@ pub(crate) async fn execute_service_account_transaction(
                 target_status,
                 expected_account_version,
             } => {
-                let record = set_status_in_transaction(
+                let record = set_status_in_transaction_with_department_snapshot(
                     transaction,
                     locator,
                     expected_account_version,
                     target_status,
+                    write.service_account_department_id,
                 )
                 .await
                 .map_err(map_service_account_error)?;
