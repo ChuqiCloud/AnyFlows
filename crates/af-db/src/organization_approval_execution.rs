@@ -24,6 +24,10 @@ use crate::organization_approval_contract_price_execution::{
     OrganizationApprovalContractPriceExecutionOutcome,
     OrganizationApprovalContractPriceExecutionWrite, execute_contract_price_transaction,
 };
+use crate::organization_approval_funds_execution::{
+    OrganizationApprovalFundsExecutionOutcome, OrganizationApprovalFundsExecutionWrite,
+    execute_funds_adjustment_transaction,
+};
 use crate::organization_approval_service_account_execution::{
     OrganizationApprovalServiceAccountExecutionOutcome,
     OrganizationApprovalServiceAccountExecutionWrite, execute_service_account_transaction,
@@ -198,6 +202,12 @@ pub enum OrganizationApprovalExecutionRepositoryError {
     EntitlementRestricted,
     #[error("企业席位容量已用尽")]
     SeatLimitReached,
+    #[error("企业钱包余额不足")]
+    InsufficientQuota,
+    #[error("企业钱包额度溢出")]
+    QuotaOverflow,
+    #[error("企业钱包审批执行结果未知")]
+    OutcomeUnknown,
     #[error("审批执行数据库操作失败")]
     Query,
     #[error("审批执行操作超时")]
@@ -296,6 +306,23 @@ impl OrganizationApprovalExecutionRepository {
         .map_err(|_| OrganizationApprovalExecutionRepositoryError::Timeout)?
     }
 
+    /// 执行或幂等恢复一个已批准的企业钱包调账。
+    pub async fn execute_funds_adjustment(
+        &self,
+        write: OrganizationApprovalFundsExecutionWrite,
+    ) -> Result<
+        OrganizationApprovalFundsExecutionOutcome,
+        OrganizationApprovalExecutionRepositoryError,
+    > {
+        timeout(
+            self.operation_timeout,
+            self.execute_funds_adjustment_inner(write)
+                .with_subscriber(NoSubscriber::default()),
+        )
+        .await
+        .map_err(|_| OrganizationApprovalExecutionRepositoryError::Timeout)?
+    }
+
     async fn execute_member_change_inner(
         &self,
         write: OrganizationApprovalMemberExecutionWrite,
@@ -375,6 +402,33 @@ impl OrganizationApprovalExecutionRepository {
             }
             Err(error) => {
                 transaction.rollback().await.map_err(query_error)?;
+                Err(error)
+            }
+        }
+    }
+
+    async fn execute_funds_adjustment_inner(
+        &self,
+        write: OrganizationApprovalFundsExecutionWrite,
+    ) -> Result<
+        OrganizationApprovalFundsExecutionOutcome,
+        OrganizationApprovalExecutionRepositoryError,
+    > {
+        let transaction = self.pool.connection().begin().await.map_err(query_error)?;
+        let result = execute_funds_adjustment_transaction(&transaction, write).await;
+        match result {
+            Ok(outcome) => {
+                transaction
+                    .commit()
+                    .await
+                    .map_err(|_| OrganizationApprovalExecutionRepositoryError::OutcomeUnknown)?;
+                Ok(outcome)
+            }
+            Err(error) => {
+                transaction
+                    .rollback()
+                    .await
+                    .map_err(|_| OrganizationApprovalExecutionRepositoryError::OutcomeUnknown)?;
                 Err(error)
             }
         }

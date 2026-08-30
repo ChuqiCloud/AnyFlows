@@ -132,6 +132,9 @@ mod organization_approval_contract_price_execution_tests;
 mod organization_approval_execution;
 #[cfg(test)]
 mod organization_approval_execution_tests;
+mod organization_approval_funds_execution;
+#[cfg(test)]
+mod organization_approval_funds_execution_tests;
 mod organization_approval_service_account_execution;
 #[cfg(test)]
 mod organization_approval_service_account_execution_tests;
@@ -530,6 +533,10 @@ pub use organization_approval_execution::{
     OrganizationApprovalExecutionRepository, OrganizationApprovalExecutionRepositoryError,
     OrganizationApprovalMemberExecutionOutcome, OrganizationApprovalMemberExecutionRecord,
     OrganizationApprovalMemberExecutionWrite, organization_approval_member_resource_summary,
+};
+pub use organization_approval_funds_execution::{
+    OrganizationApprovalFundsExecutionOutcome, OrganizationApprovalFundsExecutionRecord,
+    OrganizationApprovalFundsExecutionWrite, organization_approval_funds_resource_summary,
 };
 pub use organization_approval_service_account_execution::{
     OrganizationApprovalServiceAccountExecutionAction,

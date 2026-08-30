@@ -26,6 +26,7 @@ mod organization;
 mod organization_approval_budget_execution;
 mod organization_approval_contract_price_execution;
 mod organization_approval_execution;
+mod organization_approval_funds_execution;
 mod organization_approval_service_account_execution;
 mod organization_approvals;
 mod organization_audit;
@@ -164,6 +165,9 @@ pub(super) use organization_approval_contract_price_execution::{
 };
 pub(super) use organization_approval_execution::{
     create_organization_approval_member_executions, drop_organization_approval_member_executions,
+};
+pub(super) use organization_approval_funds_execution::{
+    create_organization_approval_funds_executions, drop_organization_approval_funds_executions,
 };
 pub(super) use organization_approval_service_account_execution::{
     create_organization_approval_service_account_executions,

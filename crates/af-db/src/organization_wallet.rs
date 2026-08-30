@@ -547,6 +547,15 @@ async fn apply_adjustment(
     transaction: &DatabaseTransaction,
     write: &OrganizationWalletAdjustmentWrite,
 ) -> Result<OrganizationWalletAdjustmentOutcome, OrganizationWalletError> {
+    apply_adjustment_with_expected_version(transaction, write, None).await
+}
+
+/// 在已有钱包事务内应用调账；审批执行可额外要求钱包版本保持不变。
+pub(crate) async fn apply_adjustment_with_expected_version(
+    transaction: &DatabaseTransaction,
+    write: &OrganizationWalletAdjustmentWrite,
+    expected_version: Option<i64>,
+) -> Result<OrganizationWalletAdjustmentOutcome, OrganizationWalletError> {
     if let Some(existing) = load_event(
         transaction,
         write.organization_id,
@@ -563,6 +572,9 @@ async fn apply_adjustment(
     let Some(wallet) = lock_wallet(transaction, write.organization_id).await? else {
         return Ok(OrganizationWalletAdjustmentOutcome::NotFound);
     };
+    if expected_version.is_some_and(|version| wallet.version != version) {
+        return Err(OrganizationWalletError::Conflict);
+    }
     let before = Quota::new(wallet.quota).map_err(|_| OrganizationWalletError::Invariant)?;
     let after = before
         .checked_apply(write.quota_delta)
