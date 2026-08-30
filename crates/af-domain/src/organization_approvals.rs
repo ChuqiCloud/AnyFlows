@@ -2,7 +2,9 @@ use std::fmt;
 
 use thiserror::Error;
 
-use crate::{OrganizationApprovalTemplateId, OrganizationId, UserId};
+use crate::{
+    OrganizationApprovalRequestId, OrganizationApprovalTemplateId, OrganizationId, UserId,
+};
 
 const KEY_BYTES: usize = 16;
 const KEY_HEX_BYTES: usize = KEY_BYTES * 2;
@@ -220,6 +222,8 @@ pub enum OrganizationApprovalError {
     InvalidTemplateDigest,
     #[error("企业审批资源类型无效")]
     InvalidResourceType,
+    #[error("企业审批决定类型无效")]
+    InvalidDecisionKind,
     #[error("企业审批模板版本无效")]
     InvalidTemplateVersion,
     #[error("企业审批资源摘要无效")]
