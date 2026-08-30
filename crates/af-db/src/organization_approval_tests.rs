@@ -3,12 +3,12 @@ use std::time::Duration;
 
 use af_domain::{
     OrganizationApprovalDecision, OrganizationApprovalDecisionKey,
-    OrganizationApprovalDecisionKind, OrganizationApprovalRequest, OrganizationApprovalRequestKey,
-    OrganizationApprovalResourceType, OrganizationApprovalTemplateDigest,
-    OrganizationApprovalTemplateKey, OrganizationEntitlementCapacity,
-    OrganizationEntitlementSnapshot, OrganizationId, UserId,
+    OrganizationApprovalDecisionKind, OrganizationApprovalRequest, OrganizationApprovalRequestId,
+    OrganizationApprovalRequestKey, OrganizationApprovalResourceType,
+    OrganizationApprovalTemplateDigest, OrganizationApprovalTemplateKey,
+    OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationId, UserId,
 };
-use sea_orm::{ActiveModelTrait, EntityTrait, Set, entity::prelude::TimeDateTimeWithTimeZone};
+use sea_orm::{ActiveModelTrait, Set, entity::prelude::TimeDateTimeWithTimeZone};
 
 use crate::entity::{groups, organization_approval_requests, users};
 use crate::{
@@ -229,7 +229,7 @@ async fn timeout_scan_and_decision_are_bounded_and_idempotent() -> Result<(), Bo
     }
     .insert(fixture.pool.connection())
     .await?;
-    let request_id = crate::OrganizationApprovalRequestId::new(request_model.id)?;
+    let request_id = OrganizationApprovalRequestId::new(request_model.id)?;
 
     assert_eq!(
         OrganizationApprovalTimeoutCursor::new(0),
