@@ -42,6 +42,7 @@
     "organizationServiceAccounts": "Service accounts",
     "organizationBudgets": "Organization budgets",
     "organizationContractPrices": "Contract prices",
+    "organizationApprovals": "Approvals",
     "organizationActivity": "Organization logs & audit",
     "organizationOverview": "Organization overview",
     "organizationMembers": "Members and teams",
@@ -4432,6 +4433,23 @@
     "form": { "title": "Create contract price", "subtitle": "The server validates the model interval and creates an immutable version.", "model": "Model", "protocol": "Protocol", "input": "Input price", "output": "Output price", "cache_read": "Cache read price", "cache_creation_5m": "Cache creation (5m)", "cache_creation_1h": "Cache creation (1h)", "effectiveFrom": "Effective from", "effectiveUntil": "Effective until (optional)", "effectiveUntilHint": "Leave empty to keep this interval open.", "expectedVersion": "Next version will be checked against v{{version}}." },
     "close": { "title": "Close contract price interval", "description": "Close {{model}} ({{protocol}}) at the current time? The server will verify version {{version}} and this cannot reopen the interval." },
     "errors": { "listTitle": "Contract prices could not be loaded", "listBody": "The service did not return a reliable price history. Try again shortly.", "forbiddenTitle": "Contract price access was denied", "forbiddenBody": "The membership or organization entitlement no longer allows this read.", "intervalConflict": "This model and protocol interval overlaps another version. Choose a later effective time.", "conflict": "The price changed in another session. Refresh and submit against the latest version.", "mutation": "The operation did not return a reliable result. Refresh the price history and try again." }
+  },
+  "organizationApprovals": {
+    "eyebrow": "Organization workspace",
+    "title": "Approvals",
+    "subtitle": "Versioned templates and auditable requests for organization changes. Approval facts never mutate resources by themselves.",
+    "summary": "{{templates}} template version(s) · {{requests}} request(s)",
+    "actions": { "refresh": "Refresh", "retry": "Try again", "createTemplate": "Create template", "createRequest": "New request", "approve": "Approve", "reject": "Reject", "submit": "Submit", "create": "Create", "cancel": "Cancel" },
+    "readOnly": "You can review requests but do not have permission to manage templates or submit decisions.",
+    "restricted": { "title": "Approval access is restricted", "body": "Your organization role does not include approval read or request permissions." },
+    "empty": { "title": "No approval requests yet", "body": "Create a request from an organization change workflow to start an auditable review." },
+    "templates": { "title": "Template versions", "empty": "No template versions are available for this organization." },
+    "resource": { "member": "Member", "budget": "Budget", "service_account": "Service account", "contract_price": "Contract price", "funds": "Funds" },
+    "status": { "pending": "Pending", "approved": "Approved", "rejected": "Rejected", "timed_out": "Timed out" },
+    "fields": { "requestedBy": "Requested by", "created": "Created", "expires": "Expires" },
+    "forms": { "templateTitle": "Create template version", "templateKey": "Template key", "resourceType": "Resource type", "digest": "Definition digest (64 lowercase hex)", "requestTitle": "Create approval request", "template": "Template version", "templatePlaceholder": "Select a template", "summary": "Resource summary", "expires": "Expires at" },
+    "decision": { "approveTitle": "Approve request", "rejectTitle": "Reject request", "description": "Submit a one-time decision for request #{{id}}? The target resource remains unchanged until a later execution step." },
+    "errors": { "listTitle": "Approval facts could not be loaded", "listBody": "The approval directory is temporarily unavailable. Try again shortly.", "forbiddenTitle": "Approval access was denied", "forbiddenBody": "The membership or organization permission no longer allows this view.", "conflict": "The approval fact changed concurrently. Refresh and review the latest state.", "expired": "This request has expired and cannot receive a manual decision.", "mutation": "The operation did not return a reliable result. Refresh and try again." }
   },
   "organizationDepartments": {
     "eyebrow": "Organization workspace",

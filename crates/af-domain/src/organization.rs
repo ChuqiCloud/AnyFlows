@@ -326,6 +326,14 @@ pub enum OrganizationPermission {
     ServiceAccountsRead,
     /// 管理企业服务账号生命周期与密钥。
     ServiceAccountsManage,
+    /// 查看企业审批模板与申请。
+    ApprovalsRead,
+    /// 创建企业审批申请与模板版本。
+    ApprovalsCreate,
+    /// 管理企业审批模板版本。
+    ApprovalsManage,
+    /// 提交企业审批决定。
+    ApprovalsDecide,
 }
 
 const CUSTOM_ROLE_GRANTABLE_PERMISSIONS: &[OrganizationPermission] = &[
@@ -345,6 +353,8 @@ const CUSTOM_ROLE_GRANTABLE_PERMISSIONS: &[OrganizationPermission] = &[
     OrganizationPermission::UsageLogsReadSelf,
     OrganizationPermission::AuditRead,
     OrganizationPermission::RolesRead,
+    OrganizationPermission::ApprovalsRead,
+    OrganizationPermission::ApprovalsCreate,
 ];
 
 impl OrganizationPermission {
@@ -378,6 +388,10 @@ impl OrganizationPermission {
             Self::SsoRecovery => "organization.sso.recovery",
             Self::ServiceAccountsRead => "organization.service_accounts.read",
             Self::ServiceAccountsManage => "organization.service_accounts.manage",
+            Self::ApprovalsRead => "organization.approvals.read",
+            Self::ApprovalsCreate => "organization.approvals.create",
+            Self::ApprovalsManage => "organization.approvals.manage",
+            Self::ApprovalsDecide => "organization.approvals.decide",
         }
     }
 
@@ -410,6 +424,10 @@ impl OrganizationPermission {
             "organization.sso.recovery" => Ok(Self::SsoRecovery),
             "organization.service_accounts.read" => Ok(Self::ServiceAccountsRead),
             "organization.service_accounts.manage" => Ok(Self::ServiceAccountsManage),
+            "organization.approvals.read" => Ok(Self::ApprovalsRead),
+            "organization.approvals.create" => Ok(Self::ApprovalsCreate),
+            "organization.approvals.manage" => Ok(Self::ApprovalsManage),
+            "organization.approvals.decide" => Ok(Self::ApprovalsDecide),
             _ => Err(OrganizationPermissionCodeError::Unknown),
         }
     }
@@ -429,6 +447,8 @@ impl OrganizationPermission {
                 | Self::SsoRecovery
                 | Self::ServiceAccountsRead
                 | Self::ServiceAccountsManage
+                | Self::ApprovalsDecide
+                | Self::ApprovalsManage
         )
     }
 
@@ -519,6 +539,10 @@ impl OrganizationRole {
                 Permission::SsoRecovery,
                 Permission::ServiceAccountsRead,
                 Permission::ServiceAccountsManage,
+                Permission::ApprovalsRead,
+                Permission::ApprovalsCreate,
+                Permission::ApprovalsManage,
+                Permission::ApprovalsDecide,
             ],
             Self::Admin => &[
                 Permission::OverviewRead,
@@ -544,6 +568,10 @@ impl OrganizationRole {
                 Permission::SsoManage,
                 Permission::ServiceAccountsRead,
                 Permission::ServiceAccountsManage,
+                Permission::ApprovalsRead,
+                Permission::ApprovalsCreate,
+                Permission::ApprovalsManage,
+                Permission::ApprovalsDecide,
             ],
             Self::Billing => &[
                 Permission::OverviewRead,
@@ -555,17 +583,21 @@ impl OrganizationRole {
                 Permission::UsageLogsReadAll,
                 Permission::UsageLogsReadSelf,
                 Permission::AuditRead,
+                Permission::ApprovalsRead,
+                Permission::ApprovalsCreate,
             ],
             Self::Member => &[
                 Permission::OverviewRead,
                 Permission::KeysManageSelf,
                 Permission::UsageLogsReadSelf,
+                Permission::ApprovalsCreate,
             ],
             Self::Viewer => &[
                 Permission::OverviewRead,
                 Permission::DepartmentsRead,
                 Permission::UsageLogsReadSelf,
                 Permission::AuditRead,
+                Permission::ApprovalsRead,
             ],
         }
     }

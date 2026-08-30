@@ -47,6 +47,12 @@ pub(crate) enum ManagementError {
     OrganizationInvitationExpired,
     /// 邀请令牌、邮箱或当前状态不允许接受；不细分具体事实。
     OrganizationInvitationRejected,
+    /// 企业审批事实不存在或不属于路径企业。
+    OrganizationApprovalNotFound,
+    /// 企业审批模板、申请或决定发生版本/幂等冲突。
+    OrganizationApprovalConflict,
+    /// 企业审批申请已经超过服务端过期时间。
+    OrganizationApprovalExpired,
     /// 企业成员或团队 CAS 版本冲突。
     OrganizationLifecycleConflict,
     /// 企业成员或团队生命周期状态不允许当前转换。
@@ -425,6 +431,27 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "organization_invitation_rejected",
                     message: "Organization invitation rejected",
+                },
+            ),
+            Self::OrganizationApprovalNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "organization_approval_not_found",
+                    message: "Organization approval not found",
+                },
+            ),
+            Self::OrganizationApprovalConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_approval_conflict",
+                    message: "Organization approval conflict",
+                },
+            ),
+            Self::OrganizationApprovalExpired => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_approval_expired",
+                    message: "Organization approval request expired",
                 },
             ),
             Self::OrganizationLifecycleConflict => (

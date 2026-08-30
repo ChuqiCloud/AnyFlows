@@ -28,6 +28,7 @@ import { OrganizationActivityPage } from '@/features/organization-activity/organ
 import { OrganizationApiKeyPage } from '@/features/organization-api-keys/organization-api-key-page'
 import { OrganizationBudgetPage } from '@/features/organization-budgets/organization-budget-page'
 import { OrganizationContractPricePage } from '@/features/organization-contract-prices/organization-contract-price-page'
+import { OrganizationApprovalPage } from '@/features/organization-approvals/organization-approval-page'
 import { OrganizationMemberPage } from '@/features/organization-members/organization-member-page'
 import { OrganizationDepartmentPage } from '@/features/organization-departments/organization-department-page'
 import { OrganizationOverviewPage } from '@/features/organization-console/organization-overview-page'
@@ -177,6 +178,8 @@ function ManagementEntry({
                   ? 'organizationBudgets.title'
                 : view === 'organization-contract-prices'
                   ? 'organizationContractPrices.title'
+                : view === 'organization-approvals'
+                  ? 'organizationApprovals.title'
                 : view === 'organization-members'
                   ? 'organizationConsole.members.title'
                 : view === 'organization-departments'
@@ -252,6 +255,8 @@ function ManagementEntry({
                   ? <OrganizationBudgetPage />
                 : view === 'organization-contract-prices'
                   ? <OrganizationContractPricePage />
+                : view === 'organization-approvals'
+                  ? <OrganizationApprovalPage />
                 : view === 'organization-members'
                   ? <OrganizationMemberPage />
                 : view === 'organization-departments'
@@ -289,6 +294,7 @@ function ManagementEntry({
     && view !== 'organization-activity'
     && view !== 'organization-budgets'
     && view !== 'organization-contract-prices'
+    && view !== 'organization-approvals'
     && view !== 'organization-members'
     && view !== 'organization-departments'
     && view !== 'organization-overview'

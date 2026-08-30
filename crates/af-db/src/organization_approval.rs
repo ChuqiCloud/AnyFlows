@@ -359,6 +359,137 @@ impl OrganizationApprovalRepository {
         self.run(self.record_decision_inner(write)).await
     }
 
+    /// 按企业范围读取模板版本；游标只使用数据库主键，避免跨企业泄漏。
+    pub async fn list_templates(
+        &self,
+        organization_id: OrganizationId,
+        after: Option<i64>,
+        limit: u64,
+    ) -> Result<Vec<OrganizationApprovalTemplateRecord>, OrganizationApprovalRepositoryError> {
+        self.run(async move {
+            let limit = bounded_page(limit)?;
+            if after.is_some_and(|value| value <= 0) {
+                return Err(OrganizationApprovalRepositoryError::InvalidInput);
+            }
+            let mut query = organization_approval_templates::Entity::find()
+                .filter(
+                    organization_approval_templates::Column::OrganizationId
+                        .eq(organization_id.get()),
+                )
+                .order_by_asc(organization_approval_templates::Column::Id)
+                .limit(limit);
+            if let Some(after) = after {
+                query = query.filter(organization_approval_templates::Column::Id.gt(after));
+            }
+            query
+                .all(self.pool.connection())
+                .await
+                .map_err(query_error)?
+                .into_iter()
+                .map(template_record)
+                .collect()
+        })
+        .await
+    }
+
+    /// 读取企业内指定模板版本。
+    pub async fn get_template(
+        &self,
+        organization_id: OrganizationId,
+        template_id: OrganizationApprovalTemplateId,
+    ) -> Result<OrganizationApprovalTemplateRecord, OrganizationApprovalRepositoryError> {
+        self.run(async move {
+            organization_approval_templates::Entity::find_by_id(template_id.get())
+                .filter(
+                    organization_approval_templates::Column::OrganizationId
+                        .eq(organization_id.get()),
+                )
+                .one(self.pool.connection())
+                .await
+                .map_err(query_error)?
+                .ok_or(OrganizationApprovalRepositoryError::NotFound)
+                .and_then(template_record)
+        })
+        .await
+    }
+
+    /// 按企业范围读取申请；`requested_by` 只用于普通成员的自有申请视图。
+    pub async fn list_requests(
+        &self,
+        organization_id: OrganizationId,
+        requested_by: Option<UserId>,
+        after: Option<i64>,
+        limit: u64,
+    ) -> Result<Vec<OrganizationApprovalRequestRecord>, OrganizationApprovalRepositoryError> {
+        self.run(async move {
+            let limit = bounded_page(limit)?;
+            if after.is_some_and(|value| value <= 0) {
+                return Err(OrganizationApprovalRepositoryError::InvalidInput);
+            }
+            let mut query = organization_approval_requests::Entity::find()
+                .filter(
+                    organization_approval_requests::Column::OrganizationId
+                        .eq(organization_id.get()),
+                )
+                .order_by_asc(organization_approval_requests::Column::Id)
+                .limit(limit);
+            if let Some(requested_by) = requested_by {
+                query = query.filter(
+                    organization_approval_requests::Column::RequestedByUserId
+                        .eq(requested_by.get()),
+                );
+            }
+            if let Some(after) = after {
+                query = query.filter(organization_approval_requests::Column::Id.gt(after));
+            }
+            query
+                .all(self.pool.connection())
+                .await
+                .map_err(query_error)?
+                .into_iter()
+                .map(request_record)
+                .collect()
+        })
+        .await
+    }
+
+    /// 读取企业内指定申请，跨企业标识统一视为不存在。
+    pub async fn get_request(
+        &self,
+        organization_id: OrganizationId,
+        request_id: OrganizationApprovalRequestId,
+    ) -> Result<OrganizationApprovalRequestRecord, OrganizationApprovalRepositoryError> {
+        self.run(async move {
+            organization_approval_requests::Entity::find_by_id(request_id.get())
+                .filter(
+                    organization_approval_requests::Column::OrganizationId
+                        .eq(organization_id.get()),
+                )
+                .one(self.pool.connection())
+                .await
+                .map_err(query_error)?
+                .ok_or(OrganizationApprovalRepositoryError::NotFound)
+                .and_then(request_record)
+        })
+        .await
+    }
+
+    /// 读取企业内申请的唯一决定。
+    pub async fn decision_for_request(
+        &self,
+        organization_id: OrganizationId,
+        request_id: OrganizationApprovalRequestId,
+    ) -> Result<Option<OrganizationApprovalDecisionRecord>, OrganizationApprovalRepositoryError>
+    {
+        self.run(async move {
+            find_decision_for_request(self.pool.connection(), organization_id, request_id)
+                .await?
+                .map(decision_record)
+                .transpose()
+        })
+        .await
+    }
+
     async fn run<T>(
         &self,
         operation: impl Future<Output = Result<T, OrganizationApprovalRepositoryError>>,
@@ -604,6 +735,13 @@ impl OrganizationApprovalRepository {
         commit(transaction).await?;
         Ok(OrganizationApprovalDecisionOutcome::Created(record))
     }
+}
+
+fn bounded_page(limit: u64) -> Result<u64, OrganizationApprovalRepositoryError> {
+    (1..=100)
+        .contains(&limit)
+        .then_some(limit)
+        .ok_or(OrganizationApprovalRepositoryError::InvalidInput)
 }
 
 impl fmt::Debug for OrganizationApprovalRepository {

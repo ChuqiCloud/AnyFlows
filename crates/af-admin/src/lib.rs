@@ -28,6 +28,7 @@ mod network_settings;
 mod oauth_login;
 mod organization;
 mod organization_activity;
+mod organization_approval;
 mod organization_budget;
 mod organization_contract_price;
 mod organization_custom_role;
@@ -244,6 +245,15 @@ pub use organization_activity::{
     OrganizationAuditPage, OrganizationAuditRecordFuture, OrganizationAuditRequestContext,
     OrganizationUsageLogFuture, OrganizationUsageLogPage, OrganizationUsageLogRows,
     OrganizationUsageLogScope, OrganizationUsageLogSummary,
+};
+pub use organization_approval::{
+    DatabaseOrganizationApprovalService, OrganizationApprovalDecisionCommand,
+    OrganizationApprovalDecisionRecord, OrganizationApprovalRequestCreateCommand,
+    OrganizationApprovalRequestFuture, OrganizationApprovalRequestListFuture,
+    OrganizationApprovalRequestStatus, OrganizationApprovalRequestView,
+    OrganizationApprovalService, OrganizationApprovalServiceError,
+    OrganizationApprovalTemplateCreateCommand, OrganizationApprovalTemplateFuture,
+    OrganizationApprovalTemplateListFuture, OrganizationApprovalTemplateRecord,
 };
 pub use organization_budget::{
     DatabaseOrganizationBudgetService, OrganizationBudgetPoliciesFuture,

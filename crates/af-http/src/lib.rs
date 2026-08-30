@@ -60,6 +60,7 @@ mod openai_speech;
 mod openapi;
 mod operations;
 mod organization_activity;
+mod organization_approval;
 mod organization_budget;
 mod organization_contract_price;
 mod organization_scim_audit;
@@ -126,6 +127,7 @@ pub use operations::{
     HEALTH_PATH, READINESS_PATH, ReadinessFuture, ReadinessHandle, ReadinessProbe,
 };
 pub use organization_activity::build_organization_activity_router;
+pub use organization_approval::build_organization_approval_router;
 pub use organization_budget::build_organization_budget_router;
 pub use organization_contract_price::build_organization_contract_price_router;
 pub use organization_scim_audit::build_organization_scim_audit_router;
