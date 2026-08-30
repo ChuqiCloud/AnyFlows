@@ -396,31 +396,27 @@ pub(crate) async fn execute_service_account_transaction(
     ))
 }
 
-fn find_execution(
+async fn find_execution(
     transaction: &DatabaseTransaction,
     organization_id: OrganizationId,
     request_id: OrganizationApprovalRequestId,
-) -> impl std::future::Future<
-    Output = Result<
-        Option<organization_approval_service_account_executions::Model>,
-        OrganizationApprovalExecutionRepositoryError,
-    >,
-> + '_ {
-    async move {
-        let mut query = organization_approval_service_account_executions::Entity::find()
-            .filter(
-                organization_approval_service_account_executions::Column::OrganizationId
-                    .eq(organization_id.get()),
-            )
-            .filter(
-                organization_approval_service_account_executions::Column::RequestId
-                    .eq(request_id.get()),
-            );
-        if transaction.get_database_backend() != DbBackend::Sqlite {
-            query = query.lock(LockType::Update);
-        }
-        query.one(transaction).await.map_err(query_error)
+) -> Result<
+    Option<organization_approval_service_account_executions::Model>,
+    OrganizationApprovalExecutionRepositoryError,
+> {
+    let mut query = organization_approval_service_account_executions::Entity::find()
+        .filter(
+            organization_approval_service_account_executions::Column::OrganizationId
+                .eq(organization_id.get()),
+        )
+        .filter(
+            organization_approval_service_account_executions::Column::RequestId
+                .eq(request_id.get()),
+        );
+    if transaction.get_database_backend() != DbBackend::Sqlite {
+        query = query.lock(LockType::Update);
     }
+    query.one(transaction).await.map_err(query_error)
 }
 
 fn exact_replay(
