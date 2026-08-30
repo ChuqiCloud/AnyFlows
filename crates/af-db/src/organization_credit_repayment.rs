@@ -1,4 +1,4 @@
-use std::{fmt, future::Future, time::Duration};
+use std::{fmt, future::Future, sync::OnceLock, time::Duration};
 
 use af_domain::{
     OrganizationCreditCurrency, OrganizationCreditInvoiceKey, OrganizationCreditInvoiceStatus,
@@ -15,16 +15,20 @@ use sea_orm::{
     sea_query::{Expr, LockType},
 };
 use thiserror::Error;
-use tokio::time::timeout;
+use tokio::{sync::Mutex, time::timeout};
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
-    DatabasePool,
+    DatabaseDialect, DatabasePool,
     entity::{
         organization_credit_invoices, organization_credit_repayment_allocations,
         organization_credit_repayments,
     },
 };
+
+// SQLite 的延迟事务在并发写锁升级时可能互相持有读锁；先在进程内串行化写事务，
+// 再由数据库约束保护跨进程并发，避免把可恢复的 SQLITE_BUSY 误报为持久化失败。
+static SQLITE_ALLOCATION_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 /// 已持久化的企业还款安全投影。
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -228,6 +232,13 @@ impl OrganizationCreditRepaymentRepository {
         OrganizationCreditRepaymentAllocationOutcome,
         OrganizationCreditRepaymentRepositoryError,
     > {
+        if self.pool.dialect() == DatabaseDialect::Sqlite {
+            let _guard = SQLITE_ALLOCATION_LOCK
+                .get_or_init(|| Mutex::new(()))
+                .lock()
+                .await;
+            return self.run(self.allocate_inner(write)).await;
+        }
         self.run(self.allocate_inner(write)).await
     }
 
@@ -514,6 +525,18 @@ async fn settle_invoice(
     settled_at: TimeDateTimeWithTimeZone,
     updated_at: TimeDateTimeWithTimeZone,
 ) -> Result<(), OrganizationCreditRepaymentRepositoryError> {
+    // SQLite 旧账单约束按文本比较时间，同一秒的 RFC3339 小数精度可能反序；推进到下一秒保持兼容。
+    let updated_at = if updated_at.unix_timestamp() <= invoice.created_at.unix_timestamp() {
+        let next_timestamp = invoice
+            .created_at
+            .unix_timestamp()
+            .checked_add(1)
+            .ok_or_else(invariant)?;
+        TimeDateTimeWithTimeZone::from_unix_timestamp(next_timestamp)
+            .map_err(|_| OrganizationCreditRepaymentRepositoryError::Invariant)?
+    } else {
+        updated_at
+    };
     let next_version = invoice
         .version
         .checked_add(1)

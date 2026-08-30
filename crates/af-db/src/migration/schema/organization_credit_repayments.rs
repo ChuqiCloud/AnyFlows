@@ -91,7 +91,11 @@ async fn create_repayments(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
         .check(Expr::col(Column::SourceKind).between(1_i16, 2_i16))
         .check(Expr::cust("UPPER(currency) = currency"))
         .check(Expr::col(Column::AmountMinor).gt(0_i64))
-        .check(Expr::col(Column::ReceivedAt).lte(Expr::col(Column::CreatedAt)))
+        .check(timestamp_lte_check(
+            manager.get_database_backend(),
+            Column::ReceivedAt,
+            Column::CreatedAt,
+        ))
         .foreign_key(
             ForeignKey::create()
                 .name("fk_org_credit_repayments_organization")
@@ -179,7 +183,11 @@ async fn create_allocations(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
         ))
         .check(Expr::cust("UPPER(currency) = currency"))
         .check(Expr::col(Column::AmountMinor).gt(0_i64))
-        .check(Expr::col(Column::AllocatedAt).lte(Expr::col(Column::CreatedAt)))
+        .check(timestamp_lte_check(
+            manager.get_database_backend(),
+            Column::AllocatedAt,
+            Column::CreatedAt,
+        ))
         .foreign_key(
             ForeignKey::create()
                 .name("fk_org_credit_allocations_organization")
@@ -292,5 +300,49 @@ where
                 String::new()
             }
         )),
+    }
+}
+
+/// SQLite 的时间列按 RFC3339 文本保存，跨列约束必须转换为时间值后比较。
+fn timestamp_lte_check<L, R>(backend: DbBackend, left: L, right: R) -> SimpleExpr
+where
+    L: Iden + 'static,
+    R: Iden + 'static,
+{
+    if backend != DbBackend::Sqlite {
+        return Expr::col(left).lte(Expr::col(right));
+    }
+    let left: SimpleExpr = Func::cust(Alias::new("julianday"))
+        .arg(Expr::col(left))
+        .into();
+    let right: SimpleExpr = Func::cust(Alias::new("julianday"))
+        .arg(Expr::col(right))
+        .into();
+    left.clone()
+        .is_not_null()
+        .and(right.clone().is_not_null())
+        .and(left.lte(right))
+}
+
+#[cfg(test)]
+mod tests {
+    use sea_orm::sea_query::{Query, SqliteQueryBuilder};
+
+    use super::*;
+
+    #[test]
+    fn sqlite_timestamp_checks_use_chronological_comparison() {
+        let query = Query::select()
+            .expr(timestamp_lte_check(
+                DbBackend::Sqlite,
+                organization_credit_repayments::Column::ReceivedAt,
+                organization_credit_repayments::Column::CreatedAt,
+            ))
+            .to_owned();
+        let sql = query.to_string(SqliteQueryBuilder);
+
+        assert!(sql.contains("julianday(\"received_at\")"));
+        assert!(sql.contains("julianday(\"created_at\")"));
+        assert_eq!(sql.matches("IS NOT NULL").count(), 2);
     }
 }
