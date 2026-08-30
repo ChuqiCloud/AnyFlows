@@ -1,4 +1,9 @@
-use std::{fmt, future::Future, time::Duration};
+use std::{
+    fmt,
+    future::Future,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use af_domain::{
     OrganizationApprovalDecision, OrganizationApprovalDecisionId, OrganizationApprovalDecisionKey,
@@ -9,10 +14,11 @@ use af_domain::{
     OrganizationMembershipStatus, UserId,
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
-    QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseTransaction, DbBackend,
+    EntityTrait, QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone, sea_query::LockType,
 };
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
@@ -21,11 +27,14 @@ use crate::{
     DatabasePool,
     entity::{
         SensitiveString, organization_approval_decisions, organization_approval_requests,
-        organization_approval_templates, organization_memberships, organizations,
+        organization_approval_templates, organization_approval_timeout_leases,
+        organization_memberships, organizations,
     },
 };
 
 const ACTIVE_ORGANIZATION: i16 = 1;
+const TIMEOUT_LEASE_KEY: &str = "organization-approval-timeout-v1";
+const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 
 /// 企业审批模板版本写入参数；版本由仓储在企业范围锁内分配。
 pub struct OrganizationApprovalTemplateWrite {
@@ -279,6 +288,175 @@ pub enum OrganizationApprovalDecisionOutcome {
     Existing(OrganizationApprovalDecisionRecord),
 }
 
+/// 审批超时扫描使用的稳定游标。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OrganizationApprovalTimeoutCursor {
+    id: i64,
+}
+
+impl OrganizationApprovalTimeoutCursor {
+    /// 构造正数申请主键游标。
+    pub const fn new(id: i64) -> Result<Self, OrganizationApprovalRepositoryError> {
+        if id <= 0 {
+            return Err(OrganizationApprovalRepositoryError::InvalidInput);
+        }
+        Ok(Self { id })
+    }
+
+    #[must_use]
+    pub const fn id(self) -> i64 {
+        self.id
+    }
+}
+
+/// 服务端超时扫描携带的不可变申请命令；不包含资源摘要。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrganizationApprovalTimeoutCommand {
+    organization_id: OrganizationId,
+    request_id: OrganizationApprovalRequestId,
+    expires_at: i64,
+    decision_key: OrganizationApprovalDecisionKey,
+}
+
+impl OrganizationApprovalTimeoutCommand {
+    /// 使用申请过期时间和确定性决定键构造超时命令。
+    pub fn new(
+        organization_id: OrganizationId,
+        request_id: OrganizationApprovalRequestId,
+        expires_at: i64,
+        decision_key: OrganizationApprovalDecisionKey,
+    ) -> Result<Self, OrganizationApprovalRepositoryError> {
+        if expires_at < 0 {
+            return Err(OrganizationApprovalRepositoryError::InvalidInput);
+        }
+        Ok(Self {
+            organization_id,
+            request_id,
+            expires_at,
+            decision_key,
+        })
+    }
+
+    #[must_use]
+    pub const fn organization_id(&self) -> OrganizationId {
+        self.organization_id
+    }
+    #[must_use]
+    pub const fn request_id(&self) -> OrganizationApprovalRequestId {
+        self.request_id
+    }
+    #[must_use]
+    pub const fn expires_at(&self) -> i64 {
+        self.expires_at
+    }
+    #[must_use]
+    pub const fn decision_key(&self) -> OrganizationApprovalDecisionKey {
+        self.decision_key
+    }
+}
+
+/// 有界超时扫描批次；游标按申请主键单调推进。
+pub struct OrganizationApprovalTimeoutBatch {
+    commands: Vec<OrganizationApprovalTimeoutCommand>,
+    scanned_count: usize,
+    next_cursor: Option<OrganizationApprovalTimeoutCursor>,
+}
+
+impl OrganizationApprovalTimeoutBatch {
+    /// 构造扫描批次，`scanned_count` 包括已经有决定而被过滤的申请。
+    pub fn new(
+        commands: Vec<OrganizationApprovalTimeoutCommand>,
+        scanned_count: usize,
+        next_cursor: Option<OrganizationApprovalTimeoutCursor>,
+    ) -> Self {
+        Self {
+            commands,
+            scanned_count,
+            next_cursor,
+        }
+    }
+
+    #[must_use]
+    pub const fn command_count(&self) -> usize {
+        self.commands.len()
+    }
+    #[must_use]
+    pub const fn scanned_count(&self) -> usize {
+        self.scanned_count
+    }
+    #[must_use]
+    pub const fn next_cursor(&self) -> Option<OrganizationApprovalTimeoutCursor> {
+        self.next_cursor
+    }
+    pub fn into_parts(
+        self,
+    ) -> (
+        Vec<OrganizationApprovalTimeoutCommand>,
+        usize,
+        Option<OrganizationApprovalTimeoutCursor>,
+    ) {
+        (self.commands, self.scanned_count, self.next_cursor)
+    }
+}
+
+impl fmt::Debug for OrganizationApprovalTimeoutBatch {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OrganizationApprovalTimeoutBatch")
+            .field("command_count", &self.commands.len())
+            .field("scanned_count", &self.scanned_count)
+            .field("has_next_cursor", &self.next_cursor.is_some())
+            .finish()
+    }
+}
+
+/// 当前实例持有的审批超时扫描租约摘要。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OrganizationApprovalTimeoutLease {
+    version: i64,
+    lease_expires_at: TimeDateTimeWithTimeZone,
+}
+
+impl OrganizationApprovalTimeoutLease {
+    /// 为非数据库端口或回归测试构造租约摘要。
+    pub const fn new(
+        version: i64,
+        lease_expires_at: TimeDateTimeWithTimeZone,
+    ) -> Result<Self, OrganizationApprovalRepositoryError> {
+        if version <= 0 {
+            return Err(OrganizationApprovalRepositoryError::InvalidInput);
+        }
+        Ok(Self {
+            version,
+            lease_expires_at,
+        })
+    }
+
+    #[must_use]
+    pub const fn version(self) -> i64 {
+        self.version
+    }
+    #[must_use]
+    pub const fn lease_expires_at(self) -> TimeDateTimeWithTimeZone {
+        self.lease_expires_at
+    }
+}
+
+/// 尝试取得全局审批超时扫描租约的结果。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OrganizationApprovalTimeoutLeaseOutcome {
+    Acquired(OrganizationApprovalTimeoutLease),
+    Held,
+}
+
+/// 单个超时命令的幂等执行结果。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OrganizationApprovalTimeoutOutcome {
+    Applied(OrganizationApprovalDecisionId),
+    Existing(OrganizationApprovalDecisionId),
+    Skipped,
+}
+
 /// 企业审批仓储错误；错误不携带资源摘要、模板键或理由原文。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum OrganizationApprovalRepositoryError {
@@ -304,6 +482,8 @@ pub enum OrganizationApprovalRepositoryError {
     Timeout,
     #[error("企业审批持久化状态损坏")]
     Invariant,
+    #[error("企业审批超时扫描结果未知")]
+    OutcomeUnknown,
 }
 
 /// 企业审批仓储构造错误。
@@ -318,6 +498,7 @@ pub enum OrganizationApprovalRepositoryConfigError {
 pub struct OrganizationApprovalRepository {
     pool: DatabasePool,
     operation_timeout: Duration,
+    lease_owner: Arc<Mutex<Option<String>>>,
 }
 
 impl OrganizationApprovalRepository {
@@ -332,6 +513,7 @@ impl OrganizationApprovalRepository {
         Ok(Self {
             pool,
             operation_timeout,
+            lease_owner: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -490,6 +672,56 @@ impl OrganizationApprovalRepository {
         .await
     }
 
+    /// 按申请主键有界读取已过期且尚未作出决定的申请命令。
+    pub async fn list_timeout_due(
+        &self,
+        now: i64,
+        after: Option<OrganizationApprovalTimeoutCursor>,
+        limit: usize,
+    ) -> Result<OrganizationApprovalTimeoutBatch, OrganizationApprovalRepositoryError> {
+        self.run(self.list_timeout_due_inner(now, after, limit))
+            .await
+    }
+
+    /// 竞争全局超时扫描租约；租约到期后允许其他实例接管。
+    pub async fn acquire_timeout_lease(
+        &self,
+        now: i64,
+        lease_duration: Duration,
+    ) -> Result<OrganizationApprovalTimeoutLeaseOutcome, OrganizationApprovalRepositoryError> {
+        if now < 0 || lease_duration.is_zero() {
+            return Err(OrganizationApprovalRepositoryError::InvalidInput);
+        }
+        let owner_token = self.lease_owner_token()?;
+        self.run(self.acquire_timeout_lease_inner(now, lease_duration, owner_token))
+            .await
+    }
+
+    /// 以申请原始过期时间写入一次 TimedOut 决定；资源动作不会在此路径执行。
+    pub async fn record_timeout(
+        &self,
+        command: &OrganizationApprovalTimeoutCommand,
+        now: i64,
+    ) -> Result<OrganizationApprovalTimeoutOutcome, OrganizationApprovalRepositoryError> {
+        self.run(self.record_timeout_inner(command.clone(), now))
+            .await
+    }
+
+    fn lease_owner_token(&self) -> Result<String, OrganizationApprovalRepositoryError> {
+        let mut owner = self
+            .lease_owner
+            .lock()
+            .map_err(|_| OrganizationApprovalRepositoryError::Invariant)?;
+        if let Some(token) = owner.as_ref() {
+            return Ok(token.clone());
+        }
+        let mut bytes = [0_u8; 16];
+        getrandom::fill(&mut bytes).map_err(|_| OrganizationApprovalRepositoryError::Invariant)?;
+        let token = encode_hex_bytes(&bytes);
+        *owner = Some(token.clone());
+        Ok(token)
+    }
+
     async fn run<T>(
         &self,
         operation: impl Future<Output = Result<T, OrganizationApprovalRepositoryError>>,
@@ -500,6 +732,253 @@ impl OrganizationApprovalRepository {
         )
         .await
         .map_err(|_| OrganizationApprovalRepositoryError::Timeout)?
+    }
+
+    async fn list_timeout_due_inner(
+        &self,
+        now: i64,
+        after: Option<OrganizationApprovalTimeoutCursor>,
+        limit: usize,
+    ) -> Result<OrganizationApprovalTimeoutBatch, OrganizationApprovalRepositoryError> {
+        if now < 0 || !(1..=100).contains(&limit) {
+            return Err(OrganizationApprovalRepositoryError::InvalidInput);
+        }
+        let now = to_time(now)?;
+        let fetch_limit = limit
+            .checked_add(1)
+            .and_then(|value| u64::try_from(value).ok())
+            .ok_or(OrganizationApprovalRepositoryError::Invariant)?;
+        let mut query = organization_approval_requests::Entity::find()
+            .filter(organization_approval_requests::Column::ExpiresAt.lte(now))
+            .order_by_asc(organization_approval_requests::Column::Id)
+            .limit(fetch_limit);
+        if let Some(after) = after {
+            query = query.filter(organization_approval_requests::Column::Id.gt(after.id));
+        }
+        let mut models = query
+            .all(self.pool.connection())
+            .await
+            .map_err(query_error)?;
+        let has_more = models.len() > limit;
+        if has_more {
+            models.truncate(limit);
+        }
+        let scanned_count = models.len();
+        let next_cursor = if has_more {
+            models
+                .last()
+                .map(|model| OrganizationApprovalTimeoutCursor { id: model.id })
+        } else {
+            None
+        };
+        let mut commands = Vec::with_capacity(models.len());
+        for model in models {
+            let organization_id = OrganizationId::new(model.organization_id)
+                .map_err(|_| OrganizationApprovalRepositoryError::Invariant)?;
+            let request_id = OrganizationApprovalRequestId::new(model.id)
+                .map_err(|_| OrganizationApprovalRepositoryError::Invariant)?;
+            if find_decision_for_request(self.pool.connection(), organization_id, request_id)
+                .await?
+                .is_some()
+            {
+                continue;
+            }
+            let expires_at = model.expires_at.unix_timestamp();
+            let decision_key = timeout_decision_key(organization_id, request_id, expires_at);
+            commands.push(OrganizationApprovalTimeoutCommand {
+                organization_id,
+                request_id,
+                expires_at,
+                decision_key,
+            });
+        }
+        Ok(OrganizationApprovalTimeoutBatch::new(
+            commands,
+            scanned_count,
+            next_cursor,
+        ))
+    }
+
+    async fn acquire_timeout_lease_inner(
+        &self,
+        now: i64,
+        lease_duration: Duration,
+        owner_token: String,
+    ) -> Result<OrganizationApprovalTimeoutLeaseOutcome, OrganizationApprovalRepositoryError> {
+        let now = to_time(now)?;
+        let lease_seconds = i64::try_from(lease_duration.as_secs())
+            .map_err(|_| OrganizationApprovalRepositoryError::Invariant)?
+            .checked_add(if lease_duration.subsec_nanos() > 0 {
+                1
+            } else {
+                0
+            })
+            .ok_or(OrganizationApprovalRepositoryError::Invariant)?;
+        let lease_expires_at = to_time(
+            now.unix_timestamp()
+                .checked_add(lease_seconds)
+                .ok_or(OrganizationApprovalRepositoryError::Invariant)?,
+        )?;
+        let existing = organization_approval_timeout_leases::Entity::find_by_id(TIMEOUT_LEASE_KEY)
+            .one(self.pool.connection())
+            .await
+            .map_err(query_error)?;
+        let existing = match existing {
+            Some(existing) => existing,
+            None => {
+                let inserted = organization_approval_timeout_leases::ActiveModel {
+                    lease_key: Set(TIMEOUT_LEASE_KEY.to_owned()),
+                    owner_token: Set(owner_token.clone()),
+                    lease_expires_at: Set(lease_expires_at),
+                    version: Set(1),
+                    updated_at: Set(now),
+                };
+                match inserted.insert(self.pool.connection()).await {
+                    Ok(_) => {
+                        return Ok(OrganizationApprovalTimeoutLeaseOutcome::Acquired(
+                            OrganizationApprovalTimeoutLease {
+                                version: 1,
+                                lease_expires_at,
+                            },
+                        ));
+                    }
+                    Err(_) => {
+                        organization_approval_timeout_leases::Entity::find_by_id(TIMEOUT_LEASE_KEY)
+                            .one(self.pool.connection())
+                            .await
+                            .map_err(query_error)?
+                            .ok_or(OrganizationApprovalRepositoryError::Query)?
+                    }
+                }
+            }
+        };
+        if existing.lease_expires_at > now && existing.owner_token != owner_token {
+            return Ok(OrganizationApprovalTimeoutLeaseOutcome::Held);
+        }
+        let next_version = existing
+            .version
+            .checked_add(1)
+            .ok_or(OrganizationApprovalRepositoryError::Invariant)?;
+        let result = organization_approval_timeout_leases::Entity::update_many()
+            .col_expr(
+                organization_approval_timeout_leases::Column::OwnerToken,
+                sea_orm::sea_query::Expr::value(owner_token),
+            )
+            .col_expr(
+                organization_approval_timeout_leases::Column::LeaseExpiresAt,
+                sea_orm::sea_query::Expr::value(lease_expires_at),
+            )
+            .col_expr(
+                organization_approval_timeout_leases::Column::Version,
+                sea_orm::sea_query::Expr::value(next_version),
+            )
+            .col_expr(
+                organization_approval_timeout_leases::Column::UpdatedAt,
+                sea_orm::sea_query::Expr::value(now),
+            )
+            .filter(organization_approval_timeout_leases::Column::LeaseKey.eq(TIMEOUT_LEASE_KEY))
+            .filter(organization_approval_timeout_leases::Column::Version.eq(existing.version))
+            .filter(
+                Condition::any()
+                    .add(organization_approval_timeout_leases::Column::LeaseExpiresAt.lte(now))
+                    .add(
+                        organization_approval_timeout_leases::Column::OwnerToken
+                            .eq(existing.owner_token),
+                    ),
+            )
+            .exec(self.pool.connection())
+            .await
+            .map_err(query_error)?;
+        match result.rows_affected {
+            0 => Ok(OrganizationApprovalTimeoutLeaseOutcome::Held),
+            1 => Ok(OrganizationApprovalTimeoutLeaseOutcome::Acquired(
+                OrganizationApprovalTimeoutLease {
+                    version: next_version,
+                    lease_expires_at,
+                },
+            )),
+            _ => Err(OrganizationApprovalRepositoryError::Invariant),
+        }
+    }
+
+    async fn record_timeout_inner(
+        &self,
+        command: OrganizationApprovalTimeoutCommand,
+        now: i64,
+    ) -> Result<OrganizationApprovalTimeoutOutcome, OrganizationApprovalRepositoryError> {
+        if now < 0 || command.expires_at > now {
+            return Ok(OrganizationApprovalTimeoutOutcome::Skipped);
+        }
+        let request = organization_approval_requests::Entity::find_by_id(command.request_id.get())
+            .filter(
+                organization_approval_requests::Column::OrganizationId
+                    .eq(command.organization_id.get()),
+            )
+            .one(self.pool.connection())
+            .await
+            .map_err(query_error)?;
+        let Some(request) = request else {
+            return Ok(OrganizationApprovalTimeoutOutcome::Skipped);
+        };
+        if request.expires_at.unix_timestamp() != command.expires_at
+            || request.expires_at > to_time(now)?
+        {
+            return Ok(OrganizationApprovalTimeoutOutcome::Skipped);
+        }
+        if let Some(existing) = find_decision_for_request(
+            self.pool.connection(),
+            command.organization_id,
+            command.request_id,
+        )
+        .await?
+        {
+            return Ok(OrganizationApprovalTimeoutOutcome::Existing(
+                OrganizationApprovalDecisionId::new(existing.id)
+                    .map_err(|_| OrganizationApprovalRepositoryError::Invariant)?,
+            ));
+        }
+        let decision = OrganizationApprovalDecision::new(
+            command.decision_key,
+            command.organization_id,
+            command.request_id,
+            OrganizationApprovalDecisionKind::TimedOut,
+            None,
+            None,
+            command.expires_at,
+        )
+        .map_err(|_| OrganizationApprovalRepositoryError::InvalidInput)?;
+        match self
+            .record_decision_inner_with_commit_policy(
+                OrganizationApprovalDecisionWrite::new(decision),
+                true,
+            )
+            .await
+        {
+            Ok(OrganizationApprovalDecisionOutcome::Created(record)) => {
+                Ok(OrganizationApprovalTimeoutOutcome::Applied(record.id()))
+            }
+            Ok(OrganizationApprovalDecisionOutcome::Existing(record)) => {
+                Ok(OrganizationApprovalTimeoutOutcome::Existing(record.id()))
+            }
+            Err(
+                OrganizationApprovalRepositoryError::AlreadyDecided
+                | OrganizationApprovalRepositoryError::Conflict,
+            ) => {
+                let existing = self
+                    .decision_for_request(command.organization_id, command.request_id)
+                    .await?;
+                Ok(
+                    existing.map_or(OrganizationApprovalTimeoutOutcome::Skipped, |record| {
+                        OrganizationApprovalTimeoutOutcome::Existing(record.id())
+                    }),
+                )
+            }
+            Err(
+                OrganizationApprovalRepositoryError::Expired
+                | OrganizationApprovalRepositoryError::NotFound,
+            ) => Ok(OrganizationApprovalTimeoutOutcome::Skipped),
+            Err(error) => Err(error),
+        }
     }
 
     async fn create_template_inner(
@@ -640,6 +1119,15 @@ impl OrganizationApprovalRepository {
         &self,
         write: OrganizationApprovalDecisionWrite,
     ) -> Result<OrganizationApprovalDecisionOutcome, OrganizationApprovalRepositoryError> {
+        self.record_decision_inner_with_commit_policy(write, false)
+            .await
+    }
+
+    async fn record_decision_inner_with_commit_policy(
+        &self,
+        write: OrganizationApprovalDecisionWrite,
+        commit_outcome_unknown: bool,
+    ) -> Result<OrganizationApprovalDecisionOutcome, OrganizationApprovalRepositoryError> {
         let decision = write.decision;
         if let Some(existing) = find_decision_by_key(
             &self.pool,
@@ -732,7 +1220,13 @@ impl OrganizationApprovalRepository {
             }
         };
         let record = decision_record(model)?;
-        commit(transaction).await?;
+        if let Err(error) = commit(transaction).await {
+            return Err(if commit_outcome_unknown {
+                OrganizationApprovalRepositoryError::OutcomeUnknown
+            } else {
+                error
+            });
+        }
         Ok(OrganizationApprovalDecisionOutcome::Created(record))
     }
 }
@@ -976,6 +1470,31 @@ fn decision_record(
 fn to_time(seconds: i64) -> Result<TimeDateTimeWithTimeZone, OrganizationApprovalRepositoryError> {
     TimeDateTimeWithTimeZone::from_unix_timestamp(seconds)
         .map_err(|_| OrganizationApprovalRepositoryError::InvalidInput)
+}
+
+fn timeout_decision_key(
+    organization_id: OrganizationId,
+    request_id: OrganizationApprovalRequestId,
+    expires_at: i64,
+) -> OrganizationApprovalDecisionKey {
+    let mut digest = Sha256::new();
+    digest.update(b"anyflows.organization-approval.timeout.v1");
+    digest.update(organization_id.get().to_be_bytes());
+    digest.update(request_id.get().to_be_bytes());
+    digest.update(expires_at.to_be_bytes());
+    let bytes = digest.finalize();
+    let mut key = [0_u8; 16];
+    key.copy_from_slice(&bytes[..16]);
+    OrganizationApprovalDecisionKey::new(key).expect("SHA-256 截断后的审批超时决定键不能全为零")
+}
+
+fn encode_hex_bytes(bytes: &[u8]) -> String {
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        encoded.push(char::from(HEX_DIGITS[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX_DIGITS[usize::from(byte & 0x0f)]));
+    }
+    encoded
 }
 
 async fn begin(

@@ -2487,6 +2487,29 @@ pub(in crate::migration) mod organization_approval_funds_executions {
     }
 }
 
+pub(in crate::migration) mod organization_approval_timeout_leases {
+    use super::DeriveIden;
+
+    /// 企业审批超时扫描全局租约表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_approval_timeout_leases")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业审批超时扫描租约字段标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        LeaseKey,
+        OwnerToken,
+        LeaseExpiresAt,
+        Version,
+        UpdatedAt,
+    }
+}
+
 pub(in crate::migration) mod organization_custom_roles {
     use super::DeriveIden;
 
