@@ -154,7 +154,7 @@ impl OrganizationBudgetRepository {
             .begin()
             .await
             .map_err(|_| OrganizationBudgetRepositoryError::Query)?;
-        match policy::create(&transaction, &write).await {
+        match policy::create(&transaction, &write, None).await {
             Ok(record) => {
                 transaction
                     .commit()
@@ -167,6 +167,15 @@ impl OrganizationBudgetRepository {
                 Err(error)
             }
         }
+    }
+
+    /// 在调用方已开启的事务内创建审批批准的预算策略，并复验期望版本。
+    pub(crate) async fn create_policy_in_transaction(
+        transaction: &sea_orm::DatabaseTransaction,
+        write: OrganizationBudgetPolicyWrite,
+        expected_version: i64,
+    ) -> Result<OrganizationBudgetPolicyRecord, OrganizationBudgetRepositoryError> {
+        policy::create(transaction, &write, Some(expected_version)).await
     }
 
     async fn list_policies_inner(

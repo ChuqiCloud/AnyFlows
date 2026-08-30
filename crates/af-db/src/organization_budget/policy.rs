@@ -10,8 +10,10 @@ use sea_orm::{
 };
 
 use crate::entity::{
-    organization_budget_policies, organization_memberships, organization_teams, organizations,
+    organization_budget_policies, organization_entitlements, organization_memberships,
+    organization_teams, organizations,
 };
+use crate::organization_custom_role_binding::active_custom_role_permissions;
 
 use super::types::{
     OrganizationBudgetPolicyRecord, OrganizationBudgetPolicyWrite,
@@ -21,12 +23,20 @@ use super::types::{
 pub(super) async fn create(
     transaction: &DatabaseTransaction,
     write: &OrganizationBudgetPolicyWrite,
+    expected_version: Option<i64>,
 ) -> Result<OrganizationBudgetPolicyRecord, OrganizationBudgetRepositoryError> {
+    if expected_version.is_some_and(|version| version < 0) {
+        return Err(OrganizationBudgetRepositoryError::InvalidInput);
+    }
     lock_organization(transaction, write.organization_id).await?;
     require_budget_manager(transaction, write.organization_id, write.actor_user_id).await?;
     validate_scope(transaction, write.organization_id, write.scope).await?;
 
     let previous = latest_policy(transaction, write.organization_id, write.scope, true).await?;
+    let current_version = previous.as_ref().map_or(0, |policy| policy.version);
+    if expected_version.is_some_and(|version| version != current_version) {
+        return Err(OrganizationBudgetRepositoryError::Conflict);
+    }
     let version = match previous.as_ref() {
         Some(previous) => previous
             .version
@@ -253,7 +263,22 @@ pub(super) async fn require_budget_manager(
         .ok_or(OrganizationBudgetRepositoryError::PermissionDenied)?;
     let role = OrganizationRole::try_from(membership.role)
         .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?;
-    role.allows(OrganizationPermission::BudgetsManage)
+    if role.allows(OrganizationPermission::BudgetsManage) {
+        return Ok(());
+    }
+    let entitlement = organization_entitlements::Entity::find()
+        .filter(organization_entitlements::Column::OrganizationId.eq(organization_id.get()))
+        .one(transaction)
+        .await
+        .map_err(|_| OrganizationBudgetRepositoryError::Query)?
+        .ok_or(OrganizationBudgetRepositoryError::Invariant)?;
+    let custom =
+        active_custom_role_permissions(transaction, &membership, entitlement.custom_roles_enabled)
+            .await
+            .map_err(|_| OrganizationBudgetRepositoryError::Query)?;
+    custom
+        .as_deref()
+        .is_some_and(|permissions| permissions.contains(&OrganizationPermission::BudgetsManage))
         .then_some(())
         .ok_or(OrganizationBudgetRepositoryError::PermissionDenied)
 }

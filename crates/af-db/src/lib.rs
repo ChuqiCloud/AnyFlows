@@ -123,6 +123,9 @@ mod oauth_login_tests;
 mod options;
 mod organization;
 mod organization_approval;
+mod organization_approval_budget_execution;
+#[cfg(test)]
+mod organization_approval_budget_execution_tests;
 mod organization_approval_execution;
 #[cfg(test)]
 mod organization_approval_execution_tests;
@@ -506,6 +509,10 @@ pub use organization_approval::{
     OrganizationApprovalRequestCreateOutcome, OrganizationApprovalRequestRecord,
     OrganizationApprovalRequestWrite, OrganizationApprovalTemplateCreateOutcome,
     OrganizationApprovalTemplateRecord, OrganizationApprovalTemplateWrite,
+};
+pub use organization_approval_budget_execution::{
+    OrganizationApprovalBudgetExecutionOutcome, OrganizationApprovalBudgetExecutionRecord,
+    OrganizationApprovalBudgetExecutionWrite, organization_approval_budget_resource_summary,
 };
 pub use organization_approval_execution::{
     OrganizationApprovalExecutionRepository, OrganizationApprovalExecutionRepositoryError,

@@ -16,6 +16,10 @@ use thiserror::Error;
 use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
+use crate::organization_approval_budget_execution::{
+    OrganizationApprovalBudgetExecutionOutcome, OrganizationApprovalBudgetExecutionWrite,
+    execute_budget_policy_transaction,
+};
 use crate::{
     DatabasePool, OrganizationMembershipChange, OrganizationRepositoryError,
     entity::{
@@ -161,22 +165,22 @@ pub enum OrganizationApprovalMemberExecutionOutcome {
     Existing(OrganizationApprovalMemberExecutionRecord),
 }
 
-/// 成员审批执行仓储错误；不携带申请摘要或用户输入。
+/// 审批执行仓储错误；不携带申请摘要或用户输入。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum OrganizationApprovalExecutionRepositoryError {
-    #[error("成员审批执行输入无效")]
+    #[error("审批执行输入无效")]
     InvalidInput,
-    #[error("成员审批执行事实不存在")]
+    #[error("审批执行事实不存在")]
     NotFound,
-    #[error("审批申请不是成员资源")]
+    #[error("审批申请资源类型不匹配")]
     ResourceTypeMismatch,
     #[error("审批申请未获批准")]
     NotApproved,
     #[error("审批申请已过期")]
     Expired,
-    #[error("成员审批执行权限不足")]
+    #[error("审批执行权限不足")]
     Forbidden,
-    #[error("成员审批执行命令或版本冲突")]
+    #[error("审批执行命令或版本冲突")]
     Conflict,
     #[error("成员目标状态转换无效")]
     InvalidTransition,
@@ -186,15 +190,15 @@ pub enum OrganizationApprovalExecutionRepositoryError {
     EntitlementRestricted,
     #[error("企业席位容量已用尽")]
     SeatLimitReached,
-    #[error("成员审批执行数据库操作失败")]
+    #[error("审批执行数据库操作失败")]
     Query,
-    #[error("成员审批执行操作超时")]
+    #[error("审批执行操作超时")]
     Timeout,
-    #[error("成员审批执行持久化状态损坏")]
+    #[error("审批执行持久化状态损坏")]
     Invariant,
 }
 
-/// 在单一业务事务内复验审批事实、当前权限和成员版本的执行仓储。
+/// 在单一业务事务内复验审批事实、当前权限和目标版本的执行仓储。
 #[derive(Clone)]
 pub struct OrganizationApprovalExecutionRepository {
     pool: DatabasePool,
@@ -233,6 +237,23 @@ impl OrganizationApprovalExecutionRepository {
         .map_err(|_| OrganizationApprovalExecutionRepositoryError::Timeout)?
     }
 
+    /// 执行或幂等恢复一个已批准的预算策略目标快照。
+    pub async fn execute_budget_policy(
+        &self,
+        write: OrganizationApprovalBudgetExecutionWrite,
+    ) -> Result<
+        OrganizationApprovalBudgetExecutionOutcome,
+        OrganizationApprovalExecutionRepositoryError,
+    > {
+        timeout(
+            self.operation_timeout,
+            self.execute_budget_policy_inner(write)
+                .with_subscriber(NoSubscriber::default()),
+        )
+        .await
+        .map_err(|_| OrganizationApprovalExecutionRepositoryError::Timeout)?
+    }
+
     async fn execute_member_change_inner(
         &self,
         write: OrganizationApprovalMemberExecutionWrite,
@@ -242,6 +263,27 @@ impl OrganizationApprovalExecutionRepository {
     > {
         let transaction = self.pool.connection().begin().await.map_err(query_error)?;
         let result = execute_member_change_transaction(&transaction, write).await;
+        match result {
+            Ok(outcome) => {
+                transaction.commit().await.map_err(query_error)?;
+                Ok(outcome)
+            }
+            Err(error) => {
+                transaction.rollback().await.map_err(query_error)?;
+                Err(error)
+            }
+        }
+    }
+
+    async fn execute_budget_policy_inner(
+        &self,
+        write: OrganizationApprovalBudgetExecutionWrite,
+    ) -> Result<
+        OrganizationApprovalBudgetExecutionOutcome,
+        OrganizationApprovalExecutionRepositoryError,
+    > {
+        let transaction = self.pool.connection().begin().await.map_err(query_error)?;
+        let result = execute_budget_policy_transaction(&transaction, write).await;
         match result {
             Ok(outcome) => {
                 transaction.commit().await.map_err(query_error)?;
@@ -288,7 +330,13 @@ async fn execute_member_change_transaction(
     }
 
     let (actor, target) = lock_actor_and_target(transaction, &write).await?;
-    require_current_member_permission(transaction, &actor, write.executed_by_user_id).await?;
+    require_current_member_permission(
+        transaction,
+        &actor,
+        write.executed_by_user_id,
+        OrganizationPermission::MembersManage,
+    )
+    .await?;
     if let Some(existing) =
         find_execution(transaction, write.organization_id, write.request_id).await?
     {
@@ -402,10 +450,11 @@ async fn lock_actor_and_target(
     }
 }
 
-async fn require_current_member_permission(
+pub(crate) async fn require_current_member_permission(
     transaction: &DatabaseTransaction,
     actor: &organization_memberships::Model,
     expected_user_id: UserId,
+    permission: OrganizationPermission,
 ) -> Result<(), OrganizationApprovalExecutionRepositoryError> {
     if actor.user_id != expected_user_id.get()
         || actor.status != OrganizationMembershipStatus::Active.code()
@@ -413,10 +462,7 @@ async fn require_current_member_permission(
         return Err(OrganizationApprovalExecutionRepositoryError::Forbidden);
     }
     let role = OrganizationRole::try_from(actor.role).map_err(|_| invariant())?;
-    if role
-        .permissions()
-        .contains(&OrganizationPermission::MembersManage)
-    {
+    if role.permissions().contains(&permission) {
         return Ok(());
     }
     let entitlement = organization_entitlements::Entity::find()
@@ -431,12 +477,12 @@ async fn require_current_member_permission(
             .map_err(|_| OrganizationApprovalExecutionRepositoryError::Query)?;
     custom
         .as_deref()
-        .is_some_and(|permissions| permissions.contains(&OrganizationPermission::MembersManage))
+        .is_some_and(|permissions| permissions.contains(&permission))
         .then_some(())
         .ok_or(OrganizationApprovalExecutionRepositoryError::Forbidden)
 }
 
-async fn lock_request(
+pub(crate) async fn lock_request(
     transaction: &DatabaseTransaction,
     organization_id: OrganizationId,
     request_id: OrganizationApprovalRequestId,
@@ -453,7 +499,7 @@ async fn lock_request(
         .ok_or(OrganizationApprovalExecutionRepositoryError::NotFound)
 }
 
-async fn lock_decision(
+pub(crate) async fn lock_decision(
     transaction: &DatabaseTransaction,
     organization_id: OrganizationId,
     request_id: OrganizationApprovalRequestId,

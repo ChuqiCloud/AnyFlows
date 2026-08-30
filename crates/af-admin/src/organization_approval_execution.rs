@@ -1,13 +1,17 @@
 use std::{fmt, future::Future, pin::Pin, sync::Arc};
 
 use af_db::{
-    OrganizationApprovalExecutionRepository, OrganizationApprovalExecutionRepositoryError,
-    OrganizationApprovalMemberExecutionOutcome, OrganizationApprovalMemberExecutionRecord,
-    OrganizationApprovalMemberExecutionWrite, organization_approval_member_resource_summary,
+    OrganizationApprovalBudgetExecutionOutcome, OrganizationApprovalBudgetExecutionRecord,
+    OrganizationApprovalBudgetExecutionWrite, OrganizationApprovalExecutionRepository,
+    OrganizationApprovalExecutionRepositoryError, OrganizationApprovalMemberExecutionOutcome,
+    OrganizationApprovalMemberExecutionRecord, OrganizationApprovalMemberExecutionWrite,
+    OrganizationBudgetScope, organization_approval_budget_resource_summary,
+    organization_approval_member_resource_summary,
 };
 use af_domain::{
-    OrganizationApprovalRequestId, OrganizationMembershipId, OrganizationMembershipStatus,
-    OrganizationPermission, OrganizationRole, OrganizationTeamId,
+    OrganizationApprovalRequestId, OrganizationBudgetLimit, OrganizationBudgetPeriod,
+    OrganizationMembershipId, OrganizationMembershipStatus, OrganizationPermission,
+    OrganizationRole, OrganizationTeamId,
 };
 use thiserror::Error;
 
@@ -65,6 +69,24 @@ pub struct OrganizationApprovalMemberExecutionResult {
     replayed: bool,
 }
 
+/// 应用层预算审批执行结果，明确标记是否为幂等恢复。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrganizationApprovalBudgetExecutionResult {
+    record: OrganizationApprovalBudgetExecutionRecord,
+    replayed: bool,
+}
+
+impl OrganizationApprovalBudgetExecutionResult {
+    #[must_use]
+    pub const fn record(&self) -> &OrganizationApprovalBudgetExecutionRecord {
+        &self.record
+    }
+    #[must_use]
+    pub const fn replayed(&self) -> bool {
+        self.replayed
+    }
+}
+
 impl OrganizationApprovalMemberExecutionResult {
     #[must_use]
     pub const fn record(&self) -> &OrganizationApprovalMemberExecutionRecord {
@@ -76,14 +98,14 @@ impl OrganizationApprovalMemberExecutionResult {
     }
 }
 
-/// 成员审批执行应用层错误。
+/// 审批执行应用层错误。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum OrganizationApprovalExecutionError {
-    #[error("成员审批执行请求无效")]
+    #[error("审批执行请求无效")]
     InvalidRequest,
-    #[error("成员审批执行权限不足")]
+    #[error("审批执行权限不足")]
     Forbidden,
-    #[error("成员审批事实或资源不存在")]
+    #[error("审批事实或资源不存在")]
     NotFound,
     #[error("审批申请资源类型不匹配")]
     ResourceTypeMismatch,
@@ -91,7 +113,7 @@ pub enum OrganizationApprovalExecutionError {
     NotApproved,
     #[error("审批申请已过期")]
     Expired,
-    #[error("成员审批执行版本或命令冲突")]
+    #[error("审批执行版本或命令冲突")]
     Conflict,
     #[error("成员目标状态转换无效")]
     InvalidTransition,
@@ -101,7 +123,7 @@ pub enum OrganizationApprovalExecutionError {
     EntitlementRestricted,
     #[error("企业席位容量已用尽")]
     SeatLimitReached,
-    #[error("成员审批执行内部错误")]
+    #[error("审批执行内部错误")]
     Internal,
 }
 
@@ -117,7 +139,64 @@ pub type OrganizationApprovalMemberExecutionFuture<'a> = Pin<
     >,
 >;
 
-/// 企业审批资源执行端口；当前只开放成员适配器，不接受宽泛资源载荷。
+pub type OrganizationApprovalBudgetExecutionFuture<'a> = Pin<
+    Box<
+        dyn Future<
+                Output = Result<
+                    OrganizationApprovalBudgetExecutionResult,
+                    OrganizationApprovalExecutionError,
+                >,
+            > + Send
+            + 'a,
+    >,
+>;
+
+/// 预算审批执行命令；策略字段与版本均来自申请时的完整快照。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OrganizationApprovalBudgetPolicyCommand {
+    scope: OrganizationBudgetScope,
+    period: OrganizationBudgetPeriod,
+    limit: OrganizationBudgetLimit,
+    effective_from: i64,
+    expected_policy_version: i64,
+}
+
+impl OrganizationApprovalBudgetPolicyCommand {
+    /// 构造带策略版本 CAS 的预算审批目标。
+    pub fn new(
+        scope: OrganizationBudgetScope,
+        period: OrganizationBudgetPeriod,
+        limit: OrganizationBudgetLimit,
+        effective_from: i64,
+        expected_policy_version: i64,
+    ) -> Result<Self, OrganizationApprovalExecutionError> {
+        if effective_from < 0 || expected_policy_version < 0 {
+            return Err(OrganizationApprovalExecutionError::InvalidRequest);
+        }
+        Ok(Self {
+            scope,
+            period,
+            limit,
+            effective_from,
+            expected_policy_version,
+        })
+    }
+
+    /// 生成创建审批申请时必须使用的命令摘要。
+    #[must_use]
+    pub fn resource_summary(&self, context: &OrganizationContext) -> String {
+        organization_approval_budget_resource_summary(
+            context.organization_id(),
+            self.scope,
+            self.period,
+            self.limit,
+            self.effective_from,
+            self.expected_policy_version,
+        )
+    }
+}
+
+/// 企业审批资源执行端口；按资源类型提供受控适配器，不接受宽泛资源载荷。
 pub trait OrganizationApprovalExecutionService: Send + Sync {
     fn execute_member_change<'a>(
         &'a self,
@@ -125,6 +204,13 @@ pub trait OrganizationApprovalExecutionService: Send + Sync {
         request_id: OrganizationApprovalRequestId,
         command: OrganizationApprovalMemberChangeCommand,
     ) -> OrganizationApprovalMemberExecutionFuture<'a>;
+
+    fn execute_budget_policy<'a>(
+        &'a self,
+        context: OrganizationContext,
+        request_id: OrganizationApprovalRequestId,
+        command: OrganizationApprovalBudgetPolicyCommand,
+    ) -> OrganizationApprovalBudgetExecutionFuture<'a>;
 }
 
 /// 使用数据库原子复验仓储实现成员审批执行。
@@ -172,6 +258,44 @@ impl OrganizationApprovalExecutionService for DatabaseOrganizationApprovalExecut
                 OrganizationApprovalMemberExecutionOutcome::Existing(record) => (record, true),
             };
             Ok(OrganizationApprovalMemberExecutionResult { record, replayed })
+        })
+    }
+
+    fn execute_budget_policy<'a>(
+        &'a self,
+        context: OrganizationContext,
+        request_id: OrganizationApprovalRequestId,
+        command: OrganizationApprovalBudgetPolicyCommand,
+    ) -> OrganizationApprovalBudgetExecutionFuture<'a> {
+        Box::pin(async move {
+            if !context.allows(OrganizationPermission::BudgetsManage) {
+                return Err(OrganizationApprovalExecutionError::Forbidden);
+            }
+            let effective_from =
+                af_db::DatabaseTimestamp::from_unix_timestamp(command.effective_from)
+                    .map_err(|_| OrganizationApprovalExecutionError::InvalidRequest)?;
+            let write = OrganizationApprovalBudgetExecutionWrite::new(
+                context.organization_id(),
+                request_id,
+                command.scope,
+                command.period,
+                command.limit,
+                effective_from,
+                command.expected_policy_version,
+                context.membership_id(),
+                context.user_id(),
+            )
+            .map_err(map_repository_error)?;
+            let (record, replayed) = match self
+                .repository
+                .execute_budget_policy(write)
+                .await
+                .map_err(map_repository_error)?
+            {
+                OrganizationApprovalBudgetExecutionOutcome::Applied(record) => (record, false),
+                OrganizationApprovalBudgetExecutionOutcome::Existing(record) => (record, true),
+            };
+            Ok(OrganizationApprovalBudgetExecutionResult { record, replayed })
         })
     }
 }

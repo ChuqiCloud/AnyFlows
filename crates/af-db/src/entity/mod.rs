@@ -12,8 +12,8 @@ use sea_orm::{ActiveValue, EntityTrait, Set, entity::prelude::*};
 use af_domain::{
     BillingReservationId, ChannelTimeout, MAX_ROUTE_MODEL_PATTERN_BYTES,
     OrganizationApprovalDecisionKind, OrganizationApprovalResourceType,
-    OrganizationApprovalTemplateDigest, OrganizationApprovalTemplateKey,
-    OrganizationCreditCurrency, OrganizationCreditInvoiceSourceKind,
+    OrganizationApprovalTemplateDigest, OrganizationApprovalTemplateKey, OrganizationBudgetLimit,
+    OrganizationBudgetPeriod, OrganizationCreditCurrency, OrganizationCreditInvoiceSourceKind,
     OrganizationCreditInvoiceStatus, OrganizationCreditRepaymentSourceKind,
     OrganizationCreditTermPeriod, OrganizationCreditTermStatus, OrganizationCustomRoleKey,
     OrganizationCustomRoleStatus, OrganizationDepartmentKey,
@@ -67,6 +67,7 @@ pub(crate) mod network_settings;
 pub(crate) mod oauth_login_providers;
 pub(crate) mod oauth_login_transactions;
 pub(crate) mod options;
+pub(crate) mod organization_approval_budget_executions;
 pub(crate) mod organization_approval_decisions;
 pub(crate) mod organization_approval_member_executions;
 pub(crate) mod organization_approval_requests;
@@ -1095,6 +1096,121 @@ where
         || executed_at.is_none_or(|value| value.unix_timestamp() < 0)
     {
         return Err(DbErr::Custom("成员审批执行事实字段无效".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_organization_approval_budget_executions<C>(
+    model: &organization_approval_budget_executions::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    if !insert {
+        return Err(DbErr::Custom("预算审批执行事实只允许追加".to_owned()));
+    }
+    let organization_id = model.organization_id.try_as_ref();
+    let request_id = model.request_id.try_as_ref();
+    let decision_id = model.decision_id.try_as_ref();
+    let policy_id = model.policy_id.try_as_ref();
+    let scope_kind = model.scope_kind.try_as_ref();
+    let period_kind = model.period_kind.try_as_ref();
+    let fixed_seconds = model.fixed_period_seconds.try_as_ref();
+    let quota_limit = model.quota_limit.try_as_ref();
+    let effective_from = model.effective_from.try_as_ref();
+    let expected_version = model.expected_policy_version.try_as_ref();
+    let applied_version = model.applied_policy_version.try_as_ref();
+    let actor_membership_id = model.executed_by_membership_id.try_as_ref();
+    let executed_at = model.executed_at.try_as_ref();
+    let scope_shape = match scope_kind {
+        Some(1) => {
+            model.team_id.try_as_ref().is_some_and(Option::is_none)
+                && model
+                    .membership_id
+                    .try_as_ref()
+                    .is_some_and(Option::is_none)
+                && model
+                    .department_id
+                    .try_as_ref()
+                    .is_some_and(Option::is_none)
+        }
+        Some(2) => {
+            model
+                .team_id
+                .try_as_ref()
+                .is_some_and(|value| value.is_some_and(|id| id > 0))
+                && model
+                    .membership_id
+                    .try_as_ref()
+                    .is_some_and(Option::is_none)
+                && model
+                    .department_id
+                    .try_as_ref()
+                    .is_some_and(Option::is_none)
+        }
+        Some(3) => {
+            model.team_id.try_as_ref().is_some_and(Option::is_none)
+                && model
+                    .membership_id
+                    .try_as_ref()
+                    .is_some_and(|value| value.is_some_and(|id| id > 0))
+                && model
+                    .department_id
+                    .try_as_ref()
+                    .is_some_and(Option::is_none)
+        }
+        Some(4) => {
+            model.team_id.try_as_ref().is_some_and(Option::is_none)
+                && model
+                    .membership_id
+                    .try_as_ref()
+                    .is_some_and(Option::is_none)
+                && model
+                    .department_id
+                    .try_as_ref()
+                    .is_some_and(|value| value.is_some_and(|id| id > 0))
+        }
+        _ => false,
+    };
+    let period_shape = match period_kind {
+        Some(1..=3) => fixed_seconds.is_some_and(Option::is_none),
+        Some(4) => fixed_seconds.is_some_and(|value| {
+            value.is_some_and(|seconds| {
+                u32::try_from(seconds)
+                    .ok()
+                    .and_then(|seconds| OrganizationBudgetPeriod::fixed(seconds).ok())
+                    .is_some()
+            })
+        }),
+        _ => false,
+    };
+    let valid_limit = quota_limit.is_some_and(|value| {
+        value.is_none_or(|quota| {
+            Quota::new(quota)
+                .ok()
+                .and_then(|quota| OrganizationBudgetLimit::new(Some(quota)).ok())
+                .is_some()
+        })
+    });
+    if organization_id.is_none_or(|value| *value <= 0)
+        || request_id.is_none_or(|value| *value <= 0)
+        || decision_id.is_none_or(|value| *value <= 0)
+        || policy_id.is_none_or(|value| *value <= 0)
+        || !scope_shape
+        || !period_shape
+        || !valid_limit
+        || effective_from.is_none_or(|value| value.unix_timestamp() < 0)
+        || expected_version.is_none_or(|value| *value < 0)
+        || applied_version.is_none_or(|value| *value <= 0)
+        || expected_version
+            .zip(applied_version)
+            .is_none_or(|(expected, applied)| expected.checked_add(1) != Some(*applied))
+        || actor_membership_id.is_none_or(|value| *value <= 0)
+        || executed_at.is_none_or(|value| value.unix_timestamp() < 0)
+    {
+        return Err(DbErr::Custom("预算审批执行事实字段无效".to_owned()));
     }
     Ok(())
 }
@@ -2838,6 +2954,17 @@ impl ActiveModelBehavior for organization_approval_member_executions::ActiveMode
         C: ConnectionTrait,
     {
         validate_organization_approval_member_executions(&self, database, insert).await?;
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_approval_budget_executions::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_organization_approval_budget_executions(&self, database, insert).await?;
         Ok(self)
     }
 }
