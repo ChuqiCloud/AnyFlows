@@ -1379,8 +1379,8 @@ where
                     .is_none_or(|part| part.len() <= 10)
         })
     });
-    let effective_from = model.effective_from.try_as_ref();
-    let effective_until = model.effective_until.try_as_ref();
+    let effective_from = model.effective_from.try_as_ref().copied();
+    let effective_until = model.effective_until.try_as_ref().copied().flatten();
     let expected_version = model.expected_version.try_as_ref();
     let applied_version = model.applied_version.try_as_ref();
     let actor_membership_id = model.executed_by_membership_id.try_as_ref();
@@ -1407,7 +1407,7 @@ where
         || effective_from.is_none_or(|value| value.unix_timestamp() < 0)
         || effective_until
             .zip(effective_from)
-            .is_some_and(|(until, from)| *until <= *from)
+            .is_some_and(|(until, from)| until <= from)
         || expected_version
             .is_some_and(|value| value.is_some_and(|version| !(0..i64::MAX).contains(&version)))
         || !versions_valid

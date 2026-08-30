@@ -2,10 +2,11 @@ use std::{error::Error, time::Duration};
 
 use af_domain::{
     OrganizationApprovalDecision, OrganizationApprovalDecisionKey,
-    OrganizationApprovalDecisionKind, OrganizationApprovalRequest, OrganizationApprovalRequestKey,
-    OrganizationApprovalResourceType, OrganizationApprovalTemplateDigest,
-    OrganizationApprovalTemplateKey, OrganizationEntitlementCapacity,
-    OrganizationEntitlementSnapshot, OrganizationId, OrganizationMembershipId, Protocol, UserId,
+    OrganizationApprovalDecisionKind, OrganizationApprovalRequest, OrganizationApprovalRequestId,
+    OrganizationApprovalRequestKey, OrganizationApprovalResourceType,
+    OrganizationApprovalTemplateDigest, OrganizationApprovalTemplateKey,
+    OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationId,
+    OrganizationMembershipId, Protocol, UserId,
 };
 use rust_decimal::Decimal;
 use sea_orm::{ActiveModelTrait, Set, entity::prelude::TimeDateTimeWithTimeZone};
@@ -182,7 +183,7 @@ fn summary(
 
 fn execution_write(
     fixture: &Fixture,
-    request_id: crate::OrganizationApprovalRequestId,
+    request_id: OrganizationApprovalRequestId,
     model: &str,
     prices: [Decimal; 5],
     effective_from: i64,
@@ -209,7 +210,7 @@ async fn create_approved_request(
     fixture: &Fixture,
     seed: u8,
     resource_summary: String,
-) -> Result<crate::OrganizationApprovalRequestId, Box<dyn Error>> {
+) -> Result<OrganizationApprovalRequestId, Box<dyn Error>> {
     let template = fixture
         .approval_repository
         .create_template(OrganizationApprovalTemplateWrite::new(

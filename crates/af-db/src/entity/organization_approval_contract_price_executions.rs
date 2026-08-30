@@ -108,6 +108,3 @@ impl Related<super::organization_memberships::Entity> for Entity {
         Relation::ExecutedBy.def()
     }
 }
-
-#[async_trait::async_trait]
-impl ActiveModelBehavior for ActiveModel {}
