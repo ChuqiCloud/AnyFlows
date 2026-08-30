@@ -28,6 +28,7 @@ mod organization_approval_contract_price_execution;
 mod organization_approval_execution;
 mod organization_approval_funds_execution;
 mod organization_approval_service_account_execution;
+mod organization_approval_timeout_lease;
 mod organization_approvals;
 mod organization_audit;
 mod organization_budget;
@@ -172,6 +173,9 @@ pub(super) use organization_approval_funds_execution::{
 pub(super) use organization_approval_service_account_execution::{
     create_organization_approval_service_account_executions,
     drop_organization_approval_service_account_executions,
+};
+pub(super) use organization_approval_timeout_lease::{
+    create_organization_approval_timeout_lease, drop_organization_approval_timeout_lease,
 };
 pub(super) use organization_approvals::{
     create_organization_approvals, drop_organization_approvals,

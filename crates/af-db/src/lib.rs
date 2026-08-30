@@ -518,6 +518,9 @@ pub use organization_approval::{
     OrganizationApprovalRequestCreateOutcome, OrganizationApprovalRequestRecord,
     OrganizationApprovalRequestWrite, OrganizationApprovalTemplateCreateOutcome,
     OrganizationApprovalTemplateRecord, OrganizationApprovalTemplateWrite,
+    OrganizationApprovalTimeoutBatch, OrganizationApprovalTimeoutCommand,
+    OrganizationApprovalTimeoutCursor, OrganizationApprovalTimeoutLease,
+    OrganizationApprovalTimeoutLeaseOutcome, OrganizationApprovalTimeoutOutcome,
 };
 pub use organization_approval_budget_execution::{
     OrganizationApprovalBudgetExecutionOutcome, OrganizationApprovalBudgetExecutionRecord,

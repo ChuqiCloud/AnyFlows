@@ -147,7 +147,8 @@ use af_httpclient::{
 use af_scheduler::{
     ChannelIndexCacheError, ChannelIndexRefreshConfig, ChannelIndexRefreshSupervisor, ChannelProbe,
     ChannelProbeSupervisor, ChannelProbeSupervisorConfig, InMemoryChannelIndex,
-    IndexedWeightedScheduler, StickyWaitPolicy, SubscriptionCycleSupervisor,
+    IndexedWeightedScheduler, OrganizationApprovalTimeoutSupervisor,
+    OrganizationApprovalTimeoutSupervisorConfig, StickyWaitPolicy, SubscriptionCycleSupervisor,
     SubscriptionCycleSupervisorConfig,
 };
 use af_telemetry::{MetricsHandle, TelemetryError, TracingHandle, init_metrics, init_tracing};
@@ -2215,6 +2216,15 @@ impl Bootstrap<BillingReady> {
                 }
             }
         });
+        spawn_organization_approval_timeout_task(
+            &mut supervisor,
+            OrganizationApprovalRepository::new(
+                infrastructure.infrastructure.database.clone(),
+                Duration::from_secs(config.auth().lookup_timeout_secs()),
+            )
+            .expect("已校验的审批查询超时必须可装配超时扫描仓储"),
+            OrganizationApprovalTimeoutSupervisorConfig::default(),
+        );
         if config.subscription().enabled() {
             spawn_subscription_cycle_task(
                 &mut supervisor,
@@ -2348,6 +2358,22 @@ fn spawn_subscription_cycle_task(
         let repository = repository.clone();
         async move {
             SubscriptionCycleSupervisor::new(repository, cycle_config)
+                .run_periodic_until(task_shutdown.cancelled())
+                .await;
+        }
+    });
+}
+
+/// 注册启动即扫描、带数据库租约且响应统一关闭信号的审批超时任务。
+fn spawn_organization_approval_timeout_task(
+    supervisor: &mut BackgroundTaskSupervisor,
+    repository: OrganizationApprovalRepository,
+    timeout_config: OrganizationApprovalTimeoutSupervisorConfig,
+) {
+    supervisor.spawn("organization-approval-timeout", move |task_shutdown| {
+        let repository = repository.clone();
+        async move {
+            OrganizationApprovalTimeoutSupervisor::new(repository, timeout_config)
                 .run_periodic_until(task_shutdown.cancelled())
                 .await;
         }
@@ -3334,7 +3360,7 @@ mod tests {
             .await
             .unwrap()
             .start_supervisor();
-        assert_eq!(supervised.stage.supervisor.task_count(), 8);
+        assert_eq!(supervised.stage.supervisor.task_count(), 9);
         let report = supervised
             .build_router()
             .bind()

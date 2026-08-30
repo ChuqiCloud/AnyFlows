@@ -8,15 +8,19 @@ use af_domain::{
     OrganizationApprovalTemplateKey, OrganizationEntitlementCapacity,
     OrganizationEntitlementSnapshot, OrganizationId, UserId,
 };
-use sea_orm::{ActiveModelTrait, Set, entity::prelude::TimeDateTimeWithTimeZone};
+use sea_orm::{
+    ActiveModelTrait, EntityTrait, IntoActiveModel, Set, entity::prelude::TimeDateTimeWithTimeZone,
+};
 
-use crate::entity::{groups, users};
+use crate::entity::{groups, organization_approval_requests, users};
 use crate::{
     DatabaseOptions, MigrationOptions, OrganizationApprovalDecisionOutcome,
     OrganizationApprovalDecisionWrite, OrganizationApprovalRepository,
     OrganizationApprovalRepositoryError, OrganizationApprovalRequestCreateOutcome,
-    OrganizationApprovalRequestWrite, OrganizationApprovalTemplateWrite, OrganizationCreate,
-    OrganizationEntitlementWrite, OrganizationRepository, PoolOptions,
+    OrganizationApprovalRequestWrite, OrganizationApprovalTemplateWrite,
+    OrganizationApprovalTimeoutCursor, OrganizationApprovalTimeoutLeaseOutcome,
+    OrganizationApprovalTimeoutOutcome, OrganizationCreate, OrganizationEntitlementWrite,
+    OrganizationRepository, PoolOptions,
 };
 
 struct Fixture {
@@ -191,6 +195,88 @@ async fn approval_request_requires_active_member() -> Result<(), Box<dyn Error>>
             .await,
         Err(OrganizationApprovalRepositoryError::MemberUnavailable)
     );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn timeout_scan_and_decision_are_bounded_and_idempotent() -> Result<(), Box<dyn Error>> {
+    let fixture = new_fixture().await?;
+    let template = fixture
+        .repository
+        .create_template(OrganizationApprovalTemplateWrite::new(
+            fixture.organization_id,
+            OrganizationApprovalTemplateKey::new("timeout-change")?,
+            OrganizationApprovalResourceType::Budget,
+            OrganizationApprovalTemplateDigest::new([9; 32])?,
+            fixture.owner_id,
+            None,
+        ))
+        .await?;
+    let now = TimeDateTimeWithTimeZone::now_utc().unix_timestamp();
+    let request = OrganizationApprovalRequest::new(
+        OrganizationApprovalRequestKey::new([10; 16])?,
+        fixture.organization_id,
+        OrganizationApprovalResourceType::Budget,
+        "timeout test".to_owned(),
+        template.id(),
+        template.version(),
+        fixture.owner_id,
+        now + 3_600,
+    )?;
+    let request_id = match fixture
+        .repository
+        .create_request(OrganizationApprovalRequestWrite::new(request))
+        .await?
+    {
+        OrganizationApprovalRequestCreateOutcome::Created(record) => record.id(),
+        OrganizationApprovalRequestCreateOutcome::Existing(_) => panic!("首次申请必须创建"),
+    };
+
+    // 通过历史事实回放构造已过期申请，避免让回归测试等待真实时钟推进。
+    let expired_at = TimeDateTimeWithTimeZone::from_unix_timestamp(now - 10)?;
+    let created_at = TimeDateTimeWithTimeZone::from_unix_timestamp(now - 100)?;
+    let mut request_model = organization_approval_requests::Entity::find_by_id(request_id.get())
+        .one(fixture.pool.connection())
+        .await?
+        .expect("刚创建的审批申请必须存在")
+        .into_active_model();
+    request_model.expires_at = Set(expired_at);
+    request_model.created_at = Set(created_at);
+    request_model.update(fixture.pool.connection()).await?;
+
+    assert_eq!(
+        OrganizationApprovalTimeoutCursor::new(0),
+        Err(OrganizationApprovalRepositoryError::InvalidInput)
+    );
+    let batch = fixture.repository.list_timeout_due(now, None, 1).await?;
+    let (commands, scanned, next_cursor) = batch.into_parts();
+    assert_eq!(scanned, 1);
+    assert_eq!(commands.len(), 1);
+    assert!(next_cursor.is_none());
+
+    assert!(matches!(
+        fixture
+            .repository
+            .acquire_timeout_lease(now, Duration::from_secs(60))
+            .await?,
+        OrganizationApprovalTimeoutLeaseOutcome::Acquired(_)
+    ));
+    assert!(matches!(
+        fixture.repository.record_timeout(&commands[0], now).await?,
+        OrganizationApprovalTimeoutOutcome::Applied(_)
+    ));
+    assert!(matches!(
+        fixture.repository.record_timeout(&commands[0], now).await?,
+        OrganizationApprovalTimeoutOutcome::Existing(_)
+    ));
+    let decision = fixture
+        .repository
+        .decision_for_request(fixture.organization_id, request_id)
+        .await?
+        .expect("超时扫描必须留下决定事实");
+    assert_eq!(decision.kind(), OrganizationApprovalDecisionKind::TimedOut);
+
     fixture.pool.close().await?;
     Ok(())
 }

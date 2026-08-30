@@ -527,6 +527,7 @@ fn map_repository_error(
         }
         OrganizationApprovalRepositoryError::Query
         | OrganizationApprovalRepositoryError::Timeout
+        | OrganizationApprovalRepositoryError::OutcomeUnknown
         | OrganizationApprovalRepositoryError::Invariant => {
             OrganizationApprovalServiceError::Internal
         }

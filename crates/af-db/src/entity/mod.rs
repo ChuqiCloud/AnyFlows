@@ -75,6 +75,7 @@ pub(crate) mod organization_approval_member_executions;
 pub(crate) mod organization_approval_requests;
 pub(crate) mod organization_approval_service_account_executions;
 pub(crate) mod organization_approval_templates;
+pub(crate) mod organization_approval_timeout_leases;
 pub(crate) mod organization_audit_logs;
 pub(crate) mod organization_budget_policies;
 pub(crate) mod organization_budget_windows;
