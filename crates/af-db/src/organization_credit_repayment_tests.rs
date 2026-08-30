@@ -92,14 +92,20 @@ async fn repayment_replay_allocation_settlement_and_wallet_isolation() -> Result
     let fixture = new_fixture().await?;
     let now = TimeDateTimeWithTimeZone::now_utc().unix_timestamp();
     let invoice = insert_invoice(&fixture, 3, 4, 100, now).await?;
-    let repayment = repayment(5, 6, fixture.organization_id, 100, now)?;
+    let repayment_snapshot = repayment(5, 6, fixture.organization_id, 100, now)?;
 
-    let created = fixture.repository.record(repayment.clone()).await?;
+    let created = fixture
+        .repository
+        .record(repayment_snapshot.clone())
+        .await?;
     let created_id = match created {
         OrganizationCreditRepaymentCreateOutcome::Created(record) => record.id(),
         OrganizationCreditRepaymentCreateOutcome::Existing(_) => panic!("首次登记必须创建"),
     };
-    let replayed = fixture.repository.record(repayment.clone()).await?;
+    let replayed = fixture
+        .repository
+        .record(repayment_snapshot.clone())
+        .await?;
     match replayed {
         OrganizationCreditRepaymentCreateOutcome::Existing(record) => {
             assert_eq!(record.id(), created_id);
