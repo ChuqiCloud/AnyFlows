@@ -806,9 +806,19 @@ impl OrganizationApprovalRepository {
         owner_token: String,
     ) -> Result<OrganizationApprovalTimeoutLeaseOutcome, OrganizationApprovalRepositoryError> {
         let now = to_time(now)?;
-        let lease_expires_at = now
-            .checked_add(lease_duration)
+        let lease_seconds = i64::try_from(lease_duration.as_secs())
+            .map_err(|_| OrganizationApprovalRepositoryError::Invariant)?
+            .checked_add(if lease_duration.subsec_nanos() > 0 {
+                1
+            } else {
+                0
+            })
             .ok_or(OrganizationApprovalRepositoryError::Invariant)?;
+        let lease_expires_at = to_time(
+            now.unix_timestamp()
+                .checked_add(lease_seconds)
+                .ok_or(OrganizationApprovalRepositoryError::Invariant)?,
+        )?;
         let existing = organization_approval_timeout_leases::Entity::find_by_id(TIMEOUT_LEASE_KEY)
             .one(self.pool.connection())
             .await
