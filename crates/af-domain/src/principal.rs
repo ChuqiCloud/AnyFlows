@@ -155,6 +155,21 @@ principal_id! {
 }
 
 principal_id! {
+    /// 企业审批模板版本事实的持久化标识。
+    OrganizationApprovalTemplateId
+}
+
+principal_id! {
+    /// 企业审批申请事实的持久化标识。
+    OrganizationApprovalRequestId
+}
+
+principal_id! {
+    /// 企业审批决定事实的持久化标识。
+    OrganizationApprovalDecisionId
+}
+
+principal_id! {
     /// 企业 SCIM 令牌的持久化标识。
     OrganizationScimTokenId
 }

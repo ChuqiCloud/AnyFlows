@@ -2236,6 +2236,87 @@ pub(in crate::migration) mod organization_credit_repayment_allocations {
     }
 }
 
+pub(in crate::migration) mod organization_approval_templates {
+    use super::DeriveIden;
+
+    /// 企业审批模板版本事实表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_approval_templates")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业审批模板版本固定字段标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        TemplateKey,
+        ResourceType,
+        Version,
+        DefinitionDigest,
+        CreatedByUserId,
+        CreatedAt,
+    }
+}
+
+pub(in crate::migration) mod organization_approval_requests {
+    use super::DeriveIden;
+
+    /// 企业审批申请事实表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_approval_requests")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业审批申请固定字段标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        RequestKey,
+        OrganizationId,
+        ResourceType,
+        ResourceSummary,
+        TemplateId,
+        TemplateVersion,
+        RequestedByUserId,
+        ExpiresAt,
+        CreatedAt,
+    }
+}
+
+pub(in crate::migration) mod organization_approval_decisions {
+    use super::DeriveIden;
+
+    /// 企业审批决定事实表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_approval_decisions")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业审批决定固定字段标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        DecisionKey,
+        OrganizationId,
+        RequestId,
+        DecisionKind,
+        DecidedByUserId,
+        Reason,
+        DecidedAt,
+        CreatedAt,
+    }
+}
+
 pub(in crate::migration) mod organization_custom_roles {
     use super::DeriveIden;
 

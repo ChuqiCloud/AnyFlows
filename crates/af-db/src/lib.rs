@@ -122,6 +122,9 @@ mod oauth_login;
 mod oauth_login_tests;
 mod options;
 mod organization;
+mod organization_approval;
+#[cfg(test)]
+mod organization_approval_tests;
 mod organization_audit;
 mod organization_budget;
 #[cfg(test)]
@@ -492,6 +495,14 @@ pub use organization::{
     OrganizationOwnershipTransferRecord, OrganizationRecord, OrganizationRepository,
     OrganizationRepositoryConfigError, OrganizationRepositoryError, OrganizationTeamChange,
     OrganizationTeamCreate, OrganizationTeamPageRecord, OrganizationTeamRecord,
+};
+pub use organization_approval::{
+    OrganizationApprovalDecisionOutcome, OrganizationApprovalDecisionRecord,
+    OrganizationApprovalDecisionWrite, OrganizationApprovalRepository,
+    OrganizationApprovalRepositoryConfigError, OrganizationApprovalRepositoryError,
+    OrganizationApprovalRequestCreateOutcome, OrganizationApprovalRequestRecord,
+    OrganizationApprovalRequestWrite, OrganizationApprovalTemplateCreateOutcome,
+    OrganizationApprovalTemplateRecord, OrganizationApprovalTemplateWrite,
 };
 pub use organization_audit::{
     MAX_ORGANIZATION_AUDIT_PAGE_SIZE, OrganizationAuditOutcome, OrganizationAuditPageRecord,
