@@ -259,9 +259,10 @@ pub use organization_approval::{
 pub use organization_approval_execution::{
     DatabaseOrganizationApprovalExecutionService, OrganizationApprovalBudgetExecutionFuture,
     OrganizationApprovalBudgetExecutionResult, OrganizationApprovalBudgetPolicyCommand,
-    OrganizationApprovalExecutionError, OrganizationApprovalExecutionService,
-    OrganizationApprovalMemberChangeCommand, OrganizationApprovalMemberExecutionFuture,
-    OrganizationApprovalMemberExecutionResult,
+    OrganizationApprovalContractPriceCommand, OrganizationApprovalContractPriceExecutionFuture,
+    OrganizationApprovalContractPriceExecutionResult, OrganizationApprovalExecutionError,
+    OrganizationApprovalExecutionService, OrganizationApprovalMemberChangeCommand,
+    OrganizationApprovalMemberExecutionFuture, OrganizationApprovalMemberExecutionResult,
     OrganizationApprovalServiceAccountBudgetBindingCommand,
     OrganizationApprovalServiceAccountExecutionFuture,
     OrganizationApprovalServiceAccountExecutionResult,

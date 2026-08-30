@@ -20,6 +20,10 @@ use crate::organization_approval_budget_execution::{
     OrganizationApprovalBudgetExecutionOutcome, OrganizationApprovalBudgetExecutionWrite,
     execute_budget_policy_transaction,
 };
+use crate::organization_approval_contract_price_execution::{
+    OrganizationApprovalContractPriceExecutionOutcome,
+    OrganizationApprovalContractPriceExecutionWrite, execute_contract_price_transaction,
+};
 use crate::organization_approval_service_account_execution::{
     OrganizationApprovalServiceAccountExecutionOutcome,
     OrganizationApprovalServiceAccountExecutionWrite, execute_service_account_transaction,
@@ -275,6 +279,23 @@ impl OrganizationApprovalExecutionRepository {
         .map_err(|_| OrganizationApprovalExecutionRepositoryError::Timeout)?
     }
 
+    /// 执行或幂等恢复一个已批准的合同价版本创建快照。
+    pub async fn execute_contract_price(
+        &self,
+        write: OrganizationApprovalContractPriceExecutionWrite,
+    ) -> Result<
+        OrganizationApprovalContractPriceExecutionOutcome,
+        OrganizationApprovalExecutionRepositoryError,
+    > {
+        timeout(
+            self.operation_timeout,
+            self.execute_contract_price_inner(write)
+                .with_subscriber(NoSubscriber::default()),
+        )
+        .await
+        .map_err(|_| OrganizationApprovalExecutionRepositoryError::Timeout)?
+    }
+
     async fn execute_member_change_inner(
         &self,
         write: OrganizationApprovalMemberExecutionWrite,
@@ -326,6 +347,27 @@ impl OrganizationApprovalExecutionRepository {
     > {
         let transaction = self.pool.connection().begin().await.map_err(query_error)?;
         let result = execute_service_account_transaction(&transaction, write).await;
+        match result {
+            Ok(outcome) => {
+                transaction.commit().await.map_err(query_error)?;
+                Ok(outcome)
+            }
+            Err(error) => {
+                transaction.rollback().await.map_err(query_error)?;
+                Err(error)
+            }
+        }
+    }
+
+    async fn execute_contract_price_inner(
+        &self,
+        write: OrganizationApprovalContractPriceExecutionWrite,
+    ) -> Result<
+        OrganizationApprovalContractPriceExecutionOutcome,
+        OrganizationApprovalExecutionRepositoryError,
+    > {
+        let transaction = self.pool.connection().begin().await.map_err(query_error)?;
+        let result = execute_contract_price_transaction(&transaction, write).await;
         match result {
             Ok(outcome) => {
                 transaction.commit().await.map_err(query_error)?;

@@ -329,65 +329,14 @@ impl OrganizationContractPriceRepository {
     ) -> Result<OrganizationContractPriceRecord, OrganizationContractPriceRepositoryError> {
         validate_write(&write)?;
         let transaction = begin(&self.pool).await?;
-        lock_active_organization(&transaction, write.organization_id).await?;
-        ensure_active_creator(
-            &transaction,
-            write.organization_id,
-            write.created_by_user_id,
-        )
-        .await?;
-        let scoped = lock_scope(
-            &transaction,
-            write.organization_id,
-            &write.model,
-            write.protocol,
-        )
-        .await?;
-        let current_version = scoped.iter().map(|row| row.version).max().unwrap_or(0);
-        if write
-            .expected_version
-            .is_some_and(|version| version != current_version)
-        {
-            rollback(transaction).await?;
-            return Err(OrganizationContractPriceRepositoryError::Conflict);
-        }
-        if scoped.iter().any(|row| {
-            intervals_overlap(
-                row.effective_from,
-                row.effective_until,
-                write.effective_from,
-                write.effective_until,
-            )
-        }) {
-            rollback(transaction).await?;
-            return Err(OrganizationContractPriceRepositoryError::IntervalConflict);
-        }
-        let version = current_version
-            .checked_add(1)
-            .filter(|value| *value > 0)
-            .ok_or_else(invariant)?;
-        let now = TimeDateTimeWithTimeZone::now_utc();
-        let model = organization_contract_prices::ActiveModel {
-            organization_id: Set(write.organization_id.get()),
-            model: Set(write.model.into()),
-            protocol: Set(write.protocol.as_str().to_owned()),
-            input_price: Set(write.prices[0].into()),
-            output_price: Set(write.prices[1].into()),
-            cache_read_price: Set(write.prices[2].into()),
-            cache_creation_5m_price: Set(write.prices[3].into()),
-            cache_creation_1h_price: Set(write.prices[4].into()),
-            effective_from: Set(write.effective_from),
-            effective_until: Set(write.effective_until),
-            version: Set(version),
-            created_by_user_id: Set(write.created_by_user_id.get()),
-            created_at: Set(now),
-            updated_at: Set(now),
-            ..Default::default()
-        }
-        .insert(&transaction)
-        .await
-        .map_err(query_error)?;
-        let record = record_from_model(model)?;
+        let result = create_in_transaction(&transaction, write).await;
+        let record = match result {
+            Ok(record) => record,
+            Err(error) => {
+                rollback(transaction).await?;
+                return Err(error);
+            }
+        };
         commit(transaction).await?;
         Ok(record)
     }
@@ -523,6 +472,69 @@ impl OrganizationContractPriceRepository {
         commit(transaction).await?;
         Ok(record)
     }
+}
+
+/// 在调用方业务事务内创建合同价版本，沿用企业→模型/协议范围锁序。
+///
+/// 审批执行和普通管理 API 共用此入口，保证区间冲突、版本 CAS 与创建者边界不会
+/// 因为审批路径而出现第二套写入语义。
+pub(crate) async fn create_in_transaction(
+    transaction: &DatabaseTransaction,
+    write: OrganizationContractPriceWrite,
+) -> Result<OrganizationContractPriceRecord, OrganizationContractPriceRepositoryError> {
+    validate_write(&write)?;
+    lock_active_organization(transaction, write.organization_id).await?;
+    ensure_active_creator(transaction, write.organization_id, write.created_by_user_id).await?;
+    let scoped = lock_scope(
+        transaction,
+        write.organization_id,
+        &write.model,
+        write.protocol,
+    )
+    .await?;
+    let current_version = scoped.iter().map(|row| row.version).max().unwrap_or(0);
+    if write
+        .expected_version
+        .is_some_and(|version| version != current_version)
+    {
+        return Err(OrganizationContractPriceRepositoryError::Conflict);
+    }
+    if scoped.iter().any(|row| {
+        intervals_overlap(
+            row.effective_from,
+            row.effective_until,
+            write.effective_from,
+            write.effective_until,
+        )
+    }) {
+        return Err(OrganizationContractPriceRepositoryError::IntervalConflict);
+    }
+    let version = current_version
+        .checked_add(1)
+        .filter(|value| *value > 0)
+        .ok_or_else(invariant)?;
+    let now = TimeDateTimeWithTimeZone::now_utc();
+    let model = organization_contract_prices::ActiveModel {
+        organization_id: Set(write.organization_id.get()),
+        model: Set(write.model.into()),
+        protocol: Set(write.protocol.as_str().to_owned()),
+        input_price: Set(write.prices[0].into()),
+        output_price: Set(write.prices[1].into()),
+        cache_read_price: Set(write.prices[2].into()),
+        cache_creation_5m_price: Set(write.prices[3].into()),
+        cache_creation_1h_price: Set(write.prices[4].into()),
+        effective_from: Set(write.effective_from),
+        effective_until: Set(write.effective_until),
+        version: Set(version),
+        created_by_user_id: Set(write.created_by_user_id.get()),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    }
+    .insert(transaction)
+    .await
+    .map_err(query_error)?;
+    record_from_model(model)
 }
 
 impl fmt::Debug for OrganizationContractPriceRepository {

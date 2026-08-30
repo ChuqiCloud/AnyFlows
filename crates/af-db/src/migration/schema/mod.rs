@@ -24,6 +24,7 @@ mod model_sync;
 mod network;
 mod organization;
 mod organization_approval_budget_execution;
+mod organization_approval_contract_price_execution;
 mod organization_approval_execution;
 mod organization_approval_service_account_execution;
 mod organization_approvals;
@@ -156,6 +157,10 @@ pub(super) use network::create_network_settings;
 pub(super) use organization::create_organization_foundation;
 pub(super) use organization_approval_budget_execution::{
     create_organization_approval_budget_executions, drop_organization_approval_budget_executions,
+};
+pub(super) use organization_approval_contract_price_execution::{
+    create_organization_approval_contract_price_executions,
+    drop_organization_approval_contract_price_executions,
 };
 pub(super) use organization_approval_execution::{
     create_organization_approval_member_executions, drop_organization_approval_member_executions,
