@@ -10,9 +10,6 @@ use af_db::{
     OrganizationApprovalTimeoutCursor, OrganizationApprovalTimeoutLeaseOutcome,
     OrganizationApprovalTimeoutOutcome,
 };
-use af_telemetry::{
-    MetricOrganizationApprovalTimeoutOutcome, record_organization_approval_timeout,
-};
 use thiserror::Error;
 use tokio::time::sleep;
 
@@ -335,12 +332,24 @@ where
     where
         F: Future<Output = ()> + Send,
     {
+        self.run_periodic_until_with_report(shutdown, |_| {}).await;
+    }
+
+    /// 启动即扫描，并将每轮低基数报告交给组合根；调度 crate 不依赖 telemetry。
+    pub async fn run_periodic_until_with_report<F, R>(&self, shutdown: F, mut on_report: R)
+    where
+        F: Future<Output = ()> + Send,
+        R: FnMut(OrganizationApprovalTimeoutRunReport) + Send,
+    {
         tokio::pin!(shutdown);
         loop {
             tokio::select! {
                 biased;
                 () = &mut shutdown => return,
-                report = self.run_once() => log_report(report),
+                report = self.run_once() => {
+                    on_report(report);
+                    log_report(report);
+                },
             }
             tokio::select! {
                 biased;
@@ -409,7 +418,6 @@ fn unix_now() -> Result<i64, ()> {
 }
 
 fn log_report(report: OrganizationApprovalTimeoutRunReport) {
-    record_report_metrics(report);
     if report.scan_failed || report.failed > 0 {
         tracing::error!(
             batches = report.batches,
@@ -432,47 +440,6 @@ fn log_report(report: OrganizationApprovalTimeoutRunReport) {
             lease_held = report.lease_held,
             truncated = report.truncated,
             "企业审批超时扫描完成"
-        );
-    }
-}
-
-fn record_report_metrics(report: OrganizationApprovalTimeoutRunReport) {
-    if report.lease_held {
-        record_organization_approval_timeout(
-            MetricOrganizationApprovalTimeoutOutcome::LeaseHeld,
-            1,
-        );
-    }
-    if report.scan_failed {
-        record_organization_approval_timeout(
-            MetricOrganizationApprovalTimeoutOutcome::ScanFailed,
-            1,
-        );
-    }
-    record_organization_approval_timeout(
-        MetricOrganizationApprovalTimeoutOutcome::Applied,
-        u64::try_from(report.applied).unwrap_or(u64::MAX),
-    );
-    record_organization_approval_timeout(
-        MetricOrganizationApprovalTimeoutOutcome::Existing,
-        u64::try_from(report.existing).unwrap_or(u64::MAX),
-    );
-    record_organization_approval_timeout(
-        MetricOrganizationApprovalTimeoutOutcome::Skipped,
-        u64::try_from(report.skipped).unwrap_or(u64::MAX),
-    );
-    record_organization_approval_timeout(
-        MetricOrganizationApprovalTimeoutOutcome::Failed,
-        u64::try_from(report.failed).unwrap_or(u64::MAX),
-    );
-    record_organization_approval_timeout(
-        MetricOrganizationApprovalTimeoutOutcome::OutcomeUnknownReplay,
-        u64::try_from(report.outcome_unknown_replays).unwrap_or(u64::MAX),
-    );
-    if report.truncated {
-        record_organization_approval_timeout(
-            MetricOrganizationApprovalTimeoutOutcome::Truncated,
-            1,
         );
     }
 }

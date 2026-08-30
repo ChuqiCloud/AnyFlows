@@ -151,7 +151,10 @@ use af_scheduler::{
     OrganizationApprovalTimeoutSupervisorConfig, StickyWaitPolicy, SubscriptionCycleSupervisor,
     SubscriptionCycleSupervisorConfig,
 };
-use af_telemetry::{MetricsHandle, TelemetryError, TracingHandle, init_metrics, init_tracing};
+use af_telemetry::{
+    MetricOrganizationApprovalTimeoutOutcome, MetricsHandle, TelemetryError, TracingHandle,
+    init_metrics, init_tracing, record_organization_approval_timeout,
+};
 use thiserror::Error;
 use url::Url;
 use webauthn_rs::prelude::{Webauthn, WebauthnBuilder};
@@ -2374,10 +2377,56 @@ fn spawn_organization_approval_timeout_task(
         let repository = repository.clone();
         async move {
             OrganizationApprovalTimeoutSupervisor::new(repository, timeout_config)
-                .run_periodic_until(task_shutdown.cancelled())
+                .run_periodic_until_with_report(
+                    task_shutdown.cancelled(),
+                    record_organization_approval_timeout_report,
+                )
                 .await;
         }
     });
+}
+
+fn record_organization_approval_timeout_report(
+    report: af_scheduler::OrganizationApprovalTimeoutRunReport,
+) {
+    if report.lease_held() {
+        record_organization_approval_timeout(
+            MetricOrganizationApprovalTimeoutOutcome::LeaseHeld,
+            1,
+        );
+    }
+    if report.scan_failed() {
+        record_organization_approval_timeout(
+            MetricOrganizationApprovalTimeoutOutcome::ScanFailed,
+            1,
+        );
+    }
+    record_organization_approval_timeout(
+        MetricOrganizationApprovalTimeoutOutcome::Applied,
+        u64::try_from(report.applied()).unwrap_or(u64::MAX),
+    );
+    record_organization_approval_timeout(
+        MetricOrganizationApprovalTimeoutOutcome::Existing,
+        u64::try_from(report.existing()).unwrap_or(u64::MAX),
+    );
+    record_organization_approval_timeout(
+        MetricOrganizationApprovalTimeoutOutcome::Skipped,
+        u64::try_from(report.skipped()).unwrap_or(u64::MAX),
+    );
+    record_organization_approval_timeout(
+        MetricOrganizationApprovalTimeoutOutcome::Failed,
+        u64::try_from(report.failed()).unwrap_or(u64::MAX),
+    );
+    record_organization_approval_timeout(
+        MetricOrganizationApprovalTimeoutOutcome::OutcomeUnknownReplay,
+        u64::try_from(report.outcome_unknown_replays()).unwrap_or(u64::MAX),
+    );
+    if report.truncated() {
+        record_organization_approval_timeout(
+            MetricOrganizationApprovalTimeoutOutcome::Truncated,
+            1,
+        );
+    }
 }
 
 /// 注册可重建且响应统一关闭信号的渠道探活周期任务。

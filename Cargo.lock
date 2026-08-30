@@ -333,7 +333,6 @@ version = "0.1.0"
 dependencies = [
  "af-db",
  "af-domain",
- "af-telemetry",
  "aho-corasick",
  "getrandom 0.4.3",
  "sea-orm",
