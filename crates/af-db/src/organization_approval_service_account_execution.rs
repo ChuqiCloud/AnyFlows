@@ -644,10 +644,14 @@ fn map_service_account_error(
         OrganizationServiceAccountRepositoryError::Conflict => {
             OrganizationApprovalExecutionRepositoryError::Conflict
         }
-        OrganizationServiceAccountRepositoryError::Query
-        | OrganizationServiceAccountRepositoryError::Timeout
-        | OrganizationServiceAccountRepositoryError::Invariant => {
-            OrganizationApprovalExecutionRepositoryError::Internal
+        OrganizationServiceAccountRepositoryError::Query => {
+            OrganizationApprovalExecutionRepositoryError::Query
+        }
+        OrganizationServiceAccountRepositoryError::Timeout => {
+            OrganizationApprovalExecutionRepositoryError::Timeout
+        }
+        OrganizationServiceAccountRepositoryError::Invariant => {
+            OrganizationApprovalExecutionRepositoryError::Invariant
         }
     }
 }
@@ -672,10 +676,14 @@ fn map_budget_binding_error(
         OrganizationServiceAccountBudgetBindingRepositoryError::Conflict => {
             OrganizationApprovalExecutionRepositoryError::Conflict
         }
-        OrganizationServiceAccountBudgetBindingRepositoryError::Query
-        | OrganizationServiceAccountBudgetBindingRepositoryError::Timeout
-        | OrganizationServiceAccountBudgetBindingRepositoryError::Invariant => {
-            OrganizationApprovalExecutionRepositoryError::Internal
+        OrganizationServiceAccountBudgetBindingRepositoryError::Query => {
+            OrganizationApprovalExecutionRepositoryError::Query
+        }
+        OrganizationServiceAccountBudgetBindingRepositoryError::Timeout => {
+            OrganizationApprovalExecutionRepositoryError::Timeout
+        }
+        OrganizationServiceAccountBudgetBindingRepositoryError::Invariant => {
+            OrganizationApprovalExecutionRepositoryError::Invariant
         }
     }
 }
@@ -694,10 +702,14 @@ fn map_organization_error(
         crate::OrganizationRepositoryError::Conflict => {
             OrganizationApprovalExecutionRepositoryError::Conflict
         }
-        crate::OrganizationRepositoryError::Query
-        | crate::OrganizationRepositoryError::Timeout
-        | crate::OrganizationRepositoryError::Invariant => {
-            OrganizationApprovalExecutionRepositoryError::Internal
+        crate::OrganizationRepositoryError::Query => {
+            OrganizationApprovalExecutionRepositoryError::Query
+        }
+        crate::OrganizationRepositoryError::Timeout => {
+            OrganizationApprovalExecutionRepositoryError::Timeout
+        }
+        crate::OrganizationRepositoryError::Invariant => {
+            OrganizationApprovalExecutionRepositoryError::Invariant
         }
         _ => OrganizationApprovalExecutionRepositoryError::Forbidden,
     }
