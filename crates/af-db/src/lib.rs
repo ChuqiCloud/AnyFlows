@@ -123,6 +123,9 @@ mod oauth_login_tests;
 mod options;
 mod organization;
 mod organization_approval;
+mod organization_approval_execution;
+#[cfg(test)]
+mod organization_approval_execution_tests;
 #[cfg(test)]
 mod organization_approval_tests;
 mod organization_audit;
@@ -503,6 +506,11 @@ pub use organization_approval::{
     OrganizationApprovalRequestCreateOutcome, OrganizationApprovalRequestRecord,
     OrganizationApprovalRequestWrite, OrganizationApprovalTemplateCreateOutcome,
     OrganizationApprovalTemplateRecord, OrganizationApprovalTemplateWrite,
+};
+pub use organization_approval_execution::{
+    OrganizationApprovalExecutionRepository, OrganizationApprovalExecutionRepositoryError,
+    OrganizationApprovalMemberExecutionOutcome, OrganizationApprovalMemberExecutionRecord,
+    OrganizationApprovalMemberExecutionWrite, organization_approval_member_resource_summary,
 };
 pub use organization_audit::{
     MAX_ORGANIZATION_AUDIT_PAGE_SIZE, OrganizationAuditOutcome, OrganizationAuditPageRecord,

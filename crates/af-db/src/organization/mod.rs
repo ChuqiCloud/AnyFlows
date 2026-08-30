@@ -10,7 +10,7 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 use crate::DatabasePool;
 
 mod invitation;
-mod mutation;
+pub(crate) mod mutation;
 pub(crate) mod read;
 mod types;
 

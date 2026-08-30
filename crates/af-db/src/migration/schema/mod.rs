@@ -23,6 +23,7 @@ mod model;
 mod model_sync;
 mod network;
 mod organization;
+mod organization_approval_execution;
 mod organization_approvals;
 mod organization_audit;
 mod organization_budget;
@@ -151,6 +152,9 @@ pub(super) use model::create_models;
 pub(super) use model_sync::create_model_sync_audit;
 pub(super) use network::create_network_settings;
 pub(super) use organization::create_organization_foundation;
+pub(super) use organization_approval_execution::{
+    create_organization_approval_member_executions, drop_organization_approval_member_executions,
+};
 pub(super) use organization_approvals::{
     create_organization_approvals, drop_organization_approvals,
 };

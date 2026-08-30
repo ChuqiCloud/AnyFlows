@@ -335,15 +335,36 @@ pub(super) async fn change_membership(
     membership_id: OrganizationMembershipId,
     change: OrganizationMembershipChange,
 ) -> Result<OrganizationMembershipRecord, OrganizationRepositoryError> {
+    let transaction = begin(repository).await?;
+    let result =
+        change_membership_in_transaction(&transaction, organization_id, membership_id, change)
+            .await;
+    match result {
+        Ok(record) => {
+            commit(transaction).await?;
+            Ok(record)
+        }
+        Err(error) => {
+            rollback(transaction).await?;
+            Err(error)
+        }
+    }
+}
+
+/// 在调用方已开启的事务中复用成员变更内核，保持统一锁序和 CAS 不变量。
+pub(crate) async fn change_membership_in_transaction(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+    membership_id: OrganizationMembershipId,
+    change: OrganizationMembershipChange,
+) -> Result<OrganizationMembershipRecord, OrganizationRepositoryError> {
     if change.expected_version <= 0 {
         return Err(OrganizationRepositoryError::InvalidInput);
     }
-    let transaction = begin(repository).await?;
-    let organization = lock_organization(&transaction, organization_id).await?;
+    let organization = lock_organization(transaction, organization_id).await?;
     require_active_organization(&organization)?;
-    let current = lock_membership(&transaction, organization_id, membership_id).await?;
+    let current = lock_membership(transaction, organization_id, membership_id).await?;
     if current.version != change.expected_version {
-        rollback(transaction).await?;
         return Err(OrganizationRepositoryError::Conflict);
     }
 
@@ -351,11 +372,10 @@ pub(super) async fn change_membership(
     let current_status =
         OrganizationMembershipStatus::try_from(current.status).map_err(|_| invariant())?;
     if !membership_transition_allowed(current_status, change.status) {
-        rollback(transaction).await?;
         return Err(OrganizationRepositoryError::InvalidTransition);
     }
     if !current_status.is_active() && change.status.is_active() {
-        let entitlement = lock_entitlement(&transaction, organization_id).await?;
+        let entitlement = lock_entitlement(transaction, organization_id).await?;
         let snapshot = super::read::entitlement_snapshot(entitlement)?;
         if !snapshot
             .status(
@@ -364,7 +384,6 @@ pub(super) async fn change_membership(
             )
             .allows_provisioning()
         {
-            rollback(transaction).await?;
             return Err(OrganizationRepositoryError::EntitlementRestricted);
         }
         let active_members = organization_memberships::Entity::find()
@@ -373,24 +392,22 @@ pub(super) async fn change_membership(
                 organization_memberships::Column::Status
                     .eq(OrganizationMembershipStatus::Active.code()),
             )
-            .count(&transaction)
+            .count(transaction)
             .await
             .map_err(query_error)?;
         let active_members = i64::try_from(active_members).map_err(|_| invariant())?;
         if active_members >= snapshot.capacity().seat_limit() {
-            rollback(transaction).await?;
             return Err(OrganizationRepositoryError::SeatLimitReached);
         }
     }
     if let Some(team_id) = change.team_id {
-        lock_active_team(&transaction, organization_id, team_id).await?;
+        lock_active_team(transaction, organization_id, team_id).await?;
     }
 
     let target_is_active_owner = change.role.is_owner() && change.status.is_active();
     if current_role.is_owner() && current_status.is_active() && !target_is_active_owner {
-        let other_owners = active_owner_count(&transaction, organization_id, membership_id).await?;
+        let other_owners = active_owner_count(transaction, organization_id, membership_id).await?;
         if other_owners == 0 {
-            rollback(transaction).await?;
             return Err(OrganizationRepositoryError::LastOwner);
         }
     }
@@ -401,7 +418,6 @@ pub(super) async fn change_membership(
         && current.team_id == target_team_id
     {
         let record = super::read::membership_record(current)?;
-        commit(transaction).await?;
         return Ok(record);
     }
 
@@ -420,7 +436,7 @@ pub(super) async fn change_membership(
     active.suspended_at = Set(suspended_at);
     active.removed_at = Set(removed_at);
     active.version = Set(next_version);
-    let updated = active.update(&transaction).await.map_err(query_error)?;
+    let updated = active.update(transaction).await.map_err(query_error)?;
     if disable_enterprise_tokens {
         // 调组与离职都让签发时团队快照失效，旧 Key 不得在恢复成员后自动复活。
         tokens::Entity::update_many()
@@ -430,12 +446,11 @@ pub(super) async fn change_membership(
             .filter(tokens::Column::Status.eq(ENABLED_TOKEN_STATUS))
             .col_expr(tokens::Column::Status, Expr::value(DISABLED_TOKEN_STATUS))
             .col_expr(tokens::Column::UpdatedAt, Expr::value(now))
-            .exec(&transaction)
+            .exec(transaction)
             .await
             .map_err(query_error)?;
     }
     let record = super::read::membership_record(updated)?;
-    commit(transaction).await?;
     Ok(record)
 }
 
@@ -759,7 +774,7 @@ pub(super) async fn lock_active_user_model(
         .ok_or(OrganizationRepositoryError::UserUnavailable)
 }
 
-pub(super) async fn lock_organization(
+pub(crate) async fn lock_organization(
     transaction: &DatabaseTransaction,
     organization_id: OrganizationId,
 ) -> Result<organizations::Model, OrganizationRepositoryError> {
@@ -805,7 +820,7 @@ pub(super) async fn lock_entitlement(
         .ok_or(OrganizationRepositoryError::Invariant)
 }
 
-async fn lock_membership(
+pub(crate) async fn lock_membership(
     transaction: &DatabaseTransaction,
     organization_id: OrganizationId,
     membership_id: OrganizationMembershipId,

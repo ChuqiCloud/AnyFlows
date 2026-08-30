@@ -121,6 +121,7 @@ mod m20260830_000112_create_organization_credit_terms;
 mod m20260830_000113_create_organization_credit_invoices;
 mod m20260830_000114_create_organization_credit_repayments;
 mod m20260830_000115_create_organization_approvals;
+mod m20260830_000116_create_organization_approval_execution;
 mod schema;
 
 #[cfg(test)]
@@ -281,6 +282,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260830_000113_create_organization_credit_invoices::Migration),
             Box::new(m20260830_000114_create_organization_credit_repayments::Migration),
             Box::new(m20260830_000115_create_organization_approvals::Migration),
+            Box::new(m20260830_000116_create_organization_approval_execution::Migration),
         ]
     }
 }

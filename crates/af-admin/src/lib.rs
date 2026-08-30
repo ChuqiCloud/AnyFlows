@@ -29,6 +29,7 @@ mod oauth_login;
 mod organization;
 mod organization_activity;
 mod organization_approval;
+mod organization_approval_execution;
 mod organization_budget;
 mod organization_contract_price;
 mod organization_custom_role;
@@ -254,6 +255,11 @@ pub use organization_approval::{
     OrganizationApprovalService, OrganizationApprovalServiceError,
     OrganizationApprovalTemplateCreateCommand, OrganizationApprovalTemplateFuture,
     OrganizationApprovalTemplateListFuture, OrganizationApprovalTemplateRecord,
+};
+pub use organization_approval_execution::{
+    DatabaseOrganizationApprovalExecutionService, OrganizationApprovalExecutionError,
+    OrganizationApprovalExecutionService, OrganizationApprovalMemberChangeCommand,
+    OrganizationApprovalMemberExecutionFuture, OrganizationApprovalMemberExecutionResult,
 };
 pub use organization_budget::{
     DatabaseOrganizationBudgetService, OrganizationBudgetPoliciesFuture,
