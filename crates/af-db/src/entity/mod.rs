@@ -68,6 +68,7 @@ pub(crate) mod oauth_login_providers;
 pub(crate) mod oauth_login_transactions;
 pub(crate) mod options;
 pub(crate) mod organization_approval_decisions;
+pub(crate) mod organization_approval_member_executions;
 pub(crate) mod organization_approval_requests;
 pub(crate) mod organization_approval_templates;
 pub(crate) mod organization_audit_logs;
@@ -1035,6 +1036,65 @@ where
             .is_some_and(|(decided, created)| decided > created)
     {
         return Err(DbErr::Custom("企业审批决定字段无效".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_organization_approval_member_executions<C>(
+    model: &organization_approval_member_executions::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    if !insert {
+        return Err(DbErr::Custom("成员审批执行事实只允许追加".to_owned()));
+    }
+    let executed_at = model.executed_at.try_as_ref().copied();
+    if model
+        .organization_id
+        .try_as_ref()
+        .is_none_or(|value| *value <= 0)
+        || model
+            .request_id
+            .try_as_ref()
+            .is_none_or(|value| *value <= 0)
+        || model
+            .decision_id
+            .try_as_ref()
+            .is_none_or(|value| *value <= 0)
+        || model
+            .target_membership_id
+            .try_as_ref()
+            .is_none_or(|value| *value <= 0)
+        || model
+            .target_role
+            .try_as_ref()
+            .is_none_or(|value| OrganizationRole::try_from(*value).is_err())
+        || model
+            .target_status
+            .try_as_ref()
+            .is_none_or(|value| OrganizationMembershipStatus::try_from(*value).is_err())
+        || model
+            .target_team_id
+            .try_as_ref()
+            .is_none_or(|value| value.as_ref().is_some_and(|value| *value <= 0))
+        || model
+            .expected_membership_version
+            .try_as_ref()
+            .is_none_or(|value| *value <= 0)
+        || model
+            .applied_membership_version
+            .try_as_ref()
+            .is_none_or(|value| *value <= 0)
+        || model
+            .executed_by_membership_id
+            .try_as_ref()
+            .is_none_or(|value| *value <= 0)
+        || executed_at.is_none_or(|value| value.unix_timestamp() < 0)
+    {
+        return Err(DbErr::Custom("成员审批执行事实字段无效".to_owned()));
     }
     Ok(())
 }
@@ -2767,6 +2827,17 @@ impl ActiveModelBehavior for organization_approval_decisions::ActiveModel {
         C: ConnectionTrait,
     {
         validate_organization_approval_decisions(&self, database, insert).await?;
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_approval_member_executions::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_organization_approval_member_executions(&self, database, insert).await?;
         Ok(self)
     }
 }

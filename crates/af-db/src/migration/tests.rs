@@ -35,7 +35,8 @@ use crate::entity::{
     debug_trace_snapshot_access_audits, debug_trace_snapshots, debug_traces, email_settings,
     group_model_ratios, groups, invite_rebate_events, model_prices, model_sync_items,
     model_sync_runs, models, oauth_login_providers, options, organization_approval_decisions,
-    organization_approval_requests, organization_approval_templates, organization_audit_logs,
+    organization_approval_member_executions, organization_approval_requests,
+    organization_approval_templates, organization_audit_logs,
     organization_budget_policies, organization_budget_windows, organization_contract_prices,
     organization_credit_invoices, organization_credit_repayment_allocations,
     organization_credit_repayments, organization_credit_terms,
@@ -86,7 +87,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 115;
+const EXPECTED_MIGRATION_COUNT: usize = 116;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -105,7 +106,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 99] = [
+const CORE_TABLES: [&str; 100] = [
     "groups",
     "users",
     "passkeys",
@@ -177,6 +178,7 @@ const CORE_TABLES: [&str; 99] = [
     "organization_approval_templates",
     "organization_approval_requests",
     "organization_approval_decisions",
+    "organization_approval_member_executions",
     "organization_memberships",
     "organization_custom_roles",
     "organization_custom_role_permissions",
@@ -909,6 +911,11 @@ async fn organization_credit_repayments_enforce_append_only_scope_and_currency()
     assert_entity_columns::<organization_approval_decisions::Column>(
         &manager,
         "organization_approval_decisions",
+    )
+    .await?;
+    assert_entity_columns::<organization_approval_member_executions::Column>(
+        &manager,
+        "organization_approval_member_executions",
     )
     .await?;
 
@@ -2044,7 +2051,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 56);
+    assert_eq!(pending_migrations.len(), 57);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -2268,6 +2275,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[55].name(),
         "m20260830_000115_create_organization_approvals"
+    );
+    assert_eq!(
+        pending_migrations[56].name(),
+        "m20260830_000116_create_organization_approval_execution"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
@@ -4341,6 +4352,14 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         (
             "organization_approval_decisions",
             "idx_org_approval_decisions_created",
+        ),
+        (
+            "organization_approval_decisions",
+            "uq_org_approval_decisions_scope_id",
+        ),
+        (
+            "organization_approval_member_executions",
+            "uq_org_approval_member_exec_request",
         ),
         (
             "billing_organization_reservation_departments",
