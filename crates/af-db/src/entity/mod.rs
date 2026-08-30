@@ -1140,7 +1140,7 @@ where
             model
                 .team_id
                 .try_as_ref()
-                .is_some_and(|value| value.is_some_and(|id| *id > 0))
+                .is_some_and(|value| value.is_some_and(|id| id > 0))
                 && model
                     .membership_id
                     .try_as_ref()
@@ -1155,7 +1155,7 @@ where
                 && model
                     .membership_id
                     .try_as_ref()
-                    .is_some_and(|value| value.is_some_and(|id| *id > 0))
+                    .is_some_and(|value| value.is_some_and(|id| id > 0))
                 && model
                     .department_id
                     .try_as_ref()
@@ -1170,7 +1170,7 @@ where
                 && model
                     .department_id
                     .try_as_ref()
-                    .is_some_and(|value| value.is_some_and(|id| *id > 0))
+                    .is_some_and(|value| value.is_some_and(|id| id > 0))
         }
         _ => false,
     };
@@ -1178,7 +1178,7 @@ where
         Some(1..=3) => fixed_seconds.is_some_and(Option::is_none),
         Some(4) => fixed_seconds.is_some_and(|value| {
             value.is_some_and(|seconds| {
-                u32::try_from(*seconds)
+                u32::try_from(seconds)
                     .ok()
                     .and_then(|seconds| OrganizationBudgetPeriod::fixed(seconds).ok())
                     .is_some()
@@ -1188,7 +1188,7 @@ where
     };
     let valid_limit = quota_limit.is_some_and(|value| {
         value.is_none_or(|quota| {
-            Quota::new(*quota)
+            Quota::new(quota)
                 .ok()
                 .and_then(|quota| OrganizationBudgetLimit::new(Some(quota)).ok())
                 .is_some()

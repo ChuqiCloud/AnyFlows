@@ -8,7 +8,7 @@ use af_domain::{
     OrganizationBudgetPeriod, OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot,
     OrganizationId, OrganizationMembershipId, OrganizationRole, Quota, UserId,
 };
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set};
 
 use crate::entity::{
     billing_organization_reservations, groups, organization_budget_policies,
