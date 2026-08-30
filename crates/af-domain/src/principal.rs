@@ -140,6 +140,11 @@ principal_id! {
 }
 
 principal_id! {
+    /// 企业账期账单事实的持久化标识。
+    OrganizationCreditInvoiceId
+}
+
+principal_id! {
     /// 企业 SCIM 令牌的持久化标识。
     OrganizationScimTokenId
 }

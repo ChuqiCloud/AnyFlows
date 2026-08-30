@@ -36,22 +36,23 @@ use crate::entity::{
     group_model_ratios, groups, invite_rebate_events, model_prices, model_sync_items,
     model_sync_runs, models, oauth_login_providers, options, organization_audit_logs,
     organization_budget_policies, organization_budget_windows, organization_contract_prices,
-    organization_credit_terms, organization_custom_role_permissions, organization_custom_roles,
-    organization_department_memberships, organization_departments, organization_entitlements,
-    organization_invitations, organization_memberships, organization_scim_audit_logs,
-    organization_scim_group_resources, organization_scim_tokens, organization_scim_user_resources,
-    organization_service_account_audit_logs, organization_service_account_budget_bindings,
-    organization_service_account_keys, organization_service_accounts, organization_sso_domains,
-    organization_sso_identities, organization_sso_login_transactions, organization_sso_policies,
-    organization_sso_providers, organization_teams, organization_wallet_ledger_entries,
-    organization_wallets, organizations, passkey_authentication_challenges,
-    passkey_registration_challenges, passkeys, payment_settings, platform_audit_logs,
-    playground_conversations, playground_shares, redemption_batches, redemption_codes,
-    refund_provider_events, refund_requests, registration_rate_limits, request_outcome_logs,
-    scheduler_outbox_events, site_settings, subscription_balance_alert_events, subscription_orders,
-    subscription_payment_events, subscription_plan_prices, subscription_plans, tokens,
-    topup_orders, topup_payment_events, usage_logs, user_notification_events,
-    user_notification_receipts, user_subscriptions, users, wallet_ledger_entries,
+    organization_credit_invoices, organization_credit_terms, organization_custom_role_permissions,
+    organization_custom_roles, organization_department_memberships, organization_departments,
+    organization_entitlements, organization_invitations, organization_memberships,
+    organization_scim_audit_logs, organization_scim_group_resources, organization_scim_tokens,
+    organization_scim_user_resources, organization_service_account_audit_logs,
+    organization_service_account_budget_bindings, organization_service_account_keys,
+    organization_service_accounts, organization_sso_domains, organization_sso_identities,
+    organization_sso_login_transactions, organization_sso_policies, organization_sso_providers,
+    organization_teams, organization_wallet_ledger_entries, organization_wallets, organizations,
+    passkey_authentication_challenges, passkey_registration_challenges, passkeys, payment_settings,
+    platform_audit_logs, playground_conversations, playground_shares, redemption_batches,
+    redemption_codes, refund_provider_events, refund_requests, registration_rate_limits,
+    request_outcome_logs, scheduler_outbox_events, site_settings,
+    subscription_balance_alert_events, subscription_orders, subscription_payment_events,
+    subscription_plan_prices, subscription_plans, tokens, topup_orders, topup_payment_events,
+    usage_logs, user_notification_events, user_notification_receipts, user_subscriptions, users,
+    wallet_ledger_entries,
 };
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
@@ -83,7 +84,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 112;
+const EXPECTED_MIGRATION_COUNT: usize = 113;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -102,7 +103,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 93] = [
+const CORE_TABLES: [&str; 94] = [
     "groups",
     "users",
     "passkeys",
@@ -168,6 +169,7 @@ const CORE_TABLES: [&str; 93] = [
     "organization_department_memberships",
     "organization_contract_prices",
     "organization_credit_terms",
+    "organization_credit_invoices",
     "organization_memberships",
     "organization_custom_roles",
     "organization_custom_role_permissions",
@@ -720,6 +722,146 @@ async fn organization_credit_terms_constraints_reject_invalid_rows() -> Result<(
             .await
             .is_err()
     );
+
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn organization_credit_invoices_constraints_reject_invalid_rows() -> Result<(), Box<dyn Error>>
+{
+    let database_options = DatabaseOptions::new("sqlite::memory:")?;
+    let pool = crate::connect_and_migrate(&database_options, MigrationOptions::default()).await?;
+    let manager = SchemaManager::new(pool.connection());
+    assert!(manager.has_table("organization_credit_invoices").await?);
+    assert_entity_columns::<organization_credit_invoices::Column>(
+        &manager,
+        "organization_credit_invoices",
+    )
+    .await?;
+
+    let group = group_active_model("credit-invoice-group", "账期账单测试分组")
+        .insert(pool.connection())
+        .await?;
+    let owner = user_active_model(
+        group.id,
+        "credit-invoice-owner",
+        "credit-invoice-owner@example.com",
+        "credit-invoice-owner-aff",
+    )
+    .insert(pool.connection())
+    .await?;
+    let now = TimeDateTimeWithTimeZone::now_utc();
+    let organization = organizations::ActiveModel {
+        organization_key: Set("44444444444444444444444444444444".to_owned()),
+        name: Set("Credit Invoice Test".to_owned()),
+        slug: Set("credit-invoice-test".to_owned()),
+        status: Set(1),
+        created_by_user_id: Set(owner.id),
+        version: Set(1),
+        created_at: Set(now),
+        updated_at: Set(now),
+        closed_at: Set(None),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+    let issued_at = TimeDateTimeWithTimeZone::from_unix_timestamp(1_893_456_000)?;
+    let due_at = TimeDateTimeWithTimeZone::from_unix_timestamp(1_893_456_001)?;
+    let valid_invoice = || organization_credit_invoices::ActiveModel {
+        invoice_key: Set("a".repeat(32)),
+        organization_id: Set(organization.id),
+        source_kind: Set(1),
+        source_key: Set("b".repeat(32)),
+        currency: Set("CNY".to_owned()),
+        amount_minor: Set(100),
+        term_version: Set(1),
+        period_kind: Set(1),
+        period_days: Set(Some(30)),
+        issued_at: Set(issued_at),
+        due_at: Set(due_at),
+        status: Set(1),
+        status_changed_at: Set(issued_at),
+        version: Set(1),
+        settled_at: Set(None),
+        voided_at: Set(None),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    };
+    organization_credit_invoices::Entity::insert(valid_invoice())
+        .exec_without_returning(pool.connection())
+        .await?;
+
+    let mut invalid_amount = valid_invoice();
+    invalid_amount.invoice_key = Set("c".repeat(32));
+    invalid_amount.amount_minor = Set(-1);
+    assert!(
+        organization_credit_invoices::Entity::insert(invalid_amount)
+            .exec_without_returning(pool.connection())
+            .await
+            .is_err()
+    );
+
+    let mut invalid_source = valid_invoice();
+    invalid_source.invoice_key = Set("d".repeat(32));
+    invalid_source.source_kind = Set(3);
+    assert!(
+        organization_credit_invoices::Entity::insert(invalid_source)
+            .exec_without_returning(pool.connection())
+            .await
+            .is_err()
+    );
+
+    let mut invalid_period = valid_invoice();
+    invalid_period.invoice_key = Set("e".repeat(32));
+    invalid_period.period_kind = Set(2);
+    invalid_period.period_days = Set(Some(30));
+    assert!(
+        organization_credit_invoices::Entity::insert(invalid_period)
+            .exec_without_returning(pool.connection())
+            .await
+            .is_err()
+    );
+
+    let mut invalid_due = valid_invoice();
+    invalid_due.invoice_key = Set("f".repeat(32));
+    invalid_due.due_at = Set(issued_at);
+    assert!(
+        organization_credit_invoices::Entity::insert(invalid_due)
+            .exec_without_returning(pool.connection())
+            .await
+            .is_err()
+    );
+
+    let mut invalid_settled = valid_invoice();
+    invalid_settled.invoice_key = Set("1".repeat(32));
+    invalid_settled.status = Set(3);
+    assert!(
+        organization_credit_invoices::Entity::insert(invalid_settled)
+            .exec_without_returning(pool.connection())
+            .await
+            .is_err()
+    );
+
+    let mut duplicate_source = valid_invoice();
+    duplicate_source.invoice_key = Set("2".repeat(32));
+    assert!(
+        organization_credit_invoices::Entity::insert(duplicate_source)
+            .exec_without_returning(pool.connection())
+            .await
+            .is_err()
+    );
+
+    let mut settled = valid_invoice();
+    settled.invoice_key = Set("3".repeat(32));
+    settled.source_key = Set("4".repeat(32));
+    settled.status = Set(3);
+    settled.status_changed_at = Set(due_at);
+    settled.settled_at = Set(Some(due_at));
+    organization_credit_invoices::Entity::insert(settled)
+        .exec_without_returning(pool.connection())
+        .await?;
 
     pool.close().await?;
     Ok(())
@@ -1715,7 +1857,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 53);
+    assert_eq!(pending_migrations.len(), 54);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -1927,6 +2069,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[52].name(),
         "m20260830_000112_create_organization_credit_terms"
+    );
+    assert_eq!(
+        pending_migrations[53].name(),
+        "m20260830_000113_create_organization_credit_invoices"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
@@ -3459,6 +3605,11 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         "organization_credit_terms",
     )
     .await?;
+    assert_entity_columns::<organization_credit_invoices::Column>(
+        &manager,
+        "organization_credit_invoices",
+    )
+    .await?;
     assert_entity_columns::<organization_custom_roles::Column>(
         &manager,
         "organization_custom_roles",
@@ -3909,6 +4060,18 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         (
             "organization_credit_terms",
             "idx_organization_credit_terms_lookup",
+        ),
+        (
+            "organization_credit_invoices",
+            "uq_organization_credit_invoices_key",
+        ),
+        (
+            "organization_credit_invoices",
+            "uq_organization_credit_invoices_source",
+        ),
+        (
+            "organization_credit_invoices",
+            "idx_organization_credit_invoices_due",
         ),
         (
             "billing_organization_reservation_departments",
