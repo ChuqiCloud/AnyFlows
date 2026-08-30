@@ -2,11 +2,11 @@ use std::{fmt, future::Future, time::Duration};
 
 use af_domain::{
     OrganizationApprovalDecision, OrganizationApprovalDecisionId, OrganizationApprovalDecisionKey,
-    OrganizationApprovalDecisionKind, OrganizationApprovalError, OrganizationApprovalRequest,
-    OrganizationApprovalRequestId, OrganizationApprovalRequestKey,
-    OrganizationApprovalResourceType, OrganizationApprovalTemplateDigest,
-    OrganizationApprovalTemplateId, OrganizationApprovalTemplateKey,
-    OrganizationApprovalTemplateSnapshot, OrganizationId, OrganizationMembershipStatus, UserId,
+    OrganizationApprovalDecisionKind, OrganizationApprovalRequest, OrganizationApprovalRequestId,
+    OrganizationApprovalRequestKey, OrganizationApprovalResourceType,
+    OrganizationApprovalTemplateDigest, OrganizationApprovalTemplateId,
+    OrganizationApprovalTemplateKey, OrganizationApprovalTemplateSnapshot, OrganizationId,
+    OrganizationMembershipStatus, UserId,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
@@ -868,6 +868,8 @@ fn invariant() -> OrganizationApprovalRepositoryError {
 
 #[cfg(test)]
 mod tests {
+    use af_domain::OrganizationApprovalError;
+
     use super::*;
 
     #[test]
