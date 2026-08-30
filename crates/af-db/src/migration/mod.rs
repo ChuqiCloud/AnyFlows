@@ -125,6 +125,7 @@ mod m20260830_000116_create_organization_approval_execution;
 mod m20260830_000117_create_organization_approval_budget_execution;
 mod m20260830_000118_create_organization_approval_service_account_execution;
 mod m20260830_000119_create_organization_approval_contract_price_execution;
+mod m20260830_000120_create_organization_approval_funds_execution;
 mod schema;
 
 #[cfg(test)]
@@ -293,6 +294,7 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260830_000119_create_organization_approval_contract_price_execution::Migration,
             ),
+            Box::new(m20260830_000120_create_organization_approval_funds_execution::Migration),
         ]
     }
 }

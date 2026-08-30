@@ -2455,6 +2455,38 @@ pub(in crate::migration) mod organization_approval_contract_price_executions {
     }
 }
 
+pub(in crate::migration) mod organization_approval_funds_executions {
+    use super::DeriveIden;
+
+    /// 企业钱包调账审批执行事实表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_approval_funds_executions")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业钱包调账审批执行事实固定字段标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        RequestId,
+        DecisionId,
+        EventKey,
+        QuotaDelta,
+        Reason,
+        ExpectedWalletVersion,
+        AppliedWalletVersion,
+        BalanceBefore,
+        BalanceAfter,
+        LedgerEntryId,
+        ExecutedByMembershipId,
+        ExecutedAt,
+    }
+}
+
 pub(in crate::migration) mod organization_custom_roles {
     use super::DeriveIden;
 

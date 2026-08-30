@@ -5,13 +5,15 @@ use af_db::{
     OrganizationApprovalBudgetExecutionWrite, OrganizationApprovalContractPriceExecutionOutcome,
     OrganizationApprovalContractPriceExecutionRecord,
     OrganizationApprovalContractPriceExecutionWrite, OrganizationApprovalExecutionRepository,
-    OrganizationApprovalExecutionRepositoryError, OrganizationApprovalMemberExecutionOutcome,
-    OrganizationApprovalMemberExecutionRecord, OrganizationApprovalMemberExecutionWrite,
-    OrganizationApprovalServiceAccountExecutionAction,
+    OrganizationApprovalExecutionRepositoryError, OrganizationApprovalFundsExecutionOutcome,
+    OrganizationApprovalFundsExecutionRecord, OrganizationApprovalFundsExecutionWrite,
+    OrganizationApprovalMemberExecutionOutcome, OrganizationApprovalMemberExecutionRecord,
+    OrganizationApprovalMemberExecutionWrite, OrganizationApprovalServiceAccountExecutionAction,
     OrganizationApprovalServiceAccountExecutionOutcome,
     OrganizationApprovalServiceAccountExecutionRecord,
     OrganizationApprovalServiceAccountExecutionWrite, OrganizationBudgetScope,
-    organization_approval_budget_resource_summary, organization_approval_member_resource_summary,
+    organization_approval_budget_resource_summary, organization_approval_funds_resource_summary,
+    organization_approval_member_resource_summary,
     organization_approval_service_account_budget_binding_resource_summary,
     organization_approval_service_account_status_resource_summary,
 };
@@ -20,6 +22,7 @@ use af_domain::{
     OrganizationBudgetPolicyId, OrganizationDepartmentId, OrganizationMembershipId,
     OrganizationMembershipStatus, OrganizationPermission, OrganizationRole,
     OrganizationServiceAccountId, OrganizationServiceAccountStatus, OrganizationTeamId, Protocol,
+    QuotaDelta, WalletEventId,
 };
 use rust_decimal::Decimal;
 use thiserror::Error;
@@ -99,6 +102,25 @@ pub struct OrganizationApprovalContractPriceExecutionResult {
     replayed: bool,
 }
 
+/// 应用层资金审批执行结果，明确标记是否为幂等恢复。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrganizationApprovalFundsExecutionResult {
+    record: OrganizationApprovalFundsExecutionRecord,
+    replayed: bool,
+}
+
+impl OrganizationApprovalFundsExecutionResult {
+    #[must_use]
+    pub const fn record(&self) -> &OrganizationApprovalFundsExecutionRecord {
+        &self.record
+    }
+
+    #[must_use]
+    pub const fn replayed(&self) -> bool {
+        self.replayed
+    }
+}
+
 impl OrganizationApprovalContractPriceExecutionResult {
     #[must_use]
     pub const fn record(&self) -> &OrganizationApprovalContractPriceExecutionRecord {
@@ -170,6 +192,12 @@ pub enum OrganizationApprovalExecutionError {
     EntitlementRestricted,
     #[error("企业席位容量已用尽")]
     SeatLimitReached,
+    #[error("企业钱包余额不足")]
+    InsufficientQuota,
+    #[error("企业钱包额度溢出")]
+    QuotaOverflow,
+    #[error("企业钱包审批执行结果未知")]
+    OutcomeUnknown,
     #[error("审批执行内部错误")]
     Internal,
 }
@@ -215,6 +243,18 @@ pub type OrganizationApprovalContractPriceExecutionFuture<'a> = Pin<
         dyn Future<
                 Output = Result<
                     OrganizationApprovalContractPriceExecutionResult,
+                    OrganizationApprovalExecutionError,
+                >,
+            > + Send
+            + 'a,
+    >,
+>;
+
+pub type OrganizationApprovalFundsExecutionFuture<'a> = Pin<
+    Box<
+        dyn Future<
+                Output = Result<
+                    OrganizationApprovalFundsExecutionResult,
                     OrganizationApprovalExecutionError,
                 >,
             > + Send
@@ -420,6 +460,54 @@ impl OrganizationApprovalContractPriceCommand {
     }
 }
 
+/// 企业钱包管理员调账审批命令；仅描述钱包账本调账，不代表支付或退款。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrganizationApprovalFundsAdjustmentCommand {
+    event_id: WalletEventId,
+    quota_delta: QuotaDelta,
+    reason: String,
+    expected_wallet_version: i64,
+}
+
+impl OrganizationApprovalFundsAdjustmentCommand {
+    /// 构造带钱包版本 CAS 的资金审批目标。
+    pub fn new(
+        event_id: WalletEventId,
+        quota_delta: QuotaDelta,
+        reason: String,
+        expected_wallet_version: i64,
+    ) -> Result<Self, OrganizationApprovalExecutionError> {
+        if event_id.is_system_opening()
+            || quota_delta.is_zero()
+            || expected_wallet_version <= 0
+            || expected_wallet_version == i64::MAX
+            || reason.is_empty()
+            || reason.len() > af_db::MAX_ORGANIZATION_WALLET_ADJUSTMENT_REASON_BYTES
+            || reason.chars().any(char::is_control)
+        {
+            return Err(OrganizationApprovalExecutionError::InvalidRequest);
+        }
+        Ok(Self {
+            event_id,
+            quota_delta,
+            reason,
+            expected_wallet_version,
+        })
+    }
+
+    /// 生成创建审批申请时必须使用的命令摘要。
+    #[must_use]
+    pub fn resource_summary(&self, context: &OrganizationContext) -> String {
+        organization_approval_funds_resource_summary(
+            context.organization_id(),
+            self.event_id,
+            self.quota_delta,
+            &self.reason,
+            self.expected_wallet_version,
+        )
+    }
+}
+
 /// 企业审批资源执行端口；按资源类型提供受控适配器，不接受宽泛资源载荷。
 pub trait OrganizationApprovalExecutionService: Send + Sync {
     fn execute_member_change<'a>(
@@ -456,6 +544,13 @@ pub trait OrganizationApprovalExecutionService: Send + Sync {
         request_id: OrganizationApprovalRequestId,
         command: OrganizationApprovalContractPriceCommand,
     ) -> OrganizationApprovalContractPriceExecutionFuture<'a>;
+
+    fn execute_funds_adjustment<'a>(
+        &'a self,
+        context: OrganizationContext,
+        request_id: OrganizationApprovalRequestId,
+        command: OrganizationApprovalFundsAdjustmentCommand,
+    ) -> OrganizationApprovalFundsExecutionFuture<'a>;
 }
 
 /// 使用数据库原子复验仓储实现成员审批执行。
@@ -647,6 +742,40 @@ impl OrganizationApprovalExecutionService for DatabaseOrganizationApprovalExecut
             Ok(OrganizationApprovalContractPriceExecutionResult { record, replayed })
         })
     }
+
+    fn execute_funds_adjustment<'a>(
+        &'a self,
+        context: OrganizationContext,
+        request_id: OrganizationApprovalRequestId,
+        command: OrganizationApprovalFundsAdjustmentCommand,
+    ) -> OrganizationApprovalFundsExecutionFuture<'a> {
+        Box::pin(async move {
+            if !context.allows(OrganizationPermission::WalletManage) {
+                return Err(OrganizationApprovalExecutionError::Forbidden);
+            }
+            let write = OrganizationApprovalFundsExecutionWrite::new(
+                context.organization_id(),
+                request_id,
+                command.event_id,
+                command.quota_delta,
+                command.reason,
+                command.expected_wallet_version,
+                context.membership_id(),
+                context.user_id(),
+            )
+            .map_err(map_repository_error)?;
+            let (record, replayed) = match self
+                .repository
+                .execute_funds_adjustment(write)
+                .await
+                .map_err(map_repository_error)?
+            {
+                OrganizationApprovalFundsExecutionOutcome::Applied(record) => (record, false),
+                OrganizationApprovalFundsExecutionOutcome::Existing(record) => (record, true),
+            };
+            Ok(OrganizationApprovalFundsExecutionResult { record, replayed })
+        })
+    }
 }
 
 async fn execute_service_account(
@@ -706,6 +835,15 @@ fn map_repository_error(
         }
         OrganizationApprovalExecutionRepositoryError::SeatLimitReached => {
             OrganizationApprovalExecutionError::SeatLimitReached
+        }
+        OrganizationApprovalExecutionRepositoryError::InsufficientQuota => {
+            OrganizationApprovalExecutionError::InsufficientQuota
+        }
+        OrganizationApprovalExecutionRepositoryError::QuotaOverflow => {
+            OrganizationApprovalExecutionError::QuotaOverflow
+        }
+        OrganizationApprovalExecutionRepositoryError::OutcomeUnknown => {
+            OrganizationApprovalExecutionError::OutcomeUnknown
         }
         OrganizationApprovalExecutionRepositoryError::Query
         | OrganizationApprovalExecutionRepositoryError::Timeout

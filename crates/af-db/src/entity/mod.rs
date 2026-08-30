@@ -70,6 +70,7 @@ pub(crate) mod options;
 pub(crate) mod organization_approval_budget_executions;
 pub(crate) mod organization_approval_contract_price_executions;
 pub(crate) mod organization_approval_decisions;
+pub(crate) mod organization_approval_funds_executions;
 pub(crate) mod organization_approval_member_executions;
 pub(crate) mod organization_approval_requests;
 pub(crate) mod organization_approval_service_account_executions;
@@ -1415,6 +1416,72 @@ where
         || executed_at.is_none_or(|value| value.unix_timestamp() < 0)
     {
         return Err(DbErr::Custom("合同价审批执行事实字段无效".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_organization_approval_funds_executions<C>(
+    model: &organization_approval_funds_executions::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    if !insert {
+        return Err(DbErr::Custom("资金审批执行事实只允许追加".to_owned()));
+    }
+    let organization_id = model.organization_id.try_as_ref();
+    let request_id = model.request_id.try_as_ref();
+    let decision_id = model.decision_id.try_as_ref();
+    let event_key = model.event_key.try_as_ref();
+    let quota_delta = model.quota_delta.try_as_ref();
+    let reason = model.reason.try_as_ref();
+    let expected_version = model.expected_wallet_version.try_as_ref();
+    let applied_version = model.applied_wallet_version.try_as_ref();
+    let balance_before = model.balance_before.try_as_ref();
+    let balance_after = model.balance_after.try_as_ref();
+    let ledger_entry_id = model.ledger_entry_id.try_as_ref();
+    let actor_membership_id = model.executed_by_membership_id.try_as_ref();
+    let executed_at = model.executed_at.try_as_ref();
+    let event_key_valid = event_key.is_some_and(|value| {
+        value.len() == 32
+            && value
+                .chars()
+                .all(|character| character.is_ascii_digit() || ('a'..='f').contains(&character))
+    });
+    let balances_valid = quota_delta
+        .zip(balance_before)
+        .zip(balance_after)
+        .is_some_and(|((delta, before), after)| {
+            *delta != 0
+                && *delta != i64::MIN
+                && *before >= 0
+                && *after >= 0
+                && before.checked_add(*delta) == Some(*after)
+        });
+    let versions_valid =
+        expected_version
+            .zip(applied_version)
+            .is_some_and(|(expected, applied)| {
+                *expected > 0 && *expected < i64::MAX && expected.checked_add(1) == Some(*applied)
+            });
+    if organization_id.is_none_or(|value| *value <= 0)
+        || request_id.is_none_or(|value| *value <= 0)
+        || decision_id.is_none_or(|value| *value <= 0)
+        || !event_key_valid
+        || !balances_valid
+        || reason.is_none_or(|value| {
+            value.as_str().is_empty()
+                || value.as_str().len() > 500
+                || value.as_str().chars().any(char::is_control)
+        })
+        || !versions_valid
+        || ledger_entry_id.is_none_or(|value| *value <= 0)
+        || actor_membership_id.is_none_or(|value| *value <= 0)
+        || executed_at.is_none_or(|value| value.unix_timestamp() < 0)
+    {
+        return Err(DbErr::Custom("资金审批执行事实字段无效".to_owned()));
     }
     Ok(())
 }
@@ -3191,6 +3258,17 @@ impl ActiveModelBehavior for organization_approval_contract_price_executions::Ac
         C: ConnectionTrait,
     {
         validate_organization_approval_contract_price_executions(&self, database, insert).await?;
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_approval_funds_executions::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_organization_approval_funds_executions(&self, database, insert).await?;
         Ok(self)
     }
 }
