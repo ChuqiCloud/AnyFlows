@@ -8,9 +8,7 @@ use af_domain::{
     OrganizationApprovalTemplateKey, OrganizationEntitlementCapacity,
     OrganizationEntitlementSnapshot, OrganizationId, UserId,
 };
-use sea_orm::{
-    ActiveModelTrait, EntityTrait, IntoActiveModel, Set, entity::prelude::TimeDateTimeWithTimeZone,
-};
+use sea_orm::{ActiveModelTrait, EntityTrait, Set, entity::prelude::TimeDateTimeWithTimeZone};
 
 use crate::entity::{groups, organization_approval_requests, users};
 use crate::{
@@ -214,36 +212,24 @@ async fn timeout_scan_and_decision_are_bounded_and_idempotent() -> Result<(), Bo
         ))
         .await?;
     let now = TimeDateTimeWithTimeZone::now_utc().unix_timestamp();
-    let request = OrganizationApprovalRequest::new(
-        OrganizationApprovalRequestKey::new([10; 16])?,
-        fixture.organization_id,
-        OrganizationApprovalResourceType::Budget,
-        "timeout test".to_owned(),
-        template.id(),
-        template.version(),
-        fixture.owner_id,
-        now + 3_600,
-    )?;
-    let request_id = match fixture
-        .repository
-        .create_request(OrganizationApprovalRequestWrite::new(request))
-        .await?
-    {
-        OrganizationApprovalRequestCreateOutcome::Created(record) => record.id(),
-        OrganizationApprovalRequestCreateOutcome::Existing(_) => panic!("首次申请必须创建"),
-    };
-
-    // 通过历史事实回放构造已过期申请，避免让回归测试等待真实时钟推进。
+    // 直接写入一条满足历史时间约束的事实，避免修改只追加的申请记录或等待真实时钟推进。
     let expired_at = TimeDateTimeWithTimeZone::from_unix_timestamp(now - 10)?;
     let created_at = TimeDateTimeWithTimeZone::from_unix_timestamp(now - 100)?;
-    let mut request_model = organization_approval_requests::Entity::find_by_id(request_id.get())
-        .one(fixture.pool.connection())
-        .await?
-        .expect("刚创建的审批申请必须存在")
-        .into_active_model();
-    request_model.expires_at = Set(expired_at);
-    request_model.created_at = Set(created_at);
-    request_model.update(fixture.pool.connection()).await?;
+    let request_model = organization_approval_requests::ActiveModel {
+        request_key: Set(OrganizationApprovalRequestKey::new([10; 16])?.persistence_key()),
+        organization_id: Set(fixture.organization_id.get()),
+        resource_type: Set(OrganizationApprovalResourceType::Budget.code()),
+        resource_summary: Set(crate::entity::SensitiveString::from("timeout test")),
+        template_id: Set(template.id().get()),
+        template_version: Set(template.version()),
+        requested_by_user_id: Set(fixture.owner_id.get()),
+        expires_at: Set(expired_at),
+        created_at: Set(created_at),
+        ..Default::default()
+    }
+    .insert(fixture.pool.connection())
+    .await?;
+    let request_id = crate::OrganizationApprovalRequestId::new(request_model.id)?;
 
     assert_eq!(
         OrganizationApprovalTimeoutCursor::new(0),
