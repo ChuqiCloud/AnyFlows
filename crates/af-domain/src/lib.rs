@@ -8,6 +8,7 @@ mod enums;
 mod error;
 mod network;
 mod organization;
+mod organization_approvals;
 mod organization_budget;
 mod organization_credit_invoices;
 mod organization_credit_repayments;
@@ -59,6 +60,13 @@ pub use organization::{
     OrganizationMembershipStatus, OrganizationPermission, OrganizationPermissionCodeError,
     OrganizationRole, OrganizationStateCodeError, OrganizationStatus, OrganizationTeamStatus,
     PlatformPermission,
+};
+pub use organization_approvals::{
+    OrganizationApprovalDecision, OrganizationApprovalDecisionKey,
+    OrganizationApprovalDecisionKind, OrganizationApprovalError, OrganizationApprovalRequest,
+    OrganizationApprovalRequestKey, OrganizationApprovalResourceType,
+    OrganizationApprovalTemplateDigest, OrganizationApprovalTemplateKey,
+    OrganizationApprovalTemplateSnapshot,
 };
 pub use organization_budget::{
     MAX_ORGANIZATION_BUDGET_FIXED_PERIOD_SECONDS, MIN_ORGANIZATION_BUDGET_FIXED_PERIOD_SECONDS,
@@ -163,7 +171,8 @@ pub use payment::{
     TopupPaymentEventType, TopupRequestId, TopupStateCodeError,
 };
 pub use principal::{
-    ChannelId, CredentialId, GatewayPrincipal, GroupId, ModelId, OrganizationBudgetPolicyId,
+    ChannelId, CredentialId, GatewayPrincipal, GroupId, ModelId, OrganizationApprovalDecisionId,
+    OrganizationApprovalRequestId, OrganizationApprovalTemplateId, OrganizationBudgetPolicyId,
     OrganizationBudgetWindowId, OrganizationContractPriceId, OrganizationCreditInvoiceId,
     OrganizationCreditRepaymentAllocationId, OrganizationCreditRepaymentId,
     OrganizationCreditTermId, OrganizationCustomRoleId, OrganizationDepartmentId,

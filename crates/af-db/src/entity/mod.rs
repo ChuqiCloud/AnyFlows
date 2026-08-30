@@ -11,6 +11,8 @@ use sea_orm::{ActiveValue, EntityTrait, Set, entity::prelude::*};
 
 use af_domain::{
     BillingReservationId, ChannelTimeout, MAX_ROUTE_MODEL_PATTERN_BYTES,
+    OrganizationApprovalDecisionKind, OrganizationApprovalResourceType,
+    OrganizationApprovalTemplateDigest, OrganizationApprovalTemplateKey,
     OrganizationCreditCurrency, OrganizationCreditInvoiceSourceKind,
     OrganizationCreditInvoiceStatus, OrganizationCreditRepaymentSourceKind,
     OrganizationCreditTermPeriod, OrganizationCreditTermStatus, OrganizationCustomRoleKey,
@@ -65,6 +67,9 @@ pub(crate) mod network_settings;
 pub(crate) mod oauth_login_providers;
 pub(crate) mod oauth_login_transactions;
 pub(crate) mod options;
+pub(crate) mod organization_approval_decisions;
+pub(crate) mod organization_approval_requests;
+pub(crate) mod organization_approval_templates;
 pub(crate) mod organization_audit_logs;
 pub(crate) mod organization_budget_policies;
 pub(crate) mod organization_budget_windows;
@@ -861,6 +866,175 @@ where
             .is_some_and(|(allocated, created)| created < allocated)
     {
         return Err(DbErr::Custom("企业还款核销分配字段无效".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_organization_approval_templates<C>(
+    model: &organization_approval_templates::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    if !insert {
+        return Err(DbErr::Custom("企业审批模板版本只允许追加".to_owned()));
+    }
+    let template_key = model.template_key.try_as_ref().map(String::as_str);
+    let digest = model
+        .definition_digest
+        .try_as_ref()
+        .map(SensitiveString::as_str);
+    if template_key.is_none()
+        || model.organization_id.try_as_ref().is_none()
+        || model.resource_type.try_as_ref().is_none()
+        || model.version.try_as_ref().is_none()
+        || digest.is_none()
+        || model.created_by_user_id.try_as_ref().is_none()
+        || model.created_at.try_as_ref().is_none()
+        || template_key.is_some_and(|value| OrganizationApprovalTemplateKey::new(value).is_err())
+        || model
+            .organization_id
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || model
+            .resource_type
+            .try_as_ref()
+            .is_some_and(|value| OrganizationApprovalResourceType::try_from(*value).is_err())
+        || model.version.try_as_ref().is_some_and(|value| *value <= 0)
+        || digest.is_some_and(|value| {
+            OrganizationApprovalTemplateDigest::from_persistence_key(value).is_err()
+        })
+        || model
+            .created_by_user_id
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || model
+            .created_at
+            .try_as_ref()
+            .is_some_and(|value| value.unix_timestamp() < 0)
+    {
+        return Err(DbErr::Custom("企业审批模板版本字段无效".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_organization_approval_requests<C>(
+    model: &organization_approval_requests::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    if !insert {
+        return Err(DbErr::Custom("企业审批申请事实只允许追加".to_owned()));
+    }
+    let request_key = model.request_key.try_as_ref().map(String::as_str);
+    let summary = model
+        .resource_summary
+        .try_as_ref()
+        .map(SensitiveString::as_str);
+    let expires_at = model.expires_at.try_as_ref().copied();
+    let created_at = model.created_at.try_as_ref().copied();
+    if request_key.is_none()
+        || model.organization_id.try_as_ref().is_none()
+        || model.resource_type.try_as_ref().is_none()
+        || summary.is_none()
+        || model.template_id.try_as_ref().is_none()
+        || model.template_version.try_as_ref().is_none()
+        || model.requested_by_user_id.try_as_ref().is_none()
+        || expires_at.is_none()
+        || created_at.is_none()
+        || request_key.is_some_and(|value| !valid_hex(value, 32, true))
+        || model
+            .organization_id
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || model
+            .resource_type
+            .try_as_ref()
+            .is_some_and(|value| OrganizationApprovalResourceType::try_from(*value).is_err())
+        || summary.is_some_and(|value| !valid_organization_text(value, 1024))
+        || model
+            .template_id
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || model
+            .template_version
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || model
+            .requested_by_user_id
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || expires_at.is_some_and(|value| value.unix_timestamp() < 0)
+        || created_at.is_some_and(|value| value.unix_timestamp() < 0)
+        || expires_at
+            .zip(created_at)
+            .is_some_and(|(expires, created)| expires <= created)
+    {
+        return Err(DbErr::Custom("企业审批申请字段无效".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_organization_approval_decisions<C>(
+    model: &organization_approval_decisions::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    if !insert {
+        return Err(DbErr::Custom("企业审批决定事实只允许追加".to_owned()));
+    }
+    let decision_key = model.decision_key.try_as_ref().map(String::as_str);
+    let reason = model
+        .reason
+        .try_as_ref()
+        .and_then(Option::as_ref)
+        .map(SensitiveString::as_str);
+    let kind = model.decision_kind.try_as_ref().copied();
+    let actor = model.decided_by_user_id.try_as_ref().copied().flatten();
+    let decided_at = model.decided_at.try_as_ref().copied();
+    let created_at = model.created_at.try_as_ref().copied();
+    let actor_shape_valid = match kind
+        .and_then(|value| OrganizationApprovalDecisionKind::try_from(value).ok())
+    {
+        Some(OrganizationApprovalDecisionKind::TimedOut) => actor.is_none(),
+        Some(
+            OrganizationApprovalDecisionKind::Approved | OrganizationApprovalDecisionKind::Rejected,
+        ) => actor.is_some_and(|value| value > 0),
+        None => false,
+    };
+    if decision_key.is_none()
+        || model.organization_id.try_as_ref().is_none()
+        || model.request_id.try_as_ref().is_none()
+        || kind.is_none()
+        || decided_at.is_none()
+        || created_at.is_none()
+        || decision_key.is_some_and(|value| !valid_hex(value, 32, true))
+        || model
+            .organization_id
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || model
+            .request_id
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || kind.is_some_and(|value| OrganizationApprovalDecisionKind::try_from(value).is_err())
+        || !actor_shape_valid
+        || reason.is_some_and(|value| !valid_organization_text(value, 512))
+        || decided_at.is_some_and(|value| value.unix_timestamp() < 0)
+        || created_at.is_some_and(|value| value.unix_timestamp() < 0)
+        || decided_at
+            .zip(created_at)
+            .is_some_and(|(decided, created)| decided > created)
+    {
+        return Err(DbErr::Custom("企业审批决定字段无效".to_owned()));
     }
     Ok(())
 }
@@ -2560,6 +2734,39 @@ impl ActiveModelBehavior for organization_credit_repayment_allocations::ActiveMo
         C: ConnectionTrait,
     {
         validate_organization_credit_repayment_allocations(&self, database, insert).await?;
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_approval_templates::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_organization_approval_templates(&self, database, insert).await?;
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_approval_requests::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_organization_approval_requests(&self, database, insert).await?;
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_approval_decisions::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_organization_approval_decisions(&self, database, insert).await?;
         Ok(self)
     }
 }
