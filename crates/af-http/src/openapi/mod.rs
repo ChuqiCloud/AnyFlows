@@ -18,6 +18,7 @@ mod network_settings;
 mod oauth_connections;
 mod oauth_login;
 mod organization_activity;
+mod organization_approval;
 mod organization_budget;
 mod organization_contract_price;
 mod organization_scim_audit;
@@ -118,6 +119,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(organization_sso::document());
     document.merge(organization_tokens::document());
     document.merge(organization_activity::document());
+    document.merge(organization_approval::document());
     document.merge(organization_scim_audit::document());
     document.merge(organization_service_account_runtime::document());
     document.merge(scim::document());
@@ -153,6 +155,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("企业 API Key"),
         Tag::new("企业服务账号"),
         Tag::new("企业活动"),
+        Tag::new("企业审批"),
         Tag::new("企业 SCIM"),
         Tag::new("平台企业活动"),
         Tag::new("平台管理审计"),

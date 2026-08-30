@@ -42,6 +42,7 @@
     "organizationServiceAccounts": "服务账号",
     "organizationBudgets": "企业预算",
     "organizationContractPrices": "企业合同价",
+    "organizationApprovals": "企业审批",
     "organizationActivity": "企业日志与审计",
     "organizationOverview": "企业概览",
     "organizationMembers": "成员与团队",
@@ -4432,6 +4433,23 @@
     "form": { "title": "创建合同价", "subtitle": "服务端会校验模型区间并创建不可变版本。", "model": "模型", "protocol": "协议", "input": "输入单价", "output": "输出单价", "cache_read": "缓存读取单价", "cache_creation_5m": "缓存创建（5 分钟）", "cache_creation_1h": "缓存创建（1 小时）", "effectiveFrom": "生效时间", "effectiveUntil": "失效时间（可选）", "effectiveUntilHint": "留空表示保持开放。", "expectedVersion": "服务端将按 v{{version}} 校验下一版本。" },
     "close": { "title": "关闭合同价区间", "description": "现在关闭 {{model}}（{{protocol}}）吗？服务端会校验版本 {{version}}，关闭后不可重新开放。" },
     "errors": { "listTitle": "合同价加载失败", "listBody": "服务端暂时没有返回可靠的价格历史，请稍后重试。", "forbiddenTitle": "合同价访问被拒绝", "forbiddenBody": "成员关系或企业授权可能已不允许读取合同价。", "intervalConflict": "该模型和协议的生效区间与其他版本重叠，请选择更晚的生效时间。", "conflict": "合同价已在其他会话中变化，请刷新后按最新版本提交。", "mutation": "操作没有返回可靠结果，请刷新价格历史后重试。" }
+  },
+  "organizationApprovals": {
+    "eyebrow": "企业工作区",
+    "title": "企业审批",
+    "subtitle": "管理版本化审批模板和可审计申请，审批事实本身不会直接修改成员、预算或资金资源。",
+    "summary": "{{templates}} 个模板版本 · {{requests}} 个申请",
+    "actions": { "refresh": "刷新", "retry": "重试", "createTemplate": "创建模板", "createRequest": "发起申请", "approve": "批准", "reject": "拒绝", "submit": "提交", "create": "创建", "cancel": "取消" },
+    "readOnly": "当前可以查看申请，但没有管理模板或提交审批决定的权限。",
+    "restricted": { "title": "审批访问受限", "body": "当前企业角色没有审批读取或申请权限。" },
+    "empty": { "title": "暂无审批申请", "body": "从成员、预算或其他企业变更流程发起申请后，这里会显示可追溯的审批事实。" },
+    "templates": { "title": "模板版本", "empty": "当前企业还没有可用的审批模板版本。" },
+    "resource": { "member": "成员", "budget": "预算", "service_account": "服务账号", "contract_price": "合同价", "funds": "资金" },
+    "status": { "pending": "待审批", "approved": "已批准", "rejected": "已拒绝", "timed_out": "已超时" },
+    "fields": { "requestedBy": "发起人", "created": "创建时间", "expires": "过期时间" },
+    "forms": { "templateTitle": "创建模板版本", "templateKey": "模板键", "resourceType": "资源类型", "digest": "定义摘要（64 位小写十六进制）", "requestTitle": "发起审批申请", "template": "模板版本", "templatePlaceholder": "选择模板", "summary": "资源摘要", "expires": "过期时间" },
+    "decision": { "approveTitle": "批准申请", "rejectTitle": "拒绝申请", "description": "确认提交申请 #{{id}} 的一次性决定？目标资源仍需后续执行步骤才会发生变化。" },
+    "errors": { "listTitle": "无法加载审批事实", "listBody": "审批目录暂时不可用，请稍后重试。", "forbiddenTitle": "审批访问被拒绝", "forbiddenBody": "当前成员关系或企业权限已不允许查看此页面。", "conflict": "审批事实已被并发更新，请刷新后重新确认最新状态。", "expired": "申请已过期，不能再提交人工决定。", "mutation": "操作没有返回可靠结果，请刷新后重试。" }
   },
   "organizationDepartments": {
     "eyebrow": "企业空间",
