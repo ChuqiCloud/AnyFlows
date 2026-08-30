@@ -101,6 +101,7 @@ async fn create_templates(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
         .check(fixed_lower_hex_check(
             manager.get_database_backend(),
             Column::DefinitionDigest,
+            64,
         ))
         .foreign_key(
             ForeignKey::create()
@@ -196,11 +197,16 @@ async fn create_requests(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
         .check(fixed_lower_hex_check(
             manager.get_database_backend(),
             Column::RequestKey,
+            32,
         ))
         .check(Expr::col(Column::ResourceType).between(1_i16, 5_i16))
         .check(Expr::cust("length(trim(resource_summary)) > 0"))
         .check(Expr::col(Column::TemplateVersion).gt(0_i64))
-        .check(Expr::col(Column::ExpiresAt).gt(Expr::col(Column::CreatedAt)))
+        .check(timestamp_lte_check(
+            manager.get_database_backend(),
+            Column::CreatedAt,
+            Column::ExpiresAt,
+        ))
         .foreign_key(
             ForeignKey::create()
                 .name("fk_org_approval_requests_organization")
@@ -301,6 +307,7 @@ async fn create_decisions(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
         .check(fixed_lower_hex_check(
             manager.get_database_backend(),
             Column::DecisionKey,
+            32,
         ))
         .check(Expr::col(Column::DecisionKind).between(1_i16, 3_i16))
         .check(
@@ -316,7 +323,11 @@ async fn create_decisions(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
                 .is_null()
                 .or(Expr::cust("length(trim(reason)) > 0")),
         )
-        .check(Expr::col(Column::DecidedAt).lte(Expr::col(Column::CreatedAt)))
+        .check(timestamp_lte_check(
+            manager.get_database_backend(),
+            Column::DecidedAt,
+            Column::CreatedAt,
+        ))
         .foreign_key(
             ForeignKey::create()
                 .name("fk_org_approval_decisions_organization")
@@ -387,18 +398,77 @@ async fn create_decisions(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
     Ok(())
 }
 
-fn fixed_lower_hex_check<C>(backend: DbBackend, column: C) -> SimpleExpr
+fn fixed_lower_hex_check<C>(backend: DbBackend, column: C, length: usize) -> SimpleExpr
 where
     C: Iden,
 {
     let name = Iden::to_string(&column);
     match backend {
-        DbBackend::Postgres => Expr::cust(format!("\"{name}\" ~ '^[0-9a-f]{{64}}$'")),
+        DbBackend::Postgres => Expr::cust(format!("\"{name}\" ~ '^[0-9a-f]{{{length}}}$'")),
         DbBackend::MySql => Expr::cust(format!(
-            "CHAR_LENGTH(`{name}`) = 64 AND `{name}` REGEXP '^[0-9a-f]{{64}}$'"
+            "CHAR_LENGTH(`{name}`) = {length} AND `{name}` REGEXP '^[0-9a-f]{{{length}}}$'"
         )),
         DbBackend::Sqlite => Expr::cust(format!(
-            "length(\"{name}\") = 64 AND \"{name}\" NOT GLOB '*[^0-9a-f]*'"
+            "length(\"{name}\") = {length} AND \"{name}\" NOT GLOB '*[^0-9a-f]*'"
         )),
+    }
+}
+
+/// SQLite 将时间列按 RFC3339 文本保存，跨列约束必须转换为时间值后比较。
+fn timestamp_lte_check<L, R>(backend: DbBackend, left: L, right: R) -> SimpleExpr
+where
+    L: Iden + 'static,
+    R: Iden + 'static,
+{
+    if backend != DbBackend::Sqlite {
+        return Expr::col(left).lte(Expr::col(right));
+    }
+    let left: SimpleExpr = Func::cust(Alias::new("julianday"))
+        .arg(Expr::col(left))
+        .into();
+    let right: SimpleExpr = Func::cust(Alias::new("julianday"))
+        .arg(Expr::col(right))
+        .into();
+    left.clone()
+        .is_not_null()
+        .and(right.clone().is_not_null())
+        .and(left.lte(right))
+}
+
+#[cfg(test)]
+mod tests {
+    use sea_orm::sea_query::{Query, SqliteQueryBuilder};
+
+    use super::*;
+
+    #[test]
+    fn sqlite_timestamp_checks_use_chronological_comparison() {
+        let query = Query::select()
+            .expr(timestamp_lte_check(
+                DbBackend::Sqlite,
+                organization_approval_decisions::Column::DecidedAt,
+                organization_approval_decisions::Column::CreatedAt,
+            ))
+            .to_owned();
+        let sql = query.to_string(SqliteQueryBuilder);
+
+        assert!(sql.contains("julianday(\"decided_at\")"));
+        assert!(sql.contains("julianday(\"created_at\")"));
+        assert_eq!(sql.matches("IS NOT NULL").count(), 2);
+    }
+
+    #[test]
+    fn fact_keys_use_their_persisted_hex_width() {
+        let query = Query::select()
+            .expr(fixed_lower_hex_check(
+                DbBackend::Sqlite,
+                organization_approval_requests::Column::RequestKey,
+                32,
+            ))
+            .to_owned();
+        let sql = query.to_string(SqliteQueryBuilder);
+
+        assert!(sql.contains("length(\"request_key\") = 32"));
+        assert!(!sql.contains("= 64"));
     }
 }
