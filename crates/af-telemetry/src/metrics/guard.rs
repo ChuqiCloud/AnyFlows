@@ -500,6 +500,12 @@ fn allowed_label_value(key: &str, value: &str, registries: &LabelRegistries) -> 
                 | "unavailable"
                 | "invariant"
                 | "invalid_request"
+                | "lease_held"
+                | "scan_failed"
+                | "skipped"
+                | "failed"
+                | "outcome_unknown_replay"
+                | "truncated"
         ),
         _ => false,
     }
