@@ -2182,6 +2182,60 @@ pub(in crate::migration) mod organization_credit_invoices {
     }
 }
 
+pub(in crate::migration) mod organization_credit_repayments {
+    use super::DeriveIden;
+
+    /// 企业已确认还款事实表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_credit_repayments")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业已确认还款事实固定字段标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        RepaymentKey,
+        OrganizationId,
+        SourceKind,
+        SourceKey,
+        Currency,
+        AmountMinor,
+        ReceivedAt,
+        CreatedAt,
+    }
+}
+
+pub(in crate::migration) mod organization_credit_repayment_allocations {
+    use super::DeriveIden;
+
+    /// 企业还款核销分配事实表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_credit_repayment_allocations")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业还款核销分配固定字段标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        AllocationKey,
+        OrganizationId,
+        RepaymentId,
+        InvoiceId,
+        Currency,
+        AmountMinor,
+        AllocatedAt,
+        CreatedAt,
+    }
+}
+
 pub(in crate::migration) mod organization_custom_roles {
     use super::DeriveIden;
 

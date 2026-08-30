@@ -12,8 +12,9 @@ use sea_orm::{ActiveValue, EntityTrait, Set, entity::prelude::*};
 use af_domain::{
     BillingReservationId, ChannelTimeout, MAX_ROUTE_MODEL_PATTERN_BYTES,
     OrganizationCreditCurrency, OrganizationCreditInvoiceSourceKind,
-    OrganizationCreditInvoiceStatus, OrganizationCreditTermPeriod, OrganizationCreditTermStatus,
-    OrganizationCustomRoleKey, OrganizationCustomRoleStatus, OrganizationDepartmentKey,
+    OrganizationCreditInvoiceStatus, OrganizationCreditRepaymentSourceKind,
+    OrganizationCreditTermPeriod, OrganizationCreditTermStatus, OrganizationCustomRoleKey,
+    OrganizationCustomRoleStatus, OrganizationDepartmentKey,
     OrganizationDepartmentMembershipStatus, OrganizationDepartmentStatus, OrganizationKey,
     OrganizationMembershipStatus, OrganizationPermission, OrganizationRole,
     OrganizationServiceAccountKey, OrganizationStatus, OrganizationTeamStatus, Quota, QuotaDelta,
@@ -69,6 +70,8 @@ pub(crate) mod organization_budget_policies;
 pub(crate) mod organization_budget_windows;
 pub(crate) mod organization_contract_prices;
 pub(crate) mod organization_credit_invoices;
+pub(crate) mod organization_credit_repayment_allocations;
+pub(crate) mod organization_credit_repayments;
 pub(crate) mod organization_credit_terms;
 pub(crate) mod organization_custom_role_permissions;
 pub(crate) mod organization_custom_roles;
@@ -762,6 +765,102 @@ where
             .is_some_and(|(created, updated)| updated < created)
     {
         return Err(DbErr::Custom("企业账期账单字段无效".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_organization_credit_repayments<C>(
+    model: &organization_credit_repayments::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    if !insert {
+        return Err(DbErr::Custom("企业还款事实只允许追加".to_owned()));
+    }
+    let received_at = model.received_at.try_as_ref().copied();
+    let created_at = model.created_at.try_as_ref().copied();
+    if model
+        .repayment_key
+        .try_as_ref()
+        .is_none_or(|value| !valid_hex(value, 32, true))
+        || model
+            .organization_id
+            .try_as_ref()
+            .is_none_or(|value| *value <= 0)
+        || model
+            .source_kind
+            .try_as_ref()
+            .is_none_or(|value| OrganizationCreditRepaymentSourceKind::try_from(*value).is_err())
+        || model
+            .source_key
+            .try_as_ref()
+            .is_none_or(|value| !valid_hex(value, 32, true))
+        || model
+            .currency
+            .try_as_ref()
+            .is_none_or(|value| OrganizationCreditCurrency::new(value).is_err())
+        || model
+            .amount_minor
+            .try_as_ref()
+            .is_none_or(|value| *value <= 0)
+        || received_at.is_none_or(|value| value.unix_timestamp() < 0)
+        || created_at.is_none_or(|value| value.unix_timestamp() < 0)
+        || received_at
+            .zip(created_at)
+            .is_some_and(|(received, created)| created < received)
+    {
+        return Err(DbErr::Custom("企业还款事实字段无效".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_organization_credit_repayment_allocations<C>(
+    model: &organization_credit_repayment_allocations::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    if !insert {
+        return Err(DbErr::Custom("企业还款核销分配只允许追加".to_owned()));
+    }
+    let allocated_at = model.allocated_at.try_as_ref().copied();
+    let created_at = model.created_at.try_as_ref().copied();
+    if model
+        .allocation_key
+        .try_as_ref()
+        .is_none_or(|value| !valid_hex(value, 32, true))
+        || model
+            .organization_id
+            .try_as_ref()
+            .is_none_or(|value| *value <= 0)
+        || model
+            .repayment_id
+            .try_as_ref()
+            .is_none_or(|value| *value <= 0)
+        || model
+            .invoice_id
+            .try_as_ref()
+            .is_none_or(|value| *value <= 0)
+        || model
+            .currency
+            .try_as_ref()
+            .is_none_or(|value| OrganizationCreditCurrency::new(value).is_err())
+        || model
+            .amount_minor
+            .try_as_ref()
+            .is_none_or(|value| *value <= 0)
+        || allocated_at.is_none_or(|value| value.unix_timestamp() < 0)
+        || created_at.is_none_or(|value| value.unix_timestamp() < 0)
+        || allocated_at
+            .zip(created_at)
+            .is_some_and(|(allocated, created)| created < allocated)
+    {
+        return Err(DbErr::Custom("企业还款核销分配字段无效".to_owned()));
     }
     Ok(())
 }
@@ -2439,6 +2538,28 @@ impl ActiveModelBehavior for organization_scim_audit_logs::ActiveModel {
         if !insert {
             return Err(DbErr::Custom("SCIM 审计事实只允许追加".to_owned()));
         }
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_credit_repayments::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_organization_credit_repayments(&self, database, insert).await?;
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_credit_repayment_allocations::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_organization_credit_repayment_allocations(&self, database, insert).await?;
         Ok(self)
     }
 }

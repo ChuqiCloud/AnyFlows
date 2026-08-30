@@ -145,6 +145,16 @@ principal_id! {
 }
 
 principal_id! {
+    /// 企业已确认还款事实的持久化标识。
+    OrganizationCreditRepaymentId
+}
+
+principal_id! {
+    /// 企业还款核销分配事实的持久化标识。
+    OrganizationCreditRepaymentAllocationId
+}
+
+principal_id! {
     /// 企业 SCIM 令牌的持久化标识。
     OrganizationScimTokenId
 }
