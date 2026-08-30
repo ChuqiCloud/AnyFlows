@@ -119,6 +119,7 @@ mod m20260829_000110_create_organization_contract_prices;
 mod m20260829_000111_add_contract_price_snapshots;
 mod m20260830_000112_create_organization_credit_terms;
 mod m20260830_000113_create_organization_credit_invoices;
+mod m20260830_000114_create_organization_credit_repayments;
 mod schema;
 
 #[cfg(test)]
@@ -277,6 +278,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260829_000111_add_contract_price_snapshots::Migration),
             Box::new(m20260830_000112_create_organization_credit_terms::Migration),
             Box::new(m20260830_000113_create_organization_credit_invoices::Migration),
+            Box::new(m20260830_000114_create_organization_credit_repayments::Migration),
         ]
     }
 }

@@ -10,6 +10,7 @@ mod network;
 mod organization;
 mod organization_budget;
 mod organization_credit_invoices;
+mod organization_credit_repayments;
 mod organization_credit_terms;
 mod organization_department;
 mod organization_department_budget;
@@ -69,6 +70,13 @@ pub use organization_credit_invoices::{
     OrganizationCreditInvoiceKeyError, OrganizationCreditInvoiceSnapshot,
     OrganizationCreditInvoiceSourceKey, OrganizationCreditInvoiceSourceKind,
     OrganizationCreditInvoiceStatus,
+};
+pub use organization_credit_repayments::{
+    OrganizationCreditRepaymentAllocation, OrganizationCreditRepaymentAllocationKey,
+    OrganizationCreditRepaymentAmount, OrganizationCreditRepaymentError,
+    OrganizationCreditRepaymentKey, OrganizationCreditRepaymentKeyError,
+    OrganizationCreditRepaymentSnapshot, OrganizationCreditRepaymentSourceKey,
+    OrganizationCreditRepaymentSourceKind,
 };
 pub use organization_credit_terms::{
     OrganizationCreditCurrency, OrganizationCreditLimit, OrganizationCreditTermPeriod,
@@ -157,6 +165,7 @@ pub use payment::{
 pub use principal::{
     ChannelId, CredentialId, GatewayPrincipal, GroupId, ModelId, OrganizationBudgetPolicyId,
     OrganizationBudgetWindowId, OrganizationContractPriceId, OrganizationCreditInvoiceId,
+    OrganizationCreditRepaymentAllocationId, OrganizationCreditRepaymentId,
     OrganizationCreditTermId, OrganizationCustomRoleId, OrganizationDepartmentId,
     OrganizationGatewayPrincipal, OrganizationId, OrganizationMembershipId,
     OrganizationScimTokenId, OrganizationServiceAccountId, OrganizationTeamId, PrincipalIdError,

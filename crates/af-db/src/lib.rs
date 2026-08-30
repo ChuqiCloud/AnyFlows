@@ -129,6 +129,9 @@ mod organization_budget_tests;
 mod organization_contract_price;
 #[cfg(test)]
 mod organization_contract_price_tests;
+mod organization_credit_repayment;
+#[cfg(test)]
+mod organization_credit_repayment_tests;
 mod organization_custom_role;
 mod organization_custom_role_binding;
 #[cfg(test)]
@@ -508,6 +511,12 @@ pub use organization_contract_price::{
     OrganizationContractPriceRecord, OrganizationContractPriceRepository,
     OrganizationContractPriceRepositoryConfigError, OrganizationContractPriceRepositoryError,
     OrganizationContractPriceSnapshot, OrganizationContractPriceWrite,
+};
+pub use organization_credit_repayment::{
+    OrganizationCreditRepaymentAllocationOutcome, OrganizationCreditRepaymentAllocationRecord,
+    OrganizationCreditRepaymentCreateOutcome, OrganizationCreditRepaymentRecord,
+    OrganizationCreditRepaymentRepository, OrganizationCreditRepaymentRepositoryConfigError,
+    OrganizationCreditRepaymentRepositoryError,
 };
 pub use organization_custom_role::{
     MAX_ORGANIZATION_CUSTOM_ROLE_DESCRIPTION_BYTES, MAX_ORGANIZATION_CUSTOM_ROLE_NAME_BYTES,
