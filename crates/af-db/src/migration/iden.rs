@@ -2347,6 +2347,41 @@ pub(in crate::migration) mod organization_approval_member_executions {
     }
 }
 
+pub(in crate::migration) mod organization_approval_budget_executions {
+    use super::DeriveIden;
+
+    /// 预算审批执行事实表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_approval_budget_executions")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 预算审批执行事实固定字段标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        RequestId,
+        DecisionId,
+        PolicyId,
+        ScopeKind,
+        TeamId,
+        MembershipId,
+        DepartmentId,
+        PeriodKind,
+        FixedPeriodSeconds,
+        QuotaLimit,
+        EffectiveFrom,
+        ExpectedPolicyVersion,
+        AppliedPolicyVersion,
+        ExecutedByMembershipId,
+        ExecutedAt,
+    }
+}
+
 pub(in crate::migration) mod organization_custom_roles {
     use super::DeriveIden;
 

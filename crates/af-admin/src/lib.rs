@@ -257,9 +257,11 @@ pub use organization_approval::{
     OrganizationApprovalTemplateListFuture, OrganizationApprovalTemplateRecord,
 };
 pub use organization_approval_execution::{
-    DatabaseOrganizationApprovalExecutionService, OrganizationApprovalExecutionError,
-    OrganizationApprovalExecutionService, OrganizationApprovalMemberChangeCommand,
-    OrganizationApprovalMemberExecutionFuture, OrganizationApprovalMemberExecutionResult,
+    DatabaseOrganizationApprovalExecutionService, OrganizationApprovalBudgetExecutionFuture,
+    OrganizationApprovalBudgetExecutionResult, OrganizationApprovalBudgetPolicyCommand,
+    OrganizationApprovalExecutionError, OrganizationApprovalExecutionService,
+    OrganizationApprovalMemberChangeCommand, OrganizationApprovalMemberExecutionFuture,
+    OrganizationApprovalMemberExecutionResult,
 };
 pub use organization_budget::{
     DatabaseOrganizationBudgetService, OrganizationBudgetPoliciesFuture,
