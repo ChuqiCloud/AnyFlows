@@ -7,8 +7,8 @@ use std::{
 use af_db::{
     OrganizationApprovalRepository, OrganizationApprovalRepositoryError,
     OrganizationApprovalTimeoutBatch, OrganizationApprovalTimeoutCommand,
-    OrganizationApprovalTimeoutCursor, OrganizationApprovalTimeoutLease,
-    OrganizationApprovalTimeoutLeaseOutcome, OrganizationApprovalTimeoutOutcome,
+    OrganizationApprovalTimeoutCursor, OrganizationApprovalTimeoutLeaseOutcome,
+    OrganizationApprovalTimeoutOutcome,
 };
 use thiserror::Error;
 use tokio::time::sleep;
@@ -389,12 +389,12 @@ fn invalid_page(
     next: Option<OrganizationApprovalTimeoutCursor>,
     batch_size: usize,
 ) -> bool {
-    (scanned_count > batch_size
+    scanned_count > batch_size
         || command_count > scanned_count
         || (scanned_count == 0 && next.is_some())
         || previous
             .zip(next)
-            .is_some_and(|(previous, next)| next.id() <= previous.id()))
+            .is_some_and(|(previous, next)| next.id() <= previous.id())
 }
 
 fn unix_now() -> Result<i64, ()> {
@@ -440,6 +440,7 @@ mod tests {
     };
 
     use super::*;
+    use af_db::OrganizationApprovalTimeoutLease;
 
     #[derive(Clone)]
     struct FakeStore {

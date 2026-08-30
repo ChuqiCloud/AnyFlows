@@ -4,8 +4,6 @@ use crate::migration::iden::organization_approval_timeout_leases;
 
 use super::{nullable_timestamp, table, timestamp};
 
-const LEASE_KEY: &str = "organization-approval-timeout-v1";
-
 /// 创建企业审批超时扫描的单行数据库租约。
 pub(in crate::migration) async fn create_organization_approval_timeout_lease(
     manager: &SchemaManager<'_>,
@@ -71,7 +69,7 @@ mod tests {
     #[test]
     fn lease_schema_keeps_owner_and_version_constraints() {
         for rendered in [
-            Query::create_table()
+            Table::create()
                 .table(organization_approval_timeout_leases::Entity)
                 .col(
                     ColumnDef::new(organization_approval_timeout_leases::Column::OwnerToken)
@@ -79,7 +77,7 @@ mod tests {
                         .not_null(),
                 )
                 .to_string(PostgresQueryBuilder),
-            Query::create_table()
+            Table::create()
                 .table(organization_approval_timeout_leases::Entity)
                 .col(
                     ColumnDef::new(organization_approval_timeout_leases::Column::Version)
@@ -87,7 +85,7 @@ mod tests {
                         .not_null(),
                 )
                 .to_string(MysqlQueryBuilder),
-            Query::create_table()
+            Table::create()
                 .table(organization_approval_timeout_leases::Entity)
                 .col(
                     ColumnDef::new(organization_approval_timeout_leases::Column::LeaseExpiresAt)
