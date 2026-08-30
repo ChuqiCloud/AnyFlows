@@ -2,7 +2,9 @@ use std::{fmt, future::Future, pin::Pin, sync::Arc};
 
 use af_db::{
     OrganizationApprovalBudgetExecutionOutcome, OrganizationApprovalBudgetExecutionRecord,
-    OrganizationApprovalBudgetExecutionWrite, OrganizationApprovalExecutionRepository,
+    OrganizationApprovalBudgetExecutionWrite, OrganizationApprovalContractPriceExecutionOutcome,
+    OrganizationApprovalContractPriceExecutionRecord,
+    OrganizationApprovalContractPriceExecutionWrite, OrganizationApprovalExecutionRepository,
     OrganizationApprovalExecutionRepositoryError, OrganizationApprovalMemberExecutionOutcome,
     OrganizationApprovalMemberExecutionRecord, OrganizationApprovalMemberExecutionWrite,
     OrganizationApprovalServiceAccountExecutionAction,
@@ -17,8 +19,9 @@ use af_domain::{
     OrganizationApprovalRequestId, OrganizationBudgetLimit, OrganizationBudgetPeriod,
     OrganizationBudgetPolicyId, OrganizationDepartmentId, OrganizationMembershipId,
     OrganizationMembershipStatus, OrganizationPermission, OrganizationRole,
-    OrganizationServiceAccountId, OrganizationServiceAccountStatus, OrganizationTeamId,
+    OrganizationServiceAccountId, OrganizationServiceAccountStatus, OrganizationTeamId, Protocol,
 };
+use rust_decimal::Decimal;
 use thiserror::Error;
 
 use crate::OrganizationContext;
@@ -87,6 +90,25 @@ pub struct OrganizationApprovalBudgetExecutionResult {
 pub struct OrganizationApprovalServiceAccountExecutionResult {
     record: OrganizationApprovalServiceAccountExecutionRecord,
     replayed: bool,
+}
+
+/// 应用层合同价审批执行结果，明确标记是否为幂等恢复。
+#[derive(Clone, Debug, PartialEq)]
+pub struct OrganizationApprovalContractPriceExecutionResult {
+    record: OrganizationApprovalContractPriceExecutionRecord,
+    replayed: bool,
+}
+
+impl OrganizationApprovalContractPriceExecutionResult {
+    #[must_use]
+    pub const fn record(&self) -> &OrganizationApprovalContractPriceExecutionRecord {
+        &self.record
+    }
+
+    #[must_use]
+    pub const fn replayed(&self) -> bool {
+        self.replayed
+    }
 }
 
 impl OrganizationApprovalServiceAccountExecutionResult {
@@ -181,6 +203,18 @@ pub type OrganizationApprovalServiceAccountExecutionFuture<'a> = Pin<
         dyn Future<
                 Output = Result<
                     OrganizationApprovalServiceAccountExecutionResult,
+                    OrganizationApprovalExecutionError,
+                >,
+            > + Send
+            + 'a,
+    >,
+>;
+
+pub type OrganizationApprovalContractPriceExecutionFuture<'a> = Pin<
+    Box<
+        dyn Future<
+                Output = Result<
+                    OrganizationApprovalContractPriceExecutionResult,
                     OrganizationApprovalExecutionError,
                 >,
             > + Send
@@ -326,6 +360,66 @@ impl OrganizationApprovalServiceAccountBudgetBindingCommand {
     }
 }
 
+/// 合同价版本审批命令；模型、协议、价格和生效区间均是不可变目标快照。
+#[derive(Clone, Debug, PartialEq)]
+pub struct OrganizationApprovalContractPriceCommand {
+    model: String,
+    protocol: Protocol,
+    prices: [Decimal; 5],
+    effective_from: i64,
+    effective_until: Option<i64>,
+    expected_version: Option<i64>,
+}
+
+impl OrganizationApprovalContractPriceCommand {
+    /// 构造带合同价范围版本 CAS 的审批目标。
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        model: String,
+        protocol: Protocol,
+        prices: [Decimal; 5],
+        effective_from: i64,
+        effective_until: Option<i64>,
+        expected_version: Option<i64>,
+    ) -> Result<Self, OrganizationApprovalExecutionError> {
+        if effective_from < 0
+            || effective_until.is_some_and(|until| until <= effective_from)
+            || expected_version.is_some_and(|version| !(0..i64::MAX).contains(&version))
+            || af_db::DatabaseTimestamp::from_unix_timestamp(effective_from).is_err()
+            || effective_until
+                .is_some_and(|until| af_db::DatabaseTimestamp::from_unix_timestamp(until).is_err())
+        {
+            return Err(OrganizationApprovalExecutionError::InvalidRequest);
+        }
+        Ok(Self {
+            model,
+            protocol,
+            prices,
+            effective_from,
+            effective_until,
+            expected_version,
+        })
+    }
+
+    /// 生成创建审批申请时必须使用的命令摘要。
+    #[must_use]
+    pub fn resource_summary(&self, context: &OrganizationContext) -> String {
+        af_db::organization_approval_contract_price_resource_summary(
+            context.organization_id(),
+            &self.model,
+            self.protocol,
+            self.prices,
+            af_db::DatabaseTimestamp::from_unix_timestamp(self.effective_from)
+                .expect("构造命令时已校验生效时间"),
+            self.effective_until.map(|value| {
+                af_db::DatabaseTimestamp::from_unix_timestamp(value)
+                    .expect("构造命令时已校验失效时间")
+            }),
+            self.expected_version,
+        )
+    }
+}
+
 /// 企业审批资源执行端口；按资源类型提供受控适配器，不接受宽泛资源载荷。
 pub trait OrganizationApprovalExecutionService: Send + Sync {
     fn execute_member_change<'a>(
@@ -355,6 +449,13 @@ pub trait OrganizationApprovalExecutionService: Send + Sync {
         request_id: OrganizationApprovalRequestId,
         command: OrganizationApprovalServiceAccountBudgetBindingCommand,
     ) -> OrganizationApprovalServiceAccountExecutionFuture<'a>;
+
+    fn execute_contract_price<'a>(
+        &'a self,
+        context: OrganizationContext,
+        request_id: OrganizationApprovalRequestId,
+        command: OrganizationApprovalContractPriceCommand,
+    ) -> OrganizationApprovalContractPriceExecutionFuture<'a>;
 }
 
 /// 使用数据库原子复验仓储实现成员审批执行。
@@ -496,6 +597,54 @@ impl OrganizationApprovalExecutionService for DatabaseOrganizationApprovalExecut
             )
             .map_err(map_repository_error)?;
             execute_service_account(&self.repository, write).await
+        })
+    }
+
+    fn execute_contract_price<'a>(
+        &'a self,
+        context: OrganizationContext,
+        request_id: OrganizationApprovalRequestId,
+        command: OrganizationApprovalContractPriceCommand,
+    ) -> OrganizationApprovalContractPriceExecutionFuture<'a> {
+        Box::pin(async move {
+            if !context.allows(OrganizationPermission::ContractPricesManage) {
+                return Err(OrganizationApprovalExecutionError::Forbidden);
+            }
+            let effective_from =
+                af_db::DatabaseTimestamp::from_unix_timestamp(command.effective_from)
+                    .map_err(|_| OrganizationApprovalExecutionError::InvalidRequest)?;
+            let effective_until = command
+                .effective_until
+                .map(af_db::DatabaseTimestamp::from_unix_timestamp)
+                .transpose()
+                .map_err(|_| OrganizationApprovalExecutionError::InvalidRequest)?;
+            let write = OrganizationApprovalContractPriceExecutionWrite::new(
+                context.organization_id(),
+                request_id,
+                command.model,
+                command.protocol,
+                command.prices,
+                effective_from,
+                effective_until,
+                command.expected_version,
+                context.membership_id(),
+                context.user_id(),
+            )
+            .map_err(map_repository_error)?;
+            let (record, replayed) = match self
+                .repository
+                .execute_contract_price(write)
+                .await
+                .map_err(map_repository_error)?
+            {
+                OrganizationApprovalContractPriceExecutionOutcome::Applied(record) => {
+                    (record, false)
+                }
+                OrganizationApprovalContractPriceExecutionOutcome::Existing(record) => {
+                    (record, true)
+                }
+            };
+            Ok(OrganizationApprovalContractPriceExecutionResult { record, replayed })
         })
     }
 }

@@ -2417,6 +2417,44 @@ pub(in crate::migration) mod organization_approval_service_account_executions {
     }
 }
 
+pub(in crate::migration) mod organization_approval_contract_price_executions {
+    use super::DeriveIden;
+
+    /// 合同价审批执行事实表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_approval_contract_price_executions")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 合同价审批执行事实固定字段标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        RequestId,
+        DecisionId,
+        ContractPriceId,
+        Model,
+        Protocol,
+        InputPrice,
+        OutputPrice,
+        CacheReadPrice,
+        #[sea_orm(iden = "cache_creation_5m_price")]
+        CacheCreation5mPrice,
+        #[sea_orm(iden = "cache_creation_1h_price")]
+        CacheCreation1hPrice,
+        EffectiveFrom,
+        EffectiveUntil,
+        ExpectedVersion,
+        AppliedVersion,
+        ExecutedByMembershipId,
+        ExecutedAt,
+    }
+}
+
 pub(in crate::migration) mod organization_custom_roles {
     use super::DeriveIden;
 

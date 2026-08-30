@@ -20,7 +20,7 @@ use af_domain::{
     OrganizationDepartmentMembershipStatus, OrganizationDepartmentStatus, OrganizationKey,
     OrganizationMembershipStatus, OrganizationPermission, OrganizationRole,
     OrganizationServiceAccountKey, OrganizationServiceAccountStatus, OrganizationStatus,
-    OrganizationTeamStatus, Quota, QuotaDelta, RedemptionBatchId, RedemptionBatchStatus,
+    OrganizationTeamStatus, Protocol, Quota, QuotaDelta, RedemptionBatchId, RedemptionBatchStatus,
     RedemptionCodeId, RedemptionCodeStatus, RouteMode, RouteStrategy, SubscriptionCycle,
     SubscriptionPlanId, SubscriptionPlanStatus, SubscriptionWindow, UserSubscriptionId,
     UserSubscriptionStatus, WalletEventId, validate_route_model_pattern,
@@ -68,6 +68,7 @@ pub(crate) mod oauth_login_providers;
 pub(crate) mod oauth_login_transactions;
 pub(crate) mod options;
 pub(crate) mod organization_approval_budget_executions;
+pub(crate) mod organization_approval_contract_price_executions;
 pub(crate) mod organization_approval_decisions;
 pub(crate) mod organization_approval_member_executions;
 pub(crate) mod organization_approval_requests;
@@ -1336,6 +1337,84 @@ where
         || !binding_versions_valid
     {
         return Err(DbErr::Custom("服务账号审批执行事实字段无效".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_organization_approval_contract_price_executions<C>(
+    model: &organization_approval_contract_price_executions::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    if !insert {
+        return Err(DbErr::Custom("合同价审批执行事实只允许追加".to_owned()));
+    }
+    let organization_id = model.organization_id.try_as_ref();
+    let request_id = model.request_id.try_as_ref();
+    let decision_id = model.decision_id.try_as_ref();
+    let contract_price_id = model.contract_price_id.try_as_ref();
+    let model_name = model.model.try_as_ref();
+    let protocol = model.protocol.try_as_ref();
+    let prices_valid = [
+        model.input_price.try_as_ref(),
+        model.output_price.try_as_ref(),
+        model.cache_read_price.try_as_ref(),
+        model.cache_creation_5m_price.try_as_ref(),
+        model.cache_creation_1h_price.try_as_ref(),
+    ]
+    .into_iter()
+    .all(|price| {
+        price.is_some_and(|value| {
+            let value = value.expose();
+            !value.is_sign_negative()
+                && value.scale() <= 28
+                && value
+                    .normalize()
+                    .to_string()
+                    .split('.')
+                    .next()
+                    .is_none_or(|part| part.len() <= 10)
+        })
+    });
+    let effective_from = model.effective_from.try_as_ref();
+    let effective_until = model.effective_until.try_as_ref();
+    let expected_version = model.expected_version.try_as_ref();
+    let applied_version = model.applied_version.try_as_ref();
+    let actor_membership_id = model.executed_by_membership_id.try_as_ref();
+    let executed_at = model.executed_at.try_as_ref();
+    let versions_valid =
+        expected_version
+            .zip(applied_version)
+            .is_some_and(|(expected, applied)| {
+                expected.is_none_or(|version| version.checked_add(1) == Some(*applied))
+                    && (expected.is_some() || *applied == 1)
+            });
+    if organization_id.is_none_or(|value| *value <= 0)
+        || request_id.is_none_or(|value| *value <= 0)
+        || decision_id.is_none_or(|value| *value <= 0)
+        || contract_price_id.is_none_or(|value| *value <= 0)
+        || model_name.is_none_or(|value| {
+            value.as_str().is_empty()
+                || value.as_str().len() > 256
+                || value.as_str().trim() != value.as_str()
+                || value.as_str().chars().any(char::is_control)
+        })
+        || protocol.is_none_or(|value| value.parse::<Protocol>().is_err())
+        || !prices_valid
+        || effective_from.is_none_or(|value| value.unix_timestamp() < 0)
+        || effective_until
+            .zip(effective_from)
+            .is_some_and(|(until, from)| *until <= *from)
+        || expected_version
+            .is_some_and(|value| value.is_some_and(|version| !(0..i64::MAX).contains(&version)))
+        || !versions_valid
+        || actor_membership_id.is_none_or(|value| *value <= 0)
+        || executed_at.is_none_or(|value| value.unix_timestamp() < 0)
+    {
+        return Err(DbErr::Custom("合同价审批执行事实字段无效".to_owned()));
     }
     Ok(())
 }
@@ -3101,6 +3180,17 @@ impl ActiveModelBehavior for organization_approval_service_account_executions::A
         C: ConnectionTrait,
     {
         validate_organization_approval_service_account_executions(&self, database, insert).await?;
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_approval_contract_price_executions::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_organization_approval_contract_price_executions(&self, database, insert).await?;
         Ok(self)
     }
 }
