@@ -2,11 +2,11 @@ use std::{fmt, future::Future, time::Duration};
 
 use af_domain::{
     OrganizationApprovalDecision, OrganizationApprovalDecisionId, OrganizationApprovalDecisionKey,
-    OrganizationApprovalDecisionKind, OrganizationApprovalRequest, OrganizationApprovalRequestId,
-    OrganizationApprovalRequestKey, OrganizationApprovalResourceType,
-    OrganizationApprovalTemplateDigest, OrganizationApprovalTemplateId,
-    OrganizationApprovalTemplateKey, OrganizationApprovalTemplateSnapshot, OrganizationId,
-    OrganizationMembershipStatus, UserId,
+    OrganizationApprovalDecisionKind, OrganizationApprovalError, OrganizationApprovalRequest,
+    OrganizationApprovalRequestId, OrganizationApprovalRequestKey,
+    OrganizationApprovalResourceType, OrganizationApprovalTemplateDigest,
+    OrganizationApprovalTemplateId, OrganizationApprovalTemplateKey,
+    OrganizationApprovalTemplateSnapshot, OrganizationId, OrganizationMembershipStatus, UserId,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
