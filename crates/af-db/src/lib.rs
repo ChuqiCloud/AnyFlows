@@ -129,6 +129,9 @@ mod organization_approval_budget_execution_tests;
 mod organization_approval_execution;
 #[cfg(test)]
 mod organization_approval_execution_tests;
+mod organization_approval_service_account_execution;
+#[cfg(test)]
+mod organization_approval_service_account_execution_tests;
 #[cfg(test)]
 mod organization_approval_tests;
 mod organization_audit;
@@ -518,6 +521,14 @@ pub use organization_approval_execution::{
     OrganizationApprovalExecutionRepository, OrganizationApprovalExecutionRepositoryError,
     OrganizationApprovalMemberExecutionOutcome, OrganizationApprovalMemberExecutionRecord,
     OrganizationApprovalMemberExecutionWrite, organization_approval_member_resource_summary,
+};
+pub use organization_approval_service_account_execution::{
+    OrganizationApprovalServiceAccountExecutionAction,
+    OrganizationApprovalServiceAccountExecutionOutcome,
+    OrganizationApprovalServiceAccountExecutionRecord,
+    OrganizationApprovalServiceAccountExecutionWrite,
+    organization_approval_service_account_budget_binding_resource_summary,
+    organization_approval_service_account_status_resource_summary,
 };
 pub use organization_audit::{
     MAX_ORGANIZATION_AUDIT_PAGE_SIZE, OrganizationAuditOutcome, OrganizationAuditPageRecord,

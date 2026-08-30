@@ -575,82 +575,24 @@ impl OrganizationServiceAccountRepository {
             .begin()
             .await
             .map_err(|_| OrganizationServiceAccountRepositoryError::Query)?;
-        let current = lock_account(&transaction, locator).await?;
-        let current_record = account_record_from_model(current.clone())
-            .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)?;
-        ensure_locator_department(locator, current_record.locator())?;
-        match classify_organization_service_account_lifecycle(
-            current_record.account.status(),
-            target,
-        ) {
-            OrganizationServiceAccountLifecycleDisposition::Reject(_) => {
-                return Err(OrganizationServiceAccountRepositoryError::Restricted);
-            }
-            OrganizationServiceAccountLifecycleDisposition::Noop => {
-                if current_record.version() != expected_version {
-                    return Err(OrganizationServiceAccountRepositoryError::Conflict);
-                }
+        let result =
+            set_status_in_transaction(&transaction, locator, expected_version, target).await;
+        match result {
+            Ok(record) => {
                 transaction
                     .commit()
                     .await
                     .map_err(|_| OrganizationServiceAccountRepositoryError::Query)?;
-                return Ok(current_record);
+                Ok(record)
             }
-            OrganizationServiceAccountLifecycleDisposition::Suspend
-            | OrganizationServiceAccountLifecycleDisposition::Resume
-            | OrganizationServiceAccountLifecycleDisposition::Revoke => {}
+            Err(error) => {
+                transaction
+                    .rollback()
+                    .await
+                    .map_err(|_| OrganizationServiceAccountRepositoryError::Query)?;
+                Err(error)
+            }
         }
-        let next_version = expected_version
-            .checked_add(1)
-            .ok_or(OrganizationServiceAccountRepositoryError::InvalidInput)?;
-        let now = TimeDateTimeWithTimeZone::now_utc();
-        let result = organization_service_accounts::Entity::update_many()
-            .filter(
-                organization_service_accounts::Column::Id.eq(locator.service_account_id().get()),
-            )
-            .filter(
-                organization_service_accounts::Column::OrganizationId
-                    .eq(locator.organization_id().get()),
-            )
-            .filter(organization_service_accounts::Column::Version.eq(expected_version))
-            .col_expr(
-                organization_service_accounts::Column::Status,
-                Expr::value(target.code()),
-            )
-            .col_expr(
-                organization_service_accounts::Column::Version,
-                Expr::value(next_version),
-            )
-            .col_expr(
-                organization_service_accounts::Column::UpdatedAt,
-                Expr::value(now),
-            )
-            .col_expr(
-                organization_service_accounts::Column::RevokedAt,
-                Expr::value(if target == OrganizationServiceAccountStatus::Revoked {
-                    Some(now)
-                } else {
-                    None
-                }),
-            )
-            .exec(&transaction)
-            .await
-            .map_err(|_| OrganizationServiceAccountRepositoryError::Query)?;
-        if result.rows_affected != 1 {
-            return Err(OrganizationServiceAccountRepositoryError::Conflict);
-        }
-        let updated =
-            organization_service_accounts::Entity::find_by_id(locator.service_account_id().get())
-                .one(&transaction)
-                .await
-                .map_err(|_| OrganizationServiceAccountRepositoryError::Query)?
-                .ok_or(OrganizationServiceAccountRepositoryError::Invariant)?;
-        transaction
-            .commit()
-            .await
-            .map_err(|_| OrganizationServiceAccountRepositoryError::Query)?;
-        account_record_from_model(updated)
-            .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)
     }
 
     async fn rotate_key_inner(
@@ -897,6 +839,84 @@ impl OrganizationServiceAccountRepository {
             identity,
         })
     }
+}
+
+/// 在调用方事务内锁定服务账号并按主体版本 CAS 推进生命周期。
+///
+/// 审批执行与管理 API 共用此端口；该路径不会触碰密钥表，因此不会签发或轮换密钥。
+pub(crate) async fn set_status_in_transaction(
+    transaction: &DatabaseTransaction,
+    locator: OrganizationServiceAccountLocator,
+    expected_version: i64,
+    target: OrganizationServiceAccountStatus,
+) -> Result<OrganizationServiceAccountRecord, OrganizationServiceAccountRepositoryError> {
+    let current = lock_account(transaction, locator).await?;
+    let current_record = account_record_from_model(current)
+        .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)?;
+    ensure_locator_department(locator, current_record.locator())?;
+    match classify_organization_service_account_lifecycle(current_record.account.status(), target) {
+        OrganizationServiceAccountLifecycleDisposition::Reject(_) => {
+            return Err(OrganizationServiceAccountRepositoryError::Restricted);
+        }
+        OrganizationServiceAccountLifecycleDisposition::Noop => {
+            if current_record.version() != expected_version {
+                return Err(OrganizationServiceAccountRepositoryError::Conflict);
+            }
+            return Ok(current_record);
+        }
+        OrganizationServiceAccountLifecycleDisposition::Suspend
+        | OrganizationServiceAccountLifecycleDisposition::Resume
+        | OrganizationServiceAccountLifecycleDisposition::Revoke => {}
+    }
+    let next_version = expected_version
+        .checked_add(1)
+        .ok_or(OrganizationServiceAccountRepositoryError::InvalidInput)?;
+    let now = TimeDateTimeWithTimeZone::now_utc();
+    let result = organization_service_accounts::Entity::update_many()
+        .filter(organization_service_accounts::Column::Id.eq(locator.service_account_id().get()))
+        .filter(
+            organization_service_accounts::Column::OrganizationId
+                .eq(locator.organization_id().get()),
+        )
+        .filter(organization_service_accounts::Column::Version.eq(expected_version))
+        .col_expr(
+            organization_service_accounts::Column::Status,
+            Expr::value(target.code()),
+        )
+        .col_expr(
+            organization_service_accounts::Column::Version,
+            Expr::value(next_version),
+        )
+        .col_expr(
+            organization_service_accounts::Column::UpdatedAt,
+            Expr::value(now),
+        )
+        .col_expr(
+            organization_service_accounts::Column::RevokedAt,
+            Expr::value(if target == OrganizationServiceAccountStatus::Revoked {
+                Some(now)
+            } else {
+                None
+            }),
+        )
+        .exec(transaction)
+        .await
+        .map_err(|_| OrganizationServiceAccountRepositoryError::Query)?;
+    if result.rows_affected != 1 {
+        return Err(OrganizationServiceAccountRepositoryError::Conflict);
+    }
+    let updated =
+        organization_service_accounts::Entity::find_by_id(locator.service_account_id().get())
+            .filter(
+                organization_service_accounts::Column::OrganizationId
+                    .eq(locator.organization_id().get()),
+            )
+            .one(transaction)
+            .await
+            .map_err(|_| OrganizationServiceAccountRepositoryError::Query)?
+            .ok_or(OrganizationServiceAccountRepositoryError::Invariant)?;
+    account_record_from_model(updated)
+        .map_err(|_| OrganizationServiceAccountRepositoryError::Invariant)
 }
 
 async fn lock_account(
