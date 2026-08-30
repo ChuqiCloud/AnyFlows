@@ -9,6 +9,7 @@ publish.workspace = true
 aho-corasick.workspace = true
 af-db = { path = "../af-db", version = "0.1.0" }
 af-domain = { path = "../af-domain", version = "0.1.0" }
+af-telemetry = { path = "../af-telemetry", version = "0.1.0" }
 getrandom.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

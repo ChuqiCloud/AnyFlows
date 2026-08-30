@@ -16,6 +16,8 @@ import type {
   OrganizationApprovalTemplateCreateRequest,
 } from '@/lib/api/generated/types.gen'
 
+const ORGANIZATION_APPROVAL_REQUEST_REFRESH_INTERVAL_MS = 60_000
+
 /** 读取企业审批模板版本；是否启用由服务端概览权限投影决定。 */
 export function useOrganizationApprovalTemplates(organizationId: number, enabled: boolean) {
   return useQuery({
@@ -37,6 +39,9 @@ export function useOrganizationApprovalRequests(organizationId: number, enabled:
   return useQuery({
     queryKey: organizationQueryKey(organizationId, 'approval-requests'),
     enabled,
+    // 超时决定由服务端调度器写入，页面只周期读取事实，不在浏览器本地推断状态。
+    refetchInterval: enabled ? ORGANIZATION_APPROVAL_REQUEST_REFRESH_INTERVAL_MS : false,
+    refetchIntervalInBackground: false,
     queryFn: async ({ signal }) => {
       const { data } = await listOrganizationApprovalRequests({
         client: apiClient,

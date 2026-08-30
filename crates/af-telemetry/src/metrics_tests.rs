@@ -6,8 +6,9 @@ use crate::{
     ANALYTICS_EXPORT_BACKLOG, BILLING_FLUSH_LAG, CHANNEL_HEALTH, CLIENT_SIMULATION_ATTEMPTS_TOTAL,
     CONCURRENCY_SLOTS, FIRST_TOKEN_SECONDS, MetricClientSimulationProfile,
     MetricClientSimulationResult, MetricConcurrencyLevel, MetricLabelError,
-    MetricPaymentConfirmationOutcome, MetricProtocol, MetricRequestRateLimitFailure,
-    MetricRequestRateLimitSubject, MetricRequestStatus, MetricUpstreamErrorType, MetricsHandle,
+    MetricOrganizationApprovalTimeoutOutcome, MetricPaymentConfirmationOutcome, MetricProtocol,
+    MetricRequestRateLimitFailure, MetricRequestRateLimitSubject, MetricRequestStatus,
+    MetricUpstreamErrorType, MetricsHandle, ORGANIZATION_APPROVAL_TIMEOUT_TOTAL,
     PAYMENT_WEBHOOK_CONFIRMATIONS_TOTAL, PROMETHEUS_CONTENT_TYPE, PROMETHEUS_PATH,
     QUOTA_CONSUMED_TOTAL, REQUEST_DURATION_SECONDS, REQUEST_RATE_LIMIT_ADMISSIONS_TOTAL,
     REQUEST_RATE_LIMIT_FAILURES_TOTAL, REQUEST_RATE_LIMIT_REJECTIONS_TOTAL,
@@ -17,10 +18,10 @@ use crate::{
         MAX_CHANNEL_LABELS, MAX_GROUP_LABELS, MAX_MODEL_LABELS, MAX_SERIES_PER_FAMILY,
         build_metrics_recorder, describe_metric_families,
     },
-    record_client_simulation_attempt, record_payment_confirmation,
-    record_request_rate_limit_admission, record_request_rate_limit_check,
-    record_request_rate_limit_failure, record_request_rate_limit_rejection,
-    set_analytics_export_backlog,
+    record_client_simulation_attempt, record_organization_approval_timeout,
+    record_payment_confirmation, record_request_rate_limit_admission,
+    record_request_rate_limit_check, record_request_rate_limit_failure,
+    record_request_rate_limit_rejection, set_analytics_export_backlog,
 };
 
 const GLOBAL_METRICS_INIT_CHILD: &str = "ANYFLOWS_METRICS_INIT_CHILD";
@@ -58,6 +59,7 @@ fn emit_sample_metrics(handle: &MetricsHandle) {
         Duration::from_millis(1_500),
     );
     record_request_rate_limit_failure(MetricRequestRateLimitFailure::StoreProtocol);
+    record_organization_approval_timeout(MetricOrganizationApprovalTimeoutOutcome::Applied, 1);
 }
 
 fn metric_line<'a>(rendered: &'a str, prefix: &str) -> &'a str {
@@ -115,6 +117,35 @@ fn payment_confirmation_metric_accepts_only_fixed_outcomes() {
     assert_eq!(lines.len(), 13);
     assert!(lines.iter().all(|line| line.contains("outcome=\"")));
     assert!(!rendered.contains("provider_event_id"));
+}
+
+#[test]
+fn organization_approval_timeout_metric_accepts_only_fixed_outcomes() {
+    let (recorder, handle) = build_metrics_recorder();
+    ::metrics::with_local_recorder(&recorder, || {
+        describe_metric_families();
+        for outcome in [
+            MetricOrganizationApprovalTimeoutOutcome::LeaseHeld,
+            MetricOrganizationApprovalTimeoutOutcome::ScanFailed,
+            MetricOrganizationApprovalTimeoutOutcome::Applied,
+            MetricOrganizationApprovalTimeoutOutcome::Existing,
+            MetricOrganizationApprovalTimeoutOutcome::Skipped,
+            MetricOrganizationApprovalTimeoutOutcome::Failed,
+            MetricOrganizationApprovalTimeoutOutcome::OutcomeUnknownReplay,
+            MetricOrganizationApprovalTimeoutOutcome::Truncated,
+        ] {
+            record_organization_approval_timeout(outcome, 2);
+        }
+        record_organization_approval_timeout(MetricOrganizationApprovalTimeoutOutcome::Applied, 0);
+    });
+    let rendered = handle.render();
+    let lines = rendered
+        .lines()
+        .filter(|line| line.starts_with(&format!("{ORGANIZATION_APPROVAL_TIMEOUT_TOTAL}{{")))
+        .collect::<Vec<_>>();
+    assert_eq!(lines.len(), 8);
+    assert!(lines.iter().all(|line| line.contains("outcome=\"")));
+    assert!(lines.iter().all(|line| line.ends_with(" 2")));
 }
 
 #[test]
@@ -189,6 +220,11 @@ fn local_recorder_renders_fixed_metric_contract() {
             "histogram",
             "AnyFlows 请求速率限制拒绝后的等待时间。",
         ),
+        (
+            ORGANIZATION_APPROVAL_TIMEOUT_TOTAL,
+            "counter",
+            "AnyFlows 企业审批超时扫描结果总数。",
+        ),
     ] {
         assert!(
             rendered.contains(&format!("# HELP {name} {description}")),
@@ -242,6 +278,9 @@ fn local_recorder_renders_fixed_metric_contract() {
     assert!(rendered.contains("request_rate_limit_retry_after_seconds_bucket{"));
     assert!(rendered.contains("subject=\"group\""));
     assert!(rendered.contains("le=\"604800\""));
+    let approval_timeout = metric_line(&rendered, "organization_approval_timeout_total{");
+    assert!(approval_timeout.contains("outcome=\"applied\""));
+    assert!(approval_timeout.ends_with(" 1"));
     let cloned_render = handle.clone().render();
     assert_eq!(sorted_lines(&rendered), sorted_lines(&cloned_render));
 }

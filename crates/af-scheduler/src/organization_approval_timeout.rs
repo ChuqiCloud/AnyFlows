@@ -10,6 +10,9 @@ use af_db::{
     OrganizationApprovalTimeoutCursor, OrganizationApprovalTimeoutLeaseOutcome,
     OrganizationApprovalTimeoutOutcome,
 };
+use af_telemetry::{
+    MetricOrganizationApprovalTimeoutOutcome, record_organization_approval_timeout,
+};
 use thiserror::Error;
 use tokio::time::sleep;
 
@@ -406,6 +409,7 @@ fn unix_now() -> Result<i64, ()> {
 }
 
 fn log_report(report: OrganizationApprovalTimeoutRunReport) {
+    record_report_metrics(report);
     if report.scan_failed || report.failed > 0 {
         tracing::error!(
             batches = report.batches,
@@ -428,6 +432,47 @@ fn log_report(report: OrganizationApprovalTimeoutRunReport) {
             lease_held = report.lease_held,
             truncated = report.truncated,
             "企业审批超时扫描完成"
+        );
+    }
+}
+
+fn record_report_metrics(report: OrganizationApprovalTimeoutRunReport) {
+    if report.lease_held {
+        record_organization_approval_timeout(
+            MetricOrganizationApprovalTimeoutOutcome::LeaseHeld,
+            1,
+        );
+    }
+    if report.scan_failed {
+        record_organization_approval_timeout(
+            MetricOrganizationApprovalTimeoutOutcome::ScanFailed,
+            1,
+        );
+    }
+    record_organization_approval_timeout(
+        MetricOrganizationApprovalTimeoutOutcome::Applied,
+        u64::try_from(report.applied).unwrap_or(u64::MAX),
+    );
+    record_organization_approval_timeout(
+        MetricOrganizationApprovalTimeoutOutcome::Existing,
+        u64::try_from(report.existing).unwrap_or(u64::MAX),
+    );
+    record_organization_approval_timeout(
+        MetricOrganizationApprovalTimeoutOutcome::Skipped,
+        u64::try_from(report.skipped).unwrap_or(u64::MAX),
+    );
+    record_organization_approval_timeout(
+        MetricOrganizationApprovalTimeoutOutcome::Failed,
+        u64::try_from(report.failed).unwrap_or(u64::MAX),
+    );
+    record_organization_approval_timeout(
+        MetricOrganizationApprovalTimeoutOutcome::OutcomeUnknownReplay,
+        u64::try_from(report.outcome_unknown_replays).unwrap_or(u64::MAX),
+    );
+    if report.truncated {
+        record_organization_approval_timeout(
+            MetricOrganizationApprovalTimeoutOutcome::Truncated,
+            1,
         );
     }
 }
