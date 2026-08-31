@@ -1,9 +1,9 @@
 use std::time::Duration;
 
 use af_domain::{
-    MAX_REFUND_APPROVAL_REASON_BYTES, RefundApprovalStatus, RefundOrderKind, RefundRequestCreate,
-    RefundRequestCreateOutcome, RefundRequestId, RefundRequestKey, RefundRequestRecord,
-    RefundRequestStatus, UserId,
+    MAX_REFUND_APPROVAL_REASON_BYTES, OrganizationId, RefundApprovalStatus, RefundOrderKind,
+    RefundRequestCreate, RefundRequestCreateOutcome, RefundRequestId, RefundRequestKey,
+    RefundRequestRecord, RefundRequestStatus, SubscriptionOrderStatus, TopupOrderStatus, UserId,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
@@ -15,7 +15,10 @@ use tokio::time::timeout;
 
 use crate::{
     DatabasePool,
-    entity::{SensitiveString, refund_provider_events, refund_requests},
+    entity::{
+        SensitiveString, refund_provider_events, refund_reconciliation_entries, refund_requests,
+        subscription_orders, topup_orders,
+    },
 };
 
 /// 退款请求事实仓储。
@@ -207,6 +210,58 @@ impl RefundRepository {
             Err(_) => Err(RefundRepositoryError::OutcomeUnknown),
         }
     }
+
+    /// 按当前用户读取个人退款对账事实；企业订单不会混入个人结果。
+    pub async fn list_user_reconciliations(
+        &self,
+        user_id: UserId,
+        query: RefundReconciliationQuery,
+    ) -> Result<RefundReconciliationPage, RefundRepositoryError> {
+        let operation = list_reconciliations_inner(
+            self.pool.connection(),
+            RefundReconciliationScope::User(user_id),
+            query,
+        );
+        match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result,
+            Err(_) => Err(RefundRepositoryError::Timeout),
+        }
+    }
+
+    /// 按企业资金主体读取退款对账事实，调用方不能省略企业作用域。
+    pub async fn list_organization_reconciliations(
+        &self,
+        organization_id: OrganizationId,
+        query: RefundReconciliationQuery,
+    ) -> Result<RefundReconciliationPage, RefundRepositoryError> {
+        let operation = list_reconciliations_inner(
+            self.pool.connection(),
+            RefundReconciliationScope::Organization(organization_id),
+            query,
+        );
+        match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result,
+            Err(_) => Err(RefundRepositoryError::Timeout),
+        }
+    }
+
+    /// 读取平台管理员可见的全局退款对账事实。
+    ///
+    /// 该入口不自行授予权限，只能由已校验固定退款管理权限的服务层调用。
+    pub async fn list_admin_reconciliations(
+        &self,
+        query: RefundReconciliationQuery,
+    ) -> Result<RefundReconciliationPage, RefundRepositoryError> {
+        let operation = list_reconciliations_inner(
+            self.pool.connection(),
+            RefundReconciliationScope::Admin,
+            query,
+        );
+        match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result,
+            Err(_) => Err(RefundRepositoryError::Timeout),
+        }
+    }
 }
 
 /// 管理员退款列表默认分页边界。
@@ -314,6 +369,179 @@ pub enum RefundReceiptOutcome {
     NotFound,
 }
 
+/// 退款对账列表的稳定主键游标。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RefundReconciliationQuery {
+    before_id: Option<i64>,
+    limit: usize,
+}
+
+impl RefundReconciliationQuery {
+    #[must_use]
+    pub const fn new(before_id: Option<i64>, limit: usize) -> Self {
+        Self { before_id, limit }
+    }
+
+    #[must_use]
+    pub const fn before_id(self) -> Option<i64> {
+        self.before_id
+    }
+
+    #[must_use]
+    pub const fn limit(self) -> usize {
+        self.limit
+    }
+}
+
+impl Default for RefundReconciliationQuery {
+    fn default() -> Self {
+        Self::new(None, DEFAULT_REFUND_ADMIN_PAGE_SIZE)
+    }
+}
+
+/// 一条不可变退款负向现金对账事实。
+pub struct RefundReconciliationRecord {
+    id: i64,
+    request_id: RefundRequestId,
+    provider_event_id: i64,
+    user_id: UserId,
+    organization_id: Option<OrganizationId>,
+    approval_actor_id: UserId,
+    order_kind: RefundOrderKind,
+    order_key: String,
+    provider: String,
+    amount_delta_minor: i64,
+    currency: String,
+    created_at: u64,
+}
+
+impl RefundReconciliationRecord {
+    #[must_use]
+    pub const fn id(&self) -> i64 {
+        self.id
+    }
+    #[must_use]
+    pub const fn request_id(&self) -> RefundRequestId {
+        self.request_id
+    }
+    #[must_use]
+    pub const fn provider_event_id(&self) -> i64 {
+        self.provider_event_id
+    }
+    #[must_use]
+    pub const fn user_id(&self) -> UserId {
+        self.user_id
+    }
+    #[must_use]
+    pub const fn organization_id(&self) -> Option<OrganizationId> {
+        self.organization_id
+    }
+    #[must_use]
+    pub const fn approval_actor_id(&self) -> UserId {
+        self.approval_actor_id
+    }
+    #[must_use]
+    pub const fn order_kind(&self) -> RefundOrderKind {
+        self.order_kind
+    }
+    #[must_use]
+    pub fn order_key(&self) -> &str {
+        &self.order_key
+    }
+    #[must_use]
+    pub fn provider(&self) -> &str {
+        &self.provider
+    }
+    #[must_use]
+    pub const fn amount_delta_minor(&self) -> i64 {
+        self.amount_delta_minor
+    }
+    #[must_use]
+    pub fn currency(&self) -> &str {
+        &self.currency
+    }
+    #[must_use]
+    pub const fn created_at(&self) -> u64 {
+        self.created_at
+    }
+}
+
+impl std::fmt::Debug for RefundReconciliationRecord {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("RefundReconciliationRecord(<redacted>)")
+    }
+}
+
+/// 一页作用域内退款对账事实。
+#[derive(Debug)]
+pub struct RefundReconciliationPage {
+    entries: Vec<RefundReconciliationRecord>,
+    next_cursor: Option<i64>,
+}
+
+impl RefundReconciliationPage {
+    #[must_use]
+    pub fn into_parts(self) -> (Vec<RefundReconciliationRecord>, Option<i64>) {
+        (self.entries, self.next_cursor)
+    }
+    #[must_use]
+    pub fn entries(&self) -> &[RefundReconciliationRecord] {
+        &self.entries
+    }
+    #[must_use]
+    pub const fn next_cursor(&self) -> Option<i64> {
+        self.next_cursor
+    }
+}
+
+#[derive(Clone, Copy)]
+enum RefundReconciliationScope {
+    User(UserId),
+    Organization(OrganizationId),
+    Admin,
+}
+
+async fn list_reconciliations_inner(
+    connection: &DatabaseConnection,
+    scope: RefundReconciliationScope,
+    query: RefundReconciliationQuery,
+) -> Result<RefundReconciliationPage, RefundRepositoryError> {
+    if query.before_id().is_some_and(|value| value <= 0) {
+        return Err(RefundRepositoryError::Invariant);
+    }
+    let limit = query.limit().clamp(1, MAX_REFUND_ADMIN_PAGE_SIZE);
+    let mut statement = refund_reconciliation_entries::Entity::find();
+    statement = match scope {
+        RefundReconciliationScope::User(user_id) => statement
+            .filter(refund_reconciliation_entries::Column::UserId.eq(user_id.get()))
+            .filter(refund_reconciliation_entries::Column::OrganizationId.is_null()),
+        RefundReconciliationScope::Organization(organization_id) => statement.filter(
+            refund_reconciliation_entries::Column::OrganizationId.eq(organization_id.get()),
+        ),
+        RefundReconciliationScope::Admin => statement,
+    };
+    if let Some(before_id) = query.before_id() {
+        statement = statement.filter(refund_reconciliation_entries::Column::Id.lt(before_id));
+    }
+    let mut models = statement
+        .order_by_desc(refund_reconciliation_entries::Column::Id)
+        .limit((limit + 1) as u64)
+        .all(connection)
+        .await
+        .map_err(map_query)?;
+    let has_more = models.len() > limit;
+    models.truncate(limit);
+    let next_cursor = has_more.then(|| models.last().expect("非空分页必须有末条记录").id);
+    let entries = models
+        .into_iter()
+        .map(to_reconciliation_record)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(RefundReconciliationPage {
+        entries,
+        next_cursor,
+    })
+}
+
 async fn list_admin_requests_inner(
     connection: &DatabaseConnection,
     query: RefundAdminListQuery,
@@ -335,11 +563,9 @@ async fn list_admin_requests_inner(
         .all(connection)
         .await
         .map_err(map_query)?;
-    let next_cursor = if models.len() > limit {
-        models.pop().map(|model| model.id)
-    } else {
-        None
-    };
+    let has_more = models.len() > limit;
+    models.truncate(limit);
+    let next_cursor = has_more.then(|| models.last().expect("非空分页必须有末条记录").id);
     let entries = models
         .into_iter()
         .map(to_record)
@@ -636,10 +862,15 @@ async fn apply_receipt_transaction(
     ) || record.status() != RefundRequestStatus::Submitted
     {
         if record.status() == write.status {
-            return Ok(RefundReceiptOutcome::Existing(record));
+            return duplicate_receipt_outcome(transaction, write, record).await;
         }
         return Err(RefundRepositoryError::Conflict);
     }
+    let reconciliation = if write.status == RefundRequestStatus::Succeeded {
+        Some(derive_reconciliation_facts(transaction, &record).await?)
+    } else {
+        None
+    };
     let received_at = to_database_time(write.received_at)?;
     let processed_at = to_database_time(write.processed_at)?;
     let created_at = to_database_time(write.created_at)?;
@@ -667,11 +898,14 @@ async fn apply_receipt_transaction(
         .await
         .map_err(|_| RefundRepositoryError::Query)?;
     let insert_result = event.insert(&savepoint).await;
-    match insert_result {
-        Ok(_) => savepoint
-            .commit()
-            .await
-            .map_err(|_| RefundRepositoryError::OutcomeUnknown)?,
+    let inserted_event = match insert_result {
+        Ok(inserted) => {
+            savepoint
+                .commit()
+                .await
+                .map_err(|_| RefundRepositoryError::OutcomeUnknown)?;
+            inserted
+        }
         Err(error) if matches!(error.sql_err(), Some(SqlErr::UniqueConstraintViolation(_))) => {
             savepoint
                 .rollback()
@@ -686,6 +920,16 @@ async fn apply_receipt_transaction(
                 .map_err(|_| RefundRepositoryError::OutcomeUnknown)?;
             return Err(RefundRepositoryError::Query);
         }
+    };
+    if let Some(reconciliation) = reconciliation {
+        insert_reconciliation(
+            transaction,
+            &record,
+            inserted_event.id,
+            reconciliation,
+            processed_at,
+        )
+        .await?;
     }
     let expected_version =
         i64::try_from(record.version()).map_err(|_| RefundRepositoryError::Invariant)?;
@@ -757,10 +1001,187 @@ async fn duplicate_receipt_outcome(
         && existing.amount_minor == write.amount_minor
         && existing.currency == write.currency
     {
+        if write.status == RefundRequestStatus::Succeeded {
+            validate_existing_reconciliation(transaction, write, &record, existing.id).await?;
+        }
         Ok(RefundReceiptOutcome::Existing(record))
     } else {
         Err(RefundRepositoryError::Conflict)
     }
+}
+
+#[derive(Clone, Copy)]
+struct ReconciliationFacts {
+    organization_id: Option<OrganizationId>,
+    approval_actor_id: UserId,
+}
+
+/// 成功退款只能从已支付原订单推导资金主体，不能信任 webhook 或调用方提供的租户字段。
+async fn derive_reconciliation_facts(
+    transaction: &DatabaseTransaction,
+    record: &RefundRequestRecord,
+) -> Result<ReconciliationFacts, RefundRepositoryError> {
+    if record.approval_status() != RefundApprovalStatus::Approved {
+        return Err(RefundRepositoryError::Conflict);
+    }
+    let approval_actor_id = record
+        .approval_actor_id()
+        .ok_or(RefundRepositoryError::Invariant)?;
+    let organization_id = match record.order_kind() {
+        RefundOrderKind::Topup => {
+            let order = topup_orders::Entity::find()
+                .filter(topup_orders::Column::OrderKey.eq(record.order_key()))
+                .one(transaction)
+                .await
+                .map_err(map_query)?
+                .ok_or(RefundRepositoryError::Conflict)?;
+            if order.status != TopupOrderStatus::Paid.code()
+                || order.user_id != record.user_id().get()
+                || order.provider != record.provider()
+                || order.amount_minor != record.original_amount_minor()
+                || order.currency != record.currency()
+                || order.trade_no.as_ref().map(SensitiveString::as_str)
+                    != record.payment_reference()
+            {
+                return Err(RefundRepositoryError::Conflict);
+            }
+            order
+                .organization_id
+                .map(OrganizationId::new)
+                .transpose()
+                .map_err(|_| RefundRepositoryError::Invariant)?
+        }
+        RefundOrderKind::Subscription => {
+            let order = subscription_orders::Entity::find()
+                .filter(subscription_orders::Column::OrderKey.eq(record.order_key()))
+                .one(transaction)
+                .await
+                .map_err(map_query)?
+                .ok_or(RefundRepositoryError::Conflict)?;
+            if order.status != SubscriptionOrderStatus::Paid.code()
+                || order.user_id != record.user_id().get()
+                || order.provider != record.provider()
+                || order.amount_minor != record.original_amount_minor()
+                || order.currency != record.currency()
+                || order.trade_no.as_ref().map(SensitiveString::as_str)
+                    != record.payment_reference()
+            {
+                return Err(RefundRepositoryError::Conflict);
+            }
+            None
+        }
+    };
+    Ok(ReconciliationFacts {
+        organization_id,
+        approval_actor_id,
+    })
+}
+
+async fn insert_reconciliation(
+    transaction: &DatabaseTransaction,
+    record: &RefundRequestRecord,
+    provider_event_id: i64,
+    facts: ReconciliationFacts,
+    created_at: TimeDateTimeWithTimeZone,
+) -> Result<(), RefundRepositoryError> {
+    let amount_delta_minor = record
+        .refund_amount_minor()
+        .checked_neg()
+        .filter(|value| *value != i64::MIN)
+        .ok_or(RefundRepositoryError::Invariant)?;
+    refund_reconciliation_entries::ActiveModel {
+        id: sea_orm::NotSet,
+        request_key: Set(record.request_id().persistence_key()),
+        provider_event_id: Set(provider_event_id),
+        user_id: Set(record.user_id().get()),
+        organization_id: Set(facts.organization_id.map(OrganizationId::get)),
+        approval_actor_id: Set(facts.approval_actor_id.get()),
+        order_kind: Set(record.order_kind().code()),
+        order_key: Set(record.order_key().to_owned()),
+        provider: Set(record.provider().to_owned()),
+        amount_delta_minor: Set(amount_delta_minor),
+        currency: Set(record.currency().to_owned()),
+        created_at: Set(created_at),
+    }
+    .insert(transaction)
+    .await
+    .map(|_| ())
+    .map_err(|error| {
+        if matches!(error.sql_err(), Some(SqlErr::UniqueConstraintViolation(_))) {
+            RefundRepositoryError::Conflict
+        } else {
+            RefundRepositoryError::Query
+        }
+    })
+}
+
+async fn validate_existing_reconciliation(
+    transaction: &DatabaseTransaction,
+    write: &RefundReceiptWrite,
+    record: &RefundRequestRecord,
+    provider_event_id: i64,
+) -> Result<(), RefundRepositoryError> {
+    let facts = derive_reconciliation_facts(transaction, record).await?;
+    let existing = refund_reconciliation_entries::Entity::find()
+        .filter(
+            refund_reconciliation_entries::Column::RequestKey
+                .eq(record.request_id().persistence_key()),
+        )
+        .one(transaction)
+        .await
+        .map_err(map_query)?
+        .ok_or(RefundRepositoryError::Invariant)?;
+    let expected_delta = record
+        .refund_amount_minor()
+        .checked_neg()
+        .filter(|value| *value != i64::MIN)
+        .ok_or(RefundRepositoryError::Invariant)?;
+    if existing.provider_event_id != provider_event_id
+        || existing.user_id != record.user_id().get()
+        || existing.organization_id != facts.organization_id.map(OrganizationId::get)
+        || existing.approval_actor_id != facts.approval_actor_id.get()
+        || existing.order_kind != record.order_kind().code()
+        || existing.order_key != record.order_key()
+        || existing.provider != write.provider
+        || existing.amount_delta_minor != expected_delta
+        || existing.currency != write.currency
+    {
+        return Err(RefundRepositoryError::Conflict);
+    }
+    Ok(())
+}
+
+fn to_reconciliation_record(
+    model: refund_reconciliation_entries::Model,
+) -> Result<RefundReconciliationRecord, RefundRepositoryError> {
+    if model.id <= 0
+        || model.provider_event_id <= 0
+        || model.amount_delta_minor >= 0
+        || model.amount_delta_minor == i64::MIN
+    {
+        return Err(RefundRepositoryError::Invariant);
+    }
+    Ok(RefundReconciliationRecord {
+        id: model.id,
+        request_id: RefundRequestId::from_persistence_key(&model.request_key)
+            .map_err(|_| RefundRepositoryError::Invariant)?,
+        provider_event_id: model.provider_event_id,
+        user_id: UserId::new(model.user_id).map_err(|_| RefundRepositoryError::Invariant)?,
+        organization_id: model
+            .organization_id
+            .map(OrganizationId::new)
+            .transpose()
+            .map_err(|_| RefundRepositoryError::Invariant)?,
+        approval_actor_id: UserId::new(model.approval_actor_id)
+            .map_err(|_| RefundRepositoryError::Invariant)?,
+        order_kind: RefundOrderKind::try_from(model.order_kind)
+            .map_err(|_| RefundRepositoryError::Invariant)?,
+        order_key: model.order_key,
+        provider: model.provider,
+        amount_delta_minor: model.amount_delta_minor,
+        currency: model.currency,
+        created_at: unix_seconds(model.created_at)?,
+    })
 }
 
 fn validate_receipt_write(write: &RefundReceiptWrite) -> Result<(), RefundRepositoryError> {
