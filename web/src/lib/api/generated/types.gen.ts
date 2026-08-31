@@ -2201,6 +2201,24 @@ export type PublicSiteSettings = {
     balance_display: BalanceDisplaySettings;
     authentication: PublicAuthenticationCapabilities;
 };
+export type RefundReconciliationEntry = {
+    request_id: string;
+    user_id: number;
+    organization_id: number | null;
+    approval_actor_id: number;
+    order_kind: AdminRefundOrderKind;
+    order_key: string;
+    provider: string;
+    amount_delta_minor: number;
+    currency: string;
+    status: RefundReconciliationStatus;
+    created_at: number;
+};
+export type RefundReconciliationListResponse = {
+    entries: Array<RefundReconciliationEntry>;
+    next_cursor: number | null;
+};
+export type RefundReconciliationStatus = 'succeeded';
 export type RegistrationEmailVerificationRequest = {
     email: string;
 };
@@ -3405,6 +3423,68 @@ export type RedeemUserRedemptionCodeResponses = {
     200: UserRedemptionResult;
 };
 export type RedeemUserRedemptionCodeResponse = RedeemUserRedemptionCodeResponses[keyof RedeemUserRedemptionCodeResponses];
+export type ListAccountRefundReconciliationsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/account/refund-reconciliations';
+};
+export type ListAccountRefundReconciliationsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    500: ManagementError;
+};
+export type ListAccountRefundReconciliationsError = ListAccountRefundReconciliationsErrors[keyof ListAccountRefundReconciliationsErrors];
+export type ListAccountRefundReconciliationsResponses = {
+    200: RefundReconciliationListResponse;
+};
+export type ListAccountRefundReconciliationsResponse = ListAccountRefundReconciliationsResponses[keyof ListAccountRefundReconciliationsResponses];
+export type ListOrganizationRefundReconciliationsData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/organizations/{organization_id}/refund-reconciliations';
+};
+export type ListOrganizationRefundReconciliationsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationRefundReconciliationsError = ListOrganizationRefundReconciliationsErrors[keyof ListOrganizationRefundReconciliationsErrors];
+export type ListOrganizationRefundReconciliationsResponses = {
+    200: RefundReconciliationListResponse;
+};
+export type ListOrganizationRefundReconciliationsResponse = ListOrganizationRefundReconciliationsResponses[keyof ListOrganizationRefundReconciliationsResponses];
+export type ListAdminRefundReconciliationsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/admin/refund-reconciliations';
+};
+export type ListAdminRefundReconciliationsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminRefundReconciliationsError = ListAdminRefundReconciliationsErrors[keyof ListAdminRefundReconciliationsErrors];
+export type ListAdminRefundReconciliationsResponses = {
+    200: RefundReconciliationListResponse;
+};
+export type ListAdminRefundReconciliationsResponse = ListAdminRefundReconciliationsResponses[keyof ListAdminRefundReconciliationsResponses];
 export type ListAdminRefundsData = {
     body?: never;
     path?: never;

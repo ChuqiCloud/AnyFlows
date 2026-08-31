@@ -1,4 +1,4 @@
-import { Check, CircleAlert, CreditCard, RefreshCw, Send, X } from 'lucide-react'
+import { Check, CircleAlert, CreditCard, FileCheck2, RefreshCw, Send, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import type { AdminRefundRequest } from '@/lib/api/generated/types.gen'
 import { refundErrorCode, useAdminRefunds, useApproveAdminRefund, useRejectAdminRefund, useSubmitAdminRefund } from './refund-api'
+import { RefundReconciliationList } from './refund-reconciliation-list'
 
 type Filter = 'all' | 'pending' | 'approved' | 'rejected'
 type Decision = { action: 'approve' | 'reject'; request: AdminRefundRequest }
@@ -36,6 +37,7 @@ function actionErrorKey(code: string | undefined) {
 /** 管理员退款审批工作台，所有资金动作都通过服务端原请求 CAS 完成。 */
 export function RefundPage() {
   const { t } = useTranslation()
+  const [mode, setMode] = useState<'approvals' | 'reconciliation'>('approvals')
   const [filter, setFilter] = useState<Filter>('pending')
   const [pageSize, setPageSize] = useState(DEFAULT_TABLE_PAGE_SIZE)
   const [decision, setDecision] = useState<Decision>()
@@ -84,11 +86,17 @@ export function RefundPage() {
           <h2 className="text-lg font-semibold">{t('refunds.title')}</h2>
           <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">{t('refunds.subtitle')}</p>
         </div>
-        <Button type="button" size="sm" variant="secondary" disabled={query.isFetching} onClick={() => void query.refetch()}>
-          <RefreshCw className={query.isFetching ? 'animate-spin' : undefined} aria-hidden="true" />
-          {t('refunds.actions.refresh')}
-        </Button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex items-center rounded-lg border border-[var(--hairline)] bg-surface-2/45 p-0.5" role="tablist" aria-label={t('refunds.views.label')}>
+            <Button type="button" size="sm" variant={mode === 'approvals' ? 'secondary' : 'ghost'} role="tab" aria-selected={mode === 'approvals'} onClick={() => setMode('approvals')}><Check aria-hidden="true" />{t('refunds.views.approvals')}</Button>
+            <Button type="button" size="sm" variant={mode === 'reconciliation' ? 'secondary' : 'ghost'} role="tab" aria-selected={mode === 'reconciliation'} onClick={() => setMode('reconciliation')}><FileCheck2 aria-hidden="true" />{t('refunds.views.reconciliation')}</Button>
+          </div>
+          {mode === 'approvals' ? <Button type="button" size="sm" variant="secondary" disabled={query.isFetching} onClick={() => void query.refetch()}><RefreshCw className={query.isFetching ? 'animate-spin' : undefined} aria-hidden="true" />{t('refunds.actions.refresh')}</Button> : null}
+        </div>
       </header>
+
+      {mode === 'reconciliation' ? <RefundReconciliationList scope="admin" translationPrefix="refunds.reconciliation" /> : (
+      <>
 
       <div className="flex flex-wrap items-center gap-3 border-y border-[var(--hairline)] py-2 text-xs text-muted-foreground">
         <label className="flex items-center gap-2">
@@ -187,6 +195,8 @@ export function RefundPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      </>
+      )}
     </div>
   )
 }

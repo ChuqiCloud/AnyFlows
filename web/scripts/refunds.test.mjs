@@ -9,13 +9,22 @@ test('退款审批入口使用管理员路由', () => {
   assert.deepEqual(routeFromHash('#/console/refunds?ignored=true'), { view: 'refunds' })
 })
 
-test('退款审批 API 与 OpenAPI 保持四个操作', async () => {
+test('退款审批与对账 API 与 OpenAPI 保持七个操作', async () => {
   const openapi = JSON.parse(await readFile(new URL('../openapi/openapi.json', import.meta.url), 'utf8'))
   assert.equal(openapi.paths['/api/admin/refunds'].get.operationId, 'listAdminRefunds')
   assert.equal(openapi.paths['/api/admin/refunds/{request_id}/approve'].post.operationId, 'approveAdminRefund')
   assert.equal(openapi.paths['/api/admin/refunds/{request_id}/reject'].post.operationId, 'rejectAdminRefund')
   assert.equal(openapi.paths['/api/admin/refunds/{request_id}/submit'].post.operationId, 'submitAdminRefund')
+  assert.equal(openapi.paths['/api/account/refund-reconciliations'].get.operationId, 'listAccountRefundReconciliations')
+  assert.equal(openapi.paths['/api/organizations/{organization_id}/refund-reconciliations'].get.operationId, 'listOrganizationRefundReconciliations')
+  assert.equal(openapi.paths['/api/admin/refund-reconciliations'].get.operationId, 'listAdminRefundReconciliations')
   assert.equal(openapi.components.schemas.AdminRefundRequest.properties.payment_reference, undefined)
+  const reconciliation = openapi.components.schemas.RefundReconciliationEntry
+  assert.equal(reconciliation.properties.amount_delta_minor.maximum, -1)
+  assert.equal(reconciliation.properties.provider_refund_id, undefined)
+  assert.equal(reconciliation.properties.provider_event_id, undefined)
+  assert.equal(reconciliation.properties.signature, undefined)
+  assert.equal(reconciliation.properties.payload, undefined)
 })
 
 test('退款审批页保留结果未知和人工提交状态提示', async () => {
@@ -25,6 +34,17 @@ test('退款审批页保留结果未知和人工提交状态提示', async () =>
   assert.match(source, /approval_status === 'approved'/)
 })
 
+test('退款对账列表复用稳定游标并展示脱敏资金主体', async () => {
+  const source = await readFile(new URL('../src/features/refunds/refund-reconciliation-list.tsx', import.meta.url), 'utf8')
+  const api = await readFile(new URL('../src/features/refunds/refund-reconciliation-api.ts', import.meta.url), 'utf8')
+  assert.match(source, /scope === 'admin'/)
+  assert.match(source, /ownerOrganization/)
+  assert.match(source, /amount_delta_minor/)
+  assert.doesNotMatch(source, /provider_refund_id|provider_event_id|signature|payload/)
+  assert.match(api, /useInfiniteQuery/)
+  assert.match(api, /before: pageParam/)
+})
+
 test('退款审批中英文文案均完整', async () => {
   const locales = await Promise.all(['zh', 'en'].map(async (locale) => JSON.parse(
     await readFile(new URL(`../src/i18n/locales/${locale}.json`, import.meta.url), 'utf8'),
@@ -32,6 +52,10 @@ test('退款审批中英文文案均完整', async () => {
   for (const locale of locales) {
     assert.equal(typeof locale.nav.refunds, 'string')
     assert.equal(typeof locale.refunds.title, 'string')
+    assert.equal(typeof locale.refunds.views.reconciliation, 'string')
+    assert.equal(typeof locale.refunds.reconciliation.columns.owner, 'string')
+    assert.equal(typeof locale.wallet.reconciliation.title, 'string')
+    assert.equal(typeof locale.organizationConsole.wallet.reconciliation.title, 'string')
     assert.equal(typeof locale.refunds.errors.refund_outcome_unknown, 'string')
   }
 })

@@ -69,7 +69,9 @@ use crate::management_model_sync::{
 use crate::management_model_writes::{create_admin_model, delete_admin_model, update_admin_model};
 use crate::management_models::{get_admin_model, list_admin_models};
 use crate::management_refunds::{
-    approve_admin_refund, list_admin_refunds, reject_admin_refund, submit_admin_refund,
+    approve_admin_refund, list_account_refund_reconciliations, list_admin_refund_reconciliations,
+    list_admin_refunds, list_organization_refund_reconciliations, reject_admin_refund,
+    submit_admin_refund,
 };
 use crate::management_route_writes::{create_admin_route, delete_admin_route, update_admin_route};
 use crate::management_routes::{get_admin_route, list_admin_routes};
@@ -611,6 +613,22 @@ pub fn build_router(
         .route(
             "/api/admin/refunds",
             get(list_admin_refunds)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(channel_collection_authentication.clone()),
+        )
+        .route(
+            "/api/account/refund-reconciliations",
+            get(list_account_refund_reconciliations)
+                .route_layer(channel_collection_authentication.clone()),
+        )
+        .route(
+            "/api/organizations/{organization_id}/refund-reconciliations",
+            get(list_organization_refund_reconciliations)
+                .route_layer(channel_collection_authentication.clone()),
+        )
+        .route(
+            "/api/admin/refund-reconciliations",
+            get(list_admin_refund_reconciliations)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(channel_collection_authentication.clone()),
         )
