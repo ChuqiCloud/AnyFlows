@@ -5513,17 +5513,29 @@
           "manageBody": "The current role can manage SSO, but create and update forms will arrive in a later slice.",
           "readBody": "This organization has no Provider configuration visible to the current role."
         },
-        "closure": {
-          "title": "Closure status",
-          "domains": "Domain verification",
-          "policy": "Enforcement policy",
-          "recovery": "Recovery entry",
-          "audit": "Audit status",
-          "available": "Live",
-          "pending": "Pending",
-          "hint": "Policy and recovery state are live. Audit details remain a separate read-only surface."
-        }
-      }
+  "closure": {
+    "title": "Closure status",
+    "provider": "Provider",
+    "domains": "Domain verification",
+    "policy": "Enforcement policy",
+    "recovery": "Recovery entry",
+    "audit": "Audit status",
+    "available": "Live",
+    "pending": "Pending",
+    "viewAudit": "View audit",
+    "status": {
+      "live": "Live",
+      "empty": "Not configured",
+      "pending": "Pending",
+      "loading": "Loading",
+      "error": "Unavailable",
+      "restricted": "Restricted",
+      "revoked": "Revoked",
+      "notReady": "Not ready"
+    },
+    "hint": "Every badge reflects the latest server response. Audit details remain a separate read-only surface."
+  }
+}
     }
   },
   "wallet": {

@@ -1,6 +1,6 @@
 import { Activity, Building2, RefreshCw, ScrollText, ShieldCheck, ShieldX } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
@@ -25,7 +25,7 @@ const AUDIT_READ = 'organization.audit.read'
 type ActivityTab = 'audit' | 'scim' | 'usage'
 
 /** 企业活动入口；企业切换会取消旧请求并通过 keyed workspace 清空页签、筛选和游标。 */
-export function OrganizationActivityPage() {
+export function OrganizationActivityPage({ initialTab }: { initialTab?: ActivityTab }) {
   const { t } = useTranslation()
   const workspace = useOrganizationWorkspace()
 
@@ -57,16 +57,20 @@ export function OrganizationActivityPage() {
       ) : workspace.selectedId === undefined || workspace.switching ? (
         <OrganizationWorkspaceLoading />
       ) : (
-        <OrganizationActivityWorkspace key={workspace.selectedId} organizationId={workspace.selectedId} />
+        <OrganizationActivityWorkspace key={workspace.selectedId} organizationId={workspace.selectedId} initialTab={initialTab} />
       )}
     </div>
   )
 }
 
-function OrganizationActivityWorkspace({ organizationId }: { organizationId: number }) {
+function OrganizationActivityWorkspace({ organizationId, initialTab }: { organizationId: number; initialTab?: ActivityTab }) {
   const { t } = useTranslation()
   const overviewQuery = useOrganizationOverview(organizationId)
-  const [tab, setTab] = useState<ActivityTab>('usage')
+  const [tab, setTab] = useState<ActivityTab>(initialTab ?? 'usage')
+
+  useEffect(() => {
+    if (initialTab) setTab(initialTab)
+  }, [initialTab])
 
   if (overviewQuery.isPending) return <OrganizationWorkspaceLoading />
   if (overviewQuery.isError || !overviewQuery.data) {

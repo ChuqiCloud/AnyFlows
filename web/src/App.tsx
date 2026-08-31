@@ -82,6 +82,7 @@ type ManagementEntryProps = {
   view: Exclude<AppView, 'landing' | 'public-models' | 'register' | 'share' | 'forgot-password' | 'reset-password' | 'oauth-callback'>
   credentialChannelId?: number
   profileSection?: AppRoute['profileSection']
+  activityTab?: AppRoute['activityTab']
   loginNotice?: LoginNotice
   onAuthenticated: () => void
   onLoginRequired: (reason: 'required' | 'sessionExpired' | 'setupComplete') => void
@@ -95,6 +96,7 @@ function ManagementEntry({
   view,
   credentialChannelId,
   profileSection,
+  activityTab,
   loginNotice,
   onAuthenticated,
   onLoginRequired,
@@ -250,7 +252,7 @@ function ManagementEntry({
             : view === 'organization-api-keys'
                 ? <OrganizationApiKeyPage />
                 : view === 'organization-activity'
-                  ? <OrganizationActivityPage />
+                  ? <OrganizationActivityPage initialTab={activityTab} />
                 : view === 'organization-budgets'
                   ? <OrganizationBudgetPage />
                 : view === 'organization-contract-prices'
@@ -392,6 +394,7 @@ export default function App() {
       view={view}
       credentialChannelId={route.channelId}
       profileSection={route.profileSection}
+      activityTab={route.activityTab}
       loginNotice={loginNotice}
       onAuthenticated={openConsole}
       onLoginRequired={openLogin}

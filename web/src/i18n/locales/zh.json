@@ -5512,17 +5512,29 @@
           "manageBody": "当前角色拥有管理权限，但创建与更新表单将在后续切片接入。",
           "readBody": "当前企业还没有可读取的 Provider 配置。"
         },
-        "closure": {
-          "title": "闭环状态",
-          "domains": "域名验证",
-          "policy": "强制策略",
-          "recovery": "恢复入口",
-          "audit": "审计状态",
-          "available": "已接入",
-          "pending": "待接入",
-          "hint": "策略与恢复状态已接入；审计明细仍由独立的只读页面提供。"
-        }
-      }
+  "closure": {
+    "title": "闭环状态",
+    "provider": "Provider",
+    "domains": "域名验证",
+    "policy": "强制策略",
+    "recovery": "恢复入口",
+    "audit": "审计状态",
+    "available": "已接入",
+    "pending": "待接入",
+    "viewAudit": "查看审计",
+    "status": {
+      "live": "已接入",
+      "empty": "未配置",
+      "pending": "等待验证",
+      "loading": "加载中",
+      "error": "暂时不可用",
+      "restricted": "受限",
+      "revoked": "已撤销",
+      "notReady": "未就绪"
+    },
+    "hint": "每个状态均来自最新服务端响应；审计明细仍由独立的只读页面提供。"
+  }
+}
     }
   },
   "wallet": {

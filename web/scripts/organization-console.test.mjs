@@ -11,6 +11,8 @@ test('企业控制台路由覆盖首版任务域', () => {
   assert.deepEqual(routeFromHash('#/console/organization-members'), { view: 'organization-members' })
   assert.deepEqual(routeFromHash('#/console/organization-wallet'), { view: 'organization-wallet' })
   assert.deepEqual(routeFromHash('#/console/organization-settings'), { view: 'organization-settings' })
+  assert.deepEqual(routeFromHash('#/console/organization-activity?tab=audit'), { view: 'organization-activity', activityTab: 'audit' })
+  assert.deepEqual(routeFromHash('#/console/organization-activity?tab=unknown'), { view: 'organization-activity' })
 })
 
 test('企业缓存键始终包含企业域', async () => {
@@ -80,7 +82,11 @@ test('企业 SSO 面板只在授权允许时读取 Provider，并显式保留未
   assert.match(domainsSource, /organizationConsole\.settings\.sso\.domains\.status/)
   assert.match(apiSource, /useOrganizationSsoPolicy/)
   assert.match(panelSource, /OrganizationSsoPolicyPanel/)
-  assert.match(panelSource, /status: 'available'/)
+  assert.match(panelSource, /type ClosureStatus/)
+  assert.match(panelSource, /queryClosureStatus/)
+  assert.match(panelSource, /organization\.audit\.read/)
+  assert.match(panelSource, /organization-activity\?tab=audit/)
+  assert.match(panelSource, /'restricted'/)
   assert.match(policySource, /organization\.sso\.recovery/)
   assert.match(policySource, /query\.isPending/)
   assert.match(policySource, /recovery_ready/)

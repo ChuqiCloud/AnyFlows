@@ -1,4 +1,4 @@
-import { CircleAlert, Fingerprint, RefreshCw, ShieldBan, ShieldCheck } from 'lucide-react'
+import { ArrowUpRight, CircleAlert, Fingerprint, RefreshCw, ShieldBan, ShieldCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { ReactNode } from 'react'
 
@@ -6,18 +6,21 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useOrganizationAuditLogs } from '@/features/organization-activity/organization-activity-api'
 import type { OrganizationSsoProvider } from '@/lib/api/generated/types.gen'
-import { useOrganizationSsoProviders } from './organization-sso-api'
+import {
+  useOrganizationSsoDomains,
+  useOrganizationSsoPolicy,
+  useOrganizationSsoProviders,
+} from './organization-sso-api'
 import { OrganizationSsoDomains } from './organization-sso-domains'
 import { OrganizationSsoPolicyPanel } from './organization-sso-policy'
 
 const SSO_READ = 'organization.sso.read'
 const SSO_MANAGE = 'organization.sso.manage'
-const SSO_CLOSURE_ITEMS = [
-  { id: 'policy', status: 'available' },
-  { id: 'recovery', status: 'available' },
-  { id: 'audit', status: 'pending' },
-] as const
+const AUDIT_READ = 'organization.audit.read'
+
+type ClosureStatus = 'live' | 'empty' | 'pending' | 'loading' | 'error' | 'restricted' | 'revoked' | 'notReady'
 
 /** 企业设置中的 SSO 脱敏状态面板；所有状态都来自服务端权限和事实投影。 */
 export function OrganizationSsoPanel({
@@ -34,8 +37,13 @@ export function OrganizationSsoPanel({
   const { t } = useTranslation()
   const canRead = permissions.includes(SSO_READ)
   const canManage = permissions.includes(SSO_MANAGE)
-  const query = useOrganizationSsoProviders(organizationId, ssoEnabled && canRead)
-  const providers = query.data ?? []
+  const canAudit = permissions.includes(AUDIT_READ)
+  const enabled = ssoEnabled && canRead
+  const providersQuery = useOrganizationSsoProviders(organizationId, enabled)
+  const domainsQuery = useOrganizationSsoDomains(organizationId, enabled)
+  const policyQuery = useOrganizationSsoPolicy(organizationId, enabled)
+  const auditQuery = useOrganizationAuditLogs(organizationId, undefined, 1, {}, ssoEnabled && canAudit)
+  const providers = providersQuery.data ?? []
 
   return (
     <Card className="overflow-hidden">
@@ -51,9 +59,9 @@ export function OrganizationSsoPanel({
               <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('organizationConsole.settings.sso.subtitle', { organization: organizationName })}</p>
             </div>
           </div>
-          {ssoEnabled && canRead ? (
-            <Button type="button" size="icon-sm" variant="ghost" title={t('organizationConsole.actions.refresh')} disabled={query.isFetching} onClick={() => void query.refetch()}>
-              <RefreshCw className={query.isFetching ? 'animate-spin' : undefined} aria-hidden="true" />
+          {enabled ? (
+            <Button type="button" size="icon-sm" variant="ghost" title={t('organizationConsole.actions.refresh')} disabled={providersQuery.isFetching || domainsQuery.isFetching || policyQuery.isFetching || auditQuery.isFetching} onClick={() => void Promise.all([providersQuery.refetch(), domainsQuery.refetch(), policyQuery.refetch(), auditQuery.refetch()])}>
+              <RefreshCw className={providersQuery.isFetching || domainsQuery.isFetching || policyQuery.isFetching || auditQuery.isFetching ? 'animate-spin' : undefined} aria-hidden="true" />
               <span className="sr-only">{t('organizationConsole.actions.refresh')}</span>
             </Button>
           ) : null}
@@ -62,27 +70,105 @@ export function OrganizationSsoPanel({
       <CardContent className="p-0">
         {!ssoEnabled ? <SsoPanelState icon={ShieldBan} title={t('organizationConsole.settings.sso.restricted.entitlementTitle')} body={t('organizationConsole.settings.sso.restricted.entitlementBody')} /> : null}
         {ssoEnabled && !canRead ? <SsoPanelState icon={ShieldBan} title={t('organizationConsole.settings.sso.restricted.permissionTitle')} body={t('organizationConsole.settings.sso.restricted.permissionBody')} /> : null}
-        {ssoEnabled && canRead && query.isPending ? <SsoPanelLoading /> : null}
-        {ssoEnabled && canRead && query.isError ? <SsoPanelState icon={CircleAlert} title={t('organizationConsole.settings.sso.errors.title')} body={t(canManage ? 'organizationConsole.settings.sso.errors.body' : 'organizationConsole.settings.sso.errors.readOnlyBody')} action={<Button type="button" size="sm" variant="secondary" onClick={() => void query.refetch()}><RefreshCw aria-hidden="true" />{t('organizationConsole.actions.retry')}</Button>} /> : null}
-        {ssoEnabled && canRead && query.isSuccess && providers.length === 0 ? <SsoPanelState icon={ShieldCheck} title={t('organizationConsole.settings.sso.empty.title')} body={t(canManage ? 'organizationConsole.settings.sso.empty.manageBody' : 'organizationConsole.settings.sso.empty.readBody')} /> : null}
-        {ssoEnabled && canRead && providers.length > 0 ? <div className="divide-y divide-[var(--hairline)]">{providers.map((provider) => <SsoProviderRow key={provider.provider_key} provider={provider} />)}</div> : null}
-        {ssoEnabled && canRead ? <OrganizationSsoDomains organizationId={organizationId} providers={providers} canManage={canManage} providersLoaded={query.isSuccess} /> : null}
-        {ssoEnabled && canRead ? <OrganizationSsoPolicyPanel organizationId={organizationId} ssoEnabled={ssoEnabled} permissions={permissions} /> : null}
-        <div className="border-t border-[var(--hairline)] bg-surface-1/25 px-4 py-3">
-          <div className="mb-2 text-[0.6875rem] font-medium uppercase tracking-[0.08em] text-muted-foreground">{t('organizationConsole.settings.sso.closure.title')}</div>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {SSO_CLOSURE_ITEMS.map((item) => (
-              <div key={item.id} className="flex min-w-0 items-center justify-between gap-2 rounded-lg border border-dashed border-[var(--hairline)] px-3 py-2">
-                <span className="truncate text-xs">{t(`organizationConsole.settings.sso.closure.${item.id}`)}</span>
-                <Badge className={item.status === 'available' ? 'shrink-0 text-success' : 'shrink-0 text-muted-foreground'}>{t(`organizationConsole.settings.sso.closure.${item.status}`)}</Badge>
-              </div>
-            ))}
-          </div>
-          <p className="mt-2 text-xs leading-5 text-muted-foreground">{t('organizationConsole.settings.sso.closure.hint')}</p>
-        </div>
+        {enabled && providersQuery.isPending ? <SsoPanelLoading /> : null}
+        {enabled && providersQuery.isError ? <SsoPanelState icon={CircleAlert} title={t('organizationConsole.settings.sso.errors.title')} body={t(canManage ? 'organizationConsole.settings.sso.errors.body' : 'organizationConsole.settings.sso.errors.readOnlyBody')} action={<Button type="button" size="sm" variant="secondary" onClick={() => void providersQuery.refetch()}><RefreshCw aria-hidden="true" />{t('organizationConsole.actions.retry')}</Button>} /> : null}
+        {enabled && providersQuery.isSuccess && providers.length === 0 ? <SsoPanelState icon={ShieldCheck} title={t('organizationConsole.settings.sso.empty.title')} body={t(canManage ? 'organizationConsole.settings.sso.empty.manageBody' : 'organizationConsole.settings.sso.empty.readBody')} /> : null}
+        {enabled && providers.length > 0 ? <div className="divide-y divide-[var(--hairline)]">{providers.map((provider) => <SsoProviderRow key={provider.provider_key} provider={provider} />)}</div> : null}
+        {enabled ? <OrganizationSsoDomains organizationId={organizationId} providers={providers} canManage={canManage} providersLoaded={providersQuery.isSuccess} query={domainsQuery} /> : null}
+        {enabled ? <OrganizationSsoPolicyPanel organizationId={organizationId} ssoEnabled={ssoEnabled} permissions={permissions} query={policyQuery} /> : null}
+        <SsoClosureStatus
+          canAudit={canAudit}
+          domains={domainsQuery.data ?? []}
+          domainsQuery={domainsQuery}
+          enabled={enabled}
+          onAudit={() => { window.location.hash = '#/console/organization-activity?tab=audit' }}
+          policy={policyQuery.data}
+          policyQuery={policyQuery}
+          providers={providers}
+          providersQuery={providersQuery}
+          auditQuery={auditQuery}
+          ssoEnabled={ssoEnabled}
+        />
       </CardContent>
     </Card>
   )
+}
+
+function SsoClosureStatus({
+  canAudit,
+  domains,
+  domainsQuery,
+  enabled,
+  onAudit,
+  policy,
+  policyQuery,
+  providers,
+  providersQuery,
+  auditQuery,
+  ssoEnabled,
+}: {
+  canAudit: boolean
+  domains: readonly { status: string }[]
+  domainsQuery: ReturnType<typeof useOrganizationSsoDomains>
+  enabled: boolean
+  onAudit: () => void
+  policy: { recovery_ready: boolean } | undefined
+  policyQuery: ReturnType<typeof useOrganizationSsoPolicy>
+  providers: readonly OrganizationSsoProvider[]
+  providersQuery: ReturnType<typeof useOrganizationSsoProviders>
+  auditQuery: ReturnType<typeof useOrganizationAuditLogs>
+  ssoEnabled: boolean
+}) {
+  const { t } = useTranslation()
+  const items: Array<{ id: 'provider' | 'domains' | 'policy' | 'recovery' | 'audit'; status: ClosureStatus; action?: ReactNode }> = [
+    { id: 'provider', status: queryClosureStatus(enabled, providersQuery.isPending, providersQuery.isError, providers.length > 0) },
+    { id: 'domains', status: domainClosureStatus(enabled, domainsQuery, domains) },
+    { id: 'policy', status: queryClosureStatus(enabled, policyQuery.isPending, policyQuery.isError, policy !== undefined) },
+    { id: 'recovery', status: queryClosureStatus(enabled, policyQuery.isPending, policyQuery.isError, policy?.recovery_ready === true, 'notReady') },
+    { id: 'audit', status: queryClosureStatus(ssoEnabled && canAudit, auditQuery.isPending, auditQuery.isError, auditQuery.isSuccess), action: canAudit && ssoEnabled ? <Button asChild type="button" size="sm" variant="link" className="h-6 px-1.5 text-xs"><a href="#/console/organization-activity?tab=audit" onClick={onAudit}>{t('organizationConsole.settings.sso.closure.viewAudit')}<ArrowUpRight aria-hidden="true" /></a></Button> : undefined },
+  ]
+
+  return (
+    <div className="border-t border-[var(--hairline)] bg-surface-1/25 px-4 py-3">
+      <div className="mb-2 text-[0.6875rem] font-medium uppercase tracking-[0.08em] text-muted-foreground">{t('organizationConsole.settings.sso.closure.title')}</div>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        {items.map((item) => (
+          <div key={item.id} className="flex min-w-0 items-center justify-between gap-2 rounded-lg border border-dashed border-[var(--hairline)] px-3 py-2">
+            <span className="truncate text-xs">{t(`organizationConsole.settings.sso.closure.${item.id}`)}</span>
+            <div className="flex shrink-0 items-center gap-1">
+              <Badge className={closureStatusClass(item.status)}>{t(`organizationConsole.settings.sso.closure.status.${item.status}`)}</Badge>
+              {item.action}
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-xs leading-5 text-muted-foreground">{t('organizationConsole.settings.sso.closure.hint')}</p>
+    </div>
+  )
+}
+
+function queryClosureStatus(enabled: boolean, pending: boolean, error: boolean, ready: boolean, empty: ClosureStatus = 'empty'): ClosureStatus {
+  if (!enabled) return 'restricted'
+  if (pending) return 'loading'
+  if (error) return 'error'
+  return ready ? 'live' : empty
+}
+
+function domainClosureStatus(enabled: boolean, query: ReturnType<typeof useOrganizationSsoDomains>, domains: readonly { status: string }[]): ClosureStatus {
+  if (!enabled) return 'restricted'
+  if (query.isPending) return 'loading'
+  if (query.isError) return 'error'
+  if (domains.some((domain) => domain.status === 'verified')) return 'live'
+  if (domains.some((domain) => domain.status === 'pending')) return 'pending'
+  if (domains.some((domain) => domain.status === 'revoked')) return 'revoked'
+  return 'empty'
+}
+
+function closureStatusClass(status: ClosureStatus) {
+  if (status === 'live') return 'shrink-0 border-transparent bg-success/10 text-success'
+  if (status === 'error') return 'shrink-0 border-transparent bg-destructive/10 text-destructive'
+  if (status === 'pending' || status === 'notReady') return 'shrink-0 border-transparent bg-warning/10 text-warning'
+  return 'shrink-0 text-muted-foreground'
 }
 
 function SsoProviderRow({ provider }: { provider: OrganizationSsoProvider }) {
