@@ -32,7 +32,7 @@ pub enum OrganizationAuditOutcome {
 }
 
 impl OrganizationAuditOutcome {
-    const fn code(self) -> i16 {
+    pub(crate) const fn code(self) -> i16 {
         self as i16
     }
 
@@ -113,6 +113,54 @@ impl OrganizationAuditWrite {
             client_fingerprint,
             change_summary,
         })
+    }
+
+    pub(crate) const fn organization_id(&self) -> OrganizationId {
+        self.organization_id
+    }
+
+    pub(crate) const fn actor_user_id(&self) -> UserId {
+        self.actor_user_id
+    }
+
+    pub(crate) const fn actor_role(&self) -> Option<OrganizationRole> {
+        self.actor_role
+    }
+
+    pub(crate) fn permission_code(&self) -> &str {
+        &self.permission_code
+    }
+
+    pub(crate) fn operation(&self) -> &str {
+        &self.operation
+    }
+
+    pub(crate) fn target_type(&self) -> &str {
+        &self.target_type
+    }
+
+    pub(crate) fn target_identifier(&self) -> &str {
+        &self.target_identifier
+    }
+
+    pub(crate) const fn outcome(&self) -> OrganizationAuditOutcome {
+        self.outcome
+    }
+
+    pub(crate) const fn platform_proxy(&self) -> bool {
+        self.actor_role.is_none()
+    }
+
+    pub(crate) fn platform_reason(&self) -> Option<&str> {
+        self.platform_reason.as_deref()
+    }
+
+    pub(crate) fn request_id(&self) -> &str {
+        &self.request_id
+    }
+
+    pub(crate) fn change_summary(&self) -> Option<&str> {
+        self.change_summary.as_deref()
     }
 }
 

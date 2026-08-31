@@ -14,7 +14,8 @@ use sea_orm::{
 };
 
 use crate::entity::{
-    groups, organization_approval_notifications, organization_approval_requests, users,
+    groups, organization_approval_notifications, organization_approval_requests,
+    organization_audit_logs, users,
 };
 use crate::{
     DatabaseOptions, MigrationOptions, OrganizationApprovalDecisionOutcome,
@@ -170,6 +171,52 @@ async fn template_request_and_decision_facts_are_scoped_and_idempotent()
         OrganizationApprovalDecisionKind::Approved.code()
     );
     assert_eq!(notification.template_version, "approval-v1");
+    let audit = organization_audit_logs::Entity::find()
+        .filter(organization_audit_logs::Column::OrganizationId.eq(fixture.organization_id.get()))
+        .filter(
+            organization_audit_logs::Column::Operation.eq("organization.approval.decision.project"),
+        )
+        .one(fixture.pool.connection())
+        .await?
+        .expect("批准决定必须投影为企业审计事实");
+    assert_eq!(audit.actor_user_id, fixture.owner_id.get());
+    assert!(!audit.platform_proxy);
+    assert!(audit.platform_reason.is_none());
+    assert_eq!(audit.permission_code, "organization.approvals.decide");
+    assert_eq!(audit.target_type, "approval_decision");
+    assert_eq!(
+        audit.request_id,
+        "approval-decision:05050505050505050505050505050505"
+    );
+    assert_eq!(audit.target_identifier.len(), 65);
+    let summary: serde_json::Value = serde_json::from_str(
+        audit
+            .change_summary
+            .as_deref()
+            .expect("审批审计摘要必须存在"),
+    )?;
+    assert_eq!(summary["event_type"], "approval_decision");
+    assert_eq!(summary["result"], "approved");
+    assert_eq!(summary["reason_code"], "provided");
+    assert_eq!(summary["decision_key"], "05050505050505050505050505050505");
+    assert_eq!(summary["request_key"], "04040404040404040404040404040404");
+    assert!(
+        !audit
+            .change_summary
+            .as_deref()
+            .unwrap()
+            .contains("monthly limit")
+    );
+    organization_audit_logs::Entity::delete_by_id(audit.id)
+        .exec(fixture.pool.connection())
+        .await?;
+    assert_eq!(
+        fixture
+            .repository
+            .record_decision(OrganizationApprovalDecisionWrite::new(decision.clone()))
+            .await,
+        Err(OrganizationApprovalRepositoryError::Invariant)
+    );
 
     let rejected_request = OrganizationApprovalRequest::new(
         OrganizationApprovalRequestKey::new([7; 16])?,
@@ -213,6 +260,24 @@ async fn template_request_and_decision_facts_are_scoped_and_idempotent()
         .count(fixture.pool.connection())
         .await?;
     assert_eq!(notification_count, 2);
+    let rejected_audit = organization_audit_logs::Entity::find()
+        .filter(organization_audit_logs::Column::OrganizationId.eq(fixture.organization_id.get()))
+        .filter(
+            organization_audit_logs::Column::RequestId
+                .eq("approval-decision:08080808080808080808080808080808"),
+        )
+        .one(fixture.pool.connection())
+        .await?
+        .expect("拒绝决定必须投影为企业审计事实");
+    assert_eq!(rejected_audit.outcome, 3);
+    let rejected_summary: serde_json::Value = serde_json::from_str(
+        rejected_audit
+            .change_summary
+            .as_deref()
+            .expect("拒绝审计摘要必须存在"),
+    )?;
+    assert_eq!(rejected_summary["result"], "rejected");
+    assert_eq!(rejected_summary["reason_code"], "none");
     let second_decision = OrganizationApprovalDecision::new(
         OrganizationApprovalDecisionKey::new([6; 16])?,
         fixture.organization_id,
@@ -358,6 +423,36 @@ async fn timeout_scan_and_decision_are_bounded_and_idempotent() -> Result<(), Bo
     assert_eq!(
         notification.decision_kind,
         OrganizationApprovalDecisionKind::TimedOut.code()
+    );
+    let audit = organization_audit_logs::Entity::find()
+        .filter(organization_audit_logs::Column::OrganizationId.eq(fixture.organization_id.get()))
+        .filter(
+            organization_audit_logs::Column::Operation.eq("organization.approval.decision.project"),
+        )
+        .one(fixture.pool.connection())
+        .await?
+        .expect("超时决定必须投影为企业审计事实");
+    assert_eq!(audit.actor_user_id, fixture.owner_id.get());
+    assert!(audit.platform_proxy);
+    assert_eq!(audit.actor_role, None);
+    assert_eq!(
+        audit.platform_reason.as_deref(),
+        Some("approval_timeout_scheduler")
+    );
+    let summary: serde_json::Value = serde_json::from_str(
+        audit
+            .change_summary
+            .as_deref()
+            .expect("超时审计摘要必须存在"),
+    )?;
+    assert_eq!(summary["result"], "timed_out");
+    assert_eq!(summary["reason_code"], "expired");
+    assert!(
+        !audit
+            .change_summary
+            .as_deref()
+            .unwrap()
+            .contains("timeout test")
     );
     organization_approval_notifications::Entity::delete_by_id(notification.id)
         .exec(fixture.pool.connection())
