@@ -123,6 +123,7 @@ mod oauth_login_tests;
 mod options;
 mod organization;
 mod organization_approval;
+mod organization_approval_audit;
 mod organization_approval_budget_execution;
 #[cfg(test)]
 mod organization_approval_budget_execution_tests;

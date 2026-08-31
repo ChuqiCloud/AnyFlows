@@ -30,6 +30,7 @@ use crate::{
         organization_approval_requests, organization_approval_templates,
         organization_approval_timeout_leases, organization_memberships, organizations,
     },
+    organization_approval_audit::{insert_decision_audit, validate_decision_audit},
 };
 
 const ACTIVE_ORGANIZATION: i16 = 1;
@@ -1231,6 +1232,11 @@ impl OrganizationApprovalRepository {
             let _ = rollback(transaction).await;
             return Err(error);
         }
+        if let Err(error) = insert_decision_audit(&transaction, &request, &decision, &model).await {
+            // 决定、通知和审计必须作为同一事实提交，避免出现无法追溯的孤立决定。
+            let _ = rollback(transaction).await;
+            return Err(error);
+        }
         let record = decision_record(model)?;
         if let Err(error) = commit(transaction).await {
             return Err(if commit_outcome_unknown {
@@ -1406,6 +1412,7 @@ async fn existing_decision_outcome_with_notification(
 ) -> Result<OrganizationApprovalDecisionOutcome, OrganizationApprovalRepositoryError> {
     let outcome = existing_decision_outcome(existing.clone(), decision)?;
     validate_decision_notification(pool, &existing).await?;
+    validate_decision_audit(pool, &existing).await?;
     Ok(outcome)
 }
 
