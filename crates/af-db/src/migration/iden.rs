@@ -2317,6 +2317,34 @@ pub(in crate::migration) mod organization_approval_decisions {
     }
 }
 
+pub(in crate::migration) mod organization_approval_notifications {
+    use super::DeriveIden;
+
+    /// 企业审批决定站内通知事实表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_approval_notifications")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业审批站内通知固定字段标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        NotificationKey,
+        OrganizationId,
+        RequestId,
+        DecisionId,
+        RecipientUserId,
+        DecisionKind,
+        TemplateVersion,
+        OccurredAt,
+        CreatedAt,
+    }
+}
+
 pub(in crate::migration) mod organization_approval_member_executions {
     use super::DeriveIden;
 

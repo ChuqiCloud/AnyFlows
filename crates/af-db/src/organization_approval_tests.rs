@@ -8,9 +8,14 @@ use af_domain::{
     OrganizationApprovalTemplateDigest, OrganizationApprovalTemplateKey,
     OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationId, UserId,
 };
-use sea_orm::{ActiveModelTrait, Set, entity::prelude::TimeDateTimeWithTimeZone};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set,
+    entity::prelude::TimeDateTimeWithTimeZone,
+};
 
-use crate::entity::{groups, organization_approval_requests, users};
+use crate::entity::{
+    groups, organization_approval_notifications, organization_approval_requests, users,
+};
 use crate::{
     DatabaseOptions, MigrationOptions, OrganizationApprovalDecisionOutcome,
     OrganizationApprovalDecisionWrite, OrganizationApprovalRepository,
@@ -136,10 +141,78 @@ async fn template_request_and_decision_facts_are_scoped_and_idempotent()
     assert!(matches!(
         fixture
             .repository
-            .record_decision(OrganizationApprovalDecisionWrite::new(decision))
+            .record_decision(OrganizationApprovalDecisionWrite::new(decision.clone()))
             .await?,
         OrganizationApprovalDecisionOutcome::Existing(_)
     ));
+    let approved = fixture
+        .repository
+        .decision_for_request(fixture.organization_id, request_id)
+        .await?
+        .expect("批准决定必须存在");
+    let notification = organization_approval_notifications::Entity::find()
+        .filter(
+            organization_approval_notifications::Column::OrganizationId
+                .eq(fixture.organization_id.get()),
+        )
+        .filter(organization_approval_notifications::Column::DecisionId.eq(approved.id().get()))
+        .one(fixture.pool.connection())
+        .await?
+        .expect("批准决定必须在同一事务写入站内通知事实");
+    assert_eq!(
+        notification.notification_key,
+        "05050505050505050505050505050505"
+    );
+    assert_eq!(notification.request_id, request_id.get());
+    assert_eq!(notification.recipient_user_id, fixture.owner_id.get());
+    assert_eq!(
+        notification.decision_kind,
+        OrganizationApprovalDecisionKind::Approved.code()
+    );
+    assert_eq!(notification.template_version, "approval-v1");
+
+    let rejected_request = OrganizationApprovalRequest::new(
+        OrganizationApprovalRequestKey::new([7; 16])?,
+        fixture.organization_id,
+        OrganizationApprovalResourceType::Budget,
+        "monthly limit 50".to_owned(),
+        second.id(),
+        second.version(),
+        fixture.owner_id,
+        now + 3_600,
+    )?;
+    let rejected_request_id = match fixture
+        .repository
+        .create_request(OrganizationApprovalRequestWrite::new(rejected_request))
+        .await?
+    {
+        OrganizationApprovalRequestCreateOutcome::Created(record) => record.id(),
+        OrganizationApprovalRequestCreateOutcome::Existing(_) => panic!("拒绝测试申请必须创建"),
+    };
+    let rejected = OrganizationApprovalDecision::new(
+        OrganizationApprovalDecisionKey::new([8; 16])?,
+        fixture.organization_id,
+        rejected_request_id,
+        OrganizationApprovalDecisionKind::Rejected,
+        Some(fixture.owner_id),
+        None,
+        now,
+    )?;
+    assert!(matches!(
+        fixture
+            .repository
+            .record_decision(OrganizationApprovalDecisionWrite::new(rejected))
+            .await?,
+        OrganizationApprovalDecisionOutcome::Created(_)
+    ));
+    let notification_count = organization_approval_notifications::Entity::find()
+        .filter(
+            organization_approval_notifications::Column::OrganizationId
+                .eq(fixture.organization_id.get()),
+        )
+        .count(fixture.pool.connection())
+        .await?;
+    assert_eq!(notification_count, 2);
     let second_decision = OrganizationApprovalDecision::new(
         OrganizationApprovalDecisionKey::new([6; 16])?,
         fixture.organization_id,
@@ -155,6 +228,16 @@ async fn template_request_and_decision_facts_are_scoped_and_idempotent()
             .record_decision(OrganizationApprovalDecisionWrite::new(second_decision))
             .await,
         Err(OrganizationApprovalRepositoryError::AlreadyDecided)
+    );
+    organization_approval_notifications::Entity::delete_by_id(notification.id)
+        .exec(fixture.pool.connection())
+        .await?;
+    assert_eq!(
+        fixture
+            .repository
+            .record_decision(OrganizationApprovalDecisionWrite::new(decision))
+            .await,
+        Err(OrganizationApprovalRepositoryError::Invariant)
     );
 
     fixture.pool.close().await?;
@@ -262,6 +345,27 @@ async fn timeout_scan_and_decision_are_bounded_and_idempotent() -> Result<(), Bo
         .await?
         .expect("超时扫描必须留下决定事实");
     assert_eq!(decision.kind(), OrganizationApprovalDecisionKind::TimedOut);
+    let notification = organization_approval_notifications::Entity::find()
+        .filter(
+            organization_approval_notifications::Column::OrganizationId
+                .eq(fixture.organization_id.get()),
+        )
+        .filter(organization_approval_notifications::Column::DecisionId.eq(decision.id().get()))
+        .one(fixture.pool.connection())
+        .await?
+        .expect("超时决定必须在同一事务写入站内通知事实");
+    assert_eq!(notification.recipient_user_id, fixture.owner_id.get());
+    assert_eq!(
+        notification.decision_kind,
+        OrganizationApprovalDecisionKind::TimedOut.code()
+    );
+    organization_approval_notifications::Entity::delete_by_id(notification.id)
+        .exec(fixture.pool.connection())
+        .await?;
+    assert_eq!(
+        fixture.repository.record_timeout(&commands[0], now).await,
+        Err(OrganizationApprovalRepositoryError::Invariant)
+    );
 
     fixture.pool.close().await?;
     Ok(())
