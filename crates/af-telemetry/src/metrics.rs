@@ -50,6 +50,8 @@ pub const REQUEST_RATE_LIMIT_RULES_PER_CHECK: &str = "request_rate_limit_rules_p
 pub const REQUEST_RATE_LIMIT_RETRY_AFTER_SECONDS: &str = "request_rate_limit_retry_after_seconds";
 /// 支付 webhook 确认结果；不代表 Provider 投递或用户已读状态。
 pub const PAYMENT_WEBHOOK_CONFIRMATIONS_TOTAL: &str = "payment_webhook_confirmations_total";
+/// 企业审批超时扫描的固定结果分类。
+pub const ORGANIZATION_APPROVAL_TIMEOUT_TOTAL: &str = "organization_approval_timeout_total";
 
 const REQUESTS_DESCRIPTION: &str = "AnyFlows 请求总数。";
 const REQUEST_DURATION_DESCRIPTION: &str = "AnyFlows 请求总耗时。";
@@ -68,11 +70,14 @@ const REQUEST_RATE_LIMIT_RULES_DESCRIPTION: &str = "AnyFlows 单次请求速率�
 const REQUEST_RATE_LIMIT_RETRY_AFTER_DESCRIPTION: &str = "AnyFlows 请求速率限制拒绝后的等待时间。";
 const PAYMENT_WEBHOOK_CONFIRMATIONS_DESCRIPTION: &str =
     "AnyFlows 支付 webhook 确认结果总数；不代表通知投递成功。";
+pub(crate) const ORGANIZATION_APPROVAL_TIMEOUT_DESCRIPTION: &str =
+    "AnyFlows 企业审批超时扫描结果总数。";
 
 const METRICS_CALLSITE: &str = module_path!();
 const OTHER_LABEL: &str = "other";
 
 const PAYMENT_CONFIRMATION_LABELS: &[&str] = &["outcome"];
+const ORGANIZATION_APPROVAL_TIMEOUT_LABELS: &[&str] = &["outcome"];
 
 // 固定 bucket 避免 exporter 回退为 summary，并覆盖网关的毫秒级到长流式请求。
 const REQUEST_DURATION_BUCKETS: &[f64] = &[
@@ -266,6 +271,21 @@ pub fn record_payment_confirmation(outcome: MetricPaymentConfirmationOutcome) {
     .increment(1);
 }
 
+/// 记录企业审批超时扫描的有限结果；不携带企业、申请或资源标识。
+pub fn record_organization_approval_timeout(
+    outcome: MetricOrganizationApprovalTimeoutOutcome,
+    count: u64,
+) {
+    if count == 0 {
+        return;
+    }
+    ::metrics::counter!(
+        ORGANIZATION_APPROVAL_TIMEOUT_TOTAL,
+        "outcome" => outcome.as_str()
+    )
+    .increment(count);
+}
+
 macro_rules! registered_label {
     ($(#[$meta:meta])* $name:ident) => {
         $(#[$meta])*
@@ -375,6 +395,34 @@ pub enum MetricPaymentConfirmationOutcome {
     Unavailable,
     Invariant,
     InvalidRequest,
+}
+
+/// 企业审批超时扫描使用的固定结果分类，避免把申请标识写入指标标签。
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum MetricOrganizationApprovalTimeoutOutcome {
+    LeaseHeld,
+    ScanFailed,
+    Applied,
+    Existing,
+    Skipped,
+    Failed,
+    OutcomeUnknownReplay,
+    Truncated,
+}
+
+impl MetricOrganizationApprovalTimeoutOutcome {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::LeaseHeld => "lease_held",
+            Self::ScanFailed => "scan_failed",
+            Self::Applied => "applied",
+            Self::Existing => "existing",
+            Self::Skipped => "skipped",
+            Self::Failed => "failed",
+            Self::OutcomeUnknownReplay => "outcome_unknown_replay",
+            Self::Truncated => "truncated",
+        }
+    }
 }
 
 impl MetricPaymentConfirmationOutcome {
@@ -626,5 +674,10 @@ pub(crate) fn describe_metric_families() {
         PAYMENT_WEBHOOK_CONFIRMATIONS_TOTAL,
         Unit::Count,
         PAYMENT_WEBHOOK_CONFIRMATIONS_DESCRIPTION
+    );
+    ::metrics::describe_counter!(
+        ORGANIZATION_APPROVAL_TIMEOUT_TOTAL,
+        Unit::Count,
+        ORGANIZATION_APPROVAL_TIMEOUT_DESCRIPTION
     );
 }

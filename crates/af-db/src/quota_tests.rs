@@ -528,7 +528,8 @@ async fn subscription_selection_skips_insufficient_candidate_and_falls_back_to_w
     let fixture = fixture(config).await?;
     let daily = add_subscription(&fixture, 0xa5, 20, SubscriptionCycle::Daily).await?;
     let monthly = add_subscription(&fixture, 0xa6, 100, SubscriptionCycle::Monthly).await?;
-    assert!(daily.window_ends_at < monthly.window_ends_at);
+    // 月末时两个日历窗口都可能在下一个月第一天结束；相等时由订阅主键顺序稳定决策。
+    assert!(daily.window_ends_at <= monthly.window_ends_at);
 
     let subscription_id = reservation_id(0xa7);
     fixture

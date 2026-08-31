@@ -30,6 +30,8 @@ test('审批工作台覆盖权限、事实状态和并发冲突', () => {
   assert.match(api, /createOrganizationApprovalRequest/)
   assert.match(api, /decideOrganizationApprovalRequest/)
   assert.match(api, /invalidateQueries/)
+  assert.match(api, /refetchInterval: enabled \? ORGANIZATION_APPROVAL_REQUEST_REFRESH_INTERVAL_MS : false/)
+  assert.match(api, /refetchIntervalInBackground: false/)
 })
 
 test('审批中英文文案和生成客户端均存在', () => {

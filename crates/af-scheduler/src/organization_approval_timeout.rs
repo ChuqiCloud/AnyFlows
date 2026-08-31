@@ -332,12 +332,24 @@ where
     where
         F: Future<Output = ()> + Send,
     {
+        self.run_periodic_until_with_report(shutdown, |_| {}).await;
+    }
+
+    /// 启动即扫描，并将每轮低基数报告交给组合根；调度 crate 不依赖 telemetry。
+    pub async fn run_periodic_until_with_report<F, R>(&self, shutdown: F, mut on_report: R)
+    where
+        F: Future<Output = ()> + Send,
+        R: FnMut(OrganizationApprovalTimeoutRunReport) + Send,
+    {
         tokio::pin!(shutdown);
         loop {
             tokio::select! {
                 biased;
                 () = &mut shutdown => return,
-                report = self.run_once() => log_report(report),
+                report = self.run_once() => {
+                    on_report(report);
+                    log_report(report);
+                },
             }
             tokio::select! {
                 biased;
