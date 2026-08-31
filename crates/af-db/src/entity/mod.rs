@@ -100,6 +100,7 @@ pub(crate) mod organization_service_account_audit_logs;
 pub(crate) mod organization_service_account_budget_bindings;
 pub(crate) mod organization_service_account_keys;
 pub(crate) mod organization_service_accounts;
+pub(crate) mod organization_sso_domain_reverification_leases;
 pub(crate) mod organization_sso_domains;
 pub(crate) mod organization_sso_identities;
 pub(crate) mod organization_sso_login_transactions;

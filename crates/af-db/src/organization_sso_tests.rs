@@ -3,11 +3,12 @@ use std::{error::Error, time::Duration};
 use af_domain::{
     DEFAULT_ORGANIZATION_SSO_RECHECK_INTERVAL_SECONDS, OrganizationEntitlementCapacity,
     OrganizationEntitlementSnapshot, OrganizationId, OrganizationInvitationKey,
-    OrganizationMembershipStatus, OrganizationRole, OrganizationSsoDnsTxtAnswers,
-    OrganizationSsoDnsVerification, OrganizationSsoDomain, OrganizationSsoDomainProof,
-    OrganizationSsoDomainProofToken, OrganizationSsoDomainStatus, OrganizationSsoEnforcementPolicy,
-    OrganizationSsoIdentityBindingMethod, OrganizationSsoIdentityStatus, OrganizationSsoProtocol,
-    OrganizationSsoProviderKey, OrganizationSsoProviderStatus, UserId,
+    OrganizationMembershipStatus, OrganizationRole, OrganizationSsoDnsReverification,
+    OrganizationSsoDnsTxtAnswers, OrganizationSsoDnsVerification, OrganizationSsoDomain,
+    OrganizationSsoDomainProof, OrganizationSsoDomainProofToken, OrganizationSsoDomainStatus,
+    OrganizationSsoEnforcementPolicy, OrganizationSsoIdentityBindingMethod,
+    OrganizationSsoIdentityStatus, OrganizationSsoProtocol, OrganizationSsoProviderKey,
+    OrganizationSsoProviderStatus, UserId,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, Set,
@@ -23,7 +24,7 @@ use crate::{
     OrganizationSsoRepositoryError,
     entity::{
         authentication_settings, groups, organization_entitlements, organization_memberships,
-        organization_sso_identities, organization_sso_policies, users,
+        organization_sso_domains, organization_sso_identities, organization_sso_policies, users,
     },
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -157,6 +158,29 @@ async fn sso_policy_repository_persists_and_gates_required() -> Result<(), Box<d
         "required.example.com",
     )
     .await?;
+    let now = TimeDateTimeWithTimeZone::now_utc();
+    let verified_domain = organization_sso_domains::Entity::find()
+        .filter(organization_sso_domains::Column::OrganizationId.eq(organization_id.get()))
+        .filter(organization_sso_domains::Column::Domain.eq("required.example.com"))
+        .one(fixture.pool.connection())
+        .await?
+        .expect("Required 策略域名必须存在");
+    let mut verified_domain = verified_domain.into_active_model();
+    verified_domain.proof_expires_at = Set(Some(TimeDateTimeWithTimeZone::from_unix_timestamp(
+        now.unix_timestamp() - 1,
+    )?));
+    verified_domain.update(fixture.pool.connection()).await?;
+    assert!(
+        fixture
+            .sso
+            .discovery_available(
+                crate::OrganizationSsoDiscoveryLocator::Domain(OrganizationSsoDomain::new(
+                    "required.example.com",
+                )?),
+                now.unix_timestamp(),
+            )
+            .await?
+    );
 
     let policy_model = organization_sso_policies::Entity::find_by_id(organization_id.get())
         .one(fixture.pool.connection())
@@ -1339,6 +1363,212 @@ async fn sso_repository_closes_domain_cas_and_cross_organization_membership()
             .await,
         Err(OrganizationSsoRepositoryError::Expired)
     );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn sso_domain_reverification_scans_refreshes_revokes_and_preserves_boundaries()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let first_organization = fixture.organizations_ids[0];
+    let second_organization = fixture.organizations_ids[1];
+    let first_provider = provider_key(9);
+    let second_provider = provider_key(10);
+    for (organization_id, provider_key, name) in [
+        (first_organization, first_provider, "reverify.example.com"),
+        (
+            second_organization,
+            second_provider,
+            "other-reverify.example.com",
+        ),
+    ] {
+        fixture
+            .sso
+            .create_provider(
+                organization_id,
+                OrganizationSsoProviderCreate::new(
+                    provider_key,
+                    OrganizationSsoProtocol::Saml,
+                    OrganizationSsoProviderStatus::Active,
+                    format!("复验 {name}"),
+                    None,
+                    None,
+                ),
+            )
+            .await?;
+    }
+    add_verified_domain(
+        &fixture,
+        first_organization,
+        first_provider,
+        "reverify.example.com",
+    )
+    .await?;
+    add_verified_domain(
+        &fixture,
+        second_organization,
+        second_provider,
+        "other-reverify.example.com",
+    )
+    .await?;
+
+    let now = TimeDateTimeWithTimeZone::now_utc().unix_timestamp();
+    let first_verified_at = fixture
+        .sso
+        .list_domains(first_organization)
+        .await?
+        .into_iter()
+        .next()
+        .and_then(|domain| domain.verified_at());
+    let overdue = TimeDateTimeWithTimeZone::from_unix_timestamp(now - 1)?;
+    let due_domains = organization_sso_domains::Entity::find()
+        .all(fixture.pool.connection())
+        .await?;
+    for model in due_domains {
+        let mut active = model.into_active_model();
+        active.recheck_at = Set(Some(overdue));
+        active.update(fixture.pool.connection()).await?;
+    }
+
+    let first_page = fixture
+        .sso
+        .list_domain_reverification_due(now, None, 1)
+        .await?;
+    let (first_targets, first_scanned, first_cursor) = first_page.into_parts();
+    assert_eq!(first_scanned, 1);
+    assert_eq!(first_targets.len(), 1);
+    let first_target = first_targets.into_iter().next().expect("第一页必须有目标");
+    let cursor = first_cursor.expect("两条到期域名必须返回游标");
+    let second_page = fixture
+        .sso
+        .list_domain_reverification_due(now, Some(cursor), 1)
+        .await?;
+    let (second_targets, second_scanned, second_cursor) = second_page.into_parts();
+    assert_eq!(second_scanned, 1);
+    assert_eq!(second_targets.len(), 1);
+    assert!(second_cursor.is_none());
+    let second_target = second_targets.into_iter().next().expect("第二页必须有目标");
+
+    let wrong_scope = crate::OrganizationSsoDomainReverificationTarget::new(
+        second_organization,
+        first_target.domain_id(),
+        first_target.domain().clone(),
+        first_target.proof_digest().to_owned(),
+        first_target.expected_version(),
+    )?;
+    assert_eq!(
+        fixture
+            .sso
+            .revoke_domain_after_reverification(&wrong_scope, now)
+            .await?,
+        crate::OrganizationSsoDomainReverificationOutcome::Skipped
+    );
+    assert_eq!(
+        fixture
+            .sso
+            .domain(first_organization, first_target.domain_id())
+            .await?
+            .status(),
+        OrganizationSsoDomainStatus::Verified
+    );
+
+    let refresh = OrganizationSsoDnsReverification::verify(
+        first_target.domain(),
+        OrganizationSsoDomainStatus::Verified,
+        first_target.proof_digest(),
+        &OrganizationSsoDnsTxtAnswers::new(vec![digest('e')]),
+        now,
+        DEFAULT_ORGANIZATION_SSO_RECHECK_INTERVAL_SECONDS,
+    )?;
+    assert_eq!(
+        fixture
+            .sso
+            .refresh_domain_reverification(&first_target, now, refresh.recheck_at())
+            .await?,
+        crate::OrganizationSsoDomainReverificationOutcome::Refreshed
+    );
+    assert_eq!(
+        fixture
+            .sso
+            .refresh_domain_reverification(&first_target, now, refresh.recheck_at())
+            .await?,
+        crate::OrganizationSsoDomainReverificationOutcome::Existing
+    );
+    let refreshed = fixture
+        .sso
+        .domain(first_organization, first_target.domain_id())
+        .await?;
+    assert_eq!(refreshed.status(), OrganizationSsoDomainStatus::Verified);
+    assert_eq!(refreshed.verified_at(), first_verified_at);
+    assert_eq!(refreshed.recheck_at(), Some(refresh.recheck_at()));
+    assert_eq!(
+        fixture
+            .sso
+            .revoke_domain_after_reverification(&first_target, now)
+            .await?,
+        crate::OrganizationSsoDomainReverificationOutcome::Skipped
+    );
+
+    assert_eq!(
+        fixture
+            .sso
+            .revoke_domain_after_reverification(&second_target, now)
+            .await?,
+        crate::OrganizationSsoDomainReverificationOutcome::Revoked
+    );
+    let revoked = fixture
+        .sso
+        .domain(second_organization, second_target.domain_id())
+        .await?;
+    assert_eq!(revoked.status(), OrganizationSsoDomainStatus::Revoked);
+    assert_eq!(revoked.recheck_at(), None);
+    assert!(revoked.verified_at().is_some());
+    assert_eq!(
+        fixture
+            .sso
+            .revoke_domain_after_reverification(&second_target, now)
+            .await?,
+        crate::OrganizationSsoDomainReverificationOutcome::Existing
+    );
+    assert_eq!(
+        fixture
+            .sso
+            .refresh_domain_reverification(&second_target, now, refresh.recheck_at())
+            .await?,
+        crate::OrganizationSsoDomainReverificationOutcome::Skipped
+    );
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn sso_domain_reverification_lease_isolated_between_repository_instances()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let first = fixture
+        .sso
+        .acquire_domain_reverification_lease(10_000, Duration::from_secs(60))
+        .await?;
+    assert!(matches!(
+        first,
+        crate::OrganizationSsoDomainReverificationLeaseOutcome::Acquired(_)
+    ));
+    let second_repository =
+        OrganizationSsoProviderRepository::new(fixture.pool.clone(), Duration::from_secs(5))?;
+    assert_eq!(
+        second_repository
+            .acquire_domain_reverification_lease(10_001, Duration::from_secs(60))
+            .await?,
+        crate::OrganizationSsoDomainReverificationLeaseOutcome::Held
+    );
+    assert!(matches!(
+        second_repository
+            .acquire_domain_reverification_lease(10_061, Duration::from_secs(60))
+            .await?,
+        crate::OrganizationSsoDomainReverificationLeaseOutcome::Acquired(_)
+    ));
     fixture.pool.close().await?;
     Ok(())
 }

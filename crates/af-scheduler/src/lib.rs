@@ -9,6 +9,7 @@ mod failure;
 mod health;
 mod index;
 mod organization_approval_timeout;
+mod organization_sso_domain_reverification;
 mod probe;
 mod retry;
 mod stable_first;
@@ -54,6 +55,17 @@ pub use organization_approval_timeout::{
     MAX_ORGANIZATION_APPROVAL_TIMEOUT_MAX_BATCHES_PER_RUN, OrganizationApprovalTimeoutRunReport,
     OrganizationApprovalTimeoutStore, OrganizationApprovalTimeoutSupervisor,
     OrganizationApprovalTimeoutSupervisorConfig, OrganizationApprovalTimeoutSupervisorConfigError,
+};
+pub use organization_sso_domain_reverification::{
+    DEFAULT_ORGANIZATION_SSO_DOMAIN_REVERIFICATION_BATCH_SIZE,
+    DEFAULT_ORGANIZATION_SSO_DOMAIN_REVERIFICATION_INTERVAL,
+    DEFAULT_ORGANIZATION_SSO_DOMAIN_REVERIFICATION_LEASE,
+    DEFAULT_ORGANIZATION_SSO_DOMAIN_REVERIFICATION_MAX_BATCHES_PER_RUN,
+    MAX_ORGANIZATION_SSO_DOMAIN_REVERIFICATION_MAX_BATCHES_PER_RUN,
+    OrganizationSsoDomainReverificationResolver, OrganizationSsoDomainReverificationRunReport,
+    OrganizationSsoDomainReverificationStore, OrganizationSsoDomainReverificationSupervisor,
+    OrganizationSsoDomainReverificationSupervisorConfig,
+    OrganizationSsoDomainReverificationSupervisorConfigError,
 };
 pub use probe::{
     ChannelProbe, ChannelProbeRunReport, ChannelProbeStatus, ChannelProbeStore,

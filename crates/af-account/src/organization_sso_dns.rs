@@ -108,7 +108,27 @@ impl ControlledOrganizationSsoDnsResolver {
         &self,
         proof: &OrganizationSsoDomainProof,
     ) -> Result<OrganizationSsoDnsTxtAnswers, OrganizationSsoDnsResolverError> {
-        let query_name = format!("{}.", proof.txt_record_name());
+        self.lookup_txt_name(&proof.txt_record_name()).await
+    }
+
+    /// 按领域域名查询固定 `_anyflows-sso` TXT 记录，供后台持续复验使用。
+    pub async fn lookup_txt_for_domain(
+        &self,
+        domain: &af_domain::OrganizationSsoDomain,
+    ) -> Result<OrganizationSsoDnsTxtAnswers, OrganizationSsoDnsResolverError> {
+        self.lookup_txt_name(&format!(
+            "{}.{domain}",
+            af_domain::ORGANIZATION_SSO_DNS_PROOF_LABEL,
+            domain = domain.as_str()
+        ))
+        .await
+    }
+
+    async fn lookup_txt_name(
+        &self,
+        record_name: &str,
+    ) -> Result<OrganizationSsoDnsTxtAnswers, OrganizationSsoDnsResolverError> {
+        let query_name = format!("{}.", record_name);
         let lookup = timeout(
             self.timeout,
             self.resolver.lookup(query_name, RecordType::TXT),
@@ -175,6 +195,15 @@ pub trait OrganizationSsoDnsTxtResolver: Send + Sync {
     ) -> Result<OrganizationSsoDnsTxtAnswers, OrganizationSsoDnsResolverError>;
 }
 
+/// 按域名查询固定 TXT 记录，供持续复验任务使用；不接受客户端自定义查询名。
+#[async_trait]
+pub trait OrganizationSsoDnsDomainResolver: Send + Sync {
+    async fn lookup_txt_for_domain(
+        &self,
+        domain: &af_domain::OrganizationSsoDomain,
+    ) -> Result<OrganizationSsoDnsTxtAnswers, OrganizationSsoDnsResolverError>;
+}
+
 #[async_trait]
 impl OrganizationSsoDnsTxtResolver for ControlledOrganizationSsoDnsResolver {
     async fn lookup_txt(
@@ -182,6 +211,16 @@ impl OrganizationSsoDnsTxtResolver for ControlledOrganizationSsoDnsResolver {
         proof: &OrganizationSsoDomainProof,
     ) -> Result<OrganizationSsoDnsTxtAnswers, OrganizationSsoDnsResolverError> {
         Self::lookup_txt(self, proof).await
+    }
+}
+
+#[async_trait]
+impl OrganizationSsoDnsDomainResolver for ControlledOrganizationSsoDnsResolver {
+    async fn lookup_txt_for_domain(
+        &self,
+        domain: &af_domain::OrganizationSsoDomain,
+    ) -> Result<OrganizationSsoDnsTxtAnswers, OrganizationSsoDnsResolverError> {
+        ControlledOrganizationSsoDnsResolver::lookup_txt_for_domain(self, domain).await
     }
 }
 

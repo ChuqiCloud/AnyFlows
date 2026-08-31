@@ -156,6 +156,7 @@ pub use organization_sso::{
 pub use organization_sso_domain_verification::{
     DEFAULT_ORGANIZATION_SSO_RECHECK_INTERVAL_SECONDS, MAX_ORGANIZATION_SSO_PROOF_TTL_SECONDS,
     MIN_ORGANIZATION_SSO_PROOF_TTL_SECONDS, ORGANIZATION_SSO_DNS_PROOF_LABEL,
+    OrganizationSsoDnsReverification, OrganizationSsoDnsReverificationError,
     OrganizationSsoDnsTxtAnswers, OrganizationSsoDnsVerification,
     OrganizationSsoDnsVerificationError, OrganizationSsoDomainProof,
     OrganizationSsoDomainProofError, OrganizationSsoDomainProofToken,

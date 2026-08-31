@@ -635,6 +635,9 @@ pub use organization_service_account_budget::{
 };
 pub use organization_sso::{
     OrganizationSsoDiscoveryLocator, OrganizationSsoDomainCreate, OrganizationSsoDomainRecord,
+    OrganizationSsoDomainReverificationBatch, OrganizationSsoDomainReverificationCursor,
+    OrganizationSsoDomainReverificationLease, OrganizationSsoDomainReverificationLeaseOutcome,
+    OrganizationSsoDomainReverificationOutcome, OrganizationSsoDomainReverificationTarget,
     OrganizationSsoDomainUpdate, OrganizationSsoIdentityCreate, OrganizationSsoIdentityRecord,
     OrganizationSsoLoginTransactionCreate, OrganizationSsoLoginTransactionRecord,
     OrganizationSsoLoginTransactionResult, OrganizationSsoPolicyRecord,

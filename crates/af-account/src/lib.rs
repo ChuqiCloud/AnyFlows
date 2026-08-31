@@ -60,8 +60,9 @@ pub use organization_invitation::{
 pub use organization_sso_dns::{
     ControlledOrganizationSsoDnsResolver, MAX_ORGANIZATION_SSO_DNS_NAMESERVERS,
     MAX_ORGANIZATION_SSO_DNS_TXT_ANSWER_BYTES, MAX_ORGANIZATION_SSO_DNS_TXT_ANSWERS,
-    MAX_ORGANIZATION_SSO_DNS_TXT_TOTAL_BYTES, OrganizationSsoDnsResolverConfigError,
-    OrganizationSsoDnsResolverError, OrganizationSsoDnsTxtResolver,
+    MAX_ORGANIZATION_SSO_DNS_TXT_TOTAL_BYTES, OrganizationSsoDnsDomainResolver,
+    OrganizationSsoDnsResolverConfigError, OrganizationSsoDnsResolverError,
+    OrganizationSsoDnsTxtResolver,
 };
 pub use organization_sso_login::{
     ORGANIZATION_SSO_OIDC_CALLBACK_PATH, ORGANIZATION_SSO_SAML_CALLBACK_PATH,
