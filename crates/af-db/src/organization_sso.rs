@@ -2495,10 +2495,10 @@ async fn discovery_available_inner(
             OrganizationSsoProtocol::try_from(provider.protocol).map_err(|_| invariant())?;
         let _key = OrganizationSsoProviderKey::from_persistence_key(&provider.provider_key)
             .map_err(|_| invariant())?;
-        if status == OrganizationSsoProviderStatus::Active {
-            if active_provider.replace(provider).is_some() {
-                return Err(OrganizationSsoRepositoryError::Conflict);
-            }
+        if status == OrganizationSsoProviderStatus::Active
+            && active_provider.replace(provider).is_some()
+        {
+            return Err(OrganizationSsoRepositoryError::Conflict);
         }
     }
     let Some(provider) = active_provider else {
