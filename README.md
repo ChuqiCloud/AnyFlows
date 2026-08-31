@@ -56,6 +56,19 @@ corepack pnpm@10.33.0 --dir web api:check
 corepack pnpm@10.33.0 --dir web check
 ```
 
+### Linux Docker 部署
+
+当前 Docker 首切片使用 Linux host 网络，以保持服务现有的 loopback 监听安全边界。应用监听宿主机 `127.0.0.1:8080`，PostgreSQL 和 Redis 分别只监听 `127.0.0.1:5432` 与 `127.0.0.1:6379`；公网访问应由宿主机上的 Nginx/Caddy 等反向代理转发，Compose 不直接发布公网端口。
+
+```bash
+./scripts/deploy/up.sh
+curl http://127.0.0.1:8080/healthz
+docker compose --env-file .env logs -f app
+docker compose --env-file .env down
+```
+
+首次运行会调用 `scripts/deploy/init-env.sh` 生成权限为 `0600` 的 `.env`，其中包含随机 PostgreSQL 密码、管理会话签名密钥和凭据加密密钥；已有 `.env` 时脚本拒绝覆盖。此部署形态要求 Docker Engine、Compose 插件和 OpenSSL，并仅支持 Linux 主机；数据库、Redis 和计费 WAL 使用 Docker 命名卷，删除容器不会删除数据。
+
 ## 架构：crate 分层
 
 采用模块化单体，按 crate 强制依赖方向（下层不得依赖上层）。依赖边界由 `cargo xtask check-deps` 在 CI 中**强制校验**（fail-closed，见 `tools/xtask`）。

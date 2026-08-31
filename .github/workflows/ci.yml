@@ -32,6 +32,7 @@ jobs:
       rust: ${{ steps.paths.outputs.rust }}
       database: ${{ steps.paths.outputs.database }}
       redis: ${{ steps.paths.outputs.redis }}
+      deployment: ${{ steps.paths.outputs.deployment }}
     steps:
       - name: Configure external Gitea checkout endpoint
         if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
@@ -60,6 +61,7 @@ jobs:
               echo "rust=true"
               echo "database=true"
               echo "redis=true"
+              echo "deployment=true"
             } >> "$GITHUB_OUTPUT"
           }
 
@@ -106,7 +108,62 @@ jobs:
             echo "rust=$(matches '^(crates/|tools/|\.cargo/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|rustfmt\.toml$|clippy\.toml$|deny\.toml$)')"
             echo "database=$(matches '^(crates/af-db/|tools/ci/run-db-migration-test\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
             echo "redis=$(matches '^(crates/af-cache/|tools/ci/run-cache-redis-test\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
+            echo "deployment=$(matches '^(Dockerfile$|docker-compose\.ya?ml$|\.dockerignore$|scripts/deploy/)')"
           } >> "$GITHUB_OUTPUT"
+
+  deployment:
+    name: Docker deployment checks
+    needs: changes
+    if: ${{ needs.changes.outputs.deployment == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out repository
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
+
+      - name: Check Docker tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker version
+          docker compose version
+
+      - name: Render Compose configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            'POSTGRES_PASSWORD=ci-only-password' \
+            'AF_AUTH__SESSION_SIGNING_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' \
+            'AF_CREDENTIAL_ENCRYPTION__KEY_ID=ci' \
+            'AF_CREDENTIAL_ENCRYPTION__KEY=BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' \
+            > .env
+          docker compose --env-file .env config --quiet
+
+      - name: Build runtime image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --target runtime --tag anyflows:ci .
+
+      - name: Verify runtime security contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect anyflows:ci --format '{{.Config.User}}')" = "anyflows"
+          test "$(docker image inspect anyflows:ci --format '{{json .Config.Healthcheck.Test}}')" = '["CMD-SHELL","wget --no-verbose --tries=1 --spider http://127.0.0.1:8080/healthz || exit 1"]'
+          test "$(docker image inspect anyflows:ci --format '{{json .Config.Volumes}}')" = '{"/app/data":{}}'
 
   release-package:
     name: Linux amd64 release package
