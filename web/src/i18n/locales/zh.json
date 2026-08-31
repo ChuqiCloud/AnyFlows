@@ -2955,7 +2955,17 @@
       "orPassword": "或使用密码",
       "orAccount": "或使用账户认证",
       "passkey": "使用 Passkey 登录",
-      "passkeyVerifying": "正在验证 Passkey"
+      "passkeyVerifying": "正在验证 Passkey",
+      "organizationSso": {
+        "title": "企业 SSO",
+        "identifier": "企业邮箱或企业标识",
+        "placeholder": "name@company.com 或企业公开标识",
+        "check": "检查企业登录",
+        "checking": "正在检查企业登录",
+        "available": "检测到可用的企业登录方式。",
+        "unavailable": "未找到可用的企业登录方式。",
+        "error": "企业登录暂时不可用，请稍后重试。"
+      }
     },
     "oauthCallback": {
       "title": "正在完成登录",

@@ -2955,7 +2955,17 @@
       "orPassword": "or use a password",
       "orAccount": "or use account sign-in",
       "passkey": "Sign in with Passkey",
-      "passkeyVerifying": "Verifying Passkey"
+      "passkeyVerifying": "Verifying Passkey",
+      "organizationSso": {
+        "title": "Enterprise SSO",
+        "identifier": "Work email or organization ID",
+        "placeholder": "name@company.com or organization ID",
+        "check": "Check enterprise sign-in",
+        "checking": "Checking enterprise sign-in",
+        "available": "An enterprise sign-in method is available.",
+        "unavailable": "No available enterprise sign-in method was found.",
+        "error": "Enterprise sign-in is temporarily unavailable. Try again shortly."
+      }
     },
     "oauthCallback": {
       "title": "Completing sign-in",

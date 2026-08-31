@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use af_admin::{
     ClaimedOrganizationSsoLoginTransaction, ORGANIZATION_SSO_OIDC_CALLBACK_PATH,
-    ORGANIZATION_SSO_SAML_CALLBACK_PATH, OrganizationSsoLoginTransactionService,
+    ORGANIZATION_SSO_SAML_CALLBACK_PATH, OrganizationSsoDiscovery,
+    OrganizationSsoDiscoveryServiceError, OrganizationSsoLoginTransactionService,
     OrganizationSsoLoginTransactionServiceError, OrganizationSsoOidcCallback,
     OrganizationSsoSamlCallback, OrganizationSsoSessionService, OrganizationSsoSessionServiceError,
 };
@@ -22,6 +23,7 @@ use crate::management_session::no_store_json;
 
 const MAX_SAML_CALLBACK_BODY_BYTES: usize = 256 * 1024;
 const ORGANIZATION_SSO_SESSION_EXCHANGE_PATH: &str = "/api/auth/organization-sso/session/exchange";
+const ORGANIZATION_SSO_DISCOVERY_PATH: &str = "/api/auth/organization-sso/discovery";
 
 #[derive(Clone)]
 struct OrganizationSsoLoginHttpState {
@@ -64,12 +66,42 @@ pub(crate) struct OrganizationSsoSessionExchangeErrorResponse {
     message: &'static str,
 }
 
+/// 公开发现请求；identifier 可以是企业公开标识或邮箱，不接受额外字段。
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = OrganizationSsoDiscoveryRequest)]
+pub(crate) struct OrganizationSsoDiscoveryRequest {
+    #[schema(min_length = 1, max_length = 320)]
+    identifier: String,
+}
+
+/// 公开发现响应只返回通用企业 SSO 动作资格，不泄露企业或 Provider 资料。
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = OrganizationSsoDiscoveryResponse)]
+pub(crate) struct OrganizationSsoDiscoveryResponse {
+    available: bool,
+}
+
+/// 公开发现输入无效或依赖不可用时的稳定错误投影。
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = OrganizationSsoDiscoveryErrorResponse)]
+pub(crate) struct OrganizationSsoDiscoveryErrorResponse {
+    code: &'static str,
+    message: &'static str,
+}
+
 /// 构建不需要登录会话的企业 SSO 固定回调路由。
 pub(crate) fn build_organization_sso_login_router(
     service: Arc<dyn OrganizationSsoLoginTransactionService>,
     session_service: Option<Arc<dyn OrganizationSsoSessionService>>,
 ) -> Router {
     let mut router = Router::new()
+        .route(
+            ORGANIZATION_SSO_DISCOVERY_PATH,
+            post(discover_organization_sso),
+        )
         .route(
             ORGANIZATION_SSO_OIDC_CALLBACK_PATH,
             get(complete_oidc_callback),
@@ -90,6 +122,50 @@ pub(crate) fn build_organization_sso_login_router(
         service,
         session_service,
     })
+}
+
+/// 执行无会话企业 SSO 发现；未知和不可用企业统一返回 available=false。
+async fn discover_organization_sso(
+    State(state): State<OrganizationSsoLoginHttpState>,
+    request: Result<Json<OrganizationSsoDiscoveryRequest>, JsonRejection>,
+) -> Response {
+    let Json(request) = match request {
+        Ok(request) => request,
+        Err(_) => return discovery_error(StatusCode::BAD_REQUEST, "invalid_request"),
+    };
+    match state.service.discover(request.identifier).await {
+        Ok(discovery) => discovery_response(discovery),
+        Err(OrganizationSsoDiscoveryServiceError::InvalidInput) => {
+            discovery_error(StatusCode::BAD_REQUEST, "invalid_request")
+        }
+        Err(OrganizationSsoDiscoveryServiceError::Internal) => {
+            discovery_error(StatusCode::SERVICE_UNAVAILABLE, "unavailable")
+        }
+    }
+}
+
+fn discovery_response(discovery: OrganizationSsoDiscovery) -> Response {
+    let mut response = no_store_json(OrganizationSsoDiscoveryResponse {
+        available: discovery.available(),
+    });
+    *response.status_mut() = StatusCode::OK;
+    response
+        .headers_mut()
+        .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+}
+
+fn discovery_error(status: StatusCode, code: &'static str) -> Response {
+    let message = match code {
+        "invalid_request" => "企业 SSO 发现请求无效",
+        _ => "企业 SSO 发现暂不可用",
+    };
+    let mut response = no_store_json(OrganizationSsoDiscoveryErrorResponse { code, message });
+    *response.status_mut() = status;
+    response
+        .headers_mut()
+        .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
 }
 
 /// 在同源 POST 边界消费一次性 ticket，并返回既有站点会话。
@@ -286,9 +362,10 @@ mod tests {
 
     use af_admin::{
         ExchangedOrganizationSsoLoginTicket, IssuedOrganizationSsoLoginTicket, IssuedSession,
-        OrganizationSsoLoginTransactionFuture, OrganizationSsoLoginTransactionStart,
-        OrganizationSsoSessionFuture, OrganizationSsoSessionService,
-        OrganizationSsoSessionServiceError, SessionPrincipal, SessionRole, SessionToken,
+        OrganizationSsoDiscoveryFuture, OrganizationSsoLoginTransactionFuture,
+        OrganizationSsoLoginTransactionStart, OrganizationSsoSessionFuture,
+        OrganizationSsoSessionService, OrganizationSsoSessionServiceError, SessionPrincipal,
+        SessionRole, SessionToken,
     };
     use af_domain::{OrganizationId, UserId};
     use axum::{
@@ -334,6 +411,14 @@ mod tests {
     }
 
     impl OrganizationSsoLoginTransactionService for TestService {
+        fn discover<'a>(&'a self, identifier: String) -> OrganizationSsoDiscoveryFuture<'a> {
+            Box::pin(async move {
+                Ok(OrganizationSsoDiscovery::new(
+                    identifier == "available@example.com",
+                ))
+            })
+        }
+
         fn begin<'a>(
             &'a self,
             _organization_id: OrganizationId,
@@ -577,6 +662,82 @@ mod tests {
         assert_eq!(body["user"]["id"], 42);
         for sensitive in ["ticket-material", "subject", "provider"] {
             assert!(!body.to_string().contains(sensitive));
+        }
+    }
+
+    #[tokio::test]
+    async fn discovery_returns_only_low_information_availability() {
+        let router = build_organization_sso_login_router(Arc::new(TestService), None);
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(ORGANIZATION_SSO_DISCOVERY_PATH)
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"identifier":"available@example.com"}"#))
+                    .expect("请求构造成功"),
+            )
+            .await
+            .expect("路由响应成功");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(CACHE_CONTROL),
+            Some(&HeaderValue::from_static("no-store"))
+        );
+        let body = to_bytes(response.into_body(), 4096)
+            .await
+            .expect("读取发现响应");
+        let body: Value = serde_json::from_slice(&body).expect("解析发现响应");
+        assert_eq!(body, serde_json::json!({"available": true}));
+        for sensitive in [
+            "available@example.com",
+            "organization",
+            "provider",
+            "domain",
+        ] {
+            assert!(!body.to_string().contains(sensitive));
+        }
+    }
+
+    #[tokio::test]
+    async fn discovery_unknown_identifier_keeps_same_response_shape() {
+        let router = build_organization_sso_login_router(Arc::new(TestService), None);
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(ORGANIZATION_SSO_DISCOVERY_PATH)
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"identifier":"unknown@example.com"}"#))
+                    .expect("请求构造成功"),
+            )
+            .await
+            .expect("路由响应成功");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 4096)
+            .await
+            .expect("读取发现响应");
+        let body: Value = serde_json::from_slice(&body).expect("解析发现响应");
+        assert_eq!(body, serde_json::json!({"available": false}));
+    }
+
+    #[tokio::test]
+    async fn discovery_rejects_unknown_fields_and_invalid_json() {
+        let router = build_organization_sso_login_router(Arc::new(TestService), None);
+        for body in [r#"{"identifier":"a@example.com","organization_id":1}"#, "{"] {
+            let response = router
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(ORGANIZATION_SSO_DISCOVERY_PATH)
+                        .header("content-type", "application/json")
+                        .body(Body::from(body))
+                        .expect("请求构造成功"),
+                )
+                .await
+                .expect("路由响应成功");
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         }
     }
 }

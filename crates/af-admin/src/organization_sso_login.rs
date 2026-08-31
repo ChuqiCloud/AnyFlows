@@ -30,6 +30,10 @@ use serde_json::{Value, json};
 use thiserror::Error;
 use zeroize::{Zeroize as _, Zeroizing};
 
+use crate::organization_sso_discovery::{
+    OrganizationSsoDiscovery, OrganizationSsoDiscoveryServiceError, discover as discover_public,
+};
+
 const LOGIN_TRANSACTION_TTL_SECONDS: i64 = 10 * 60;
 const LOGIN_TICKET_TTL_SECONDS: i64 = 2 * 60;
 const TICKET_RANDOM_BYTES: usize = 32;
@@ -39,6 +43,15 @@ const REJECTED_RESULT_CODE: i16 = 2;
 /// 企业 SSO 登录事务服务的异步结果。
 pub type OrganizationSsoLoginTransactionFuture<'a, T> = Pin<
     Box<dyn Future<Output = Result<T, OrganizationSsoLoginTransactionServiceError>> + Send + 'a>,
+>;
+
+/// 企业 SSO 公开发现的异步结果；响应只允许携带低信息资格布尔值。
+pub type OrganizationSsoDiscoveryFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<OrganizationSsoDiscovery, OrganizationSsoDiscoveryServiceError>>
+            + Send
+            + 'a,
+    >,
 >;
 
 /// 登录事务启动后可交给 HTTP 层的脱敏绑定摘要。
@@ -348,6 +361,12 @@ pub enum OrganizationSsoLoginTransactionServiceError {
 
 /// 企业 SSO 登录事务协调服务；HTTP 路由必须继续在其外层固定回调地址和响应边界。
 pub trait OrganizationSsoLoginTransactionService: Send + Sync {
+    /// 公开判定邮箱域名或企业公开标识，不返回企业资料或 Provider 端点。
+    fn discover<'a>(&'a self, identifier: String) -> OrganizationSsoDiscoveryFuture<'a> {
+        let _ = identifier;
+        Box::pin(async { Err(OrganizationSsoDiscoveryServiceError::Internal) })
+    }
+
     /// 读取当前 Active Provider 并创建仅含摘要的短期登录事务。
     fn begin<'a>(
         &'a self,
@@ -947,6 +966,10 @@ impl DatabaseOrganizationSsoLoginTransactionService {
 }
 
 impl OrganizationSsoLoginTransactionService for DatabaseOrganizationSsoLoginTransactionService {
+    fn discover<'a>(&'a self, identifier: String) -> OrganizationSsoDiscoveryFuture<'a> {
+        Box::pin(discover_public(&self.repository, identifier))
+    }
+
     fn begin<'a>(
         &'a self,
         organization_id: OrganizationId,

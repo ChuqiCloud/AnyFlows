@@ -39,6 +39,7 @@ mod organization_management;
 mod organization_scim;
 mod organization_service_account;
 mod organization_sso;
+mod organization_sso_discovery;
 mod organization_sso_domain;
 mod organization_sso_identity_binding;
 mod organization_sso_login;
@@ -347,6 +348,9 @@ pub use organization_sso::{
     OrganizationSsoProviderListFuture, OrganizationSsoProviderService,
     OrganizationSsoProviderServiceError,
 };
+pub use organization_sso_discovery::{
+    OrganizationSsoDiscovery, OrganizationSsoDiscoveryServiceError,
+};
 pub use organization_sso_domain::{
     DatabaseOrganizationSsoDomainService, OrganizationSsoDomain,
     OrganizationSsoDomainCreateCommand, OrganizationSsoDomainCreated,
@@ -362,8 +366,9 @@ pub use organization_sso_identity_binding::{
 pub use organization_sso_login::{
     ClaimedOrganizationSsoLoginTransaction, DatabaseOrganizationSsoLoginTransactionService,
     ExchangedOrganizationSsoLoginTicket, IssuedOrganizationSsoLoginTicket,
-    OrganizationSsoLoginTransactionFuture, OrganizationSsoLoginTransactionService,
-    OrganizationSsoLoginTransactionServiceError, OrganizationSsoLoginTransactionStart,
+    OrganizationSsoDiscoveryFuture, OrganizationSsoLoginTransactionFuture,
+    OrganizationSsoLoginTransactionService, OrganizationSsoLoginTransactionServiceError,
+    OrganizationSsoLoginTransactionStart,
 };
 pub use organization_sso_policy::{
     DatabaseOrganizationSsoPolicyService, OrganizationSsoPolicy, OrganizationSsoPolicyCommand,
