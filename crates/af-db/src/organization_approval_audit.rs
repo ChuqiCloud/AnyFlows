@@ -5,12 +5,13 @@ use af_domain::{
     OrganizationMembershipStatus, OrganizationRole, UserId,
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabasePool, DatabaseTransaction, EntityTrait, QueryFilter,
-    QuerySelect, Set, entity::prelude::TimeDateTimeWithTimeZone,
+    ActiveModelTrait, ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, Set,
+    entity::prelude::TimeDateTimeWithTimeZone,
 };
 use sha2::{Digest, Sha256};
 
 use crate::{
+    DatabasePool,
     entity::{
         organization_approval_decisions, organization_approval_requests, organization_audit_logs,
         organization_memberships,
