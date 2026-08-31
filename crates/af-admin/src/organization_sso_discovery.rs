@@ -80,10 +80,10 @@ fn parse_locator(
     {
         return Err(OrganizationSsoDiscoveryServiceError::InvalidInput);
     }
-    if identifier.len() == 32 {
-        if let Ok(key) = OrganizationKey::from_persistence_key(identifier) {
-            return Ok(OrganizationSsoDiscoveryLocator::OrganizationKey(key));
-        }
+    if identifier.len() == 32
+        && let Ok(key) = OrganizationKey::from_persistence_key(identifier)
+    {
+        return Ok(OrganizationSsoDiscoveryLocator::OrganizationKey(key));
     }
 
     let mut parts = identifier.split('@');
