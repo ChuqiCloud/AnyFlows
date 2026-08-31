@@ -198,6 +198,22 @@ jobs:
           grep -q '^User=anyflows$' scripts/systemd/anyflows.service
           grep -q '^ProtectSystem=strict$' scripts/systemd/anyflows.service
           grep -q '^ReadWritePaths=/var/lib/anyflows$' scripts/systemd/anyflows.service
+
+          # systemd-analyze 会解析运行时路径，门禁先准备最小静态夹具。
+          sudo install -d -o root -g root -m 0755 \
+            /usr/local/libexec/anyflows /etc/anyflows /var/lib/anyflows
+          if ! getent group anyflows >/dev/null 2>&1; then
+            sudo groupadd --system anyflows
+          fi
+          if ! id -u anyflows >/dev/null 2>&1; then
+            sudo useradd --system --gid anyflows --no-create-home \
+              --home-dir /var/lib/anyflows --shell /usr/sbin/nologin anyflows
+          fi
+          printf '%s\n' '# systemd-analyze CI fixture' \
+            | sudo tee /etc/anyflows/anyflows.env >/dev/null
+          printf '%s\n' '#!/bin/sh' 'exit 0' \
+            | sudo tee /usr/local/libexec/anyflows/anyflows >/dev/null
+          sudo chmod 0755 /usr/local/libexec/anyflows/anyflows
           systemd-analyze verify scripts/systemd/anyflows.service
 
       - name: Verify release archive includes systemd assets
