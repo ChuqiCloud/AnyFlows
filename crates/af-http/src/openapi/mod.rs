@@ -246,7 +246,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 206);
+        assert_eq!(document.paths.paths.len(), 207);
         let operation_count = document
             .paths
             .paths
@@ -267,8 +267,8 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        // 审批与部门目录管理接口扩展了既有管理面，保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 280);
+        // 公开发现、审批与部门目录管理接口扩展了既有管理面，保持操作总数与生成文档同步。
+        assert_eq!(operation_count, 281);
         assert!(
             document
                 .components
@@ -343,6 +343,7 @@ mod tests {
             "startCustomOAuth2Login",
             "completeCustomOAuth2Login",
             "exchangeOAuthLoginTicket",
+            "discoverOrganizationSso",
             "getAdminGitHubOAuthLoginSettings",
             "updateAdminGitHubOAuthLoginSettings",
             "getAdminDiscordOAuthLoginSettings",
@@ -595,8 +596,11 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 454);
+        assert_eq!(schemas.len(), 457);
         assert!(schemas.keys().is_sorted());
+        assert!(schemas.contains_key("OrganizationSsoDiscoveryErrorResponse"));
+        assert!(schemas.contains_key("OrganizationSsoDiscoveryRequest"));
+        assert!(schemas.contains_key("OrganizationSsoDiscoveryResponse"));
         assert!(schemas.contains_key("OrganizationApprovalCursorQuery"));
         assert!(schemas.contains_key("OrganizationApprovalDecision"));
         assert!(schemas.contains_key("OrganizationApprovalDecisionKind"));
