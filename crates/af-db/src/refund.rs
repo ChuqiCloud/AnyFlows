@@ -840,6 +840,7 @@ async fn apply_receipt_transaction(
     transaction: &DatabaseTransaction,
     write: &RefundReceiptWrite,
 ) -> Result<RefundReceiptOutcome, RefundRepositoryError> {
+    let event_type = refund_receipt_event_type(write.status)?;
     let Some(current) = load_model_by_request_key(transaction, write.request_id).await? else {
         return Ok(RefundReceiptOutcome::NotFound);
     };
@@ -862,7 +863,7 @@ async fn apply_receipt_transaction(
     ) || record.status() != RefundRequestStatus::Submitted
     {
         if record.status() == write.status {
-            return duplicate_receipt_outcome(transaction, write, record).await;
+            return duplicate_receipt_outcome(transaction, write, record, event_type).await;
         }
         return Err(RefundRepositoryError::Conflict);
     }
@@ -881,7 +882,7 @@ async fn apply_receipt_transaction(
         provider: Set(write.provider.clone()),
         provider_event_id: Set(SensitiveString::from(write.provider_event_id.clone())),
         provider_refund_id: Set(SensitiveString::from(write.provider_refund_id.clone())),
-        event_type: Set(write.status.code()),
+        event_type: Set(event_type),
         amount_minor: Set(write.amount_minor),
         currency: Set(write.currency.clone()),
         signature_key_fingerprint: Set(SensitiveString::from(
@@ -911,7 +912,7 @@ async fn apply_receipt_transaction(
                 .rollback()
                 .await
                 .map_err(|_| RefundRepositoryError::OutcomeUnknown)?;
-            return duplicate_receipt_outcome(transaction, write, record).await;
+            return duplicate_receipt_outcome(transaction, write, record, event_type).await;
         }
         Err(_) => {
             savepoint
@@ -973,6 +974,7 @@ async fn duplicate_receipt_outcome(
     transaction: &DatabaseTransaction,
     write: &RefundReceiptWrite,
     record: RefundRequestRecord,
+    event_type: i16,
 ) -> Result<RefundReceiptOutcome, RefundRepositoryError> {
     let by_event_key = refund_provider_events::Entity::find()
         .filter(refund_provider_events::Column::EventKey.eq(write.event_key.clone()))
@@ -997,7 +999,7 @@ async fn duplicate_receipt_outcome(
     if existing.request_key == write.request_id.persistence_key()
         && existing.provider == write.provider
         && existing.provider_refund_id.as_str() == write.provider_refund_id
-        && existing.event_type == write.status.code()
+        && existing.event_type == event_type
         && existing.amount_minor == write.amount_minor
         && existing.currency == write.currency
     {
@@ -1203,6 +1205,14 @@ fn validate_receipt_write(write: &RefundReceiptWrite) -> Result<(), RefundReposi
         return Err(RefundRepositoryError::Invariant);
     }
     Ok(())
+}
+
+fn refund_receipt_event_type(status: RefundRequestStatus) -> Result<i16, RefundRepositoryError> {
+    match status {
+        RefundRequestStatus::Succeeded => Ok(1),
+        RefundRequestStatus::Failed => Ok(2),
+        _ => Err(RefundRepositoryError::Invariant),
+    }
 }
 
 async fn load_model_by_request_key<C: ConnectionTrait>(
@@ -1443,4 +1453,25 @@ pub enum RefundRepositoryError {
     /// 持久化快照违反退款不变量。
     #[error("退款持久化状态损坏")]
     Invariant,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn refund_receipt_event_codes_are_independent_from_request_status_codes() {
+        assert_eq!(
+            refund_receipt_event_type(RefundRequestStatus::Succeeded),
+            Ok(1)
+        );
+        assert_eq!(
+            refund_receipt_event_type(RefundRequestStatus::Failed),
+            Ok(2)
+        );
+        assert_eq!(
+            refund_receipt_event_type(RefundRequestStatus::Submitted),
+            Err(RefundRepositoryError::Invariant)
+        );
+    }
 }
