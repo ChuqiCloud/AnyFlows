@@ -69,6 +69,19 @@ docker compose --env-file .env down
 
 首次运行会调用 `scripts/deploy/init-env.sh` 生成权限为 `0600` 的 `.env`，其中包含随机 PostgreSQL 密码、管理会话签名密钥和凭据加密密钥；已有 `.env` 时脚本拒绝覆盖。此部署形态要求 Docker Engine、Compose 插件和 OpenSSL，并仅支持 Linux 主机；数据库、Redis 和计费 WAL 使用 Docker 命名卷，删除容器不会删除数据。
 
+### Linux systemd 部署
+
+Linux amd64 Release 归档同时包含 `anyflows`、`install.sh` 和 `anyflows.service`。在解压后的归档目录执行以下命令，首次安装会在 `/etc/anyflows/anyflows.env` 生成 SQLite 与随机密钥配置，升级会保留现有配置并在 `/readyz` 未恢复时自动回滚上一份二进制：
+
+```bash
+sudo ./install.sh install
+sudo ./install.sh upgrade
+sudo ./install.sh rollback
+sudo ./install.sh status
+```
+
+服务使用专用 `anyflows` 用户，数据和计费 WAL 位于 `/var/lib/anyflows`，配置位于 `/etc/anyflows`；应用仍只监听 `127.0.0.1:8080`，公网访问需由宿主机反向代理提供。安装脚本不下载网络内容，也不会覆盖已有配置文件。
+
 ## 架构：crate 分层
 
 采用模块化单体，按 crate 强制依赖方向（下层不得依赖上层）。依赖边界由 `cargo xtask check-deps` 在 CI 中**强制校验**（fail-closed，见 `tools/xtask`）。

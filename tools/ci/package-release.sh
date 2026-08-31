@@ -56,6 +56,8 @@ if [[ "$output_directory" != /* ]]; then
   output_directory="$workspace/$output_directory"
 fi
 [[ -x "$binary_path" ]] || fail "缺少可执行 release 二进制 $binary_path"
+[[ -x "$workspace/scripts/systemd/install.sh" ]] || fail "缺少 systemd 安装脚本"
+[[ -f "$workspace/scripts/systemd/anyflows.service" ]] || fail "缺少 systemd 服务单元"
 
 archive_name="anyflows-${tag}-linux-${release_arch}.tar.gz"
 package_name="anyflows-${tag}-linux-${release_arch}"
@@ -66,6 +68,8 @@ mkdir -p "$temporary_directory/$package_name" "$output_directory"
 install -m 0755 "$binary_path" "$temporary_directory/$package_name/anyflows"
 install -m 0644 "$workspace/README.md" "$temporary_directory/$package_name/README.md"
 install -m 0644 "$workspace/.env.example" "$temporary_directory/$package_name/.env.example"
+install -m 0755 "$workspace/scripts/systemd/install.sh" "$temporary_directory/$package_name/install.sh"
+install -m 0644 "$workspace/scripts/systemd/anyflows.service" "$temporary_directory/$package_name/anyflows.service"
 printf '%s\ncommit=%s\n' "$tag" "$(git -C "$workspace" rev-parse HEAD)" \
   >"$temporary_directory/$package_name/VERSION"
 

@@ -33,6 +33,7 @@ jobs:
       database: ${{ steps.paths.outputs.database }}
       redis: ${{ steps.paths.outputs.redis }}
       deployment: ${{ steps.paths.outputs.deployment }}
+      systemd: ${{ steps.paths.outputs.systemd }}
     steps:
       - name: Configure external Gitea checkout endpoint
         if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
@@ -62,6 +63,7 @@ jobs:
               echo "database=true"
               echo "redis=true"
               echo "deployment=true"
+              echo "systemd=true"
             } >> "$GITHUB_OUTPUT"
           }
 
@@ -109,6 +111,7 @@ jobs:
             echo "database=$(matches '^(crates/af-db/|tools/ci/run-db-migration-test\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
             echo "redis=$(matches '^(crates/af-cache/|tools/ci/run-cache-redis-test\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
             echo "deployment=$(matches '^(Dockerfile$|docker-compose\.ya?ml$|\.dockerignore$|scripts/deploy/)')"
+            echo "systemd=$(matches '^(scripts/systemd/|tools/ci/(package-release|finalize-release|test-release-scripts)\.sh$)')"
           } >> "$GITHUB_OUTPUT"
 
   deployment:
@@ -164,6 +167,42 @@ jobs:
           test "$(docker image inspect anyflows:ci --format '{{.Config.User}}')" = "anyflows"
           test "$(docker image inspect anyflows:ci --format '{{json .Config.Healthcheck.Test}}')" = '["CMD-SHELL","wget --no-verbose --tries=1 --spider http://127.0.0.1:8080/healthz || exit 1"]'
           test "$(docker image inspect anyflows:ci --format '{{json .Config.Volumes}}')" = '{"/app/data":{}}'
+
+  systemd:
+    name: systemd deployment checks
+    needs: changes
+    if: ${{ needs.changes.outputs.systemd == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
+
+      - name: Check systemd assets and shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x scripts/systemd/install.sh
+          bash -n scripts/systemd/install.sh
+          grep -q '^User=anyflows$' scripts/systemd/anyflows.service
+          grep -q '^ProtectSystem=strict$' scripts/systemd/anyflows.service
+          grep -q '^ReadWritePaths=/var/lib/anyflows$' scripts/systemd/anyflows.service
+          systemd-analyze verify scripts/systemd/anyflows.service
+
+      - name: Verify release archive includes systemd assets
+        shell: bash
+        run: bash tools/ci/test-release-scripts.sh
 
   release-package:
     name: Linux amd64 release package
