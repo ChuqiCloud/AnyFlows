@@ -26,14 +26,15 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 use crate::{
     DatabasePool,
     entity::{
-        SensitiveString, organization_approval_decisions, organization_approval_requests,
-        organization_approval_templates, organization_approval_timeout_leases,
-        organization_memberships, organizations,
+        SensitiveString, organization_approval_decisions, organization_approval_notifications,
+        organization_approval_requests, organization_approval_templates,
+        organization_approval_timeout_leases, organization_memberships, organizations,
     },
 };
 
 const ACTIVE_ORGANIZATION: i16 = 1;
 const TIMEOUT_LEASE_KEY: &str = "organization-approval-timeout-v1";
+const APPROVAL_NOTIFICATION_TEMPLATE_VERSION: &str = "approval-v1";
 const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 
 /// 企业审批模板版本写入参数；版本由仓储在企业范围锁内分配。
@@ -932,10 +933,9 @@ impl OrganizationApprovalRepository {
         )
         .await?
         {
-            return Ok(OrganizationApprovalTimeoutOutcome::Existing(
-                OrganizationApprovalDecisionId::new(existing.id)
-                    .map_err(|_| OrganizationApprovalRepositoryError::Invariant)?,
-            ));
+            let record = decision_record(existing)?;
+            validate_decision_notification(&self.pool, &record).await?;
+            return Ok(OrganizationApprovalTimeoutOutcome::Existing(record.id()));
         }
         let decision = OrganizationApprovalDecision::new(
             command.decision_key,
@@ -967,11 +967,11 @@ impl OrganizationApprovalRepository {
                 let existing = self
                     .decision_for_request(command.organization_id, command.request_id)
                     .await?;
-                Ok(
-                    existing.map_or(OrganizationApprovalTimeoutOutcome::Skipped, |record| {
-                        OrganizationApprovalTimeoutOutcome::Existing(record.id())
-                    }),
-                )
+                let Some(record) = existing else {
+                    return Ok(OrganizationApprovalTimeoutOutcome::Skipped);
+                };
+                validate_decision_notification(&self.pool, &record).await?;
+                Ok(OrganizationApprovalTimeoutOutcome::Existing(record.id()))
             }
             Err(
                 OrganizationApprovalRepositoryError::Expired
@@ -1136,7 +1136,8 @@ impl OrganizationApprovalRepository {
         )
         .await?
         {
-            return existing_decision_outcome(existing, &decision);
+            return existing_decision_outcome_with_notification(&self.pool, existing, &decision)
+                .await;
         }
         let decided_at = to_time(decision.decided_at())?;
         let now = TimeDateTimeWithTimeZone::now_utc();
@@ -1214,11 +1215,22 @@ impl OrganizationApprovalRepository {
                 )
                 .await?
                 {
-                    return existing_decision_outcome(existing, &decision);
+                    return existing_decision_outcome_with_notification(
+                        &self.pool, existing, &decision,
+                    )
+                    .await;
                 }
                 return Err(OrganizationApprovalRepositoryError::AlreadyDecided);
             }
         };
+        if let Err(error) =
+            insert_approval_notification(&transaction, &request, &decision, &model, decided_at, now)
+                .await
+        {
+            // 决定与通知是同一事实边界；通知失败时显式回滚，不能留下孤立决定。
+            let _ = rollback(transaction).await;
+            return Err(error);
+        }
         let record = decision_record(model)?;
         if let Err(error) = commit(transaction).await {
             return Err(if commit_outcome_unknown {
@@ -1358,6 +1370,81 @@ where
         .one(connection)
         .await
         .map_err(query_error)
+}
+
+async fn insert_approval_notification(
+    transaction: &DatabaseTransaction,
+    request: &organization_approval_requests::Model,
+    decision: &OrganizationApprovalDecision,
+    decision_model: &organization_approval_decisions::Model,
+    occurred_at: TimeDateTimeWithTimeZone,
+    created_at: TimeDateTimeWithTimeZone,
+) -> Result<(), OrganizationApprovalRepositoryError> {
+    organization_approval_notifications::ActiveModel {
+        notification_key: Set(decision.decision_key().persistence_key()),
+        organization_id: Set(decision.organization_id().get()),
+        request_id: Set(request.id),
+        decision_id: Set(decision_model.id),
+        recipient_user_id: Set(request.requested_by_user_id),
+        decision_kind: Set(decision.kind().code()),
+        template_version: Set(APPROVAL_NOTIFICATION_TEMPLATE_VERSION.to_owned()),
+        occurred_at: Set(occurred_at),
+        created_at: Set(created_at),
+        ..Default::default()
+    }
+    .insert(transaction)
+    .await
+    .map_err(query_error)?;
+    Ok(())
+}
+
+/// 校验幂等决定对应的通知事实，避免损坏状态被静默当作已存在。
+async fn existing_decision_outcome_with_notification(
+    pool: &DatabasePool,
+    existing: OrganizationApprovalDecisionRecord,
+    decision: &OrganizationApprovalDecision,
+) -> Result<OrganizationApprovalDecisionOutcome, OrganizationApprovalRepositoryError> {
+    let outcome = existing_decision_outcome(existing.clone(), decision)?;
+    validate_decision_notification(pool, &existing).await?;
+    Ok(outcome)
+}
+
+/// 校验已存在决定的通知事实与申请、决定保持同企业同键一致。
+async fn validate_decision_notification(
+    pool: &DatabasePool,
+    existing: &OrganizationApprovalDecisionRecord,
+) -> Result<(), OrganizationApprovalRepositoryError> {
+    let request = organization_approval_requests::Entity::find_by_id(existing.request_id().get())
+        .filter(
+            organization_approval_requests::Column::OrganizationId
+                .eq(existing.organization_id().get()),
+        )
+        .one(pool.connection())
+        .await
+        .map_err(query_error)?
+        .ok_or(OrganizationApprovalRepositoryError::Invariant)?;
+    let notification = organization_approval_notifications::Entity::find()
+        .filter(
+            organization_approval_notifications::Column::OrganizationId
+                .eq(existing.organization_id().get()),
+        )
+        .filter(organization_approval_notifications::Column::DecisionId.eq(existing.id().get()))
+        .one(pool.connection())
+        .await
+        .map_err(query_error)?
+        .ok_or(OrganizationApprovalRepositoryError::Invariant)?;
+    if notification.notification_key != existing.decision_key().persistence_key()
+        || notification.request_id != existing.request_id().get()
+        || notification.decision_id != existing.id().get()
+        || notification.recipient_user_id != request.requested_by_user_id
+        || notification.decision_kind != existing.kind().code()
+        || notification.template_version != APPROVAL_NOTIFICATION_TEMPLATE_VERSION
+        || notification.occurred_at.unix_timestamp() != existing.decided_at()
+        || notification.created_at != existing.created_at()
+    {
+        return Err(OrganizationApprovalRepositoryError::Invariant);
+    }
+    Ok(())
 }
 
 fn existing_request_outcome(

@@ -37,12 +37,12 @@ use crate::entity::{
     model_sync_runs, models, oauth_login_providers, options,
     organization_approval_budget_executions, organization_approval_contract_price_executions,
     organization_approval_decisions, organization_approval_member_executions,
-    organization_approval_requests, organization_approval_service_account_executions,
-    organization_approval_templates, organization_approval_timeout_leases, organization_audit_logs,
-    organization_budget_policies, organization_budget_windows, organization_contract_prices,
-    organization_credit_invoices, organization_credit_repayment_allocations,
-    organization_credit_repayments, organization_credit_terms,
-    organization_custom_role_permissions, organization_custom_roles,
+    organization_approval_notifications, organization_approval_requests,
+    organization_approval_service_account_executions, organization_approval_templates,
+    organization_approval_timeout_leases, organization_audit_logs, organization_budget_policies,
+    organization_budget_windows, organization_contract_prices, organization_credit_invoices,
+    organization_credit_repayment_allocations, organization_credit_repayments,
+    organization_credit_terms, organization_custom_role_permissions, organization_custom_roles,
     organization_department_memberships, organization_departments, organization_entitlements,
     organization_invitations, organization_memberships, organization_scim_audit_logs,
     organization_scim_group_resources, organization_scim_tokens, organization_scim_user_resources,
@@ -89,7 +89,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 121;
+const EXPECTED_MIGRATION_COUNT: usize = 122;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -108,7 +108,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 104] = [
+const CORE_TABLES: [&str; 105] = [
     "groups",
     "users",
     "passkeys",
@@ -185,6 +185,7 @@ const CORE_TABLES: [&str; 104] = [
     "organization_approval_service_account_executions",
     "organization_approval_contract_price_executions",
     "organization_approval_timeout_leases",
+    "organization_approval_notifications",
     "organization_memberships",
     "organization_custom_roles",
     "organization_custom_role_permissions",
@@ -298,6 +299,116 @@ async fn organization_sso_policy_migration_backfills_existing_organizations()
     assert_eq!(policy.enforcement_policy, 1);
     assert!(!policy.recovery_ready);
     assert_eq!(policy.version, 1);
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn organization_approval_notification_migration_backfills_existing_decisions()
+-> Result<(), Box<dyn Error>> {
+    let pool = connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
+    Migrator::up(pool.connection(), Some(121)).await?;
+
+    let group = group_active_model("approval-notification-backfill", "审批通知回填分组")
+        .insert(pool.connection())
+        .await?;
+    let mut owner = user_active_model(
+        group.id,
+        "approval-notification-backfill-owner",
+        "approval-notification-backfill@example.com",
+        "approval-notification-backfill-aff",
+    );
+    owner.status = Set(1);
+    let owner = owner.insert(pool.connection()).await?;
+    let organization_created_at = TimeDateTimeWithTimeZone::from_unix_timestamp(1_700_000_000)?;
+    let organization = organizations::ActiveModel {
+        organization_key: Set("abababababababababababababababab".to_owned()),
+        name: Set("审批通知回填企业".to_owned()),
+        slug: Set("approval-notification-backfill".to_owned()),
+        status: Set(1),
+        created_by_user_id: Set(owner.id),
+        version: Set(1),
+        created_at: Set(organization_created_at),
+        updated_at: Set(organization_created_at),
+        closed_at: Set(None),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+    let template = organization_approval_templates::ActiveModel {
+        organization_id: Set(organization.id),
+        template_key: Set("approval-notification-backfill".to_owned()),
+        resource_type: Set(2),
+        version: Set(1),
+        definition_digest: Set(SensitiveString::from("cd".repeat(32))),
+        created_by_user_id: Set(owner.id),
+        created_at: Set(organization_created_at),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+    let request_created_at = TimeDateTimeWithTimeZone::from_unix_timestamp(1_700_000_100)?;
+    let request_expires_at = TimeDateTimeWithTimeZone::from_unix_timestamp(1_700_003_700)?;
+    let request = organization_approval_requests::ActiveModel {
+        request_key: Set("12121212121212121212121212121212".to_owned()),
+        organization_id: Set(organization.id),
+        resource_type: Set(2),
+        resource_summary: Set(SensitiveString::from("历史审批申请摘要")),
+        template_id: Set(template.id),
+        template_version: Set(template.version),
+        requested_by_user_id: Set(owner.id),
+        expires_at: Set(request_expires_at),
+        created_at: Set(request_created_at),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+    let decision_created_at = TimeDateTimeWithTimeZone::from_unix_timestamp(1_700_000_200)?;
+    let decision = organization_approval_decisions::ActiveModel {
+        decision_key: Set("34343434343434343434343434343434".to_owned()),
+        organization_id: Set(organization.id),
+        request_id: Set(request.id),
+        decision_kind: Set(1),
+        decided_by_user_id: Set(Some(owner.id)),
+        reason: Set(Some(SensitiveString::from("历史审批已批准"))),
+        decided_at: Set(decision_created_at),
+        created_at: Set(decision_created_at),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+
+    // 第 122 号迁移必须为升级前的决定补齐通知，而不是只覆盖新写入。
+    Migrator::up(pool.connection(), None).await?;
+    let notification = organization_approval_notifications::Entity::find()
+        .filter(organization_approval_notifications::Column::OrganizationId.eq(organization.id))
+        .filter(organization_approval_notifications::Column::DecisionId.eq(decision.id))
+        .one(pool.connection())
+        .await?
+        .expect("历史审批决定必须回填通知事实");
+    assert_eq!(
+        notification.notification_key,
+        "34343434343434343434343434343434"
+    );
+    assert_eq!(notification.request_id, request.id);
+    assert_eq!(notification.decision_id, decision.id);
+    assert_eq!(notification.recipient_user_id, owner.id);
+    assert_eq!(notification.decision_kind, 1);
+    assert_eq!(notification.template_version, "approval-v1");
+    assert_eq!(notification.occurred_at, decision_created_at);
+    assert_eq!(notification.created_at, decision_created_at);
+
+    // 迁移重入或重复部署不能为同一决定产生第二条通知。
+    Migrator::up(pool.connection(), None).await?;
+    assert_eq!(
+        organization_approval_notifications::Entity::find()
+            .filter(
+                organization_approval_notifications::Column::OrganizationId.eq(organization.id),
+            )
+            .count(pool.connection())
+            .await?,
+        1
+    );
     pool.close().await?;
     Ok(())
 }
@@ -917,6 +1028,11 @@ async fn organization_credit_repayments_enforce_append_only_scope_and_currency()
     assert_entity_columns::<organization_approval_decisions::Column>(
         &manager,
         "organization_approval_decisions",
+    )
+    .await?;
+    assert_entity_columns::<organization_approval_notifications::Column>(
+        &manager,
+        "organization_approval_notifications",
     )
     .await?;
     assert_entity_columns::<organization_approval_member_executions::Column>(
@@ -2072,7 +2188,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 62);
+    assert_eq!(pending_migrations.len(), 63);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -2320,6 +2436,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[61].name(),
         "m20260830_000121_create_organization_approval_timeout_lease"
+    );
+    assert_eq!(
+        pending_migrations[62].name(),
+        "m20260831_000122_create_organization_approval_notifications"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
@@ -3847,6 +3967,11 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         "organization_approval_timeout_leases",
     )
     .await?;
+    assert_entity_columns::<organization_approval_notifications::Column>(
+        &manager,
+        "organization_approval_notifications",
+    )
+    .await?;
     assert_entity_columns::<organization_contract_prices::Column>(
         &manager,
         "organization_contract_prices",
@@ -4402,6 +4527,18 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         (
             "organization_approval_decisions",
             "uq_org_approval_decisions_scope_id",
+        ),
+        (
+            "organization_approval_notifications",
+            "uq_org_approval_notifications_key",
+        ),
+        (
+            "organization_approval_notifications",
+            "uq_org_approval_notifications_decision",
+        ),
+        (
+            "organization_approval_notifications",
+            "idx_org_approval_notifications_recipient",
         ),
         (
             "organization_approval_member_executions",

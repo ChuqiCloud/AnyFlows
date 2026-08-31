@@ -127,6 +127,7 @@ mod m20260830_000118_create_organization_approval_service_account_execution;
 mod m20260830_000119_create_organization_approval_contract_price_execution;
 mod m20260830_000120_create_organization_approval_funds_execution;
 mod m20260830_000121_create_organization_approval_timeout_lease;
+mod m20260831_000122_create_organization_approval_notifications;
 mod schema;
 
 #[cfg(test)]
@@ -297,6 +298,7 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(m20260830_000120_create_organization_approval_funds_execution::Migration),
             Box::new(m20260830_000121_create_organization_approval_timeout_lease::Migration),
+            Box::new(m20260831_000122_create_organization_approval_notifications::Migration),
         ]
     }
 }

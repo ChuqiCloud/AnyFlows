@@ -72,6 +72,7 @@ pub(crate) mod organization_approval_contract_price_executions;
 pub(crate) mod organization_approval_decisions;
 pub(crate) mod organization_approval_funds_executions;
 pub(crate) mod organization_approval_member_executions;
+pub(crate) mod organization_approval_notifications;
 pub(crate) mod organization_approval_requests;
 pub(crate) mod organization_approval_service_account_executions;
 pub(crate) mod organization_approval_templates;
@@ -1041,6 +1042,64 @@ where
             .is_some_and(|(decided, created)| decided > created)
     {
         return Err(DbErr::Custom("企业审批决定字段无效".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_organization_approval_notifications<C>(
+    model: &organization_approval_notifications::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    if !insert {
+        return Err(DbErr::Custom("企业审批通知事实只允许追加".to_owned()));
+    }
+    let notification_key = model.notification_key.try_as_ref().map(String::as_str);
+    let template_version = model.template_version.try_as_ref().map(String::as_str);
+    let occurred_at = model.occurred_at.try_as_ref().copied();
+    let created_at = model.created_at.try_as_ref().copied();
+    if notification_key.is_none()
+        || model.organization_id.try_as_ref().is_none()
+        || model.request_id.try_as_ref().is_none()
+        || model.decision_id.try_as_ref().is_none()
+        || model.recipient_user_id.try_as_ref().is_none()
+        || model.decision_kind.try_as_ref().is_none()
+        || template_version.is_none()
+        || occurred_at.is_none()
+        || created_at.is_none()
+        || notification_key.is_some_and(|value| !valid_hex(value, 32, true))
+        || model
+            .organization_id
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || model
+            .request_id
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || model
+            .decision_id
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || model
+            .recipient_user_id
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || model
+            .decision_kind
+            .try_as_ref()
+            .is_some_and(|value| OrganizationApprovalDecisionKind::try_from(*value).is_err())
+        || template_version.is_some_and(|value| value != "approval-v1")
+        || template_version.is_some_and(|value| !valid_organization_text(value, 16))
+        || occurred_at.is_some_and(|value| value.unix_timestamp() < 0)
+        || created_at.is_some_and(|value| value.unix_timestamp() < 0)
+        || occurred_at
+            .zip(created_at)
+            .is_some_and(|(occurred, created)| occurred > created)
+    {
+        return Err(DbErr::Custom("企业审批通知事实字段无效".to_owned()));
     }
     Ok(())
 }
@@ -3215,6 +3274,17 @@ impl ActiveModelBehavior for organization_approval_decisions::ActiveModel {
         C: ConnectionTrait,
     {
         validate_organization_approval_decisions(&self, database, insert).await?;
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_approval_notifications::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_organization_approval_notifications(&self, database, insert).await?;
         Ok(self)
     }
 }
