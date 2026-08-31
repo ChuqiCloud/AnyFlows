@@ -143,7 +143,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          printf 'POSTGRES_PASSWORD=ci-only-password\n' > .env
+          printf '%s\n' \
+            'POSTGRES_PASSWORD=ci-only-password' \
+            'AF_AUTH__SESSION_SIGNING_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' \
+            'AF_CREDENTIAL_ENCRYPTION__KEY_ID=ci' \
+            'AF_CREDENTIAL_ENCRYPTION__KEY=BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' \
+            > .env
           docker compose --env-file .env config --quiet
 
       - name: Build runtime image

@@ -12,6 +12,9 @@ services:
       AF_SERVER__BIND: 127.0.0.1:8080
       AF_DATABASE__URL: postgres://anyflows:${POSTGRES_PASSWORD:?请先运行 scripts/deploy/init-env.sh}@127.0.0.1:5432/anyflows
       AF_REDIS__URL: redis://127.0.0.1:6379/
+      AF_AUTH__SESSION_SIGNING_KEY: ${AF_AUTH__SESSION_SIGNING_KEY:?请先运行 scripts/deploy/init-env.sh}
+      AF_CREDENTIAL_ENCRYPTION__KEY_ID: ${AF_CREDENTIAL_ENCRYPTION__KEY_ID:?请先运行 scripts/deploy/init-env.sh}
+      AF_CREDENTIAL_ENCRYPTION__KEY: ${AF_CREDENTIAL_ENCRYPTION__KEY:?请先运行 scripts/deploy/init-env.sh}
       AF_BILLING__WAL_DIRECTORY: /app/data/billing-wal
     depends_on:
       postgres:
