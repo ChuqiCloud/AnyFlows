@@ -120,6 +120,7 @@ pub(crate) mod proxies;
 pub(crate) mod redemption_batches;
 pub(crate) mod redemption_codes;
 pub(crate) mod refund_provider_events;
+pub(crate) mod refund_reconciliation_entries;
 pub(crate) mod refund_requests;
 pub(crate) mod registration_rate_limits;
 pub(crate) mod request_outcome_logs;
@@ -3745,6 +3746,68 @@ impl ActiveModelBehavior for subscription_payment_events::ActiveModel {
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for refund_provider_events::ActiveModel {}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for refund_reconciliation_entries::ActiveModel {
+    async fn before_save<C>(self, _database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        // 成功退款对账事实只能追加，且订阅订单永远不能伪造企业资金主体。
+        if !insert {
+            return Err(DbErr::Custom("退款对账事实不允许更新".to_owned()));
+        }
+        let id = self.id.try_as_ref().copied().unwrap_or_default();
+        let request_key = self.request_key.try_as_ref();
+        let provider_event_id = self
+            .provider_event_id
+            .try_as_ref()
+            .copied()
+            .unwrap_or_default();
+        let user_id = self.user_id.try_as_ref().copied().unwrap_or_default();
+        let organization_id = self.organization_id.try_as_ref().copied().flatten();
+        let approval_actor_id = self
+            .approval_actor_id
+            .try_as_ref()
+            .copied()
+            .unwrap_or_default();
+        let order_kind = self.order_kind.try_as_ref().copied().unwrap_or_default();
+        let order_key = self.order_key.try_as_ref();
+        let provider = self.provider.try_as_ref();
+        let amount_delta_minor = self
+            .amount_delta_minor
+            .try_as_ref()
+            .copied()
+            .unwrap_or_default();
+        let currency = self.currency.try_as_ref();
+        if id != 0
+            || request_key.is_none_or(|value| !valid_hex(value, 32, true))
+            || provider_event_id <= 0
+            || user_id <= 0
+            || organization_id.is_some_and(|value| value <= 0)
+            || approval_actor_id <= 0
+            || !matches!(order_kind, 1 | 2)
+            || (order_kind == 2 && organization_id.is_some())
+            || order_key.is_none_or(|value| !valid_hex(value, 32, true))
+            || provider.is_none_or(|value| {
+                value.is_empty()
+                    || value.len() > 64
+                    || !value.bytes().all(|byte| {
+                        byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"._-".contains(&byte)
+                    })
+            })
+            || amount_delta_minor >= 0
+            || amount_delta_minor == i64::MIN
+            || currency.is_none_or(|value| {
+                value.len() != 3 || !value.bytes().all(|byte| byte.is_ascii_uppercase())
+            })
+            || self.created_at.try_as_ref().is_none()
+        {
+            return Err(DbErr::Custom("退款对账事实字段无效".to_owned()));
+        }
+        Ok(self)
+    }
+}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for redemption_batches::ActiveModel {

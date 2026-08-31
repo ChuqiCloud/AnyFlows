@@ -208,6 +208,8 @@ mod quota_tests;
 mod quota_token_window_tests;
 mod redemption;
 mod refund;
+#[cfg(test)]
+mod refund_reconciliation_tests;
 mod registration;
 #[cfg(test)]
 mod registration_tests;
@@ -706,6 +708,7 @@ pub use redemption::{
 pub use refund::{
     DEFAULT_REFUND_ADMIN_PAGE_SIZE, MAX_REFUND_ADMIN_PAGE_SIZE, RefundAdminListQuery,
     RefundAdminPage, RefundApprovalOutcome, RefundReceiptOutcome, RefundReceiptWrite,
+    RefundReconciliationPage, RefundReconciliationQuery, RefundReconciliationRecord,
     RefundRepository, RefundRepositoryConfigError, RefundRepositoryError, RefundSubmissionOutcome,
 };
 pub use registration::{

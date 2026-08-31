@@ -53,11 +53,12 @@ use crate::entity::{
     organization_wallets, organizations, passkey_authentication_challenges,
     passkey_registration_challenges, passkeys, payment_settings, platform_audit_logs,
     playground_conversations, playground_shares, redemption_batches, redemption_codes,
-    refund_provider_events, refund_requests, registration_rate_limits, request_outcome_logs,
-    scheduler_outbox_events, site_settings, subscription_balance_alert_events, subscription_orders,
-    subscription_payment_events, subscription_plan_prices, subscription_plans, tokens,
-    topup_orders, topup_payment_events, usage_logs, user_notification_events,
-    user_notification_receipts, user_subscriptions, users, wallet_ledger_entries,
+    refund_provider_events, refund_reconciliation_entries, refund_requests,
+    registration_rate_limits, request_outcome_logs, scheduler_outbox_events, site_settings,
+    subscription_balance_alert_events, subscription_orders, subscription_payment_events,
+    subscription_plan_prices, subscription_plans, tokens, topup_orders, topup_payment_events,
+    usage_logs, user_notification_events, user_notification_receipts, user_subscriptions, users,
+    wallet_ledger_entries,
 };
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
@@ -89,7 +90,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 122;
+const EXPECTED_MIGRATION_COUNT: usize = 123;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -108,7 +109,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 105] = [
+const CORE_TABLES: [&str; 106] = [
     "groups",
     "users",
     "passkeys",
@@ -214,6 +215,7 @@ const CORE_TABLES: [&str; 105] = [
     "analytics_export_outbox_events",
     "refund_requests",
     "refund_provider_events",
+    "refund_reconciliation_entries",
 ];
 
 #[test]
@@ -222,6 +224,10 @@ fn refund_table_idens_are_stable() {
     assert_eq!(
         refund_provider_events::Entity.to_string(),
         "refund_provider_events"
+    );
+    assert_eq!(
+        refund_reconciliation_entries::Entity.to_string(),
+        "refund_reconciliation_entries"
     );
 }
 
@@ -2188,7 +2194,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 63);
+    assert_eq!(pending_migrations.len(), 64);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -2440,6 +2446,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[62].name(),
         "m20260831_000122_create_organization_approval_notifications"
+    );
+    assert_eq!(
+        pending_migrations[63].name(),
+        "m20260831_000123_create_refund_reconciliations"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
@@ -4165,6 +4175,11 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     assert_entity_columns::<refund_requests::Column>(&manager, "refund_requests").await?;
     assert_entity_columns::<refund_provider_events::Column>(&manager, "refund_provider_events")
         .await?;
+    assert_entity_columns::<refund_reconciliation_entries::Column>(
+        &manager,
+        "refund_reconciliation_entries",
+    )
+    .await?;
     assert_entity_columns::<organization_sso_providers::Column>(
         &manager,
         "organization_sso_providers",
