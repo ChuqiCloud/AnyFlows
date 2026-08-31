@@ -7,8 +7,10 @@ use crate::{
     management_error::ManagementErrorBody,
     management_session::LoginResponse,
     organization_sso_login::{
-        OrganizationSsoLoginCallbackErrorResponse, OrganizationSsoLoginCallbackSuccessResponse,
-        OrganizationSsoSessionExchangeErrorResponse, OrganizationSsoSessionExchangeRequest,
+        OrganizationSsoDiscoveryErrorResponse, OrganizationSsoDiscoveryRequest,
+        OrganizationSsoDiscoveryResponse, OrganizationSsoLoginCallbackErrorResponse,
+        OrganizationSsoLoginCallbackSuccessResponse, OrganizationSsoSessionExchangeErrorResponse,
+        OrganizationSsoSessionExchangeRequest,
     },
     organizations::{
         OrganizationSsoDomainCreateRequest, OrganizationSsoDomainCreatedResponse,
@@ -21,6 +23,22 @@ use crate::{
         OrganizationSsoRecoveryRequest, OrganizationSsoRecoveryResponse,
     },
 };
+
+#[utoipa::path(
+    post,
+    path = "/api/auth/organization-sso/discovery",
+    operation_id = "discoverOrganizationSso",
+    tag = "企业 SSO",
+    summary = "公开发现企业 SSO",
+    description = "仅接受企业公开标识或邮箱并返回通用可用性。未知、停用、过期、冲突或损坏事实均统一为 available=false，不返回企业、域名或 Provider 资料。",
+    request_body = OrganizationSsoDiscoveryRequest,
+    responses(
+        (status = 200, description = "返回通用企业 SSO 可用性", body = OrganizationSsoDiscoveryResponse),
+        (status = 400, description = "发现请求无效", body = OrganizationSsoDiscoveryErrorResponse),
+        (status = 503, description = "发现服务暂不可用", body = OrganizationSsoDiscoveryErrorResponse)
+    )
+)]
+fn discover_organization_sso() {}
 
 #[utoipa::path(
     get,
@@ -356,6 +374,7 @@ fn exchange_organization_sso_session() {}
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        discover_organization_sso,
         list_organization_sso_providers,
         create_organization_sso_provider,
         get_organization_sso_provider,
@@ -390,6 +409,9 @@ fn exchange_organization_sso_session() {}
         OrganizationSsoPolicyResponse,
         OrganizationSsoRecoveryRequest,
         OrganizationSsoRecoveryResponse,
+        OrganizationSsoDiscoveryRequest,
+        OrganizationSsoDiscoveryResponse,
+        OrganizationSsoDiscoveryErrorResponse,
         OrganizationSsoLoginCallbackErrorResponse,
         OrganizationSsoLoginCallbackSuccessResponse,
         OrganizationSsoSessionExchangeRequest,

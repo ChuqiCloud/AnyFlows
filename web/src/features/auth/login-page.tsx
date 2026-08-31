@@ -2,6 +2,7 @@ import { useMutation } from '@tanstack/react-query'
 import {
   AlertCircle,
   Boxes,
+  Building2,
   CheckCircle2,
   Eye,
   EyeOff,
@@ -20,6 +21,7 @@ import { Input } from '@/components/ui/input'
 import { AuthCapabilityCard, AuthCapabilitySkeleton } from '@/features/auth/auth-capability-card'
 import { AuthPageShell } from '@/features/auth/auth-page-shell'
 import { beginOAuthLogin, type OAuthLoginProvider } from '@/features/auth/oauth-login-api'
+import { discoverOrganizationSso } from '@/features/auth/organization-sso-discovery-api'
 import { OAuthProviderIcon } from '@/features/auth/oauth-provider-icon'
 import {
   authenticateWithPasskey,
@@ -69,6 +71,8 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
   const [turnstileResetKey, setTurnstileResetKey] = useState(0)
   const [loginError, setLoginError] = useState<LoginError>()
   const [noticeDismissed, setNoticeDismissed] = useState(false)
+  const [organizationIdentifier, setOrganizationIdentifier] = useState('')
+  const [organizationSsoStatus, setOrganizationSsoStatus] = useState<'idle' | 'available' | 'unavailable' | 'error'>('idle')
   const siteQuery = usePublicSiteSettings()
 
   const loginMutation = useMutation({
@@ -78,6 +82,7 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
     },
   })
   const oauthMutation = useMutation({ mutationFn: beginOAuthLogin })
+  const organizationSsoMutation = useMutation({ mutationFn: discoverOrganizationSso })
   const passkeyMutation = useMutation({ mutationFn: authenticateWithPasskey })
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -147,6 +152,21 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
     }
   }
 
+  async function handleOrganizationSsoDiscovery() {
+    const identifier = organizationIdentifier.trim()
+    if (!identifier) {
+      setOrganizationSsoStatus('error')
+      return
+    }
+    setOrganizationSsoStatus('idle')
+    try {
+      const response = await organizationSsoMutation.mutateAsync(identifier)
+      setOrganizationSsoStatus(response?.available ? 'available' : 'unavailable')
+    } catch {
+      setOrganizationSsoStatus('error')
+    }
+  }
+
   const site = siteQuery.data
   const siteName = site?.site_name ?? t('brand.name')
   const heroTitle = site?.brand.tagline ?? t('auth.login.heroTitle')
@@ -194,17 +214,6 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
               </div>
             )}
           />
-        ) : !passwordLoginEnabled && !oauthLoginEnabled ? (
-          <AuthCapabilityCard
-            icon={<LockKeyhole className="size-5" aria-hidden="true" />}
-            title={t('auth.login.disabledTitle')}
-            body={t('auth.login.disabledBody')}
-            action={(
-              <Button variant="secondary" className="w-full" asChild>
-                <a href="#/models"><Boxes aria-hidden="true" />{t('auth.login.browseModels')}</a>
-              </Button>
-            )}
-          />
         ) : (
           <Card elevation="overlay" className="mx-auto w-full max-w-[400px] bg-card/94 backdrop-blur-2xl">
             <CardHeader className="gap-2 px-6 pt-6 pb-5 sm:px-7 sm:pt-7">
@@ -246,6 +255,64 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                     </Button>
                   )
                 })}
+
+                <div className="grid gap-3 border-t border-[var(--hairline)] pt-5">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="size-4 text-info" aria-hidden="true" />
+                    <span className="text-sm font-medium">{t('auth.login.organizationSso.title')}</span>
+                  </div>
+                  <div className="grid gap-2">
+                    <label htmlFor="organization-sso-identifier" className="text-sm font-medium">
+                      {t('auth.login.organizationSso.identifier')}
+                    </label>
+                    <Input
+                      id="organization-sso-identifier"
+                      name="organization_sso_identifier"
+                      autoComplete="email"
+                      className="h-11 px-3"
+                      placeholder={t('auth.login.organizationSso.placeholder')}
+                      value={organizationIdentifier}
+                      aria-describedby={organizationSsoStatus !== 'idle' ? 'organization-sso-status' : undefined}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault()
+                          void handleOrganizationSsoDiscovery()
+                        }
+                      }}
+                      onChange={(event) => {
+                        setOrganizationIdentifier(event.target.value)
+                        setOrganizationSsoStatus('idle')
+                      }}
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="w-full"
+                    disabled={organizationSsoMutation.isPending}
+                    onClick={() => void handleOrganizationSsoDiscovery()}
+                  >
+                    {organizationSsoMutation.isPending
+                      ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+                      : <Building2 className="size-4" aria-hidden="true" />}
+                    {organizationSsoMutation.isPending
+                      ? t('auth.login.organizationSso.checking')
+                      : t('auth.login.organizationSso.check')}
+                  </Button>
+                  {organizationSsoStatus !== 'idle' ? (
+                    <p
+                      id="organization-sso-status"
+                      role={organizationSsoStatus === 'error' ? 'alert' : 'status'}
+                      className={organizationSsoStatus === 'available'
+                        ? 'text-sm leading-5 text-success'
+                        : organizationSsoStatus === 'error'
+                          ? 'text-sm leading-5 text-destructive'
+                          : 'text-sm leading-5 text-muted-foreground'}
+                    >
+                      {t(`auth.login.organizationSso.${organizationSsoStatus}`)}
+                    </p>
+                  ) : null}
+                </div>
 
                 {oauthLoginEnabled && passwordLoginEnabled ? (
                   <div className="flex items-center gap-3 text-xs text-muted-foreground" aria-hidden="true">

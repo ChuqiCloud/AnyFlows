@@ -2,7 +2,7 @@ use std::{fmt, future::Future, time::Duration};
 
 use af_domain::{
     OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot,
-    OrganizationEntitlementStatus, OrganizationId, OrganizationMembershipId,
+    OrganizationEntitlementStatus, OrganizationId, OrganizationKey, OrganizationMembershipId,
     OrganizationMembershipStatus, OrganizationSsoDnsVerification, OrganizationSsoDomain,
     OrganizationSsoDomainStatus, OrganizationSsoEnforcementFacts, OrganizationSsoEnforcementPolicy,
     OrganizationSsoIdentityBindingMethod, OrganizationSsoIdentityLoginFacts,
@@ -292,6 +292,21 @@ pub struct OrganizationSsoDomainRecord {
     version: i64,
     created_at: i64,
     updated_at: i64,
+}
+
+/// 公开发现只允许使用企业公开标识或已经规范化的邮箱域名。
+#[derive(Clone, Eq, PartialEq)]
+pub enum OrganizationSsoDiscoveryLocator {
+    /// 由服务端解析出的非零企业公开标识。
+    OrganizationKey(OrganizationKey),
+    /// 由服务端解析出的规范化邮箱域名。
+    Domain(OrganizationSsoDomain),
+}
+
+impl fmt::Debug for OrganizationSsoDiscoveryLocator {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("OrganizationSsoDiscoveryLocator(<redacted>)")
+    }
 }
 
 impl OrganizationSsoDomainRecord {
@@ -944,6 +959,19 @@ impl OrganizationSsoProviderRepository {
             models.into_iter().map(provider_record).collect()
         })
         .await
+    }
+
+    /// 读取公开发现所需的最小资格事实；不返回企业、Provider 或域名资料。
+    pub async fn discovery_available(
+        &self,
+        locator: OrganizationSsoDiscoveryLocator,
+        now: i64,
+    ) -> Result<bool, OrganizationSsoRepositoryError> {
+        if now < 0 {
+            return Err(OrganizationSsoRepositoryError::InvalidInput);
+        }
+        self.run(async move { discovery_available_inner(&self.pool, locator, now).await })
+            .await
     }
 
     /// 仅供受控服务重封装密钥使用；不把密钥 envelope 放入公开 Provider 记录。
@@ -2357,6 +2385,170 @@ impl fmt::Debug for OrganizationSsoProviderRepository {
             .field("operation_timeout", &self.operation_timeout)
             .finish_non_exhaustive()
     }
+}
+
+/// 公开发现只做资格判定；所有企业资料均在仓储边界内消费并丢弃。
+async fn discovery_available_inner(
+    pool: &DatabasePool,
+    locator: OrganizationSsoDiscoveryLocator,
+    now: i64,
+) -> Result<bool, OrganizationSsoRepositoryError> {
+    let (organization_id, requested_provider_id) = match locator {
+        OrganizationSsoDiscoveryLocator::OrganizationKey(key) => {
+            let models = organizations::Entity::find()
+                .filter(organizations::Column::OrganizationKey.eq(key.persistence_key()))
+                .all(pool.connection())
+                .await
+                .map_err(query_error)?;
+            let organization = match models.as_slice() {
+                [] => return Ok(false),
+                [organization] => organization,
+                _ => return Err(invariant()),
+            };
+            let _ = OrganizationKey::from_persistence_key(&organization.organization_key)
+                .map_err(|_| invariant())?;
+            (
+                OrganizationId::new(organization.id).map_err(|_| invariant())?,
+                None,
+            )
+        }
+        OrganizationSsoDiscoveryLocator::Domain(domain) => {
+            let models = organization_sso_domains::Entity::find()
+                .filter(organization_sso_domains::Column::Domain.eq(domain.as_str()))
+                .all(pool.connection())
+                .await
+                .map_err(query_error)?;
+            let mut valid = Vec::new();
+            for model in &models {
+                let status =
+                    OrganizationSsoDomainStatus::try_from(model.status).map_err(|_| invariant())?;
+                let _ =
+                    OrganizationSsoDomain::new(model.domain.clone()).map_err(|_| invariant())?;
+                if status == OrganizationSsoDomainStatus::Verified
+                    && model.verified_at.is_some()
+                    && model.revoked_at.is_none()
+                    && model
+                        .proof_expires_at
+                        .as_ref()
+                        .is_some_and(|value| value.unix_timestamp() > now)
+                    && model
+                        .recheck_at
+                        .as_ref()
+                        .is_some_and(|value| value.unix_timestamp() > now)
+                {
+                    valid.push(model);
+                }
+            }
+            let model = match valid.as_slice() {
+                [] => return Ok(false),
+                [model] => *model,
+                _ => return Err(OrganizationSsoRepositoryError::Conflict),
+            };
+            (
+                OrganizationId::new(model.organization_id).map_err(|_| invariant())?,
+                Some(model.provider_id),
+            )
+        }
+    };
+
+    let organization = organizations::Entity::find_by_id(organization_id.get())
+        .one(pool.connection())
+        .await
+        .map_err(query_error)?
+        .ok_or_else(invariant)?;
+    let organization_status =
+        OrganizationStatus::try_from(organization.status).map_err(|_| invariant())?;
+    if organization_status != OrganizationStatus::Active {
+        return Ok(false);
+    }
+
+    let entitlements = organization_entitlements::Entity::find()
+        .filter(organization_entitlements::Column::OrganizationId.eq(organization_id.get()))
+        .all(pool.connection())
+        .await
+        .map_err(query_error)?;
+    let entitlement = match entitlements.as_slice() {
+        [entitlement] => entitlement,
+        [] => return Ok(false),
+        _ => return Err(invariant()),
+    };
+    let entitlement = entitlement_snapshot(entitlement)?;
+    if !entitlement.sso_enabled()
+        || entitlement.status(organization_status, now) != OrganizationEntitlementStatus::Active
+    {
+        return Ok(false);
+    }
+
+    let providers = organization_sso_providers::Entity::find()
+        .filter(organization_sso_providers::Column::OrganizationId.eq(organization_id.get()))
+        .all(pool.connection())
+        .await
+        .map_err(query_error)?;
+    let mut active_provider = None;
+    for provider in &providers {
+        if provider.id <= 0 || provider.organization_id != organization_id.get() {
+            return Err(invariant());
+        }
+        let status =
+            OrganizationSsoProviderStatus::try_from(provider.status).map_err(|_| invariant())?;
+        let _protocol =
+            OrganizationSsoProtocol::try_from(provider.protocol).map_err(|_| invariant())?;
+        let _key = OrganizationSsoProviderKey::from_persistence_key(&provider.provider_key)
+            .map_err(|_| invariant())?;
+        if status == OrganizationSsoProviderStatus::Active
+            && active_provider.replace(provider).is_some()
+        {
+            return Err(OrganizationSsoRepositoryError::Conflict);
+        }
+    }
+    let Some(provider) = active_provider else {
+        return Ok(false);
+    };
+    if requested_provider_id.is_some_and(|id| id != provider.id) {
+        return Ok(false);
+    }
+    if !provider
+        .metadata_projection
+        .as_ref()
+        .is_some_and(|value| matches!(value, Json::Object(_)))
+        || !provider
+            .secret_envelope
+            .as_ref()
+            .is_some_and(|value| value.envelope_parts().is_ok())
+    {
+        return Ok(false);
+    }
+
+    let domains = organization_sso_domains::Entity::find()
+        .filter(organization_sso_domains::Column::OrganizationId.eq(organization_id.get()))
+        .all(pool.connection())
+        .await
+        .map_err(query_error)?;
+    let mut verified_domain_ready = false;
+    for domain in &domains {
+        if domain.organization_id != organization_id.get() || domain.provider_id <= 0 {
+            return Err(invariant());
+        }
+        let status =
+            OrganizationSsoDomainStatus::try_from(domain.status).map_err(|_| invariant())?;
+        let _domain = OrganizationSsoDomain::new(domain.domain.clone()).map_err(|_| invariant())?;
+        if domain.provider_id == provider.id
+            && status == OrganizationSsoDomainStatus::Verified
+            && domain.verified_at.is_some()
+            && domain.revoked_at.is_none()
+            && domain
+                .proof_expires_at
+                .as_ref()
+                .is_some_and(|value| value.unix_timestamp() > now)
+            && domain
+                .recheck_at
+                .as_ref()
+                .is_some_and(|value| value.unix_timestamp() > now)
+        {
+            verified_domain_ready = true;
+        }
+    }
+    Ok(verified_domain_ready)
 }
 
 async fn organization_exists(

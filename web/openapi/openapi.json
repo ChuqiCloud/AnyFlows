@@ -18606,6 +18606,58 @@
         ]
       }
     },
+    "/api/auth/organization-sso/discovery": {
+      "post": {
+        "tags": [
+          "企业 SSO"
+        ],
+        "summary": "公开发现企业 SSO",
+        "description": "仅接受企业公开标识或邮箱并返回通用可用性。未知、停用、过期、冲突或损坏事实均统一为 available=false，不返回企业、域名或 Provider 资料。",
+        "operationId": "discoverOrganizationSso",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationSsoDiscoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "返回通用企业 SSO 可用性",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoDiscoveryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "发现请求无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoDiscoveryErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "发现服务暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoDiscoveryErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/organizations/{organization_id}/sso/providers": {
       "get": {
         "tags": [
@@ -35603,6 +35655,51 @@
           "expected_version": {
             "type": "integer",
             "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoDiscoveryErrorResponse": {
+        "type": "object",
+        "description": "公开发现输入无效或依赖不可用时的稳定错误投影。",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoDiscoveryRequest": {
+        "type": "object",
+        "description": "公开发现请求；identifier 可以是企业公开标识或邮箱，不接受额外字段。",
+        "required": [
+          "identifier"
+        ],
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "maxLength": 320,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoDiscoveryResponse": {
+        "type": "object",
+        "description": "公开发现响应只返回通用企业 SSO 动作资格，不泄露企业或 Provider 资料。",
+        "required": [
+          "available"
+        ],
+        "properties": {
+          "available": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false

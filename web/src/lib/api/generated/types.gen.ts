@@ -1826,6 +1826,16 @@ export type OrganizationServiceAccountStatusRequest = {
     status: string;
     expected_version: number;
 };
+export type OrganizationSsoDiscoveryErrorResponse = {
+    code: string;
+    message: string;
+};
+export type OrganizationSsoDiscoveryRequest = {
+    identifier: string;
+};
+export type OrganizationSsoDiscoveryResponse = {
+    available: boolean;
+};
 export type OrganizationSsoDomain = {
     id: number;
     organization_id: number;
@@ -7151,6 +7161,21 @@ export type CloseOrganizationContractPriceResponses = {
     200: ContractPriceResponse;
 };
 export type CloseOrganizationContractPriceResponse = CloseOrganizationContractPriceResponses[keyof CloseOrganizationContractPriceResponses];
+export type DiscoverOrganizationSsoData = {
+    body: OrganizationSsoDiscoveryRequest;
+    path?: never;
+    query?: never;
+    url: '/api/auth/organization-sso/discovery';
+};
+export type DiscoverOrganizationSsoErrors = {
+    400: OrganizationSsoDiscoveryErrorResponse;
+    503: OrganizationSsoDiscoveryErrorResponse;
+};
+export type DiscoverOrganizationSsoError = DiscoverOrganizationSsoErrors[keyof DiscoverOrganizationSsoErrors];
+export type DiscoverOrganizationSsoResponses = {
+    200: OrganizationSsoDiscoveryResponse;
+};
+export type DiscoverOrganizationSsoResponse = DiscoverOrganizationSsoResponses[keyof DiscoverOrganizationSsoResponses];
 export type ListOrganizationSsoProvidersData = {
     body?: never;
     path: {

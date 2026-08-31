@@ -634,8 +634,8 @@ pub use organization_service_account_budget::{
     OrganizationServiceAccountBudgetBindingRepositoryError,
 };
 pub use organization_sso::{
-    OrganizationSsoDomainCreate, OrganizationSsoDomainRecord, OrganizationSsoDomainUpdate,
-    OrganizationSsoIdentityCreate, OrganizationSsoIdentityRecord,
+    OrganizationSsoDiscoveryLocator, OrganizationSsoDomainCreate, OrganizationSsoDomainRecord,
+    OrganizationSsoDomainUpdate, OrganizationSsoIdentityCreate, OrganizationSsoIdentityRecord,
     OrganizationSsoLoginTransactionCreate, OrganizationSsoLoginTransactionRecord,
     OrganizationSsoLoginTransactionResult, OrganizationSsoPolicyRecord,
     OrganizationSsoPolicyUpdate, OrganizationSsoProviderCreate, OrganizationSsoProviderRecord,
