@@ -32,14 +32,15 @@ export function OrganizationSsoDomains({
   providers,
   canManage,
   providersLoaded,
+  query,
 }: {
   organizationId: number
   providers: readonly OrganizationSsoProvider[]
   canManage: boolean
   providersLoaded: boolean
+  query: ReturnType<typeof useOrganizationSsoDomains>
 }) {
   const { t } = useTranslation()
-  const query = useOrganizationSsoDomains(organizationId, true)
   const createMutation = useCreateOrganizationSsoDomain(organizationId)
   const verifyMutation = useVerifyOrganizationSsoDomain(organizationId)
   const [providerKey, setProviderKey] = useState('')

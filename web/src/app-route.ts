@@ -55,6 +55,7 @@ export type AppRoute = {
   resetToken?: string
   inviteCode?: string
   profileSection?: 'notifications'
+  activityTab?: 'audit' | 'scim' | 'usage'
 }
 
 const shareRoutePrefix = '#/share/'
@@ -79,6 +80,16 @@ function profileSectionQuery(hash: string): AppRoute['profileSection'] {
   if (queryStart < 0) return undefined
   const values = new URLSearchParams(hash.slice(queryStart + 1)).getAll('section')
   return values.length === 1 && values[0] === 'notifications' ? 'notifications' : undefined
+}
+
+/** 只接受企业活动页签深链，避免把任意查询值带入页内状态。 */
+function activityTabQuery(hash: string): AppRoute['activityTab'] {
+  const queryStart = hash.indexOf('?')
+  if (queryStart < 0) return undefined
+  const values = new URLSearchParams(hash.slice(queryStart + 1)).getAll('tab')
+  return values.length === 1 && (values[0] === 'audit' || values[0] === 'scim' || values[0] === 'usage')
+    ? values[0]
+    : undefined
 }
 
 /** 解析临时 hash 路由，并严格限制公开分享令牌的可接受格式。 */
@@ -120,7 +131,10 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash.startsWith('#/console/system-settings/models')) return { view: 'model-settings' }
   if (hash.startsWith('#/console/api-keys')) return { view: 'api-keys' }
   if (hash.startsWith('#/console/organization-api-keys')) return { view: 'organization-api-keys' }
-  if (hash.startsWith('#/console/organization-activity')) return { view: 'organization-activity' }
+  if (hash.startsWith('#/console/organization-activity')) {
+    const activityTab = activityTabQuery(hash)
+    return activityTab ? { view: 'organization-activity', activityTab } : { view: 'organization-activity' }
+  }
   if (hash.startsWith('#/console/organization-budgets')) return { view: 'organization-budgets' }
   if (hash.startsWith('#/console/organization-contract-prices')) return { view: 'organization-contract-prices' }
   if (hash.startsWith('#/console/organization-approvals')) return { view: 'organization-approvals' }

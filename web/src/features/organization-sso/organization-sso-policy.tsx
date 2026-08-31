@@ -24,15 +24,16 @@ export function OrganizationSsoPolicyPanel({
   organizationId,
   ssoEnabled,
   permissions,
+  query,
 }: {
   organizationId: number
   ssoEnabled: boolean
   permissions: readonly string[]
+  query: ReturnType<typeof useOrganizationSsoPolicy>
 }) {
   const { t } = useTranslation()
   const canRead = permissions.includes(SSO_READ)
   const canRecover = permissions.includes(SSO_RECOVERY)
-  const query = useOrganizationSsoPolicy(organizationId, ssoEnabled && canRead)
   const policy = query.data
 
   return (
