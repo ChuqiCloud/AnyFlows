@@ -1,6 +1,12 @@
-use std::{fmt, future::Future, time::Duration};
+use std::{
+    fmt,
+    future::Future,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use af_domain::{
+    MAX_ORGANIZATION_SSO_PROOF_TTL_SECONDS, MIN_ORGANIZATION_SSO_PROOF_TTL_SECONDS,
     OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot,
     OrganizationEntitlementStatus, OrganizationId, OrganizationKey, OrganizationMembershipId,
     OrganizationMembershipStatus, OrganizationSsoDnsVerification, OrganizationSsoDomain,
@@ -11,8 +17,8 @@ use af_domain::{
     authorize_organization_sso_identity_login,
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, DbErr,
-    EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, SqlErr,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseTransaction, DbBackend,
+    DbErr, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, SqlErr,
     TransactionTrait,
     entity::prelude::{Json, TimeDateTimeWithTimeZone},
     sea_query::{Expr, LockType},
@@ -25,10 +31,14 @@ use crate::{
     DatabasePool, EncryptedCredentialEnvelope,
     entity::{
         EncryptedJson, SensitiveString, organization_entitlements, organization_memberships,
-        organization_sso_domains, organization_sso_identities, organization_sso_login_transactions,
+        organization_sso_domain_reverification_leases, organization_sso_domains,
+        organization_sso_identities, organization_sso_login_transactions,
         organization_sso_policies, organization_sso_providers, organizations,
     },
 };
+
+const DOMAIN_REVERIFICATION_LEASE_KEY: &str = "organization-sso-domain-reverification-v1";
+const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 
 /// 创建企业 SSO Provider 的配置事实。
 pub struct OrganizationSsoProviderCreate {
@@ -354,6 +364,174 @@ impl OrganizationSsoDomainRecord {
     pub const fn version(&self) -> i64 {
         self.version
     }
+}
+
+/// Verified 域名扫描使用的稳定主键游标。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OrganizationSsoDomainReverificationCursor {
+    id: i64,
+}
+
+impl OrganizationSsoDomainReverificationCursor {
+    /// 构造严格为正的数据库主键游标。
+    pub const fn new(id: i64) -> Result<Self, OrganizationSsoRepositoryError> {
+        if id <= 0 {
+            return Err(OrganizationSsoRepositoryError::InvalidInput);
+        }
+        Ok(Self { id })
+    }
+
+    #[must_use]
+    pub const fn id(self) -> i64 {
+        self.id
+    }
+}
+
+/// 单个待复验域名；Debug 不暴露企业、域名或证明摘要。
+#[derive(Clone, PartialEq)]
+pub struct OrganizationSsoDomainReverificationTarget {
+    organization_id: OrganizationId,
+    domain_id: i64,
+    domain: OrganizationSsoDomain,
+    proof_digest: String,
+    expected_version: i64,
+}
+
+impl OrganizationSsoDomainReverificationTarget {
+    /// 构造脱敏复验目标；持久化仓储与测试端口共用相同输入边界。
+    pub fn new(
+        organization_id: OrganizationId,
+        domain_id: i64,
+        domain: OrganizationSsoDomain,
+        proof_digest: String,
+        expected_version: i64,
+    ) -> Result<Self, OrganizationSsoRepositoryError> {
+        if domain_id <= 0 {
+            return Err(OrganizationSsoRepositoryError::InvalidInput);
+        }
+        validate_digest(&proof_digest)?;
+        validate_expected_version(expected_version)?;
+        Ok(Self {
+            organization_id,
+            domain_id,
+            domain,
+            proof_digest,
+            expected_version,
+        })
+    }
+
+    #[must_use]
+    pub const fn organization_id(&self) -> OrganizationId {
+        self.organization_id
+    }
+    #[must_use]
+    pub const fn domain_id(&self) -> i64 {
+        self.domain_id
+    }
+    #[must_use]
+    pub fn domain(&self) -> &OrganizationSsoDomain {
+        &self.domain
+    }
+    #[must_use]
+    pub fn proof_digest(&self) -> &str {
+        &self.proof_digest
+    }
+    #[must_use]
+    pub const fn expected_version(&self) -> i64 {
+        self.expected_version
+    }
+}
+
+impl fmt::Debug for OrganizationSsoDomainReverificationTarget {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("OrganizationSsoDomainReverificationTarget(<redacted>)")
+    }
+}
+
+/// 一页到期复验目标及稳定扫描进度。
+#[derive(Clone, Debug, PartialEq)]
+pub struct OrganizationSsoDomainReverificationBatch {
+    targets: Vec<OrganizationSsoDomainReverificationTarget>,
+    scanned_count: usize,
+    next_cursor: Option<OrganizationSsoDomainReverificationCursor>,
+}
+
+impl OrganizationSsoDomainReverificationBatch {
+    /// 组装仓储扫描页；执行器会再次校验数量和游标推进关系。
+    #[must_use]
+    pub fn new(
+        targets: Vec<OrganizationSsoDomainReverificationTarget>,
+        scanned_count: usize,
+        next_cursor: Option<OrganizationSsoDomainReverificationCursor>,
+    ) -> Self {
+        Self {
+            targets,
+            scanned_count,
+            next_cursor,
+        }
+    }
+
+    #[must_use]
+    pub fn into_parts(
+        self,
+    ) -> (
+        Vec<OrganizationSsoDomainReverificationTarget>,
+        usize,
+        Option<OrganizationSsoDomainReverificationCursor>,
+    ) {
+        (self.targets, self.scanned_count, self.next_cursor)
+    }
+}
+
+/// 当前实例持有的域名复验租约摘要。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OrganizationSsoDomainReverificationLease {
+    version: i64,
+    lease_expires_at: TimeDateTimeWithTimeZone,
+}
+
+impl OrganizationSsoDomainReverificationLease {
+    /// 构造已取得的租约投影。
+    pub const fn new(
+        version: i64,
+        lease_expires_at: TimeDateTimeWithTimeZone,
+    ) -> Result<Self, OrganizationSsoRepositoryError> {
+        if version <= 0 {
+            return Err(OrganizationSsoRepositoryError::InvalidInput);
+        }
+        Ok(Self {
+            version,
+            lease_expires_at,
+        })
+    }
+
+    /// 返回租约 CAS 版本。
+    #[must_use]
+    pub const fn version(self) -> i64 {
+        self.version
+    }
+
+    /// 返回当前租约到期时间。
+    #[must_use]
+    pub const fn lease_expires_at(self) -> TimeDateTimeWithTimeZone {
+        self.lease_expires_at
+    }
+}
+
+/// 全局复验租约竞争结果。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OrganizationSsoDomainReverificationLeaseOutcome {
+    Acquired(OrganizationSsoDomainReverificationLease),
+    Held,
+}
+
+/// 单个域名 CAS 写入结果。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OrganizationSsoDomainReverificationOutcome {
+    Refreshed,
+    Revoked,
+    Existing,
+    Skipped,
 }
 
 /// 创建企业 SSO 身份绑定事实。
@@ -822,6 +1000,7 @@ pub enum OrganizationSsoRepositoryError {
 pub struct OrganizationSsoProviderRepository {
     pool: DatabasePool,
     operation_timeout: Duration,
+    reverification_lease_owner: Arc<Mutex<Option<String>>>,
 }
 
 impl OrganizationSsoProviderRepository {
@@ -836,6 +1015,7 @@ impl OrganizationSsoProviderRepository {
         Ok(Self {
             pool,
             operation_timeout,
+            reverification_lease_owner: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -1130,6 +1310,70 @@ impl OrganizationSsoProviderRepository {
             expected_version,
         ))
         .await
+    }
+
+    /// 按主键有界读取 `recheck_at` 已到期的 Verified 域名。
+    pub async fn list_domain_reverification_due(
+        &self,
+        now: i64,
+        after: Option<OrganizationSsoDomainReverificationCursor>,
+        limit: usize,
+    ) -> Result<OrganizationSsoDomainReverificationBatch, OrganizationSsoRepositoryError> {
+        self.run(self.list_domain_reverification_due_inner(now, after, limit))
+            .await
+    }
+
+    /// 竞争独立的全局域名复验租约；同一实例可在租约到期前续租。
+    pub async fn acquire_domain_reverification_lease(
+        &self,
+        now: i64,
+        lease_duration: Duration,
+    ) -> Result<OrganizationSsoDomainReverificationLeaseOutcome, OrganizationSsoRepositoryError>
+    {
+        if now < 0 || lease_duration.is_zero() {
+            return Err(OrganizationSsoRepositoryError::InvalidInput);
+        }
+        let owner_token = self.domain_reverification_lease_owner_token()?;
+        self.run(self.acquire_domain_reverification_lease_inner(now, lease_duration, owner_token))
+            .await
+    }
+
+    /// DNS 摘要仍匹配时仅推进下一复验时间，并保持原始验证时间不变。
+    pub async fn refresh_domain_reverification(
+        &self,
+        target: &OrganizationSsoDomainReverificationTarget,
+        now: i64,
+        recheck_at: i64,
+    ) -> Result<OrganizationSsoDomainReverificationOutcome, OrganizationSsoRepositoryError> {
+        self.run(self.finish_domain_reverification_inner(target.clone(), now, Some(recheck_at)))
+            .await
+    }
+
+    /// DNS 缺失、不匹配、超时或损坏时用企业范围 CAS 撤销域名。
+    pub async fn revoke_domain_after_reverification(
+        &self,
+        target: &OrganizationSsoDomainReverificationTarget,
+        now: i64,
+    ) -> Result<OrganizationSsoDomainReverificationOutcome, OrganizationSsoRepositoryError> {
+        self.run(self.finish_domain_reverification_inner(target.clone(), now, None))
+            .await
+    }
+
+    fn domain_reverification_lease_owner_token(
+        &self,
+    ) -> Result<String, OrganizationSsoRepositoryError> {
+        let mut owner = self
+            .reverification_lease_owner
+            .lock()
+            .map_err(|_| OrganizationSsoRepositoryError::Invariant)?;
+        if let Some(token) = owner.as_ref() {
+            return Ok(token.clone());
+        }
+        let mut bytes = [0_u8; 16];
+        getrandom::fill(&mut bytes).map_err(|_| OrganizationSsoRepositoryError::Invariant)?;
+        let token = encode_hex_bytes(&bytes);
+        *owner = Some(token.clone());
+        Ok(token)
     }
 
     /// 创建唯一的活动身份绑定。
@@ -1806,6 +2050,273 @@ impl OrganizationSsoProviderRepository {
         Ok(record)
     }
 
+    async fn list_domain_reverification_due_inner(
+        &self,
+        now: i64,
+        after: Option<OrganizationSsoDomainReverificationCursor>,
+        limit: usize,
+    ) -> Result<OrganizationSsoDomainReverificationBatch, OrganizationSsoRepositoryError> {
+        if now < 0 || !(1..=100).contains(&limit) {
+            return Err(OrganizationSsoRepositoryError::InvalidInput);
+        }
+        let fetch_limit = limit
+            .checked_add(1)
+            .and_then(|value| u64::try_from(value).ok())
+            .ok_or_else(invariant)?;
+        let mut query = organization_sso_domains::Entity::find()
+            .filter(
+                organization_sso_domains::Column::Status
+                    .eq(OrganizationSsoDomainStatus::Verified.code()),
+            )
+            .filter(organization_sso_domains::Column::RecheckAt.lte(timestamp(now)?))
+            .order_by_asc(organization_sso_domains::Column::Id)
+            .limit(fetch_limit);
+        if let Some(after) = after {
+            query = query.filter(organization_sso_domains::Column::Id.gt(after.id));
+        }
+        let mut models = query
+            .all(self.pool.connection())
+            .await
+            .map_err(query_error)?;
+        let has_more = models.len() > limit;
+        if has_more {
+            models.truncate(limit);
+        }
+        let scanned_count = models.len();
+        let next_cursor = if has_more {
+            models
+                .last()
+                .map(|model| OrganizationSsoDomainReverificationCursor { id: model.id })
+        } else {
+            None
+        };
+        let mut targets = Vec::with_capacity(models.len());
+        for model in models {
+            let organization_id =
+                OrganizationId::new(model.organization_id).map_err(|_| invariant())?;
+            let domain = OrganizationSsoDomain::new(model.domain).map_err(|_| invariant())?;
+            let proof_digest = model.proof_digest.as_str().to_owned();
+            validate_digest(&proof_digest).map_err(|_| invariant())?;
+            validate_expected_version(model.version).map_err(|_| invariant())?;
+            targets.push(OrganizationSsoDomainReverificationTarget::new(
+                organization_id,
+                model.id,
+                domain,
+                proof_digest,
+                model.version,
+            )?);
+        }
+        Ok(OrganizationSsoDomainReverificationBatch::new(
+            targets,
+            scanned_count,
+            next_cursor,
+        ))
+    }
+
+    async fn acquire_domain_reverification_lease_inner(
+        &self,
+        now: i64,
+        lease_duration: Duration,
+        owner_token: String,
+    ) -> Result<OrganizationSsoDomainReverificationLeaseOutcome, OrganizationSsoRepositoryError>
+    {
+        let now = timestamp(now)?;
+        let lease_seconds = i64::try_from(lease_duration.as_secs())
+            .map_err(|_| OrganizationSsoRepositoryError::InvalidInput)?
+            .checked_add(i64::from(lease_duration.subsec_nanos() > 0))
+            .ok_or_else(invariant)?;
+        let lease_expires_at = timestamp(
+            now.unix_timestamp()
+                .checked_add(lease_seconds)
+                .ok_or_else(invariant)?,
+        )?;
+        let existing = organization_sso_domain_reverification_leases::Entity::find_by_id(
+            DOMAIN_REVERIFICATION_LEASE_KEY,
+        )
+        .one(self.pool.connection())
+        .await
+        .map_err(query_error)?;
+        let existing = match existing {
+            Some(existing) => existing,
+            None => {
+                let inserted = organization_sso_domain_reverification_leases::ActiveModel {
+                    lease_key: Set(DOMAIN_REVERIFICATION_LEASE_KEY.to_owned()),
+                    owner_token: Set(owner_token.clone()),
+                    lease_expires_at: Set(lease_expires_at),
+                    version: Set(1),
+                    updated_at: Set(now),
+                };
+                match inserted.insert(self.pool.connection()).await {
+                    Ok(_) => {
+                        return Ok(OrganizationSsoDomainReverificationLeaseOutcome::Acquired(
+                            OrganizationSsoDomainReverificationLease {
+                                version: 1,
+                                lease_expires_at,
+                            },
+                        ));
+                    }
+                    Err(_) => organization_sso_domain_reverification_leases::Entity::find_by_id(
+                        DOMAIN_REVERIFICATION_LEASE_KEY,
+                    )
+                    .one(self.pool.connection())
+                    .await
+                    .map_err(query_error)?
+                    .ok_or(OrganizationSsoRepositoryError::Query)?,
+                }
+            }
+        };
+        if existing.lease_expires_at > now && existing.owner_token != owner_token {
+            return Ok(OrganizationSsoDomainReverificationLeaseOutcome::Held);
+        }
+        let next_version = existing.version.checked_add(1).ok_or_else(invariant)?;
+        let result = organization_sso_domain_reverification_leases::Entity::update_many()
+            .col_expr(
+                organization_sso_domain_reverification_leases::Column::OwnerToken,
+                Expr::value(owner_token),
+            )
+            .col_expr(
+                organization_sso_domain_reverification_leases::Column::LeaseExpiresAt,
+                Expr::value(lease_expires_at),
+            )
+            .col_expr(
+                organization_sso_domain_reverification_leases::Column::Version,
+                Expr::value(next_version),
+            )
+            .col_expr(
+                organization_sso_domain_reverification_leases::Column::UpdatedAt,
+                Expr::value(now),
+            )
+            .filter(
+                organization_sso_domain_reverification_leases::Column::LeaseKey
+                    .eq(DOMAIN_REVERIFICATION_LEASE_KEY),
+            )
+            .filter(
+                organization_sso_domain_reverification_leases::Column::Version.eq(existing.version),
+            )
+            .filter(
+                Condition::any()
+                    .add(
+                        organization_sso_domain_reverification_leases::Column::LeaseExpiresAt
+                            .lte(now),
+                    )
+                    .add(
+                        organization_sso_domain_reverification_leases::Column::OwnerToken
+                            .eq(existing.owner_token),
+                    ),
+            )
+            .exec(self.pool.connection())
+            .await
+            .map_err(query_error)?;
+        match result.rows_affected {
+            0 => Ok(OrganizationSsoDomainReverificationLeaseOutcome::Held),
+            1 => Ok(OrganizationSsoDomainReverificationLeaseOutcome::Acquired(
+                OrganizationSsoDomainReverificationLease {
+                    version: next_version,
+                    lease_expires_at,
+                },
+            )),
+            _ => Err(invariant()),
+        }
+    }
+
+    async fn finish_domain_reverification_inner(
+        &self,
+        target: OrganizationSsoDomainReverificationTarget,
+        now: i64,
+        next_recheck_at: Option<i64>,
+    ) -> Result<OrganizationSsoDomainReverificationOutcome, OrganizationSsoRepositoryError> {
+        if now < 0
+            || next_recheck_at.is_some_and(|value| {
+                value.checked_sub(now).is_none_or(|interval| {
+                    !(MIN_ORGANIZATION_SSO_PROOF_TTL_SECONDS
+                        ..=MAX_ORGANIZATION_SSO_PROOF_TTL_SECONDS)
+                        .contains(&interval)
+                })
+            })
+        {
+            return Err(OrganizationSsoRepositoryError::InvalidInput);
+        }
+        let now = timestamp(now)?;
+        let next_recheck_at = next_recheck_at.map(timestamp).transpose()?;
+        let next_version = target
+            .expected_version
+            .checked_add(1)
+            .ok_or_else(invariant)?;
+        let mut update = organization_sso_domains::Entity::update_many()
+            .filter(organization_sso_domains::Column::Id.eq(target.domain_id))
+            .filter(
+                organization_sso_domains::Column::OrganizationId.eq(target.organization_id.get()),
+            )
+            .filter(organization_sso_domains::Column::Version.eq(target.expected_version))
+            .filter(
+                organization_sso_domains::Column::Status
+                    .eq(OrganizationSsoDomainStatus::Verified.code()),
+            )
+            .filter(organization_sso_domains::Column::RecheckAt.lte(now))
+            .filter(organization_sso_domains::Column::Domain.eq(target.domain.as_str()))
+            .filter(organization_sso_domains::Column::ProofDigest.eq(&target.proof_digest))
+            .col_expr(
+                organization_sso_domains::Column::Version,
+                Expr::value(next_version),
+            )
+            .col_expr(
+                organization_sso_domains::Column::UpdatedAt,
+                Expr::value(now),
+            );
+        let success = next_recheck_at.is_some();
+        if let Some(recheck_at) = next_recheck_at {
+            update = update.col_expr(
+                organization_sso_domains::Column::RecheckAt,
+                Expr::value(Some(recheck_at)),
+            );
+        } else {
+            update = update
+                .col_expr(
+                    organization_sso_domains::Column::Status,
+                    Expr::value(OrganizationSsoDomainStatus::Revoked.code()),
+                )
+                .col_expr(
+                    organization_sso_domains::Column::RecheckAt,
+                    Expr::value(None::<TimeDateTimeWithTimeZone>),
+                )
+                .col_expr(
+                    organization_sso_domains::Column::RevokedAt,
+                    Expr::value(Some(now)),
+                );
+        }
+        let result = update
+            .exec(self.pool.connection())
+            .await
+            .map_err(query_error)?;
+        match result.rows_affected {
+            1 if success => Ok(OrganizationSsoDomainReverificationOutcome::Refreshed),
+            1 => Ok(OrganizationSsoDomainReverificationOutcome::Revoked),
+            0 => {
+                let current = organization_sso_domains::Entity::find_by_id(target.domain_id)
+                    .filter(
+                        organization_sso_domains::Column::OrganizationId
+                            .eq(target.organization_id.get()),
+                    )
+                    .one(self.pool.connection())
+                    .await
+                    .map_err(query_error)?;
+                match current {
+                    Some(model)
+                        if domain_reverification_already_applied(
+                            &model,
+                            &target,
+                            next_recheck_at,
+                        ) =>
+                    {
+                        Ok(OrganizationSsoDomainReverificationOutcome::Existing)
+                    }
+                    _ => Ok(OrganizationSsoDomainReverificationOutcome::Skipped),
+                }
+            }
+            _ => Err(invariant()),
+        }
+    }
+
     async fn create_identity_inner(
         &self,
         organization_id: OrganizationId,
@@ -2378,6 +2889,31 @@ impl OrganizationSsoProviderRepository {
     }
 }
 
+fn domain_reverification_already_applied(
+    current: &organization_sso_domains::Model,
+    target: &OrganizationSsoDomainReverificationTarget,
+    next_recheck_at: Option<TimeDateTimeWithTimeZone>,
+) -> bool {
+    if current.domain != target.domain.as_str()
+        || current.proof_digest.as_str() != target.proof_digest
+        || current.version <= target.expected_version
+    {
+        return false;
+    }
+    match next_recheck_at {
+        Some(expected) => {
+            current.status == OrganizationSsoDomainStatus::Verified.code()
+                && current.revoked_at.is_none()
+                && current.recheck_at.is_some_and(|actual| actual >= expected)
+        }
+        None => {
+            current.status == OrganizationSsoDomainStatus::Revoked.code()
+                && current.recheck_at.is_none()
+                && current.revoked_at.is_some()
+        }
+    }
+}
+
 impl fmt::Debug for OrganizationSsoProviderRepository {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -2427,10 +2963,6 @@ async fn discovery_available_inner(
                 if status == OrganizationSsoDomainStatus::Verified
                     && model.verified_at.is_some()
                     && model.revoked_at.is_none()
-                    && model
-                        .proof_expires_at
-                        .as_ref()
-                        .is_some_and(|value| value.unix_timestamp() > now)
                     && model
                         .recheck_at
                         .as_ref()
@@ -2536,10 +3068,6 @@ async fn discovery_available_inner(
             && status == OrganizationSsoDomainStatus::Verified
             && domain.verified_at.is_some()
             && domain.revoked_at.is_none()
-            && domain
-                .proof_expires_at
-                .as_ref()
-                .is_some_and(|value| value.unix_timestamp() > now)
             && domain
                 .recheck_at
                 .as_ref()
@@ -2696,10 +3224,6 @@ async fn required_enforcement_facts(
             && status == OrganizationSsoDomainStatus::Verified
             && domain.verified_at.is_some()
             && domain.revoked_at.is_none()
-            && domain
-                .proof_expires_at
-                .as_ref()
-                .is_some_and(|value| *value > now)
             && domain.recheck_at.as_ref().is_some_and(|value| *value > now)
     });
     // 上面的 any 只负责筛选，先完整解析所有域名状态以拒绝未知值。
@@ -3120,6 +3644,15 @@ fn validate_digest(value: &str) -> Result<(), OrganizationSsoRepositoryError> {
     } else {
         Ok(())
     }
+}
+
+fn encode_hex_bytes(bytes: &[u8]) -> String {
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        encoded.push(char::from(HEX_DIGITS[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX_DIGITS[usize::from(byte & 0x0f)]));
+    }
+    encoded
 }
 fn decode_digest(value: &str) -> Result<[u8; 32], OrganizationSsoRepositoryError> {
     validate_digest(value)?;

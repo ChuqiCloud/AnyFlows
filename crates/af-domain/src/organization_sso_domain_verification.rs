@@ -233,12 +233,21 @@ impl OrganizationSsoDomainProof {
     /// 按域名和固定上下文计算隔离摘要，防止跨用途复用同一令牌摘要。
     #[must_use]
     pub fn digest(&self) -> String {
+        Self::digest_for_token(&self.domain, &self.token)
+    }
+
+    /// 按固定用途上下文计算摘要；令牌只在调用栈内短暂存在，不进入持久化层。
+    #[must_use]
+    pub fn digest_for_token(
+        domain: &OrganizationSsoDomain,
+        token: &OrganizationSsoDomainProofToken,
+    ) -> String {
         let mut hasher = Sha256::new();
         hasher.update(ORGANIZATION_SSO_PROOF_DIGEST_CONTEXT);
         hasher.update([0]);
-        hasher.update(self.domain.as_str().as_bytes());
+        hasher.update(domain.as_str().as_bytes());
         hasher.update([0]);
-        hasher.update(self.token.as_str().as_bytes());
+        hasher.update(token.as_str().as_bytes());
         hex_digest(hasher.finalize().into())
     }
 }
@@ -269,6 +278,79 @@ impl OrganizationSsoDnsTxtAnswers {
     fn contains_exact(&self, token: &OrganizationSsoDomainProofToken) -> bool {
         self.0.iter().any(|answer| answer == token.as_str())
     }
+
+    /// 复验时从 TXT 答案恢复短暂 token 并比较域隔离摘要，不依赖一次性证明有效期。
+    #[must_use]
+    pub fn matches_digest(&self, domain: &OrganizationSsoDomain, expected_digest: &str) -> bool {
+        self.0.iter().any(|answer| {
+            OrganizationSsoDomainProofToken::new(answer.clone())
+                .ok()
+                .is_some_and(|token| {
+                    OrganizationSsoDomainProof::digest_for_token(domain, &token) == expected_digest
+                })
+        })
+    }
+}
+
+/// Verified 域名持续复验成功后的下一次复验时间。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OrganizationSsoDnsReverification {
+    recheck_at: i64,
+}
+
+impl OrganizationSsoDnsReverification {
+    /// 复验只比较持久化摘要，不把一次性认领证明的过期时间当作 TXT 失效。
+    pub fn verify(
+        domain: &OrganizationSsoDomain,
+        current_status: OrganizationSsoDomainStatus,
+        proof_digest: &str,
+        answers: &OrganizationSsoDnsTxtAnswers,
+        now: i64,
+        recheck_interval_seconds: i64,
+    ) -> Result<Self, OrganizationSsoDnsReverificationError> {
+        if current_status != OrganizationSsoDomainStatus::Verified {
+            return Err(OrganizationSsoDnsReverificationError::InvalidStatus);
+        }
+        if now < 0
+            || !(MIN_ORGANIZATION_SSO_PROOF_TTL_SECONDS..=MAX_ORGANIZATION_SSO_PROOF_TTL_SECONDS)
+                .contains(&recheck_interval_seconds)
+        {
+            return Err(OrganizationSsoDnsReverificationError::InvalidTime);
+        }
+        if proof_digest.len() != 64
+            || !proof_digest
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err(OrganizationSsoDnsReverificationError::InvalidDigest);
+        }
+        if !answers.matches_digest(domain, proof_digest) {
+            return Err(OrganizationSsoDnsReverificationError::ProofMismatch);
+        }
+        let recheck_at = now
+            .checked_add(recheck_interval_seconds)
+            .ok_or(OrganizationSsoDnsReverificationError::InvalidTime)?;
+        Ok(Self { recheck_at })
+    }
+
+    /// 返回成功复验后的下一次检查时刻。
+    #[must_use]
+    pub const fn recheck_at(self) -> i64 {
+        self.recheck_at
+    }
+}
+
+/// 持续复验失败分类；不携带 DNS 原文或证明令牌。
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum OrganizationSsoDnsReverificationError {
+    #[error("企业 SSO 域名状态不可复验")]
+    InvalidStatus,
+    #[error("企业 SSO 域名证明摘要无效")]
+    InvalidDigest,
+    #[error("企业 SSO DNS TXT 证明不匹配")]
+    ProofMismatch,
+    #[error("企业 SSO 域名复验时间无效")]
+    InvalidTime,
 }
 
 impl fmt::Debug for OrganizationSsoDnsTxtAnswers {

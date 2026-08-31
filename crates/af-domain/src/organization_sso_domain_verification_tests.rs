@@ -1,5 +1,6 @@
 use super::{
-    DEFAULT_ORGANIZATION_SSO_RECHECK_INTERVAL_SECONDS, OrganizationSsoDnsTxtAnswers,
+    DEFAULT_ORGANIZATION_SSO_RECHECK_INTERVAL_SECONDS, OrganizationSsoDnsReverification,
+    OrganizationSsoDnsReverificationError, OrganizationSsoDnsTxtAnswers,
     OrganizationSsoDnsVerification, OrganizationSsoDnsVerificationError, OrganizationSsoDomain,
     OrganizationSsoDomainProof, OrganizationSsoDomainProofError, OrganizationSsoDomainProofToken,
     OrganizationSsoDomainStatus, OrganizationSsoDomainSuffixKind,
@@ -122,5 +123,63 @@ fn proof_constructor_rejects_invalid_token_and_ttl() {
             1,
         ),
         Err(OrganizationSsoDomainProofError::InvalidTtl)
+    );
+}
+
+#[test]
+fn reverification_accepts_expired_proof_when_txt_digest_still_matches() {
+    let proof = proof("example.com");
+    let answers = OrganizationSsoDnsTxtAnswers::new(vec![TOKEN.to_owned()]);
+    let result = OrganizationSsoDnsReverification::verify(
+        proof.domain(),
+        OrganizationSsoDomainStatus::Verified,
+        &proof.digest(),
+        &answers,
+        10_000,
+        DEFAULT_ORGANIZATION_SSO_RECHECK_INTERVAL_SECONDS,
+    )
+    .unwrap();
+    assert_eq!(
+        result.recheck_at(),
+        10_000 + DEFAULT_ORGANIZATION_SSO_RECHECK_INTERVAL_SECONDS
+    );
+}
+
+#[test]
+fn reverification_rejects_mismatch_and_non_verified_status_without_leaking_material() {
+    let proof = proof("example.com");
+    let mismatch = OrganizationSsoDnsTxtAnswers::new(vec!["not-a-token".to_owned()]);
+    assert_eq!(
+        OrganizationSsoDnsReverification::verify(
+            proof.domain(),
+            OrganizationSsoDomainStatus::Verified,
+            &proof.digest(),
+            &mismatch,
+            10_000,
+            DEFAULT_ORGANIZATION_SSO_RECHECK_INTERVAL_SECONDS,
+        ),
+        Err(OrganizationSsoDnsReverificationError::ProofMismatch)
+    );
+    assert_eq!(
+        OrganizationSsoDnsReverification::verify(
+            proof.domain(),
+            OrganizationSsoDomainStatus::Revoked,
+            &proof.digest(),
+            &OrganizationSsoDnsTxtAnswers::new(vec![TOKEN.to_owned()]),
+            10_000,
+            DEFAULT_ORGANIZATION_SSO_RECHECK_INTERVAL_SECONDS,
+        ),
+        Err(OrganizationSsoDnsReverificationError::InvalidStatus)
+    );
+    assert_eq!(
+        OrganizationSsoDnsReverification::verify(
+            proof.domain(),
+            OrganizationSsoDomainStatus::Verified,
+            &proof.digest().to_ascii_uppercase(),
+            &OrganizationSsoDnsTxtAnswers::new(vec![TOKEN.to_owned()]),
+            10_000,
+            DEFAULT_ORGANIZATION_SSO_RECHECK_INTERVAL_SECONDS,
+        ),
+        Err(OrganizationSsoDnsReverificationError::InvalidDigest)
     );
 }

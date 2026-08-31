@@ -47,7 +47,8 @@ use crate::entity::{
     organization_invitations, organization_memberships, organization_scim_audit_logs,
     organization_scim_group_resources, organization_scim_tokens, organization_scim_user_resources,
     organization_service_account_audit_logs, organization_service_account_budget_bindings,
-    organization_service_account_keys, organization_service_accounts, organization_sso_domains,
+    organization_service_account_keys, organization_service_accounts,
+    organization_sso_domain_reverification_leases, organization_sso_domains,
     organization_sso_identities, organization_sso_login_transactions, organization_sso_policies,
     organization_sso_providers, organization_teams, organization_wallet_ledger_entries,
     organization_wallets, organizations, passkey_authentication_challenges,
@@ -90,7 +91,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 123;
+const EXPECTED_MIGRATION_COUNT: usize = 124;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -109,7 +110,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 106] = [
+const CORE_TABLES: [&str; 107] = [
     "groups",
     "users",
     "passkeys",
@@ -187,6 +188,7 @@ const CORE_TABLES: [&str; 106] = [
     "organization_approval_contract_price_executions",
     "organization_approval_timeout_leases",
     "organization_approval_notifications",
+    "organization_sso_domain_reverification_leases",
     "organization_memberships",
     "organization_custom_roles",
     "organization_custom_role_permissions",
@@ -1257,6 +1259,7 @@ async fn standard_startup_installs_organization_sso_schema() -> Result<(), Box<d
     for table in [
         "organization_sso_providers",
         "organization_sso_domains",
+        "organization_sso_domain_reverification_leases",
         "organization_sso_identities",
         "organization_sso_login_transactions",
     ] {
@@ -1285,6 +1288,10 @@ async fn standard_startup_installs_organization_sso_schema() -> Result<(), Box<d
         (
             "organization_sso_domains",
             "uq_organization_sso_domains_active",
+        ),
+        (
+            "organization_sso_domains",
+            "idx_organization_sso_domains_reverification",
         ),
         (
             "organization_sso_identities",
@@ -2194,7 +2201,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 64);
+    assert_eq!(pending_migrations.len(), 65);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -2450,6 +2457,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[63].name(),
         "m20260831_000123_create_refund_reconciliations"
+    );
+    assert_eq!(
+        pending_migrations[64].name(),
+        "m20260901_000124_add_organization_sso_domain_reverification"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
@@ -4187,6 +4198,11 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     .await?;
     assert_entity_columns::<organization_sso_domains::Column>(&manager, "organization_sso_domains")
         .await?;
+    assert_entity_columns::<organization_sso_domain_reverification_leases::Column>(
+        &manager,
+        "organization_sso_domain_reverification_leases",
+    )
+    .await?;
     assert_entity_columns::<organization_sso_identities::Column>(
         &manager,
         "organization_sso_identities",

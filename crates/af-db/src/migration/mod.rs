@@ -129,6 +129,7 @@ mod m20260830_000120_create_organization_approval_funds_execution;
 mod m20260830_000121_create_organization_approval_timeout_lease;
 mod m20260831_000122_create_organization_approval_notifications;
 mod m20260831_000123_create_refund_reconciliations;
+mod m20260901_000124_add_organization_sso_domain_reverification;
 mod schema;
 
 #[cfg(test)]
@@ -301,6 +302,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260830_000121_create_organization_approval_timeout_lease::Migration),
             Box::new(m20260831_000122_create_organization_approval_notifications::Migration),
             Box::new(m20260831_000123_create_refund_reconciliations::Migration),
+            Box::new(m20260901_000124_add_organization_sso_domain_reverification::Migration),
         ]
     }
 }

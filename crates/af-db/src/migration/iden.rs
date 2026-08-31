@@ -2538,6 +2538,27 @@ pub(in crate::migration) mod organization_approval_timeout_leases {
     }
 }
 
+pub(in crate::migration) mod organization_sso_domain_reverification_leases {
+    use super::DeriveIden;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_sso_domain_reverification_leases")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        LeaseKey,
+        OwnerToken,
+        LeaseExpiresAt,
+        Version,
+        UpdatedAt,
+    }
+}
+
 pub(in crate::migration) mod organization_custom_roles {
     use super::DeriveIden;
 

@@ -148,8 +148,10 @@ use af_scheduler::{
     ChannelIndexCacheError, ChannelIndexRefreshConfig, ChannelIndexRefreshSupervisor, ChannelProbe,
     ChannelProbeSupervisor, ChannelProbeSupervisorConfig, InMemoryChannelIndex,
     IndexedWeightedScheduler, OrganizationApprovalTimeoutSupervisor,
-    OrganizationApprovalTimeoutSupervisorConfig, StickyWaitPolicy, SubscriptionCycleSupervisor,
-    SubscriptionCycleSupervisorConfig,
+    OrganizationApprovalTimeoutSupervisorConfig, OrganizationSsoDomainReverificationResolver,
+    OrganizationSsoDomainReverificationSupervisor,
+    OrganizationSsoDomainReverificationSupervisorConfig, StickyWaitPolicy,
+    SubscriptionCycleSupervisor, SubscriptionCycleSupervisorConfig,
 };
 use af_telemetry::{
     MetricOrganizationApprovalTimeoutOutcome, MetricsHandle, TelemetryError, TracingHandle,
@@ -2228,6 +2230,23 @@ impl Bootstrap<BillingReady> {
             .expect("已校验的审批查询超时必须可装配超时扫描仓储"),
             OrganizationApprovalTimeoutSupervisorConfig::default(),
         );
+        spawn_organization_sso_domain_reverification_task(
+            &mut supervisor,
+            OrganizationSsoProviderRepository::new(
+                infrastructure.infrastructure.database.clone(),
+                Duration::from_secs(config.auth().lookup_timeout_secs()),
+            )
+            .expect("已校验的 SSO 域名复验仓储必须可装配"),
+            ControlledOrganizationSsoDnsResolver::new(
+                &[
+                    std::net::SocketAddr::from(([1, 1, 1, 1], 53)),
+                    std::net::SocketAddr::from(([8, 8, 8, 8], 53)),
+                ],
+                Duration::from_secs(5),
+            )
+            .expect("已校验的 SSO DNS 解析器必须可装配"),
+            OrganizationSsoDomainReverificationSupervisorConfig::default(),
+        );
         if config.subscription().enabled() {
             spawn_subscription_cycle_task(
                 &mut supervisor,
@@ -2384,6 +2403,44 @@ fn spawn_organization_approval_timeout_task(
                 .await;
         }
     });
+}
+
+/// 注册启动即扫描、带数据库租约且按 DNS 结果 CAS 复验/撤销的域名任务。
+fn spawn_organization_sso_domain_reverification_task(
+    supervisor: &mut BackgroundTaskSupervisor,
+    repository: OrganizationSsoProviderRepository,
+    resolver: ControlledOrganizationSsoDnsResolver,
+    config: OrganizationSsoDomainReverificationSupervisorConfig,
+) {
+    supervisor.spawn(
+        "organization-sso-domain-reverification",
+        move |task_shutdown| {
+            let repository = repository.clone();
+            let resolver = OrganizationSsoDomainReverificationDnsResolver(resolver.clone());
+            async move {
+                OrganizationSsoDomainReverificationSupervisor::new(repository, resolver, config)
+                    .run_periodic_until(task_shutdown.cancelled())
+                    .await;
+            }
+        },
+    );
+}
+
+#[derive(Clone)]
+struct OrganizationSsoDomainReverificationDnsResolver(ControlledOrganizationSsoDnsResolver);
+
+impl OrganizationSsoDomainReverificationResolver
+    for OrganizationSsoDomainReverificationDnsResolver
+{
+    async fn lookup_txt(
+        &self,
+        target: &af_db::OrganizationSsoDomainReverificationTarget,
+    ) -> Result<af_domain::OrganizationSsoDnsTxtAnswers, ()> {
+        self.0
+            .lookup_txt_for_domain(target.domain())
+            .await
+            .map_err(|_| ())
+    }
 }
 
 fn record_organization_approval_timeout_report(
@@ -3409,7 +3466,7 @@ mod tests {
             .await
             .unwrap()
             .start_supervisor();
-        assert_eq!(supervised.stage.supervisor.task_count(), 9);
+        assert_eq!(supervised.stage.supervisor.task_count(), 10);
         let report = supervised
             .build_router()
             .bind()
