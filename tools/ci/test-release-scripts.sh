@@ -46,6 +46,9 @@ bash "$workspace/tools/ci/finalize-release.sh" \
   "$tag" "$commit" "$temporary_directory/release"
 
 test "$(wc -l <"$temporary_directory/release/SHA256SUMS")" -eq 1
+test -x "$workspace/scripts/systemd/install.sh"
+bash -n "$workspace/scripts/systemd/install.sh"
+grep -q 'ProtectSystem=strict' "$workspace/scripts/systemd/anyflows.service"
 grep -q "anyflows-${tag}-linux-amd64.tar.gz" \
   "$temporary_directory/release/RELEASE_NOTES.md"
 ! grep -q "anyflows-${tag}-linux-arm64.tar.gz" \
@@ -53,5 +56,9 @@ grep -q "anyflows-${tag}-linux-amd64.tar.gz" \
 grep -q '测试变更摘要。' "$temporary_directory/release/RELEASE_NOTES.md"
 tar -tzf "$temporary_directory/release/anyflows-${tag}-linux-amd64.tar.gz" \
   | grep -q "/anyflows$"
+tar -tzf "$temporary_directory/release/anyflows-${tag}-linux-amd64.tar.gz" \
+  | grep -q "/install.sh$"
+tar -tzf "$temporary_directory/release/anyflows-${tag}-linux-amd64.tar.gz" \
+  | grep -q "/anyflows.service$"
 
 printf '发布脚本回归通过。\n'
