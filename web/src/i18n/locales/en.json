@@ -3804,6 +3804,7 @@
       "approved": "{{count}} approved",
       "succeeded": "{{count}} succeeded"
     },
+    "views": { "label": "Refund workspace views", "approvals": "Approvals", "reconciliation": "Reconciliation" },
     "orderKinds": { "topup": "Top-up", "subscription": "Subscription" },
     "statuses": { "requested": "Requested", "submitted": "Submitted", "succeeded": "Succeeded", "failed": "Failed", "canceled": "Canceled" },
     "approval": { "pending": "Pending", "approved": "Approved", "rejected": "Rejected" },
@@ -3816,6 +3817,22 @@
       "rejectBody": "The request will be marked canceled and no provider refund will be submitted.",
       "reasonLabel": "Approval reason",
       "reasonPlaceholder": "Optional reason"
+    },
+    "reconciliation": {
+      "title": "Successful refund reconciliation",
+      "subtitle": "Platform-wide confirmed negative refund facts; transaction IDs and raw receipts are excluded.",
+      "loading": "Loading refund reconciliation",
+      "emptyTitle": "No successful refunds reconciled yet",
+      "emptyBody": "Provider refund facts appear here after the server confirms a successful receipt.",
+      "ownerPersonal": "Personal wallet",
+      "ownerOrganization": "Organization wallet #{{id}}",
+      "user": "User #{{id}}",
+      "approver": "Approver #{{id}}",
+      "minorUnit": "Negative refund amount",
+      "adminScope": "Platform scope",
+      "columns": { "owner": "Funding owner", "order": "Order", "amount": "Refund amount", "status": "Result", "approver": "Approver", "time": "Confirmed" },
+      "actions": { "refresh": "Refresh refund reconciliation", "retry": "Try again", "loadMore": "Load earlier entries", "loadingMore": "Loading" },
+      "errors": { "title": "Refund reconciliation is unavailable", "body": "Successful refund facts are temporarily unavailable. Try again shortly.", "more": "Earlier refund facts could not be loaded." }
     },
     "errors": {
       "listTitle": "Refund requests are unavailable",
@@ -5353,6 +5370,22 @@
         "wallet_outcome_unknown": "The result cannot be confirmed yet. Retry with the same event key.",
         "wallet_event_conflict": "The event key is already bound to a different adjustment fact.",
         "unknown": "The organization wallet operation failed. Refresh the facts and retry."
+      },
+      "reconciliation": {
+        "title": "Organization refund reconciliation",
+        "subtitle": "Reconcile confirmed negative refund facts for this organization only; personal wallets are excluded.",
+        "loading": "Loading organization refund reconciliation",
+        "emptyTitle": "No organization refunds reconciled yet",
+        "emptyBody": "Provider refund facts appear here after the server confirms a successful receipt.",
+        "ownerPersonal": "Personal wallet",
+        "ownerOrganization": "Organization wallet #{{id}}",
+        "user": "User #{{id}}",
+        "approver": "Approver #{{id}}",
+        "minorUnit": "Negative refund amount",
+        "adminScope": "Organization scope",
+        "columns": { "owner": "Funding owner", "order": "Order", "amount": "Refund amount", "status": "Result", "approver": "Approver", "time": "Confirmed" },
+        "actions": { "refresh": "Refresh refund reconciliation", "retry": "Try again", "loadMore": "Load earlier entries", "loadingMore": "Loading" },
+        "errors": { "title": "Organization refund reconciliation is unavailable", "body": "Successful organization refund facts are temporarily unavailable. Try again shortly.", "more": "Earlier organization refund facts could not be loaded." }
       }
     },
     "settings": {
@@ -5635,6 +5668,22 @@
       "ledgerTitle": "Balance ledger could not be loaded",
       "ledgerBody": "Balance history is temporarily unavailable. The displayed balance state is unaffected.",
       "more": "Earlier balance entries could not be loaded."
+    },
+    "reconciliation": {
+      "title": "Successful refund reconciliation",
+      "subtitle": "Only confirmed negative cash refund facts are shown, with amounts formatted from minor units.",
+      "loading": "Loading refund reconciliation",
+      "emptyTitle": "No successful refunds reconciled yet",
+      "emptyBody": "Provider refund facts appear here after the server confirms a successful receipt.",
+      "ownerPersonal": "Personal wallet",
+      "ownerOrganization": "Organization wallet #{{id}}",
+      "user": "User #{{id}}",
+      "approver": "Approver #{{id}}",
+      "minorUnit": "Negative refund amount",
+      "adminScope": "Platform scope",
+      "columns": { "owner": "Funding owner", "order": "Order", "amount": "Refund amount", "status": "Result", "approver": "Approver", "time": "Confirmed" },
+      "actions": { "refresh": "Refresh refund reconciliation", "retry": "Try again", "loadMore": "Load earlier entries", "loadingMore": "Loading" },
+      "errors": { "title": "Refund reconciliation is unavailable", "body": "Successful refund facts are temporarily unavailable. Try again shortly.", "more": "Earlier refund facts could not be loaded." }
     }
   },
   "setup": {

@@ -3804,6 +3804,7 @@
       "approved": "已批准 {{count}}",
       "succeeded": "已成功 {{count}}"
     },
+    "views": { "label": "退款工作台视图", "approvals": "审批", "reconciliation": "对账" },
     "orderKinds": { "topup": "充值", "subscription": "订阅" },
     "statuses": { "requested": "待提交", "submitted": "已提交", "succeeded": "退款成功", "failed": "提交失败", "canceled": "已取消" },
     "approval": { "pending": "待审批", "approved": "已批准", "rejected": "已拒绝" },
@@ -3816,6 +3817,22 @@
       "rejectBody": "请求会被标记为已取消，不会向 Provider 提交退款。",
       "reasonLabel": "审批理由",
       "reasonPlaceholder": "可选，填写审批理由"
+    },
+    "reconciliation": {
+      "title": "退款成功对账",
+      "subtitle": "平台范围核对已确认的原路退款负向事实，响应不包含交易号或原始回执。",
+      "loading": "正在加载退款对账",
+      "emptyTitle": "还没有退款成功对账",
+      "emptyBody": "退款 Provider 成功回执经过服务端确认后会显示在这里。",
+      "ownerPersonal": "个人钱包",
+      "ownerOrganization": "企业钱包 #{{id}}",
+      "user": "用户 #{{id}}",
+      "approver": "审批人 #{{id}}",
+      "minorUnit": "负向退款金额",
+      "adminScope": "平台范围",
+      "columns": { "owner": "资金主体", "order": "订单", "amount": "退款金额", "status": "结果", "approver": "审批人", "time": "确认时间" },
+      "actions": { "refresh": "刷新退款对账", "retry": "重试", "loadMore": "加载更早记录", "loadingMore": "正在加载" },
+      "errors": { "title": "无法读取退款对账", "body": "退款成功事实暂时不可用，请稍后重试。", "more": "更早的退款对账加载失败。" }
     },
     "errors": {
       "listTitle": "暂时无法读取退款请求",
@@ -5352,6 +5369,22 @@
         "wallet_outcome_unknown": "暂时无法确认调账结果，请使用同一事件键重试。",
         "wallet_event_conflict": "事件键已经绑定到不同调账事实。",
         "unknown": "企业钱包操作失败，请刷新事实后重试。"
+      },
+      "reconciliation": {
+        "title": "企业退款成功对账",
+        "subtitle": "按当前企业资金主体核对已确认的原路退款负向事实，不混入个人钱包。",
+        "loading": "正在加载企业退款对账",
+        "emptyTitle": "还没有企业退款成功对账",
+        "emptyBody": "企业退款 Provider 成功回执经过服务端确认后会显示在这里。",
+        "ownerPersonal": "个人钱包",
+        "ownerOrganization": "企业钱包 #{{id}}",
+        "user": "用户 #{{id}}",
+        "approver": "审批人 #{{id}}",
+        "minorUnit": "负向退款金额",
+        "adminScope": "企业范围",
+        "columns": { "owner": "资金主体", "order": "订单", "amount": "退款金额", "status": "结果", "approver": "审批人", "time": "确认时间" },
+        "actions": { "refresh": "刷新退款对账", "retry": "重试", "loadMore": "加载更早记录", "loadingMore": "正在加载" },
+        "errors": { "title": "无法读取企业退款对账", "body": "企业退款成功事实暂时不可用，请稍后重试。", "more": "更早的企业退款对账加载失败。" }
       }
     },
     "settings": {
@@ -5634,6 +5667,22 @@
       "ledgerTitle": "无法读取余额账本",
       "ledgerBody": "余额记录暂时不可用，已显示的余额状态不受影响。",
       "more": "更早的余额记录加载失败。"
+    },
+    "reconciliation": {
+      "title": "退款成功对账",
+      "subtitle": "仅展示已确认的原路退款负向资金事实，金额使用最小货币单位换算。",
+      "loading": "正在加载退款对账",
+      "emptyTitle": "还没有退款成功对账",
+      "emptyBody": "退款 Provider 成功回执经过服务端确认后会显示在这里。",
+      "ownerPersonal": "个人钱包",
+      "ownerOrganization": "企业钱包 #{{id}}",
+      "user": "用户 #{{id}}",
+      "approver": "审批人 #{{id}}",
+      "minorUnit": "负向退款金额",
+      "adminScope": "平台范围",
+      "columns": { "owner": "资金主体", "order": "订单", "amount": "退款金额", "status": "结果", "approver": "审批人", "time": "确认时间" },
+      "actions": { "refresh": "刷新退款对账", "retry": "重试", "loadMore": "加载更早记录", "loadingMore": "正在加载" },
+      "errors": { "title": "无法读取退款对账", "body": "退款成功事实暂时不可用，请稍后重试。", "more": "更早的退款对账加载失败。" }
     }
   },
   "setup": {

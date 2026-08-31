@@ -1688,6 +1688,287 @@
         ]
       }
     },
+    "/api/account/refund-reconciliations": {
+      "get": {
+        "tags": [
+          "退款对账"
+        ],
+        "summary": "读取当前用户退款对账",
+        "operationId": "listAccountRefundReconciliations",
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "description": "上一页末尾的对账事实 ID",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "每页数量，默认 50",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前用户的退款成功对账事实",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefundReconciliationListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "分页参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{organization_id}/refund-reconciliations": {
+      "get": {
+        "tags": [
+          "退款对账"
+        ],
+        "summary": "读取企业退款对账",
+        "operationId": "listOrganizationRefundReconciliations",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "企业内部标识",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "description": "上一页末尾的对账事实 ID",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "每页数量，默认 50",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "企业资金主体的退款成功对账事实",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefundReconciliationListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "企业标识或分页参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "企业角色无权查看钱包",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "企业不存在或无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/refund-reconciliations": {
+      "get": {
+        "tags": [
+          "退款对账"
+        ],
+        "summary": "读取平台退款对账",
+        "operationId": "listAdminRefundReconciliations",
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "description": "上一页末尾的对账事实 ID",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "每页数量，默认 50",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "平台管理员可见的退款成功对账事实",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefundReconciliationListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "分页参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/refunds": {
       "get": {
         "tags": [
@@ -37431,6 +37712,111 @@
         },
         "additionalProperties": false
       },
+      "RefundReconciliationEntry": {
+        "type": "object",
+        "required": [
+          "request_id",
+          "user_id",
+          "organization_id",
+          "approval_actor_id",
+          "order_kind",
+          "order_key",
+          "provider",
+          "amount_delta_minor",
+          "currency",
+          "status",
+          "created_at"
+        ],
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "organization_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "approval_actor_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "order_kind": {
+            "$ref": "#/components/schemas/AdminRefundOrderKind"
+          },
+          "order_key": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1
+          },
+          "provider": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "amount_delta_minor": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": -1
+          },
+          "currency": {
+            "type": "string",
+            "maxLength": 16,
+            "minLength": 3
+          },
+          "status": {
+            "$ref": "#/components/schemas/RefundReconciliationStatus"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "RefundReconciliationListResponse": {
+        "type": "object",
+        "required": [
+          "entries",
+          "next_cursor"
+        ],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RefundReconciliationEntry"
+            },
+            "maxItems": 100
+          },
+          "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "RefundReconciliationStatus": {
+        "type": "string",
+        "enum": [
+          "succeeded"
+        ]
+      },
       "RegistrationEmailVerificationRequest": {
         "type": "object",
         "required": [
@@ -40581,6 +40967,9 @@
     },
     {
       "name": "退款审批"
+    },
+    {
+      "name": "退款对账"
     },
     {
       "name": "订阅管理"

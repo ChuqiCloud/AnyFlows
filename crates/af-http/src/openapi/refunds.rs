@@ -5,9 +5,75 @@ use utoipa::OpenApi;
 use crate::{
     management_error::ManagementErrorBody,
     management_refunds::{
-        AdminRefundDecisionRequest, AdminRefundListResponse, AdminRefundRequestResponse,
+        AdminRefundDecisionRequest, AdminRefundListResponse, AdminRefundOrderKindResponse,
+        AdminRefundRequestResponse, RefundReconciliationEntryResponse,
+        RefundReconciliationListResponse, RefundReconciliationStatusResponse,
     },
 };
+
+#[utoipa::path(
+    get,
+    path = "/api/account/refund-reconciliations",
+    operation_id = "listAccountRefundReconciliations",
+    tag = "退款对账",
+    summary = "读取当前用户退款对账",
+    params(
+        ("before" = Option<i64>, Query, minimum = 1, description = "上一页末尾的对账事实 ID"),
+        ("limit" = Option<usize>, Query, minimum = 1, maximum = 100, description = "每页数量，默认 50")
+    ),
+    responses(
+        (status = 200, description = "当前用户的退款成功对账事实", body = RefundReconciliationListResponse),
+        (status = 400, description = "分页参数无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn list_account_refund_reconciliations() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/organizations/{organization_id}/refund-reconciliations",
+    operation_id = "listOrganizationRefundReconciliations",
+    tag = "退款对账",
+    summary = "读取企业退款对账",
+    params(
+        ("organization_id" = i64, Path, minimum = 1, description = "企业内部标识"),
+        ("before" = Option<i64>, Query, minimum = 1, description = "上一页末尾的对账事实 ID"),
+        ("limit" = Option<usize>, Query, minimum = 1, maximum = 100, description = "每页数量，默认 50")
+    ),
+    responses(
+        (status = 200, description = "企业资金主体的退款成功对账事实", body = RefundReconciliationListResponse),
+        (status = 400, description = "企业标识或分页参数无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "企业角色无权查看钱包", body = ManagementErrorBody),
+        (status = 404, description = "企业不存在或无权访问", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn list_organization_refund_reconciliations() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/admin/refund-reconciliations",
+    operation_id = "listAdminRefundReconciliations",
+    tag = "退款对账",
+    summary = "读取平台退款对账",
+    params(
+        ("before" = Option<i64>, Query, minimum = 1, description = "上一页末尾的对账事实 ID"),
+        ("limit" = Option<usize>, Query, minimum = 1, maximum = 100, description = "每页数量，默认 50")
+    ),
+    responses(
+        (status = 200, description = "平台管理员可见的退款成功对账事实", body = RefundReconciliationListResponse),
+        (status = 400, description = "分页参数无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "需要管理员权限", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn list_admin_refund_reconciliations() {}
 
 #[utoipa::path(
     get,
@@ -99,12 +165,21 @@ fn submit_admin_refund() {}
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        list_account_refund_reconciliations,
+        list_organization_refund_reconciliations,
+        list_admin_refund_reconciliations,
         list_admin_refunds,
         approve_admin_refund,
         reject_admin_refund,
         submit_admin_refund
     ),
-    components(schemas(AdminRefundRequestResponse,))
+    components(schemas(
+        AdminRefundRequestResponse,
+        AdminRefundOrderKindResponse,
+        RefundReconciliationStatusResponse,
+        RefundReconciliationEntryResponse,
+        RefundReconciliationListResponse
+    ))
 )]
 struct RefundsApi;
 

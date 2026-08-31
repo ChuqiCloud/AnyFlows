@@ -3,15 +3,17 @@ use std::{fmt, future::Future, pin::Pin, sync::Arc};
 use af_db::{
     DEFAULT_REFUND_ADMIN_PAGE_SIZE, MAX_REFUND_ADMIN_PAGE_SIZE,
     RefundAdminListQuery as DbRefundAdminListQuery, RefundAdminPage, RefundApprovalOutcome,
+    RefundReconciliationPage as DbRefundReconciliationPage,
+    RefundReconciliationQuery as DbRefundReconciliationQuery, RefundReconciliationRecord,
     RefundRepository, RefundRepositoryError,
 };
 use af_domain::{
-    MAX_REFUND_APPROVAL_REASON_BYTES, RefundApprovalStatus, RefundOrderKind, RefundRequestId,
-    RefundRequestRecord, RefundRequestStatus, UserId,
+    MAX_REFUND_APPROVAL_REASON_BYTES, OrganizationId, OrganizationPermission, RefundApprovalStatus,
+    RefundOrderKind, RefundRequestId, RefundRequestRecord, RefundRequestStatus, UserId,
 };
 use thiserror::Error;
 
-use crate::{SessionPrincipal, SessionRole};
+use crate::{OrganizationContext, SessionPrincipal, SessionRole};
 
 pub const DEFAULT_ADMIN_REFUND_PAGE_SIZE: usize = DEFAULT_REFUND_ADMIN_PAGE_SIZE;
 pub const MAX_ADMIN_REFUND_PAGE_SIZE: usize = MAX_REFUND_ADMIN_PAGE_SIZE;
@@ -152,6 +154,145 @@ impl fmt::Debug for AdminRefundPage {
     }
 }
 
+/// 退款对账读取默认分页数量。
+pub const DEFAULT_REFUND_RECONCILIATION_PAGE_SIZE: usize = 50;
+/// 退款对账单页硬上限。
+pub const MAX_REFUND_RECONCILIATION_PAGE_SIZE: usize = 100;
+
+/// 已校验的退款对账稳定游标查询。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RefundReconciliationListQuery {
+    before_id: Option<i64>,
+    limit: usize,
+}
+
+impl RefundReconciliationListQuery {
+    pub fn new(before_id: Option<i64>, limit: usize) -> Result<Self, AdminRefundError> {
+        if before_id.is_some_and(|value| value <= 0)
+            || !(1..=MAX_REFUND_RECONCILIATION_PAGE_SIZE).contains(&limit)
+        {
+            return Err(AdminRefundError::InvalidInput);
+        }
+        Ok(Self { before_id, limit })
+    }
+}
+
+impl Default for RefundReconciliationListQuery {
+    fn default() -> Self {
+        Self {
+            before_id: None,
+            limit: DEFAULT_REFUND_RECONCILIATION_PAGE_SIZE,
+        }
+    }
+}
+
+/// HTTP 层可读取的一条脱敏退款对账事实。
+pub struct RefundReconciliationEntry {
+    id: i64,
+    request_id: RefundRequestId,
+    user_id: UserId,
+    organization_id: Option<OrganizationId>,
+    approval_actor_id: UserId,
+    order_kind: RefundOrderKind,
+    order_key: String,
+    provider: String,
+    amount_delta_minor: i64,
+    currency: String,
+    created_at: u64,
+}
+
+impl RefundReconciliationEntry {
+    fn from_record(record: RefundReconciliationRecord) -> Self {
+        Self {
+            id: record.id(),
+            request_id: record.request_id(),
+            user_id: record.user_id(),
+            organization_id: record.organization_id(),
+            approval_actor_id: record.approval_actor_id(),
+            order_kind: record.order_kind(),
+            order_key: record.order_key().to_owned(),
+            provider: record.provider().to_owned(),
+            amount_delta_minor: record.amount_delta_minor(),
+            currency: record.currency().to_owned(),
+            created_at: record.created_at(),
+        }
+    }
+
+    #[must_use]
+    pub const fn id(&self) -> i64 {
+        self.id
+    }
+    #[must_use]
+    pub const fn request_id(&self) -> RefundRequestId {
+        self.request_id
+    }
+    #[must_use]
+    pub const fn user_id(&self) -> UserId {
+        self.user_id
+    }
+    #[must_use]
+    pub const fn organization_id(&self) -> Option<OrganizationId> {
+        self.organization_id
+    }
+    #[must_use]
+    pub const fn approval_actor_id(&self) -> UserId {
+        self.approval_actor_id
+    }
+    #[must_use]
+    pub const fn order_kind(&self) -> RefundOrderKind {
+        self.order_kind
+    }
+    #[must_use]
+    pub fn order_key(&self) -> &str {
+        &self.order_key
+    }
+    #[must_use]
+    pub fn provider(&self) -> &str {
+        &self.provider
+    }
+    #[must_use]
+    pub const fn amount_delta_minor(&self) -> i64 {
+        self.amount_delta_minor
+    }
+    #[must_use]
+    pub fn currency(&self) -> &str {
+        &self.currency
+    }
+    #[must_use]
+    pub const fn created_at(&self) -> u64 {
+        self.created_at
+    }
+}
+
+impl fmt::Debug for RefundReconciliationEntry {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("RefundReconciliationEntry(<redacted>)")
+    }
+}
+
+/// 一页已经按个人、企业或平台管理员作用域裁剪的退款对账事实。
+pub struct RefundReconciliationPage {
+    entries: Vec<RefundReconciliationEntry>,
+    next_cursor: Option<i64>,
+}
+
+impl RefundReconciliationPage {
+    #[must_use]
+    pub fn entries(&self) -> &[RefundReconciliationEntry] {
+        &self.entries
+    }
+    #[must_use]
+    pub const fn next_cursor(&self) -> Option<i64> {
+        self.next_cursor
+    }
+}
+
+impl fmt::Debug for RefundReconciliationPage {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("RefundReconciliationPage(<redacted>)")
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AdminRefundListQuery {
     after_id: Option<i64>,
@@ -211,6 +352,8 @@ pub type AdminRefundListFuture<'a> =
     Pin<Box<dyn Future<Output = Result<AdminRefundPage, AdminRefundError>> + Send + 'a>>;
 pub type AdminRefundActionFuture<'a> =
     Pin<Box<dyn Future<Output = Result<AdminRefundPage, AdminRefundError>> + Send + 'a>>;
+pub type RefundReconciliationListFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<RefundReconciliationPage, AdminRefundError>> + Send + 'a>>;
 
 /// 将已批准退款提交给当前运行时 Provider，并复用同一 CAS 编排器。
 pub trait AdminRefundSubmitter: Send + Sync {
@@ -247,6 +390,21 @@ pub trait AdminRefundService: Send + Sync {
         principal: SessionPrincipal,
         request_id: RefundRequestId,
     ) -> AdminRefundActionFuture<'a>;
+    fn list_user_reconciliations<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        query: RefundReconciliationListQuery,
+    ) -> RefundReconciliationListFuture<'a>;
+    fn list_organization_reconciliations<'a>(
+        &'a self,
+        context: OrganizationContext,
+        query: RefundReconciliationListQuery,
+    ) -> RefundReconciliationListFuture<'a>;
+    fn list_admin_reconciliations<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        query: RefundReconciliationListQuery,
+    ) -> RefundReconciliationListFuture<'a>;
 }
 
 #[derive(Clone)]
@@ -328,6 +486,62 @@ impl AdminRefundService for DatabaseAdminRefundService {
             Ok(to_page_from_record(record))
         })
     }
+
+    fn list_user_reconciliations<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        query: RefundReconciliationListQuery,
+    ) -> RefundReconciliationListFuture<'a> {
+        Box::pin(async move {
+            let page = self
+                .repository
+                .list_user_reconciliations(
+                    principal.user_id(),
+                    DbRefundReconciliationQuery::new(query.before_id, query.limit),
+                )
+                .await
+                .map_err(map_repository_error)?;
+            Ok(to_reconciliation_page(page))
+        })
+    }
+
+    fn list_organization_reconciliations<'a>(
+        &'a self,
+        context: OrganizationContext,
+        query: RefundReconciliationListQuery,
+    ) -> RefundReconciliationListFuture<'a> {
+        Box::pin(async move {
+            require_organization_wallet_read(&context)?;
+            let page = self
+                .repository
+                .list_organization_reconciliations(
+                    context.organization_id(),
+                    DbRefundReconciliationQuery::new(query.before_id, query.limit),
+                )
+                .await
+                .map_err(map_repository_error)?;
+            Ok(to_reconciliation_page(page))
+        })
+    }
+
+    fn list_admin_reconciliations<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        query: RefundReconciliationListQuery,
+    ) -> RefundReconciliationListFuture<'a> {
+        Box::pin(async move {
+            require_admin(principal)?;
+            let page = self
+                .repository
+                .list_admin_reconciliations(DbRefundReconciliationQuery::new(
+                    query.before_id,
+                    query.limit,
+                ))
+                .await
+                .map_err(map_repository_error)?;
+            Ok(to_reconciliation_page(page))
+        })
+    }
 }
 
 impl DatabaseAdminRefundService {
@@ -384,12 +598,30 @@ fn to_page_from_record(record: RefundRequestRecord) -> AdminRefundPage {
     }
 }
 
+fn to_reconciliation_page(page: DbRefundReconciliationPage) -> RefundReconciliationPage {
+    let (entries, next_cursor) = page.into_parts();
+    RefundReconciliationPage {
+        entries: entries
+            .into_iter()
+            .map(RefundReconciliationEntry::from_record)
+            .collect(),
+        next_cursor,
+    }
+}
+
 fn require_admin(principal: SessionPrincipal) -> Result<(), AdminRefundError> {
     if principal.role() == SessionRole::Admin {
         Ok(())
     } else {
         Err(AdminRefundError::Forbidden)
     }
+}
+
+fn require_organization_wallet_read(context: &OrganizationContext) -> Result<(), AdminRefundError> {
+    context
+        .allows(OrganizationPermission::WalletRead)
+        .then_some(())
+        .ok_or(AdminRefundError::Forbidden)
 }
 
 fn now_seconds() -> u64 {

@@ -139,6 +139,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("我的钱包"),
         Tag::new("兑换码"),
         Tag::new("退款审批"),
+        Tag::new("退款对账"),
         Tag::new("订阅管理"),
         Tag::new("邀请中心"),
         Tag::new("站点设置"),
@@ -245,7 +246,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 203);
+        assert_eq!(document.paths.paths.len(), 206);
         let operation_count = document
             .paths
             .paths
@@ -267,7 +268,7 @@ mod tests {
             })
             .sum::<usize>();
         // 审批与部门目录管理接口扩展了既有管理面，保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 277);
+        assert_eq!(operation_count, 280);
         assert!(
             document
                 .components
@@ -564,6 +565,9 @@ mod tests {
             "approveAdminRefund",
             "rejectAdminRefund",
             "submitAdminRefund",
+            "listAccountRefundReconciliations",
+            "listOrganizationRefundReconciliations",
+            "listAdminRefundReconciliations",
             "bindAdminUserSubscription",
             "transitionAdminUserSubscriptionLifecycle",
             "listAdminWalletEntries",
@@ -591,7 +595,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 451);
+        assert_eq!(schemas.len(), 454);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("OrganizationApprovalCursorQuery"));
         assert!(schemas.contains_key("OrganizationApprovalDecision"));
@@ -817,6 +821,9 @@ mod tests {
         assert!(schemas.contains_key("AdminRefundOrderKind"));
         assert!(schemas.contains_key("AdminRefundStatus"));
         assert!(schemas.contains_key("AdminRefundApprovalStatus"));
+        assert!(schemas.contains_key("RefundReconciliationStatus"));
+        assert!(schemas.contains_key("RefundReconciliationEntry"));
+        assert!(schemas.contains_key("RefundReconciliationListResponse"));
         assert!(schemas.contains_key("AdminUsageLogVideoResolution"));
         assert!(schemas.contains_key("AdminRedemptionAuditBatch"));
         assert!(schemas.contains_key("AdminRedemptionAuditListResponse"));

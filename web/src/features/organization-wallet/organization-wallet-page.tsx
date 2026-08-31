@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { OrganizationPageBoundary, OrganizationPageHeader, OrganizationPageState, useOrganizationPageState } from '@/features/organization-console/organization-page-shell'
 import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import { WalletTopupPanel } from '@/features/wallet/wallet-topup-panel'
+import { RefundReconciliationList } from '@/features/refunds/refund-reconciliation-list'
 import type { OrganizationOverviewResponse, OrganizationWalletEntryResponse, OrganizationWalletSummaryResponse } from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
 import { OrganizationWalletAdjustmentForm } from './organization-wallet-adjustment-form'
@@ -51,6 +52,7 @@ function OrganizationWalletWorkspace({ organizationId, overview }: { organizatio
         <CardHeader className="border-b border-[var(--hairline)] bg-surface-1/45"><div className="flex flex-wrap items-center justify-between gap-3"><div><CardTitle className="text-base">{t('organizationConsole.wallet.ledger.title')}</CardTitle><p className="mt-1 text-xs leading-5 text-muted-foreground">{t('organizationConsole.wallet.ledger.subtitle')}</p></div><div className="flex items-center gap-2"><Badge className="bg-surface-2 text-muted-foreground">{entries.length}</Badge><Button type="button" size="icon-sm" variant="ghost" title={t('organizationConsole.actions.refresh')} disabled={entriesQuery.isFetching} onClick={() => void entriesQuery.refetch()}><RefreshCw className={entriesQuery.isFetching ? 'animate-spin' : undefined} aria-hidden="true" /><span className="sr-only">{t('organizationConsole.actions.refresh')}</span></Button></div></div></CardHeader>
         <CardContent className="p-0"><WalletLedger entries={entries} query={entriesQuery} formatQuota={formatQuota} formatTime={(value) => timeFormat.format(value * 1_000)} /></CardContent>
       </Card>
+      <RefundReconciliationList scope="organization" organizationId={organizationId} translationPrefix="organizationConsole.wallet.reconciliation" enabled={canRead} />
     </>
   )
 }
