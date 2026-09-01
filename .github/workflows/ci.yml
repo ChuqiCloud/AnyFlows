@@ -20,7 +20,9 @@ env:
   # runner 资源有限；每个 job 串行编译，避免多个 Rust 门禁同时耗尽 CPU/内存。
   CARGO_BUILD_JOBS: "1"
   CARGO_INCREMENTAL: "0"
-  # 测试产物关闭调试符号并串行代码生成，避免大型数据库测试在受限 runner 中触发 OOM。
+  # 开发与测试产物关闭调试符号并串行代码生成，避免大型数据库检查在受限 runner 中触发 OOM。
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_DEV_CODEGEN_UNITS: "1"
   CARGO_PROFILE_TEST_DEBUG: "0"
   CARGO_PROFILE_TEST_CODEGEN_UNITS: "1"
   RUST_BACKTRACE: "1"
