@@ -36352,6 +36352,7 @@
             }
           }
         ],
+        "description": "公开启动只返回浏览器执行当前协议所需的短期动作。",
         "discriminator": {
           "propertyName": "protocol"
         }
