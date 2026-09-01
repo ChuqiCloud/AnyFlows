@@ -33,6 +33,9 @@ use super::{
     OrganizationSsoLoginTransactionServiceError,
 };
 
+const TEST_SAML_CERTIFICATE: &str =
+    include_str!("../../af-account/src/fixtures/organization_sso_saml_test_certificate.pem");
+
 #[tokio::test]
 async fn login_transaction_service_binds_provider_and_consumes_ticket_once()
 -> Result<(), Box<dyn Error>> {
@@ -119,7 +122,15 @@ async fn login_transaction_service_binds_provider_and_consumes_ticket_once()
                 OrganizationSsoProtocol::Saml,
                 OrganizationSsoProviderStatus::Active,
                 "SAML Login Provider".to_owned(),
-                None,
+                Some(json!({
+                    "idp_entity_id": "https://idp.example.com/metadata",
+                    "sso_url": "https://idp.example.com/sso",
+                    "sp_entity_id": "https://gateway.example.com/saml/metadata",
+                    "acs_url": "https://gateway.example.com/api/auth/organization-sso/saml/callback",
+                    "name_id_format": "persistent",
+                    "trusted_certificates": [TEST_SAML_CERTIFICATE.trim()],
+                    "protocol": "saml",
+                })),
                 None,
             ),
         )
@@ -136,10 +147,17 @@ async fn login_transaction_service_binds_provider_and_consumes_ticket_once()
         .await?;
     assert_eq!(saml_transaction.provider_id(), saml_provider.id());
     assert_eq!(saml_transaction.protocol(), OrganizationSsoProtocol::Saml);
-    assert!(saml_transaction.login_material_envelope().is_none());
+    assert!(saml_transaction.login_material_envelope().is_some());
 
     // 启动响应只返回 state 摘要；票据交换回归需要独立保留原始 state 才能模拟受控回调。
     let saml_claim_start = OrganizationSsoLoginStart::new("d".repeat(64))?;
+    let saml_claim_material = saml_login_material(
+        &cipher,
+        second_organization,
+        saml_provider.id(),
+        saml_provider.version(),
+        &saml_claim_start.state_digest(),
+    )?;
     let saml_claim_state = saml_claim_start.state().to_owned();
     let saml_claim_transaction = repository
         .create_login_transaction(
@@ -151,11 +169,13 @@ async fn login_transaction_service_binds_provider_and_consumes_ticket_once()
                 saml_claim_start.state_digest().to_owned(),
                 "d".repeat(64),
                 4_102_444_800,
-            ),
+            )
+            .with_login_material_envelope(saml_claim_material),
         )
         .await?;
     let saml_claim = service.claim(second_organization, saml_claim_state).await?;
     assert_eq!(saml_claim.transaction_id(), saml_claim_transaction.id());
+    assert!(saml_claim.saml_login_material().is_some());
     let saml_ticket = service
         .complete_verified(
             second_organization,
@@ -167,6 +187,53 @@ async fn login_transaction_service_binds_provider_and_consumes_ticket_once()
         .exchange_ticket(second_organization, saml_ticket.ticket().to_owned())
         .await?;
     assert_eq!(saml_exchanged.subject_digest(), None);
+
+    let rejected_saml_start = OrganizationSsoLoginStart::new("g".repeat(64))?;
+    let rejected_saml_state = rejected_saml_start.state().to_owned();
+    let rejected_saml_digest = rejected_saml_start.state_digest().to_owned();
+    let rejected_saml_material = saml_login_material(
+        &cipher,
+        second_organization,
+        saml_provider.id(),
+        saml_provider.version(),
+        &rejected_saml_digest,
+    )?;
+    let rejected_saml_transaction = repository
+        .create_login_transaction(
+            second_organization,
+            OrganizationSsoLoginTransactionCreate::new(
+                saml_provider_key,
+                OrganizationSsoProtocol::Saml,
+                saml_provider.version(),
+                rejected_saml_digest.clone(),
+                "g".repeat(64),
+                4_102_444_800,
+            )
+            .with_login_material_envelope(rejected_saml_material),
+        )
+        .await?;
+    let rejected_saml_claim = service
+        .claim(second_organization, rejected_saml_state.clone())
+        .await?;
+    assert!(matches!(
+        service
+            .complete_saml_callback(rejected_saml_claim, "<not-saml/>".to_owned())
+            .await,
+        Err(OrganizationSsoLoginTransactionServiceError::Rejected)
+    ));
+    let rejected_saml_record = repository
+        .login_transaction(second_organization, rejected_saml_digest)
+        .await?;
+    assert_eq!(rejected_saml_record.id(), rejected_saml_transaction.id());
+    assert_eq!(rejected_saml_record.result_code(), Some(2));
+    assert!(rejected_saml_record.ticket_digest().is_none());
+    assert!(rejected_saml_record.assertion_digest().is_none());
+    assert!(matches!(
+        service
+            .claim(second_organization, rejected_saml_state)
+            .await,
+        Err(OrganizationSsoLoginTransactionServiceError::AlreadyProcessed)
+    ));
 
     let (claim_state, claim_digest, claim_envelope, claim_verifier, claim_nonce) =
         oidc_login_material(
@@ -741,4 +808,29 @@ fn oidc_login_material(
         verifier,
         nonce,
     ))
+}
+
+fn saml_login_material(
+    cipher: &SystemSecretCipher,
+    organization_id: af_domain::OrganizationId,
+    provider_id: i64,
+    provider_version: i64,
+    state_digest: &str,
+) -> Result<Value, Box<dyn Error>> {
+    let material = af_account::OrganizationSsoSamlLoginMaterial::new()?;
+    let secret = material.into_plain_system_secret()?;
+    let envelope = cipher.encrypt_organization_sso_saml_login_material(
+        organization_id,
+        provider_id,
+        provider_version,
+        state_digest,
+        &secret,
+    )?;
+    Ok(json!({
+        "version": 1,
+        "algorithm": "xchacha20poly1305",
+        "key_id": envelope.key_id(),
+        "nonce": URL_SAFE_NO_PAD.encode(envelope.nonce()),
+        "ciphertext": URL_SAFE_NO_PAD.encode(envelope.ciphertext()),
+    }))
 }

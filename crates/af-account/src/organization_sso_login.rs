@@ -5,7 +5,10 @@
 
 use std::{fmt, mem};
 
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use base64::{
+    Engine as _,
+    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -190,6 +193,12 @@ impl OrganizationSsoSamlLoginMaterial {
         self.request_id.as_str()
     }
 
+    /// 消费材料并移出 Request ID，避免在回调编排中复制敏感字符串。
+    #[must_use]
+    pub fn into_request_id(self) -> String {
+        self.request_id.into_inner()
+    }
+
     /// 序列化为受系统密钥保护的短期明文，不保留未清零的额外副本。
     pub fn into_plain_system_secret(self) -> Result<PlainSystemSecret, OrganizationSsoLoginError> {
         let wire = OrganizationSsoSamlLoginMaterialWireRef {
@@ -299,7 +308,7 @@ pub struct OrganizationSsoSamlCallback {
 }
 
 impl OrganizationSsoSamlCallback {
-    /// 解析固定 SAML 表单，只接受一次 `SAMLResponse` 和 `RelayState`。
+    /// 解析固定 SAML POST 表单，将受限 Base64 响应解码为仅供验签的 XML。
     pub fn parse(form: &str) -> Result<Self, OrganizationSsoLoginError> {
         if form.len() > MAX_SAML_RESPONSE_BYTES {
             return Err(OrganizationSsoLoginError::CallbackTooLarge);
@@ -313,15 +322,24 @@ impl OrganizationSsoSamlCallback {
                 _ => return Err(OrganizationSsoLoginError::UnexpectedCallbackField),
             }
         }
-        let response =
-            response.filter(|value| !value.is_empty() && value.len() <= MAX_SAML_RESPONSE_BYTES);
+        let response = response
+            .filter(|value| !value.is_empty() && value.len() <= MAX_SAML_RESPONSE_BYTES)
+            .ok_or(OrganizationSsoLoginError::MissingCallbackField)?;
+        let response = STANDARD
+            .decode(response)
+            .map_err(|_| OrganizationSsoLoginError::InvalidCallbackEncoding)?;
+        if response.is_empty() || response.len() > MAX_SAML_RESPONSE_BYTES {
+            return Err(OrganizationSsoLoginError::InvalidCallbackEncoding);
+        }
+        let response = String::from_utf8(response)
+            .map_err(|_| OrganizationSsoLoginError::InvalidCallbackEncoding)?;
         let relay_state = relay_state.filter(|value| valid_parameter(value));
-        match (response, relay_state) {
-            (Some(response), Some(relay_state)) => Ok(Self {
+        match relay_state {
+            Some(relay_state) => Ok(Self {
                 response,
                 relay_state,
             }),
-            _ => Err(OrganizationSsoLoginError::MissingCallbackField),
+            None => Err(OrganizationSsoLoginError::MissingCallbackField),
         }
     }
 
@@ -333,6 +351,12 @@ impl OrganizationSsoSamlCallback {
     #[must_use]
     pub fn relay_state(&self) -> &str {
         &self.relay_state
+    }
+
+    /// 消费回调并移出已解码响应与 RelayState，避免在 HTTP 编排中复制断言正文。
+    #[must_use]
+    pub fn into_parts(self) -> (String, String) {
+        (self.response, self.relay_state)
     }
 }
 
@@ -363,6 +387,8 @@ pub enum OrganizationSsoLoginError {
     MissingCallbackField,
     #[error("企业 SSO 回调字段不允许")]
     UnexpectedCallbackField,
+    #[error("企业 SSO 回调编码无效")]
+    InvalidCallbackEncoding,
     #[error("企业 SSO 回调过大")]
     CallbackTooLarge,
 }
@@ -505,13 +531,21 @@ mod tests {
 
     #[test]
     fn saml_callback_requires_relay_state_and_redacts_response() {
-        let callback =
-            OrganizationSsoSamlCallback::parse("SAMLResponse=assertion&RelayState=state").unwrap();
-        assert_eq!(callback.response(), "assertion");
-        assert!(!format!("{callback:?}").contains("assertion"));
+        let response = "<samlp:Response>signed-assertion</samlp:Response>";
+        let form = form_urlencoded::Serializer::new(String::new())
+            .append_pair("SAMLResponse", &STANDARD.encode(response))
+            .append_pair("RelayState", "state")
+            .finish();
+        let callback = OrganizationSsoSamlCallback::parse(&form).unwrap();
+        assert_eq!(callback.response(), response);
+        assert!(!format!("{callback:?}").contains("signed-assertion"));
         assert_eq!(
-            OrganizationSsoSamlCallback::parse("SAMLResponse=assertion"),
+            OrganizationSsoSamlCallback::parse("SAMLResponse=YXNzZXJ0aW9u"),
             Err(OrganizationSsoLoginError::MissingCallbackField)
+        );
+        assert_eq!(
+            OrganizationSsoSamlCallback::parse("SAMLResponse=not-base64&RelayState=state"),
+            Err(OrganizationSsoLoginError::InvalidCallbackEncoding)
         );
     }
 }

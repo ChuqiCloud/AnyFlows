@@ -11,8 +11,9 @@ use af_account::{
     OrganizationSsoOidcIdTokenVerificationConfig, OrganizationSsoOidcIdTokenVerifier,
     OrganizationSsoOidcJwksClient, OrganizationSsoOidcLoginMaterial,
     OrganizationSsoOidcTokenExchangeClient, OrganizationSsoOidcTokenExchangeConfig,
-    OrganizationSsoOidcTokenExchangeInput, SystemSecretCipher, organization_sso_login_state_digest,
-    organization_sso_login_ticket_digest,
+    OrganizationSsoOidcTokenExchangeInput, OrganizationSsoSamlLoginMaterial,
+    OrganizationSsoSamlProviderConfig, OrganizationSsoSamlSemanticVerifier, SystemSecretCipher,
+    organization_sso_login_state_digest, organization_sso_login_ticket_digest,
 };
 use af_db::{
     EncryptedCredentialEnvelope, OrganizationMembershipRecord, OrganizationRepository,
@@ -125,12 +126,14 @@ pub struct ClaimedOrganizationSsoLoginTransaction {
     provider_version: i64,
     request_digest: String,
     oidc_login_material: Option<OrganizationSsoOidcLoginMaterial>,
+    saml_login_material: Option<OrganizationSsoSamlLoginMaterial>,
 }
 
 impl ClaimedOrganizationSsoLoginTransaction {
     fn from_record(
         record: OrganizationSsoLoginTransactionRecord,
         oidc_login_material: Option<OrganizationSsoOidcLoginMaterial>,
+        saml_login_material: Option<OrganizationSsoSamlLoginMaterial>,
     ) -> Self {
         Self {
             transaction_id: record.id(),
@@ -140,6 +143,7 @@ impl ClaimedOrganizationSsoLoginTransaction {
             provider_version: record.provider_version(),
             request_digest: record.request_digest().to_owned(),
             oidc_login_material,
+            saml_login_material,
         }
     }
 
@@ -184,6 +188,12 @@ impl ClaimedOrganizationSsoLoginTransaction {
     pub fn oidc_login_material(&self) -> Option<&OrganizationSsoOidcLoginMaterial> {
         self.oidc_login_material.as_ref()
     }
+
+    /// 返回仅用于 SAML InResponseTo 校验的短期 Request ID，不得复制或记录。
+    #[must_use]
+    pub fn saml_login_material(&self) -> Option<&OrganizationSsoSamlLoginMaterial> {
+        self.saml_login_material.as_ref()
+    }
 }
 
 impl fmt::Debug for ClaimedOrganizationSsoLoginTransaction {
@@ -199,6 +209,10 @@ impl fmt::Debug for ClaimedOrganizationSsoLoginTransaction {
             .field(
                 "has_oidc_login_material",
                 &self.oidc_login_material.is_some(),
+            )
+            .field(
+                "has_saml_login_material",
+                &self.saml_login_material.is_some(),
             )
             .finish()
     }
@@ -439,6 +453,16 @@ pub trait OrganizationSsoLoginTransactionService: Send + Sync {
         let _ = (claimed, code);
         Box::pin(async { Err(OrganizationSsoLoginTransactionServiceError::Unavailable) })
     }
+
+    /// 完成受控 SAML 回调；验证失败时服务层必须封存已领取事务。
+    fn complete_saml_callback<'a>(
+        &'a self,
+        claimed: ClaimedOrganizationSsoLoginTransaction,
+        saml_response: String,
+    ) -> OrganizationSsoLoginTransactionFuture<'a, IssuedOrganizationSsoLoginTicket> {
+        let _ = (claimed, saml_response);
+        Box::pin(async { Err(OrganizationSsoLoginTransactionServiceError::Unavailable) })
+    }
 }
 
 /// 使用企业范围仓储协调短期登录事务，不持久化协议敏感材料。
@@ -510,6 +534,81 @@ impl DatabaseOrganizationSsoLoginTransactionService {
                 Err(_) => Err(OrganizationSsoLoginTransactionServiceError::Internal),
             },
         }
+    }
+
+    /// 编排受控 SAML 回调；任一内部步骤失败都会封存已领取事务。
+    async fn complete_saml_callback_inner(
+        &self,
+        claimed: ClaimedOrganizationSsoLoginTransaction,
+        saml_response: String,
+    ) -> Result<IssuedOrganizationSsoLoginTicket, OrganizationSsoLoginTransactionServiceError> {
+        let organization_id = claimed.organization_id();
+        let transaction_id = claimed.transaction_id();
+        match self
+            .complete_saml_callback_attempt(claimed, &saml_response)
+            .await
+        {
+            Ok(ticket) => Ok(ticket),
+            Err(error) => match self
+                .complete_rejected_inner(organization_id, transaction_id)
+                .await
+            {
+                Ok(()) => Err(error),
+                Err(_) => Err(OrganizationSsoLoginTransactionServiceError::Internal),
+            },
+        }
+    }
+
+    /// 执行一次 SAML 回调验证尝试；断言正文只在内存中流经验证器。
+    async fn complete_saml_callback_attempt(
+        &self,
+        mut claimed: ClaimedOrganizationSsoLoginTransaction,
+        saml_response: &str,
+    ) -> Result<IssuedOrganizationSsoLoginTicket, OrganizationSsoLoginTransactionServiceError> {
+        if claimed.protocol() != OrganizationSsoProtocol::Saml {
+            return Err(OrganizationSsoLoginTransactionServiceError::Rejected);
+        }
+        // Request ID 只消费一次，避免在验证编排中复制敏感材料。
+        let request_id = claimed
+            .saml_login_material
+            .take()
+            .ok_or(OrganizationSsoLoginTransactionServiceError::Rejected)?
+            .into_request_id();
+        let organization_id = claimed.organization_id();
+        let provider = self
+            .repository
+            .provider_by_id(organization_id, claimed.provider_id())
+            .await
+            .map_err(map_repository_error)?;
+        if provider.protocol() != OrganizationSsoProtocol::Saml
+            || provider.version() != claimed.provider_version()
+            || provider.status() != OrganizationSsoProviderStatus::Active
+        {
+            return Err(OrganizationSsoLoginTransactionServiceError::Rejected);
+        }
+        let projection = provider
+            .metadata_projection()
+            .ok_or(OrganizationSsoLoginTransactionServiceError::Rejected)?;
+        let config = OrganizationSsoSamlProviderConfig::from_metadata_projection(
+            claimed.provider_version(),
+            projection,
+        )
+        .map_err(|_| OrganizationSsoLoginTransactionServiceError::Rejected)?;
+        let semantic_config = config
+            .with_request_id(request_id)
+            .map_err(|_| OrganizationSsoLoginTransactionServiceError::Rejected)?;
+        let verifier = OrganizationSsoSamlSemanticVerifier::new(semantic_config)
+            .map_err(|_| OrganizationSsoLoginTransactionServiceError::Rejected)?;
+        let identity = verifier
+            .verify(saml_response, SystemTime::now())
+            .map_err(|_| OrganizationSsoLoginTransactionServiceError::Rejected)?;
+        self.complete_verified_inner(
+            organization_id,
+            claimed.transaction_id(),
+            identity.assertion_digest().to_owned(),
+            None,
+        )
+        .await
     }
 
     /// 执行一次 OIDC 回调验证尝试，不在此方法中持久化失败结果。
@@ -651,7 +750,25 @@ impl DatabaseOrganizationSsoLoginTransactionService {
                     .map_err(|_| OrganizationSsoLoginTransactionServiceError::Internal)?;
                 Some(envelope_json(&envelope))
             }
-            OrganizationSsoProtocol::Saml => None,
+            // SAML 的 Request ID 只进入绑定当前事务的加密封套，数据库不保存原文。
+            OrganizationSsoProtocol::Saml => {
+                let material =
+                    OrganizationSsoSamlLoginMaterial::new().map_err(map_login_material_error)?;
+                let secret = material
+                    .into_plain_system_secret()
+                    .map_err(map_login_material_error)?;
+                let envelope = self
+                    .cipher
+                    .encrypt_organization_sso_saml_login_material(
+                        organization_id,
+                        provider.id(),
+                        provider.version(),
+                        &state_digest,
+                        &secret,
+                    )
+                    .map_err(|_| OrganizationSsoLoginTransactionServiceError::Internal)?;
+                Some(envelope_json(&envelope))
+            }
         };
         let write = OrganizationSsoLoginTransactionCreate::new(
             provider_key,
@@ -729,9 +846,21 @@ impl DatabaseOrganizationSsoLoginTransactionService {
         } else {
             None
         };
+        let saml_login_material = if record.protocol() == OrganizationSsoProtocol::Saml {
+            match self.decrypt_saml_login_material(&record) {
+                Ok(material) => Some(material),
+                Err(()) => {
+                    self.reject_claimed_login_transaction(&record).await?;
+                    return Err(OrganizationSsoLoginTransactionServiceError::Rejected);
+                }
+            }
+        } else {
+            None
+        };
         Ok(ClaimedOrganizationSsoLoginTransaction::from_record(
             record,
             oidc_login_material,
+            saml_login_material,
         ))
     }
 
@@ -752,6 +881,24 @@ impl DatabaseOrganizationSsoLoginTransactionService {
             )
             .map_err(|_| ())?;
         OrganizationSsoOidcLoginMaterial::from_decrypted_system_secret(secret).map_err(|_| ())
+    }
+
+    fn decrypt_saml_login_material(
+        &self,
+        record: &OrganizationSsoLoginTransactionRecord,
+    ) -> Result<OrganizationSsoSamlLoginMaterial, ()> {
+        let envelope = record.login_material_envelope().ok_or(())?;
+        let secret = self
+            .cipher
+            .decrypt_organization_sso_saml_login_material(
+                record.organization_id(),
+                record.provider_id(),
+                record.provider_version(),
+                record.state_digest(),
+                envelope,
+            )
+            .map_err(|_| ())?;
+        OrganizationSsoSamlLoginMaterial::from_decrypted_system_secret(secret).map_err(|_| ())
     }
 
     async fn reject_claimed_login_transaction(
@@ -1047,6 +1194,14 @@ impl OrganizationSsoLoginTransactionService for DatabaseOrganizationSsoLoginTran
     ) -> OrganizationSsoLoginTransactionFuture<'a, IssuedOrganizationSsoLoginTicket> {
         Box::pin(self.complete_oidc_callback_inner(claimed, code))
     }
+
+    fn complete_saml_callback<'a>(
+        &'a self,
+        claimed: ClaimedOrganizationSsoLoginTransaction,
+        saml_response: String,
+    ) -> OrganizationSsoLoginTransactionFuture<'a, IssuedOrganizationSsoLoginTicket> {
+        Box::pin(self.complete_saml_callback_inner(claimed, saml_response))
+    }
 }
 
 impl fmt::Debug for DatabaseOrganizationSsoLoginTransactionService {
@@ -1098,6 +1253,7 @@ const fn map_login_material_error(
         | OrganizationSsoLoginError::InvalidLoginMaterial
         | OrganizationSsoLoginError::MissingCallbackField
         | OrganizationSsoLoginError::UnexpectedCallbackField
+        | OrganizationSsoLoginError::InvalidCallbackEncoding
         | OrganizationSsoLoginError::CallbackTooLarge => {
             OrganizationSsoLoginTransactionServiceError::InvalidInput
         }
