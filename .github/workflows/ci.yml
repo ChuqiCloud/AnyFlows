@@ -119,8 +119,8 @@ jobs:
 
   deployment:
     name: Docker deployment checks
-    needs: changes
-    if: ${{ needs.changes.outputs.deployment == 'true' }}
+    needs: [changes, cache-redis]
+    if: ${{ always() && needs.changes.outputs.deployment == 'true' && (needs.cache-redis.result == 'success' || needs.cache-redis.result == 'skipped') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -225,8 +225,8 @@ jobs:
 
   release-package:
     name: Linux amd64 release package
-    needs: changes
-    if: ${{ needs.changes.outputs.rust == 'true' }}
+    needs: [changes, rust-quality]
+    if: ${{ always() && needs.changes.outputs.rust == 'true' && needs.rust-quality.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -414,8 +414,8 @@ jobs:
 
   msrv:
     name: Minimum supported Rust version
-    needs: changes
-    if: ${{ needs.changes.outputs.rust == 'true' }}
+    needs: [changes, release-package]
+    if: ${{ always() && needs.changes.outputs.rust == 'true' && needs.release-package.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -478,8 +478,8 @@ jobs:
 
   sqlite-migration:
     name: SQLite migration smoke test
-    needs: changes
-    if: ${{ needs.changes.outputs.database == 'true' }}
+    needs: [changes, msrv]
+    if: ${{ always() && needs.changes.outputs.database == 'true' && needs.msrv.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -530,8 +530,8 @@ jobs:
 
   postgres-migration:
     name: PostgreSQL migration smoke test
-    needs: changes
-    if: ${{ needs.changes.outputs.database == 'true' }}
+    needs: [changes, sqlite-migration]
+    if: ${{ always() && needs.changes.outputs.database == 'true' && needs.sqlite-migration.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -603,8 +603,8 @@ jobs:
 
   mysql-migration:
     name: MySQL migration smoke test
-    needs: changes
-    if: ${{ needs.changes.outputs.database == 'true' }}
+    needs: [changes, postgres-migration]
+    if: ${{ always() && needs.changes.outputs.database == 'true' && needs.postgres-migration.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -671,8 +671,8 @@ jobs:
 
   cache-redis:
     name: Redis cache smoke test
-    needs: changes
-    if: ${{ needs.changes.outputs.redis == 'true' }}
+    needs: [changes, mysql-migration]
+    if: ${{ always() && needs.changes.outputs.redis == 'true' && (needs.mysql-migration.result == 'success' || needs.mysql-migration.result == 'skipped') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
