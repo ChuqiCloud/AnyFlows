@@ -250,7 +250,7 @@ async fn expiration_and_member_version_are_rechecked_at_execution_time()
         .filter(organization_approval_requests::Column::Id.eq(expired_request_id.get()))
         .col_expr(
             organization_approval_requests::Column::ExpiresAt,
-            Expr::col(organization_approval_requests::Column::CreatedAt),
+            Expr::col(organization_approval_requests::Column::CreatedAt).into(),
         )
         .exec(fixture.pool.connection())
         .await?;
