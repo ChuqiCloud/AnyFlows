@@ -1,6 +1,6 @@
 use std::{fmt, future::Future, pin::Pin};
 
-use af_account::{PlainSystemSecret, SystemSecretCipher};
+use af_account::{OrganizationSsoSamlProviderConfig, PlainSystemSecret, SystemSecretCipher};
 use af_db::{
     EncryptedCredentialEnvelope, OrganizationSsoProviderCreate, OrganizationSsoProviderRecord,
     OrganizationSsoProviderRepository, OrganizationSsoProviderSecretChange,
@@ -322,6 +322,8 @@ impl OrganizationSsoProviderService for DatabaseOrganizationSsoProviderService {
                 1,
                 command.client_secret,
             )?;
+            let metadata_projection =
+                normalize_metadata_projection(command.protocol, 1, command.metadata_projection)?;
             let record = self
                 .repository
                 .create_provider(
@@ -331,7 +333,7 @@ impl OrganizationSsoProviderService for DatabaseOrganizationSsoProviderService {
                         command.protocol,
                         command.status,
                         command.display_name,
-                        command.metadata_projection,
+                        metadata_projection,
                         secret,
                     ),
                 )
@@ -357,6 +359,11 @@ impl OrganizationSsoProviderService for DatabaseOrganizationSsoProviderService {
                 .expected_version
                 .checked_add(1)
                 .ok_or(OrganizationSsoProviderServiceError::InvalidInput)?;
+            let metadata_projection = normalize_metadata_projection(
+                command.protocol,
+                next_version,
+                command.metadata_projection,
+            )?;
             // Provider 版本绑定在密钥 AAD；即使请求未提交新密钥，也必须按新协议和版本重封装。
             let current = self
                 .repository
@@ -421,7 +428,7 @@ impl OrganizationSsoProviderService for DatabaseOrganizationSsoProviderService {
                         command.protocol,
                         command.status,
                         command.display_name,
-                        command.metadata_projection,
+                        metadata_projection,
                         secret_change,
                         command.expected_version,
                     ),
@@ -478,6 +485,22 @@ fn parse_provider_key(
 ) -> Result<OrganizationSsoProviderKey, OrganizationSsoProviderServiceError> {
     OrganizationSsoProviderKey::from_persistence_key(value)
         .map_err(|_| OrganizationSsoProviderServiceError::InvalidInput)
+}
+
+/// 将 SAML 元数据投影收敛为严格版本化 JSON；OIDC 保持既有专用解析边界。
+fn normalize_metadata_projection(
+    protocol: OrganizationSsoProtocol,
+    provider_version: i64,
+    projection: Option<Value>,
+) -> Result<Option<Value>, OrganizationSsoProviderServiceError> {
+    if protocol != OrganizationSsoProtocol::Saml {
+        return Ok(projection);
+    }
+    let projection = projection.ok_or(OrganizationSsoProviderServiceError::InvalidInput)?;
+    let config =
+        OrganizationSsoSamlProviderConfig::from_metadata_projection(provider_version, &projection)
+            .map_err(|_| OrganizationSsoProviderServiceError::InvalidInput)?;
+    Ok(Some(config.to_metadata_projection()))
 }
 
 fn generate_provider_key() -> Result<OrganizationSsoProviderKey, OrganizationSsoProviderServiceError>
@@ -543,5 +566,54 @@ fn map_repository_error(
         | OrganizationSsoRepositoryError::Invariant => {
             OrganizationSsoProviderServiceError::Internal
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    const CERTIFICATE: &str =
+        include_str!("../../af-account/src/fixtures/organization_sso_saml_test_certificate.pem");
+
+    fn saml_projection() -> Value {
+        json!({
+            "idp_entity_id": "https://idp.example.test/metadata",
+            "sso_url": "https://idp.example.test/sso",
+            "sp_entity_id": "https://gateway.example.test/saml/metadata",
+            "acs_url": "https://gateway.example.test/api/auth/organization-sso/saml/callback",
+            "name_id_format": "persistent",
+            "trusted_certificates": [CERTIFICATE],
+            "protocol": "saml",
+        })
+    }
+
+    #[test]
+    fn saml_projection_is_normalized_before_persistence() {
+        let projection = saml_projection();
+        assert_eq!(
+            normalize_metadata_projection(
+                OrganizationSsoProtocol::Saml,
+                2,
+                Some(projection.clone())
+            )
+            .unwrap(),
+            Some(projection)
+        );
+    }
+
+    #[test]
+    fn saml_projection_rejects_missing_or_unknown_fields() {
+        assert_eq!(
+            normalize_metadata_projection(OrganizationSsoProtocol::Saml, 1, None),
+            Err(OrganizationSsoProviderServiceError::InvalidInput)
+        );
+        let mut projection = saml_projection();
+        projection["unsafe"] = json!("rejected");
+        assert_eq!(
+            normalize_metadata_projection(OrganizationSsoProtocol::Saml, 1, Some(projection)),
+            Err(OrganizationSsoProviderServiceError::InvalidInput)
+        );
     }
 }
