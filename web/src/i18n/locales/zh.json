@@ -5446,6 +5446,12 @@
         "protocol": { "oidc": "OpenID Connect", "saml": "SAML 2.0" },
         "status": { "draft": "草稿", "active": "活动", "disabled": "已停用" },
         "fields": { "protocol": "协议", "version": "版本", "secret": "密钥", "metadata": "元数据" },
+        "login": {
+          "start": "发起 SAML 登录",
+          "starting": "正在准备 SAML 登录",
+          "invalid": "服务端返回的 SAML 登录表单无效，请刷新 Provider 状态后重试。",
+          "unavailable": "无法发起 SAML 登录，请刷新 Provider 状态后重试。"
+        },
         "domains": {
           "title": "已验证域名",
           "subtitle": "通过服务端 DNS TXT 检查证明企业对域名的控制权。",

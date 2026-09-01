@@ -1894,6 +1894,15 @@ export type OrganizationSsoLoginStartResponse = {
     state_digest: string;
     request_digest: string;
     expires_at: number;
+    saml_authn_request?: OrganizationSsoSamlAuthnRequestResponse;
+};
+export type OrganizationSsoSamlAuthnRequestResponse = {
+    action: string;
+    fields: Array<OrganizationSsoSamlAuthnRequestFieldResponse>;
+};
+export type OrganizationSsoSamlAuthnRequestFieldResponse = {
+    name: string;
+    value: string;
 };
 export type OrganizationSsoPolicyRequest = {
     expected_version: number;

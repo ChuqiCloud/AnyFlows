@@ -1,6 +1,6 @@
-import { ArrowUpRight, CircleAlert, Fingerprint, RefreshCw, ShieldBan, ShieldCheck } from 'lucide-react'
+import { ArrowUpRight, CircleAlert, Fingerprint, LoaderCircle, LogIn, RefreshCw, ShieldBan, ShieldCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -12,7 +12,9 @@ import {
   useOrganizationSsoDomains,
   useOrganizationSsoPolicy,
   useOrganizationSsoProviders,
+  useStartOrganizationSsoLogin,
 } from './organization-sso-api'
+import { createOrganizationSsoRequestDigest, submitOrganizationSsoSamlAuthnRequest } from './organization-sso-authn-request'
 import { OrganizationSsoDomains } from './organization-sso-domains'
 import { OrganizationSsoPolicyPanel } from './organization-sso-policy'
 
@@ -42,8 +44,24 @@ export function OrganizationSsoPanel({
   const providersQuery = useOrganizationSsoProviders(organizationId, enabled)
   const domainsQuery = useOrganizationSsoDomains(organizationId, enabled)
   const policyQuery = useOrganizationSsoPolicy(organizationId, enabled)
+  const startMutation = useStartOrganizationSsoLogin(organizationId)
+  const [startError, setStartError] = useState<'invalid' | 'unavailable'>()
   const auditQuery = useOrganizationAuditLogs(organizationId, undefined, 1, {}, ssoEnabled && canAudit)
   const providers = providersQuery.data ?? []
+  async function startSamlLogin(providerKey: string) {
+    setStartError(undefined)
+    try {
+      const response = await startMutation.mutateAsync({
+        provider_key: providerKey,
+        request_digest: createOrganizationSsoRequestDigest(),
+      })
+      if (response.protocol !== 'saml' || !submitOrganizationSsoSamlAuthnRequest(response)) {
+        setStartError('invalid')
+      }
+    } catch {
+      setStartError('unavailable')
+    }
+  }
 
   return (
     <Card className="overflow-hidden">
@@ -73,7 +91,8 @@ export function OrganizationSsoPanel({
         {enabled && providersQuery.isPending ? <SsoPanelLoading /> : null}
         {enabled && providersQuery.isError ? <SsoPanelState icon={CircleAlert} title={t('organizationConsole.settings.sso.errors.title')} body={t(canManage ? 'organizationConsole.settings.sso.errors.body' : 'organizationConsole.settings.sso.errors.readOnlyBody')} action={<Button type="button" size="sm" variant="secondary" onClick={() => void providersQuery.refetch()}><RefreshCw aria-hidden="true" />{t('organizationConsole.actions.retry')}</Button>} /> : null}
         {enabled && providersQuery.isSuccess && providers.length === 0 ? <SsoPanelState icon={ShieldCheck} title={t('organizationConsole.settings.sso.empty.title')} body={t(canManage ? 'organizationConsole.settings.sso.empty.manageBody' : 'organizationConsole.settings.sso.empty.readBody')} /> : null}
-        {enabled && providers.length > 0 ? <div className="divide-y divide-[var(--hairline)]">{providers.map((provider) => <SsoProviderRow key={provider.provider_key} provider={provider} />)}</div> : null}
+        {enabled && providers.length > 0 ? <div className="divide-y divide-[var(--hairline)]">{providers.map((provider) => <SsoProviderRow key={provider.provider_key} provider={provider} canManage={canManage} startDisabled={startMutation.isPending} starting={startMutation.isPending && startMutation.variables?.provider_key === provider.provider_key} onStart={() => void startSamlLogin(provider.provider_key)} />)}</div> : null}
+        {startError ? <p role="alert" className="border-t border-[var(--hairline)] px-4 py-3 text-xs leading-5 text-destructive">{t(`organizationConsole.settings.sso.login.${startError}`)}</p> : null}
         {enabled ? <OrganizationSsoDomains organizationId={organizationId} providers={providers} canManage={canManage} providersLoaded={providersQuery.isSuccess} query={domainsQuery} /> : null}
         {enabled ? <OrganizationSsoPolicyPanel organizationId={organizationId} ssoEnabled={ssoEnabled} permissions={permissions} query={policyQuery} /> : null}
         <SsoClosureStatus
@@ -171,7 +190,7 @@ function closureStatusClass(status: ClosureStatus) {
   return 'shrink-0 text-muted-foreground'
 }
 
-function SsoProviderRow({ provider }: { provider: OrganizationSsoProvider }) {
+function SsoProviderRow({ provider, canManage, startDisabled, starting, onStart }: { provider: OrganizationSsoProvider; canManage: boolean; startDisabled: boolean; starting: boolean; onStart: () => void }) {
   const { t } = useTranslation()
   const active = provider.status === 'active'
   return (
@@ -183,12 +202,15 @@ function SsoProviderRow({ provider }: { provider: OrganizationSsoProvider }) {
         </div>
         <p className="mt-1 truncate font-mono text-xs text-muted-foreground" title={provider.provider_key}>{provider.provider_key}</p>
       </div>
-      <dl className="grid grid-cols-2 gap-x-5 gap-y-1 text-xs sm:min-w-52">
+      <div className="flex flex-wrap items-start justify-between gap-3 sm:min-w-52 sm:justify-end">
+        <dl className="grid grid-cols-2 gap-x-5 gap-y-1 text-xs">
         <div><dt className="text-muted-foreground">{t('organizationConsole.settings.sso.fields.protocol')}</dt><dd className="font-medium">{t(`organizationConsole.settings.sso.protocol.${provider.protocol}`, { defaultValue: provider.protocol })}</dd></div>
         <div><dt className="text-muted-foreground">{t('organizationConsole.settings.sso.fields.version')}</dt><dd className="font-mono font-medium">v{provider.version}</dd></div>
         <div><dt className="text-muted-foreground">{t('organizationConsole.settings.sso.fields.secret')}</dt><dd className="font-medium">{t(provider.secret_configured ? 'organizationConsole.settings.sso.configured' : 'organizationConsole.settings.sso.notConfigured')}</dd></div>
         <div><dt className="text-muted-foreground">{t('organizationConsole.settings.sso.fields.metadata')}</dt><dd className="font-medium">{t(provider.metadata_projection ? 'organizationConsole.settings.sso.configured' : 'organizationConsole.settings.sso.notConfigured')}</dd></div>
-      </dl>
+        </dl>
+        {canManage && active && provider.protocol === 'saml' ? <Button type="button" size="sm" variant="secondary" disabled={startDisabled} onClick={onStart}>{starting ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : <LogIn className="size-3.5" aria-hidden="true" />}{starting ? t('organizationConsole.settings.sso.login.starting') : t('organizationConsole.settings.sso.login.start')}</Button> : null}
+      </div>
     </article>
   )
 }

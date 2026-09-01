@@ -112,6 +112,7 @@ async fn login_transaction_service_binds_provider_and_consumes_ticket_once()
     assert_eq!(transaction.provider_version(), provider.version());
     assert_eq!(transaction.protocol(), OrganizationSsoProtocol::Oidc);
     assert!(transaction.login_material_envelope().is_some());
+    assert!(start.saml_authn_request().is_none());
 
     let saml_provider_key = OrganizationSsoProviderKey::new([0x74; 16])?;
     let saml_provider = repository
@@ -148,6 +149,30 @@ async fn login_transaction_service_binds_provider_and_consumes_ticket_once()
     assert_eq!(saml_transaction.provider_id(), saml_provider.id());
     assert_eq!(saml_transaction.protocol(), OrganizationSsoProtocol::Saml);
     assert!(saml_transaction.login_material_envelope().is_some());
+    let authn_request = saml_start
+        .saml_authn_request()
+        .expect("SAML 启动必须返回受控 POST 表单");
+    assert_eq!(authn_request.action(), "https://idp.example.com/sso");
+    assert!(
+        authn_request
+            .fields()
+            .iter()
+            .any(|(name, _)| name == "SAMLRequest")
+    );
+    let relay_state = authn_request
+        .fields()
+        .iter()
+        .find_map(|(name, value)| (name == "RelayState").then_some(value.clone()))
+        .expect("SAML POST 表单必须携带当前事务的 RelayState");
+    let generated_request_id = authn_request.request_id().to_owned();
+    let generated_claim = service.claim(second_organization, relay_state).await?;
+    assert_eq!(
+        generated_claim
+            .saml_login_material()
+            .expect("事务封套必须恢复 SAML Request ID")
+            .request_id(),
+        generated_request_id
+    );
 
     // 启动响应只返回 state 摘要；票据交换回归需要独立保留原始 state 才能模拟受控回调。
     let saml_claim_start = OrganizationSsoLoginStart::new("d".repeat(64))?;

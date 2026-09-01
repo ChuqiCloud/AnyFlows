@@ -11,9 +11,10 @@ use af_account::{
     OrganizationSsoOidcIdTokenVerificationConfig, OrganizationSsoOidcIdTokenVerifier,
     OrganizationSsoOidcJwksClient, OrganizationSsoOidcLoginMaterial,
     OrganizationSsoOidcTokenExchangeClient, OrganizationSsoOidcTokenExchangeConfig,
-    OrganizationSsoOidcTokenExchangeInput, OrganizationSsoSamlLoginMaterial,
-    OrganizationSsoSamlProviderConfig, OrganizationSsoSamlSemanticVerifier, SystemSecretCipher,
-    organization_sso_login_state_digest, organization_sso_login_ticket_digest,
+    OrganizationSsoOidcTokenExchangeInput, OrganizationSsoSamlAuthnRequest,
+    OrganizationSsoSamlLoginMaterial, OrganizationSsoSamlProviderConfig,
+    OrganizationSsoSamlSemanticVerifier, SystemSecretCipher, organization_sso_login_state_digest,
+    organization_sso_login_ticket_digest,
 };
 use af_db::{
     EncryptedCredentialEnvelope, OrganizationMembershipRecord, OrganizationRepository,
@@ -66,6 +67,7 @@ pub struct OrganizationSsoLoginTransactionStart {
     state_digest: String,
     request_digest: String,
     expires_at: i64,
+    saml_authn_request: Option<OrganizationSsoSamlAuthnRequest>,
 }
 
 impl OrganizationSsoLoginTransactionStart {
@@ -75,6 +77,7 @@ impl OrganizationSsoLoginTransactionStart {
         state_digest: String,
         request_digest: String,
         expires_at: i64,
+        saml_authn_request: Option<OrganizationSsoSamlAuthnRequest>,
     ) -> Self {
         Self {
             protocol,
@@ -82,6 +85,7 @@ impl OrganizationSsoLoginTransactionStart {
             state_digest,
             request_digest,
             expires_at,
+            saml_authn_request,
         }
     }
 
@@ -113,6 +117,12 @@ impl OrganizationSsoLoginTransactionStart {
     #[must_use]
     pub const fn expires_at(&self) -> i64 {
         self.expires_at
+    }
+
+    /// 返回 SAML SP 发起所需的受控 POST 表单；OIDC 启动不返回该字段。
+    #[must_use]
+    pub fn saml_authn_request(&self) -> Option<&OrganizationSsoSamlAuthnRequest> {
+        self.saml_authn_request.as_ref()
     }
 }
 
@@ -731,6 +741,7 @@ impl DatabaseOrganizationSsoLoginTransactionService {
         let expires_at = expires_at(LOGIN_TRANSACTION_TTL_SECONDS)?;
         let state_digest = start.state_digest().to_owned();
         let request_digest = start.request_digest().to_owned();
+        let mut saml_authn_request = None;
         let login_material_envelope = match provider.protocol() {
             OrganizationSsoProtocol::Oidc => {
                 let secret = start
@@ -752,8 +763,22 @@ impl DatabaseOrganizationSsoLoginTransactionService {
             }
             // SAML 的 Request ID 只进入绑定当前事务的加密封套，数据库不保存原文。
             OrganizationSsoProtocol::Saml => {
-                let material =
-                    OrganizationSsoSamlLoginMaterial::new().map_err(map_login_material_error)?;
+                let projection = provider
+                    .metadata_projection()
+                    .ok_or(OrganizationSsoLoginTransactionServiceError::Unavailable)?;
+                let config = OrganizationSsoSamlProviderConfig::from_metadata_projection(
+                    provider.version(),
+                    projection,
+                )
+                .map_err(|_| OrganizationSsoLoginTransactionServiceError::Unavailable)?;
+                let authn_request = config
+                    .start_authn_request(start.state().to_owned())
+                    .map_err(|_| OrganizationSsoLoginTransactionServiceError::Unavailable)?;
+                let material = OrganizationSsoSamlLoginMaterial::from_request_id(
+                    authn_request.request_id().to_owned(),
+                )
+                .map_err(map_login_material_error)?;
+                saml_authn_request = Some(authn_request);
                 let secret = material
                     .into_plain_system_secret()
                     .map_err(map_login_material_error)?;
@@ -794,6 +819,7 @@ impl DatabaseOrganizationSsoLoginTransactionService {
             record.state_digest().to_owned(),
             record.request_digest().to_owned(),
             record.expires_at(),
+            saml_authn_request,
         ))
     }
 

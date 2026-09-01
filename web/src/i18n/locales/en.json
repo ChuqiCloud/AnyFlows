@@ -5447,6 +5447,12 @@
         "protocol": { "oidc": "OpenID Connect", "saml": "SAML 2.0" },
         "status": { "draft": "Draft", "active": "Active", "disabled": "Disabled" },
         "fields": { "protocol": "Protocol", "version": "Version", "secret": "Secret", "metadata": "Metadata" },
+        "login": {
+          "start": "Start SAML login",
+          "starting": "Preparing SAML login",
+          "invalid": "The server returned an invalid SAML login form. Refresh the Provider state and try again.",
+          "unavailable": "SAML login could not be started. Refresh the Provider state and try again."
+        },
         "domains": {
           "title": "Verified domains",
           "subtitle": "Prove control of an organization domain with a server-side DNS TXT check.",

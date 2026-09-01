@@ -938,6 +938,22 @@ pub struct OrganizationSsoLoginStartResponse {
     #[schema(min_length = 64, max_length = 64)]
     request_digest: String,
     expires_at: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    saml_authn_request: Option<OrganizationSsoSamlAuthnRequestResponse>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationSsoSamlAuthnRequestResponse {
+    action: String,
+    fields: Vec<OrganizationSsoSamlAuthnRequestFieldResponse>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationSsoSamlAuthnRequestFieldResponse {
+    name: String,
+    value: String,
 }
 
 async fn start_organization_sso_login(
@@ -1016,6 +1032,21 @@ async fn start_organization_sso_login(
         state_digest: start.state_digest().to_owned(),
         request_digest: start.request_digest().to_owned(),
         expires_at: start.expires_at(),
+        saml_authn_request: start.saml_authn_request().map(|request| {
+            OrganizationSsoSamlAuthnRequestResponse {
+                action: request.action().to_owned(),
+                fields: request
+                    .fields()
+                    .iter()
+                    .map(
+                        |(name, value)| OrganizationSsoSamlAuthnRequestFieldResponse {
+                            name: name.clone(),
+                            value: value.clone(),
+                        },
+                    )
+                    .collect(),
+            }
+        }),
     }))
 }
 
