@@ -1938,15 +1938,15 @@ export type OrganizationSsoPublicLoginStartRequest = {
     identifier: string;
 };
 export type OrganizationSsoPublicLoginStartResponse = {
-    protocol: 'oidc';
     expires_at: number;
     authorization_url: string;
+    protocol: 'oidc';
 } | {
-    protocol: 'saml';
     expires_at: number;
     action: string;
     saml_request: string;
     relay_state: string;
+    protocol: 'saml';
 };
 export type OrganizationSsoRecoveryRequest = {
     expected_version: number;

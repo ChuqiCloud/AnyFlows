@@ -36294,17 +36294,11 @@
           {
             "type": "object",
             "required": [
-              "protocol",
               "expires_at",
-              "authorization_url"
+              "authorization_url",
+              "protocol"
             ],
             "properties": {
-              "protocol": {
-                "type": "string",
-                "enum": [
-                  "oidc"
-                ]
-              },
               "expires_at": {
                 "type": "integer",
                 "format": "int64"
@@ -36313,6 +36307,12 @@
                 "type": "string",
                 "format": "uri",
                 "maxLength": 4096
+              },
+              "protocol": {
+                "type": "string",
+                "enum": [
+                  "oidc"
+                ]
               }
             },
             "additionalProperties": false
@@ -36320,19 +36320,13 @@
           {
             "type": "object",
             "required": [
-              "protocol",
               "expires_at",
               "action",
               "saml_request",
-              "relay_state"
+              "relay_state",
+              "protocol"
             ],
             "properties": {
-              "protocol": {
-                "type": "string",
-                "enum": [
-                  "saml"
-                ]
-              },
               "expires_at": {
                 "type": "integer",
                 "format": "int64"
@@ -36349,6 +36343,12 @@
               "relay_state": {
                 "type": "string",
                 "maxLength": 4096
+              },
+              "protocol": {
+                "type": "string",
+                "enum": [
+                  "saml"
+                ]
               }
             },
             "additionalProperties": false
