@@ -1896,14 +1896,6 @@ export type OrganizationSsoLoginStartResponse = {
     expires_at: number;
     saml_authn_request?: null | OrganizationSsoSamlAuthnRequestResponse;
 };
-export type OrganizationSsoSamlAuthnRequestResponse = {
-    action: string;
-    fields: Array<OrganizationSsoSamlAuthnRequestFieldResponse>;
-};
-export type OrganizationSsoSamlAuthnRequestFieldResponse = {
-    name: string;
-    value: string;
-};
 export type OrganizationSsoPolicyRequest = {
     expected_version: number;
     policy: 'optional' | 'required';
@@ -1944,6 +1936,14 @@ export type OrganizationSsoRecoveryResponse = {
     policy: 'optional' | 'required';
     recovery_ready: boolean;
     version: number;
+};
+export type OrganizationSsoSamlAuthnRequestFieldResponse = {
+    name: string;
+    value: string;
+};
+export type OrganizationSsoSamlAuthnRequestResponse = {
+    action: string;
+    fields: Array<OrganizationSsoSamlAuthnRequestFieldResponse>;
 };
 export type OrganizationSsoSessionExchangeErrorResponse = {
     code: string;

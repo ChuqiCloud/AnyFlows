@@ -36026,41 +36026,6 @@
         },
         "additionalProperties": false
       },
-      "OrganizationSsoSamlAuthnRequestResponse": {
-        "type": "object",
-        "required": [
-          "action",
-          "fields"
-        ],
-        "properties": {
-          "action": {
-            "type": "string"
-          },
-          "fields": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/OrganizationSsoSamlAuthnRequestFieldResponse"
-            }
-          }
-        },
-        "additionalProperties": false
-      },
-      "OrganizationSsoSamlAuthnRequestFieldResponse": {
-        "type": "object",
-        "required": [
-          "name",
-          "value"
-        ],
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "value": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false
-      },
       "OrganizationSsoPolicyRequest": {
         "type": "object",
         "required": [
@@ -36275,6 +36240,41 @@
             "type": "integer",
             "format": "int64",
             "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoSamlAuthnRequestFieldResponse": {
+        "type": "object",
+        "required": [
+          "name",
+          "value"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoSamlAuthnRequestResponse": {
+        "type": "object",
+        "required": [
+          "action",
+          "fields"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrganizationSsoSamlAuthnRequestFieldResponse"
+            }
           }
         },
         "additionalProperties": false
