@@ -246,12 +246,11 @@ async fn expiration_and_member_version_are_rechecked_at_execution_time()
     )
     .await?;
     // 直接构造已过期持久化事实，避免依赖并发门禁中的调度时延。
-    let expired_at = TimeDateTimeWithTimeZone::now_utc() - Duration::from_secs(1);
     let update = organization_approval_requests::Entity::update_many()
         .filter(organization_approval_requests::Column::Id.eq(expired_request_id.get()))
         .col_expr(
             organization_approval_requests::Column::ExpiresAt,
-            Expr::value(expired_at),
+            Expr::col(organization_approval_requests::Column::CreatedAt),
         )
         .exec(fixture.pool.connection())
         .await?;
