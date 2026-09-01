@@ -33,8 +33,8 @@ use crate::{
         EncryptedJson, SensitiveString, organization_entitlements, organization_memberships,
         organization_sso_domain_reverification_leases, organization_sso_domains,
         organization_sso_identities, organization_sso_login_transaction_cleanup_leases,
-        organization_sso_login_transactions,
-        organization_sso_policies, organization_sso_providers, organizations,
+        organization_sso_login_transactions, organization_sso_policies, organization_sso_providers,
+        organizations,
     },
 };
 
@@ -1409,21 +1409,12 @@ impl OrganizationSsoProviderRepository {
             return Err(OrganizationSsoRepositoryError::InvalidInput);
         }
         let owner_token = self.login_transaction_cleanup_lease_owner_token()?;
-        let outcome = self
-            .run(self.acquire_login_transaction_cleanup_lease_inner(
-                now,
-                lease_duration,
-                owner_token,
-            ))
-            .await?;
-        Ok(match outcome {
-            OrganizationSsoDomainReverificationLeaseOutcome::Acquired(_) => {
-                OrganizationSsoLoginTransactionCleanupLeaseOutcome::Acquired
-            }
-            OrganizationSsoDomainReverificationLeaseOutcome::Held => {
-                OrganizationSsoLoginTransactionCleanupLeaseOutcome::Held
-            }
-        })
+        self.run(self.acquire_login_transaction_cleanup_lease_inner(
+            now,
+            lease_duration,
+            owner_token,
+        ))
+        .await
     }
 
     /// 有界删除已过期、未领取且没有任何完成/票据/断言事实的登录事务。
@@ -2320,14 +2311,18 @@ impl OrganizationSsoProviderRepository {
                     updated_at: Set(now),
                 };
                 match inserted.insert(self.pool.connection()).await {
-                    Ok(_) => return Ok(OrganizationSsoLoginTransactionCleanupLeaseOutcome::Acquired),
-                    Err(_) => organization_sso_login_transaction_cleanup_leases::Entity::find_by_id(
-                        LOGIN_TRANSACTION_CLEANUP_LEASE_KEY,
-                    )
-                    .one(self.pool.connection())
-                    .await
-                    .map_err(query_error)?
-                    .ok_or(OrganizationSsoRepositoryError::Query)?,
+                    Ok(_) => {
+                        return Ok(OrganizationSsoLoginTransactionCleanupLeaseOutcome::Acquired);
+                    }
+                    Err(_) => {
+                        organization_sso_login_transaction_cleanup_leases::Entity::find_by_id(
+                            LOGIN_TRANSACTION_CLEANUP_LEASE_KEY,
+                        )
+                        .one(self.pool.connection())
+                        .await
+                        .map_err(query_error)?
+                        .ok_or(OrganizationSsoRepositoryError::Query)?
+                    }
                 }
             }
         };
@@ -2352,16 +2347,20 @@ impl OrganizationSsoProviderRepository {
                 organization_sso_login_transaction_cleanup_leases::Column::UpdatedAt,
                 Expr::value(now),
             )
-            .filter(organization_sso_login_transaction_cleanup_leases::Column::LeaseKey.eq(
-                LOGIN_TRANSACTION_CLEANUP_LEASE_KEY,
-            ))
+            .filter(
+                organization_sso_login_transaction_cleanup_leases::Column::LeaseKey
+                    .eq(LOGIN_TRANSACTION_CLEANUP_LEASE_KEY),
+            )
             .filter(
                 organization_sso_login_transaction_cleanup_leases::Column::Version
                     .eq(existing.version),
             )
             .filter(
                 Condition::any()
-                    .add(organization_sso_login_transaction_cleanup_leases::Column::LeaseExpiresAt.lte(now))
+                    .add(
+                        organization_sso_login_transaction_cleanup_leases::Column::LeaseExpiresAt
+                            .lte(now),
+                    )
                     .add(
                         organization_sso_login_transaction_cleanup_leases::Column::OwnerToken
                             .eq(existing.owner_token),

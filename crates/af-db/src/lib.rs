@@ -638,7 +638,6 @@ pub use organization_sso::{
     OrganizationSsoDomainReverificationBatch, OrganizationSsoDomainReverificationCursor,
     OrganizationSsoDomainReverificationLease, OrganizationSsoDomainReverificationLeaseOutcome,
     OrganizationSsoDomainReverificationOutcome, OrganizationSsoDomainReverificationTarget,
-    OrganizationSsoLoginTransactionCleanupLeaseOutcome,
     OrganizationSsoDomainUpdate, OrganizationSsoIdentityCreate, OrganizationSsoIdentityRecord,
     OrganizationSsoLoginTransactionCleanupLeaseOutcome, OrganizationSsoLoginTransactionCreate,
     OrganizationSsoLoginTransactionRecord, OrganizationSsoLoginTransactionResult,

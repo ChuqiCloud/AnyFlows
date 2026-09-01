@@ -1,7 +1,7 @@
 use std::{
     fmt,
     future::Future,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use af_db::{
@@ -55,7 +55,9 @@ impl OrganizationSsoLoginTransactionCleanupSupervisorConfig {
         max_batches_per_run: usize,
     ) -> Result<Self, OrganizationSsoLoginTransactionCleanupSupervisorConfigError> {
         if batch_size == 0 || batch_size > 64 {
-            return Err(OrganizationSsoLoginTransactionCleanupSupervisorConfigError::InvalidBatchSize);
+            return Err(
+                OrganizationSsoLoginTransactionCleanupSupervisorConfigError::InvalidBatchSize,
+            );
         }
         if interval.is_zero() {
             return Err(OrganizationSsoLoginTransactionCleanupSupervisorConfigError::ZeroInterval);
@@ -64,23 +66,37 @@ impl OrganizationSsoLoginTransactionCleanupSupervisorConfig {
             return Err(OrganizationSsoLoginTransactionCleanupSupervisorConfigError::ZeroLease);
         }
         if max_batches_per_run == 0
-            || max_batches_per_run > MAX_ORGANIZATION_SSO_LOGIN_TRANSACTION_CLEANUP_MAX_BATCHES_PER_RUN
+            || max_batches_per_run
+                > MAX_ORGANIZATION_SSO_LOGIN_TRANSACTION_CLEANUP_MAX_BATCHES_PER_RUN
         {
             return Err(
                 OrganizationSsoLoginTransactionCleanupSupervisorConfigError::InvalidMaxBatchesPerRun,
             );
         }
-        Ok(Self { batch_size, interval, lease_duration, max_batches_per_run })
+        Ok(Self {
+            batch_size,
+            interval,
+            lease_duration,
+            max_batches_per_run,
+        })
     }
 
     #[must_use]
-    pub const fn batch_size(self) -> usize { self.batch_size }
+    pub const fn batch_size(self) -> usize {
+        self.batch_size
+    }
     #[must_use]
-    pub const fn interval(self) -> Duration { self.interval }
+    pub const fn interval(self) -> Duration {
+        self.interval
+    }
     #[must_use]
-    pub const fn lease_duration(self) -> Duration { self.lease_duration }
+    pub const fn lease_duration(self) -> Duration {
+        self.lease_duration
+    }
     #[must_use]
-    pub const fn max_batches_per_run(self) -> usize { self.max_batches_per_run }
+    pub const fn max_batches_per_run(self) -> usize {
+        self.max_batches_per_run
+    }
 }
 
 impl Default for OrganizationSsoLoginTransactionCleanupSupervisorConfig {
@@ -89,7 +105,8 @@ impl Default for OrganizationSsoLoginTransactionCleanupSupervisorConfig {
             batch_size: DEFAULT_ORGANIZATION_SSO_LOGIN_TRANSACTION_CLEANUP_BATCH_SIZE,
             interval: DEFAULT_ORGANIZATION_SSO_LOGIN_TRANSACTION_CLEANUP_INTERVAL,
             lease_duration: DEFAULT_ORGANIZATION_SSO_LOGIN_TRANSACTION_CLEANUP_LEASE,
-            max_batches_per_run: DEFAULT_ORGANIZATION_SSO_LOGIN_TRANSACTION_CLEANUP_MAX_BATCHES_PER_RUN,
+            max_batches_per_run:
+                DEFAULT_ORGANIZATION_SSO_LOGIN_TRANSACTION_CLEANUP_MAX_BATCHES_PER_RUN,
         }
     }
 }
@@ -106,15 +123,25 @@ pub struct OrganizationSsoLoginTransactionCleanupRunReport {
 
 impl OrganizationSsoLoginTransactionCleanupRunReport {
     #[must_use]
-    pub const fn batches(self) -> usize { self.batches }
+    pub const fn batches(self) -> usize {
+        self.batches
+    }
     #[must_use]
-    pub const fn deleted(self) -> usize { self.deleted }
+    pub const fn deleted(self) -> usize {
+        self.deleted
+    }
     #[must_use]
-    pub const fn lease_held(self) -> bool { self.lease_held }
+    pub const fn lease_held(self) -> bool {
+        self.lease_held
+    }
     #[must_use]
-    pub const fn failed(self) -> bool { self.failed }
+    pub const fn failed(self) -> bool {
+        self.failed
+    }
     #[must_use]
-    pub const fn truncated(self) -> bool { self.truncated }
+    pub const fn truncated(self) -> bool {
+        self.truncated
+    }
 }
 
 /// 清理任务的最小持久化端口。
@@ -123,7 +150,12 @@ pub trait OrganizationSsoLoginTransactionCleanupStore: Send + Sync {
         &self,
         now: i64,
         lease_duration: Duration,
-    ) -> impl Future<Output = Result<OrganizationSsoLoginTransactionCleanupLeaseOutcome, OrganizationSsoRepositoryError>> + Send;
+    ) -> impl Future<
+        Output = Result<
+            OrganizationSsoLoginTransactionCleanupLeaseOutcome,
+            OrganizationSsoRepositoryError,
+        >,
+    > + Send;
     fn cleanup_expired(
         &self,
         now: i64,
@@ -136,8 +168,10 @@ impl OrganizationSsoLoginTransactionCleanupStore for OrganizationSsoProviderRepo
         &self,
         now: i64,
         lease_duration: Duration,
-    ) -> Result<OrganizationSsoLoginTransactionCleanupLeaseOutcome, OrganizationSsoRepositoryError> {
-        self.acquire_login_transaction_cleanup_lease(now, lease_duration).await
+    ) -> Result<OrganizationSsoLoginTransactionCleanupLeaseOutcome, OrganizationSsoRepositoryError>
+    {
+        self.acquire_login_transaction_cleanup_lease(now, lease_duration)
+            .await
     }
 
     async fn cleanup_expired(
@@ -145,7 +179,8 @@ impl OrganizationSsoLoginTransactionCleanupStore for OrganizationSsoProviderRepo
         now: i64,
         limit: usize,
     ) -> Result<usize, OrganizationSsoRepositoryError> {
-        self.cleanup_expired_unclaimed_login_transactions(now, limit).await
+        self.cleanup_expired_unclaimed_login_transactions(now, limit)
+            .await
     }
 }
 
@@ -157,7 +192,10 @@ pub struct OrganizationSsoLoginTransactionCleanupSupervisor<S> {
 
 impl<S> OrganizationSsoLoginTransactionCleanupSupervisor<S> {
     #[must_use]
-    pub const fn new(store: S, config: OrganizationSsoLoginTransactionCleanupSupervisorConfig) -> Self {
+    pub const fn new(
+        store: S,
+        config: OrganizationSsoLoginTransactionCleanupSupervisorConfig,
+    ) -> Self {
         Self { store, config }
     }
 }
@@ -168,32 +206,55 @@ where
 {
     /// 执行一轮有界清理；任何依赖错误都会失败关闭本轮。
     pub async fn run_once_at(&self, now: i64) -> OrganizationSsoLoginTransactionCleanupRunReport {
+        let started_at = Instant::now();
         let mut report = OrganizationSsoLoginTransactionCleanupRunReport::default();
-        let mut lease = match self.store.acquire_lease(now, self.config.lease_duration()).await {
+        let mut lease = match self
+            .store
+            .acquire_lease(now, self.config.lease_duration())
+            .await
+        {
             Ok(value) => value,
             Err(_) => {
                 report.failed = true;
                 return report;
             }
         };
-        if matches!(lease, OrganizationSsoLoginTransactionCleanupLeaseOutcome::Held) {
+        if matches!(
+            lease,
+            OrganizationSsoLoginTransactionCleanupLeaseOutcome::Held
+        ) {
             report.lease_held = true;
             return report;
         }
         for batch_index in 0..self.config.max_batches_per_run() {
-            lease = match self.store.acquire_lease(now, self.config.lease_duration()).await {
+            let Some(lease_now) = elapsed_scan_time(now, started_at.elapsed()) else {
+                report.failed = true;
+                return report;
+            };
+            lease = match self
+                .store
+                .acquire_lease(lease_now, self.config.lease_duration())
+                .await
+            {
                 Ok(value) => value,
                 Err(_) => {
                     report.failed = true;
                     return report;
                 }
             };
-            if matches!(lease, OrganizationSsoLoginTransactionCleanupLeaseOutcome::Held) {
+            if matches!(
+                lease,
+                OrganizationSsoLoginTransactionCleanupLeaseOutcome::Held
+            ) {
                 report.lease_held = true;
                 report.truncated = true;
                 return report;
             }
-            let deleted = match self.store.cleanup_expired(now, self.config.batch_size()).await {
+            let deleted = match self
+                .store
+                .cleanup_expired(now, self.config.batch_size())
+                .await
+            {
                 Ok(value) => value,
                 Err(_) => {
                     report.failed = true;
@@ -250,11 +311,28 @@ fn unix_now() -> i64 {
         .unwrap_or(0)
 }
 
-fn log_report(report: OrganizationSsoLoginTransactionCleanupRunReport) {
-    if report.failed {
-        tracing::error!(batches = report.batches, deleted = report.deleted, lease_held = report.lease_held, truncated = report.truncated, "企业 SSO 过期登录事务清理失败");
-    } else if report.deleted > 0 || report.lease_held {
-        tracing::info!(batches = report.batches, deleted = report.deleted, lease_held = report.lease_held, truncated = report.truncated, "企业 SSO 过期登录事务清理完成");
-    }
+fn elapsed_scan_time(started_at: i64, elapsed: Duration) -> Option<i64> {
+    i64::try_from(elapsed.as_secs())
+        .ok()
+        .and_then(|seconds| started_at.checked_add(seconds))
 }
 
+fn log_report(report: OrganizationSsoLoginTransactionCleanupRunReport) {
+    if report.failed {
+        tracing::error!(
+            batches = report.batches,
+            deleted = report.deleted,
+            lease_held = report.lease_held,
+            truncated = report.truncated,
+            "企业 SSO 过期登录事务清理失败"
+        );
+    } else if report.deleted > 0 || report.lease_held {
+        tracing::info!(
+            batches = report.batches,
+            deleted = report.deleted,
+            lease_held = report.lease_held,
+            truncated = report.truncated,
+            "企业 SSO 过期登录事务清理完成"
+        );
+    }
+}

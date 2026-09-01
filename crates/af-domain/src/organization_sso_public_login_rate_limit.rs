@@ -84,7 +84,7 @@ fn client_ip_bytes(client_ip: TrustedClientIp) -> [u8; 17] {
 fn digest(secret: &[u8; 32], context: &[u8], value: &[u8]) -> [u8; 32] {
     let mut hasher = Hmac::<Sha256>::new_from_slice(secret).expect("固定长度 HMAC 密钥有效");
     hasher.update(context);
-    hasher.update([0]);
+    hasher.update(&[0]);
     hasher.update(value);
     hasher.finalize().into_bytes().into()
 }
