@@ -188,7 +188,7 @@ impl OrganizationSsoSamlNameIdFormat {
 }
 
 /// 企业 SAML Provider 的版本化闭合配置投影；不包含原始 metadata/XML。
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OrganizationSsoSamlProviderConfig {
     provider_version: i64,
     idp_entity_id: String,
