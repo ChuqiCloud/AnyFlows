@@ -188,6 +188,16 @@ impl OrganizationSsoSamlLoginMaterial {
         })
     }
 
+    /// 从 `saml-rs` 已生成的 AuthnRequest ID 构造短期材料。
+    pub fn from_request_id(request_id: String) -> Result<Self, OrganizationSsoLoginError> {
+        if !valid_saml_request_id(&request_id) {
+            return Err(OrganizationSsoLoginError::InvalidLoginMaterial);
+        }
+        Ok(Self {
+            request_id: Zeroizing::new(request_id),
+        })
+    }
+
     /// 返回 Request ID；调用方只能交给 SAML 请求构造器或对应加密封套。
     #[must_use]
     pub fn request_id(&self) -> &str {
@@ -218,7 +228,7 @@ impl OrganizationSsoSamlLoginMaterial {
         let serialized = secret.into_zeroizing();
         let wire: OrganizationSsoSamlLoginMaterialWire = serde_json::from_str(serialized.as_str())
             .map_err(|_| OrganizationSsoLoginError::InvalidLoginMaterial)?;
-        if !wire.request_id.starts_with('_') || !valid_parameter(&wire.request_id) {
+        if !valid_saml_request_id(&wire.request_id) {
             return Err(OrganizationSsoLoginError::InvalidLoginMaterial);
         }
         Ok(Self {
@@ -467,6 +477,17 @@ fn valid_parameter(value: &str) -> bool {
         && value.bytes().all(|byte| byte.is_ascii_graphic())
 }
 
+fn valid_saml_request_id(value: &str) -> bool {
+    if value.is_empty() || value.len() > 255 || !value.is_ascii() {
+        return false;
+    }
+    let mut bytes = value.bytes();
+    if bytes.next() != Some(b'_') {
+        return false;
+    }
+    bytes.all(|byte| matches!(byte, b'_' | b'-' | b'.' | b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9'))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -493,6 +514,17 @@ mod tests {
         assert!(!format!("{material:?}").contains(material.request_id()));
         let secret = material.into_plain_system_secret().unwrap();
         assert!(!format!("{secret:?}").contains("request_id"));
+
+        assert_eq!(
+            OrganizationSsoSamlLoginMaterial::from_request_id("_request-1".to_owned())
+                .unwrap()
+                .request_id(),
+            "_request-1"
+        );
+        assert_eq!(
+            OrganizationSsoSamlLoginMaterial::from_request_id("_request:id".to_owned()),
+            Err(OrganizationSsoLoginError::InvalidLoginMaterial)
+        );
     }
 
     #[test]

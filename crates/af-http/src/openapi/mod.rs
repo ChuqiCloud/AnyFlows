@@ -596,7 +596,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 457);
+        assert_eq!(schemas.len(), 459);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("OrganizationSsoDiscoveryErrorResponse"));
         assert!(schemas.contains_key("OrganizationSsoDiscoveryRequest"));
@@ -654,6 +654,8 @@ mod tests {
         assert!(schemas.contains_key("OrganizationSsoDomainVerifyRequest"));
         assert!(schemas.contains_key("OrganizationSsoLoginStartRequest"));
         assert!(schemas.contains_key("OrganizationSsoLoginStartResponse"));
+        assert!(schemas.contains_key("OrganizationSsoSamlAuthnRequestResponse"));
+        assert!(schemas.contains_key("OrganizationSsoSamlAuthnRequestFieldResponse"));
         assert!(schemas.contains_key("OrganizationSsoIdentityBindingRequest"));
         assert!(schemas.contains_key("OrganizationSsoIdentityBindingResponse"));
         assert!(schemas.contains_key("OrganizationSsoPolicyRequest"));

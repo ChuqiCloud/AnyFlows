@@ -19,7 +19,7 @@ use saml_rs::{
     AcsEndpoint, AuthnRequestSigningPolicy, BrowserInput, ClockSkew, EntityId, FormField,
     IdpDescriptor, MessageId, MetadataTrustPolicy, NameIdFormat, PendingAuthnRequest,
     RelayStateParam, ReplayCache, ReplayKey, ReplayPolicy, Saml, SamlError, SamlValidationContext,
-    SpConfig, SpValidationPolicy, SsoResponse, SsoResponseBinding, XmlPolicy,
+    SpConfig, SpValidationPolicy, SsoResponse, SsoResponseBinding, StartSso, XmlPolicy,
     constants::{Binding, digest_algorithm, namespace, signature_algorithm, transform_algorithm},
     crypto::verify_signature_with_limits,
     metadata::{
@@ -199,6 +199,45 @@ pub struct OrganizationSsoSamlProviderConfig {
     trusted_certificates: Vec<String>,
 }
 
+/// 由受控 Provider 快照生成的 SAML POST 浏览器动作。
+#[derive(Clone, Eq, PartialEq)]
+pub struct OrganizationSsoSamlAuthnRequest {
+    request_id: String,
+    action: String,
+    fields: Vec<(String, String)>,
+}
+
+impl OrganizationSsoSamlAuthnRequest {
+    /// 返回 `saml-rs` 实际生成的 Request ID，仅供事务材料封套使用。
+    #[must_use]
+    pub fn request_id(&self) -> &str {
+        &self.request_id
+    }
+
+    /// 返回受控 IdP POST 地址。
+    #[must_use]
+    pub fn action(&self) -> &str {
+        &self.action
+    }
+
+    /// 返回需要由浏览器提交的隐藏字段。
+    #[must_use]
+    pub fn fields(&self) -> &[(String, String)] {
+        &self.fields
+    }
+}
+
+impl fmt::Debug for OrganizationSsoSamlAuthnRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OrganizationSsoSamlAuthnRequest")
+            .field("request_id", &"<redacted>")
+            .field("action", &"<redacted>")
+            .field("field_count", &self.fields.len())
+            .finish()
+    }
+}
+
 impl OrganizationSsoSamlProviderConfig {
     /// 构造并校验当前 Provider 版本的 SAML 配置快照。
     #[allow(
@@ -323,6 +362,66 @@ impl OrganizationSsoSamlProviderConfig {
             self.name_id_format,
             self.trusted_certificates.clone(),
         )
+    }
+
+    /// 使用固定 Provider 快照发起 SP-initiated SSO，并返回可提交的 POST 表单。
+    pub fn start_authn_request(
+        &self,
+        relay_state: String,
+    ) -> Result<OrganizationSsoSamlAuthnRequest, OrganizationSsoSamlSemanticError> {
+        let sp_entity_id = EntityId::try_new(self.sp_entity_id.clone())
+            .map_err(|_| OrganizationSsoSamlSemanticError::InvalidConfiguration)?;
+        let idp_entity_id = EntityId::try_new(self.idp_entity_id.clone())
+            .map_err(|_| OrganizationSsoSamlSemanticError::InvalidConfiguration)?;
+        let acs = AcsEndpoint::post(self.acs_url.clone())
+            .map_err(|_| OrganizationSsoSamlSemanticError::InvalidConfiguration)?;
+        let mut validation = SpValidationPolicy::strict();
+        validation.authn_requests = AuthnRequestSigningPolicy::DoNotSignForCompatibility;
+        let sp = Saml::sp(
+            SpConfig::builder(sp_entity_id)
+                .acs_endpoint(acs)
+                .validation(validation)
+                .xml(XmlPolicy {
+                    limits: SAML_XML_LIMITS,
+                    ..XmlPolicy::default()
+                })
+                .build()
+                .map_err(|_| OrganizationSsoSamlSemanticError::InvalidConfiguration)?,
+        )
+        .map_err(|_| OrganizationSsoSamlSemanticError::InvalidConfiguration)?;
+        let metadata = generate_idp_metadata(&SamlIdpMetadataConfig {
+            entity_id: idp_entity_id.as_str().to_owned(),
+            signing_certs: self.trusted_certificates.clone(),
+            single_sign_on_service: vec![SamlMetadataEndpoint::new(
+                Binding::Post,
+                self.idp_sso_url.clone(),
+            )],
+            ..SamlIdpMetadataConfig::default()
+        });
+        let idp = IdpDescriptor::from_metadata_xml_for(
+            idp_entity_id,
+            &metadata,
+            MetadataTrustPolicy::UnsignedForCompatibility,
+        )
+        .map_err(|_| OrganizationSsoSamlSemanticError::InvalidConfiguration)?;
+        let relay_state = RelayStateParam::try_from_option(Some(relay_state))
+            .map_err(|_| OrganizationSsoSamlSemanticError::InvalidConfiguration)?;
+        let started = sp
+            .start_sso(&idp, StartSso::post().relay_state(relay_state))
+            .map_err(|_| OrganizationSsoSamlSemanticError::Rejected)?;
+        let form = started
+            .outbound
+            .post_form()
+            .map_err(|_| OrganizationSsoSamlSemanticError::Rejected)?;
+        Ok(OrganizationSsoSamlAuthnRequest {
+            request_id: started.pending.request_id().as_str().to_owned(),
+            action: form.action().as_str().to_owned(),
+            fields: form
+                .fields()
+                .iter()
+                .map(|field| (field.name().to_owned(), field.value().to_owned()))
+                .collect(),
+        })
     }
 
     #[must_use]
@@ -1076,6 +1175,42 @@ mod tests {
         assert_eq!(config.provider_version(), 7);
         assert_eq!(config.to_metadata_projection(), projection);
         assert!(config.with_request_id(REQUEST_ID.to_owned()).is_ok());
+    }
+
+    #[test]
+    fn provider_starts_a_post_request_bound_to_the_generated_request_id() {
+        let config = OrganizationSsoSamlProviderConfig::new(
+            7,
+            IDP_ENTITY_ID.to_owned(),
+            IDP_SSO_URL.to_owned(),
+            SP_ENTITY_ID.to_owned(),
+            ACS_URL.to_owned(),
+            OrganizationSsoSamlNameIdFormat::Persistent,
+            vec![TEST_CERTIFICATE.trim().to_owned()],
+        )
+        .unwrap();
+
+        let request = config
+            .start_authn_request("relay-state-1".to_owned())
+            .unwrap();
+        assert_eq!(request.action(), IDP_SSO_URL);
+        assert_eq!(request.fields().len(), 2);
+        let saml_request = request
+            .fields()
+            .iter()
+            .find_map(|(name, value)| (name == "SAMLRequest").then_some(value))
+            .unwrap();
+        assert_eq!(
+            request
+                .fields()
+                .iter()
+                .find_map(|(name, value)| (name == "RelayState").then_some(value.as_str())),
+            Some("relay-state-1")
+        );
+        let xml = String::from_utf8(STANDARD.decode(saml_request).unwrap()).unwrap();
+        assert!(xml.contains(&format!("ID=\"{}\"", request.request_id())));
+        assert!(xml.contains(&format!("AssertionConsumerServiceURL=\"{ACS_URL}\"")));
+        assert!(xml.contains(&format!(">{SP_ENTITY_ID}</")));
     }
 
     #[test]

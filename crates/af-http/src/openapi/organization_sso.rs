@@ -21,6 +21,7 @@ use crate::{
         OrganizationSsoPolicyResponse, OrganizationSsoProviderListResponse,
         OrganizationSsoProviderRequest, OrganizationSsoProviderResponse,
         OrganizationSsoRecoveryRequest, OrganizationSsoRecoveryResponse,
+        OrganizationSsoSamlAuthnRequestFieldResponse, OrganizationSsoSamlAuthnRequestResponse,
     },
 };
 
@@ -200,7 +201,7 @@ fn verify_organization_sso_domain() {}
     params(("organization_id" = i64, Path, minimum = 1, description = "企业内部标识")),
     request_body = OrganizationSsoLoginStartRequest,
     responses(
-        (status = 200, description = "返回脱敏的登录事务摘要", body = OrganizationSsoLoginStartResponse),
+        (status = 200, description = "返回登录事务摘要和可选的受控 SAML POST 表单", body = OrganizationSsoLoginStartResponse),
         (status = 400, description = "登录事务参数无效", body = ManagementErrorBody),
         (status = 401, description = "会话无效", body = ManagementErrorBody),
         (status = 403, description = "无权启动企业 SSO 登录", body = ManagementErrorBody),
@@ -403,6 +404,8 @@ fn exchange_organization_sso_session() {}
         OrganizationSsoDomainVerifyRequest,
         OrganizationSsoLoginStartRequest,
         OrganizationSsoLoginStartResponse,
+        OrganizationSsoSamlAuthnRequestResponse,
+        OrganizationSsoSamlAuthnRequestFieldResponse,
         OrganizationSsoIdentityBindingRequest,
         OrganizationSsoIdentityBindingResponse,
         OrganizationSsoPolicyRequest,

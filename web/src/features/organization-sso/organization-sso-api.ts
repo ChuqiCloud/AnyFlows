@@ -10,6 +10,7 @@ import {
   updateOrganizationSsoPolicy,
   establishOrganizationSsoRecovery,
   suspendOrganizationSsoRequired,
+  startOrganizationSsoLogin,
   verifyOrganizationSsoDomain,
 } from '@/lib/api/generated/sdk.gen'
 import type {
@@ -17,6 +18,7 @@ import type {
   OrganizationSsoDomainVerifyRequestWritable,
   OrganizationSsoPolicyRequest,
   OrganizationSsoRecoveryRequestWritable,
+  OrganizationSsoLoginStartRequest,
 } from '@/lib/api/generated/types.gen'
 
 /** 按企业权限读取脱敏 SSO Provider；未授权时不发起请求。 */
@@ -45,6 +47,20 @@ export function useOrganizationSsoPolicy(organizationId: number, enabled: boolea
         client: apiClient,
         path: { organization_id: organizationId },
         signal,
+      })
+      return data
+    },
+  })
+}
+
+/** 为企业设置中的受控联调入口创建一次性 SSO 事务。 */
+export function useStartOrganizationSsoLogin(organizationId: number) {
+  return useMutation({
+    mutationFn: async (body: OrganizationSsoLoginStartRequest) => {
+      const { data } = await startOrganizationSsoLogin({
+        body,
+        client: apiClient,
+        path: { organization_id: organizationId },
       })
       return data
     },

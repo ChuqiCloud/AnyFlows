@@ -19426,7 +19426,7 @@
         },
         "responses": {
           "200": {
-            "description": "返回脱敏的登录事务摘要",
+            "description": "返回登录事务摘要和可选的受控 SAML POST 表单",
             "content": {
               "application/json": {
                 "schema": {
@@ -36012,6 +36012,16 @@
           "expires_at": {
             "type": "integer",
             "format": "int64"
+          },
+          "saml_authn_request": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OrganizationSsoSamlAuthnRequestResponse"
+              }
+            ]
           }
         },
         "additionalProperties": false
@@ -36230,6 +36240,41 @@
             "type": "integer",
             "format": "int64",
             "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoSamlAuthnRequestFieldResponse": {
+        "type": "object",
+        "required": [
+          "name",
+          "value"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoSamlAuthnRequestResponse": {
+        "type": "object",
+        "required": [
+          "action",
+          "fields"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrganizationSsoSamlAuthnRequestFieldResponse"
+            }
           }
         },
         "additionalProperties": false
