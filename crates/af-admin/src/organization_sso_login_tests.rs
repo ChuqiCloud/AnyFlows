@@ -156,7 +156,7 @@ async fn login_transaction_service_binds_provider_and_consumes_ticket_once()
         second_organization,
         saml_provider.id(),
         saml_provider.version(),
-        &saml_claim_start.state_digest(),
+        saml_claim_start.state_digest(),
     )?;
     let saml_claim_state = saml_claim_start.state().to_owned();
     let saml_claim_transaction = repository
