@@ -181,6 +181,22 @@ async fn sso_policy_repository_persists_and_gates_required() -> Result<(), Box<d
             )
             .await?
     );
+    let target = fixture
+        .sso
+        .public_login_target(
+            crate::OrganizationSsoDiscoveryLocator::Domain(OrganizationSsoDomain::new(
+                "required.example.com",
+            )?),
+            now.unix_timestamp(),
+        )
+        .await?
+        .expect("满足公开发现资格时必须解析内部启动目标");
+    assert_eq!(target.organization_id(), organization_id);
+    assert_eq!(target.provider_key(), provider_key);
+    assert_eq!(
+        format!("{target:?}"),
+        "OrganizationSsoPublicLoginTarget(<redacted>)"
+    );
 
     let policy_model = organization_sso_policies::Entity::find_by_id(organization_id.get())
         .one(fixture.pool.connection())

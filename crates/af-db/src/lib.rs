@@ -644,7 +644,8 @@ pub use organization_sso::{
     OrganizationSsoPolicyUpdate, OrganizationSsoProviderCreate, OrganizationSsoProviderRecord,
     OrganizationSsoProviderRepository, OrganizationSsoProviderRepositoryConfigError,
     OrganizationSsoProviderSecretChange, OrganizationSsoProviderUpdate,
-    OrganizationSsoRecoverySuspend, OrganizationSsoRecoveryUpdate, OrganizationSsoRepositoryError,
+    OrganizationSsoPublicLoginTarget, OrganizationSsoRecoverySuspend,
+    OrganizationSsoRecoveryUpdate, OrganizationSsoRepositoryError,
 };
 pub use organization_token::{
     MAX_ORGANIZATION_TOKEN_PAGE_SIZE, OrganizationTokenCreateRecord,

@@ -2962,7 +2962,9 @@
         "placeholder": "name@company.com 或企业公开标识",
         "check": "检查企业登录",
         "checking": "正在检查企业登录",
-        "available": "检测到可用的企业登录方式。",
+        "continue": "继续企业登录",
+        "starting": "正在启动企业登录",
+        "available": "检测到可用的企业登录方式，可以继续登录。",
         "unavailable": "未找到可用的企业登录方式。",
         "error": "企业登录暂时不可用，请稍后重试。"
       }

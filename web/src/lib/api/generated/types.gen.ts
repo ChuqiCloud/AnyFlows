@@ -1894,6 +1894,7 @@ export type OrganizationSsoLoginStartResponse = {
     state_digest: string;
     request_digest: string;
     expires_at: number;
+    authorization_url?: string | null;
     saml_authn_request?: null | OrganizationSsoSamlAuthnRequestResponse;
 };
 export type OrganizationSsoPolicyRequest = {
@@ -1928,6 +1929,24 @@ export type OrganizationSsoProviderRequest = {
     display_name: string;
     metadata_projection?: unknown;
     clear_client_secret: boolean;
+};
+export type OrganizationSsoPublicLoginStartErrorResponse = {
+    code: string;
+    message: string;
+};
+export type OrganizationSsoPublicLoginStartRequest = {
+    identifier: string;
+};
+export type OrganizationSsoPublicLoginStartResponse = {
+    expires_at: number;
+    authorization_url: string;
+    protocol: 'oidc';
+} | {
+    expires_at: number;
+    action: string;
+    saml_request: string;
+    relay_state: string;
+    protocol: 'saml';
 };
 export type OrganizationSsoRecoveryRequest = {
     expected_version: number;
@@ -7185,6 +7204,22 @@ export type DiscoverOrganizationSsoResponses = {
     200: OrganizationSsoDiscoveryResponse;
 };
 export type DiscoverOrganizationSsoResponse = DiscoverOrganizationSsoResponses[keyof DiscoverOrganizationSsoResponses];
+export type StartPublicOrganizationSsoLoginData = {
+    body: OrganizationSsoPublicLoginStartRequest;
+    path?: never;
+    query?: never;
+    url: '/api/auth/organization-sso/login/start';
+};
+export type StartPublicOrganizationSsoLoginErrors = {
+    400: OrganizationSsoPublicLoginStartErrorResponse;
+    422: OrganizationSsoPublicLoginStartErrorResponse;
+    503: OrganizationSsoPublicLoginStartErrorResponse;
+};
+export type StartPublicOrganizationSsoLoginError = StartPublicOrganizationSsoLoginErrors[keyof StartPublicOrganizationSsoLoginErrors];
+export type StartPublicOrganizationSsoLoginResponses = {
+    200: OrganizationSsoPublicLoginStartResponse;
+};
+export type StartPublicOrganizationSsoLoginResponse = StartPublicOrganizationSsoLoginResponses[keyof StartPublicOrganizationSsoLoginResponses];
 export type ListOrganizationSsoProvidersData = {
     body?: never;
     path: {

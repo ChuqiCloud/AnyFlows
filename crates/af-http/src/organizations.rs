@@ -938,6 +938,9 @@ pub struct OrganizationSsoLoginStartResponse {
     #[schema(min_length = 64, max_length = 64)]
     request_digest: String,
     expires_at: i64,
+    #[schema(format = "uri", max_length = 4096)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    authorization_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     saml_authn_request: Option<OrganizationSsoSamlAuthnRequestResponse>,
 }
@@ -1032,6 +1035,9 @@ async fn start_organization_sso_login(
         state_digest: start.state_digest().to_owned(),
         request_digest: start.request_digest().to_owned(),
         expires_at: start.expires_at(),
+        authorization_url: start
+            .oidc_authorization_request()
+            .map(|request| request.authorization_url().to_owned()),
         saml_authn_request: start.saml_authn_request().map(|request| {
             OrganizationSsoSamlAuthnRequestResponse {
                 action: request.action().to_owned(),

@@ -67,7 +67,7 @@ pub(crate) async fn discover(
     }
 }
 
-fn parse_locator(
+pub(crate) fn parse_locator(
     identifier: &str,
 ) -> Result<OrganizationSsoDiscoveryLocator, OrganizationSsoDiscoveryServiceError> {
     if identifier.is_empty()

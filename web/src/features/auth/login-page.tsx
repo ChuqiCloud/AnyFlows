@@ -1,6 +1,7 @@
 import { useMutation } from '@tanstack/react-query'
 import {
   AlertCircle,
+  ArrowRight,
   Boxes,
   Building2,
   CheckCircle2,
@@ -12,7 +13,7 @@ import {
   RefreshCw,
   UserRoundPlus,
 } from 'lucide-react'
-import { type FormEvent, useEffect, useState } from 'react'
+import { type FormEvent, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -21,7 +22,10 @@ import { Input } from '@/components/ui/input'
 import { AuthCapabilityCard, AuthCapabilitySkeleton } from '@/features/auth/auth-capability-card'
 import { AuthPageShell } from '@/features/auth/auth-page-shell'
 import { beginOAuthLogin, type OAuthLoginProvider } from '@/features/auth/oauth-login-api'
-import { discoverOrganizationSso } from '@/features/auth/organization-sso-discovery-api'
+import {
+  discoverOrganizationSso,
+  startPublicOrganizationSsoLogin,
+} from '@/features/auth/organization-sso-discovery-api'
 import { OAuthProviderIcon } from '@/features/auth/oauth-provider-icon'
 import {
   authenticateWithPasskey,
@@ -30,6 +34,7 @@ import {
 } from '@/features/auth/passkey-login-api'
 import { establishManagementSession } from '@/features/auth/session-query'
 import { TurnstileWidget } from '@/features/auth/turnstile-widget'
+import { submitOrganizationSsoSamlPostAction } from '@/features/organization-sso/organization-sso-authn-request'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
 import { apiClient, ApiError } from '@/lib/api'
 import { loginManagementSession } from '@/lib/api/generated/sdk.gen'
@@ -72,7 +77,9 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
   const [loginError, setLoginError] = useState<LoginError>()
   const [noticeDismissed, setNoticeDismissed] = useState(false)
   const [organizationIdentifier, setOrganizationIdentifier] = useState('')
+  const organizationIdentifierRef = useRef('')
   const [organizationSsoStatus, setOrganizationSsoStatus] = useState<'idle' | 'available' | 'unavailable' | 'error'>('idle')
+  const [organizationSsoStarting, setOrganizationSsoStarting] = useState(false)
   const siteQuery = usePublicSiteSettings()
 
   const loginMutation = useMutation({
@@ -161,9 +168,35 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
     setOrganizationSsoStatus('idle')
     try {
       const response = await organizationSsoMutation.mutateAsync(identifier)
-      setOrganizationSsoStatus(response?.available ? 'available' : 'unavailable')
+      if (organizationIdentifierRef.current.trim() === identifier) {
+        setOrganizationSsoStatus(response?.available ? 'available' : 'unavailable')
+      }
+    } catch {
+      if (organizationIdentifierRef.current.trim() === identifier) {
+        setOrganizationSsoStatus('error')
+      }
+    }
+  }
+
+  async function handleOrganizationSsoStart() {
+    const identifier = organizationIdentifier.trim()
+    if (!identifier || organizationSsoStatus !== 'available') return
+    setOrganizationSsoStarting(true)
+    try {
+      const response = await startPublicOrganizationSsoLogin(identifier)
+      if (response.protocol === 'oidc') {
+        window.location.assign(response.authorization_url)
+        return
+      }
+      const submitted = submitOrganizationSsoSamlPostAction(response.action, [
+        { name: 'SAMLRequest', value: response.saml_request },
+        { name: 'RelayState', value: response.relay_state },
+      ])
+      if (!submitted) throw new Error('企业 SSO SAML 动作无效')
     } catch {
       setOrganizationSsoStatus('error')
+    } finally {
+      setOrganizationSsoStarting(false)
     }
   }
 
@@ -272,14 +305,18 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                       className="h-11 px-3"
                       placeholder={t('auth.login.organizationSso.placeholder')}
                       value={organizationIdentifier}
+                      disabled={organizationSsoStarting}
                       aria-describedby={organizationSsoStatus !== 'idle' ? 'organization-sso-status' : undefined}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter') {
                           event.preventDefault()
-                          void handleOrganizationSsoDiscovery()
+                          void (organizationSsoStatus === 'available'
+                            ? handleOrganizationSsoStart()
+                            : handleOrganizationSsoDiscovery())
                         }
                       }}
                       onChange={(event) => {
+                        organizationIdentifierRef.current = event.target.value
                         setOrganizationIdentifier(event.target.value)
                         setOrganizationSsoStatus('idle')
                       }}
@@ -289,15 +326,23 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                     type="button"
                     variant="secondary"
                     className="w-full"
-                    disabled={organizationSsoMutation.isPending}
-                    onClick={() => void handleOrganizationSsoDiscovery()}
+                    disabled={organizationSsoMutation.isPending || organizationSsoStarting}
+                    onClick={() => void (organizationSsoStatus === 'available'
+                      ? handleOrganizationSsoStart()
+                      : handleOrganizationSsoDiscovery())}
                   >
-                    {organizationSsoMutation.isPending
+                    {organizationSsoMutation.isPending || organizationSsoStarting
                       ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
-                      : <Building2 className="size-4" aria-hidden="true" />}
-                    {organizationSsoMutation.isPending
+                      : organizationSsoStatus === 'available'
+                        ? <ArrowRight className="size-4" aria-hidden="true" />
+                        : <Building2 className="size-4" aria-hidden="true" />}
+                    {organizationSsoStarting
+                      ? t('auth.login.organizationSso.starting')
+                      : organizationSsoMutation.isPending
                       ? t('auth.login.organizationSso.checking')
-                      : t('auth.login.organizationSso.check')}
+                      : organizationSsoStatus === 'available'
+                        ? t('auth.login.organizationSso.continue')
+                        : t('auth.login.organizationSso.check')}
                   </Button>
                   {organizationSsoStatus !== 'idle' ? (
                     <p

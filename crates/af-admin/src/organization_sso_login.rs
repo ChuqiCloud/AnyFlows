@@ -8,13 +8,13 @@ use std::{
 
 use af_account::{
     OrganizationInvitationCipher, OrganizationSsoLoginError, OrganizationSsoLoginStart,
-    OrganizationSsoOidcIdTokenVerificationConfig, OrganizationSsoOidcIdTokenVerifier,
-    OrganizationSsoOidcJwksClient, OrganizationSsoOidcLoginMaterial,
-    OrganizationSsoOidcTokenExchangeClient, OrganizationSsoOidcTokenExchangeConfig,
-    OrganizationSsoOidcTokenExchangeInput, OrganizationSsoSamlAuthnRequest,
-    OrganizationSsoSamlLoginMaterial, OrganizationSsoSamlProviderConfig,
-    OrganizationSsoSamlSemanticVerifier, SystemSecretCipher, organization_sso_login_state_digest,
-    organization_sso_login_ticket_digest,
+    OrganizationSsoOidcAuthorizationRequest, OrganizationSsoOidcIdTokenVerificationConfig,
+    OrganizationSsoOidcIdTokenVerifier, OrganizationSsoOidcJwksClient,
+    OrganizationSsoOidcLoginMaterial, OrganizationSsoOidcTokenExchangeClient,
+    OrganizationSsoOidcTokenExchangeConfig, OrganizationSsoOidcTokenExchangeInput,
+    OrganizationSsoSamlAuthnRequest, OrganizationSsoSamlLoginMaterial,
+    OrganizationSsoSamlProviderConfig, OrganizationSsoSamlSemanticVerifier, SystemSecretCipher,
+    organization_sso_login_state_digest, organization_sso_login_ticket_digest,
 };
 use af_db::{
     EncryptedCredentialEnvelope, OrganizationMembershipRecord, OrganizationRepository,
@@ -34,11 +34,14 @@ use zeroize::{Zeroize as _, Zeroizing};
 
 use crate::organization_sso_discovery::{
     OrganizationSsoDiscovery, OrganizationSsoDiscoveryServiceError, discover as discover_public,
+    parse_locator,
 };
 
 const LOGIN_TRANSACTION_TTL_SECONDS: i64 = 10 * 60;
 const LOGIN_TICKET_TTL_SECONDS: i64 = 2 * 60;
 const TICKET_RANDOM_BYTES: usize = 32;
+const REQUEST_DIGEST_RANDOM_BYTES: usize = 32;
+const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 const VERIFIED_RESULT_CODE: i16 = 1;
 const REJECTED_RESULT_CODE: i16 = 2;
 
@@ -67,6 +70,7 @@ pub struct OrganizationSsoLoginTransactionStart {
     state_digest: String,
     request_digest: String,
     expires_at: i64,
+    oidc_authorization_request: Option<OrganizationSsoOidcAuthorizationRequest>,
     saml_authn_request: Option<OrganizationSsoSamlAuthnRequest>,
 }
 
@@ -77,6 +81,7 @@ impl OrganizationSsoLoginTransactionStart {
         state_digest: String,
         request_digest: String,
         expires_at: i64,
+        oidc_authorization_request: Option<OrganizationSsoOidcAuthorizationRequest>,
         saml_authn_request: Option<OrganizationSsoSamlAuthnRequest>,
     ) -> Self {
         Self {
@@ -85,6 +90,7 @@ impl OrganizationSsoLoginTransactionStart {
             state_digest,
             request_digest,
             expires_at,
+            oidc_authorization_request,
             saml_authn_request,
         }
     }
@@ -117,6 +123,12 @@ impl OrganizationSsoLoginTransactionStart {
     #[must_use]
     pub const fn expires_at(&self) -> i64 {
         self.expires_at
+    }
+
+    /// 返回 OIDC 浏览器授权动作；SAML 启动不返回该字段。
+    #[must_use]
+    pub fn oidc_authorization_request(&self) -> Option<&OrganizationSsoOidcAuthorizationRequest> {
+        self.oidc_authorization_request.as_ref()
     }
 
     /// 返回 SAML SP 发起所需的受控 POST 表单；OIDC 启动不返回该字段。
@@ -389,6 +401,15 @@ pub trait OrganizationSsoLoginTransactionService: Send + Sync {
     fn discover<'a>(&'a self, identifier: String) -> OrganizationSsoDiscoveryFuture<'a> {
         let _ = identifier;
         Box::pin(async { Err(OrganizationSsoDiscoveryServiceError::Internal) })
+    }
+
+    /// 按公开标识重新复验可用性事实，并生成不依赖客户端企业资料的登录动作。
+    fn begin_public<'a>(
+        &'a self,
+        identifier: String,
+    ) -> OrganizationSsoLoginTransactionFuture<'a, OrganizationSsoLoginTransactionStart> {
+        let _ = identifier;
+        Box::pin(async { Err(OrganizationSsoLoginTransactionServiceError::Unavailable) })
     }
 
     /// 读取当前 Active Provider 并创建仅含摘要的短期登录事务。
@@ -741,9 +762,23 @@ impl DatabaseOrganizationSsoLoginTransactionService {
         let expires_at = expires_at(LOGIN_TRANSACTION_TTL_SECONDS)?;
         let state_digest = start.state_digest().to_owned();
         let request_digest = start.request_digest().to_owned();
+        let mut oidc_authorization_request = None;
         let mut saml_authn_request = None;
         let login_material_envelope = match provider.protocol() {
             OrganizationSsoProtocol::Oidc => {
+                let projection = provider
+                    .metadata_projection()
+                    .ok_or(OrganizationSsoLoginTransactionServiceError::Unavailable)?;
+                let config = OrganizationSsoOidcTokenExchangeConfig::from_metadata_projection(
+                    provider.version(),
+                    projection,
+                )
+                .map_err(|_| OrganizationSsoLoginTransactionServiceError::Unavailable)?;
+                oidc_authorization_request = Some(
+                    config
+                        .authorization_request(&start)
+                        .map_err(|_| OrganizationSsoLoginTransactionServiceError::Unavailable)?,
+                );
                 let secret = start
                     .into_oidc_material()
                     .into_plain_system_secret()
@@ -819,8 +854,37 @@ impl DatabaseOrganizationSsoLoginTransactionService {
             record.state_digest().to_owned(),
             record.request_digest().to_owned(),
             record.expires_at(),
+            oidc_authorization_request,
             saml_authn_request,
         ))
+    }
+
+    /// 公开启动只消费服务端内部目标，客户端无法指定企业、Provider 或请求摘要。
+    async fn begin_public_inner(
+        &self,
+        identifier: String,
+    ) -> Result<OrganizationSsoLoginTransactionStart, OrganizationSsoLoginTransactionServiceError>
+    {
+        let locator = parse_locator(&identifier).map_err(|error| match error {
+            OrganizationSsoDiscoveryServiceError::InvalidInput => {
+                OrganizationSsoLoginTransactionServiceError::InvalidInput
+            }
+            OrganizationSsoDiscoveryServiceError::Internal => {
+                OrganizationSsoLoginTransactionServiceError::Internal
+            }
+        })?;
+        let target = self
+            .repository
+            .public_login_target(locator, current_timestamp()?)
+            .await
+            .map_err(map_public_login_repository_error)?
+            .ok_or(OrganizationSsoLoginTransactionServiceError::Unavailable)?;
+        self.begin_inner(
+            target.organization_id(),
+            target.provider_key().persistence_key(),
+            generate_request_digest()?,
+        )
+        .await
     }
 
     async fn claim_inner(
@@ -1143,6 +1207,13 @@ impl OrganizationSsoLoginTransactionService for DatabaseOrganizationSsoLoginTran
         Box::pin(discover_public(&self.repository, identifier))
     }
 
+    fn begin_public<'a>(
+        &'a self,
+        identifier: String,
+    ) -> OrganizationSsoLoginTransactionFuture<'a, OrganizationSsoLoginTransactionStart> {
+        Box::pin(self.begin_public_inner(identifier))
+    }
+
     fn begin<'a>(
         &'a self,
         organization_id: OrganizationId,
@@ -1269,6 +1340,18 @@ fn generate_ticket() -> Result<Zeroizing<String>, OrganizationSsoLoginTransactio
     Ok(Zeroizing::new(ticket))
 }
 
+fn generate_request_digest() -> Result<String, OrganizationSsoLoginTransactionServiceError> {
+    let mut bytes = [0_u8; REQUEST_DIGEST_RANDOM_BYTES];
+    getrandom::fill(&mut bytes)
+        .map_err(|_| OrganizationSsoLoginTransactionServiceError::Internal)?;
+    let mut digest = String::with_capacity(REQUEST_DIGEST_RANDOM_BYTES * 2);
+    for byte in bytes {
+        digest.push(char::from(HEX_DIGITS[usize::from(byte >> 4)]));
+        digest.push(char::from(HEX_DIGITS[usize::from(byte & 0x0f)]));
+    }
+    Ok(digest)
+}
+
 const fn map_login_material_error(
     error: OrganizationSsoLoginError,
 ) -> OrganizationSsoLoginTransactionServiceError {
@@ -1310,6 +1393,29 @@ const fn map_repository_error(
             OrganizationSsoLoginTransactionServiceError::InvalidTransition
         }
         OrganizationSsoRepositoryError::Query
+        | OrganizationSsoRepositoryError::Timeout
+        | OrganizationSsoRepositoryError::Invariant => {
+            OrganizationSsoLoginTransactionServiceError::Internal
+        }
+    }
+}
+
+const fn map_public_login_repository_error(
+    error: OrganizationSsoRepositoryError,
+) -> OrganizationSsoLoginTransactionServiceError {
+    match error {
+        OrganizationSsoRepositoryError::InvalidInput => {
+            OrganizationSsoLoginTransactionServiceError::InvalidInput
+        }
+        OrganizationSsoRepositoryError::NotFound
+        | OrganizationSsoRepositoryError::Conflict
+        | OrganizationSsoRepositoryError::Expired
+        | OrganizationSsoRepositoryError::Unavailable => {
+            OrganizationSsoLoginTransactionServiceError::Unavailable
+        }
+        OrganizationSsoRepositoryError::AlreadyProcessed
+        | OrganizationSsoRepositoryError::InvalidTransition
+        | OrganizationSsoRepositoryError::Query
         | OrganizationSsoRepositoryError::Timeout
         | OrganizationSsoRepositoryError::Invariant => {
             OrganizationSsoLoginTransactionServiceError::Internal

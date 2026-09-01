@@ -18658,6 +18658,68 @@
         }
       }
     },
+    "/api/auth/organization-sso/login/start": {
+      "post": {
+        "tags": [
+          "企业 SSO"
+        ],
+        "summary": "公开启动企业 SSO 登录",
+        "description": "服务端重新解析企业公开标识或邮箱，复验企业、授权、Provider 和域名事实后创建一次性事务。OIDC 仅返回受控授权地址，SAML 仅返回受控 POST 材料；响应不包含企业、Provider、配置版本或摘要。",
+        "operationId": "startPublicOrganizationSsoLogin",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationSsoPublicLoginStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "返回受控浏览器登录动作",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoPublicLoginStartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "启动请求无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoPublicLoginStartErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "企业 SSO 当前不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoPublicLoginStartErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "登录启动服务暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSsoPublicLoginStartErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/organizations/{organization_id}/sso/providers": {
       "get": {
         "tags": [
@@ -19426,7 +19488,7 @@
         },
         "responses": {
           "200": {
-            "description": "返回登录事务摘要和可选的受控 SAML POST 表单",
+            "description": "返回登录事务摘要和受控 OIDC 或 SAML 浏览器动作",
             "content": {
               "application/json": {
                 "schema": {
@@ -36013,6 +36075,14 @@
             "type": "integer",
             "format": "int64"
           },
+          "authorization_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "maxLength": 4096
+          },
           "saml_authn_request": {
             "oneOf": [
               {
@@ -36186,6 +36256,103 @@
           }
         },
         "additionalProperties": false
+      },
+      "OrganizationSsoPublicLoginStartErrorResponse": {
+        "type": "object",
+        "description": "公开启动失败的稳定投影，不返回输入、企业或 Provider 事实。",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoPublicLoginStartRequest": {
+        "type": "object",
+        "description": "无会话登录启动请求；服务端重新解析标识，不接受企业或 Provider 参数。",
+        "required": [
+          "identifier"
+        ],
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "maxLength": 320,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationSsoPublicLoginStartResponse": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "expires_at",
+              "authorization_url",
+              "protocol"
+            ],
+            "properties": {
+              "expires_at": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "authorization_url": {
+                "type": "string",
+                "format": "uri",
+                "maxLength": 4096
+              },
+              "protocol": {
+                "type": "string",
+                "enum": [
+                  "oidc"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "expires_at",
+              "action",
+              "saml_request",
+              "relay_state",
+              "protocol"
+            ],
+            "properties": {
+              "expires_at": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "action": {
+                "type": "string",
+                "format": "uri",
+                "maxLength": 2048
+              },
+              "saml_request": {
+                "type": "string",
+                "maxLength": 262144
+              },
+              "relay_state": {
+                "type": "string",
+                "maxLength": 4096
+              },
+              "protocol": {
+                "type": "string",
+                "enum": [
+                  "saml"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "公开启动只返回浏览器执行当前协议所需的短期动作。"
       },
       "OrganizationSsoRecoveryRequest": {
         "type": "object",

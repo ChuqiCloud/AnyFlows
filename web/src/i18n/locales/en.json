@@ -2962,7 +2962,9 @@
         "placeholder": "name@company.com or organization ID",
         "check": "Check enterprise sign-in",
         "checking": "Checking enterprise sign-in",
-        "available": "An enterprise sign-in method is available.",
+        "continue": "Continue with enterprise sign-in",
+        "starting": "Starting enterprise sign-in",
+        "available": "An enterprise sign-in method is available. Continue to sign in.",
         "unavailable": "No available enterprise sign-in method was found.",
         "error": "Enterprise sign-in is temporarily unavailable. Try again shortly."
       }
