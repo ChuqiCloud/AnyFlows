@@ -584,7 +584,7 @@ mod tests {
             "sp_entity_id": "https://gateway.example.test/saml/metadata",
             "acs_url": "https://gateway.example.test/api/auth/organization-sso/saml/callback",
             "name_id_format": "persistent",
-            "trusted_certificates": [CERTIFICATE],
+            "trusted_certificates": [CERTIFICATE.trim()],
             "protocol": "saml",
         })
     }

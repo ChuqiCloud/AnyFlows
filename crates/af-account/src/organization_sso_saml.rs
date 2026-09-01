@@ -1068,7 +1068,7 @@ mod tests {
             "sp_entity_id": SP_ENTITY_ID,
             "acs_url": ACS_URL,
             "name_id_format": "persistent",
-            "trusted_certificates": [TEST_CERTIFICATE],
+            "trusted_certificates": [TEST_CERTIFICATE.trim()],
             "protocol": "saml",
         });
         let config =
@@ -1086,7 +1086,7 @@ mod tests {
             "sp_entity_id": SP_ENTITY_ID,
             "acs_url": ACS_URL,
             "name_id_format": "persistent",
-            "trusted_certificates": [TEST_CERTIFICATE],
+            "trusted_certificates": [TEST_CERTIFICATE.trim()],
             "protocol": "saml",
         });
         for invalid in [
