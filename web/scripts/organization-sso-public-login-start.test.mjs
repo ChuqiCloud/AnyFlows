@@ -34,6 +34,7 @@ test('公开企业 SSO 启动契约只接受服务端解析标识', () => {
 
 test('公开启动响应只包含闭合 OIDC 或 SAML 浏览器动作', () => {
   const response = openapi.components.schemas.OrganizationSsoPublicLoginStartResponse
+  assert.equal(response.discriminator.propertyName, 'protocol')
   assert.equal(response.oneOf.length, 2)
   const oidc = response.oneOf.find((schema) => schema.properties.protocol.enum[0] === 'oidc')
   const saml = response.oneOf.find((schema) => schema.properties.protocol.enum[0] === 'saml')

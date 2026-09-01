@@ -36351,7 +36351,10 @@
               }
             }
           }
-        ]
+        ],
+        "discriminator": {
+          "propertyName": "protocol"
+        }
       },
       "OrganizationSsoRecoveryRequest": {
         "type": "object",
