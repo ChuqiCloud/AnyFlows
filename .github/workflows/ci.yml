@@ -20,11 +20,11 @@ env:
   # runner 资源有限；每个 job 串行编译，避免多个 Rust 门禁同时耗尽 CPU/内存。
   CARGO_BUILD_JOBS: "1"
   CARGO_INCREMENTAL: "0"
-  # 开发与测试产物关闭调试符号并串行代码生成，避免大型数据库检查在受限 runner 中触发 OOM。
+  # 开发与测试产物关闭调试符号，避免大型数据库检查在受限 runner 中触发 OOM。
   CARGO_PROFILE_DEV_DEBUG: "0"
-  CARGO_PROFILE_DEV_CODEGEN_UNITS: "1"
   CARGO_PROFILE_TEST_DEBUG: "0"
-  CARGO_PROFILE_TEST_CODEGEN_UNITS: "1"
+  # 失败时保留已完成的 Rust 产物，后续修复无需重复冷编译全部依赖。
+  CACHE_ON_FAILURE: "true"
   RUST_BACKTRACE: "1"
 
 jobs:
@@ -338,6 +338,9 @@ jobs:
     if: ${{ needs.changes.outputs.rust == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      # 多代码生成单元降低大型测试 crate 的编译峰值，链接器按需重读符号表以换取更低内存。
+      RUSTFLAGS: "-C link-arg=-Wl,--no-keep-memory"
     steps:
       - name: Configure external Gitea checkout endpoint
         if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
