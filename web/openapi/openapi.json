@@ -19488,7 +19488,7 @@
         },
         "responses": {
           "200": {
-            "description": "返回登录事务摘要和可选的受控 SAML POST 表单",
+            "description": "返回登录事务摘要和受控 OIDC 或 SAML 浏览器动作",
             "content": {
               "application/json": {
                 "schema": {
