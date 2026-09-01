@@ -336,3 +336,141 @@ fn log_report(report: OrganizationSsoLoginTransactionCleanupRunReport) {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        collections::VecDeque,
+        sync::{Arc, Mutex},
+    };
+
+    use super::*;
+
+    #[derive(Clone)]
+    struct FakeStore {
+        leases: Arc<
+            Mutex<
+                VecDeque<
+                    Result<
+                        OrganizationSsoLoginTransactionCleanupLeaseOutcome,
+                        OrganizationSsoRepositoryError,
+                    >,
+                >,
+            >,
+        >,
+        cleanups: Arc<Mutex<VecDeque<Result<usize, OrganizationSsoRepositoryError>>>>,
+    }
+
+    impl OrganizationSsoLoginTransactionCleanupStore for FakeStore {
+        async fn acquire_lease(
+            &self,
+            _now: i64,
+            _lease_duration: Duration,
+        ) -> Result<
+            OrganizationSsoLoginTransactionCleanupLeaseOutcome,
+            OrganizationSsoRepositoryError,
+        > {
+            self.leases.lock().unwrap().pop_front().unwrap_or(Ok(
+                OrganizationSsoLoginTransactionCleanupLeaseOutcome::Acquired,
+            ))
+        }
+
+        async fn cleanup_expired(
+            &self,
+            _now: i64,
+            _limit: usize,
+        ) -> Result<usize, OrganizationSsoRepositoryError> {
+            self.cleanups.lock().unwrap().pop_front().unwrap_or(Ok(0))
+        }
+    }
+
+    fn store(
+        leases: Vec<
+            Result<
+                OrganizationSsoLoginTransactionCleanupLeaseOutcome,
+                OrganizationSsoRepositoryError,
+            >,
+        >,
+        cleanups: Vec<Result<usize, OrganizationSsoRepositoryError>>,
+    ) -> FakeStore {
+        FakeStore {
+            leases: Arc::new(Mutex::new(leases.into_iter().collect())),
+            cleanups: Arc::new(Mutex::new(cleanups.into_iter().collect())),
+        }
+    }
+
+    fn config(
+        batch_size: usize,
+        max_batches: usize,
+    ) -> OrganizationSsoLoginTransactionCleanupSupervisorConfig {
+        OrganizationSsoLoginTransactionCleanupSupervisorConfig::new(
+            batch_size,
+            Duration::from_secs(1),
+            Duration::from_secs(2),
+            max_batches,
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn held_lease_does_not_cleanup() {
+        let report = OrganizationSsoLoginTransactionCleanupSupervisor::new(
+            store(
+                vec![Ok(OrganizationSsoLoginTransactionCleanupLeaseOutcome::Held)],
+                Vec::new(),
+            ),
+            config(1, 1),
+        )
+        .run_once_at(100)
+        .await;
+        assert!(report.lease_held());
+        assert_eq!(report.batches(), 0);
+        assert_eq!(report.deleted(), 0);
+    }
+
+    #[tokio::test]
+    async fn max_batches_are_bounded_and_report_truncation() {
+        let report = OrganizationSsoLoginTransactionCleanupSupervisor::new(
+            store(
+                vec![
+                    Ok(OrganizationSsoLoginTransactionCleanupLeaseOutcome::Acquired),
+                    Ok(OrganizationSsoLoginTransactionCleanupLeaseOutcome::Acquired),
+                    Ok(OrganizationSsoLoginTransactionCleanupLeaseOutcome::Acquired),
+                ],
+                vec![Ok(1), Ok(1)],
+            ),
+            config(1, 2),
+        )
+        .run_once_at(100)
+        .await;
+        assert!(report.truncated());
+        assert!(!report.failed());
+        assert_eq!(report.batches(), 2);
+        assert_eq!(report.deleted(), 2);
+    }
+
+    #[tokio::test]
+    async fn deletion_over_batch_limit_fails_closed() {
+        let report = OrganizationSsoLoginTransactionCleanupSupervisor::new(
+            store(
+                vec![
+                    Ok(OrganizationSsoLoginTransactionCleanupLeaseOutcome::Acquired),
+                    Ok(OrganizationSsoLoginTransactionCleanupLeaseOutcome::Acquired),
+                ],
+                vec![Ok(2)],
+            ),
+            config(1, 1),
+        )
+        .run_once_at(100)
+        .await;
+        assert!(report.failed());
+        assert_eq!(report.batches(), 0);
+        assert_eq!(report.deleted(), 0);
+    }
+
+    #[test]
+    fn elapsed_scan_time_is_checked() {
+        assert_eq!(elapsed_scan_time(10, Duration::from_secs(3)), Some(13));
+        assert_eq!(elapsed_scan_time(i64::MAX, Duration::from_secs(1)), None);
+    }
+}
