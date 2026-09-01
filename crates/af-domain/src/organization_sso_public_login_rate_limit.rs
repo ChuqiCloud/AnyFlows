@@ -1,7 +1,6 @@
 use std::{fmt, future::Future, pin::Pin, time::Duration};
 
-use hmac::{Hmac, Mac};
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 
 use crate::TrustedClientIp;
 
@@ -82,11 +81,25 @@ fn client_ip_bytes(client_ip: TrustedClientIp) -> [u8; 17] {
 }
 
 fn digest(secret: &[u8; 32], context: &[u8], value: &[u8]) -> [u8; 32] {
-    let mut hasher = Hmac::<Sha256>::new_from_slice(secret).expect("固定长度 HMAC 密钥有效");
-    hasher.update(context);
-    hasher.update(&[0]);
-    hasher.update(value);
-    hasher.finalize().into_bytes().into()
+    const HMAC_BLOCK_BYTES: usize = 64;
+    let mut inner_pad = [0x36_u8; HMAC_BLOCK_BYTES];
+    let mut outer_pad = [0x5c_u8; HMAC_BLOCK_BYTES];
+    for (index, byte) in secret.iter().copied().enumerate() {
+        inner_pad[index] ^= byte;
+        outer_pad[index] ^= byte;
+    }
+
+    let mut inner = Sha256::new();
+    inner.update(inner_pad);
+    inner.update(context);
+    inner.update([0]);
+    inner.update(value);
+    let inner = inner.finalize();
+
+    let mut outer = Sha256::new();
+    outer.update(outer_pad);
+    outer.update(inner);
+    outer.finalize().into()
 }
 
 #[cfg(test)]
