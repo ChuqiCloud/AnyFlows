@@ -28,6 +28,7 @@ use saml_rs::{
     },
     xml::XmlLimits,
 };
+use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 use url::Url;
@@ -182,6 +183,160 @@ impl OrganizationSsoSamlNameIdFormat {
             Self::Persistent => b"persistent",
             Self::Transient => b"transient",
             Self::EmailAddress => b"email_address",
+        }
+    }
+}
+
+/// 企业 SAML Provider 的版本化闭合配置投影；不包含原始 metadata/XML。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrganizationSsoSamlProviderConfig {
+    provider_version: i64,
+    idp_entity_id: String,
+    idp_sso_url: String,
+    sp_entity_id: String,
+    acs_url: String,
+    name_id_format: OrganizationSsoSamlNameIdFormat,
+    trusted_certificates: Vec<String>,
+}
+
+impl OrganizationSsoSamlProviderConfig {
+    /// 构造并校验当前 Provider 版本的 SAML 配置快照。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "字段与持久化 Provider 配置投影一一对应"
+    )]
+    pub fn new(
+        provider_version: i64,
+        idp_entity_id: String,
+        idp_sso_url: String,
+        sp_entity_id: String,
+        acs_url: String,
+        name_id_format: OrganizationSsoSamlNameIdFormat,
+        trusted_certificates: Vec<String>,
+    ) -> Result<Self, OrganizationSsoSamlSemanticError> {
+        if provider_version <= 0
+            || !valid_entity_id(&idp_entity_id)
+            || !valid_https_endpoint(&idp_sso_url)
+            || !valid_entity_id(&sp_entity_id)
+            || !valid_https_endpoint(&acs_url)
+        {
+            return Err(OrganizationSsoSamlSemanticError::InvalidConfiguration);
+        }
+        let signature = OrganizationSsoSamlSignatureVerificationConfig::new(trusted_certificates)
+            .map_err(|_| OrganizationSsoSamlSemanticError::InvalidConfiguration)?;
+        Ok(Self {
+            provider_version,
+            idp_entity_id,
+            idp_sso_url,
+            sp_entity_id,
+            acs_url,
+            name_id_format,
+            trusted_certificates: signature.trusted_certificates,
+        })
+    }
+
+    /// 从持久化 JSON 投影恢复严格配置；协议标记和字段集合必须完全匹配。
+    pub fn from_metadata_projection(
+        provider_version: i64,
+        projection: &Value,
+    ) -> Result<Self, OrganizationSsoSamlSemanticError> {
+        let object = projection
+            .as_object()
+            .ok_or(OrganizationSsoSamlSemanticError::InvalidConfiguration)?;
+        const KEYS: [&str; 7] = [
+            "idp_entity_id",
+            "sso_url",
+            "sp_entity_id",
+            "acs_url",
+            "name_id_format",
+            "trusted_certificates",
+            "protocol",
+        ];
+        if object.len() != KEYS.len() || object.keys().any(|key| !KEYS.contains(&key.as_str())) {
+            return Err(OrganizationSsoSamlSemanticError::InvalidConfiguration);
+        }
+        if object.get("protocol").and_then(Value::as_str) != Some("saml") {
+            return Err(OrganizationSsoSamlSemanticError::InvalidConfiguration);
+        }
+        let string = |key: &str| {
+            object
+                .get(key)
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .ok_or(OrganizationSsoSamlSemanticError::InvalidConfiguration)
+        };
+        let name_id_format = match string("name_id_format")?.as_str() {
+            "persistent" => OrganizationSsoSamlNameIdFormat::Persistent,
+            "transient" => OrganizationSsoSamlNameIdFormat::Transient,
+            "email_address" => OrganizationSsoSamlNameIdFormat::EmailAddress,
+            _ => return Err(OrganizationSsoSamlSemanticError::InvalidConfiguration),
+        };
+        let certificates = object
+            .get("trusted_certificates")
+            .and_then(Value::as_array)
+            .ok_or(OrganizationSsoSamlSemanticError::InvalidConfiguration)?
+            .iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .map(str::to_owned)
+                    .ok_or(OrganizationSsoSamlSemanticError::InvalidConfiguration)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Self::new(
+            provider_version,
+            string("idp_entity_id")?,
+            string("sso_url")?,
+            string("sp_entity_id")?,
+            string("acs_url")?,
+            name_id_format,
+            certificates,
+        )
+    }
+
+    /// 返回规范化的持久化 JSON 投影；Provider 版本由数据库行单独保存。
+    #[must_use]
+    pub fn to_metadata_projection(&self) -> Value {
+        json!({
+            "idp_entity_id": self.idp_entity_id.as_str(),
+            "sso_url": self.idp_sso_url.as_str(),
+            "sp_entity_id": self.sp_entity_id.as_str(),
+            "acs_url": self.acs_url.as_str(),
+            "name_id_format": self.name_id_format.as_str(),
+            "trusted_certificates": &self.trusted_certificates,
+            "protocol": "saml",
+        })
+    }
+
+    /// 将 Provider 快照与当前事务 Request ID 组合为语义验证配置。
+    pub fn with_request_id(
+        &self,
+        request_id: String,
+    ) -> Result<OrganizationSsoSamlSemanticVerificationConfig, OrganizationSsoSamlSemanticError>
+    {
+        OrganizationSsoSamlSemanticVerificationConfig::new(
+            self.idp_entity_id.clone(),
+            self.idp_sso_url.clone(),
+            self.sp_entity_id.clone(),
+            self.acs_url.clone(),
+            request_id,
+            self.name_id_format,
+            self.trusted_certificates.clone(),
+        )
+    }
+
+    #[must_use]
+    pub const fn provider_version(&self) -> i64 {
+        self.provider_version
+    }
+}
+
+impl OrganizationSsoSamlNameIdFormat {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Persistent => "persistent",
+            Self::Transient => "transient",
+            Self::EmailAddress => "email_address",
         }
     }
 }
@@ -891,6 +1046,7 @@ mod tests {
 
     use super::*;
     use saml_rs::crypto::{construct_saml_signature, keys::load_private_key};
+    use serde_json::json;
 
     const IDP_ENTITY_ID: &str = "https://idp.example.com/metadata";
     const IDP_SSO_URL: &str = "https://idp.example.com/sso";
@@ -903,6 +1059,59 @@ mod tests {
         include_str!("fixtures/organization_sso_saml_test_certificate.pem");
     const TEST_PRIVATE_KEY: &str = include_str!("fixtures/organization_sso_saml_test_private.pem");
     const UNSIGNED_RESPONSE: &str = r#"<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_response-1" Version="2.0" IssueInstant="2026-08-24T00:00:00Z"><saml:Issuer>https://idp.example.com/metadata</saml:Issuer><samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status><saml:Assertion ID="_assertion-1" Version="2.0" IssueInstant="2026-08-24T00:00:00Z"><saml:Issuer>https://idp.example.com/metadata</saml:Issuer><saml:Subject><saml:NameID>directory-subject-123</saml:NameID></saml:Subject></saml:Assertion></samlp:Response>"#;
+
+    #[test]
+    fn provider_projection_is_closed_and_round_trips() {
+        let projection = json!({
+            "idp_entity_id": IDP_ENTITY_ID,
+            "sso_url": IDP_SSO_URL,
+            "sp_entity_id": SP_ENTITY_ID,
+            "acs_url": ACS_URL,
+            "name_id_format": "persistent",
+            "trusted_certificates": [TEST_CERTIFICATE.trim()],
+            "protocol": "saml",
+        });
+        let config =
+            OrganizationSsoSamlProviderConfig::from_metadata_projection(7, &projection).unwrap();
+        assert_eq!(config.provider_version(), 7);
+        assert_eq!(config.to_metadata_projection(), projection);
+        assert!(config.with_request_id(REQUEST_ID.to_owned()).is_ok());
+    }
+
+    #[test]
+    fn provider_projection_rejects_unknown_fields_and_unsafe_values() {
+        let valid = json!({
+            "idp_entity_id": IDP_ENTITY_ID,
+            "sso_url": IDP_SSO_URL,
+            "sp_entity_id": SP_ENTITY_ID,
+            "acs_url": ACS_URL,
+            "name_id_format": "persistent",
+            "trusted_certificates": [TEST_CERTIFICATE.trim()],
+            "protocol": "saml",
+        });
+        for invalid in [
+            {
+                let mut value = valid.clone();
+                value["unsafe"] = json!(true);
+                value
+            },
+            {
+                let mut value = valid.clone();
+                value["protocol"] = json!("oidc");
+                value
+            },
+            {
+                let mut value = valid.clone();
+                value["sso_url"] = json!("https://idp.example.com/sso?next=unsafe");
+                value
+            },
+        ] {
+            assert_eq!(
+                OrganizationSsoSamlProviderConfig::from_metadata_projection(7, &invalid),
+                Err(OrganizationSsoSamlSemanticError::InvalidConfiguration)
+            );
+        }
+    }
 
     fn verifier() -> OrganizationSsoSamlSignatureVerifier {
         OrganizationSsoSamlSignatureVerifier::new(
