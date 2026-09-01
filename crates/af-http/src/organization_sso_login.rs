@@ -234,10 +234,12 @@ async fn complete_saml_callback(
         Ok(callback) => callback,
         Err(_) => return callback_error(StatusCode::BAD_REQUEST, "invalid_request"),
     };
+    let (saml_response, relay_state) = callback.into_parts();
     process_claimed_callback(
         &state,
-        callback.relay_state(),
+        &relay_state,
         OrganizationSsoProtocol::Saml,
+        Some(saml_response),
     )
     .await
 }
@@ -246,6 +248,7 @@ async fn process_claimed_callback(
     state: &OrganizationSsoLoginHttpState,
     state_material: &str,
     expected_protocol: OrganizationSsoProtocol,
+    saml_response: Option<String>,
 ) -> Response {
     let claimed = match state
         .service
@@ -259,8 +262,22 @@ async fn process_claimed_callback(
         return reject_claimed_callback(state, claimed).await;
     }
 
-    // Provider 的元数据、密钥读取和协议交换尚未接入；在此边界绝不把回调材料伪装成已验证。
-    reject_claimed_callback(state, claimed).await
+    match expected_protocol {
+        OrganizationSsoProtocol::Saml => {
+            let Some(saml_response) = saml_response else {
+                return reject_claimed_callback(state, claimed).await;
+            };
+            match state
+                .service
+                .complete_saml_callback(claimed, saml_response)
+                .await
+            {
+                Ok(ticket) => callback_success(ticket),
+                Err(error) => map_claim_error(error),
+            }
+        }
+        OrganizationSsoProtocol::Oidc => reject_claimed_callback(state, claimed).await,
+    }
 }
 
 async fn reject_claimed_callback(
