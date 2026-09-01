@@ -26,7 +26,10 @@ test('SAML 启动响应 schema 与前端消费字段保持同步', () => {
   const response = openapi.components.schemas.OrganizationSsoLoginStartResponse
   const saml = openapi.components.schemas.OrganizationSsoSamlAuthnRequestResponse
   const field = openapi.components.schemas.OrganizationSsoSamlAuthnRequestFieldResponse
-  assert.equal(response.properties.saml_authn_request.$ref, '#/components/schemas/OrganizationSsoSamlAuthnRequestResponse')
+  assert.equal(
+    response.properties.saml_authn_request.oneOf.find((schema) => schema.$ref)?.$ref,
+    '#/components/schemas/OrganizationSsoSamlAuthnRequestResponse',
+  )
   assert.deepEqual(Object.keys(saml.properties).sort(), ['action', 'fields'])
   assert.deepEqual(Object.keys(field.properties).sort(), ['name', 'value'])
   assert.match(panelSource, /submitOrganizationSsoSamlAuthnRequest/)

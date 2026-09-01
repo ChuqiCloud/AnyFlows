@@ -1894,7 +1894,7 @@ export type OrganizationSsoLoginStartResponse = {
     state_digest: string;
     request_digest: string;
     expires_at: number;
-    saml_authn_request?: OrganizationSsoSamlAuthnRequestResponse;
+    saml_authn_request?: null | OrganizationSsoSamlAuthnRequestResponse;
 };
 export type OrganizationSsoSamlAuthnRequestResponse = {
     action: string;

@@ -36014,7 +36014,14 @@
             "format": "int64"
           },
           "saml_authn_request": {
-            "$ref": "#/components/schemas/OrganizationSsoSamlAuthnRequestResponse"
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OrganizationSsoSamlAuthnRequestResponse"
+              }
+            ]
           }
         },
         "additionalProperties": false
