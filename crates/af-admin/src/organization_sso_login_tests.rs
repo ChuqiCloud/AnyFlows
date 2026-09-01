@@ -188,7 +188,7 @@ async fn login_transaction_service_binds_provider_and_consumes_ticket_once()
         .await?;
     assert_eq!(saml_exchanged.subject_digest(), None);
 
-    let rejected_saml_start = OrganizationSsoLoginStart::new("g".repeat(64))?;
+    let rejected_saml_start = OrganizationSsoLoginStart::new("a".repeat(64))?;
     let rejected_saml_state = rejected_saml_start.state().to_owned();
     let rejected_saml_digest = rejected_saml_start.state_digest().to_owned();
     let rejected_saml_material = saml_login_material(
@@ -206,7 +206,7 @@ async fn login_transaction_service_binds_provider_and_consumes_ticket_once()
                 OrganizationSsoProtocol::Saml,
                 saml_provider.version(),
                 rejected_saml_digest.clone(),
-                "g".repeat(64),
+                "a".repeat(64),
                 4_102_444_800,
             )
             .with_login_material_envelope(rejected_saml_material),
