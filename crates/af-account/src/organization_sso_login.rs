@@ -195,8 +195,8 @@ impl OrganizationSsoSamlLoginMaterial {
 
     /// 消费材料并移出 Request ID，避免在回调编排中复制敏感字符串。
     #[must_use]
-    pub fn into_request_id(self) -> String {
-        self.request_id.into_inner()
+    pub fn into_request_id(mut self) -> String {
+        mem::take(&mut *self.request_id)
     }
 
     /// 序列化为受系统密钥保护的短期明文，不保留未清零的额外副本。
