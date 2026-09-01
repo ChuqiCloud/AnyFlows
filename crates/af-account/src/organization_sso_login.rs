@@ -166,6 +166,66 @@ impl fmt::Debug for OrganizationSsoOidcLoginMaterial {
     }
 }
 
+/// SAML SP 发起请求需要在回调中复验的一次性 Request ID。
+///
+/// Request ID 只存在于短期加密材料中；数据库只保存其所属事务的摘要，
+/// 任何 Debug 输出都不得暴露原始值。
+pub struct OrganizationSsoSamlLoginMaterial {
+    request_id: Zeroizing<String>,
+}
+
+impl OrganizationSsoSamlLoginMaterial {
+    /// 生成符合 SAML 消息标识形状的短期 Request ID。
+    pub fn new() -> Result<Self, OrganizationSsoLoginError> {
+        let mut request_id = String::from("_");
+        request_id.push_str(&random_parameter()?);
+        Ok(Self {
+            request_id: Zeroizing::new(request_id),
+        })
+    }
+
+    /// 返回 Request ID；调用方只能交给 SAML 请求构造器或对应加密封套。
+    #[must_use]
+    pub fn request_id(&self) -> &str {
+        self.request_id.as_str()
+    }
+
+    /// 序列化为受系统密钥保护的短期明文，不保留未清零的额外副本。
+    pub fn into_plain_system_secret(self) -> Result<PlainSystemSecret, OrganizationSsoLoginError> {
+        let wire = OrganizationSsoSamlLoginMaterialWireRef {
+            request_id: self.request_id.as_str(),
+        };
+        let serialized = serde_json::to_string(&wire)
+            .map_err(|_| OrganizationSsoLoginError::InvalidLoginMaterial)?;
+        PlainSystemSecret::new(serialized)
+            .map_err(|_| OrganizationSsoLoginError::InvalidLoginMaterial)
+    }
+
+    /// 从已解密系统密钥恢复 Request ID；未知字段和异常形状一律拒绝。
+    pub fn from_decrypted_system_secret(
+        secret: DecryptedSystemSecret,
+    ) -> Result<Self, OrganizationSsoLoginError> {
+        let serialized = secret.into_zeroizing();
+        let wire: OrganizationSsoSamlLoginMaterialWire = serde_json::from_str(serialized.as_str())
+            .map_err(|_| OrganizationSsoLoginError::InvalidLoginMaterial)?;
+        if !wire.request_id.starts_with('_') || !valid_parameter(&wire.request_id) {
+            return Err(OrganizationSsoLoginError::InvalidLoginMaterial);
+        }
+        Ok(Self {
+            request_id: Zeroizing::new(wire.request_id),
+        })
+    }
+}
+
+impl fmt::Debug for OrganizationSsoSamlLoginMaterial {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OrganizationSsoSamlLoginMaterial")
+            .field("request_id", &"<redacted>")
+            .finish()
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct OrganizationSsoOidcLoginMaterialWire {
@@ -177,6 +237,17 @@ struct OrganizationSsoOidcLoginMaterialWire {
 struct OrganizationSsoOidcLoginMaterialWireRef<'a> {
     pkce_verifier: &'a str,
     nonce: &'a str,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OrganizationSsoSamlLoginMaterialWire {
+    request_id: String,
+}
+
+#[derive(Serialize)]
+struct OrganizationSsoSamlLoginMaterialWireRef<'a> {
+    request_id: &'a str,
 }
 
 /// OIDC 回调中允许的最小材料；授权码只在内存中交给交换客户端。
@@ -386,6 +457,15 @@ mod tests {
         );
         assert!(!format!("{start:?}").contains(start.pkce_verifier()));
         assert!(!format!("{start:?}").contains(start.nonce()));
+    }
+
+    #[test]
+    fn saml_request_material_is_generated_and_redacted() {
+        let material = OrganizationSsoSamlLoginMaterial::new().unwrap();
+        assert!(material.request_id().starts_with('_'));
+        assert!(!format!("{material:?}").contains(material.request_id()));
+        let secret = material.into_plain_system_secret().unwrap();
+        assert!(!format!("{secret:?}").contains("request_id"));
     }
 
     #[test]
