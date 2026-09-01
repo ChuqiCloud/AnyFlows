@@ -2029,6 +2029,8 @@ async fn start_server(
         None,
         None,
         None,
+        [0_u8; 32],
+        None,
         None,
         None,
     );

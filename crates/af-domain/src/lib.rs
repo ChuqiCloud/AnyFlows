@@ -24,6 +24,7 @@ mod organization_service_account_budget;
 mod organization_sso;
 mod organization_sso_domain_verification;
 mod organization_sso_identity;
+mod organization_sso_public_login_rate_limit;
 mod payment;
 mod principal;
 mod quota;
@@ -166,6 +167,13 @@ pub use organization_sso_identity::{
     OrganizationSsoIdentityBindingMethod, OrganizationSsoIdentityLoginFacts,
     OrganizationSsoIdentityLoginRejection, OrganizationSsoIdentityStateCodeError,
     OrganizationSsoIdentityStatus, authorize_organization_sso_identity_login,
+};
+pub use organization_sso_public_login_rate_limit::{
+    ORGANIZATION_SSO_PUBLIC_LOGIN_RATE_LIMIT_PER_IDENTIFIER,
+    ORGANIZATION_SSO_PUBLIC_LOGIN_RATE_LIMIT_PER_IP,
+    ORGANIZATION_SSO_PUBLIC_LOGIN_RATE_LIMIT_WINDOW, OrganizationSsoPublicLoginRateLimitDecision,
+    OrganizationSsoPublicLoginRateLimitFuture, OrganizationSsoPublicLoginRateLimitKey,
+    OrganizationSsoPublicLoginRateLimitStore,
 };
 pub use payment::{
     TopupIdentifierError, TopupOrderId, TopupOrderStatus, TopupPaymentEventId,

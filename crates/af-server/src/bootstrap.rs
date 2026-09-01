@@ -67,7 +67,8 @@ use af_billing::{
 };
 use af_cache::{
     CacheError, RedisConcurrencyConfig, RedisConcurrencyStore, RedisConfig, RedisHealthConfig,
-    RedisHealthStore, RedisOrganizationScimRateLimitStore, RedisRequestRateLimitConfig,
+    RedisHealthStore, RedisOrganizationScimRateLimitStore,
+    RedisOrganizationSsoPublicLoginRateLimitStore, RedisRequestRateLimitConfig,
     RedisRequestRateLimitStore, RedisStickySessionConfig, RedisStickySessionStore,
 };
 use af_config::{AppConfig, ConfigError};
@@ -150,7 +151,9 @@ use af_scheduler::{
     IndexedWeightedScheduler, OrganizationApprovalTimeoutSupervisor,
     OrganizationApprovalTimeoutSupervisorConfig, OrganizationSsoDomainReverificationResolver,
     OrganizationSsoDomainReverificationSupervisor,
-    OrganizationSsoDomainReverificationSupervisorConfig, StickyWaitPolicy,
+    OrganizationSsoDomainReverificationSupervisorConfig,
+    OrganizationSsoLoginTransactionCleanupSupervisor,
+    OrganizationSsoLoginTransactionCleanupSupervisorConfig, StickyWaitPolicy,
     SubscriptionCycleSupervisor, SubscriptionCycleSupervisorConfig,
 };
 use af_telemetry::{
@@ -218,6 +221,9 @@ pub struct DatabaseReady {
     database: DatabasePool,
     passkey_public_base_url: Option<String>,
     organization_scim_rate_limit_store: Option<Arc<dyn af_domain::OrganizationScimRateLimitStore>>,
+    organization_sso_public_login_rate_limit_store:
+        Option<Arc<dyn af_domain::OrganizationSsoPublicLoginRateLimitStore>>,
+    organization_sso_public_login_fingerprint_secret: [u8; 32],
 }
 
 /// 已使用数据库连接池装配令牌认证服务。
@@ -847,6 +853,26 @@ impl Bootstrap<TelemetryReady> {
         } else {
             None
         };
+        let organization_sso_public_login_rate_limit_store =
+            if let Some(redis_url) = self.config.redis().url() {
+                let store = RedisOrganizationSsoPublicLoginRateLimitStore::connect(
+                    RedisConfig::new(redis_url.expose().to_owned()),
+                    "anyflows.organization.sso.public-login.rate.v1",
+                )
+                .await
+                .map_err(BootstrapError::RequestRateLimit)?;
+                Some(Arc::new(store)
+                    as Arc<
+                        dyn af_domain::OrganizationSsoPublicLoginRateLimitStore,
+                    >)
+            } else {
+                None
+            };
+        // 限流指纹必须跨重启稳定，并绑定应用密钥，避免重启后绕过窗口或泄露原始标识。
+        let organization_sso_public_login_fingerprint_secret =
+            SystemSecretCipher::new(self.config.credential_encryption())
+                .map_err(BootstrapError::SystemSecret)?
+                .organization_sso_public_login_rate_limit_key();
         let Bootstrap {
             config,
             shutdown_timeout,
@@ -862,6 +888,8 @@ impl Bootstrap<TelemetryReady> {
                 database,
                 passkey_public_base_url,
                 organization_scim_rate_limit_store,
+                organization_sso_public_login_rate_limit_store,
+                organization_sso_public_login_fingerprint_secret,
             },
         })
     }
@@ -2247,6 +2275,15 @@ impl Bootstrap<BillingReady> {
             .expect("已校验的 SSO DNS 解析器必须可装配"),
             OrganizationSsoDomainReverificationSupervisorConfig::default(),
         );
+        spawn_organization_sso_login_transaction_cleanup_task(
+            &mut supervisor,
+            OrganizationSsoProviderRepository::new(
+                infrastructure.infrastructure.database.clone(),
+                Duration::from_secs(config.auth().lookup_timeout_secs()),
+            )
+            .expect("已校验的 SSO 登录事务清理仓储必须可装配"),
+            OrganizationSsoLoginTransactionCleanupSupervisorConfig::default(),
+        );
         if config.subscription().enabled() {
             spawn_subscription_cycle_task(
                 &mut supervisor,
@@ -2419,6 +2456,25 @@ fn spawn_organization_sso_domain_reverification_task(
             let resolver = OrganizationSsoDomainReverificationDnsResolver(resolver.clone());
             async move {
                 OrganizationSsoDomainReverificationSupervisor::new(repository, resolver, config)
+                    .run_periodic_until(task_shutdown.cancelled())
+                    .await;
+            }
+        },
+    );
+}
+
+/// 注册启动即扫描、带独立数据库租约且有界删除的登录事务清理任务。
+fn spawn_organization_sso_login_transaction_cleanup_task(
+    supervisor: &mut BackgroundTaskSupervisor,
+    repository: OrganizationSsoProviderRepository,
+    config: OrganizationSsoLoginTransactionCleanupSupervisorConfig,
+) {
+    supervisor.spawn(
+        "organization-sso-login-transaction-cleanup",
+        move |task_shutdown| {
+            let repository = repository.clone();
+            async move {
+                OrganizationSsoLoginTransactionCleanupSupervisor::new(repository, config)
                     .run_periodic_until(task_shutdown.cancelled())
                     .await;
             }
@@ -2795,6 +2851,13 @@ impl Bootstrap<Supervised> {
                     .clone();
                 service
             }),
+            self.stage
+                .infrastructure
+                .organization_sso_public_login_rate_limit_store
+                .clone(),
+            self.stage
+                .infrastructure
+                .organization_sso_public_login_fingerprint_secret,
             Some(Arc::clone(
                 &self.stage.infrastructure.organization_sso_session_service,
             )),

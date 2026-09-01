@@ -105,6 +105,16 @@ pub(crate) fn parse_locator(
     Ok(OrganizationSsoDiscoveryLocator::Domain(domain))
 }
 
+/// 按公开发现的同一规则规范化限流标识；邮箱只保留域名，避免 local-part 变化绕过配额。
+pub fn normalize_organization_sso_public_login_identifier(
+    identifier: &str,
+) -> Result<String, OrganizationSsoDiscoveryServiceError> {
+    match parse_locator(identifier)? {
+        OrganizationSsoDiscoveryLocator::OrganizationKey(key) => Ok(key.persistence_key()),
+        OrganizationSsoDiscoveryLocator::Domain(domain) => Ok(domain.as_str().to_owned()),
+    }
+}
+
 const fn is_valid_email_local_byte(byte: u8) -> bool {
     matches!(
         byte,
@@ -169,5 +179,19 @@ mod tests {
             format!("{value:?}"),
             "OrganizationSsoDiscovery { available: true }"
         );
+    }
+
+    #[test]
+    fn 限流标识只保留企业_key或规范域名() {
+        assert_eq!(
+            normalize_organization_sso_public_login_identifier("0123456789abcdef0123456789abcdef")
+                .unwrap(),
+            "0123456789abcdef0123456789abcdef"
+        );
+        assert_eq!(
+            normalize_organization_sso_public_login_identifier("Member@Example.COM").unwrap(),
+            "example.com"
+        );
+        assert!(normalize_organization_sso_public_login_identifier(" member@example.com").is_err());
     }
 }
