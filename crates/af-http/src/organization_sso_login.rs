@@ -164,6 +164,7 @@ pub(crate) struct OrganizationSsoPublicLoginStartErrorResponse {
 }
 
 /// 构建不需要登录会话的企业 SSO 固定回调路由。
+#[cfg(test)]
 pub(crate) fn build_organization_sso_login_router(
     service: Arc<dyn OrganizationSsoLoginTransactionService>,
     session_service: Option<Arc<dyn OrganizationSsoSessionService>>,

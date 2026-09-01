@@ -106,8 +106,7 @@ use crate::organization_contract_price::build_organization_contract_price_router
 use crate::organization_scim_audit::build_organization_scim_audit_router;
 use crate::organization_service_account_runtime::build_organization_service_account_runtime_router;
 use crate::organization_sso_login::{
-    OrganizationSsoPublicLoginProtection, build_organization_sso_login_router,
-    build_organization_sso_login_router_with_protection,
+    OrganizationSsoPublicLoginProtection, build_organization_sso_login_router_with_protection,
 };
 use crate::organization_tokens::build_organization_token_router;
 use crate::organization_wallet::build_organization_wallet_router;
