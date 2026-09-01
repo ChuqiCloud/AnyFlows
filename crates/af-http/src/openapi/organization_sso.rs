@@ -9,8 +9,9 @@ use crate::{
     organization_sso_login::{
         OrganizationSsoDiscoveryErrorResponse, OrganizationSsoDiscoveryRequest,
         OrganizationSsoDiscoveryResponse, OrganizationSsoLoginCallbackErrorResponse,
-        OrganizationSsoLoginCallbackSuccessResponse, OrganizationSsoSessionExchangeErrorResponse,
-        OrganizationSsoSessionExchangeRequest,
+        OrganizationSsoLoginCallbackSuccessResponse, OrganizationSsoPublicLoginStartErrorResponse,
+        OrganizationSsoPublicLoginStartRequest, OrganizationSsoPublicLoginStartResponse,
+        OrganizationSsoSessionExchangeErrorResponse, OrganizationSsoSessionExchangeRequest,
     },
     organizations::{
         OrganizationSsoDomainCreateRequest, OrganizationSsoDomainCreatedResponse,
@@ -40,6 +41,23 @@ use crate::{
     )
 )]
 fn discover_organization_sso() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/auth/organization-sso/login/start",
+    operation_id = "startPublicOrganizationSsoLogin",
+    tag = "企业 SSO",
+    summary = "公开启动企业 SSO 登录",
+    description = "服务端重新解析企业公开标识或邮箱，复验企业、授权、Provider 和域名事实后创建一次性事务。OIDC 仅返回受控授权地址，SAML 仅返回受控 POST 材料；响应不包含企业、Provider、配置版本或摘要。",
+    request_body = OrganizationSsoPublicLoginStartRequest,
+    responses(
+        (status = 200, description = "返回受控浏览器登录动作", body = OrganizationSsoPublicLoginStartResponse),
+        (status = 400, description = "启动请求无效", body = OrganizationSsoPublicLoginStartErrorResponse),
+        (status = 422, description = "企业 SSO 当前不可用", body = OrganizationSsoPublicLoginStartErrorResponse),
+        (status = 503, description = "登录启动服务暂不可用", body = OrganizationSsoPublicLoginStartErrorResponse)
+    )
+)]
+fn start_public_organization_sso_login() {}
 
 #[utoipa::path(
     get,
@@ -201,7 +219,7 @@ fn verify_organization_sso_domain() {}
     params(("organization_id" = i64, Path, minimum = 1, description = "企业内部标识")),
     request_body = OrganizationSsoLoginStartRequest,
     responses(
-        (status = 200, description = "返回登录事务摘要和可选的受控 SAML POST 表单", body = OrganizationSsoLoginStartResponse),
+        (status = 200, description = "返回登录事务摘要和受控 OIDC 或 SAML 浏览器动作", body = OrganizationSsoLoginStartResponse),
         (status = 400, description = "登录事务参数无效", body = ManagementErrorBody),
         (status = 401, description = "会话无效", body = ManagementErrorBody),
         (status = 403, description = "无权启动企业 SSO 登录", body = ManagementErrorBody),
@@ -376,6 +394,7 @@ fn exchange_organization_sso_session() {}
 #[openapi(
     paths(
         discover_organization_sso,
+        start_public_organization_sso_login,
         list_organization_sso_providers,
         create_organization_sso_provider,
         get_organization_sso_provider,
@@ -415,6 +434,9 @@ fn exchange_organization_sso_session() {}
         OrganizationSsoDiscoveryRequest,
         OrganizationSsoDiscoveryResponse,
         OrganizationSsoDiscoveryErrorResponse,
+        OrganizationSsoPublicLoginStartRequest,
+        OrganizationSsoPublicLoginStartResponse,
+        OrganizationSsoPublicLoginStartErrorResponse,
         OrganizationSsoLoginCallbackErrorResponse,
         OrganizationSsoLoginCallbackSuccessResponse,
         OrganizationSsoSessionExchangeRequest,

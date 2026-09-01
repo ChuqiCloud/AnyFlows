@@ -4,8 +4,9 @@ use af_admin::{
     ClaimedOrganizationSsoLoginTransaction, ORGANIZATION_SSO_OIDC_CALLBACK_PATH,
     ORGANIZATION_SSO_SAML_CALLBACK_PATH, OrganizationSsoDiscovery,
     OrganizationSsoDiscoveryServiceError, OrganizationSsoLoginTransactionService,
-    OrganizationSsoLoginTransactionServiceError, OrganizationSsoOidcCallback,
-    OrganizationSsoSamlCallback, OrganizationSsoSessionService, OrganizationSsoSessionServiceError,
+    OrganizationSsoLoginTransactionServiceError, OrganizationSsoLoginTransactionStart,
+    OrganizationSsoOidcCallback, OrganizationSsoSamlCallback, OrganizationSsoSessionService,
+    OrganizationSsoSessionServiceError,
 };
 use af_domain::{OrganizationId, OrganizationSsoProtocol};
 use axum::{
@@ -24,6 +25,7 @@ use crate::management_session::no_store_json;
 const MAX_SAML_CALLBACK_BODY_BYTES: usize = 256 * 1024;
 const ORGANIZATION_SSO_SESSION_EXCHANGE_PATH: &str = "/api/auth/organization-sso/session/exchange";
 const ORGANIZATION_SSO_DISCOVERY_PATH: &str = "/api/auth/organization-sso/discovery";
+const ORGANIZATION_SSO_PUBLIC_LOGIN_START_PATH: &str = "/api/auth/organization-sso/login/start";
 
 #[derive(Clone)]
 struct OrganizationSsoLoginHttpState {
@@ -92,6 +94,45 @@ pub(crate) struct OrganizationSsoDiscoveryErrorResponse {
     message: &'static str,
 }
 
+/// 无会话登录启动请求；服务端重新解析标识，不接受企业或 Provider 参数。
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = OrganizationSsoPublicLoginStartRequest)]
+pub(crate) struct OrganizationSsoPublicLoginStartRequest {
+    #[schema(min_length = 1, max_length = 320)]
+    identifier: String,
+}
+
+/// 公开启动只返回浏览器执行当前协议所需的短期动作。
+#[derive(Serialize, ToSchema)]
+#[serde(tag = "protocol", rename_all = "lowercase")]
+#[schema(as = OrganizationSsoPublicLoginStartResponse)]
+pub(crate) enum OrganizationSsoPublicLoginStartResponse {
+    Oidc {
+        expires_at: i64,
+        #[schema(format = "uri", max_length = 4096)]
+        authorization_url: String,
+    },
+    Saml {
+        expires_at: i64,
+        #[schema(format = "uri", max_length = 2048)]
+        action: String,
+        #[schema(max_length = 262144)]
+        saml_request: String,
+        #[schema(max_length = 4096)]
+        relay_state: String,
+    },
+}
+
+/// 公开启动失败的稳定投影，不返回输入、企业或 Provider 事实。
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = OrganizationSsoPublicLoginStartErrorResponse)]
+pub(crate) struct OrganizationSsoPublicLoginStartErrorResponse {
+    code: &'static str,
+    message: &'static str,
+}
+
 /// 构建不需要登录会话的企业 SSO 固定回调路由。
 pub(crate) fn build_organization_sso_login_router(
     service: Arc<dyn OrganizationSsoLoginTransactionService>,
@@ -101,6 +142,10 @@ pub(crate) fn build_organization_sso_login_router(
         .route(
             ORGANIZATION_SSO_DISCOVERY_PATH,
             post(discover_organization_sso),
+        )
+        .route(
+            ORGANIZATION_SSO_PUBLIC_LOGIN_START_PATH,
+            post(start_public_organization_sso_login),
         )
         .route(
             ORGANIZATION_SSO_OIDC_CALLBACK_PATH,
@@ -122,6 +167,98 @@ pub(crate) fn build_organization_sso_login_router(
         service,
         session_service,
     })
+}
+
+/// 重新复验公开标识并创建一次性事务；响应不包含企业和 Provider 标识。
+async fn start_public_organization_sso_login(
+    State(state): State<OrganizationSsoLoginHttpState>,
+    request: Result<Json<OrganizationSsoPublicLoginStartRequest>, JsonRejection>,
+) -> Response {
+    let Json(request) = match request {
+        Ok(request) => request,
+        Err(_) => return public_login_start_error(StatusCode::BAD_REQUEST, "invalid_request"),
+    };
+    match state.service.begin_public(request.identifier).await {
+        Ok(start) => public_login_start_response(&start).unwrap_or_else(|| {
+            public_login_start_error(StatusCode::SERVICE_UNAVAILABLE, "unavailable")
+        }),
+        Err(error) => map_public_login_start_error(error),
+    }
+}
+
+fn public_login_start_response(start: &OrganizationSsoLoginTransactionStart) -> Option<Response> {
+    let body = match start.protocol() {
+        OrganizationSsoProtocol::Oidc => {
+            let request = start.oidc_authorization_request()?;
+            OrganizationSsoPublicLoginStartResponse::Oidc {
+                expires_at: start.expires_at(),
+                authorization_url: request.authorization_url().to_owned(),
+            }
+        }
+        OrganizationSsoProtocol::Saml => {
+            let request = start.saml_authn_request()?;
+            let (saml_request, relay_state) = saml_post_fields(request.fields())?;
+            OrganizationSsoPublicLoginStartResponse::Saml {
+                expires_at: start.expires_at(),
+                action: request.action().to_owned(),
+                saml_request,
+                relay_state,
+            }
+        }
+    };
+    Some(public_login_start_success(body))
+}
+
+fn saml_post_fields(fields: &[(String, String)]) -> Option<(String, String)> {
+    let mut saml_request = None;
+    let mut relay_state = None;
+    for (name, value) in fields {
+        let slot = match name.as_str() {
+            "SAMLRequest" => &mut saml_request,
+            "RelayState" => &mut relay_state,
+            _ => return None,
+        };
+        if slot.replace(value.clone()).is_some() {
+            return None;
+        }
+    }
+    Some((saml_request?, relay_state?))
+}
+
+fn public_login_start_success(body: OrganizationSsoPublicLoginStartResponse) -> Response {
+    let mut response = no_store_json(body);
+    *response.status_mut() = StatusCode::OK;
+    response
+}
+
+fn map_public_login_start_error(error: OrganizationSsoLoginTransactionServiceError) -> Response {
+    match error {
+        OrganizationSsoLoginTransactionServiceError::InvalidInput => {
+            public_login_start_error(StatusCode::BAD_REQUEST, "invalid_request")
+        }
+        OrganizationSsoLoginTransactionServiceError::Rejected
+        | OrganizationSsoLoginTransactionServiceError::Expired
+        | OrganizationSsoLoginTransactionServiceError::AlreadyProcessed
+        | OrganizationSsoLoginTransactionServiceError::InvalidTransition
+        | OrganizationSsoLoginTransactionServiceError::Unavailable => {
+            public_login_start_error(StatusCode::UNPROCESSABLE_ENTITY, "not_available")
+        }
+        OrganizationSsoLoginTransactionServiceError::Internal => {
+            public_login_start_error(StatusCode::SERVICE_UNAVAILABLE, "unavailable")
+        }
+    }
+}
+
+fn public_login_start_error(status: StatusCode, code: &'static str) -> Response {
+    let message = match code {
+        "invalid_request" => "企业 SSO 登录启动请求无效",
+        "not_available" => "企业 SSO 登录暂不可用",
+        _ => "企业 SSO 登录服务暂不可用",
+    };
+    let mut response =
+        no_store_json(OrganizationSsoPublicLoginStartErrorResponse { code, message });
+    *response.status_mut() = status;
+    response
 }
 
 /// 执行无会话企业 SSO 发现；未知和不可用企业统一返回 available=false。
@@ -436,6 +573,21 @@ mod tests {
             })
         }
 
+        fn begin_public<'a>(
+            &'a self,
+            identifier: String,
+        ) -> OrganizationSsoLoginTransactionFuture<'a, OrganizationSsoLoginTransactionStart>
+        {
+            Box::pin(async move {
+                let error = if identifier == "dependency@example.com" {
+                    OrganizationSsoLoginTransactionServiceError::Internal
+                } else {
+                    OrganizationSsoLoginTransactionServiceError::Unavailable
+                };
+                Err(error)
+            })
+        }
+
         fn begin<'a>(
             &'a self,
             _organization_id: OrganizationId,
@@ -525,9 +677,9 @@ mod tests {
 
         let body = to_bytes(response.into_body(), 4096)
             .await
-            .expect("璇诲彇鎴愬姛鍥炶皟鍝嶅簲");
-        let body: Value = serde_json::from_slice(&body).expect("瑙ｆ瀽鎴愬姛鍥炶皟 JSON");
-        let object = body.as_object().expect("鎴愬姛鍥炶皟搴旇鏄璞?");
+            .expect("读取成功回调响应");
+        let body: Value = serde_json::from_slice(&body).expect("解析成功回调 JSON");
+        let object = body.as_object().expect("成功回调应该是对象");
         assert_eq!(object.len(), 2);
         assert_eq!(
             object.get("ticket").and_then(Value::as_str),
@@ -756,5 +908,119 @@ mod tests {
                 .expect("路由响应成功");
             assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         }
+    }
+
+    #[tokio::test]
+    async fn public_login_start_has_stable_private_error_shapes() {
+        let router = build_organization_sso_login_router(Arc::new(TestService), None);
+        for (body, expected_status) in [
+            (
+                r#"{"identifier":"unknown@example.com"}"#,
+                StatusCode::UNPROCESSABLE_ENTITY,
+            ),
+            (
+                r#"{"identifier":"dependency@example.com"}"#,
+                StatusCode::SERVICE_UNAVAILABLE,
+            ),
+            (
+                r#"{"identifier":"unknown@example.com","organization_id":1}"#,
+                StatusCode::BAD_REQUEST,
+            ),
+            ("{", StatusCode::BAD_REQUEST),
+        ] {
+            let response = router
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(ORGANIZATION_SSO_PUBLIC_LOGIN_START_PATH)
+                        .header("content-type", "application/json")
+                        .body(Body::from(body))
+                        .expect("请求构造成功"),
+                )
+                .await
+                .expect("路由响应成功");
+            assert_eq!(response.status(), expected_status);
+            assert_eq!(
+                response.headers().get(CACHE_CONTROL),
+                Some(&HeaderValue::from_static("no-store"))
+            );
+            let body = to_bytes(response.into_body(), 4096)
+                .await
+                .expect("读取启动错误响应");
+            let body = String::from_utf8_lossy(&body);
+            for sensitive in [
+                "unknown@example.com",
+                "dependency@example.com",
+                "organization_id",
+                "provider",
+                "endpoint",
+            ] {
+                assert!(!body.contains(sensitive));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn public_login_start_success_only_contains_browser_action() {
+        let oidc = public_login_start_success(OrganizationSsoPublicLoginStartResponse::Oidc {
+            expires_at: 1_800_000_000,
+            authorization_url: "https://idp.example.test/authorize?state=short-lived".to_owned(),
+        });
+        let body = to_bytes(oidc.into_body(), 4096)
+            .await
+            .expect("读取 OIDC 启动响应");
+        let body: Value = serde_json::from_slice(&body).expect("解析 OIDC 启动响应");
+        assert_eq!(body.as_object().map(|object| object.len()), Some(3));
+        assert_eq!(body["protocol"], "oidc");
+        assert_eq!(body["expires_at"], 1_800_000_000_i64);
+        assert_eq!(
+            body["authorization_url"],
+            "https://idp.example.test/authorize?state=short-lived"
+        );
+
+        let saml = public_login_start_success(OrganizationSsoPublicLoginStartResponse::Saml {
+            expires_at: 1_800_000_000,
+            action: "https://idp.example.test/sso".to_owned(),
+            saml_request: "encoded-authn-request".to_owned(),
+            relay_state: "short-lived-relay-state".to_owned(),
+        });
+        let body = to_bytes(saml.into_body(), 4096)
+            .await
+            .expect("读取 SAML 启动响应");
+        let body: Value = serde_json::from_slice(&body).expect("解析 SAML 启动响应");
+        assert_eq!(body.as_object().map(|object| object.len()), Some(5));
+        assert_eq!(body["protocol"], "saml");
+        assert_eq!(body["action"], "https://idp.example.test/sso");
+        assert_eq!(body["saml_request"], "encoded-authn-request");
+        assert_eq!(body["relay_state"], "short-lived-relay-state");
+        for sensitive in ["organization_id", "provider", "version", "digest"] {
+            assert!(!body.to_string().contains(sensitive));
+        }
+    }
+
+    #[test]
+    fn saml_public_action_requires_exactly_one_controlled_field_pair() {
+        assert_eq!(
+            saml_post_fields(&[
+                ("SAMLRequest".to_owned(), "request".to_owned()),
+                ("RelayState".to_owned(), "state".to_owned()),
+            ]),
+            Some(("request".to_owned(), "state".to_owned()))
+        );
+        assert!(
+            saml_post_fields(&[
+                ("SAMLRequest".to_owned(), "request".to_owned()),
+                ("SAMLRequest".to_owned(), "duplicate".to_owned()),
+            ])
+            .is_none()
+        );
+        assert!(
+            saml_post_fields(&[
+                ("SAMLRequest".to_owned(), "request".to_owned()),
+                ("Unsafe".to_owned(), "value".to_owned()),
+            ])
+            .is_none()
+        );
     }
 }

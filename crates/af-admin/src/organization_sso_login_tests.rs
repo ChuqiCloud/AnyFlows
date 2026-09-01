@@ -6,7 +6,8 @@ use std::{
 
 use af_account::{
     OrganizationInvitationCipher, OrganizationSsoLoginStart, PlainOrganizationInvitationEmail,
-    SystemSecretCipher, organization_sso_login_state_digest, organization_sso_login_ticket_digest,
+    PlainSystemSecret, SystemSecretCipher, organization_sso_login_state_digest,
+    organization_sso_login_ticket_digest,
 };
 use af_config::{CREDENTIAL_ENCRYPTION_KEY_BYTES, CredentialEncryptionSettings};
 use af_db::{
@@ -78,7 +79,18 @@ async fn login_transaction_service_binds_provider_and_consumes_ticket_once()
         .0
         .id();
     let repository = OrganizationSsoProviderRepository::new(pool.clone(), Duration::from_secs(5))?;
+    organizations
+        .replace_entitlement(first_organization, sso_entitlement(Some(1))?)
+        .await?;
     let provider_key = OrganizationSsoProviderKey::new([0x73; 16])?;
+    let cipher = cipher();
+    let provider_secret = cipher.encrypt_organization_sso_provider_secret(
+        first_organization,
+        provider_key,
+        OrganizationSsoProtocol::Oidc,
+        1,
+        &PlainSystemSecret::new("oidc-client-secret".to_owned())?,
+    )?;
     let provider = repository
         .create_provider(
             first_organization,
@@ -87,12 +99,33 @@ async fn login_transaction_service_binds_provider_and_consumes_ticket_once()
                 OrganizationSsoProtocol::Oidc,
                 OrganizationSsoProviderStatus::Active,
                 "Login Provider".to_owned(),
-                None,
-                None,
+                Some(json!({
+                    "issuer": "https://idp.example.com/",
+                    "authorization_endpoint": "https://idp.example.com/oauth2/authorize",
+                    "token_endpoint": "https://idp.example.com/oauth2/token",
+                    "jwks_uri": "https://idp.example.com/oauth2/jwks",
+                    "client_id": "client-id",
+                    "audience": "client-id",
+                    "redirect_uri": "https://gateway.example.com/api/auth/organization-sso/oidc/callback",
+                    "protocol": "oidc",
+                })),
+                Some(json!({
+                    "version": 1,
+                    "algorithm": "xchacha20poly1305",
+                    "key_id": provider_secret.key_id(),
+                    "nonce": URL_SAFE_NO_PAD.encode(provider_secret.nonce()),
+                    "ciphertext": URL_SAFE_NO_PAD.encode(provider_secret.ciphertext()),
+                })),
             ),
         )
         .await?;
-    let cipher = cipher();
+    add_verified_domain(
+        &repository,
+        first_organization,
+        provider_key,
+        "login.example.com",
+    )
+    .await?;
     let service = DatabaseOrganizationSsoLoginTransactionService::new(
         repository.clone(),
         cipher.clone(),
@@ -113,6 +146,42 @@ async fn login_transaction_service_binds_provider_and_consumes_ticket_once()
     assert_eq!(transaction.protocol(), OrganizationSsoProtocol::Oidc);
     assert!(transaction.login_material_envelope().is_some());
     assert!(start.saml_authn_request().is_none());
+    let authorization = start
+        .oidc_authorization_request()
+        .expect("OIDC 启动必须返回受控授权地址");
+    assert!(
+        authorization
+            .authorization_url()
+            .starts_with("https://idp.example.com/oauth2/authorize?")
+    );
+
+    let public_start = service
+        .begin_public("member@login.example.com".to_owned())
+        .await?;
+    assert_eq!(public_start.protocol(), OrganizationSsoProtocol::Oidc);
+    assert_eq!(public_start.request_digest().len(), 64);
+    assert!(
+        public_start
+            .request_digest()
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+    );
+    assert_ne!(public_start.request_digest(), "a".repeat(64));
+    assert!(public_start.oidc_authorization_request().is_some());
+    assert!(public_start.saml_authn_request().is_none());
+    let public_transaction = repository
+        .login_transaction(first_organization, public_start.state_digest().to_owned())
+        .await?;
+    assert_eq!(
+        public_transaction.request_digest(),
+        public_start.request_digest()
+    );
+    assert!(matches!(
+        service
+            .begin_public("member@unknown.example.com".to_owned())
+            .await,
+        Err(OrganizationSsoLoginTransactionServiceError::Unavailable)
+    ));
 
     let saml_provider_key = OrganizationSsoProviderKey::new([0x74; 16])?;
     let saml_provider = repository

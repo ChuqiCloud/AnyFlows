@@ -16,8 +16,8 @@ use thiserror::Error;
 use url::Url;
 use zeroize::Zeroizing;
 
-use crate::ORGANIZATION_SSO_OIDC_CALLBACK_PATH;
 use crate::system_secret::SystemSecretCipher;
+use crate::{ORGANIZATION_SSO_OIDC_CALLBACK_PATH, OrganizationSsoLoginStart};
 
 const MAX_ENDPOINT_BYTES: usize = 2_048;
 const MAX_CLIENT_ID_BYTES: usize = 255;
@@ -28,12 +28,37 @@ const MAX_TOKEN_REQUEST_BYTES: usize = 32 * 1_024;
 const MAX_TOKEN_RESPONSE_BYTES: usize = 64 * 1_024;
 const MAX_TOKEN_BYTES: usize = 64 * 1_024;
 const MAX_SCOPE_BYTES: usize = 4_096;
+const ORGANIZATION_SSO_OIDC_SCOPE: &str = "openid email";
+
+/// 由受控 Provider 快照生成的 OIDC 浏览器授权动作。
+#[derive(Clone, Eq, PartialEq)]
+pub struct OrganizationSsoOidcAuthorizationRequest {
+    authorization_url: String,
+}
+
+impl OrganizationSsoOidcAuthorizationRequest {
+    /// 返回需要交给浏览器导航的短期授权地址；调用方不得记录或持久化。
+    #[must_use]
+    pub fn authorization_url(&self) -> &str {
+        &self.authorization_url
+    }
+}
+
+impl fmt::Debug for OrganizationSsoOidcAuthorizationRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OrganizationSsoOidcAuthorizationRequest")
+            .field("authorization_url", &"<redacted>")
+            .finish()
+    }
+}
 
 /// OIDC Provider 版本绑定的 token exchange 配置快照。
 #[derive(Clone, Eq, PartialEq)]
 pub struct OrganizationSsoOidcTokenExchangeConfig {
     provider_version: i64,
     issuer: Url,
+    authorization_endpoint: Url,
     token_endpoint: Url,
     jwks_uri: Url,
     client_id: String,
@@ -46,6 +71,7 @@ impl OrganizationSsoOidcTokenExchangeConfig {
     pub fn new(
         provider_version: i64,
         issuer: String,
+        authorization_endpoint: String,
         token_endpoint: String,
         jwks_uri: String,
         client_id: String,
@@ -56,6 +82,7 @@ impl OrganizationSsoOidcTokenExchangeConfig {
             return Err(OrganizationSsoOidcTokenExchangeError::InvalidConfiguration);
         }
         let issuer = parse_https_url(&issuer)?;
+        let authorization_endpoint = parse_https_url(&authorization_endpoint)?;
         let token_endpoint = parse_https_url(&token_endpoint)?;
         let jwks_uri = parse_https_url(&jwks_uri)?;
         let redirect_uri = parse_https_url(&redirect_uri)?;
@@ -73,6 +100,7 @@ impl OrganizationSsoOidcTokenExchangeConfig {
         Ok(Self {
             provider_version,
             issuer,
+            authorization_endpoint,
             token_endpoint,
             jwks_uri,
             client_id,
@@ -89,6 +117,12 @@ impl OrganizationSsoOidcTokenExchangeConfig {
     #[must_use]
     pub fn issuer(&self) -> &Url {
         &self.issuer
+    }
+
+    /// 返回固定在 Provider 快照中的浏览器授权端点。
+    #[must_use]
+    pub fn authorization_endpoint(&self) -> &Url {
+        &self.authorization_endpoint
     }
 
     #[must_use]
@@ -117,6 +151,29 @@ impl OrganizationSsoOidcTokenExchangeConfig {
         &self.redirect_uri
     }
 
+    /// 使用当前登录事务材料构造固定 Authorization Code + PKCE S256 请求。
+    pub fn authorization_request(
+        &self,
+        start: &OrganizationSsoLoginStart,
+    ) -> Result<OrganizationSsoOidcAuthorizationRequest, OrganizationSsoOidcTokenExchangeError>
+    {
+        let mut url = self.authorization_endpoint.clone();
+        url.query_pairs_mut()
+            .append_pair("response_type", "code")
+            .append_pair("client_id", self.client_id())
+            .append_pair("redirect_uri", self.redirect_uri().as_str())
+            .append_pair("scope", ORGANIZATION_SSO_OIDC_SCOPE)
+            .append_pair("state", start.state())
+            .append_pair("nonce", start.nonce())
+            .append_pair("code_challenge", start.pkce_challenge())
+            .append_pair("code_challenge_method", "S256");
+        let authorization_url: String = url.into();
+        if authorization_url.len() > MAX_ENDPOINT_BYTES * 2 {
+            return Err(OrganizationSsoOidcTokenExchangeError::InvalidConfiguration);
+        }
+        Ok(OrganizationSsoOidcAuthorizationRequest { authorization_url })
+    }
+
     /// 从 Provider 脱敏元数据投影构造严格的交换配置。
     pub fn from_metadata_projection(
         provider_version: i64,
@@ -125,8 +182,9 @@ impl OrganizationSsoOidcTokenExchangeConfig {
         let object = projection
             .as_object()
             .ok_or(OrganizationSsoOidcTokenExchangeError::InvalidConfiguration)?;
-        const KEYS: [&str; 7] = [
+        const KEYS: [&str; 8] = [
             "issuer",
+            "authorization_endpoint",
             "token_endpoint",
             "jwks_uri",
             "client_id",
@@ -150,6 +208,7 @@ impl OrganizationSsoOidcTokenExchangeConfig {
         Self::new(
             provider_version,
             string("issuer")?,
+            string("authorization_endpoint")?,
             string("token_endpoint")?,
             string("jwks_uri")?,
             string("client_id")?,
@@ -165,6 +224,7 @@ impl fmt::Debug for OrganizationSsoOidcTokenExchangeConfig {
             .debug_struct("OrganizationSsoOidcTokenExchangeConfig")
             .field("provider_version", &self.provider_version)
             .field("issuer", &"<redacted>")
+            .field("authorization_endpoint", &"<redacted>")
             .field("token_endpoint", &"<redacted>")
             .field("jwks_uri", &"<redacted>")
             .field("client_id", &"<redacted>")
@@ -596,6 +656,7 @@ mod tests {
         OrganizationSsoOidcTokenExchangeConfig::new(
             7,
             "https://idp.example.test/".to_owned(),
+            "https://idp.example.test/oauth2/authorize".to_owned(),
             "https://idp.example.test/oauth2/token".to_owned(),
             "https://idp.example.test/oauth2/jwks".to_owned(),
             "client-id".to_owned(),
@@ -614,6 +675,7 @@ mod tests {
             OrganizationSsoOidcTokenExchangeConfig::new(
                 7,
                 "https://idp.example.test".to_owned(),
+                "https://idp.example.test/oauth2/authorize".to_owned(),
                 "https://idp.example.test/oauth2/token?unsafe=1".to_owned(),
                 "https://idp.example.test/oauth2/jwks".to_owned(),
                 "client-id".to_owned(),
@@ -626,6 +688,7 @@ mod tests {
             OrganizationSsoOidcTokenExchangeConfig::new(
                 7,
                 "https://idp.example.test".to_owned(),
+                "https://idp.example.test/oauth2/authorize".to_owned(),
                 "https://127.0.0.1/oauth2/token".to_owned(),
                 "https://idp.example.test/oauth2/jwks".to_owned(),
                 "client-id".to_owned(),
@@ -638,6 +701,7 @@ mod tests {
             OrganizationSsoOidcTokenExchangeConfig::new(
                 7,
                 "https://idp.example.test".to_owned(),
+                "https://idp.example.test/oauth2/authorize".to_owned(),
                 "https://idp.example.test/oauth2/token".to_owned(),
                 "https://idp.example.test/oauth2/jwks".to_owned(),
                 "client-id".to_owned(),
@@ -646,6 +710,42 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn authorization_request_uses_fixed_code_pkce_shape_and_redacts_url() {
+        let start = OrganizationSsoLoginStart::new("11".repeat(32)).unwrap();
+        let request = config().authorization_request(&start).unwrap();
+        let url = Url::parse(request.authorization_url()).unwrap();
+        assert_eq!(
+            url.origin().ascii_serialization(),
+            "https://idp.example.test"
+        );
+        assert_eq!(url.path(), "/oauth2/authorize");
+        let query = url.query_pairs().into_owned().collect::<HashMap<_, _>>();
+        assert_eq!(query.len(), 8);
+        assert_eq!(query.get("response_type").map(String::as_str), Some("code"));
+        assert_eq!(
+            query.get("client_id").map(String::as_str),
+            Some("client-id")
+        );
+        assert_eq!(
+            query.get("redirect_uri").map(String::as_str),
+            Some("https://app.example.test/api/auth/organization-sso/oidc/callback")
+        );
+        assert_eq!(query.get("scope").map(String::as_str), Some("openid email"));
+        assert_eq!(query.get("state").map(String::as_str), Some(start.state()));
+        assert_eq!(query.get("nonce").map(String::as_str), Some(start.nonce()));
+        assert_eq!(
+            query.get("code_challenge").map(String::as_str),
+            Some(start.pkce_challenge())
+        );
+        assert_eq!(
+            query.get("code_challenge_method").map(String::as_str),
+            Some("S256")
+        );
+        assert!(!format!("{request:?}").contains("idp.example.test"));
+        assert!(!format!("{request:?}").contains(start.state()));
     }
 
     #[test]
@@ -666,6 +766,7 @@ mod tests {
     fn metadata_projection_is_closed_and_requires_oidc_shape() {
         let projection = json!({
             "issuer": "https://idp.example.test/",
+            "authorization_endpoint": "https://idp.example.test/oauth2/authorize",
             "token_endpoint": "https://idp.example.test/oauth2/token",
             "jwks_uri": "https://idp.example.test/oauth2/jwks",
             "client_id": "client-id",

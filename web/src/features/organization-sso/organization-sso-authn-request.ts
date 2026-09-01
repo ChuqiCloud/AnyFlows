@@ -13,14 +13,22 @@ export function createOrganizationSsoRequestDigest(
 /** 将服务端返回的受控 SAML POST 表单直接交给浏览器提交。 */
 export function submitOrganizationSsoSamlAuthnRequest(response: OrganizationSsoLoginStartResponse) {
   const request = response.saml_authn_request
-  if (!request || !isSafeAction(request.action) || !hasExpectedFields(request.fields)) return false
+  return request ? submitOrganizationSsoSamlPostAction(request.action, request.fields) : false
+}
+
+/** 立即提交公开登录返回的 SAML 动作，材料只在当前调用栈和临时表单中存在。 */
+export function submitOrganizationSsoSamlPostAction(
+  action: string,
+  fields: readonly { name: string; value: string }[],
+) {
+  if (!isSafeAction(action) || !hasExpectedFields(fields)) return false
 
   const form = document.createElement('form')
   form.method = 'post'
-  form.action = request.action
+  form.action = action
   form.hidden = true
   form.setAttribute('aria-hidden', 'true')
-  for (const field of request.fields) {
+  for (const field of fields) {
     const input = document.createElement('input')
     input.type = 'hidden'
     input.name = field.name

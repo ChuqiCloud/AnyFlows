@@ -313,6 +313,31 @@ pub enum OrganizationSsoDiscoveryLocator {
     Domain(OrganizationSsoDomain),
 }
 
+/// 公开登录启动的内部目标；仅在服务端边界内携带企业和 Provider 绑定。
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct OrganizationSsoPublicLoginTarget {
+    organization_id: OrganizationId,
+    provider_key: OrganizationSsoProviderKey,
+}
+
+impl fmt::Debug for OrganizationSsoPublicLoginTarget {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("OrganizationSsoPublicLoginTarget(<redacted>)")
+    }
+}
+
+impl OrganizationSsoPublicLoginTarget {
+    #[must_use]
+    pub const fn organization_id(self) -> OrganizationId {
+        self.organization_id
+    }
+
+    #[must_use]
+    pub const fn provider_key(self) -> OrganizationSsoProviderKey {
+        self.provider_key
+    }
+}
+
 impl fmt::Debug for OrganizationSsoDiscoveryLocator {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("OrganizationSsoDiscoveryLocator(<redacted>)")
@@ -1150,7 +1175,24 @@ impl OrganizationSsoProviderRepository {
         if now < 0 {
             return Err(OrganizationSsoRepositoryError::InvalidInput);
         }
-        self.run(async move { discovery_available_inner(&self.pool, locator, now).await })
+        self.run(async move {
+            Ok(public_login_target_inner(&self.pool, locator, now)
+                .await?
+                .is_some())
+        })
+        .await
+    }
+
+    /// 按与公开 discovery 相同的资格事实解析启动目标；目标只在服务端继续消费。
+    pub async fn public_login_target(
+        &self,
+        locator: OrganizationSsoDiscoveryLocator,
+        now: i64,
+    ) -> Result<Option<OrganizationSsoPublicLoginTarget>, OrganizationSsoRepositoryError> {
+        if now < 0 {
+            return Err(OrganizationSsoRepositoryError::InvalidInput);
+        }
+        self.run(async move { public_login_target_inner(&self.pool, locator, now).await })
             .await
     }
 
@@ -2923,12 +2965,12 @@ impl fmt::Debug for OrganizationSsoProviderRepository {
     }
 }
 
-/// 公开发现只做资格判定；所有企业资料均在仓储边界内消费并丢弃。
-async fn discovery_available_inner(
+/// 公开发现和登录启动共用资格校验；仅在服务端返回内部启动目标。
+async fn public_login_target_inner(
     pool: &DatabasePool,
     locator: OrganizationSsoDiscoveryLocator,
     now: i64,
-) -> Result<bool, OrganizationSsoRepositoryError> {
+) -> Result<Option<OrganizationSsoPublicLoginTarget>, OrganizationSsoRepositoryError> {
     let (organization_id, requested_provider_id) = match locator {
         OrganizationSsoDiscoveryLocator::OrganizationKey(key) => {
             let models = organizations::Entity::find()
@@ -2937,7 +2979,7 @@ async fn discovery_available_inner(
                 .await
                 .map_err(query_error)?;
             let organization = match models.as_slice() {
-                [] => return Ok(false),
+                [] => return Ok(None),
                 [organization] => organization,
                 _ => return Err(invariant()),
             };
@@ -2972,7 +3014,7 @@ async fn discovery_available_inner(
                 }
             }
             let model = match valid.as_slice() {
-                [] => return Ok(false),
+                [] => return Ok(None),
                 [model] => *model,
                 _ => return Err(OrganizationSsoRepositoryError::Conflict),
             };
@@ -2991,7 +3033,7 @@ async fn discovery_available_inner(
     let organization_status =
         OrganizationStatus::try_from(organization.status).map_err(|_| invariant())?;
     if organization_status != OrganizationStatus::Active {
-        return Ok(false);
+        return Ok(None);
     }
 
     let entitlements = organization_entitlements::Entity::find()
@@ -3001,14 +3043,14 @@ async fn discovery_available_inner(
         .map_err(query_error)?;
     let entitlement = match entitlements.as_slice() {
         [entitlement] => entitlement,
-        [] => return Ok(false),
+        [] => return Ok(None),
         _ => return Err(invariant()),
     };
     let entitlement = entitlement_snapshot(entitlement)?;
     if !entitlement.sso_enabled()
         || entitlement.status(organization_status, now) != OrganizationEntitlementStatus::Active
     {
-        return Ok(false);
+        return Ok(None);
     }
 
     let providers = organization_sso_providers::Entity::find()
@@ -3034,10 +3076,10 @@ async fn discovery_available_inner(
         }
     }
     let Some(provider) = active_provider else {
-        return Ok(false);
+        return Ok(None);
     };
     if requested_provider_id.is_some_and(|id| id != provider.id) {
-        return Ok(false);
+        return Ok(None);
     }
     if !provider
         .metadata_projection
@@ -3048,7 +3090,7 @@ async fn discovery_available_inner(
             .as_ref()
             .is_some_and(|value| value.envelope_parts().is_ok())
     {
-        return Ok(false);
+        return Ok(None);
     }
 
     let domains = organization_sso_domains::Entity::find()
@@ -3076,7 +3118,13 @@ async fn discovery_available_inner(
             verified_domain_ready = true;
         }
     }
-    Ok(verified_domain_ready)
+    Ok(
+        verified_domain_ready.then_some(OrganizationSsoPublicLoginTarget {
+            organization_id,
+            provider_key: OrganizationSsoProviderKey::from_persistence_key(&provider.provider_key)
+                .map_err(|_| invariant())?,
+        }),
+    )
 }
 
 async fn organization_exists(

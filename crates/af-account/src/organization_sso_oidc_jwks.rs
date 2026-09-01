@@ -177,6 +177,7 @@ mod tests {
         let config = OrganizationSsoOidcTokenExchangeConfig::new(
             7,
             "https://idp.example.test/".to_owned(),
+            "https://idp.example.test/oauth2/authorize".to_owned(),
             "https://idp.example.test/oauth2/token".to_owned(),
             "https://idp.example.test/oauth2/jwks".to_owned(),
             "client-id".to_owned(),
