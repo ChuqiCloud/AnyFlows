@@ -36314,8 +36314,7 @@
                   "oidc"
                 ]
               }
-            },
-            "additionalProperties": false
+            }
           },
           {
             "type": "object",
@@ -36350,8 +36349,7 @@
                   "saml"
                 ]
               }
-            },
-            "additionalProperties": false
+            }
           }
         ]
       },
