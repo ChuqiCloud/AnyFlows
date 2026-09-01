@@ -335,6 +335,44 @@ impl SystemSecretCipher {
         )
     }
 
+    /// 加密企业 SAML Request ID；事务 state 摘要和 Provider 配置版本共同参与 AAD。
+    pub fn encrypt_organization_sso_saml_login_material(
+        &self,
+        organization_id: af_domain::OrganizationId,
+        provider_id: i64,
+        config_version: i64,
+        state_digest: &str,
+        secret: &PlainSystemSecret,
+    ) -> Result<EncryptedCredentialEnvelope, SystemSecretError> {
+        self.encrypt_organization_sso_login_material(
+            organization_id,
+            provider_id,
+            af_domain::OrganizationSsoProtocol::Saml,
+            config_version,
+            state_digest,
+            secret,
+        )
+    }
+
+    /// 解密绑定当前 SAML 事务的 Request ID；任一边界不一致都会失败。
+    pub fn decrypt_organization_sso_saml_login_material(
+        &self,
+        organization_id: af_domain::OrganizationId,
+        provider_id: i64,
+        config_version: i64,
+        state_digest: &str,
+        envelope: &EncryptedCredentialEnvelope,
+    ) -> Result<DecryptedSystemSecret, SystemSecretError> {
+        self.decrypt_organization_sso_login_material(
+            organization_id,
+            provider_id,
+            af_domain::OrganizationSsoProtocol::Saml,
+            config_version,
+            state_digest,
+            envelope,
+        )
+    }
+
     fn decrypt_with_aad(
         &self,
         aad: &[u8],
@@ -834,6 +872,63 @@ mod tests {
                 .decrypt_organization_sso_login_material(
                     organization,
                     provider_id + 1,
+                    af_domain::OrganizationSsoProtocol::Oidc,
+                    3,
+                    &state_digest,
+                    &envelope,
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn organization_sso_saml_request_material_is_bound_to_one_login_transaction() {
+        let cipher = SystemSecretCipher::new(&settings()).unwrap();
+        let organization = af_domain::OrganizationId::new(7).unwrap();
+        let provider_id = 19_i64;
+        let material = crate::OrganizationSsoSamlLoginMaterial::new().unwrap();
+        let request_id = material.request_id().to_owned();
+        let secret = material.into_plain_system_secret().unwrap();
+        let state_digest = "a".repeat(64);
+        let envelope = cipher
+            .encrypt_organization_sso_saml_login_material(
+                organization,
+                provider_id,
+                3,
+                &state_digest,
+                &secret,
+            )
+            .unwrap();
+        let decrypted = cipher
+            .decrypt_organization_sso_saml_login_material(
+                organization,
+                provider_id,
+                3,
+                &state_digest,
+                &envelope,
+            )
+            .unwrap();
+        let restored =
+            crate::OrganizationSsoSamlLoginMaterial::from_decrypted_system_secret(decrypted)
+                .unwrap();
+        assert_eq!(restored.request_id(), request_id);
+        assert!(!format!("{restored:?}").contains(&request_id));
+        assert!(
+            cipher
+                .decrypt_organization_sso_saml_login_material(
+                    af_domain::OrganizationId::new(8).unwrap(),
+                    provider_id,
+                    3,
+                    &state_digest,
+                    &envelope,
+                )
+                .is_err()
+        );
+        assert!(
+            cipher
+                .decrypt_organization_sso_login_material(
+                    organization,
+                    provider_id,
                     af_domain::OrganizationSsoProtocol::Oidc,
                     3,
                     &state_digest,

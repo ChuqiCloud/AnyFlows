@@ -68,7 +68,8 @@ pub use organization_sso_login::{
     ORGANIZATION_SSO_OIDC_CALLBACK_PATH, ORGANIZATION_SSO_SAML_CALLBACK_PATH,
     OrganizationSsoLoginError, OrganizationSsoLoginStart, OrganizationSsoOidcCallback,
     OrganizationSsoOidcLoginMaterial, OrganizationSsoSamlCallback,
-    organization_sso_login_state_digest, organization_sso_login_ticket_digest,
+    OrganizationSsoSamlLoginMaterial, organization_sso_login_state_digest,
+    organization_sso_login_ticket_digest,
 };
 pub use organization_sso_oidc::{
     OrganizationSsoOidcIdTokenError, OrganizationSsoOidcIdTokenVerificationConfig,
