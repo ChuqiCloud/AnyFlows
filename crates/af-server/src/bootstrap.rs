@@ -2853,9 +2853,11 @@ impl Bootstrap<Supervised> {
             }),
             self.stage
                 .infrastructure
+                .infrastructure
                 .organization_sso_public_login_rate_limit_store
                 .clone(),
             self.stage
+                .infrastructure
                 .infrastructure
                 .organization_sso_public_login_fingerprint_secret,
             Some(Arc::clone(
