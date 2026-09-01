@@ -20,6 +20,11 @@ env:
   # runner 资源有限；每个 job 串行编译，避免多个 Rust 门禁同时耗尽 CPU/内存。
   CARGO_BUILD_JOBS: "1"
   CARGO_INCREMENTAL: "0"
+  # 开发与测试产物关闭调试符号，避免大型数据库检查在受限 runner 中触发 OOM。
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+  # 失败时保留已完成的 Rust 产物，后续修复无需重复冷编译全部依赖。
+  CACHE_ON_FAILURE: "true"
   RUST_BACKTRACE: "1"
 
 jobs:
@@ -116,8 +121,8 @@ jobs:
 
   deployment:
     name: Docker deployment checks
-    needs: changes
-    if: ${{ needs.changes.outputs.deployment == 'true' }}
+    needs: [changes, cache-redis]
+    if: ${{ always() && needs.changes.outputs.deployment == 'true' && (needs.cache-redis.result == 'success' || needs.cache-redis.result == 'skipped') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -222,8 +227,8 @@ jobs:
 
   release-package:
     name: Linux amd64 release package
-    needs: changes
-    if: ${{ needs.changes.outputs.rust == 'true' }}
+    needs: [changes, rust-quality]
+    if: ${{ always() && needs.changes.outputs.rust == 'true' && needs.rust-quality.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -333,6 +338,9 @@ jobs:
     if: ${{ needs.changes.outputs.rust == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      # 多代码生成单元降低大型测试 crate 的编译峰值，链接器按需重读符号表以换取更低内存。
+      RUSTFLAGS: "-C link-arg=-Wl,--no-keep-memory"
     steps:
       - name: Configure external Gitea checkout endpoint
         if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
@@ -411,8 +419,8 @@ jobs:
 
   msrv:
     name: Minimum supported Rust version
-    needs: changes
-    if: ${{ needs.changes.outputs.rust == 'true' }}
+    needs: [changes, release-package]
+    if: ${{ always() && needs.changes.outputs.rust == 'true' && needs.release-package.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -475,10 +483,13 @@ jobs:
 
   sqlite-migration:
     name: SQLite migration smoke test
-    needs: changes
-    if: ${{ needs.changes.outputs.database == 'true' }}
+    needs: [changes, msrv]
+    if: ${{ always() && needs.changes.outputs.database == 'true' && needs.msrv.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      # 数据库冒烟会链接 af-db 测试二进制，受限 runner 通过按需重读符号表控制链接峰值内存。
+      RUSTFLAGS: "-C link-arg=-Wl,--no-keep-memory"
     steps:
       - name: Configure external Gitea checkout endpoint
         if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
@@ -527,10 +538,13 @@ jobs:
 
   postgres-migration:
     name: PostgreSQL migration smoke test
-    needs: changes
-    if: ${{ needs.changes.outputs.database == 'true' }}
+    needs: [changes, sqlite-migration]
+    if: ${{ always() && needs.changes.outputs.database == 'true' && needs.sqlite-migration.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      # 数据库冒烟会链接 af-db 测试二进制，受限 runner 通过按需重读符号表控制链接峰值内存。
+      RUSTFLAGS: "-C link-arg=-Wl,--no-keep-memory"
     services:
       postgres:
         image: postgres:17.10-bookworm@sha256:67870dc097790edf2bd6726658db995dcc830f799d41bb2b78ef07c9a2d5f010
@@ -600,10 +614,13 @@ jobs:
 
   mysql-migration:
     name: MySQL migration smoke test
-    needs: changes
-    if: ${{ needs.changes.outputs.database == 'true' }}
+    needs: [changes, postgres-migration]
+    if: ${{ always() && needs.changes.outputs.database == 'true' && needs.postgres-migration.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      # 数据库冒烟会链接 af-db 测试二进制，受限 runner 通过按需重读符号表控制链接峰值内存。
+      RUSTFLAGS: "-C link-arg=-Wl,--no-keep-memory"
     services:
       mysql:
         image: mysql:8.4.10@sha256:6ec1dc148edc412cce3ae27dd5b78dcd4e026976648424b3d31d9a8c6204db4e
@@ -668,8 +685,8 @@ jobs:
 
   cache-redis:
     name: Redis cache smoke test
-    needs: changes
-    if: ${{ needs.changes.outputs.redis == 'true' }}
+    needs: [changes, mysql-migration]
+    if: ${{ always() && needs.changes.outputs.redis == 'true' && (needs.mysql-migration.result == 'success' || needs.mysql-migration.result == 'skipped') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
