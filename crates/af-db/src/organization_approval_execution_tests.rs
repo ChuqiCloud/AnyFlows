@@ -8,9 +8,12 @@ use af_domain::{
     OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationId,
     OrganizationMembershipId, OrganizationMembershipStatus, OrganizationRole, UserId,
 };
-use sea_orm::{ActiveModelTrait, Set, entity::prelude::TimeDateTimeWithTimeZone};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set,
+    entity::prelude::TimeDateTimeWithTimeZone, sea_query::Expr,
+};
 
-use crate::entity::{groups, users};
+use crate::entity::{groups, organization_approval_requests, users};
 use crate::{
     DatabaseOptions, MigrationOptions, OrganizationApprovalDecisionWrite,
     OrganizationApprovalExecutionRepository, OrganizationApprovalExecutionRepositoryError,
@@ -233,17 +236,25 @@ async fn expiration_and_member_version_are_rechecked_at_execution_time()
         Err(OrganizationApprovalExecutionRepositoryError::Conflict)
     );
 
-    let expires_at = now() + 1;
     let expired_request_id = create_request_and_decision(
         &fixture,
         61,
         OrganizationApprovalResourceType::Member,
         member_summary(&fixture, OrganizationRole::Viewer, 1),
         OrganizationApprovalDecisionKind::Approved,
-        expires_at,
+        now() + 3_600,
     )
     .await?;
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    // 直接构造已过期持久化事实，避免依赖并发门禁中的调度时延。
+    let update = organization_approval_requests::Entity::update_many()
+        .filter(organization_approval_requests::Column::Id.eq(expired_request_id.get()))
+        .col_expr(
+            organization_approval_requests::Column::ExpiresAt,
+            Expr::col(organization_approval_requests::Column::CreatedAt).into(),
+        )
+        .exec(fixture.pool.connection())
+        .await?;
+    assert_eq!(update.rows_affected, 1);
     assert_eq!(
         fixture
             .execution_repository
