@@ -487,6 +487,9 @@ jobs:
     if: ${{ always() && needs.changes.outputs.database == 'true' && needs.msrv.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      # 数据库冒烟会链接 af-db 测试二进制，受限 runner 通过按需重读符号表控制链接峰值内存。
+      RUSTFLAGS: "-C link-arg=-Wl,--no-keep-memory"
     steps:
       - name: Configure external Gitea checkout endpoint
         if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
@@ -539,6 +542,9 @@ jobs:
     if: ${{ always() && needs.changes.outputs.database == 'true' && needs.sqlite-migration.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      # 数据库冒烟会链接 af-db 测试二进制，受限 runner 通过按需重读符号表控制链接峰值内存。
+      RUSTFLAGS: "-C link-arg=-Wl,--no-keep-memory"
     services:
       postgres:
         image: postgres:17.10-bookworm@sha256:67870dc097790edf2bd6726658db995dcc830f799d41bb2b78ef07c9a2d5f010
@@ -612,6 +618,9 @@ jobs:
     if: ${{ always() && needs.changes.outputs.database == 'true' && needs.postgres-migration.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      # 数据库冒烟会链接 af-db 测试二进制，受限 runner 通过按需重读符号表控制链接峰值内存。
+      RUSTFLAGS: "-C link-arg=-Wl,--no-keep-memory"
     services:
       mysql:
         image: mysql:8.4.10@sha256:6ec1dc148edc412cce3ae27dd5b78dcd4e026976648424b3d31d9a8c6204db4e
