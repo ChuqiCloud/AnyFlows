@@ -173,6 +173,7 @@ impl fmt::Debug for OrganizationSsoOidcLoginMaterial {
 ///
 /// Request ID 只存在于短期加密材料中；数据库只保存其所属事务的摘要，
 /// 任何 Debug 输出都不得暴露原始值。
+#[derive(PartialEq, Eq)]
 pub struct OrganizationSsoSamlLoginMaterial {
     request_id: Zeroizing<String>,
 }
