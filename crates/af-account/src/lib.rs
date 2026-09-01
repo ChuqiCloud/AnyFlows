@@ -81,8 +81,11 @@ pub use organization_sso_oidc_exchange::{
 };
 pub use organization_sso_oidc_jwks::{OrganizationSsoOidcJwksClient, OrganizationSsoOidcJwksError};
 pub use organization_sso_saml::{
+    OrganizationSsoSamlNameIdFormat, OrganizationSsoSamlSemanticError,
+    OrganizationSsoSamlSemanticVerificationConfig, OrganizationSsoSamlSemanticVerifier,
     OrganizationSsoSamlSignatureError, OrganizationSsoSamlSignatureVerificationConfig,
-    OrganizationSsoSamlSignatureVerifier, VerifiedOrganizationSsoSamlResponse,
+    OrganizationSsoSamlSignatureVerifier, VerifiedOrganizationSsoSamlIdentity,
+    VerifiedOrganizationSsoSamlResponse,
 };
 pub use system_secret::{
     DecryptedSystemSecret, PlainSystemSecret, SystemSecretCipher, SystemSecretError,
