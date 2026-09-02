@@ -3750,6 +3750,8 @@ impl ActiveModelBehavior for subscription_payment_events::ActiveModel {
 #[async_trait::async_trait]
 impl ActiveModelBehavior for refund_provider_events::ActiveModel {}
 
+impl ActiveModelBehavior for refund_manual_completions::ActiveModel {}
+
 #[async_trait::async_trait]
 impl ActiveModelBehavior for refund_reconciliation_entries::ActiveModel {
     async fn before_save<C>(self, _database: &C, insert: bool) -> Result<Self, DbErr>

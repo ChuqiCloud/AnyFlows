@@ -188,7 +188,8 @@ async fn alter_reconciliation(manager: &SchemaManager<'_>) -> Result<(), DbErr> 
         .await;
         let restore = connection
             .execute_unprepared("PRAGMA foreign_keys=ON")
-            .await;
+            .await
+            .map(|_| ());
         return match (result, restore) {
             (Err(error), _) => Err(error),
             (Ok(()), Err(error)) => Err(error),
@@ -300,7 +301,8 @@ async fn revert_reconciliation(manager: &SchemaManager<'_>) -> Result<(), DbErr>
         }.await;
         let restore = connection
             .execute_unprepared("PRAGMA foreign_keys=ON")
-            .await;
+            .await
+            .map(|_| ());
         return match (result, restore) {
             (Err(error), _) => Err(error),
             (Ok(()), Err(error)) => Err(error),

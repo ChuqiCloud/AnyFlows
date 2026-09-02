@@ -3193,6 +3193,7 @@ pub(in crate::migration) mod refund_manual_completions {
         Id,
         CompletionKey,
         RequestKey,
+        ExpectedVersion,
         ActorUserId,
         Result,
         ReferenceSha256,

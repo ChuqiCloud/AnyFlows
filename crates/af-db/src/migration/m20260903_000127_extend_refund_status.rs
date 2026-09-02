@@ -142,16 +142,20 @@ async fn ensure_no_manual_refund_facts(manager: &SchemaManager<'_>) -> Result<()
     Ok(())
 }
 
-async fn rebuild_sqlite_refund_requests(
-    connection: &sea_orm::DatabaseConnection,
-) -> Result<(), DbErr> {
+async fn rebuild_sqlite_refund_requests<C>(connection: &C) -> Result<(), DbErr>
+where
+    C: ConnectionTrait + Sync,
+{
     rebuild_sqlite_refund_requests_with_status(connection, 7).await
 }
 
-async fn rebuild_sqlite_refund_requests_with_status(
-    connection: &sea_orm::DatabaseConnection,
+async fn rebuild_sqlite_refund_requests_with_status<C>(
+    connection: &C,
     max_status: i16,
-) -> Result<(), DbErr> {
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait + Sync,
+{
     connection
         .execute_unprepared("PRAGMA foreign_keys=OFF")
         .await?;
@@ -214,7 +218,8 @@ async fn rebuild_sqlite_refund_requests_with_status(
     .await;
     let restore = connection
         .execute_unprepared("PRAGMA foreign_keys=ON")
-        .await;
+        .await
+        .map(|_| ());
     match (result, restore) {
         (Err(error), _) => Err(error),
         (Ok(()), Err(error)) => Err(error),
