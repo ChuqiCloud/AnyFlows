@@ -300,9 +300,12 @@ fn map_storage_error(_: AdminDashboardStorageError) -> AdminDashboardReadError {
 
 #[cfg(test)]
 mod tests {
+    use af_domain::{ChannelId, Protocol};
+
     use super::*;
     use crate::{
-        AdminDashboardChannelSnapshot, AdminDashboardOutcomeSnapshot, AdminDashboardStorageFuture,
+        AdminDashboardChannelSnapshot, AdminDashboardFailure, AdminDashboardFailureKind,
+        AdminDashboardOutcomeSnapshot, AdminDashboardStorageFuture,
     };
 
     #[derive(Clone)]
@@ -365,6 +368,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn complete_snapshot_maps_all_public_metrics() {
+        let period_start = 10;
+        let period_end = ADMIN_DASHBOARD_PERIOD_SECONDS + period_start;
+        let mut snapshot = empty_snapshot(period_start);
+        snapshot.usage = AdminDashboardUsageSnapshot::new(5, 50, 3, 2, 2, 2, 1);
+        snapshot.channels = AdminDashboardChannelSnapshot::new(4, 1, 2);
+        snapshot.outcomes = AdminDashboardOutcomeSnapshot::new(
+            5,
+            4,
+            1,
+            1,
+            vec![AdminDashboardFailure::new(
+                AdminDashboardFailureKind::UpstreamRateLimited,
+                1,
+            )],
+            vec![AdminDashboardChannelFlow::new(
+                Protocol::OpenAiChat,
+                ChannelId::new(7).unwrap(),
+                "primary".to_owned(),
+                3,
+            )],
+        );
+        snapshot.hourly[0] =
+            AdminDashboardHourlyPoint::new(period_start, period_start + 3_600, 5, 50);
+        snapshot.performance =
+            AdminDashboardPerformance::new(2, Some(120), 1, 2_000, 3, Some(800), 1, 10_000);
+        let storage: Arc<dyn AdminDashboardStorage> = Arc::new(StaticStorage {
+            expected_start: period_start,
+            expected_end: period_end,
+            result: Ok(snapshot),
+        });
+        let reader =
+            StorageAdminDashboardReader::with_clock(storage, Arc::new(move || Ok(period_end)));
+
+        let dashboard = reader.read(AdminDashboardAccess::Admin).await.unwrap();
+        assert_eq!(dashboard.request_count(), 5);
+        assert_eq!(dashboard.quota_consumed(), 50);
+        assert_eq!(dashboard.upstream_usage_count(), 3);
+        assert_eq!(dashboard.estimated_usage_count(), 2);
+        assert_eq!(dashboard.enabled_channel_count(), 4);
+        assert_eq!(dashboard.disabled_channel_count(), 1);
+        assert_eq!(dashboard.auto_disabled_channel_count(), 2);
+        assert_eq!(dashboard.outcome_request_count(), 5);
+        assert_eq!(dashboard.successful_request_count(), 4);
+        assert_eq!(dashboard.failed_request_count(), 1);
+        assert_eq!(dashboard.other_success_count(), 1);
+        assert_eq!(
+            dashboard.failures()[0].kind(),
+            AdminDashboardFailureKind::UpstreamRateLimited
+        );
+        assert_eq!(dashboard.channel_flows()[0].channel_name(), "primary");
+        assert_eq!(dashboard.hourly()[0].request_count(), 5);
+        assert_eq!(dashboard.performance().average_duration_ms(), Some(800));
+    }
+
+    #[tokio::test]
     async fn malformed_or_unavailable_storage_fails_closed() {
         let period_start = 10;
         let period_end = ADMIN_DASHBOARD_PERIOD_SECONDS + period_start;
@@ -397,6 +456,54 @@ mod tests {
             reader.read(AdminDashboardAccess::Admin).await.unwrap_err(),
             AdminDashboardReadError::Internal
         );
+    }
+
+    #[test]
+    fn malformed_snapshot_invariants_fail_closed() {
+        let period_start = 10;
+        let period_end = ADMIN_DASHBOARD_PERIOD_SECONDS + period_start;
+        let cases = [
+            {
+                let mut snapshot = empty_snapshot(period_start);
+                snapshot.usage.quota_consumed = -1;
+                snapshot
+            },
+            {
+                let mut snapshot = empty_snapshot(period_start);
+                snapshot.outcomes.failures = vec![AdminDashboardFailure::new(
+                    AdminDashboardFailureKind::Internal,
+                    0,
+                )];
+                snapshot
+            },
+            {
+                let mut snapshot = empty_snapshot(period_start);
+                snapshot.hourly[1] =
+                    AdminDashboardHourlyPoint::new(period_start, period_start + 3_600, 0, 0);
+                snapshot
+            },
+            {
+                let mut snapshot = empty_snapshot(period_start);
+                snapshot.performance =
+                    AdminDashboardPerformance::new(0, Some(0), 0, 2_000, 0, None, 0, 10_000);
+                snapshot
+            },
+            {
+                let mut snapshot = empty_snapshot(period_start);
+                snapshot.outcomes.failures = vec![
+                    AdminDashboardFailure::new(AdminDashboardFailureKind::Internal, i64::MAX),
+                    AdminDashboardFailure::new(AdminDashboardFailureKind::Internal, 1),
+                ];
+                snapshot
+            },
+        ];
+
+        for snapshot in cases {
+            assert_eq!(
+                dashboard_from_storage(period_start, period_end, snapshot),
+                Err(AdminDashboardReadError::Internal)
+            );
+        }
     }
 
     fn empty_snapshot(period_start: i64) -> AdminDashboardStorageSnapshot {
