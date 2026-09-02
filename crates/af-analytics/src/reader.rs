@@ -300,6 +300,8 @@ fn map_storage_error(_: AdminDashboardStorageError) -> AdminDashboardReadError {
 
 #[cfg(test)]
 mod tests {
+    use af_domain::{ChannelId, Protocol};
+
     use super::*;
     use crate::{
         AdminDashboardChannelSnapshot, AdminDashboardOutcomeSnapshot, AdminDashboardStorageFuture,
