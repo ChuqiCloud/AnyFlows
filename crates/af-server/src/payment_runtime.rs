@@ -115,7 +115,6 @@ impl PaymentRuntime {
                 cipher,
                 &mut routes,
                 &mut webhook_processors,
-                &mut refund_providers,
             )
             .await?;
         }
@@ -217,7 +216,6 @@ impl PaymentRuntime {
         cipher: &SystemSecretCipher,
         routes: &mut Vec<UserTopupProviderRoute>,
         processors: &mut HashMap<String, Arc<dyn PaymentWebhookHandler>>,
-        refund_providers: &mut HashMap<String, Arc<dyn RefundProvider>>,
     ) -> Result<(), PaymentSettingsRuntimeError> {
         let gateway_url = record
             .epay_gateway_url()
