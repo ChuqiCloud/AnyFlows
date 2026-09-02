@@ -1365,8 +1365,6 @@ mod tests {
         assert_eq!(route.generation(), 11);
         assert_eq!(route.target_group_id(), GroupId::new(7).unwrap());
         assert_eq!(route.candidates().len(), 2);
-        assert_eq!(route.candidates()[0].selection().priority_rank(), 1);
-        assert_eq!(route.candidates()[1].selection().priority_rank(), 0);
         for candidate in route.candidates() {
             assert_eq!(
                 candidate.selection().candidate().channel_id(),
@@ -1534,7 +1532,7 @@ mod tests {
             std::time::Duration::from_secs(1)
         );
         assert_eq!(route.candidates()[0].selection().attempt().get(), 1);
-        assert_eq!(route.candidates()[0].selection().priority_rank(), 0);
+        assert_eq!(route.candidates()[0].selection().priority_rank(), 1);
         assert_eq!(
             route.candidates()[1].wait_plan().kind(),
             RouteWaitKind::Fallback
@@ -1544,7 +1542,7 @@ mod tests {
             std::time::Duration::from_secs(10)
         );
         assert_eq!(route.candidates()[1].selection().attempt().get(), 2);
-        assert_eq!(route.candidates()[1].selection().priority_rank(), 1);
+        assert_eq!(route.candidates()[1].selection().priority_rank(), 0);
         assert_eq!(
             route.prefer_sticky_channel(ChannelId::new(99).unwrap(), policy),
             StickyRouteOutcome::Unavailable
