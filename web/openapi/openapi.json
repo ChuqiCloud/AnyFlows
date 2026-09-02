@@ -2409,7 +2409,9 @@
     },
     "/api/admin/refunds/{request_id}/manual-complete": {
       "post": {
-        "tags": ["退款审批"],
+        "tags": [
+          "退款审批"
+        ],
         "summary": "登记易支付人工退款结果",
         "operationId": "manualCompleteAdminRefund",
         "parameters": [{
