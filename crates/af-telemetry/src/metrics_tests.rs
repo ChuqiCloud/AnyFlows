@@ -506,7 +506,7 @@ fn categorical_label_values_are_rejected_at_the_recorder_boundary() {
     const INVALID: &str = "future-value";
     let (recorder, handle) = build_metrics_recorder();
     let model = handle.register_model("known-model").unwrap();
-    let channel = handle.register_channel("known-channel").unwrap();
+    let _channel = handle.register_channel("known-channel").unwrap();
     let group = handle.register_group("known-group").unwrap();
 
     let invalid_cases = [
