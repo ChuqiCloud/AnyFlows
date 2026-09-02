@@ -304,7 +304,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        AdminDashboardChannelSnapshot, AdminDashboardOutcomeSnapshot, AdminDashboardStorageFuture,
+        AdminDashboardChannelSnapshot, AdminDashboardFailure, AdminDashboardFailureKind,
+        AdminDashboardOutcomeSnapshot, AdminDashboardStorageFuture,
     };
 
     #[derive(Clone)]
@@ -383,7 +384,7 @@ mod tests {
                 1,
             )],
             vec![AdminDashboardChannelFlow::new(
-                Protocol::OpenAi,
+                Protocol::OpenAiChat,
                 ChannelId::new(7).unwrap(),
                 "primary".to_owned(),
                 3,
