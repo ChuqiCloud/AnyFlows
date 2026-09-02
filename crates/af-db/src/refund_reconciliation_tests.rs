@@ -7,8 +7,10 @@ use af_domain::{
     TopupPaymentEventType, TopupRequestId,
 };
 use sea_orm::{ActiveModelTrait, ConnectionTrait, DatabaseBackend, EntityTrait, Set, Statement};
+use sea_orm_migration::MigratorTrait;
 
 use crate::entity::{groups, refund_manual_completions};
+use crate::migration::Migrator;
 use crate::{
     AdminUserCreateRecord, AdminUserRepository, DatabaseOptions, MigrationOptions,
     RefundReceiptWrite, RefundReconciliationQuery, RefundRepository, TopupOrderCreate,
