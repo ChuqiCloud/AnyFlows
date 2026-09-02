@@ -32,12 +32,14 @@ use crate::{
     entity::{
         EncryptedJson, SensitiveString, organization_entitlements, organization_memberships,
         organization_sso_domain_reverification_leases, organization_sso_domains,
-        organization_sso_identities, organization_sso_login_transactions,
-        organization_sso_policies, organization_sso_providers, organizations,
+        organization_sso_identities, organization_sso_login_transaction_cleanup_leases,
+        organization_sso_login_transactions, organization_sso_policies, organization_sso_providers,
+        organizations,
     },
 };
 
 const DOMAIN_REVERIFICATION_LEASE_KEY: &str = "organization-sso-domain-reverification-v1";
+const LOGIN_TRANSACTION_CLEANUP_LEASE_KEY: &str = "organization-sso-login-transaction-cleanup-v1";
 const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 
 /// 创建企业 SSO Provider 的配置事实。
@@ -550,6 +552,15 @@ pub enum OrganizationSsoDomainReverificationLeaseOutcome {
     Held,
 }
 
+/// 企业 SSO 过期登录事务清理的全局数据库租约竞争结果。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OrganizationSsoLoginTransactionCleanupLeaseOutcome {
+    /// 当前实例取得清理租约。
+    Acquired,
+    /// 其他实例仍持有未过期租约。
+    Held,
+}
+
 /// 单个域名 CAS 写入结果。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OrganizationSsoDomainReverificationOutcome {
@@ -1026,6 +1037,7 @@ pub struct OrganizationSsoProviderRepository {
     pool: DatabasePool,
     operation_timeout: Duration,
     reverification_lease_owner: Arc<Mutex<Option<String>>>,
+    login_transaction_cleanup_lease_owner: Arc<Mutex<Option<String>>>,
 }
 
 impl OrganizationSsoProviderRepository {
@@ -1041,6 +1053,7 @@ impl OrganizationSsoProviderRepository {
             pool,
             operation_timeout,
             reverification_lease_owner: Arc::new(Mutex::new(None)),
+            login_transaction_cleanup_lease_owner: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -1376,7 +1389,41 @@ impl OrganizationSsoProviderRepository {
             return Err(OrganizationSsoRepositoryError::InvalidInput);
         }
         let owner_token = self.domain_reverification_lease_owner_token()?;
-        self.run(self.acquire_domain_reverification_lease_inner(now, lease_duration, owner_token))
+        self.run(self.acquire_domain_reverification_lease_inner(
+            DOMAIN_REVERIFICATION_LEASE_KEY,
+            now,
+            lease_duration,
+            owner_token,
+        ))
+        .await
+    }
+
+    /// 竞争独立的过期登录事务清理租约；不得复用域名复验租约键。
+    pub async fn acquire_login_transaction_cleanup_lease(
+        &self,
+        now: i64,
+        lease_duration: Duration,
+    ) -> Result<OrganizationSsoLoginTransactionCleanupLeaseOutcome, OrganizationSsoRepositoryError>
+    {
+        if now < 0 || lease_duration.is_zero() {
+            return Err(OrganizationSsoRepositoryError::InvalidInput);
+        }
+        let owner_token = self.login_transaction_cleanup_lease_owner_token()?;
+        self.run(self.acquire_login_transaction_cleanup_lease_inner(
+            now,
+            lease_duration,
+            owner_token,
+        ))
+        .await
+    }
+
+    /// 有界删除已过期、未领取且没有任何完成/票据/断言事实的登录事务。
+    pub async fn cleanup_expired_unclaimed_login_transactions(
+        &self,
+        now: i64,
+        limit: usize,
+    ) -> Result<usize, OrganizationSsoRepositoryError> {
+        self.run(self.cleanup_expired_unclaimed_login_transactions_inner(now, limit))
             .await
     }
 
@@ -1406,6 +1453,23 @@ impl OrganizationSsoProviderRepository {
     ) -> Result<String, OrganizationSsoRepositoryError> {
         let mut owner = self
             .reverification_lease_owner
+            .lock()
+            .map_err(|_| OrganizationSsoRepositoryError::Invariant)?;
+        if let Some(token) = owner.as_ref() {
+            return Ok(token.clone());
+        }
+        let mut bytes = [0_u8; 16];
+        getrandom::fill(&mut bytes).map_err(|_| OrganizationSsoRepositoryError::Invariant)?;
+        let token = encode_hex_bytes(&bytes);
+        *owner = Some(token.clone());
+        Ok(token)
+    }
+
+    fn login_transaction_cleanup_lease_owner_token(
+        &self,
+    ) -> Result<String, OrganizationSsoRepositoryError> {
+        let mut owner = self
+            .login_transaction_cleanup_lease_owner
             .lock()
             .map_err(|_| OrganizationSsoRepositoryError::Invariant)?;
         if let Some(token) = owner.as_ref() {
@@ -2155,8 +2219,166 @@ impl OrganizationSsoProviderRepository {
         ))
     }
 
+    async fn cleanup_expired_unclaimed_login_transactions_inner(
+        &self,
+        now: i64,
+        limit: usize,
+    ) -> Result<usize, OrganizationSsoRepositoryError> {
+        if now < 0 || !(1..=100).contains(&limit) {
+            return Err(OrganizationSsoRepositoryError::InvalidInput);
+        }
+        let now = timestamp(now)?;
+        let fetch_limit = u64::try_from(limit).map_err(|_| invariant())?;
+        let transaction_ids = organization_sso_login_transactions::Entity::find()
+            .select_only()
+            .column(organization_sso_login_transactions::Column::Id)
+            .filter(organization_sso_login_transactions::Column::ExpiresAt.lte(now))
+            .filter(organization_sso_login_transactions::Column::ClaimedAt.is_null())
+            .filter(organization_sso_login_transactions::Column::ResultCode.is_null())
+            .filter(organization_sso_login_transactions::Column::TicketDigest.is_null())
+            .filter(organization_sso_login_transactions::Column::TicketExpiresAt.is_null())
+            .filter(organization_sso_login_transactions::Column::ExchangedAt.is_null())
+            .filter(organization_sso_login_transactions::Column::AssertionDigest.is_null())
+            .filter(organization_sso_login_transactions::Column::AssertionExpiresAt.is_null())
+            .filter(
+                organization_sso_login_transactions::Column::InvitationEmailFingerprint.is_null(),
+            )
+            .order_by_asc(organization_sso_login_transactions::Column::Id)
+            .limit(fetch_limit)
+            .into_tuple::<i64>()
+            .all(self.pool.connection())
+            .await
+            .map_err(query_error)?;
+        let mut deleted = 0_usize;
+        for transaction_id in transaction_ids {
+            let result = organization_sso_login_transactions::Entity::delete_many()
+                .filter(organization_sso_login_transactions::Column::Id.eq(transaction_id))
+                .filter(organization_sso_login_transactions::Column::ExpiresAt.lte(now))
+                .filter(organization_sso_login_transactions::Column::ClaimedAt.is_null())
+                .filter(organization_sso_login_transactions::Column::ResultCode.is_null())
+                .filter(organization_sso_login_transactions::Column::TicketDigest.is_null())
+                .filter(organization_sso_login_transactions::Column::TicketExpiresAt.is_null())
+                .filter(organization_sso_login_transactions::Column::ExchangedAt.is_null())
+                .filter(organization_sso_login_transactions::Column::AssertionDigest.is_null())
+                .filter(organization_sso_login_transactions::Column::AssertionExpiresAt.is_null())
+                .filter(
+                    organization_sso_login_transactions::Column::InvitationEmailFingerprint
+                        .is_null(),
+                )
+                .exec(self.pool.connection())
+                .await
+                .map_err(query_error)?;
+            match result.rows_affected {
+                0 => {}
+                1 => deleted = deleted.checked_add(1).ok_or_else(invariant)?,
+                _ => return Err(invariant()),
+            }
+        }
+        Ok(deleted)
+    }
+
+    async fn acquire_login_transaction_cleanup_lease_inner(
+        &self,
+        now: i64,
+        lease_duration: Duration,
+        owner_token: String,
+    ) -> Result<OrganizationSsoLoginTransactionCleanupLeaseOutcome, OrganizationSsoRepositoryError>
+    {
+        let now = timestamp(now)?;
+        let lease_seconds = i64::try_from(lease_duration.as_secs())
+            .map_err(|_| OrganizationSsoRepositoryError::InvalidInput)?
+            .checked_add(i64::from(lease_duration.subsec_nanos() > 0))
+            .ok_or_else(invariant)?;
+        let lease_expires_at = timestamp(
+            now.unix_timestamp()
+                .checked_add(lease_seconds)
+                .ok_or_else(invariant)?,
+        )?;
+        let existing = organization_sso_login_transaction_cleanup_leases::Entity::find_by_id(
+            LOGIN_TRANSACTION_CLEANUP_LEASE_KEY,
+        )
+        .one(self.pool.connection())
+        .await
+        .map_err(query_error)?;
+        let existing = match existing {
+            Some(existing) => existing,
+            None => {
+                let inserted = organization_sso_login_transaction_cleanup_leases::ActiveModel {
+                    lease_key: Set(LOGIN_TRANSACTION_CLEANUP_LEASE_KEY.to_owned()),
+                    owner_token: Set(owner_token.clone()),
+                    lease_expires_at: Set(lease_expires_at),
+                    version: Set(1),
+                    updated_at: Set(now),
+                };
+                match inserted.insert(self.pool.connection()).await {
+                    Ok(_) => {
+                        return Ok(OrganizationSsoLoginTransactionCleanupLeaseOutcome::Acquired);
+                    }
+                    Err(_) => {
+                        organization_sso_login_transaction_cleanup_leases::Entity::find_by_id(
+                            LOGIN_TRANSACTION_CLEANUP_LEASE_KEY,
+                        )
+                        .one(self.pool.connection())
+                        .await
+                        .map_err(query_error)?
+                        .ok_or(OrganizationSsoRepositoryError::Query)?
+                    }
+                }
+            }
+        };
+        if existing.lease_expires_at > now && existing.owner_token != owner_token {
+            return Ok(OrganizationSsoLoginTransactionCleanupLeaseOutcome::Held);
+        }
+        let next_version = existing.version.checked_add(1).ok_or_else(invariant)?;
+        let result = organization_sso_login_transaction_cleanup_leases::Entity::update_many()
+            .col_expr(
+                organization_sso_login_transaction_cleanup_leases::Column::OwnerToken,
+                Expr::value(owner_token),
+            )
+            .col_expr(
+                organization_sso_login_transaction_cleanup_leases::Column::LeaseExpiresAt,
+                Expr::value(lease_expires_at),
+            )
+            .col_expr(
+                organization_sso_login_transaction_cleanup_leases::Column::Version,
+                Expr::value(next_version),
+            )
+            .col_expr(
+                organization_sso_login_transaction_cleanup_leases::Column::UpdatedAt,
+                Expr::value(now),
+            )
+            .filter(
+                organization_sso_login_transaction_cleanup_leases::Column::LeaseKey
+                    .eq(LOGIN_TRANSACTION_CLEANUP_LEASE_KEY),
+            )
+            .filter(
+                organization_sso_login_transaction_cleanup_leases::Column::Version
+                    .eq(existing.version),
+            )
+            .filter(
+                Condition::any()
+                    .add(
+                        organization_sso_login_transaction_cleanup_leases::Column::LeaseExpiresAt
+                            .lte(now),
+                    )
+                    .add(
+                        organization_sso_login_transaction_cleanup_leases::Column::OwnerToken
+                            .eq(existing.owner_token),
+                    ),
+            )
+            .exec(self.pool.connection())
+            .await
+            .map_err(query_error)?;
+        match result.rows_affected {
+            0 => Ok(OrganizationSsoLoginTransactionCleanupLeaseOutcome::Held),
+            1 => Ok(OrganizationSsoLoginTransactionCleanupLeaseOutcome::Acquired),
+            _ => Err(invariant()),
+        }
+    }
+
     async fn acquire_domain_reverification_lease_inner(
         &self,
+        lease_key: &str,
         now: i64,
         lease_duration: Duration,
         owner_token: String,
@@ -2172,17 +2394,15 @@ impl OrganizationSsoProviderRepository {
                 .checked_add(lease_seconds)
                 .ok_or_else(invariant)?,
         )?;
-        let existing = organization_sso_domain_reverification_leases::Entity::find_by_id(
-            DOMAIN_REVERIFICATION_LEASE_KEY,
-        )
-        .one(self.pool.connection())
-        .await
-        .map_err(query_error)?;
+        let existing = organization_sso_domain_reverification_leases::Entity::find_by_id(lease_key)
+            .one(self.pool.connection())
+            .await
+            .map_err(query_error)?;
         let existing = match existing {
             Some(existing) => existing,
             None => {
                 let inserted = organization_sso_domain_reverification_leases::ActiveModel {
-                    lease_key: Set(DOMAIN_REVERIFICATION_LEASE_KEY.to_owned()),
+                    lease_key: Set(lease_key.to_owned()),
                     owner_token: Set(owner_token.clone()),
                     lease_expires_at: Set(lease_expires_at),
                     version: Set(1),
@@ -2197,13 +2417,13 @@ impl OrganizationSsoProviderRepository {
                             },
                         ));
                     }
-                    Err(_) => organization_sso_domain_reverification_leases::Entity::find_by_id(
-                        DOMAIN_REVERIFICATION_LEASE_KEY,
-                    )
-                    .one(self.pool.connection())
-                    .await
-                    .map_err(query_error)?
-                    .ok_or(OrganizationSsoRepositoryError::Query)?,
+                    Err(_) => {
+                        organization_sso_domain_reverification_leases::Entity::find_by_id(lease_key)
+                            .one(self.pool.connection())
+                            .await
+                            .map_err(query_error)?
+                            .ok_or(OrganizationSsoRepositoryError::Query)?
+                    }
                 }
             }
         };
@@ -2228,10 +2448,7 @@ impl OrganizationSsoProviderRepository {
                 organization_sso_domain_reverification_leases::Column::UpdatedAt,
                 Expr::value(now),
             )
-            .filter(
-                organization_sso_domain_reverification_leases::Column::LeaseKey
-                    .eq(DOMAIN_REVERIFICATION_LEASE_KEY),
-            )
+            .filter(organization_sso_domain_reverification_leases::Column::LeaseKey.eq(lease_key))
             .filter(
                 organization_sso_domain_reverification_leases::Column::Version.eq(existing.version),
             )

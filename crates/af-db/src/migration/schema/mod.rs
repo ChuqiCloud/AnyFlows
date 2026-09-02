@@ -39,6 +39,7 @@ mod organization_credit_terms;
 mod organization_entitlement;
 mod organization_invitation;
 mod organization_sso_domain_reverification;
+mod organization_sso_login_transaction_cleanup;
 mod organization_wallet;
 mod payment;
 mod platform_audit;
@@ -202,6 +203,10 @@ pub(super) use organization_entitlement::create_organization_entitlements;
 pub(super) use organization_invitation::create_organization_invitations;
 pub(super) use organization_sso_domain_reverification::{
     create_organization_sso_domain_reverification, drop_organization_sso_domain_reverification,
+};
+pub(super) use organization_sso_login_transaction_cleanup::{
+    create_organization_sso_login_transaction_cleanup,
+    drop_organization_sso_login_transaction_cleanup,
 };
 pub(super) use organization_wallet::{
     create_organization_wallet_storage, drop_organization_wallet_storage,

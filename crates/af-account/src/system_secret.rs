@@ -6,6 +6,8 @@ use chacha20poly1305::{
     XChaCha20Poly1305, XNonce,
     aead::{Aead as _, KeyInit as _, Payload},
 };
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
 use thiserror::Error;
 use zeroize::{Zeroize as _, Zeroizing};
 
@@ -13,6 +15,8 @@ use crate::credential_decryption::{CredentialKey, is_valid_key_id};
 use crate::oauth::CustomOAuth2ProviderKey;
 
 const MAX_SYSTEM_SECRET_BYTES: usize = 4 * 1_024;
+const ORGANIZATION_SSO_PUBLIC_LOGIN_RATE_LIMIT_KEY_CONTEXT: &[u8] =
+    b"anyflows:organization-sso:public-login-rate-limit:v1";
 
 /// 系统密钥用途参与 AAD，避免不同业务域之间搬用密文。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -191,6 +195,15 @@ impl SystemSecretCipher {
             key_id: key_id.to_owned(),
             key,
         })
+    }
+
+    /// 从启动期主密钥派生企业 SSO 公开登录限流专用密钥，不暴露主密钥本身。
+    #[must_use]
+    pub fn organization_sso_public_login_rate_limit_key(&self) -> [u8; 32] {
+        let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(self.key.as_slice())
+            .expect("固定长度的启动期主密钥可用作 HMAC 密钥");
+        mac.update(ORGANIZATION_SSO_PUBLIC_LOGIN_RATE_LIMIT_KEY_CONTEXT);
+        mac.finalize().into_bytes().into()
     }
 
     /// 使用系统邮件专用 AAD 生成密文封套。

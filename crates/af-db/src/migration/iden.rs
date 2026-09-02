@@ -2559,6 +2559,29 @@ pub(in crate::migration) mod organization_sso_domain_reverification_leases {
     }
 }
 
+pub(in crate::migration) mod organization_sso_login_transaction_cleanup_leases {
+    use super::DeriveIden;
+
+    /// 企业 SSO 过期登录事务清理任务的独立租约表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_sso_login_transaction_cleanup_leases")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 清理租约字段标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        LeaseKey,
+        OwnerToken,
+        LeaseExpiresAt,
+        Version,
+        UpdatedAt,
+    }
+}
+
 pub(in crate::migration) mod organization_custom_roles {
     use super::DeriveIden;
 

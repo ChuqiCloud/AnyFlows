@@ -105,7 +105,9 @@ use crate::organization_budget::build_organization_budget_router;
 use crate::organization_contract_price::build_organization_contract_price_router;
 use crate::organization_scim_audit::build_organization_scim_audit_router;
 use crate::organization_service_account_runtime::build_organization_service_account_runtime_router;
-use crate::organization_sso_login::build_organization_sso_login_router;
+use crate::organization_sso_login::{
+    OrganizationSsoPublicLoginProtection, build_organization_sso_login_router_with_protection,
+};
 use crate::organization_tokens::build_organization_token_router;
 use crate::organization_wallet::build_organization_wallet_router;
 use crate::organizations::build_organization_router_with_domain;
@@ -249,6 +251,10 @@ pub fn build_router(
     organization_sso_login_service: Option<
         Arc<dyn af_admin::OrganizationSsoLoginTransactionService>,
     >,
+    organization_sso_public_login_rate_limit_store: Option<
+        Arc<dyn af_domain::OrganizationSsoPublicLoginRateLimitStore>,
+    >,
+    organization_sso_public_login_fingerprint_secret: [u8; 32],
     organization_sso_session_service: Option<Arc<dyn af_admin::OrganizationSsoSessionService>>,
     organization_sso_identity_binding_service: Option<
         Arc<dyn af_admin::OrganizationSsoIdentityBindingService>,
@@ -837,10 +843,18 @@ pub fn build_router(
         None => management_routes,
     };
     let management_routes = match organization_sso_login_service.clone() {
-        Some(service) => management_routes.merge(build_organization_sso_login_router(
-            service,
-            organization_sso_session_service,
-        )),
+        Some(service) => {
+            let router = build_organization_sso_login_router_with_protection(
+                service,
+                organization_sso_session_service,
+                Some(OrganizationSsoPublicLoginProtection::new(
+                    crate::client_ip::ClientIpResolver::from_config(config),
+                    organization_sso_public_login_rate_limit_store,
+                    organization_sso_public_login_fingerprint_secret,
+                )),
+            );
+            management_routes.merge(router)
+        }
         None => management_routes,
     };
     let management_routes = management_routes.merge(debug_trace_routes);

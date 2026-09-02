@@ -350,6 +350,7 @@ pub use organization_sso::{
 };
 pub use organization_sso_discovery::{
     OrganizationSsoDiscovery, OrganizationSsoDiscoveryServiceError,
+    normalize_organization_sso_public_login_identifier,
 };
 pub use organization_sso_domain::{
     DatabaseOrganizationSsoDomainService, OrganizationSsoDomain,

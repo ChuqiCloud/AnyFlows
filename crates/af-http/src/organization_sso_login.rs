@@ -6,20 +6,27 @@ use af_admin::{
     OrganizationSsoDiscoveryServiceError, OrganizationSsoLoginTransactionService,
     OrganizationSsoLoginTransactionServiceError, OrganizationSsoLoginTransactionStart,
     OrganizationSsoOidcCallback, OrganizationSsoSamlCallback, OrganizationSsoSessionService,
-    OrganizationSsoSessionServiceError,
+    OrganizationSsoSessionServiceError, normalize_organization_sso_public_login_identifier,
 };
-use af_domain::{OrganizationId, OrganizationSsoProtocol};
+use af_domain::{
+    OrganizationId, OrganizationSsoProtocol, OrganizationSsoPublicLoginRateLimitDecision,
+    OrganizationSsoPublicLoginRateLimitKey, OrganizationSsoPublicLoginRateLimitStore,
+};
 use axum::{
     Json, Router,
-    extract::{DefaultBodyLimit, RawQuery, State, rejection::JsonRejection},
+    extract::{DefaultBodyLimit, FromRequest, RawQuery, Request, State, rejection::JsonRejection},
     response::Response,
     routing::{get, post},
 };
-use http::{HeaderValue, StatusCode, header::CACHE_CONTROL};
+use http::{
+    HeaderValue, StatusCode,
+    header::{CACHE_CONTROL, RETRY_AFTER},
+};
 use serde::Serialize;
 use tower_http::limit::RequestBodyLimitLayer;
 use utoipa::ToSchema;
 
+use crate::client_ip::{ClientIpResolutionError, ClientIpResolver};
 use crate::management_session::no_store_json;
 
 const MAX_SAML_CALLBACK_BODY_BYTES: usize = 256 * 1024;
@@ -31,6 +38,29 @@ const ORGANIZATION_SSO_PUBLIC_LOGIN_START_PATH: &str = "/api/auth/organization-s
 struct OrganizationSsoLoginHttpState {
     service: Arc<dyn OrganizationSsoLoginTransactionService>,
     session_service: Option<Arc<dyn OrganizationSsoSessionService>>,
+    public_login_protection: Option<OrganizationSsoPublicLoginProtection>,
+}
+
+#[derive(Clone)]
+pub(crate) struct OrganizationSsoPublicLoginProtection {
+    client_ip_resolver: ClientIpResolver,
+    rate_limit_store: Option<Arc<dyn OrganizationSsoPublicLoginRateLimitStore>>,
+    fingerprint_secret: [u8; 32],
+}
+
+impl OrganizationSsoPublicLoginProtection {
+    #[must_use]
+    pub(crate) fn new(
+        client_ip_resolver: ClientIpResolver,
+        rate_limit_store: Option<Arc<dyn OrganizationSsoPublicLoginRateLimitStore>>,
+        fingerprint_secret: [u8; 32],
+    ) -> Self {
+        Self {
+            client_ip_resolver,
+            rate_limit_store,
+            fingerprint_secret,
+        }
+    }
 }
 
 /// 企业 SSO 回调当前只返回稳定错误投影，不返回 state、授权码或断言原文。
@@ -134,9 +164,18 @@ pub(crate) struct OrganizationSsoPublicLoginStartErrorResponse {
 }
 
 /// 构建不需要登录会话的企业 SSO 固定回调路由。
+#[cfg(test)]
 pub(crate) fn build_organization_sso_login_router(
     service: Arc<dyn OrganizationSsoLoginTransactionService>,
     session_service: Option<Arc<dyn OrganizationSsoSessionService>>,
+) -> Router {
+    build_organization_sso_login_router_with_protection(service, session_service, None)
+}
+
+pub(crate) fn build_organization_sso_login_router_with_protection(
+    service: Arc<dyn OrganizationSsoLoginTransactionService>,
+    session_service: Option<Arc<dyn OrganizationSsoSessionService>>,
+    public_login_protection: Option<OrganizationSsoPublicLoginProtection>,
 ) -> Router {
     let mut router = Router::new()
         .route(
@@ -166,18 +205,71 @@ pub(crate) fn build_organization_sso_login_router(
     router.with_state(OrganizationSsoLoginHttpState {
         service,
         session_service,
+        public_login_protection,
     })
 }
 
 /// 重新复验公开标识并创建一次性事务；响应不包含企业和 Provider 标识。
 async fn start_public_organization_sso_login(
     State(state): State<OrganizationSsoLoginHttpState>,
-    request: Result<Json<OrganizationSsoPublicLoginStartRequest>, JsonRejection>,
+    mut request: Request,
 ) -> Response {
-    let Json(request) = match request {
-        Ok(request) => request,
-        Err(_) => return public_login_start_error(StatusCode::BAD_REQUEST, "invalid_request"),
+    let client_ip = match state.public_login_protection.as_ref() {
+        Some(protection) => match protection.client_ip_resolver.resolve(&mut request) {
+            Ok(client_ip) => Some(client_ip),
+            Err(ClientIpResolutionError::MissingPeer) => {
+                tracing::error!(
+                    target: "af_http::organization_sso_login",
+                    error_kind = "client_ip_missing_peer",
+                    "企业 SSO 公开启动缺少 TCP 对端信息"
+                );
+                return public_login_start_error(StatusCode::INTERNAL_SERVER_ERROR, "unavailable");
+            }
+            Err(ClientIpResolutionError::InvalidProxyChain) => {
+                return public_login_start_error(StatusCode::BAD_REQUEST, "invalid_request");
+            }
+        },
+        None => None,
     };
+    let Json(request) =
+        match Json::<OrganizationSsoPublicLoginStartRequest>::from_request(request, &()).await {
+            Ok(request) => request,
+            Err(_) => return public_login_start_error(StatusCode::BAD_REQUEST, "invalid_request"),
+        };
+    let normalized_identifier =
+        match normalize_organization_sso_public_login_identifier(&request.identifier) {
+            Ok(identifier) => identifier,
+            Err(OrganizationSsoDiscoveryServiceError::InvalidInput) => {
+                return public_login_start_error(StatusCode::BAD_REQUEST, "invalid_request");
+            }
+            Err(OrganizationSsoDiscoveryServiceError::Internal) => {
+                return public_login_start_error(StatusCode::SERVICE_UNAVAILABLE, "unavailable");
+            }
+        };
+    if let Some(protection) = state.public_login_protection.as_ref() {
+        let Some(client_ip) = client_ip else {
+            return public_login_start_error(StatusCode::SERVICE_UNAVAILABLE, "unavailable");
+        };
+        let Some(rate_limit_store) = protection.rate_limit_store.as_ref() else {
+            return public_login_start_error(StatusCode::SERVICE_UNAVAILABLE, "unavailable");
+        };
+        let key = OrganizationSsoPublicLoginRateLimitKey::new(
+            &protection.fingerprint_secret,
+            client_ip,
+            &normalized_identifier,
+        );
+        match rate_limit_store.admit(key).await {
+            OrganizationSsoPublicLoginRateLimitDecision::Admitted => {}
+            OrganizationSsoPublicLoginRateLimitDecision::Limited {
+                retry_after_seconds,
+            } => {
+                return public_login_start_rate_limited(retry_after_seconds);
+            }
+            OrganizationSsoPublicLoginRateLimitDecision::Rejected => {
+                return public_login_start_error(StatusCode::SERVICE_UNAVAILABLE, "unavailable");
+            }
+        }
+    }
     match state.service.begin_public(request.identifier).await {
         Ok(start) => public_login_start_response(&start).unwrap_or_else(|| {
             public_login_start_error(StatusCode::SERVICE_UNAVAILABLE, "unavailable")
@@ -258,6 +350,14 @@ fn public_login_start_error(status: StatusCode, code: &'static str) -> Response 
     let mut response =
         no_store_json(OrganizationSsoPublicLoginStartErrorResponse { code, message });
     *response.status_mut() = status;
+    response
+}
+
+fn public_login_start_rate_limited(retry_after_seconds: u32) -> Response {
+    let mut response = public_login_start_error(StatusCode::TOO_MANY_REQUESTS, "not_available");
+    if let Ok(value) = HeaderValue::try_from(retry_after_seconds.to_string()) {
+        response.headers_mut().insert(RETRY_AFTER, value);
+    }
     response
 }
 
