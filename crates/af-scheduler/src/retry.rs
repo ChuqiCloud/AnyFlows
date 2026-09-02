@@ -356,8 +356,8 @@ mod tests {
         let error = UpstreamError::ServerError {
             status: UpstreamServerStatus::new(503).unwrap(),
         };
-        let mut plan = WeightedRetryPlan::new_with_health(vec![first, cooling, fallback], &health)
-            .unwrap();
+        let mut plan =
+            WeightedRetryPlan::new_with_health(vec![first, cooling, fallback], &health).unwrap();
 
         let initial = plan.select_next().unwrap().unwrap();
         assert_eq!(initial.candidate().channel_id(), first.channel_id());
