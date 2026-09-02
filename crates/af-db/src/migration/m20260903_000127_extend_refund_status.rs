@@ -1,10 +1,6 @@
 use sea_orm::{ConnectionTrait, DbBackend, Statement};
 use sea_orm_migration::prelude::*;
 
-use crate::migration::iden::refund_requests;
-
-use super::schema;
-
 /// 扩展退款请求状态范围，允许人工退款完成事实落在独立终态。
 #[derive(DeriveMigrationName)]
 pub struct Migration;

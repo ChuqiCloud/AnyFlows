@@ -920,7 +920,7 @@ async fn complete_manual_refund_transaction(
     let manual = refund_manual_completions::ActiveModel {
         id: sea_orm::NotSet,
         completion_key: Set(completion.completion_key().persistence_key()),
-        request_key: Set(request_key),
+        request_key: Set(request_key.clone()),
         expected_version: Set(i64::try_from(completion.expected_version())
             .map_err(|_| RefundRepositoryError::Invariant)?),
         actor_user_id: Set(completion.actor_id().get()),

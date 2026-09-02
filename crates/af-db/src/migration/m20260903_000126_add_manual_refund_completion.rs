@@ -2,7 +2,7 @@ use sea_orm::{ConnectionTrait, DbBackend, Statement};
 use sea_orm_migration::prelude::*;
 
 use crate::migration::iden::{
-    organizations, refund_manual_completions, refund_reconciliation_entries, refund_requests, users,
+    refund_manual_completions, refund_reconciliation_entries, refund_requests, users,
 };
 
 use super::schema;
