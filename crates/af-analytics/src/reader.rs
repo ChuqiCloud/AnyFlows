@@ -382,7 +382,7 @@ mod tests {
             )],
             vec![AdminDashboardChannelFlow::new(
                 Protocol::OpenAi,
-                ChannelId::new(7),
+                ChannelId::new(7).unwrap(),
                 "primary".to_owned(),
                 3,
             )],
