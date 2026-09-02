@@ -1971,9 +1971,7 @@
     },
     "/api/admin/refunds": {
       "get": {
-        "tags": [
-          "退款审批"
-        ],
+        "tags": ["退款审批"],
         "summary": "读取退款审批列表",
         "operationId": "listAdminRefunds",
         "parameters": [
