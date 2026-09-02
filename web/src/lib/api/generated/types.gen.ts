@@ -1266,6 +1266,99 @@ export type ContractPriceValues = {
     cache_creation_5m: string;
     cache_creation_1h: string;
 };
+export type CreditAllocationListResponse = {
+    allocations: Array<CreditAllocationResponse>;
+    next_cursor: number | null;
+};
+export type CreditAllocationResponse = {
+    id: number;
+    organization_id: number;
+    repayment_id: number;
+    invoice_id: number;
+    currency: string;
+    amount_minor: number;
+    allocated_at: number;
+    invoice_settled: boolean;
+    created_at: number;
+};
+export type CreditInvoiceListResponse = {
+    invoices: Array<CreditInvoiceResponse>;
+    next_cursor: number | null;
+};
+export type CreditInvoiceResponse = {
+    id: number;
+    organization_id: number;
+    currency: string;
+    amount_minor: number;
+    term_version: number;
+    period: CreditTermPeriodResponse;
+    issued_at: number;
+    due_at: number;
+    status: CreditInvoiceStatusResponse;
+    status_changed_at: number;
+    settled_at: number | null;
+    voided_at: number | null;
+    created_at: number;
+    updated_at: number;
+};
+export type CreditInvoiceStatusResponse = 'due' | 'overdue' | 'settled' | 'voided';
+export type CreditRepaymentListResponse = {
+    repayments: Array<CreditRepaymentResponse>;
+    next_cursor: number | null;
+};
+export type CreditRepaymentResponse = {
+    id: number;
+    organization_id: number;
+    currency: string;
+    amount_minor: number;
+    source_kind: CreditRepaymentSourceKindResponse;
+    received_at: number;
+    created_at: number;
+};
+export type CreditRepaymentSourceKindResponse = 'bank_transfer' | 'other_confirmed';
+export type CreditTermCreateRequest = {
+    currency: string;
+    credit_limit: number;
+    period: CreditTermPeriodRequest;
+    effective_from: number;
+    effective_until: number | null;
+    expected_version: number | null;
+};
+export type CreditTermListResponse = {
+    terms: Array<CreditTermResponse>;
+    next_cursor: number | null;
+};
+export type CreditTermPeriodRequest = {
+    days: number;
+    kind: 'net_days';
+} | {
+    kind: 'end_of_month';
+};
+export type CreditTermPeriodResponse = {
+    days: number;
+    kind: 'net_days';
+} | {
+    kind: 'end_of_month';
+};
+export type CreditTermResponse = {
+    id: number;
+    organization_id: number;
+    currency: string;
+    credit_limit: number;
+    period: CreditTermPeriodResponse;
+    status: CreditTermStatusResponse;
+    effective_from: number;
+    effective_until: number | null;
+    version: number;
+    created_by_user_id: number;
+    created_at: number;
+    updated_at: number;
+};
+export type CreditTermStatusRequest = {
+    status: string;
+    expected_version: number;
+};
+export type CreditTermStatusResponse = 'active' | 'paused' | 'closed';
 export type IssuedAdminRedemptionBatch = {
     batch: AdminRedemptionBatch;
     codes: Array<string>;
@@ -1294,7 +1387,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'two_factor_required' | 'two_factor_invalid' | 'password_login_disabled' | 'turnstile_rejected' | 'turnstile_unavailable' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'site_settings_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'token_outcome_unknown' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_login_settings_conflict' | 'custom_oauth2_provider_not_found' | 'custom_oauth2_provider_conflict' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'organization_not_found' | 'organization_approval_not_found' | 'organization_approval_conflict' | 'organization_approval_expired' | 'organization_contract_price_not_found' | 'organization_contract_price_interval_conflict' | 'organization_contract_price_conflict' | 'organization_contract_price_transition_invalid' | 'organization_sso_provider_not_found' | 'organization_sso_provider_conflict' | 'organization_sso_provider_transition_invalid' | 'organization_sso_identity_binding_rejected' | 'organization_sso_identity_binding_conflict' | 'organization_sso_recovery_rejected' | 'organization_sso_recovery_conflict' | 'organization_sso_recovery_unavailable' | 'organization_sso_domain_not_found' | 'organization_sso_domain_conflict' | 'organization_sso_domain_transition_invalid' | 'organization_sso_domain_verification_failed' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'refund_not_found' | 'refund_conflict' | 'refund_unavailable' | 'refund_auto_submit_failed' | 'refund_outcome_unknown' | 'topup_unavailable' | 'topup_provider_rejected' | 'topup_order_conflict' | 'topup_order_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'subscription_plan_not_found' | 'subscription_plan_disabled' | 'subscription_not_found' | 'subscription_transition_invalid' | 'subscription_in_use' | 'subscription_conflict' | 'subscription_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'two_factor_already_enabled' | 'two_factor_not_enabled' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'debug_trace_not_found' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_expression_invalid' | 'model_price_expression_preview_invalid' | 'model_price_expression_evaluation_failed' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'two_factor_required' | 'two_factor_invalid' | 'password_login_disabled' | 'turnstile_rejected' | 'turnstile_unavailable' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'site_settings_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'token_outcome_unknown' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_login_settings_conflict' | 'custom_oauth2_provider_not_found' | 'custom_oauth2_provider_conflict' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'organization_not_found' | 'organization_credit_invalid_request' | 'organization_credit_not_found' | 'organization_credit_interval_conflict' | 'organization_credit_conflict' | 'organization_credit_transition_invalid' | 'organization_approval_not_found' | 'organization_approval_conflict' | 'organization_approval_expired' | 'organization_contract_price_not_found' | 'organization_contract_price_interval_conflict' | 'organization_contract_price_conflict' | 'organization_contract_price_transition_invalid' | 'organization_sso_provider_not_found' | 'organization_sso_provider_conflict' | 'organization_sso_provider_transition_invalid' | 'organization_sso_identity_binding_rejected' | 'organization_sso_identity_binding_conflict' | 'organization_sso_recovery_rejected' | 'organization_sso_recovery_conflict' | 'organization_sso_recovery_unavailable' | 'organization_sso_domain_not_found' | 'organization_sso_domain_conflict' | 'organization_sso_domain_transition_invalid' | 'organization_sso_domain_verification_failed' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'refund_not_found' | 'refund_conflict' | 'refund_unavailable' | 'refund_auto_submit_failed' | 'refund_outcome_unknown' | 'topup_unavailable' | 'topup_provider_rejected' | 'topup_order_conflict' | 'topup_order_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'subscription_plan_not_found' | 'subscription_plan_disabled' | 'subscription_not_found' | 'subscription_transition_invalid' | 'subscription_in_use' | 'subscription_conflict' | 'subscription_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'two_factor_already_enabled' | 'two_factor_not_enabled' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'debug_trace_not_found' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_expression_invalid' | 'model_price_expression_preview_invalid' | 'model_price_expression_evaluation_failed' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
     message: string;
 };
 export type ModelCatalogBillingMode = 'per_token' | 'free';
@@ -7189,6 +7282,225 @@ export type CloseOrganizationContractPriceResponses = {
     200: ContractPriceResponse;
 };
 export type CloseOrganizationContractPriceResponse = CloseOrganizationContractPriceResponses[keyof CloseOrganizationContractPriceResponses];
+export type ListOrganizationCreditTermsData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/organizations/{organization_id}/credit-terms';
+};
+export type ListOrganizationCreditTermsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationCreditTermsError = ListOrganizationCreditTermsErrors[keyof ListOrganizationCreditTermsErrors];
+export type ListOrganizationCreditTermsResponses = {
+    200: CreditTermListResponse;
+};
+export type ListOrganizationCreditTermsResponse = ListOrganizationCreditTermsResponses[keyof ListOrganizationCreditTermsResponses];
+export type CreateOrganizationCreditTermData = {
+    body: CreditTermCreateRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/credit-terms';
+};
+export type CreateOrganizationCreditTermErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type CreateOrganizationCreditTermError = CreateOrganizationCreditTermErrors[keyof CreateOrganizationCreditTermErrors];
+export type CreateOrganizationCreditTermResponses = {
+    201: CreditTermResponse;
+};
+export type CreateOrganizationCreditTermResponse = CreateOrganizationCreditTermResponses[keyof CreateOrganizationCreditTermResponses];
+export type GetOrganizationCreditTermData = {
+    body?: never;
+    path: {
+        organization_id: number;
+        term_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/credit-terms/{term_id}';
+};
+export type GetOrganizationCreditTermErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetOrganizationCreditTermError = GetOrganizationCreditTermErrors[keyof GetOrganizationCreditTermErrors];
+export type GetOrganizationCreditTermResponses = {
+    200: CreditTermResponse;
+};
+export type GetOrganizationCreditTermResponse = GetOrganizationCreditTermResponses[keyof GetOrganizationCreditTermResponses];
+export type UpdateOrganizationCreditTermStatusData = {
+    body: CreditTermStatusRequest;
+    path: {
+        organization_id: number;
+        term_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/credit-terms/{term_id}/status';
+};
+export type UpdateOrganizationCreditTermStatusErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateOrganizationCreditTermStatusError = UpdateOrganizationCreditTermStatusErrors[keyof UpdateOrganizationCreditTermStatusErrors];
+export type UpdateOrganizationCreditTermStatusResponses = {
+    200: CreditTermResponse;
+};
+export type UpdateOrganizationCreditTermStatusResponse = UpdateOrganizationCreditTermStatusResponses[keyof UpdateOrganizationCreditTermStatusResponses];
+export type ListOrganizationCreditInvoicesData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/organizations/{organization_id}/credit-invoices';
+};
+export type ListOrganizationCreditInvoicesErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationCreditInvoicesError = ListOrganizationCreditInvoicesErrors[keyof ListOrganizationCreditInvoicesErrors];
+export type ListOrganizationCreditInvoicesResponses = {
+    200: CreditInvoiceListResponse;
+};
+export type ListOrganizationCreditInvoicesResponse = ListOrganizationCreditInvoicesResponses[keyof ListOrganizationCreditInvoicesResponses];
+export type GetOrganizationCreditInvoiceData = {
+    body?: never;
+    path: {
+        organization_id: number;
+        invoice_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/credit-invoices/{invoice_id}';
+};
+export type GetOrganizationCreditInvoiceErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetOrganizationCreditInvoiceError = GetOrganizationCreditInvoiceErrors[keyof GetOrganizationCreditInvoiceErrors];
+export type GetOrganizationCreditInvoiceResponses = {
+    200: CreditInvoiceResponse;
+};
+export type GetOrganizationCreditInvoiceResponse = GetOrganizationCreditInvoiceResponses[keyof GetOrganizationCreditInvoiceResponses];
+export type ListOrganizationCreditRepaymentsData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/organizations/{organization_id}/credit-repayments';
+};
+export type ListOrganizationCreditRepaymentsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationCreditRepaymentsError = ListOrganizationCreditRepaymentsErrors[keyof ListOrganizationCreditRepaymentsErrors];
+export type ListOrganizationCreditRepaymentsResponses = {
+    200: CreditRepaymentListResponse;
+};
+export type ListOrganizationCreditRepaymentsResponse = ListOrganizationCreditRepaymentsResponses[keyof ListOrganizationCreditRepaymentsResponses];
+export type GetOrganizationCreditRepaymentData = {
+    body?: never;
+    path: {
+        organization_id: number;
+        repayment_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/credit-repayments/{repayment_id}';
+};
+export type GetOrganizationCreditRepaymentErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetOrganizationCreditRepaymentError = GetOrganizationCreditRepaymentErrors[keyof GetOrganizationCreditRepaymentErrors];
+export type GetOrganizationCreditRepaymentResponses = {
+    200: CreditRepaymentResponse;
+};
+export type GetOrganizationCreditRepaymentResponse = GetOrganizationCreditRepaymentResponses[keyof GetOrganizationCreditRepaymentResponses];
+export type ListOrganizationCreditAllocationsData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/organizations/{organization_id}/credit-allocations';
+};
+export type ListOrganizationCreditAllocationsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationCreditAllocationsError = ListOrganizationCreditAllocationsErrors[keyof ListOrganizationCreditAllocationsErrors];
+export type ListOrganizationCreditAllocationsResponses = {
+    200: CreditAllocationListResponse;
+};
+export type ListOrganizationCreditAllocationsResponse = ListOrganizationCreditAllocationsResponses[keyof ListOrganizationCreditAllocationsResponses];
+export type GetOrganizationCreditAllocationData = {
+    body?: never;
+    path: {
+        organization_id: number;
+        allocation_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/credit-allocations/{allocation_id}';
+};
+export type GetOrganizationCreditAllocationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetOrganizationCreditAllocationError = GetOrganizationCreditAllocationErrors[keyof GetOrganizationCreditAllocationErrors];
+export type GetOrganizationCreditAllocationResponses = {
+    200: CreditAllocationResponse;
+};
+export type GetOrganizationCreditAllocationResponse = GetOrganizationCreditAllocationResponses[keyof GetOrganizationCreditAllocationResponses];
 export type DiscoverOrganizationSsoData = {
     body: OrganizationSsoDiscoveryRequest;
     path?: never;

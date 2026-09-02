@@ -32,6 +32,7 @@ mod organization_approval;
 mod organization_approval_execution;
 mod organization_budget;
 mod organization_contract_price;
+mod organization_credit_terms;
 mod organization_custom_role;
 mod organization_custom_role_binding;
 mod organization_invitation;
@@ -102,6 +103,10 @@ pub use af_db::{
     OrganizationMembershipRecord, OrganizationTeamRecord, OrganizationWalletLedgerEntryType,
 };
 pub use af_db::{OrganizationAuditOutcome, PlatformAuditOutcome};
+pub use af_db::{
+    OrganizationCreditInvoiceRecord, OrganizationCreditRepaymentAllocationRecord,
+    OrganizationCreditRepaymentRecord, OrganizationCreditTermsRecord,
+};
 pub use af_db::{
     OrganizationScimAuditPageRecord, OrganizationScimAuditQuery, OrganizationScimAuditRecord,
 };
@@ -282,6 +287,15 @@ pub use organization_contract_price::{
     OrganizationContractPriceCreateCommand, OrganizationContractPriceFuture,
     OrganizationContractPriceListFuture, OrganizationContractPriceService,
     OrganizationContractPriceServiceError,
+};
+pub use organization_credit_terms::{
+    DatabaseOrganizationCreditTermsService, OrganizationCreditInvoiceFuture,
+    OrganizationCreditInvoicePageFuture, OrganizationCreditRepaymentAllocationFuture,
+    OrganizationCreditRepaymentAllocationPageFuture, OrganizationCreditRepaymentFuture,
+    OrganizationCreditRepaymentPageFuture, OrganizationCreditTermsCreateCommand,
+    OrganizationCreditTermsFuture, OrganizationCreditTermsListFuture,
+    OrganizationCreditTermsPageFuture, OrganizationCreditTermsService,
+    OrganizationCreditTermsServiceError, OrganizationCreditTermsStatusCommand,
 };
 pub use organization_custom_role::{
     DEFAULT_ORGANIZATION_CUSTOM_ROLE_PAGE_SIZE, DatabaseOrganizationCustomRoleService,

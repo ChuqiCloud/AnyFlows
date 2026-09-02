@@ -89,6 +89,7 @@ const navItems = {
   organizationActivity: { key: 'organizationActivity', icon: History, href: '#/console/organization-activity' },
   organizationBudgets: { key: 'organizationBudgets', icon: Building2, href: '#/console/organization-budgets' },
   organizationContractPrices: { key: 'organizationContractPrices', icon: CircleDollarSign, href: '#/console/organization-contract-prices' },
+  organizationCredit: { key: 'organizationCredit', icon: Landmark, href: '#/console/organization-credit' },
   organizationApprovals: { key: 'organizationApprovals', icon: ClipboardCheck, href: '#/console/organization-approvals' },
   organizationMembers: { key: 'organizationMembers', icon: UsersRound, href: '#/console/organization-members' },
   organizationDepartments: { key: 'organizationDepartments', icon: Building2, href: '#/console/organization-departments' },
