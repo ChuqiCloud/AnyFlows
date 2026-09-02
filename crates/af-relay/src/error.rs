@@ -222,7 +222,14 @@ pub(crate) const fn is_retryable(error: UpstreamError) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::net::SocketAddr;
+
     use super::*;
+
+    use af_adapter::{HeaderName, HeaderValue};
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    use url::Url;
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
 
     #[test]
     fn adaptor_transport_errors_keep_only_the_stable_failure_stage() {
@@ -321,5 +328,142 @@ mod tests {
             headers.insert("retry-after", invalid.parse().unwrap());
             assert_eq!(parse_retry_after(&headers), None, "未拒绝 {invalid}");
         }
+    }
+
+    #[tokio::test]
+    async fn wiremock_matrix_keeps_provider_errors_structured_and_redacted() {
+        struct Case {
+            path: &'static str,
+            status: u16,
+            body: &'static str,
+            retry_after: Option<&'static str>,
+            expected: UpstreamError,
+        }
+
+        let retry_after = UpstreamRetryAfter::from_seconds(17).unwrap();
+        let cases = [
+            Case {
+                path: "/openai-rate-limit",
+                status: 429,
+                body: r#"{"error":{"code":"rate_limit_exceeded","message":"openai-secret"}}"#,
+                retry_after: Some("17"),
+                expected: UpstreamError::rate_limited_after(RateLimitScope::Window, retry_after),
+            },
+            Case {
+                path: "/openai-revoked",
+                status: 401,
+                body: r#"{"error":{"code":"invalid_api_key","message":"revoked-secret"}}"#,
+                retry_after: None,
+                expected: UpstreamError::AuthRevoked,
+            },
+            Case {
+                path: "/anthropic-overloaded",
+                status: 529,
+                body: r#"{"type":"error","error":{"type":"overloaded_error","message":"anthropic-secret"}}"#,
+                retry_after: Some("17"),
+                expected: UpstreamError::overloaded_after(retry_after),
+            },
+            Case {
+                path: "/anthropic-billing",
+                status: 400,
+                body: r#"{"type":"error","error":{"type":"billing_error","message":"billing-secret"}}"#,
+                retry_after: None,
+                expected: UpstreamError::QuotaExhausted,
+            },
+            Case {
+                path: "/gemini-rate-limit",
+                status: 429,
+                body: r#"{"error":{"code":429,"status":"RESOURCE_EXHAUSTED","message":"gemini-secret"}}"#,
+                retry_after: Some("17"),
+                expected: UpstreamError::rate_limited_after(RateLimitScope::Unknown, retry_after),
+            },
+            Case {
+                path: "/generic-server-error",
+                status: 503,
+                body: r#"{"error":{"message":"server-secret"}}"#,
+                retry_after: None,
+                expected: UpstreamError::ServerError {
+                    status: af_domain::UpstreamServerStatus::new(503).unwrap(),
+                },
+            },
+        ];
+
+        let server = MockServer::start().await;
+        for case in &cases {
+            let mut response = ResponseTemplate::new(case.status).set_body_string(case.body);
+            if let Some(retry_after) = case.retry_after {
+                response = response.insert_header("retry-after", retry_after);
+            }
+            Mock::given(method("GET"))
+                .and(wiremock::matchers::path(case.path))
+                .respond_with(response)
+                .mount(&server)
+                .await;
+        }
+
+        for case in cases {
+            let (status, headers, body) = fetch_wiremock_response(&server, case.path).await;
+            let retry_after = parse_retry_after(&headers);
+            let classified = classify_upstream_status(status, retry_after, &body);
+
+            assert_eq!(classified, case.expected, "mock path {}", case.path);
+            let debug = format!("{classified:?}");
+            assert!(!debug.contains("secret"), "分类泄露了 mock 正文");
+        }
+    }
+
+    async fn fetch_wiremock_response(
+        server: &MockServer,
+        path: &str,
+    ) -> (StatusCode, HeaderMap, Vec<u8>) {
+        let endpoint = Url::parse(&format!("{}{}", server.uri(), path)).unwrap();
+        let address = SocketAddr::new(
+            endpoint.host().unwrap().to_string().parse().unwrap(),
+            endpoint.port().unwrap(),
+        );
+        let mut stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        stream
+            .write_all(
+                format!(
+                    "GET {path} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
+                    endpoint.host_str().unwrap()
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+        let mut response = Vec::new();
+        stream.read_to_end(&mut response).await.unwrap();
+
+        let header_end = response
+            .windows(4)
+            .position(|window| window == b"\r\n\r\n")
+            .unwrap()
+            + 4;
+        let header_text = std::str::from_utf8(&response[..header_end]).unwrap();
+        let status = StatusCode::from_u16(
+            header_text
+                .lines()
+                .next()
+                .unwrap()
+                .split_whitespace()
+                .nth(1)
+                .unwrap()
+                .parse()
+                .unwrap(),
+        )
+        .unwrap();
+        let mut headers = HeaderMap::new();
+        if let Some(value) = header_text.lines().find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("retry-after")
+                .then_some(value.trim())
+        }) {
+            headers.insert(
+                HeaderName::from_static("retry-after"),
+                HeaderValue::from_str(value).unwrap(),
+            );
+        }
+        (status, headers, response[header_end..].to_vec())
     }
 }
