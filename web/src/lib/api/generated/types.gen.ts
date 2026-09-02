@@ -910,6 +910,12 @@ export type AdminRefundListResponse = {
     entries: Array<AdminRefundRequest>;
     next_cursor: number | null;
 };
+export type AdminRefundManualCompletionRequest = {
+    completion_key: string;
+    expected_version: number;
+    result: string;
+    reference: string;
+};
 export type AdminRefundOrderKind = 'topup' | 'subscription';
 export type AdminRefundRequest = {
     request_id: string;
@@ -930,12 +936,6 @@ export type AdminRefundRequest = {
     updated_at: number;
 };
 export type AdminRefundStatus = 'requested' | 'submitted' | 'succeeded' | 'failed' | 'canceled' | 'manually_succeeded' | 'manually_failed';
-export type AdminRefundManualCompletionRequest = {
-    completion_key: string;
-    expected_version: number;
-    result: 'completed' | 'failed';
-    reference: string;
-};
 export type AdminResponsesCompactProbe = {
     result: ResponsesCompactProbeResult;
     checked_at: number | null;
