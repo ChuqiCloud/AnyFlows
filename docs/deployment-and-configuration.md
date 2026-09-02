@@ -65,12 +65,28 @@ curl --fail http://127.0.0.1:8080/readyz
 | `AF_SERVER__BIND` | 服务监听地址 | 生产保持 `127.0.0.1:8080`，不要改为公网地址 |
 | `AF_DATABASE__URL` | 数据库连接 | Docker 使用 Compose 注入的 PostgreSQL；systemd 默认使用 `/var/lib/anyflows/anyflows.db` |
 | `AF_REDIS__URL` | Redis 连接 | OAuth 刷新、请求限流和公开 SSO 启动防护依赖 Redis；公开 SSO 限流在 Redis 不可用时失败关闭 |
+| `AF_REDIS__REQUEST_RATE_LIMIT_NAMESPACE` | 请求限流键空间 | 默认 `anyflows.gateway.rpm.v1`；多实例必须保持一致，变更会使旧固定窗口失效 |
+| `AF_CLICKHOUSE_ANALYTICS__*` | 可选 ClickHouse 只读看板事实源 | 必须完整配置端点、单条参数化查询、只读账号、超时和响应上限；缺失时继续使用事务主库 |
+| `AF_CLICKHOUSE_EXPORT__*` | 可选 ClickHouse 异步事实投递 | 与只读账号分离；查询只能是 `INSERT INTO`，主库 outbox 负责有界回填、重试和去重，失败不影响计费或请求终态 |
 | `AF_AUTH__SESSION_SIGNING_KEY` | 管理会话签名 | 必须是 32 字节随机值的 Base64URL 无填充文本，泄露后需轮换并重新登录 |
 | `AF_CREDENTIAL_ENCRYPTION__KEY_ID` / `AF_CREDENTIAL_ENCRYPTION__KEY` | 渠道凭据加密 | ID 与 32 字节 Base64URL 无填充密钥必须成对配置；轮换时保留旧密钥的受控解密能力 |
 | `AF_BILLING__WAL_DIRECTORY` | 计费 WAL 目录 | 每个实例必须独占目录，并纳入备份和磁盘监控 |
 | `AF_HTTP_CLIENT__PROXY_URL` | 上游代理 | 只填写受控 HTTP(S)、SOCKS5 或 SOCKS5H 代理；运行时不读取系统代理环境变量 |
 | `AF_OAUTH__*` | 上游订阅账号 OAuth 客户端材料 | 仅从启动配置读取；未配置的 Provider 不注册，密钥不得写入数据库或前端 |
 | `AF_PAYMENT__*` | Stripe 支付与回执 | 服务端密钥和 webhook 密钥只通过部署密钥管理注入；Epay 人工退款不使用自动退款密钥 |
+| `AF_OPENAI_UPSTREAM__*` | 旧版静态 OpenAI-compatible 配置 | 可选且三项必须同时存在，仅保留兼容解析；M1 生产 Chat 只使用数据库渠道，不把它作为回退目标 |
+
+### ClickHouse 可选配置
+
+ClickHouse 配置默认关闭，只有对应配置段完整存在时才会启用。分析读取和异步投递必须使用不同的账号与权限：前者只授予查询权限，后者只授予目标事实表的写入权限。端点必须是无凭据、无查询参数和无片段的 HTTP(S) 地址，密钥不得写入仓库、日志或镜像层。
+
+`AF_CLICKHOUSE_ANALYTICS__QUERY` 是单条参数化查询，必须包含 `{period_start:Int64}` 与 `{period_end:Int64}`，返回一行与管理看板快照结构一致的 `JSONEachRow`。查询不得包含分号；超时默认 5 秒、上限 300 秒，响应体默认 1 MiB、上限 4 MiB。配置段缺失时，管理看板仍从事务主库读取，ClickHouse 不会覆盖当前渠道状态。
+
+`AF_CLICKHOUSE_EXPORT__USAGE_INSERT_QUERY` 与 `AF_CLICKHOUSE_EXPORT__OUTCOME_INSERT_QUERY` 必须是单条 `INSERT INTO` 查询，运行时追加 `FORMAT JSONEachRow`、异步写入参数和去重 token。批量大小默认 64（上限 256），扫描周期默认 5 秒（上限 3600），请求超时默认 5 秒（上限 300），请求体默认 4 MiB（上限 16 MiB），历史回填默认 128 条（上限 256）。投递失败只会延迟 outbox 事实并触发受控重试，不回滚主库事实、计费结算或请求终态。
+
+### 静态上游兼容配置
+
+`AF_OPENAI_UPSTREAM__BASE_URL`、`AF_OPENAI_UPSTREAM__MODEL` 和 `AF_OPENAI_UPSTREAM__API_KEY` 仅用于旧版嵌入式配置的兼容解析，三项必须同时提供。M1 生产路径不会读取这些字段进行选路，也不会在数据库渠道不可用时回退到静态目标；新部署应优先配置数据库渠道与加密凭据。
 
 配置变更通常需要重启应用。不要在运行中的容器或服务内直接编辑配置，也不要把 `AF_AUTH__SESSION_SIGNING_KEY`、`AF_CREDENTIAL_ENCRYPTION__KEY`、支付密钥或 OAuth client secret 放入命令历史。
 
