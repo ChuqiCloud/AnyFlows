@@ -191,6 +191,19 @@ mod tests {
     }
 
     #[test]
+    fn rule_accepts_maximum_window_and_limit() {
+        let rule = RequestRateLimitRule::new(
+            RequestRateLimitSubject::Group(GroupId::new(2).unwrap()),
+            NonZeroU32::new(u32::MAX).unwrap(),
+            MAX_REQUEST_RATE_LIMIT_WINDOW,
+        )
+        .unwrap();
+        assert_eq!(rule.limit().get(), u32::MAX);
+        assert_eq!(rule.window(), MAX_REQUEST_RATE_LIMIT_WINDOW);
+        assert_eq!(rule.window_millis(), 7 * 24 * 60 * 60 * 1_000);
+    }
+
+    #[test]
     fn config_debug_redacts_namespace_and_redis_url() {
         let config = RedisRequestRateLimitConfig::new(
             RedisConfig::new("redis://user:secret@127.0.0.1/"),

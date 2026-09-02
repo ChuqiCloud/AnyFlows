@@ -175,7 +175,8 @@ async fn verify_request_rate_limit_contract(redis_url: &str, namespace: &str) {
     };
     let first = RedisRequestRateLimitStore::connect(config()).await.unwrap();
     let second = RedisRequestRateLimitStore::connect(config()).await.unwrap();
-    let window = Duration::from_millis(300);
+    // 给 CI 调度抖动留出余量，避免对齐后断言跨越固定窗口。
+    let window = Duration::from_secs(1);
     let alignment_rule = RequestRateLimitRule::new(
         RequestRateLimitSubject::User(UserId::new(100).unwrap()),
         NonZeroU32::new(1).unwrap(),
