@@ -235,9 +235,10 @@ fn validate_unique_channels(
 mod tests {
     use std::collections::BTreeSet;
 
-    use af_domain::GroupId;
+    use af_domain::{GroupId, UpstreamError, UpstreamServerStatus};
 
     use super::*;
+    use crate::{FailureAction, FailureContext, FailurePolicy};
 
     #[test]
     fn retries_descend_priorities_and_then_exhaust_the_lowest_tier() {
@@ -340,6 +341,41 @@ mod tests {
 
         assert_eq!(order.len(), 1);
         assert_eq!(order[0].candidate().channel_id(), second.channel_id());
+    }
+
+    #[test]
+    fn exhausted_transient_retry_fails_over_to_next_healthy_priority() {
+        let first = candidate(1, 11, 20);
+        let cooling = candidate(1, 12, 30);
+        let fallback = candidate(1, 13, 10);
+        let health = std::collections::BTreeMap::from([(
+            cooling.channel_id(),
+            ChannelRoutingHealth::new(0, true),
+        )]);
+        let policy = FailurePolicy::default();
+        let error = UpstreamError::ServerError {
+            status: UpstreamServerStatus::new(503).unwrap(),
+        };
+        let mut plan =
+            WeightedRetryPlan::new_with_health(vec![first, cooling, fallback], &health).unwrap();
+
+        let initial = plan.select_next().unwrap().unwrap();
+        assert_eq!(initial.candidate().channel_id(), first.channel_id());
+        assert_eq!(initial.attempt().get(), 1);
+        assert_eq!(
+            policy.action_for(error, FailureContext::new(0, false)),
+            FailureAction::RetrySameChannel
+        );
+        assert_eq!(
+            policy.action_for(error, FailureContext::new(1, false)),
+            FailureAction::Failover
+        );
+
+        let failover = plan.select_next().unwrap().unwrap();
+        assert_eq!(failover.candidate().channel_id(), fallback.channel_id());
+        assert_eq!(failover.priority_rank(), 1);
+        assert_eq!(failover.attempt().get(), 2);
+        assert_eq!(plan.select_next(), Ok(None));
     }
 
     #[test]
