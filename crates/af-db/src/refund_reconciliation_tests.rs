@@ -337,7 +337,7 @@ async fn epay_manual_completion_is_idempotent_and_keeps_provider_facts_separate(
     let refund = RefundRepository::new(pool.clone(), Duration::from_secs(5))?;
     let request_id = RefundRequestId::new([0x71; 16])?;
     let request_key = RefundRequestKey::new([0x72; 16])?;
-    let RefundRequestCreateOutcome::Created(request) = refund
+    let RefundRequestCreateOutcome::Created(_) = refund
         .create_request(RefundRequestCreate::new(
             request_id,
             request_key,
