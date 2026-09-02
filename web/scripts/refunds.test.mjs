@@ -53,6 +53,13 @@ test('人工退款文案保持双语且覆盖失败结果', async () => {
   }
 })
 
+test('易支付不注册自动退款 Provider 且人工开关由运行时快照控制', async () => {
+  const runtime = await readFile(new URL('../../crates/af-server/src/payment_runtime.rs', import.meta.url), 'utf8')
+  assert.doesNotMatch(runtime, /EasyPayRefundProvider/)
+  assert.match(runtime, /manual_refund_enabled/)
+  assert.match(runtime, /epay_manual_refund_enabled/)
+})
+
 test('退款对账列表复用稳定游标并展示脱敏资金主体', async () => {
   const source = await readFile(new URL('../src/features/refunds/refund-reconciliation-list.tsx', import.meta.url), 'utf8')
   const api = await readFile(new URL('../src/features/refunds/refund-reconciliation-api.ts', import.meta.url), 'utf8')

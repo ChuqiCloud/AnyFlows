@@ -4281,7 +4281,7 @@
       "description": "连接兼容易支付协议的聚合网关，可分别开放支付宝与微信支付。",
       "publicBaseUrlRequired": "启用易支付前需要配置站点公开基址",
       "publicBaseUrlHint": "异步通知和支付返回地址必须使用外部可访问的稳定地址，不能使用当前本地预览地址。",
-      "refundHint": "易支付服务商未必支持退款；仅在服务商确认支持时开启。退款请求仍需管理员审批，自动提交策略只决定审批通过后的执行方式。"
+      "refundHint": "易支付不提供自动退款接口；开启后允许管理员在服务商后台完成线下退款并登记结果。退款请求仍需管理员审批，关闭时不会提供人工退款入口。"
     },
     "fields": {
       "stripeEnabled": "启用 Stripe",
@@ -4296,8 +4296,8 @@
       "epayQuotaPerCny": "每人民币到账额度",
       "alipay": "支付宝",
       "wxpay": "微信支付",
-      "epayRefundEnabled": "允许易支付退款",
-      "refundAutoSubmitEnabled": "审批通过后自动提交退款"
+      "epayRefundEnabled": "允许易支付人工退款",
+      "refundAutoSubmitEnabled": "审批通过后自动提交可用 Provider 退款"
     },
     "status": {
       "enabled": "已启用",

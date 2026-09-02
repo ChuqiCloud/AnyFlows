@@ -391,6 +391,15 @@ pub type RefundReconciliationListFuture<'a> =
 
 /// 将已批准退款提交给当前运行时 Provider，并复用同一 CAS 编排器。
 pub trait AdminRefundSubmitter: Send + Sync {
+    /// 返回指定 Provider 是否允许进入人工退款登记边界。
+    fn manual_refund_enabled<'a>(
+        &'a self,
+        provider: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<bool, AdminRefundError>> + Send + 'a>> {
+        let _ = provider;
+        Box::pin(async { Ok(false) })
+    }
+
     fn auto_submit_enabled<'a>(
         &'a self,
     ) -> Pin<Box<dyn Future<Output = Result<bool, AdminRefundError>> + Send + 'a>>;
@@ -473,6 +482,13 @@ impl DatabaseAdminRefundService {
     ) -> AdminRefundActionFuture<'a> {
         Box::pin(async move {
             require_admin(principal)?;
+            let submitter = self
+                .submitter
+                .as_ref()
+                .ok_or(AdminRefundError::Unavailable)?;
+            if !submitter.manual_refund_enabled("epay").await? {
+                return Err(AdminRefundError::Unavailable);
+            }
             // 不在服务层预读并拒绝终态：仓储必须先按完成键回读，保证重试幂等。
             let completion = RefundManualCompletion::new(
                 request_id,

@@ -4280,7 +4280,7 @@
       "description": "Connect an Epay-compatible gateway and enable Alipay or WeChat Pay independently.",
       "publicBaseUrlRequired": "Set the public base URL before enabling Epay",
       "publicBaseUrlHint": "Webhook and return URLs require a stable externally accessible address, not the current local preview URL.",
-      "refundHint": "Epay gateways do not necessarily support refunds. Enable this only after the provider confirms support. Refund requests still require administrator approval; the automatic-submit policy only controls what happens after approval."
+      "refundHint": "Epay has no automatic refund API. When enabled, an administrator may complete the refund in the gateway and record the offline result. Refund requests still require approval; disabling this removes the manual refund action."
     },
     "fields": {
       "stripeEnabled": "Enable Stripe",
@@ -4295,8 +4295,8 @@
       "epayQuotaPerCny": "Quota per CNY",
       "alipay": "Alipay",
       "wxpay": "WeChat Pay",
-      "epayRefundEnabled": "Allow Epay refunds",
-      "refundAutoSubmitEnabled": "Automatically submit refunds after approval"
+      "epayRefundEnabled": "Allow Epay manual refunds",
+      "refundAutoSubmitEnabled": "Automatically submit supported Provider refunds after approval"
     },
     "status": {
       "enabled": "Enabled",

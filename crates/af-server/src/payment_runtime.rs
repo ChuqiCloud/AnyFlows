@@ -38,6 +38,7 @@ struct PaymentRuntimeSnapshot {
     webhook_processors: HashMap<String, Arc<dyn PaymentWebhookHandler>>,
     refund_providers: HashMap<String, Arc<dyn RefundProvider>>,
     refund_receipt_processors: HashMap<String, Arc<dyn RefundReceiptHandler>>,
+    epay_manual_refund_enabled: bool,
     refund_auto_submit_enabled: bool,
 }
 
@@ -48,6 +49,7 @@ impl PaymentRuntimeSnapshot {
             webhook_processors: HashMap::new(),
             refund_providers: HashMap::new(),
             refund_receipt_processors: HashMap::new(),
+            epay_manual_refund_enabled: false,
             refund_auto_submit_enabled: false,
         }
     }
@@ -130,6 +132,7 @@ impl PaymentRuntime {
             webhook_processors,
             refund_providers,
             refund_receipt_processors,
+            epay_manual_refund_enabled: record.epay_refund_enabled(),
             refund_auto_submit_enabled: record.refund_auto_submit_enabled(),
         })
     }
@@ -308,6 +311,18 @@ impl PaymentRuntime {
 }
 
 impl AdminRefundSubmitter for PaymentRuntime {
+    fn manual_refund_enabled<'a>(
+        &'a self,
+        provider: &'a str,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<bool, AdminRefundError>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            Ok(provider == EASYPAY_PAYMENT_PROVIDER
+                && self.current_snapshot().epay_manual_refund_enabled)
+        })
+    }
+
     fn auto_submit_enabled<'a>(
         &'a self,
     ) -> std::pin::Pin<
