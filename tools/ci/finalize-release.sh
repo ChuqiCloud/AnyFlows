@@ -48,7 +48,7 @@ cat >"$release_notes" <<EOF
 
 - \`anyflows-${tag}-linux-amd64.tar.gz\`：Linux x86_64
 
-归档包含内嵌完整前端资源的 \`anyflows\` 单二进制、\`README.md\`、\`.env.example\`、systemd 安装脚本/服务单元和 \`VERSION\`。
+归档包含内嵌完整前端资源的 \`anyflows\` 单二进制、\`README.md\`、\`.env.example\`、\`CHANGELOG.md\`、systemd 安装脚本/服务单元和 \`VERSION\`。
 
 ## SHA-256
 

@@ -68,6 +68,7 @@ mkdir -p "$temporary_directory/$package_name" "$output_directory"
 install -m 0755 "$binary_path" "$temporary_directory/$package_name/anyflows"
 install -m 0644 "$workspace/README.md" "$temporary_directory/$package_name/README.md"
 install -m 0644 "$workspace/.env.example" "$temporary_directory/$package_name/.env.example"
+install -m 0644 "$workspace/CHANGELOG.md" "$temporary_directory/$package_name/CHANGELOG.md"
 install -m 0755 "$workspace/scripts/systemd/install.sh" "$temporary_directory/$package_name/install.sh"
 install -m 0644 "$workspace/scripts/systemd/anyflows.service" "$temporary_directory/$package_name/anyflows.service"
 printf '%s\ncommit=%s\n' "$tag" "$(git -C "$workspace" rev-parse HEAD)" \
