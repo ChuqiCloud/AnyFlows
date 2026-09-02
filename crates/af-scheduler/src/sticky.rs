@@ -144,3 +144,59 @@ pub enum StickyRouteOutcome {
     /// 当前快照没有该渠道，调用方可按策略条件删除旧绑定。
     Unavailable,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wait_policy_rejects_zero_equal_and_reversed_timeouts() {
+        assert_eq!(
+            StickyWaitPolicy::new(Duration::ZERO, Duration::from_secs(1)),
+            Err(StickyWaitPolicyError::ZeroStickyTimeout)
+        );
+        assert_eq!(
+            StickyWaitPolicy::new(Duration::from_secs(1), Duration::ZERO),
+            Err(StickyWaitPolicyError::ZeroFallbackTimeout)
+        );
+        assert_eq!(
+            StickyWaitPolicy::new(Duration::from_secs(1), Duration::from_secs(1)),
+            Err(StickyWaitPolicyError::StickyNotShorter)
+        );
+        assert_eq!(
+            StickyWaitPolicy::new(Duration::from_secs(2), Duration::from_secs(1)),
+            Err(StickyWaitPolicyError::StickyNotShorter)
+        );
+    }
+
+    #[test]
+    fn default_policy_keeps_short_sticky_wait_and_clears_unavailable_binding() {
+        let policy = StickyWaitPolicy::default();
+
+        assert_eq!(policy.sticky_wait_timeout(), Duration::from_secs(2));
+        assert_eq!(policy.fallback_wait_timeout(), Duration::from_secs(30));
+        assert!(policy.clear_unavailable_binding());
+        assert!(
+            !policy
+                .with_clear_unavailable_binding(false)
+                .clear_unavailable_binding()
+        );
+    }
+
+    #[test]
+    fn wait_plans_preserve_channel_and_stage_specific_timeout() {
+        let channel_id = ChannelId::new(42).expect("测试渠道标识必须为正");
+        let policy = StickyWaitPolicy::new(Duration::from_secs(1), Duration::from_secs(8))
+            .expect("测试等待策略必须满足严格退让关系");
+
+        let sticky = policy.sticky_plan(channel_id);
+        assert_eq!(sticky.channel_id(), channel_id);
+        assert_eq!(sticky.kind(), RouteWaitKind::Sticky);
+        assert_eq!(sticky.timeout(), Duration::from_secs(1));
+
+        let fallback = policy.fallback_plan(channel_id);
+        assert_eq!(fallback.channel_id(), channel_id);
+        assert_eq!(fallback.kind(), RouteWaitKind::Fallback);
+        assert_eq!(fallback.timeout(), Duration::from_secs(8));
+    }
+}

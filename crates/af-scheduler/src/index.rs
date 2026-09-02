@@ -1533,6 +1533,8 @@ mod tests {
             route.candidates()[0].wait_plan().timeout(),
             std::time::Duration::from_secs(1)
         );
+        assert_eq!(route.candidates()[0].selection().attempt().get(), 1);
+        assert_eq!(route.candidates()[0].selection().priority_rank(), 0);
         assert_eq!(
             route.candidates()[1].wait_plan().kind(),
             RouteWaitKind::Fallback
@@ -1541,9 +1543,65 @@ mod tests {
             route.candidates()[1].wait_plan().timeout(),
             std::time::Duration::from_secs(10)
         );
+        assert_eq!(route.candidates()[1].selection().attempt().get(), 2);
+        assert_eq!(route.candidates()[1].selection().priority_rank(), 1);
         assert_eq!(
             route.prefer_sticky_channel(ChannelId::new(99).unwrap(), policy),
             StickyRouteOutcome::Unavailable
+        );
+    }
+
+    #[test]
+    fn unavailable_sticky_channel_resets_all_candidates_to_fallback_waits() {
+        let snapshot = ChannelIndexSnapshot::from_records(
+            vec![
+                record(7, "gpt-sticky-unavailable", 1, 10, 1),
+                record(7, "gpt-sticky-unavailable", 2, 0, 1),
+            ],
+            13,
+        )
+        .unwrap();
+        let index = InMemoryChannelIndex {
+            inner: Arc::new(InMemoryChannelIndexInner {
+                source: Arc::new(SequenceSource::new(Vec::new())),
+                snapshot: RwLock::new(Arc::new(snapshot)),
+                refresh_gate: tokio::sync::Mutex::new(()),
+            }),
+        };
+        let mut route = IndexedWeightedScheduler::new(index)
+            .route_plan(GroupId::new(7).unwrap(), "gpt-sticky-unavailable")
+            .unwrap()
+            .unwrap();
+        let policy = StickyWaitPolicy::new(
+            std::time::Duration::from_secs(1),
+            std::time::Duration::from_secs(10),
+        )
+        .unwrap();
+
+        assert_eq!(
+            route.prefer_sticky_channel(ChannelId::new(99).unwrap(), policy),
+            StickyRouteOutcome::Unavailable
+        );
+        assert_eq!(
+            route
+                .candidates()
+                .iter()
+                .map(|candidate| candidate.channel_id())
+                .collect::<Vec<_>>(),
+            vec![ChannelId::new(1).unwrap(), ChannelId::new(2).unwrap()]
+        );
+        assert!(
+            route
+                .candidates()
+                .iter()
+                .all(|candidate| candidate.wait_plan().kind() == RouteWaitKind::Fallback)
+        );
+        assert!(
+            route
+                .candidates()
+                .iter()
+                .all(|candidate| candidate.wait_plan().timeout()
+                    == std::time::Duration::from_secs(10))
         );
     }
 
