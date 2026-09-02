@@ -222,9 +222,13 @@ pub(crate) const fn is_retryable(error: UpstreamError) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::net::SocketAddr;
+
     use super::*;
 
-    use reqwest::Client;
+    use af_adapter::{HeaderName, HeaderValue};
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    use url::Url;
     use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
 
     #[test]
@@ -397,26 +401,69 @@ mod tests {
                 .await;
         }
 
-        let client = Client::new();
         for case in cases {
-            let response = client
-                .get(format!("{}{}", server.uri(), case.path))
-                .send()
-                .await
-                .unwrap();
-            let status = StatusCode::from_u16(response.status().as_u16()).unwrap();
-            let retry_after = response
-                .headers()
-                .get("retry-after")
-                .and_then(|value| value.to_str().ok())
-                .and_then(|value| value.parse().ok())
-                .and_then(UpstreamRetryAfter::from_seconds);
-            let body = response.bytes().await.unwrap();
+            let (status, headers, body) = fetch_wiremock_response(&server, case.path).await;
+            let retry_after = parse_retry_after(&headers);
             let classified = classify_upstream_status(status, retry_after, &body);
 
             assert_eq!(classified, case.expected, "mock path {}", case.path);
             let debug = format!("{classified:?}");
             assert!(!debug.contains("secret"), "分类泄露了 mock 正文");
         }
+    }
+
+    async fn fetch_wiremock_response(
+        server: &MockServer,
+        path: &str,
+    ) -> (StatusCode, HeaderMap, Vec<u8>) {
+        let endpoint = Url::parse(&format!("{}{}", server.uri(), path)).unwrap();
+        let address = SocketAddr::new(
+            endpoint.host().unwrap().to_string().parse().unwrap(),
+            endpoint.port().unwrap(),
+        );
+        let mut stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        stream
+            .write_all(
+                format!(
+                    "GET {path} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
+                    endpoint.host_str().unwrap()
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+        let mut response = Vec::new();
+        stream.read_to_end(&mut response).await.unwrap();
+
+        let header_end = response
+            .windows(4)
+            .position(|window| window == b"\r\n\r\n")
+            .unwrap()
+            + 4;
+        let header_text = std::str::from_utf8(&response[..header_end]).unwrap();
+        let status = StatusCode::from_u16(
+            header_text
+                .lines()
+                .next()
+                .unwrap()
+                .split_whitespace()
+                .nth(1)
+                .unwrap()
+                .parse()
+                .unwrap(),
+        )
+        .unwrap();
+        let mut headers = HeaderMap::new();
+        if let Some(value) = header_text.lines().find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("retry-after")
+                .then_some(value.trim())
+        }) {
+            headers.insert(
+                HeaderName::from_static("retry-after"),
+                HeaderValue::from_str(value).unwrap(),
+            );
+        }
+        (status, headers, response[header_end..].to_vec())
     }
 }
