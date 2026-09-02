@@ -295,6 +295,24 @@ mod tests {
         }
     }
 
+    struct FailingAnalytics(AdminDashboardStorageError);
+
+    impl AdminDashboardAnalyticsStorage for FailingAnalytics {
+        fn analytics_snapshot(&self, _: i64, _: i64) -> AdminDashboardAnalyticsStorageFuture<'_> {
+            let error = self.0;
+            Box::pin(async move { Err(error) })
+        }
+    }
+
+    struct FailingChannels(AdminDashboardStorageError);
+
+    impl AdminDashboardChannelStorage for FailingChannels {
+        fn channel_snapshot(&self) -> AdminDashboardChannelStorageFuture<'_> {
+            let error = self.0;
+            Box::pin(async move { Err(error) })
+        }
+    }
+
     #[tokio::test]
     async fn split_storage_combines_analytics_with_explicit_channel_authority() {
         let analytics = AdminDashboardAnalyticsSnapshot::new(
@@ -312,6 +330,35 @@ mod tests {
         assert_eq!(
             storage.snapshot(7, 86_407).await.unwrap(),
             AdminDashboardStorageSnapshot::from_parts(analytics, channels)
+        );
+    }
+
+    #[tokio::test]
+    async fn split_storage_preserves_each_source_failure() {
+        let analytics = AdminDashboardAnalyticsSnapshot::new(
+            AdminDashboardUsageSnapshot::new(0, 0, 0, 0, 0, 0, 0),
+            AdminDashboardOutcomeSnapshot::new(0, 0, 0, 0, Vec::new(), Vec::new()),
+            Vec::new(),
+            AdminDashboardPerformance::new(0, None, 0, 2_000, 0, None, 0, 10_000),
+        );
+        let channels = AdminDashboardChannelSnapshot::new(0, 0, 0);
+
+        let analytics_failure = SplitAdminDashboardStorage::new(
+            Arc::new(FailingAnalytics(AdminDashboardStorageError::Unavailable)),
+            Arc::new(StaticChannels(channels)),
+        );
+        assert_eq!(
+            analytics_failure.snapshot(7, 86_407).await,
+            Err(AdminDashboardStorageError::Unavailable)
+        );
+
+        let channel_failure = SplitAdminDashboardStorage::new(
+            Arc::new(StaticAnalytics(analytics)),
+            Arc::new(FailingChannels(AdminDashboardStorageError::Invariant)),
+        );
+        assert_eq!(
+            channel_failure.snapshot(7, 86_407).await,
+            Err(AdminDashboardStorageError::Invariant)
         );
     }
 }
