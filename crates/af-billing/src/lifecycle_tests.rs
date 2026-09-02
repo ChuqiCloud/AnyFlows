@@ -113,6 +113,38 @@ impl UsageRecordPort for RecordingUsagePort {
 }
 
 #[derive(Default)]
+struct PanickingUsagePort {
+    calls: AtomicUsize,
+    records: Mutex<Vec<BillingUsageRecord>>,
+}
+
+impl PanickingUsagePort {
+    fn calls(&self) -> usize {
+        self.calls.load(Ordering::Acquire)
+    }
+
+    fn records(&self) -> Vec<BillingUsageRecord> {
+        self.records
+            .lock()
+            .expect("测试 panic 用量记录锁不能损坏")
+            .clone()
+    }
+}
+
+impl UsageRecordPort for PanickingUsagePort {
+    fn try_record(&self, record: BillingUsageRecord) -> UsageRecordOutcome {
+        if self.calls.fetch_add(1, Ordering::AcqRel) == 0 {
+            panic!("测试用量端口异常");
+        }
+        self.records
+            .lock()
+            .expect("测试 panic 用量记录锁不能损坏")
+            .push(record);
+        UsageRecordOutcome::Accepted
+    }
+}
+
+#[derive(Default)]
 struct RecordingRefundPort {
     reservations: Mutex<Vec<BillingReservationId>>,
 }
@@ -376,6 +408,101 @@ async fn usage_queue_retry_never_repeats_persistent_settlement() {
     assert_eq!(settlement.requests().len(), 1);
     assert_eq!(usage_port.records(), vec![completion.usage_record()]);
     assert_eq!(lifecycle.state(), BillingLifecycleState::Completed);
+}
+
+#[tokio::test]
+async fn closed_usage_record_can_retry_without_repeating_settlement() {
+    let measured = usage(1_000_000, 1_000_000);
+    let plan = BillingRequestPlan::prepare(Arc::new(metered_resolver()), &measured).unwrap();
+    let settlement = Arc::new(RecordingSettlementPort::default());
+    let usage_port = Arc::new(RecordingUsagePort::with_outcomes([
+        UsageRecordOutcome::Closed,
+        UsageRecordOutcome::Accepted,
+    ]));
+    let refund = Arc::new(RecordingRefundPort::default());
+    let mut lifecycle = plan
+        .start_reserved(
+            principal(),
+            reservation_id(12),
+            refund.clone(),
+            settlement.clone(),
+            usage_port.clone(),
+        )
+        .unwrap();
+
+    assert_eq!(
+        lifecycle.complete(measured).await,
+        Err(BillingLifecycleError::UsageRecordClosed)
+    );
+    assert_eq!(lifecycle.state(), BillingLifecycleState::UsagePending);
+    let completion = lifecycle.complete(measured).await.unwrap();
+
+    assert_eq!(settlement.requests().len(), 1);
+    assert_eq!(usage_port.records(), vec![completion.usage_record()]);
+    assert!(refund.reservations().is_empty());
+}
+
+#[tokio::test]
+async fn usage_record_conflict_keeps_completion_frozen_without_rebilling() {
+    let measured = usage(1_000_000, 1_000_000);
+    let plan = BillingRequestPlan::prepare(Arc::new(metered_resolver()), &measured).unwrap();
+    let settlement = Arc::new(RecordingSettlementPort::default());
+    let usage_port = Arc::new(RecordingUsagePort::with_outcomes([
+        UsageRecordOutcome::Conflict,
+        UsageRecordOutcome::Conflict,
+    ]));
+    let refund = Arc::new(RecordingRefundPort::default());
+    let mut lifecycle = plan
+        .start_reserved(
+            principal(),
+            reservation_id(13),
+            refund.clone(),
+            settlement.clone(),
+            usage_port,
+        )
+        .unwrap();
+
+    assert_eq!(
+        lifecycle.complete(measured).await,
+        Err(BillingLifecycleError::UsageRecordConflict)
+    );
+    assert_eq!(lifecycle.state(), BillingLifecycleState::UsagePending);
+    assert_eq!(
+        lifecycle.complete(measured).await,
+        Err(BillingLifecycleError::UsageRecordConflict)
+    );
+    assert_eq!(settlement.requests().len(), 1);
+    assert!(refund.reservations().is_empty());
+}
+
+#[tokio::test]
+async fn panicking_usage_record_port_is_caught_and_can_retry_without_rebilling() {
+    let measured = usage(1_000_000, 1_000_000);
+    let plan = BillingRequestPlan::prepare(Arc::new(metered_resolver()), &measured).unwrap();
+    let settlement = Arc::new(RecordingSettlementPort::default());
+    let usage_port = Arc::new(PanickingUsagePort::default());
+    let refund = Arc::new(RecordingRefundPort::default());
+    let mut lifecycle = plan
+        .start_reserved(
+            principal(),
+            reservation_id(14),
+            refund.clone(),
+            settlement.clone(),
+            usage_port.clone(),
+        )
+        .unwrap();
+
+    assert_eq!(
+        lifecycle.complete(measured).await,
+        Err(BillingLifecycleError::UsageRecordPanicked)
+    );
+    assert_eq!(lifecycle.state(), BillingLifecycleState::UsagePending);
+    let completion = lifecycle.complete(measured).await.unwrap();
+
+    assert_eq!(usage_port.calls(), 2);
+    assert_eq!(usage_port.records(), vec![completion.usage_record()]);
+    assert_eq!(settlement.requests().len(), 1);
+    assert!(refund.reservations().is_empty());
 }
 
 fn principal() -> GatewayPrincipal {
