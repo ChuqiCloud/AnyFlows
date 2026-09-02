@@ -2426,14 +2426,14 @@
           }
         ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/AdminRefundManualCompletionRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -31620,6 +31620,38 @@
         },
         "additionalProperties": false
       },
+      "AdminRefundManualCompletionRequest": {
+        "type": "object",
+        "required": [
+          "completion_key",
+          "expected_version",
+          "result",
+          "reference"
+        ],
+        "properties": {
+          "completion_key": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "expected_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "result": {
+            "type": "string",
+            "pattern": "^(completed|failed)$"
+          },
+          "reference": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
       "AdminRefundOrderKind": {
         "type": "string",
         "enum": [
@@ -31744,17 +31776,6 @@
           "manually_succeeded",
           "manually_failed"
         ]
-      },
-      "AdminRefundManualCompletionRequest": {
-        "type": "object",
-        "required": ["completion_key", "expected_version", "result", "reference"],
-        "properties": {
-          "completion_key": {"type": "string", "minLength": 32, "maxLength": 32, "pattern": "^[0-9a-f]{32}$"},
-          "expected_version": {"type": "integer", "format": "int64", "minimum": 1},
-          "result": {"type": "string", "enum": ["completed", "failed"]},
-          "reference": {"type": "string", "minLength": 1, "maxLength": 256}
-        },
-        "additionalProperties": false
       },
       "AdminResponsesCompactProbe": {
         "type": "object",
