@@ -10,7 +10,7 @@ use sea_orm::{ActiveModelTrait, ConnectionTrait, DatabaseBackend, EntityTrait, S
 
 use crate::entity::{groups, refund_manual_completions};
 use crate::{
-    AdminUserCreateRecord, AdminUserRepository, DatabaseOptions, MigrationOptions, Migrator,
+    AdminUserCreateRecord, AdminUserRepository, DatabaseOptions, MigrationOptions,
     RefundReceiptWrite, RefundReconciliationQuery, RefundRepository, TopupOrderCreate,
     TopupOrderCreateOutcome, TopupOrderSubmission, TopupOrderSubmitOutcome, TopupPaymentEventWrite,
     TopupRepository,
@@ -116,7 +116,7 @@ async fn successful_refund_creates_scoped_append_only_reconciliation() -> Result
     let refund = RefundRepository::new(pool.clone(), Duration::from_secs(5))?;
     let refund_id = RefundRequestId::new([0x21; 16])?;
     let refund_key = RefundRequestKey::new([0x22; 16])?;
-    let RefundRequestCreateOutcome::Created(_) = refund
+    let RefundRequestCreateOutcome::Created(request) = refund
         .create_request(RefundRequestCreate::new(
             refund_id,
             refund_key,
