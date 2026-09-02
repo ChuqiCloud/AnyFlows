@@ -62,31 +62,7 @@ impl RedisRequestRateLimitStore {
             .query(CacheOperation::RateLimitCheck, &mut command)
             .await?;
 
-        match status {
-            ADMIT_OK if index == 0 && retry_after_millis == 0 => {
-                Ok(RequestRateLimitOutcome::Admitted)
-            }
-            ADMIT_LIMITED => {
-                let index = usize::try_from(index)
-                    .ok()
-                    .and_then(|index| index.checked_sub(1))
-                    .filter(|index| *index < rules.len())
-                    .ok_or_else(protocol_error)?;
-                let retry_after_millis = u64::try_from(retry_after_millis)
-                    .ok()
-                    .filter(|value| *value > 0)
-                    .ok_or_else(protocol_error)?;
-                let retry_after = Duration::from_millis(retry_after_millis);
-                if retry_after > rules[index].window() {
-                    return Err(protocol_error());
-                }
-                Ok(RequestRateLimitOutcome::Limited(
-                    RequestRateLimitRejection::new(rules[index].subject(), retry_after),
-                ))
-            }
-            ADMIT_INCONSISTENT => Err(protocol_error()),
-            _ => Err(protocol_error()),
-        }
+        decode_admit_response(rules, status, index, retry_after_millis)
     }
 
     fn rule_key(&self, rule: RequestRateLimitRule) -> Result<String, CacheError> {
@@ -124,11 +100,43 @@ fn protocol_error() -> CacheError {
     }
 }
 
+/// 将 Redis Lua 返回值收敛为受控结果；任何越界或未知形状均失败关闭。
+fn decode_admit_response(
+    rules: &[RequestRateLimitRule],
+    status: i64,
+    index: i64,
+    retry_after_millis: i64,
+) -> Result<RequestRateLimitOutcome, CacheError> {
+    match status {
+        ADMIT_OK if index == 0 && retry_after_millis == 0 => Ok(RequestRateLimitOutcome::Admitted),
+        ADMIT_LIMITED => {
+            let index = usize::try_from(index)
+                .ok()
+                .and_then(|index| index.checked_sub(1))
+                .filter(|index| *index < rules.len())
+                .ok_or_else(protocol_error)?;
+            let retry_after_millis = u64::try_from(retry_after_millis)
+                .ok()
+                .filter(|value| *value > 0)
+                .ok_or_else(protocol_error)?;
+            let retry_after = Duration::from_millis(retry_after_millis);
+            if retry_after > rules[index].window() {
+                return Err(protocol_error());
+            }
+            Ok(RequestRateLimitOutcome::Limited(
+                RequestRateLimitRejection::new(rules[index].subject(), retry_after),
+            ))
+        }
+        ADMIT_INCONSISTENT => Err(protocol_error()),
+        _ => Err(protocol_error()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroU32;
 
-    use af_domain::UserId;
+    use af_domain::{GroupId, TokenId, UserId};
 
     use super::*;
 
@@ -144,10 +152,84 @@ mod tests {
             validate_rules(&[rule, rule]).unwrap_err(),
             CacheError::InvalidRateLimitBatch
         );
+        let same_subject_and_window =
+            RequestRateLimitRule::new(rule.subject(), NonZeroU32::new(2).unwrap(), rule.window())
+                .unwrap();
+        assert_eq!(
+            validate_rules(&[rule, same_subject_and_window]).unwrap_err(),
+            CacheError::InvalidRateLimitBatch
+        );
         assert_eq!(
             validate_rules(&[rule; MAX_REQUEST_RATE_LIMIT_RULES + 1]).unwrap_err(),
             CacheError::InvalidRateLimitBatch
         );
         assert!(validate_rules(&[]).is_ok());
+    }
+
+    #[test]
+    fn batch_keeps_subject_types_and_windows_independent() {
+        let limit = NonZeroU32::new(2).unwrap();
+        let user = RequestRateLimitSubject::User(UserId::new(7).unwrap());
+        let group = RequestRateLimitSubject::Group(GroupId::new(7).unwrap());
+        let token = RequestRateLimitSubject::Token(TokenId::new(7).unwrap());
+        let rules = [
+            RequestRateLimitRule::new(user, limit, Duration::from_secs(1)).unwrap(),
+            RequestRateLimitRule::new(user, limit, Duration::from_secs(2)).unwrap(),
+            RequestRateLimitRule::new(group, limit, Duration::from_secs(1)).unwrap(),
+            RequestRateLimitRule::new(token, limit, Duration::from_secs(1)).unwrap(),
+        ];
+        assert!(validate_rules(&rules).is_ok());
+    }
+
+    #[test]
+    fn empty_batch_response_is_admitted() {
+        assert!(validate_rules(&[]).is_ok());
+        assert_eq!(
+            decode_admit_response(&[], ADMIT_OK, 0, 0).unwrap(),
+            RequestRateLimitOutcome::Admitted
+        );
+    }
+
+    #[test]
+    fn malformed_lua_responses_fail_closed_as_protocol_errors() {
+        let rule = RequestRateLimitRule::new(
+            RequestRateLimitSubject::User(UserId::new(8).unwrap()),
+            NonZeroU32::new(1).unwrap(),
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        let cases = [
+            (ADMIT_OK, 1, 0),
+            (ADMIT_LIMITED, -1, 1),
+            (ADMIT_LIMITED, 0, 1),
+            (ADMIT_LIMITED, 2, 1),
+            (ADMIT_LIMITED, 1, 0),
+            (ADMIT_LIMITED, 1, 6_000),
+            (ADMIT_INCONSISTENT, 1, 1),
+            (99, 0, 0),
+        ];
+        for (status, index, retry_after_millis) in cases {
+            assert_eq!(
+                decode_admit_response(&[rule], status, index, retry_after_millis).unwrap_err(),
+                protocol_error()
+            );
+        }
+    }
+
+    #[test]
+    fn limited_response_preserves_subject_and_retry_boundary() {
+        let rule = RequestRateLimitRule::new(
+            RequestRateLimitSubject::Token(TokenId::new(9).unwrap()),
+            NonZeroU32::new(1).unwrap(),
+            Duration::from_millis(1_500),
+        )
+        .unwrap();
+        assert_eq!(
+            decode_admit_response(&[rule], ADMIT_LIMITED, 1, 1_500).unwrap(),
+            RequestRateLimitOutcome::Limited(RequestRateLimitRejection::new(
+                rule.subject(),
+                Duration::from_millis(1_500),
+            ))
+        );
     }
 }
