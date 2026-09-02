@@ -506,6 +506,64 @@ mod tests {
         }
     }
 
+    #[test]
+    fn performance_sample_shape_boundaries_fail_closed() {
+        let valid_cases = [
+            (0, None, 0, 1),
+            (1, Some(0), 0, 1),
+            (2, Some(i64::MAX), 2, i64::MAX),
+        ];
+        for (sample_count, average_ms, slow_count, slow_threshold_ms) in valid_cases {
+            assert!(valid_performance_sample(
+                sample_count,
+                average_ms,
+                slow_count,
+                slow_threshold_ms
+            ));
+        }
+
+        let invalid_cases = [
+            (-1, None, 0, 1),
+            (0, Some(0), 0, 1),
+            (1, None, 0, 1),
+            (1, Some(-1), 0, 1),
+            (1, Some(0), -1, 1),
+            (1, Some(0), 2, 1),
+            (1, Some(0), 0, 0),
+        ];
+        for (sample_count, average_ms, slow_count, slow_threshold_ms) in invalid_cases {
+            assert!(!valid_performance_sample(
+                sample_count,
+                average_ms,
+                slow_count,
+                slow_threshold_ms
+            ));
+        }
+    }
+
+    #[test]
+    fn hourly_bucket_and_aggregate_overflow_fail_closed() {
+        let hourly = vec![
+            AdminDashboardHourlyPoint::new(i64::MAX, i64::MAX, 0, 0);
+            ADMIN_DASHBOARD_BUCKET_COUNT
+        ];
+        assert_eq!(
+            valid_hourly_points(
+                i64::MAX,
+                i64::MAX,
+                &hourly,
+                AdminDashboardUsageSnapshot::new(0, 0, 0, 0, 0, 0, 0),
+            ),
+            Err(AdminDashboardReadError::Internal)
+        );
+
+        assert_eq!(
+            checked_sum([i64::MAX, 1].into_iter()),
+            Err(AdminDashboardReadError::Internal)
+        );
+        assert_eq!(checked_sum([i64::MAX].into_iter()), Ok(i64::MAX));
+    }
+
     fn empty_snapshot(period_start: i64) -> AdminDashboardStorageSnapshot {
         let hourly = (0..ADMIN_DASHBOARD_BUCKET_COUNT)
             .map(|index| {
