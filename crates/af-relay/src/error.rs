@@ -224,6 +224,9 @@ pub(crate) const fn is_retryable(error: UpstreamError) -> bool {
 mod tests {
     use super::*;
 
+    use reqwest::Client;
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
+
     #[test]
     fn adaptor_transport_errors_keep_only_the_stable_failure_stage() {
         for (transport, expected) in [
@@ -320,6 +323,100 @@ mod tests {
         for invalid in ["0", " 90", "Wed, 21 Oct 2015 07:28:00 GMT", "604801"] {
             headers.insert("retry-after", invalid.parse().unwrap());
             assert_eq!(parse_retry_after(&headers), None, "未拒绝 {invalid}");
+        }
+    }
+
+    #[tokio::test]
+    async fn wiremock_matrix_keeps_provider_errors_structured_and_redacted() {
+        struct Case {
+            path: &'static str,
+            status: u16,
+            body: &'static str,
+            retry_after: Option<&'static str>,
+            expected: UpstreamError,
+        }
+
+        let retry_after = UpstreamRetryAfter::from_seconds(17).unwrap();
+        let cases = [
+            Case {
+                path: "/openai-rate-limit",
+                status: 429,
+                body: r#"{"error":{"code":"rate_limit_exceeded","message":"openai-secret"}}"#,
+                retry_after: Some("17"),
+                expected: UpstreamError::rate_limited_after(RateLimitScope::Window, retry_after),
+            },
+            Case {
+                path: "/openai-revoked",
+                status: 401,
+                body: r#"{"error":{"code":"invalid_api_key","message":"revoked-secret"}}"#,
+                retry_after: None,
+                expected: UpstreamError::AuthRevoked,
+            },
+            Case {
+                path: "/anthropic-overloaded",
+                status: 529,
+                body: r#"{"type":"error","error":{"type":"overloaded_error","message":"anthropic-secret"}}"#,
+                retry_after: Some("17"),
+                expected: UpstreamError::overloaded_after(retry_after),
+            },
+            Case {
+                path: "/anthropic-billing",
+                status: 400,
+                body: r#"{"type":"error","error":{"type":"billing_error","message":"billing-secret"}}"#,
+                retry_after: None,
+                expected: UpstreamError::QuotaExhausted,
+            },
+            Case {
+                path: "/gemini-rate-limit",
+                status: 429,
+                body: r#"{"error":{"code":429,"status":"RESOURCE_EXHAUSTED","message":"gemini-secret"}}"#,
+                retry_after: Some("17"),
+                expected: UpstreamError::rate_limited_after(RateLimitScope::Unknown, retry_after),
+            },
+            Case {
+                path: "/generic-server-error",
+                status: 503,
+                body: r#"{"error":{"message":"server-secret"}}"#,
+                retry_after: None,
+                expected: UpstreamError::ServerError {
+                    status: af_domain::UpstreamServerStatus::new(503).unwrap(),
+                },
+            },
+        ];
+
+        let server = MockServer::start().await;
+        for case in &cases {
+            let mut response = ResponseTemplate::new(case.status).set_body_string(case.body);
+            if let Some(retry_after) = case.retry_after {
+                response = response.insert_header("retry-after", retry_after);
+            }
+            Mock::given(method("GET"))
+                .and(wiremock::matchers::path(case.path))
+                .respond_with(response)
+                .mount(&server)
+                .await;
+        }
+
+        let client = Client::new();
+        for case in cases {
+            let response = client
+                .get(format!("{}{}", server.uri(), case.path))
+                .send()
+                .await
+                .unwrap();
+            let status = StatusCode::from_u16(response.status().as_u16()).unwrap();
+            let retry_after = response
+                .headers()
+                .get("retry-after")
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse().ok())
+                .and_then(UpstreamRetryAfter::from_seconds);
+            let body = response.bytes().await.unwrap();
+            let classified = classify_upstream_status(status, retry_after, &body);
+
+            assert_eq!(classified, case.expected, "mock path {}", case.path);
+            let debug = format!("{classified:?}");
+            assert!(!debug.contains("secret"), "分类泄露了 mock 正文");
         }
     }
 }
