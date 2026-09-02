@@ -401,6 +401,192 @@ fn recorder_rejects_unknown_families_labels_values_and_descriptions() {
 }
 
 #[test]
+fn all_fixed_metric_enum_variants_render_canonical_labels() {
+    let (recorder, handle) = build_metrics_recorder();
+    let model = handle.register_model("enum-model").unwrap();
+    let channel = handle.register_channel("enum-channel").unwrap();
+    let group = handle.register_group("enum-group").unwrap();
+
+    ::metrics::with_local_recorder(&recorder, || {
+        describe_metric_families();
+        for protocol in [
+            MetricProtocol::OpenAi,
+            MetricProtocol::Anthropic,
+            MetricProtocol::Gemini,
+            MetricProtocol::Bedrock,
+            MetricProtocol::Other,
+        ] {
+            handle.record_request(
+                protocol,
+                &model,
+                MetricRequestStatus::Success,
+                Duration::from_millis(1),
+            );
+            handle.record_first_token(protocol, &model, Duration::from_millis(1));
+        }
+        for status in [
+            MetricRequestStatus::Success,
+            MetricRequestStatus::ClientError,
+            MetricRequestStatus::UpstreamError,
+            MetricRequestStatus::InternalError,
+            MetricRequestStatus::Cancelled,
+        ] {
+            handle.record_request(
+                MetricProtocol::OpenAi,
+                &model,
+                status,
+                Duration::from_millis(1),
+            );
+        }
+        for error_type in [
+            MetricUpstreamErrorType::Timeout,
+            MetricUpstreamErrorType::Authentication,
+            MetricUpstreamErrorType::RateLimited,
+            MetricUpstreamErrorType::InvalidRequest,
+            MetricUpstreamErrorType::Unavailable,
+            MetricUpstreamErrorType::Protocol,
+            MetricUpstreamErrorType::Other,
+        ] {
+            handle.record_upstream_error(&channel, error_type);
+        }
+        for level in [
+            MetricConcurrencyLevel::Account,
+            MetricConcurrencyLevel::User,
+            MetricConcurrencyLevel::Token,
+        ] {
+            handle.set_concurrency_slots(level, 1);
+        }
+        for result in [
+            MetricClientSimulationResult::NotApplied,
+            MetricClientSimulationResult::Applied,
+            MetricClientSimulationResult::Failed,
+        ] {
+            record_client_simulation_attempt(
+                MetricClientSimulationProfile::AnthropicCliHeadersV1,
+                result,
+            );
+        }
+        handle.add_quota_consumed(&group, 1);
+    });
+
+    let rendered = handle.render();
+    for value in [
+        "openai",
+        "anthropic",
+        "gemini",
+        "bedrock",
+        "other",
+        "success",
+        "client_error",
+        "upstream_error",
+        "internal_error",
+        "cancelled",
+        "timeout",
+        "authentication",
+        "rate_limited",
+        "invalid_request",
+        "unavailable",
+        "protocol",
+        "account",
+        "user",
+        "token",
+        "not_applied",
+        "applied",
+        "failed",
+    ] {
+        assert!(
+            rendered.contains(&format!("=\"{value}\"")),
+            "缺少固定标签值: {value}"
+        );
+    }
+}
+
+#[test]
+fn categorical_label_values_are_rejected_at_the_recorder_boundary() {
+    const INVALID: &str = "future-value";
+    let (recorder, handle) = build_metrics_recorder();
+    let model = handle.register_model("known-model").unwrap();
+    let channel = handle.register_channel("known-channel").unwrap();
+    let group = handle.register_group("known-group").unwrap();
+
+    let invalid_cases = [
+        test_key(
+            REQUESTS_TOTAL,
+            &[
+                ("protocol", INVALID),
+                ("model", "known-model"),
+                ("status", "success"),
+            ],
+        ),
+        test_key(
+            REQUESTS_TOTAL,
+            &[
+                ("protocol", "openai"),
+                ("model", "known-model"),
+                ("status", INVALID),
+            ],
+        ),
+        test_key(
+            UPSTREAM_ERRORS_TOTAL,
+            &[("channel", "known-channel"), ("type", INVALID)],
+        ),
+        test_key(CONCURRENCY_SLOTS, &[("level", INVALID)]),
+        test_key(
+            CLIENT_SIMULATION_ATTEMPTS_TOTAL,
+            &[("profile", INVALID), ("result", "applied")],
+        ),
+        test_key(
+            CLIENT_SIMULATION_ATTEMPTS_TOTAL,
+            &[("profile", "anthropic_cli_headers_v1"), ("result", INVALID)],
+        ),
+        test_key(REQUEST_RATE_LIMIT_REJECTIONS_TOTAL, &[("subject", INVALID)]),
+        test_key(REQUEST_RATE_LIMIT_FAILURES_TOTAL, &[("reason", INVALID)]),
+        test_key(PAYMENT_WEBHOOK_CONFIRMATIONS_TOTAL, &[("outcome", INVALID)]),
+        test_key(QUOTA_CONSUMED_TOTAL, &[("group", "unknown-group")]),
+    ];
+
+    ::metrics::with_local_recorder(&recorder, || {
+        describe_metric_families();
+        for key in invalid_cases {
+            recorder.record_counter_from_trusted_test_callsite(key, 1);
+        }
+        recorder.record_gauge_from_trusted_test_callsite(
+            test_key(CHANNEL_HEALTH, &[("channel", "known-channel")]),
+            1.0,
+        );
+        recorder.record_gauge_from_trusted_test_callsite(
+            test_key(CHANNEL_HEALTH, &[("channel", "unknown-channel")]),
+            1.0,
+        );
+    });
+
+    let rendered = handle.render();
+    assert!(!rendered.contains(INVALID));
+    assert!(!rendered.contains("unknown-group"));
+    assert!(!rendered.contains("unknown-channel"));
+    assert!(rendered.contains("channel=\"known-channel\""));
+    drop(model);
+    drop(group);
+}
+
+#[test]
+fn known_metric_descriptions_units_and_kinds_must_match_contract() {
+    let (recorder, handle) = build_metrics_recorder();
+    ::metrics::with_local_recorder(&recorder, || {
+        ::metrics::describe_gauge!(REQUESTS_TOTAL, ::metrics::Unit::Count, "wrong kind");
+        ::metrics::describe_counter!(
+            REQUESTS_TOTAL,
+            ::metrics::Unit::Seconds,
+            "AnyFlows 请求总数。"
+        );
+        ::metrics::describe_counter!(REQUESTS_TOTAL, ::metrics::Unit::Count, "wrong description");
+    });
+
+    let rendered = handle.render();
+    assert!(!rendered.contains("# HELP requests_total"));
+}
+
+#[test]
 fn rate_limit_metrics_accept_only_fixed_classifications() {
     const SECRET_CANARY: &str = "rate-limit-subject-secret";
     let (recorder, handle) = build_metrics_recorder();
