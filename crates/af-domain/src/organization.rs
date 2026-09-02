@@ -296,6 +296,10 @@ pub enum OrganizationPermission {
     WalletManage,
     /// 管理企业、团队与成员预算策略。
     BudgetsManage,
+    /// 查看企业授信策略、账期账单和还款核销事实。
+    CreditRead,
+    /// 管理企业授信策略和账期状态。
+    CreditManage,
     /// 查看企业合同价版本与生效区间。
     ContractPricesRead,
     /// 创建和关闭企业合同价版本。
@@ -345,6 +349,7 @@ const CUSTOM_ROLE_GRANTABLE_PERMISSIONS: &[OrganizationPermission] = &[
     OrganizationPermission::WalletRead,
     OrganizationPermission::WalletManage,
     OrganizationPermission::BudgetsManage,
+    OrganizationPermission::CreditRead,
     OrganizationPermission::ContractPricesRead,
     OrganizationPermission::ContractPricesManage,
     OrganizationPermission::KeysReadAll,
@@ -373,6 +378,8 @@ impl OrganizationPermission {
             Self::WalletRead => "organization.wallet.read",
             Self::WalletManage => "organization.wallet.manage",
             Self::BudgetsManage => "organization.budgets.manage",
+            Self::CreditRead => "organization.credit.read",
+            Self::CreditManage => "organization.credit.manage",
             Self::ContractPricesRead => "organization.contract_prices.read",
             Self::ContractPricesManage => "organization.contract_prices.manage",
             Self::KeysReadAll => "organization.keys.read_all",
@@ -409,6 +416,8 @@ impl OrganizationPermission {
             "organization.wallet.read" => Ok(Self::WalletRead),
             "organization.wallet.manage" => Ok(Self::WalletManage),
             "organization.budgets.manage" => Ok(Self::BudgetsManage),
+            "organization.credit.read" => Ok(Self::CreditRead),
+            "organization.credit.manage" => Ok(Self::CreditManage),
             "organization.contract_prices.read" => Ok(Self::ContractPricesRead),
             "organization.contract_prices.manage" => Ok(Self::ContractPricesManage),
             "organization.keys.read_all" => Ok(Self::KeysReadAll),
@@ -447,6 +456,7 @@ impl OrganizationPermission {
                 | Self::SsoRecovery
                 | Self::ServiceAccountsRead
                 | Self::ServiceAccountsManage
+                | Self::CreditManage
                 | Self::ApprovalsDecide
                 | Self::ApprovalsManage
         )
@@ -524,6 +534,7 @@ impl OrganizationRole {
                 Permission::WalletRead,
                 Permission::WalletManage,
                 Permission::BudgetsManage,
+                Permission::CreditRead,
                 Permission::ContractPricesRead,
                 Permission::ContractPricesManage,
                 Permission::KeysReadAll,
@@ -554,6 +565,8 @@ impl OrganizationRole {
                 Permission::WalletRead,
                 Permission::WalletManage,
                 Permission::BudgetsManage,
+                Permission::CreditRead,
+                Permission::CreditManage,
                 Permission::ContractPricesRead,
                 Permission::ContractPricesManage,
                 Permission::KeysReadAll,
@@ -578,6 +591,8 @@ impl OrganizationRole {
                 Permission::WalletRead,
                 Permission::WalletManage,
                 Permission::BudgetsManage,
+                Permission::CreditRead,
+                Permission::CreditManage,
                 Permission::ContractPricesRead,
                 Permission::ContractPricesManage,
                 Permission::UsageLogsReadAll,

@@ -4463,6 +4463,25 @@
     "close": { "title": "Close contract price interval", "description": "Close {{model}} ({{protocol}}) at the current time? The server will verify version {{version}} and this cannot reopen the interval." },
     "errors": { "listTitle": "Contract prices could not be loaded", "listBody": "The service did not return a reliable price history. Try again shortly.", "forbiddenTitle": "Contract price access was denied", "forbiddenBody": "The membership or organization entitlement no longer allows this read.", "intervalConflict": "This model and protocol interval overlaps another version. Choose a later effective time.", "conflict": "The price changed in another session. Refresh and submit against the latest version.", "mutation": "The operation did not return a reliable result. Refresh the price history and try again." }
   },
+  "organizationCredit": {
+    "eyebrow": "Organization workspace",
+    "title": "Credit & terms",
+    "subtitle": "Review invoice, confirmed repayment, and allocation facts; policy changes use version checks.",
+    "tabs": { "label": "Credit fact categories", "terms": "Credit policies", "invoices": "Invoices", "repayments": "Repayments", "allocations": "Allocations" },
+    "columns": { "limit": "Credit limit", "period": "Terms", "status": "Status", "effective": "Effective", "version": "Version", "amount": "Amount", "due": "Due", "source": "Source", "received": "Received", "created": "Recorded", "invoice": "Invoice", "repayment": "Repayment", "allocated": "Allocated", "settled": "Settled" },
+    "period": { "netDays": "{{days}}-day terms", "endOfMonth": "End of month" },
+    "status": { "active": "Active", "paused": "Paused", "closed": "Closed" },
+    "invoiceStatus": { "due": "Due", "overdue": "Overdue", "settled": "Settled", "voided": "Voided" },
+    "source": { "bank_transfer": "Bank transfer", "other_confirmed": "Other confirmed" },
+    "yes": "Yes",
+    "no": "No",
+    "readOnly": "You can review credit facts, but your role cannot manage credit policies.",
+    "actions": { "refresh": "Refresh", "retry": "Try again", "loadMore": "Load older records", "create": "New policy", "save": "Save policy", "cancel": "Cancel", "pause": "Pause", "resume": "Resume", "close": "Close" },
+    "form": { "currency": "Currency", "limit": "Limit (minor units)", "period": "Terms type", "days": "Days", "effectiveFrom": "Effective from" },
+    "empty": { "termsTitle": "No credit policies", "termsBody": "Create a policy to preserve the organization's billing boundary as a server-side versioned fact.", "invoicesTitle": "No invoices", "invoicesBody": "Invoices appear here after organization usage is confirmed.", "repaymentsTitle": "No repayment facts", "repaymentsBody": "Confirmed finance receipts appear here.", "allocationsTitle": "No allocations", "allocationsBody": "Append-only allocation facts appear here after repayments are applied." },
+    "restricted": { "title": "Credit access restricted", "body": "Your organization role does not include credit and terms read access." },
+    "errors": { "loadTitle": "Credit facts could not be loaded", "loadBody": "The service did not return reliable credit data. Try again shortly.", "forbiddenTitle": "Credit access denied", "forbiddenBody": "Your membership or organization entitlement may no longer allow credit reads.", "mutation": "The policy operation did not return a reliable result. Refresh and try again." }
+  },
   "organizationApprovals": {
     "eyebrow": "Organization workspace",
     "title": "Approvals",

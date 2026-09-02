@@ -25,26 +25,27 @@ use af_admin::{
     DatabaseAdminUserReader, DatabaseAdminUserWriter, DatabaseAdminWalletService,
     DatabaseInitialSetup, DatabaseOAuthLoginService, DatabaseOrganizationActivityService,
     DatabaseOrganizationApprovalService, DatabaseOrganizationBudgetService,
-    DatabaseOrganizationContractPriceService, DatabaseOrganizationCustomRoleBindingService,
-    DatabaseOrganizationCustomRoleService, DatabaseOrganizationScimService,
-    DatabaseOrganizationSsoDomainService, DatabaseOrganizationSsoIdentityBindingService,
-    DatabaseOrganizationSsoLoginTransactionService, DatabaseOrganizationSsoPolicyService,
-    DatabaseOrganizationSsoProviderService, DatabaseOrganizationSsoRecoveryService,
-    DatabaseOrganizationTokenService, DatabaseOrganizationWalletService,
-    DatabasePasskeyAuthenticationService, DatabasePasswordResetService,
-    DatabasePlatformAuditService, DatabasePlaygroundConversationService,
-    DatabasePlaygroundShareService, DatabaseRedemptionService, DatabaseRegistrationService,
-    DatabaseSessionAuthenticator, DatabaseSiteSettingsService, DatabaseSubscriptionService,
-    DatabaseTokenAuthenticator, DatabaseUserInvitationService, DatabaseUserNotificationService,
-    DatabaseUserProfileService, DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery,
-    InitialSetup, ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
+    DatabaseOrganizationContractPriceService, DatabaseOrganizationCreditTermsService,
+    DatabaseOrganizationCustomRoleBindingService, DatabaseOrganizationCustomRoleService,
+    DatabaseOrganizationScimService, DatabaseOrganizationSsoDomainService,
+    DatabaseOrganizationSsoIdentityBindingService, DatabaseOrganizationSsoLoginTransactionService,
+    DatabaseOrganizationSsoPolicyService, DatabaseOrganizationSsoProviderService,
+    DatabaseOrganizationSsoRecoveryService, DatabaseOrganizationTokenService,
+    DatabaseOrganizationWalletService, DatabasePasskeyAuthenticationService,
+    DatabasePasswordResetService, DatabasePlatformAuditService,
+    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
+    DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
+    DatabaseSiteSettingsService, DatabaseSubscriptionService, DatabaseTokenAuthenticator,
+    DatabaseUserInvitationService, DatabaseUserNotificationService, DatabaseUserProfileService,
+    DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery, InitialSetup,
+    ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
     OAuthLoginService, OrganizationActivityService, OrganizationActivityServiceConfigError,
     OrganizationApprovalService, OrganizationBudgetService, OrganizationContractPriceService,
-    OrganizationCustomRoleBindingService, OrganizationCustomRoleService, OrganizationScimService,
-    OrganizationSsoDomainService, OrganizationSsoIdentityBindingService,
-    OrganizationSsoLoginTransactionService, OrganizationSsoPolicyService,
-    OrganizationSsoProviderService, OrganizationSsoRecoveryService, OrganizationTokenService,
-    OrganizationWalletService, PasskeyAuthenticationService,
+    OrganizationCreditTermsService, OrganizationCustomRoleBindingService,
+    OrganizationCustomRoleService, OrganizationScimService, OrganizationSsoDomainService,
+    OrganizationSsoIdentityBindingService, OrganizationSsoLoginTransactionService,
+    OrganizationSsoPolicyService, OrganizationSsoProviderService, OrganizationSsoRecoveryService,
+    OrganizationTokenService, OrganizationWalletService, PasskeyAuthenticationService,
     PasskeyAuthenticationServiceConfigError, PasswordResetService, PasswordResetServiceConfigError,
     PlatformAuditService, PlaygroundConversationService, PlaygroundShareService, RedemptionService,
     RegistrationService, RegistrationServiceConfigError, RuntimeRefreshingAdminGroupWriter,
@@ -96,6 +97,9 @@ use af_db::{
     OrganizationApprovalRepositoryConfigError, OrganizationAuditRepository,
     OrganizationBudgetRepository, OrganizationBudgetRepositoryConfigError,
     OrganizationContractPriceRepository, OrganizationContractPriceRepositoryConfigError,
+    OrganizationCreditInvoiceRepository, OrganizationCreditInvoiceRepositoryConfigError,
+    OrganizationCreditRepaymentRepository, OrganizationCreditRepaymentRepositoryConfigError,
+    OrganizationCreditTermsRepository, OrganizationCreditTermsRepositoryConfigError,
     OrganizationCustomRoleBindingRepository, OrganizationCustomRoleBindingRepositoryConfigError,
     OrganizationCustomRoleRepository, OrganizationCustomRoleRepositoryConfigError,
     OrganizationDepartmentMembershipRepository,
@@ -137,8 +141,8 @@ use af_http::{
     HttpListener, HttpRouter, ImageService, PaymentWebhookProcessorRegistry, QueryApiKeyPolicy,
     ReadinessHandle, RefundReceiptProcessorRegistry, RerankService, ResponsesCompactService,
     ServeError, ServeOutcome, SpeechService, TurnstileVerifier, VideoTaskService,
-    build_payment_webhook_router, build_refund_receipt_webhook_router, build_router,
-    serve_with_graceful_shutdown,
+    build_organization_credit_terms_router, build_payment_webhook_router,
+    build_refund_receipt_webhook_router, build_router, serve_with_graceful_shutdown,
 };
 use af_httpclient::{
     DEFAULT_CONNECT_TIMEOUT, DEFAULT_MAX_CACHED_CLIENTS, DEFAULT_READ_TIMEOUT,
@@ -240,6 +244,7 @@ pub struct AuthenticationReady {
     user_notification_service: Arc<dyn af_admin::UserNotificationService>,
     organization_wallet_service: Arc<dyn OrganizationWalletService>,
     organization_budget_service: Arc<dyn OrganizationBudgetService>,
+    organization_credit_terms_service: Arc<dyn OrganizationCreditTermsService>,
     organization_contract_price_repository: Arc<OrganizationContractPriceRepository>,
     organization_contract_price_service: Arc<dyn OrganizationContractPriceService>,
     organization_token_service: Arc<dyn OrganizationTokenService>,
@@ -595,6 +600,17 @@ pub enum BootstrapError {
     /// 企业预算仓储的启动参数无效。
     #[error("企业预算仓储启动参数无效")]
     OrganizationBudgetRepository(#[source] OrganizationBudgetRepositoryConfigError),
+    /// 企业授信策略仓储的启动参数无效。
+    #[error("企业授信策略仓储启动参数无效")]
+    OrganizationCreditTermsRepository(#[source] OrganizationCreditTermsRepositoryConfigError),
+    /// 企业账单仓储的启动参数无效。
+    #[error("企业账单仓储启动参数无效")]
+    OrganizationCreditInvoiceRepository(#[source] OrganizationCreditInvoiceRepositoryConfigError),
+    /// 企业还款核销仓储的启动参数无效。
+    #[error("企业还款核销仓储启动参数无效")]
+    OrganizationCreditRepaymentRepository(
+        #[source] OrganizationCreditRepaymentRepositoryConfigError,
+    ),
     /// 企业合同价仓储的启动参数无效。
     #[error("企业合同价仓储启动参数无效")]
     OrganizationContractPriceRepository(#[source] OrganizationContractPriceRepositoryConfigError),
@@ -1109,6 +1125,27 @@ impl Bootstrap<DatabaseReady> {
             )
             .map_err(BootstrapError::OrganizationBudgetRepository)?,
         );
+        let organization_credit_terms_repository = Arc::new(
+            OrganizationCreditTermsRepository::new(
+                self.stage.database.clone(),
+                Duration::from_secs(auth.lookup_timeout_secs()),
+            )
+            .map_err(BootstrapError::OrganizationCreditTermsRepository)?,
+        );
+        let organization_credit_invoice_repository = Arc::new(
+            OrganizationCreditInvoiceRepository::new(
+                self.stage.database.clone(),
+                Duration::from_secs(auth.lookup_timeout_secs()),
+            )
+            .map_err(BootstrapError::OrganizationCreditInvoiceRepository)?,
+        );
+        let organization_credit_repayment_repository = Arc::new(
+            OrganizationCreditRepaymentRepository::new(
+                self.stage.database.clone(),
+                Duration::from_secs(auth.lookup_timeout_secs()),
+            )
+            .map_err(BootstrapError::OrganizationCreditRepaymentRepository)?,
+        );
         let organization_contract_price_repository = Arc::new(
             OrganizationContractPriceRepository::new(
                 self.stage.database.clone(),
@@ -1409,6 +1446,15 @@ impl Bootstrap<DatabaseReady> {
                 organization_budget_service: Arc::new(DatabaseOrganizationBudgetService::new(
                     organization_budget_repository,
                 )),
+                organization_credit_terms_service: Arc::new(
+                    DatabaseOrganizationCreditTermsService::new(
+                        organization_credit_terms_repository,
+                    )
+                    .with_ledger_repositories(
+                        organization_credit_invoice_repository,
+                        organization_credit_repayment_repository,
+                    ),
+                ),
                 organization_contract_price_repository: Arc::clone(
                     &organization_contract_price_repository,
                 ),
@@ -2873,6 +2919,12 @@ impl Bootstrap<Supervised> {
                 &self.stage.infrastructure.organization_sso_recovery_service,
             )),
         );
+        let router = router.merge(build_organization_credit_terms_router(
+            Arc::clone(&self.stage.infrastructure.organization_authorization_service),
+            Arc::clone(&self.stage.infrastructure.organization_credit_terms_service),
+            Arc::clone(&self.stage.infrastructure.organization_activity_service),
+            Arc::clone(&self.stage.infrastructure.session_authenticator),
+        ));
         let Bootstrap {
             config,
             shutdown_timeout,

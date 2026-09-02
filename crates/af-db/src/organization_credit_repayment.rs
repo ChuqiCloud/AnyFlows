@@ -10,7 +10,7 @@ use af_domain::{
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
-    QueryFilter, QuerySelect, Set, TransactionTrait,
+    QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Expr, LockType},
 };
@@ -22,7 +22,7 @@ use crate::{
     DatabaseDialect, DatabasePool,
     entity::{
         organization_credit_invoices, organization_credit_repayment_allocations,
-        organization_credit_repayments,
+        organization_credit_repayments, organizations,
     },
 };
 
@@ -154,6 +154,39 @@ impl OrganizationCreditRepaymentAllocationRecord {
     }
 }
 
+/// 一页企业还款事实。
+pub struct OrganizationCreditRepaymentPageRecord {
+    repayments: Vec<OrganizationCreditRepaymentRecord>,
+    next_cursor: Option<i64>,
+}
+
+impl OrganizationCreditRepaymentPageRecord {
+    /// 消费页面并返回还款记录和下一页游标。
+    #[must_use]
+    pub fn into_parts(self) -> (Vec<OrganizationCreditRepaymentRecord>, Option<i64>) {
+        (self.repayments, self.next_cursor)
+    }
+}
+
+/// 一页企业还款核销分配事实。
+pub struct OrganizationCreditRepaymentAllocationPageRecord {
+    allocations: Vec<OrganizationCreditRepaymentAllocationRecord>,
+    next_cursor: Option<i64>,
+}
+
+impl OrganizationCreditRepaymentAllocationPageRecord {
+    /// 消费页面并返回核销记录和下一页游标。
+    #[must_use]
+    pub fn into_parts(
+        self,
+    ) -> (
+        Vec<OrganizationCreditRepaymentAllocationRecord>,
+        Option<i64>,
+    ) {
+        (self.allocations, self.next_cursor)
+    }
+}
+
 /// 企业还款核销分配的幂等结果。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OrganizationCreditRepaymentAllocationOutcome {
@@ -224,6 +257,60 @@ impl OrganizationCreditRepaymentRepository {
         self.run(self.record_inner(write)).await
     }
 
+    /// 按还款事实 ID 从新到旧读取一页已确认还款。
+    pub async fn list(
+        &self,
+        organization_id: OrganizationId,
+        before: Option<i64>,
+        limit: usize,
+    ) -> Result<OrganizationCreditRepaymentPageRecord, OrganizationCreditRepaymentRepositoryError>
+    {
+        if before.is_some_and(|value| value <= 0) || !(1..=100).contains(&limit) {
+            return Err(OrganizationCreditRepaymentRepositoryError::InvalidInput);
+        }
+        self.run(self.list_inner(organization_id, before, limit))
+            .await
+    }
+
+    /// 按企业和还款 ID 读取已确认还款。
+    pub async fn get(
+        &self,
+        organization_id: OrganizationId,
+        id: OrganizationCreditRepaymentId,
+    ) -> Result<OrganizationCreditRepaymentRecord, OrganizationCreditRepaymentRepositoryError> {
+        self.run(self.get_inner(organization_id, id)).await
+    }
+
+    /// 按核销事实 ID 从新到旧读取一页核销分配。
+    pub async fn list_allocations(
+        &self,
+        organization_id: OrganizationId,
+        before: Option<i64>,
+        limit: usize,
+    ) -> Result<
+        OrganizationCreditRepaymentAllocationPageRecord,
+        OrganizationCreditRepaymentRepositoryError,
+    > {
+        if before.is_some_and(|value| value <= 0) || !(1..=100).contains(&limit) {
+            return Err(OrganizationCreditRepaymentRepositoryError::InvalidInput);
+        }
+        self.run(self.list_allocations_inner(organization_id, before, limit))
+            .await
+    }
+
+    /// 按企业和核销分配 ID 读取核销事实。
+    pub async fn get_allocation(
+        &self,
+        organization_id: OrganizationId,
+        id: OrganizationCreditRepaymentAllocationId,
+    ) -> Result<
+        OrganizationCreditRepaymentAllocationRecord,
+        OrganizationCreditRepaymentRepositoryError,
+    > {
+        self.run(self.get_allocation_inner(organization_id, id))
+            .await
+    }
+
     /// 追加一条核销分配，并在事务内保护还款与账单不被超额分配。
     pub async fn allocate(
         &self,
@@ -252,6 +339,160 @@ impl OrganizationCreditRepaymentRepository {
         )
         .await
         .map_err(|_| OrganizationCreditRepaymentRepositoryError::Timeout)?
+    }
+
+    async fn list_inner(
+        &self,
+        organization_id: OrganizationId,
+        before: Option<i64>,
+        limit: usize,
+    ) -> Result<OrganizationCreditRepaymentPageRecord, OrganizationCreditRepaymentRepositoryError>
+    {
+        ensure_active_organization(&self.pool, organization_id).await?;
+        let mut query = organization_credit_repayments::Entity::find()
+            .filter(
+                organization_credit_repayments::Column::OrganizationId.eq(organization_id.get()),
+            )
+            .order_by_desc(organization_credit_repayments::Column::Id)
+            .limit((limit + 1) as u64);
+        if let Some(before) = before {
+            query = query.filter(organization_credit_repayments::Column::Id.lt(before));
+        }
+        let mut models = query
+            .all(self.pool.connection())
+            .await
+            .map_err(query_error)?;
+        let has_more = models.len() > limit;
+        if has_more {
+            models.truncate(limit);
+        }
+        let repayments = models
+            .into_iter()
+            .map(repayment_record)
+            .collect::<Result<Vec<_>, _>>()?;
+        let next_cursor = has_more
+            .then(|| repayments.last().map(OrganizationCreditRepaymentRecord::id))
+            .flatten()
+            .map(OrganizationCreditRepaymentId::get);
+        Ok(OrganizationCreditRepaymentPageRecord {
+            repayments,
+            next_cursor,
+        })
+    }
+
+    async fn get_inner(
+        &self,
+        organization_id: OrganizationId,
+        id: OrganizationCreditRepaymentId,
+    ) -> Result<OrganizationCreditRepaymentRecord, OrganizationCreditRepaymentRepositoryError> {
+        ensure_active_organization(&self.pool, organization_id).await?;
+        organization_credit_repayments::Entity::find_by_id(id.get())
+            .filter(
+                organization_credit_repayments::Column::OrganizationId.eq(organization_id.get()),
+            )
+            .one(self.pool.connection())
+            .await
+            .map_err(query_error)?
+            .ok_or(OrganizationCreditRepaymentRepositoryError::NotFound)
+            .and_then(repayment_record)
+    }
+
+    async fn list_allocations_inner(
+        &self,
+        organization_id: OrganizationId,
+        before: Option<i64>,
+        limit: usize,
+    ) -> Result<
+        OrganizationCreditRepaymentAllocationPageRecord,
+        OrganizationCreditRepaymentRepositoryError,
+    > {
+        ensure_active_organization(&self.pool, organization_id).await?;
+        let mut query = organization_credit_repayment_allocations::Entity::find()
+            .filter(
+                organization_credit_repayment_allocations::Column::OrganizationId
+                    .eq(organization_id.get()),
+            )
+            .order_by_desc(organization_credit_repayment_allocations::Column::Id)
+            .limit((limit + 1) as u64);
+        if let Some(before) = before {
+            query = query.filter(organization_credit_repayment_allocations::Column::Id.lt(before));
+        }
+        let mut models = query
+            .all(self.pool.connection())
+            .await
+            .map_err(query_error)?;
+        let has_more = models.len() > limit;
+        if has_more {
+            models.truncate(limit);
+        }
+        let mut allocations = Vec::with_capacity(models.len());
+        for model in models {
+            allocations.push(self.read_allocation_record(model).await?);
+        }
+        let next_cursor = has_more
+            .then(|| {
+                allocations
+                    .last()
+                    .map(OrganizationCreditRepaymentAllocationRecord::id)
+            })
+            .flatten()
+            .map(OrganizationCreditRepaymentAllocationId::get);
+        Ok(OrganizationCreditRepaymentAllocationPageRecord {
+            allocations,
+            next_cursor,
+        })
+    }
+
+    async fn get_allocation_inner(
+        &self,
+        organization_id: OrganizationId,
+        id: OrganizationCreditRepaymentAllocationId,
+    ) -> Result<
+        OrganizationCreditRepaymentAllocationRecord,
+        OrganizationCreditRepaymentRepositoryError,
+    > {
+        ensure_active_organization(&self.pool, organization_id).await?;
+        let model = organization_credit_repayment_allocations::Entity::find_by_id(id.get())
+            .filter(
+                organization_credit_repayment_allocations::Column::OrganizationId
+                    .eq(organization_id.get()),
+            )
+            .one(self.pool.connection())
+            .await
+            .map_err(query_error)?
+            .ok_or(OrganizationCreditRepaymentRepositoryError::NotFound)?;
+        self.read_allocation_record(model).await
+    }
+
+    async fn read_allocation_record(
+        &self,
+        model: organization_credit_repayment_allocations::Model,
+    ) -> Result<
+        OrganizationCreditRepaymentAllocationRecord,
+        OrganizationCreditRepaymentRepositoryError,
+    > {
+        let repayment = organization_credit_repayments::Entity::find_by_id(model.repayment_id)
+            .filter(
+                organization_credit_repayments::Column::OrganizationId.eq(model.organization_id),
+            )
+            .one(self.pool.connection())
+            .await
+            .map_err(query_error)?
+            .ok_or_else(invariant)?;
+        let invoice = organization_credit_invoices::Entity::find_by_id(model.invoice_id)
+            .filter(organization_credit_invoices::Column::OrganizationId.eq(model.organization_id))
+            .one(self.pool.connection())
+            .await
+            .map_err(query_error)?
+            .ok_or_else(invariant)?;
+        let status =
+            OrganizationCreditInvoiceStatus::try_from(invoice.status).map_err(|_| invariant())?;
+        allocation_record(
+            model,
+            &repayment,
+            &invoice,
+            status == OrganizationCreditInvoiceStatus::Settled,
+        )
     }
 
     async fn record_inner(
@@ -790,6 +1031,22 @@ async fn rollback(
 
 fn query_error(_: sea_orm::DbErr) -> OrganizationCreditRepaymentRepositoryError {
     OrganizationCreditRepaymentRepositoryError::Query
+}
+
+async fn ensure_active_organization(
+    pool: &DatabasePool,
+    organization_id: OrganizationId,
+) -> Result<(), OrganizationCreditRepaymentRepositoryError> {
+    if organizations::Entity::find_by_id(organization_id.get())
+        .filter(organizations::Column::Status.eq(1_i16))
+        .one(pool.connection())
+        .await
+        .map_err(query_error)?
+        .is_none()
+    {
+        return Err(OrganizationCreditRepaymentRepositoryError::NotFound);
+    }
+    Ok(())
 }
 
 fn invariant() -> OrganizationCreditRepaymentRepositoryError {

@@ -152,6 +152,11 @@ impl HttpRouter {
     pub(crate) fn into_router(self) -> Router {
         self.0
     }
+
+    /// 在组合根追加一个已经自带认证边界的业务路由。
+    pub fn merge(self, router: Router) -> Self {
+        Self(self.0.merge(router))
+    }
 }
 
 /// 构建包含已鉴权模型网关入口、管理端接口及健康检查的 HTTP Router。

@@ -37,6 +37,16 @@ pub(crate) enum ManagementError {
     UserConflict,
     /// 企业不存在、已关闭或当前用户不是活动成员。
     OrganizationNotFound,
+    /// 企业授信请求字段或状态值无效。
+    OrganizationCreditInvalidRequest,
+    /// 企业授信策略不存在或不属于路径企业。
+    OrganizationCreditNotFound,
+    /// 企业授信有效区间与既有策略冲突。
+    OrganizationCreditIntervalConflict,
+    /// 企业授信版本 CAS 冲突。
+    OrganizationCreditConflict,
+    /// 企业授信状态不能继续推进。
+    OrganizationCreditTransitionInvalid,
     /// 企业邀请不存在或不属于路径企业。
     OrganizationInvitationNotFound,
     /// 企业邀请批次、邮箱或生命周期事实发生冲突。
@@ -396,6 +406,41 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "organization_not_found",
                     message: "Organization not found",
+                },
+            ),
+            Self::OrganizationCreditInvalidRequest => (
+                StatusCode::BAD_REQUEST,
+                ManagementErrorBody {
+                    code: "organization_credit_invalid_request",
+                    message: "Organization credit request is invalid",
+                },
+            ),
+            Self::OrganizationCreditNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "organization_credit_not_found",
+                    message: "Organization credit term not found",
+                },
+            ),
+            Self::OrganizationCreditIntervalConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_credit_interval_conflict",
+                    message: "Organization credit term interval conflict",
+                },
+            ),
+            Self::OrganizationCreditConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_credit_conflict",
+                    message: "Organization credit term version conflict",
+                },
+            ),
+            Self::OrganizationCreditTransitionInvalid => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_credit_transition_invalid",
+                    message: "Organization credit term transition invalid",
                 },
             ),
             Self::OrganizationInvitationNotFound => (

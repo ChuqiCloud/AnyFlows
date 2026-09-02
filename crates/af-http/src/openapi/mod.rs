@@ -21,6 +21,7 @@ mod organization_activity;
 mod organization_approval;
 mod organization_budget;
 mod organization_contract_price;
+mod organization_credit_terms;
 mod organization_scim_audit;
 mod organization_service_account_runtime;
 mod organization_sso;
@@ -116,6 +117,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(organization_wallet::document());
     document.merge(organization_budget::document());
     document.merge(organization_contract_price::document());
+    document.merge(organization_credit_terms::document());
     document.merge(organization_sso::document());
     document.merge(organization_tokens::document());
     document.merge(organization_activity::document());
@@ -246,7 +248,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 208);
+        assert_eq!(document.paths.paths.len(), 217);
         let operation_count = document
             .paths
             .paths
@@ -268,7 +270,7 @@ mod tests {
             })
             .sum::<usize>();
         // 公开发现、SSO 启动、审批与部门目录管理接口扩展了既有管理面，保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 282);
+        assert_eq!(operation_count, 292);
         assert!(
             document
                 .components
@@ -383,6 +385,16 @@ mod tests {
             "getOrganizationContractPrice",
             "createOrganizationContractPrice",
             "closeOrganizationContractPrice",
+            "listOrganizationCreditTerms",
+            "getOrganizationCreditTerm",
+            "createOrganizationCreditTerm",
+            "updateOrganizationCreditTermStatus",
+            "listOrganizationCreditInvoices",
+            "getOrganizationCreditInvoice",
+            "listOrganizationCreditRepayments",
+            "getOrganizationCreditRepayment",
+            "listOrganizationCreditAllocations",
+            "getOrganizationCreditAllocation",
             "createOrganizationBudgetPolicy",
             "getOrganizationBudgetReservation",
             "listOrganizationTokens",
@@ -597,9 +609,24 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 462);
+        assert_eq!(schemas.len(), 477);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("OrganizationSsoDiscoveryErrorResponse"));
+        assert!(schemas.contains_key("CreditAllocationListResponse"));
+        assert!(schemas.contains_key("CreditAllocationResponse"));
+        assert!(schemas.contains_key("CreditInvoiceListResponse"));
+        assert!(schemas.contains_key("CreditInvoiceResponse"));
+        assert!(schemas.contains_key("CreditInvoiceStatusResponse"));
+        assert!(schemas.contains_key("CreditRepaymentListResponse"));
+        assert!(schemas.contains_key("CreditRepaymentResponse"));
+        assert!(schemas.contains_key("CreditRepaymentSourceKindResponse"));
+        assert!(schemas.contains_key("CreditTermCreateRequest"));
+        assert!(schemas.contains_key("CreditTermListResponse"));
+        assert!(schemas.contains_key("CreditTermPeriodRequest"));
+        assert!(schemas.contains_key("CreditTermPeriodResponse"));
+        assert!(schemas.contains_key("CreditTermResponse"));
+        assert!(schemas.contains_key("CreditTermStatusRequest"));
+        assert!(schemas.contains_key("CreditTermStatusResponse"));
         assert!(schemas.contains_key("OrganizationSsoDiscoveryRequest"));
         assert!(schemas.contains_key("OrganizationSsoDiscoveryResponse"));
         assert!(schemas.contains_key("OrganizationSsoPublicLoginStartErrorResponse"));
