@@ -472,8 +472,8 @@ pub use redemption::{
 };
 pub use refund::{
     AdminRefundDecisionCommand, AdminRefundError, AdminRefundListFuture, AdminRefundListQuery,
-    AdminRefundPage, AdminRefundRequest, AdminRefundService, AdminRefundSubmitter,
-    DEFAULT_ADMIN_REFUND_PAGE_SIZE, DEFAULT_REFUND_RECONCILIATION_PAGE_SIZE,
+    AdminRefundManualCompletionCommand, AdminRefundPage, AdminRefundRequest, AdminRefundService,
+    AdminRefundSubmitter, DEFAULT_ADMIN_REFUND_PAGE_SIZE, DEFAULT_REFUND_RECONCILIATION_PAGE_SIZE,
     DatabaseAdminRefundService, MAX_ADMIN_REFUND_PAGE_SIZE, MAX_REFUND_RECONCILIATION_PAGE_SIZE,
     RefundReconciliationEntry, RefundReconciliationListFuture, RefundReconciliationListQuery,
     RefundReconciliationPage,

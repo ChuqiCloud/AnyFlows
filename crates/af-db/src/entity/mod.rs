@@ -121,6 +121,7 @@ pub(crate) mod playground_shares;
 pub(crate) mod proxies;
 pub(crate) mod redemption_batches;
 pub(crate) mod redemption_codes;
+pub(crate) mod refund_manual_completions;
 pub(crate) mod refund_provider_events;
 pub(crate) mod refund_reconciliation_entries;
 pub(crate) mod refund_requests;
@@ -2880,7 +2881,7 @@ where
         || original_amount_minor <= 0
         || refund_amount_minor <= 0
         || refund_amount_minor > original_amount_minor
-        || !matches!(status, 1..=5)
+        || !matches!(status, 1..=7)
         || !matches!(approval_status, 1..=3)
         || approval_actor_id.is_some_and(|value| value <= 0)
         || (approval_status == 1 && (approval_actor_id.is_some() || approval_reason.is_some()))
@@ -3761,11 +3762,8 @@ impl ActiveModelBehavior for refund_reconciliation_entries::ActiveModel {
         }
         let id = self.id.try_as_ref().copied().unwrap_or_default();
         let request_key = self.request_key.try_as_ref();
-        let provider_event_id = self
-            .provider_event_id
-            .try_as_ref()
-            .copied()
-            .unwrap_or_default();
+        let provider_event_id = self.provider_event_id.try_as_ref().copied().flatten();
+        let manual_completion_id = self.manual_completion_id.try_as_ref().copied().flatten();
         let user_id = self.user_id.try_as_ref().copied().unwrap_or_default();
         let organization_id = self.organization_id.try_as_ref().copied().flatten();
         let approval_actor_id = self
@@ -3784,7 +3782,9 @@ impl ActiveModelBehavior for refund_reconciliation_entries::ActiveModel {
         let currency = self.currency.try_as_ref();
         if id != 0
             || request_key.is_none_or(|value| !valid_hex(value, 32, true))
-            || provider_event_id <= 0
+            || (provider_event_id.is_some() == manual_completion_id.is_some())
+            || provider_event_id.is_some_and(|value| value <= 0)
+            || manual_completion_id.is_some_and(|value| value <= 0)
             || user_id <= 0
             || organization_id.is_some_and(|value| value <= 0)
             || approval_actor_id <= 0

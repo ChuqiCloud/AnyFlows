@@ -1,9 +1,12 @@
 use std::time::Duration;
 
+use sha2::{Digest, Sha256};
+
 use af_domain::{
-    MAX_REFUND_APPROVAL_REASON_BYTES, OrganizationId, RefundApprovalStatus, RefundOrderKind,
-    RefundRequestCreate, RefundRequestCreateOutcome, RefundRequestId, RefundRequestKey,
-    RefundRequestRecord, RefundRequestStatus, SubscriptionOrderStatus, TopupOrderStatus, UserId,
+    MAX_REFUND_APPROVAL_REASON_BYTES, OrganizationId, RefundApprovalStatus, RefundManualCompletion,
+    RefundManualResult, RefundOrderKind, RefundRequestCreate, RefundRequestCreateOutcome,
+    RefundRequestId, RefundRequestKey, RefundRequestRecord, RefundRequestStatus,
+    SubscriptionOrderStatus, TopupOrderStatus, UserId,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
@@ -16,8 +19,8 @@ use tokio::time::timeout;
 use crate::{
     DatabasePool,
     entity::{
-        SensitiveString, refund_provider_events, refund_reconciliation_entries, refund_requests,
-        subscription_orders, topup_orders,
+        SensitiveString, refund_manual_completions, refund_provider_events,
+        refund_reconciliation_entries, refund_requests, subscription_orders, topup_orders,
     },
 };
 
@@ -205,6 +208,18 @@ impl RefundRepository {
         write: RefundReceiptWrite,
     ) -> Result<RefundReceiptOutcome, RefundRepositoryError> {
         let operation = apply_receipt_inner(self.pool.connection(), &write);
+        match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result,
+            Err(_) => Err(RefundRepositoryError::OutcomeUnknown),
+        }
+    }
+
+    /// 记录易支付线下退款结果；人工事实与请求状态在同一事务内提交。
+    pub async fn complete_manual_refund(
+        &self,
+        completion: RefundManualCompletion,
+    ) -> Result<RefundSubmissionOutcome, RefundRepositoryError> {
+        let operation = complete_manual_refund_inner(self.pool.connection(), &completion);
         match timeout(self.operation_timeout, operation).await {
             Ok(result) => result,
             Err(_) => Err(RefundRepositoryError::OutcomeUnknown),
@@ -403,7 +418,8 @@ impl Default for RefundReconciliationQuery {
 pub struct RefundReconciliationRecord {
     id: i64,
     request_id: RefundRequestId,
-    provider_event_id: i64,
+    provider_event_id: Option<i64>,
+    manual_completion_id: Option<i64>,
     user_id: UserId,
     organization_id: Option<OrganizationId>,
     approval_actor_id: UserId,
@@ -425,8 +441,12 @@ impl RefundReconciliationRecord {
         self.request_id
     }
     #[must_use]
-    pub const fn provider_event_id(&self) -> i64 {
+    pub const fn provider_event_id(&self) -> Option<i64> {
         self.provider_event_id
+    }
+    #[must_use]
+    pub const fn manual_completion_id(&self) -> Option<i64> {
+        self.manual_completion_id
     }
     #[must_use]
     pub const fn user_id(&self) -> UserId {
@@ -801,6 +821,246 @@ async fn transition_submission(
     Ok(RefundSubmissionOutcome::Applied(to_record(model)?))
 }
 
+async fn complete_manual_refund_inner(
+    connection: &DatabaseConnection,
+    completion: &RefundManualCompletion,
+) -> Result<RefundSubmissionOutcome, RefundRepositoryError> {
+    let reference_sha256 = format!("{:x}", Sha256::digest(completion.reference().as_bytes()));
+    let transaction = connection
+        .begin()
+        .await
+        .map_err(|_| RefundRepositoryError::Query)?;
+    let result =
+        complete_manual_refund_transaction(&transaction, completion, &reference_sha256).await;
+    match result {
+        Ok(outcome) => {
+            transaction
+                .commit()
+                .await
+                .map_err(|_| RefundRepositoryError::OutcomeUnknown)?;
+            Ok(outcome)
+        }
+        Err(error) => {
+            transaction
+                .rollback()
+                .await
+                .map_err(|_| RefundRepositoryError::OutcomeUnknown)?;
+            Err(error)
+        }
+    }
+}
+
+async fn complete_manual_refund_transaction(
+    transaction: &DatabaseTransaction,
+    completion: &RefundManualCompletion,
+    reference_sha256: &str,
+) -> Result<RefundSubmissionOutcome, RefundRepositoryError> {
+    let request_key = completion.request_id().persistence_key();
+    if let Some(existing) = refund_manual_completions::Entity::find()
+        .filter(
+            refund_manual_completions::Column::CompletionKey
+                .eq(completion.completion_key().persistence_key()),
+        )
+        .one(transaction)
+        .await
+        .map_err(map_query)?
+    {
+        if existing.request_key != request_key
+            || existing.expected_version
+                != i64::try_from(completion.expected_version())
+                    .map_err(|_| RefundRepositoryError::Invariant)?
+            || existing.result != completion.result().code()
+            || existing.reference_sha256 != reference_sha256
+        {
+            return Err(RefundRepositoryError::Conflict);
+        }
+        let model = load_model_by_request_key(transaction, completion.request_id())
+            .await?
+            .ok_or(RefundRepositoryError::Invariant)?;
+        return Ok(RefundSubmissionOutcome::Existing(to_record(model)?));
+    }
+    if let Some(existing) = refund_manual_completions::Entity::find()
+        .filter(refund_manual_completions::Column::RequestKey.eq(request_key.clone()))
+        .one(transaction)
+        .await
+        .map_err(map_query)?
+    {
+        let same = existing.completion_key == completion.completion_key().persistence_key()
+            && existing.expected_version
+                == i64::try_from(completion.expected_version())
+                    .map_err(|_| RefundRepositoryError::Invariant)?
+            && existing.result == completion.result().code()
+            && existing.reference_sha256 == reference_sha256;
+        return if same {
+            let model = load_model_by_request_key(transaction, completion.request_id())
+                .await?
+                .ok_or(RefundRepositoryError::Invariant)?;
+            Ok(RefundSubmissionOutcome::Existing(to_record(model)?))
+        } else {
+            Err(RefundRepositoryError::Conflict)
+        };
+    }
+
+    let current = load_model_by_request_key(transaction, completion.request_id())
+        .await?
+        .ok_or(RefundRepositoryError::NotFound)?;
+    let record = to_record(current)?;
+    if record.provider() != "epay"
+        || record.approval_status() != RefundApprovalStatus::Approved
+        || !matches!(
+            record.status(),
+            RefundRequestStatus::Requested | RefundRequestStatus::Failed
+        )
+        || completion.completed_at() < record.created_at()
+        || completion.expected_version() != record.version()
+    {
+        return Err(RefundRepositoryError::Conflict);
+    }
+    let completed_at = to_database_time(completion.completed_at())?;
+    let manual = refund_manual_completions::ActiveModel {
+        id: sea_orm::NotSet,
+        completion_key: Set(completion.completion_key().persistence_key()),
+        request_key: Set(request_key),
+        expected_version: Set(i64::try_from(completion.expected_version())
+            .map_err(|_| RefundRepositoryError::Invariant)?),
+        actor_user_id: Set(completion.actor_id().get()),
+        result: Set(completion.result().code()),
+        reference_sha256: Set(reference_sha256.to_owned()),
+        completed_at: Set(completed_at),
+        created_at: Set(completed_at),
+    };
+    let savepoint = transaction
+        .begin()
+        .await
+        .map_err(|_| RefundRepositoryError::Query)?;
+    let inserted = match manual.insert(&savepoint).await {
+        Ok(value) => {
+            savepoint
+                .commit()
+                .await
+                .map_err(|_| RefundRepositoryError::OutcomeUnknown)?;
+            value
+        }
+        Err(error) if matches!(error.sql_err(), Some(SqlErr::UniqueConstraintViolation(_))) => {
+            savepoint
+                .rollback()
+                .await
+                .map_err(|_| RefundRepositoryError::OutcomeUnknown)?;
+            return resolve_manual_unique_conflict(
+                transaction,
+                completion,
+                reference_sha256,
+                &request_key,
+            )
+            .await;
+        }
+        Err(_) => {
+            savepoint
+                .rollback()
+                .await
+                .map_err(|_| RefundRepositoryError::OutcomeUnknown)?;
+            return Err(RefundRepositoryError::Query);
+        }
+    };
+    let facts = if completion.result() == RefundManualResult::Completed {
+        Some(derive_reconciliation_facts(transaction, &record).await?)
+    } else {
+        None
+    };
+    if let Some(facts) = facts {
+        insert_reconciliation(
+            transaction,
+            &record,
+            None,
+            Some(inserted.id),
+            facts,
+            completed_at,
+        )
+        .await?;
+    }
+    let target = match completion.result() {
+        RefundManualResult::Completed => RefundRequestStatus::ManuallySucceeded,
+        RefundManualResult::Failed => RefundRequestStatus::ManuallyFailed,
+    };
+    let expected_version = i64::try_from(completion.expected_version())
+        .map_err(|_| RefundRepositoryError::Invariant)?;
+    let next_version = record
+        .version()
+        .checked_add(1)
+        .ok_or(RefundRepositoryError::Invariant)?;
+    let changed = refund_requests::Entity::update_many()
+        .filter(refund_requests::Column::Id.eq(record.database_id()))
+        .filter(refund_requests::Column::Version.eq(expected_version))
+        .filter(refund_requests::Column::Status.eq(record.status().code()))
+        .col_expr(refund_requests::Column::Status, Expr::value(target.code()))
+        .col_expr(
+            refund_requests::Column::Version,
+            Expr::value(i64::try_from(next_version).map_err(|_| RefundRepositoryError::Invariant)?),
+        )
+        .col_expr(
+            refund_requests::Column::UpdatedAt,
+            Expr::value(completed_at),
+        )
+        .exec(transaction)
+        .await
+        .map_err(|_| RefundRepositoryError::Query)?;
+    if changed.rows_affected != 1 {
+        return Err(RefundRepositoryError::Conflict);
+    }
+    let updated = load_model_by_request_key(transaction, completion.request_id())
+        .await?
+        .ok_or(RefundRepositoryError::Invariant)?;
+    Ok(RefundSubmissionOutcome::Applied(to_record(updated)?))
+}
+
+/// 唯一键并发竞争后回读已提交事实，保证重试同一完成键仍然幂等。
+async fn resolve_manual_unique_conflict(
+    transaction: &DatabaseTransaction,
+    completion: &RefundManualCompletion,
+    reference_sha256: &str,
+    request_key: &str,
+) -> Result<RefundSubmissionOutcome, RefundRepositoryError> {
+    let expected_version = i64::try_from(completion.expected_version())
+        .map_err(|_| RefundRepositoryError::Invariant)?;
+    let completion_key = completion.completion_key().persistence_key();
+    let matches = |existing: &refund_manual_completions::Model| {
+        existing.request_key == request_key
+            && existing.expected_version == expected_version
+            && existing.result == completion.result().code()
+            && existing.reference_sha256 == reference_sha256
+    };
+    if let Some(existing) = refund_manual_completions::Entity::find()
+        .filter(refund_manual_completions::Column::CompletionKey.eq(completion_key.clone()))
+        .one(transaction)
+        .await
+        .map_err(map_query)?
+    {
+        if !matches(&existing) {
+            return Err(RefundRepositoryError::Conflict);
+        }
+        let model = load_model_by_request_key(transaction, completion.request_id())
+            .await?
+            .ok_or(RefundRepositoryError::Invariant)?;
+        return Ok(RefundSubmissionOutcome::Existing(to_record(model)?));
+    }
+    if let Some(existing) = refund_manual_completions::Entity::find()
+        .filter(refund_manual_completions::Column::RequestKey.eq(request_key.to_owned()))
+        .one(transaction)
+        .await
+        .map_err(map_query)?
+    {
+        if !matches(&existing) || existing.completion_key != completion_key {
+            return Err(RefundRepositoryError::Conflict);
+        }
+        let model = load_model_by_request_key(transaction, completion.request_id())
+            .await?
+            .ok_or(RefundRepositoryError::Invariant)?;
+        return Ok(RefundSubmissionOutcome::Existing(to_record(model)?));
+    }
+    // 唯一键错误但两个业务键都不存在，说明数据库返回了未知约束冲突。
+    Err(RefundRepositoryError::Query)
+}
+
 async fn apply_receipt_inner(
     connection: &DatabaseConnection,
     write: &RefundReceiptWrite,
@@ -926,7 +1186,8 @@ async fn apply_receipt_transaction(
         insert_reconciliation(
             transaction,
             &record,
-            inserted_event.id,
+            Some(inserted_event.id),
+            None,
             reconciliation,
             processed_at,
         )
@@ -1082,7 +1343,8 @@ async fn derive_reconciliation_facts(
 async fn insert_reconciliation(
     transaction: &DatabaseTransaction,
     record: &RefundRequestRecord,
-    provider_event_id: i64,
+    provider_event_id: Option<i64>,
+    manual_completion_id: Option<i64>,
     facts: ReconciliationFacts,
     created_at: TimeDateTimeWithTimeZone,
 ) -> Result<(), RefundRepositoryError> {
@@ -1095,6 +1357,7 @@ async fn insert_reconciliation(
         id: sea_orm::NotSet,
         request_key: Set(record.request_id().persistence_key()),
         provider_event_id: Set(provider_event_id),
+        manual_completion_id: Set(manual_completion_id),
         user_id: Set(record.user_id().get()),
         organization_id: Set(facts.organization_id.map(OrganizationId::get)),
         approval_actor_id: Set(facts.approval_actor_id.get()),
@@ -1138,7 +1401,7 @@ async fn validate_existing_reconciliation(
         .checked_neg()
         .filter(|value| *value != i64::MIN)
         .ok_or(RefundRepositoryError::Invariant)?;
-    if existing.provider_event_id != provider_event_id
+    if existing.provider_event_id != Some(provider_event_id)
         || existing.user_id != record.user_id().get()
         || existing.organization_id != facts.organization_id.map(OrganizationId::get)
         || existing.approval_actor_id != facts.approval_actor_id.get()
@@ -1157,7 +1420,7 @@ fn to_reconciliation_record(
     model: refund_reconciliation_entries::Model,
 ) -> Result<RefundReconciliationRecord, RefundRepositoryError> {
     if model.id <= 0
-        || model.provider_event_id <= 0
+        || (model.provider_event_id.is_none() == model.manual_completion_id.is_none())
         || model.amount_delta_minor >= 0
         || model.amount_delta_minor == i64::MIN
     {
@@ -1168,6 +1431,7 @@ fn to_reconciliation_record(
         request_id: RefundRequestId::from_persistence_key(&model.request_key)
             .map_err(|_| RefundRepositoryError::Invariant)?,
         provider_event_id: model.provider_event_id,
+        manual_completion_id: model.manual_completion_id,
         user_id: UserId::new(model.user_id).map_err(|_| RefundRepositoryError::Invariant)?,
         organization_id: model
             .organization_id

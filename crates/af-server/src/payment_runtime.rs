@@ -27,7 +27,6 @@ use af_http::{PaymentWebhookProcessorRegistry, RefundReceiptProcessorRegistry};
 use af_httpclient::HttpClientProvider;
 use url::Url;
 
-use crate::epay_refund::EasyPayRefundProvider;
 use crate::stripe_payment_intent::StripePaymentIntentProvider;
 use crate::stripe_refund::StripeRefundProvider;
 
@@ -257,20 +256,7 @@ impl PaymentRuntime {
             )
             .map_err(|_| runtime_failed("epay_provider"))?,
         );
-        if record.epay_refund_enabled() {
-            // 易支付退款协议并非所有服务商都提供，只有显式开启时才暴露退款 Provider。
-            let refund_provider = Arc::new(
-                EasyPayRefundProvider::new(
-                    gateway_url,
-                    merchant_id,
-                    merchant_key.expose_secret(),
-                    self.upstream_clients.clone(),
-                    self.request_timeout,
-                )
-                .map_err(|_| runtime_failed("epay_refund_provider"))?,
-            );
-            refund_providers.insert(EASYPAY_PAYMENT_PROVIDER.to_owned(), refund_provider);
-        }
+        // 易支付不提供原路退款接口，退款由管理员审批后登记线下完成事实。
         if record.epay_alipay_enabled() {
             routes.push(
                 UserTopupProviderRoute::epay(

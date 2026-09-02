@@ -4,11 +4,13 @@ import { apiClient, ApiError } from '@/lib/api'
 import {
   approveAdminRefund,
   listAdminRefunds,
+  manualCompleteAdminRefund,
   rejectAdminRefund,
   submitAdminRefund,
 } from '@/lib/api/generated/sdk.gen'
 import type {
   AdminRefundListResponse,
+  AdminRefundManualCompletionRequest,
   AdminRefundRequest,
 } from '@/lib/api/generated/types.gen'
 
@@ -45,7 +47,8 @@ function useRefundAction(action: 'approve' | 'reject') {
         ? (await approveAdminRefund(options)).data
         : (await rejectAdminRefund(options)).data
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminRefundsQueryKey }),
+    // 无论成功、CAS 冲突还是结果未知，都重新读取服务端版本，避免继续使用过期审批事实。
+    onSettled: () => queryClient.invalidateQueries({ queryKey: adminRefundsQueryKey }),
   })
 }
 
@@ -68,6 +71,26 @@ export function useSubmitAdminRefund() {
       return data
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: adminRefundsQueryKey }),
+  })
+}
+
+export function useManualCompleteAdminRefund() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: {
+      requestId: string
+      body: AdminRefundManualCompletionRequest
+    }) => {
+      const { data } = await manualCompleteAdminRefund({
+        client: apiClient,
+        path: { request_id: input.requestId },
+        body: input.body,
+        throwOnError: true as const,
+      })
+      return data
+    },
+    // 结果未知或 CAS 冲突时也要刷新，确保界面显示服务端的最新版本。
+    onSettled: () => queryClient.invalidateQueries({ queryKey: adminRefundsQueryKey }),
   })
 }
 
