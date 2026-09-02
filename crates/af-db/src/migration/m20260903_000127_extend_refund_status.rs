@@ -128,16 +128,20 @@ async fn ensure_no_manual_refund_facts(manager: &SchemaManager<'_>) -> Result<()
     Ok(())
 }
 
-async fn rebuild_sqlite_refund_requests(
-    connection: &SchemaManagerConnection<'_>,
-) -> Result<(), DbErr> {
+async fn rebuild_sqlite_refund_requests<C>(connection: &C) -> Result<(), DbErr>
+where
+    C: ConnectionTrait + Sync,
+{
     rebuild_sqlite_refund_requests_with_status(connection, 7).await
 }
 
-async fn rebuild_sqlite_refund_requests_with_status(
-    connection: &SchemaManagerConnection<'_>,
+async fn rebuild_sqlite_refund_requests_with_status<C>(
+    connection: &C,
     max_status: i16,
-) -> Result<(), DbErr> {
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait + Sync,
+{
     connection
         .execute_unprepared("PRAGMA foreign_keys=OFF")
         .await?;
