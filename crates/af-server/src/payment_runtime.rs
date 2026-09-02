@@ -110,13 +110,8 @@ impl PaymentRuntime {
             )?;
         }
         if record.epay_enabled() {
-            self.add_epay(
-                record,
-                cipher,
-                &mut routes,
-                &mut webhook_processors,
-            )
-            .await?;
+            self.add_epay(record, cipher, &mut routes, &mut webhook_processors)
+                .await?;
         }
 
         let user_topup_service = if routes.is_empty() {
