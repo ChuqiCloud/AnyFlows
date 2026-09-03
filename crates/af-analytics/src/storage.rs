@@ -111,6 +111,10 @@ pub struct AdminDashboardOutcomeSnapshot {
 impl AdminDashboardOutcomeSnapshot {
     /// 组合请求终态、失败分类和可见成功流向。
     #[must_use]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "参数与看板终态及四层流向事实一一对应"
+    )]
     pub fn new(
         request_count: i64,
         successful_request_count: i64,
