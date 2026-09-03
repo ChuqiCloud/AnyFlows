@@ -61,6 +61,7 @@ mod openapi;
 mod operations;
 mod organization_activity;
 mod organization_approval;
+mod organization_approval_notifications;
 mod organization_budget;
 mod organization_contract_price;
 mod organization_credit_terms;

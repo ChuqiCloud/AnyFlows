@@ -5957,6 +5957,30 @@
       "purchaseDetail": "Subscription purchase confirmation recorded",
       "meta": "{{time}} · Attempts {{attempts}} · #{{id}}"
     },
+    "organizationApprovalNotifications": {
+      "title": "Organization approval decisions",
+      "subtitle": "Approval decisions for requests you submitted in an organization.",
+      "loadError": "Organization approval notifications are temporarily unavailable.",
+      "olderLoadError": "Older approval notifications could not be loaded.",
+      "empty": "No organization approval decisions yet.",
+      "unreadCount": "{{count}} unread",
+      "markRead": "Mark as read",
+      "markReadError": "This approval notification could not be marked as read. Try again.",
+      "readAt": "Read {{time}}",
+      "loading": "Loading",
+      "loadOlder": "Load older records",
+      "detail": "Organization #{{organization}} · Request #{{request}}",
+      "meta": "{{time}} · #{{id}}",
+      "decision": {
+        "approved": "Request approved",
+        "rejected": "Request rejected",
+        "timed_out": "Request timed out"
+      },
+      "readState": {
+        "read": "Read",
+        "unread": "Unread"
+      }
+    },
     "actions": {
       "refresh": "Refresh",
       "retry": "Try again",

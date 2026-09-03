@@ -11,6 +11,8 @@ import {
   listUserPasskeys,
   listUserNotifications,
   markUserNotificationsRead,
+  listOrganizationApprovalNotifications,
+  markOrganizationApprovalNotificationsRead,
   renameUserPasskey,
   revokeUserPasskey,
   startUserPasskeyRegistration,
@@ -19,6 +21,7 @@ import {
 } from '@/lib/api/generated/sdk.gen'
 import type {
   UserNotificationPreferencesRequest,
+  OrganizationApprovalNotificationListResponse,
   UserPasswordChangeRequest,
   UserProfileResponse,
   UserProfileUpdateRequest,
@@ -32,6 +35,7 @@ export const userProfileQueryKey = ['user-profile'] as const
 export const userTwoFactorQueryKey = ['user-two-factor'] as const
 export const userPasskeysQueryKey = ['user-passkeys'] as const
 export const userNotificationsQueryKey = ['user-notifications'] as const
+export const organizationApprovalNotificationsQueryKey = ['organization-approval-notifications'] as const
 
 /** 读取当前会话用户的个人资料与通知偏好。 */
 export function useUserProfile() {
@@ -184,7 +188,7 @@ export function useUserNotifications() {
   })
 }
 
-/** Mark notification facts as read and let every consumer refresh the server-owned unread count. */
+/** 将通知事实标记为已读，并让所有消费者刷新服务端维护的未读数。 */
 export function useMarkUserNotificationsRead() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -196,5 +200,37 @@ export function useMarkUserNotificationsRead() {
       return data
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: userNotificationsQueryKey }),
+  })
+}
+
+/** 读取当前用户作为申请人的企业审批决定通知。 */
+export function useOrganizationApprovalNotifications() {
+  return useInfiniteQuery({
+    queryKey: organizationApprovalNotificationsQueryKey,
+    initialPageParam: undefined as string | undefined,
+    queryFn: async ({ pageParam, signal }) => {
+      const { data } = await listOrganizationApprovalNotifications({
+        client: apiClient,
+        query: { before: pageParam, limit: 25 },
+        signal,
+      })
+      return data as OrganizationApprovalNotificationListResponse
+    },
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
+  })
+}
+
+/** 幂等写入企业审批通知已读回执，并刷新列表和顶栏未读数。 */
+export function useMarkOrganizationApprovalNotificationsRead() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (notificationIds: number[]) => {
+      const { data } = await markOrganizationApprovalNotificationsRead({
+        body: { notification_ids: notificationIds },
+        client: apiClient,
+      })
+      return data
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: organizationApprovalNotificationsQueryKey }),
   })
 }

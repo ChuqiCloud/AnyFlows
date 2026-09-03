@@ -1500,6 +1500,29 @@ export type OrganizationApprovalDecisionRequest = {
     reason?: string | null;
     decided_at?: number | null;
 };
+export type OrganizationApprovalNotification = {
+    id: number;
+    organization_id: number;
+    request_id: number;
+    decision_id: number;
+    decision: OrganizationApprovalNotificationDecision;
+    template_version: string;
+    occurred_at: number;
+    read_at?: number | null;
+};
+export type OrganizationApprovalNotificationDecision = 'approved' | 'rejected' | 'timed_out';
+export type OrganizationApprovalNotificationListResponse = {
+    entries: Array<OrganizationApprovalNotification>;
+    next_cursor?: string | null;
+    unread_count: number;
+};
+export type OrganizationApprovalNotificationMarkReadRequest = {
+    notification_ids: Array<number>;
+};
+export type OrganizationApprovalNotificationMarkReadResponse = {
+    marked_count: number;
+    unread_count: number;
+};
 export type OrganizationApprovalRequest = {
     id: number;
     request_key: string;
@@ -8300,6 +8323,41 @@ export type DecideOrganizationApprovalRequestResponses = {
     200: OrganizationApprovalRequest;
 };
 export type DecideOrganizationApprovalRequestResponse = DecideOrganizationApprovalRequestResponses[keyof DecideOrganizationApprovalRequestResponses];
+export type ListOrganizationApprovalNotificationsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before?: string;
+        limit?: number;
+    };
+    url: '/api/account/organization-approval-notifications';
+};
+export type ListOrganizationApprovalNotificationsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationApprovalNotificationsError = ListOrganizationApprovalNotificationsErrors[keyof ListOrganizationApprovalNotificationsErrors];
+export type ListOrganizationApprovalNotificationsResponses = {
+    200: OrganizationApprovalNotificationListResponse;
+};
+export type ListOrganizationApprovalNotificationsResponse = ListOrganizationApprovalNotificationsResponses[keyof ListOrganizationApprovalNotificationsResponses];
+export type MarkOrganizationApprovalNotificationsReadData = {
+    body: OrganizationApprovalNotificationMarkReadRequest;
+    path?: never;
+    query?: never;
+    url: '/api/account/organization-approval-notifications/read';
+};
+export type MarkOrganizationApprovalNotificationsReadErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    500: ManagementError;
+};
+export type MarkOrganizationApprovalNotificationsReadError = MarkOrganizationApprovalNotificationsReadErrors[keyof MarkOrganizationApprovalNotificationsReadErrors];
+export type MarkOrganizationApprovalNotificationsReadResponses = {
+    200: OrganizationApprovalNotificationMarkReadResponse;
+};
+export type MarkOrganizationApprovalNotificationsReadResponse = MarkOrganizationApprovalNotificationsReadResponses[keyof MarkOrganizationApprovalNotificationsReadResponses];
 export type ListOrganizationScimAuditLogsData = {
     body?: never;
     path: {

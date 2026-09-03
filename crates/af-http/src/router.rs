@@ -8,12 +8,13 @@ use af_admin::{
     AdminPaymentSettingsService, AdminRouteReader, AdminRouteWriter, AdminTokenReader,
     AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, AdminWalletService,
     InitialSetup, ModelCatalogReader, OAuthLoginService, OrganizationActivityService,
-    OrganizationApprovalService, OrganizationBudgetService, OrganizationContractPriceService,
-    OrganizationScimService, OrganizationTokenService, OrganizationWalletService,
-    PasskeyAuthenticationService, PasswordResetService, PlatformAuditService,
-    PlaygroundConversationService, PlaygroundShareService, RedemptionService, RegistrationService,
-    SessionAuthenticator, SiteSettingsService, SubscriptionService, TokenAuthenticator,
-    UserInvitationService, UserNotificationService, UserTopupService, UserWalletService,
+    OrganizationApprovalNotificationService, OrganizationApprovalService,
+    OrganizationBudgetService, OrganizationContractPriceService, OrganizationScimService,
+    OrganizationTokenService, OrganizationWalletService, PasskeyAuthenticationService,
+    PasswordResetService, PlatformAuditService, PlaygroundConversationService,
+    PlaygroundShareService, RedemptionService, RegistrationService, SessionAuthenticator,
+    SiteSettingsService, SubscriptionService, TokenAuthenticator, UserInvitationService,
+    UserNotificationService, UserTopupService, UserWalletService,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -101,6 +102,7 @@ use crate::openai_speech::openai_speech;
 use crate::operations::{ReadinessHandle, operations_router};
 use crate::organization_activity::{PLATFORM_REASON_HEADER, build_organization_activity_router};
 use crate::organization_approval::build_organization_approval_router;
+use crate::organization_approval_notifications::build_organization_approval_notification_router;
 use crate::organization_budget::build_organization_budget_router;
 use crate::organization_contract_price::build_organization_contract_price_router;
 use crate::organization_scim_audit::build_organization_scim_audit_router;
@@ -191,6 +193,7 @@ pub fn build_router(
     user_profile_service: Arc<dyn af_admin::UserProfileService>,
     user_wallet_service: Arc<dyn UserWalletService>,
     user_notification_service: Arc<dyn UserNotificationService>,
+    organization_approval_notification_service: Arc<dyn OrganizationApprovalNotificationService>,
     organization_authorization_service: Option<Arc<dyn af_admin::OrganizationAuthorizationService>>,
     organization_activity_service: Option<Arc<dyn OrganizationActivityService>>,
     organization_wallet_service: Option<Arc<dyn OrganizationWalletService>>,
@@ -518,6 +521,10 @@ pub fn build_router(
         user_notification_service,
         Arc::clone(&http_state.session_authenticator),
     );
+    let organization_approval_notification_routes = build_organization_approval_notification_router(
+        organization_approval_notification_service,
+        Arc::clone(&http_state.session_authenticator),
+    );
     let user_topup_routes = build_user_topup_router(
         user_topup_service.clone(),
         Arc::clone(&http_state.session_authenticator),
@@ -838,6 +845,7 @@ pub fn build_router(
         .merge(user_profile_routes)
         .merge(user_wallet_routes)
         .merge(user_notification_routes)
+        .merge(organization_approval_notification_routes)
         .merge(user_topup_routes)
         .merge(redemption_routes)
         .merge(subscription_routes)

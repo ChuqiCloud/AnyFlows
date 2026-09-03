@@ -26,6 +26,10 @@ use crate::{
     OrganizationApprovalTimeoutOutcome, OrganizationCreate, OrganizationEntitlementWrite,
     OrganizationRepository, PoolOptions,
 };
+use crate::{
+    OrganizationApprovalNotificationCursor, OrganizationApprovalNotificationListQuery,
+    OrganizationApprovalNotificationRepository, OrganizationApprovalNotificationRepositoryError,
+};
 
 struct Fixture {
     pool: crate::DatabasePool,
@@ -462,6 +466,140 @@ async fn timeout_scan_and_decision_are_bounded_and_idempotent() -> Result<(), Bo
         Err(OrganizationApprovalRepositoryError::Invariant)
     );
 
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn approval_notification_repository_paginates_and_marks_read_idempotently()
+-> Result<(), Box<dyn Error>> {
+    let fixture = new_fixture().await?;
+    let notification_repository = OrganizationApprovalNotificationRepository::new(
+        fixture.pool.clone(),
+        Duration::from_secs(2),
+    )?;
+    let template = fixture
+        .repository
+        .create_template(OrganizationApprovalTemplateWrite::new(
+            fixture.organization_id,
+            OrganizationApprovalTemplateKey::new("notification-list")?,
+            OrganizationApprovalResourceType::Budget,
+            OrganizationApprovalTemplateDigest::new([11; 32])?,
+            fixture.owner_id,
+            None,
+        ))
+        .await?;
+    let now = TimeDateTimeWithTimeZone::now_utc().unix_timestamp();
+    let mut notification_ids = Vec::new();
+    for (request_key, decision_key) in [([12; 16], [13; 16]), ([14; 16], [15; 16])] {
+        let request = OrganizationApprovalRequest::new(
+            OrganizationApprovalRequestKey::new(request_key)?,
+            fixture.organization_id,
+            OrganizationApprovalResourceType::Budget,
+            "notification test".to_owned(),
+            template.id(),
+            template.version(),
+            fixture.owner_id,
+            now + 3_600,
+        )?;
+        let request_id = match fixture
+            .repository
+            .create_request(OrganizationApprovalRequestWrite::new(request))
+            .await
+            .map_err(|error| format!("创建通知测试申请失败: {error:?}"))?
+        {
+            OrganizationApprovalRequestCreateOutcome::Created(record) => record.id(),
+            OrganizationApprovalRequestCreateOutcome::Existing(_) => unreachable!(),
+        };
+        let decision = OrganizationApprovalDecision::new(
+            OrganizationApprovalDecisionKey::new(decision_key)?,
+            fixture.organization_id,
+            request_id,
+            OrganizationApprovalDecisionKind::Approved,
+            Some(fixture.owner_id),
+            None,
+            now,
+        )?;
+        let decision = match fixture
+            .repository
+            .record_decision(OrganizationApprovalDecisionWrite::new(decision))
+            .await
+            .map_err(|error| format!("写入通知测试决定失败: {error:?}"))?
+        {
+            OrganizationApprovalDecisionOutcome::Created(record) => record,
+            OrganizationApprovalDecisionOutcome::Existing(_) => unreachable!(),
+        };
+        let notification = organization_approval_notifications::Entity::find()
+            .filter(organization_approval_notifications::Column::DecisionId.eq(decision.id().get()))
+            .one(fixture.pool.connection())
+            .await
+            .map_err(|error| format!("读取通知测试事实失败: {error:?}"))?
+            .expect("审批决定必须生成通知");
+        notification_ids.push(notification.id);
+    }
+
+    let page = notification_repository
+        .list(
+            fixture.owner_id.get(),
+            OrganizationApprovalNotificationListQuery::new(None, 1)?,
+        )
+        .await
+        .map_err(|error| format!("分页读取审批通知失败: {error:?}"))?;
+    assert_eq!(page.entries().len(), 1);
+    assert_eq!(page.unread_count(), 2);
+    let cursor = page.next_cursor().expect("分页必须返回稳定游标");
+    let older = notification_repository
+        .list(
+            fixture.owner_id.get(),
+            OrganizationApprovalNotificationListQuery::new(Some(cursor), 1)?,
+        )
+        .await
+        .map_err(|error| format!("读取较旧审批通知失败: {error:?}"))?;
+    assert_eq!(older.entries().len(), 1);
+    assert!(older.next_cursor().is_none());
+
+    let marked = notification_repository
+        .mark_read(fixture.owner_id.get(), vec![notification_ids[0]])
+        .await
+        .map_err(|error| format!("首次标记审批通知已读失败: {error:?}"))?;
+    assert_eq!(marked.marked_count(), 1);
+    assert_eq!(marked.unread_count(), 1);
+    let repeated = notification_repository
+        .mark_read(fixture.owner_id.get(), vec![notification_ids[0]])
+        .await
+        .map_err(|error| format!("重复标记审批通知已读失败: {error:?}"))?;
+    assert_eq!(repeated.marked_count(), 1);
+    assert_eq!(repeated.unread_count(), 1);
+    assert_eq!(
+        notification_repository
+            .mark_read(999_999, vec![notification_ids[1]])
+            .await,
+        Err(OrganizationApprovalNotificationRepositoryError::NotFound)
+    );
+    assert_eq!(
+        notification_repository
+            .list(
+                999_999,
+                OrganizationApprovalNotificationListQuery::new(None, 10)?,
+            )
+            .await?
+            .entries()
+            .len(),
+        0
+    );
+    assert_eq!(
+        OrganizationApprovalNotificationCursor::new(0, notification_ids[0]),
+        Err(OrganizationApprovalNotificationRepositoryError::InvalidInput)
+    );
+    assert_eq!(
+        notification_repository
+            .mark_read(
+                fixture.owner_id.get(),
+                vec![notification_ids[0], notification_ids[0]]
+            )
+            .await,
+        Err(OrganizationApprovalNotificationRepositoryError::InvalidInput)
+    );
     fixture.pool.close().await?;
     Ok(())
 }

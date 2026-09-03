@@ -5957,6 +5957,30 @@
       "purchaseDetail": "订阅购买确认已记录",
       "meta": "{{time}} · 尝试 {{attempts}} 次 · #{{id}}"
     },
+    "organizationApprovalNotifications": {
+      "title": "企业审批决定",
+      "subtitle": "查看你在企业中提交的审批申请决定。",
+      "loadError": "企业审批通知暂时无法加载。",
+      "olderLoadError": "更早的企业审批通知加载失败。",
+      "empty": "暂时没有企业审批决定。",
+      "unreadCount": "{{count}} 条未读",
+      "markRead": "标记为已读",
+      "markReadError": "这条企业审批通知暂时无法标记为已读，请重试。",
+      "readAt": "已于 {{time}} 读取",
+      "loading": "正在加载",
+      "loadOlder": "加载更早记录",
+      "detail": "企业 #{{organization}} · 申请 #{{request}}",
+      "meta": "{{time}} · #{{id}}",
+      "decision": {
+        "approved": "申请已通过",
+        "rejected": "申请已拒绝",
+        "timed_out": "申请已超时"
+      },
+      "readState": {
+        "read": "已读",
+        "unread": "未读"
+      }
+    },
     "actions": {
       "refresh": "刷新",
       "retry": "重试",
