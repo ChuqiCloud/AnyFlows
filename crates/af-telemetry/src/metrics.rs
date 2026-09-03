@@ -36,6 +36,8 @@ pub const CONCURRENCY_SLOTS: &str = "concurrency_slots";
 pub const BILLING_FLUSH_LAG: &str = "billing_flush_lag";
 /// 按闭合档案和结果累计的客户端仿真 Attempt。
 pub const CLIENT_SIMULATION_ATTEMPTS_TOTAL: &str = "client_simulation_attempts_total";
+/// 按闭合正文档案和补丁结果累计的请求数。
+pub const CLIENT_SIMULATION_BODY_PATCHES_TOTAL: &str = "client_simulation_body_patches_total";
 /// 尚未完成 ClickHouse 投递的事实数量。
 pub const ANALYTICS_EXPORT_BACKLOG: &str = "analytics_export_backlog";
 /// 有限请求速率策略成功准入的请求数。
@@ -62,6 +64,7 @@ const QUOTA_CONSUMED_DESCRIPTION: &str = "AnyFlows 已结算的整数 quota 消�
 const CONCURRENCY_SLOTS_DESCRIPTION: &str = "AnyFlows 各级并发槽位占用量。";
 const BILLING_FLUSH_LAG_DESCRIPTION: &str = "AnyFlows 批量计费落盘滞后。";
 const CLIENT_SIMULATION_ATTEMPTS_DESCRIPTION: &str = "AnyFlows 客户端仿真 Attempt 总数。";
+const CLIENT_SIMULATION_BODY_PATCHES_DESCRIPTION: &str = "AnyFlows 客户端仿真正文补丁结果总数。";
 const ANALYTICS_EXPORT_BACKLOG_DESCRIPTION: &str = "AnyFlows ClickHouse 事实投递积压数量。";
 const REQUEST_RATE_LIMIT_ADMISSIONS_DESCRIPTION: &str = "AnyFlows 有限请求速率策略成功准入总数。";
 const REQUEST_RATE_LIMIT_REJECTIONS_DESCRIPTION: &str = "AnyFlows 请求速率限制拒绝总数。";
@@ -78,6 +81,7 @@ const OTHER_LABEL: &str = "other";
 
 const PAYMENT_CONFIRMATION_LABELS: &[&str] = &["outcome"];
 const ORGANIZATION_APPROVAL_TIMEOUT_LABELS: &[&str] = &["outcome"];
+const CLIENT_SIMULATION_BODY_LABELS: &[&str] = &["profile", "result"];
 
 // 固定 bucket 避免 exporter 回退为 summary，并覆盖网关的毫秒级到长流式请求。
 const REQUEST_DURATION_BUCKETS: &[f64] = &[
@@ -221,6 +225,19 @@ pub fn record_client_simulation_attempt(
     .increment(1);
 }
 
+/// 记录一次请求级正文补丁结果；不携带日期、提示词或正文内容。
+pub fn record_client_simulation_body_patch(
+    profile: MetricClientSimulationBodyProfile,
+    result: MetricClientSimulationBodyResult,
+) {
+    ::metrics::counter!(
+        CLIENT_SIMULATION_BODY_PATCHES_TOTAL,
+        "profile" => profile.as_str(),
+        "result" => result.as_str()
+    )
+    .increment(1);
+}
+
 /// 设置尚未完成 ClickHouse 投递的事实数量。
 pub fn set_analytics_export_backlog(backlog: u64) {
     ::metrics::gauge!(ANALYTICS_EXPORT_BACKLOG).set(backlog as f64);
@@ -331,6 +348,36 @@ registered_label!(
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum MetricClientSimulationProfile {
     AnthropicCliHeadersV1,
+}
+
+/// 指标使用的有限客户端仿真正文档案。
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum MetricClientSimulationBodyProfile {
+    AnthropicCliSystemDateV1,
+}
+
+impl MetricClientSimulationBodyProfile {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::AnthropicCliSystemDateV1 => "anthropic_cli_system_date_v1",
+        }
+    }
+}
+
+/// 指标使用的正文补丁闭合结果。
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum MetricClientSimulationBodyResult {
+    Applied,
+    Rejected,
+}
+
+impl MetricClientSimulationBodyResult {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Applied => "applied",
+            Self::Rejected => "rejected",
+        }
+    }
 }
 
 impl MetricClientSimulationProfile {
@@ -639,6 +686,11 @@ pub(crate) fn describe_metric_families() {
         CLIENT_SIMULATION_ATTEMPTS_TOTAL,
         Unit::Count,
         CLIENT_SIMULATION_ATTEMPTS_DESCRIPTION
+    );
+    ::metrics::describe_counter!(
+        CLIENT_SIMULATION_BODY_PATCHES_TOTAL,
+        Unit::Count,
+        CLIENT_SIMULATION_BODY_PATCHES_DESCRIPTION
     );
     ::metrics::describe_gauge!(
         ANALYTICS_EXPORT_BACKLOG,

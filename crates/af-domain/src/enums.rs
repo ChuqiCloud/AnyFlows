@@ -234,6 +234,16 @@ string_enum! {
 }
 
 string_enum! {
+    /// 出站请求可显式选择的版本化客户端仿真正文档案。
+    ///
+    /// 关闭状态由配置缺失表达；正文档案不得携带管理员自定义文本或模板。
+    pub enum ClientSimulationBodyProfile {
+        /// 在受控 Anthropic CLI 仿真请求开头插入冻结的 UTC 日期指令。
+        AnthropicCliSystemDateV1 => "anthropic_cli_system_date_v1",
+    }
+}
+
+string_enum! {
     /// 单个上游 Attempt 的客户端仿真应用结果。
     pub enum ClientSimulationResult {
         /// 当前候选配置了档案，但在应用前已结束。
@@ -242,6 +252,16 @@ string_enum! {
         Applied => "applied",
         /// 档案不匹配或补丁校验失败，请求未发送。
         Failed => "failed",
+    }
+}
+
+string_enum! {
+    /// 请求级客户端仿真正文补丁结果。
+    pub enum ClientSimulationBodyPatchResult {
+        /// 正文已按闭合档案重新构建，原始正文直通资格已清除。
+        Applied => "applied",
+        /// 正文形状或受信时钟不满足档案约束，请求在发送前被拒绝。
+        Rejected => "rejected",
     }
 }
 

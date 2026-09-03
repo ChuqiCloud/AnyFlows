@@ -5,7 +5,10 @@ use af_db::{
     DebugTraceOperation, DebugTraceOutcome, DebugTraceProtocol, DebugTraceRepository,
     DebugTraceRequestDiagnosticWrite, DebugTraceSettingsRecord, DebugTraceWrite,
 };
-use af_domain::{GatewayPrincipal, Operation, Protocol, UpstreamError};
+use af_domain::{
+    ClientSimulationBodyPatchResult, ClientSimulationBodyProfile, GatewayPrincipal, Operation,
+    Protocol, UpstreamError,
+};
 use af_relay::{
     RelayAttemptDiagnostic, RelayAttemptReport, RelayDiagnosticInput, RelayDiagnosticPolicy,
 };
@@ -92,25 +95,31 @@ impl DebugTraceRuntime {
         downstream_protocol: Protocol,
         upstream_protocol: Protocol,
         operation: Operation,
+        body_profile: Option<ClientSimulationBodyProfile>,
+        body_result: Option<ClientSimulationBodyPatchResult>,
         downstream: RelayDiagnosticInput,
     ) -> Option<DebugTraceCapture> {
         let settings = *self.settings.borrow();
         if !settings.enabled || !sampled(request_id, settings.sample_per_million) {
             return None;
         }
-        let policy = RelayDiagnosticPolicy::new(
+        if body_profile.is_some() != body_result.is_some() {
+            return None;
+        }
+        let policy = diagnostic_policy(
             settings.capture_headers,
             settings.capture_bodies,
             usize::try_from(settings.max_body_bytes).ok()?,
+            body_profile,
         )?;
         let downstream = DebugTraceRequestDiagnosticWrite::new(
             downstream.method().to_owned(),
             downstream.path().to_owned(),
-            settings
-                .capture_headers
+            policy
+                .capture_headers()
                 .then(|| downstream.headers_json().to_owned()),
-            settings
-                .capture_bodies
+            policy
+                .capture_bodies()
                 .then(|| downstream.body_json(policy.max_body_bytes())),
         )
         .ok()?;
@@ -124,6 +133,8 @@ impl DebugTraceRuntime {
             downstream_protocol: map_protocol(downstream_protocol)?,
             upstream_protocol: map_protocol(upstream_protocol)?,
             operation: map_operation(operation)?,
+            body_profile,
+            body_result,
             policy,
             downstream,
         })
@@ -159,6 +170,8 @@ pub(crate) struct DebugTraceCapture {
     downstream_protocol: DebugTraceProtocol,
     upstream_protocol: DebugTraceProtocol,
     operation: DebugTraceOperation,
+    body_profile: Option<ClientSimulationBodyProfile>,
+    body_result: Option<ClientSimulationBodyPatchResult>,
     policy: RelayDiagnosticPolicy,
     downstream: DebugTraceRequestDiagnosticWrite,
 }
@@ -177,7 +190,8 @@ impl DebugTraceCapture {
         succeeded: bool,
         routing_elapsed: Duration,
     ) {
-        let Some(attempts) = trace_attempts(report, targets) else {
+        let Some(attempts) = trace_attempts(report, targets, self.body_profile, self.body_result)
+        else {
             tracing::error!(
                 target: "af_server::debug_trace",
                 error_kind = "debug_trace_attempt_mapping",
@@ -316,6 +330,8 @@ fn apply_settings(
 fn trace_attempts(
     report: &RelayAttemptReport,
     targets: &[CredentialAttemptTarget],
+    body_profile: Option<ClientSimulationBodyProfile>,
+    body_result: Option<ClientSimulationBodyPatchResult>,
 ) -> Option<Vec<DebugTraceAttemptWrite>> {
     let mut attempts = Vec::with_capacity(
         report.failures().len() + usize::from(report.successful_candidate_index().is_some()),
@@ -338,6 +354,9 @@ fn trace_attempts(
             attempt = attempt
                 .with_client_simulation(client_simulation.profile(), client_simulation.result());
         }
+        if let (Some(profile), Some(result)) = (body_profile, body_result) {
+            attempt = attempt.with_client_simulation_body(profile, result);
+        }
         if let Some(diagnostic) = failure.diagnostic() {
             attempt = attempt.with_diagnostic(map_attempt_diagnostic(diagnostic)?);
         }
@@ -355,6 +374,9 @@ fn trace_attempts(
         if let Some(client_simulation) = report.successful_client_simulation() {
             attempt = attempt
                 .with_client_simulation(client_simulation.profile(), client_simulation.result());
+        }
+        if let (Some(profile), Some(result)) = (body_profile, body_result) {
+            attempt = attempt.with_client_simulation_body(profile, result);
         }
         if let Some(diagnostic) = report.successful_diagnostic() {
             attempt = attempt.with_diagnostic(map_attempt_diagnostic(diagnostic)?);
@@ -441,6 +463,20 @@ fn elapsed_millis(elapsed: Duration) -> i64 {
     i64::try_from(elapsed.as_millis()).unwrap_or(i64::MAX)
 }
 
+/// 正文仿真启用时无条件关闭诊断正文采集，避免保留原始 system 指令。
+fn diagnostic_policy(
+    capture_headers: bool,
+    capture_bodies: bool,
+    max_body_bytes: usize,
+    body_profile: Option<ClientSimulationBodyProfile>,
+) -> Option<RelayDiagnosticPolicy> {
+    RelayDiagnosticPolicy::new(
+        capture_headers,
+        capture_bodies && body_profile.is_none(),
+        max_body_bytes,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -459,5 +495,18 @@ mod tests {
     fn duration_conversion_saturates_instead_of_wrapping() {
         assert_eq!(elapsed_millis(Duration::from_millis(15)), 15);
         assert_eq!(elapsed_millis(Duration::MAX), i64::MAX);
+    }
+
+    #[test]
+    fn body_simulation_trace_policy_never_captures_bodies() {
+        let policy = diagnostic_policy(
+            true,
+            true,
+            1_024,
+            Some(ClientSimulationBodyProfile::AnthropicCliSystemDateV1),
+        )
+        .unwrap();
+        assert!(policy.capture_headers());
+        assert!(!policy.capture_bodies());
     }
 }

@@ -26155,6 +26155,17 @@
               }
             ]
           },
+          "client_simulation_body_profile": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ClientSimulationBodyProfile",
+                "description": "默认关闭的版本化客户端仿真正文档案。"
+              }
+            ]
+          },
           "responses_websocket_enabled": {
             "type": "boolean",
             "description": "是否显式允许该原生 Responses 渠道使用 WebSocket。"
@@ -26317,6 +26328,8 @@
           "auto_ban",
           "client_simulation_profile",
           "client_simulation_risk_accepted",
+          "client_simulation_body_profile",
+          "client_simulation_body_risk_accepted",
           "models",
           "group_ids",
           "model_mapping",
@@ -26424,6 +26437,21 @@
           "client_simulation_risk_accepted": {
             "type": "boolean",
             "description": "仅确认本次启用或换档案的合规风险，不作为持久化开关。"
+          },
+          "client_simulation_body_profile": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ClientSimulationBodyProfile",
+                "description": "可空正文仿真档案；仅可附加在匹配的 Header 仿真档案上。"
+              }
+            ]
+          },
+          "client_simulation_body_risk_accepted": {
+            "type": "boolean",
+            "description": "仅确认本次启用或更换正文档案的请求改写风险，不作为持久化开关。"
           },
           "responses_websocket_enabled": {
             "type": "boolean",
@@ -26625,6 +26653,8 @@
           "auto_ban",
           "client_simulation_profile",
           "client_simulation_risk_accepted",
+          "client_simulation_body_profile",
+          "client_simulation_body_risk_accepted",
           "models",
           "group_ids",
           "model_mapping",
@@ -26729,6 +26759,21 @@
           "client_simulation_risk_accepted": {
             "type": "boolean",
             "description": "首次启用或换档案必须为 true；保持或关闭时可为 false。"
+          },
+          "client_simulation_body_profile": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ClientSimulationBodyProfile",
+                "description": "必须显式提交；null 表示关闭，非空档案表示保持、启用或更换正文档案。"
+              }
+            ]
+          },
+          "client_simulation_body_risk_accepted": {
+            "type": "boolean",
+            "description": "首次启用或更换正文档案必须为 true；保持或关闭时可为 false。"
           },
           "responses_websocket_enabled": {
             "type": [
@@ -28457,6 +28502,26 @@
               },
               {
                 "$ref": "#/components/schemas/ClientSimulationResult"
+              }
+            ]
+          },
+          "client_simulation_body_profile": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ClientSimulationBodyProfile"
+              }
+            ]
+          },
+          "client_simulation_body_result": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ClientSimulationBodyPatchResult"
               }
             ]
           },
@@ -33497,6 +33562,19 @@
         "type": "string",
         "enum": [
           "anthropic_cli_headers_v1"
+        ]
+      },
+      "ClientSimulationBodyProfile": {
+        "type": "string",
+        "enum": [
+          "anthropic_cli_system_date_v1"
+        ]
+      },
+      "ClientSimulationBodyPatchResult": {
+        "type": "string",
+        "enum": [
+          "applied",
+          "rejected"
         ]
       },
       "ClientSimulationResult": {

@@ -379,6 +379,8 @@ pub struct AdminDebugTraceAttempt {
     elapsed_ms: i64,
     client_simulation_profile: Option<af_domain::ClientSimulationProfile>,
     client_simulation_result: Option<af_domain::ClientSimulationResult>,
+    client_simulation_body_profile: Option<af_domain::ClientSimulationBodyProfile>,
+    client_simulation_body_result: Option<af_domain::ClientSimulationBodyPatchResult>,
     request_method: Option<String>,
     request_url: Option<String>,
     response_status: Option<i16>,
@@ -402,6 +404,8 @@ impl AdminDebugTraceAttempt {
             elapsed_ms: record.elapsed_ms(),
             client_simulation_profile: record.client_simulation_profile(),
             client_simulation_result: record.client_simulation_result(),
+            client_simulation_body_profile: record.client_simulation_body_profile(),
+            client_simulation_body_result: record.client_simulation_body_result(),
             request_method: record.request_method().map(str::to_owned),
             request_url: record.request_url().map(str::to_owned),
             response_status: record.response_status(),
@@ -448,6 +452,18 @@ impl AdminDebugTraceAttempt {
     #[must_use]
     pub const fn client_simulation_result(&self) -> Option<af_domain::ClientSimulationResult> {
         self.client_simulation_result
+    }
+    #[must_use]
+    pub const fn client_simulation_body_profile(
+        &self,
+    ) -> Option<af_domain::ClientSimulationBodyProfile> {
+        self.client_simulation_body_profile
+    }
+    #[must_use]
+    pub const fn client_simulation_body_result(
+        &self,
+    ) -> Option<af_domain::ClientSimulationBodyPatchResult> {
+        self.client_simulation_body_result
     }
     #[must_use]
     pub fn request_method(&self) -> Option<&str> {

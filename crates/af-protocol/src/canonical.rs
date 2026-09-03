@@ -96,6 +96,15 @@ impl CanonicalRequest {
     pub const fn raw_passthrough(&self) -> Option<&RawPassthrough> {
         self.raw_passthrough.as_ref()
     }
+
+    /// 用已校验的消息序列替换正文，并取消私有字段直通资格。
+    ///
+    /// 正文语义发生变化后必须由目标协议重新编码，不能复用来源 JSON 的私有字段。
+    pub(crate) fn with_rewritten_messages(mut self, messages: Vec<Message>) -> Self {
+        self.messages = messages;
+        self.raw_passthrough = None;
+        self
+    }
 }
 
 impl fmt::Debug for CanonicalRequest {

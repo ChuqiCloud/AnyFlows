@@ -4,24 +4,27 @@ use ::metrics::{Key, Label};
 
 use crate::{
     ANALYTICS_EXPORT_BACKLOG, BILLING_FLUSH_LAG, CHANNEL_HEALTH, CLIENT_SIMULATION_ATTEMPTS_TOTAL,
-    CONCURRENCY_SLOTS, FIRST_TOKEN_SECONDS, MetricClientSimulationProfile,
-    MetricClientSimulationResult, MetricConcurrencyLevel, MetricLabelError,
-    MetricOrganizationApprovalTimeoutOutcome, MetricPaymentConfirmationOutcome, MetricProtocol,
-    MetricRequestRateLimitFailure, MetricRequestRateLimitSubject, MetricRequestStatus,
-    MetricUpstreamErrorType, MetricsHandle, ORGANIZATION_APPROVAL_TIMEOUT_TOTAL,
-    PAYMENT_WEBHOOK_CONFIRMATIONS_TOTAL, PROMETHEUS_CONTENT_TYPE, PROMETHEUS_PATH,
-    QUOTA_CONSUMED_TOTAL, REQUEST_DURATION_SECONDS, REQUEST_RATE_LIMIT_ADMISSIONS_TOTAL,
-    REQUEST_RATE_LIMIT_FAILURES_TOTAL, REQUEST_RATE_LIMIT_REJECTIONS_TOTAL,
-    REQUEST_RATE_LIMIT_RETRY_AFTER_SECONDS, REQUEST_RATE_LIMIT_RULES_PER_CHECK, REQUESTS_TOTAL,
-    TelemetryError, UPSTREAM_ERRORS_TOTAL, init_metrics,
+    CLIENT_SIMULATION_BODY_PATCHES_TOTAL, CONCURRENCY_SLOTS, FIRST_TOKEN_SECONDS,
+    MetricClientSimulationBodyProfile, MetricClientSimulationBodyResult,
+    MetricClientSimulationProfile, MetricClientSimulationResult, MetricConcurrencyLevel,
+    MetricLabelError, MetricOrganizationApprovalTimeoutOutcome, MetricPaymentConfirmationOutcome,
+    MetricProtocol, MetricRequestRateLimitFailure, MetricRequestRateLimitSubject,
+    MetricRequestStatus, MetricUpstreamErrorType, MetricsHandle,
+    ORGANIZATION_APPROVAL_TIMEOUT_TOTAL, PAYMENT_WEBHOOK_CONFIRMATIONS_TOTAL,
+    PROMETHEUS_CONTENT_TYPE, PROMETHEUS_PATH, QUOTA_CONSUMED_TOTAL, REQUEST_DURATION_SECONDS,
+    REQUEST_RATE_LIMIT_ADMISSIONS_TOTAL, REQUEST_RATE_LIMIT_FAILURES_TOTAL,
+    REQUEST_RATE_LIMIT_REJECTIONS_TOTAL, REQUEST_RATE_LIMIT_RETRY_AFTER_SECONDS,
+    REQUEST_RATE_LIMIT_RULES_PER_CHECK, REQUESTS_TOTAL, TelemetryError, UPSTREAM_ERRORS_TOTAL,
+    init_metrics,
     metrics::{
         MAX_CHANNEL_LABELS, MAX_GROUP_LABELS, MAX_MODEL_LABELS, MAX_SERIES_PER_FAMILY,
         build_metrics_recorder, describe_metric_families,
     },
-    record_client_simulation_attempt, record_organization_approval_timeout,
-    record_payment_confirmation, record_request_rate_limit_admission,
-    record_request_rate_limit_check, record_request_rate_limit_failure,
-    record_request_rate_limit_rejection, set_analytics_export_backlog,
+    record_client_simulation_attempt, record_client_simulation_body_patch,
+    record_organization_approval_timeout, record_payment_confirmation,
+    record_request_rate_limit_admission, record_request_rate_limit_check,
+    record_request_rate_limit_failure, record_request_rate_limit_rejection,
+    set_analytics_export_backlog,
 };
 
 const GLOBAL_METRICS_INIT_CHILD: &str = "ANYFLOWS_METRICS_INIT_CHILD";
@@ -50,6 +53,10 @@ fn emit_sample_metrics(handle: &MetricsHandle) {
     record_client_simulation_attempt(
         MetricClientSimulationProfile::AnthropicCliHeadersV1,
         MetricClientSimulationResult::Applied,
+    );
+    record_client_simulation_body_patch(
+        MetricClientSimulationBodyProfile::AnthropicCliSystemDateV1,
+        MetricClientSimulationBodyResult::Applied,
     );
     set_analytics_export_backlog(5);
     record_request_rate_limit_check(2);
@@ -259,6 +266,10 @@ fn local_recorder_renders_fixed_metric_contract() {
     assert!(simulation.contains("profile=\"anthropic_cli_headers_v1\""));
     assert!(simulation.contains("result=\"applied\""));
     assert!(simulation.ends_with(" 1"));
+    let body_patch = metric_line(&rendered, "client_simulation_body_patches_total{");
+    assert!(body_patch.contains("profile=\"anthropic_cli_system_date_v1\""));
+    assert!(body_patch.contains("result=\"applied\""));
+    assert!(body_patch.ends_with(" 1"));
     assert_eq!(
         metric_line(&rendered, "analytics_export_backlog "),
         "analytics_export_backlog 5"
@@ -466,6 +477,15 @@ fn all_fixed_metric_enum_variants_render_canonical_labels() {
                 result,
             );
         }
+        for result in [
+            MetricClientSimulationBodyResult::Applied,
+            MetricClientSimulationBodyResult::Rejected,
+        ] {
+            record_client_simulation_body_patch(
+                MetricClientSimulationBodyProfile::AnthropicCliSystemDateV1,
+                result,
+            );
+        }
         handle.add_quota_consumed(&group, 1);
     });
 
@@ -493,6 +513,7 @@ fn all_fixed_metric_enum_variants_render_canonical_labels() {
         "not_applied",
         "applied",
         "failed",
+        "rejected",
     ] {
         assert!(
             rendered.contains(&format!("=\"{value}\"")),
@@ -538,6 +559,17 @@ fn categorical_label_values_are_rejected_at_the_recorder_boundary() {
         test_key(
             CLIENT_SIMULATION_ATTEMPTS_TOTAL,
             &[("profile", "anthropic_cli_headers_v1"), ("result", INVALID)],
+        ),
+        test_key(
+            CLIENT_SIMULATION_BODY_PATCHES_TOTAL,
+            &[("profile", INVALID), ("result", "applied")],
+        ),
+        test_key(
+            CLIENT_SIMULATION_BODY_PATCHES_TOTAL,
+            &[
+                ("profile", "anthropic_cli_system_date_v1"),
+                ("result", INVALID),
+            ],
         ),
         test_key(REQUEST_RATE_LIMIT_REJECTIONS_TOTAL, &[("subject", INVALID)]),
         test_key(REQUEST_RATE_LIMIT_FAILURES_TOTAL, &[("reason", INVALID)]),

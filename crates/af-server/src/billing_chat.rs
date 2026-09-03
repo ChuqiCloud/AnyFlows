@@ -49,6 +49,9 @@ pub trait PlannedChatExecution: Send {
     /// 返回路由映射后用于定价解析的 Canonical 模型。
     fn pricing_model(&self) -> &str;
 
+    /// 返回经过路由期受控改写后的 Canonical 请求，计费只能以此请求估算与结算。
+    fn canonical_request(&self) -> &CanonicalRequestEnvelope;
+
     /// 在预扣成功后消费计划并执行全部候选故障转移。
     fn execute(self: Box<Self>) -> PlannedChatExecutionFuture;
 }
@@ -201,24 +204,10 @@ impl BillingChatService {
         diagnostic: RelayDiagnosticInput,
     ) -> Result<BilledChatExecution, AfError> {
         let started_at = Instant::now();
-        let canonical = request.canonical();
-        let reasoning = canonical.reasoning;
-        let observation_context = BillingUsageContext::new(
-            request_id,
-            request.requested_model(),
-            response_protocol,
-            canonical.operation,
-            canonical.stream,
-            reasoning.and_then(|value| value.effort()),
-            reasoning.and_then(|value| value.budget_tokens()),
-        )
-        .map_err(|_| AfError::Internal)?;
         // 缺省值必须同时约束预扣和上游输出，避免预留额度低于平台真实成本。
         let request = request.with_default_max_output_tokens(
             TokenCount::new(DEFAULT_MAX_OUTPUT_TOKENS).expect("网关默认输出上限必须是合法正整数"),
         );
-        let upper_bound = estimate_openai_request_upper_bound(request.canonical())
-            .map_err(map_upper_bound_error)?;
         let planned = self
             .inner
             .plan(
@@ -230,6 +219,20 @@ impl BillingChatService {
                 diagnostic,
             )
             .await?;
+        // 路由计划可能已按受控正文档案重建消息；预扣与后续结算必须使用同一份事实。
+        let canonical = planned.canonical_request().canonical();
+        let observation_context = BillingUsageContext::new(
+            request_id,
+            planned.canonical_request().requested_model(),
+            response_protocol,
+            canonical.operation,
+            canonical.stream,
+            canonical.reasoning.and_then(|value| value.effort()),
+            canonical.reasoning.and_then(|value| value.budget_tokens()),
+        )
+        .map_err(|_| AfError::Internal)?;
+        let upper_bound =
+            estimate_openai_request_upper_bound(canonical).map_err(map_upper_bound_error)?;
         let source_group_id = principal.group_id();
         let target_group_id = planned.target_group_id();
         let pricing_model = planned.pricing_model().to_owned();
@@ -785,6 +788,7 @@ mod tests {
                         .pricing_model_override
                         .clone()
                         .unwrap_or_else(|| request.canonical().model.clone()),
+                    request,
                 }) as Box<dyn PlannedChatExecution>)
             })
         }
@@ -793,6 +797,7 @@ mod tests {
     struct FullExecution {
         target_group_id: GroupId,
         pricing_model: String,
+        request: CanonicalRequestEnvelope,
     }
 
     struct ProtocolTrackingStub {
@@ -820,6 +825,7 @@ mod tests {
                 Ok(Box::new(FullExecution {
                     target_group_id: self.target_group_id,
                     pricing_model: request.canonical().model.clone(),
+                    request,
                 }) as Box<dyn PlannedChatExecution>)
             })
         }
@@ -849,6 +855,7 @@ mod tests {
                 Ok(Box::new(FullExecution {
                     target_group_id: self.target_group_id,
                     pricing_model: request.canonical().model.clone(),
+                    request,
                 }) as Box<dyn PlannedChatExecution>)
             })
         }
@@ -861,6 +868,10 @@ mod tests {
 
         fn pricing_model(&self) -> &str {
             &self.pricing_model
+        }
+
+        fn canonical_request(&self) -> &CanonicalRequestEnvelope {
+            &self.request
         }
 
         fn execute(self: Box<Self>) -> PlannedChatExecutionFuture {
@@ -1414,6 +1425,7 @@ mod tests {
                 Ok(Box::new(SimulatedFailoverExecution {
                     target_group_id,
                     pricing_model: request.canonical().model.clone(),
+                    request,
                     attempts,
                 }) as Box<dyn PlannedChatExecution>)
             })
@@ -1423,6 +1435,7 @@ mod tests {
     struct SimulatedFailoverExecution {
         target_group_id: GroupId,
         pricing_model: String,
+        request: CanonicalRequestEnvelope,
         attempts: Arc<Mutex<usize>>,
     }
 
@@ -1433,6 +1446,10 @@ mod tests {
 
         fn pricing_model(&self) -> &str {
             &self.pricing_model
+        }
+
+        fn canonical_request(&self) -> &CanonicalRequestEnvelope {
+            &self.request
         }
 
         fn execute(self: Box<Self>) -> PlannedChatExecutionFuture {

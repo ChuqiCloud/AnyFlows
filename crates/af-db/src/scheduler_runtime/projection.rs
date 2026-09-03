@@ -5,8 +5,9 @@ use std::{
 };
 
 use af_domain::{
-    ChannelId, ChannelTimeout, ChannelType, ClientSimulationProfile, CredentialId, CredentialKind,
-    CredentialQuotaDimension, GroupId, Protocol, ResponsesCompactMode, ResponsesCompactProbeResult,
+    ChannelId, ChannelTimeout, ChannelType, ClientSimulationBodyProfile, ClientSimulationProfile,
+    CredentialId, CredentialKind, CredentialQuotaDimension, GroupId, Protocol,
+    ResponsesCompactMode, ResponsesCompactProbeResult,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use sea_orm::entity::prelude::Json;
@@ -182,6 +183,9 @@ struct ProjectionTargetWire {
     /// 旧投影缺少该字段时保持默认关闭。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     client_simulation_profile: Option<String>,
+    /// 旧投影缺少该字段时保持默认关闭。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    client_simulation_body_profile: Option<String>,
     responses_websocket_enabled: bool,
     #[serde(default)]
     responses_compact_mode: Option<String>,
@@ -393,6 +397,9 @@ impl ProjectionTargetWire {
             client_simulation_profile: target
                 .client_simulation_profile()
                 .map(|profile| profile.to_string()),
+            client_simulation_body_profile: target
+                .client_simulation_body_profile()
+                .map(|profile| profile.to_string()),
             responses_websocket_enabled: target.responses_websocket_enabled(),
             responses_compact_mode: Some(target.responses_compact_mode().to_string()),
             responses_compact_probe_result: Some(
@@ -447,6 +454,11 @@ impl ProjectionTargetWire {
             .map(|profile| profile.parse::<ClientSimulationProfile>())
             .transpose()
             .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
+        let client_simulation_body_profile = self
+            .client_simulation_body_profile
+            .map(|profile| profile.parse::<ClientSimulationBodyProfile>())
+            .transpose()
+            .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
         let responses_compact_mode = self
             .responses_compact_mode
             .unwrap_or_else(|| ResponsesCompactMode::Auto.to_string())
@@ -479,6 +491,9 @@ impl ProjectionTargetWire {
         .with_auto_ban_rules(auto_ban_rules)
         .with_pool_mode(self.pool_mode)
         .with_client_simulation_profile(client_simulation_profile)
+        .and_then(|target| {
+            target.with_client_simulation_body_profile(client_simulation_body_profile)
+        })
         .and_then(|target| {
             target.with_responses_websocket_enabled(self.responses_websocket_enabled)
         })

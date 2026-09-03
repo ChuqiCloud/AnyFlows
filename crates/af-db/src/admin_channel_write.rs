@@ -5,9 +5,9 @@ use std::{
 };
 
 use af_domain::{
-    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ClientSimulationProfile,
-    CredentialId, CredentialKind, CredentialQuotaDimension, GroupId, Protocol,
-    ResponsesCompactMode, Status,
+    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ClientSimulationBodyProfile,
+    ClientSimulationProfile, CredentialId, CredentialKind, CredentialQuotaDimension, GroupId,
+    Protocol, ResponsesCompactMode, Status,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::{
@@ -30,13 +30,14 @@ use crate::{
     },
     admin_channel::valid_text,
     channel_settings::{
-        auto_ban_rules, clear_responses_compact_probe_record, client_simulation_profile, pool_mode,
-        responses_compact_mode, responses_compact_model_mapping, responses_websocket_enabled,
-        set_auto_ban_rules, set_client_simulation_profile, set_pool_mode,
+        auto_ban_rules, clear_responses_compact_probe_record, client_simulation_body_profile,
+        client_simulation_profile, pool_mode, responses_compact_mode,
+        responses_compact_model_mapping, responses_websocket_enabled, set_auto_ban_rules,
+        set_client_simulation_body_profile, set_client_simulation_profile, set_pool_mode,
         set_responses_compact_mode, set_responses_compact_model_mapping,
-        set_responses_websocket_enabled, validate_client_simulation_capability,
-        validate_responses_compact_capability, validate_responses_compact_model_mapping,
-        validate_responses_websocket_capability,
+        set_responses_websocket_enabled, validate_client_simulation_body_capability,
+        validate_client_simulation_capability, validate_responses_compact_capability,
+        validate_responses_compact_model_mapping, validate_responses_websocket_capability,
     },
     entity::{
         ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, channel_groups,
@@ -73,6 +74,8 @@ pub struct AdminChannelWriteRecord {
     pool_mode: Option<bool>,
     client_simulation_profile: Option<Option<ClientSimulationProfile>>,
     client_simulation_risk_accepted: bool,
+    client_simulation_body_profile: Option<Option<ClientSimulationBodyProfile>>,
+    client_simulation_body_risk_accepted: bool,
     responses_websocket_enabled: Option<bool>,
     responses_compact_mode: Option<ResponsesCompactMode>,
     responses_compact_model_mapping: Option<serde_json::Value>,
@@ -123,6 +126,8 @@ impl AdminChannelWriteRecord {
             pool_mode: Some(false),
             client_simulation_profile: Some(None),
             client_simulation_risk_accepted: false,
+            client_simulation_body_profile: Some(None),
+            client_simulation_body_risk_accepted: false,
             responses_websocket_enabled: Some(false),
             responses_compact_mode: None,
             responses_compact_model_mapping: None,
@@ -174,6 +179,8 @@ impl AdminChannelWriteRecord {
             pool_mode: None,
             client_simulation_profile: None,
             client_simulation_risk_accepted: false,
+            client_simulation_body_profile: None,
+            client_simulation_body_risk_accepted: false,
             responses_websocket_enabled: None,
             responses_compact_mode: None,
             responses_compact_model_mapping: None,
@@ -217,6 +224,18 @@ impl AdminChannelWriteRecord {
     ) -> Self {
         self.client_simulation_profile = Some(profile);
         self.client_simulation_risk_accepted = risk_accepted;
+        self
+    }
+
+    /// 覆盖版本化正文仿真档案与本次写入的独立风险确认。
+    #[must_use]
+    pub fn with_client_simulation_body_profile(
+        mut self,
+        profile: Option<ClientSimulationBodyProfile>,
+        risk_accepted: bool,
+    ) -> Self {
+        self.client_simulation_body_profile = Some(profile);
+        self.client_simulation_body_risk_accepted = risk_accepted;
         self
     }
 
@@ -625,6 +644,22 @@ impl AdminChannelRepository {
         .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         set_client_simulation_profile(&mut settings, client_simulation_profile)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        let client_simulation_body_profile = fields
+            .client_simulation_body_profile
+            .ok_or_else(|| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
+        if client_simulation_body_profile.is_some() && !fields.client_simulation_body_risk_accepted
+        {
+            return Err(AdminChannelWriteRepositoryError::InvalidInput);
+        }
+        validate_client_simulation_body_capability(
+            fields.channel_type,
+            fields.protocol,
+            client_simulation_profile,
+            client_simulation_body_profile,
+        )
+        .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        set_client_simulation_body_profile(&mut settings, client_simulation_body_profile)
+            .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         let responses_websocket_enabled = fields
             .responses_websocket_enabled
             .ok_or_else(|| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
@@ -735,6 +770,25 @@ impl AdminChannelRepository {
             effective_client_simulation_profile,
         )
         .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        let current_client_simulation_body_profile =
+            client_simulation_body_profile(&current_settings)
+                .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
+        let effective_client_simulation_body_profile = fields
+            .client_simulation_body_profile
+            .unwrap_or(current_client_simulation_body_profile);
+        if effective_client_simulation_body_profile.is_some()
+            && effective_client_simulation_body_profile != current_client_simulation_body_profile
+            && !fields.client_simulation_body_risk_accepted
+        {
+            return Err(AdminChannelWriteRepositoryError::InvalidInput);
+        }
+        validate_client_simulation_body_capability(
+            fields.channel_type,
+            fields.protocol,
+            effective_client_simulation_profile,
+            effective_client_simulation_body_profile,
+        )
+        .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         let effective_pool_mode = match fields.pool_mode {
             Some(enabled) => enabled,
             None => pool_mode(&current_settings)
@@ -760,6 +814,8 @@ impl AdminChannelRepository {
         set_pool_mode(&mut settings, effective_pool_mode)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         set_client_simulation_profile(&mut settings, effective_client_simulation_profile)
+            .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        set_client_simulation_body_profile(&mut settings, effective_client_simulation_body_profile)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         set_responses_websocket_enabled(&mut settings, effective_responses_websocket_enabled)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
@@ -1222,6 +1278,8 @@ struct ValidatedChannelFields {
     pool_mode: Option<bool>,
     client_simulation_profile: Option<Option<ClientSimulationProfile>>,
     client_simulation_risk_accepted: bool,
+    client_simulation_body_profile: Option<Option<ClientSimulationBodyProfile>>,
+    client_simulation_body_risk_accepted: bool,
     responses_websocket_enabled: Option<bool>,
     responses_compact_mode: Option<ResponsesCompactMode>,
     responses_compact_model_mapping: Option<ChannelModelMappings>,
@@ -1285,6 +1343,18 @@ fn validate_channel_fields(
         validate_client_simulation_capability(record.channel_type, record.protocol, profile)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
     }
+    if let (Some(profile), Some(body_profile)) = (
+        record.client_simulation_profile,
+        record.client_simulation_body_profile,
+    ) {
+        validate_client_simulation_body_capability(
+            record.channel_type,
+            record.protocol,
+            profile,
+            body_profile,
+        )
+        .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+    }
     if let Some(mode) = record.responses_compact_mode {
         validate_responses_compact_capability(record.channel_type, record.protocol, mode)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
@@ -1343,6 +1413,8 @@ fn validate_channel_fields(
         pool_mode: record.pool_mode,
         client_simulation_profile: record.client_simulation_profile,
         client_simulation_risk_accepted: record.client_simulation_risk_accepted,
+        client_simulation_body_profile: record.client_simulation_body_profile,
+        client_simulation_body_risk_accepted: record.client_simulation_body_risk_accepted,
         responses_websocket_enabled: record.responses_websocket_enabled,
         responses_compact_mode: record.responses_compact_mode,
         responses_compact_model_mapping,

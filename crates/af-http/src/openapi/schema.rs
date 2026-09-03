@@ -443,6 +443,22 @@ pub(crate) enum ClientSimulationProfileSchema {
 
 #[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
 #[derive(ToSchema)]
+#[schema(as = ClientSimulationBodyProfile, rename_all = "snake_case")]
+pub(crate) enum ClientSimulationBodyProfileSchema {
+    AnthropicCliSystemDateV1,
+}
+
+/// 调试追踪使用的闭合正文补丁结果。
+#[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
+#[derive(ToSchema)]
+#[schema(as = ClientSimulationBodyPatchResult, rename_all = "snake_case")]
+pub(crate) enum ClientSimulationBodyPatchResultSchema {
+    Applied,
+    Rejected,
+}
+
+#[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
+#[derive(ToSchema)]
 #[schema(as = ClientSimulationResult, rename_all = "snake_case")]
 pub(crate) enum ClientSimulationResultSchema {
     NotApplied,

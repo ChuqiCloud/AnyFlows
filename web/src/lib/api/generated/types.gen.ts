@@ -58,6 +58,7 @@ export type AdminChannel = {
     auto_ban_rules: AdminChannelAutoBanRules;
     pool_mode: boolean;
     client_simulation_profile?: null | ClientSimulationProfile;
+    client_simulation_body_profile?: null | ClientSimulationBodyProfile;
     responses_websocket_enabled: boolean;
     responses_compact_mode: ResponsesCompactMode;
     responses_compact_model_mapping: {
@@ -393,6 +394,8 @@ export type AdminDebugTraceAttempt = {
     elapsed_ms: number;
     client_simulation_profile?: null | ClientSimulationProfile;
     client_simulation_result?: null | ClientSimulationResult;
+    client_simulation_body_profile?: null | ClientSimulationBodyProfile;
+    client_simulation_body_result?: null | ClientSimulationBodyPatchResult;
     request_method?: string | null;
     request_url?: string | null;
     response_status?: number | null;
@@ -1229,6 +1232,8 @@ export type BalanceDisplaySettings = {
 };
 export type BalanceDisplaySymbolPosition = 'prefix' | 'suffix';
 export type ClientSimulationProfile = 'anthropic_cli_headers_v1';
+export type ClientSimulationBodyProfile = 'anthropic_cli_system_date_v1';
+export type ClientSimulationBodyPatchResult = 'applied' | 'rejected';
 export type ClientSimulationResult = 'not_applied' | 'applied' | 'failed';
 export type ContractPriceCloseRequest = {
     effective_until: number;
@@ -2910,6 +2915,8 @@ export type AdminChannelCreateRequestWritable = {
     pool_mode?: boolean;
     client_simulation_profile: null | ClientSimulationProfile;
     client_simulation_risk_accepted: boolean;
+    client_simulation_body_profile: null | ClientSimulationBodyProfile;
+    client_simulation_body_risk_accepted: boolean;
     responses_websocket_enabled?: boolean;
     responses_compact_mode?: ResponsesCompactMode;
     responses_compact_model_mapping?: {
@@ -2948,6 +2955,8 @@ export type AdminChannelUpdateRequestWritable = {
     pool_mode?: boolean | null;
     client_simulation_profile: null | ClientSimulationProfile;
     client_simulation_risk_accepted: boolean;
+    client_simulation_body_profile: null | ClientSimulationBodyProfile;
+    client_simulation_body_risk_accepted: boolean;
     responses_websocket_enabled?: boolean | null;
     responses_compact_mode?: null | ResponsesCompactMode;
     responses_compact_model_mapping?: {

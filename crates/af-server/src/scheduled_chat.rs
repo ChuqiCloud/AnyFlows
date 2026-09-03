@@ -40,11 +40,12 @@ use af_db::{
     CredentialStateRepository, SmartRouteRuntimeRepository,
 };
 use af_domain::{
-    AfError, ChannelType, ConcurrencyLimit, CredentialId, CredentialQuotaDimension,
-    GatewayPrincipal, GroupId, Operation, Protocol,
+    AfError, ChannelType, ClientSimulationBodyPatchResult, ClientSimulationBodyProfile,
+    ConcurrencyLimit, CredentialId, CredentialQuotaDimension, GatewayPrincipal, GroupId, Operation,
+    Protocol,
 };
 use af_httpclient::{HttpClientProvider, ProxyConfig, RemoteDnsPolicy};
-use af_protocol::CanonicalRequestEnvelope;
+use af_protocol::{CanonicalRequestEnvelope, ClientSimulationBodyPatch, UtcDate};
 use af_relay::{
     AnthropicRequestOverrides, ChatResponse, GeminiRequestOverrides, OpenAiChatRequestOverrides,
     OpenAiResponsesRequestOverrides, RelayCandidate, RelayCandidateRequest, RelayDiagnosticInput,
@@ -56,7 +57,9 @@ use af_scheduler::{
     IndexedWeightedSchedulerError, RouteWaitKind, StickyRouteOutcome, StickyWaitPolicy,
 };
 use af_telemetry::{
+    MetricClientSimulationBodyProfile, MetricClientSimulationBodyResult,
     MetricClientSimulationProfile, MetricClientSimulationResult, record_client_simulation_attempt,
+    record_client_simulation_body_patch,
 };
 
 mod audio;
@@ -70,6 +73,9 @@ mod video_task;
 mod video_task_persistence;
 
 const MAX_PLAYGROUND_GROUP_DEPTH: usize = 4;
+
+/// 正文档案只能使用进程受信 UTC 时钟，测试可注入固定日期以复验跨午夜重试边界。
+type UtcDateClock = dyn Fn() -> Option<UtcDate> + Send + Sync;
 
 #[cfg(test)]
 use smart_route::SmartRouteRulesFuture;
@@ -141,6 +147,7 @@ pub(crate) struct ScheduledChatService {
     groups: Option<AdminGroupRepository>,
     smart_routes: Option<Arc<dyn SmartRouteResolver>>,
     smart_route_feedback: Option<SmartRouteRuntimeRepository>,
+    utc_date_clock: Arc<UtcDateClock>,
 }
 
 impl ScheduledChatService {
@@ -168,6 +175,7 @@ impl ScheduledChatService {
             groups: None,
             smart_routes: None,
             smart_route_feedback: None,
+            utc_date_clock: Arc::new(crate::utc_time::current_utc_date),
         }
     }
 
@@ -234,6 +242,13 @@ impl ScheduledChatService {
     #[cfg(test)]
     fn with_smart_route_resolver(mut self, resolver: Arc<dyn SmartRouteResolver>) -> Self {
         self.smart_routes = Some(resolver);
+        self
+    }
+
+    /// 注入受信 UTC 日期来源；仅测试使用，生产始终使用系统 UTC 时钟。
+    #[cfg(test)]
+    fn with_utc_date_clock(mut self, clock: Arc<UtcDateClock>) -> Self {
+        self.utc_date_clock = clock;
         self
     }
 
@@ -884,6 +899,45 @@ impl ChatRoutePlanner for ScheduledChatService {
                     session_scope.as_ref(),
                 )
                 .await?;
+            let body_profile = route_client_simulation_body_profile(
+                &route,
+                upstream_protocol,
+                &routed_model,
+                session_scope
+                    .as_ref()
+                    .map_or(request_id, StableSessionScope::as_str),
+                credential_health.as_ref(),
+            )?;
+            // 只在候选档案完全一致时冻结一次日期；任何混合或不可重建形状都在预扣前失败。
+            let request = match body_profile {
+                Some(profile) => {
+                    let Some(date) = (self.utc_date_clock)() else {
+                        record_client_simulation_body_patch(
+                            metric_client_simulation_body_profile(profile),
+                            MetricClientSimulationBodyResult::Rejected,
+                        );
+                        return Err(AfError::InvalidRequest);
+                    };
+                    let patched = ClientSimulationBodyPatch::new(profile).apply(request, date);
+                    match patched {
+                        Ok(request) => {
+                            record_client_simulation_body_patch(
+                                metric_client_simulation_body_profile(profile),
+                                MetricClientSimulationBodyResult::Applied,
+                            );
+                            request
+                        }
+                        Err(_) => {
+                            record_client_simulation_body_patch(
+                                metric_client_simulation_body_profile(profile),
+                                MetricClientSimulationBodyResult::Rejected,
+                            );
+                            return Err(AfError::InvalidRequest);
+                        }
+                    }
+                }
+                None => request,
+            };
             let debug_trace = self.debug_trace.as_ref().and_then(|runtime| {
                 runtime.capture(
                     request_id,
@@ -892,6 +946,8 @@ impl ChatRoutePlanner for ScheduledChatService {
                     response_protocol,
                     upstream_protocol,
                     request.canonical().operation,
+                    body_profile,
+                    body_profile.map(|_| ClientSimulationBodyPatchResult::Applied),
                     diagnostic,
                 )
             });
@@ -972,6 +1028,10 @@ impl PlannedChatExecution for ScheduledChatExecution {
 
     fn pricing_model(&self) -> &str {
         &self.pricing_model
+    }
+
+    fn canonical_request(&self) -> &CanonicalRequestEnvelope {
+        &self.request
     }
 
     fn execute(self: Box<Self>) -> PlannedChatExecutionFuture {
@@ -1138,6 +1198,16 @@ const fn metric_client_simulation_profile(
     }
 }
 
+const fn metric_client_simulation_body_profile(
+    profile: ClientSimulationBodyProfile,
+) -> MetricClientSimulationBodyProfile {
+    match profile {
+        ClientSimulationBodyProfile::AnthropicCliSystemDateV1 => {
+            MetricClientSimulationBodyProfile::AnthropicCliSystemDateV1
+        }
+    }
+}
+
 const fn metric_client_simulation_result(
     result: af_domain::ClientSimulationResult,
 ) -> MetricClientSimulationResult {
@@ -1253,6 +1323,46 @@ fn collect_route_credentials(
         }
     }
     Ok(credential_ids)
+}
+
+/// 从可发送候选收集正文档案；混合关闭与启用、或不同版本档案一律在预扣前拒绝。
+fn route_client_simulation_body_profile(
+    route: &IndexedRoutePlan,
+    upstream_protocol: Protocol,
+    model: &str,
+    order_scope: &str,
+    credential_health: Option<&BTreeMap<i64, RuntimeHealthState>>,
+) -> Result<Option<ClientSimulationBodyProfile>, AfError> {
+    let quota_dimension = CredentialQuotaDimension::for_canonical_model(model);
+    let mut resolved = None;
+    for candidate in route.candidates() {
+        let target = candidate.runtime_target();
+        if !target_matches_protocol(target, upstream_protocol) {
+            continue;
+        }
+        let credentials = target
+            .credentials()
+            .iter()
+            .filter(|credential| credential.quota_dimension() == quota_dimension)
+            .cloned()
+            .collect::<Vec<_>>();
+        if credentials.is_empty() {
+            continue;
+        }
+        if credential_health.is_some_and(|health| {
+            order_credentials_with_health(order_scope, target.channel_id(), &credentials, health)
+                .is_empty()
+        }) {
+            continue;
+        }
+        let profile = target.client_simulation_body_profile();
+        match resolved {
+            None => resolved = Some(profile),
+            Some(current) if current == profile => {}
+            Some(_) => return Err(AfError::InvalidRequest),
+        }
+    }
+    Ok(resolved.flatten())
 }
 
 const fn map_concurrency_runtime_error(error: ConcurrencyRuntimeError) -> AfError {
@@ -1848,6 +1958,93 @@ mod tests {
         assert_eq!(execution.response_protocol, Protocol::Anthropic);
         assert_eq!(execution.upstream_protocol, Protocol::Anthropic);
         assert_eq!(execution.attempt_targets.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn body_simulation_profile_requires_all_sendable_candidates_to_match() {
+        let profile = ClientSimulationBodyProfile::AnthropicCliSystemDateV1;
+        let target = |channel_id, body_profile| {
+            SchedulerRuntimeTargetRecord::new_pool(
+                ChannelId::new(channel_id).unwrap(),
+                ChannelType::Anthropic,
+                Protocol::Anthropic,
+                Some("https://scheduled-chat.example".to_owned()),
+                vec![
+                    SchedulerRuntimeCredentialRecord::new(
+                        channel_id + 100,
+                        CredentialKind::Oauth,
+                        valid_envelope(),
+                        false,
+                    )
+                    .unwrap(),
+                ],
+                Vec::new(),
+            )
+            .unwrap()
+            .with_client_simulation_profile(Some(
+                af_domain::ClientSimulationProfile::AnthropicCliHeadersV1,
+            ))
+            .unwrap()
+            .with_client_simulation_body_profile(body_profile)
+            .unwrap()
+        };
+        let group_id = GroupId::new(7).unwrap();
+        let record = |channel_id, body_profile| {
+            ChannelIndexSourceRecord::with_runtime_target(
+                group_id,
+                "gpt-scheduled",
+                10,
+                0,
+                Arc::new(target(channel_id, body_profile)),
+            )
+            .unwrap()
+        };
+
+        let matching_index = InMemoryChannelIndex::load(Arc::new(StaticSource {
+            records: vec![
+                record(CHANNEL_ID, Some(profile)),
+                record(CHANNEL_ID + 1, Some(profile)),
+            ],
+        }))
+        .await
+        .unwrap();
+        let matching_route = IndexedWeightedScheduler::new(matching_index)
+            .route_plan(group_id, "gpt-scheduled")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            route_client_simulation_body_profile(
+                &matching_route,
+                Protocol::Anthropic,
+                "gpt-scheduled",
+                "body-profile-matching",
+                None,
+            ),
+            Ok(Some(profile))
+        );
+
+        let mixed_index = InMemoryChannelIndex::load(Arc::new(StaticSource {
+            records: vec![
+                record(CHANNEL_ID, Some(profile)),
+                record(CHANNEL_ID + 1, None),
+            ],
+        }))
+        .await
+        .unwrap();
+        let mixed_route = IndexedWeightedScheduler::new(mixed_index)
+            .route_plan(group_id, "gpt-scheduled")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            route_client_simulation_body_profile(
+                &mixed_route,
+                Protocol::Anthropic,
+                "gpt-scheduled",
+                "body-profile-mixed",
+                None,
+            ),
+            Err(AfError::InvalidRequest)
+        );
     }
 
     #[tokio::test]

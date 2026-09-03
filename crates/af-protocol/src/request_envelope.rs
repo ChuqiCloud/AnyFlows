@@ -102,6 +102,18 @@ impl CanonicalRequestEnvelope {
         self.canonical
     }
 
+    /// 用重建后的 Canonical 请求替换正文，同时保留客户端模型别名并取消直通资格。
+    ///
+    /// 仅协议层的受控语义补丁可以调用该方法，调用方不得试图恢复已验证的原始字节。
+    #[must_use]
+    pub(crate) fn with_rebuilt_canonical(self, canonical: CanonicalRequest) -> Self {
+        Self {
+            canonical,
+            source: None,
+            requested_model: self.requested_model,
+        }
+    }
+
     /// 仅当目标协议与已验证源协议相同时，交付不可变的原始正文。
     ///
     /// 模型映射、参数覆盖或内部字段注入后不得再原字节直通。调用方通常应改走
