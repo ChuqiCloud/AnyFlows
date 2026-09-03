@@ -1,4 +1,4 @@
-import { Building2, RefreshCw } from 'lucide-react'
+import { Building2, RefreshCw, TicketCheck } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -68,7 +68,26 @@ export function OrganizationPageBoundary({
     )
   }
   if (workspace.organizations.length === 0) {
-    return <OrganizationPageState icon={Building2} title={t('organizationConsole.empty.title')} body={t('organizationConsole.empty.body')} />
+    return (
+      <OrganizationPageState
+        icon={Building2}
+        title={t('organizationConsole.empty.title')}
+        body={t('organizationConsole.empty.body')}
+        action={
+          <div className="flex flex-col items-center gap-2">
+            <Button asChild type="button" size="sm">
+              <a href="#/console/invitations">
+                <TicketCheck aria-hidden="true" />
+                {t('organizationConsole.empty.openInvitations')}
+              </a>
+            </Button>
+            <p className="max-w-xs text-[0.6875rem] leading-4 text-muted-foreground">
+              {t('organizationConsole.empty.provisioningHint')}
+            </p>
+          </div>
+        }
+      />
+    )
   }
   if (workspace.selectedId === undefined || workspace.switching) return <OrganizationPageLoading />
   if (overviewQuery.isPending) return <OrganizationPageLoading />

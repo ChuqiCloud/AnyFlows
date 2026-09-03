@@ -5025,7 +5025,9 @@
     },
     "empty": {
       "title": "No organizations are available",
-      "body": "This account has not joined an organization. Organizations appear here after an invitation is accepted."
+      "body": "This account has not joined an organization. Organizations appear here after an invitation is accepted.",
+      "openInvitations": "Open invitation center",
+      "provisioningHint": "Organizations are created through a platform-admin or trusted provisioning flow; personal accounts cannot upgrade to an organization plan here."
     },
     "errors": {
       "directoryTitle": "Organization directory could not be loaded",
@@ -5138,6 +5140,19 @@
         "keys": "Organization key limit",
         "value": "{{used}} / {{limit}}",
         "limitOnly": "Limit {{limit}}"
+      },
+      "entitlement": {
+        "title": "Commercial entitlement",
+        "subtitle": "Validity and grace periods come from the server-side entitlement fact.",
+        "validUntil": "Entitlement valid until",
+        "graceUntil": "Grace period ends",
+        "unavailable": "Not returned by server",
+        "notApplicable": "Not applicable"
+      },
+      "funding": {
+        "title": "Funding and plan boundary",
+        "wallet": "The organization wallet is used for organization calls and ledger facts. A top-up does not purchase or extend a commercial plan.",
+        "upgrade": "Organization creation, plan purchase, renewal, and upgrades require a platform provisioning flow; this page does not invent a personal-account upgrade path."
       },
       "links": {
       "members": "Members and teams",
