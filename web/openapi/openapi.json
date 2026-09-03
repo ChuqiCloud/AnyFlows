@@ -33558,10 +33558,12 @@
           "suffix"
         ]
       },
-      "ClientSimulationProfile": {
+      "ClientSimulationBodyPatchResult": {
         "type": "string",
+        "description": "调试追踪使用的闭合正文补丁结果。",
         "enum": [
-          "anthropic_cli_headers_v1"
+          "applied",
+          "rejected"
         ]
       },
       "ClientSimulationBodyProfile": {
@@ -33570,11 +33572,10 @@
           "anthropic_cli_system_date_v1"
         ]
       },
-      "ClientSimulationBodyPatchResult": {
+      "ClientSimulationProfile": {
         "type": "string",
         "enum": [
-          "applied",
-          "rejected"
+          "anthropic_cli_headers_v1"
         ]
       },
       "ClientSimulationResult": {

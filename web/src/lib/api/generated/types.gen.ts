@@ -100,6 +100,8 @@ export type AdminChannelCreateRequest = {
     pool_mode?: boolean;
     client_simulation_profile: null | ClientSimulationProfile;
     client_simulation_risk_accepted: boolean;
+    client_simulation_body_profile: null | ClientSimulationBodyProfile;
+    client_simulation_body_risk_accepted: boolean;
     responses_websocket_enabled?: boolean;
     responses_compact_mode?: ResponsesCompactMode;
     responses_compact_model_mapping?: {
@@ -143,6 +145,8 @@ export type AdminChannelUpdateRequest = {
     pool_mode?: boolean | null;
     client_simulation_profile: null | ClientSimulationProfile;
     client_simulation_risk_accepted: boolean;
+    client_simulation_body_profile: null | ClientSimulationBodyProfile;
+    client_simulation_body_risk_accepted: boolean;
     responses_websocket_enabled?: boolean | null;
     responses_compact_mode?: null | ResponsesCompactMode;
     responses_compact_model_mapping?: {
@@ -1231,9 +1235,9 @@ export type BalanceDisplaySettings = {
     fraction_digits: number;
 };
 export type BalanceDisplaySymbolPosition = 'prefix' | 'suffix';
-export type ClientSimulationProfile = 'anthropic_cli_headers_v1';
-export type ClientSimulationBodyProfile = 'anthropic_cli_system_date_v1';
 export type ClientSimulationBodyPatchResult = 'applied' | 'rejected';
+export type ClientSimulationBodyProfile = 'anthropic_cli_system_date_v1';
+export type ClientSimulationProfile = 'anthropic_cli_headers_v1';
 export type ClientSimulationResult = 'not_applied' | 'applied' | 'failed';
 export type ContractPriceCloseRequest = {
     effective_until: number;
