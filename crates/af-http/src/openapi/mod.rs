@@ -650,6 +650,7 @@ mod tests {
         assert!(schemas.contains_key("AdminDashboardPerformance"));
         assert!(schemas.contains_key("ClientSimulationProfile"));
         assert!(schemas.contains_key("ClientSimulationBodyProfile"));
+        assert!(schemas.contains_key("ClientSimulationBodyPatchResult"));
         assert!(schemas.contains_key("ClientSimulationResult"));
         assert!(schemas.contains_key("ContractPriceCloseRequest"));
         assert!(schemas.contains_key("ContractPriceCreateRequest"));

@@ -81,8 +81,6 @@ const OTHER_LABEL: &str = "other";
 
 const PAYMENT_CONFIRMATION_LABELS: &[&str] = &["outcome"];
 const ORGANIZATION_APPROVAL_TIMEOUT_LABELS: &[&str] = &["outcome"];
-const CLIENT_SIMULATION_BODY_LABELS: &[&str] = &["profile", "result"];
-
 // 固定 bucket 避免 exporter 回退为 summary，并覆盖网关的毫秒级到长流式请求。
 const REQUEST_DURATION_BUCKETS: &[f64] = &[
     0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 900.0,
