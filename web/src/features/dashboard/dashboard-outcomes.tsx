@@ -10,14 +10,15 @@ type DashboardOutcomesProps = {
   dashboard: AdminDashboardResponse
   formatNumber: (value: number) => string
   formatPercent: (value: number) => string
+  formatQuota: (value: number) => string
 }
 
-export function DashboardOutcomes({ dashboard, formatNumber, formatPercent }: DashboardOutcomesProps) {
+export function DashboardOutcomes({ dashboard, formatNumber, formatPercent, formatQuota }: DashboardOutcomesProps) {
   const { t } = useTranslation()
   const metrics = getDashboardAvailabilityMetrics(dashboard)
 
   return (
-    <section className="grid gap-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]" aria-label={t('dashboard.outcomes.label')}>
+    <section className="grid gap-3" aria-label={t('dashboard.outcomes.label')}>
       <Card>
         <CardHeader className="border-b border-[var(--hairline)] px-4 py-3">
           <CardTitle className="text-sm">{t('dashboard.outcomes.title')}</CardTitle>
@@ -89,10 +90,10 @@ export function DashboardOutcomes({ dashboard, formatNumber, formatPercent }: Da
 
       <Card>
         <CardHeader className="border-b border-[var(--hairline)] px-4 py-3">
-          <CardTitle className="text-sm">{t('dashboard.outcomes.flowsTitle')}</CardTitle>
-          <CardDescription className="mt-1 text-xs">{t('dashboard.outcomes.flowsSubtitle')}</CardDescription>
+          <CardTitle className="text-sm">{t('dashboard.outcomes.flowMap.title')}</CardTitle>
+          <CardDescription className="mt-1 text-xs">{t('dashboard.outcomes.flowMap.subtitle')}</CardDescription>
         </CardHeader>
-        <DashboardFlowMap dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} />
+        <DashboardFlowMap dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} formatQuota={formatQuota} />
       </Card>
     </section>
   )

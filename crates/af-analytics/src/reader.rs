@@ -120,6 +120,9 @@ fn dashboard_from_storage(
         other_success_count: outcomes.other_success_count,
         failures: outcomes.failures,
         channel_flows: outcomes.channel_flows,
+        flow_request_count: outcomes.flow_request_count,
+        flow_quota_consumed: outcomes.flow_quota_consumed,
+        flow_paths: outcomes.flow_paths,
         hourly,
         performance,
     })
@@ -199,6 +202,10 @@ fn validate_storage_snapshot(
             .map(AdminDashboardChannelFlow::request_count),
     )?;
     let classified_success_total = visible_success_total.checked_add(outcomes.other_success_count);
+    let visible_flow_requests =
+        checked_sum(outcomes.flow_paths.iter().map(|path| path.request_count()))?;
+    let visible_flow_quota =
+        checked_sum(outcomes.flow_paths.iter().map(|path| path.quota_consumed()))?;
 
     if period_end.checked_sub(period_start) != Some(ADMIN_DASHBOARD_PERIOD_SECONDS)
         || usage_values.into_iter().any(|value| value < 0)
@@ -209,6 +216,10 @@ fn validate_storage_snapshot(
         || outcome_total != Some(outcomes.request_count)
         || failure_total != outcomes.failed_request_count
         || classified_success_total != Some(outcomes.successful_request_count)
+        || outcomes.flow_request_count < 0
+        || outcomes.flow_quota_consumed < 0
+        || visible_flow_requests > outcomes.flow_request_count
+        || visible_flow_quota > outcomes.flow_quota_consumed
         || outcomes
             .failures
             .iter()
@@ -217,6 +228,15 @@ fn validate_storage_snapshot(
             .channel_flows
             .iter()
             .any(|flow| flow.request_count() <= 0 || flow.channel_name().trim().is_empty())
+        || outcomes.flow_paths.iter().any(|path| {
+            path.user_id() <= 0
+                || path.group_id() <= 0
+                || path.request_count() <= 0
+                || path.quota_consumed() < 0
+                || path.group_name().trim().is_empty()
+                || path.channel_name().trim().is_empty()
+                || path.model().trim().is_empty()
+        })
         || !valid_hourly_points(period_start, period_end, &snapshot.hourly, usage)?
         || !valid_performance(snapshot.performance)
     {
@@ -305,7 +325,7 @@ mod tests {
     use super::*;
     use crate::{
         AdminDashboardChannelSnapshot, AdminDashboardFailure, AdminDashboardFailureKind,
-        AdminDashboardOutcomeSnapshot, AdminDashboardStorageFuture,
+        AdminDashboardFlowPath, AdminDashboardOutcomeSnapshot, AdminDashboardStorageFuture,
     };
 
     #[derive(Clone)]
@@ -389,6 +409,18 @@ mod tests {
                 "primary".to_owned(),
                 3,
             )],
+            2,
+            40,
+            vec![AdminDashboardFlowPath::new(
+                11,
+                3,
+                "默认分组".to_owned(),
+                ChannelId::new(7).unwrap(),
+                "primary".to_owned(),
+                "gpt-5".to_owned(),
+                2,
+                40,
+            )],
         );
         snapshot.hourly[0] =
             AdminDashboardHourlyPoint::new(period_start, period_start + 3_600, 5, 50);
@@ -419,6 +451,9 @@ mod tests {
             AdminDashboardFailureKind::UpstreamRateLimited
         );
         assert_eq!(dashboard.channel_flows()[0].channel_name(), "primary");
+        assert_eq!(dashboard.flow_request_count(), 2);
+        assert_eq!(dashboard.flow_quota_consumed(), 40);
+        assert_eq!(dashboard.flow_paths()[0].model(), "gpt-5");
         assert_eq!(dashboard.hourly()[0].request_count(), 5);
         assert_eq!(dashboard.performance().average_duration_ms(), Some(800));
     }
@@ -574,7 +609,17 @@ mod tests {
         AdminDashboardStorageSnapshot::new(
             AdminDashboardUsageSnapshot::new(0, 0, 0, 0, 0, 0, 0),
             AdminDashboardChannelSnapshot::new(0, 0, 0),
-            AdminDashboardOutcomeSnapshot::new(0, 0, 0, 0, Vec::new(), Vec::new()),
+            AdminDashboardOutcomeSnapshot::new(
+                0,
+                0,
+                0,
+                0,
+                Vec::new(),
+                Vec::new(),
+                0,
+                0,
+                Vec::new(),
+            ),
             hourly,
             AdminDashboardPerformance::new(0, None, 0, 2_000, 0, None, 0, 10_000),
         )

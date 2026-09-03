@@ -119,7 +119,7 @@ export function DashboardPage() {
               formatPercent={formatPercent}
             />
           </section>
-          <DashboardOutcomes dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} />
+          <DashboardOutcomes dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} formatQuota={formatQuota} />
         </>
       ) : null}
     </div>

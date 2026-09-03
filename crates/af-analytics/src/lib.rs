@@ -51,6 +51,9 @@ pub struct AdminDashboard {
     other_success_count: i64,
     failures: Vec<AdminDashboardFailure>,
     channel_flows: Vec<AdminDashboardChannelFlow>,
+    flow_request_count: i64,
+    flow_quota_consumed: i64,
+    flow_paths: Vec<AdminDashboardFlowPath>,
     hourly: Vec<AdminDashboardHourlyPoint>,
     performance: AdminDashboardPerformance,
 }
@@ -147,6 +150,79 @@ impl AdminDashboardChannelFlow {
     #[must_use]
     pub const fn request_count(&self) -> i64 {
         self.request_count
+    }
+}
+
+/// 管理看板窗口内一条用户、分组、最终渠道和模型的已结算路径。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminDashboardFlowPath {
+    user_id: i64,
+    group_id: i64,
+    group_name: String,
+    channel_id: ChannelId,
+    channel_name: String,
+    model: String,
+    request_count: i64,
+    quota_consumed: i64,
+}
+
+impl AdminDashboardFlowPath {
+    /// 构造不携带用户名、令牌或请求正文的低敏聚合路径。
+    #[must_use]
+    #[allow(clippy::too_many_arguments, reason = "参数与闭合四层流向字段一一对应")]
+    pub fn new(
+        user_id: i64,
+        group_id: i64,
+        group_name: String,
+        channel_id: ChannelId,
+        channel_name: String,
+        model: String,
+        request_count: i64,
+        quota_consumed: i64,
+    ) -> Self {
+        Self {
+            user_id,
+            group_id,
+            group_name,
+            channel_id,
+            channel_name,
+            model,
+            request_count,
+            quota_consumed,
+        }
+    }
+
+    #[must_use]
+    pub const fn user_id(&self) -> i64 {
+        self.user_id
+    }
+    #[must_use]
+    pub const fn group_id(&self) -> i64 {
+        self.group_id
+    }
+    #[must_use]
+    pub fn group_name(&self) -> &str {
+        &self.group_name
+    }
+    #[must_use]
+    pub const fn channel_id(&self) -> ChannelId {
+        self.channel_id
+    }
+    #[must_use]
+    pub fn channel_name(&self) -> &str {
+        &self.channel_name
+    }
+    #[must_use]
+    pub fn model(&self) -> &str {
+        &self.model
+    }
+    #[must_use]
+    pub const fn request_count(&self) -> i64 {
+        self.request_count
+    }
+    #[must_use]
+    pub const fn quota_consumed(&self) -> i64 {
+        self.quota_consumed
     }
 }
 
@@ -384,6 +460,24 @@ impl AdminDashboard {
     #[must_use]
     pub fn channel_flows(&self) -> &[AdminDashboardChannelFlow] {
         &self.channel_flows
+    }
+
+    /// 返回可连接为四层路径的已结算请求总数。
+    #[must_use]
+    pub const fn flow_request_count(&self) -> i64 {
+        self.flow_request_count
+    }
+
+    /// 返回可连接为四层路径的已结算额度总量。
+    #[must_use]
+    pub const fn flow_quota_consumed(&self) -> i64 {
+        self.flow_quota_consumed
+    }
+
+    /// 返回按请求量排序且数量受限的四层聚合路径。
+    #[must_use]
+    pub fn flow_paths(&self) -> &[AdminDashboardFlowPath] {
+        &self.flow_paths
     }
 
     /// 返回覆盖完整窗口的连续一小时分桶。

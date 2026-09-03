@@ -146,6 +146,24 @@ impl AdminDashboardRecord {
     pub fn channel_flows(&self) -> &[crate::AdminDashboardChannelFlowRecord] {
         self.outcomes.channel_flows()
     }
+
+    /// 返回具备已结算用量与成功终态连接事实的请求总数。
+    #[must_use]
+    pub const fn flow_request_count(&self) -> i64 {
+        self.outcomes.flow_request_count()
+    }
+
+    /// 返回具备完整四层路径事实的已结算额度总量。
+    #[must_use]
+    pub const fn flow_quota_consumed(&self) -> i64 {
+        self.outcomes.flow_quota_consumed()
+    }
+
+    /// 返回按请求量排序的有界用户、分组、渠道和模型路径。
+    #[must_use]
+    pub fn flow_paths(&self) -> &[crate::AdminDashboardFlowPathRecord] {
+        self.outcomes.flow_paths()
+    }
 }
 
 /// 管理看板仓储构造错误。

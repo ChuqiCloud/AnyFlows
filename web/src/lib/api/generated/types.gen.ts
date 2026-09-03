@@ -332,6 +332,16 @@ export type AdminDashboardFailure = {
     request_count: number;
 };
 export type AdminDashboardFailureKind = 'invalid_request' | 'model_not_allowed' | 'insufficient_quota' | 'quota_limited' | 'concurrency_limited' | 'outcome_unknown' | 'upstream_rate_limited' | 'upstream_overloaded' | 'upstream_authentication' | 'upstream_quota' | 'upstream_model' | 'upstream_protocol' | 'upstream_server' | 'upstream_network' | 'internal';
+export type AdminDashboardFlowPath = {
+    user_id: number;
+    group_id: number;
+    group_name: string;
+    channel_id: number;
+    channel_name: string;
+    model: string;
+    request_count: number;
+    quota_consumed: number;
+};
 export type AdminDashboardHourlyPoint = {
     period_start: number;
     period_end: number;
@@ -367,6 +377,9 @@ export type AdminDashboardResponse = {
     other_success_count: number;
     failures: Array<AdminDashboardFailure>;
     channel_flows: Array<AdminDashboardChannelFlow>;
+    flow_request_count: number;
+    flow_quota_consumed: number;
+    flow_paths: Array<AdminDashboardFlowPath>;
     hourly: Array<AdminDashboardHourlyPoint>;
     performance: AdminDashboardPerformance;
 };

@@ -72,8 +72,8 @@ async fn snapshot_uses_half_open_window_and_excludes_deleted_channels() -> Resul
             audio_duration_nanoseconds: Set(None),
             video_duration_seconds: Set(None),
             video_resolution: Set(None),
-            request_id: Set(None),
-            model: Set(None),
+            request_id: Set(Some(format!("dashboard-outcome-{id}"))),
+            model: Set(Some("gpt-test".to_owned())),
             protocol: Set(None),
             operation: Set(None),
             is_stream: Set(None),
@@ -191,6 +191,18 @@ async fn snapshot_uses_half_open_window_and_excludes_deleted_channels() -> Resul
     );
     assert_eq!(snapshot.channel_flows().len(), 2);
     assert_eq!(snapshot.channel_flows()[0].request_count(), 1);
+    assert_eq!(snapshot.flow_request_count(), 2);
+    assert_eq!(snapshot.flow_quota_consumed(), 30);
+    assert_eq!(snapshot.flow_paths().len(), 1);
+    let path = &snapshot.flow_paths()[0];
+    assert_eq!(path.user_id(), 1);
+    assert_eq!(path.group_id(), 1);
+    assert_eq!(path.group_name(), "看板");
+    assert_eq!(path.channel_id().get(), 1);
+    assert_eq!(path.channel_name(), "dashboard-1");
+    assert_eq!(path.model(), "gpt-test");
+    assert_eq!(path.request_count(), 2);
+    assert_eq!(path.quota_consumed(), 30);
 
     pool.close().await?;
     Ok(())
