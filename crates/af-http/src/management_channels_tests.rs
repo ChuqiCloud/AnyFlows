@@ -619,6 +619,8 @@ async fn admin_can_create_update_and_delete_channels_and_credentials() {
         "pool_mode": true,
         "client_simulation_profile": null,
         "client_simulation_risk_accepted": false,
+        "client_simulation_body_profile": null,
+        "client_simulation_body_risk_accepted": false,
         "responses_websocket_enabled": false,
         "models": ["public"],
         "group_ids": [1],
@@ -650,6 +652,10 @@ async fn admin_can_create_update_and_delete_channels_and_credentials() {
     assert_eq!(created["pool_mode"], false);
     assert_eq!(
         created["client_simulation_profile"],
+        serde_json::Value::Null
+    );
+    assert_eq!(
+        created["client_simulation_body_profile"],
         serde_json::Value::Null
     );
     assert_eq!(created["responses_websocket_enabled"], false);
@@ -715,6 +721,49 @@ async fn admin_can_create_update_and_delete_channels_and_credentials() {
         .await
         .unwrap();
     assert_eq!(anthropic_created.status(), StatusCode::CREATED);
+
+    let mut anthropic_body_patch = anthropic_body.clone();
+    anthropic_body_patch
+        .as_object_mut()
+        .expect("Anthropic 测试渠道正文必须是对象")
+        .insert(
+            "client_simulation_body_profile".to_owned(),
+            json!("anthropic_cli_system_date_v1"),
+        );
+    let rejected_body_risk = app
+        .clone()
+        .oneshot(write_request(
+            "POST",
+            "/api/admin/channels",
+            ADMIN_TOKEN,
+            &anthropic_body_patch,
+        ))
+        .await
+        .unwrap();
+    assert_error(
+        rejected_body_risk,
+        StatusCode::BAD_REQUEST,
+        "invalid_request",
+    )
+    .await;
+    anthropic_body_patch
+        .as_object_mut()
+        .expect("Anthropic 测试渠道正文必须是对象")
+        .insert(
+            "client_simulation_body_risk_accepted".to_owned(),
+            json!(true),
+        );
+    let body_patch_created = app
+        .clone()
+        .oneshot(write_request(
+            "POST",
+            "/api/admin/channels",
+            ADMIN_TOKEN,
+            &anthropic_body_patch,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(body_patch_created.status(), StatusCode::CREATED);
 
     for (field, invalid) in [
         ("param_override", json!({"messages": []})),
@@ -854,7 +903,7 @@ async fn admin_can_create_update_and_delete_channels_and_credentials() {
             .unwrap();
         assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
     }
-    assert_eq!(reader.calls.load(Ordering::Relaxed), 8);
+    assert_eq!(reader.calls.load(Ordering::Relaxed), 9);
 }
 
 #[tokio::test]

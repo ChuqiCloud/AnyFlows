@@ -122,6 +122,9 @@ fn try_runtime_target(
     .map(|target| target.with_pool_mode(channel.pool_mode()))
     .and_then(|target| target.with_client_simulation_profile(channel.client_simulation_profile()))
     .and_then(|target| {
+        target.with_client_simulation_body_profile(channel.client_simulation_body_profile())
+    })
+    .and_then(|target| {
         target.with_responses_websocket_enabled(channel.responses_websocket_enabled())
     })
     .and_then(|target| target.with_responses_compact_mode(channel.responses_compact_mode()))

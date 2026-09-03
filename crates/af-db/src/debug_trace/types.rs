@@ -1,6 +1,9 @@
 use std::{collections::BTreeSet, fmt};
 
-use af_domain::{ClientSimulationProfile, ClientSimulationResult};
+use af_domain::{
+    ClientSimulationBodyPatchResult, ClientSimulationBodyProfile, ClientSimulationProfile,
+    ClientSimulationResult,
+};
 use thiserror::Error;
 use zeroize::Zeroize as _;
 
@@ -549,6 +552,8 @@ pub struct DebugTraceAttemptWrite {
     pub(super) elapsed_ms: i64,
     pub(super) client_simulation_profile: Option<ClientSimulationProfile>,
     pub(super) client_simulation_result: Option<ClientSimulationResult>,
+    pub(super) client_simulation_body_profile: Option<ClientSimulationBodyProfile>,
+    pub(super) client_simulation_body_result: Option<ClientSimulationBodyPatchResult>,
     pub(super) diagnostic: Option<DebugTraceAttemptDiagnosticWrite>,
 }
 
@@ -635,6 +640,8 @@ impl DebugTraceAttemptWrite {
             elapsed_ms,
             client_simulation_profile: None,
             client_simulation_result: None,
+            client_simulation_body_profile: None,
+            client_simulation_body_result: None,
             diagnostic: None,
         })
     }
@@ -648,6 +655,18 @@ impl DebugTraceAttemptWrite {
     ) -> Self {
         self.client_simulation_profile = Some(profile);
         self.client_simulation_result = Some(result);
+        self
+    }
+
+    /// 附加请求级正文补丁档案和结果；不包含日期或正文内容。
+    #[must_use]
+    pub const fn with_client_simulation_body(
+        mut self,
+        profile: ClientSimulationBodyProfile,
+        result: ClientSimulationBodyPatchResult,
+    ) -> Self {
+        self.client_simulation_body_profile = Some(profile);
+        self.client_simulation_body_result = Some(result);
         self
     }
 
@@ -804,6 +823,8 @@ pub struct DebugTraceAttemptRecord {
     pub(super) elapsed_ms: i64,
     pub(super) client_simulation_profile: Option<ClientSimulationProfile>,
     pub(super) client_simulation_result: Option<ClientSimulationResult>,
+    pub(super) client_simulation_body_profile: Option<ClientSimulationBodyProfile>,
+    pub(super) client_simulation_body_result: Option<ClientSimulationBodyPatchResult>,
     pub(super) request_method: Option<String>,
     pub(super) request_url: Option<String>,
     pub(super) response_status: Option<i16>,
@@ -850,6 +871,14 @@ impl DebugTraceAttemptRecord {
     #[must_use]
     pub const fn client_simulation_result(&self) -> Option<ClientSimulationResult> {
         self.client_simulation_result
+    }
+    #[must_use]
+    pub const fn client_simulation_body_profile(&self) -> Option<ClientSimulationBodyProfile> {
+        self.client_simulation_body_profile
+    }
+    #[must_use]
+    pub const fn client_simulation_body_result(&self) -> Option<ClientSimulationBodyPatchResult> {
+        self.client_simulation_body_result
     }
 
     #[must_use]

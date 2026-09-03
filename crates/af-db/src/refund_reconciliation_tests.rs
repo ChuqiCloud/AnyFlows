@@ -484,8 +484,8 @@ async fn epay_manual_completion_is_idempotent_and_keeps_provider_facts_separate(
         1
     );
 
-    // 人工完成事实一旦落库，任何数据库方言都必须拒绝降级状态迁移。
-    let rollback = Migrator::down(pool.connection(), Some(1)).await;
+    // 先回退最新的正文仿真迁移，再验证人工退款状态迁移仍受事实保护。
+    let rollback = Migrator::down(pool.connection(), Some(2)).await;
     assert!(matches!(
         rollback,
         Err(sea_orm_migration::DbErr::Custom(message))

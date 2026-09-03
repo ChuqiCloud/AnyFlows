@@ -610,7 +610,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 479);
+        assert_eq!(schemas.len(), 480);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("OrganizationSsoDiscoveryErrorResponse"));
         assert!(schemas.contains_key("CreditAllocationListResponse"));
@@ -651,6 +651,8 @@ mod tests {
         assert!(schemas.contains_key("AdminDashboardHourlyPoint"));
         assert!(schemas.contains_key("AdminDashboardPerformance"));
         assert!(schemas.contains_key("ClientSimulationProfile"));
+        assert!(schemas.contains_key("ClientSimulationBodyProfile"));
+        assert!(schemas.contains_key("ClientSimulationBodyPatchResult"));
         assert!(schemas.contains_key("ClientSimulationResult"));
         assert!(schemas.contains_key("ContractPriceCloseRequest"));
         assert!(schemas.contains_key("ContractPriceCreateRequest"));

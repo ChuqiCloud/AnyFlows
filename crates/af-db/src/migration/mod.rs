@@ -133,6 +133,7 @@ mod m20260901_000124_add_organization_sso_domain_reverification;
 mod m20260902_000125_add_organization_sso_login_transaction_cleanup;
 mod m20260903_000126_add_manual_refund_completion;
 mod m20260903_000127_extend_refund_status;
+mod m20260903_000128_add_client_simulation_body_observability;
 mod schema;
 
 #[cfg(test)]
@@ -309,6 +310,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260902_000125_add_organization_sso_login_transaction_cleanup::Migration),
             Box::new(m20260903_000126_add_manual_refund_completion::Migration),
             Box::new(m20260903_000127_extend_refund_status::Migration),
+            Box::new(m20260903_000128_add_client_simulation_body_observability::Migration),
         ]
     }
 }

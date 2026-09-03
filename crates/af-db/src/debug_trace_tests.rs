@@ -1,6 +1,9 @@
 use std::{error::Error, sync::Arc, time::Duration};
 
-use af_domain::{ClientSimulationProfile, ClientSimulationResult};
+use af_domain::{
+    ClientSimulationBodyPatchResult, ClientSimulationBodyProfile, ClientSimulationProfile,
+    ClientSimulationResult,
+};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter, Set,
     entity::prelude::{Json, TimeDateTimeWithTimeZone},
@@ -213,6 +216,14 @@ async fn client_simulation_metadata_round_trips_and_corruption_fails_closed()
         detail.attempts()[0].client_simulation_result(),
         Some(ClientSimulationResult::Failed)
     );
+    assert_eq!(
+        detail.attempts()[0].client_simulation_body_profile(),
+        Some(ClientSimulationBodyProfile::AnthropicCliSystemDateV1)
+    );
+    assert_eq!(
+        detail.attempts()[0].client_simulation_body_result(),
+        Some(ClientSimulationBodyPatchResult::Applied)
+    );
 
     assert!(
         fixture
@@ -225,6 +236,18 @@ async fn client_simulation_metadata_round_trips_and_corruption_fails_closed()
             .await
             .is_err(),
         "第 68 号迁移必须拒绝未知仿真档案"
+    );
+    assert!(
+        fixture
+            .pool
+            .connection()
+            .execute_unprepared(&format!(
+                "UPDATE debug_trace_attempts SET client_simulation_body_result = 'unknown' WHERE trace_id = {}",
+                trace.id()
+            ))
+            .await
+            .is_err(),
+        "第 128 号迁移必须拒绝未知正文补丁结果"
     );
 
     fixture
@@ -522,6 +545,10 @@ fn failed_trace(
             .with_client_simulation(
                 ClientSimulationProfile::AnthropicCliHeadersV1,
                 ClientSimulationResult::Failed,
+            )
+            .with_client_simulation_body(
+                ClientSimulationBodyProfile::AnthropicCliSystemDateV1,
+                ClientSimulationBodyPatchResult::Applied,
             ),
         ],
     )

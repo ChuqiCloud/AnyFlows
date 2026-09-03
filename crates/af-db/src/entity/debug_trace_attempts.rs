@@ -21,6 +21,10 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub client_simulation_result: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
+    pub client_simulation_body_profile: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub client_simulation_body_result: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
     pub request_method: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub request_url: Option<String>,

@@ -313,6 +313,12 @@ impl DebugTraceRepository {
                 client_simulation_result: Set(attempt
                     .client_simulation_result
                     .map(|result| result.as_str().to_owned())),
+                client_simulation_body_profile: Set(attempt
+                    .client_simulation_body_profile
+                    .map(|profile| profile.as_str().to_owned())),
+                client_simulation_body_result: Set(attempt
+                    .client_simulation_body_result
+                    .map(|result| result.as_str().to_owned())),
                 request_method: Set(request_method),
                 request_url: Set(request_url),
                 request_headers_json: Set(None),
@@ -613,6 +619,18 @@ fn attempt_from_model(
         .map(str::parse)
         .transpose()
         .map_err(|_| internal_error(DebugTraceRepositoryError::Invariant))?;
+    let client_simulation_body_profile = model
+        .client_simulation_body_profile
+        .as_deref()
+        .map(str::parse)
+        .transpose()
+        .map_err(|_| internal_error(DebugTraceRepositoryError::Invariant))?;
+    let client_simulation_body_result = model
+        .client_simulation_body_result
+        .as_deref()
+        .map(str::parse)
+        .transpose()
+        .map_err(|_| internal_error(DebugTraceRepositoryError::Invariant))?;
     let shape_valid = match outcome {
         DebugTraceAttemptOutcome::Succeeded => {
             failure_kind.is_none() && model.upstream_status.is_none() && !model.retry_decision
@@ -640,6 +658,7 @@ fn attempt_from_model(
             .response_status
             .is_some_and(|status| !(100..=599).contains(&status))
         || client_simulation_profile.is_some() != client_simulation_result.is_some()
+        || client_simulation_body_profile.is_some() != client_simulation_body_result.is_some()
     {
         return Err(internal_error(DebugTraceRepositoryError::Invariant));
     }
@@ -654,6 +673,8 @@ fn attempt_from_model(
         elapsed_ms: model.elapsed_ms,
         client_simulation_profile,
         client_simulation_result,
+        client_simulation_body_profile,
+        client_simulation_body_result,
         request_method: model.request_method,
         request_url: model.request_url,
         response_status: model.response_status,

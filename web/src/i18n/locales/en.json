@@ -315,7 +315,8 @@
       "inheritTimeout": "Service default",
       "poolMode": "External pool",
       "responsesWebsocket": "WebSocket",
-      "clientSimulation": "Client simulation"
+      "clientSimulation": "Client simulation",
+      "clientSimulationBody": "Body patch"
     },
     "probe": {
       "notTested": "Not tested",
@@ -370,6 +371,9 @@
       "clientSimulationHint": "Applies a fixed, versioned HTTP identity profile only to Anthropic OAuth Chat candidates.",
       "clientSimulationRisk": "This capability may interact with upstream terms or risk controls. The current profile changes only User-Agent and X-App, not the body, authentication, model, routing, or billing facts.",
       "clientSimulationRiskAccept": "I have reviewed and accept the compliance risk of enabling this profile for the channel.",
+      "clientSimulationBodyHint": "Adds a fixed UTC date instruction before a supported Anthropic system message. No custom text, time zone, or template can be configured.",
+      "clientSimulationBodyRisk": "This body patch changes the request that is counted for precharge and billing. Unsupported system-message shapes are rejected before the request is sent.",
+      "clientSimulationBodyRiskAccept": "I have reviewed and accept the compliance risk of enabling this body patch for the channel.",
       "responsesWebsocketHint": "Reuses a connection only when the request has a stable session identifier. Failures before the first event fall back to HTTP once.",
       "responsesCompactModeHint": "Auto mode routes only after a real probe confirms support. Force-on is still limited to native Responses channels.",
       "responsesCompactModelMappingHint": "Optional. Applies a Compact-only upstream model mapping after the normal model mapping.",
@@ -402,6 +406,7 @@
       "autoBanKeywords": "Structured error keywords",
       "poolMode": "External account pool mode",
       "clientSimulationProfile": "Client simulation profile",
+      "clientSimulationBodyProfile": "Client simulation body profile",
       "responsesWebsocket": "Enable Responses WebSocket",
       "responsesCompactMode": "Context compaction capability",
       "responsesCompactModelMapping": "Compact model mapping",
@@ -428,11 +433,13 @@
       "url": "Enter an HTTP(S) URL without credentials, a query string, or a fragment.",
       "routing": "Models and groups must both be set or both be empty, with no duplicates or capacity overflow.",
       "autoBanRules": "Rules must use unique statuses from 500 to 599 and bounded keywords, with no more than 64 entries in total.",
-      "clientSimulationRisk": "Confirm the compliance risk before enabling or changing the client simulation profile."
+      "clientSimulationRisk": "Confirm the compliance risk before enabling or changing the client simulation profile.",
+      "clientSimulationBodyRisk": "Confirm the compliance risk before enabling or changing the client simulation body profile."
     },
     "clientSimulation": {
       "off": "Off",
-      "anthropicCliHeadersV1": "Anthropic CLI Headers v1"
+      "anthropicCliHeadersV1": "Anthropic CLI Headers v1",
+      "anthropicCliSystemDateV1": "Anthropic CLI system date v1"
     },
     "mapping": {
       "source": "Client model",
@@ -2369,12 +2376,14 @@
     },
     "clientSimulation": {
       "profile": {
-        "anthropic_cli_headers_v1": "Anthropic CLI simulation"
+        "anthropic_cli_headers_v1": "Anthropic CLI simulation",
+        "anthropic_cli_system_date_v1": "Anthropic CLI date patch"
       },
       "result": {
         "not_applied": "Not applied",
         "applied": "Applied",
-        "failed": "Application failed"
+        "failed": "Application failed",
+        "rejected": "Rejected before send"
       }
     },
     "failure": {

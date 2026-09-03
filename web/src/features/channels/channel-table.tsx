@@ -84,6 +84,11 @@ function RoutingBadges({ channel }: { channel: AdminChannel }) {
           {t('channels.values.clientSimulation')}
         </Badge>
       ) : null}
+      {channel.client_simulation_body_profile ? (
+        <Badge className="border-transparent bg-destructive/10 text-destructive">
+          {t('channels.values.clientSimulationBody')}
+        </Badge>
+      ) : null}
     </div>
   )
 }
