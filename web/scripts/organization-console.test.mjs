@@ -159,6 +159,10 @@ test('企业控制台具备中英文入口和关键状态文案', async () => {
     assert.equal(typeof locale.nav.organizationWallet, 'string')
     assert.equal(typeof locale.nav.organizationSettings, 'string')
     assert.equal(typeof locale.organizationConsole.workspace.personal, 'string')
+    assert.equal(typeof locale.organizationConsole.empty.openInvitations, 'string')
+    assert.equal(typeof locale.organizationConsole.empty.provisioningHint, 'string')
+    assert.equal(typeof locale.organizationConsole.overview.entitlement.validUntil, 'string')
+    assert.equal(typeof locale.organizationConsole.overview.funding.wallet, 'string')
     assert.equal(typeof locale.organizationConsole.members.fields.customRole, 'string')
     assert.equal(typeof locale.organizationConsole.members.customRoles.disabledByEntitlement, 'string')
     assert.equal(typeof locale.organizationConsole.customRoles.title, 'string')
@@ -174,4 +178,17 @@ test('企业控制台具备中英文入口和关键状态文案', async () => {
     assert.equal(typeof locale.organizationConsole.wallet.adjustment.title, 'string')
     assert.equal(typeof locale.invitations.organization.accept, 'string')
   }
+})
+
+test('企业空状态引导已有邀请中心，概览只展示服务端授权与资金边界', async () => {
+  const [shellSource, overviewSource] = await Promise.all([
+    readFile(new URL('../src/features/organization-console/organization-page-shell.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/features/organization-console/organization-overview-page.tsx', import.meta.url), 'utf8'),
+  ])
+  assert.match(shellSource, /#\/console\/invitations/)
+  assert.match(shellSource, /organizationConsole\.empty\.provisioningHint/)
+  assert.match(overviewSource, /overview\.entitlement\.valid_until/)
+  assert.match(overviewSource, /overview\.entitlement\.grace_until/)
+  assert.match(overviewSource, /overview\.funding\.wallet/)
+  assert.match(overviewSource, /overview\.funding\.upgrade/)
 })

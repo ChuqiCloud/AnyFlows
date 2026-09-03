@@ -5026,7 +5026,9 @@
     },
     "empty": {
       "title": "还没有可进入的企业",
-      "body": "当前账号尚未加入企业。接受企业邀请后，企业工作空间会出现在这里。"
+      "body": "当前账号尚未加入企业。接受企业邀请后，企业工作空间会出现在这里。",
+      "openInvitations": "前往邀请中心",
+      "provisioningHint": "企业由平台管理员或受信开通流程创建；个人账号目前不能直接升级企业套餐。"
     },
     "errors": {
       "directoryTitle": "无法读取企业目录",
@@ -5139,6 +5141,19 @@
         "keys": "企业 Key 上限",
         "value": "{{used}} / {{limit}}",
         "limitOnly": "上限 {{limit}}"
+      },
+      "entitlement": {
+        "title": "商业授权",
+        "subtitle": "有效期和宽限期均以服务端授权事实为准。",
+        "validUntil": "授权有效至",
+        "graceUntil": "宽限期结束",
+        "unavailable": "服务端未返回",
+        "notApplicable": "当前不适用"
+      },
+      "funding": {
+        "title": "资金与套餐边界",
+        "wallet": "企业钱包余额仅用于企业调用和账本记录，充值不会自动购买或延长商业套餐。",
+        "upgrade": "企业创建、套餐购买、续费和升级需要平台开通流程；当前页面不会伪造个人账号升级入口。"
       },
       "links": {
       "members": "成员与团队",

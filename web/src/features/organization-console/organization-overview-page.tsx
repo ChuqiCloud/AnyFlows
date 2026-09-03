@@ -64,8 +64,12 @@ function OrganizationOverviewWorkspace({
   organizationId: number
   overview: OrganizationOverviewResponse
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { formatQuota } = useBalanceDisplay()
+  const formatTime = useMemo(
+    () => new Intl.DateTimeFormat(i18n.resolvedLanguage === 'zh' ? 'zh-CN' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' }),
+    [i18n.resolvedLanguage],
+  )
   const canReadWallet = overview.permissions.includes(WALLET_READ)
   const canManageBudgets = overview.permissions.includes(BUDGETS_MANAGE)
   const canReadUsage = overview.permissions.includes(USAGE_READ_ALL)
@@ -146,6 +150,41 @@ function OrganizationOverviewWorkspace({
         </Button>
       </section>
 
+      <section className="grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]">
+        <Card>
+          <CardHeader className="border-b border-[var(--hairline)] bg-surface-1/45">
+            <CardTitle className="text-base">{t('organizationConsole.overview.entitlement.title')}</CardTitle>
+            <p className="text-xs leading-5 text-muted-foreground">{t('organizationConsole.overview.entitlement.subtitle')}</p>
+          </CardHeader>
+          <CardContent className="grid gap-3 p-4 sm:grid-cols-2">
+            <EntitlementDate
+              label={t('organizationConsole.overview.entitlement.validUntil')}
+              timestamp={overview.entitlement.valid_until}
+              formatTime={formatTime}
+            />
+            <EntitlementDate
+              label={t('organizationConsole.overview.entitlement.graceUntil')}
+              timestamp={overview.entitlement.grace_until}
+              formatTime={formatTime}
+              optional
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="border-b border-[var(--hairline)] bg-surface-1/45">
+            <CardTitle className="text-base">{t('organizationConsole.overview.funding.title')}</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3 p-4 text-xs leading-5 text-muted-foreground">
+            <div className="flex items-start gap-2">
+              <WalletCards className="mt-0.5 size-4 shrink-0 text-brand" aria-hidden="true" />
+              <p>{t('organizationConsole.overview.funding.wallet')}</p>
+            </div>
+            <p className="border-t border-[var(--hairline)] pt-3">{t('organizationConsole.overview.funding.upgrade')}</p>
+          </CardContent>
+        </Card>
+      </section>
+
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label={t('organizationConsole.overview.metrics.label')}>
         {metrics.map((metric) => {
           const Icon = metric.icon
@@ -187,6 +226,31 @@ function OrganizationOverviewWorkspace({
         <QuickLink icon={ShieldCheck} href="#/console/organization-settings" label={t('organizationConsole.overview.links.settings')} />
       </section>
     </>
+  )
+}
+
+function EntitlementDate({
+  label,
+  timestamp,
+  formatTime,
+  optional = false,
+}: {
+  label: string
+  timestamp?: number | null
+  formatTime: Intl.DateTimeFormat
+  optional?: boolean
+}) {
+  const { t } = useTranslation()
+  const value = timestamp && timestamp > 0
+    ? formatTime.format(timestamp * 1_000)
+    : optional
+      ? t('organizationConsole.overview.entitlement.notApplicable')
+      : t('organizationConsole.overview.entitlement.unavailable')
+  return (
+    <div className="rounded-lg border border-[var(--hairline)] bg-surface-1/35 p-3">
+      <p className="text-[0.6875rem] text-muted-foreground">{label}</p>
+      <p className="mt-1 text-sm font-semibold tabular-nums">{value}</p>
+    </div>
   )
 }
 
