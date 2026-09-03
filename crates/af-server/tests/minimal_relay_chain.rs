@@ -64,6 +64,8 @@ use af_admin::{
     UserTokenListQuery, UserTokenService, UserTokenUpdateFuture, UserTokenWriteCommand,
     UserWalletError, UserWalletListFuture, UserWalletListQuery, UserWalletService,
     UserWalletSummaryFuture,
+    OrganizationApprovalNotificationListFuture, OrganizationApprovalNotificationListQuery,
+    OrganizationApprovalNotificationMarkReadFuture, OrganizationApprovalNotificationService,
 };
 use af_analytics::{
     AdminDashboardAccess, AdminDashboardReadError, AdminDashboardReadFuture, AdminDashboardReader,
@@ -197,6 +199,7 @@ struct RejectPasswordReset;
 struct RejectUserProfile;
 struct RejectUserWallet;
 struct RejectUserNotifications;
+struct RejectOrganizationApprovalNotifications;
 struct RejectRedemptions;
 struct RejectSubscriptions;
 struct RejectUserInvitations;
@@ -411,6 +414,28 @@ impl UserNotificationService for RejectUserNotifications {
         _command: af_admin::UserNotificationMarkReadCommand,
     ) -> af_admin::UserNotificationMarkReadFuture<'a> {
         Box::pin(async { Err(UserNotificationError::Internal) })
+    }
+}
+
+impl OrganizationApprovalNotificationService for RejectOrganizationApprovalNotifications {
+    fn list<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _query: OrganizationApprovalNotificationListQuery,
+    ) -> OrganizationApprovalNotificationListFuture<'a> {
+        Box::pin(async {
+            Err(af_admin::OrganizationApprovalNotificationError::Internal)
+        })
+    }
+
+    fn mark_read<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _ids: Vec<i64>,
+    ) -> OrganizationApprovalNotificationMarkReadFuture<'a> {
+        Box::pin(async {
+            Err(af_admin::OrganizationApprovalNotificationError::Internal)
+        })
     }
 }
 
@@ -1971,6 +1996,7 @@ async fn start_server(
         Arc::new(RejectUserProfile),
         Arc::new(RejectUserWallet),
         Arc::new(RejectUserNotifications),
+        Arc::new(RejectOrganizationApprovalNotifications),
         None,
         None,
         None,
