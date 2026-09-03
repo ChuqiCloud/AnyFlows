@@ -28147,6 +28147,46 @@
         },
         "additionalProperties": false
       },
+      "AdminDashboardFailure": {
+        "type": "object",
+        "description": "管理看板窗口内一个失败分类的请求数。",
+        "required": [
+          "kind",
+          "request_count"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/AdminDashboardFailureKind"
+          },
+          "request_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminDashboardFailureKind": {
+        "type": "string",
+        "description": "管理看板公开的闭合失败分类。",
+        "enum": [
+          "invalid_request",
+          "model_not_allowed",
+          "insufficient_quota",
+          "quota_limited",
+          "concurrency_limited",
+          "outcome_unknown",
+          "upstream_rate_limited",
+          "upstream_overloaded",
+          "upstream_authentication",
+          "upstream_quota",
+          "upstream_model",
+          "upstream_protocol",
+          "upstream_server",
+          "upstream_network",
+          "internal"
+        ]
+      },
       "AdminDashboardFlowPath": {
         "type": "object",
         "description": "管理看板窗口内一条低敏四层请求与额度流向。",
@@ -28203,46 +28243,6 @@
           }
         },
         "additionalProperties": false
-      },
-      "AdminDashboardFailure": {
-        "type": "object",
-        "description": "管理看板窗口内一个失败分类的请求数。",
-        "required": [
-          "kind",
-          "request_count"
-        ],
-        "properties": {
-          "kind": {
-            "$ref": "#/components/schemas/AdminDashboardFailureKind"
-          },
-          "request_count": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          }
-        },
-        "additionalProperties": false
-      },
-      "AdminDashboardFailureKind": {
-        "type": "string",
-        "description": "管理看板公开的闭合失败分类。",
-        "enum": [
-          "invalid_request",
-          "model_not_allowed",
-          "insufficient_quota",
-          "quota_limited",
-          "concurrency_limited",
-          "outcome_unknown",
-          "upstream_rate_limited",
-          "upstream_overloaded",
-          "upstream_authentication",
-          "upstream_quota",
-          "upstream_model",
-          "upstream_protocol",
-          "upstream_server",
-          "upstream_network",
-          "internal"
-        ]
       },
       "AdminDashboardHourlyPoint": {
         "type": "object",
