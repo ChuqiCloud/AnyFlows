@@ -219,6 +219,13 @@ function AttemptRow({ attempt, headerSnapshot, bodySnapshot, headersLoaded, bodi
                 {t(`debugTraces.clientSimulation.result.${attempt.client_simulation_result}`)}
               </Badge>
             ) : null}
+            {attempt.client_simulation_body_profile && attempt.client_simulation_body_result ? (
+              <Badge className={clientSimulationTone(attempt.client_simulation_body_result)}>
+                {t(`debugTraces.clientSimulation.profile.${attempt.client_simulation_body_profile}`)}
+                {' · '}
+                {t(`debugTraces.clientSimulation.result.${attempt.client_simulation_body_result}`)}
+              </Badge>
+            ) : null}
             {attempt.failure_kind ? <span className="text-destructive">{t(`debugTraces.failure.${attempt.failure_kind}`)}</span> : null}
             {attempt.response_status ? <span>HTTP {attempt.response_status}</span> : attempt.upstream_status ? <span>HTTP {attempt.upstream_status}</span> : null}
             {attempt.retry_decision ? <span className="inline-flex items-center gap-1 text-warning"><RotateCcw className="size-3" aria-hidden="true" />{t('debugTraces.detail.retried')}</span> : null}
@@ -238,7 +245,7 @@ function AttemptRow({ attempt, headerSnapshot, bodySnapshot, headersLoaded, bodi
   )
 }
 
-function clientSimulationTone(result: TraceAttempt['client_simulation_result']) {
+function clientSimulationTone(result: TraceAttempt['client_simulation_result'] | TraceAttempt['client_simulation_body_result']) {
   if (result === 'applied') return 'border-success/20 bg-success/8 text-success'
   if (result === 'failed') return 'border-destructive/20 bg-destructive/8 text-destructive'
   return 'border-warning/20 bg-warning/8 text-warning'

@@ -1991,6 +1991,8 @@ pub(in crate::migration) mod debug_trace_attempts {
         ElapsedMs,
         ClientSimulationProfile,
         ClientSimulationResult,
+        ClientSimulationBodyProfile,
+        ClientSimulationBodyResult,
         RequestMethod,
         RequestUrl,
         RequestHeadersJson,

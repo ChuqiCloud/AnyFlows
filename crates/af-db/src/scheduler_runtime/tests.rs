@@ -3,8 +3,9 @@ mod support;
 use std::{error::Error, time::Duration};
 
 use af_domain::{
-    ChannelId, ChannelType, ClientSimulationProfile, CredentialKind, CredentialQuotaDimension,
-    GroupId, Protocol, ResponsesCompactMode, ResponsesCompactProbeResult, Status,
+    ChannelId, ChannelType, ClientSimulationBodyProfile, ClientSimulationProfile, CredentialKind,
+    CredentialQuotaDimension, GroupId, Protocol, ResponsesCompactMode, ResponsesCompactProbeResult,
+    Status,
 };
 use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
 
@@ -611,10 +612,48 @@ fn anthropic_runtime_target_accepts_messages_pair_and_rejects_mismatch() {
     )
     .unwrap()
     .with_client_simulation_profile(Some(ClientSimulationProfile::AnthropicCliHeadersV1))
+    .unwrap()
+    .with_client_simulation_body_profile(Some(
+        ClientSimulationBodyProfile::AnthropicCliSystemDateV1,
+    ))
     .unwrap();
     assert_eq!(
         target.client_simulation_profile(),
         Some(ClientSimulationProfile::AnthropicCliHeadersV1)
+    );
+    assert_eq!(
+        target.client_simulation_body_profile(),
+        Some(ClientSimulationBodyProfile::AnthropicCliSystemDateV1)
+    );
+    assert!(
+        SchedulerRuntimeTargetRecord::new_pool(
+            ChannelId::new(4).unwrap(),
+            ChannelType::Anthropic,
+            Protocol::Anthropic,
+            None,
+            vec![
+                SchedulerRuntimeCredentialRecord::with_scheduling(
+                    4,
+                    CredentialKind::Oauth,
+                    EncryptedCredentialEnvelope::new(
+                        "runtime-test-key",
+                        [0x43; 24],
+                        vec![0x25; 16]
+                    )
+                    .unwrap(),
+                    false,
+                    0,
+                    10,
+                )
+                .unwrap()
+            ],
+            Vec::new(),
+        )
+        .unwrap()
+        .with_client_simulation_body_profile(Some(
+            ClientSimulationBodyProfile::AnthropicCliSystemDateV1,
+        ))
+        .is_err()
     );
     assert!(
         SchedulerRuntimeTargetRecord::new_pool(

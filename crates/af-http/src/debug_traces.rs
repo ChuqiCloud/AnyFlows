@@ -98,6 +98,14 @@ pub(crate) struct AdminDebugTraceAttemptResponse {
     client_simulation_profile: Option<String>,
     #[schema(value_type = Option<crate::openapi::schema::ClientSimulationResultSchema>)]
     client_simulation_result: Option<String>,
+    #[schema(
+        value_type = Option<crate::openapi::schema::ClientSimulationBodyProfileSchema>
+    )]
+    client_simulation_body_profile: Option<String>,
+    #[schema(
+        value_type = Option<crate::openapi::schema::ClientSimulationBodyPatchResultSchema>
+    )]
+    client_simulation_body_result: Option<String>,
     request_method: Option<String>,
     request_url: Option<String>,
     response_status: Option<i16>,
@@ -360,6 +368,12 @@ impl AdminDebugTraceAttemptResponse {
             client_simulation_result: attempt
                 .client_simulation_result()
                 .map(|result| result.as_str().to_owned()),
+            client_simulation_body_profile: attempt
+                .client_simulation_body_profile()
+                .map(|profile| profile.as_str().to_owned()),
+            client_simulation_body_result: attempt
+                .client_simulation_body_result()
+                .map(|result| result.as_str().to_owned()),
             request_method: attempt.request_method().map(str::to_owned),
             request_url: attempt.request_url().map(str::to_owned),
             response_status: attempt.response_status(),
@@ -563,6 +577,8 @@ mod tests {
             elapsed_ms: 7,
             client_simulation_profile: Some("anthropic_cli_headers_v1".to_owned()),
             client_simulation_result: Some("failed".to_owned()),
+            client_simulation_body_profile: Some("anthropic_cli_system_date_v1".to_owned()),
+            client_simulation_body_result: Some("applied".to_owned()),
             request_method: None,
             request_url: None,
             response_status: None,
@@ -576,5 +592,10 @@ mod tests {
             json!("anthropic_cli_headers_v1")
         );
         assert_eq!(value["client_simulation_result"], json!("failed"));
+        assert_eq!(
+            value["client_simulation_body_profile"],
+            json!("anthropic_cli_system_date_v1")
+        );
+        assert_eq!(value["client_simulation_body_result"], json!("applied"));
     }
 }

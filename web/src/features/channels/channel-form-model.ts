@@ -12,6 +12,7 @@ export type ChannelType = 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' 
 export type ChannelProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'anthropic' | 'gemini' | 'jina_rerank' | 'cohere_rerank' | 'xai_video'
 export type ResponsesCompactMode = 'auto' | 'force_on' | 'force_off'
 export type ClientSimulationProfile = '' | 'anthropic_cli_headers_v1'
+export type ClientSimulationBodyProfile = '' | 'anthropic_cli_system_date_v1'
 export const MAX_CHANNEL_TIMEOUT_SECONDS = 900
 
 export const channelParameterNames = [
@@ -52,6 +53,8 @@ export type ChannelFormValues = {
   poolMode: boolean
   clientSimulationProfile: ClientSimulationProfile
   clientSimulationRiskAccepted: boolean
+  clientSimulationBodyProfile: ClientSimulationBodyProfile
+  clientSimulationBodyRiskAccepted: boolean
   responsesWebsocketEnabled: boolean
   responsesCompactMode: ResponsesCompactMode
   responsesCompactModelMapping: KeyValueRow[]
@@ -71,6 +74,7 @@ type ValidationMessages = {
   invalidParameter: string
   invalidAutoBanRules: string
   invalidClientSimulationRisk: string
+  invalidClientSimulationBodyRisk: string
   invalidRouting: string
   invalidTimeout: string
   invalidUrl: string
@@ -94,6 +98,7 @@ export function buildChannelFormSchema(
   mode: ChannelEditorMode,
   messages: ValidationMessages,
   existingClientSimulationProfile: ClientSimulationProfile = '',
+  existingClientSimulationBodyProfile: ClientSimulationBodyProfile = '',
 ) {
   return z.object({
     name: z.string().trim().min(1, messages.invalidField).max(128, messages.invalidField),
@@ -111,6 +116,8 @@ export function buildChannelFormSchema(
     poolMode: z.boolean(),
     clientSimulationProfile: z.enum(['', 'anthropic_cli_headers_v1']),
     clientSimulationRiskAccepted: z.boolean(),
+    clientSimulationBodyProfile: z.enum(['', 'anthropic_cli_system_date_v1']),
+    clientSimulationBodyRiskAccepted: z.boolean(),
     responsesWebsocketEnabled: z.boolean(),
     responsesCompactMode: z.enum(['auto', 'force_on', 'force_off']),
     responsesCompactModelMapping: z.array(keyValueRowSchema),
@@ -142,6 +149,10 @@ export function buildChannelFormSchema(
     if (values.clientSimulationProfile && !nativeAnthropic) {
       addIssue(context, 'clientSimulationProfile', messages.invalidField)
     }
+    if (values.clientSimulationBodyProfile
+      && (!nativeAnthropic || values.clientSimulationProfile !== 'anthropic_cli_headers_v1')) {
+      addIssue(context, 'clientSimulationBodyProfile', messages.invalidField)
+    }
     const clientSimulationChanged = values.clientSimulationProfile !== existingClientSimulationProfile
     if (values.clientSimulationProfile && clientSimulationChanged
       && !values.clientSimulationRiskAccepted) {
@@ -149,6 +160,16 @@ export function buildChannelFormSchema(
         context,
         'clientSimulationRiskAccepted',
         messages.invalidClientSimulationRisk,
+      )
+    }
+    const clientSimulationBodyChanged = values.clientSimulationBodyProfile
+      !== existingClientSimulationBodyProfile
+    if (values.clientSimulationBodyProfile && clientSimulationBodyChanged
+      && !values.clientSimulationBodyRiskAccepted) {
+      addIssue(
+        context,
+        'clientSimulationBodyRiskAccepted',
+        messages.invalidClientSimulationBodyRisk,
       )
     }
     if (values.responsesWebsocketEnabled
@@ -243,6 +264,8 @@ export function defaultChannelValues(channel?: AdminChannel): ChannelFormValues 
     poolMode: channel?.pool_mode ?? false,
     clientSimulationProfile: channel?.client_simulation_profile ?? '',
     clientSimulationRiskAccepted: false,
+    clientSimulationBodyProfile: channel?.client_simulation_body_profile ?? '',
+    clientSimulationBodyRiskAccepted: false,
     responsesWebsocketEnabled: channel?.responses_websocket_enabled ?? false,
     responsesCompactMode: channel?.responses_compact_mode ?? 'auto',
     responsesCompactModelMapping: stringMapRows(
@@ -308,6 +331,8 @@ function commonRequest(values: ChannelFormValues) {
     pool_mode: values.poolMode,
     client_simulation_profile: values.clientSimulationProfile || null,
     client_simulation_risk_accepted: values.clientSimulationRiskAccepted,
+    client_simulation_body_profile: values.clientSimulationBodyProfile || null,
+    client_simulation_body_risk_accepted: values.clientSimulationBodyRiskAccepted,
     responses_websocket_enabled: values.responsesWebsocketEnabled,
     responses_compact_mode: values.responsesCompactMode,
     responses_compact_model_mapping: stringRowsObject(values.responsesCompactModelMapping),

@@ -5,6 +5,7 @@ mod audio;
 mod bounded_json;
 mod canonical;
 mod capability;
+mod client_simulation_body_patch;
 pub mod cohere_rerank_v2;
 mod embedding;
 mod error_evidence;
@@ -58,6 +59,9 @@ pub use capability::{
     StreamCapability, UnsupportedCapability, protocol_capabilities, supports_request_capability,
     supports_response_capability, supports_stream_capability, validate_request_capabilities,
     validate_response_capabilities, validate_stream_event_capabilities,
+};
+pub use client_simulation_body_patch::{
+    ClientSimulationBodyPatch, ClientSimulationBodyPatchError, UtcDate,
 };
 pub use embedding::{
     CanonicalEmbeddingRequest, CanonicalEmbeddingRequestError, CanonicalEmbeddingResponse,

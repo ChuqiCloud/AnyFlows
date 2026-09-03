@@ -2,8 +2,9 @@ use std::fmt;
 
 use af_db::AdminChannelRecord;
 use af_domain::{
-    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ClientSimulationProfile, GroupId,
-    Protocol, ResponsesCompactMode, ResponsesCompactProbeResult, Status,
+    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ClientSimulationBodyProfile,
+    ClientSimulationProfile, GroupId, Protocol, ResponsesCompactMode, ResponsesCompactProbeResult,
+    Status,
 };
 use serde::{Deserialize, Serialize};
 
@@ -86,6 +87,7 @@ pub struct AdminChannel {
     auto_ban_rules: ChannelAutoBanRules,
     pool_mode: bool,
     client_simulation_profile: Option<ClientSimulationProfile>,
+    client_simulation_body_profile: Option<ClientSimulationBodyProfile>,
     responses_websocket_enabled: bool,
     responses_compact_mode: ResponsesCompactMode,
     responses_compact_model_mapping: serde_json::Value,
@@ -142,6 +144,7 @@ impl AdminChannel {
             auto_ban_rules: ChannelAutoBanRules::default(),
             pool_mode: false,
             client_simulation_profile: None,
+            client_simulation_body_profile: None,
             responses_websocket_enabled: false,
             responses_compact_mode: ResponsesCompactMode::Auto,
             responses_compact_model_mapping: serde_json::json!({}),
@@ -225,6 +228,12 @@ impl AdminChannel {
     #[must_use]
     pub const fn client_simulation_profile(&self) -> Option<ClientSimulationProfile> {
         self.client_simulation_profile
+    }
+
+    /// 返回显式选择的版本化客户端仿真正文档案。
+    #[must_use]
+    pub const fn client_simulation_body_profile(&self) -> Option<ClientSimulationBodyProfile> {
+        self.client_simulation_body_profile
     }
     /// 返回是否显式开启原生 Responses WebSocket。
     #[must_use]
@@ -327,6 +336,7 @@ impl AdminChannel {
         .with_auto_ban_rules(record.auto_ban_rules().clone())
         .with_pool_mode(record.pool_mode())
         .with_client_simulation_profile(record.client_simulation_profile())
+        .with_client_simulation_body_profile(record.client_simulation_body_profile())
         .with_responses_websocket_enabled(record.responses_websocket_enabled())
         .with_responses_compact_configuration(
             record.responses_compact_mode(),
@@ -370,6 +380,14 @@ impl AdminChannel {
 
     fn with_client_simulation_profile(mut self, profile: Option<ClientSimulationProfile>) -> Self {
         self.client_simulation_profile = profile;
+        self
+    }
+
+    fn with_client_simulation_body_profile(
+        mut self,
+        profile: Option<ClientSimulationBodyProfile>,
+    ) -> Self {
+        self.client_simulation_body_profile = profile;
         self
     }
 }

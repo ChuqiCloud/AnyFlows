@@ -15,6 +15,7 @@ const messages = {
   invalidParameter: 'parameter',
   invalidAutoBanRules: 'auto-ban-rules',
   invalidClientSimulationRisk: 'client-simulation-risk',
+  invalidClientSimulationBodyRisk: 'client-simulation-body-risk',
   invalidRouting: 'routing',
   invalidTimeout: 'timeout',
   invalidUrl: 'url',
@@ -88,6 +89,37 @@ test('客户端仿真仅允许 Anthropic 并要求首次启用确认风险', () 
   })
   assert.equal(request.client_simulation_profile, 'anthropic_cli_headers_v1')
   assert.equal(request.client_simulation_risk_accepted, true)
+})
+
+test('正文仿真档案要求匹配 Header 档案与独立风险确认', () => {
+  const schema = buildChannelFormSchema('create', messages)
+  const enabled = {
+    ...defaultChannelValues(),
+    name: 'Anthropic body simulation',
+    channelType: 'anthropic',
+    protocol: 'anthropic',
+    clientSimulationProfile: 'anthropic_cli_headers_v1',
+    clientSimulationRiskAccepted: true,
+    clientSimulationBodyProfile: 'anthropic_cli_system_date_v1',
+  }
+
+  assert.equal(schema.safeParse(enabled).success, false)
+  assert.equal(schema.safeParse({
+    ...enabled,
+    clientSimulationBodyRiskAccepted: true,
+  }).success, true)
+  assert.equal(schema.safeParse({
+    ...enabled,
+    clientSimulationProfile: '',
+    clientSimulationBodyRiskAccepted: true,
+  }).success, false)
+
+  const request = toCreateRequest({
+    ...enabled,
+    clientSimulationBodyRiskAccepted: true,
+  })
+  assert.equal(request.client_simulation_body_profile, 'anthropic_cli_system_date_v1')
+  assert.equal(request.client_simulation_body_risk_accepted, true)
 })
 
 test('已启用的同一仿真档案无需在每次更新时重复确认', () => {

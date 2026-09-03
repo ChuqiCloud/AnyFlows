@@ -1,8 +1,9 @@
 use std::{fmt, str::FromStr as _, time::Duration};
 
 use af_domain::{
-    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ClientSimulationProfile, GroupId,
-    Protocol, ResponsesCompactMode, ResponsesCompactProbeResult, Status,
+    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ClientSimulationBodyProfile,
+    ClientSimulationProfile, GroupId, Protocol, ResponsesCompactMode, ResponsesCompactProbeResult,
+    Status,
 };
 use sea_orm::{
     ConnectionTrait, DbBackend, DbErr, JsonValue, QueryResult,
@@ -17,14 +18,16 @@ use crate::{
     ChannelModelMappings, ChannelParameterOverrides, DatabasePool,
     ability_write::{AbilityWriteError, ChannelRoutingSnapshot, load_channel_routing_snapshots},
     channel_settings::{
-        AUTO_BAN_RULES_KEY, CLIENT_SIMULATION_PROFILE_KEY, RESPONSES_COMPACT_MODE_KEY,
-        RESPONSES_COMPACT_MODEL_MAPPING_KEY, RESPONSES_COMPACT_PROBE_CHECKED_AT_KEY,
-        RESPONSES_COMPACT_PROBE_HTTP_STATUS_KEY, RESPONSES_COMPACT_PROBE_RESULT_KEY,
+        AUTO_BAN_RULES_KEY, CLIENT_SIMULATION_BODY_PROFILE_KEY, CLIENT_SIMULATION_PROFILE_KEY,
+        RESPONSES_COMPACT_MODE_KEY, RESPONSES_COMPACT_MODEL_MAPPING_KEY,
+        RESPONSES_COMPACT_PROBE_CHECKED_AT_KEY, RESPONSES_COMPACT_PROBE_HTTP_STATUS_KEY,
+        RESPONSES_COMPACT_PROBE_RESULT_KEY, client_simulation_body_profile,
         client_simulation_profile, parse_auto_ban_rules_value, pool_mode, responses_compact_mode,
         responses_compact_model_mapping, responses_compact_probe_record,
-        responses_websocket_enabled, validate_client_simulation_capability,
-        validate_responses_compact_capability, validate_responses_compact_model_mapping,
-        validate_responses_compact_probe_result, validate_responses_websocket_capability,
+        responses_websocket_enabled, validate_client_simulation_body_capability,
+        validate_client_simulation_capability, validate_responses_compact_capability,
+        validate_responses_compact_model_mapping, validate_responses_compact_probe_result,
+        validate_responses_websocket_capability,
     },
     entity::{ChannelBaseUrl, channels},
 };
@@ -49,6 +52,7 @@ pub struct AdminChannelRecord {
     auto_ban_rules: ChannelAutoBanRules,
     pool_mode: bool,
     client_simulation_profile: Option<ClientSimulationProfile>,
+    client_simulation_body_profile: Option<ClientSimulationBodyProfile>,
     responses_websocket_enabled: bool,
     responses_compact_mode: ResponsesCompactMode,
     responses_compact_model_mapping: JsonValue,
@@ -111,6 +115,10 @@ impl AdminChannelRecord {
                 pool_mode(&settings).map(i64::from).unwrap_or(-1)
             },
             client_simulation_profile: setting_value(&settings, CLIENT_SIMULATION_PROFILE_KEY),
+            client_simulation_body_profile: setting_value(
+                &settings,
+                CLIENT_SIMULATION_BODY_PROFILE_KEY,
+            ),
             models: Vec::new(),
             group_ids: Vec::new(),
             model_mapping: Some(model.model_mapping),
@@ -227,6 +235,12 @@ impl AdminChannelRecord {
     #[must_use]
     pub const fn client_simulation_profile(&self) -> Option<ClientSimulationProfile> {
         self.client_simulation_profile
+    }
+
+    /// 返回渠道显式选择的版本化客户端仿真正文档案。
+    #[must_use]
+    pub const fn client_simulation_body_profile(&self) -> Option<ClientSimulationBodyProfile> {
+        self.client_simulation_body_profile
     }
 
     /// 返回渠道是否显式开启原生 Responses WebSocket。
@@ -549,6 +563,7 @@ struct AdminChannelRow {
     auto_ban_rules: Option<JsonValue>,
     pool_mode_state: i64,
     client_simulation_profile: Option<JsonValue>,
+    client_simulation_body_profile: Option<JsonValue>,
     models: Vec<String>,
     group_ids: Vec<GroupId>,
     model_mapping: Option<JsonValue>,
@@ -585,6 +600,7 @@ impl AdminChannelRow {
             auto_ban_rules: result.try_get("", "auto_ban_rules")?,
             pool_mode_state: result.try_get("", "pool_mode")?,
             client_simulation_profile: result.try_get("", "client_simulation_profile")?,
+            client_simulation_body_profile: result.try_get("", "client_simulation_body_profile")?,
             models: Vec::new(),
             group_ids: Vec::new(),
             model_mapping: result.try_get("", "model_mapping")?,
@@ -648,6 +664,7 @@ impl AdminChannelRow {
         }
         let settings = compact_settings_projection(
             self.client_simulation_profile,
+            self.client_simulation_body_profile,
             self.responses_compact_mode,
             self.responses_compact_model_mapping,
             self.responses_compact_probe_result,
@@ -658,8 +675,17 @@ impl AdminChannelRow {
             responses_compact_mode(&settings).map_err(|_| internal_invariant())?;
         let client_simulation_profile =
             client_simulation_profile(&settings).map_err(|_| internal_invariant())?;
+        let client_simulation_body_profile =
+            client_simulation_body_profile(&settings).map_err(|_| internal_invariant())?;
         validate_client_simulation_capability(channel_type, protocol, client_simulation_profile)
             .map_err(|_| internal_invariant())?;
+        validate_client_simulation_body_capability(
+            channel_type,
+            protocol,
+            client_simulation_profile,
+            client_simulation_body_profile,
+        )
+        .map_err(|_| internal_invariant())?;
         let responses_compact_model_mapping =
             responses_compact_model_mapping(&settings).map_err(|_| internal_invariant())?;
         validate_responses_compact_capability(channel_type, protocol, responses_compact_mode)
@@ -732,6 +758,7 @@ impl AdminChannelRow {
             auto_ban_rules,
             pool_mode,
             client_simulation_profile,
+            client_simulation_body_profile,
             responses_websocket_enabled,
             responses_compact_mode,
             responses_compact_model_mapping,
@@ -869,6 +896,10 @@ pub(crate) fn channel_base_query(database_backend: DbBackend) -> SelectStatement
             Alias::new("client_simulation_profile"),
         )
         .expr_as(
+            bounded_setting(CLIENT_SIMULATION_BODY_PROFILE_KEY),
+            Alias::new("client_simulation_body_profile"),
+        )
+        .expr_as(
             bounded_setting(RESPONSES_COMPACT_MODE_KEY),
             Alias::new("responses_compact_mode"),
         )
@@ -947,6 +978,7 @@ fn setting_value(settings: &JsonValue, key: &str) -> Option<JsonValue> {
 
 fn compact_settings_projection(
     client_simulation_profile: Option<JsonValue>,
+    client_simulation_body_profile: Option<JsonValue>,
     mode: Option<JsonValue>,
     model_mapping: Option<JsonValue>,
     probe_result: Option<JsonValue>,
@@ -956,6 +988,10 @@ fn compact_settings_projection(
     let mut settings = serde_json::Map::new();
     for (key, value) in [
         (CLIENT_SIMULATION_PROFILE_KEY, client_simulation_profile),
+        (
+            CLIENT_SIMULATION_BODY_PROFILE_KEY,
+            client_simulation_body_profile,
+        ),
         (RESPONSES_COMPACT_MODE_KEY, mode),
         (RESPONSES_COMPACT_MODEL_MAPPING_KEY, model_mapping),
         (RESPONSES_COMPACT_PROBE_RESULT_KEY, probe_result),

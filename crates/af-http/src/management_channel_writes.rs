@@ -25,6 +25,11 @@ use crate::{
 /// 渠道写接口要求显式提交的可空客户端仿真档案。
 struct NullableClientSimulationProfile(Option<af_domain::ClientSimulationProfile>);
 
+#[derive(Deserialize)]
+#[serde(transparent)]
+/// 渠道写接口要求显式提交的可空客户端仿真正文档案。
+struct NullableClientSimulationBodyProfile(Option<af_domain::ClientSimulationBodyProfile>);
+
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 #[schema(as = AdminChannelCreateRequest)]
@@ -71,6 +76,14 @@ pub(crate) struct AdminChannelCreateRequest {
     client_simulation_profile: NullableClientSimulationProfile,
     /// 仅确认本次启用或换档案的合规风险，不作为持久化开关。
     client_simulation_risk_accepted: bool,
+    /// 可空正文仿真档案；仅可附加在匹配的 Header 仿真档案上。
+    #[schema(
+        value_type = Option<crate::openapi::schema::ClientSimulationBodyProfileSchema>,
+        required = true
+    )]
+    client_simulation_body_profile: NullableClientSimulationBodyProfile,
+    /// 仅确认本次启用或更换正文档案的请求改写风险，不作为持久化开关。
+    client_simulation_body_risk_accepted: bool,
     /// 仅 `OpenAI + openai_responses` 可开启；省略时默认关闭。
     #[serde(default)]
     responses_websocket_enabled: bool,
@@ -142,6 +155,14 @@ pub(crate) struct AdminChannelUpdateRequest {
     client_simulation_profile: NullableClientSimulationProfile,
     /// 首次启用或换档案必须为 true；保持或关闭时可为 false。
     client_simulation_risk_accepted: bool,
+    /// 必须显式提交；null 表示关闭，非空档案表示保持、启用或更换正文档案。
+    #[schema(
+        value_type = Option<crate::openapi::schema::ClientSimulationBodyProfileSchema>,
+        required = true
+    )]
+    client_simulation_body_profile: NullableClientSimulationBodyProfile,
+    /// 首次启用或更换正文档案必须为 true；保持或关闭时可为 false。
+    client_simulation_body_risk_accepted: bool,
     /// 省略或 null 表示保留原值。
     responses_websocket_enabled: Option<bool>,
     /// 与专属模型映射必须同时出现；均省略时保留原值。
@@ -262,6 +283,11 @@ impl AdminChannelCreateRequest {
             self.client_simulation_risk_accepted,
         )
         .map_err(map_write_error)?
+        .with_client_simulation_body_profile(
+            self.client_simulation_body_profile.0,
+            self.client_simulation_body_risk_accepted,
+        )
+        .map_err(map_write_error)?
         .with_responses_websocket_enabled(self.responses_websocket_enabled)
         .map_err(map_write_error)?
         .with_responses_compact_configuration(
@@ -299,6 +325,12 @@ impl AdminChannelUpdateRequest {
             self.client_simulation_risk_accepted,
         )
         .map_err(map_write_error)?;
+        let command = command
+            .with_client_simulation_body_profile(
+                self.client_simulation_body_profile.0,
+                self.client_simulation_body_risk_accepted,
+            )
+            .map_err(map_write_error)?;
         let command = match self.auto_ban_rules {
             Some(rules) => command
                 .with_auto_ban_rules(rules.into_domain()?)

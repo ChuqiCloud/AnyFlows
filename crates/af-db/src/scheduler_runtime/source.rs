@@ -1,7 +1,8 @@
 use af_domain::{
-    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ClientSimulationProfile,
-    ConcurrencyLimit, CredentialId, CredentialKind, CredentialQuotaDimension, Protocol, ProxyId,
-    ResponsesCompactMode, ResponsesCompactProbeResult, Status,
+    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ClientSimulationBodyProfile,
+    ClientSimulationProfile, ConcurrencyLimit, CredentialId, CredentialKind,
+    CredentialQuotaDimension, Protocol, ProxyId, ResponsesCompactMode, ResponsesCompactProbeResult,
+    Status,
 };
 use sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
 use thiserror::Error;
@@ -9,11 +10,12 @@ use thiserror::Error;
 use crate::{
     CredentialProxyScheme,
     channel_settings::{
-        auto_ban_rules, client_simulation_profile, pool_mode, responses_compact_mode,
-        responses_compact_model_mapping, responses_compact_probe_result,
-        responses_websocket_enabled, validate_client_simulation_capability,
-        validate_responses_compact_capability, validate_responses_compact_model_mapping,
-        validate_responses_compact_probe_result, validate_responses_websocket_capability,
+        auto_ban_rules, client_simulation_body_profile, client_simulation_profile, pool_mode,
+        responses_compact_mode, responses_compact_model_mapping, responses_compact_probe_result,
+        responses_websocket_enabled, validate_client_simulation_body_capability,
+        validate_client_simulation_capability, validate_responses_compact_capability,
+        validate_responses_compact_model_mapping, validate_responses_compact_probe_result,
+        validate_responses_websocket_capability,
     },
     credential_probe::EncryptedCredentialEnvelope,
     entity::{channels, credentials, proxies},
@@ -43,6 +45,7 @@ pub(super) struct SchedulerRuntimeChannelSource {
     auto_ban_rules: ChannelAutoBanRules,
     pool_mode: bool,
     client_simulation_profile: Option<ClientSimulationProfile>,
+    client_simulation_body_profile: Option<ClientSimulationBodyProfile>,
     responses_websocket_enabled: bool,
     responses_compact_mode: ResponsesCompactMode,
     responses_compact_probe_result: ResponsesCompactProbeResult,
@@ -98,6 +101,15 @@ impl SchedulerRuntimeChannelSource {
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         validate_client_simulation_capability(channel_type, protocol, client_simulation_profile)
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        let client_simulation_body_profile = client_simulation_body_profile(&settings)
+            .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        validate_client_simulation_body_capability(
+            channel_type,
+            protocol,
+            client_simulation_profile,
+            client_simulation_body_profile,
+        )
+        .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         let responses_websocket_enabled = responses_websocket_enabled(&settings)
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         validate_responses_websocket_capability(
@@ -138,6 +150,7 @@ impl SchedulerRuntimeChannelSource {
             auto_ban_rules,
             pool_mode,
             client_simulation_profile,
+            client_simulation_body_profile,
             responses_websocket_enabled,
             responses_compact_mode,
             responses_compact_probe_result,
@@ -198,6 +211,13 @@ impl SchedulerRuntimeChannelSource {
     /// 返回渠道显式选择的版本化客户端仿真档案。
     pub(super) const fn client_simulation_profile(&self) -> Option<ClientSimulationProfile> {
         self.client_simulation_profile
+    }
+
+    /// 返回渠道显式选择的版本化客户端仿真正文档案。
+    pub(super) const fn client_simulation_body_profile(
+        &self,
+    ) -> Option<ClientSimulationBodyProfile> {
+        self.client_simulation_body_profile
     }
 
     /// 返回渠道显式开启的 Responses WebSocket 能力。
