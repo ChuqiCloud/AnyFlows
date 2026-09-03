@@ -543,7 +543,8 @@ async fn approval_notification_repository_paginates_and_marks_read_idempotently(
             fixture.owner_id.get(),
             OrganizationApprovalNotificationListQuery::new(None, 1)?,
         )
-        .await?;
+        .await
+        .map_err(|error| format!("分页读取审批通知失败: {error:?}"))?;
     assert_eq!(page.entries().len(), 1);
     assert_eq!(page.unread_count(), 2);
     let cursor = page.next_cursor().expect("分页必须返回稳定游标");
@@ -552,18 +553,21 @@ async fn approval_notification_repository_paginates_and_marks_read_idempotently(
             fixture.owner_id.get(),
             OrganizationApprovalNotificationListQuery::new(Some(cursor), 1)?,
         )
-        .await?;
+        .await
+        .map_err(|error| format!("读取较旧审批通知失败: {error:?}"))?;
     assert_eq!(older.entries().len(), 1);
     assert!(older.next_cursor().is_none());
 
     let marked = notification_repository
         .mark_read(fixture.owner_id.get(), vec![notification_ids[0]])
-        .await?;
+        .await
+        .map_err(|error| format!("首次标记审批通知已读失败: {error:?}"))?;
     assert_eq!(marked.marked_count(), 1);
     assert_eq!(marked.unread_count(), 1);
     let repeated = notification_repository
         .mark_read(fixture.owner_id.get(), vec![notification_ids[0]])
-        .await?;
+        .await
+        .map_err(|error| format!("重复标记审批通知已读失败: {error:?}"))?;
     assert_eq!(repeated.marked_count(), 1);
     assert_eq!(repeated.unread_count(), 1);
     assert_eq!(
