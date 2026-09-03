@@ -319,18 +319,19 @@ async fn revert_reconciliation(manager: &SchemaManager<'_>) -> Result<(), DbErr>
         DbBackend::Sqlite => unreachable!(),
     };
     connection.execute_unprepared(drop_check).await?;
+    // MySQL 要求先解除外键，再删除承载外键所需的唯一索引。
     manager
-        .drop_index(
-            Index::drop()
-                .name("uq_refund_reconciliation_manual_completion")
+        .drop_foreign_key(
+            ForeignKey::drop()
+                .name("fk_refund_reconciliation_manual_completion")
                 .table(refund_reconciliation_entries::Entity)
                 .to_owned(),
         )
         .await?;
     manager
-        .drop_foreign_key(
-            ForeignKey::drop()
-                .name("fk_refund_reconciliation_manual_completion")
+        .drop_index(
+            Index::drop()
+                .name("uq_refund_reconciliation_manual_completion")
                 .table(refund_reconciliation_entries::Entity)
                 .to_owned(),
         )
