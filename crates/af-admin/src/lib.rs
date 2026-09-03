@@ -30,6 +30,7 @@ mod organization;
 mod organization_activity;
 mod organization_approval;
 mod organization_approval_execution;
+mod organization_approval_notifications;
 mod organization_budget;
 mod organization_contract_price;
 mod organization_credit_terms;
@@ -275,6 +276,15 @@ pub use organization_approval_execution::{
     OrganizationApprovalServiceAccountExecutionFuture,
     OrganizationApprovalServiceAccountExecutionResult,
     OrganizationApprovalServiceAccountStatusCommand,
+};
+pub use organization_approval_notifications::{
+    DEFAULT_ORGANIZATION_APPROVAL_NOTIFICATION_PAGE_SIZE,
+    DatabaseOrganizationApprovalNotificationService, OrganizationApprovalNotification,
+    OrganizationApprovalNotificationCursor, OrganizationApprovalNotificationDecision,
+    OrganizationApprovalNotificationError, OrganizationApprovalNotificationListFuture,
+    OrganizationApprovalNotificationListQuery, OrganizationApprovalNotificationMarkReadFuture,
+    OrganizationApprovalNotificationMarkReadResult, OrganizationApprovalNotificationPage,
+    OrganizationApprovalNotificationService,
 };
 pub use organization_budget::{
     DatabaseOrganizationBudgetService, OrganizationBudgetPoliciesFuture,

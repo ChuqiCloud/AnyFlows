@@ -72,6 +72,7 @@ pub(crate) mod organization_approval_contract_price_executions;
 pub(crate) mod organization_approval_decisions;
 pub(crate) mod organization_approval_funds_executions;
 pub(crate) mod organization_approval_member_executions;
+pub(crate) mod organization_approval_notification_receipts;
 pub(crate) mod organization_approval_notifications;
 pub(crate) mod organization_approval_requests;
 pub(crate) mod organization_approval_service_account_executions;
@@ -3292,6 +3293,9 @@ impl ActiveModelBehavior for organization_approval_notifications::ActiveModel {
         Ok(self)
     }
 }
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_approval_notification_receipts::ActiveModel {}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for organization_approval_member_executions::ActiveModel {

@@ -3110,6 +3110,26 @@ pub(in crate::migration) mod user_notification_receipts {
     }
 }
 
+pub(in crate::migration) mod organization_approval_notification_receipts {
+    use super::DeriveIden;
+
+    /// 企业审批通知已读回执固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_approval_notification_receipts")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        RecipientUserId,
+        NotificationId,
+        ReadAt,
+    }
+}
+
 pub(in crate::migration) mod refund_requests {
     use super::DeriveIden;
 

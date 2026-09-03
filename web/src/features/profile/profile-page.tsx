@@ -3,6 +3,7 @@ import {
   BellRing,
   CalendarClock,
   Check,
+  ClipboardCheck,
   CircleDollarSign,
   Copy,
   Fingerprint,
@@ -44,6 +45,7 @@ import {
   useEnableUserTwoFactor,
   useFinishUserPasskeyRegistration,
   useMarkUserNotificationsRead,
+  useMarkOrganizationApprovalNotificationsRead,
   useRenameUserPasskey,
   useRevokeUserPasskey,
   useStartUserPasskeyRegistration,
@@ -51,6 +53,7 @@ import {
   useUpdateUserProfile,
   useUserPasskeys,
   useUserNotifications,
+  useOrganizationApprovalNotifications,
   useUserProfile,
   useUserTwoFactor,
 } from './profile-api'
@@ -813,6 +816,54 @@ function NotificationHistoryRow({ entry, formatTime, onMarkRead, pending }: { en
   return <article className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className={isRead ? 'text-sm font-medium' : 'text-sm font-semibold'}>{title}</span><Badge className={isRead ? 'bg-muted text-muted-foreground' : 'bg-brand/10 text-brand'}>{t(`profile.notificationHistory.readState.${isRead ? 'read' : 'unread'}`)}</Badge><Badge className={entry.delivery_state === 'accepted' ? 'bg-success/10 text-success' : entry.delivery_state === 'failed' ? 'bg-destructive/10 text-destructive' : 'bg-warning/10 text-warning'}>{state}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{detail}</p><p className="mt-1 text-[0.6875rem] text-muted-foreground/75">{t('profile.notificationHistory.meta', { time: formatTime(entry.occurred_at), attempts: entry.delivery_attempts, id: entry.id })}</p></div><div className="flex items-center justify-between gap-3 sm:flex-col sm:items-end"><span className="text-[0.6875rem] text-muted-foreground">{t(`profile.notificationHistory.channel.${entry.channel}`)}</span>{isRead ? <span className="text-[0.6875rem] text-muted-foreground">{t('profile.notificationHistory.readAt', { time: formatTime(entry.read_at ?? entry.occurred_at) })}</span> : <Button type="button" size="sm" variant="secondary" disabled={pending} onClick={() => onMarkRead(entry.id)}>{pending ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <Check aria-hidden="true" />}{t('profile.notificationHistory.markRead')}</Button>}</div></article>
 }
 
+function OrganizationApprovalNotificationCard() {
+  const { t, i18n } = useTranslation()
+  const query = useOrganizationApprovalNotifications()
+  const markReadMutation = useMarkOrganizationApprovalNotificationsRead()
+  const [pendingId, setPendingId] = useState<number>()
+  const entries = query.data?.pages.flatMap((page) => page.entries) ?? []
+  const unreadCount = query.data?.pages[0]?.unread_count
+  const formatTime = (value: number) => new Intl.DateTimeFormat(
+    i18n.resolvedLanguage?.startsWith('zh') ? 'zh-CN' : 'en-US',
+    { dateStyle: 'medium', timeStyle: 'short' },
+  ).format(new Date(value * 1000))
+  const markRead = async (id: number) => {
+    if (markReadMutation.isPending) return
+    setPendingId(id)
+    try {
+      await markReadMutation.mutateAsync([id])
+    } finally {
+      setPendingId(undefined)
+    }
+  }
+
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader className="border-b border-[var(--hairline)] bg-surface-1/45">
+        <div className="flex gap-3">
+          <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-brand/10 text-brand"><ClipboardCheck className="size-4" aria-hidden="true" /></div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <CardTitle className="text-base">{t('profile.organizationApprovalNotifications.title')}</CardTitle>
+              {unreadCount !== undefined ? <Badge className={unreadCount > 0 ? 'bg-warning/10 text-warning' : 'bg-muted text-muted-foreground'}>{t('profile.organizationApprovalNotifications.unreadCount', { count: unreadCount })}</Badge> : null}
+            </div>
+            <CardDescription className="mt-1">{t('profile.organizationApprovalNotifications.subtitle')}</CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        {query.isPending ? <div className="grid gap-3 p-5"><Skeleton className="h-12" /><Skeleton className="h-12" /></div> : null}
+        {query.isError ? <div role="alert" className="flex items-center justify-between gap-3 p-5 text-xs text-destructive"><span>{t('profile.organizationApprovalNotifications.loadError')}</span><Button type="button" size="sm" variant="secondary" onClick={() => void query.refetch()}>{t('profile.actions.retry')}</Button></div> : null}
+        {!query.isPending && !query.isError && entries.length === 0 ? <div className="p-5 text-xs text-muted-foreground">{t('profile.organizationApprovalNotifications.empty')}</div> : null}
+        {markReadMutation.isError ? <div role="alert" className="border-t border-[var(--hairline)] px-5 py-3 text-xs text-destructive">{t('profile.organizationApprovalNotifications.markReadError')}</div> : null}
+        {entries.length > 0 ? <div className="divide-y divide-[var(--hairline)]">{entries.map((entry) => <article key={entry.id} className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className={entry.read_at ? 'text-sm font-medium' : 'text-sm font-semibold'}>{t(`profile.organizationApprovalNotifications.decision.${entry.decision}`)}</span><Badge className={entry.read_at ? 'bg-muted text-muted-foreground' : 'bg-brand/10 text-brand'}>{t(`profile.organizationApprovalNotifications.readState.${entry.read_at ? 'read' : 'unread'}`)}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{t('profile.organizationApprovalNotifications.detail', { organization: entry.organization_id, request: entry.request_id })}</p><p className="mt-1 text-[0.6875rem] text-muted-foreground/75">{t('profile.organizationApprovalNotifications.meta', { time: formatTime(entry.occurred_at), id: entry.id })}</p></div><div className="flex items-center justify-between gap-3 sm:flex-col sm:items-end">{entry.read_at ? <span className="text-[0.6875rem] text-muted-foreground">{t('profile.organizationApprovalNotifications.readAt', { time: formatTime(entry.read_at) })}</span> : <Button type="button" size="sm" variant="secondary" disabled={pendingId === entry.id && markReadMutation.isPending} onClick={() => void markRead(entry.id)}>{pendingId === entry.id && markReadMutation.isPending ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <Check aria-hidden="true" />}{t('profile.organizationApprovalNotifications.markRead')}</Button>}</div></article>)}</div> : null}
+        {query.isFetchNextPageError ? <div role="alert" className="flex items-center justify-between gap-3 border-t border-[var(--hairline)] p-4 text-xs text-destructive"><span>{t('profile.organizationApprovalNotifications.olderLoadError')}</span><Button type="button" size="sm" variant="ghost" onClick={() => void query.fetchNextPage()}>{t('profile.actions.retry')}</Button></div> : null}
+        {query.hasNextPage && !query.isFetchNextPageError ? <div className="flex justify-center border-t border-[var(--hairline)] p-4"><Button type="button" size="sm" variant="secondary" disabled={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>{t(query.isFetchingNextPage ? 'profile.organizationApprovalNotifications.loading' : 'profile.organizationApprovalNotifications.loadOlder')}</Button></div> : null}
+      </CardContent>
+    </Card>
+  )
+}
+
 function PreferenceRow({ id, title, description, checked, onCheckedChange }: { id: string; title: string; description: string; checked: boolean; onCheckedChange: (checked: boolean) => void }) {
   return (
     <div className="flex items-start gap-3 py-4 first:pt-0 last:pb-0"><div className="min-w-0 flex-1"><Label htmlFor={id} className="text-sm font-medium">{title}</Label><p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p></div><Switch id={id} checked={checked} onCheckedChange={onCheckedChange} aria-label={title} /></div>
@@ -844,7 +895,7 @@ export function ProfilePage({ section, onPasswordChanged }: ProfilePageProps) {
         <div><div className="mb-1 flex items-center gap-2 text-[0.6875rem] uppercase tracking-[0.18em] text-brand"><UserRound className="size-3.5" aria-hidden="true" />{roleLabel ?? t('profile.eyebrow')}</div><h2 className="text-lg font-semibold">{t('profile.title')}</h2><p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">{t('profile.subtitle')}</p></div>
         <Button type="button" size="sm" variant="secondary" disabled={profileQuery.isFetching} onClick={() => void profileQuery.refetch()}><RefreshCw className={profileQuery.isFetching ? 'animate-spin' : undefined} aria-hidden="true" />{t('profile.actions.refresh')}</Button>
       </header>
-      {profileQuery.isPending ? <ProfileLoading /> : profileQuery.isError || !profile ? <ErrorPanel onRetry={() => void profileQuery.refetch()} /> : <div className="grid gap-4 xl:grid-cols-2"><ProfileCard profile={profile} /><PasswordCard onPasswordChanged={onPasswordChanged} /><TwoFactorCard /><PasskeyCard onPasswordChanged={onPasswordChanged} /><div ref={notificationsRef} id="profile-notifications" tabIndex={-1} className="scroll-mt-16 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring/60 xl:col-span-2"><NotificationsCard profile={profile} /></div><div className="xl:col-span-2"><NotificationHistoryCard /></div></div>}
+      {profileQuery.isPending ? <ProfileLoading /> : profileQuery.isError || !profile ? <ErrorPanel onRetry={() => void profileQuery.refetch()} /> : <div className="grid gap-4 xl:grid-cols-2"><ProfileCard profile={profile} /><PasswordCard onPasswordChanged={onPasswordChanged} /><TwoFactorCard /><PasskeyCard onPasswordChanged={onPasswordChanged} /><div ref={notificationsRef} id="profile-notifications" tabIndex={-1} className="scroll-mt-16 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring/60 xl:col-span-2"><NotificationsCard profile={profile} /></div><div className="xl:col-span-2"><NotificationHistoryCard /></div><div className="xl:col-span-2"><OrganizationApprovalNotificationCard /></div></div>}
     </div>
   )
 }

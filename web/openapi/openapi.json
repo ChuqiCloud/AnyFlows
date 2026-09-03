@@ -23421,6 +23421,151 @@
         ]
       }
     },
+    "/api/account/organization-approval-notifications": {
+      "get": {
+        "tags": [
+          "企业审批通知"
+        ],
+        "summary": "读取当前用户企业审批通知",
+        "operationId": "listOrganizationApprovalNotifications",
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "description": "occurred_at:id 复合游标",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "每页数量，默认 25",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前用户可见的企业审批通知事实",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationApprovalNotificationListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "分页参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/account/organization-approval-notifications/read": {
+      "post": {
+        "tags": [
+          "企业审批通知"
+        ],
+        "summary": "批量标记企业审批通知为已读",
+        "operationId": "markOrganizationApprovalNotificationsRead",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationApprovalNotificationMarkReadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "已读回执已幂等写入",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationApprovalNotificationMarkReadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "通知 ID 无效或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/organizations/{organization_id}/scim/audit-logs": {
       "get": {
         "tags": [
@@ -35320,6 +35465,126 @@
           }
         }
       },
+      "OrganizationApprovalNotification": {
+        "type": "object",
+        "required": [
+          "id",
+          "organization_id",
+          "request_id",
+          "decision_id",
+          "decision",
+          "template_version",
+          "occurred_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "organization_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "request_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "decision_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/OrganizationApprovalNotificationDecision"
+          },
+          "template_version": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "read_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationApprovalNotificationDecision": {
+        "type": "string",
+        "enum": [
+          "approved",
+          "rejected",
+          "timed_out"
+        ]
+      },
+      "OrganizationApprovalNotificationListResponse": {
+        "type": "object",
+        "required": [
+          "entries",
+          "unread_count"
+        ],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrganizationApprovalNotification"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unread_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationApprovalNotificationMarkReadRequest": {
+        "type": "object",
+        "required": [
+          "notification_ids"
+        ],
+        "properties": {
+          "notification_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "maxItems": 100,
+            "minItems": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrganizationApprovalNotificationMarkReadResponse": {
+        "type": "object",
+        "required": [
+          "marked_count",
+          "unread_count"
+        ],
+        "properties": {
+          "marked_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unread_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
       "OrganizationApprovalRequest": {
         "type": "object",
         "required": [
@@ -43220,6 +43485,9 @@
     },
     {
       "name": "企业审批"
+    },
+    {
+      "name": "企业审批通知"
     },
     {
       "name": "企业 SCIM"

@@ -19,6 +19,7 @@ mod oauth_connections;
 mod oauth_login;
 mod organization_activity;
 mod organization_approval;
+mod organization_approval_notifications;
 mod organization_budget;
 mod organization_contract_price;
 mod organization_credit_terms;
@@ -122,6 +123,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(organization_tokens::document());
     document.merge(organization_activity::document());
     document.merge(organization_approval::document());
+    document.merge(organization_approval_notifications::document());
     document.merge(organization_scim_audit::document());
     document.merge(organization_service_account_runtime::document());
     document.merge(scim::document());
@@ -159,6 +161,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("企业服务账号"),
         Tag::new("企业活动"),
         Tag::new("企业审批"),
+        Tag::new("企业审批通知"),
         Tag::new("企业 SCIM"),
         Tag::new("平台企业活动"),
         Tag::new("平台管理审计"),
@@ -248,7 +251,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 218);
+        assert_eq!(document.paths.paths.len(), 220);
         let operation_count = document
             .paths
             .paths
@@ -270,7 +273,7 @@ mod tests {
             })
             .sum::<usize>();
         // 公开发现、SSO 启动、审批与部门目录管理接口扩展了既有管理面，保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 293);
+        assert_eq!(operation_count, 295);
         assert!(
             document
                 .components
@@ -463,6 +466,8 @@ mod tests {
             "updateUserNotificationPreferences",
             "listUserNotifications",
             "markUserNotificationsRead",
+            "listOrganizationApprovalNotifications",
+            "markOrganizationApprovalNotificationsRead",
             "createPlaygroundShare",
             "createUserToken",
             "createPlaygroundToken",
@@ -644,6 +649,11 @@ mod tests {
         assert!(schemas.contains_key("OrganizationApprovalTemplate"));
         assert!(schemas.contains_key("OrganizationApprovalTemplateCreateRequest"));
         assert!(schemas.contains_key("OrganizationApprovalTemplateListResponse"));
+        assert!(schemas.contains_key("OrganizationApprovalNotificationDecision"));
+        assert!(schemas.contains_key("OrganizationApprovalNotification"));
+        assert!(schemas.contains_key("OrganizationApprovalNotificationListResponse"));
+        assert!(schemas.contains_key("OrganizationApprovalNotificationMarkReadRequest"));
+        assert!(schemas.contains_key("OrganizationApprovalNotificationMarkReadResponse"));
         assert!(schemas.contains_key("AdminDashboardChannelFlow"));
         assert!(schemas.contains_key("AdminDashboardFlowPath"));
         assert!(schemas.contains_key("AdminDashboardFailure"));

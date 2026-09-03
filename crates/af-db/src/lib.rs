@@ -136,6 +136,7 @@ mod organization_approval_execution_tests;
 mod organization_approval_funds_execution;
 #[cfg(test)]
 mod organization_approval_funds_execution_tests;
+mod organization_approval_notification;
 mod organization_approval_service_account_execution;
 #[cfg(test)]
 mod organization_approval_service_account_execution_tests;
@@ -546,6 +547,15 @@ pub use organization_approval_execution::{
 pub use organization_approval_funds_execution::{
     OrganizationApprovalFundsExecutionOutcome, OrganizationApprovalFundsExecutionRecord,
     OrganizationApprovalFundsExecutionWrite, organization_approval_funds_resource_summary,
+};
+pub use organization_approval_notification::{
+    MAX_ORGANIZATION_APPROVAL_NOTIFICATION_PAGE_SIZE,
+    MAX_ORGANIZATION_APPROVAL_NOTIFICATION_READ_BATCH, OrganizationApprovalNotificationCursor,
+    OrganizationApprovalNotificationListQuery, OrganizationApprovalNotificationMarkReadOutcome,
+    OrganizationApprovalNotificationPage, OrganizationApprovalNotificationRecord,
+    OrganizationApprovalNotificationRepository,
+    OrganizationApprovalNotificationRepositoryConfigError,
+    OrganizationApprovalNotificationRepositoryError,
 };
 pub use organization_approval_service_account_execution::{
     OrganizationApprovalServiceAccountExecutionAction,
