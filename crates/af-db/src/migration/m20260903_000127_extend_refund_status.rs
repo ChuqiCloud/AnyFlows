@@ -37,39 +37,29 @@ END $$;"#,
                     .await?;
             }
             DbBackend::MySql => {
-                // MySQL 为未命名 CHECK 自动生成名称，先从 information_schema 找到旧约束再删除。
-                connection
-                    .execute_unprepared(
-                        r#"SET @drop_refund_status_check = (
-  SELECT CONCAT('ALTER TABLE `refund_requests` DROP CHECK `', tc.CONSTRAINT_NAME, '`')
-    FROM information_schema.TABLE_CONSTRAINTS tc
-    JOIN information_schema.CHECK_CONSTRAINTS cc
-      ON cc.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA
-     AND cc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
-   WHERE tc.TABLE_SCHEMA = DATABASE()
-     AND tc.TABLE_NAME = 'refund_requests'
-     AND tc.CONSTRAINT_TYPE = 'CHECK'
-     AND cc.CHECK_CLAUSE LIKE '%status%'
-   LIMIT 1
-);"#,
-                    )
+                // 连接池可能为每条语句选择不同连接，先读取约束名称，再在同一迁移连接上逐条执行。
+                let rows = connection
+                    .query_all(Statement::from_string(
+                        DbBackend::MySql,
+                        r#"SELECT tc.CONSTRAINT_NAME AS constraint_name
+FROM information_schema.TABLE_CONSTRAINTS tc
+JOIN information_schema.CHECK_CONSTRAINTS cc
+  ON cc.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA
+ AND cc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
+WHERE tc.CONSTRAINT_SCHEMA = DATABASE()
+  AND tc.TABLE_NAME = 'refund_requests'
+  AND tc.CONSTRAINT_TYPE = 'CHECK'
+  AND LOWER(cc.CHECK_CLAUSE) LIKE '%status%'"#,
+                    ))
                     .await?;
-                connection
-                    .execute_unprepared(
-                        "SET @drop_refund_status_check = IFNULL(@drop_refund_status_check, 'SELECT 1')",
-                    )
-                    .await?;
-                connection
-                    .execute_unprepared(
-                        "PREPARE drop_refund_status_check FROM @drop_refund_status_check",
-                    )
-                    .await?;
-                connection
-                    .execute_unprepared("EXECUTE drop_refund_status_check")
-                    .await?;
-                connection
-                    .execute_unprepared("DEALLOCATE PREPARE drop_refund_status_check")
-                    .await?;
+                for row in rows {
+                    let constraint: String = row.try_get("", "constraint_name")?;
+                    let statement = format!(
+                        "ALTER TABLE `refund_requests` DROP CHECK `{}`",
+                        constraint.replace('`', "``")
+                    );
+                    connection.execute_unprepared(&statement).await?;
+                }
                 connection
                     .execute_unprepared(
                         "ALTER TABLE `refund_requests` ADD CONSTRAINT `ck_refund_requests_status_range` CHECK (`status` BETWEEN 1 AND 7)",
