@@ -11,11 +11,13 @@ import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import type { AdminRefundRequest } from '@/lib/api/generated/types.gen'
-import { refundErrorCode, useAdminRefunds, useApproveAdminRefund, useRejectAdminRefund, useSubmitAdminRefund } from './refund-api'
+import { refundErrorCode, useAdminRefunds, useApproveAdminRefund, useManualCompleteAdminRefund, useRejectAdminRefund, useSubmitAdminRefund } from './refund-api'
 import { RefundReconciliationList } from './refund-reconciliation-list'
 
 type Filter = 'all' | 'pending' | 'approved' | 'rejected'
 type Decision = { action: 'approve' | 'reject'; request: AdminRefundRequest }
+type ManualCompletion = { request: AdminRefundRequest; result: 'completed' | 'failed'; reference: string; completionKey: string }
+const EMPTY_REFUND_ENTRIES: AdminRefundRequest[] = []
 
 const statusTone: Record<AdminRefundRequest['status'], string> = {
   requested: 'text-info',
@@ -23,6 +25,8 @@ const statusTone: Record<AdminRefundRequest['status'], string> = {
   succeeded: 'text-success',
   failed: 'text-destructive',
   canceled: 'text-muted-foreground',
+  manually_succeeded: 'text-success',
+  manually_failed: 'text-destructive',
 }
 
 function actionErrorKey(code: string | undefined) {
@@ -34,6 +38,12 @@ function actionErrorKey(code: string | undefined) {
     : 'unknown'
 }
 
+function newCompletionKey() {
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
 /** 管理员退款审批工作台，所有资金动作都通过服务端原请求 CAS 完成。 */
 export function RefundPage() {
   const { t } = useTranslation()
@@ -41,6 +51,7 @@ export function RefundPage() {
   const [filter, setFilter] = useState<Filter>('pending')
   const [pageSize, setPageSize] = useState(DEFAULT_TABLE_PAGE_SIZE)
   const [decision, setDecision] = useState<Decision>()
+  const [manual, setManual] = useState<ManualCompletion>()
   const [reason, setReason] = useState('')
   const query = useAdminRefunds(filter === 'all' ? undefined : filter, pageSize)
   const pagination = useLoadedCursorPagination({
@@ -48,18 +59,19 @@ export function RefundPage() {
     pageSize,
     onPageSizeChange: setPageSize,
   })
-  const entries = query.data?.pages[pagination.pageIndex]?.entries ?? []
+  const entries = query.data?.pages[pagination.pageIndex]?.entries ?? EMPTY_REFUND_ENTRIES
   const approve = useApproveAdminRefund()
   const reject = useRejectAdminRefund()
   const submit = useSubmitAdminRefund()
-  const actionError = approve.error ?? reject.error ?? submit.error
+  const manualComplete = useManualCompleteAdminRefund()
+  const actionError = approve.error ?? reject.error ?? submit.error ?? manualComplete.error
   const errorCode = refundErrorCode(actionError)
   const errorKey = actionErrorKey(errorCode)
-  const busy = approve.isPending || reject.isPending || submit.isPending
+  const busy = approve.isPending || reject.isPending || submit.isPending || manualComplete.isPending
   const summary = useMemo(() => ({
     pending: entries.filter((entry) => entry.approval_status === 'pending').length,
     approved: entries.filter((entry) => entry.approval_status === 'approved').length,
-    succeeded: entries.filter((entry) => entry.status === 'succeeded').length,
+    succeeded: entries.filter((entry) => entry.status === 'succeeded' || entry.status === 'manually_succeeded').length,
   }), [entries])
 
   const openDecision = (action: Decision['action'], request: AdminRefundRequest) => {
@@ -73,6 +85,19 @@ export function RefundPage() {
     mutation.mutate({ requestId: decision.request.request_id, reason }, {
       onSuccess: () => setDecision(undefined),
     })
+  }
+
+  const confirmManualCompletion = () => {
+    if (!manual || !manual.reference.trim()) return
+    manualComplete.mutate({
+      requestId: manual.request.request_id,
+      body: {
+        completion_key: manual.completionKey,
+        expected_version: manual.request.version,
+        result: manual.result,
+        reference: manual.reference.trim(),
+      },
+    }, { onSuccess: () => setManual(undefined) })
   }
 
   return (
@@ -155,11 +180,13 @@ export function RefundPage() {
                     <td className="px-3 py-3"><code className="font-mono text-[0.6875rem]">{entry.request_id.slice(0, 8)}…</code><div className="mt-1 text-muted-foreground">{t('refunds.user', { id: entry.user_id })}</div></td>
                     <td className="px-3 py-3"><div className="font-medium">{t(`refunds.orderKinds.${entry.order_kind}`)}</div><div className="mt-1 max-w-[180px] truncate font-mono text-muted-foreground">{entry.order_key}</div><div className="mt-1 text-muted-foreground">{entry.provider} · {entry.currency}</div></td>
                     <td className="px-3 py-3 font-mono">{entry.refund_amount_minor.toLocaleString()} <span className="text-muted-foreground">/ {entry.original_amount_minor.toLocaleString()}</span></td>
-                    <td className="px-3 py-3"><span className={statusTone[entry.status]}>{t(`refunds.statuses.${entry.status}`)}</span>{entry.provider_refund_id ? <div className="mt-1 max-w-[130px] truncate font-mono text-muted-foreground">{entry.provider_refund_id}</div> : null}</td>
+                    <td className="px-3 py-3"><span className={statusTone[entry.status]}>{t(`refunds.statuses.${entry.status}`)}</span></td>
                     <td className="px-3 py-3"><Badge className={entry.approval_status === 'approved' ? 'text-success' : entry.approval_status === 'rejected' ? 'text-destructive' : 'text-warning'}>{t(`refunds.approval.${entry.approval_status}`)}</Badge>{entry.approval_reason ? <div className="mt-1 max-w-[170px] truncate text-muted-foreground" title={entry.approval_reason}>{entry.approval_reason}</div> : null}</td>
                     <td className="px-3 py-3"><div className="flex justify-end gap-1.5">
                       {entry.approval_status === 'pending' ? <><Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => openDecision('approve', entry)}><Check aria-hidden="true" />{t('refunds.actions.approve')}</Button><Button type="button" size="icon-sm" variant="ghost" aria-label={t('refunds.actions.reject')} disabled={busy} onClick={() => openDecision('reject', entry)}><X aria-hidden="true" /></Button></> : null}
-                      {entry.approval_status === 'approved' && (entry.status === 'requested' || entry.status === 'failed') ? <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => submit.mutate(entry.request_id)}><Send aria-hidden="true" />{t('refunds.actions.submit')}</Button> : null}
+                      {entry.approval_status === 'approved' && (entry.status === 'requested' || entry.status === 'failed') ? <>
+                        {entry.provider === 'epay' ? <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => setManual({ request: entry, result: 'completed', reference: '', completionKey: newCompletionKey() })}><Check aria-hidden="true" />{t('refunds.actions.manualComplete')}</Button> : <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => submit.mutate(entry.request_id)}><Send aria-hidden="true" />{t('refunds.actions.submit')}</Button>}
+                      </> : null}
                     </div></td>
                   </tr>
                 ))}
@@ -192,6 +219,36 @@ export function RefundPage() {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>{t('refunds.actions.cancel')}</AlertDialogCancel>
             <AlertDialogAction disabled={busy} onClick={(event) => { event.preventDefault(); confirmDecision() }}>{decision?.action === 'approve' ? t('refunds.actions.approve') : t('refunds.actions.reject')}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={manual !== undefined} onOpenChange={(open) => { if (!open && !manualComplete.isPending) setManual(undefined) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('refunds.manual.title')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('refunds.manual.body')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="grid gap-3">
+            <label className="grid gap-1.5 text-xs font-medium" htmlFor="refund-manual-result">
+              {t('refunds.manual.resultLabel')}
+              <Select id="refund-manual-result" value={manual?.result ?? 'completed'} disabled={manualComplete.isPending} onChange={(event) => setManual((current) => current ? { ...current, result: event.target.value as ManualCompletion['result'] } : current)}>
+                <option value="completed">{t('refunds.manual.completed')}</option>
+                <option value="failed">{t('refunds.manual.failed')}</option>
+              </Select>
+            </label>
+            <label className="grid gap-1.5 text-xs font-medium" htmlFor="refund-manual-reference">
+              {t('refunds.manual.referenceLabel')}
+              <input id="refund-manual-reference" value={manual?.reference ?? ''} maxLength={256} disabled={manualComplete.isPending} onChange={(event) => setManual((current) => current ? { ...current, reference: event.target.value } : current)} className="h-9 rounded-md border border-[var(--hairline)] bg-background px-3 text-sm font-normal outline-none focus:ring-2 focus:ring-ring" placeholder={t('refunds.manual.referencePlaceholder')} />
+            </label>
+          </div>
+          {manualComplete.isError ? (
+            <div role="alert" className="rounded-md border border-destructive/25 bg-destructive/8 p-3 text-xs text-destructive">
+              {t(`refunds.errors.${errorKey}`)}
+            </div>
+          ) : null}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={manualComplete.isPending}>{t('refunds.actions.cancel')}</AlertDialogCancel>
+            <AlertDialogAction disabled={manualComplete.isPending || !manual?.reference.trim()} onClick={(event) => { event.preventDefault(); confirmManualCompletion() }}>{manualComplete.isPending ? t('refunds.manual.submitting') : t('refunds.actions.manualConfirm')}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -5,9 +5,10 @@ use utoipa::OpenApi;
 use crate::{
     management_error::ManagementErrorBody,
     management_refunds::{
-        AdminRefundDecisionRequest, AdminRefundListResponse, AdminRefundOrderKindResponse,
-        AdminRefundRequestResponse, RefundReconciliationEntryResponse,
-        RefundReconciliationListResponse, RefundReconciliationStatusResponse,
+        AdminRefundDecisionRequest, AdminRefundListResponse, AdminRefundManualCompletionRequest,
+        AdminRefundOrderKindResponse, AdminRefundRequestResponse,
+        RefundReconciliationEntryResponse, RefundReconciliationListResponse,
+        RefundReconciliationStatusResponse,
     },
 };
 
@@ -162,6 +163,27 @@ fn reject_admin_refund() {}
 )]
 fn submit_admin_refund() {}
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/refunds/{request_id}/manual-complete",
+    operation_id = "manualCompleteAdminRefund",
+    tag = "退款审批",
+    summary = "登记易支付人工退款结果",
+    params(("request_id" = String, Path, description = "32 位小写十六进制退款请求 ID")),
+    request_body = AdminRefundManualCompletionRequest,
+    responses(
+        (status = 200, description = "人工退款结果已登记", body = AdminRefundListResponse),
+        (status = 400, description = "请求字段无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "需要管理员权限", body = ManagementErrorBody),
+        (status = 404, description = "退款请求不存在", body = ManagementErrorBody),
+        (status = 409, description = "人工退款状态冲突", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn manual_complete_admin_refund() {}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -171,10 +193,12 @@ fn submit_admin_refund() {}
         list_admin_refunds,
         approve_admin_refund,
         reject_admin_refund,
-        submit_admin_refund
+        submit_admin_refund,
+        manual_complete_admin_refund
     ),
     components(schemas(
         AdminRefundRequestResponse,
+        AdminRefundManualCompletionRequest,
         AdminRefundOrderKindResponse,
         RefundReconciliationStatusResponse,
         RefundReconciliationEntryResponse,

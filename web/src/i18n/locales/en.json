@@ -3818,10 +3818,10 @@
     },
     "views": { "label": "Refund workspace views", "approvals": "Approvals", "reconciliation": "Reconciliation" },
     "orderKinds": { "topup": "Top-up", "subscription": "Subscription" },
-    "statuses": { "requested": "Requested", "submitted": "Submitted", "succeeded": "Succeeded", "failed": "Failed", "canceled": "Canceled" },
+    "statuses": { "requested": "Requested", "submitted": "Submitted", "succeeded": "Succeeded", "failed": "Failed", "canceled": "Canceled", "manually_succeeded": "Manually succeeded", "manually_failed": "Manually failed" },
     "approval": { "pending": "Pending", "approved": "Approved", "rejected": "Rejected" },
     "table": { "request": "Request", "order": "Order", "amount": "Refund / original", "status": "Provider status", "approval": "Approval", "actions": "Actions" },
-    "actions": { "refresh": "Refresh", "retry": "Retry", "approve": "Approve", "reject": "Reject", "submit": "Submit refund", "cancel": "Cancel" },
+    "actions": { "refresh": "Refresh", "retry": "Retry", "approve": "Approve", "reject": "Reject", "submit": "Submit refund", "manualComplete": "Record manual result", "manualConfirm": "Record result", "cancel": "Cancel" },
     "confirm": {
       "approveTitle": "Approve this refund?",
       "approveBody": "Approval is recorded first. If automatic submission is enabled, the same request is submitted immediately; a provider rejection will leave the approval fact intact.",
@@ -3829,6 +3829,16 @@
       "rejectBody": "The request will be marked canceled and no provider refund will be submitted.",
       "reasonLabel": "Approval reason",
       "reasonPlaceholder": "Optional reason"
+    },
+    "manual": {
+      "title": "Record Epay manual refund result",
+      "body": "Complete the refund in the Epay gateway first, then record its result here. Only a redacted reference digest is stored; no provider request is sent.",
+      "resultLabel": "Manual result",
+      "completed": "Refund completed",
+      "failed": "Manual refund failed",
+      "referenceLabel": "Offline reference",
+      "referencePlaceholder": "Gateway refund number or operator reference",
+      "submitting": "Recording"
     },
     "reconciliation": {
       "title": "Successful refund reconciliation",
@@ -4270,7 +4280,7 @@
       "description": "Connect an Epay-compatible gateway and enable Alipay or WeChat Pay independently.",
       "publicBaseUrlRequired": "Set the public base URL before enabling Epay",
       "publicBaseUrlHint": "Webhook and return URLs require a stable externally accessible address, not the current local preview URL.",
-      "refundHint": "Epay gateways do not necessarily support refunds. Enable this only after the provider confirms support. Refund requests still require administrator approval; the automatic-submit policy only controls what happens after approval."
+      "refundHint": "Epay has no automatic refund API. When enabled, an administrator may complete the refund in the gateway and record the offline result. Refund requests still require approval; disabling this removes the manual refund action."
     },
     "fields": {
       "stripeEnabled": "Enable Stripe",
@@ -4285,8 +4295,8 @@
       "epayQuotaPerCny": "Quota per CNY",
       "alipay": "Alipay",
       "wxpay": "WeChat Pay",
-      "epayRefundEnabled": "Allow Epay refunds",
-      "refundAutoSubmitEnabled": "Automatically submit refunds after approval"
+      "epayRefundEnabled": "Allow Epay manual refunds",
+      "refundAutoSubmitEnabled": "Automatically submit supported Provider refunds after approval"
     },
     "status": {
       "enabled": "Enabled",

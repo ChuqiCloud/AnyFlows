@@ -3819,10 +3819,10 @@
     },
     "views": { "label": "退款工作台视图", "approvals": "审批", "reconciliation": "对账" },
     "orderKinds": { "topup": "充值", "subscription": "订阅" },
-    "statuses": { "requested": "待提交", "submitted": "已提交", "succeeded": "退款成功", "failed": "提交失败", "canceled": "已取消" },
+    "statuses": { "requested": "待提交", "submitted": "已提交", "succeeded": "退款成功", "failed": "提交失败", "canceled": "已取消", "manually_succeeded": "人工退款成功", "manually_failed": "人工退款失败" },
     "approval": { "pending": "待审批", "approved": "已批准", "rejected": "已拒绝" },
     "table": { "request": "请求", "order": "订单", "amount": "退款 / 原金额", "status": "Provider 状态", "approval": "审批", "actions": "操作" },
-    "actions": { "refresh": "刷新", "retry": "重试", "approve": "批准", "reject": "拒绝", "submit": "提交退款", "cancel": "取消" },
+    "actions": { "refresh": "刷新", "retry": "重试", "approve": "批准", "reject": "拒绝", "submit": "提交退款", "manualComplete": "登记人工结果", "manualConfirm": "确认登记", "cancel": "取消" },
     "confirm": {
       "approveTitle": "批准这笔退款？",
       "approveBody": "系统会先记录审批事实。若已开启自动提交，将立即使用同一请求提交；Provider 拒绝时审批事实仍会保留。",
@@ -3830,6 +3830,16 @@
       "rejectBody": "请求会被标记为已取消，不会向 Provider 提交退款。",
       "reasonLabel": "审批理由",
       "reasonPlaceholder": "可选，填写审批理由"
+    },
+    "manual": {
+      "title": "登记易支付人工退款结果",
+      "body": "请在易支付服务商后台完成退款后登记结果。系统只保存脱敏参考号摘要，不会再次向 Provider 发起请求。",
+      "resultLabel": "人工结果",
+      "completed": "已完成退款",
+      "failed": "人工退款失败",
+      "referenceLabel": "线下参考号",
+      "referencePlaceholder": "填写服务商后台的退款单号或操作凭据",
+      "submitting": "正在登记"
     },
     "reconciliation": {
       "title": "退款成功对账",
@@ -4271,7 +4281,7 @@
       "description": "连接兼容易支付协议的聚合网关，可分别开放支付宝与微信支付。",
       "publicBaseUrlRequired": "启用易支付前需要配置站点公开基址",
       "publicBaseUrlHint": "异步通知和支付返回地址必须使用外部可访问的稳定地址，不能使用当前本地预览地址。",
-      "refundHint": "易支付服务商未必支持退款；仅在服务商确认支持时开启。退款请求仍需管理员审批，自动提交策略只决定审批通过后的执行方式。"
+      "refundHint": "易支付不提供自动退款接口；开启后允许管理员在服务商后台完成线下退款并登记结果。退款请求仍需管理员审批，关闭时不会提供人工退款入口。"
     },
     "fields": {
       "stripeEnabled": "启用 Stripe",
@@ -4286,8 +4296,8 @@
       "epayQuotaPerCny": "每人民币到账额度",
       "alipay": "支付宝",
       "wxpay": "微信支付",
-      "epayRefundEnabled": "允许易支付退款",
-      "refundAutoSubmitEnabled": "审批通过后自动提交退款"
+      "epayRefundEnabled": "允许易支付人工退款",
+      "refundAutoSubmitEnabled": "审批通过后自动提交可用 Provider 退款"
     },
     "status": {
       "enabled": "已启用",

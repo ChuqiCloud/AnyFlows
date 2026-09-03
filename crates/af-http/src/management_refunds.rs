@@ -1,11 +1,12 @@
 use af_admin::{
-    AdminRefundDecisionCommand, AdminRefundError, AdminRefundListQuery, AdminRefundPage,
-    AdminRefundRequest, OrganizationAuthorizationError, RefundReconciliationEntry,
-    RefundReconciliationListQuery, RefundReconciliationPage,
+    AdminRefundDecisionCommand, AdminRefundError, AdminRefundListQuery,
+    AdminRefundManualCompletionCommand, AdminRefundPage, AdminRefundRequest,
+    OrganizationAuthorizationError, RefundReconciliationEntry, RefundReconciliationListQuery,
+    RefundReconciliationPage,
 };
 use af_domain::{
-    OrganizationId, OrganizationPermission, RefundApprovalStatus, RefundOrderKind, RefundRequestId,
-    RefundRequestStatus,
+    OrganizationId, OrganizationPermission, RefundApprovalStatus, RefundManualResult,
+    RefundOrderKind, RefundRequestId, RefundRequestKey, RefundRequestStatus,
 };
 use axum::{
     Json,
@@ -35,6 +36,8 @@ pub(crate) enum AdminRefundStatusResponse {
     Succeeded,
     Failed,
     Canceled,
+    ManuallySucceeded,
+    ManuallyFailed,
 }
 
 #[derive(Clone, Copy, Serialize, ToSchema)]
@@ -138,6 +141,20 @@ pub(crate) struct RefundReconciliationListResponse {
 pub(crate) struct AdminRefundDecisionRequest {
     #[schema(min_length = 1, max_length = 512, required = true)]
     reason: Option<String>,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminRefundManualCompletionRequest)]
+pub(crate) struct AdminRefundManualCompletionRequest {
+    #[schema(min_length = 32, max_length = 32, pattern = "^[0-9a-f]{32}$")]
+    completion_key: String,
+    #[schema(minimum = 1)]
+    expected_version: u64,
+    #[schema(pattern = "^(completed|failed)$")]
+    result: String,
+    #[schema(min_length = 1, max_length = 256)]
+    reference: String,
 }
 
 /// 读取管理员退款审批队列，游标只使用数据库自增 ID。
@@ -281,6 +298,46 @@ pub(crate) async fn submit_admin_refund(
     ))
 }
 
+/// 登记易支付线下退款结果，不发送任何 Provider 请求。
+pub(crate) async fn manual_complete_admin_refund(
+    State(state): State<HttpState>,
+    Path(request_id): Path<String>,
+    Extension(authentication): Extension<af_admin::SessionAuthentication>,
+    request: Result<Json<AdminRefundManualCompletionRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let service = state
+        .admin_refund_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let completion_key = RefundRequestKey::from_persistence_key(&request.completion_key)
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    let result = match request.result.as_str() {
+        "completed" => RefundManualResult::Completed,
+        "failed" => RefundManualResult::Failed,
+        _ => return Err(ManagementError::InvalidRequest),
+    };
+    let command = AdminRefundManualCompletionCommand::new(
+        completion_key,
+        request.expected_version,
+        result,
+        request.reference,
+    )
+    .map_err(map_refund_error)?;
+    let page = service
+        .complete_manual(
+            authentication.principal(),
+            parse_request_id(&request_id)?,
+            command,
+        )
+        .await
+        .map_err(map_refund_error)?;
+    Ok(status_json(
+        StatusCode::OK,
+        AdminRefundListResponse::from_page(&page),
+    ))
+}
+
 async fn decide_admin_refund(
     state: HttpState,
     request_id: String,
@@ -345,6 +402,10 @@ impl AdminRefundRequestResponse {
                 RefundRequestStatus::Succeeded => AdminRefundStatusResponse::Succeeded,
                 RefundRequestStatus::Failed => AdminRefundStatusResponse::Failed,
                 RefundRequestStatus::Canceled => AdminRefundStatusResponse::Canceled,
+                RefundRequestStatus::ManuallySucceeded => {
+                    AdminRefundStatusResponse::ManuallySucceeded
+                }
+                RefundRequestStatus::ManuallyFailed => AdminRefundStatusResponse::ManuallyFailed,
             },
             approval_status: match request.approval_status() {
                 RefundApprovalStatus::Pending => AdminRefundApprovalStatusResponse::Pending,

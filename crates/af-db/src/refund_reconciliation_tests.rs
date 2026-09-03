@@ -1,13 +1,16 @@
 use std::{error::Error, time::Duration};
 
 use af_domain::{
-    GroupId, Quota, RefundApprovalStatus, RefundOrderKind, RefundRequestCreate,
-    RefundRequestCreateOutcome, RefundRequestId, RefundRequestKey, RefundRequestStatus,
-    TopupOrderId, TopupPaymentEventId, TopupPaymentEventType, TopupRequestId,
+    GroupId, Quota, RefundApprovalStatus, RefundManualCompletion, RefundManualResult,
+    RefundOrderKind, RefundRequestCreate, RefundRequestCreateOutcome, RefundRequestId,
+    RefundRequestKey, RefundRequestStatus, TopupOrderId, TopupPaymentEventId,
+    TopupPaymentEventType, TopupRequestId,
 };
-use sea_orm::{ActiveModelTrait, ConnectionTrait, DatabaseBackend, Set, Statement};
+use sea_orm::{ActiveModelTrait, ConnectionTrait, DatabaseBackend, EntityTrait, Set, Statement};
+use sea_orm_migration::MigratorTrait;
 
-use crate::entity::groups;
+use crate::entity::{groups, refund_manual_completions};
+use crate::migration::Migrator;
 use crate::{
     AdminUserCreateRecord, AdminUserRepository, DatabaseOptions, MigrationOptions,
     RefundReceiptWrite, RefundReconciliationQuery, RefundRepository, TopupOrderCreate,
@@ -253,6 +256,241 @@ async fn successful_refund_creates_scoped_append_only_reconciliation() -> Result
         ))
         .await;
     assert!(delete.is_err());
+
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn epay_manual_completion_is_idempotent_and_keeps_provider_facts_separate()
+-> Result<(), Box<dyn Error>> {
+    let pool = crate::connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
+    let group = groups::ActiveModel {
+        name: Set("epay-manual-refund-test".to_owned()),
+        display_name: Set("易支付人工退款测试".to_owned()),
+        flags: Set(serde_json::json!({})),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+    let users = AdminUserRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let actor = users
+        .create(AdminUserCreateRecord::new(
+            "epay-manual-refund-actor".to_owned(),
+            None,
+            None,
+            0,
+            1,
+            GroupId::new(group.id)?,
+            0,
+            None,
+            None,
+        ))
+        .await?;
+
+    let topup = TopupRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let order_id = TopupOrderId::new([0x61; 16])?;
+    let topup_request_id = TopupRequestId::new([0x62; 16])?;
+    topup
+        .create_order(TopupOrderCreate::new(
+            order_id,
+            topup_request_id,
+            actor.user_id(),
+            "epay".to_owned(),
+            "alipay".to_owned(),
+            900,
+            "CNY".to_owned(),
+            Quota::new(90)?,
+            CREATED_AT,
+        )?)
+        .await?;
+    topup
+        .submit_order(TopupOrderSubmission::new(
+            order_id,
+            1,
+            "epay-trade-manual".to_owned(),
+            SUBMITTED_AT,
+            EXPIRES_AT,
+        )?)
+        .await?;
+    topup
+        .accept_verified_event(TopupPaymentEventWrite::new(
+            TopupPaymentEventId::new([0x63; 16])?,
+            order_id,
+            "epay".to_owned(),
+            "epay-payment-manual".to_owned(),
+            Some("epay-trade-manual".to_owned()),
+            900,
+            "CNY".to_owned(),
+            "alipay".to_owned(),
+            TopupPaymentEventType::Succeeded,
+            [0x64; 32],
+            [0x65; 32],
+            RECEIVED_AT,
+        )?)
+        .await?;
+
+    let refund = RefundRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let request_id = RefundRequestId::new([0x71; 16])?;
+    let request_key = RefundRequestKey::new([0x72; 16])?;
+    let RefundRequestCreateOutcome::Created(_) = refund
+        .create_request(RefundRequestCreate::new(
+            request_id,
+            request_key,
+            actor.user_id(),
+            RefundOrderKind::Topup,
+            order_id.persistence_key(),
+            "epay".to_owned(),
+            "epay-trade-manual".to_owned(),
+            "CNY".to_owned(),
+            900,
+            400,
+            CREATED_AT + 100,
+        )?)
+        .await?
+    else {
+        panic!("易支付退款请求必须创建事实")
+    };
+    let request = match refund
+        .approve_request(
+            request_id,
+            actor.user_id(),
+            Some("人工退款审批".to_owned()),
+            CREATED_AT + 101,
+        )
+        .await?
+    {
+        crate::RefundApprovalOutcome::Applied(request) => request,
+        crate::RefundApprovalOutcome::Existing(_) => panic!("首次审批必须写入事实"),
+    };
+    let completion_key = RefundRequestKey::new([0x73; 16])?;
+    let completion = RefundManualCompletion::new(
+        request_id,
+        completion_key,
+        request.version(),
+        actor.user_id(),
+        RefundManualResult::Completed,
+        "manual-bank-ref-20260903".to_owned(),
+        CREATED_AT + 102,
+    )?;
+    let applied = refund.complete_manual_refund(completion).await?;
+    let request = match applied {
+        crate::RefundSubmissionOutcome::Applied(request) => request,
+        crate::RefundSubmissionOutcome::Existing(_) => panic!("首次人工完成必须推进版本"),
+    };
+    assert_eq!(request.status(), RefundRequestStatus::ManuallySucceeded);
+    assert_eq!(request.provider_refund_id(), None);
+
+    let (entries, _) = refund
+        .list_admin_reconciliations(RefundReconciliationQuery::default())
+        .await?
+        .into_parts();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].provider_event_id(), None);
+    assert!(entries[0].manual_completion_id().is_some());
+    assert_eq!(entries[0].amount_delta_minor(), -400);
+    let stored = refund_manual_completions::Entity::find_by_id(1)
+        .one(pool.connection())
+        .await?
+        .expect("人工完成事实必须落库");
+    assert_eq!(stored.reference_sha256.len(), 64);
+    assert_ne!(stored.reference_sha256, "manual-bank-ref-20260903");
+
+    let existing = refund
+        .complete_manual_refund(RefundManualCompletion::new(
+            request_id,
+            completion_key,
+            request.version() - 1,
+            actor.user_id(),
+            RefundManualResult::Completed,
+            "manual-bank-ref-20260903".to_owned(),
+            CREATED_AT + 102,
+        )?)
+        .await?;
+    assert!(matches!(
+        existing,
+        crate::RefundSubmissionOutcome::Existing(_)
+    ));
+
+    let conflict = refund
+        .complete_manual_refund(RefundManualCompletion::new(
+            request_id,
+            RefundRequestKey::new([0x74; 16])?,
+            request.version() - 1,
+            actor.user_id(),
+            RefundManualResult::Completed,
+            "manual-bank-ref-20260903".to_owned(),
+            CREATED_AT + 102,
+        )?)
+        .await;
+    assert!(matches!(
+        conflict,
+        Err(crate::RefundRepositoryError::Conflict)
+    ));
+
+    let failed_request_id = RefundRequestId::new([0x75; 16])?;
+    let failed_request_key = RefundRequestKey::new([0x76; 16])?;
+    let RefundRequestCreateOutcome::Created(_) = refund
+        .create_request(RefundRequestCreate::new(
+            failed_request_id,
+            failed_request_key,
+            actor.user_id(),
+            RefundOrderKind::Subscription,
+            "ab".repeat(16),
+            "epay".to_owned(),
+            "epay-subscription-manual".to_owned(),
+            "CNY".to_owned(),
+            500,
+            100,
+            CREATED_AT + 200,
+        )?)
+        .await?
+    else {
+        panic!("失败人工退款请求必须创建事实")
+    };
+    let failed_request = match refund
+        .approve_request(failed_request_id, actor.user_id(), None, CREATED_AT + 201)
+        .await?
+    {
+        crate::RefundApprovalOutcome::Applied(request) => request,
+        crate::RefundApprovalOutcome::Existing(_) => panic!("失败请求首次审批必须写入事实"),
+    };
+    let failed = refund
+        .complete_manual_refund(RefundManualCompletion::new(
+            failed_request_id,
+            RefundRequestKey::new([0x77; 16])?,
+            failed_request.version(),
+            actor.user_id(),
+            RefundManualResult::Failed,
+            "manual-failed-ref".to_owned(),
+            CREATED_AT + 202,
+        )?)
+        .await?;
+    let failed_request = match failed {
+        crate::RefundSubmissionOutcome::Applied(request) => request,
+        crate::RefundSubmissionOutcome::Existing(_) => panic!("首次失败登记必须推进版本"),
+    };
+    assert_eq!(failed_request.status(), RefundRequestStatus::ManuallyFailed);
+    assert_eq!(
+        refund
+            .list_admin_reconciliations(RefundReconciliationQuery::default())
+            .await?
+            .entries()
+            .len(),
+        1
+    );
+
+    // 人工完成事实一旦落库，任何数据库方言都必须拒绝降级状态迁移。
+    let rollback = Migrator::down(pool.connection(), Some(1)).await;
+    assert!(matches!(
+        rollback,
+        Err(sea_orm_migration::DbErr::Custom(message))
+            if message.contains("无法回退人工退款状态迁移")
+    ));
 
     pool.close().await?;
     Ok(())

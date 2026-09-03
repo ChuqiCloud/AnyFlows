@@ -2407,6 +2407,113 @@
         ]
       }
     },
+    "/api/admin/refunds/{request_id}/manual-complete": {
+      "post": {
+        "tags": [
+          "退款审批"
+        ],
+        "summary": "登记易支付人工退款结果",
+        "operationId": "manualCompleteAdminRefund",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "description": "32 位小写十六进制退款请求 ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminRefundManualCompletionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "人工退款结果已登记",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRefundListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求字段无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "退款请求不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "人工退款状态冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/subscription-plans": {
       "get": {
         "tags": [
@@ -31513,6 +31620,38 @@
         },
         "additionalProperties": false
       },
+      "AdminRefundManualCompletionRequest": {
+        "type": "object",
+        "required": [
+          "completion_key",
+          "expected_version",
+          "result",
+          "reference"
+        ],
+        "properties": {
+          "completion_key": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "expected_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "result": {
+            "type": "string",
+            "pattern": "^(completed|failed)$"
+          },
+          "reference": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
       "AdminRefundOrderKind": {
         "type": "string",
         "enum": [
@@ -31633,7 +31772,9 @@
           "submitted",
           "succeeded",
           "failed",
-          "canceled"
+          "canceled",
+          "manually_succeeded",
+          "manually_failed"
         ]
       },
       "AdminResponsesCompactProbe": {

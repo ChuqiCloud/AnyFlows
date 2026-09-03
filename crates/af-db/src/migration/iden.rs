@@ -3175,6 +3175,33 @@ pub(in crate::migration) mod refund_provider_events {
     }
 }
 
+pub(in crate::migration) mod refund_manual_completions {
+    use super::DeriveIden;
+
+    /// 管理员线下退款完成事实表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "refund_manual_completions")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 人工退款完成幂等键、结果和参考号摘要列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        CompletionKey,
+        RequestKey,
+        ExpectedVersion,
+        ActorUserId,
+        Result,
+        ReferenceSha256,
+        CompletedAt,
+        CreatedAt,
+    }
+}
+
 pub(in crate::migration) mod refund_reconciliation_entries {
     use super::DeriveIden;
 
@@ -3192,6 +3219,7 @@ pub(in crate::migration) mod refund_reconciliation_entries {
         Id,
         RequestKey,
         ProviderEventId,
+        ManualCompletionId,
         UserId,
         OrganizationId,
         ApprovalActorId,
