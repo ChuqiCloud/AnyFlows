@@ -363,26 +363,31 @@ impl OrganizationApprovalNotificationRepository {
             return Err(OrganizationApprovalNotificationRepositoryError::NotFound);
         }
         let now = TimeDateTimeWithTimeZone::now_utc();
-        for notification_id in &notification_ids {
-            organization_approval_notification_receipts::Entity::insert(
-                organization_approval_notification_receipts::ActiveModel {
+        let receipts = notification_ids
+            .iter()
+            .map(
+                |notification_id| organization_approval_notification_receipts::ActiveModel {
                     recipient_user_id: Set(recipient_user_id),
                     notification_id: Set(*notification_id),
                     read_at: Set(now),
                 },
             )
+            .collect::<Vec<_>>();
+        organization_approval_notification_receipts::Entity::insert_many(receipts)
             .on_conflict(
                 OnConflict::columns([
                     organization_approval_notification_receipts::Column::RecipientUserId,
                     organization_approval_notification_receipts::Column::NotificationId,
                 ])
-                .do_nothing()
+                .do_nothing_on([
+                    organization_approval_notification_receipts::Column::RecipientUserId,
+                    organization_approval_notification_receipts::Column::NotificationId,
+                ])
                 .to_owned(),
             )
-            .exec(self.pool.connection())
+            .exec_without_returning(self.pool.connection())
             .await
             .map_err(|_| OrganizationApprovalNotificationRepositoryError::Query)?;
-        }
         let read = organization_approval_notification_receipts::Entity::find()
             .filter(
                 organization_approval_notification_receipts::Column::RecipientUserId
