@@ -245,13 +245,6 @@ impl ScheduledChatService {
         self
     }
 
-    /// 注入受信 UTC 日期来源；仅测试使用，生产始终使用系统 UTC 时钟。
-    #[cfg(test)]
-    fn with_utc_date_clock(mut self, clock: Arc<UtcDateClock>) -> Self {
-        self.utc_date_clock = clock;
-        self
-    }
-
     fn build_plan(
         &self,
         prepared_route: PreparedExecutionRoute,
