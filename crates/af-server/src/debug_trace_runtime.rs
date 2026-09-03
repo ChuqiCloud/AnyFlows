@@ -87,6 +87,7 @@ impl DebugTraceRuntime {
     }
 
     /// 在请求规划阶段固定采样决定和全部脱敏上下文。
+    #[allow(clippy::too_many_arguments, reason = "参数与固定诊断快照字段一一对应")]
     pub(crate) fn capture(
         &self,
         request_id: &str,
