@@ -9,7 +9,8 @@ pub struct Model {
     pub id: i64,
     #[sea_orm(column_type = "Char(Some(32))")]
     pub request_key: String,
-    pub provider_event_id: i64,
+    pub provider_event_id: Option<i64>,
+    pub manual_completion_id: Option<i64>,
     pub user_id: i64,
     pub organization_id: Option<i64>,
     pub approval_actor_id: i64,
@@ -42,6 +43,14 @@ pub enum Relation {
         on_delete = "Restrict"
     )]
     ProviderEvent,
+    #[sea_orm(
+        belongs_to = "super::refund_manual_completions::Entity",
+        from = "Column::ManualCompletionId",
+        to = "super::refund_manual_completions::Column::Id",
+        on_update = "Restrict",
+        on_delete = "Restrict"
+    )]
+    ManualCompletion,
     #[sea_orm(
         belongs_to = "super::organizations::Entity",
         from = "Column::OrganizationId",

@@ -27,7 +27,6 @@ use af_http::{PaymentWebhookProcessorRegistry, RefundReceiptProcessorRegistry};
 use af_httpclient::HttpClientProvider;
 use url::Url;
 
-use crate::epay_refund::EasyPayRefundProvider;
 use crate::stripe_payment_intent::StripePaymentIntentProvider;
 use crate::stripe_refund::StripeRefundProvider;
 
@@ -39,6 +38,7 @@ struct PaymentRuntimeSnapshot {
     webhook_processors: HashMap<String, Arc<dyn PaymentWebhookHandler>>,
     refund_providers: HashMap<String, Arc<dyn RefundProvider>>,
     refund_receipt_processors: HashMap<String, Arc<dyn RefundReceiptHandler>>,
+    epay_manual_refund_enabled: bool,
     refund_auto_submit_enabled: bool,
 }
 
@@ -49,6 +49,7 @@ impl PaymentRuntimeSnapshot {
             webhook_processors: HashMap::new(),
             refund_providers: HashMap::new(),
             refund_receipt_processors: HashMap::new(),
+            epay_manual_refund_enabled: false,
             refund_auto_submit_enabled: false,
         }
     }
@@ -109,14 +110,8 @@ impl PaymentRuntime {
             )?;
         }
         if record.epay_enabled() {
-            self.add_epay(
-                record,
-                cipher,
-                &mut routes,
-                &mut webhook_processors,
-                &mut refund_providers,
-            )
-            .await?;
+            self.add_epay(record, cipher, &mut routes, &mut webhook_processors)
+                .await?;
         }
 
         let user_topup_service = if routes.is_empty() {
@@ -131,6 +126,7 @@ impl PaymentRuntime {
             webhook_processors,
             refund_providers,
             refund_receipt_processors,
+            epay_manual_refund_enabled: record.epay_refund_enabled(),
             refund_auto_submit_enabled: record.refund_auto_submit_enabled(),
         })
     }
@@ -215,7 +211,6 @@ impl PaymentRuntime {
         cipher: &SystemSecretCipher,
         routes: &mut Vec<UserTopupProviderRoute>,
         processors: &mut HashMap<String, Arc<dyn PaymentWebhookHandler>>,
-        refund_providers: &mut HashMap<String, Arc<dyn RefundProvider>>,
     ) -> Result<(), PaymentSettingsRuntimeError> {
         let gateway_url = record
             .epay_gateway_url()
@@ -257,20 +252,7 @@ impl PaymentRuntime {
             )
             .map_err(|_| runtime_failed("epay_provider"))?,
         );
-        if record.epay_refund_enabled() {
-            // 易支付退款协议并非所有服务商都提供，只有显式开启时才暴露退款 Provider。
-            let refund_provider = Arc::new(
-                EasyPayRefundProvider::new(
-                    gateway_url,
-                    merchant_id,
-                    merchant_key.expose_secret(),
-                    self.upstream_clients.clone(),
-                    self.request_timeout,
-                )
-                .map_err(|_| runtime_failed("epay_refund_provider"))?,
-            );
-            refund_providers.insert(EASYPAY_PAYMENT_PROVIDER.to_owned(), refund_provider);
-        }
+        // 易支付不提供原路退款接口，退款由管理员审批后登记线下完成事实。
         if record.epay_alipay_enabled() {
             routes.push(
                 UserTopupProviderRoute::epay(
@@ -322,6 +304,18 @@ impl PaymentRuntime {
 }
 
 impl AdminRefundSubmitter for PaymentRuntime {
+    fn manual_refund_enabled<'a>(
+        &'a self,
+        provider: &'a str,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<bool, AdminRefundError>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            Ok(provider == EASYPAY_PAYMENT_PROVIDER
+                && self.current_snapshot().epay_manual_refund_enabled)
+        })
+    }
+
     fn auto_submit_enabled<'a>(
         &'a self,
     ) -> std::pin::Pin<

@@ -11,6 +11,7 @@ pub const MAX_REFUND_PROVIDER_BYTES: usize = 64;
 pub const MAX_REFUND_PROVIDER_REFUND_ID_BYTES: usize = 128;
 pub const MAX_REFUND_PAYMENT_REFERENCE_BYTES: usize = 128;
 pub const MAX_REFUND_APPROVAL_REASON_BYTES: usize = 512;
+pub const MAX_REFUND_MANUAL_REFERENCE_BYTES: usize = 256;
 
 /// 退款业务标识构造错误；不保留外部输入。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
@@ -138,6 +139,10 @@ pub enum RefundRequestStatus {
     Failed = 4,
     /// 在尚未提交 Provider 前取消。
     Canceled = 5,
+    /// 易支付由管理员线下完成并确认的退款，不代表 Provider 回执。
+    ManuallySucceeded = 6,
+    /// 管理员登记线下处理失败并关闭退款请求。
+    ManuallyFailed = 7,
 }
 
 impl RefundRequestStatus {
@@ -154,6 +159,10 @@ impl RefundRequestStatus {
             (Self::Requested, Self::Submitted | Self::Canceled)
                 | (Self::Submitted, Self::Succeeded | Self::Failed)
                 | (Self::Failed, Self::Submitted)
+                | (
+                    Self::Requested | Self::Failed,
+                    Self::ManuallySucceeded | Self::ManuallyFailed
+                )
         )
     }
 }
@@ -168,7 +177,115 @@ impl TryFrom<i16> for RefundRequestStatus {
             3 => Ok(Self::Succeeded),
             4 => Ok(Self::Failed),
             5 => Ok(Self::Canceled),
+            6 => Ok(Self::ManuallySucceeded),
+            7 => Ok(Self::ManuallyFailed),
             _ => Err(RefundStateCodeError::InvalidStatus),
+        }
+    }
+}
+
+/// 管理员登记的线下退款结果；结果事实与 Provider 回执严格分离。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(i16)]
+pub enum RefundManualResult {
+    Completed = 1,
+    Failed = 2,
+}
+
+impl RefundManualResult {
+    #[must_use]
+    pub const fn code(self) -> i16 {
+        self as i16
+    }
+}
+
+/// 管理员提交的线下退款完成事实输入。
+pub struct RefundManualCompletion {
+    pub(super) request_id: RefundRequestId,
+    pub(super) completion_key: RefundRequestKey,
+    pub(super) expected_version: u64,
+    pub(super) actor_id: UserId,
+    pub(super) result: RefundManualResult,
+    pub(super) reference: String,
+    pub(super) completed_at: u64,
+}
+
+impl RefundManualCompletion {
+    /// 校验线下参考号和时间边界，禁止把原始支付凭据写入人工事实。
+    pub fn new(
+        request_id: RefundRequestId,
+        completion_key: RefundRequestKey,
+        expected_version: u64,
+        actor_id: UserId,
+        result: RefundManualResult,
+        reference: String,
+        completed_at: u64,
+    ) -> Result<Self, RefundRequestInputError> {
+        if expected_version == 0
+            || actor_id.get() <= 0
+            || reference.is_empty()
+            || reference.len() > MAX_REFUND_MANUAL_REFERENCE_BYTES
+            || reference.trim() != reference
+            || reference.chars().any(char::is_control)
+            || completed_at > i64::MAX as u64
+        {
+            return Err(RefundRequestInputError::InvalidManualCompletion);
+        }
+        Ok(Self {
+            request_id,
+            completion_key,
+            expected_version,
+            actor_id,
+            result,
+            reference,
+            completed_at,
+        })
+    }
+
+    #[must_use]
+    pub const fn request_id(&self) -> RefundRequestId {
+        self.request_id
+    }
+    #[must_use]
+    pub const fn completion_key(&self) -> RefundRequestKey {
+        self.completion_key
+    }
+    #[must_use]
+    pub const fn expected_version(&self) -> u64 {
+        self.expected_version
+    }
+    #[must_use]
+    pub const fn actor_id(&self) -> UserId {
+        self.actor_id
+    }
+    #[must_use]
+    pub const fn result(&self) -> RefundManualResult {
+        self.result
+    }
+    #[must_use]
+    pub fn reference(&self) -> &str {
+        &self.reference
+    }
+    #[must_use]
+    pub const fn completed_at(&self) -> u64 {
+        self.completed_at
+    }
+}
+
+impl fmt::Debug for RefundManualCompletion {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("RefundManualCompletion(<redacted>)")
+    }
+}
+
+impl TryFrom<i16> for RefundManualResult {
+    type Error = RefundStateCodeError;
+
+    fn try_from(value: i16) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::Completed),
+            2 => Ok(Self::Failed),
+            _ => Err(RefundStateCodeError::InvalidManualResult),
         }
     }
 }
@@ -214,6 +331,9 @@ pub enum RefundStateCodeError {
     /// 审批状态不属于固定集合。
     #[error("退款审批状态无效")]
     InvalidApprovalStatus,
+    /// 人工退款结果不属于闭合集合。
+    #[error("人工退款结果无效")]
+    InvalidManualResult,
 }
 
 /// 创建退款请求时固化的订单与金额事实。
@@ -414,6 +534,13 @@ impl RefundRequestRecord {
         if status == RefundRequestStatus::Succeeded && provider_refund_id.is_none() {
             return Err(RefundRequestInputError::InvalidPersistedState);
         }
+        if matches!(
+            status,
+            RefundRequestStatus::ManuallySucceeded | RefundRequestStatus::ManuallyFailed
+        ) && provider_refund_id.is_some()
+        {
+            return Err(RefundRequestInputError::InvalidPersistedState);
+        }
         if approval_reason.as_deref().is_some_and(|value| {
             value.is_empty()
                 || value.len() > MAX_REFUND_APPROVAL_REASON_BYTES
@@ -583,6 +710,9 @@ pub enum RefundRequestInputError {
     /// 数据库快照违反正数、时间或字段闭合约束。
     #[error("退款持久化状态无效")]
     InvalidPersistedState,
+    /// 线下退款参考号或完成时间不符合边界。
+    #[error("人工退款完成事实无效")]
+    InvalidManualCompletion,
 }
 
 fn valid_order_key(value: &str) -> bool {

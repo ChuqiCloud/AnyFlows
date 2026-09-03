@@ -917,6 +917,12 @@ export type AdminRefundListResponse = {
     entries: Array<AdminRefundRequest>;
     next_cursor: number | null;
 };
+export type AdminRefundManualCompletionRequest = {
+    completion_key: string;
+    expected_version: number;
+    result: string;
+    reference: string;
+};
 export type AdminRefundOrderKind = 'topup' | 'subscription';
 export type AdminRefundRequest = {
     request_id: string;
@@ -936,7 +942,7 @@ export type AdminRefundRequest = {
     created_at: number;
     updated_at: number;
 };
-export type AdminRefundStatus = 'requested' | 'submitted' | 'succeeded' | 'failed' | 'canceled';
+export type AdminRefundStatus = 'requested' | 'submitted' | 'succeeded' | 'failed' | 'canceled' | 'manually_succeeded' | 'manually_failed';
 export type AdminResponsesCompactProbe = {
     result: ResponsesCompactProbeResult;
     checked_at: number | null;
@@ -3716,6 +3722,27 @@ export type SubmitAdminRefundResponses = {
     200: AdminRefundListResponse;
 };
 export type SubmitAdminRefundResponse = SubmitAdminRefundResponses[keyof SubmitAdminRefundResponses];
+export type ManualCompleteAdminRefundData = {
+    body: AdminRefundManualCompletionRequest;
+    path: {
+        request_id: string;
+    };
+    query?: never;
+    url: '/api/admin/refunds/{request_id}/manual-complete';
+};
+export type ManualCompleteAdminRefundErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type ManualCompleteAdminRefundError = ManualCompleteAdminRefundErrors[keyof ManualCompleteAdminRefundErrors];
+export type ManualCompleteAdminRefundResponses = {
+    200: AdminRefundListResponse;
+};
+export type ManualCompleteAdminRefundResponse = ManualCompleteAdminRefundResponses[keyof ManualCompleteAdminRefundResponses];
 export type ListAdminSubscriptionPlansData = {
     body?: never;
     path?: never;

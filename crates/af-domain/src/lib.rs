@@ -196,12 +196,12 @@ pub use redemption::{
     RedemptionIdentifierError, RedemptionStateCodeError,
 };
 pub use refund::{
-    MAX_REFUND_APPROVAL_REASON_BYTES, MAX_REFUND_ORDER_KEY_BYTES,
-    MAX_REFUND_PAYMENT_REFERENCE_BYTES, MAX_REFUND_PROVIDER_BYTES,
+    MAX_REFUND_APPROVAL_REASON_BYTES, MAX_REFUND_MANUAL_REFERENCE_BYTES,
+    MAX_REFUND_ORDER_KEY_BYTES, MAX_REFUND_PAYMENT_REFERENCE_BYTES, MAX_REFUND_PROVIDER_BYTES,
     MAX_REFUND_PROVIDER_REFUND_ID_BYTES, RefundApprovalStatus, RefundIdentifierError,
-    RefundOrderKind, RefundRequestCreate, RefundRequestCreateOutcome, RefundRequestId,
-    RefundRequestInputError, RefundRequestKey, RefundRequestRecord, RefundRequestStatus,
-    RefundStateCodeError,
+    RefundManualCompletion, RefundManualResult, RefundOrderKind, RefundRequestCreate,
+    RefundRequestCreateOutcome, RefundRequestId, RefundRequestInputError, RefundRequestKey,
+    RefundRequestRecord, RefundRequestStatus, RefundStateCodeError,
 };
 pub use routing::{
     MAX_ROUTE_MODEL_PATTERN_BYTES, RouteMode, RoutePatternError, RouteStrategy,

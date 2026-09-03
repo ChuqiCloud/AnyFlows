@@ -54,12 +54,12 @@ use crate::entity::{
     organization_teams, organization_wallet_ledger_entries, organization_wallets, organizations,
     passkey_authentication_challenges, passkey_registration_challenges, passkeys, payment_settings,
     platform_audit_logs, playground_conversations, playground_shares, redemption_batches,
-    redemption_codes, refund_provider_events, refund_reconciliation_entries, refund_requests,
-    registration_rate_limits, request_outcome_logs, scheduler_outbox_events, site_settings,
-    subscription_balance_alert_events, subscription_orders, subscription_payment_events,
-    subscription_plan_prices, subscription_plans, tokens, topup_orders, topup_payment_events,
-    usage_logs, user_notification_events, user_notification_receipts, user_subscriptions, users,
-    wallet_ledger_entries,
+    redemption_codes, refund_manual_completions, refund_provider_events,
+    refund_reconciliation_entries, refund_requests, registration_rate_limits, request_outcome_logs,
+    scheduler_outbox_events, site_settings, subscription_balance_alert_events, subscription_orders,
+    subscription_payment_events, subscription_plan_prices, subscription_plans, tokens,
+    topup_orders, topup_payment_events, usage_logs, user_notification_events,
+    user_notification_receipts, user_subscriptions, users, wallet_ledger_entries,
 };
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
@@ -110,7 +110,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 108] = [
+const CORE_TABLES: [&str; 109] = [
     "groups",
     "users",
     "passkeys",
@@ -219,6 +219,7 @@ const CORE_TABLES: [&str; 108] = [
     "refund_requests",
     "refund_provider_events",
     "refund_reconciliation_entries",
+    "refund_manual_completions",
 ];
 
 #[test]
@@ -4207,6 +4208,11 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     assert_entity_columns::<refund_reconciliation_entries::Column>(
         &manager,
         "refund_reconciliation_entries",
+    )
+    .await?;
+    assert_entity_columns::<refund_manual_completions::Column>(
+        &manager,
+        "refund_manual_completions",
     )
     .await?;
     assert_entity_columns::<organization_sso_providers::Column>(

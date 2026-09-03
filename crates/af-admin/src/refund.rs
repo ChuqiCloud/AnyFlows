@@ -9,7 +9,8 @@ use af_db::{
 };
 use af_domain::{
     MAX_REFUND_APPROVAL_REASON_BYTES, OrganizationId, OrganizationPermission, RefundApprovalStatus,
-    RefundOrderKind, RefundRequestId, RefundRequestRecord, RefundRequestStatus, UserId,
+    RefundManualCompletion, RefundManualResult, RefundOrderKind, RefundRequestId, RefundRequestKey,
+    RefundRequestRecord, RefundRequestStatus, UserId,
 };
 use thiserror::Error;
 
@@ -334,6 +335,39 @@ pub struct AdminRefundDecisionCommand {
     reason: Option<String>,
 }
 
+/// 管理员登记易支付线下退款结果的命令。
+#[derive(Clone, Debug)]
+pub struct AdminRefundManualCompletionCommand {
+    completion_key: RefundRequestKey,
+    expected_version: u64,
+    result: RefundManualResult,
+    reference: String,
+}
+
+impl AdminRefundManualCompletionCommand {
+    pub fn new(
+        completion_key: RefundRequestKey,
+        expected_version: u64,
+        result: RefundManualResult,
+        reference: String,
+    ) -> Result<Self, AdminRefundError> {
+        if expected_version == 0
+            || reference.is_empty()
+            || reference.trim() != reference
+            || reference.len() > af_domain::MAX_REFUND_MANUAL_REFERENCE_BYTES
+            || reference.chars().any(char::is_control)
+        {
+            return Err(AdminRefundError::InvalidInput);
+        }
+        Ok(Self {
+            completion_key,
+            expected_version,
+            result,
+            reference,
+        })
+    }
+}
+
 impl AdminRefundDecisionCommand {
     pub fn new(reason: Option<String>) -> Result<Self, AdminRefundError> {
         if reason.as_deref().is_some_and(|value| {
@@ -357,6 +391,15 @@ pub type RefundReconciliationListFuture<'a> =
 
 /// 将已批准退款提交给当前运行时 Provider，并复用同一 CAS 编排器。
 pub trait AdminRefundSubmitter: Send + Sync {
+    /// 返回指定 Provider 是否允许进入人工退款登记边界。
+    fn manual_refund_enabled<'a>(
+        &'a self,
+        provider: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<bool, AdminRefundError>> + Send + 'a>> {
+        let _ = provider;
+        Box::pin(async { Ok(false) })
+    }
+
     fn auto_submit_enabled<'a>(
         &'a self,
     ) -> Pin<Box<dyn Future<Output = Result<bool, AdminRefundError>> + Send + 'a>>;
@@ -378,6 +421,12 @@ pub trait AdminRefundService: Send + Sync {
         principal: SessionPrincipal,
         request_id: RefundRequestId,
         command: AdminRefundDecisionCommand,
+    ) -> AdminRefundActionFuture<'a>;
+    fn complete_manual<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        request_id: RefundRequestId,
+        command: AdminRefundManualCompletionCommand,
     ) -> AdminRefundActionFuture<'a>;
     fn reject<'a>(
         &'a self,
@@ -424,6 +473,45 @@ impl DatabaseAdminRefundService {
             submitter,
         }
     }
+
+    fn complete_manual<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        request_id: RefundRequestId,
+        command: AdminRefundManualCompletionCommand,
+    ) -> AdminRefundActionFuture<'a> {
+        Box::pin(async move {
+            require_admin(principal)?;
+            let submitter = self
+                .submitter
+                .as_ref()
+                .ok_or(AdminRefundError::Unavailable)?;
+            if !submitter.manual_refund_enabled("epay").await? {
+                return Err(AdminRefundError::Unavailable);
+            }
+            // 不在服务层预读并拒绝终态：仓储必须先按完成键回读，保证重试幂等。
+            let completion = RefundManualCompletion::new(
+                request_id,
+                command.completion_key,
+                command.expected_version,
+                principal.user_id(),
+                command.result,
+                command.reference,
+                now_seconds(),
+            )
+            .map_err(|_| AdminRefundError::InvalidInput)?;
+            let result = self
+                .repository
+                .complete_manual_refund(completion)
+                .await
+                .map_err(map_repository_error)?;
+            let record = match result {
+                af_db::RefundSubmissionOutcome::Applied(record)
+                | af_db::RefundSubmissionOutcome::Existing(record) => record,
+            };
+            Ok(to_page_from_record(record))
+        })
+    }
 }
 
 impl AdminRefundService for DatabaseAdminRefundService {
@@ -456,6 +544,15 @@ impl AdminRefundService for DatabaseAdminRefundService {
         self.decide(principal, request_id, command, true)
     }
 
+    fn complete_manual<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        request_id: RefundRequestId,
+        command: AdminRefundManualCompletionCommand,
+    ) -> AdminRefundActionFuture<'a> {
+        DatabaseAdminRefundService::complete_manual(self, principal, request_id, command)
+    }
+
     fn reject<'a>(
         &'a self,
         principal: SessionPrincipal,
@@ -478,6 +575,9 @@ impl AdminRefundService for DatabaseAdminRefundService {
                 .await
                 .map_err(map_repository_error)?
                 .ok_or(AdminRefundError::NotFound)?;
+            if record.provider() == "epay" {
+                return Err(AdminRefundError::Conflict);
+            }
             let submitter = self
                 .submitter
                 .as_ref()
@@ -564,11 +664,13 @@ impl DatabaseAdminRefundService {
                     .reject_request(request_id, actor_id, command.reason, now_seconds())
                     .await
             };
-            let record = match outcome.map_err(map_repository_error)? {
-                RefundApprovalOutcome::Applied(record)
-                | RefundApprovalOutcome::Existing(record) => record,
+            let (record, applied) = match outcome.map_err(map_repository_error)? {
+                RefundApprovalOutcome::Applied(record) => (record, true),
+                RefundApprovalOutcome::Existing(record) => (record, false),
             };
             if approve
+                && applied
+                && record.provider() != "epay"
                 && let Some(submitter) = &self.submitter
                 && submitter.auto_submit_enabled().await?
             {

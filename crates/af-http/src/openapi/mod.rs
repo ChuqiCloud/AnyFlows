@@ -248,7 +248,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 217);
+        assert_eq!(document.paths.paths.len(), 218);
         let operation_count = document
             .paths
             .paths
@@ -270,7 +270,7 @@ mod tests {
             })
             .sum::<usize>();
         // 公开发现、SSO 启动、审批与部门目录管理接口扩展了既有管理面，保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 292);
+        assert_eq!(operation_count, 293);
         assert!(
             document
                 .components
@@ -576,6 +576,7 @@ mod tests {
             "updateUserToken",
             "adjustAdminWallet",
             "listAdminRefunds",
+            "manualCompleteAdminRefund",
             "approveAdminRefund",
             "rejectAdminRefund",
             "submitAdminRefund",
@@ -609,7 +610,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 479);
+        assert_eq!(schemas.len(), 480);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("OrganizationSsoDiscoveryErrorResponse"));
         assert!(schemas.contains_key("CreditAllocationListResponse"));
@@ -992,6 +993,7 @@ mod tests {
         assert!(schemas.contains_key("AdminModelPriceBatchRequest"));
         assert!(schemas.contains_key("AdminModelPriceExpressionPreviewRequest"));
         assert!(schemas.contains_key("AdminModelPriceExpressionPreviewResponse"));
+        assert!(schemas.contains_key("AdminRefundManualCompletionRequest"));
         assert_eq!(
             schemas["AdminModelPriceBillingMode"]["enum"],
             serde_json::json!(["per_token", "free", "expression"])
