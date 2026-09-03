@@ -399,6 +399,9 @@ jobs:
       - name: Test release scripts
         run: bash tools/ci/test-release-scripts.sh
 
+      - name: Test live provider preflight
+        run: bash tools/ci/test-live-provider-test.sh
+
       - name: Test service container runner
         run: bash tools/ci/test-container-test-runner.sh
 
