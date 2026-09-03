@@ -164,8 +164,8 @@ async fn live_native_openai_responses_low_cost() {
     }
 
     run_live_responses_request(
-        // 部分聚合层会拒绝可选的输出上限或推理配置；短提示与单用例门禁负责控制额度。
-        br#"{"model":"test-model","input":"Reply with exactly OK.","stream":true}"#,
+        // 低成本验收固定最小输出上限，避免供应商默认上限放大实际消耗。
+        br#"{"model":"test-model","input":"Reply with exactly OK.","max_output_tokens":4,"stream":true}"#,
     )
     .await;
 }

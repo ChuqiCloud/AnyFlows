@@ -39,8 +39,41 @@ esac
 
 require_environment_variable() {
     local variable_name="$1"
-    if [[ -z "${!variable_name:-}" ]]; then
+    local value="${!variable_name:-}"
+    if [[ -z "${value//[[:space:]]/}" ]]; then
         echo "真实 ${PROVIDER} E2E 缺少环境变量：${variable_name}" >&2
+        return 1
+    fi
+    if [[ "${value}" =~ [[:cntrl:]] ]]; then
+        echo "真实 ${PROVIDER} E2E 环境变量包含控制字符：${variable_name}" >&2
+        return 1
+    fi
+}
+
+validate_base_url() {
+    local base_url="$1"
+    # 真实上游只接受无凭据、无查询串/片段的 HTTPS DNS 地址；代理单独由 *_PROXY_URL 提供。
+    if [[ ! "${base_url}" =~ ^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~:/-]*)?$ ]]; then
+        echo "真实 ${PROVIDER} E2E 上游地址必须是无凭据、无 query/fragment 的 HTTPS 地址" >&2
+        return 1
+    fi
+
+    local authority="${base_url#https://}"
+    authority="${authority%%/*}"
+    local host="${authority%%:*}"
+    if [[ -z "${host}" || "${host}" == .* || "${host}" == *. || "${host}" == *..* || "${host}" == -* || "${host}" == *- ]]; then
+        echo "真实 ${PROVIDER} E2E 上游地址的主机名无效" >&2
+        return 1
+    fi
+    if [[ "${authority}" == *:* ]]; then
+        local port="${authority##*:}"
+        if ((10#${port} < 1 || 10#${port} > 65535)); then
+            echo "真实 ${PROVIDER} E2E 上游地址的端口无效" >&2
+            return 1
+        fi
+    fi
+    if [[ "${host}" =~ ^(localhost|127\.0\.0\.1|0\.0\.0\.0)$ || "${host}" == "[::1]" ]]; then
+        echo "真实 ${PROVIDER} E2E 不接受 loopback 上游" >&2
         return 1
     fi
 }
@@ -59,13 +92,11 @@ if [[ "${!CASE_VARIABLE}" != "${EXPECTED_CASE}" ]]; then
 fi
 
 readonly BASE_URL="${!BASE_URL_VARIABLE}"
-if [[ ! "${BASE_URL}" =~ ^https:// ]]; then
-    echo "真实 ${PROVIDER} E2E 只允许 HTTPS 上游地址" >&2
-    exit 2
-fi
-if [[ "${BASE_URL}" =~ ^https://(localhost|127\.0\.0\.1|\[::1\])([/:]|$) ]]; then
-    echo "真实 ${PROVIDER} E2E 不接受 loopback 上游" >&2
-    exit 2
+validate_base_url "${BASE_URL}"
+
+if [[ "${ANYFLOWS_LIVE_PROVIDER_PREFLIGHT_ONLY:-0}" == "1" ]]; then
+    echo "真实 ${PROVIDER} E2E 预检通过"
+    exit 0
 fi
 
 # 先确认精确测试仍然存在，避免过滤器漂移后以零测试成功。
