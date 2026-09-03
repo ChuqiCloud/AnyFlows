@@ -39,33 +39,33 @@ use af_admin::{
     AdminUserReadError, AdminUserReader, AdminUserUpdateCommand, AdminUserUpdateFuture,
     AdminUserWriteError, AdminUserWriter, ApiKeyDigest, InitialSetup, InitialSetupCommand,
     InitialSetupError, InitialSetupFuture, InitialSetupStatusFuture, LoginCredentials,
-    ModelCatalogQuery, ModelCatalogReadError, ModelCatalogReader, PasswordResetConfirmCommand,
-    PasswordResetConfirmFuture, PasswordResetError, PasswordResetRequestCommand,
-    PasswordResetRequestFuture, PasswordResetService, PlaygroundConversationDeleteFuture,
-    PlaygroundConversationError, PlaygroundConversationListFuture,
-    PlaygroundConversationReadFuture, PlaygroundConversationSaveCommand,
-    PlaygroundConversationSaveFuture, PlaygroundConversationService, PlaygroundShareCreateCommand,
-    PlaygroundShareCreateFuture, PlaygroundShareError, PlaygroundShareReadFuture,
-    PlaygroundShareRevokeFuture, PlaygroundShareService, PublicSiteSettingsFuture,
-    RedemptionCreateFuture, RedemptionDisableFuture, RedemptionListFuture, RedemptionRedeemFuture,
-    RedemptionService, RedemptionServiceError, RegistrationCommand,
-    RegistrationEmailVerificationCommand, RegistrationEmailVerificationFuture, RegistrationError,
-    RegistrationFuture, RegistrationPolicyCommand, RegistrationPolicyFuture,
-    RegistrationPolicyUpdateFuture, RegistrationService, RegistrationStatusFuture,
-    SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
-    SessionLoginFuture, SessionPrincipal, SiteSettingsCommand, SiteSettingsError,
-    SiteSettingsService, SubscriptionService, SubscriptionServiceError, TokenAuthentication,
-    TokenAuthenticationFuture, TokenAuthenticator, UserInvitationError, UserInvitationReadFuture,
-    UserInvitationService, UserNotificationError, UserNotificationListFuture,
-    UserNotificationPreferencesCommand, UserNotificationService, UserNotificationUpdateFuture,
-    UserPasswordChangeCommand, UserPasswordChangeFuture, UserProfileError, UserProfileReadFuture,
-    UserProfileService, UserProfileUpdateCommand, UserProfileUpdateFuture, UserTokenCreateFuture,
-    UserTokenDeleteFuture, UserTokenError, UserTokenGetFuture, UserTokenListFuture,
-    UserTokenListQuery, UserTokenService, UserTokenUpdateFuture, UserTokenWriteCommand,
-    UserWalletError, UserWalletListFuture, UserWalletListQuery, UserWalletService,
-    UserWalletSummaryFuture,
+    ModelCatalogQuery, ModelCatalogReadError, ModelCatalogReader,
     OrganizationApprovalNotificationListFuture, OrganizationApprovalNotificationListQuery,
     OrganizationApprovalNotificationMarkReadFuture, OrganizationApprovalNotificationService,
+    PasswordResetConfirmCommand, PasswordResetConfirmFuture, PasswordResetError,
+    PasswordResetRequestCommand, PasswordResetRequestFuture, PasswordResetService,
+    PlaygroundConversationDeleteFuture, PlaygroundConversationError,
+    PlaygroundConversationListFuture, PlaygroundConversationReadFuture,
+    PlaygroundConversationSaveCommand, PlaygroundConversationSaveFuture,
+    PlaygroundConversationService, PlaygroundShareCreateCommand, PlaygroundShareCreateFuture,
+    PlaygroundShareError, PlaygroundShareReadFuture, PlaygroundShareRevokeFuture,
+    PlaygroundShareService, PublicSiteSettingsFuture, RedemptionCreateFuture,
+    RedemptionDisableFuture, RedemptionListFuture, RedemptionRedeemFuture, RedemptionService,
+    RedemptionServiceError, RegistrationCommand, RegistrationEmailVerificationCommand,
+    RegistrationEmailVerificationFuture, RegistrationError, RegistrationFuture,
+    RegistrationPolicyCommand, RegistrationPolicyFuture, RegistrationPolicyUpdateFuture,
+    RegistrationService, RegistrationStatusFuture, SessionAuthenticationError,
+    SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, SessionPrincipal,
+    SiteSettingsCommand, SiteSettingsError, SiteSettingsService, SubscriptionService,
+    SubscriptionServiceError, TokenAuthentication, TokenAuthenticationFuture, TokenAuthenticator,
+    UserInvitationError, UserInvitationReadFuture, UserInvitationService, UserNotificationError,
+    UserNotificationListFuture, UserNotificationPreferencesCommand, UserNotificationService,
+    UserNotificationUpdateFuture, UserPasswordChangeCommand, UserPasswordChangeFuture,
+    UserProfileError, UserProfileReadFuture, UserProfileService, UserProfileUpdateCommand,
+    UserProfileUpdateFuture, UserTokenCreateFuture, UserTokenDeleteFuture, UserTokenError,
+    UserTokenGetFuture, UserTokenListFuture, UserTokenListQuery, UserTokenService,
+    UserTokenUpdateFuture, UserTokenWriteCommand, UserWalletError, UserWalletListFuture,
+    UserWalletListQuery, UserWalletService, UserWalletSummaryFuture,
 };
 use af_analytics::{
     AdminDashboardAccess, AdminDashboardReadError, AdminDashboardReadFuture, AdminDashboardReader,
@@ -423,9 +423,7 @@ impl OrganizationApprovalNotificationService for RejectOrganizationApprovalNotif
         _principal: SessionPrincipal,
         _query: OrganizationApprovalNotificationListQuery,
     ) -> OrganizationApprovalNotificationListFuture<'a> {
-        Box::pin(async {
-            Err(af_admin::OrganizationApprovalNotificationError::Internal)
-        })
+        Box::pin(async { Err(af_admin::OrganizationApprovalNotificationError::Internal) })
     }
 
     fn mark_read<'a>(
@@ -433,9 +431,7 @@ impl OrganizationApprovalNotificationService for RejectOrganizationApprovalNotif
         _principal: SessionPrincipal,
         _ids: Vec<i64>,
     ) -> OrganizationApprovalNotificationMarkReadFuture<'a> {
-        Box::pin(async {
-            Err(af_admin::OrganizationApprovalNotificationError::Internal)
-        })
+        Box::pin(async { Err(af_admin::OrganizationApprovalNotificationError::Internal) })
     }
 }
 
