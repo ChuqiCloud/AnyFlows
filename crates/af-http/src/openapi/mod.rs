@@ -645,6 +645,7 @@ mod tests {
         assert!(schemas.contains_key("OrganizationApprovalTemplateCreateRequest"));
         assert!(schemas.contains_key("OrganizationApprovalTemplateListResponse"));
         assert!(schemas.contains_key("AdminDashboardChannelFlow"));
+        assert!(schemas.contains_key("AdminDashboardFlowPath"));
         assert!(schemas.contains_key("AdminDashboardFailure"));
         assert!(schemas.contains_key("AdminDashboardFailureKind"));
         assert!(schemas.contains_key("AdminDashboardHourlyPoint"));

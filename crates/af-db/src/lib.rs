@@ -277,7 +277,8 @@ pub use admin_dashboard_observability::{
     AdminDashboardPerformanceRecord, SLOW_FIRST_TOKEN_THRESHOLD_MS, SLOW_REQUEST_THRESHOLD_MS,
 };
 pub use admin_dashboard_outcomes::{
-    AdminDashboardChannelFlowRecord, AdminDashboardFailureRecord, MAX_DASHBOARD_CHANNEL_FLOWS,
+    AdminDashboardChannelFlowRecord, AdminDashboardFailureRecord, AdminDashboardFlowPathRecord,
+    MAX_DASHBOARD_CHANNEL_FLOWS, MAX_DASHBOARD_FLOW_PATHS,
 };
 pub use admin_group::{
     AdminGroupLookupOutcome, AdminGroupPageRecord, AdminGroupPeakRecord, AdminGroupRecord,

@@ -28147,6 +28147,63 @@
         },
         "additionalProperties": false
       },
+      "AdminDashboardFlowPath": {
+        "type": "object",
+        "description": "管理看板窗口内一条低敏四层请求与额度流向。",
+        "required": [
+          "user_id",
+          "group_id",
+          "group_name",
+          "channel_id",
+          "channel_name",
+          "model",
+          "request_count",
+          "quota_consumed"
+        ],
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "group_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "group_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "channel_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "channel_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "request_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "quota_consumed": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
       "AdminDashboardFailure": {
         "type": "object",
         "description": "管理看板窗口内一个失败分类的请求数。",
@@ -28303,6 +28360,9 @@
           "other_success_count",
           "failures",
           "channel_flows",
+          "flow_request_count",
+          "flow_quota_consumed",
+          "flow_paths",
           "hourly",
           "performance"
         ],
@@ -28404,6 +28464,25 @@
               "$ref": "#/components/schemas/AdminDashboardChannelFlow"
             },
             "description": "请求量最高的十二条入口协议到最终成功渠道流向。"
+          },
+          "flow_request_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "能连接已结算用量与成功终态的请求总数。",
+            "minimum": 0
+          },
+          "flow_quota_consumed": {
+            "type": "integer",
+            "format": "int64",
+            "description": "能连接完整四层路径的已结算额度总量。",
+            "minimum": 0
+          },
+          "flow_paths": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminDashboardFlowPath"
+            },
+            "description": "请求量最高的二十四条用户、分组、渠道和模型流向。"
           },
           "hourly": {
             "type": "array",

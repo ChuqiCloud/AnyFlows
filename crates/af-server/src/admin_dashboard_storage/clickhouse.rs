@@ -4,8 +4,9 @@ use std::{fmt, future::Future, pin::Pin, str::FromStr as _, sync::Arc, time::Dur
 use af_analytics::{
     AdminDashboardAnalyticsSnapshot, AdminDashboardAnalyticsStorage,
     AdminDashboardAnalyticsStorageFuture, AdminDashboardChannelFlow, AdminDashboardFailure,
-    AdminDashboardFailureKind, AdminDashboardHourlyPoint, AdminDashboardOutcomeSnapshot,
-    AdminDashboardPerformance, AdminDashboardStorageError, AdminDashboardUsageSnapshot,
+    AdminDashboardFailureKind, AdminDashboardFlowPath, AdminDashboardHourlyPoint,
+    AdminDashboardOutcomeSnapshot, AdminDashboardPerformance, AdminDashboardStorageError,
+    AdminDashboardUsageSnapshot,
 };
 use af_config::{
     DEFAULT_CLICKHOUSE_ANALYTICS_RESPONSE_BYTES, DEFAULT_CLICKHOUSE_ANALYTICS_TIMEOUT_SECS,
@@ -20,7 +21,8 @@ use thiserror::Error;
 use url::Url;
 
 use af_db::{
-    MAX_DASHBOARD_CHANNEL_FLOWS, SLOW_FIRST_TOKEN_THRESHOLD_MS, SLOW_REQUEST_THRESHOLD_MS,
+    MAX_DASHBOARD_CHANNEL_FLOWS, MAX_DASHBOARD_FLOW_PATHS, SLOW_FIRST_TOKEN_THRESHOLD_MS,
+    SLOW_REQUEST_THRESHOLD_MS,
 };
 
 /// ClickHouse 看板查询默认硬截止时间。
@@ -385,6 +387,13 @@ struct WireOutcomes {
     other_success_count: i64,
     failures: Vec<WireFailure>,
     channel_flows: Vec<WireChannelFlow>,
+    /// 旧版 ClickHouse 快照没有流向字段时保持可读，前端显示为空流向。
+    #[serde(default)]
+    flow_request_count: i64,
+    #[serde(default)]
+    flow_quota_consumed: i64,
+    #[serde(default)]
+    flow_paths: Vec<WireFlowPath>,
 }
 
 #[derive(Deserialize)]
@@ -401,6 +410,19 @@ struct WireChannelFlow {
     channel_id: i64,
     channel_name: String,
     request_count: i64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WireFlowPath {
+    user_id: i64,
+    group_id: i64,
+    group_name: String,
+    channel_id: i64,
+    channel_name: String,
+    model: String,
+    request_count: i64,
+    quota_consumed: i64,
 }
 
 #[derive(Deserialize)]
@@ -437,6 +459,7 @@ fn decode_snapshot(
         || row.hourly.len() != 24
         || row.outcomes.failures.len() > FAILURE_KIND_COUNT
         || row.outcomes.channel_flows.len() > MAX_DASHBOARD_CHANNEL_FLOWS
+        || row.outcomes.flow_paths.len() > MAX_DASHBOARD_FLOW_PATHS
         || row.performance.slow_first_token_threshold_ms != SLOW_FIRST_TOKEN_THRESHOLD_MS
         || row.performance.slow_request_threshold_ms != SLOW_REQUEST_THRESHOLD_MS
     {
@@ -457,6 +480,25 @@ fn decode_snapshot(
     }) {
         return Err(AdminDashboardStorageError::Invariant);
     }
+    let mut path_keys = BTreeSet::new();
+    if row.outcomes.flow_request_count < 0
+        || row.outcomes.flow_quota_consumed < 0
+        || row.outcomes.flow_paths.iter().any(|path| {
+            path.user_id <= 0
+                || path.group_id <= 0
+                || path.channel_id <= 0
+                || path.request_count <= 0
+                || path.quota_consumed < 0
+                || !path_keys.insert((
+                    path.user_id,
+                    path.group_id,
+                    path.channel_id,
+                    path.model.as_str(),
+                ))
+        })
+    {
+        return Err(AdminDashboardStorageError::Invariant);
+    }
 
     let failures = row
         .outcomes
@@ -474,6 +516,12 @@ fn decode_snapshot(
         .channel_flows
         .into_iter()
         .map(decode_channel_flow)
+        .collect::<Result<Vec<_>, _>>()?;
+    let flow_paths = row
+        .outcomes
+        .flow_paths
+        .into_iter()
+        .map(decode_flow_path)
         .collect::<Result<Vec<_>, _>>()?;
     let hourly = row
         .hourly
@@ -505,6 +553,9 @@ fn decode_snapshot(
             row.outcomes.other_success_count,
             failures,
             channel_flows,
+            row.outcomes.flow_request_count,
+            row.outcomes.flow_quota_consumed,
+            flow_paths,
         ),
         hourly,
         AdminDashboardPerformance::new(
@@ -565,6 +616,36 @@ fn decode_channel_flow(
     ))
 }
 
+fn decode_flow_path(
+    path: WireFlowPath,
+) -> Result<AdminDashboardFlowPath, AdminDashboardStorageError> {
+    let channel_id =
+        ChannelId::new(path.channel_id).map_err(|_| AdminDashboardStorageError::Invariant)?;
+    for (value, max_bytes) in [
+        (path.group_name.as_str(), 128_usize),
+        (path.channel_name.as_str(), 128_usize),
+        (path.model.as_str(), 255_usize),
+    ] {
+        if value.is_empty()
+            || value.len() > max_bytes
+            || value.trim() != value
+            || value.chars().any(char::is_control)
+        {
+            return Err(AdminDashboardStorageError::Invariant);
+        }
+    }
+    Ok(AdminDashboardFlowPath::new(
+        path.user_id,
+        path.group_id,
+        path.group_name,
+        channel_id,
+        path.channel_name,
+        path.model,
+        path.request_count,
+        path.quota_consumed,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -622,7 +703,10 @@ mod tests {
                 "failed_request_count": 0,
                 "other_success_count": 0,
                 "failures": [],
-                "channel_flows": []
+                "channel_flows": [],
+                "flow_request_count": 0,
+                "flow_quota_consumed": 0,
+                "flow_paths": []
             },
             "hourly": hourly,
             "performance": {
@@ -729,6 +813,18 @@ mod tests {
                 "channel_id": 7,
                 "channel_name": "primary",
                 "request_count": 1
+            }],
+            "flow_request_count": 1,
+            "flow_quota_consumed": 9,
+            "flow_paths": [{
+                "user_id": 11,
+                "group_id": 3,
+                "group_name": "Default",
+                "channel_id": 7,
+                "channel_name": "primary",
+                "model": "gpt-5",
+                "request_count": 1,
+                "quota_consumed": 9
             }]
         });
         wire["hourly"][0]["request_count"] = json!(2);
@@ -775,6 +871,18 @@ mod tests {
                     ChannelId::new(7).unwrap(),
                     "primary".to_owned(),
                     1,
+                )],
+                1,
+                9,
+                vec![AdminDashboardFlowPath::new(
+                    11,
+                    3,
+                    "Default".to_owned(),
+                    ChannelId::new(7).unwrap(),
+                    "primary".to_owned(),
+                    "gpt-5".to_owned(),
+                    1,
+                    9,
                 )],
             ),
             hourly,

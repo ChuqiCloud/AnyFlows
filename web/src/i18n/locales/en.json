@@ -174,13 +174,27 @@
       "otherFlows": "Other successful flows",
       "channelId": "Channel {{id}}",
       "flowMap": {
-        "visible": "{{count}} requests shown",
-        "share": "{{rate}} of successful outcomes",
-        "requests": "requests",
-        "chartLabel": "Protocol to channel request flow map",
-        "chartTitle": "Protocol to channel flow",
-        "chartDescription": "Line width represents the number of successful requests from each protocol to each final channel.",
-        "path": "{{protocol}} to {{channel}}: {{count}} requests"
+        "title": "Request and funds flow",
+        "subtitle": "Settled successful paths across users, groups, final channels, and models",
+        "visible": "{{value}} shown · {{rate}} coverage",
+        "empty": "No settled successful paths can be joined in this window.",
+        "other": "Other collapsed paths",
+        "user": "User #{{id}}",
+        "modeLabel": "Flow measure",
+        "modes": {
+          "requests": "Requests",
+          "quota": "Quota"
+        },
+        "layers": {
+          "users": "Users",
+          "groups": "Groups",
+          "channels": "Channels",
+          "models": "Models"
+        },
+        "chartLabel": "Request and funds flow from users through groups and channels to models",
+        "chartTitle": "User, group, channel, and model flow",
+        "chartDescription": "Line width scales by the selected request count or settled quota. Users are identified only by stable IDs.",
+        "edge": "Segment volume: {{value}}"
       },
       "protocols": {
         "openai_chat": "OpenAI Chat",

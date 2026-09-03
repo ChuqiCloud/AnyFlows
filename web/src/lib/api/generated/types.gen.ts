@@ -322,6 +322,16 @@ export type AdminDashboardChannelFlow = {
     channel_name: string;
     request_count: number;
 };
+export type AdminDashboardFlowPath = {
+    user_id: number;
+    group_id: number;
+    group_name: string;
+    channel_id: number;
+    channel_name: string;
+    model: string;
+    request_count: number;
+    quota_consumed: number;
+};
 export type AdminDashboardFailure = {
     kind: AdminDashboardFailureKind;
     request_count: number;
@@ -362,6 +372,9 @@ export type AdminDashboardResponse = {
     other_success_count: number;
     failures: Array<AdminDashboardFailure>;
     channel_flows: Array<AdminDashboardChannelFlow>;
+    flow_request_count: number;
+    flow_quota_consumed: number;
+    flow_paths: Array<AdminDashboardFlowPath>;
     hourly: Array<AdminDashboardHourlyPoint>;
     performance: AdminDashboardPerformance;
 };

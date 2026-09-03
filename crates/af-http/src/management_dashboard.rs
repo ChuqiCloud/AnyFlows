@@ -1,8 +1,8 @@
 use af_admin::{PlatformPolicy, SessionAuthentication};
 use af_analytics::{
     AdminDashboard, AdminDashboardAccess, AdminDashboardChannelFlow, AdminDashboardFailure,
-    AdminDashboardFailureKind, AdminDashboardHourlyPoint, AdminDashboardPerformance,
-    AdminDashboardReadError,
+    AdminDashboardFailureKind, AdminDashboardFlowPath, AdminDashboardHourlyPoint,
+    AdminDashboardPerformance, AdminDashboardReadError,
 };
 use af_domain::PlatformPermission;
 use axum::{
@@ -61,6 +61,14 @@ pub(crate) struct AdminDashboardResponse {
     failures: Vec<AdminDashboardFailureResponse>,
     /// 请求量最高的十二条入口协议到最终成功渠道流向。
     channel_flows: Vec<AdminDashboardChannelFlowResponse>,
+    /// 能连接已结算用量与成功终态的请求总数。
+    #[schema(minimum = 0)]
+    flow_request_count: i64,
+    /// 能连接完整四层路径的已结算额度总量。
+    #[schema(minimum = 0)]
+    flow_quota_consumed: i64,
+    /// 请求量最高的二十四条用户、分组、渠道和模型流向。
+    flow_paths: Vec<AdminDashboardFlowPathResponse>,
     /// 覆盖整个统计窗口的连续一小时用量分桶。
     hourly: Vec<AdminDashboardHourlyPointResponse>,
     /// 只基于真实持久化耗时样本生成的性能健康摘要。
@@ -152,6 +160,29 @@ pub(crate) struct AdminDashboardChannelFlowResponse {
     request_count: i64,
 }
 
+/// 管理看板窗口内一条低敏四层请求与额度流向。
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminDashboardFlowPath)]
+pub(crate) struct AdminDashboardFlowPathResponse {
+    #[schema(minimum = 1)]
+    user_id: i64,
+    #[schema(minimum = 1)]
+    group_id: i64,
+    #[schema(min_length = 1, max_length = 128)]
+    group_name: String,
+    #[schema(minimum = 1)]
+    channel_id: i64,
+    #[schema(min_length = 1, max_length = 128)]
+    channel_name: String,
+    #[schema(min_length = 1, max_length = 255)]
+    model: String,
+    #[schema(minimum = 1)]
+    request_count: i64,
+    #[schema(minimum = 0)]
+    quota_consumed: i64,
+}
+
 /// 返回管理员可见的最近 24 小时看板快照。
 pub(crate) async fn get_admin_dashboard(
     State(state): State<HttpState>,
@@ -205,6 +236,13 @@ impl AdminDashboardResponse {
                 .iter()
                 .map(AdminDashboardChannelFlowResponse::from_flow)
                 .collect(),
+            flow_request_count: dashboard.flow_request_count(),
+            flow_quota_consumed: dashboard.flow_quota_consumed(),
+            flow_paths: dashboard
+                .flow_paths()
+                .iter()
+                .map(AdminDashboardFlowPathResponse::from_path)
+                .collect(),
             hourly: dashboard
                 .hourly()
                 .iter()
@@ -256,6 +294,21 @@ impl AdminDashboardChannelFlowResponse {
             channel_id: flow.channel_id().get(),
             channel_name: flow.channel_name().to_owned(),
             request_count: flow.request_count(),
+        }
+    }
+}
+
+impl AdminDashboardFlowPathResponse {
+    fn from_path(path: &AdminDashboardFlowPath) -> Self {
+        Self {
+            user_id: path.user_id(),
+            group_id: path.group_id(),
+            group_name: path.group_name().to_owned(),
+            channel_id: path.channel_id().get(),
+            channel_name: path.channel_name().to_owned(),
+            model: path.model().to_owned(),
+            request_count: path.request_count(),
+            quota_consumed: path.quota_consumed(),
         }
     }
 }

@@ -7,8 +7,9 @@ use utoipa::OpenApi;
 use crate::{
     management_dashboard::{
         AdminDashboardChannelFlowResponse, AdminDashboardFailureKindResponse,
-        AdminDashboardFailureResponse, AdminDashboardHourlyPointResponse,
-        AdminDashboardPerformanceResponse, AdminDashboardResponse,
+        AdminDashboardFailureResponse, AdminDashboardFlowPathResponse,
+        AdminDashboardHourlyPointResponse, AdminDashboardPerformanceResponse,
+        AdminDashboardResponse,
     },
     management_error::ManagementErrorBody,
 };
@@ -37,6 +38,7 @@ fn get_admin_dashboard() {}
         AdminDashboardFailureKindResponse,
         AdminDashboardFailureResponse,
         AdminDashboardChannelFlowResponse,
+        AdminDashboardFlowPathResponse,
         AdminDashboardHourlyPointResponse,
         AdminDashboardPerformanceResponse,
         ManagementErrorBody

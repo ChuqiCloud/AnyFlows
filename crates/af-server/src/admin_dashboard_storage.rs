@@ -3,9 +3,9 @@ use std::fmt;
 use af_analytics::{
     AdminDashboardChannelFlow, AdminDashboardChannelSnapshot, AdminDashboardChannelStorage,
     AdminDashboardChannelStorageFuture, AdminDashboardFailure, AdminDashboardFailureKind,
-    AdminDashboardHourlyPoint, AdminDashboardOutcomeSnapshot, AdminDashboardPerformance,
-    AdminDashboardStorage, AdminDashboardStorageError, AdminDashboardStorageFuture,
-    AdminDashboardStorageSnapshot, AdminDashboardUsageSnapshot,
+    AdminDashboardFlowPath, AdminDashboardHourlyPoint, AdminDashboardOutcomeSnapshot,
+    AdminDashboardPerformance, AdminDashboardStorage, AdminDashboardStorageError,
+    AdminDashboardStorageFuture, AdminDashboardStorageSnapshot, AdminDashboardUsageSnapshot,
 };
 use af_db::{
     AdminDashboardRecord, AdminDashboardRepository, AdminDashboardRepositoryError,
@@ -130,6 +130,24 @@ fn storage_snapshot(record: AdminDashboardRecord) -> AdminDashboardStorageSnapsh
                     flow.channel_id(),
                     flow.channel_name().to_owned(),
                     flow.request_count(),
+                )
+            })
+            .collect(),
+        record.flow_request_count(),
+        record.flow_quota_consumed(),
+        record
+            .flow_paths()
+            .iter()
+            .map(|path| {
+                AdminDashboardFlowPath::new(
+                    path.user_id(),
+                    path.group_id(),
+                    path.group_name().to_owned(),
+                    path.channel_id(),
+                    path.channel_name().to_owned(),
+                    path.model().to_owned(),
+                    path.request_count(),
+                    path.quota_consumed(),
                 )
             })
             .collect(),

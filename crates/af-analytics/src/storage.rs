@@ -3,8 +3,8 @@ use std::{fmt, future::Future, pin::Pin, sync::Arc};
 use thiserror::Error;
 
 use crate::{
-    AdminDashboardChannelFlow, AdminDashboardFailure, AdminDashboardHourlyPoint,
-    AdminDashboardPerformance,
+    AdminDashboardChannelFlow, AdminDashboardFailure, AdminDashboardFlowPath,
+    AdminDashboardHourlyPoint, AdminDashboardPerformance,
 };
 
 /// 分析存储返回的已确认用量汇总。
@@ -103,6 +103,9 @@ pub struct AdminDashboardOutcomeSnapshot {
     pub(crate) other_success_count: i64,
     pub(crate) failures: Vec<AdminDashboardFailure>,
     pub(crate) channel_flows: Vec<AdminDashboardChannelFlow>,
+    pub(crate) flow_request_count: i64,
+    pub(crate) flow_quota_consumed: i64,
+    pub(crate) flow_paths: Vec<AdminDashboardFlowPath>,
 }
 
 impl AdminDashboardOutcomeSnapshot {
@@ -115,6 +118,9 @@ impl AdminDashboardOutcomeSnapshot {
         other_success_count: i64,
         failures: Vec<AdminDashboardFailure>,
         channel_flows: Vec<AdminDashboardChannelFlow>,
+        flow_request_count: i64,
+        flow_quota_consumed: i64,
+        flow_paths: Vec<AdminDashboardFlowPath>,
     ) -> Self {
         Self {
             request_count,
@@ -123,6 +129,9 @@ impl AdminDashboardOutcomeSnapshot {
             other_success_count,
             failures,
             channel_flows,
+            flow_request_count,
+            flow_quota_consumed,
+            flow_paths,
         }
     }
 }
@@ -317,7 +326,17 @@ mod tests {
     async fn split_storage_combines_analytics_with_explicit_channel_authority() {
         let analytics = AdminDashboardAnalyticsSnapshot::new(
             AdminDashboardUsageSnapshot::new(0, 0, 0, 0, 0, 0, 0),
-            AdminDashboardOutcomeSnapshot::new(0, 0, 0, 0, Vec::new(), Vec::new()),
+            AdminDashboardOutcomeSnapshot::new(
+                0,
+                0,
+                0,
+                0,
+                Vec::new(),
+                Vec::new(),
+                0,
+                0,
+                Vec::new(),
+            ),
             Vec::new(),
             AdminDashboardPerformance::new(0, None, 0, 2_000, 0, None, 0, 10_000),
         );
@@ -337,7 +356,17 @@ mod tests {
     async fn split_storage_preserves_each_source_failure() {
         let analytics = AdminDashboardAnalyticsSnapshot::new(
             AdminDashboardUsageSnapshot::new(0, 0, 0, 0, 0, 0, 0),
-            AdminDashboardOutcomeSnapshot::new(0, 0, 0, 0, Vec::new(), Vec::new()),
+            AdminDashboardOutcomeSnapshot::new(
+                0,
+                0,
+                0,
+                0,
+                Vec::new(),
+                Vec::new(),
+                0,
+                0,
+                Vec::new(),
+            ),
             Vec::new(),
             AdminDashboardPerformance::new(0, None, 0, 2_000, 0, None, 0, 10_000),
         );
