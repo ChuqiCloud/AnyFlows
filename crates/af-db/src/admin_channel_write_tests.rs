@@ -694,7 +694,12 @@ async fn client_simulation_body_profile_requires_header_profile_and_own_risk_con
             .repository
             .update_channel(
                 created.channel_id(),
-                update().with_client_simulation_profile(None, false),
+                update()
+                    .with_client_simulation_profile(None, false)
+                    .with_client_simulation_body_profile(
+                        Some(ClientSimulationBodyProfile::AnthropicCliSystemDateV1),
+                        true,
+                    ),
             )
             .await
             .unwrap_err(),
