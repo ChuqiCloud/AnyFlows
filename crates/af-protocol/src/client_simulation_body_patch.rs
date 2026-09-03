@@ -186,10 +186,6 @@ mod tests {
             .apply(request, UtcDate::new(2026, 9, 3).unwrap())
             .unwrap();
         assert_eq!(patched.source_protocol(), None);
-        assert!(matches!(
-            patched.into_same_protocol(Protocol::Anthropic),
-            SameProtocolDecision::Rebuild(_)
-        ));
         let messages = &patched.canonical().messages;
         assert_eq!(messages.len(), 3);
         assert_eq!(messages[0].role, Role::System);
@@ -199,6 +195,10 @@ mod tests {
         );
         assert_eq!(messages[1].role, Role::System);
         assert_eq!(messages[2].role, Role::User);
+        assert!(matches!(
+            patched.into_same_protocol(Protocol::Anthropic),
+            SameProtocolDecision::Rebuild(_)
+        ));
     }
 
     #[test]
