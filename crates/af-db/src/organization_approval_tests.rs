@@ -505,7 +505,8 @@ async fn approval_notification_repository_paginates_and_marks_read_idempotently(
         let request_id = match fixture
             .repository
             .create_request(OrganizationApprovalRequestWrite::new(request))
-            .await?
+            .await
+            .map_err(|error| format!("创建通知测试申请失败: {error:?}"))?
         {
             OrganizationApprovalRequestCreateOutcome::Created(record) => record.id(),
             OrganizationApprovalRequestCreateOutcome::Existing(_) => unreachable!(),
@@ -522,7 +523,8 @@ async fn approval_notification_repository_paginates_and_marks_read_idempotently(
         let decision = match fixture
             .repository
             .record_decision(OrganizationApprovalDecisionWrite::new(decision))
-            .await?
+            .await
+            .map_err(|error| format!("写入通知测试决定失败: {error:?}"))?
         {
             OrganizationApprovalDecisionOutcome::Created(record) => record,
             OrganizationApprovalDecisionOutcome::Existing(_) => unreachable!(),
@@ -530,7 +532,8 @@ async fn approval_notification_repository_paginates_and_marks_read_idempotently(
         let notification = organization_approval_notifications::Entity::find()
             .filter(organization_approval_notifications::Column::DecisionId.eq(decision.id().get()))
             .one(fixture.pool.connection())
-            .await?
+            .await
+            .map_err(|error| format!("读取通知测试事实失败: {error:?}"))?
             .expect("审批决定必须生成通知");
         notification_ids.push(notification.id);
     }
