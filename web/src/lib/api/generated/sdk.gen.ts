@@ -2387,6 +2387,50 @@ export const decideOrganizationProvisioningRequest = <ThrowOnError extends boole
         ...options.headers
     }
 });
+export const listAdminOrganizationPlans = <ThrowOnError extends boolean = true>(options?: Options<ListAdminOrganizationPlansData, ThrowOnError>): RequestResult<ListAdminOrganizationPlansResponses, ListAdminOrganizationPlansErrors, ThrowOnError> => (options?.client ?? client).get<ListAdminOrganizationPlansResponses, ListAdminOrganizationPlansErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/organization-plans',
+    ...options
+});
+export const createAdminOrganizationPlan = <ThrowOnError extends boolean = true>(options: Options<CreateAdminOrganizationPlanData, ThrowOnError>): RequestResult<CreateAdminOrganizationPlanResponses, CreateAdminOrganizationPlanErrors, ThrowOnError> => (options.client ?? client).post<CreateAdminOrganizationPlanResponses, CreateAdminOrganizationPlanErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/organization-plans',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const disableAdminOrganizationPlan = <ThrowOnError extends boolean = true>(options: Options<DisableAdminOrganizationPlanData, ThrowOnError>): RequestResult<DisableAdminOrganizationPlanResponses, DisableAdminOrganizationPlanErrors, ThrowOnError> => (options.client ?? client).post<DisableAdminOrganizationPlanResponses, DisableAdminOrganizationPlanErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/organization-plans/{plan_id}/disable',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const getOrganizationPlanCatalog = <ThrowOnError extends boolean = true>(options?: Options<GetOrganizationPlanCatalogData, ThrowOnError>): RequestResult<GetOrganizationPlanCatalogResponses, GetOrganizationPlanCatalogErrors, ThrowOnError> => (options?.client ?? client).get<GetOrganizationPlanCatalogResponses, GetOrganizationPlanCatalogErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/account/organization-plan-catalog',
+    ...options
+});
 export const discoverOrganizationSso = <ThrowOnError extends boolean = true>(options: Options<DiscoverOrganizationSsoData, ThrowOnError>): RequestResult<DiscoverOrganizationSsoResponses, DiscoverOrganizationSsoErrors, ThrowOnError> => (options.client ?? client).post<DiscoverOrganizationSsoResponses, DiscoverOrganizationSsoErrors, ThrowOnError>({
     url: '/api/auth/organization-sso/discovery',
     ...options,
@@ -3021,48 +3065,4 @@ export const updateAdminGoogleOAuthLoginSettings = <ThrowOnError extends boolean
         'Content-Type': 'application/json',
         ...options.headers
     }
-});
-export const listAdminOrganizationPlans = <ThrowOnError extends boolean = true>(options?: Options<ListAdminOrganizationPlansData, ThrowOnError>): RequestResult<ListAdminOrganizationPlansResponses, ListAdminOrganizationPlansErrors, ThrowOnError> => (options?.client ?? client).get<ListAdminOrganizationPlansResponses, ListAdminOrganizationPlansErrors, ThrowOnError>({
-    security: [{
-            key: 'bearerAuth',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/api/admin/organization-plans',
-    ...options
-});
-export const createAdminOrganizationPlan = <ThrowOnError extends boolean = true>(options: Options<CreateAdminOrganizationPlanData, ThrowOnError>): RequestResult<CreateAdminOrganizationPlanResponses, CreateAdminOrganizationPlanErrors, ThrowOnError> => (options.client ?? client).post<CreateAdminOrganizationPlanResponses, CreateAdminOrganizationPlanErrors, ThrowOnError>({
-    security: [{
-            key: 'bearerAuth',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/api/admin/organization-plans',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-export const disableAdminOrganizationPlan = <ThrowOnError extends boolean = true>(options: Options<DisableAdminOrganizationPlanData, ThrowOnError>): RequestResult<DisableAdminOrganizationPlanResponses, DisableAdminOrganizationPlanErrors, ThrowOnError> => (options.client ?? client).post<DisableAdminOrganizationPlanResponses, DisableAdminOrganizationPlanErrors, ThrowOnError>({
-    security: [{
-            key: 'bearerAuth',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/api/admin/organization-plans/{plan_id}/disable',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-export const getOrganizationPlanCatalog = <ThrowOnError extends boolean = true>(options?: Options<GetOrganizationPlanCatalogData, ThrowOnError>): RequestResult<GetOrganizationPlanCatalogResponses, GetOrganizationPlanCatalogErrors, ThrowOnError> => (options?.client ?? client).get<GetOrganizationPlanCatalogResponses, GetOrganizationPlanCatalogErrors, ThrowOnError>({
-    security: [{
-            key: 'bearerAuth',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/api/account/organization-plan-catalog',
-    ...options
 });

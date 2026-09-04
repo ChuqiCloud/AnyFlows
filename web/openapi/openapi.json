@@ -20273,6 +20273,316 @@
         ]
       }
     },
+    "/api/admin/organization-plans": {
+      "get": {
+        "tags": [
+          "企业套餐"
+        ],
+        "operationId": "listAdminOrganizationPlans",
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationPlanListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "企业套餐"
+        ],
+        "operationId": "createAdminOrganizationPlan",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationPlanCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationPlan"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/organization-plans/{plan_id}/disable": {
+      "post": {
+        "tags": [
+          "企业套餐"
+        ],
+        "operationId": "disableAdminOrganizationPlan",
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationPlanDisableRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationPlan"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/account/organization-plan-catalog": {
+      "get": {
+        "tags": [
+          "企业套餐"
+        ],
+        "operationId": "getOrganizationPlanCatalog",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationPlanCatalogResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/auth/organization-sso/discovery": {
       "post": {
         "tags": [
@@ -26585,317 +26895,6 @@
           },
           "500": {
             "description": "服务内部错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/admin/organization-plans": {
-      "get": {
-        "tags": [
-          "企业套餐"
-        ],
-        "operationId": "listAdminOrganizationPlans",
-        "parameters": [
-          {
-            "name": "before",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "minimum": 1
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 1,
-              "maximum": 100
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "企业套餐列表",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OrganizationPlanListResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "管理会话错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "管理会话错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "管理会话错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "管理会话错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      },
-      "post": {
-        "tags": [
-          "企业套餐"
-        ],
-        "operationId": "createAdminOrganizationPlan",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/OrganizationPlanCreateRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "企业套餐已创建",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OrganizationPlan"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "管理会话错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "管理会话错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "管理会话错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "管理会话错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/admin/organization-plans/{plan_id}/disable": {
-      "post": {
-        "tags": [
-          "企业套餐"
-        ],
-        "operationId": "disableAdminOrganizationPlan",
-        "parameters": [
-          {
-            "name": "plan_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/OrganizationPlanDisableRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "企业套餐已停用",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OrganizationPlan"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "管理会话错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "管理会话错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "管理会话错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "管理会话错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "管理会话错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "管理会话错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/account/organization-plan-catalog": {
-      "get": {
-        "tags": [
-          "企业套餐"
-        ],
-        "operationId": "getOrganizationPlanCatalog",
-        "responses": {
-          "200": {
-            "description": "当前账号可售企业套餐目录",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OrganizationPlanCatalogResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "管理会话错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "管理会话错误",
             "content": {
               "application/json": {
                 "schema": {
@@ -34656,7 +34655,7 @@
               "null"
             ],
             "format": "double",
-            "default": 1,
+            "default": 1.0,
             "maximum": 4,
             "minimum": 0.25
           },
@@ -35726,6 +35725,8 @@
               "organization_contract_price_interval_conflict",
               "organization_contract_price_conflict",
               "organization_contract_price_transition_invalid",
+              "organization_plan_not_found",
+              "organization_plan_conflict",
               "organization_sso_provider_not_found",
               "organization_sso_provider_conflict",
               "organization_sso_provider_transition_invalid",
@@ -38391,6 +38392,252 @@
           }
         },
         "additionalProperties": false
+      },
+      "OrganizationPlan": {
+        "type": "object",
+        "required": [
+          "plan_id",
+          "name",
+          "status",
+          "team_management_enabled",
+          "sso_enabled",
+          "custom_roles_enabled",
+          "seat_limit",
+          "team_limit",
+          "organization_key_limit",
+          "audit_retention_days",
+          "validity_days",
+          "price_provider",
+          "price_currency",
+          "price_amount_minor",
+          "version",
+          "created_by_user_id",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "plan_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/OrganizationPlanStatus"
+          },
+          "team_management_enabled": {
+            "type": "boolean"
+          },
+          "sso_enabled": {
+            "type": "boolean"
+          },
+          "custom_roles_enabled": {
+            "type": "boolean"
+          },
+          "seat_limit": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "team_limit": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "organization_key_limit": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "audit_retention_days": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "validity_days": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "price_provider": {
+            "type": "string"
+          },
+          "price_currency": {
+            "type": "string"
+          },
+          "price_amount_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "created_by_user_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "disabled_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "OrganizationPlanCatalogResponse": {
+        "type": "object",
+        "required": [
+          "plans",
+          "purchase_notice"
+        ],
+        "properties": {
+          "plans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrganizationPlan"
+            }
+          },
+          "purchase_notice": {
+            "type": "string"
+          }
+        }
+      },
+      "OrganizationPlanCreateRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "team_management_enabled",
+          "sso_enabled",
+          "custom_roles_enabled",
+          "seat_limit",
+          "team_limit",
+          "organization_key_limit",
+          "audit_retention_days",
+          "validity_days",
+          "price_provider",
+          "price_currency",
+          "price_amount_minor"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "team_management_enabled": {
+            "type": "boolean"
+          },
+          "sso_enabled": {
+            "type": "boolean"
+          },
+          "custom_roles_enabled": {
+            "type": "boolean"
+          },
+          "seat_limit": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "team_limit": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "organization_key_limit": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "audit_retention_days": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "validity_days": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "price_provider": {
+            "type": "string"
+          },
+          "price_currency": {
+            "type": "string"
+          },
+          "price_amount_minor": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "OrganizationPlanDisableRequest": {
+        "type": "object",
+        "required": [
+          "expected_version"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "OrganizationPlanListQuerySchema": {
+        "type": "object",
+        "properties": {
+          "before": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          }
+        }
+      },
+      "OrganizationPlanListResponse": {
+        "type": "object",
+        "required": [
+          "plans"
+        ],
+        "properties": {
+          "plans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrganizationPlan"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "OrganizationPlanStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "disabled"
+        ]
       },
       "OrganizationProvisioningCreateRequest": {
         "type": "object",
@@ -44460,236 +44707,6 @@
           "expired",
           "failed"
         ]
-      },
-      "OrganizationPlanCreateRequest": {
-        "type": "object",
-        "required": [
-          "name",
-          "team_management_enabled",
-          "sso_enabled",
-          "custom_roles_enabled",
-          "seat_limit",
-          "team_limit",
-          "organization_key_limit",
-          "audit_retention_days",
-          "validity_days",
-          "price_provider",
-          "price_currency",
-          "price_amount_minor"
-        ],
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "team_management_enabled": {
-            "type": "boolean"
-          },
-          "sso_enabled": {
-            "type": "boolean"
-          },
-          "custom_roles_enabled": {
-            "type": "boolean"
-          },
-          "seat_limit": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "team_limit": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "organization_key_limit": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "audit_retention_days": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "validity_days": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "price_provider": {
-            "type": "string"
-          },
-          "price_currency": {
-            "type": "string"
-          },
-          "price_amount_minor": {
-            "type": "integer",
-            "format": "int64"
-          }
-        }
-      },
-      "OrganizationPlanDisableRequest": {
-        "type": "object",
-        "required": [
-          "expected_version"
-        ],
-        "properties": {
-          "expected_version": {
-            "type": "integer",
-            "format": "int64"
-          }
-        }
-      },
-      "OrganizationPlanStatus": {
-        "type": "string",
-        "enum": [
-          "active",
-          "disabled"
-        ]
-      },
-      "OrganizationPlan": {
-        "type": "object",
-        "required": [
-          "plan_id",
-          "name",
-          "status",
-          "team_management_enabled",
-          "sso_enabled",
-          "custom_roles_enabled",
-          "seat_limit",
-          "team_limit",
-          "organization_key_limit",
-          "audit_retention_days",
-          "validity_days",
-          "price_provider",
-          "price_currency",
-          "price_amount_minor",
-          "version",
-          "created_by_user_id",
-          "created_at",
-          "updated_at"
-        ],
-        "properties": {
-          "plan_id": {
-            "type": "string",
-            "minLength": 32,
-            "maxLength": 32,
-            "pattern": "^[0-9a-f]{32}$"
-          },
-          "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "status": {
-            "$ref": "#/components/schemas/OrganizationPlanStatus"
-          },
-          "team_management_enabled": {
-            "type": "boolean"
-          },
-          "sso_enabled": {
-            "type": "boolean"
-          },
-          "custom_roles_enabled": {
-            "type": "boolean"
-          },
-          "seat_limit": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "team_limit": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "organization_key_limit": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "audit_retention_days": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "validity_days": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "price_provider": {
-            "type": "string"
-          },
-          "price_currency": {
-            "type": "string"
-          },
-          "price_amount_minor": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "version": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "created_by_user_id": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "disabled_at": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64"
-          },
-          "created_at": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "updated_at": {
-            "type": "integer",
-            "format": "int64"
-          }
-        }
-      },
-      "OrganizationPlanListResponse": {
-        "type": "object",
-        "required": [
-          "plans"
-        ],
-        "properties": {
-          "plans": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/OrganizationPlan"
-            }
-          },
-          "next_cursor": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64"
-          }
-        }
-      },
-      "OrganizationPlanCatalogResponse": {
-        "type": "object",
-        "required": [
-          "plans",
-          "purchase_notice"
-        ],
-        "properties": {
-          "plans": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/OrganizationPlan"
-            }
-          },
-          "purchase_notice": {
-            "type": "string"
-          }
-        }
       }
     },
     "securitySchemes": {
@@ -44884,9 +44901,6 @@
     },
     {
       "name": "退款回执"
-    },
-    {
-      "name": "企业套餐"
     }
   ]
 }

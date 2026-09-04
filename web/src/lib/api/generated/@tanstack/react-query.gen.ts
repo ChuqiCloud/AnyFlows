@@ -4015,6 +4015,83 @@ export const decideOrganizationProvisioningRequestMutation = (options?: Partial<
     };
     return mutationOptions;
 };
+export const listAdminOrganizationPlansQueryKey = (options?: Options<ListAdminOrganizationPlansData>) => createQueryKey('listAdminOrganizationPlans', options);
+export const listAdminOrganizationPlansOptions = (options?: Options<ListAdminOrganizationPlansData>) => queryOptions<ListAdminOrganizationPlansResponse, ListAdminOrganizationPlansError, ListAdminOrganizationPlansResponse, ReturnType<typeof listAdminOrganizationPlansQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await listAdminOrganizationPlans({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: listAdminOrganizationPlansQueryKey(options)
+});
+export const listAdminOrganizationPlansInfiniteQueryKey = (options?: Options<ListAdminOrganizationPlansData>): QueryKey<Options<ListAdminOrganizationPlansData>> => createQueryKey('listAdminOrganizationPlans', options, true);
+export const listAdminOrganizationPlansInfiniteOptions = (options?: Options<ListAdminOrganizationPlansData>) => {
+    const opts = infiniteQueryOptions<ListAdminOrganizationPlansResponse, ListAdminOrganizationPlansError, InfiniteData<ListAdminOrganizationPlansResponse>, QueryKey<Options<ListAdminOrganizationPlansData>>, number | Pick<QueryKey<Options<ListAdminOrganizationPlansData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
+    // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
+    {
+        queryFn: async ({ pageParam, queryKey, signal }) => {
+            // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
+            const page: Pick<QueryKey<Options<ListAdminOrganizationPlansData>>[0], 'body' | 'headers' | 'path' | 'query'> = typeof pageParam === 'object' ? pageParam : {
+                query: {
+                    before: pageParam
+                }
+            };
+            const params = createInfiniteParams(queryKey, page);
+            const { data } = await listAdminOrganizationPlans({
+                ...options,
+                ...params,
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: listAdminOrganizationPlansInfiniteQueryKey(options)
+    });
+    return opts as Omit<typeof opts, 'initialData'>;
+};
+export const createAdminOrganizationPlanMutation = (options?: Partial<Options<CreateAdminOrganizationPlanData>>): UseMutationOptions<CreateAdminOrganizationPlanResponse, CreateAdminOrganizationPlanError, Options<CreateAdminOrganizationPlanData>> => {
+    const mutationOptions: UseMutationOptions<CreateAdminOrganizationPlanResponse, CreateAdminOrganizationPlanError, Options<CreateAdminOrganizationPlanData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await createAdminOrganizationPlan({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+export const disableAdminOrganizationPlanMutation = (options?: Partial<Options<DisableAdminOrganizationPlanData>>): UseMutationOptions<DisableAdminOrganizationPlanResponse, DisableAdminOrganizationPlanError, Options<DisableAdminOrganizationPlanData>> => {
+    const mutationOptions: UseMutationOptions<DisableAdminOrganizationPlanResponse, DisableAdminOrganizationPlanError, Options<DisableAdminOrganizationPlanData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await disableAdminOrganizationPlan({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+export const getOrganizationPlanCatalogQueryKey = (options?: Options<GetOrganizationPlanCatalogData>) => createQueryKey('getOrganizationPlanCatalog', options);
+export const getOrganizationPlanCatalogOptions = (options?: Options<GetOrganizationPlanCatalogData>) => queryOptions<GetOrganizationPlanCatalogResponse, GetOrganizationPlanCatalogError, GetOrganizationPlanCatalogResponse, ReturnType<typeof getOrganizationPlanCatalogQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await getOrganizationPlanCatalog({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: getOrganizationPlanCatalogQueryKey(options)
+});
 export const discoverOrganizationSsoMutation = (options?: Partial<Options<DiscoverOrganizationSsoData>>): UseMutationOptions<DiscoverOrganizationSsoResponse, DiscoverOrganizationSsoError, Options<DiscoverOrganizationSsoData>> => {
     const mutationOptions: UseMutationOptions<DiscoverOrganizationSsoResponse, DiscoverOrganizationSsoError, Options<DiscoverOrganizationSsoData>> = {
         mutationFn: async (fnOptions) => {
@@ -5251,80 +5328,3 @@ export const updateAdminGoogleOAuthLoginSettingsMutation = (options?: Partial<Op
     };
     return mutationOptions;
 };
-export const listAdminOrganizationPlansQueryKey = (options?: Options<ListAdminOrganizationPlansData>) => createQueryKey('listAdminOrganizationPlans', options);
-export const listAdminOrganizationPlansOptions = (options?: Options<ListAdminOrganizationPlansData>) => queryOptions<ListAdminOrganizationPlansResponse, ListAdminOrganizationPlansError, ListAdminOrganizationPlansResponse, ReturnType<typeof listAdminOrganizationPlansQueryKey>>({
-    queryFn: async ({ queryKey, signal }) => {
-        const { data } = await listAdminOrganizationPlans({
-            ...options,
-            ...queryKey[0],
-            signal,
-            throwOnError: true
-        });
-        return data;
-    },
-    queryKey: listAdminOrganizationPlansQueryKey(options)
-});
-export const listAdminOrganizationPlansInfiniteQueryKey = (options?: Options<ListAdminOrganizationPlansData>): QueryKey<Options<ListAdminOrganizationPlansData>> => createQueryKey('listAdminOrganizationPlans', options, true);
-export const listAdminOrganizationPlansInfiniteOptions = (options?: Options<ListAdminOrganizationPlansData>) => {
-    const opts = infiniteQueryOptions<ListAdminOrganizationPlansResponse, ListAdminOrganizationPlansError, InfiniteData<ListAdminOrganizationPlansResponse>, QueryKey<Options<ListAdminOrganizationPlansData>>, number | Pick<QueryKey<Options<ListAdminOrganizationPlansData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
-    // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
-    {
-        queryFn: async ({ pageParam, queryKey, signal }) => {
-            // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
-            const page: Pick<QueryKey<Options<ListAdminOrganizationPlansData>>[0], 'body' | 'headers' | 'path' | 'query'> = typeof pageParam === 'object' ? pageParam : {
-                query: {
-                    before: pageParam
-                }
-            };
-            const params = createInfiniteParams(queryKey, page);
-            const { data } = await listAdminOrganizationPlans({
-                ...options,
-                ...params,
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: listAdminOrganizationPlansInfiniteQueryKey(options)
-    });
-    return opts as Omit<typeof opts, 'initialData'>;
-};
-export const createAdminOrganizationPlanMutation = (options?: Partial<Options<CreateAdminOrganizationPlanData>>): UseMutationOptions<CreateAdminOrganizationPlanResponse, CreateAdminOrganizationPlanError, Options<CreateAdminOrganizationPlanData>> => {
-    const mutationOptions: UseMutationOptions<CreateAdminOrganizationPlanResponse, CreateAdminOrganizationPlanError, Options<CreateAdminOrganizationPlanData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await createAdminOrganizationPlan({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
-export const disableAdminOrganizationPlanMutation = (options?: Partial<Options<DisableAdminOrganizationPlanData>>): UseMutationOptions<DisableAdminOrganizationPlanResponse, DisableAdminOrganizationPlanError, Options<DisableAdminOrganizationPlanData>> => {
-    const mutationOptions: UseMutationOptions<DisableAdminOrganizationPlanResponse, DisableAdminOrganizationPlanError, Options<DisableAdminOrganizationPlanData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await disableAdminOrganizationPlan({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
-export const getOrganizationPlanCatalogQueryKey = (options?: Options<GetOrganizationPlanCatalogData>) => createQueryKey('getOrganizationPlanCatalog', options);
-export const getOrganizationPlanCatalogOptions = (options?: Options<GetOrganizationPlanCatalogData>) => queryOptions<GetOrganizationPlanCatalogResponse, GetOrganizationPlanCatalogError, GetOrganizationPlanCatalogResponse, ReturnType<typeof getOrganizationPlanCatalogQueryKey>>({
-    queryFn: async ({ queryKey, signal }) => {
-        const { data } = await getOrganizationPlanCatalog({
-            ...options,
-            ...queryKey[0],
-            signal,
-            throwOnError: true
-        });
-        return data;
-    },
-    queryKey: getOrganizationPlanCatalogQueryKey(options)
-});
