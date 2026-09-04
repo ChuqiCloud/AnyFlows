@@ -278,7 +278,7 @@ mod tests {
             })
             .sum::<usize>();
         // 公开发现、SSO 启动、审批与部门目录管理接口扩展了既有管理面，保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 301);
+        assert_eq!(operation_count, 305);
         assert!(
             document
                 .components
