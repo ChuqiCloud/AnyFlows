@@ -312,9 +312,9 @@ async fn approval_atomically_provisions_and_recovers_the_same_organization()
 async fn rejection_requires_admin_and_matching_version_then_releases_active_slots()
 -> Result<(), Box<dyn Error>> {
     let fixture = fixture().await?;
-    let request = request(80, fixture.users[0], "Rejected", "rejected", "private")?;
-    let request_key = request.request_key();
-    fixture.repository.create_request(request).await?;
+    let initial_request = request(80, fixture.users[0], "Rejected", "rejected", "private")?;
+    let request_key = initial_request.request_key();
+    fixture.repository.create_request(initial_request).await?;
 
     assert_eq!(
         fixture

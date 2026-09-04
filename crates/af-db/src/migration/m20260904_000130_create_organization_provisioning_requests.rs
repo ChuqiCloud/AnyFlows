@@ -213,7 +213,7 @@ where
             "\"{name}\" ~ '^[0-9a-f]{{32}}$' AND \"{name}\" <> '{zero}'"
         )),
         DbBackend::MySql => Expr::cust(format!(
-            "CHAR_LENGTH(`{name}`) = 32 AND BINARY `{name}` REGEXP '^[0-9a-f]{{32}}$' AND `{name}` <> '{zero}'"
+            "CHAR_LENGTH(`{name}`) = 32 AND `{name}` REGEXP '^[0-9a-f]{{32}}$' AND `{name}` <> '{zero}'"
         )),
         DbBackend::Sqlite => Expr::cust(format!(
             "length(\"{name}\") = 32 AND \"{name}\" NOT GLOB '*[^0-9a-f]*' AND \"{name}\" <> '{zero}'"
@@ -245,7 +245,7 @@ fn slug_check(backend: DbBackend) -> SimpleExpr {
             "octet_length(\"organization_slug\") BETWEEN 1 AND 64 AND \"organization_slug\" ~ '^[a-z0-9]+(-[a-z0-9]+)*$'",
         ),
         DbBackend::MySql => Expr::cust(
-            "OCTET_LENGTH(`organization_slug`) BETWEEN 1 AND 64 AND BINARY `organization_slug` REGEXP '^[a-z0-9]+(-[a-z0-9]+)*$'",
+            "OCTET_LENGTH(`organization_slug`) BETWEEN 1 AND 64 AND `organization_slug` REGEXP '^[a-z0-9]+(-[a-z0-9]+)*$'",
         ),
         DbBackend::Sqlite => Expr::cust(
             "length(CAST(\"organization_slug\" AS BLOB)) BETWEEN 1 AND 64 AND \"organization_slug\" NOT GLOB '*[^a-z0-9-]*' AND \"organization_slug\" NOT LIKE '-%' AND \"organization_slug\" NOT LIKE '%-' AND \"organization_slug\" NOT LIKE '%--%'",
@@ -328,6 +328,7 @@ mod tests {
         assert!(postgres.contains("octet_length"));
         assert!(postgres.contains("2000"));
         assert!(mysql.contains("REGEXP"));
+        assert!(!mysql.contains("BINARY"));
         assert!(mysql.contains("64"));
         assert!(sqlite.contains("NOT GLOB"));
         assert!(sqlite.contains(&"0".repeat(32)));
