@@ -3314,7 +3314,9 @@ fn valid_organization_plan_order_state(
     closed_at: Option<TimeDateTimeWithTimeZone>,
 ) -> bool {
     match OrganizationPlanOrderStatus::try_from(status) {
-        Ok(status) if status.is_open() => paid_at.is_none() && closed_at.is_none(),
+        Ok(OrganizationPlanOrderStatus::Created | OrganizationPlanOrderStatus::Pending) => {
+            paid_at.is_none() && closed_at.is_none()
+        }
         Ok(OrganizationPlanOrderStatus::Paid) => paid_at.is_some() && closed_at.is_none(),
         Ok(
             OrganizationPlanOrderStatus::Failed
