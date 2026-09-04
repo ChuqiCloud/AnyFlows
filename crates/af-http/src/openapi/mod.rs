@@ -256,7 +256,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 226);
+        assert_eq!(document.paths.paths.len(), 229);
         let operation_count = document
             .paths
             .paths
@@ -630,7 +630,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 494);
+        assert_eq!(schemas.len(), 501);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("OrganizationSsoDiscoveryErrorResponse"));
         assert!(schemas.contains_key("CreditAllocationListResponse"));
