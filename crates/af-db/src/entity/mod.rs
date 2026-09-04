@@ -3308,6 +3308,23 @@ fn valid_subscription_order_state(
     }
 }
 
+fn valid_organization_plan_order_state(
+    status: i16,
+    paid_at: Option<TimeDateTimeWithTimeZone>,
+    closed_at: Option<TimeDateTimeWithTimeZone>,
+) -> bool {
+    match OrganizationPlanOrderStatus::try_from(status) {
+        Ok(status) if status.is_open() => paid_at.is_none() && closed_at.is_none(),
+        Ok(OrganizationPlanOrderStatus::Paid) => paid_at.is_some() && closed_at.is_none(),
+        Ok(
+            OrganizationPlanOrderStatus::Failed
+            | OrganizationPlanOrderStatus::Canceled
+            | OrganizationPlanOrderStatus::Expired,
+        ) => paid_at.is_none() && closed_at.is_some(),
+        Err(_) => false,
+    }
+}
+
 fn valid_currency(value: &str) -> bool {
     value.len() == 3 && value.bytes().all(|byte| byte.is_ascii_uppercase())
 }

@@ -1,10 +1,9 @@
-use std::{
-    fmt,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::Duration,
+use std::{fmt, time::Duration};
+
+#[cfg(test)]
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
 };
 
 use af_domain::{
@@ -140,7 +139,7 @@ impl OrganizationPlanOrderRepository {
         )
         .await?
         {
-            return classify_create(existing, write);
+            return classify_create(order_record(existing)?, write);
         }
 
         let transaction = self
@@ -349,7 +348,7 @@ async fn create_order_in_transaction(
     if let Some(existing) =
         load_order_by_request(transaction, write.organization_id, write.request_id).await?
     {
-        return classify_create(existing, write).map_err(Into::into);
+        return classify_create(order_record(existing)?, write).map_err(Into::into);
     }
     let created_at = to_database_time(write.created_at)?;
     let expires_at = write.expires_at.map(to_database_time).transpose()?;
