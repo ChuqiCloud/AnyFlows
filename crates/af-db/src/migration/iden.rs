@@ -2883,8 +2883,8 @@ pub(in crate::migration) mod organization_plan_orders {
 
     /// `organization_plan_orders` 企业授权订单表标识。
     #[derive(Clone, Copy, DeriveIden)]
-    #[sea_orm(iden = "organization_plan_orders")]
     pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_plan_orders")]
         Name,
     }
 
@@ -2922,8 +2922,8 @@ pub(in crate::migration) mod organization_plan_payment_events {
 
     /// `organization_plan_payment_events` 企业授权支付事件表标识。
     #[derive(Clone, Copy, DeriveIden)]
-    #[sea_orm(iden = "organization_plan_payment_events")]
     pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_plan_payment_events")]
         Name,
     }
 

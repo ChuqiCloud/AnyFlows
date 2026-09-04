@@ -252,7 +252,7 @@ fn organization(name: &str, slug: &str, owner: UserId) -> OrganizationCreate {
             OrganizationEntitlementSnapshot::new(
                 OrganizationEntitlementCapacity::new(10, 3, 2).expect("容量有效"),
                 true,
-                true,
+                false,
                 false,
                 90,
                 946_684_800,
