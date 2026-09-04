@@ -39,4 +39,3 @@ test('企业开通申请的 HTTP、OpenAPI、生成客户端和前端入口保�
   assert.equal(typeof en.organizationConsole.empty.applyProvisioning, 'string')
   assert.equal(typeof zh.organizationConsole.empty.applyProvisioning, 'string')
 })
-
