@@ -5656,7 +5656,8 @@
       "version": "Fact version",
       "updated": "Last updated",
       "organizationId": "Organization ID",
-      "replayed": "Recovered from server"
+      "replayed": "Recovered from server",
+      "openOnboarding": "Start owner onboarding"
     },
     "admin": {
       "title": "Organization provisioning",
@@ -5679,6 +5680,71 @@
       "mutation": "The operation did not return a reliable result. Keep the current input and retry.",
       "conflict": "The request changed concurrently. Refresh and review the latest server version.",
       "unavailable": "The provisioning service is temporarily unavailable. Try again shortly."
+    }
+  },
+  "organizationOnboarding": {
+    "title": "Organization owner onboarding",
+    "subtitle": "Review the approved organization facts, prepare the first members, and verify security settings. You can pause and resume this checklist at any time.",
+    "stepsLabel": "Organization onboarding steps",
+    "completed": "Confirmed",
+    "localProgress": "{{completed}} of {{total}} confirmed",
+    "localProgressHint": "Confirmation progress is stored only in this browser for this organization. It does not change or represent the server-side provisioning state.",
+    "steps": {
+      "profile": {
+        "title": "Organization profile",
+        "description": "Confirm the identity and role facts created by the approved provisioning request."
+      },
+      "members": {
+        "title": "First members",
+        "description": "Review accepted members and pending invitations before expanding the organization."
+      },
+      "security": {
+        "title": "Security review",
+        "description": "Review SSO status and continue to the server-managed security controls."
+      }
+    },
+    "actions": {
+      "confirm": "Confirm step",
+      "confirmed": "Confirmed",
+      "openSettings": "Open organization settings",
+      "openMembers": "Open members and invitations",
+      "openOverview": "Open organization overview",
+      "retry": "Try again"
+    },
+    "errors": {
+      "organizationUnavailableTitle": "Organization is not available",
+      "organizationUnavailableBody": "This organization is not present in the current account directory. The server may have changed membership or the link may be stale."
+    },
+    "profile": {
+      "name": "Organization name",
+      "slug": "Organization slug",
+      "organizationId": "Organization ID",
+      "role": "My organization role",
+      "serverFact": "These identity and role values come from the approved server projection. Use organization settings for the remaining profile and ownership controls."
+    },
+    "members": {
+      "title": "First members and invitations",
+      "description": "Review the first seat facts and continue to the member directory when you are ready to invite or assign people.",
+      "active": "Active seats",
+      "activeHint": "Server entitlement limit: {{limit}}",
+      "pending": "Pending invitations",
+      "pendingHint": "Invitations that still need a response",
+      "accepted": "Accepted invitations",
+      "acceptedHint": "Invitations recorded as accepted",
+      "serverFact": "Counts are read from the organization member and invitation services. Invitation tokens and other sensitive materials are never stored in this checklist.",
+      "loading": "Loading member facts from the server",
+      "loadError": "Member or invitation facts could not be loaded. The existing server state is unchanged."
+    },
+    "security": {
+      "title": "Security settings",
+      "description": "Review the current SSO capability and organization role, then open settings for domains, recovery, and policy controls.",
+      "sso": "Enterprise SSO",
+      "enabled": "Enabled",
+      "disabled": "Not enabled",
+      "ssoHint": "SSO providers and policy are managed in organization settings",
+      "role": "Current role",
+      "roleHint": "The server controls which security actions are available",
+      "serverFact": "This step records only your local confirmation. SSO, recovery, and policy changes are completed and audited by the server in organization settings."
     }
   },
   "wallet": {

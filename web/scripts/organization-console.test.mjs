@@ -8,11 +8,35 @@ const openapi = JSON.parse(await readFile(new URL('../openapi/openapi.json', imp
 
 test('企业控制台路由覆盖首版任务域', () => {
   assert.deepEqual(routeFromHash('#/console/organization'), { view: 'organization-overview' })
+  assert.deepEqual(routeFromHash('#/console/organization-onboarding?organization_id=42'), { view: 'organization-onboarding', organizationId: 42 })
   assert.deepEqual(routeFromHash('#/console/organization-members'), { view: 'organization-members' })
   assert.deepEqual(routeFromHash('#/console/organization-wallet'), { view: 'organization-wallet' })
   assert.deepEqual(routeFromHash('#/console/organization-settings'), { view: 'organization-settings' })
   assert.deepEqual(routeFromHash('#/console/organization-activity?tab=audit'), { view: 'organization-activity', activityTab: 'audit' })
   assert.deepEqual(routeFromHash('#/console/organization-activity?tab=unknown'), { view: 'organization-activity' })
+})
+
+test('企业 Owner 初始化向导按企业恢复本地进度并只展示服务端事实', async () => {
+  const [pageSource, provisioningSource, en, zh] = await Promise.all([
+    readFile(new URL('../src/features/organization-onboarding/organization-onboarding-page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/features/organization-provisioning/organization-provisioning-page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/i18n/locales/en.json', import.meta.url), 'utf8').then(JSON.parse),
+    readFile(new URL('../src/i18n/locales/zh.json', import.meta.url), 'utf8').then(JSON.parse),
+  ])
+  assert.match(pageSource, /useOrganizationPageState/)
+  assert.match(pageSource, /useOrganizationWorkspace/)
+  assert.match(pageSource, /useOrganizationMembers/)
+  assert.match(pageSource, /useOrganizationInvitations/)
+  assert.match(pageSource, /PROGRESS_PREFIX.*organizationId/)
+  assert.match(pageSource, /localProgressHint/)
+  assert.match(pageSource, /organization-members/)
+  assert.match(pageSource, /organization-settings/)
+  assert.doesNotMatch(pageSource, /invitation\.invitation_key/)
+  assert.match(provisioningSource, /organization-onboarding\?organization_id=\$\{request\.organization_id\}/)
+  assert.equal(typeof en.organizationOnboarding.title, 'string')
+  assert.equal(typeof zh.organizationOnboarding.title, 'string')
+  assert.equal(typeof en.organizationOnboarding.members.serverFact, 'string')
+  assert.equal(typeof zh.organizationOnboarding.security.serverFact, 'string')
 })
 
 test('企业缓存键始终包含企业域', async () => {

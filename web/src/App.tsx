@@ -33,6 +33,7 @@ import { OrganizationApprovalPage } from '@/features/organization-approvals/orga
 import { OrganizationMemberPage } from '@/features/organization-members/organization-member-page'
 import { OrganizationDepartmentPage } from '@/features/organization-departments/organization-department-page'
 import { OrganizationOverviewPage } from '@/features/organization-console/organization-overview-page'
+import { OrganizationOnboardingPage } from '@/features/organization-onboarding/organization-onboarding-page'
 import { OrganizationProvisioningPage } from '@/features/organization-provisioning/organization-provisioning-page'
 import { OrganizationSettingsPage } from '@/features/organization-console/organization-settings-page'
 import { OrganizationServiceAccountPage } from '@/features/organization-service-accounts/organization-service-account-page'
@@ -85,6 +86,7 @@ type ManagementEntryProps = {
   credentialChannelId?: number
   profileSection?: AppRoute['profileSection']
   activityTab?: AppRoute['activityTab']
+  organizationId?: AppRoute['organizationId']
   loginNotice?: LoginNotice
   onAuthenticated: () => void
   onLoginRequired: (reason: 'required' | 'sessionExpired' | 'setupComplete') => void
@@ -99,6 +101,7 @@ function ManagementEntry({
   credentialChannelId,
   profileSection,
   activityTab,
+  organizationId,
   loginNotice,
   onAuthenticated,
   onLoginRequired,
@@ -192,6 +195,8 @@ function ManagementEntry({
                   ? 'organizationDepartments.title'
                 : view === 'organization-overview'
                   ? 'organizationConsole.overview.title'
+                : view === 'organization-onboarding'
+                  ? 'organizationOnboarding.title'
                 : view === 'organization-provisioning'
                   ? 'organizationProvisioning.title'
                 : view === 'organization-settings'
@@ -273,6 +278,8 @@ function ManagementEntry({
                   ? <OrganizationDepartmentPage />
                 : view === 'organization-overview'
                   ? <OrganizationOverviewPage />
+                : view === 'organization-onboarding'
+                  ? <OrganizationOnboardingPage requestedOrganizationId={organizationId} />
                 : view === 'organization-provisioning'
                   ? <OrganizationProvisioningPage admin={admin} />
                 : view === 'organization-settings'
@@ -311,6 +318,7 @@ function ManagementEntry({
     && view !== 'organization-members'
     && view !== 'organization-departments'
     && view !== 'organization-overview'
+    && view !== 'organization-onboarding'
     && view !== 'organization-provisioning'
     && view !== 'organization-settings'
     && view !== 'organization-service-accounts'
@@ -407,6 +415,7 @@ export default function App() {
       credentialChannelId={route.channelId}
       profileSection={route.profileSection}
       activityTab={route.activityTab}
+      organizationId={route.organizationId}
       loginNotice={loginNotice}
       onAuthenticated={openConsole}
       onLoginRequired={openLogin}
