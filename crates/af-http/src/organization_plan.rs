@@ -31,7 +31,7 @@ struct OrganizationPlanHttpState {
 }
 
 /// 构建企业套餐目录和平台管理接口；所有入口均要求有效管理会话。
-pub(crate) fn build_organization_plan_router(
+pub fn build_organization_plan_router(
     service: Option<Arc<dyn OrganizationPlanService>>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
     topup_service: Option<Arc<dyn UserTopupService>>,
@@ -349,8 +349,8 @@ fn map_error(error: OrganizationPlanServiceError) -> ManagementError {
     match error {
         OrganizationPlanServiceError::InvalidRequest => ManagementError::InvalidRequest,
         OrganizationPlanServiceError::Forbidden => ManagementError::Forbidden,
-        OrganizationPlanServiceError::NotFound => ManagementError::NotFound,
-        OrganizationPlanServiceError::Conflict => ManagementError::Conflict,
+        OrganizationPlanServiceError::NotFound => ManagementError::OrganizationPlanNotFound,
+        OrganizationPlanServiceError::Conflict => ManagementError::OrganizationPlanConflict,
         OrganizationPlanServiceError::Internal => ManagementError::Internal,
     }
 }
