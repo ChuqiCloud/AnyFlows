@@ -1,7 +1,9 @@
 use std::{error::Error, time::Duration};
 
 use af_domain::{
-    OrganizationProvisioningCreateOutcome, OrganizationProvisioningIdempotencyKey,
+    OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot,
+    OrganizationProvisioningCreateOutcome, OrganizationProvisioningDecisionKind,
+    OrganizationProvisioningDecisionOutcome, OrganizationProvisioningIdempotencyKey,
     OrganizationProvisioningRequest, OrganizationProvisioningRequestKey,
     OrganizationProvisioningStatus, UserId,
 };
@@ -11,9 +13,14 @@ use sea_orm::{
 };
 
 use crate::{
-    DatabaseOptions, MigrationOptions, OrganizationProvisioningRepository,
+    DatabaseOptions, MigrationOptions, OrganizationEntitlementWrite,
+    OrganizationProvisioningDecisionWrite, OrganizationProvisioningRepository,
     OrganizationProvisioningRepositoryError,
-    entity::{SensitiveString, groups, organization_provisioning_requests, users},
+    entity::{
+        SensitiveString, groups, organization_entitlements, organization_memberships,
+        organization_provisioning_requests, organization_sso_policies, organization_wallets,
+        organizations, platform_audit_logs, users,
+    },
 };
 
 struct Fixture {
@@ -250,6 +257,196 @@ async fn concurrent_slug_claim_has_one_winner_and_constraints_fail_closed()
     Ok(())
 }
 
+#[tokio::test]
+async fn approval_atomically_provisions_and_recovers_the_same_organization()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let request = request(70, fixture.users[0], "Approved", "approved", "private")?;
+    let request_key = request.request_key();
+    fixture.repository.create_request(request).await?;
+    let decision = approval(request_key, fixture.users[1])?;
+
+    let OrganizationProvisioningDecisionOutcome::Applied(applied) =
+        fixture.repository.decide_request(decision.clone()).await?
+    else {
+        panic!("首次审批必须应用决定");
+    };
+    assert_eq!(applied.status(), OrganizationProvisioningStatus::Approved);
+    assert_eq!(applied.version(), 2);
+    assert_eq!(applied.reviewer_user_id(), Some(fixture.users[1]));
+    assert!(applied.organization_id().is_some());
+
+    let OrganizationProvisioningDecisionOutcome::Existing(existing) =
+        fixture.repository.decide_request(decision).await?
+    else {
+        panic!("相同审批重放必须恢复原决定");
+    };
+    assert_eq!(existing, applied);
+    for count in [
+        organizations::Entity::find()
+            .count(fixture.pool.connection())
+            .await?,
+        organization_memberships::Entity::find()
+            .count(fixture.pool.connection())
+            .await?,
+        organization_entitlements::Entity::find()
+            .count(fixture.pool.connection())
+            .await?,
+        organization_wallets::Entity::find()
+            .count(fixture.pool.connection())
+            .await?,
+        organization_sso_policies::Entity::find()
+            .count(fixture.pool.connection())
+            .await?,
+        platform_audit_logs::Entity::find()
+            .count(fixture.pool.connection())
+            .await?,
+    ] {
+        assert_eq!(count, 1);
+    }
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn rejection_requires_admin_and_matching_version_then_releases_active_slots()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let request = request(80, fixture.users[0], "Rejected", "rejected", "private")?;
+    let request_key = request.request_key();
+    fixture.repository.create_request(request).await?;
+
+    assert_eq!(
+        fixture
+            .repository
+            .decide_request(rejection(request_key, 1, fixture.users[2])?)
+            .await,
+        Err(OrganizationProvisioningRepositoryError::Forbidden)
+    );
+    assert_eq!(
+        fixture
+            .repository
+            .decide_request(rejection(request_key, 2, fixture.users[1])?)
+            .await,
+        Err(OrganizationProvisioningRepositoryError::VersionConflict)
+    );
+    let OrganizationProvisioningDecisionOutcome::Applied(rejected) = fixture
+        .repository
+        .decide_request(rejection(request_key, 1, fixture.users[1])?)
+        .await?
+    else {
+        panic!("首次拒绝必须应用决定");
+    };
+    assert_eq!(rejected.status(), OrganizationProvisioningStatus::Rejected);
+    assert!(rejected.organization_id().is_none());
+    assert!(matches!(
+        fixture
+            .repository
+            .create_request(request(82, fixture.users[0], "Retry", "rejected", "again")?)
+            .await?,
+        OrganizationProvisioningCreateOutcome::Created(_)
+    ));
+    assert_eq!(
+        organizations::Entity::find()
+            .count(fixture.pool.connection())
+            .await?,
+        0
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn occupied_slug_rolls_back_the_entire_approval() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let first = request(90, fixture.users[0], "First", "claimed", "first")?;
+    let first_key = first.request_key();
+    fixture.repository.create_request(first).await?;
+    fixture
+        .repository
+        .decide_request(approval(first_key, fixture.users[1])?)
+        .await?;
+
+    let second = request(92, fixture.users[2], "Second", "claimed", "second")?;
+    let second_key = second.request_key();
+    fixture.repository.create_request(second).await?;
+    assert_eq!(
+        fixture
+            .repository
+            .decide_request(approval(second_key, fixture.users[1])?)
+            .await,
+        Err(OrganizationProvisioningRepositoryError::OrganizationSlugConflict)
+    );
+    let pending = fixture
+        .repository
+        .get_request(fixture.users[2], second_key)
+        .await?
+        .expect("冲突申请必须保持可审批");
+    assert_eq!(pending.status(), OrganizationProvisioningStatus::Pending);
+    assert_eq!(pending.version(), 1);
+    assert_eq!(
+        organizations::Entity::find()
+            .count(fixture.pool.connection())
+            .await?,
+        1
+    );
+    assert_eq!(
+        platform_audit_logs::Entity::find()
+            .count(fixture.pool.connection())
+            .await?,
+        1
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+fn approval(
+    request_key: OrganizationProvisioningRequestKey,
+    reviewer_user_id: UserId,
+) -> Result<OrganizationProvisioningDecisionWrite, Box<dyn Error>> {
+    Ok(OrganizationProvisioningDecisionWrite::new(
+        request_key,
+        1,
+        reviewer_user_id,
+        OrganizationProvisioningDecisionKind::Approve,
+        Some("verified".to_owned()),
+        Some(initial_entitlement()?),
+    )?)
+}
+
+fn rejection(
+    request_key: OrganizationProvisioningRequestKey,
+    expected_version: u64,
+    reviewer_user_id: UserId,
+) -> Result<OrganizationProvisioningDecisionWrite, Box<dyn Error>> {
+    Ok(OrganizationProvisioningDecisionWrite::new(
+        request_key,
+        expected_version,
+        reviewer_user_id,
+        OrganizationProvisioningDecisionKind::Reject,
+        Some("requirements_not_met".to_owned()),
+        None,
+    )?)
+}
+
+fn initial_entitlement() -> Result<OrganizationEntitlementWrite, Box<dyn Error>> {
+    Ok(OrganizationEntitlementWrite::new(
+        OrganizationEntitlementSnapshot::new(
+            OrganizationEntitlementCapacity::new(5, 2, 3)?,
+            true,
+            false,
+            false,
+            90,
+            1_900_000_000,
+            1_931_536_000,
+            Some(1_934_128_000),
+        )?,
+        "provisioning_approval".to_owned(),
+        None,
+        None,
+    )?)
+}
+
 fn request(
     marker: u8,
     user_id: UserId,
@@ -290,6 +487,7 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
                 "organization-provisioning-{index}@example.com"
             ))),
             password_hash: Set(None),
+            role: Set(i16::from(index == 1)),
             status: Set(1),
             default_group_id: Set(group.id),
             aff_code: Set(format!("organization-provisioning-aff-{index}")),

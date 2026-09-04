@@ -92,6 +92,15 @@ pub enum OrganizationProvisioningStatus {
     Rejected = 3,
 }
 
+/// 平台管理员对企业开通申请作出的闭合决定。
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum OrganizationProvisioningDecisionKind {
+    /// 批准申请并原子创建企业事实。
+    Approve,
+    /// 拒绝申请且不创建任何企业资源。
+    Reject,
+}
+
 impl OrganizationProvisioningStatus {
     /// 返回持久化使用的稳定编码。
     #[must_use]
@@ -370,6 +379,15 @@ impl fmt::Debug for OrganizationProvisioningRecord {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OrganizationProvisioningCreateOutcome {
     Created(OrganizationProvisioningRecord),
+    Existing(OrganizationProvisioningRecord),
+}
+
+/// 企业开通审批结果；`Existing` 表示原决定已提交且未重复执行。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OrganizationProvisioningDecisionOutcome {
+    /// 本次事务首次应用决定。
+    Applied(OrganizationProvisioningRecord),
+    /// 相同命令恢复了已经提交的决定。
     Existing(OrganizationProvisioningRecord),
 }
 
