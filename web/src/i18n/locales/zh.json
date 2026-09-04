@@ -5656,7 +5656,8 @@
       "version": "事实版本",
       "updated": "最近更新",
       "organizationId": "企业 ID",
-      "replayed": "已从服务端恢复"
+      "replayed": "已从服务端恢复",
+      "openOnboarding": "开始 Owner 初始化"
     },
     "admin": {
       "title": "企业开通审批",
@@ -5679,6 +5680,71 @@
       "mutation": "操作没有返回可靠结果，请保留当前内容后重试。",
       "conflict": "申请已被并发更新，请刷新后按最新服务端版本审核。",
       "unavailable": "企业开通服务暂时不可用，请稍后重试。"
+    }
+  },
+  "organizationOnboarding": {
+    "title": "企业 Owner 初始化向导",
+    "subtitle": "核对已批准的企业事实，准备首批成员并检查安全设置。清单可以随时中断并恢复。",
+    "stepsLabel": "企业初始化步骤",
+    "completed": "已确认",
+    "localProgress": "已确认 {{completed}} / {{total}} 项",
+    "localProgressHint": "确认进度只保存在此浏览器的当前企业范围内，不会改变或代表服务端企业开通状态。",
+    "steps": {
+      "profile": {
+        "title": "企业资料",
+        "description": "确认批准开通申请后生成的企业身份和角色事实。"
+      },
+      "members": {
+        "title": "首批成员",
+        "description": "扩展企业前，先核对已接受成员和待处理邀请。"
+      },
+      "security": {
+        "title": "安全检查",
+        "description": "检查 SSO 状态并进入服务端管理的安全控制。"
+      }
+    },
+    "actions": {
+      "confirm": "确认此步骤",
+      "confirmed": "已确认",
+      "openSettings": "打开企业设置",
+      "openMembers": "打开成员与邀请",
+      "openOverview": "打开企业概览",
+      "retry": "重试"
+    },
+    "errors": {
+      "organizationUnavailableTitle": "企业当前不可用",
+      "organizationUnavailableBody": "当前账号企业目录中没有找到该企业，成员关系可能已变化，或链接已经过期。"
+    },
+    "profile": {
+      "name": "企业名称",
+      "slug": "企业标识",
+      "organizationId": "企业 ID",
+      "role": "我的企业角色",
+      "serverFact": "身份和角色均来自服务端批准投影。其余资料和所有权控制请在企业设置中操作。"
+    },
+    "members": {
+      "title": "首批成员与邀请",
+      "description": "核对首批席位事实，准备邀请或分配成员时进入成员目录继续操作。",
+      "active": "活动席位",
+      "activeHint": "服务端授权上限：{{limit}}",
+      "pending": "待处理邀请",
+      "pendingHint": "仍等待回应的邀请",
+      "accepted": "已接受邀请",
+      "acceptedHint": "服务端记录为已接受的邀请",
+      "serverFact": "数量来自企业成员和邀请服务。邀请令牌及其他敏感材料不会存入此清单。",
+      "loading": "正在加载服务端成员事实",
+      "loadError": "成员或邀请事实加载失败，服务端现有状态未改变。"
+    },
+    "security": {
+      "title": "安全设置",
+      "description": "检查当前 SSO 能力和企业角色，然后进入设置处理域名、恢复和策略控制。",
+      "sso": "企业 SSO",
+      "enabled": "已启用",
+      "disabled": "未启用",
+      "ssoHint": "SSO Provider 和策略在企业设置中管理",
+      "role": "当前角色",
+      "roleHint": "可用安全操作由服务端权限控制",
+      "serverFact": "此步骤只记录浏览器内的本地确认。SSO、恢复和策略变更须在企业设置中由服务端完成并写入审计。"
     }
   },
   "wallet": {
