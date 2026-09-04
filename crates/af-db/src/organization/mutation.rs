@@ -740,7 +740,7 @@ pub(super) async fn lock_active_user(
 }
 
 /// 锁定活动用户并返回邮箱，供邀请接受事务做同一快照匹配。
-pub(super) async fn lock_active_user_model(
+pub(crate) async fn lock_active_user_model(
     transaction: &DatabaseTransaction,
     user_id: UserId,
 ) -> Result<users::Model, OrganizationRepositoryError> {

@@ -11,8 +11,8 @@ use af_domain::{
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
-    DbBackend, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
-    Set, TransactionTrait,
+    DbBackend, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, Set,
+    TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Expr, LockType},
 };
@@ -79,7 +79,7 @@ async fn decide_request_transaction(
     let model = lock_request_for_decision(transaction, write.request_key).await?;
     let current = to_record(model.clone())?;
     if current.status() != OrganizationProvisioningStatus::Pending {
-        verify_existing_decision(transaction, write, current).await?;
+        verify_existing_decision(transaction, write, &current).await?;
         return Ok(OrganizationProvisioningDecisionOutcome::Existing(current));
     }
     if model.version != write.expected_version {
@@ -310,7 +310,7 @@ fn entitlement_fingerprint(write: &OrganizationEntitlementWrite) -> String {
 async fn verify_existing_decision(
     transaction: &DatabaseTransaction,
     write: &OrganizationProvisioningDecisionWrite,
-    record: OrganizationProvisioningRecord,
+    record: &OrganizationProvisioningRecord,
 ) -> Result<(), OrganizationProvisioningRepositoryError> {
     let expected_status = match write.decision {
         OrganizationProvisioningDecisionKind::Approve => OrganizationProvisioningStatus::Approved,
@@ -349,7 +349,7 @@ async fn verify_existing_decision(
     } else {
         None
     };
-    let audit = audit_fact(write, &record, organization_key.as_deref())?;
+    let audit = audit_fact(write, record, organization_key.as_deref())?;
     let stored = platform_audit_logs::Entity::find()
         .filter(platform_audit_logs::Column::RequestId.eq(&audit.request_id))
         .filter(platform_audit_logs::Column::Route.eq(PLATFORM_AUDIT_ROUTE))
