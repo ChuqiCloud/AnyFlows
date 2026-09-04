@@ -343,6 +343,11 @@ async fn verify_existing_decision(
         if organization.created_by_user_id != record.applicant_user_id().get() {
             return Err(OrganizationProvisioningRepositoryError::Invariant);
         }
+        if organization.name != record.organization_name()
+            || organization.slug != record.organization_slug()
+        {
+            return Err(OrganizationProvisioningRepositoryError::Invariant);
+        }
         verify_provisioned_relations(transaction, organization_id, record.applicant_user_id())
             .await?;
         Some(organization.organization_key)

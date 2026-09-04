@@ -487,7 +487,7 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
                 "organization-provisioning-{index}@example.com"
             ))),
             password_hash: Set(None),
-            role: Set(i16::from(index == 1)),
+            role: Set(if index == 1 { 1 } else { 0 }),
             status: Set(1),
             default_group_id: Set(group.id),
             aff_code: Set(format!("organization-provisioning-aff-{index}")),
