@@ -101,16 +101,16 @@ struct DecisionRequest {
 
 #[derive(Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
-enum DecisionKindRequest {
+pub(super) enum DecisionKindRequest {
     Approve,
     Reject,
 }
 
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
-struct EntitlementRequest {
+pub(super) struct EntitlementRequest {
     #[schema(minimum = 1)]
-    seat_limit: i64,
+    pub(super) seat_limit: i64,
     #[schema(minimum = 1)]
     team_limit: i64,
     #[schema(minimum = 1)]
@@ -122,33 +122,33 @@ struct EntitlementRequest {
     audit_retention_days: i64,
     valid_from: i64,
     valid_until: i64,
-    grace_until: Option<i64>,
+    pub(super) grace_until: Option<i64>,
 }
 
 #[derive(Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
-struct ProvisioningResponse {
-    id: i64,
-    request_key: String,
-    idempotency_key: String,
-    applicant_user_id: i64,
-    organization_name: String,
-    organization_slug: String,
-    business_reason: String,
-    status: StatusResponse,
-    version: u64,
-    reviewer_user_id: Option<i64>,
-    decision_reason: Option<String>,
-    organization_id: Option<i64>,
-    created_at: u64,
-    updated_at: u64,
-    decided_at: Option<u64>,
-    replayed: bool,
+pub(super) struct ProvisioningResponse {
+    pub(super) id: i64,
+    pub(super) request_key: String,
+    pub(super) idempotency_key: String,
+    pub(super) applicant_user_id: i64,
+    pub(super) organization_name: String,
+    pub(super) organization_slug: String,
+    pub(super) business_reason: String,
+    pub(super) status: StatusResponse,
+    pub(super) version: u64,
+    pub(super) reviewer_user_id: Option<i64>,
+    pub(super) decision_reason: Option<String>,
+    pub(super) organization_id: Option<i64>,
+    pub(super) created_at: u64,
+    pub(super) updated_at: u64,
+    pub(super) decided_at: Option<u64>,
+    pub(super) replayed: bool,
 }
 
 #[derive(Clone, Copy, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
-enum StatusResponse {
+pub(super) enum StatusResponse {
     Pending,
     Approved,
     Rejected,
@@ -304,7 +304,7 @@ fn parse_request_key(value: &str) -> Result<OrganizationProvisioningRequestKey, 
         .map_err(|_| ManagementError::OrganizationProvisioningInvalidRequest)
 }
 
-fn parse_admin_query(
+pub(super) fn parse_admin_query(
     raw_query: Option<&str>,
 ) -> Result<OrganizationProvisioningListQuery, ManagementError> {
     let mut before = None;
