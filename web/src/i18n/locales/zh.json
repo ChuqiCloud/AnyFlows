@@ -47,6 +47,7 @@
     "organizationActivity": "企业日志与审计",
     "organizationOverview": "企业概览",
     "organizationProvisioning": "企业开通申请",
+    "organizationPlans": "企业套餐管理",
     "organizationMembers": "成员与团队",
     "organizationDepartments": "部门目录",
     "organizationWallet": "企业钱包",
@@ -5157,6 +5158,26 @@
         "wallet": "企业钱包余额仅用于企业调用和账本记录，充值不会自动购买或延长商业套餐。",
         "upgrade": "企业创建、套餐购买、续费和升级需要平台开通流程；当前页面不会伪造个人账号升级入口。"
       },
+      "planCatalog": {
+        "eyebrow": "企业套餐",
+        "title": "当前可售企业套餐",
+        "subtitle": "对比平台当前提供的不可变容量、能力、有效期和价格快照。",
+        "loading": "正在加载企业套餐目录",
+        "errorTitle": "无法加载企业套餐",
+        "errorBody": "平台套餐目录暂时不可用，现有企业授权不受影响。",
+        "empty": "当前账号暂时没有可售企业套餐，请联系平台管理员确认开通或支付配置。",
+        "minorUnit": "货币最小单位",
+        "seats": "{{count}} 个成员席位",
+        "teams": "{{count}} 个团队",
+        "keys": "{{count}} 个企业 Key",
+        "auditRetention": "审计保留 {{count}} 天",
+        "teamManagement": "团队管理",
+        "sso": "企业 SSO",
+        "customRoles": "自定义角色",
+        "validity": "有效期 {{count}} 天",
+        "enabled": "已包含",
+        "disabled": "未包含"
+      },
       "links": {
       "members": "成员与团队",
       "departments": "部门目录",
@@ -5681,6 +5702,25 @@
       "conflict": "申请已被并发更新，请刷新后按最新服务端版本审核。",
       "unavailable": "企业开通服务暂时不可用，请稍后重试。"
     }
+  },
+  "organizationPlans": {
+    "eyebrow": "企业商业化",
+    "title": "企业套餐管理",
+    "subtitle": "创建不可变的企业能力与价格快照；历史套餐只能停用，不能改价覆盖。",
+    "summary": { "loaded": "已加载 {{count}} 个套餐", "active": "可售 {{count}} 个" },
+    "actions": { "refresh": "刷新", "retry": "重试", "create": "新建套餐", "save": "保存套餐", "creating": "保存中…", "loadMore": "加载更多", "disable": "停用套餐", "cancel": "取消" },
+    "create": { "title": "新建企业套餐", "subtitle": "价格使用货币最小单位，创建后不可编辑；后续订单将引用这份快照。" },
+    "fields": {
+      "name": "套餐名称", "description": "说明", "provider": "支付 Provider", "currency": "币种", "amountMinor": "价格（最小单位）",
+      "seats": "成员席位", "teams": "团队数量", "keys": "企业 Key 上限", "auditRetention": "审计保留天数", "validity": "有效期天数", "capabilities": "高级能力",
+      "teamManagement": "团队管理", "sso": "企业 SSO", "customRolesUnavailable": "自定义角色（当前销售边界未开放）"
+    },
+    "columns": { "plan": "套餐", "capacity": "容量", "price": "价格快照", "validity": "有效期", "actions": "操作" },
+    "status": { "active": "可售", "disabled": "已停用" },
+    "values": { "capacity": "{{seats}} 席位 · {{teams}} 团队 · {{keys}} Key", "days": "{{count}} 天", "audit": "审计 {{count}} 天", "selected": "已选择" },
+    "empty": { "title": "暂无企业套餐", "body": "创建第一个企业套餐后，可售目录会展示服务端确认的价格快照。" },
+    "errors": { "loadTitle": "无法加载企业套餐", "loadBody": "平台套餐事实暂时不可用，请稍后重试。", "more": "下一页加载失败，请重试。", "create": "套餐参数无效或保存失败，请检查输入后重试。", "disable": "停用未完成，套餐版本可能已变化，请刷新后重试。" },
+    "disable": { "title": "停用企业套餐？", "body": "停用 {{name}} 后，它不会再出现在可售目录中；历史价格快照和已引用订单不会被修改。" }
   },
   "organizationOnboarding": {
     "title": "企业 Owner 初始化向导",

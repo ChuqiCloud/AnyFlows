@@ -703,6 +703,8 @@ pub(crate) enum ManagementErrorCodeSchema {
     OrganizationContractPriceIntervalConflict,
     OrganizationContractPriceConflict,
     OrganizationContractPriceTransitionInvalid,
+    OrganizationPlanNotFound,
+    OrganizationPlanConflict,
     OrganizationSsoProviderNotFound,
     OrganizationSsoProviderConflict,
     OrganizationSsoProviderTransitionInvalid,

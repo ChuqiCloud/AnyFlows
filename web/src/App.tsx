@@ -34,6 +34,7 @@ import { OrganizationMemberPage } from '@/features/organization-members/organiza
 import { OrganizationDepartmentPage } from '@/features/organization-departments/organization-department-page'
 import { OrganizationOverviewPage } from '@/features/organization-console/organization-overview-page'
 import { OrganizationOnboardingPage } from '@/features/organization-onboarding/organization-onboarding-page'
+import { OrganizationPlanManagementPage } from '@/features/organization-console/organization-plan-management-page'
 import { OrganizationProvisioningPage } from '@/features/organization-provisioning/organization-provisioning-page'
 import { OrganizationSettingsPage } from '@/features/organization-console/organization-settings-page'
 import { OrganizationServiceAccountPage } from '@/features/organization-service-accounts/organization-service-account-page'
@@ -197,6 +198,8 @@ function ManagementEntry({
                   ? 'organizationConsole.overview.title'
                 : view === 'organization-onboarding'
                   ? 'organizationOnboarding.title'
+                : view === 'organization-plans'
+                  ? 'organizationPlans.title'
                 : view === 'organization-provisioning'
                   ? 'organizationProvisioning.title'
                 : view === 'organization-settings'
@@ -280,6 +283,8 @@ function ManagementEntry({
                   ? <OrganizationOverviewPage />
                 : view === 'organization-onboarding'
                   ? <OrganizationOnboardingPage requestedOrganizationId={organizationId} />
+                : view === 'organization-plans'
+                  ? <OrganizationPlanManagementPage />
                 : view === 'organization-provisioning'
                   ? <OrganizationProvisioningPage admin={admin} />
                 : view === 'organization-settings'
@@ -319,6 +324,7 @@ function ManagementEntry({
     && view !== 'organization-departments'
     && view !== 'organization-overview'
     && view !== 'organization-onboarding'
+    && view !== 'organization-plans'
     && view !== 'organization-provisioning'
     && view !== 'organization-settings'
     && view !== 'organization-service-accounts'

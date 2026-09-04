@@ -27,6 +27,7 @@ import {
   OrganizationPageHeader,
   useOrganizationPageState,
 } from './organization-page-shell'
+import { OrganizationPlanCatalog } from './organization-plan-catalog'
 
 const WALLET_READ = 'organization.wallet.read'
 const BUDGETS_MANAGE = 'organization.budgets.manage'
@@ -184,6 +185,8 @@ function OrganizationOverviewWorkspace({
           </CardContent>
         </Card>
       </section>
+
+      <OrganizationPlanCatalog />
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label={t('organizationConsole.overview.metrics.label')}>
         {metrics.map((metric) => {

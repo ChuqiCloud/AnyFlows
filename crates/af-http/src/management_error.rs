@@ -91,6 +91,10 @@ pub(crate) enum ManagementError {
     OrganizationContractPriceConflict,
     /// 企业合同价已经关闭或不能再次关闭。
     OrganizationContractPriceTransitionInvalid,
+    /// 企业套餐不存在或不可见。
+    OrganizationPlanNotFound,
+    /// 企业套餐版本或不可变价格快照发生冲突。
+    OrganizationPlanConflict,
     OrganizationSsoProviderNotFound,
     OrganizationSsoProviderConflict,
     OrganizationSsoProviderTransitionInvalid,
@@ -605,6 +609,20 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "organization_contract_price_transition_invalid",
                     message: "Organization contract price transition invalid",
+                },
+            ),
+            Self::OrganizationPlanNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "organization_plan_not_found",
+                    message: "Organization plan not found",
+                },
+            ),
+            Self::OrganizationPlanConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_plan_conflict",
+                    message: "Organization plan conflict",
                 },
             ),
             Self::OrganizationSsoProviderNotFound => (

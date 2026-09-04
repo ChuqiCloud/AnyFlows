@@ -45,15 +45,15 @@ use crate::entity::{
     organization_credit_repayments, organization_credit_terms,
     organization_custom_role_permissions, organization_custom_roles,
     organization_department_memberships, organization_departments, organization_entitlements,
-    organization_invitations, organization_memberships, organization_provisioning_requests,
-    organization_scim_audit_logs, organization_scim_group_resources, organization_scim_tokens,
-    organization_scim_user_resources, organization_service_account_audit_logs,
-    organization_service_account_budget_bindings, organization_service_account_keys,
-    organization_service_accounts, organization_sso_domain_reverification_leases,
-    organization_sso_domains, organization_sso_identities,
-    organization_sso_login_transaction_cleanup_leases, organization_sso_login_transactions,
-    organization_sso_policies, organization_sso_providers, organization_teams,
-    organization_wallet_ledger_entries, organization_wallets, organizations,
+    organization_invitations, organization_memberships, organization_plan_prices,
+    organization_plans, organization_provisioning_requests, organization_scim_audit_logs,
+    organization_scim_group_resources, organization_scim_tokens, organization_scim_user_resources,
+    organization_service_account_audit_logs, organization_service_account_budget_bindings,
+    organization_service_account_keys, organization_service_accounts,
+    organization_sso_domain_reverification_leases, organization_sso_domains,
+    organization_sso_identities, organization_sso_login_transaction_cleanup_leases,
+    organization_sso_login_transactions, organization_sso_policies, organization_sso_providers,
+    organization_teams, organization_wallet_ledger_entries, organization_wallets, organizations,
     passkey_authentication_challenges, passkey_registration_challenges, passkeys, payment_settings,
     platform_audit_logs, playground_conversations, playground_shares, redemption_batches,
     redemption_codes, refund_manual_completions, refund_provider_events,
@@ -93,7 +93,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 130;
+const EXPECTED_MIGRATION_COUNT: usize = 131;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -112,7 +112,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 111] = [
+const CORE_TABLES: [&str; 113] = [
     "groups",
     "users",
     "passkeys",
@@ -174,6 +174,8 @@ const CORE_TABLES: [&str; 111] = [
     "debug_trace_snapshot_access_audits",
     "organizations",
     "organization_provisioning_requests",
+    "organization_plans",
+    "organization_plan_prices",
     "organization_teams",
     "organization_departments",
     "organization_department_memberships",
@@ -2213,7 +2215,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 71);
+    assert_eq!(pending_migrations.len(), 72);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -2497,6 +2499,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[70].name(),
         "m20260904_000130_create_organization_provisioning_requests"
+    );
+    assert_eq!(
+        pending_migrations[71].name(),
+        "m20260904_000131_create_organization_plan_catalog"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
@@ -4069,6 +4075,9 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         "organization_entitlements",
     )
     .await?;
+    assert_entity_columns::<organization_plans::Column>(&manager, "organization_plans").await?;
+    assert_entity_columns::<organization_plan_prices::Column>(&manager, "organization_plan_prices")
+        .await?;
     assert_entity_columns::<organization_sso_policies::Column>(
         &manager,
         "organization_sso_policies",
@@ -4372,6 +4381,13 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         ("subscription_plans", "uq_subscription_plans_plan_key"),
         ("subscription_plans", "idx_subscription_plans_status_id"),
         ("subscription_plans", "idx_subscription_plans_creator"),
+        ("organization_plans", "uq_organization_plans_plan_key"),
+        ("organization_plans", "idx_organization_plans_status_id"),
+        ("organization_plans", "idx_organization_plans_creator"),
+        (
+            "organization_plan_prices",
+            "uq_organization_plan_prices_plan",
+        ),
         (
             "subscription_plan_prices",
             "uq_subscription_plan_prices_plan",

@@ -1415,7 +1415,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'two_factor_required' | 'two_factor_invalid' | 'password_login_disabled' | 'turnstile_rejected' | 'turnstile_unavailable' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'site_settings_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'token_outcome_unknown' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_login_settings_conflict' | 'custom_oauth2_provider_not_found' | 'custom_oauth2_provider_conflict' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'organization_not_found' | 'organization_credit_invalid_request' | 'organization_credit_not_found' | 'organization_credit_interval_conflict' | 'organization_credit_conflict' | 'organization_credit_transition_invalid' | 'organization_approval_not_found' | 'organization_approval_conflict' | 'organization_approval_expired' | 'organization_contract_price_not_found' | 'organization_contract_price_interval_conflict' | 'organization_contract_price_conflict' | 'organization_contract_price_transition_invalid' | 'organization_sso_provider_not_found' | 'organization_sso_provider_conflict' | 'organization_sso_provider_transition_invalid' | 'organization_sso_identity_binding_rejected' | 'organization_sso_identity_binding_conflict' | 'organization_sso_recovery_rejected' | 'organization_sso_recovery_conflict' | 'organization_sso_recovery_unavailable' | 'organization_sso_domain_not_found' | 'organization_sso_domain_conflict' | 'organization_sso_domain_transition_invalid' | 'organization_sso_domain_verification_failed' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'refund_not_found' | 'refund_conflict' | 'refund_unavailable' | 'refund_auto_submit_failed' | 'refund_outcome_unknown' | 'topup_unavailable' | 'topup_provider_rejected' | 'topup_order_conflict' | 'topup_order_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'subscription_plan_not_found' | 'subscription_plan_disabled' | 'subscription_not_found' | 'subscription_transition_invalid' | 'subscription_in_use' | 'subscription_conflict' | 'subscription_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'two_factor_already_enabled' | 'two_factor_not_enabled' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'debug_trace_not_found' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_expression_invalid' | 'model_price_expression_preview_invalid' | 'model_price_expression_evaluation_failed' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'two_factor_required' | 'two_factor_invalid' | 'password_login_disabled' | 'turnstile_rejected' | 'turnstile_unavailable' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'site_settings_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'token_outcome_unknown' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_login_settings_conflict' | 'custom_oauth2_provider_not_found' | 'custom_oauth2_provider_conflict' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'organization_not_found' | 'organization_credit_invalid_request' | 'organization_credit_not_found' | 'organization_credit_interval_conflict' | 'organization_credit_conflict' | 'organization_credit_transition_invalid' | 'organization_approval_not_found' | 'organization_approval_conflict' | 'organization_approval_expired' | 'organization_contract_price_not_found' | 'organization_contract_price_interval_conflict' | 'organization_contract_price_conflict' | 'organization_contract_price_transition_invalid' | 'organization_plan_not_found' | 'organization_plan_conflict' | 'organization_sso_provider_not_found' | 'organization_sso_provider_conflict' | 'organization_sso_provider_transition_invalid' | 'organization_sso_identity_binding_rejected' | 'organization_sso_identity_binding_conflict' | 'organization_sso_recovery_rejected' | 'organization_sso_recovery_conflict' | 'organization_sso_recovery_unavailable' | 'organization_sso_domain_not_found' | 'organization_sso_domain_conflict' | 'organization_sso_domain_transition_invalid' | 'organization_sso_domain_verification_failed' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'refund_not_found' | 'refund_conflict' | 'refund_unavailable' | 'refund_auto_submit_failed' | 'refund_outcome_unknown' | 'topup_unavailable' | 'topup_provider_rejected' | 'topup_order_conflict' | 'topup_order_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'subscription_plan_not_found' | 'subscription_plan_disabled' | 'subscription_not_found' | 'subscription_transition_invalid' | 'subscription_in_use' | 'subscription_conflict' | 'subscription_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'two_factor_already_enabled' | 'two_factor_not_enabled' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'debug_trace_not_found' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_expression_invalid' | 'model_price_expression_preview_invalid' | 'model_price_expression_evaluation_failed' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
     message: string;
 };
 export type ModelCatalogBillingMode = 'per_token' | 'free';
@@ -1906,6 +1906,59 @@ export type OrganizationOwnershipTransferResponse = {
     previous_owner: OrganizationMembershipResponse;
     current_owner: OrganizationMembershipResponse;
 };
+export type OrganizationPlan = {
+    plan_id: string;
+    name: string;
+    description?: string | null;
+    status: OrganizationPlanStatus;
+    team_management_enabled: boolean;
+    sso_enabled: boolean;
+    custom_roles_enabled: boolean;
+    seat_limit: number;
+    team_limit: number;
+    organization_key_limit: number;
+    audit_retention_days: number;
+    validity_days: number;
+    price_provider: string;
+    price_currency: string;
+    price_amount_minor: number;
+    version: number;
+    created_by_user_id: number;
+    disabled_at?: number | null;
+    created_at: number;
+    updated_at: number;
+};
+export type OrganizationPlanCatalogResponse = {
+    plans: Array<OrganizationPlan>;
+    purchase_notice: string;
+};
+export type OrganizationPlanCreateRequest = {
+    name: string;
+    description?: string | null;
+    team_management_enabled: boolean;
+    sso_enabled: boolean;
+    custom_roles_enabled: boolean;
+    seat_limit: number;
+    team_limit: number;
+    organization_key_limit: number;
+    audit_retention_days: number;
+    validity_days: number;
+    price_provider: string;
+    price_currency: string;
+    price_amount_minor: number;
+};
+export type OrganizationPlanDisableRequest = {
+    expected_version: number;
+};
+export type OrganizationPlanListQuerySchema = {
+    before?: number | null;
+    limit?: number | null;
+};
+export type OrganizationPlanListResponse = {
+    plans: Array<OrganizationPlan>;
+    next_cursor?: number | null;
+};
+export type OrganizationPlanStatus = 'active' | 'disabled';
 export type OrganizationProvisioningCreateRequest = {
     idempotency_key: string;
     organization_name: string;
@@ -7746,6 +7799,79 @@ export type DecideOrganizationProvisioningRequestResponses = {
     202: OrganizationProvisioningRequest;
 };
 export type DecideOrganizationProvisioningRequestResponse = DecideOrganizationProvisioningRequestResponses[keyof DecideOrganizationProvisioningRequestResponses];
+export type ListAdminOrganizationPlansData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/admin/organization-plans';
+};
+export type ListAdminOrganizationPlansErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    503: ManagementError;
+};
+export type ListAdminOrganizationPlansError = ListAdminOrganizationPlansErrors[keyof ListAdminOrganizationPlansErrors];
+export type ListAdminOrganizationPlansResponses = {
+    200: OrganizationPlanListResponse;
+};
+export type ListAdminOrganizationPlansResponse = ListAdminOrganizationPlansResponses[keyof ListAdminOrganizationPlansResponses];
+export type CreateAdminOrganizationPlanData = {
+    body: OrganizationPlanCreateRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/organization-plans';
+};
+export type CreateAdminOrganizationPlanErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    503: ManagementError;
+};
+export type CreateAdminOrganizationPlanError = CreateAdminOrganizationPlanErrors[keyof CreateAdminOrganizationPlanErrors];
+export type CreateAdminOrganizationPlanResponses = {
+    201: OrganizationPlan;
+};
+export type CreateAdminOrganizationPlanResponse = CreateAdminOrganizationPlanResponses[keyof CreateAdminOrganizationPlanResponses];
+export type DisableAdminOrganizationPlanData = {
+    body: OrganizationPlanDisableRequest;
+    path: {
+        plan_id: string;
+    };
+    query?: never;
+    url: '/api/admin/organization-plans/{plan_id}/disable';
+};
+export type DisableAdminOrganizationPlanErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type DisableAdminOrganizationPlanError = DisableAdminOrganizationPlanErrors[keyof DisableAdminOrganizationPlanErrors];
+export type DisableAdminOrganizationPlanResponses = {
+    200: OrganizationPlan;
+};
+export type DisableAdminOrganizationPlanResponse = DisableAdminOrganizationPlanResponses[keyof DisableAdminOrganizationPlanResponses];
+export type GetOrganizationPlanCatalogData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/account/organization-plan-catalog';
+};
+export type GetOrganizationPlanCatalogErrors = {
+    401: ManagementError;
+    503: ManagementError;
+};
+export type GetOrganizationPlanCatalogError = GetOrganizationPlanCatalogErrors[keyof GetOrganizationPlanCatalogErrors];
+export type GetOrganizationPlanCatalogResponses = {
+    200: OrganizationPlanCatalogResponse;
+};
+export type GetOrganizationPlanCatalogResponse = GetOrganizationPlanCatalogResponses[keyof GetOrganizationPlanCatalogResponses];
 export type DiscoverOrganizationSsoData = {
     body: OrganizationSsoDiscoveryRequest;
     path?: never;
