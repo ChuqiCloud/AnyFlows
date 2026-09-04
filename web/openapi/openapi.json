@@ -19762,6 +19762,517 @@
         ]
       }
     },
+    "/api/account/organization-provisioning": {
+      "post": {
+        "tags": [
+          "企业开通"
+        ],
+        "operationId": "createOrganizationProvisioningRequest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationProvisioningCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationProvisioningRequest"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationProvisioningRequest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/account/organization-provisioning/active": {
+      "get": {
+        "tags": [
+          "企业开通"
+        ],
+        "operationId": "getActiveOrganizationProvisioningRequest",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationProvisioningRequest"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/account/organization-provisioning/{request_key}": {
+      "get": {
+        "tags": [
+          "企业开通"
+        ],
+        "operationId": "getOrganizationProvisioningRequest",
+        "parameters": [
+          {
+            "name": "request_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationProvisioningRequest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/organization-provisioning": {
+      "get": {
+        "tags": [
+          "企业开通"
+        ],
+        "operationId": "listAdminOrganizationProvisioningRequests",
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "maximum": 100,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/OrganizationProvisioningStatus"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationProvisioningRequestListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/organization-provisioning/{request_key}": {
+      "get": {
+        "tags": [
+          "企业开通"
+        ],
+        "operationId": "getAdminOrganizationProvisioningRequest",
+        "parameters": [
+          {
+            "name": "request_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationProvisioningRequest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/organization-provisioning/{request_key}/decision": {
+      "post": {
+        "tags": [
+          "企业开通"
+        ],
+        "operationId": "decideOrganizationProvisioningRequest",
+        "parameters": [
+          {
+            "name": "request_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationProvisioningDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationProvisioningRequest"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationProvisioningRequest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/auth/organization-sso/discovery": {
       "post": {
         "tags": [
@@ -26074,523 +26585,6 @@
           },
           "500": {
             "description": "服务内部错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/account/organization-provisioning": {
-      "post": {
-        "tags": [
-          "企业开通"
-        ],
-        "summary": "提交企业开通申请",
-        "operationId": "createOrganizationProvisioningRequest",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/OrganizationProvisioningCreateRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "幂等恢复已有申请",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OrganizationProvisioningRequest"
-                }
-              }
-            }
-          },
-          "201": {
-            "description": "申请已创建",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OrganizationProvisioningRequest"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "请求无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "会话无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "申请冲突",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "服务不可用",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/account/organization-provisioning/active": {
-      "get": {
-        "tags": [
-          "企业开通"
-        ],
-        "summary": "读取当前活动申请",
-        "operationId": "getActiveOrganizationProvisioningRequest",
-        "responses": {
-          "200": {
-            "description": "活动申请",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OrganizationProvisioningRequest"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "会话无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "没有活动申请",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "服务不可用",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/account/organization-provisioning/{request_key}": {
-      "get": {
-        "tags": [
-          "企业开通"
-        ],
-        "summary": "读取本人企业开通申请",
-        "operationId": "getOrganizationProvisioningRequest",
-        "parameters": [
-          {
-            "name": "request_key",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "申请事实",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OrganizationProvisioningRequest"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "请求无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "会话无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "申请不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "服务不可用",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/admin/organization-provisioning": {
-      "get": {
-        "tags": [
-          "企业开通"
-        ],
-        "summary": "列出企业开通申请",
-        "operationId": "listAdminOrganizationProvisioningRequests",
-        "parameters": [
-          {
-            "name": "before",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "minimum": 1
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "minimum": 1,
-              "maximum": 100
-            }
-          },
-          {
-            "name": "status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/OrganizationProvisioningStatus"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "申请列表",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OrganizationProvisioningRequestListResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "请求无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "会话无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "需要平台管理员",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "服务不可用",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/admin/organization-provisioning/{request_key}": {
-      "get": {
-        "tags": [
-          "企业开通"
-        ],
-        "summary": "读取企业开通申请详情",
-        "operationId": "getAdminOrganizationProvisioningRequest",
-        "parameters": [
-          {
-            "name": "request_key",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "申请事实",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OrganizationProvisioningRequest"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "请求无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "会话无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "需要平台管理员",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "申请不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "服务不可用",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/admin/organization-provisioning/{request_key}/decision": {
-      "post": {
-        "tags": [
-          "企业开通"
-        ],
-        "summary": "审批企业开通申请",
-        "operationId": "decideOrganizationProvisioningRequest",
-        "parameters": [
-          {
-            "name": "request_key",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/OrganizationProvisioningDecisionRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "幂等恢复审批结果",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OrganizationProvisioningRequest"
-                }
-              }
-            }
-          },
-          "202": {
-            "description": "审批已应用",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OrganizationProvisioningRequest"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "请求无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "会话无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "需要平台管理员",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "申请不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "版本冲突",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "服务不可用",
             "content": {
               "application/json": {
                 "schema": {
@@ -38087,6 +38081,275 @@
         },
         "additionalProperties": false
       },
+      "OrganizationProvisioningCreateRequest": {
+        "type": "object",
+        "required": [
+          "idempotency_key",
+          "organization_name",
+          "organization_slug",
+          "business_reason"
+        ],
+        "properties": {
+          "idempotency_key": {
+            "type": "string"
+          },
+          "organization_name": {
+            "type": "string"
+          },
+          "organization_slug": {
+            "type": "string"
+          },
+          "business_reason": {
+            "type": "string"
+          }
+        }
+      },
+      "OrganizationProvisioningDecisionKind": {
+        "type": "string",
+        "enum": [
+          "approve",
+          "reject"
+        ]
+      },
+      "OrganizationProvisioningDecisionRequest": {
+        "type": "object",
+        "required": [
+          "expected_version",
+          "decision"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "decision": {
+            "$ref": "#/components/schemas/OrganizationProvisioningDecisionKind"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entitlement": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OrganizationProvisioningEntitlement"
+              }
+            ]
+          }
+        }
+      },
+      "OrganizationProvisioningEntitlement": {
+        "type": "object",
+        "required": [
+          "seat_limit",
+          "team_limit",
+          "organization_key_limit",
+          "team_management_enabled",
+          "sso_enabled",
+          "custom_roles_enabled",
+          "audit_retention_days",
+          "valid_from",
+          "valid_until"
+        ],
+        "properties": {
+          "seat_limit": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "team_limit": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "organization_key_limit": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "team_management_enabled": {
+            "type": "boolean"
+          },
+          "sso_enabled": {
+            "type": "boolean"
+          },
+          "custom_roles_enabled": {
+            "type": "boolean"
+          },
+          "audit_retention_days": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "valid_from": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "valid_until": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "grace_until": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "OrganizationProvisioningListQuerySchema": {
+        "type": "object",
+        "properties": {
+          "before": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OrganizationProvisioningStatus"
+              }
+            ]
+          }
+        }
+      },
+      "OrganizationProvisioningRequest": {
+        "type": "object",
+        "required": [
+          "id",
+          "request_key",
+          "idempotency_key",
+          "applicant_user_id",
+          "organization_name",
+          "organization_slug",
+          "business_reason",
+          "status",
+          "version",
+          "created_at",
+          "updated_at",
+          "replayed"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "request_key": {
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "applicant_user_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "organization_name": {
+            "type": "string"
+          },
+          "organization_slug": {
+            "type": "string"
+          },
+          "business_reason": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OrganizationProvisioningStatus"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "reviewer_user_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "decision_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "organization_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "decided_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "OrganizationProvisioningRequestListResponse": {
+        "type": "object",
+        "required": [
+          "requests"
+        ],
+        "properties": {
+          "requests": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrganizationProvisioningRequest"
+            }
+          },
+          "next_before": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "OrganizationProvisioningStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "approved",
+          "rejected"
+        ]
+      },
       "OrganizationScimAuditLogListResponse": {
         "type": "object",
         "required": [
@@ -43886,266 +44149,6 @@
           "expired",
           "failed"
         ]
-      },
-      "OrganizationProvisioningStatus": {
-        "type": "string",
-        "enum": [
-          "pending",
-          "approved",
-          "rejected"
-        ]
-      },
-      "OrganizationProvisioningDecisionKind": {
-        "type": "string",
-        "enum": [
-          "approve",
-          "reject"
-        ]
-      },
-      "OrganizationProvisioningCreateRequest": {
-        "type": "object",
-        "required": [
-          "idempotency_key",
-          "organization_name",
-          "organization_slug",
-          "business_reason"
-        ],
-        "properties": {
-          "idempotency_key": {
-            "type": "string",
-            "minLength": 32,
-            "maxLength": 32,
-            "pattern": "^[0-9a-f]{32}$"
-          },
-          "organization_name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "organization_slug": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64,
-            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
-          },
-          "business_reason": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 2000
-          }
-        },
-        "additionalProperties": false
-      },
-      "OrganizationProvisioningEntitlement": {
-        "type": "object",
-        "required": [
-          "seat_limit",
-          "team_limit",
-          "organization_key_limit",
-          "team_management_enabled",
-          "sso_enabled",
-          "custom_roles_enabled",
-          "audit_retention_days",
-          "valid_from",
-          "valid_until",
-          "grace_until"
-        ],
-        "properties": {
-          "seat_limit": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          },
-          "team_limit": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          },
-          "organization_key_limit": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          },
-          "team_management_enabled": {
-            "type": "boolean"
-          },
-          "sso_enabled": {
-            "type": "boolean"
-          },
-          "custom_roles_enabled": {
-            "type": "boolean"
-          },
-          "audit_retention_days": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          },
-          "valid_from": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "valid_until": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "grace_until": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64"
-          }
-        },
-        "additionalProperties": false
-      },
-      "OrganizationProvisioningDecisionRequest": {
-        "type": "object",
-        "required": [
-          "expected_version",
-          "decision"
-        ],
-        "properties": {
-          "expected_version": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          },
-          "decision": {
-            "$ref": "#/components/schemas/OrganizationProvisioningDecisionKind"
-          },
-          "reason": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "maxLength": 2000
-          },
-          "entitlement": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/OrganizationProvisioningEntitlement"
-              }
-            ]
-          }
-        },
-        "additionalProperties": false
-      },
-      "OrganizationProvisioningRequest": {
-        "type": "object",
-        "required": [
-          "id",
-          "request_key",
-          "idempotency_key",
-          "applicant_user_id",
-          "organization_name",
-          "organization_slug",
-          "business_reason",
-          "status",
-          "version",
-          "replayed",
-          "created_at",
-          "updated_at"
-        ],
-        "properties": {
-          "id": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          },
-          "request_key": {
-            "type": "string"
-          },
-          "idempotency_key": {
-            "type": "string"
-          },
-          "applicant_user_id": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          },
-          "organization_name": {
-            "type": "string"
-          },
-          "organization_slug": {
-            "type": "string"
-          },
-          "business_reason": {
-            "type": "string"
-          },
-          "status": {
-            "$ref": "#/components/schemas/OrganizationProvisioningStatus"
-          },
-          "version": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          },
-          "reviewer_user_id": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64"
-          },
-          "decision_reason": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "organization_id": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64"
-          },
-          "created_at": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "updated_at": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "decided_at": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64"
-          },
-          "replayed": {
-            "type": "boolean"
-          }
-        },
-        "additionalProperties": false
-      },
-      "OrganizationProvisioningRequestListResponse": {
-        "type": "object",
-        "required": [
-          "requests",
-          "next_before"
-        ],
-        "properties": {
-          "requests": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/OrganizationProvisioningRequest"
-            }
-          },
-          "next_before": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64"
-          }
-        },
-        "additionalProperties": false
       }
     },
     "securitySchemes": {
@@ -44262,6 +44265,9 @@
     },
     {
       "name": "企业审批"
+    },
+    {
+      "name": "企业开通"
     },
     {
       "name": "企业审批通知"

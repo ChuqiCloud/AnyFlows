@@ -2325,6 +2325,68 @@ export const getOrganizationCreditAllocation = <ThrowOnError extends boolean = t
     url: '/api/organizations/{organization_id}/credit-allocations/{allocation_id}',
     ...options
 });
+export const createOrganizationProvisioningRequest = <ThrowOnError extends boolean = true>(options: Options<CreateOrganizationProvisioningRequestData, ThrowOnError>): RequestResult<CreateOrganizationProvisioningRequestResponses, CreateOrganizationProvisioningRequestErrors, ThrowOnError> => (options.client ?? client).post<CreateOrganizationProvisioningRequestResponses, CreateOrganizationProvisioningRequestErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/account/organization-provisioning',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const getActiveOrganizationProvisioningRequest = <ThrowOnError extends boolean = true>(options?: Options<GetActiveOrganizationProvisioningRequestData, ThrowOnError>): RequestResult<GetActiveOrganizationProvisioningRequestResponses, GetActiveOrganizationProvisioningRequestErrors, ThrowOnError> => (options?.client ?? client).get<GetActiveOrganizationProvisioningRequestResponses, GetActiveOrganizationProvisioningRequestErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/account/organization-provisioning/active',
+    ...options
+});
+export const getOrganizationProvisioningRequest = <ThrowOnError extends boolean = true>(options: Options<GetOrganizationProvisioningRequestData, ThrowOnError>): RequestResult<GetOrganizationProvisioningRequestResponses, GetOrganizationProvisioningRequestErrors, ThrowOnError> => (options.client ?? client).get<GetOrganizationProvisioningRequestResponses, GetOrganizationProvisioningRequestErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/account/organization-provisioning/{request_key}',
+    ...options
+});
+export const listAdminOrganizationProvisioningRequests = <ThrowOnError extends boolean = true>(options?: Options<ListAdminOrganizationProvisioningRequestsData, ThrowOnError>): RequestResult<ListAdminOrganizationProvisioningRequestsResponses, ListAdminOrganizationProvisioningRequestsErrors, ThrowOnError> => (options?.client ?? client).get<ListAdminOrganizationProvisioningRequestsResponses, ListAdminOrganizationProvisioningRequestsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/organization-provisioning',
+    ...options
+});
+export const getAdminOrganizationProvisioningRequest = <ThrowOnError extends boolean = true>(options: Options<GetAdminOrganizationProvisioningRequestData, ThrowOnError>): RequestResult<GetAdminOrganizationProvisioningRequestResponses, GetAdminOrganizationProvisioningRequestErrors, ThrowOnError> => (options.client ?? client).get<GetAdminOrganizationProvisioningRequestResponses, GetAdminOrganizationProvisioningRequestErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/organization-provisioning/{request_key}',
+    ...options
+});
+export const decideOrganizationProvisioningRequest = <ThrowOnError extends boolean = true>(options: Options<DecideOrganizationProvisioningRequestData, ThrowOnError>): RequestResult<DecideOrganizationProvisioningRequestResponses, DecideOrganizationProvisioningRequestErrors, ThrowOnError> => (options.client ?? client).post<DecideOrganizationProvisioningRequestResponses, DecideOrganizationProvisioningRequestErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/organization-provisioning/{request_key}/decision',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 export const discoverOrganizationSso = <ThrowOnError extends boolean = true>(options: Options<DiscoverOrganizationSsoData, ThrowOnError>): RequestResult<DiscoverOrganizationSsoResponses, DiscoverOrganizationSsoErrors, ThrowOnError> => (options.client ?? client).post<DiscoverOrganizationSsoResponses, DiscoverOrganizationSsoErrors, ThrowOnError>({
     url: '/api/auth/organization-sso/discovery',
     ...options,
@@ -2954,68 +3016,6 @@ export const updateAdminGoogleOAuthLoginSettings = <ThrowOnError extends boolean
             type: 'http'
         }],
     url: '/api/admin/authentication-settings/oauth/google',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-export const createOrganizationProvisioningRequest = <ThrowOnError extends boolean = true>(options: Options<CreateOrganizationProvisioningRequestData, ThrowOnError>): RequestResult<CreateOrganizationProvisioningRequestResponses, CreateOrganizationProvisioningRequestErrors, ThrowOnError> => (options.client ?? client).post<CreateOrganizationProvisioningRequestResponses, CreateOrganizationProvisioningRequestErrors, ThrowOnError>({
-    security: [{
-            key: 'bearerAuth',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/api/account/organization-provisioning',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-export const getActiveOrganizationProvisioningRequest = <ThrowOnError extends boolean = true>(options?: Options<GetActiveOrganizationProvisioningRequestData, ThrowOnError>): RequestResult<GetActiveOrganizationProvisioningRequestResponses, GetActiveOrganizationProvisioningRequestErrors, ThrowOnError> => (options?.client ?? client).get<GetActiveOrganizationProvisioningRequestResponses, GetActiveOrganizationProvisioningRequestErrors, ThrowOnError>({
-    security: [{
-            key: 'bearerAuth',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/api/account/organization-provisioning/active',
-    ...options
-});
-export const getOrganizationProvisioningRequest = <ThrowOnError extends boolean = true>(options: Options<GetOrganizationProvisioningRequestData, ThrowOnError>): RequestResult<GetOrganizationProvisioningRequestResponses, GetOrganizationProvisioningRequestErrors, ThrowOnError> => (options.client ?? client).get<GetOrganizationProvisioningRequestResponses, GetOrganizationProvisioningRequestErrors, ThrowOnError>({
-    security: [{
-            key: 'bearerAuth',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/api/account/organization-provisioning/{request_key}',
-    ...options
-});
-export const listAdminOrganizationProvisioningRequests = <ThrowOnError extends boolean = true>(options?: Options<ListAdminOrganizationProvisioningRequestsData, ThrowOnError>): RequestResult<ListAdminOrganizationProvisioningRequestsResponses, ListAdminOrganizationProvisioningRequestsErrors, ThrowOnError> => (options?.client ?? client).get<ListAdminOrganizationProvisioningRequestsResponses, ListAdminOrganizationProvisioningRequestsErrors, ThrowOnError>({
-    security: [{
-            key: 'bearerAuth',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/api/admin/organization-provisioning',
-    ...options
-});
-export const getAdminOrganizationProvisioningRequest = <ThrowOnError extends boolean = true>(options: Options<GetAdminOrganizationProvisioningRequestData, ThrowOnError>): RequestResult<GetAdminOrganizationProvisioningRequestResponses, GetAdminOrganizationProvisioningRequestErrors, ThrowOnError> => (options.client ?? client).get<GetAdminOrganizationProvisioningRequestResponses, GetAdminOrganizationProvisioningRequestErrors, ThrowOnError>({
-    security: [{
-            key: 'bearerAuth',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/api/admin/organization-provisioning/{request_key}',
-    ...options
-});
-export const decideOrganizationProvisioningRequest = <ThrowOnError extends boolean = true>(options: Options<DecideOrganizationProvisioningRequestData, ThrowOnError>): RequestResult<DecideOrganizationProvisioningRequestResponses, DecideOrganizationProvisioningRequestErrors, ThrowOnError> => (options.client ?? client).post<DecideOrganizationProvisioningRequestResponses, DecideOrganizationProvisioningRequestErrors, ThrowOnError>({
-    security: [{
-            key: 'bearerAuth',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/api/admin/organization-provisioning/{request_key}/decision',
     ...options,
     headers: {
         'Content-Type': 'application/json',

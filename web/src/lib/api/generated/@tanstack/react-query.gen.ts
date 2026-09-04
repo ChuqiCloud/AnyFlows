@@ -3912,6 +3912,109 @@ export const getOrganizationCreditAllocationOptions = (options: Options<GetOrgan
     },
     queryKey: getOrganizationCreditAllocationQueryKey(options)
 });
+export const createOrganizationProvisioningRequestMutation = (options?: Partial<Options<CreateOrganizationProvisioningRequestData>>): UseMutationOptions<CreateOrganizationProvisioningRequestResponse, CreateOrganizationProvisioningRequestError, Options<CreateOrganizationProvisioningRequestData>> => {
+    const mutationOptions: UseMutationOptions<CreateOrganizationProvisioningRequestResponse, CreateOrganizationProvisioningRequestError, Options<CreateOrganizationProvisioningRequestData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await createOrganizationProvisioningRequest({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+export const getActiveOrganizationProvisioningRequestQueryKey = (options?: Options<GetActiveOrganizationProvisioningRequestData>) => createQueryKey('getActiveOrganizationProvisioningRequest', options);
+export const getActiveOrganizationProvisioningRequestOptions = (options?: Options<GetActiveOrganizationProvisioningRequestData>) => queryOptions<GetActiveOrganizationProvisioningRequestResponse, GetActiveOrganizationProvisioningRequestError, GetActiveOrganizationProvisioningRequestResponse, ReturnType<typeof getActiveOrganizationProvisioningRequestQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await getActiveOrganizationProvisioningRequest({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: getActiveOrganizationProvisioningRequestQueryKey(options)
+});
+export const getOrganizationProvisioningRequestQueryKey = (options: Options<GetOrganizationProvisioningRequestData>) => createQueryKey('getOrganizationProvisioningRequest', options);
+export const getOrganizationProvisioningRequestOptions = (options: Options<GetOrganizationProvisioningRequestData>) => queryOptions<GetOrganizationProvisioningRequestResponse, GetOrganizationProvisioningRequestError, GetOrganizationProvisioningRequestResponse, ReturnType<typeof getOrganizationProvisioningRequestQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await getOrganizationProvisioningRequest({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: getOrganizationProvisioningRequestQueryKey(options)
+});
+export const listAdminOrganizationProvisioningRequestsQueryKey = (options?: Options<ListAdminOrganizationProvisioningRequestsData>) => createQueryKey('listAdminOrganizationProvisioningRequests', options);
+export const listAdminOrganizationProvisioningRequestsOptions = (options?: Options<ListAdminOrganizationProvisioningRequestsData>) => queryOptions<ListAdminOrganizationProvisioningRequestsResponse, ListAdminOrganizationProvisioningRequestsError, ListAdminOrganizationProvisioningRequestsResponse, ReturnType<typeof listAdminOrganizationProvisioningRequestsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await listAdminOrganizationProvisioningRequests({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: listAdminOrganizationProvisioningRequestsQueryKey(options)
+});
+export const listAdminOrganizationProvisioningRequestsInfiniteQueryKey = (options?: Options<ListAdminOrganizationProvisioningRequestsData>): QueryKey<Options<ListAdminOrganizationProvisioningRequestsData>> => createQueryKey('listAdminOrganizationProvisioningRequests', options, true);
+export const listAdminOrganizationProvisioningRequestsInfiniteOptions = (options?: Options<ListAdminOrganizationProvisioningRequestsData>) => {
+    const opts = infiniteQueryOptions<ListAdminOrganizationProvisioningRequestsResponse, ListAdminOrganizationProvisioningRequestsError, InfiniteData<ListAdminOrganizationProvisioningRequestsResponse>, QueryKey<Options<ListAdminOrganizationProvisioningRequestsData>>, number | Pick<QueryKey<Options<ListAdminOrganizationProvisioningRequestsData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
+    // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
+    {
+        queryFn: async ({ pageParam, queryKey, signal }) => {
+            // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
+            const page: Pick<QueryKey<Options<ListAdminOrganizationProvisioningRequestsData>>[0], 'body' | 'headers' | 'path' | 'query'> = typeof pageParam === 'object' ? pageParam : {
+                query: {
+                    before: pageParam
+                }
+            };
+            const params = createInfiniteParams(queryKey, page);
+            const { data } = await listAdminOrganizationProvisioningRequests({
+                ...options,
+                ...params,
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: listAdminOrganizationProvisioningRequestsInfiniteQueryKey(options)
+    });
+    return opts as Omit<typeof opts, 'initialData'>;
+};
+export const getAdminOrganizationProvisioningRequestQueryKey = (options: Options<GetAdminOrganizationProvisioningRequestData>) => createQueryKey('getAdminOrganizationProvisioningRequest', options);
+export const getAdminOrganizationProvisioningRequestOptions = (options: Options<GetAdminOrganizationProvisioningRequestData>) => queryOptions<GetAdminOrganizationProvisioningRequestResponse, GetAdminOrganizationProvisioningRequestError, GetAdminOrganizationProvisioningRequestResponse, ReturnType<typeof getAdminOrganizationProvisioningRequestQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await getAdminOrganizationProvisioningRequest({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: getAdminOrganizationProvisioningRequestQueryKey(options)
+});
+export const decideOrganizationProvisioningRequestMutation = (options?: Partial<Options<DecideOrganizationProvisioningRequestData>>): UseMutationOptions<DecideOrganizationProvisioningRequestResponse, DecideOrganizationProvisioningRequestError, Options<DecideOrganizationProvisioningRequestData>> => {
+    const mutationOptions: UseMutationOptions<DecideOrganizationProvisioningRequestResponse, DecideOrganizationProvisioningRequestError, Options<DecideOrganizationProvisioningRequestData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await decideOrganizationProvisioningRequest({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
 export const discoverOrganizationSsoMutation = (options?: Partial<Options<DiscoverOrganizationSsoData>>): UseMutationOptions<DiscoverOrganizationSsoResponse, DiscoverOrganizationSsoError, Options<DiscoverOrganizationSsoData>> => {
     const mutationOptions: UseMutationOptions<DiscoverOrganizationSsoResponse, DiscoverOrganizationSsoError, Options<DiscoverOrganizationSsoData>> = {
         mutationFn: async (fnOptions) => {
@@ -5139,109 +5242,6 @@ export const updateAdminGoogleOAuthLoginSettingsMutation = (options?: Partial<Op
     const mutationOptions: UseMutationOptions<UpdateAdminGoogleOAuthLoginSettingsResponse, UpdateAdminGoogleOAuthLoginSettingsError, Options<UpdateAdminGoogleOAuthLoginSettingsData>> = {
         mutationFn: async (fnOptions) => {
             const { data } = await updateAdminGoogleOAuthLoginSettings({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
-export const createOrganizationProvisioningRequestMutation = (options?: Partial<Options<CreateOrganizationProvisioningRequestData>>): UseMutationOptions<CreateOrganizationProvisioningRequestResponse, CreateOrganizationProvisioningRequestError, Options<CreateOrganizationProvisioningRequestData>> => {
-    const mutationOptions: UseMutationOptions<CreateOrganizationProvisioningRequestResponse, CreateOrganizationProvisioningRequestError, Options<CreateOrganizationProvisioningRequestData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await createOrganizationProvisioningRequest({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
-export const getActiveOrganizationProvisioningRequestQueryKey = (options?: Options<GetActiveOrganizationProvisioningRequestData>) => createQueryKey('getActiveOrganizationProvisioningRequest', options);
-export const getActiveOrganizationProvisioningRequestOptions = (options?: Options<GetActiveOrganizationProvisioningRequestData>) => queryOptions<GetActiveOrganizationProvisioningRequestResponse, GetActiveOrganizationProvisioningRequestError, GetActiveOrganizationProvisioningRequestResponse, ReturnType<typeof getActiveOrganizationProvisioningRequestQueryKey>>({
-    queryFn: async ({ queryKey, signal }) => {
-        const { data } = await getActiveOrganizationProvisioningRequest({
-            ...options,
-            ...queryKey[0],
-            signal,
-            throwOnError: true
-        });
-        return data;
-    },
-    queryKey: getActiveOrganizationProvisioningRequestQueryKey(options)
-});
-export const getOrganizationProvisioningRequestQueryKey = (options: Options<GetOrganizationProvisioningRequestData>) => createQueryKey('getOrganizationProvisioningRequest', options);
-export const getOrganizationProvisioningRequestOptions = (options: Options<GetOrganizationProvisioningRequestData>) => queryOptions<GetOrganizationProvisioningRequestResponse, GetOrganizationProvisioningRequestError, GetOrganizationProvisioningRequestResponse, ReturnType<typeof getOrganizationProvisioningRequestQueryKey>>({
-    queryFn: async ({ queryKey, signal }) => {
-        const { data } = await getOrganizationProvisioningRequest({
-            ...options,
-            ...queryKey[0],
-            signal,
-            throwOnError: true
-        });
-        return data;
-    },
-    queryKey: getOrganizationProvisioningRequestQueryKey(options)
-});
-export const listAdminOrganizationProvisioningRequestsQueryKey = (options?: Options<ListAdminOrganizationProvisioningRequestsData>) => createQueryKey('listAdminOrganizationProvisioningRequests', options);
-export const listAdminOrganizationProvisioningRequestsOptions = (options?: Options<ListAdminOrganizationProvisioningRequestsData>) => queryOptions<ListAdminOrganizationProvisioningRequestsResponse, ListAdminOrganizationProvisioningRequestsError, ListAdminOrganizationProvisioningRequestsResponse, ReturnType<typeof listAdminOrganizationProvisioningRequestsQueryKey>>({
-    queryFn: async ({ queryKey, signal }) => {
-        const { data } = await listAdminOrganizationProvisioningRequests({
-            ...options,
-            ...queryKey[0],
-            signal,
-            throwOnError: true
-        });
-        return data;
-    },
-    queryKey: listAdminOrganizationProvisioningRequestsQueryKey(options)
-});
-export const listAdminOrganizationProvisioningRequestsInfiniteQueryKey = (options?: Options<ListAdminOrganizationProvisioningRequestsData>): QueryKey<Options<ListAdminOrganizationProvisioningRequestsData>> => createQueryKey('listAdminOrganizationProvisioningRequests', options, true);
-export const listAdminOrganizationProvisioningRequestsInfiniteOptions = (options?: Options<ListAdminOrganizationProvisioningRequestsData>) => {
-    const opts = infiniteQueryOptions<ListAdminOrganizationProvisioningRequestsResponse, ListAdminOrganizationProvisioningRequestsError, InfiniteData<ListAdminOrganizationProvisioningRequestsResponse>, QueryKey<Options<ListAdminOrganizationProvisioningRequestsData>>, number | Pick<QueryKey<Options<ListAdminOrganizationProvisioningRequestsData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
-    // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
-    {
-        queryFn: async ({ pageParam, queryKey, signal }) => {
-            // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
-            const page: Pick<QueryKey<Options<ListAdminOrganizationProvisioningRequestsData>>[0], 'body' | 'headers' | 'path' | 'query'> = typeof pageParam === 'object' ? pageParam : {
-                query: {
-                    before: pageParam
-                }
-            };
-            const params = createInfiniteParams(queryKey, page);
-            const { data } = await listAdminOrganizationProvisioningRequests({
-                ...options,
-                ...params,
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: listAdminOrganizationProvisioningRequestsInfiniteQueryKey(options)
-    });
-    return opts as Omit<typeof opts, 'initialData'>;
-};
-export const getAdminOrganizationProvisioningRequestQueryKey = (options: Options<GetAdminOrganizationProvisioningRequestData>) => createQueryKey('getAdminOrganizationProvisioningRequest', options);
-export const getAdminOrganizationProvisioningRequestOptions = (options: Options<GetAdminOrganizationProvisioningRequestData>) => queryOptions<GetAdminOrganizationProvisioningRequestResponse, GetAdminOrganizationProvisioningRequestError, GetAdminOrganizationProvisioningRequestResponse, ReturnType<typeof getAdminOrganizationProvisioningRequestQueryKey>>({
-    queryFn: async ({ queryKey, signal }) => {
-        const { data } = await getAdminOrganizationProvisioningRequest({
-            ...options,
-            ...queryKey[0],
-            signal,
-            throwOnError: true
-        });
-        return data;
-    },
-    queryKey: getAdminOrganizationProvisioningRequestQueryKey(options)
-});
-export const decideOrganizationProvisioningRequestMutation = (options?: Partial<Options<DecideOrganizationProvisioningRequestData>>): UseMutationOptions<DecideOrganizationProvisioningRequestResponse, DecideOrganizationProvisioningRequestError, Options<DecideOrganizationProvisioningRequestData>> => {
-    const mutationOptions: UseMutationOptions<DecideOrganizationProvisioningRequestResponse, DecideOrganizationProvisioningRequestError, Options<DecideOrganizationProvisioningRequestData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await decideOrganizationProvisioningRequest({
                 ...options,
                 ...fnOptions,
                 throwOnError: true
