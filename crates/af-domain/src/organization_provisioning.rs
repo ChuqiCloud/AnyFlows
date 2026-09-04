@@ -276,7 +276,7 @@ impl OrganizationProvisioningRecord {
     /// 判断持久化事实是否与一次创建重试完全一致。
     #[must_use]
     pub fn matches_create(&self, request: &OrganizationProvisioningRequest) -> bool {
-        self.status == OrganizationProvisioningStatus::Pending && self.request == *request
+        self.request == *request
     }
 
     #[must_use]

@@ -2,7 +2,8 @@ use std::{error::Error, time::Duration};
 
 use af_domain::{
     OrganizationProvisioningCreateOutcome, OrganizationProvisioningIdempotencyKey,
-    OrganizationProvisioningRequest, OrganizationProvisioningRequestKey, UserId,
+    OrganizationProvisioningRequest, OrganizationProvisioningRequestKey,
+    OrganizationProvisioningStatus, UserId,
 };
 use sea_orm::{
     ActiveModelTrait, EntityTrait, IntoActiveModel, PaginatorTrait, Set,
@@ -146,6 +147,45 @@ async fn active_user_slug_and_idempotency_conflicts_are_distinct() -> Result<(),
             .await,
         Err(OrganizationProvisioningRepositoryError::ApplicantUnavailable)
     );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn create_retry_recovers_the_same_request_after_it_reaches_a_terminal_state()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let request = request(
+        45,
+        fixture.users[0],
+        "Terminal",
+        "terminal",
+        "private reason",
+    )?;
+    fixture.repository.create_request(request.clone()).await?;
+
+    let model = organization_provisioning_requests::Entity::find()
+        .one(fixture.pool.connection())
+        .await?
+        .expect("申请事实必须存在");
+    let decided_at =
+        TimeDateTimeWithTimeZone::from_unix_timestamp(i64::try_from(request.created_at() + 1)?)?;
+    let mut terminal = model.into_active_model();
+    terminal.status = Set(OrganizationProvisioningStatus::Rejected.code());
+    terminal.active_slot = Set(None);
+    terminal.version = Set(2);
+    terminal.reviewer_user_id = Set(Some(fixture.users[1].get()));
+    terminal.decision_reason = Set(Some(SensitiveString::from("manual rejection")));
+    terminal.updated_at = Set(decided_at);
+    terminal.decided_at = Set(Some(decided_at));
+    terminal.update(fixture.pool.connection()).await?;
+
+    let existing = fixture.repository.create_request(request).await?;
+    let OrganizationProvisioningCreateOutcome::Existing(existing) = existing else {
+        panic!("原创建命令重放必须恢复已经进入终态的同一申请");
+    };
+    assert_eq!(existing.status(), OrganizationProvisioningStatus::Rejected);
+    assert_eq!(existing.version(), 2);
     fixture.pool.close().await?;
     Ok(())
 }
