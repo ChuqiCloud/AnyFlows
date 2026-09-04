@@ -98,8 +98,10 @@ async fn template_request_and_decision_facts_are_scoped_and_idempotent()
         .repository
         .create_request(OrganizationApprovalRequestWrite::new(request.clone()))
         .await?;
-    let request_id = match created {
-        OrganizationApprovalRequestCreateOutcome::Created(record) => record.id(),
+    let (request_id, request_created_at) = match created {
+        OrganizationApprovalRequestCreateOutcome::Created(record) => {
+            (record.id(), record.created_at().unix_timestamp())
+        }
         OrganizationApprovalRequestCreateOutcome::Existing(_) => panic!("首次申请必须创建"),
     };
     assert!(matches!(
@@ -134,7 +136,7 @@ async fn template_request_and_decision_facts_are_scoped_and_idempotent()
         OrganizationApprovalDecisionKind::Approved,
         Some(fixture.owner_id),
         Some("approved by owner".to_owned()),
-        now,
+        request_created_at,
     )?;
     assert!(matches!(
         fixture
@@ -232,12 +234,14 @@ async fn template_request_and_decision_facts_are_scoped_and_idempotent()
         fixture.owner_id,
         now + 3_600,
     )?;
-    let rejected_request_id = match fixture
+    let (rejected_request_id, rejected_request_created_at) = match fixture
         .repository
         .create_request(OrganizationApprovalRequestWrite::new(rejected_request))
         .await?
     {
-        OrganizationApprovalRequestCreateOutcome::Created(record) => record.id(),
+        OrganizationApprovalRequestCreateOutcome::Created(record) => {
+            (record.id(), record.created_at().unix_timestamp())
+        }
         OrganizationApprovalRequestCreateOutcome::Existing(_) => panic!("拒绝测试申请必须创建"),
     };
     let rejected = OrganizationApprovalDecision::new(
@@ -247,7 +251,7 @@ async fn template_request_and_decision_facts_are_scoped_and_idempotent()
         OrganizationApprovalDecisionKind::Rejected,
         Some(fixture.owner_id),
         None,
-        now,
+        rejected_request_created_at,
     )?;
     assert!(matches!(
         fixture
@@ -289,7 +293,7 @@ async fn template_request_and_decision_facts_are_scoped_and_idempotent()
         OrganizationApprovalDecisionKind::Rejected,
         Some(fixture.owner_id),
         None,
-        now,
+        request_created_at,
     )?;
     assert_eq!(
         fixture
