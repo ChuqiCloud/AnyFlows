@@ -1,4 +1,4 @@
-import { Building2, RefreshCw, TicketCheck } from 'lucide-react'
+import { Building2, ClipboardCheck, RefreshCw, TicketCheck } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -76,6 +76,12 @@ export function OrganizationPageBoundary({
         action={
           <div className="flex flex-col items-center gap-2">
             <Button asChild type="button" size="sm">
+              <a href="#/console/organization-provisioning">
+                <ClipboardCheck aria-hidden="true" />
+                {t('organizationConsole.empty.applyProvisioning')}
+              </a>
+            </Button>
+            <Button asChild type="button" size="sm" variant="secondary">
               <a href="#/console/invitations">
                 <TicketCheck aria-hidden="true" />
                 {t('organizationConsole.empty.openInvitations')}

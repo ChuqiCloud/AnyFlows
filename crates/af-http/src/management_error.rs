@@ -63,6 +63,16 @@ pub(crate) enum ManagementError {
     OrganizationApprovalConflict,
     /// 企业审批申请已经超过服务端过期时间。
     OrganizationApprovalExpired,
+    /// 企业开通申请不存在或当前用户不可见。
+    OrganizationProvisioningNotFound,
+    /// 企业开通申请或审批版本发生冲突。
+    OrganizationProvisioningConflict,
+    /// 企业开通申请请求字段无效。
+    OrganizationProvisioningInvalidRequest,
+    /// 企业开通申请平台审批权限不足。
+    OrganizationProvisioningForbidden,
+    /// 企业开通申请服务暂不可用。
+    OrganizationProvisioningUnavailable,
     /// 企业成员或团队 CAS 版本冲突。
     OrganizationLifecycleConflict,
     /// 企业成员或团队生命周期状态不允许当前转换。
@@ -497,6 +507,41 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "organization_approval_expired",
                     message: "Organization approval request expired",
+                },
+            ),
+            Self::OrganizationProvisioningNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "organization_provisioning_not_found",
+                    message: "Organization provisioning request not found",
+                },
+            ),
+            Self::OrganizationProvisioningConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_provisioning_conflict",
+                    message: "Organization provisioning request conflict",
+                },
+            ),
+            Self::OrganizationProvisioningInvalidRequest => (
+                StatusCode::BAD_REQUEST,
+                ManagementErrorBody {
+                    code: "organization_provisioning_invalid_request",
+                    message: "Organization provisioning request is invalid",
+                },
+            ),
+            Self::OrganizationProvisioningForbidden => (
+                StatusCode::FORBIDDEN,
+                ManagementErrorBody {
+                    code: "organization_provisioning_forbidden",
+                    message: "Organization provisioning access is forbidden",
+                },
+            ),
+            Self::OrganizationProvisioningUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "organization_provisioning_unavailable",
+                    message: "Organization provisioning is temporarily unavailable",
                 },
             ),
             Self::OrganizationLifecycleConflict => (

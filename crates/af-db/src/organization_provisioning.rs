@@ -597,6 +597,53 @@ impl OrganizationProvisioningRepository {
         .await
     }
 
+    /// 按平台范围读取开通申请，使用自增主键倒序游标避免泄漏跨用户筛选条件。
+    pub async fn list_requests(
+        &self,
+        status: Option<OrganizationProvisioningStatus>,
+        before: Option<i64>,
+        limit: u64,
+    ) -> Result<Vec<OrganizationProvisioningRecord>, OrganizationProvisioningRepositoryError> {
+        self.run_read(async move {
+            if !(1..=100).contains(&limit) || before.is_some_and(|value| value <= 0) {
+                return Err(OrganizationProvisioningRepositoryError::InvalidInput);
+            }
+            let mut query = organization_provisioning_requests::Entity::find()
+                .order_by_desc(organization_provisioning_requests::Column::Id)
+                .limit(limit);
+            if let Some(before) = before {
+                query = query.filter(organization_provisioning_requests::Column::Id.lt(before));
+            }
+            if let Some(status) = status {
+                query = query
+                    .filter(organization_provisioning_requests::Column::Status.eq(status.code()));
+            }
+            query
+                .all(self.pool.connection())
+                .await
+                .map_err(query_error)?
+                .into_iter()
+                .map(to_record)
+                .collect()
+        })
+        .await
+    }
+
+    /// 按平台范围读取单条申请；普通用户必须使用带申请人边界的读取方法。
+    pub async fn get_request_for_admin(
+        &self,
+        request_key: OrganizationProvisioningRequestKey,
+    ) -> Result<Option<OrganizationProvisioningRecord>, OrganizationProvisioningRepositoryError>
+    {
+        self.run_read(async move {
+            find_by_request_key(self.pool.connection(), request_key)
+                .await?
+                .map(to_record)
+                .transpose()
+        })
+        .await
+    }
+
     /// 以版本 CAS 批准或拒绝申请；写入超时后只能重放同一命令。
     pub async fn decide_request(
         &self,

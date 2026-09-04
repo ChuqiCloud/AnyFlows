@@ -65,6 +65,7 @@ mod organization_approval_notifications;
 mod organization_budget;
 mod organization_contract_price;
 mod organization_credit_terms;
+mod organization_provisioning;
 mod organization_scim_audit;
 mod organization_service_account_runtime;
 mod organization_sso_login;
@@ -133,6 +134,7 @@ pub use organization_approval::build_organization_approval_router;
 pub use organization_budget::build_organization_budget_router;
 pub use organization_contract_price::build_organization_contract_price_router;
 pub use organization_credit_terms::build_organization_credit_terms_router;
+pub use organization_provisioning::build_organization_provisioning_router;
 pub use organization_scim_audit::build_organization_scim_audit_router;
 pub use organization_service_account_runtime::build_organization_service_account_runtime_router;
 pub use organization_tokens::build_organization_token_router;
@@ -187,6 +189,8 @@ mod oauth_connections_tests;
 mod oauth_login_tests;
 #[cfg(test)]
 mod operations_tests;
+#[cfg(test)]
+mod organization_provisioning_tests;
 #[cfg(test)]
 mod passkey_auth_tests;
 #[cfg(test)]

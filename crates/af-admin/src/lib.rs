@@ -38,6 +38,7 @@ mod organization_custom_role;
 mod organization_custom_role_binding;
 mod organization_invitation;
 mod organization_management;
+mod organization_provisioning;
 mod organization_scim;
 mod organization_service_account;
 mod organization_sso;
@@ -345,6 +346,15 @@ pub use organization_management::{
     OrganizationTeamChangeCommand, OrganizationTeamCreateCommand, OrganizationTeamDisableCommand,
     OrganizationTeamFuture, OrganizationTeamListQuery, OrganizationTeamPage,
     OrganizationTeamPageFuture,
+};
+pub use organization_provisioning::{
+    DatabaseOrganizationProvisioningService, OrganizationProvisioningCreateCommand,
+    OrganizationProvisioningDecisionCommand, OrganizationProvisioningEntitlementCommand,
+    OrganizationProvisioningListQuery, OrganizationProvisioningPage,
+    OrganizationProvisioningRecord, OrganizationProvisioningRecordFuture,
+    OrganizationProvisioningResult, OrganizationProvisioningResultFuture,
+    OrganizationProvisioningService, OrganizationProvisioningServiceError,
+    OrganizationProvisioningStatus,
 };
 pub use organization_scim::{
     DatabaseOrganizationScimService, OrganizationScimAuditError, OrganizationScimAuditFuture,
