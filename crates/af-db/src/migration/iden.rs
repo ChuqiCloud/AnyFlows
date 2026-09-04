@@ -3130,6 +3130,40 @@ pub(in crate::migration) mod organization_approval_notification_receipts {
     }
 }
 
+pub(in crate::migration) mod organization_provisioning_requests {
+    use super::DeriveIden;
+
+    /// 企业开通申请事实表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_provisioning_requests")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业开通申请及预留审批字段标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        RequestKey,
+        IdempotencyKey,
+        ApplicantUserId,
+        OrganizationName,
+        OrganizationSlug,
+        BusinessReason,
+        Status,
+        ActiveSlot,
+        Version,
+        ReviewerUserId,
+        DecisionReason,
+        OrganizationId,
+        CreatedAt,
+        UpdatedAt,
+        DecidedAt,
+    }
+}
+
 pub(in crate::migration) mod refund_requests {
     use super::DeriveIden;
 

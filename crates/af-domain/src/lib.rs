@@ -16,6 +16,7 @@ mod organization_credit_terms;
 mod organization_department;
 mod organization_department_budget;
 mod organization_entitlement;
+mod organization_provisioning;
 mod organization_scim;
 mod organization_scim_audit;
 mod organization_scim_rate_limit;
@@ -109,6 +110,14 @@ pub use organization_entitlement::{
     OrganizationEntitlementSnapshot, OrganizationEntitlementStateError,
     OrganizationEntitlementStatus,
 };
+pub use organization_provisioning::{
+    MAX_ORGANIZATION_PROVISIONING_DECISION_REASON_BYTES, MAX_ORGANIZATION_PROVISIONING_NAME_BYTES,
+    MAX_ORGANIZATION_PROVISIONING_REASON_BYTES, MAX_ORGANIZATION_PROVISIONING_SLUG_BYTES,
+    OrganizationProvisioningCreateOutcome, OrganizationProvisioningError,
+    OrganizationProvisioningIdempotencyKey, OrganizationProvisioningRecord,
+    OrganizationProvisioningRequest, OrganizationProvisioningRequestKey,
+    OrganizationProvisioningStatus,
+};
 pub use organization_scim::{
     MAX_ORGANIZATION_SCIM_DISPLAY_NAME_BYTES, MAX_ORGANIZATION_SCIM_GROUP_MEMBER_COUNT,
     MAX_ORGANIZATION_SCIM_RESOURCE_ID_BYTES, OrganizationScimGroupResource,
@@ -187,8 +196,8 @@ pub use principal::{
     OrganizationCreditRepaymentAllocationId, OrganizationCreditRepaymentId,
     OrganizationCreditTermId, OrganizationCustomRoleId, OrganizationDepartmentId,
     OrganizationGatewayPrincipal, OrganizationId, OrganizationMembershipId,
-    OrganizationScimTokenId, OrganizationServiceAccountId, OrganizationTeamId, PrincipalIdError,
-    ProxyId, RouteChannelId, RouteId, TokenId, UserId,
+    OrganizationProvisioningRequestId, OrganizationScimTokenId, OrganizationServiceAccountId,
+    OrganizationTeamId, PrincipalIdError, ProxyId, RouteChannelId, RouteId, TokenId, UserId,
 };
 pub use quota::{Quota, QuotaDelta, QuotaError};
 pub use redemption::{

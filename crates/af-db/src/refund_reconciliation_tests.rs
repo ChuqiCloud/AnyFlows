@@ -484,8 +484,14 @@ async fn epay_manual_completion_is_idempotent_and_keeps_provider_facts_separate(
         1
     );
 
-    // 先回退最新的已读回执和正文仿真迁移，再验证人工退款状态迁移仍受事实保护。
-    let rollback = Migrator::down(pool.connection(), Some(3)).await;
+    // 从迁移尾部精确推进到人工退款状态迁移，避免后续新增迁移削弱保护回归。
+    let migrations = Migrator::migrations();
+    let protected_migration_index = migrations
+        .iter()
+        .position(|migration| migration.name() == "m20260903_000127_extend_refund_status")
+        .expect("人工退款状态迁移必须保留在迁移注册表");
+    let rollback_steps = u32::try_from(migrations.len() - protected_migration_index)?;
+    let rollback = Migrator::down(pool.connection(), Some(rollback_steps)).await;
     assert!(matches!(
         rollback,
         Err(sea_orm_migration::DbErr::Custom(message))

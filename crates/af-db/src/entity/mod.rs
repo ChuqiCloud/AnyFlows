@@ -93,6 +93,7 @@ pub(crate) mod organization_departments;
 pub(crate) mod organization_entitlements;
 pub(crate) mod organization_invitations;
 pub(crate) mod organization_memberships;
+pub(crate) mod organization_provisioning_requests;
 pub(crate) mod organization_scim_audit_logs;
 pub(crate) mod organization_scim_group_resources;
 pub(crate) mod organization_scim_tokens;
@@ -3293,6 +3294,9 @@ impl ActiveModelBehavior for organization_approval_notifications::ActiveModel {
         Ok(self)
     }
 }
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_provisioning_requests::ActiveModel {}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for organization_approval_notification_receipts::ActiveModel {}

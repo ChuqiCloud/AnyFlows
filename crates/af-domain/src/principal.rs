@@ -170,6 +170,11 @@ principal_id! {
 }
 
 principal_id! {
+    /// 企业开通申请事实的持久化标识。
+    OrganizationProvisioningRequestId
+}
+
+principal_id! {
     /// 企业 SCIM 令牌的持久化标识。
     OrganizationScimTokenId
 }
