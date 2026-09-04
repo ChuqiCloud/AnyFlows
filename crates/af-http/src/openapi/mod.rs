@@ -23,6 +23,7 @@ mod organization_approval_notifications;
 mod organization_budget;
 mod organization_contract_price;
 mod organization_credit_terms;
+mod organization_provisioning;
 mod organization_scim_audit;
 mod organization_service_account_runtime;
 mod organization_sso;
@@ -119,6 +120,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(organization_budget::document());
     document.merge(organization_contract_price::document());
     document.merge(organization_credit_terms::document());
+    document.merge(organization_provisioning::document());
     document.merge(organization_sso::document());
     document.merge(organization_tokens::document());
     document.merge(organization_activity::document());
@@ -161,6 +163,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("企业服务账号"),
         Tag::new("企业活动"),
         Tag::new("企业审批"),
+        Tag::new("企业开通"),
         Tag::new("企业审批通知"),
         Tag::new("企业 SCIM"),
         Tag::new("平台企业活动"),
@@ -251,7 +254,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 220);
+        assert_eq!(document.paths.paths.len(), 226);
         let operation_count = document
             .paths
             .paths
@@ -273,7 +276,7 @@ mod tests {
             })
             .sum::<usize>();
         // 公开发现、SSO 启动、审批与部门目录管理接口扩展了既有管理面，保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 295);
+        assert_eq!(operation_count, 301);
         assert!(
             document
                 .components
@@ -457,6 +460,12 @@ mod tests {
             "completeOrganizationSsoOidcLogin",
             "completeOrganizationSsoSamlLogin",
             "exchangeOrganizationSsoSession",
+            "createOrganizationProvisioningRequest",
+            "getActiveOrganizationProvisioningRequest",
+            "getOrganizationProvisioningRequest",
+            "listAdminOrganizationProvisioningRequests",
+            "getAdminOrganizationProvisioningRequest",
+            "decideOrganizationProvisioningRequest",
             "getUserTopupConfiguration",
             "getUserWallet",
             "importMissingAdminModels",
@@ -615,7 +624,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 486);
+        assert_eq!(schemas.len(), 494);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("OrganizationSsoDiscoveryErrorResponse"));
         assert!(schemas.contains_key("CreditAllocationListResponse"));
@@ -654,6 +663,14 @@ mod tests {
         assert!(schemas.contains_key("OrganizationApprovalNotificationListResponse"));
         assert!(schemas.contains_key("OrganizationApprovalNotificationMarkReadRequest"));
         assert!(schemas.contains_key("OrganizationApprovalNotificationMarkReadResponse"));
+        assert!(schemas.contains_key("OrganizationProvisioningListQuerySchema"));
+        assert!(schemas.contains_key("OrganizationProvisioningStatus"));
+        assert!(schemas.contains_key("OrganizationProvisioningDecisionKind"));
+        assert!(schemas.contains_key("OrganizationProvisioningCreateRequest"));
+        assert!(schemas.contains_key("OrganizationProvisioningEntitlement"));
+        assert!(schemas.contains_key("OrganizationProvisioningDecisionRequest"));
+        assert!(schemas.contains_key("OrganizationProvisioningRequest"));
+        assert!(schemas.contains_key("OrganizationProvisioningRequestListResponse"));
         assert!(schemas.contains_key("AdminDashboardChannelFlow"));
         assert!(schemas.contains_key("AdminDashboardFlowPath"));
         assert!(schemas.contains_key("AdminDashboardFailure"));

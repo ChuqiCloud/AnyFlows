@@ -1906,6 +1906,59 @@ export type OrganizationOwnershipTransferResponse = {
     previous_owner: OrganizationMembershipResponse;
     current_owner: OrganizationMembershipResponse;
 };
+export type OrganizationProvisioningCreateRequest = {
+    idempotency_key: string;
+    organization_name: string;
+    organization_slug: string;
+    business_reason: string;
+};
+export type OrganizationProvisioningDecisionKind = 'approve' | 'reject';
+export type OrganizationProvisioningDecisionRequest = {
+    expected_version: number;
+    decision: OrganizationProvisioningDecisionKind;
+    reason?: string | null;
+    entitlement?: null | OrganizationProvisioningEntitlement;
+};
+export type OrganizationProvisioningEntitlement = {
+    seat_limit: number;
+    team_limit: number;
+    organization_key_limit: number;
+    team_management_enabled: boolean;
+    sso_enabled: boolean;
+    custom_roles_enabled: boolean;
+    audit_retention_days: number;
+    valid_from: number;
+    valid_until: number;
+    grace_until?: number | null;
+};
+export type OrganizationProvisioningListQuerySchema = {
+    before?: number | null;
+    limit?: number | null;
+    status?: null | OrganizationProvisioningStatus;
+};
+export type OrganizationProvisioningRequest = {
+    id: number;
+    request_key: string;
+    idempotency_key: string;
+    applicant_user_id: number;
+    organization_name: string;
+    organization_slug: string;
+    business_reason: string;
+    status: OrganizationProvisioningStatus;
+    version: number;
+    reviewer_user_id?: number | null;
+    decision_reason?: string | null;
+    organization_id?: number | null;
+    created_at: number;
+    updated_at: number;
+    decided_at?: number | null;
+    replayed: boolean;
+};
+export type OrganizationProvisioningRequestListResponse = {
+    requests: Array<OrganizationProvisioningRequest>;
+    next_before?: number | null;
+};
+export type OrganizationProvisioningStatus = 'pending' | 'approved' | 'rejected';
 export type OrganizationScimAuditLogListResponse = {
     logs: Array<OrganizationScimAuditLogResponse>;
     nextCursor: number | null;
@@ -7577,6 +7630,122 @@ export type GetOrganizationCreditAllocationResponses = {
     200: CreditAllocationResponse;
 };
 export type GetOrganizationCreditAllocationResponse = GetOrganizationCreditAllocationResponses[keyof GetOrganizationCreditAllocationResponses];
+export type CreateOrganizationProvisioningRequestData = {
+    body: OrganizationProvisioningCreateRequest;
+    path?: never;
+    query?: never;
+    url: '/api/account/organization-provisioning';
+};
+export type CreateOrganizationProvisioningRequestErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type CreateOrganizationProvisioningRequestError = CreateOrganizationProvisioningRequestErrors[keyof CreateOrganizationProvisioningRequestErrors];
+export type CreateOrganizationProvisioningRequestResponses = {
+    200: OrganizationProvisioningRequest;
+    201: OrganizationProvisioningRequest;
+};
+export type CreateOrganizationProvisioningRequestResponse = CreateOrganizationProvisioningRequestResponses[keyof CreateOrganizationProvisioningRequestResponses];
+export type GetActiveOrganizationProvisioningRequestData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/account/organization-provisioning/active';
+};
+export type GetActiveOrganizationProvisioningRequestErrors = {
+    401: ManagementError;
+    404: ManagementError;
+    503: ManagementError;
+};
+export type GetActiveOrganizationProvisioningRequestError = GetActiveOrganizationProvisioningRequestErrors[keyof GetActiveOrganizationProvisioningRequestErrors];
+export type GetActiveOrganizationProvisioningRequestResponses = {
+    200: OrganizationProvisioningRequest;
+};
+export type GetActiveOrganizationProvisioningRequestResponse = GetActiveOrganizationProvisioningRequestResponses[keyof GetActiveOrganizationProvisioningRequestResponses];
+export type GetOrganizationProvisioningRequestData = {
+    body?: never;
+    path: {
+        request_key: string;
+    };
+    query?: never;
+    url: '/api/account/organization-provisioning/{request_key}';
+};
+export type GetOrganizationProvisioningRequestErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    404: ManagementError;
+    503: ManagementError;
+};
+export type GetOrganizationProvisioningRequestError = GetOrganizationProvisioningRequestErrors[keyof GetOrganizationProvisioningRequestErrors];
+export type GetOrganizationProvisioningRequestResponses = {
+    200: OrganizationProvisioningRequest;
+};
+export type GetOrganizationProvisioningRequestResponse = GetOrganizationProvisioningRequestResponses[keyof GetOrganizationProvisioningRequestResponses];
+export type ListAdminOrganizationProvisioningRequestsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before?: number;
+        limit?: number;
+        status?: OrganizationProvisioningStatus;
+    };
+    url: '/api/admin/organization-provisioning';
+};
+export type ListAdminOrganizationProvisioningRequestsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    503: ManagementError;
+};
+export type ListAdminOrganizationProvisioningRequestsError = ListAdminOrganizationProvisioningRequestsErrors[keyof ListAdminOrganizationProvisioningRequestsErrors];
+export type ListAdminOrganizationProvisioningRequestsResponses = {
+    200: OrganizationProvisioningRequestListResponse;
+};
+export type ListAdminOrganizationProvisioningRequestsResponse = ListAdminOrganizationProvisioningRequestsResponses[keyof ListAdminOrganizationProvisioningRequestsResponses];
+export type GetAdminOrganizationProvisioningRequestData = {
+    body?: never;
+    path: {
+        request_key: string;
+    };
+    query?: never;
+    url: '/api/admin/organization-provisioning/{request_key}';
+};
+export type GetAdminOrganizationProvisioningRequestErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    503: ManagementError;
+};
+export type GetAdminOrganizationProvisioningRequestError = GetAdminOrganizationProvisioningRequestErrors[keyof GetAdminOrganizationProvisioningRequestErrors];
+export type GetAdminOrganizationProvisioningRequestResponses = {
+    200: OrganizationProvisioningRequest;
+};
+export type GetAdminOrganizationProvisioningRequestResponse = GetAdminOrganizationProvisioningRequestResponses[keyof GetAdminOrganizationProvisioningRequestResponses];
+export type DecideOrganizationProvisioningRequestData = {
+    body: OrganizationProvisioningDecisionRequest;
+    path: {
+        request_key: string;
+    };
+    query?: never;
+    url: '/api/admin/organization-provisioning/{request_key}/decision';
+};
+export type DecideOrganizationProvisioningRequestErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type DecideOrganizationProvisioningRequestError = DecideOrganizationProvisioningRequestErrors[keyof DecideOrganizationProvisioningRequestErrors];
+export type DecideOrganizationProvisioningRequestResponses = {
+    200: OrganizationProvisioningRequest;
+    202: OrganizationProvisioningRequest;
+};
+export type DecideOrganizationProvisioningRequestResponse = DecideOrganizationProvisioningRequestResponses[keyof DecideOrganizationProvisioningRequestResponses];
 export type DiscoverOrganizationSsoData = {
     body: OrganizationSsoDiscoveryRequest;
     path?: never;

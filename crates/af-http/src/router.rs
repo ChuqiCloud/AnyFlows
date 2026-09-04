@@ -105,6 +105,7 @@ use crate::organization_approval::build_organization_approval_router;
 use crate::organization_approval_notifications::build_organization_approval_notification_router;
 use crate::organization_budget::build_organization_budget_router;
 use crate::organization_contract_price::build_organization_contract_price_router;
+use crate::organization_provisioning::build_organization_provisioning_router;
 use crate::organization_scim_audit::build_organization_scim_audit_router;
 use crate::organization_service_account_runtime::build_organization_service_account_runtime_router;
 use crate::organization_sso_login::{
@@ -202,6 +203,7 @@ pub fn build_router(
     organization_token_service: Option<Arc<dyn OrganizationTokenService>>,
     organization_scim_service: Option<Arc<dyn OrganizationScimService>>,
     organization_approval_service: Option<Arc<dyn OrganizationApprovalService>>,
+    organization_provisioning_service: Option<Arc<dyn af_admin::OrganizationProvisioningService>>,
     user_topup_service: Option<Arc<dyn UserTopupService>>,
     redemption_service: Arc<dyn RedemptionService>,
     subscription_service: Arc<dyn SubscriptionService>,
@@ -901,6 +903,10 @@ pub fn build_router(
         }
         _ => management_routes,
     };
+    let management_routes = management_routes.merge(build_organization_provisioning_router(
+        organization_provisioning_service,
+        Arc::clone(&http_state.session_authenticator),
+    ));
     let management_routes = match (
         http_state.organization_authorization_service.clone(),
         organization_contract_price_service,

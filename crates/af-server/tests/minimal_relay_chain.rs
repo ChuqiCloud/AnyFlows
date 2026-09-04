@@ -2002,6 +2002,7 @@ async fn start_server(
         None,
         None,
         None,
+        None,
         Arc::new(RejectRedemptions),
         Arc::new(RejectSubscriptions),
         Arc::new(RejectUserInvitations),

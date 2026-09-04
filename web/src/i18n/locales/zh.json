@@ -46,6 +46,7 @@
     "organizationApprovals": "企业审批",
     "organizationActivity": "企业日志与审计",
     "organizationOverview": "企业概览",
+    "organizationProvisioning": "企业开通申请",
     "organizationMembers": "成员与团队",
     "organizationDepartments": "部门目录",
     "organizationWallet": "企业钱包",
@@ -5028,6 +5029,7 @@
       "title": "还没有可进入的企业",
       "body": "当前账号尚未加入企业。接受企业邀请后，企业工作空间会出现在这里。",
       "openInvitations": "前往邀请中心",
+      "applyProvisioning": "申请开通企业",
       "provisioningHint": "企业由平台管理员或受信开通流程创建；个人账号目前不能直接升级企业套餐。"
     },
     "errors": {
@@ -5621,6 +5623,62 @@
     "hint": "每个状态均来自最新服务端响应；审计明细仍由独立的只读页面提供。"
   }
 }
+    }
+  },
+  "organizationProvisioning": {
+    "title": "申请开通企业",
+    "subtitle": "提交平台审核的企业工作空间申请。企业创建和授权均由服务端决定。",
+    "form": {
+      "title": "企业资料",
+      "body": "填写稳定的企业标识并说明业务用途。请求幂等键可保证重试只恢复服务端事实。",
+      "name": "企业名称",
+      "slug": "企业标识",
+      "slugHint": "仅允许小写字母、数字和连字符，且必须以字母或数字开头和结尾。",
+      "reason": "业务用途",
+      "idempotent": "使用同一请求键重复提交只会恢复服务端申请事实。"
+    },
+    "retry": {
+      "title": "提交新的申请",
+      "body": "上一份申请已被拒绝。请根据原因调整资料后重新提交。"
+    },
+    "actions": {
+      "submit": "提交申请",
+      "retry": "重试",
+      "cancel": "取消"
+    },
+    "status": {
+      "pending": "等待审核",
+      "approved": "已批准",
+      "rejected": "已拒绝",
+      "pendingBody": "申请正在等待平台管理员处理，浏览器不会自行创建企业。",
+      "approvedBody": "平台已批准申请，下面的企业 ID 来自服务端事实。",
+      "rejectedBody": "平台拒绝了申请，你可以调整资料后重新提交。",
+      "version": "事实版本",
+      "updated": "最近更新",
+      "organizationId": "企业 ID",
+      "replayed": "已从服务端恢复"
+    },
+    "admin": {
+      "title": "企业开通审批",
+      "subtitle": "审核申请，并由服务端原子写入首个企业授权快照。",
+      "filters": { "all": "全部", "pending": "待审核", "approved": "已批准", "rejected": "已拒绝" },
+      "review": "审核",
+      "approve": "批准并开通",
+      "reject": "拒绝",
+      "reason": "审批理由",
+      "seats": "席位",
+      "teams": "团队",
+      "keys": "企业 Key",
+      "retention": "审计天数",
+      "emptyTitle": "暂无企业开通申请",
+      "emptyBody": "用户提交申请后，会显示在这里。"
+    },
+    "errors": {
+      "loadTitle": "无法加载企业开通事实",
+      "loadBody": "服务暂时不可用，现有申请和授权不会改变。",
+      "mutation": "操作没有返回可靠结果，请保留当前内容后重试。",
+      "conflict": "申请已被并发更新，请刷新后按最新服务端版本审核。",
+      "unavailable": "企业开通服务暂时不可用，请稍后重试。"
     }
   },
   "wallet": {

@@ -106,7 +106,8 @@ use af_db::{
     OrganizationCustomRoleRepository, OrganizationCustomRoleRepositoryConfigError,
     OrganizationDepartmentMembershipRepository,
     OrganizationDepartmentMembershipRepositoryConfigError, OrganizationDepartmentRepository,
-    OrganizationDepartmentRepositoryConfigError, OrganizationRepository,
+    OrganizationDepartmentRepositoryConfigError, OrganizationProvisioningRepository,
+    OrganizationProvisioningRepositoryConfigError, OrganizationRepository,
     OrganizationRepositoryConfigError, OrganizationScimAuditRepository,
     OrganizationScimAuditRepositoryError, OrganizationScimGroupRepository,
     OrganizationScimGroupRepositoryError, OrganizationScimTokenRepository,
@@ -253,6 +254,7 @@ pub struct AuthenticationReady {
     organization_token_service: Arc<dyn OrganizationTokenService>,
     organization_scim_service: Arc<dyn OrganizationScimService>,
     organization_approval_service: Arc<dyn OrganizationApprovalService>,
+    organization_provisioning_service: Arc<dyn af_admin::OrganizationProvisioningService>,
     organization_activity_service: Arc<dyn OrganizationActivityService>,
     platform_audit_service: Arc<dyn PlatformAuditService>,
     redemption_service: Arc<dyn RedemptionService>,
@@ -498,6 +500,9 @@ pub enum BootstrapError {
     /// 企业审批事实仓储的启动参数无效。
     #[error("企业审批仓储启动参数无效")]
     OrganizationApprovalRepository(#[source] OrganizationApprovalRepositoryConfigError),
+    /// 企业开通申请事实仓储的启动参数无效。
+    #[error("企业开通申请仓储启动参数无效")]
+    OrganizationProvisioningRepository(#[source] OrganizationProvisioningRepositoryConfigError),
     /// 企业审批通知回执仓储的启动参数无效。
     #[error("企业审批通知仓储启动参数无效")]
     OrganizationApprovalNotificationRepository(
@@ -1076,6 +1081,13 @@ impl Bootstrap<DatabaseReady> {
             )
             .map_err(BootstrapError::OrganizationApprovalRepository)?,
         );
+        let organization_provisioning_repository = Arc::new(
+            OrganizationProvisioningRepository::new(
+                self.stage.database.clone(),
+                Duration::from_secs(auth.lookup_timeout_secs()),
+            )
+            .map_err(BootstrapError::OrganizationProvisioningRepository)?,
+        );
         let organization_approval_notification_repository = Arc::new(
             OrganizationApprovalNotificationRepository::new(
                 self.stage.database.clone(),
@@ -1496,6 +1508,11 @@ impl Bootstrap<DatabaseReady> {
                 organization_approval_service: Arc::new(DatabaseOrganizationApprovalService::new(
                     organization_approval_repository,
                 )),
+                organization_provisioning_service: Arc::new(
+                    af_admin::DatabaseOrganizationProvisioningService::new(
+                        organization_provisioning_repository,
+                    ),
+                ),
                 organization_activity_service,
                 platform_audit_service,
                 redemption_service: Arc::new(DatabaseRedemptionService::new(redemption_repository)),
@@ -2831,6 +2848,9 @@ impl Bootstrap<Supervised> {
             )),
             Some(Arc::clone(
                 &self.stage.infrastructure.organization_approval_service,
+            )),
+            Some(Arc::clone(
+                &self.stage.infrastructure.organization_provisioning_service,
             )),
             Some(user_topup_service),
             Arc::clone(&self.stage.infrastructure.redemption_service),

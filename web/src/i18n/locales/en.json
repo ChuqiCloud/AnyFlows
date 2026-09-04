@@ -45,6 +45,7 @@
     "organizationApprovals": "Approvals",
     "organizationActivity": "Organization logs & audit",
     "organizationOverview": "Organization overview",
+    "organizationProvisioning": "Organization provisioning",
     "organizationMembers": "Members and teams",
     "organizationWallet": "Organization wallet",
     "organizationSettings": "Organization settings",
@@ -5027,6 +5028,7 @@
       "title": "No organizations are available",
       "body": "This account has not joined an organization. Organizations appear here after an invitation is accepted.",
       "openInvitations": "Open invitation center",
+      "applyProvisioning": "Apply for organization access",
       "provisioningHint": "Organizations are created through a platform-admin or trusted provisioning flow; personal accounts cannot upgrade to an organization plan here."
     },
     "errors": {
@@ -5621,6 +5623,62 @@
     "hint": "Every badge reflects the latest server response. Audit details remain a separate read-only surface."
   }
 }
+    }
+  },
+  "organizationProvisioning": {
+    "title": "Apply for organization access",
+    "subtitle": "Submit a reviewed request for an organization workspace. Creation and entitlements are decided by the platform server.",
+    "form": {
+      "title": "Organization details",
+      "body": "Use a stable slug and explain the business need. The request key keeps retries idempotent.",
+      "name": "Organization name",
+      "slug": "Organization slug",
+      "slugHint": "Lowercase letters, numbers, and hyphens; must start and end with a letter or number.",
+      "reason": "Business reason",
+      "idempotent": "Repeated submission with the same request key only restores the server fact."
+    },
+    "retry": {
+      "title": "Submit a new request",
+      "body": "The previous request was rejected. Review the reason, then submit a new request."
+    },
+    "actions": {
+      "submit": "Submit request",
+      "retry": "Try again",
+      "cancel": "Cancel"
+    },
+    "status": {
+      "pending": "Pending review",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "pendingBody": "Your request is waiting for a platform administrator. No organization has been created in the browser.",
+      "approvedBody": "The platform approved this request. The organization ID below comes from the server fact.",
+      "rejectedBody": "The platform rejected this request. You can submit a new request with updated details.",
+      "version": "Fact version",
+      "updated": "Last updated",
+      "organizationId": "Organization ID",
+      "replayed": "Recovered from server"
+    },
+    "admin": {
+      "title": "Organization provisioning",
+      "subtitle": "Review requests and write the initial entitlement snapshot atomically on the server.",
+      "filters": { "all": "All", "pending": "Pending", "approved": "Approved", "rejected": "Rejected" },
+      "review": "Review",
+      "approve": "Approve and provision",
+      "reject": "Reject",
+      "reason": "Decision reason",
+      "seats": "Seats",
+      "teams": "Teams",
+      "keys": "Organization keys",
+      "retention": "Audit days",
+      "emptyTitle": "No provisioning requests",
+      "emptyBody": "New organization requests will appear here after a user submits them."
+    },
+    "errors": {
+      "loadTitle": "Provisioning facts could not be loaded",
+      "loadBody": "The service is temporarily unavailable. Existing requests and entitlements are unchanged.",
+      "mutation": "The operation did not return a reliable result. Keep the current input and retry.",
+      "conflict": "The request changed concurrently. Refresh and review the latest server version.",
+      "unavailable": "The provisioning service is temporarily unavailable. Try again shortly."
     }
   },
   "wallet": {

@@ -33,6 +33,7 @@ import { OrganizationApprovalPage } from '@/features/organization-approvals/orga
 import { OrganizationMemberPage } from '@/features/organization-members/organization-member-page'
 import { OrganizationDepartmentPage } from '@/features/organization-departments/organization-department-page'
 import { OrganizationOverviewPage } from '@/features/organization-console/organization-overview-page'
+import { OrganizationProvisioningPage } from '@/features/organization-provisioning/organization-provisioning-page'
 import { OrganizationSettingsPage } from '@/features/organization-console/organization-settings-page'
 import { OrganizationServiceAccountPage } from '@/features/organization-service-accounts/organization-service-account-page'
 import { OrganizationWalletPage } from '@/features/organization-wallet/organization-wallet-page'
@@ -191,6 +192,8 @@ function ManagementEntry({
                   ? 'organizationDepartments.title'
                 : view === 'organization-overview'
                   ? 'organizationConsole.overview.title'
+                : view === 'organization-provisioning'
+                  ? 'organizationProvisioning.title'
                 : view === 'organization-settings'
                   ? 'organizationConsole.settings.title'
                 : view === 'organization-service-accounts'
@@ -270,6 +273,8 @@ function ManagementEntry({
                   ? <OrganizationDepartmentPage />
                 : view === 'organization-overview'
                   ? <OrganizationOverviewPage />
+                : view === 'organization-provisioning'
+                  ? <OrganizationProvisioningPage admin={admin} />
                 : view === 'organization-settings'
                   ? <OrganizationSettingsPage />
                 : view === 'organization-service-accounts'
@@ -306,6 +311,7 @@ function ManagementEntry({
     && view !== 'organization-members'
     && view !== 'organization-departments'
     && view !== 'organization-overview'
+    && view !== 'organization-provisioning'
     && view !== 'organization-settings'
     && view !== 'organization-service-accounts'
     && view !== 'organization-wallet'
@@ -325,7 +331,7 @@ function ManagementEntry({
       onUserHomeRequired={onUserHomeRequired}
     >
       {(session) => (
-        <OrganizationWorkspaceProvider enterpriseView={view.startsWith('organization-')}>
+        <OrganizationWorkspaceProvider enterpriseView={view.startsWith('organization-') && view !== 'organization-provisioning'}>
           <AppShell title={t(titleKey)} currentUser={session.user} onLogout={onLogout}>
             {content(session.user.role === 'admin')}
           </AppShell>
