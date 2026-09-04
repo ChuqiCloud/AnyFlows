@@ -45,14 +45,15 @@ use crate::entity::{
     organization_credit_repayments, organization_credit_terms,
     organization_custom_role_permissions, organization_custom_roles,
     organization_department_memberships, organization_departments, organization_entitlements,
-    organization_invitations, organization_memberships, organization_scim_audit_logs,
-    organization_scim_group_resources, organization_scim_tokens, organization_scim_user_resources,
-    organization_service_account_audit_logs, organization_service_account_budget_bindings,
-    organization_service_account_keys, organization_service_accounts,
-    organization_sso_domain_reverification_leases, organization_sso_domains,
-    organization_sso_identities, organization_sso_login_transaction_cleanup_leases,
-    organization_sso_login_transactions, organization_sso_policies, organization_sso_providers,
-    organization_teams, organization_wallet_ledger_entries, organization_wallets, organizations,
+    organization_invitations, organization_memberships, organization_provisioning_requests,
+    organization_scim_audit_logs, organization_scim_group_resources, organization_scim_tokens,
+    organization_scim_user_resources, organization_service_account_audit_logs,
+    organization_service_account_budget_bindings, organization_service_account_keys,
+    organization_service_accounts, organization_sso_domain_reverification_leases,
+    organization_sso_domains, organization_sso_identities,
+    organization_sso_login_transaction_cleanup_leases, organization_sso_login_transactions,
+    organization_sso_policies, organization_sso_providers, organization_teams,
+    organization_wallet_ledger_entries, organization_wallets, organizations,
     passkey_authentication_challenges, passkey_registration_challenges, passkeys, payment_settings,
     platform_audit_logs, playground_conversations, playground_shares, redemption_batches,
     redemption_codes, refund_manual_completions, refund_provider_events,
@@ -92,7 +93,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 129;
+const EXPECTED_MIGRATION_COUNT: usize = 130;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -111,7 +112,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 110] = [
+const CORE_TABLES: [&str; 111] = [
     "groups",
     "users",
     "passkeys",
@@ -172,6 +173,7 @@ const CORE_TABLES: [&str; 110] = [
     "debug_trace_snapshots",
     "debug_trace_snapshot_access_audits",
     "organizations",
+    "organization_provisioning_requests",
     "organization_teams",
     "organization_departments",
     "organization_department_memberships",
@@ -2492,6 +2494,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
         pending_migrations[69].name(),
         "m20260903_000129_create_organization_approval_notification_receipts"
     );
+    assert_eq!(
+        pending_migrations[70].name(),
+        "m20260904_000130_create_organization_provisioning_requests"
+    );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
     assert_legacy_debug_trace_snapshot_cleared(&pool, legacy_debug_trace_id).await?;
@@ -4253,6 +4259,11 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         "organization_sso_login_transactions",
     )
     .await?;
+    assert_entity_columns::<organization_provisioning_requests::Column>(
+        &manager,
+        "organization_provisioning_requests",
+    )
+    .await?;
     assert_entity_columns::<user_subscriptions::Column>(&manager, "user_subscriptions").await?;
     assert_entity_columns::<invite_rebate_events::Column>(&manager, "invite_rebate_events").await?;
     assert_entity_columns::<balance_alert_settings::Column>(&manager, "balance_alert_settings")
@@ -4439,6 +4450,30 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         ("organizations", "uq_organizations_key"),
         ("organizations", "uq_organizations_slug"),
         ("organizations", "idx_organizations_status_id"),
+        (
+            "organization_provisioning_requests",
+            "uq_org_provision_requests_key",
+        ),
+        (
+            "organization_provisioning_requests",
+            "uq_org_provision_requests_user_idempotency",
+        ),
+        (
+            "organization_provisioning_requests",
+            "uq_org_provision_requests_active_user",
+        ),
+        (
+            "organization_provisioning_requests",
+            "uq_org_provision_requests_active_slug",
+        ),
+        (
+            "organization_provisioning_requests",
+            "idx_org_provision_requests_user_created",
+        ),
+        (
+            "organization_provisioning_requests",
+            "idx_org_provision_requests_status_created",
+        ),
         ("organization_teams", "uq_organization_teams_scope_id"),
         ("organization_teams", "uq_organization_teams_scope_name"),
         ("organization_teams", "idx_organization_teams_scope_status"),

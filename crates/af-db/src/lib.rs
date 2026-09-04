@@ -166,6 +166,9 @@ mod organization_department_membership;
 mod organization_department_membership_tests;
 #[cfg(test)]
 mod organization_department_tests;
+mod organization_provisioning;
+#[cfg(test)]
+mod organization_provisioning_tests;
 mod organization_scim;
 mod organization_scim_audit;
 #[cfg(test)]
@@ -625,6 +628,10 @@ pub use organization_department_membership::{
     OrganizationDepartmentMembershipRepository,
     OrganizationDepartmentMembershipRepositoryConfigError,
     OrganizationDepartmentMembershipRepositoryError,
+};
+pub use organization_provisioning::{
+    OrganizationProvisioningRepository, OrganizationProvisioningRepositoryConfigError,
+    OrganizationProvisioningRepositoryError,
 };
 pub use organization_scim::{
     OrganizationScimGroupRecord, OrganizationScimGroupRepository,
