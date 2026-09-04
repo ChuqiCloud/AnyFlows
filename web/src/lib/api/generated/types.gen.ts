@@ -3000,6 +3000,55 @@ export type VideoTaskListResponse = {
     next_cursor: string | null;
 };
 export type VideoTaskStatus = 'pending' | 'done' | 'expired' | 'failed';
+export type OrganizationPlanCreateRequest = {
+    name: string;
+    description?: string | null;
+    team_management_enabled: boolean;
+    sso_enabled: boolean;
+    custom_roles_enabled: boolean;
+    seat_limit: number;
+    team_limit: number;
+    organization_key_limit: number;
+    audit_retention_days: number;
+    validity_days: number;
+    price_provider: string;
+    price_currency: string;
+    price_amount_minor: number;
+};
+export type OrganizationPlanDisableRequest = {
+    expected_version: number;
+};
+export type OrganizationPlanStatus = 'active' | 'disabled';
+export type OrganizationPlan = {
+    plan_id: string;
+    name: string;
+    description?: string | null;
+    status: OrganizationPlanStatus;
+    team_management_enabled: boolean;
+    sso_enabled: boolean;
+    custom_roles_enabled: boolean;
+    seat_limit: number;
+    team_limit: number;
+    organization_key_limit: number;
+    audit_retention_days: number;
+    validity_days: number;
+    price_provider: string;
+    price_currency: string;
+    price_amount_minor: number;
+    version: number;
+    created_by_user_id: number;
+    disabled_at?: number | null;
+    created_at: number;
+    updated_at: number;
+};
+export type OrganizationPlanListResponse = {
+    plans: Array<OrganizationPlan>;
+    next_cursor?: number | null;
+};
+export type OrganizationPlanCatalogResponse = {
+    plans: Array<OrganizationPlan>;
+    purchase_notice: string;
+};
 export type AdminChannelCreateRequestWritable = {
     name: string;
     type: 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
@@ -9142,3 +9191,76 @@ export type UpdateAdminGoogleOAuthLoginSettingsResponses = {
     200: AdminOAuthLoginProviderSettings;
 };
 export type UpdateAdminGoogleOAuthLoginSettingsResponse = UpdateAdminGoogleOAuthLoginSettingsResponses[keyof UpdateAdminGoogleOAuthLoginSettingsResponses];
+export type ListAdminOrganizationPlansData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/admin/organization-plans';
+};
+export type ListAdminOrganizationPlansErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    503: ManagementError;
+};
+export type ListAdminOrganizationPlansError = ListAdminOrganizationPlansErrors[keyof ListAdminOrganizationPlansErrors];
+export type ListAdminOrganizationPlansResponses = {
+    200: OrganizationPlanListResponse;
+};
+export type ListAdminOrganizationPlansResponse = ListAdminOrganizationPlansResponses[keyof ListAdminOrganizationPlansResponses];
+export type CreateAdminOrganizationPlanData = {
+    body: OrganizationPlanCreateRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/organization-plans';
+};
+export type CreateAdminOrganizationPlanErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    503: ManagementError;
+};
+export type CreateAdminOrganizationPlanError = CreateAdminOrganizationPlanErrors[keyof CreateAdminOrganizationPlanErrors];
+export type CreateAdminOrganizationPlanResponses = {
+    201: OrganizationPlan;
+};
+export type CreateAdminOrganizationPlanResponse = CreateAdminOrganizationPlanResponses[keyof CreateAdminOrganizationPlanResponses];
+export type DisableAdminOrganizationPlanData = {
+    body: OrganizationPlanDisableRequest;
+    path: {
+        plan_id: string;
+    };
+    query?: never;
+    url: '/api/admin/organization-plans/{plan_id}/disable';
+};
+export type DisableAdminOrganizationPlanErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type DisableAdminOrganizationPlanError = DisableAdminOrganizationPlanErrors[keyof DisableAdminOrganizationPlanErrors];
+export type DisableAdminOrganizationPlanResponses = {
+    200: OrganizationPlan;
+};
+export type DisableAdminOrganizationPlanResponse = DisableAdminOrganizationPlanResponses[keyof DisableAdminOrganizationPlanResponses];
+export type GetOrganizationPlanCatalogData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/account/organization-plan-catalog';
+};
+export type GetOrganizationPlanCatalogErrors = {
+    401: ManagementError;
+    503: ManagementError;
+};
+export type GetOrganizationPlanCatalogError = GetOrganizationPlanCatalogErrors[keyof GetOrganizationPlanCatalogErrors];
+export type GetOrganizationPlanCatalogResponses = {
+    200: OrganizationPlanCatalogResponse;
+};
+export type GetOrganizationPlanCatalogResponse = GetOrganizationPlanCatalogResponses[keyof GetOrganizationPlanCatalogResponses];

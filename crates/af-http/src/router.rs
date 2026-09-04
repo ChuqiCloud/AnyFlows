@@ -9,12 +9,12 @@ use af_admin::{
     AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, AdminWalletService,
     InitialSetup, ModelCatalogReader, OAuthLoginService, OrganizationActivityService,
     OrganizationApprovalNotificationService, OrganizationApprovalService,
-    OrganizationBudgetService, OrganizationContractPriceService, OrganizationScimService,
-    OrganizationTokenService, OrganizationWalletService, PasskeyAuthenticationService,
-    PasswordResetService, PlatformAuditService, PlaygroundConversationService,
-    PlaygroundShareService, RedemptionService, RegistrationService, SessionAuthenticator,
-    SiteSettingsService, SubscriptionService, TokenAuthenticator, UserInvitationService,
-    UserNotificationService, UserTopupService, UserWalletService,
+    OrganizationBudgetService, OrganizationContractPriceService, OrganizationPlanService,
+    OrganizationScimService, OrganizationTokenService, OrganizationWalletService,
+    PasskeyAuthenticationService, PasswordResetService, PlatformAuditService,
+    PlaygroundConversationService, PlaygroundShareService, RedemptionService, RegistrationService,
+    SessionAuthenticator, SiteSettingsService, SubscriptionService, TokenAuthenticator,
+    UserInvitationService, UserNotificationService, UserTopupService, UserWalletService,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -105,6 +105,7 @@ use crate::organization_approval::build_organization_approval_router;
 use crate::organization_approval_notifications::build_organization_approval_notification_router;
 use crate::organization_budget::build_organization_budget_router;
 use crate::organization_contract_price::build_organization_contract_price_router;
+use crate::organization_plan::build_organization_plan_router;
 use crate::organization_provisioning::build_organization_provisioning_router;
 use crate::organization_scim_audit::build_organization_scim_audit_router;
 use crate::organization_service_account_runtime::build_organization_service_account_runtime_router;
@@ -204,6 +205,7 @@ pub fn build_router(
     organization_scim_service: Option<Arc<dyn OrganizationScimService>>,
     organization_approval_service: Option<Arc<dyn OrganizationApprovalService>>,
     organization_provisioning_service: Option<Arc<dyn af_admin::OrganizationProvisioningService>>,
+    organization_plan_service: Option<Arc<dyn OrganizationPlanService>>,
     user_topup_service: Option<Arc<dyn UserTopupService>>,
     redemption_service: Arc<dyn RedemptionService>,
     subscription_service: Arc<dyn SubscriptionService>,
@@ -906,6 +908,11 @@ pub fn build_router(
     let management_routes = management_routes.merge(build_organization_provisioning_router(
         organization_provisioning_service,
         Arc::clone(&http_state.session_authenticator),
+    ));
+    let management_routes = management_routes.merge(build_organization_plan_router(
+        organization_plan_service,
+        Arc::clone(&http_state.session_authenticator),
+        user_topup_service.clone(),
     ));
     let management_routes = match (
         http_state.organization_authorization_service.clone(),

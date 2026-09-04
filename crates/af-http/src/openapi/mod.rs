@@ -23,6 +23,7 @@ mod organization_approval_notifications;
 mod organization_budget;
 mod organization_contract_price;
 mod organization_credit_terms;
+mod organization_plan;
 mod organization_provisioning;
 mod organization_scim_audit;
 mod organization_service_account_runtime;
@@ -121,6 +122,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(organization_contract_price::document());
     document.merge(organization_credit_terms::document());
     document.merge(organization_provisioning::document());
+    document.merge(organization_plan::document());
     document.merge(organization_sso::document());
     document.merge(organization_tokens::document());
     document.merge(organization_activity::document());
@@ -466,6 +468,10 @@ mod tests {
             "listAdminOrganizationProvisioningRequests",
             "getAdminOrganizationProvisioningRequest",
             "decideOrganizationProvisioningRequest",
+            "listAdminOrganizationPlans",
+            "createAdminOrganizationPlan",
+            "disableAdminOrganizationPlan",
+            "getOrganizationPlanCatalog",
             "getUserTopupConfiguration",
             "getUserWallet",
             "importMissingAdminModels",
@@ -671,6 +677,13 @@ mod tests {
         assert!(schemas.contains_key("OrganizationProvisioningDecisionRequest"));
         assert!(schemas.contains_key("OrganizationProvisioningRequest"));
         assert!(schemas.contains_key("OrganizationProvisioningRequestListResponse"));
+        assert!(schemas.contains_key("OrganizationPlanListQuerySchema"));
+        assert!(schemas.contains_key("OrganizationPlanCreateRequest"));
+        assert!(schemas.contains_key("OrganizationPlanDisableRequest"));
+        assert!(schemas.contains_key("OrganizationPlanStatus"));
+        assert!(schemas.contains_key("OrganizationPlan"));
+        assert!(schemas.contains_key("OrganizationPlanListResponse"));
+        assert!(schemas.contains_key("OrganizationPlanCatalogResponse"));
         assert!(schemas.contains_key("AdminDashboardChannelFlow"));
         assert!(schemas.contains_key("AdminDashboardFlowPath"));
         assert!(schemas.contains_key("AdminDashboardFailure"));

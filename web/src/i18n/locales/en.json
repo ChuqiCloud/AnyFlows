@@ -46,6 +46,7 @@
     "organizationActivity": "Organization logs & audit",
     "organizationOverview": "Organization overview",
     "organizationProvisioning": "Organization provisioning",
+    "organizationPlans": "Organization plans",
     "organizationMembers": "Members and teams",
     "organizationWallet": "Organization wallet",
     "organizationSettings": "Organization settings",
@@ -5156,6 +5157,26 @@
         "wallet": "The organization wallet is used for organization calls and ledger facts. A top-up does not purchase or extend a commercial plan.",
         "upgrade": "Organization creation, plan purchase, renewal, and upgrades require a platform provisioning flow; this page does not invent a personal-account upgrade path."
       },
+      "planCatalog": {
+        "eyebrow": "Enterprise plans",
+        "title": "Available organization plans",
+        "subtitle": "Compare the immutable capacity, capability, validity, and price snapshots currently exposed by the platform.",
+        "loading": "Loading organization plan catalog",
+        "errorTitle": "Organization plans could not be loaded",
+        "errorBody": "The platform plan catalog is temporarily unavailable. Existing organization access is unaffected.",
+        "empty": "No organization plan is currently available for this account. Ask a platform administrator about provisioning or payment configuration.",
+        "minorUnit": "currency minor units",
+        "seats": "{{count}} member seats",
+        "teams": "{{count}} teams",
+        "keys": "{{count}} organization keys",
+        "auditRetention": "{{count}} audit retention days",
+        "teamManagement": "Team management",
+        "sso": "Enterprise SSO",
+        "customRoles": "Custom roles",
+        "validity": "Valid for {{count}} days",
+        "enabled": "enabled",
+        "disabled": "not included"
+      },
       "links": {
       "members": "Members and teams",
       "departments": "Departments",
@@ -5681,6 +5702,25 @@
       "conflict": "The request changed concurrently. Refresh and review the latest server version.",
       "unavailable": "The provisioning service is temporarily unavailable. Try again shortly."
     }
+  },
+  "organizationPlans": {
+    "eyebrow": "Enterprise commerce",
+    "title": "Organization plans",
+    "subtitle": "Create immutable organization capability and price snapshots. Historical plans can only be disabled, never repriced in place.",
+    "summary": { "loaded": "{{count}} plans loaded", "active": "{{count}} available" },
+    "actions": { "refresh": "Refresh", "retry": "Try again", "create": "New plan", "save": "Save plan", "creating": "Saving…", "loadMore": "Load more", "disable": "Disable plan", "cancel": "Cancel" },
+    "create": { "title": "New organization plan", "subtitle": "Prices use currency minor units and cannot be edited after creation; future orders reference this snapshot." },
+    "fields": {
+      "name": "Plan name", "description": "Description", "provider": "Payment Provider", "currency": "Currency", "amountMinor": "Price (minor units)",
+      "seats": "Member seats", "teams": "Teams", "keys": "Organization key limit", "auditRetention": "Audit retention days", "validity": "Validity days", "capabilities": "Advanced capabilities",
+      "teamManagement": "Team management", "sso": "Organization SSO", "customRolesUnavailable": "Custom roles (not in the current sales boundary)"
+    },
+    "columns": { "plan": "Plan", "capacity": "Capacity", "price": "Price snapshot", "validity": "Validity", "actions": "Actions" },
+    "status": { "active": "Available", "disabled": "Disabled" },
+    "values": { "capacity": "{{seats}} seats · {{teams}} teams · {{keys}} keys", "days": "{{count}} days", "audit": "{{count}} audit days", "selected": "Selected" },
+    "empty": { "title": "No organization plans", "body": "Create the first plan to make a server-confirmed price snapshot available in the catalog." },
+    "errors": { "loadTitle": "Organization plans could not be loaded", "loadBody": "Plan facts are temporarily unavailable. Try again later.", "more": "The next page failed to load. Try again.", "create": "The plan is invalid or could not be saved. Check the fields and retry.", "disable": "Disable did not complete. The plan version may have changed; refresh and retry." },
+    "disable": { "title": "Disable organization plan?", "body": "{{name}} will leave the sales catalog. Historical price snapshots and referenced orders remain unchanged." }
   },
   "organizationOnboarding": {
     "title": "Organization owner onboarding",

@@ -38,6 +38,7 @@ mod organization_custom_role;
 mod organization_custom_role_binding;
 mod organization_invitation;
 mod organization_management;
+mod organization_plan;
 mod organization_provisioning;
 mod organization_scim;
 mod organization_service_account;
@@ -346,6 +347,13 @@ pub use organization_management::{
     OrganizationTeamChangeCommand, OrganizationTeamCreateCommand, OrganizationTeamDisableCommand,
     OrganizationTeamFuture, OrganizationTeamListQuery, OrganizationTeamPage,
     OrganizationTeamPageFuture,
+};
+pub use organization_plan::{
+    DEFAULT_ORGANIZATION_PLAN_PAGE_SIZE, DatabaseOrganizationPlanService, OrganizationPlanCatalog,
+    OrganizationPlanCatalogFuture, OrganizationPlanCreateCommand, OrganizationPlanDisableCommand,
+    OrganizationPlanFuture, OrganizationPlanListQuery, OrganizationPlanPage,
+    OrganizationPlanPageFuture, OrganizationPlanService, OrganizationPlanServiceError,
+    OrganizationPlanView,
 };
 pub use organization_provisioning::{
     DatabaseOrganizationProvisioningService, OrganizationProvisioningCreateCommand,

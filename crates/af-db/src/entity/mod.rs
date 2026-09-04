@@ -18,7 +18,7 @@ use af_domain::{
     OrganizationCreditTermPeriod, OrganizationCreditTermStatus, OrganizationCustomRoleKey,
     OrganizationCustomRoleStatus, OrganizationDepartmentKey,
     OrganizationDepartmentMembershipStatus, OrganizationDepartmentStatus, OrganizationKey,
-    OrganizationMembershipStatus, OrganizationPermission, OrganizationRole,
+    OrganizationMembershipStatus, OrganizationPermission, OrganizationPlanStatus, OrganizationRole,
     OrganizationServiceAccountKey, OrganizationServiceAccountStatus, OrganizationStatus,
     OrganizationTeamStatus, Protocol, Quota, QuotaDelta, RedemptionBatchId, RedemptionBatchStatus,
     RedemptionCodeId, RedemptionCodeStatus, RouteMode, RouteStrategy, SubscriptionCycle,
@@ -93,6 +93,8 @@ pub(crate) mod organization_departments;
 pub(crate) mod organization_entitlements;
 pub(crate) mod organization_invitations;
 pub(crate) mod organization_memberships;
+pub(crate) mod organization_plan_prices;
+pub(crate) mod organization_plans;
 pub(crate) mod organization_provisioning_requests;
 pub(crate) mod organization_scim_audit_logs;
 pub(crate) mod organization_scim_group_resources;
@@ -618,6 +620,104 @@ where
         || grace_until.is_some_and(|grace| valid_until.is_some_and(|until| grace < until))
     {
         return Err(DbErr::Custom("企业授权字段无效".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_organization_plan<C>(
+    model: &organization_plans::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    if !insert {
+        return Err(DbErr::Custom("企业套餐必须通过受信仓储停用".to_owned()));
+    }
+    if model.plan_key.try_as_ref().is_none()
+        || model.name.try_as_ref().is_none()
+        || model.seat_limit.try_as_ref().is_none()
+        || model.team_limit.try_as_ref().is_none()
+        || model.organization_key_limit.try_as_ref().is_none()
+        || model.audit_retention_days.try_as_ref().is_none()
+        || model.validity_days.try_as_ref().is_none()
+        || model.created_by_user_id.try_as_ref().is_none()
+    {
+        return Err(DbErr::Custom("企业套餐基础字段缺失".to_owned()));
+    }
+    let key = model.plan_key.try_as_ref().map(SensitiveString::as_str);
+    let name = model.name.try_as_ref().map(String::as_str);
+    let description = model.description.try_as_ref().map(|value| value.as_deref());
+    if key.is_some_and(|value| af_domain::OrganizationPlanId::from_persistence_key(value).is_err())
+        || name.is_some_and(|value| !valid_organization_text(value, 80))
+        || description
+            .is_some_and(|value| value.is_some_and(|text| !valid_organization_text(text, 240)))
+        || model
+            .status
+            .try_as_ref()
+            .is_some_and(|value| OrganizationPlanStatus::try_from(*value).is_err())
+        || model
+            .seat_limit
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || model
+            .team_limit
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || model
+            .organization_key_limit
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || model
+            .audit_retention_days
+            .try_as_ref()
+            .is_some_and(|value| !(1..=3_650).contains(value))
+        || model
+            .validity_days
+            .try_as_ref()
+            .is_some_and(|value| !(1..=3_650).contains(value))
+        || model.version.try_as_ref().is_some_and(|value| *value <= 0)
+    {
+        return Err(DbErr::Custom("企业套餐字段无效".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_organization_plan_price<C>(
+    model: &organization_plan_prices::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    if !insert {
+        return Err(DbErr::Custom("企业套餐价格快照不可更新".to_owned()));
+    }
+    let provider = model.provider.try_as_ref().map(String::as_str);
+    let currency = model.currency.try_as_ref().map(String::as_str);
+    if model.plan_id.try_as_ref().is_none()
+        || provider.is_none()
+        || currency.is_none()
+        || model.amount_minor.try_as_ref().is_none()
+        || model.plan_id.try_as_ref().is_some_and(|value| *value <= 0)
+        || provider.is_some_and(|value| {
+            value.is_empty()
+                || value.len() > 32
+                || !value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
+        })
+        || currency.is_some_and(|value| {
+            value.len() != 3 || !value.bytes().all(|byte| byte.is_ascii_uppercase())
+        })
+        || model
+            .amount_minor
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+    {
+        return Err(DbErr::Custom("企业套餐价格字段无效".to_owned()));
     }
     Ok(())
 }
@@ -3149,6 +3249,7 @@ impl_updated_at_behavior!(
     oauth_login_transactions::ActiveModel => validate_default,
     options::ActiveModel => validate_default,
     organizations::ActiveModel => validate_organization,
+    organization_plans::ActiveModel => validate_organization_plan,
     organization_teams::ActiveModel => validate_organization_team,
     organization_departments::ActiveModel => validate_organization_department,
     organization_department_memberships::ActiveModel => validate_organization_department_membership,
@@ -3171,6 +3272,18 @@ impl_updated_at_behavior!(
     user_oauth_identities::ActiveModel => validate_default,
     users::ActiveModel => validate_user,
 );
+
+/// 价格快照只有创建入口，不写入可变的 `updated_at` 审计字段。
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_plan_prices::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_organization_plan_price(&self, database, insert).await?;
+        Ok(self)
+    }
+}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for organization_custom_role_permissions::ActiveModel {

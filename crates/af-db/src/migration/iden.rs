@@ -2818,6 +2818,66 @@ pub(in crate::migration) mod organization_entitlements {
     }
 }
 
+pub(in crate::migration) mod organization_plans {
+    use super::DeriveIden;
+
+    /// `organization_plans` 企业套餐目录表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_plans")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业套餐目录的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        PlanKey,
+        Name,
+        Description,
+        Status,
+        TeamManagementEnabled,
+        SeatLimit,
+        TeamLimit,
+        OrganizationKeyLimit,
+        AuditRetentionDays,
+        SsoEnabled,
+        CustomRolesEnabled,
+        ValidityDays,
+        CreatedByUserId,
+        Version,
+        DisabledAt,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod organization_plan_prices {
+    use super::DeriveIden;
+
+    /// `organization_plan_prices` 不可变价格快照表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_plan_prices")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业套餐价格快照的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        PlanId,
+        Provider,
+        Currency,
+        AmountMinor,
+        CreatedAt,
+    }
+}
+
 pub(in crate::migration) mod organization_invitations {
     use super::DeriveIden;
 
