@@ -6,7 +6,7 @@ use af_domain::{
     OrganizationPlanOrderRequestId, OrganizationPlanOrderStatus, OrganizationPlanPaymentEventId,
     OrganizationPlanPaymentEventType, OrganizationPlanPrice, OrganizationPlanSnapshot, UserId,
 };
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set};
+use sea_orm::{ActiveModelTrait, EntityTrait, PaginatorTrait, Set};
 
 use crate::{
     DatabaseOptions, MigrationOptions, OrganizationCreate, OrganizationEntitlementWrite,
@@ -128,11 +128,11 @@ async fn payment_events_are_append_only_idempotent_and_do_not_grant_entitlement(
     let order = order(organization.id(), fixture.users[0], 0x41, 0x42, 0x43, 100)?;
     let order_id = order.order_id;
     fixture.repository.create_order(order).await?;
-    let event = event(organization.id(), order_id, 0x51, "provider-event-1", 100);
+    let first_event = event(organization.id(), order_id, 0x51, "provider-event-1", 100);
 
     fixture.repository.inject_outcome_unknown_after_commit();
     assert!(matches!(
-        fixture.repository.record_payment_event(event).await,
+        fixture.repository.record_payment_event(first_event).await,
         Err(OrganizationPlanOrderRepositoryError::OutcomeUnknown)
     ));
     let replay = fixture
