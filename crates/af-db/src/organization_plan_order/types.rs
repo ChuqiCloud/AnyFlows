@@ -80,6 +80,7 @@ impl fmt::Debug for OrganizationPlanOrderCreate {
 
 /// 已持久化的企业授权订单事实；敏感 Provider 引用不在 Debug 中输出。
 pub struct OrganizationPlanOrderRecord {
+    #[allow(dead_code, reason = "支付确认事务切片将使用持久化订单主键")]
     pub(super) database_id: i64,
     pub(super) order_id: OrganizationPlanOrderId,
     pub(super) request_id: OrganizationPlanOrderRequestId,
@@ -103,6 +104,7 @@ pub struct OrganizationPlanOrderRecord {
 }
 
 impl OrganizationPlanOrderRecord {
+    #[allow(dead_code, reason = "支付确认事务切片将读取持久化订单主键")]
     #[must_use]
     pub(crate) const fn database_id(&self) -> i64 {
         self.database_id
@@ -336,6 +338,7 @@ impl fmt::Debug for OrganizationPlanPaymentEventWrite {
 
 /// 已持久化支付事件的脱敏快照。
 pub struct OrganizationPlanPaymentEventRecord {
+    #[allow(dead_code, reason = "支付确认事务切片将使用持久化事件主键")]
     pub(super) database_id: i64,
     pub(super) event_id: OrganizationPlanPaymentEventId,
     pub(super) order_id: OrganizationPlanOrderId,
@@ -351,6 +354,7 @@ pub struct OrganizationPlanPaymentEventRecord {
 }
 
 impl OrganizationPlanPaymentEventRecord {
+    #[allow(dead_code, reason = "支付确认事务切片将读取持久化事件主键")]
     #[must_use]
     pub(crate) const fn database_id(&self) -> i64 {
         self.database_id
