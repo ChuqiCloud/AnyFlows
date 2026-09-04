@@ -113,7 +113,8 @@ pub use organization_entitlement::{
 pub use organization_provisioning::{
     MAX_ORGANIZATION_PROVISIONING_DECISION_REASON_BYTES, MAX_ORGANIZATION_PROVISIONING_NAME_BYTES,
     MAX_ORGANIZATION_PROVISIONING_REASON_BYTES, MAX_ORGANIZATION_PROVISIONING_SLUG_BYTES,
-    OrganizationProvisioningCreateOutcome, OrganizationProvisioningError,
+    OrganizationProvisioningCreateOutcome, OrganizationProvisioningDecisionKind,
+    OrganizationProvisioningDecisionOutcome, OrganizationProvisioningError,
     OrganizationProvisioningIdempotencyKey, OrganizationProvisioningRecord,
     OrganizationProvisioningRequest, OrganizationProvisioningRequestKey,
     OrganizationProvisioningStatus,

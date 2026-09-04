@@ -328,6 +328,7 @@ mod tests {
         assert!(postgres.contains("octet_length"));
         assert!(postgres.contains("2000"));
         assert!(mysql.contains("REGEXP"));
+        assert!(!mysql.contains("BINARY"));
         assert!(mysql.contains("64"));
         assert!(sqlite.contains("NOT GLOB"));
         assert!(sqlite.contains(&"0".repeat(32)));

@@ -97,6 +97,22 @@ impl OrganizationEntitlementWrite {
             expected_version,
         })
     }
+
+    pub(crate) const fn snapshot(&self) -> OrganizationEntitlementSnapshot {
+        self.snapshot
+    }
+
+    pub(crate) fn source(&self) -> &str {
+        &self.source
+    }
+
+    pub(crate) fn external_reference(&self) -> Option<&str> {
+        self.external_reference.as_deref()
+    }
+
+    pub(crate) const fn expected_version(&self) -> Option<i64> {
+        self.expected_version
+    }
 }
 
 impl fmt::Debug for OrganizationEntitlementWrite {

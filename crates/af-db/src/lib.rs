@@ -630,8 +630,8 @@ pub use organization_department_membership::{
     OrganizationDepartmentMembershipRepositoryError,
 };
 pub use organization_provisioning::{
-    OrganizationProvisioningRepository, OrganizationProvisioningRepositoryConfigError,
-    OrganizationProvisioningRepositoryError,
+    OrganizationProvisioningDecisionWrite, OrganizationProvisioningRepository,
+    OrganizationProvisioningRepositoryConfigError, OrganizationProvisioningRepositoryError,
 };
 pub use organization_scim::{
     OrganizationScimGroupRecord, OrganizationScimGroupRepository,

@@ -32,12 +32,29 @@ pub(super) async fn create(
     repository: &OrganizationRepository,
     write: OrganizationCreate,
 ) -> Result<OrganizationCreatedRecord, OrganizationRepositoryError> {
+    let transaction = begin(repository).await?;
+    let result = create_in_transaction(&transaction, write).await;
+    match result {
+        Ok(record) => {
+            commit(transaction).await?;
+            Ok(record)
+        }
+        Err(error) => {
+            rollback(transaction).await?;
+            Err(error)
+        }
+    }
+}
+
+/// 在调用方事务中创建企业、初始授权、钱包、SSO 策略和首个 Owner。
+pub(crate) async fn create_in_transaction(
+    transaction: &DatabaseTransaction,
+    write: OrganizationCreate,
+) -> Result<OrganizationCreatedRecord, OrganizationRepositoryError> {
     validate_name(&write.name, MAX_ORGANIZATION_NAME_BYTES)?;
     validate_slug(&write.slug)?;
     let organization_key = generate_organization_key()?;
-    let transaction = begin(repository).await?;
-    if !lock_active_user(&transaction, write.owner_user_id).await? {
-        rollback(transaction).await?;
+    if !lock_active_user(transaction, write.owner_user_id).await? {
         return Err(OrganizationRepositoryError::UserUnavailable);
     }
 
@@ -54,19 +71,11 @@ pub(super) async fn create(
         closed_at: Set(None),
         ..Default::default()
     }
-    .insert(&transaction)
-    .await;
-    let organization = match organization {
-        Ok(model) => model,
-        Err(error) => {
-            let mapped = map_write_error(&error);
-            rollback(transaction).await?;
-            return Err(mapped);
-        }
-    };
+    .insert(transaction)
+    .await
+    .map_err(|error| map_write_error(&error))?;
 
     if write.entitlement.expected_version.is_some() {
-        rollback(transaction).await?;
         return Err(OrganizationRepositoryError::InvalidInput);
     }
     let entitlement = write.entitlement;
@@ -93,12 +102,10 @@ pub(super) async fn create(
         updated_at: Set(now),
         ..Default::default()
     })
-    .insert(&transaction)
+    .insert(transaction)
     .await
     {
-        let mapped = map_write_error(&error);
-        rollback(transaction).await?;
-        return Err(mapped);
+        return Err(map_write_error(&error));
     }
 
     if let Err(error) = (organization_sso_policies::ActiveModel {
@@ -109,12 +116,10 @@ pub(super) async fn create(
         created_at: Set(now),
         updated_at: Set(now),
     })
-    .insert(&transaction)
+    .insert(transaction)
     .await
     {
-        let mapped = map_write_error(&error);
-        rollback(transaction).await?;
-        return Err(mapped);
+        return Err(map_write_error(&error));
     }
 
     if let Err(error) = (organization_wallets::ActiveModel {
@@ -127,12 +132,10 @@ pub(super) async fn create(
         updated_at: Set(now),
         ..Default::default()
     })
-    .insert(&transaction)
+    .insert(transaction)
     .await
     {
-        let mapped = map_write_error(&error);
-        rollback(transaction).await?;
-        return Err(mapped);
+        return Err(map_write_error(&error));
     }
 
     let owner = organization_memberships::ActiveModel {
@@ -148,20 +151,12 @@ pub(super) async fn create(
         version: Set(1),
         ..Default::default()
     }
-    .insert(&transaction)
-    .await;
-    let owner = match owner {
-        Ok(model) => model,
-        Err(error) => {
-            let mapped = map_write_error(&error);
-            rollback(transaction).await?;
-            return Err(mapped);
-        }
-    };
+    .insert(transaction)
+    .await
+    .map_err(|error| map_write_error(&error))?;
 
     let organization = super::read::organization_record(organization)?;
     let owner_membership = super::read::membership_record(owner)?;
-    commit(transaction).await?;
     Ok(OrganizationCreatedRecord::new(
         organization,
         owner_membership,
@@ -745,7 +740,7 @@ pub(super) async fn lock_active_user(
 }
 
 /// 锁定活动用户并返回邮箱，供邀请接受事务做同一快照匹配。
-pub(super) async fn lock_active_user_model(
+pub(crate) async fn lock_active_user_model(
     transaction: &DatabaseTransaction,
     user_id: UserId,
 ) -> Result<users::Model, OrganizationRepositoryError> {
