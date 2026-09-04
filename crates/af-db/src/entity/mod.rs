@@ -18,12 +18,13 @@ use af_domain::{
     OrganizationCreditTermPeriod, OrganizationCreditTermStatus, OrganizationCustomRoleKey,
     OrganizationCustomRoleStatus, OrganizationDepartmentKey,
     OrganizationDepartmentMembershipStatus, OrganizationDepartmentStatus, OrganizationKey,
-    OrganizationMembershipStatus, OrganizationPermission, OrganizationPlanStatus, OrganizationRole,
-    OrganizationServiceAccountKey, OrganizationServiceAccountStatus, OrganizationStatus,
-    OrganizationTeamStatus, Protocol, Quota, QuotaDelta, RedemptionBatchId, RedemptionBatchStatus,
-    RedemptionCodeId, RedemptionCodeStatus, RouteMode, RouteStrategy, SubscriptionCycle,
-    SubscriptionPlanId, SubscriptionPlanStatus, SubscriptionWindow, UserSubscriptionId,
-    UserSubscriptionStatus, WalletEventId, validate_route_model_pattern,
+    OrganizationMembershipStatus, OrganizationPermission, OrganizationPlanOrderStatus,
+    OrganizationPlanStatus, OrganizationRole, OrganizationServiceAccountKey,
+    OrganizationServiceAccountStatus, OrganizationStatus, OrganizationTeamStatus, Protocol, Quota,
+    QuotaDelta, RedemptionBatchId, RedemptionBatchStatus, RedemptionCodeId, RedemptionCodeStatus,
+    RouteMode, RouteStrategy, SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus,
+    SubscriptionWindow, UserSubscriptionId, UserSubscriptionStatus, WalletEventId,
+    validate_route_model_pattern,
 };
 
 pub(crate) mod abilities;
@@ -93,6 +94,8 @@ pub(crate) mod organization_departments;
 pub(crate) mod organization_entitlements;
 pub(crate) mod organization_invitations;
 pub(crate) mod organization_memberships;
+pub(crate) mod organization_plan_orders;
+pub(crate) mod organization_plan_payment_events;
 pub(crate) mod organization_plan_prices;
 pub(crate) mod organization_plans;
 pub(crate) mod organization_provisioning_requests;
@@ -2851,6 +2854,146 @@ where
     Ok(())
 }
 
+async fn validate_organization_plan_order<C>(
+    model: &organization_plan_orders::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    // 订单固定事实只能由企业订单仓储创建，后续状态推进走专用 CAS。
+    if !insert {
+        return Err(DbErr::Custom("企业授权订单必须通过受信仓储更新".to_owned()));
+    }
+    let order_key = model
+        .order_key
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("企业授权订单标识缺失".to_owned()))?;
+    let request_key = model
+        .idempotency_key
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("企业授权订单幂等键缺失".to_owned()))?;
+    let plan_key = model
+        .plan_key
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("企业授权订单套餐标识缺失".to_owned()))?;
+    let provider = model
+        .provider
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("企业授权订单支付 Provider 缺失".to_owned()))?;
+    let currency = model
+        .currency
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("企业授权订单币种缺失".to_owned()))?;
+    let organization_id = model
+        .organization_id
+        .try_as_ref()
+        .copied()
+        .unwrap_or_default();
+    let payer_user_id = model
+        .payer_user_id
+        .try_as_ref()
+        .copied()
+        .unwrap_or_default();
+    let plan_id = model.plan_id.try_as_ref().copied().unwrap_or_default();
+    let plan_version = model.plan_version.try_as_ref().copied().unwrap_or_default();
+    let status = model.status.try_as_ref().copied().unwrap_or_default();
+    let version = model.version.try_as_ref().copied().unwrap_or_default();
+    let amount_minor = model.amount_minor.try_as_ref().copied().unwrap_or_default();
+    let created_at = model
+        .created_at
+        .try_as_ref()
+        .copied()
+        .ok_or_else(|| DbErr::Custom("企业授权订单创建时间缺失".to_owned()))?;
+    let expires_at = model.expires_at.try_as_ref().copied().flatten();
+    let paid_at = model.paid_at.try_as_ref().copied().flatten();
+    let closed_at = model.closed_at.try_as_ref().copied().flatten();
+
+    if !valid_hex(order_key, 32, true)
+        || !valid_hex(request_key, 32, true)
+        || !valid_hex(plan_key, 32, true)
+        || organization_id <= 0
+        || payer_user_id <= 0
+        || plan_id <= 0
+        || plan_version <= 0
+        || provider.is_empty()
+        || provider.len() > 32
+        || provider
+            .bytes()
+            .any(|byte| !(byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.')))
+        || !valid_currency(currency)
+        || amount_minor <= 0
+        || version != 1
+        || created_at.unix_timestamp() < 0
+        || expires_at.is_some_and(|value| value <= created_at)
+        || !valid_organization_plan_order_state(status, paid_at, closed_at)
+    {
+        return Err(DbErr::Custom("企业授权订单状态无效".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_organization_plan_payment_event<C>(
+    model: &organization_plan_payment_events::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    // 支付事件是只追加审计事实，禁止通过实体更新旧事件。
+    if !insert {
+        return Err(DbErr::Custom("企业授权支付事件不允许更新".to_owned()));
+    }
+    let event_key = model
+        .event_key
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("企业授权支付事件标识缺失".to_owned()))?;
+    let provider = model
+        .provider
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("企业授权支付事件渠道缺失".to_owned()))?;
+    let provider_event_id = model
+        .provider_event_id
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("企业授权支付事件 Provider 标识缺失".to_owned()))?;
+    let signature_key_fingerprint = model
+        .signature_key_fingerprint
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("企业授权支付事件签名指纹缺失".to_owned()))?;
+    let payload_sha256 = model
+        .payload_sha256
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("企业授权支付事件负载哈希缺失".to_owned()))?;
+    let order_id = model.order_id.try_as_ref().copied().unwrap_or_default();
+    let event_type = model.event_type.try_as_ref().copied().unwrap_or_default();
+    let amount_minor = model.amount_minor.try_as_ref().copied().flatten();
+    let currency = model.currency.try_as_ref().and_then(Option::as_deref);
+    let payment_method = model.payment_method.try_as_ref().and_then(Option::as_deref);
+    if order_id <= 0
+        || !valid_hex(event_key, 32, true)
+        || provider.is_empty()
+        || provider.len() > 32
+        || provider
+            .bytes()
+            .any(|byte| !(byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.')))
+        || provider_event_id.as_str().is_empty()
+        || provider_event_id.as_str().len() > 128
+        || !matches!(event_type, 1..=3)
+        || amount_minor.is_some_and(|value| value <= 0)
+        || currency.is_some_and(|value| !valid_currency(value))
+        || payment_method.is_some_and(|value| value.is_empty() || value.len() > 32)
+        || !valid_hex(signature_key_fingerprint.as_str(), 64, false)
+        || !valid_hex(payload_sha256.as_str(), 64, false)
+        || model.received_at.try_as_ref().is_none()
+        || model.created_at.try_as_ref().is_none()
+    {
+        return Err(DbErr::Custom("企业授权支付事件状态无效".to_owned()));
+    }
+    Ok(())
+}
+
 async fn validate_refund_request<C>(
     model: &refund_requests::ActiveModel,
     database: &C,
@@ -3250,6 +3393,7 @@ impl_updated_at_behavior!(
     options::ActiveModel => validate_default,
     organizations::ActiveModel => validate_organization,
     organization_plans::ActiveModel => validate_organization_plan,
+    organization_plan_orders::ActiveModel => validate_organization_plan_order,
     organization_teams::ActiveModel => validate_organization_team,
     organization_departments::ActiveModel => validate_organization_department,
     organization_department_memberships::ActiveModel => validate_organization_department_membership,
@@ -3281,6 +3425,17 @@ impl ActiveModelBehavior for organization_plan_prices::ActiveModel {
         C: ConnectionTrait,
     {
         validate_organization_plan_price(&self, database, insert).await?;
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_plan_payment_events::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_organization_plan_payment_event(&self, database, insert).await?;
         Ok(self)
     }
 }

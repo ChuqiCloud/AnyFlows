@@ -45,8 +45,9 @@ use crate::entity::{
     organization_credit_repayments, organization_credit_terms,
     organization_custom_role_permissions, organization_custom_roles,
     organization_department_memberships, organization_departments, organization_entitlements,
-    organization_invitations, organization_memberships, organization_plan_prices,
-    organization_plans, organization_provisioning_requests, organization_scim_audit_logs,
+    organization_invitations, organization_memberships, organization_plan_orders,
+    organization_plan_payment_events, organization_plan_prices, organization_plans,
+    organization_provisioning_requests, organization_scim_audit_logs,
     organization_scim_group_resources, organization_scim_tokens, organization_scim_user_resources,
     organization_service_account_audit_logs, organization_service_account_budget_bindings,
     organization_service_account_keys, organization_service_accounts,
@@ -93,7 +94,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 131;
+const EXPECTED_MIGRATION_COUNT: usize = 132;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -112,7 +113,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 113] = [
+const CORE_TABLES: [&str; 115] = [
     "groups",
     "users",
     "passkeys",
@@ -176,6 +177,8 @@ const CORE_TABLES: [&str; 113] = [
     "organization_provisioning_requests",
     "organization_plans",
     "organization_plan_prices",
+    "organization_plan_orders",
+    "organization_plan_payment_events",
     "organization_teams",
     "organization_departments",
     "organization_department_memberships",
@@ -2504,6 +2507,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
         pending_migrations[71].name(),
         "m20260904_000131_create_organization_plan_catalog"
     );
+    assert_eq!(
+        pending_migrations[72].name(),
+        "m20260905_000132_create_organization_plan_orders"
+    );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
     assert_legacy_debug_trace_snapshot_cleared(&pool, legacy_debug_trace_id).await?;
@@ -4078,6 +4085,13 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     assert_entity_columns::<organization_plans::Column>(&manager, "organization_plans").await?;
     assert_entity_columns::<organization_plan_prices::Column>(&manager, "organization_plan_prices")
         .await?;
+    assert_entity_columns::<organization_plan_orders::Column>(&manager, "organization_plan_orders")
+        .await?;
+    assert_entity_columns::<organization_plan_payment_events::Column>(
+        &manager,
+        "organization_plan_payment_events",
+    )
+    .await?;
     assert_entity_columns::<organization_sso_policies::Column>(
         &manager,
         "organization_sso_policies",
@@ -4387,6 +4401,38 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         (
             "organization_plan_prices",
             "uq_organization_plan_prices_plan",
+        ),
+        (
+            "organization_plan_orders",
+            "uq_organization_plan_orders_order_key",
+        ),
+        (
+            "organization_plan_orders",
+            "uq_organization_plan_orders_org_idempotency",
+        ),
+        (
+            "organization_plan_orders",
+            "uq_organization_plan_orders_provider_trade_no",
+        ),
+        (
+            "organization_plan_orders",
+            "idx_organization_plan_orders_org_created",
+        ),
+        (
+            "organization_plan_orders",
+            "idx_organization_plan_orders_status_expires",
+        ),
+        (
+            "organization_plan_payment_events",
+            "uq_organization_plan_payment_events_event_key",
+        ),
+        (
+            "organization_plan_payment_events",
+            "uq_organization_plan_payment_events_provider_event",
+        ),
+        (
+            "organization_plan_payment_events",
+            "idx_organization_plan_payment_events_order_created",
         ),
         (
             "subscription_plan_prices",
