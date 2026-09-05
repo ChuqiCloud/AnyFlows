@@ -9,6 +9,7 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        // SQLite 的 ALTER TABLE 每次只能增加一列，拆分执行保证三方言迁移一致。
         manager
             .alter_table(
                 Table::alter()
@@ -19,10 +20,24 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .default(1_i16),
                     )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(organization_plan_orders::Entity)
                     .add_column(
                         ColumnDef::new(organization_plan_orders::Column::EffectiveAt)
                             .timestamp_with_time_zone(),
                     )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(organization_plan_orders::Entity)
                     .add_column(
                         ColumnDef::new(organization_plan_orders::Column::AppliedAt)
                             .timestamp_with_time_zone(),
@@ -58,7 +73,21 @@ impl MigrationTrait for Migration {
                 Table::alter()
                     .table(organization_plan_orders::Entity)
                     .drop_column(organization_plan_orders::Column::AppliedAt)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(organization_plan_orders::Entity)
                     .drop_column(organization_plan_orders::Column::EffectiveAt)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(organization_plan_orders::Entity)
                     .drop_column(organization_plan_orders::Column::Kind)
                     .to_owned(),
             )
