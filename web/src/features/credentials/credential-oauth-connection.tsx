@@ -13,10 +13,11 @@ type CredentialOAuthConnectionProps = {
   channelId: number
   credential: AdminCredential
   onRefresh: () => Promise<unknown>
+  onDelete: (credential: AdminCredential) => void
 }
 
 /** 组合 OAuth Provider 状态、授权控制器与操作视图。 */
-export function CredentialOAuthConnection({ active, channelId, credential, onRefresh }: CredentialOAuthConnectionProps) {
+export function CredentialOAuthConnection({ active, channelId, credential, onDelete, onRefresh }: CredentialOAuthConnectionProps) {
   const { t } = useTranslation()
   const controller = useCredentialOAuthController({
     active,
@@ -43,7 +44,7 @@ export function CredentialOAuthConnection({ active, channelId, credential, onRef
         ) : null}
       </div>
       <CredentialOAuthProviderField controller={controller} credential={credential} />
-      <CredentialOAuthStatusView controller={controller} credential={credential} />
+      <CredentialOAuthStatusView controller={controller} credential={credential} onDelete={() => { controller.resetFlow(); onDelete(credential) }} />
     </div>
   )
 }

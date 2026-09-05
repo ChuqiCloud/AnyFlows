@@ -10,6 +10,72 @@ export type OAuthCredentialBaseline = {
   revision: number
 }
 
+export type OAuthWizardPhase = 'waiting' | 'error' | 'expired'
+
+export type PersistedOAuthWizardState = {
+  channelId: number
+  credentialId: number
+  provider: AdminOAuthProvider
+  phase: OAuthWizardPhase
+}
+
+const oauthWizardStoragePrefix = 'anyflows.credentials.oauth-wizard.v1'
+
+/** 仅使用当前标签页保存向导阶段；授权 URL、state、code 和 token 永不写入存储。 */
+export function readOAuthWizardState(channelId: number, credentialId: number): PersistedOAuthWizardState | undefined {
+  const storage = getOAuthWizardStorage()
+  if (!storage) return undefined
+  const key = oauthWizardStorageKey(channelId, credentialId)
+  try {
+    const raw = storage.getItem(key)
+    if (!raw) return undefined
+    const parsed: unknown = JSON.parse(raw)
+    if (!isPersistedOAuthWizardState(parsed, channelId, credentialId)) {
+      storage.removeItem(key)
+      return undefined
+    }
+    return parsed
+  } catch {
+    try { storage.removeItem(key) } catch { /* 存储策略拒绝访问时仅退化为内存状态。 */ }
+    return undefined
+  }
+}
+
+/** 写入可恢复的非敏感阶段，存储不可用时不影响当前页面授权。 */
+export function writeOAuthWizardState(state: PersistedOAuthWizardState) {
+  const storage = getOAuthWizardStorage()
+  if (!storage) return
+  try {
+    storage.setItem(oauthWizardStorageKey(state.channelId, state.credentialId), JSON.stringify(state))
+  } catch {
+    // 隐私模式或存储配额不足时保留页面内存状态。
+  }
+}
+
+/** 清除当前凭据的恢复状态，避免已删除或已完成授权再次显示旧阶段。 */
+export function clearOAuthWizardState(channelId: number, credentialId: number) {
+  const storage = getOAuthWizardStorage()
+  if (!storage) return
+  try { storage.removeItem(oauthWizardStorageKey(channelId, credentialId)) } catch { /* 存储不可用时无需补偿。 */ }
+}
+
+function oauthWizardStorageKey(channelId: number, credentialId: number) {
+  return `${oauthWizardStoragePrefix}.${channelId}.${credentialId}`
+}
+
+function getOAuthWizardStorage(): Storage | undefined {
+  try { return globalThis.sessionStorage } catch { return undefined }
+}
+
+function isPersistedOAuthWizardState(value: unknown, channelId: number, credentialId: number): value is PersistedOAuthWizardState {
+  if (typeof value !== 'object' || value === null) return false
+  const candidate = value as Record<string, unknown>
+  return candidate.channelId === channelId
+    && candidate.credentialId === credentialId
+    && asAdminOAuthProvider(typeof candidate.provider === 'string' ? candidate.provider : '') !== undefined
+    && (candidate.phase === 'waiting' || candidate.phase === 'error' || candidate.phase === 'expired')
+}
+
 /** 将数据库中的开放 provider 字符串收敛为管理 API 支持的闭合集合。 */
 export function asAdminOAuthProvider(value: string | null): AdminOAuthProvider | undefined {
   return adminOAuthProviders.find((provider) => provider === value)
