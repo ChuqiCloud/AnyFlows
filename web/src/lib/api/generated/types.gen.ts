@@ -1981,7 +1981,19 @@ export type OrganizationPlanOrderCreateRequest = {
     plan_id: string;
     idempotency_key: string;
 };
+export type OrganizationPlanOrderPaymentRequest = {
+    payment_method: string;
+};
+export type OrganizationPlanOrderPaymentResponse = {
+    order: OrganizationPlanOrder;
+    payment: OrganizationPlanPayment;
+};
 export type OrganizationPlanOrderStatus = 'created' | 'pending' | 'paid' | 'failed' | 'canceled' | 'expired';
+export type OrganizationPlanPayment = {
+    payment_intent_id: string | null;
+    client_secret: string | null;
+    redirect_url: string | null;
+};
 export type OrganizationPlanStatus = 'active' | 'disabled';
 export type OrganizationProvisioningCreateRequest = {
     idempotency_key: string;
@@ -7939,6 +7951,28 @@ export type GetOrganizationPlanOrderResponses = {
     200: OrganizationPlanOrder;
 };
 export type GetOrganizationPlanOrderResponse = GetOrganizationPlanOrderResponses[keyof GetOrganizationPlanOrderResponses];
+export type SubmitOrganizationPlanOrderPaymentData = {
+    body: OrganizationPlanOrderPaymentRequest;
+    path: {
+        organization_id: number;
+        order_id: string;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/plan-orders/{order_id}/payment';
+};
+export type SubmitOrganizationPlanOrderPaymentErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type SubmitOrganizationPlanOrderPaymentError = SubmitOrganizationPlanOrderPaymentErrors[keyof SubmitOrganizationPlanOrderPaymentErrors];
+export type SubmitOrganizationPlanOrderPaymentResponses = {
+    200: OrganizationPlanOrderPaymentResponse;
+};
+export type SubmitOrganizationPlanOrderPaymentResponse = SubmitOrganizationPlanOrderPaymentResponses[keyof SubmitOrganizationPlanOrderPaymentResponses];
 export type DiscoverOrganizationSsoData = {
     body: OrganizationSsoDiscoveryRequest;
     path?: never;

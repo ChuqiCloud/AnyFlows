@@ -18,8 +18,11 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::{
-    OrganizationAuthorizationError, OrganizationAuthorizationService, OrganizationPlanService,
-    OrganizationPlanServiceError, SessionPrincipal, UserTopupError, UserTopupService,
+    DatabaseOrganizationPlanOrderPaymentService, OrganizationAuthorizationError,
+    OrganizationAuthorizationService, OrganizationPlanOrderPaymentCommand,
+    OrganizationPlanOrderPaymentError, OrganizationPlanOrderPaymentService,
+    OrganizationPlanService, OrganizationPlanServiceError, SessionPrincipal, UserTopupError,
+    UserTopupPaymentSession, UserTopupService,
 };
 
 const ORDER_ID_DOMAIN: &[u8] = b"anyflows:organization-plan-order:v1";
@@ -176,6 +179,38 @@ impl fmt::Debug for OrganizationPlanOrderView {
     }
 }
 
+/// 企业控制台支付提交结果；订单投影不暴露 Provider 订单号或交易流水号。
+pub struct OrganizationPlanOrderPaymentView {
+    order: OrganizationPlanOrderView,
+    payment: UserTopupPaymentSession,
+}
+
+impl OrganizationPlanOrderPaymentView {
+    fn from_payment(payment: crate::OrganizationPlanOrderPayment) -> Self {
+        let (order, payment, replayed) = payment.into_parts();
+        Self {
+            order: OrganizationPlanOrderView::from_record(order, replayed),
+            payment,
+        }
+    }
+
+    #[must_use]
+    pub const fn order(&self) -> &OrganizationPlanOrderView {
+        &self.order
+    }
+
+    #[must_use]
+    pub const fn payment(&self) -> &UserTopupPaymentSession {
+        &self.payment
+    }
+}
+
+impl fmt::Debug for OrganizationPlanOrderPaymentView {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("OrganizationPlanOrderPaymentView(<redacted>)")
+    }
+}
+
 /// 企业授权订单应用层错误；跨企业探测统一折叠为不存在。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum OrganizationPlanOrderServiceError {
@@ -187,6 +222,8 @@ pub enum OrganizationPlanOrderServiceError {
     NotFound,
     #[error("企业授权订单幂等事实冲突")]
     Conflict,
+    #[error("支付 Provider 拒绝企业授权订单")]
+    PaymentRejected,
     #[error("企业授权订单写入结果未知")]
     OutcomeUnknown,
     #[error("企业授权订单服务暂不可用")]
@@ -203,7 +240,19 @@ pub type OrganizationPlanOrderFuture<'a> = Pin<
     >,
 >;
 
-/// 企业授权订单创建与读取端口；支付提交和支付确认由独立服务负责。
+pub type OrganizationPlanOrderPaymentViewFuture<'a> = Pin<
+    Box<
+        dyn Future<
+                Output = Result<
+                    OrganizationPlanOrderPaymentView,
+                    OrganizationPlanOrderServiceError,
+                >,
+            > + Send
+            + 'a,
+    >,
+>;
+
+/// 企业授权订单创建、读取与支付提交端口；支付确认和授权发放仍由验签事件负责。
 pub trait OrganizationPlanOrderService: Send + Sync {
     fn create<'a>(
         &'a self,
@@ -218,6 +267,13 @@ pub trait OrganizationPlanOrderService: Send + Sync {
         organization_id: OrganizationId,
         order_id: OrganizationPlanOrderId,
     ) -> OrganizationPlanOrderFuture<'a>;
+
+    /// 复验付款人企业权限后创建或恢复同一订单的支付会话。
+    fn submit_payment<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        command: OrganizationPlanOrderPaymentCommand,
+    ) -> OrganizationPlanOrderPaymentViewFuture<'a>;
 }
 
 /// 使用企业 RBAC、活动套餐目录和幂等仓储实现订单创建与读取。
@@ -226,6 +282,7 @@ pub struct DatabaseOrganizationPlanOrderService {
     plan_service: Arc<dyn OrganizationPlanService>,
     topup_service: Arc<dyn UserTopupService>,
     repository: OrganizationPlanOrderRepository,
+    payment_service: DatabaseOrganizationPlanOrderPaymentService,
 }
 
 impl DatabaseOrganizationPlanOrderService {
@@ -236,11 +293,13 @@ impl DatabaseOrganizationPlanOrderService {
         topup_service: Arc<dyn UserTopupService>,
         repository: OrganizationPlanOrderRepository,
     ) -> Self {
+        let payment_service = DatabaseOrganizationPlanOrderPaymentService::new(repository.clone());
         Self {
             authorization_service,
             plan_service,
             topup_service,
             repository,
+            payment_service,
         }
     }
 }
@@ -362,6 +421,41 @@ impl OrganizationPlanOrderService for DatabaseOrganizationPlanOrderService {
                 .ok_or(OrganizationPlanOrderServiceError::NotFound)
         })
     }
+
+    fn submit_payment<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        command: OrganizationPlanOrderPaymentCommand,
+    ) -> OrganizationPlanOrderPaymentViewFuture<'a> {
+        Box::pin(async move {
+            self.authorization_service
+                .context(
+                    principal,
+                    command.organization_id(),
+                    OrganizationPermission::WalletManage,
+                )
+                .await
+                .map_err(map_authorization_error)?;
+
+            // Provider 只能由路径企业内、当前付款人的已锁定订单事实决定。
+            let order = self
+                .repository
+                .get_order(command.organization_id(), command.order_id())
+                .await
+                .map_err(map_repository_error)?
+                .filter(|order| order.payer_user_id() == principal.user_id())
+                .ok_or(OrganizationPlanOrderServiceError::NotFound)?;
+            let provider = self
+                .topup_service
+                .provider_for(order.provider(), command.payment_method())
+                .map_err(map_topup_error)?;
+            self.payment_service
+                .submit(principal, command, provider)
+                .await
+                .map(OrganizationPlanOrderPaymentView::from_payment)
+                .map_err(map_payment_error)
+        })
+    }
 }
 
 impl fmt::Debug for DatabaseOrganizationPlanOrderService {
@@ -434,6 +528,30 @@ fn map_topup_error(_error: UserTopupError) -> OrganizationPlanOrderServiceError 
     OrganizationPlanOrderServiceError::Unavailable
 }
 
+fn map_payment_error(
+    error: OrganizationPlanOrderPaymentError,
+) -> OrganizationPlanOrderServiceError {
+    match error {
+        OrganizationPlanOrderPaymentError::InvalidInput => {
+            OrganizationPlanOrderServiceError::InvalidRequest
+        }
+        OrganizationPlanOrderPaymentError::OrderNotFound => {
+            OrganizationPlanOrderServiceError::NotFound
+        }
+        OrganizationPlanOrderPaymentError::Conflict => OrganizationPlanOrderServiceError::Conflict,
+        OrganizationPlanOrderPaymentError::PaymentRejected => {
+            OrganizationPlanOrderServiceError::PaymentRejected
+        }
+        OrganizationPlanOrderPaymentError::PaymentUnavailable => {
+            OrganizationPlanOrderServiceError::Unavailable
+        }
+        OrganizationPlanOrderPaymentError::OutcomeUnknown => {
+            OrganizationPlanOrderServiceError::OutcomeUnknown
+        }
+        OrganizationPlanOrderPaymentError::Internal => OrganizationPlanOrderServiceError::Internal,
+    }
+}
+
 fn map_repository_error(
     error: OrganizationPlanOrderRepositoryError,
 ) -> OrganizationPlanOrderServiceError {
@@ -459,8 +577,16 @@ fn map_repository_error(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use af_db::{DatabaseOptions, MigrationOptions};
+
     use super::*;
-    use crate::SessionRole;
+    use crate::{
+        OrganizationAccessFuture, OrganizationListFuture, OrganizationPlanCatalogFuture,
+        OrganizationPlanFuture, OrganizationPlanPageFuture, SessionRole, UserTopupConfiguration,
+        UserTopupOrderCreateFuture,
+    };
 
     #[test]
     fn 同一企业用户套餐和请求生成稳定订单标识() {
@@ -483,5 +609,127 @@ mod tests {
             first,
             scoped_order_id(principal, organization_id, another_plan).unwrap()
         );
+    }
+
+    #[tokio::test]
+    async fn 支付提交必须重新校验企业钱包管理权限() {
+        let pool = af_db::connect_and_migrate(
+            &DatabaseOptions::new("sqlite::memory:").expect("测试数据库配置有效"),
+            MigrationOptions::default(),
+        )
+        .await
+        .expect("测试数据库迁移成功");
+        let authorization = Arc::new(DenyingAuthorizationService::default());
+        let service = DatabaseOrganizationPlanOrderService::new(
+            authorization.clone(),
+            Arc::new(UnavailablePlanService),
+            Arc::new(UnavailableTopupService),
+            OrganizationPlanOrderRepository::new(pool.clone(), std::time::Duration::from_secs(5))
+                .expect("企业订单仓储配置有效"),
+        );
+        let organization_id = OrganizationId::new(23).expect("企业标识有效");
+        let command = OrganizationPlanOrderPaymentCommand::new(
+            organization_id,
+            OrganizationPlanOrderId::new([0x62; 16]).expect("订单标识有效"),
+            "card".to_owned(),
+        )
+        .expect("支付命令有效");
+
+        let result = service
+            .submit_payment(
+                SessionPrincipal::new(UserId::new(17).expect("用户标识有效"), SessionRole::User),
+                command,
+            )
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(OrganizationPlanOrderServiceError::Forbidden)
+        ));
+        assert_eq!(
+            authorization
+                .permissions
+                .lock()
+                .expect("测试权限锁未中毒")
+                .as_slice(),
+            &[OrganizationPermission::WalletManage]
+        );
+        pool.close().await.expect("测试数据库关闭成功");
+    }
+
+    #[derive(Default)]
+    struct DenyingAuthorizationService {
+        permissions: Mutex<Vec<OrganizationPermission>>,
+    }
+
+    impl OrganizationAuthorizationService for DenyingAuthorizationService {
+        fn list<'a>(&'a self, _principal: SessionPrincipal) -> OrganizationListFuture<'a> {
+            Box::pin(async { Err(OrganizationAuthorizationError::Internal) })
+        }
+
+        fn context<'a>(
+            &'a self,
+            _principal: SessionPrincipal,
+            _organization_id: OrganizationId,
+            permission: OrganizationPermission,
+        ) -> OrganizationAccessFuture<'a> {
+            self.permissions
+                .lock()
+                .expect("测试权限锁未中毒")
+                .push(permission);
+            Box::pin(async { Err(OrganizationAuthorizationError::Forbidden) })
+        }
+    }
+
+    struct UnavailablePlanService;
+
+    impl OrganizationPlanService for UnavailablePlanService {
+        fn list_catalog<'a>(
+            &'a self,
+            _principal: SessionPrincipal,
+        ) -> OrganizationPlanCatalogFuture<'a> {
+            Box::pin(async { Err(OrganizationPlanServiceError::Internal) })
+        }
+
+        fn list<'a>(
+            &'a self,
+            _principal: SessionPrincipal,
+            _query: crate::OrganizationPlanListQuery,
+        ) -> OrganizationPlanPageFuture<'a> {
+            Box::pin(async { Err(OrganizationPlanServiceError::Internal) })
+        }
+
+        fn create<'a>(
+            &'a self,
+            _principal: SessionPrincipal,
+            _command: crate::OrganizationPlanCreateCommand,
+        ) -> OrganizationPlanFuture<'a> {
+            Box::pin(async { Err(OrganizationPlanServiceError::Internal) })
+        }
+
+        fn disable<'a>(
+            &'a self,
+            _principal: SessionPrincipal,
+            _plan_id: OrganizationPlanId,
+            _command: crate::OrganizationPlanDisableCommand,
+        ) -> OrganizationPlanFuture<'a> {
+            Box::pin(async { Err(OrganizationPlanServiceError::Internal) })
+        }
+    }
+
+    struct UnavailableTopupService;
+
+    impl UserTopupService for UnavailableTopupService {
+        fn configuration(&self) -> Result<UserTopupConfiguration, UserTopupError> {
+            Err(UserTopupError::Unavailable)
+        }
+
+        fn create<'a>(
+            &'a self,
+            _principal: SessionPrincipal,
+            _command: crate::UserTopupOrderCreateCommand,
+        ) -> UserTopupOrderCreateFuture<'a> {
+            Box::pin(async { Err(UserTopupError::Unavailable) })
+        }
     }
 }

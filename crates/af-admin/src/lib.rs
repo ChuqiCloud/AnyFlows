@@ -364,8 +364,9 @@ pub use organization_plan_order::{
 };
 pub use organization_plan_order_service::{
     DatabaseOrganizationPlanOrderService, OrganizationPlanOrderCreateCommand,
-    OrganizationPlanOrderFuture, OrganizationPlanOrderService, OrganizationPlanOrderServiceError,
-    OrganizationPlanOrderView,
+    OrganizationPlanOrderFuture, OrganizationPlanOrderPaymentView,
+    OrganizationPlanOrderPaymentViewFuture, OrganizationPlanOrderService,
+    OrganizationPlanOrderServiceError, OrganizationPlanOrderView,
 };
 pub use organization_provisioning::{
     DatabaseOrganizationProvisioningService, OrganizationProvisioningCreateCommand,

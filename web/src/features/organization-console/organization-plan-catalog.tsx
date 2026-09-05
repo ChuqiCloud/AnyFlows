@@ -13,14 +13,24 @@ import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import type { UserTopupMethod } from '@/features/payment-settings/payment-settings-types'
+import { useUserTopupConfiguration } from '@/features/wallet/wallet-api'
 import type { OrganizationPlan } from '@/lib/api/generated/types.gen'
 
 import { useOrganizationPlanCatalog } from './organization-plan-api'
+import { OrganizationPlanPurchase } from './organization-plan-purchase'
 
-/** 企业控制台只展示服务端可售快照，不把目录误报为已购买授权。 */
-export function OrganizationPlanCatalog() {
+/** 企业控制台展示服务端可售快照并绑定当前企业，不把目录误报为已购买授权。 */
+export function OrganizationPlanCatalog({
+  organizationId,
+  canPurchase,
+}: {
+  organizationId: number
+  canPurchase: boolean
+}) {
   const { t, i18n } = useTranslation()
   const query = useOrganizationPlanCatalog()
+  const configurationQuery = useUserTopupConfiguration(canPurchase)
   const numberFormat = useMemo(
     () => new Intl.NumberFormat(i18n.resolvedLanguage === 'zh' ? 'zh-CN' : 'en-US'),
     [i18n.resolvedLanguage],
@@ -73,7 +83,16 @@ export function OrganizationPlanCatalog() {
       {query.data !== undefined && query.data.plans.length > 0 ? (
         <div className="grid gap-3 lg:grid-cols-2">
           {query.data.plans.map((plan) => (
-            <PlanCard key={plan.plan_id} plan={plan} numberFormat={numberFormat} />
+            <PlanCard
+              key={plan.plan_id}
+              organizationId={organizationId}
+              plan={plan}
+              numberFormat={numberFormat}
+              methods={configurationQuery.data?.methods}
+              methodsLoading={configurationQuery.isPending && canPurchase}
+              methodsUnavailable={configurationQuery.isError && canPurchase}
+              canPurchase={canPurchase}
+            />
           ))}
         </div>
       ) : null}
@@ -87,7 +106,23 @@ export function OrganizationPlanCatalog() {
   )
 }
 
-function PlanCard({ plan, numberFormat }: { plan: OrganizationPlan; numberFormat: Intl.NumberFormat }) {
+function PlanCard({
+  organizationId,
+  plan,
+  numberFormat,
+  methods,
+  methodsLoading,
+  methodsUnavailable,
+  canPurchase,
+}: {
+  organizationId: number
+  plan: OrganizationPlan
+  numberFormat: Intl.NumberFormat
+  methods: UserTopupMethod[] | undefined
+  methodsLoading: boolean
+  methodsUnavailable: boolean
+  canPurchase: boolean
+}) {
   const { t } = useTranslation()
   const features = [
     { icon: UsersRound, label: t('organizationConsole.overview.planCatalog.seats', { count: numberFormat.format(plan.seat_limit) }) },
@@ -125,6 +160,14 @@ function PlanCard({ plan, numberFormat }: { plan: OrganizationPlan; numberFormat
           <Capability enabled={plan.custom_roles_enabled} label={t('organizationConsole.overview.planCatalog.customRoles')} />
           <span className="text-muted-foreground">{t('organizationConsole.overview.planCatalog.validity', { count: numberFormat.format(plan.validity_days) })}</span>
         </div>
+        <OrganizationPlanPurchase
+          organizationId={organizationId}
+          plan={plan}
+          methods={methods}
+          methodsLoading={methodsLoading}
+          methodsUnavailable={methodsUnavailable}
+          canPurchase={canPurchase}
+        />
       </CardContent>
     </Card>
   )
@@ -134,7 +177,7 @@ function Capability({ enabled, label }: { enabled: boolean; label: string }) {
   const { t } = useTranslation()
   return (
     <div className="flex items-center gap-2">
-      <Check className={`size-3.5 ${enabled ? 'text-success' : 'text-muted-foreground/45'}`} aria-hidden="true" />
+      <Check className={enabled ? 'size-3.5 text-success' : 'size-3.5 text-muted-foreground/45'} aria-hidden="true" />
       <span className={enabled ? 'text-foreground' : 'text-muted-foreground'}>{label}</span>
       <span className="sr-only">{enabled ? t('organizationConsole.overview.planCatalog.enabled') : t('organizationConsole.overview.planCatalog.disabled')}</span>
     </div>

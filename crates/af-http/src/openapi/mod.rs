@@ -256,7 +256,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 231);
+        assert_eq!(document.paths.paths.len(), 232);
         let operation_count = document
             .paths
             .paths
@@ -278,7 +278,7 @@ mod tests {
             })
             .sum::<usize>();
         // 公开发现、SSO 启动、审批与部门目录管理接口扩展了既有管理面，保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 307);
+        assert_eq!(operation_count, 308);
         assert!(
             document
                 .components
@@ -474,6 +474,7 @@ mod tests {
             "getOrganizationPlanCatalog",
             "createOrganizationPlanOrder",
             "getOrganizationPlanOrder",
+            "submitOrganizationPlanOrderPayment",
             "getUserTopupConfiguration",
             "getUserWallet",
             "importMissingAdminModels",
@@ -632,7 +633,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 504);
+        assert_eq!(schemas.len(), 507);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("OrganizationSsoDiscoveryErrorResponse"));
         assert!(schemas.contains_key("CreditAllocationListResponse"));

@@ -5156,7 +5156,7 @@
       "funding": {
         "title": "资金与套餐边界",
         "wallet": "企业钱包余额仅用于企业调用和账本记录，充值不会自动购买或延长商业套餐。",
-        "upgrade": "企业创建、套餐购买、续费和升级需要平台开通流程；当前页面不会伪造个人账号升级入口。"
+        "upgrade": "具备企业钱包管理权限的成员可在下方购买套餐；续费、升级与降级仍等待独立生命周期能力。"
       },
       "planCatalog": {
         "eyebrow": "企业套餐",
@@ -5176,7 +5176,52 @@
         "customRoles": "自定义角色",
         "validity": "有效期 {{count}} 天",
         "enabled": "已包含",
-        "disabled": "未包含"
+        "disabled": "未包含",
+        "permissionRequired": "需要企业钱包管理权限才能创建和支付授权订单。",
+        "paymentMethod": "支付方式",
+        "paymentMethodsLoading": "正在加载支付方式",
+        "paymentMethodsUnavailable": "支付配置暂时不可用，请稍后重试。",
+        "paymentMethodsEmpty": "当前套餐没有可用的支付方式。",
+        "paymentMethods": {
+          "card": "银行卡",
+          "alipay": "支付宝",
+          "wxpay": "微信支付"
+        },
+        "orderCreate": "购买此套餐",
+        "paymentCreating": "正在创建支付会话",
+        "orderLoading": "正在恢复企业授权订单",
+        "orderId": "订单",
+        "status": {
+          "created": "待提交",
+          "pending": "待支付",
+          "paid": "已支付",
+          "failed": "支付失败",
+          "canceled": "已取消",
+          "expired": "已过期"
+        },
+        "paymentPaid": "服务端已确认支付，授权是否生效仍以企业授权事实为准。",
+        "paymentConfirmed": "浏览器已完成支付，请刷新服务端订单状态。",
+        "paymentProcessing": "支付仍在处理，请稍后刷新服务端订单状态。",
+        "refreshPayment": "刷新状态",
+        "paymentRedirectHint": "请在支付页面完成付款，返回后刷新订单状态。",
+        "openPayment": "打开支付页",
+        "paymentResumeHint": "订单已保留，可恢复同一笔支付会话。",
+        "resumePayment": "恢复支付",
+        "newOrder": "重新下单",
+        "paymentTerminal": {
+          "failed": "服务端已确认支付失败，可重新创建订单。",
+          "canceled": "订单已取消，可重新创建订单。",
+          "expired": "订单已过期，可重新创建订单。"
+        },
+        "errors": {
+          "orderConflict": "订单事实或支付方式已发生冲突，请刷新后重新下单。",
+          "paymentOutcomeUnknown": "提交结果暂时未知，请使用同一订单恢复，切勿重复下单。",
+          "paymentUnavailable": "支付服务暂时不可用，请稍后恢复同一订单。",
+          "paymentRejected": "支付 Provider 已拒绝本次请求，请核对支付方式后重试。",
+          "paymentSubmit": "无法提交企业授权订单支付，请稍后重试。",
+          "permission": "当前成员已不再拥有企业钱包管理权限。",
+          "orderLoad": "无法恢复企业授权订单状态，请重试。"
+        }
       },
       "links": {
       "members": "成员与团队",

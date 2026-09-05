@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use af_admin::{
     OrganizationPlanCreateCommand, OrganizationPlanDisableCommand, OrganizationPlanListQuery,
-    OrganizationPlanOrderCreateCommand, OrganizationPlanOrderService,
-    OrganizationPlanOrderServiceError, OrganizationPlanOrderView, OrganizationPlanService,
-    OrganizationPlanServiceError, OrganizationPlanView, SessionAuthentication,
-    SessionAuthenticator, UserTopupService,
+    OrganizationPlanOrderCreateCommand, OrganizationPlanOrderPaymentCommand,
+    OrganizationPlanOrderService, OrganizationPlanOrderServiceError, OrganizationPlanOrderView,
+    OrganizationPlanService, OrganizationPlanServiceError, OrganizationPlanView,
+    SessionAuthentication, SessionAuthenticator, UserTopupService,
 };
 use af_domain::{
     OrganizationId, OrganizationPlanFeatures, OrganizationPlanId, OrganizationPlanOrderId,
@@ -81,6 +81,10 @@ pub fn build_organization_plan_router(
         .route(
             "/api/organizations/{organization_id}/plan-orders/{order_id}",
             get(get_organization_plan_order),
+        )
+        .route(
+            "/api/organizations/{organization_id}/plan-orders/{order_id}/payment",
+            post(submit_organization_plan_order_payment),
         )
         .route_layer(user_authentication)
         .layer(middleware::from_fn(ensure_request_id))
@@ -207,6 +211,13 @@ pub(crate) struct OrganizationPlanOrderCreateRequest {
     idempotency_key: String,
 }
 
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct OrganizationPlanOrderPaymentRequest {
+    #[schema(min_length = 1, max_length = 32, pattern = "^[a-z0-9._-]+$")]
+    payment_method: String,
+}
+
 #[derive(Clone, Copy, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum OrganizationPlanOrderStatusDto {
@@ -266,6 +277,24 @@ pub(crate) struct OrganizationPlanOrderResponse {
     #[schema(minimum = 0)]
     updated_at: u64,
     replayed: bool,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct OrganizationPlanPaymentResponse {
+    #[schema(min_length = 1, required = true)]
+    payment_intent_id: Option<String>,
+    #[schema(min_length = 1, required = true)]
+    client_secret: Option<String>,
+    #[schema(min_length = 1, required = true)]
+    redirect_url: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct OrganizationPlanOrderPaymentResponse {
+    order: OrganizationPlanOrderResponse,
+    payment: OrganizationPlanPaymentResponse,
 }
 
 async fn list_admin_organization_plans(
@@ -372,7 +401,7 @@ async fn list_organization_plan_catalog(
         .collect::<Result<Vec<_>, _>>()?;
     Ok(no_store_json(OrganizationPlanCatalogResponse {
         plans,
-        purchase_notice: "当前仅展示已配置支付 Provider 的企业套餐价格快照，支付和授权发放尚未完成。",
+        purchase_notice: "当前仅展示已配置支付 Provider 的企业套餐价格快照；支付状态以订单查询为准，授权仅以服务端发放事实为准。",
     }))
 }
 
@@ -432,6 +461,42 @@ async fn get_organization_plan_order(
     Ok(no_store_json(OrganizationPlanOrderResponse::from_view(
         &order,
     )))
+}
+
+/// 复验当前付款人的企业钱包管理权限并创建或恢复同一支付会话。
+async fn submit_organization_plan_order_payment(
+    State(state): State<OrganizationPlanHttpState>,
+    Path((organization_id, order_id)): Path<(i64, String)>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    request: Result<Json<OrganizationPlanOrderPaymentRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let service = state
+        .order_service
+        .as_ref()
+        .ok_or(ManagementError::OrganizationPlanOrderUnavailable)?;
+    let organization_id =
+        OrganizationId::new(organization_id).map_err(|_| ManagementError::InvalidRequest)?;
+    let order_id = OrganizationPlanOrderId::from_persistence_key(&order_id)
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let command =
+        OrganizationPlanOrderPaymentCommand::new(organization_id, order_id, request.payment_method)
+            .map_err(|_| ManagementError::InvalidRequest)?;
+    let result = service
+        .submit_payment(authentication.principal(), command)
+        .await
+        .map_err(map_order_error)?;
+    let payment = result.payment();
+    Ok(no_store_json(OrganizationPlanOrderPaymentResponse {
+        order: OrganizationPlanOrderResponse::from_view(result.order()),
+        payment: OrganizationPlanPaymentResponse {
+            payment_intent_id: payment
+                .client_secret()
+                .map(|_| payment.payment_intent_id().to_owned()),
+            client_secret: payment.client_secret().map(str::to_owned),
+            redirect_url: payment.redirect_url().map(str::to_owned),
+        },
+    }))
 }
 
 impl OrganizationPlanResponse {
@@ -534,6 +599,9 @@ fn map_order_error(error: OrganizationPlanOrderServiceError) -> ManagementError 
         }
         OrganizationPlanOrderServiceError::Conflict => {
             ManagementError::OrganizationPlanOrderConflict
+        }
+        OrganizationPlanOrderServiceError::PaymentRejected => {
+            ManagementError::TopupProviderRejected
         }
         OrganizationPlanOrderServiceError::OutcomeUnknown => {
             ManagementError::OrganizationPlanOrderOutcomeUnknown

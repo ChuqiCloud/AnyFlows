@@ -5155,7 +5155,7 @@
       "funding": {
         "title": "Funding and plan boundary",
         "wallet": "The organization wallet is used for organization calls and ledger facts. A top-up does not purchase or extend a commercial plan.",
-        "upgrade": "Organization creation, plan purchase, renewal, and upgrades require a platform provisioning flow; this page does not invent a personal-account upgrade path."
+        "upgrade": "Members with organization wallet management permission can purchase a plan below. Renewal, upgrades, and downgrades still require dedicated lifecycle support."
       },
       "planCatalog": {
         "eyebrow": "Enterprise plans",
@@ -5175,7 +5175,52 @@
         "customRoles": "Custom roles",
         "validity": "Valid for {{count}} days",
         "enabled": "enabled",
-        "disabled": "not included"
+        "disabled": "not included",
+        "permissionRequired": "Organization wallet management permission is required to create and pay for an entitlement order.",
+        "paymentMethod": "Payment method",
+        "paymentMethodsLoading": "Loading payment methods",
+        "paymentMethodsUnavailable": "Payment configuration is temporarily unavailable. Try again later.",
+        "paymentMethodsEmpty": "No payment method is available for this plan.",
+        "paymentMethods": {
+          "card": "Card",
+          "alipay": "Alipay",
+          "wxpay": "WeChat Pay"
+        },
+        "orderCreate": "Purchase this plan",
+        "paymentCreating": "Creating payment session",
+        "orderLoading": "Restoring organization entitlement order",
+        "orderId": "Order",
+        "status": {
+          "created": "Ready",
+          "pending": "Pending payment",
+          "paid": "Paid",
+          "failed": "Failed",
+          "canceled": "Canceled",
+          "expired": "Expired"
+        },
+        "paymentPaid": "Payment is confirmed by the server. Entitlement activation still depends on the server-side entitlement fact.",
+        "paymentConfirmed": "Payment completed in the browser. Refresh the server order status.",
+        "paymentProcessing": "Payment is still processing. Refresh the server order status shortly.",
+        "refreshPayment": "Refresh status",
+        "paymentRedirectHint": "Complete payment on the provider page, then return and refresh the order status.",
+        "openPayment": "Open payment",
+        "paymentResumeHint": "The order is preserved and the same payment session can be restored.",
+        "resumePayment": "Resume payment",
+        "newOrder": "Create new order",
+        "paymentTerminal": {
+          "failed": "The server confirmed that payment failed. You can create a new order.",
+          "canceled": "The order was canceled. You can create a new order.",
+          "expired": "The order expired. You can create a new order."
+        },
+        "errors": {
+          "orderConflict": "The order facts or payment method conflict. Refresh and create a new order.",
+          "paymentOutcomeUnknown": "The submission outcome is unknown. Restore this same order and do not create a duplicate.",
+          "paymentUnavailable": "The payment service is temporarily unavailable. Restore this same order later.",
+          "paymentRejected": "The payment provider rejected this request. Check the payment method and retry.",
+          "paymentSubmit": "The organization entitlement payment could not be submitted. Try again later.",
+          "permission": "This member no longer has organization wallet management permission.",
+          "orderLoad": "The organization entitlement order status could not be restored. Retry."
+        }
       },
       "links": {
       "members": "Members and teams",

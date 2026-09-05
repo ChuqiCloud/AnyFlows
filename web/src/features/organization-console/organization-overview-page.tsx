@@ -30,6 +30,7 @@ import {
 import { OrganizationPlanCatalog } from './organization-plan-catalog'
 
 const WALLET_READ = 'organization.wallet.read'
+const WALLET_MANAGE = 'organization.wallet.manage'
 const BUDGETS_MANAGE = 'organization.budgets.manage'
 const USAGE_READ_ALL = 'organization.usage_logs.read_all'
 const USAGE_READ_SELF = 'organization.usage_logs.read_self'
@@ -186,7 +187,10 @@ function OrganizationOverviewWorkspace({
         </Card>
       </section>
 
-      <OrganizationPlanCatalog />
+      <OrganizationPlanCatalog
+        organizationId={organizationId}
+        canPurchase={overview.permissions.includes(WALLET_MANAGE)}
+      />
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label={t('organizationConsole.overview.metrics.label')}>
         {metrics.map((metric) => {

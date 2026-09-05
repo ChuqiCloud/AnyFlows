@@ -102,6 +102,12 @@ impl OrganizationPlanOrderPayment {
     pub const fn replayed(&self) -> bool {
         self.replayed
     }
+
+    /// 将已校验的订单事实和短期支付材料交给上层安全投影。
+    #[must_use]
+    pub(crate) fn into_parts(self) -> (OrganizationPlanOrderRecord, UserTopupPaymentSession, bool) {
+        (self.order, self.payment, self.replayed)
+    }
 }
 
 impl fmt::Debug for OrganizationPlanOrderPayment {
