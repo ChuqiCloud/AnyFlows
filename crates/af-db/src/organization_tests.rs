@@ -433,6 +433,18 @@ async fn entitlement_enforces_capacity_and_cas() -> Result<(), Box<dyn Error>> {
         )
         .await?;
     assert_eq!(replaced.version(), 2);
+    let projection = fixture.repository.entitlement(organization.id()).await?;
+    assert_eq!(
+        projection.organization_status(),
+        af_domain::OrganizationStatus::Active
+    );
+    assert_eq!(projection.entitlement().source(), "contract");
+    assert_eq!(
+        projection.entitlement().external_reference(),
+        Some("agreement-redacted")
+    );
+    assert_eq!(projection.entitlement().version(), 2);
+    assert!(projection.entitlement().updated_at() > 0);
     assert_eq!(
         replaced.snapshot().status(
             af_domain::OrganizationStatus::Active,

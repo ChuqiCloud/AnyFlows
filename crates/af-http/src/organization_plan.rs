@@ -1,16 +1,20 @@
 use std::sync::Arc;
 
 use af_admin::{
-    OrganizationPlanCreateCommand, OrganizationPlanDisableCommand, OrganizationPlanListQuery,
-    OrganizationPlanOrderCreateCommand, OrganizationPlanOrderPaymentCommand,
-    OrganizationPlanOrderService, OrganizationPlanOrderServiceError, OrganizationPlanOrderView,
-    OrganizationPlanService, OrganizationPlanServiceError, OrganizationPlanView,
-    SessionAuthentication, SessionAuthenticator, UserTopupService,
+    OrganizationEntitlementServiceError, OrganizationEntitlementSource,
+    OrganizationEntitlementView, OrganizationPlanCreateCommand, OrganizationPlanDisableCommand,
+    OrganizationPlanListQuery, OrganizationPlanOrderCreateCommand,
+    OrganizationPlanOrderPaymentCommand, OrganizationPlanOrderService,
+    OrganizationPlanOrderServiceError, OrganizationPlanOrderView, OrganizationPlanService,
+    OrganizationPlanServiceError, OrganizationPlanView, SessionAuthentication,
+    SessionAuthenticator, UserTopupService,
 };
 use af_domain::{
-    OrganizationId, OrganizationPlanFeatures, OrganizationPlanId, OrganizationPlanOrderId,
-    OrganizationPlanOrderRequestId, OrganizationPlanOrderStatus, OrganizationPlanStatus,
+    OrganizationEntitlementStatus, OrganizationId, OrganizationPlanFeatures, OrganizationPlanId,
+    OrganizationPlanOrderId, OrganizationPlanOrderRequestId, OrganizationPlanOrderStatus,
+    OrganizationPlanStatus,
 };
+use af_telemetry::RequestId;
 use axum::{
     Extension, Json, Router,
     extract::{Path, RawQuery, State, rejection::JsonRejection},
@@ -18,7 +22,7 @@ use axum::{
     response::Response,
     routing::{get, post},
 };
-use http::StatusCode;
+use http::{HeaderMap, StatusCode};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -28,6 +32,7 @@ use crate::{
     management_error::ManagementError,
     management_session::no_store_json,
     middleware::ensure_request_id,
+    organization_activity::{audit_request_context, platform_reason},
 };
 
 #[derive(Clone)]
@@ -66,8 +71,13 @@ pub fn build_organization_plan_router(
             "/api/admin/organization-plans/{plan_id}/disable",
             post(disable_admin_organization_plan),
         )
+        .route(
+            "/api/platform/organizations/{organization_id}/entitlement",
+            get(get_platform_organization_entitlement),
+        )
         .route_layer(middleware::from_fn(authorize_management_admin))
         .route_layer(admin_authentication)
+        .layer(middleware::from_fn(ensure_request_id))
         .with_state(state.clone());
     let user_routes = Router::new()
         .route(
@@ -85,6 +95,10 @@ pub fn build_organization_plan_router(
         .route(
             "/api/organizations/{organization_id}/plan-orders/{order_id}/payment",
             post(submit_organization_plan_order_payment),
+        )
+        .route(
+            "/api/organizations/{organization_id}/entitlement",
+            get(get_organization_entitlement),
         )
         .route_layer(user_authentication)
         .layer(middleware::from_fn(ensure_request_id))
@@ -295,6 +309,138 @@ pub(crate) struct OrganizationPlanPaymentResponse {
 pub(crate) struct OrganizationPlanOrderPaymentResponse {
     order: OrganizationPlanOrderResponse,
     payment: OrganizationPlanPaymentResponse,
+}
+
+#[derive(Clone, Copy, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum OrganizationEntitlementStatusDto {
+    Active,
+    Grace,
+    ReadOnly,
+    Suspended,
+    Closed,
+}
+
+impl From<OrganizationEntitlementStatus> for OrganizationEntitlementStatusDto {
+    fn from(value: OrganizationEntitlementStatus) -> Self {
+        match value {
+            OrganizationEntitlementStatus::Active => Self::Active,
+            OrganizationEntitlementStatus::Grace => Self::Grace,
+            OrganizationEntitlementStatus::ReadOnly => Self::ReadOnly,
+            OrganizationEntitlementStatus::Suspended => Self::Suspended,
+            OrganizationEntitlementStatus::Closed => Self::Closed,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum OrganizationEntitlementSourceDto {
+    PlatformProvisioning,
+    OrganizationPlanOrder,
+    Other,
+}
+
+impl From<OrganizationEntitlementSource> for OrganizationEntitlementSourceDto {
+    fn from(value: OrganizationEntitlementSource) -> Self {
+        match value {
+            OrganizationEntitlementSource::PlatformProvisioning => Self::PlatformProvisioning,
+            OrganizationEntitlementSource::OrganizationPlanOrder => Self::OrganizationPlanOrder,
+            OrganizationEntitlementSource::Other => Self::Other,
+        }
+    }
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct OrganizationEntitlementProjectionResponse {
+    #[schema(minimum = 1)]
+    organization_id: i64,
+    status: OrganizationEntitlementStatusDto,
+    source: OrganizationEntitlementSourceDto,
+    team_management_enabled: bool,
+    sso_enabled: bool,
+    custom_roles_enabled: bool,
+    #[schema(minimum = 1)]
+    seat_limit: i64,
+    #[schema(minimum = 1)]
+    team_limit: i64,
+    #[schema(minimum = 1)]
+    organization_key_limit: i64,
+    #[schema(minimum = 1, maximum = 3650)]
+    audit_retention_days: i64,
+    #[schema(minimum = 0)]
+    valid_from: i64,
+    #[schema(minimum = 0)]
+    valid_until: i64,
+    #[schema(minimum = 0, required = true)]
+    grace_until: Option<i64>,
+    #[schema(minimum = 1)]
+    version: i64,
+    #[schema(minimum = 0)]
+    updated_at: i64,
+    #[schema(
+        min_length = 32,
+        max_length = 32,
+        pattern = "^[0-9a-f]{32}$",
+        required = true
+    )]
+    applied_order_id: Option<String>,
+    #[schema(
+        min_length = 32,
+        max_length = 32,
+        pattern = "^[0-9a-f]{32}$",
+        required = true
+    )]
+    plan_id: Option<String>,
+    #[schema(minimum = 1, required = true)]
+    plan_version: Option<u64>,
+}
+
+/// 读取当前路径企业的授权投影；服务层只允许 Owner。
+async fn get_organization_entitlement(
+    State(state): State<OrganizationPlanHttpState>,
+    Path(organization_id): Path<i64>,
+    Extension(authentication): Extension<SessionAuthentication>,
+) -> Result<Response, ManagementError> {
+    let service = state
+        .order_service
+        .as_ref()
+        .ok_or(ManagementError::OrganizationEntitlementUnavailable)?;
+    let organization_id =
+        OrganizationId::new(organization_id).map_err(|_| ManagementError::InvalidRequest)?;
+    let entitlement = service
+        .get_entitlement(authentication.principal(), organization_id)
+        .await
+        .map_err(map_entitlement_error)?;
+    Ok(no_store_json(
+        OrganizationEntitlementProjectionResponse::from_view(&entitlement),
+    ))
+}
+
+/// 平台管理员说明理由后跨企业读取授权投影，并由服务层完成审计。
+async fn get_platform_organization_entitlement(
+    State(state): State<OrganizationPlanHttpState>,
+    Path(organization_id): Path<i64>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    headers: HeaderMap,
+) -> Result<Response, ManagementError> {
+    let service = state
+        .order_service
+        .as_ref()
+        .ok_or(ManagementError::OrganizationEntitlementUnavailable)?;
+    let organization_id =
+        OrganizationId::new(organization_id).map_err(|_| ManagementError::InvalidRequest)?;
+    let reason = platform_reason(&headers)?;
+    let request = audit_request_context(&request_id, &headers)?;
+    let entitlement = service
+        .get_entitlement_as_platform(authentication.principal(), organization_id, reason, request)
+        .await
+        .map_err(map_entitlement_error)?;
+    Ok(no_store_json(
+        OrganizationEntitlementProjectionResponse::from_view(&entitlement),
+    ))
 }
 
 async fn list_admin_organization_plans(
@@ -555,6 +701,35 @@ impl OrganizationPlanOrderResponse {
     }
 }
 
+impl OrganizationEntitlementProjectionResponse {
+    fn from_view(view: &OrganizationEntitlementView) -> Self {
+        let snapshot = view.snapshot();
+        let capacity = snapshot.capacity();
+        Self {
+            organization_id: view.organization_id().get(),
+            status: view.status().into(),
+            source: view.source().into(),
+            team_management_enabled: snapshot.team_management_enabled(),
+            sso_enabled: snapshot.sso_enabled(),
+            custom_roles_enabled: snapshot.custom_roles_enabled(),
+            seat_limit: capacity.seat_limit(),
+            team_limit: capacity.team_limit(),
+            organization_key_limit: capacity.organization_key_limit(),
+            audit_retention_days: snapshot.audit_retention_days(),
+            valid_from: snapshot.valid_from(),
+            valid_until: snapshot.valid_until(),
+            grace_until: snapshot.grace_until(),
+            version: view.version(),
+            updated_at: view.updated_at(),
+            applied_order_id: view
+                .applied_order_id()
+                .map(OrganizationPlanOrderId::persistence_key),
+            plan_id: view.plan_id().map(OrganizationPlanId::persistence_key),
+            plan_version: view.plan_version(),
+        }
+    }
+}
+
 fn parse_query(raw_query: Option<&str>) -> Result<OrganizationPlanListQuery, ManagementError> {
     let mut before = None;
     let mut limit = af_admin::DEFAULT_ORGANIZATION_PLAN_PAGE_SIZE;
@@ -610,6 +785,18 @@ fn map_order_error(error: OrganizationPlanOrderServiceError) -> ManagementError 
             ManagementError::OrganizationPlanOrderUnavailable
         }
         OrganizationPlanOrderServiceError::Internal => ManagementError::Internal,
+    }
+}
+
+fn map_entitlement_error(error: OrganizationEntitlementServiceError) -> ManagementError {
+    match error {
+        OrganizationEntitlementServiceError::InvalidRequest => ManagementError::InvalidRequest,
+        OrganizationEntitlementServiceError::Forbidden => ManagementError::Forbidden,
+        OrganizationEntitlementServiceError::NotFound => ManagementError::OrganizationNotFound,
+        OrganizationEntitlementServiceError::Unavailable => {
+            ManagementError::OrganizationEntitlementUnavailable
+        }
+        OrganizationEntitlementServiceError::Internal => ManagementError::Internal,
     }
 }
 

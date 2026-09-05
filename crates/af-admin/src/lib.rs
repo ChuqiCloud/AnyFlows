@@ -36,6 +36,7 @@ mod organization_contract_price;
 mod organization_credit_terms;
 mod organization_custom_role;
 mod organization_custom_role_binding;
+mod organization_entitlement;
 mod organization_invitation;
 mod organization_management;
 mod organization_plan;
@@ -323,6 +324,10 @@ pub use organization_custom_role_binding::{
     OrganizationCustomRoleBindingFuture, OrganizationCustomRoleBindingResult,
     OrganizationCustomRoleBindingService, OrganizationCustomRoleBindingServiceError,
 };
+pub use organization_entitlement::{
+    DatabaseOrganizationEntitlementReader, OrganizationEntitlementServiceError,
+    OrganizationEntitlementSource, OrganizationEntitlementView,
+};
 pub use organization_invitation::{
     AcceptedOrganizationInvitation, DEFAULT_ORGANIZATION_INVITATION_TTL_SECONDS,
     DatabaseOrganizationInvitationService, IssuedOrganizationInvitation,
@@ -363,10 +368,10 @@ pub use organization_plan_order::{
     OrganizationPlanOrderPaymentFuture, OrganizationPlanOrderPaymentService,
 };
 pub use organization_plan_order_service::{
-    DatabaseOrganizationPlanOrderService, OrganizationPlanOrderCreateCommand,
-    OrganizationPlanOrderFuture, OrganizationPlanOrderPaymentView,
-    OrganizationPlanOrderPaymentViewFuture, OrganizationPlanOrderService,
-    OrganizationPlanOrderServiceError, OrganizationPlanOrderView,
+    DatabaseOrganizationPlanOrderService, OrganizationEntitlementFuture,
+    OrganizationPlanOrderCreateCommand, OrganizationPlanOrderFuture,
+    OrganizationPlanOrderPaymentView, OrganizationPlanOrderPaymentViewFuture,
+    OrganizationPlanOrderService, OrganizationPlanOrderServiceError, OrganizationPlanOrderView,
 };
 pub use organization_provisioning::{
     DatabaseOrganizationProvisioningService, OrganizationProvisioningCreateCommand,

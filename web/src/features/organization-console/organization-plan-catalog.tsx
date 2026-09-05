@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { UserTopupMethod } from '@/features/payment-settings/payment-settings-types'
 import { useUserTopupConfiguration } from '@/features/wallet/wallet-api'
-import type { OrganizationPlan } from '@/lib/api/generated/types.gen'
+import type { OrganizationEntitlementProjection, OrganizationPlan } from '@/lib/api/generated/types.gen'
 
 import { useOrganizationPlanCatalog } from './organization-plan-api'
 import { OrganizationPlanPurchase } from './organization-plan-purchase'
@@ -24,9 +24,15 @@ import { OrganizationPlanPurchase } from './organization-plan-purchase'
 export function OrganizationPlanCatalog({
   organizationId,
   canPurchase,
+  entitlement,
+  entitlementRefreshing,
+  onRefreshEntitlement,
 }: {
   organizationId: number
   canPurchase: boolean
+  entitlement?: OrganizationEntitlementProjection
+  entitlementRefreshing: boolean
+  onRefreshEntitlement?: () => Promise<unknown>
 }) {
   const { t, i18n } = useTranslation()
   const query = useOrganizationPlanCatalog()
@@ -92,6 +98,9 @@ export function OrganizationPlanCatalog({
               methodsLoading={configurationQuery.isPending && canPurchase}
               methodsUnavailable={configurationQuery.isError && canPurchase}
               canPurchase={canPurchase}
+              entitlement={entitlement}
+              entitlementRefreshing={entitlementRefreshing}
+              onRefreshEntitlement={onRefreshEntitlement}
             />
           ))}
         </div>
@@ -114,6 +123,9 @@ function PlanCard({
   methodsLoading,
   methodsUnavailable,
   canPurchase,
+  entitlement,
+  entitlementRefreshing,
+  onRefreshEntitlement,
 }: {
   organizationId: number
   plan: OrganizationPlan
@@ -122,6 +134,9 @@ function PlanCard({
   methodsLoading: boolean
   methodsUnavailable: boolean
   canPurchase: boolean
+  entitlement?: OrganizationEntitlementProjection
+  entitlementRefreshing: boolean
+  onRefreshEntitlement?: () => Promise<unknown>
 }) {
   const { t } = useTranslation()
   const features = [
@@ -138,7 +153,12 @@ function PlanCard({
             <CardTitle className="truncate text-base">{plan.name}</CardTitle>
             {plan.description ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{plan.description}</p> : null}
           </div>
-          <Badge className="shrink-0 bg-brand/10 text-brand">{plan.price_provider}</Badge>
+          <div className="flex shrink-0 flex-wrap justify-end gap-2">
+            {entitlement?.plan_id === plan.plan_id ? (
+              <Badge className="bg-success/10 text-success">{t('organizationConsole.overview.planCatalog.currentEntitlement')}</Badge>
+            ) : null}
+            <Badge className="bg-brand/10 text-brand">{plan.price_provider}</Badge>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="grid gap-4 p-4">
@@ -167,6 +187,9 @@ function PlanCard({
           methodsLoading={methodsLoading}
           methodsUnavailable={methodsUnavailable}
           canPurchase={canPurchase}
+          entitlement={entitlement}
+          entitlementRefreshing={entitlementRefreshing}
+          onRefreshEntitlement={onRefreshEntitlement}
         />
       </CardContent>
     </Card>

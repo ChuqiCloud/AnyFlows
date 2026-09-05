@@ -5147,8 +5147,21 @@
       "entitlement": {
         "title": "Commercial entitlement",
         "subtitle": "Validity and grace periods come from the server-side entitlement fact.",
+        "loading": "Loading the server entitlement projection",
+        "loadError": "A reliable organization entitlement projection could not be loaded. Existing entitlement facts are unchanged.",
+        "source": "Entitlement source",
+        "sources": {
+          "platform_provisioning": "Platform provisioning",
+          "organization_plan_order": "Organization plan order",
+          "other": "Other controlled source"
+        },
+        "version": "Entitlement version",
+        "validFrom": "Entitlement active from",
         "validUntil": "Entitlement valid until",
         "graceUntil": "Grace period ends",
+        "updatedAt": "Entitlement updated at",
+        "appliedOrder": "Applied order",
+        "noAppliedOrder": "The current entitlement is not linked to a confirmed plan order",
         "unavailable": "Not returned by server",
         "notApplicable": "Not applicable"
       },
@@ -5176,6 +5189,7 @@
         "validity": "Valid for {{count}} days",
         "enabled": "enabled",
         "disabled": "not included",
+        "currentEntitlement": "Current entitlement plan",
         "permissionRequired": "Organization wallet management permission is required to create and pay for an entitlement order.",
         "paymentMethod": "Payment method",
         "paymentMethodsLoading": "Loading payment methods",
@@ -5198,6 +5212,7 @@
           "canceled": "Canceled",
           "expired": "Expired"
         },
+        "paymentEffective": "The server confirmed payment and this order's organization entitlement is now active.",
         "paymentPaid": "Payment is confirmed by the server. Entitlement activation still depends on the server-side entitlement fact.",
         "paymentConfirmed": "Payment completed in the browser. Refresh the server order status.",
         "paymentProcessing": "Payment is still processing. Refresh the server order status shortly.",
@@ -5753,6 +5768,30 @@
     "title": "Organization plans",
     "subtitle": "Create immutable organization capability and price snapshots. Historical plans can only be disabled, never repriced in place.",
     "summary": { "loaded": "{{count}} plans loaded", "active": "{{count}} available" },
+    "entitlementLookup": {
+      "title": "Organization entitlement lookup",
+      "subtitle": "Platform administrators must provide a cross-organization access reason. It is sent only with this request and recorded in organization audit.",
+      "organizationId": "Organization ID",
+      "reason": "Access reason",
+      "search": "Look up entitlement",
+      "refresh": "Refresh entitlement",
+      "empty": "Enter an organization ID and access reason to query the server entitlement fact.",
+      "error": "A reliable organization entitlement projection could not be loaded. Check permissions, organization ID, and access reason, then retry.",
+      "result": "Organization #{{id}} entitlement",
+      "source": "Entitlement source",
+      "sources": {
+        "platform_provisioning": "Platform provisioning",
+        "organization_plan_order": "Organization plan order",
+        "other": "Other controlled source"
+      },
+      "version": "Entitlement version",
+      "validFrom": "Active from",
+      "validUntil": "Valid until",
+      "updatedAt": "Updated at",
+      "appliedOrder": "Applied order",
+      "noAppliedOrder": "No confirmed plan order is linked",
+      "capacity": "Capacity: {{seats}} seats · {{teams}} teams · {{keys}} keys · {{days}} audit retention days"
+    },
     "actions": { "refresh": "Refresh", "retry": "Try again", "create": "New plan", "save": "Save plan", "creating": "Saving…", "loadMore": "Load more", "disable": "Disable plan", "cancel": "Cancel" },
     "create": { "title": "New organization plan", "subtitle": "Prices use currency minor units and cannot be edited after creation; future orders reference this snapshot." },
     "fields": {

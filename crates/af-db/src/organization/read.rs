@@ -15,11 +15,33 @@ use crate::entity::{
 use crate::organization_custom_role_binding::active_custom_role_permissions;
 
 use super::{
-    MAX_ORGANIZATION_DIRECTORY_PAGE_SIZE, OrganizationAccessRecord, OrganizationEntitlementRecord,
+    MAX_ORGANIZATION_DIRECTORY_PAGE_SIZE, OrganizationAccessRecord,
+    OrganizationEntitlementReadRecord, OrganizationEntitlementRecord,
     OrganizationMembershipPageRecord, OrganizationMembershipRecord, OrganizationRecord,
     OrganizationRepository, OrganizationRepositoryError, OrganizationTeamPageRecord,
     OrganizationTeamRecord, record_internal_error,
 };
+
+/// 在同一查询中读取企业生命周期与完整授权事实。
+pub(super) async fn entitlement(
+    repository: &OrganizationRepository,
+    organization_id: OrganizationId,
+) -> Result<OrganizationEntitlementReadRecord, OrganizationRepositoryError> {
+    let row = organizations::Entity::find_by_id(organization_id.get())
+        .find_also_related(organization_entitlements::Entity)
+        .one(repository.pool.connection())
+        .await
+        .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?;
+    let Some((organization, entitlement)) = row else {
+        return Err(OrganizationRepositoryError::NotFound);
+    };
+    let entitlement = entitlement.ok_or_else(invariant)?;
+    Ok(OrganizationEntitlementReadRecord {
+        organization_status: OrganizationStatus::try_from(organization.status)
+            .map_err(|_| invariant())?,
+        entitlement: entitlement_record(entitlement)?,
+    })
+}
 
 /// 在企业路径内读取单个成员，禁止只凭全局成员 ID 查询。
 pub(super) async fn membership(
@@ -277,6 +299,7 @@ pub(crate) fn entitlement_record(
         source: model.source,
         external_reference: model.external_reference,
         version: model.version,
+        updated_at: model.updated_at.unix_timestamp(),
     })
 }
 

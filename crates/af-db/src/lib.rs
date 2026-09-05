@@ -513,7 +513,7 @@ pub use organization::{
     MAX_ORGANIZATION_NAME_BYTES, MAX_ORGANIZATION_SLUG_BYTES,
     MAX_ORGANIZATION_TEAM_DESCRIPTION_BYTES, MAX_ORGANIZATION_TEAM_NAME_BYTES,
     OrganizationAccessRecord, OrganizationCreate, OrganizationCreatedRecord,
-    OrganizationEntitlementRecord, OrganizationEntitlementWrite,
+    OrganizationEntitlementReadRecord, OrganizationEntitlementRecord, OrganizationEntitlementWrite,
     OrganizationInvitationAcceptanceContext, OrganizationInvitationBatchRecord,
     OrganizationInvitationCreate, OrganizationInvitationPreviewItem,
     OrganizationInvitationPreviewRow, OrganizationInvitationPreviewSnapshot,

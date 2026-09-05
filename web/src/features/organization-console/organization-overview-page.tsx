@@ -4,6 +4,7 @@ import {
   Building2,
   ChartNoAxesColumnIncreasing,
   KeyRound,
+  LoaderCircle,
   RefreshCw,
   ShieldCheck,
   UsersRound,
@@ -20,7 +21,7 @@ import { useOrganizationBudgets } from '@/features/organization-budgets/organiza
 import { useOrganizationUsageLogs } from '@/features/organization-activity/organization-activity-api'
 import { useOrganizationWalletSummary } from '@/features/organization-wallet/organization-wallet-api'
 import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
-import type { OrganizationOverviewResponse } from '@/lib/api/generated/types.gen'
+import type { OrganizationEntitlementProjection, OrganizationOverviewResponse } from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
 import {
   OrganizationPageBoundary,
@@ -28,6 +29,7 @@ import {
   useOrganizationPageState,
 } from './organization-page-shell'
 import { OrganizationPlanCatalog } from './organization-plan-catalog'
+import { useOrganizationEntitlement } from './organization-plan-api'
 
 const WALLET_READ = 'organization.wallet.read'
 const WALLET_MANAGE = 'organization.wallet.manage'
@@ -76,20 +78,24 @@ function OrganizationOverviewWorkspace({
   const canManageBudgets = overview.permissions.includes(BUDGETS_MANAGE)
   const canReadUsage = overview.permissions.includes(USAGE_READ_ALL)
     || overview.permissions.includes(USAGE_READ_SELF)
+  const canReadEntitlement = overview.role === 'owner'
   const walletQuery = useOrganizationWalletSummary(organizationId, canReadWallet)
   const budgetsQuery = useOrganizationBudgets(organizationId, canManageBudgets)
   const usageQuery = useOrganizationUsageLogs(organizationId, 'summary', undefined, 50, canReadUsage)
+  const entitlementQuery = useOrganizationEntitlement(organizationId, canReadEntitlement)
   const requestCount = useMemo(
     () => usageQuery.data?.summaries.reduce((total, item) => total + item.request_count, 0),
     [usageQuery.data?.summaries],
   )
   const organizationWindow = budgetsQuery.data?.windows.find((window) => window.scope.kind === 'organization')
   const refreshing = walletQuery.isFetching || budgetsQuery.isFetching || usageQuery.isFetching
+    || entitlementQuery.isFetching
   const refresh = () => {
     const requests: Promise<unknown>[] = []
     if (canReadWallet) requests.push(walletQuery.refetch())
     if (canManageBudgets) requests.push(budgetsQuery.refetch())
     if (canReadUsage) requests.push(usageQuery.refetch())
+    if (canReadEntitlement) requests.push(entitlementQuery.refetch())
     void Promise.all(requests)
   }
 
@@ -158,17 +164,16 @@ function OrganizationOverviewWorkspace({
             <CardTitle className="text-base">{t('organizationConsole.overview.entitlement.title')}</CardTitle>
             <p className="text-xs leading-5 text-muted-foreground">{t('organizationConsole.overview.entitlement.subtitle')}</p>
           </CardHeader>
-          <CardContent className="grid gap-3 p-4 sm:grid-cols-2">
-            <EntitlementDate
-              label={t('organizationConsole.overview.entitlement.validUntil')}
-              timestamp={overview.entitlement.valid_until}
+          <CardContent className="p-4">
+            <EntitlementDetails
+              summary={overview.entitlement}
+              projection={entitlementQuery.data}
+              canReadProjection={canReadEntitlement}
+              loading={entitlementQuery.isPending}
+              error={entitlementQuery.isError}
+              refreshing={entitlementQuery.isFetching}
+              retry={() => void entitlementQuery.refetch()}
               formatTime={formatTime}
-            />
-            <EntitlementDate
-              label={t('organizationConsole.overview.entitlement.graceUntil')}
-              timestamp={overview.entitlement.grace_until}
-              formatTime={formatTime}
-              optional
             />
           </CardContent>
         </Card>
@@ -190,6 +195,11 @@ function OrganizationOverviewWorkspace({
       <OrganizationPlanCatalog
         organizationId={organizationId}
         canPurchase={overview.permissions.includes(WALLET_MANAGE)}
+        entitlement={entitlementQuery.data}
+        entitlementRefreshing={entitlementQuery.isFetching}
+        onRefreshEntitlement={canReadEntitlement
+          ? () => entitlementQuery.refetch()
+          : undefined}
       />
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label={t('organizationConsole.overview.metrics.label')}>
@@ -233,6 +243,82 @@ function OrganizationOverviewWorkspace({
         <QuickLink icon={ShieldCheck} href="#/console/organization-settings" label={t('organizationConsole.overview.links.settings')} />
       </section>
     </>
+  )
+}
+
+function EntitlementDetails({
+  summary,
+  projection,
+  canReadProjection,
+  loading,
+  error,
+  refreshing,
+  retry,
+  formatTime,
+}: {
+  summary: OrganizationOverviewResponse['entitlement']
+  projection?: OrganizationEntitlementProjection
+  canReadProjection: boolean
+  loading: boolean
+  error: boolean
+  refreshing: boolean
+  retry: () => void
+  formatTime: Intl.DateTimeFormat
+}) {
+  const { t } = useTranslation()
+  if (canReadProjection && loading && projection === undefined) {
+    return (
+      <div className="flex min-h-24 items-center justify-center gap-2 text-xs text-muted-foreground" role="status">
+        <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+        {t('organizationConsole.overview.entitlement.loading')}
+      </div>
+    )
+  }
+  if (canReadProjection && error && projection === undefined) {
+    return (
+      <div role="alert" className="flex min-h-24 flex-col items-start justify-center gap-2 rounded-lg border border-destructive/25 bg-destructive/8 p-3">
+        <p className="text-xs leading-5 text-destructive">{t('organizationConsole.overview.entitlement.loadError')}</p>
+        <Button type="button" size="sm" variant="secondary" disabled={refreshing} onClick={retry}>
+          <RefreshCw aria-hidden="true" />
+          {t('organizationConsole.actions.retry')}
+        </Button>
+      </div>
+    )
+  }
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {projection ? (
+        <>
+          <EntitlementDate label={t('organizationConsole.overview.entitlement.validFrom')} timestamp={projection.valid_from} formatTime={formatTime} />
+          <EntitlementDate label={t('organizationConsole.overview.entitlement.validUntil')} timestamp={projection.valid_until} formatTime={formatTime} />
+          <EntitlementDate label={t('organizationConsole.overview.entitlement.graceUntil')} timestamp={projection.grace_until} formatTime={formatTime} optional />
+          <EntitlementDate label={t('organizationConsole.overview.entitlement.updatedAt')} timestamp={projection.updated_at} formatTime={formatTime} />
+          <EntitlementFact label={t('organizationConsole.overview.entitlement.source')} value={t(`organizationConsole.overview.entitlement.sources.${projection.source}`)} />
+          <EntitlementFact label={t('organizationConsole.overview.entitlement.version')} value={`v${projection.version}`} />
+          <EntitlementFact
+            label={t('organizationConsole.overview.entitlement.appliedOrder')}
+            value={projection.applied_order_id
+              ? `${projection.applied_order_id.slice(0, 12)} · ${projection.plan_id?.slice(0, 8) ?? '-'} · v${projection.plan_version ?? '-'}`
+              : t('organizationConsole.overview.entitlement.noAppliedOrder')}
+            wide
+          />
+        </>
+      ) : (
+        <>
+          <EntitlementDate label={t('organizationConsole.overview.entitlement.validUntil')} timestamp={summary.valid_until} formatTime={formatTime} />
+          <EntitlementDate label={t('organizationConsole.overview.entitlement.graceUntil')} timestamp={summary.grace_until} formatTime={formatTime} optional />
+        </>
+      )}
+    </div>
+  )
+}
+
+function EntitlementFact({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
+  return (
+    <div className={wide ? 'min-w-0 rounded-lg border border-[var(--hairline)] bg-surface-1/35 p-3 sm:col-span-2' : 'min-w-0 rounded-lg border border-[var(--hairline)] bg-surface-1/35 p-3'}>
+      <p className="text-[0.6875rem] text-muted-foreground">{label}</p>
+      <p className="mt-1 truncate font-mono text-xs font-semibold" title={value}>{value}</p>
+    </div>
   )
 }
 

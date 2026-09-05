@@ -20,7 +20,7 @@ pub use types::{
     MAX_ORGANIZATION_NAME_BYTES, MAX_ORGANIZATION_SLUG_BYTES,
     MAX_ORGANIZATION_TEAM_DESCRIPTION_BYTES, MAX_ORGANIZATION_TEAM_NAME_BYTES,
     OrganizationAccessRecord, OrganizationCreate, OrganizationCreatedRecord,
-    OrganizationEntitlementRecord, OrganizationEntitlementWrite,
+    OrganizationEntitlementReadRecord, OrganizationEntitlementRecord, OrganizationEntitlementWrite,
     OrganizationInvitationAcceptanceContext, OrganizationInvitationBatchRecord,
     OrganizationInvitationCreate, OrganizationInvitationPreviewItem,
     OrganizationInvitationPreviewRow, OrganizationInvitationPreviewSnapshot,
@@ -69,6 +69,14 @@ impl OrganizationRepository {
     ) -> Result<OrganizationEntitlementRecord, OrganizationRepositoryError> {
         self.run(mutation::replace_entitlement(self, organization_id, write))
             .await
+    }
+
+    /// 按企业路径读取生命周期与完整授权事实。
+    pub async fn entitlement(
+        &self,
+        organization_id: OrganizationId,
+    ) -> Result<OrganizationEntitlementReadRecord, OrganizationRepositoryError> {
+        self.run(read::entitlement(self, organization_id)).await
     }
 
     /// 在指定企业范围内创建一条唯一的活动成员关系。

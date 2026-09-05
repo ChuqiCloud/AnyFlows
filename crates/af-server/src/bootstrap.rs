@@ -259,6 +259,7 @@ pub struct AuthenticationReady {
     organization_provisioning_service: Arc<dyn af_admin::OrganizationProvisioningService>,
     organization_plan_service: Arc<dyn af_admin::OrganizationPlanService>,
     organization_plan_order_repository: OrganizationPlanOrderRepository,
+    organization_repository: Arc<OrganizationRepository>,
     organization_activity_service: Arc<dyn OrganizationActivityService>,
     platform_audit_service: Arc<dyn PlatformAuditService>,
     redemption_service: Arc<dyn RedemptionService>,
@@ -1541,6 +1542,7 @@ impl Bootstrap<DatabaseReady> {
                 ),
                 organization_plan_service,
                 organization_plan_order_repository,
+                organization_repository: Arc::clone(&organization_repository),
                 organization_activity_service,
                 platform_audit_service,
                 redemption_service: Arc::new(DatabaseRedemptionService::new(redemption_repository)),
@@ -2812,6 +2814,8 @@ impl Bootstrap<Supervised> {
                     .infrastructure
                     .organization_plan_order_repository
                     .clone(),
+                Arc::clone(&self.stage.infrastructure.organization_repository),
+                Arc::clone(&self.stage.infrastructure.organization_activity_service),
             ));
         let custom_oauth2_provider_service: Arc<dyn AdminCustomOAuth2ProviderService> =
             Arc::new(DatabaseAdminCustomOAuth2ProviderService::new(

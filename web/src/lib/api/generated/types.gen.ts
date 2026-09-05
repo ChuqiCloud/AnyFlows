@@ -1776,6 +1776,26 @@ export type OrganizationDepartmentResponse = {
     updated_at: number;
     disabled_at?: number | null;
 };
+export type OrganizationEntitlementProjection = {
+    organization_id: number;
+    status: OrganizationEntitlementStatus;
+    source: OrganizationEntitlementSource;
+    team_management_enabled: boolean;
+    sso_enabled: boolean;
+    custom_roles_enabled: boolean;
+    seat_limit: number;
+    team_limit: number;
+    organization_key_limit: number;
+    audit_retention_days: number;
+    valid_from: number;
+    valid_until: number;
+    grace_until: number | null;
+    version: number;
+    updated_at: number;
+    applied_order_id: string | null;
+    plan_id: string | null;
+    plan_version: number | null;
+};
 export type OrganizationEntitlementResponse = {
     status: string;
     sso_enabled: boolean;
@@ -1792,6 +1812,8 @@ export type OrganizationEntitlementResponse = {
     valid_until: number;
     grace_until?: number | null;
 };
+export type OrganizationEntitlementSource = 'platform_provisioning' | 'organization_plan_order' | 'other';
+export type OrganizationEntitlementStatus = 'active' | 'grace' | 'read_only' | 'suspended' | 'closed';
 export type OrganizationInvitationAcceptRequest = {
     token: string;
 };
@@ -7973,6 +7995,49 @@ export type SubmitOrganizationPlanOrderPaymentResponses = {
     200: OrganizationPlanOrderPaymentResponse;
 };
 export type SubmitOrganizationPlanOrderPaymentResponse = SubmitOrganizationPlanOrderPaymentResponses[keyof SubmitOrganizationPlanOrderPaymentResponses];
+export type GetOrganizationEntitlementData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/entitlement';
+};
+export type GetOrganizationEntitlementErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    503: ManagementError;
+};
+export type GetOrganizationEntitlementError = GetOrganizationEntitlementErrors[keyof GetOrganizationEntitlementErrors];
+export type GetOrganizationEntitlementResponses = {
+    200: OrganizationEntitlementProjection;
+};
+export type GetOrganizationEntitlementResponse = GetOrganizationEntitlementResponses[keyof GetOrganizationEntitlementResponses];
+export type GetPlatformOrganizationEntitlementData = {
+    body?: never;
+    headers: {
+        'x-anyflows-platform-reason': string;
+    };
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/platform/organizations/{organization_id}/entitlement';
+};
+export type GetPlatformOrganizationEntitlementErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    503: ManagementError;
+};
+export type GetPlatformOrganizationEntitlementError = GetPlatformOrganizationEntitlementErrors[keyof GetPlatformOrganizationEntitlementErrors];
+export type GetPlatformOrganizationEntitlementResponses = {
+    200: OrganizationEntitlementProjection;
+};
+export type GetPlatformOrganizationEntitlementResponse = GetPlatformOrganizationEntitlementResponses[keyof GetPlatformOrganizationEntitlementResponses];
 export type DiscoverOrganizationSsoData = {
     body: OrganizationSsoDiscoveryRequest;
     path?: never;

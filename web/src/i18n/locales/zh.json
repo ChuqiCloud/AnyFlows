@@ -5148,8 +5148,21 @@
       "entitlement": {
         "title": "商业授权",
         "subtitle": "有效期和宽限期均以服务端授权事实为准。",
+        "loading": "正在读取服务端授权投影",
+        "loadError": "无法读取可靠的企业授权投影，现有授权事实未改变。",
+        "source": "授权来源",
+        "sources": {
+          "platform_provisioning": "平台开通",
+          "organization_plan_order": "企业套餐订单",
+          "other": "其他受控来源"
+        },
+        "version": "授权版本",
+        "validFrom": "授权生效于",
         "validUntil": "授权有效至",
         "graceUntil": "宽限期结束",
+        "updatedAt": "授权更新于",
+        "appliedOrder": "已生效订单",
+        "noAppliedOrder": "当前授权未关联已确认的套餐订单",
         "unavailable": "服务端未返回",
         "notApplicable": "当前不适用"
       },
@@ -5177,6 +5190,7 @@
         "validity": "有效期 {{count}} 天",
         "enabled": "已包含",
         "disabled": "未包含",
+        "currentEntitlement": "当前授权套餐",
         "permissionRequired": "需要企业钱包管理权限才能创建和支付授权订单。",
         "paymentMethod": "支付方式",
         "paymentMethodsLoading": "正在加载支付方式",
@@ -5199,6 +5213,7 @@
           "canceled": "已取消",
           "expired": "已过期"
         },
+        "paymentEffective": "服务端已确认支付，且该订单对应的企业授权已经生效。",
         "paymentPaid": "服务端已确认支付，授权是否生效仍以企业授权事实为准。",
         "paymentConfirmed": "浏览器已完成支付，请刷新服务端订单状态。",
         "paymentProcessing": "支付仍在处理，请稍后刷新服务端订单状态。",
@@ -5753,6 +5768,30 @@
     "title": "企业套餐管理",
     "subtitle": "创建不可变的企业能力与价格快照；历史套餐只能停用，不能改价覆盖。",
     "summary": { "loaded": "已加载 {{count}} 个套餐", "active": "可售 {{count}} 个" },
+    "entitlementLookup": {
+      "title": "企业授权投影查询",
+      "subtitle": "平台管理员须填写跨企业访问理由；理由仅随本次请求发送，并写入企业审计。",
+      "organizationId": "企业 ID",
+      "reason": "访问理由",
+      "search": "查询授权",
+      "refresh": "刷新授权",
+      "empty": "输入企业 ID 和访问理由后查询服务端授权事实。",
+      "error": "无法读取可靠的企业授权投影，请核对权限、企业 ID 和访问理由后重试。",
+      "result": "企业 #{{id}} 授权",
+      "source": "授权来源",
+      "sources": {
+        "platform_provisioning": "平台开通",
+        "organization_plan_order": "企业套餐订单",
+        "other": "其他受控来源"
+      },
+      "version": "授权版本",
+      "validFrom": "生效时间",
+      "validUntil": "有效期结束",
+      "updatedAt": "更新时间",
+      "appliedOrder": "已生效订单",
+      "noAppliedOrder": "未关联已确认的套餐订单",
+      "capacity": "容量：{{seats}} 席位 · {{teams}} 团队 · {{keys}} Key · 审计保留 {{days}} 天"
+    },
     "actions": { "refresh": "刷新", "retry": "重试", "create": "新建套餐", "save": "保存套餐", "creating": "保存中…", "loadMore": "加载更多", "disable": "停用套餐", "cancel": "取消" },
     "create": { "title": "新建企业套餐", "subtitle": "价格使用货币最小单位，创建后不可编辑；后续订单将引用这份快照。" },
     "fields": {

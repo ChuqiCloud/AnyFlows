@@ -5,8 +5,10 @@ import {
   createAdminOrganizationPlan,
   createOrganizationPlanOrder,
   disableAdminOrganizationPlan,
+  getOrganizationEntitlement,
   getOrganizationPlanOrder,
   getOrganizationPlanCatalog,
+  getPlatformOrganizationEntitlement,
   listAdminOrganizationPlans,
   submitOrganizationPlanOrderPayment,
 } from '@/lib/api/generated/sdk.gen'
@@ -21,6 +23,10 @@ import { organizationQueryKey } from '@/features/organization-budgets/organizati
 
 export const organizationPlanCatalogQueryKey = ['organization-plan-catalog'] as const
 export const adminOrganizationPlansQueryKey = ['admin-organization-plans'] as const
+export const organizationEntitlementQueryKey = (organizationId: number) => (
+  organizationQueryKey(organizationId, 'entitlement')
+)
+export const platformOrganizationEntitlementQueryKey = ['platform-organization-entitlement'] as const
 
 /** 读取当前账号可售的企业套餐快照；支付和授权发放仍由后续商业生命周期接入。 */
 export function useOrganizationPlanCatalog() {
@@ -58,6 +64,44 @@ export function useOrganizationPlanOrder(organizationId: number, orderId: string
       const { data } = await getOrganizationPlanOrder({
         client: apiClient,
         path: { organization_id: organizationId, order_id: orderId },
+        signal,
+      })
+      return data
+    },
+    retry: false,
+  })
+}
+
+/** 仅在 Owner 视图读取服务端授权来源和生效订单投影。 */
+export function useOrganizationEntitlement(organizationId: number, enabled = true) {
+  return useQuery({
+    queryKey: organizationEntitlementQueryKey(organizationId),
+    enabled,
+    queryFn: async ({ signal }) => {
+      const { data } = await getOrganizationEntitlement({
+        client: apiClient,
+        path: { organization_id: organizationId },
+        signal,
+      })
+      return data
+    },
+    retry: false,
+  })
+}
+
+/** 平台管理员以显式理由跨企业读取授权投影，理由不进入查询串。 */
+export function usePlatformOrganizationEntitlement(
+  request: { organizationId: number; reason: string } | undefined,
+) {
+  return useQuery({
+    queryKey: [...platformOrganizationEntitlementQueryKey, request],
+    enabled: request !== undefined,
+    queryFn: async ({ signal }) => {
+      if (request === undefined) throw new Error('缺少平台企业授权查询参数')
+      const { data } = await getPlatformOrganizationEntitlement({
+        client: apiClient,
+        headers: { 'x-anyflows-platform-reason': request.reason },
+        path: { organization_id: request.organizationId },
         signal,
       })
       return data

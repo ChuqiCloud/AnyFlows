@@ -146,6 +146,51 @@ pub(crate) struct OrganizationPlanOrderPaymentResponseSchema {
     pub(crate) payment: OrganizationPlanPaymentResponseSchema,
 }
 
+#[derive(ToSchema)]
+#[schema(as = OrganizationEntitlementStatus, rename_all = "snake_case")]
+pub(crate) enum OrganizationEntitlementStatusSchema {
+    Active,
+    Grace,
+    ReadOnly,
+    Suspended,
+    Closed,
+}
+
+#[derive(ToSchema)]
+#[schema(as = OrganizationEntitlementSource, rename_all = "snake_case")]
+pub(crate) enum OrganizationEntitlementSourceSchema {
+    PlatformProvisioning,
+    OrganizationPlanOrder,
+    Other,
+}
+
+#[derive(ToSchema)]
+#[schema(as = OrganizationEntitlementProjection)]
+pub(crate) struct OrganizationEntitlementProjectionResponseSchema {
+    pub(crate) organization_id: i64,
+    pub(crate) status: OrganizationEntitlementStatusSchema,
+    pub(crate) source: OrganizationEntitlementSourceSchema,
+    pub(crate) team_management_enabled: bool,
+    pub(crate) sso_enabled: bool,
+    pub(crate) custom_roles_enabled: bool,
+    pub(crate) seat_limit: i64,
+    pub(crate) team_limit: i64,
+    pub(crate) organization_key_limit: i64,
+    pub(crate) audit_retention_days: i64,
+    pub(crate) valid_from: i64,
+    pub(crate) valid_until: i64,
+    #[schema(required = true)]
+    pub(crate) grace_until: Option<i64>,
+    pub(crate) version: i64,
+    pub(crate) updated_at: i64,
+    #[schema(required = true)]
+    pub(crate) applied_order_id: Option<String>,
+    #[schema(required = true)]
+    pub(crate) plan_id: Option<String>,
+    #[schema(required = true)]
+    pub(crate) plan_version: Option<u64>,
+}
+
 #[utoipa::path(
     get,
     path = "/api/admin/organization-plans",
@@ -225,6 +270,31 @@ fn get_organization_plan_order() {}
 )]
 fn submit_organization_plan_order_payment() {}
 
+#[utoipa::path(
+    get,
+    path = "/api/organizations/{organization_id}/entitlement",
+    operation_id = "getOrganizationEntitlement",
+    tag = "企业套餐",
+    params(("organization_id" = i64, Path, minimum = 1)),
+    responses((status = 200, body = OrganizationEntitlementProjectionResponseSchema), (status = 400, body = ManagementErrorBody), (status = 401, body = ManagementErrorBody), (status = 403, body = ManagementErrorBody), (status = 404, body = ManagementErrorBody), (status = 503, body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn get_organization_entitlement() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/platform/organizations/{organization_id}/entitlement",
+    operation_id = "getPlatformOrganizationEntitlement",
+    tag = "企业套餐",
+    params(
+        ("organization_id" = i64, Path, minimum = 1),
+        ("x-anyflows-platform-reason" = String, Header, min_length = 1, max_length = 255, description = "跨企业访问理由")
+    ),
+    responses((status = 200, body = OrganizationEntitlementProjectionResponseSchema), (status = 400, body = ManagementErrorBody), (status = 401, body = ManagementErrorBody), (status = 403, body = ManagementErrorBody), (status = 404, body = ManagementErrorBody), (status = 503, body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn get_platform_organization_entitlement() {}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -234,7 +304,9 @@ fn submit_organization_plan_order_payment() {}
         get_organization_plan_catalog,
         create_organization_plan_order,
         get_organization_plan_order,
-        submit_organization_plan_order_payment
+        submit_organization_plan_order_payment,
+        get_organization_entitlement,
+        get_platform_organization_entitlement
     ),
     components(schemas(
         OrganizationPlanListQuerySchema,
@@ -250,6 +322,9 @@ fn submit_organization_plan_order_payment() {}
         OrganizationPlanOrderResponseSchema,
         OrganizationPlanPaymentResponseSchema,
         OrganizationPlanOrderPaymentResponseSchema,
+        OrganizationEntitlementStatusSchema,
+        OrganizationEntitlementSourceSchema,
+        OrganizationEntitlementProjectionResponseSchema,
         ManagementErrorBody
     ))
 )]

@@ -15,6 +15,7 @@ test('企业套餐目录 OpenAPI 与生成入口保持完整', () => {
   assert.equal(openapi.paths['/api/organizations/{organization_id}/plan-orders'].post.operationId, 'createOrganizationPlanOrder')
   assert.equal(openapi.paths['/api/organizations/{organization_id}/plan-orders/{order_id}'].get.operationId, 'getOrganizationPlanOrder')
   assert.equal(openapi.paths['/api/organizations/{organization_id}/plan-orders/{order_id}/payment'].post.operationId, 'submitOrganizationPlanOrderPayment')
+  assert.equal(openapi.paths['/api/organizations/{organization_id}/entitlement'].get.operationId, 'getOrganizationEntitlement')
   for (const schema of [
     'OrganizationPlan',
     'OrganizationPlanCatalogResponse',
@@ -23,6 +24,7 @@ test('企业套餐目录 OpenAPI 与生成入口保持完整', () => {
     'OrganizationPlanOrderCreateRequest',
     'OrganizationPlanOrderPaymentRequest',
     'OrganizationPlanOrderPaymentResponse',
+    'OrganizationEntitlementProjection',
   ]) {
     assert.ok(openapi.components.schemas[schema], `缺少 ${schema}`)
   }
@@ -31,7 +33,17 @@ test('企业套餐目录 OpenAPI 与生成入口保持完整', () => {
     'createOrganizationPlanOrder',
     'getOrganizationPlanOrder',
     'submitOrganizationPlanOrderPayment',
+    'getOrganizationEntitlement',
   ]) assert.match(api, new RegExp(operation))
+  const entitlementSchema = openapi.components.schemas.OrganizationEntitlementProjection
+  for (const field of ['grace_until', 'applied_order_id', 'plan_id', 'plan_version']) {
+    assert.ok(entitlementSchema.required.includes(field), `${field} 必须存在但允许为 null`)
+  }
+  assert.deepEqual(openapi.components.schemas.OrganizationEntitlementSource.enum, [
+    'platform_provisioning',
+    'organization_plan_order',
+    'other',
+  ])
 })
 
 test('企业套餐卡片展示容量、能力、有效期和价格边界', () => {
@@ -48,7 +60,8 @@ test('企业订单支付按企业与套餐隔离恢复且不持久化敏感材�
   assert.doesNotMatch(purchase, /sessionStorage\.setItem\([^\n]+client_secret/)
   assert.match(purchase, /safePaymentRedirectUrl/)
   assert.match(purchase, /paymentPaid/)
-  assert.doesNotMatch(purchase, /授权已生效/)
+  assert.match(purchase, /entitlement\?\.applied_order_id === order\.order_id/)
+  assert.match(purchase, /paymentEffective/)
   assert.match(component, /useUserTopupConfiguration\(canPurchase\)/)
 })
 
@@ -62,6 +75,8 @@ test('企业套餐目录双语文案同步且不含替换字符', () => {
     'validity',
     'paymentMethod',
     'paymentPaid',
+    'paymentEffective',
+    'currentEntitlement',
     'paymentOutcomeUnknown',
   ]
   for (const key of required) {
@@ -76,5 +91,9 @@ test('企业套餐目录双语文案同步且不含替换字符', () => {
   }
   for (const value of [en.organizationConsole.overview.planCatalog, zh.organizationConsole.overview.planCatalog]) {
     assert.ok(!JSON.stringify(value).includes('\uFFFD'))
+  }
+  for (const locale of [en, zh]) {
+    assert.equal(typeof locale.organizationConsole.overview.entitlement.appliedOrder, 'string')
+    assert.equal(typeof locale.organizationConsole.overview.entitlement.sources.organization_plan_order, 'string')
   }
 })

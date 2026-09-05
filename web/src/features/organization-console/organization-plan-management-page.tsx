@@ -1,4 +1,4 @@
-import { Ban, Building2, Check, Layers3, LoaderCircle, Plus, RefreshCw } from 'lucide-react'
+import { Ban, Building2, Check, Layers3, LoaderCircle, Plus, RefreshCw, Search, ShieldCheck } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -10,12 +10,13 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
-import type { OrganizationPlan, OrganizationPlanCreateRequest } from '@/lib/api/generated/types.gen'
+import type { OrganizationEntitlementProjection, OrganizationPlan, OrganizationPlanCreateRequest } from '@/lib/api/generated/types.gen'
 
 import {
   useAdminOrganizationPlans,
   useCreateAdminOrganizationPlan,
   useDisableAdminOrganizationPlan,
+  usePlatformOrganizationEntitlement,
 } from './organization-plan-api'
 
 type Draft = {
@@ -85,6 +86,8 @@ export function OrganizationPlanManagementPage() {
         <span>{t('organizationPlans.summary.active', { count: activeCount })}</span>
       </div>
 
+      <EntitlementLookup />
+
       {creating ? <CreatePlanPanel onCreated={() => setCreating(false)} /> : null}
 
       {query.isPending ? <LoadingState /> : query.isError && query.data === undefined ? (
@@ -103,6 +106,98 @@ export function OrganizationPlanManagementPage() {
 
       <DisablePlanDialog plan={selected} onClose={() => setSelected(undefined)} />
     </div>
+  )
+}
+
+function EntitlementLookup() {
+  const { t, i18n } = useTranslation()
+  const [organizationId, setOrganizationId] = useState('')
+  const [reason, setReason] = useState('')
+  const [request, setRequest] = useState<{ organizationId: number; reason: string }>()
+  const query = usePlatformOrganizationEntitlement(request)
+  const parsedOrganizationId = /^\d+$/.test(organizationId) ? Number(organizationId) : 0
+  const reasonBytes = new TextEncoder().encode(reason).length
+  const valid = Number.isSafeInteger(parsedOrganizationId)
+    && parsedOrganizationId > 0
+    && reason.length > 0
+    && reason.trim() === reason
+    && reasonBytes <= 255
+  const submit = () => {
+    if (!valid) return
+    const next = { organizationId: parsedOrganizationId, reason }
+    if (request?.organizationId === next.organizationId && request.reason === next.reason) {
+      void query.refetch()
+      return
+    }
+    setRequest(next)
+  }
+  const formatTime = useMemo(
+    () => new Intl.DateTimeFormat(i18n.resolvedLanguage === 'zh' ? 'zh-CN' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' }),
+    [i18n.resolvedLanguage],
+  )
+
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader className="border-b border-[var(--hairline)] bg-surface-1/45">
+        <div className="flex items-start gap-3">
+          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-surface-2 text-brand"><ShieldCheck className="size-4" aria-hidden="true" /></span>
+          <div>
+            <CardTitle className="text-base">{t('organizationPlans.entitlementLookup.title')}</CardTitle>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('organizationPlans.entitlementLookup.subtitle')}</p>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-4 p-4">
+        <div className="grid gap-3 lg:grid-cols-[minmax(10rem,0.35fr)_minmax(16rem,1fr)_auto] lg:items-end">
+          <Field id="organization-entitlement-id" label={t('organizationPlans.entitlementLookup.organizationId')}>
+            <Input id="organization-entitlement-id" inputMode="numeric" pattern="[0-9]+" value={organizationId} disabled={query.isFetching} onChange={(event) => setOrganizationId(event.target.value)} />
+          </Field>
+          <Field id="organization-entitlement-reason" label={t('organizationPlans.entitlementLookup.reason')}>
+            <Input id="organization-entitlement-reason" maxLength={255} value={reason} disabled={query.isFetching} onChange={(event) => setReason(event.target.value)} />
+          </Field>
+          <Button type="button" size="sm" disabled={!valid || query.isFetching} onClick={submit}>
+            {query.isFetching ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <Search aria-hidden="true" />}
+            {t(query.data ? 'organizationPlans.entitlementLookup.refresh' : 'organizationPlans.entitlementLookup.search')}
+          </Button>
+        </div>
+        {query.isError && query.data === undefined ? (
+          <p role="alert" className="rounded-lg border border-destructive/25 bg-destructive/8 px-3 py-2 text-xs leading-5 text-destructive">
+            {t('organizationPlans.entitlementLookup.error')}
+          </p>
+        ) : null}
+        {query.data ? <AdminEntitlementProjection projection={query.data} formatTime={formatTime} /> : (
+          <p className="border-t border-[var(--hairline)] pt-3 text-xs leading-5 text-muted-foreground">{t('organizationPlans.entitlementLookup.empty')}</p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function AdminEntitlementProjection({ projection, formatTime }: { projection: OrganizationEntitlementProjection; formatTime: Intl.DateTimeFormat }) {
+  const { t } = useTranslation()
+  const facts = [
+    [t('organizationPlans.entitlementLookup.source'), t(`organizationPlans.entitlementLookup.sources.${projection.source}`)],
+    [t('organizationPlans.entitlementLookup.version'), `v${projection.version}`],
+    [t('organizationPlans.entitlementLookup.validFrom'), formatTime.format(projection.valid_from * 1_000)],
+    [t('organizationPlans.entitlementLookup.validUntil'), formatTime.format(projection.valid_until * 1_000)],
+    [t('organizationPlans.entitlementLookup.updatedAt'), formatTime.format(projection.updated_at * 1_000)],
+    [t('organizationPlans.entitlementLookup.appliedOrder'), projection.applied_order_id
+      ? `${projection.applied_order_id.slice(0, 12)} · ${projection.plan_id?.slice(0, 8) ?? '-'} · v${projection.plan_version ?? '-'}`
+      : t('organizationPlans.entitlementLookup.noAppliedOrder')],
+  ]
+  return (
+    <section className="grid gap-3 border-t border-[var(--hairline)] pt-4" aria-live="polite">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-semibold">{t('organizationPlans.entitlementLookup.result', { id: projection.organization_id })}</span>
+        <Badge className={projection.status === 'active' ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'}>{t(`organizationConsole.entitlement.${projection.status}`)}</Badge>
+      </div>
+      <dl className="grid gap-x-5 gap-y-3 text-xs sm:grid-cols-2 xl:grid-cols-3">
+        {facts.map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-muted-foreground">{label}</dt><dd className="mt-1 truncate font-mono font-medium" title={value}>{value}</dd></div>)}
+      </dl>
+      <p className="text-xs leading-5 text-muted-foreground">
+        {t('organizationPlans.entitlementLookup.capacity', { seats: projection.seat_limit, teams: projection.team_limit, keys: projection.organization_key_limit, days: projection.audit_retention_days })}
+      </p>
+    </section>
   )
 }
 

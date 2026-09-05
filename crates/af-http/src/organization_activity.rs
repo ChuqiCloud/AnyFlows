@@ -445,7 +445,7 @@ fn parse_organization_id(value: i64) -> Result<OrganizationId, ManagementError> 
     OrganizationId::new(value).map_err(|_| ManagementError::InvalidRequest)
 }
 
-fn platform_reason(headers: &HeaderMap) -> Result<String, ManagementError> {
+pub(crate) fn platform_reason(headers: &HeaderMap) -> Result<String, ManagementError> {
     let name = HeaderName::from_static(PLATFORM_REASON_HEADER);
     let mut values = headers.get_all(name).iter();
     let value = values.next().ok_or(ManagementError::InvalidRequest)?;

@@ -8,6 +8,7 @@ use af_admin::{
 };
 use af_db::OrganizationAuditOutcome;
 use af_domain::OrganizationId;
+use af_domain::PlatformPermission;
 
 struct TestOrganizationActivityService;
 
@@ -63,6 +64,22 @@ impl OrganizationActivityService for TestOrganizationActivityService {
         _target_type: &'static str,
         _target_identifier: String,
         _outcome: OrganizationAuditOutcome,
+        _summary: Option<OrganizationAuditChangeSummary>,
+    ) -> OrganizationAuditRecordFuture<'a> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn record_platform_action<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _organization_id: OrganizationId,
+        _request: OrganizationAuditRequestContext,
+        _permission: PlatformPermission,
+        _operation: &'static str,
+        _target_type: &'static str,
+        _target_identifier: String,
+        _outcome: OrganizationAuditOutcome,
+        _platform_reason: String,
         _summary: Option<OrganizationAuditChangeSummary>,
     ) -> OrganizationAuditRecordFuture<'a> {
         Box::pin(async { Ok(()) })
