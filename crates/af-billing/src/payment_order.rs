@@ -13,8 +13,11 @@ pub const MAX_PAYMENT_REDIRECT_URL_BYTES: usize = 16 * 1024;
 /// 创建 Provider 支付订单所需的不可变本地事实。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PaymentOrderId {
+    /// 个人或企业钱包充值订单。
     Topup(TopupOrderId),
+    /// 个人订阅购买订单。
     Subscription(SubscriptionOrderId),
+    /// 企业商业授权购买订单。
     OrganizationPlanOrder(OrganizationPlanOrderId),
 }
 

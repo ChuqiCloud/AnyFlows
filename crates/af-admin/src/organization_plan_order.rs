@@ -255,6 +255,10 @@ async fn recover_pending(
     if record.payment_method() != Some(command.payment_method()) {
         return Err(OrganizationPlanOrderPaymentError::Conflict);
     }
+    // Pending 订单必须保留首次提交时的有效期；缺失说明持久化事实损坏，不能继续发起支付。
+    if record.expires_at().is_none() {
+        return Err(OrganizationPlanOrderPaymentError::Internal);
+    }
     let provider_order_id = record
         .provider_order_id()
         .ok_or(OrganizationPlanOrderPaymentError::Internal)?
