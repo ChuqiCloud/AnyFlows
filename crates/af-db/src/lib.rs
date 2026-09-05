@@ -647,8 +647,9 @@ pub use organization_plan_order::{
     OrganizationPlanOrderCreateOutcome, OrganizationPlanOrderRecord,
     OrganizationPlanOrderRepository, OrganizationPlanOrderRepositoryConfigError,
     OrganizationPlanOrderRepositoryError, OrganizationPlanOrderSubmission,
-    OrganizationPlanOrderSubmitOutcome, OrganizationPlanPaymentEventOutcome,
-    OrganizationPlanPaymentEventRecord, OrganizationPlanPaymentEventWrite,
+    OrganizationPlanOrderSubmitOutcome, OrganizationPlanPaymentConfirmationOutcome,
+    OrganizationPlanPaymentEventOutcome, OrganizationPlanPaymentEventRecord,
+    OrganizationPlanPaymentEventRejection, OrganizationPlanPaymentEventWrite,
 };
 pub use organization_provisioning::{
     OrganizationProvisioningDecisionWrite, OrganizationProvisioningRepository,

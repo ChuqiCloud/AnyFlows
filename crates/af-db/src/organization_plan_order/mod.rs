@@ -14,6 +14,7 @@ pub use types::{
     OrganizationPlanOrderCreateOutcome, OrganizationPlanOrderRecord,
     OrganizationPlanOrderRepositoryConfigError, OrganizationPlanOrderRepositoryError,
     OrganizationPlanOrderSubmission, OrganizationPlanOrderSubmitOutcome,
-    OrganizationPlanPaymentEventOutcome, OrganizationPlanPaymentEventRecord,
+    OrganizationPlanPaymentConfirmationOutcome, OrganizationPlanPaymentEventOutcome,
+    OrganizationPlanPaymentEventRecord, OrganizationPlanPaymentEventRejection,
     OrganizationPlanPaymentEventWrite,
 };

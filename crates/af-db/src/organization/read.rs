@@ -259,7 +259,7 @@ pub(crate) fn entitlement_snapshot(
     .map_err(|_| invariant())
 }
 
-pub(super) fn entitlement_record(
+pub(crate) fn entitlement_record(
     model: organization_entitlements::Model,
 ) -> Result<OrganizationEntitlementRecord, OrganizationRepositoryError> {
     if model.version <= 0

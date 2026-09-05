@@ -27,13 +27,18 @@ use crate::{
         organization_plan_payment_events, organization_plan_prices, organization_plans,
         organizations, users,
     },
+    organization::{mutation as organization_mutation, read as organization_read},
+    organization_audit::{
+        OrganizationAuditOutcome, OrganizationAuditWrite, record_in_transaction as record_audit,
+    },
 };
 
 use super::types::{
     OrganizationPlanOrderCreate, OrganizationPlanOrderCreateOutcome, OrganizationPlanOrderRecord,
     OrganizationPlanOrderRepositoryConfigError, OrganizationPlanOrderRepositoryError,
     OrganizationPlanOrderSubmission, OrganizationPlanOrderSubmitOutcome,
-    OrganizationPlanPaymentEventOutcome, OrganizationPlanPaymentEventRecord,
+    OrganizationPlanPaymentConfirmationOutcome, OrganizationPlanPaymentEventOutcome,
+    OrganizationPlanPaymentEventRecord, OrganizationPlanPaymentEventRejection,
     OrganizationPlanPaymentEventWrite,
 };
 
@@ -140,6 +145,32 @@ impl OrganizationPlanOrderRepository {
             && self
                 .outcome_unknown_after_commit
                 .swap(false, Ordering::AcqRel)
+        {
+            return Err(OrganizationPlanOrderRepositoryError::OutcomeUnknown);
+        }
+        Ok(outcome)
+    }
+
+    /// 在同一事务内确认已验签事件、推进订单、替换授权并追加审计。
+    pub async fn confirm_payment_event(
+        &self,
+        write: OrganizationPlanPaymentEventWrite,
+    ) -> Result<OrganizationPlanPaymentConfirmationOutcome, OrganizationPlanOrderRepositoryError>
+    {
+        let operation = self
+            .confirm_payment_event_inner(&write)
+            .with_subscriber(NoSubscriber::default());
+        let outcome = match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result?,
+            Err(_) => return Err(OrganizationPlanOrderRepositoryError::OutcomeUnknown),
+        };
+        #[cfg(test)]
+        if matches!(
+            &outcome,
+            OrganizationPlanPaymentConfirmationOutcome::Applied { .. }
+        ) && self
+            .outcome_unknown_after_commit
+            .swap(false, Ordering::AcqRel)
         {
             return Err(OrganizationPlanOrderRepositoryError::OutcomeUnknown);
         }
@@ -389,6 +420,53 @@ impl OrganizationPlanOrderRepository {
             .map_err(|_| OrganizationPlanOrderRepositoryError::OutcomeUnknown)?;
         Ok(OrganizationPlanPaymentEventOutcome::Recorded(record))
     }
+
+    async fn confirm_payment_event_inner(
+        &self,
+        write: &OrganizationPlanPaymentEventWrite,
+    ) -> Result<OrganizationPlanPaymentConfirmationOutcome, OrganizationPlanOrderRepositoryError>
+    {
+        // 唯一键竞争只允许回滚后重新读取一次，避免把语义冲突误当成可重试错误。
+        for attempt in 0..=1 {
+            let transaction = self
+                .pool
+                .connection()
+                .begin()
+                .await
+                .map_err(|_| OrganizationPlanOrderRepositoryError::Query)?;
+            let result = confirm_payment_event_in_transaction(&transaction, write).await;
+            match result {
+                Ok(outcome) => {
+                    transaction
+                        .commit()
+                        .await
+                        .map_err(|_| OrganizationPlanOrderRepositoryError::OutcomeUnknown)?;
+                    return Ok(outcome);
+                }
+                Err(TransactionWriteError::UniqueConflict) if attempt == 0 => {
+                    transaction
+                        .rollback()
+                        .await
+                        .map_err(|_| OrganizationPlanOrderRepositoryError::OutcomeUnknown)?;
+                }
+                Err(TransactionWriteError::Repository(error)) => {
+                    transaction
+                        .rollback()
+                        .await
+                        .map_err(|_| OrganizationPlanOrderRepositoryError::OutcomeUnknown)?;
+                    return Err(error);
+                }
+                Err(TransactionWriteError::UniqueConflict) => {
+                    transaction
+                        .rollback()
+                        .await
+                        .map_err(|_| OrganizationPlanOrderRepositoryError::OutcomeUnknown)?;
+                    return Err(OrganizationPlanOrderRepositoryError::Conflict);
+                }
+            }
+        }
+        Err(OrganizationPlanOrderRepositoryError::Invariant)
+    }
 }
 
 impl fmt::Debug for OrganizationPlanOrderRepository {
@@ -397,6 +475,416 @@ impl fmt::Debug for OrganizationPlanOrderRepository {
             .debug_struct("OrganizationPlanOrderRepository")
             .field("operation_timeout", &self.operation_timeout)
             .finish_non_exhaustive()
+    }
+}
+
+/// 在订单事务内完成企业支付确认，调用方不得在此处拆分授权写入事务。
+async fn confirm_payment_event_in_transaction(
+    transaction: &DatabaseTransaction,
+    write: &OrganizationPlanPaymentEventWrite,
+) -> Result<OrganizationPlanPaymentConfirmationOutcome, TransactionWriteError> {
+    let organization =
+        match organization_mutation::lock_organization(transaction, write.organization_id).await {
+            Ok(organization) => organization,
+            Err(crate::OrganizationRepositoryError::NotFound) => {
+                return Ok(OrganizationPlanPaymentConfirmationOutcome::NotFound);
+            }
+            Err(error) => return Err(map_organization_error(error).into()),
+        };
+    if organization.status != af_domain::OrganizationStatus::Active.code()
+        || organization.closed_at.is_some()
+    {
+        return Ok(OrganizationPlanPaymentConfirmationOutcome::NotFound);
+    }
+    let Some(order_model) = lock_order(transaction, write.organization_id, write.order_id).await?
+    else {
+        return Ok(OrganizationPlanPaymentConfirmationOutcome::NotFound);
+    };
+    let order = order_record(order_model.clone())?;
+    if let Some(existing) = load_event_collision(transaction, write).await? {
+        if existing.order_id != order_model.id || !event_matches(&existing, write) {
+            return Err(OrganizationPlanOrderRepositoryError::Conflict.into());
+        }
+        if existing.processed_at.is_some() {
+            let entitlement = if order.status == OrganizationPlanOrderStatus::Paid {
+                load_entitlement_record(transaction, order.organization_id()).await?
+            } else {
+                None
+            };
+            return Ok(OrganizationPlanPaymentConfirmationOutcome::Existing { order, entitlement });
+        }
+        confirm_new_event(transaction, &order_model, order, existing, write).await
+    } else {
+        let received_at = to_database_time(write.received_at)?;
+        let inserted = organization_plan_payment_events::ActiveModel {
+            event_key: Set(write.event_id.persistence_key()),
+            order_id: Set(order_model.id),
+            provider: Set(write.provider.clone()),
+            provider_event_id: Set(SensitiveString::from(write.provider_event_id.clone())),
+            trade_no: Set(write.trade_no.clone().map(SensitiveString::from)),
+            amount_minor: Set(write.amount_minor),
+            currency: Set(write.currency.clone()),
+            payment_method: Set(write.payment_method.clone()),
+            event_type: Set(write.event_type.code()),
+            signature_key_fingerprint: Set(SensitiveString::from(hex_digest(
+                write.signature_key_fingerprint,
+            ))),
+            payload_sha256: Set(SensitiveString::from(hex_digest(write.payload_sha256))),
+            received_at: Set(received_at),
+            processed_at: Set(None),
+            created_at: Set(received_at),
+            ..Default::default()
+        }
+        .insert(transaction)
+        .await
+        .map_err(|error| {
+            if is_event_unique_conflict(&error) {
+                TransactionWriteError::UniqueConflict
+            } else {
+                OrganizationPlanOrderRepositoryError::Query.into()
+            }
+        })?;
+        confirm_new_event(transaction, &order_model, order, inserted, write).await
+    }
+}
+
+async fn confirm_new_event(
+    transaction: &DatabaseTransaction,
+    order_model: &organization_plan_orders::Model,
+    order: OrganizationPlanOrderRecord,
+    event_model: organization_plan_payment_events::Model,
+    write: &OrganizationPlanPaymentEventWrite,
+) -> Result<OrganizationPlanPaymentConfirmationOutcome, TransactionWriteError> {
+    let rejection = validate_confirmation_event(&order, write);
+    if let Some(reason) = rejection {
+        return Ok(
+            OrganizationPlanPaymentConfirmationOutcome::RecordedUnprocessed { order, reason },
+        );
+    }
+
+    if !order.status().is_open() {
+        if order.status() == write.event_type.target_status()
+            && (order.status() != OrganizationPlanOrderStatus::Paid
+                || order.trade_no() == write.trade_no.as_deref())
+        {
+            mark_payment_event_processed(transaction, event_model.id, write.received_at).await?;
+            let entitlement = if order.status() == OrganizationPlanOrderStatus::Paid {
+                load_entitlement_record(transaction, order.organization_id()).await?
+            } else {
+                None
+            };
+            return Ok(OrganizationPlanPaymentConfirmationOutcome::Acknowledged {
+                order,
+                entitlement,
+            });
+        }
+        return Ok(
+            OrganizationPlanPaymentConfirmationOutcome::RecordedUnprocessed {
+                order,
+                reason: OrganizationPlanPaymentEventRejection::TerminalConflict,
+            },
+        );
+    }
+
+    let processed_at = write.received_at;
+    let entitlement = if write.event_type == OrganizationPlanPaymentEventType::Succeeded {
+        let Some(plan) = lock_plan(transaction, order.plan_id()).await? else {
+            return Ok(
+                OrganizationPlanPaymentConfirmationOutcome::RecordedUnprocessed {
+                    order,
+                    reason: OrganizationPlanPaymentEventRejection::PlanSnapshotConflict,
+                },
+            );
+        };
+        if plan.id != order_model.plan_id
+            || plan.version != i64::try_from(order.plan_version()).unwrap_or_default()
+        {
+            return Ok(
+                OrganizationPlanPaymentConfirmationOutcome::RecordedUnprocessed {
+                    order,
+                    reason: OrganizationPlanPaymentEventRejection::PlanSnapshotConflict,
+                },
+            );
+        }
+        let current = organization_mutation::lock_entitlement(transaction, order.organization_id())
+            .await
+            .map_err(map_organization_error)?;
+        let current_version = u64::try_from(current.version)
+            .map_err(|_| OrganizationPlanOrderRepositoryError::Invariant)?;
+        let valid_from = i64::try_from(processed_at)
+            .map_err(|_| OrganizationPlanOrderRepositoryError::Invariant)?;
+        let duration = plan
+            .validity_days
+            .checked_mul(86_400)
+            .ok_or(OrganizationPlanOrderRepositoryError::Invariant)?;
+        let valid_until = valid_from
+            .checked_add(duration)
+            .ok_or(OrganizationPlanOrderRepositoryError::Invariant)?;
+        let snapshot = af_domain::OrganizationEntitlementSnapshot::new(
+            af_domain::OrganizationEntitlementCapacity::new(
+                plan.seat_limit,
+                plan.team_limit,
+                plan.organization_key_limit,
+            )
+            .map_err(|_| OrganizationPlanOrderRepositoryError::Invariant)?,
+            plan.team_management_enabled,
+            plan.sso_enabled,
+            plan.custom_roles_enabled,
+            plan.audit_retention_days,
+            valid_from,
+            valid_until,
+            Some(valid_until),
+        )
+        .map_err(|_| OrganizationPlanOrderRepositoryError::Invariant)?;
+        let entitlement_write = crate::OrganizationEntitlementWrite::new(
+            snapshot,
+            "organization_plan_order".to_owned(),
+            Some(order.order_id().persistence_key()),
+            Some(current_version),
+        )
+        .map_err(|_| OrganizationPlanOrderRepositoryError::Invariant)?;
+        Some(
+            organization_mutation::replace_entitlement_in_transaction(
+                transaction,
+                order.organization_id(),
+                entitlement_write,
+            )
+            .await
+            .map_err(map_organization_error)?,
+        )
+    } else {
+        None
+    };
+
+    transition_payment_order(transaction, order_model, write, processed_at).await?;
+    mark_payment_event_processed(transaction, event_model.id, processed_at).await?;
+    append_payment_audit(transaction, &order, write).await?;
+    let updated = load_order_by_database_id(transaction, order_model.id)
+        .await?
+        .ok_or(OrganizationPlanOrderRepositoryError::Invariant)?;
+    let updated = order_record(updated)?;
+    Ok(OrganizationPlanPaymentConfirmationOutcome::Applied {
+        order: updated,
+        entitlement,
+    })
+}
+
+fn validate_confirmation_event(
+    order: &OrganizationPlanOrderRecord,
+    write: &OrganizationPlanPaymentEventWrite,
+) -> Option<OrganizationPlanPaymentEventRejection> {
+    if write.provider != order.provider() {
+        return Some(OrganizationPlanPaymentEventRejection::ProviderMismatch);
+    }
+    if (write.event_type == OrganizationPlanPaymentEventType::Succeeded
+        && write.amount_minor != Some(order.amount_minor()))
+        || write
+            .amount_minor
+            .is_some_and(|amount| amount != order.amount_minor())
+    {
+        return Some(OrganizationPlanPaymentEventRejection::AmountMismatch);
+    }
+    if (write.event_type == OrganizationPlanPaymentEventType::Succeeded
+        && write.currency.as_deref() != Some(order.currency()))
+        || write
+            .currency
+            .as_deref()
+            .is_some_and(|currency| currency != order.currency())
+    {
+        return Some(OrganizationPlanPaymentEventRejection::CurrencyMismatch);
+    }
+    if order.payment_method().is_none() {
+        return Some(OrganizationPlanPaymentEventRejection::SubmissionRequired);
+    }
+    if write
+        .payment_method
+        .as_deref()
+        .is_some_and(|method| order.payment_method() != Some(method))
+        || (write.event_type == OrganizationPlanPaymentEventType::Succeeded
+            && write.payment_method.is_none())
+    {
+        return Some(OrganizationPlanPaymentEventRejection::PaymentMethodMismatch);
+    }
+    if write.received_at < order.created_at() {
+        return Some(OrganizationPlanPaymentEventRejection::TimingConflict);
+    }
+    if order
+        .trade_no()
+        .zip(write.trade_no.as_deref())
+        .is_some_and(|(expected, actual)| expected != actual)
+    {
+        return Some(OrganizationPlanPaymentEventRejection::TradeNumberConflict);
+    }
+    None
+}
+
+async fn transition_payment_order(
+    transaction: &DatabaseTransaction,
+    order: &organization_plan_orders::Model,
+    write: &OrganizationPlanPaymentEventWrite,
+    processed_at: u64,
+) -> Result<(), OrganizationPlanOrderRepositoryError> {
+    let target = write.event_type.target_status();
+    let next_version = order
+        .version
+        .checked_add(1)
+        .ok_or(OrganizationPlanOrderRepositoryError::Invariant)?;
+    let timestamp = to_database_time(processed_at)?;
+    let update = organization_plan_orders::Entity::update_many()
+        .filter(organization_plan_orders::Column::Id.eq(order.id))
+        .filter(organization_plan_orders::Column::Version.eq(order.version))
+        .filter(organization_plan_orders::Column::Status.is_in([
+            OrganizationPlanOrderStatus::Created.code(),
+            OrganizationPlanOrderStatus::Pending.code(),
+        ]))
+        .col_expr(organization_plan_orders::Column::Status, Expr::value(target.code()))
+        // 失败/过期事件可能不携带可选字段；不能覆盖提交阶段已固化的绑定事实。
+        .col_expr(
+            organization_plan_orders::Column::TradeNo,
+            write.trade_no
+                .clone()
+                .map(|trade_no| Expr::value(Some(SensitiveString::from(trade_no))))
+                .unwrap_or_else(|| Expr::col(organization_plan_orders::Column::TradeNo).into()),
+        )
+        .col_expr(
+            organization_plan_orders::Column::PaymentMethod,
+            write
+                .payment_method
+                .clone()
+                .map(|payment_method| Expr::value(Some(payment_method)))
+                .unwrap_or_else(|| Expr::col(organization_plan_orders::Column::PaymentMethod).into()),
+        )
+        .col_expr(organization_plan_orders::Column::Version, Expr::value(next_version))
+        .col_expr(
+            organization_plan_orders::Column::PaidAt,
+            Expr::value((target == OrganizationPlanOrderStatus::Paid).then_some(timestamp)),
+        )
+        .col_expr(
+            organization_plan_orders::Column::ClosedAt,
+            Expr::value((target != OrganizationPlanOrderStatus::Paid).then_some(timestamp)),
+        )
+        .col_expr(organization_plan_orders::Column::UpdatedAt, Expr::value(timestamp))
+        .exec(transaction)
+        .await
+        .map_err(|_| OrganizationPlanOrderRepositoryError::Query)?;
+    if update.rows_affected != 1 {
+        return Err(OrganizationPlanOrderRepositoryError::Conflict);
+    }
+    Ok(())
+}
+
+async fn mark_payment_event_processed(
+    transaction: &DatabaseTransaction,
+    event_id: i64,
+    processed_at: u64,
+) -> Result<(), OrganizationPlanOrderRepositoryError> {
+    let processed_at = to_database_time(processed_at)?;
+    let update = organization_plan_payment_events::Entity::update_many()
+        .filter(organization_plan_payment_events::Column::Id.eq(event_id))
+        .filter(organization_plan_payment_events::Column::ProcessedAt.is_null())
+        .col_expr(
+            organization_plan_payment_events::Column::ProcessedAt,
+            Expr::value(processed_at),
+        )
+        .exec(transaction)
+        .await
+        .map_err(|_| OrganizationPlanOrderRepositoryError::Query)?;
+    if update.rows_affected != 1 {
+        return Err(OrganizationPlanOrderRepositoryError::Invariant);
+    }
+    Ok(())
+}
+
+async fn load_entitlement_record(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+) -> Result<Option<crate::OrganizationEntitlementRecord>, OrganizationPlanOrderRepositoryError> {
+    let model = organization_mutation::lock_entitlement(transaction, organization_id)
+        .await
+        .map_err(map_organization_error)?;
+    organization_read::entitlement_record(model)
+        .map(Some)
+        .map_err(map_organization_error)
+}
+
+async fn append_payment_audit(
+    transaction: &DatabaseTransaction,
+    order: &OrganizationPlanOrderRecord,
+    write: &OrganizationPlanPaymentEventWrite,
+) -> Result<(), OrganizationPlanOrderRepositoryError> {
+    let audit_write = OrganizationAuditWrite::new(
+        order.organization_id(),
+        order.payer_user_id(),
+        None,
+        "organization.plan_orders.confirm".to_owned(),
+        "organization.plan_order.payment_confirmed".to_owned(),
+        "organization_plan_order".to_owned(),
+        order.order_id().persistence_key(),
+        OrganizationAuditOutcome::Succeeded,
+        Some("payment_webhook".to_owned()),
+        format!(
+            "organization-plan-payment:{}",
+            write.event_id.persistence_key()
+        ),
+        write.payload_sha256,
+        Some(
+            serde_json::json!({
+                "event_type": write.event_type.code(),
+                "provider": write.provider.clone(),
+                "amount_minor": order.amount_minor(),
+                "currency": order.currency(),
+            })
+            .to_string(),
+        ),
+    )
+    .map_err(|_| OrganizationPlanOrderRepositoryError::Invariant)?;
+    record_audit(transaction, &audit_write)
+        .await
+        .map(|_| ())
+        .map_err(|error| match error {
+            crate::OrganizationAuditRepositoryError::Conflict => {
+                OrganizationPlanOrderRepositoryError::Conflict
+            }
+            crate::OrganizationAuditRepositoryError::Invariant => {
+                OrganizationPlanOrderRepositoryError::Invariant
+            }
+            crate::OrganizationAuditRepositoryError::Query
+            | crate::OrganizationAuditRepositoryError::Timeout => {
+                OrganizationPlanOrderRepositoryError::Query
+            }
+        })
+}
+
+fn map_organization_error(
+    error: crate::OrganizationRepositoryError,
+) -> OrganizationPlanOrderRepositoryError {
+    match error {
+        crate::OrganizationRepositoryError::InvalidInput => {
+            OrganizationPlanOrderRepositoryError::InvalidInput
+        }
+        crate::OrganizationRepositoryError::Conflict => {
+            OrganizationPlanOrderRepositoryError::Conflict
+        }
+        crate::OrganizationRepositoryError::Query => OrganizationPlanOrderRepositoryError::Query,
+        crate::OrganizationRepositoryError::Timeout => {
+            OrganizationPlanOrderRepositoryError::Timeout
+        }
+        crate::OrganizationRepositoryError::Invariant
+        | crate::OrganizationRepositoryError::NotFound
+        | crate::OrganizationRepositoryError::UserUnavailable
+        | crate::OrganizationRepositoryError::InvalidTransition
+        | crate::OrganizationRepositoryError::LastOwner
+        | crate::OrganizationRepositoryError::TeamHasActiveMembers
+        | crate::OrganizationRepositoryError::EntitlementRestricted
+        | crate::OrganizationRepositoryError::SeatLimitReached
+        | crate::OrganizationRepositoryError::InvitationExpired
+        | crate::OrganizationRepositoryError::InvitationNotPending
+        | crate::OrganizationRepositoryError::InvitationEmailMismatch
+        | crate::OrganizationRepositoryError::InvitationBatchConflict
+        | crate::OrganizationRepositoryError::TeamLimitReached
+        | crate::OrganizationRepositoryError::EntropyUnavailable => {
+            OrganizationPlanOrderRepositoryError::Invariant
+        }
     }
 }
 
