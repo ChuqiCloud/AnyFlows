@@ -197,7 +197,9 @@ impl AdminOAuthConnectionService for RuntimeAdminOAuthConnectionService {
             let start = self
                 .coordinator
                 .begin(account_provider, context)
-                .map_err(|error| report_oauth_failure(provider, "begin", map_connection_error(error)))?;
+                .map_err(|error| {
+                    report_oauth_failure(provider, "begin", map_connection_error(error))
+                })?;
             let expires_in_seconds = start
                 .expires_at()
                 .saturating_duration_since(Instant::now())
@@ -228,9 +230,8 @@ impl AdminOAuthConnectionService for RuntimeAdminOAuthConnectionService {
                     AdminOAuthConnectionError::ProviderNotConfigured,
                 ));
             }
-            let callback = parse_callback(provider, callback_url).map_err(|error| {
-                report_oauth_failure(provider, "manual_callback", error)
-            })?;
+            let callback = parse_callback(provider, callback_url)
+                .map_err(|error| report_oauth_failure(provider, "manual_callback", error))?;
             let outcome = self
                 .coordinator
                 .complete_for(principal.user_id(), callback)
@@ -255,16 +256,11 @@ impl AdminOAuthConnectionService for RuntimeAdminOAuthConnectionService {
                     AdminOAuthConnectionError::ProviderNotConfigured,
                 ));
             }
-            let callback = parse_callback(provider, callback_url).map_err(|error| {
-                report_oauth_failure(provider, "loopback_callback", error)
+            let callback = parse_callback(provider, callback_url)
+                .map_err(|error| report_oauth_failure(provider, "loopback_callback", error))?;
+            let outcome = self.coordinator.complete(callback).await.map_err(|error| {
+                report_oauth_failure(provider, "loopback_callback", map_connection_error(error))
             })?;
-            let outcome = self
-                .coordinator
-                .complete(callback)
-                .await
-                .map_err(|error| {
-                    report_oauth_failure(provider, "loopback_callback", map_connection_error(error))
-                })?;
             Ok(map_connection_outcome(outcome))
         })
     }

@@ -551,11 +551,9 @@ async fn complete_oauth_manual_callback(
     let provider = request.provider;
     let outcome = tokio::time::timeout(
         OAUTH_CALLBACK_COMPLETION_TIMEOUT,
-        state.service.complete_manual(
-            authentication.principal(),
-            provider,
-            request.callback_url,
-        ),
+        state
+            .service
+            .complete_manual(authentication.principal(), provider, request.callback_url),
     )
     .await
     .map_err(|_| {
