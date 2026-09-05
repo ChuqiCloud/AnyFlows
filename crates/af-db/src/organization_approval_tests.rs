@@ -506,23 +506,24 @@ async fn approval_notification_repository_paginates_and_marks_read_idempotently(
             fixture.owner_id,
             now + 3_600,
         )?;
-        let request_id = match fixture
+        let request = match fixture
             .repository
             .create_request(OrganizationApprovalRequestWrite::new(request))
             .await
             .map_err(|error| format!("创建通知测试申请失败: {error:?}"))?
         {
-            OrganizationApprovalRequestCreateOutcome::Created(record) => record.id(),
+            OrganizationApprovalRequestCreateOutcome::Created(record) => record,
             OrganizationApprovalRequestCreateOutcome::Existing(_) => unreachable!(),
         };
         let decision = OrganizationApprovalDecision::new(
             OrganizationApprovalDecisionKey::new(decision_key)?,
             fixture.organization_id,
-            request_id,
+            request.id(),
             OrganizationApprovalDecisionKind::Approved,
             Some(fixture.owner_id),
             None,
-            now,
+            // 使用已落库的秒级时间，避免申请创建跨秒后决定时间早于申请。
+            request.created_at().unix_timestamp(),
         )?;
         let decision = match fixture
             .repository
