@@ -256,7 +256,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 229);
+        assert_eq!(document.paths.paths.len(), 231);
         let operation_count = document
             .paths
             .paths
@@ -278,7 +278,7 @@ mod tests {
             })
             .sum::<usize>();
         // 公开发现、SSO 启动、审批与部门目录管理接口扩展了既有管理面，保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 305);
+        assert_eq!(operation_count, 307);
         assert!(
             document
                 .components
@@ -472,6 +472,8 @@ mod tests {
             "createAdminOrganizationPlan",
             "disableAdminOrganizationPlan",
             "getOrganizationPlanCatalog",
+            "createOrganizationPlanOrder",
+            "getOrganizationPlanOrder",
             "getUserTopupConfiguration",
             "getUserWallet",
             "importMissingAdminModels",
@@ -630,7 +632,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 501);
+        assert_eq!(schemas.len(), 504);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("OrganizationSsoDiscoveryErrorResponse"));
         assert!(schemas.contains_key("CreditAllocationListResponse"));
@@ -684,6 +686,9 @@ mod tests {
         assert!(schemas.contains_key("OrganizationPlan"));
         assert!(schemas.contains_key("OrganizationPlanListResponse"));
         assert!(schemas.contains_key("OrganizationPlanCatalogResponse"));
+        assert!(schemas.contains_key("OrganizationPlanOrderCreateRequest"));
+        assert!(schemas.contains_key("OrganizationPlanOrderStatus"));
+        assert!(schemas.contains_key("OrganizationPlanOrder"));
         assert!(schemas.contains_key("AdminDashboardChannelFlow"));
         assert!(schemas.contains_key("AdminDashboardFlowPath"));
         assert!(schemas.contains_key("AdminDashboardFailure"));

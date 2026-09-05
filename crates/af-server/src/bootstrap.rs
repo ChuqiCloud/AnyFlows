@@ -106,7 +106,8 @@ use af_db::{
     OrganizationCustomRoleRepository, OrganizationCustomRoleRepositoryConfigError,
     OrganizationDepartmentMembershipRepository,
     OrganizationDepartmentMembershipRepositoryConfigError, OrganizationDepartmentRepository,
-    OrganizationDepartmentRepositoryConfigError, OrganizationPlanRepository,
+    OrganizationDepartmentRepositoryConfigError, OrganizationPlanOrderRepository,
+    OrganizationPlanOrderRepositoryConfigError, OrganizationPlanRepository,
     OrganizationPlanRepositoryConfigError, OrganizationProvisioningRepository,
     OrganizationProvisioningRepositoryConfigError, OrganizationRepository,
     OrganizationRepositoryConfigError, OrganizationScimAuditRepository,
@@ -257,6 +258,7 @@ pub struct AuthenticationReady {
     organization_approval_service: Arc<dyn OrganizationApprovalService>,
     organization_provisioning_service: Arc<dyn af_admin::OrganizationProvisioningService>,
     organization_plan_service: Arc<dyn af_admin::OrganizationPlanService>,
+    organization_plan_order_repository: OrganizationPlanOrderRepository,
     organization_activity_service: Arc<dyn OrganizationActivityService>,
     platform_audit_service: Arc<dyn PlatformAuditService>,
     redemption_service: Arc<dyn RedemptionService>,
@@ -508,6 +510,9 @@ pub enum BootstrapError {
     /// 企业套餐目录仓储的启动参数无效。
     #[error("企业套餐仓储启动参数无效")]
     OrganizationPlanRepository(#[source] OrganizationPlanRepositoryConfigError),
+    /// 企业授权订单仓储的启动参数无效。
+    #[error("企业授权订单仓储启动参数无效")]
+    OrganizationPlanOrderRepository(#[source] OrganizationPlanOrderRepositoryConfigError),
     /// 企业审批通知回执仓储的启动参数无效。
     #[error("企业审批通知仓储启动参数无效")]
     OrganizationApprovalNotificationRepository(
@@ -1100,6 +1105,11 @@ impl Bootstrap<DatabaseReady> {
             )
             .map_err(BootstrapError::OrganizationPlanRepository)?,
         );
+        let organization_plan_order_repository = OrganizationPlanOrderRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::OrganizationPlanOrderRepository)?;
         let organization_approval_notification_repository = Arc::new(
             OrganizationApprovalNotificationRepository::new(
                 self.stage.database.clone(),
@@ -1353,6 +1363,10 @@ impl Bootstrap<DatabaseReady> {
         > = Arc::new(af_admin::DatabaseOrganizationAuthorizationService::new(
             Arc::clone(&organization_repository),
         ));
+        let organization_plan_service: Arc<dyn af_admin::OrganizationPlanService> =
+            Arc::new(af_admin::DatabaseOrganizationPlanService::new(Arc::clone(
+                &organization_plan_repository,
+            )));
         let organization_activity_service: Arc<dyn OrganizationActivityService> = Arc::new(
             DatabaseOrganizationActivityService::new(
                 Arc::clone(&organization_authorization_service),
@@ -1525,9 +1539,8 @@ impl Bootstrap<DatabaseReady> {
                         organization_provisioning_repository,
                     ),
                 ),
-                organization_plan_service: Arc::new(
-                    af_admin::DatabaseOrganizationPlanService::new(organization_plan_repository),
-                ),
+                organization_plan_service,
+                organization_plan_order_repository,
                 organization_activity_service,
                 platform_audit_service,
                 redemption_service: Arc::new(DatabaseRedemptionService::new(redemption_repository)),
@@ -2790,6 +2803,16 @@ impl Bootstrap<Supervised> {
                 )),
             ));
         let user_topup_service: Arc<dyn UserTopupService> = self.stage.payment_runtime.clone();
+        let organization_plan_order_service: Arc<dyn af_admin::OrganizationPlanOrderService> =
+            Arc::new(af_admin::DatabaseOrganizationPlanOrderService::new(
+                Arc::clone(&self.stage.infrastructure.organization_authorization_service),
+                Arc::clone(&self.stage.infrastructure.organization_plan_service),
+                Arc::clone(&user_topup_service),
+                self.stage
+                    .infrastructure
+                    .organization_plan_order_repository
+                    .clone(),
+            ));
         let custom_oauth2_provider_service: Arc<dyn AdminCustomOAuth2ProviderService> =
             Arc::new(DatabaseAdminCustomOAuth2ProviderService::new(
                 self.stage
@@ -2870,6 +2893,7 @@ impl Bootstrap<Supervised> {
             Some(Arc::clone(
                 &self.stage.infrastructure.organization_plan_service,
             )),
+            Some(organization_plan_order_service),
             Some(user_topup_service),
             Arc::clone(&self.stage.infrastructure.redemption_service),
             Arc::clone(&self.stage.infrastructure.subscription_service),

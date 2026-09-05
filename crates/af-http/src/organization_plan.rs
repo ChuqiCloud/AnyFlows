@@ -2,10 +2,15 @@ use std::sync::Arc;
 
 use af_admin::{
     OrganizationPlanCreateCommand, OrganizationPlanDisableCommand, OrganizationPlanListQuery,
-    OrganizationPlanService, OrganizationPlanServiceError, OrganizationPlanView,
-    SessionAuthentication, SessionAuthenticator, UserTopupService,
+    OrganizationPlanOrderCreateCommand, OrganizationPlanOrderService,
+    OrganizationPlanOrderServiceError, OrganizationPlanOrderView, OrganizationPlanService,
+    OrganizationPlanServiceError, OrganizationPlanView, SessionAuthentication,
+    SessionAuthenticator, UserTopupService,
 };
-use af_domain::{OrganizationPlanFeatures, OrganizationPlanId, OrganizationPlanStatus};
+use af_domain::{
+    OrganizationId, OrganizationPlanFeatures, OrganizationPlanId, OrganizationPlanOrderId,
+    OrganizationPlanOrderRequestId, OrganizationPlanOrderStatus, OrganizationPlanStatus,
+};
 use axum::{
     Extension, Json, Router,
     extract::{Path, RawQuery, State, rejection::JsonRejection},
@@ -22,22 +27,26 @@ use crate::{
     management_authorization::authorize_management_admin,
     management_error::ManagementError,
     management_session::no_store_json,
+    middleware::ensure_request_id,
 };
 
 #[derive(Clone)]
 struct OrganizationPlanHttpState {
     service: Option<Arc<dyn OrganizationPlanService>>,
+    order_service: Option<Arc<dyn OrganizationPlanOrderService>>,
     topup_service: Option<Arc<dyn UserTopupService>>,
 }
 
 /// 构建企业套餐目录和平台管理接口；所有入口均要求有效管理会话。
 pub fn build_organization_plan_router(
     service: Option<Arc<dyn OrganizationPlanService>>,
+    order_service: Option<Arc<dyn OrganizationPlanOrderService>>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
     topup_service: Option<Arc<dyn UserTopupService>>,
 ) -> Router {
     let state = OrganizationPlanHttpState {
         service,
+        order_service,
         topup_service,
     };
     let admin_authentication = middleware::from_fn_with_state(
@@ -65,7 +74,16 @@ pub fn build_organization_plan_router(
             "/api/account/organization-plan-catalog",
             get(list_organization_plan_catalog),
         )
+        .route(
+            "/api/organizations/{organization_id}/plan-orders",
+            post(create_organization_plan_order),
+        )
+        .route(
+            "/api/organizations/{organization_id}/plan-orders/{order_id}",
+            get(get_organization_plan_order),
+        )
         .route_layer(user_authentication)
+        .layer(middleware::from_fn(ensure_request_id))
         .with_state(state);
     admin_routes.merge(user_routes)
 }
@@ -180,6 +198,76 @@ pub(crate) struct OrganizationPlanCatalogResponse {
     purchase_notice: &'static str,
 }
 
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct OrganizationPlanOrderCreateRequest {
+    #[schema(min_length = 32, max_length = 32, pattern = "^[0-9a-f]{32}$")]
+    plan_id: String,
+    #[schema(min_length = 32, max_length = 32, pattern = "^[0-9a-f]{32}$")]
+    idempotency_key: String,
+}
+
+#[derive(Clone, Copy, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum OrganizationPlanOrderStatusDto {
+    Created,
+    Pending,
+    Paid,
+    Failed,
+    Canceled,
+    Expired,
+}
+
+impl From<OrganizationPlanOrderStatus> for OrganizationPlanOrderStatusDto {
+    fn from(value: OrganizationPlanOrderStatus) -> Self {
+        match value {
+            OrganizationPlanOrderStatus::Created => Self::Created,
+            OrganizationPlanOrderStatus::Pending => Self::Pending,
+            OrganizationPlanOrderStatus::Paid => Self::Paid,
+            OrganizationPlanOrderStatus::Failed => Self::Failed,
+            OrganizationPlanOrderStatus::Canceled => Self::Canceled,
+            OrganizationPlanOrderStatus::Expired => Self::Expired,
+        }
+    }
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct OrganizationPlanOrderResponse {
+    #[schema(min_length = 32, max_length = 32, pattern = "^[0-9a-f]{32}$")]
+    order_id: String,
+    #[schema(minimum = 1)]
+    organization_id: i64,
+    #[schema(minimum = 1)]
+    payer_user_id: i64,
+    #[schema(min_length = 32, max_length = 32, pattern = "^[0-9a-f]{32}$")]
+    plan_id: String,
+    #[schema(minimum = 1)]
+    plan_version: u64,
+    #[schema(min_length = 1, max_length = 32)]
+    provider: String,
+    #[schema(min_length = 3, max_length = 3, pattern = "^[A-Z]{3}$")]
+    currency: String,
+    #[schema(minimum = 1)]
+    amount_minor: i64,
+    status: OrganizationPlanOrderStatusDto,
+    #[schema(minimum = 1)]
+    version: u64,
+    #[schema(min_length = 1, max_length = 32, required = true)]
+    payment_method: Option<String>,
+    #[schema(minimum = 0, required = true)]
+    expires_at: Option<u64>,
+    #[schema(minimum = 0, required = true)]
+    paid_at: Option<u64>,
+    #[schema(minimum = 0, required = true)]
+    closed_at: Option<u64>,
+    #[schema(minimum = 0)]
+    created_at: u64,
+    #[schema(minimum = 0)]
+    updated_at: u64,
+    replayed: bool,
+}
+
 async fn list_admin_organization_plans(
     State(state): State<OrganizationPlanHttpState>,
     RawQuery(raw_query): RawQuery,
@@ -288,6 +376,64 @@ async fn list_organization_plan_catalog(
     }))
 }
 
+async fn create_organization_plan_order(
+    State(state): State<OrganizationPlanHttpState>,
+    Path(organization_id): Path<i64>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    request: Result<Json<OrganizationPlanOrderCreateRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let service = state
+        .order_service
+        .as_ref()
+        .ok_or(ManagementError::OrganizationPlanOrderUnavailable)?;
+    let organization_id =
+        OrganizationId::new(organization_id).map_err(|_| ManagementError::InvalidRequest)?;
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let plan_id = OrganizationPlanId::from_persistence_key(&request.plan_id)
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    let request_id = OrganizationPlanOrderRequestId::from_persistence_key(&request.idempotency_key)
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    let order = service
+        .create(
+            authentication.principal(),
+            organization_id,
+            OrganizationPlanOrderCreateCommand::new(plan_id, request_id),
+        )
+        .await
+        .map_err(map_order_error)?;
+    let status = if order.replayed() {
+        StatusCode::OK
+    } else {
+        StatusCode::CREATED
+    };
+    Ok(status_json(
+        status,
+        OrganizationPlanOrderResponse::from_view(&order),
+    ))
+}
+
+async fn get_organization_plan_order(
+    State(state): State<OrganizationPlanHttpState>,
+    Path((organization_id, order_id)): Path<(i64, String)>,
+    Extension(authentication): Extension<SessionAuthentication>,
+) -> Result<Response, ManagementError> {
+    let service = state
+        .order_service
+        .as_ref()
+        .ok_or(ManagementError::OrganizationPlanOrderUnavailable)?;
+    let organization_id =
+        OrganizationId::new(organization_id).map_err(|_| ManagementError::InvalidRequest)?;
+    let order_id = OrganizationPlanOrderId::from_persistence_key(&order_id)
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    let order = service
+        .get(authentication.principal(), organization_id, order_id)
+        .await
+        .map_err(map_order_error)?;
+    Ok(no_store_json(OrganizationPlanOrderResponse::from_view(
+        &order,
+    )))
+}
+
 impl OrganizationPlanResponse {
     fn from_view(view: &OrganizationPlanView) -> Result<Self, ManagementError> {
         let features: OrganizationPlanFeatures = view.snapshot().features();
@@ -317,6 +463,30 @@ impl OrganizationPlanResponse {
             created_at: i64::try_from(view.created_at()).map_err(|_| ManagementError::Internal)?,
             updated_at: i64::try_from(view.updated_at()).map_err(|_| ManagementError::Internal)?,
         })
+    }
+}
+
+impl OrganizationPlanOrderResponse {
+    fn from_view(view: &OrganizationPlanOrderView) -> Self {
+        Self {
+            order_id: view.order_id().persistence_key(),
+            organization_id: view.organization_id().get(),
+            payer_user_id: view.payer_user_id().get(),
+            plan_id: view.plan_id().persistence_key(),
+            plan_version: view.plan_version(),
+            provider: view.provider().to_owned(),
+            currency: view.currency().to_owned(),
+            amount_minor: view.amount_minor(),
+            status: view.status().into(),
+            version: view.version(),
+            payment_method: view.payment_method().map(str::to_owned),
+            expires_at: view.expires_at(),
+            paid_at: view.paid_at(),
+            closed_at: view.closed_at(),
+            created_at: view.created_at(),
+            updated_at: view.updated_at(),
+            replayed: view.replayed(),
+        }
     }
 }
 
@@ -352,6 +522,26 @@ fn map_error(error: OrganizationPlanServiceError) -> ManagementError {
         OrganizationPlanServiceError::NotFound => ManagementError::OrganizationPlanNotFound,
         OrganizationPlanServiceError::Conflict => ManagementError::OrganizationPlanConflict,
         OrganizationPlanServiceError::Internal => ManagementError::Internal,
+    }
+}
+
+fn map_order_error(error: OrganizationPlanOrderServiceError) -> ManagementError {
+    match error {
+        OrganizationPlanOrderServiceError::InvalidRequest => ManagementError::InvalidRequest,
+        OrganizationPlanOrderServiceError::Forbidden => ManagementError::Forbidden,
+        OrganizationPlanOrderServiceError::NotFound => {
+            ManagementError::OrganizationPlanOrderNotFound
+        }
+        OrganizationPlanOrderServiceError::Conflict => {
+            ManagementError::OrganizationPlanOrderConflict
+        }
+        OrganizationPlanOrderServiceError::OutcomeUnknown => {
+            ManagementError::OrganizationPlanOrderOutcomeUnknown
+        }
+        OrganizationPlanOrderServiceError::Unavailable => {
+            ManagementError::OrganizationPlanOrderUnavailable
+        }
+        OrganizationPlanOrderServiceError::Internal => ManagementError::Internal,
     }
 }
 

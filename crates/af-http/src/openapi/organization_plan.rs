@@ -82,6 +82,46 @@ pub(crate) struct OrganizationPlanCatalogResponseSchema {
     pub(crate) purchase_notice: String,
 }
 
+#[derive(ToSchema)]
+#[schema(as = OrganizationPlanOrderCreateRequest)]
+pub(crate) struct OrganizationPlanOrderCreateRequestSchema {
+    pub(crate) plan_id: String,
+    pub(crate) idempotency_key: String,
+}
+
+#[derive(ToSchema)]
+#[schema(as = OrganizationPlanOrderStatus, rename_all = "snake_case")]
+pub(crate) enum OrganizationPlanOrderStatusSchema {
+    Created,
+    Pending,
+    Paid,
+    Failed,
+    Canceled,
+    Expired,
+}
+
+#[derive(ToSchema)]
+#[schema(as = OrganizationPlanOrder)]
+pub(crate) struct OrganizationPlanOrderResponseSchema {
+    pub(crate) order_id: String,
+    pub(crate) organization_id: i64,
+    pub(crate) payer_user_id: i64,
+    pub(crate) plan_id: String,
+    pub(crate) plan_version: u64,
+    pub(crate) provider: String,
+    pub(crate) currency: String,
+    pub(crate) amount_minor: i64,
+    pub(crate) status: OrganizationPlanOrderStatusSchema,
+    pub(crate) version: u64,
+    pub(crate) payment_method: Option<String>,
+    pub(crate) expires_at: Option<u64>,
+    pub(crate) paid_at: Option<u64>,
+    pub(crate) closed_at: Option<u64>,
+    pub(crate) created_at: u64,
+    pub(crate) updated_at: u64,
+    pub(crate) replayed: bool,
+}
+
 #[utoipa::path(
     get,
     path = "/api/admin/organization-plans",
@@ -126,13 +166,38 @@ fn disable_admin_organization_plan() {}
 )]
 fn get_organization_plan_catalog() {}
 
+#[utoipa::path(
+    post,
+    path = "/api/organizations/{organization_id}/plan-orders",
+    operation_id = "createOrganizationPlanOrder",
+    tag = "企业套餐",
+    params(("organization_id" = i64, Path, minimum = 1)),
+    request_body = OrganizationPlanOrderCreateRequestSchema,
+    responses((status = 201, body = OrganizationPlanOrderResponseSchema), (status = 200, body = OrganizationPlanOrderResponseSchema), (status = 400, body = ManagementErrorBody), (status = 401, body = ManagementErrorBody), (status = 403, body = ManagementErrorBody), (status = 404, body = ManagementErrorBody), (status = 409, body = ManagementErrorBody), (status = 503, body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn create_organization_plan_order() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/organizations/{organization_id}/plan-orders/{order_id}",
+    operation_id = "getOrganizationPlanOrder",
+    tag = "企业套餐",
+    params(("organization_id" = i64, Path, minimum = 1), ("order_id" = String, Path)),
+    responses((status = 200, body = OrganizationPlanOrderResponseSchema), (status = 400, body = ManagementErrorBody), (status = 401, body = ManagementErrorBody), (status = 403, body = ManagementErrorBody), (status = 404, body = ManagementErrorBody), (status = 503, body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn get_organization_plan_order() {}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
         list_admin_organization_plans,
         create_admin_organization_plan,
         disable_admin_organization_plan,
-        get_organization_plan_catalog
+        get_organization_plan_catalog,
+        create_organization_plan_order,
+        get_organization_plan_order
     ),
     components(schemas(
         OrganizationPlanListQuerySchema,
@@ -142,6 +207,9 @@ fn get_organization_plan_catalog() {}
         OrganizationPlanResponseSchema,
         OrganizationPlanListResponseSchema,
         OrganizationPlanCatalogResponseSchema,
+        OrganizationPlanOrderCreateRequestSchema,
+        OrganizationPlanOrderStatusSchema,
+        OrganizationPlanOrderResponseSchema,
         ManagementErrorBody
     ))
 )]

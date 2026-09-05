@@ -206,6 +206,7 @@ pub fn build_router(
     organization_approval_service: Option<Arc<dyn OrganizationApprovalService>>,
     organization_provisioning_service: Option<Arc<dyn af_admin::OrganizationProvisioningService>>,
     organization_plan_service: Option<Arc<dyn OrganizationPlanService>>,
+    organization_plan_order_service: Option<Arc<dyn af_admin::OrganizationPlanOrderService>>,
     user_topup_service: Option<Arc<dyn UserTopupService>>,
     redemption_service: Arc<dyn RedemptionService>,
     subscription_service: Arc<dyn SubscriptionService>,
@@ -911,6 +912,7 @@ pub fn build_router(
     ));
     let management_routes = management_routes.merge(build_organization_plan_router(
         organization_plan_service,
+        organization_plan_order_service,
         Arc::clone(&http_state.session_authenticator),
         user_topup_service.clone(),
     ));
