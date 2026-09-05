@@ -529,7 +529,7 @@ async fn future_plan_change_is_paid_then_applied_once_when_due() -> Result<(), B
 
     fixture
         .repository
-        .apply_due_entitlement_change(organization.id(), effective_at - 1)
+        .apply_due_entitlement_change(organization.id(), i64::try_from(effective_at - 1)?)
         .await?;
     assert_eq!(
         fixture
@@ -542,7 +542,7 @@ async fn future_plan_change_is_paid_then_applied_once_when_due() -> Result<(), B
     );
     fixture
         .repository
-        .apply_due_entitlement_change(organization.id(), effective_at)
+        .apply_due_entitlement_change(organization.id(), i64::try_from(effective_at)?)
         .await?;
     let applied = fixture
         .organization_repository
@@ -551,7 +551,7 @@ async fn future_plan_change_is_paid_then_applied_once_when_due() -> Result<(), B
     assert_eq!(applied.entitlement().version(), 2);
     fixture
         .repository
-        .apply_due_entitlement_change(organization.id(), effective_at + 1)
+        .apply_due_entitlement_change(organization.id(), i64::try_from(effective_at + 1)?)
         .await?;
     assert_eq!(
         fixture
