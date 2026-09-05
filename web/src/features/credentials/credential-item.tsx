@@ -99,7 +99,7 @@ export function CredentialItem({ credential, parent, language, pending, active, 
           <IconAction label={t('credentials.actions.delete')} className="hover:text-destructive" disabled={oauthOpen} onClick={() => onDelete(credential)}><Trash2 aria-hidden="true" /></IconAction>
         </div>
       </div>
-      {isOAuth && oauthOpen ? <CredentialOAuthConnection active={active && oauthOpen} channelId={credential.channel_id} credential={credential} onRefresh={onRefresh} /> : null}
+      {isOAuth && oauthOpen ? <CredentialOAuthConnection active={active && oauthOpen} channelId={credential.channel_id} credential={credential} onDelete={onDelete} onRefresh={onRefresh} /> : null}
     </article>
   )
 }

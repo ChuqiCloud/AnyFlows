@@ -17,9 +17,12 @@ import {
 } from './credential-oauth-effects'
 import {
   asAdminOAuthProvider,
+  clearOAuthWizardState,
   isValidOAuthCallbackUrl,
   oauthAuthorizationRemainingSeconds,
   oauthProviderStatus,
+  readOAuthWizardState,
+  writeOAuthWizardState,
 } from './credential-oauth-model'
 import { useCredentialOAuthPopup } from './credential-oauth-popup'
 import type { ActiveOAuthAuthorization, CredentialOAuthStatus } from './credential-oauth-types'
@@ -44,8 +47,16 @@ export function useCredentialOAuthController(options: CredentialOAuthControllerO
   const boundProvider = asAdminOAuthProvider(options.credential.oauth_provider)
   const unsupportedBoundProvider = options.credential.oauth_provider !== null && boundProvider === undefined
   const providers = useMemo(() => providersQuery.data?.providers ?? [], [providersQuery.data])
-  const [provider, setProvider] = useState<AdminOAuthProvider | ''>(boundProvider ?? '')
-  const [status, setStatus] = useState<CredentialOAuthStatus>('idle')
+  const [restoredState] = useState(() => readOAuthWizardState(options.channelId, options.credential.id))
+  const restoredProvider = restoredState !== undefined
+    && (boundProvider === undefined || restoredState.provider === boundProvider)
+    ? restoredState.provider
+    : undefined
+  const [provider, setProvider] = useState<AdminOAuthProvider | ''>(restoredProvider ?? boundProvider ?? '')
+  const [status, setStatus] = useState<CredentialOAuthStatus>(() => {
+    if (restoredProvider === undefined || restoredState === undefined) return 'idle'
+    return restoredState.phase === 'waiting' ? 'interrupted' : restoredState.phase
+  })
   const [authorization, setAuthorization] = useState<ActiveOAuthAuthorization>()
   const [manualVisible, setManualVisible] = useState(false)
   const [callbackUrl, setCallbackUrl] = useState('')
@@ -63,12 +74,26 @@ export function useCredentialOAuthController(options: CredentialOAuthControllerO
     ? oauthProviderStatus(providers, options.credential)
     : providers.find((item) => item.provider === provider)
 
+  useEffect(() => {
+    if (!options.active || status === 'idle' || status === 'connected' || provider === '') {
+      clearOAuthWizardState(options.channelId, options.credential.id)
+      return
+    }
+    writeOAuthWizardState({
+      channelId: options.channelId,
+      credentialId: options.credential.id,
+      provider,
+      phase: status === 'expired' ? 'expired' : status === 'error' ? 'error' : 'waiting',
+    })
+  }, [options.active, options.channelId, options.credential.id, provider, status])
+
   const resetFlow = useCallback(() => {
     beginAbortRef.current?.abort()
     manualAbortRef.current?.abort()
     beginAbortRef.current = undefined
     manualAbortRef.current = undefined
     closePopup()
+    clearOAuthWizardState(options.channelId, options.credential.id)
     setStatus('idle')
     setAuthorization(undefined)
     setManualVisible(false)
@@ -80,7 +105,7 @@ export function useCredentialOAuthController(options: CredentialOAuthControllerO
     setManualBusy(false)
     resetBeginMutation()
     resetManualMutation()
-  }, [closePopup, resetBeginMutation, resetManualMutation])
+  }, [closePopup, options.channelId, options.credential.id, resetBeginMutation, resetManualMutation])
 
   const expireAuthorization = useCallback(() => {
     setStatus('expired')

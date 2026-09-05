@@ -22,6 +22,8 @@ export function useOAuthProviderSelection(options: {
       setProvider('')
       return
     }
+    // Provider 请求尚未完成时保留恢复的选择，避免空列表把它清掉。
+    if (providers.length === 0) return
     if (!providers.some((item) => item.provider === provider)) {
       setProvider(providers[0]?.provider ?? '')
     }

@@ -905,6 +905,7 @@
       "popupBlocked": "The browser blocked the authorization window. Open it manually.",
       "waiting": "Waiting for authorization. This session expires in about {{seconds}} seconds.",
       "openAuthorization": "Open authorization page",
+      "cancel": "Cancel authorization",
       "useManual": "Use manual callback",
       "hideManual": "Hide manual callback",
       "callbackUrl": "Complete callback URL",
@@ -916,7 +917,9 @@
       "connectPending": "Connect OAuth",
       "reauthorize": "Reauthorize",
       "expired": "This authorization session has expired.",
+      "interrupted": "The original authorization session cannot be resumed after a refresh. Start again.",
       "restart": "Restart authorization",
+      "clearPending": "Clear pending credential",
       "errors": {
         "invalid_request": "The OAuth request is invalid. Check the credential type and callback URL.",
         "forbidden": "This session cannot connect OAuth credentials.",

@@ -23,9 +23,12 @@ import {
 } from '../src/features/credentials/credential-form-scalar.ts'
 import {
   asAdminOAuthProvider,
+  clearOAuthWizardState,
   isValidOAuthCallbackUrl,
   oauthAuthorizationRemainingSeconds,
   oauthCredentialConnectionUpdated,
+  readOAuthWizardState,
+  writeOAuthWizardState,
 } from '../src/features/credentials/credential-oauth-model.ts'
 
 const oauthCredential = {
@@ -290,6 +293,48 @@ test('provider 收敛与授权剩余时间保持闭合', () => {
   assert.equal(asAdminOAuthProvider('unknown'), undefined)
   assert.equal(oauthAuthorizationRemainingSeconds(2_001, 1_000), 2)
   assert.equal(oauthAuthorizationRemainingSeconds(999, 1_000), 0)
+})
+
+test('OAuth 向导刷新恢复只保存凭据阶段而不保存敏感回调材料', () => {
+  const previousStorage = globalThis.sessionStorage
+  const values = new Map()
+  Object.defineProperty(globalThis, 'sessionStorage', {
+    configurable: true,
+    value: {
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, value),
+      removeItem: (key) => values.delete(key),
+    },
+  })
+  try {
+    writeOAuthWizardState({ channelId: 2, credentialId: 9, provider: 'codex', phase: 'waiting' })
+    const raw = [...values.values()][0]
+    assert.deepEqual(JSON.parse(raw), {
+      channelId: 2,
+      credentialId: 9,
+      provider: 'codex',
+      phase: 'waiting',
+    })
+    const storageKey = [...values.keys()][0]
+    assert.deepEqual(Object.keys(JSON.parse(raw)).sort(), ['channelId', 'credentialId', 'phase', 'provider'])
+    assert.deepEqual(readOAuthWizardState(2, 9), {
+      channelId: 2,
+      credentialId: 9,
+      provider: 'codex',
+      phase: 'waiting',
+    })
+    clearOAuthWizardState(2, 9)
+    assert.equal(readOAuthWizardState(2, 9), undefined)
+    values.set(storageKey, JSON.stringify({ channelId: 2, credentialId: 9, provider: 'unknown', phase: 'waiting' }))
+    assert.equal(readOAuthWizardState(2, 9), undefined)
+    values.set(storageKey, JSON.stringify({ channelId: 2, credentialId: 9, provider: 'codex', phase: 'unknown' }))
+    assert.equal(readOAuthWizardState(2, 9), undefined)
+    values.set(storageKey, JSON.stringify({ channelId: 8, credentialId: 9, provider: 'codex', phase: 'waiting' }))
+    assert.equal(readOAuthWizardState(2, 9), undefined)
+  } finally {
+    if (previousStorage === undefined) delete globalThis.sessionStorage
+    else Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, value: previousStorage })
+  }
 })
 
 test('独立账号池与 OAuth 固定终态都有中英文文案', () => {
