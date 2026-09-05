@@ -90,6 +90,12 @@ pub(crate) struct OrganizationPlanOrderCreateRequestSchema {
 }
 
 #[derive(ToSchema)]
+#[schema(as = OrganizationPlanOrderPaymentRequest)]
+pub(crate) struct OrganizationPlanOrderPaymentRequestSchema {
+    pub(crate) payment_method: String,
+}
+
+#[derive(ToSchema)]
 #[schema(as = OrganizationPlanOrderStatus, rename_all = "snake_case")]
 pub(crate) enum OrganizationPlanOrderStatusSchema {
     Created,
@@ -120,6 +126,24 @@ pub(crate) struct OrganizationPlanOrderResponseSchema {
     pub(crate) created_at: u64,
     pub(crate) updated_at: u64,
     pub(crate) replayed: bool,
+}
+
+#[derive(ToSchema)]
+#[schema(as = OrganizationPlanPayment)]
+pub(crate) struct OrganizationPlanPaymentResponseSchema {
+    #[schema(required = true)]
+    pub(crate) payment_intent_id: Option<String>,
+    #[schema(required = true)]
+    pub(crate) client_secret: Option<String>,
+    #[schema(required = true)]
+    pub(crate) redirect_url: Option<String>,
+}
+
+#[derive(ToSchema)]
+#[schema(as = OrganizationPlanOrderPaymentResponse)]
+pub(crate) struct OrganizationPlanOrderPaymentResponseSchema {
+    pub(crate) order: OrganizationPlanOrderResponseSchema,
+    pub(crate) payment: OrganizationPlanPaymentResponseSchema,
 }
 
 #[utoipa::path(
@@ -189,6 +213,18 @@ fn create_organization_plan_order() {}
 )]
 fn get_organization_plan_order() {}
 
+#[utoipa::path(
+    post,
+    path = "/api/organizations/{organization_id}/plan-orders/{order_id}/payment",
+    operation_id = "submitOrganizationPlanOrderPayment",
+    tag = "企业套餐",
+    params(("organization_id" = i64, Path, minimum = 1), ("order_id" = String, Path)),
+    request_body = OrganizationPlanOrderPaymentRequestSchema,
+    responses((status = 200, body = OrganizationPlanOrderPaymentResponseSchema), (status = 400, body = ManagementErrorBody), (status = 401, body = ManagementErrorBody), (status = 403, body = ManagementErrorBody), (status = 404, body = ManagementErrorBody), (status = 409, body = ManagementErrorBody), (status = 503, body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn submit_organization_plan_order_payment() {}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -197,7 +233,8 @@ fn get_organization_plan_order() {}
         disable_admin_organization_plan,
         get_organization_plan_catalog,
         create_organization_plan_order,
-        get_organization_plan_order
+        get_organization_plan_order,
+        submit_organization_plan_order_payment
     ),
     components(schemas(
         OrganizationPlanListQuerySchema,
@@ -208,8 +245,11 @@ fn get_organization_plan_order() {}
         OrganizationPlanListResponseSchema,
         OrganizationPlanCatalogResponseSchema,
         OrganizationPlanOrderCreateRequestSchema,
+        OrganizationPlanOrderPaymentRequestSchema,
         OrganizationPlanOrderStatusSchema,
         OrganizationPlanOrderResponseSchema,
+        OrganizationPlanPaymentResponseSchema,
+        OrganizationPlanOrderPaymentResponseSchema,
         ManagementErrorBody
     ))
 )]

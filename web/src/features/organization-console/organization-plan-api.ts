@@ -1,16 +1,23 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { apiClient } from '@/lib/api'
+import { apiClient, ApiError } from '@/lib/api'
 import {
   createAdminOrganizationPlan,
+  createOrganizationPlanOrder,
   disableAdminOrganizationPlan,
+  getOrganizationPlanOrder,
   getOrganizationPlanCatalog,
   listAdminOrganizationPlans,
+  submitOrganizationPlanOrderPayment,
 } from '@/lib/api/generated/sdk.gen'
 import type {
+  OrganizationPlanOrderCreateRequest,
+  OrganizationPlanOrderPaymentRequest,
   OrganizationPlanCreateRequest,
   OrganizationPlanDisableRequest,
 } from '@/lib/api/generated/types.gen'
+
+import { organizationQueryKey } from '@/features/organization-budgets/organization-budget-api'
 
 export const organizationPlanCatalogQueryKey = ['organization-plan-catalog'] as const
 export const adminOrganizationPlansQueryKey = ['admin-organization-plans'] as const
@@ -25,6 +32,74 @@ export function useOrganizationPlanCatalog() {
     },
     retry: false,
   })
+}
+
+/** 在路径企业内创建或恢复当前付款人的授权订单。 */
+export function useCreateOrganizationPlanOrder(organizationId: number) {
+  return useMutation({
+    mutationFn: async (body: OrganizationPlanOrderCreateRequest) => {
+      const { data } = await createOrganizationPlanOrder({
+        body,
+        client: apiClient,
+        path: { organization_id: organizationId },
+      })
+      return data
+    },
+  })
+}
+
+/** 按企业和订单双重范围读取服务端支付状态。 */
+export function useOrganizationPlanOrder(organizationId: number, orderId: string | undefined) {
+  return useQuery({
+    queryKey: organizationQueryKey(organizationId, 'plan-orders', orderId),
+    enabled: orderId !== undefined,
+    queryFn: async ({ signal }) => {
+      if (orderId === undefined) throw new Error('缺少企业授权订单 ID')
+      const { data } = await getOrganizationPlanOrder({
+        client: apiClient,
+        path: { organization_id: organizationId, order_id: orderId },
+        signal,
+      })
+      return data
+    },
+    retry: false,
+  })
+}
+
+/** 复验企业钱包管理权限后提交或恢复同一订单的支付会话。 */
+export function useSubmitOrganizationPlanOrderPayment(organizationId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    gcTime: 0,
+    mutationFn: async ({ orderId, body }: { orderId: string; body: OrganizationPlanOrderPaymentRequest }) => {
+      const { data } = await submitOrganizationPlanOrderPayment({
+        body,
+        client: apiClient,
+        path: { organization_id: organizationId, order_id: orderId },
+      })
+      return data
+    },
+    onSuccess: (data) => queryClient.setQueryData(
+      organizationQueryKey(organizationId, 'plan-orders', data.order.order_id),
+      data.order,
+    ),
+  })
+}
+
+/** 提取企业授权订单接口的稳定公开错误码。 */
+export function organizationPlanOrderErrorCode(error: unknown) {
+  if (!(error instanceof ApiError) || typeof error.details !== 'object' || error.details === null) {
+    return undefined
+  }
+  const code = (error.details as { code?: unknown }).code
+  return typeof code === 'string' ? code : undefined
+}
+
+/** 生成企业授权订单可跨网络重试复用的 128 位幂等键。 */
+export function createOrganizationPlanOrderIdempotencyKey() {
+  const bytes = new Uint8Array(new ArrayBuffer(16))
+  globalThis.crypto.getRandomValues(bytes)
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
 /** 管理员按稳定游标读取全部企业套餐，历史停用快照也保留在列表中。 */

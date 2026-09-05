@@ -49,9 +49,10 @@ export function useUserWalletEntries() {
 }
 
 /** 读取当前用户可用的支付方式和各自金额边界。 */
-export function useUserTopupConfiguration() {
+export function useUserTopupConfiguration(enabled = true) {
   return useQuery({
     queryKey: userTopupConfigurationQueryKey,
+    enabled,
     queryFn: async ({ signal }) => {
       const { data } = await apiClient.get<{ 200: UserTopupConfiguration }, unknown, true>({
         security: bearerSecurity,

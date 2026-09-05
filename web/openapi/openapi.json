@@ -20795,6 +20795,121 @@
         ]
       }
     },
+    "/api/organizations/{organization_id}/plan-orders/{order_id}/payment": {
+      "post": {
+        "tags": [
+          "企业套餐"
+        ],
+        "operationId": "submitOrganizationPlanOrderPayment",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationPlanOrderPaymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationPlanOrderPaymentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/auth/organization-sso/discovery": {
       "post": {
         "tags": [
@@ -38959,6 +39074,32 @@
           }
         }
       },
+      "OrganizationPlanOrderPaymentRequest": {
+        "type": "object",
+        "required": [
+          "payment_method"
+        ],
+        "properties": {
+          "payment_method": {
+            "type": "string"
+          }
+        }
+      },
+      "OrganizationPlanOrderPaymentResponse": {
+        "type": "object",
+        "required": [
+          "order",
+          "payment"
+        ],
+        "properties": {
+          "order": {
+            "$ref": "#/components/schemas/OrganizationPlanOrder"
+          },
+          "payment": {
+            "$ref": "#/components/schemas/OrganizationPlanPayment"
+          }
+        }
+      },
       "OrganizationPlanOrderStatus": {
         "type": "string",
         "enum": [
@@ -38969,6 +39110,34 @@
           "canceled",
           "expired"
         ]
+      },
+      "OrganizationPlanPayment": {
+        "type": "object",
+        "required": [
+          "payment_intent_id",
+          "client_secret",
+          "redirect_url"
+        ],
+        "properties": {
+          "payment_intent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "client_secret": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "redirect_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
       },
       "OrganizationPlanStatus": {
         "type": "string",
