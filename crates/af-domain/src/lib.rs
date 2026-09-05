@@ -16,6 +16,7 @@ mod organization_credit_terms;
 mod organization_department;
 mod organization_department_budget;
 mod organization_entitlement;
+mod organization_entitlement_change;
 mod organization_entitlement_renewal;
 mod organization_plan;
 mod organization_plan_order;
@@ -112,6 +113,11 @@ pub use organization_entitlement::{
     MAX_ORGANIZATION_AUDIT_RETENTION_DAYS, OrganizationEntitlementCapacity,
     OrganizationEntitlementSnapshot, OrganizationEntitlementStateError,
     OrganizationEntitlementStatus,
+};
+pub use organization_entitlement_change::{
+    ORGANIZATION_ENTITLEMENT_DAY_SECONDS, OrganizationEntitlementChangeError,
+    OrganizationEntitlementChangePlan, OrganizationEntitlementPreflightError,
+    OrganizationEntitlementUsage,
 };
 pub use organization_entitlement_renewal::OrganizationEntitlementRenewalError;
 pub use organization_plan::{

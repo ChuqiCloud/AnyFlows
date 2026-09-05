@@ -2,10 +2,11 @@ use std::fmt;
 
 use crate::EncryptedCredentialEnvelope;
 use af_domain::{
-    OrganizationCustomRoleId, OrganizationCustomRoleKey, OrganizationEntitlementSnapshot,
-    OrganizationId, OrganizationInvitationKey, OrganizationInvitationStatus, OrganizationKey,
-    OrganizationMembershipId, OrganizationMembershipStatus, OrganizationPermission,
-    OrganizationRole, OrganizationStatus, OrganizationTeamId, OrganizationTeamStatus, UserId,
+    OrganizationCustomRoleId, OrganizationCustomRoleKey, OrganizationEntitlementPreflightError,
+    OrganizationEntitlementSnapshot, OrganizationId, OrganizationInvitationKey,
+    OrganizationInvitationStatus, OrganizationKey, OrganizationMembershipId,
+    OrganizationMembershipStatus, OrganizationPermission, OrganizationRole, OrganizationStatus,
+    OrganizationTeamId, OrganizationTeamStatus, UserId,
 };
 use thiserror::Error;
 use zeroize::Zeroizing;
@@ -136,6 +137,15 @@ pub struct OrganizationEntitlementRecord {
     pub(super) external_reference: Option<String>,
     pub(super) version: i64,
     pub(super) updated_at: i64,
+}
+
+/// 企业授权变更的事务预检结果；拒绝只返回原因，不触碰任何企业资源。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OrganizationEntitlementPreflightOutcome {
+    /// 当前占用满足目标授权。
+    Passed,
+    /// 当前占用不满足目标授权，调用方应保留原授权和全部资源。
+    Rejected(OrganizationEntitlementPreflightError),
 }
 
 impl OrganizationEntitlementRecord {

@@ -1,10 +1,11 @@
 use std::{error::Error, time::Duration};
 
 use af_domain::{
-    OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot,
+    OrganizationEntitlementCapacity, OrganizationEntitlementChangePlan,
+    OrganizationEntitlementPreflightError, OrganizationEntitlementSnapshot,
     OrganizationEntitlementStatus, OrganizationInvitationKey, OrganizationInvitationStatus,
-    OrganizationMembershipStatus, OrganizationRole, OrganizationTeamId, OrganizationTeamStatus,
-    UserId,
+    OrganizationMembershipStatus, OrganizationPlanFeatures, OrganizationPlanSnapshot,
+    OrganizationRole, OrganizationTeamId, OrganizationTeamStatus, UserId,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set,
@@ -12,10 +13,10 @@ use sea_orm::{
 };
 
 use super::{
-    DatabaseOptions, MigrationOptions, OrganizationCreate, OrganizationEntitlementWrite,
-    OrganizationInvitationCreate, OrganizationInvitationPreviewItem, OrganizationMembershipChange,
-    OrganizationMembershipCreate, OrganizationOwnershipTransfer, OrganizationRepository,
-    OrganizationRepositoryError, OrganizationTeamCreate,
+    DatabaseOptions, MigrationOptions, OrganizationCreate, OrganizationEntitlementPreflightOutcome,
+    OrganizationEntitlementWrite, OrganizationInvitationCreate, OrganizationInvitationPreviewItem,
+    OrganizationMembershipChange, OrganizationMembershipCreate, OrganizationOwnershipTransfer,
+    OrganizationRepository, OrganizationRepositoryError, OrganizationTeamCreate,
 };
 use crate::{
     EncryptedCredentialEnvelope,
@@ -473,6 +474,107 @@ async fn entitlement_enforces_capacity_and_cas() -> Result<(), Box<dyn Error>> {
             )
             .await,
         Err(OrganizationRepositoryError::EntitlementRestricted)
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn entitlement_change_preflight_is_atomic_and_keeps_resources() -> Result<(), Box<dyn Error>>
+{
+    let fixture = fixture().await?;
+    let (organization, _) = fixture
+        .repository
+        .create(OrganizationCreate::new(
+            "Entitlement Change Lab".to_owned(),
+            "entitlement-change-lab".to_owned(),
+            fixture.users[0],
+            active_entitlement(2, 1, None)?,
+        ))
+        .await?
+        .into_parts();
+    fixture
+        .repository
+        .add_membership(
+            organization.id(),
+            OrganizationMembershipCreate::new(
+                fixture.users[1],
+                OrganizationRole::Member,
+                None,
+                Some(fixture.users[0]),
+            ),
+        )
+        .await?;
+    fixture
+        .repository
+        .create_team(
+            organization.id(),
+            OrganizationTeamCreate::new("Capacity Team".to_owned(), None),
+        )
+        .await?;
+
+    let downgrade_plan = OrganizationEntitlementChangePlan::from_plan(
+        OrganizationPlanSnapshot::new(
+            OrganizationPlanFeatures::new(true, false, false),
+            1,
+            1,
+            1,
+            90,
+            30,
+        )?,
+        2_000,
+        0,
+    )?;
+    assert_eq!(
+        fixture
+            .repository
+            .preflight_entitlement_change(organization.id(), downgrade_plan)
+            .await?,
+        OrganizationEntitlementPreflightOutcome::Rejected(
+            OrganizationEntitlementPreflightError::SeatCapacityExceeded
+        )
+    );
+    let entitlement = fixture.repository.entitlement(organization.id()).await?;
+    assert_eq!(entitlement.entitlement().version(), 1);
+    assert_eq!(
+        fixture
+            .repository
+            .list_teams(organization.id(), None, 10)
+            .await?
+            .into_parts()
+            .0
+            .len(),
+        1
+    );
+    assert_eq!(
+        fixture
+            .repository
+            .list_memberships(organization.id(), None, 10)
+            .await?
+            .into_parts()
+            .0
+            .len(),
+        2
+    );
+
+    let valid_plan = OrganizationEntitlementChangePlan::from_plan(
+        OrganizationPlanSnapshot::new(
+            OrganizationPlanFeatures::new(true, false, false),
+            2,
+            1,
+            1,
+            90,
+            30,
+        )?,
+        2_000,
+        0,
+    )?;
+    assert_eq!(
+        fixture
+            .repository
+            .preflight_entitlement_change(organization.id(), valid_plan)
+            .await?,
+        OrganizationEntitlementPreflightOutcome::Passed
     );
     fixture.pool.close().await?;
     Ok(())
