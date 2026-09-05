@@ -506,7 +506,7 @@ async fn future_plan_change_is_paid_then_applied_once_when_due() -> Result<(), B
             "provider-order-scheduled".to_owned(),
             "card".to_owned(),
             CREATED_AT + 10,
-            CREATED_AT + 3_600,
+            CREATED_AT + 7_200,
         )?)
         .await?;
     let result = fixture
