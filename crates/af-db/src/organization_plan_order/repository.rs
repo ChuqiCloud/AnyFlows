@@ -15,7 +15,7 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
     QueryFilter, QuerySelect, Set, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
-    sea_query::{Condition, LockType},
+    sea_query::{Condition, Expr, LockType},
 };
 use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
@@ -32,6 +32,7 @@ use crate::{
 use super::types::{
     OrganizationPlanOrderCreate, OrganizationPlanOrderCreateOutcome, OrganizationPlanOrderRecord,
     OrganizationPlanOrderRepositoryConfigError, OrganizationPlanOrderRepositoryError,
+    OrganizationPlanOrderSubmission, OrganizationPlanOrderSubmitOutcome,
     OrganizationPlanPaymentEventOutcome, OrganizationPlanPaymentEventRecord,
     OrganizationPlanPaymentEventWrite,
 };
@@ -90,6 +91,29 @@ impl OrganizationPlanOrderRepository {
         };
         #[cfg(test)]
         if matches!(&outcome, OrganizationPlanOrderCreateOutcome::Created(_))
+            && self
+                .outcome_unknown_after_commit
+                .swap(false, Ordering::AcqRel)
+        {
+            return Err(OrganizationPlanOrderRepositoryError::OutcomeUnknown);
+        }
+        Ok(outcome)
+    }
+
+    /// 使用版本 CAS 把企业订单绑定到 Provider 支付订单；相同绑定可以安全重放。
+    pub async fn submit_order(
+        &self,
+        write: OrganizationPlanOrderSubmission,
+    ) -> Result<OrganizationPlanOrderSubmitOutcome, OrganizationPlanOrderRepositoryError> {
+        let operation = self
+            .submit_order_inner(&write)
+            .with_subscriber(NoSubscriber::default());
+        let outcome = match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result?,
+            Err(_) => return Err(OrganizationPlanOrderRepositoryError::OutcomeUnknown),
+        };
+        #[cfg(test)]
+        if matches!(&outcome, OrganizationPlanOrderSubmitOutcome::Applied(_))
             && self
                 .outcome_unknown_after_commit
                 .swap(false, Ordering::AcqRel)
@@ -175,6 +199,101 @@ impl OrganizationPlanOrderRepository {
                 Err(error)
             }
         }
+    }
+
+    async fn submit_order_inner(
+        &self,
+        write: &OrganizationPlanOrderSubmission,
+    ) -> Result<OrganizationPlanOrderSubmitOutcome, OrganizationPlanOrderRepositoryError> {
+        let transaction = self
+            .pool
+            .connection()
+            .begin()
+            .await
+            .map_err(|_| OrganizationPlanOrderRepositoryError::Query)?;
+        let Some(model) = lock_order(&transaction, write.organization_id, write.order_id).await?
+        else {
+            transaction
+                .rollback()
+                .await
+                .map_err(|_| OrganizationPlanOrderRepositoryError::OutcomeUnknown)?;
+            return Ok(OrganizationPlanOrderSubmitOutcome::NotFound);
+        };
+        let current = order_record(model.clone())?;
+        if current.matches_submission(write) {
+            transaction
+                .rollback()
+                .await
+                .map_err(|_| OrganizationPlanOrderRepositoryError::OutcomeUnknown)?;
+            return Ok(OrganizationPlanOrderSubmitOutcome::Existing(current));
+        }
+        if current.status() != af_domain::OrganizationPlanOrderStatus::Created
+            || model.version != write.expected_version
+            || current.provider() != write.provider
+            || write.submitted_at < current.created_at()
+            || current.expires_at() != Some(write.expires_at)
+        {
+            transaction
+                .rollback()
+                .await
+                .map_err(|_| OrganizationPlanOrderRepositoryError::OutcomeUnknown)?;
+            return Err(OrganizationPlanOrderRepositoryError::Conflict);
+        }
+
+        let next_version = model
+            .version
+            .checked_add(1)
+            .ok_or(OrganizationPlanOrderRepositoryError::Invariant)?;
+        let submitted_at = to_database_time(write.submitted_at)?;
+        let update = organization_plan_orders::Entity::update_many()
+            .filter(organization_plan_orders::Column::Id.eq(model.id))
+            .filter(
+                organization_plan_orders::Column::OrganizationId.eq(write.organization_id.get()),
+            )
+            .filter(
+                organization_plan_orders::Column::Status
+                    .eq(af_domain::OrganizationPlanOrderStatus::Created.code()),
+            )
+            .filter(organization_plan_orders::Column::Version.eq(write.expected_version))
+            .col_expr(
+                organization_plan_orders::Column::ProviderOrderId,
+                Expr::value(Some(SensitiveString::from(write.provider_order_id.clone()))),
+            )
+            .col_expr(
+                organization_plan_orders::Column::PaymentMethod,
+                Expr::value(Some(write.payment_method.clone())),
+            )
+            .col_expr(
+                organization_plan_orders::Column::Status,
+                Expr::value(af_domain::OrganizationPlanOrderStatus::Pending.code()),
+            )
+            .col_expr(
+                organization_plan_orders::Column::Version,
+                Expr::value(next_version),
+            )
+            .col_expr(
+                organization_plan_orders::Column::UpdatedAt,
+                Expr::value(submitted_at),
+            )
+            .exec(&transaction)
+            .await
+            .map_err(|_| OrganizationPlanOrderRepositoryError::Query)?;
+        if update.rows_affected != 1 {
+            transaction
+                .rollback()
+                .await
+                .map_err(|_| OrganizationPlanOrderRepositoryError::OutcomeUnknown)?;
+            return Err(OrganizationPlanOrderRepositoryError::Conflict);
+        }
+        let updated = load_order_by_database_id(&transaction, model.id)
+            .await?
+            .ok_or(OrganizationPlanOrderRepositoryError::Invariant)?;
+        let updated = order_record(updated)?;
+        transaction
+            .commit()
+            .await
+            .map_err(|_| OrganizationPlanOrderRepositoryError::OutcomeUnknown)?;
+        Ok(OrganizationPlanOrderSubmitOutcome::Applied(updated))
     }
 
     async fn record_payment_event_inner(
@@ -396,6 +515,16 @@ async fn load_order_by_key<C: ConnectionTrait>(
     organization_plan_orders::Entity::find()
         .filter(organization_plan_orders::Column::OrganizationId.eq(organization_id.get()))
         .filter(organization_plan_orders::Column::OrderKey.eq(order_id.persistence_key()))
+        .one(connection)
+        .await
+        .map_err(|_| OrganizationPlanOrderRepositoryError::Query)
+}
+
+async fn load_order_by_database_id<C: ConnectionTrait>(
+    connection: &C,
+    database_id: i64,
+) -> Result<Option<organization_plan_orders::Model>, OrganizationPlanOrderRepositoryError> {
+    organization_plan_orders::Entity::find_by_id(database_id)
         .one(connection)
         .await
         .map_err(|_| OrganizationPlanOrderRepositoryError::Query)

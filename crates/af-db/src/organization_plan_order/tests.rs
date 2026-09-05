@@ -12,6 +12,7 @@ use crate::{
     DatabaseOptions, MigrationOptions, OrganizationCreate, OrganizationEntitlementWrite,
     OrganizationPlanOrderCreate, OrganizationPlanOrderCreateOutcome,
     OrganizationPlanOrderRepository, OrganizationPlanOrderRepositoryError,
+    OrganizationPlanOrderSubmission, OrganizationPlanOrderSubmitOutcome,
     OrganizationPlanPaymentEventOutcome, OrganizationPlanPaymentEventWrite,
     OrganizationPlanRepository, OrganizationPlanWrite, OrganizationRepository,
     entity::{groups, organization_plan_orders, organization_plan_payment_events, users},
@@ -168,6 +169,85 @@ async fn payment_events_are_append_only_idempotent_and_do_not_grant_entitlement(
         .expect("订单必须仍为可恢复事实");
     assert_eq!(stored.status(), OrganizationPlanOrderStatus::Created);
     assert!(stored.paid_at().is_none());
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn payment_submission_is_cas_idempotent_and_organization_scoped() -> Result<(), Box<dyn Error>>
+{
+    let fixture = fixture().await?;
+    let (organization, _) = fixture
+        .organization_repository
+        .create(organization(
+            "提交企业",
+            "submit-enterprise",
+            fixture.users[0],
+        ))
+        .await?
+        .into_parts();
+    fixture
+        .plan_repository
+        .create(plan(&fixture, 0x61, "提交套餐")?)
+        .await?;
+    let write = order(organization.id(), fixture.users[0], 0x61, 0x62, 0x63, 100)?;
+    let order_id = write.order_id;
+    fixture.repository.create_order(write).await?;
+
+    let submission = OrganizationPlanOrderSubmission::new(
+        organization.id(),
+        order_id,
+        1,
+        "stripe".to_owned(),
+        "provider-order-1".to_owned(),
+        "card".to_owned(),
+        CREATED_AT + 10,
+        CREATED_AT + 3_600,
+    )?;
+    fixture.repository.inject_outcome_unknown_after_commit();
+    assert!(matches!(
+        fixture.repository.submit_order(submission.clone()).await,
+        Err(OrganizationPlanOrderRepositoryError::OutcomeUnknown)
+    ));
+    let replay = fixture.repository.submit_order(submission).await?;
+    let OrganizationPlanOrderSubmitOutcome::Existing(existing) = replay else {
+        panic!("结果未知后必须恢复同一 Provider 绑定")
+    };
+    assert_eq!(existing.status(), OrganizationPlanOrderStatus::Pending);
+    assert_eq!(existing.version(), 2);
+    assert_eq!(existing.provider_order_id(), Some("provider-order-1"));
+    assert_eq!(existing.payment_method(), Some("card"));
+
+    let changed = OrganizationPlanOrderSubmission::new(
+        organization.id(),
+        order_id,
+        1,
+        "stripe".to_owned(),
+        "provider-order-2".to_owned(),
+        "card".to_owned(),
+        CREATED_AT + 10,
+        CREATED_AT + 3_600,
+    )?;
+    assert!(matches!(
+        fixture.repository.submit_order(changed).await,
+        Err(OrganizationPlanOrderRepositoryError::Conflict)
+    ));
+
+    let other_organization = OrganizationId::new(99).expect("企业标识有效");
+    let cross_organization = OrganizationPlanOrderSubmission::new(
+        other_organization,
+        order_id,
+        1,
+        "stripe".to_owned(),
+        "provider-order-1".to_owned(),
+        "card".to_owned(),
+        CREATED_AT + 10,
+        CREATED_AT + 3_600,
+    )?;
+    assert!(matches!(
+        fixture.repository.submit_order(cross_organization).await?,
+        OrganizationPlanOrderSubmitOutcome::NotFound
+    ));
     fixture.pool.close().await?;
     Ok(())
 }
