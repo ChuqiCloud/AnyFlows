@@ -475,6 +475,8 @@ mod tests {
             "createOrganizationPlanOrder",
             "getOrganizationPlanOrder",
             "submitOrganizationPlanOrderPayment",
+            "getOrganizationEntitlement",
+            "getPlatformOrganizationEntitlement",
             "getUserTopupConfiguration",
             "getUserWallet",
             "importMissingAdminModels",

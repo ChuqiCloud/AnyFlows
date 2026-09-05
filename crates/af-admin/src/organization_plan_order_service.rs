@@ -695,7 +695,7 @@ mod tests {
                 AdminUsageLogRepository::new(pool.clone(), std::time::Duration::from_secs(5))
                     .expect("调用日志仓储配置有效"),
                 OrganizationAuditRepository::new(pool.clone()),
-                Some("0123456789abcdef0123456789abcdef"),
+                Some("ERERERERERERERERERERERERERERERERERERERERERE"),
             )
             .expect("企业审计服务配置有效"),
         );
