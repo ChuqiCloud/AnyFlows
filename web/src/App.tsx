@@ -319,7 +319,6 @@ function ManagementEntry({
                         : <DashboardPage />
 
   const requireAdmin = view !== 'api-keys'
-    && view !== 'announcements'
     && view !== 'organization-api-keys'
     && view !== 'organization-activity'
     && view !== 'organization-budgets'
