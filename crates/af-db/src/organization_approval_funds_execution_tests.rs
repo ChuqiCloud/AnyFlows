@@ -8,7 +8,9 @@ use af_domain::{
     OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationId,
     OrganizationMembershipId, OrganizationRole, QuotaDelta, UserId, WalletEventId,
 };
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, Expr, PaginatorTrait, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set, sea_query::Expr,
+};
 
 use crate::entity::{
     groups, organization_approval_funds_executions, organization_approval_requests,
