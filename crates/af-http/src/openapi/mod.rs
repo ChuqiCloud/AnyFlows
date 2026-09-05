@@ -635,7 +635,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 510);
+        assert_eq!(schemas.len(), 511);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("OrganizationSsoDiscoveryErrorResponse"));
         assert!(schemas.contains_key("CreditAllocationListResponse"));
@@ -690,6 +690,7 @@ mod tests {
         assert!(schemas.contains_key("OrganizationPlanListResponse"));
         assert!(schemas.contains_key("OrganizationPlanCatalogResponse"));
         assert!(schemas.contains_key("OrganizationPlanOrderCreateRequest"));
+        assert!(schemas.contains_key("OrganizationPlanOrderKind"));
         assert!(schemas.contains_key("OrganizationPlanOrderStatus"));
         assert!(schemas.contains_key("OrganizationPlanOrder"));
         assert!(schemas.contains_key("OrganizationEntitlementProjection"));

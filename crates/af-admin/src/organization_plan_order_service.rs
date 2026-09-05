@@ -12,7 +12,7 @@ use af_db::{
 };
 use af_domain::{
     OrganizationId, OrganizationPermission, OrganizationPlanId, OrganizationPlanOrderId,
-    OrganizationPlanOrderRequestId, OrganizationPlanOrderStatus, UserId,
+    OrganizationPlanOrderKind, OrganizationPlanOrderRequestId, OrganizationPlanOrderStatus, UserId,
 };
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -35,6 +35,8 @@ const ORGANIZATION_PLAN_ORDER_TTL_SECONDS: u64 = 30 * 60;
 pub struct OrganizationPlanOrderCreateCommand {
     plan_id: OrganizationPlanId,
     request_id: OrganizationPlanOrderRequestId,
+    kind: OrganizationPlanOrderKind,
+    effective_at: Option<u64>,
 }
 
 impl OrganizationPlanOrderCreateCommand {
@@ -46,6 +48,24 @@ impl OrganizationPlanOrderCreateCommand {
         Self {
             plan_id,
             request_id,
+            kind: OrganizationPlanOrderKind::Initial,
+            effective_at: None,
+        }
+    }
+
+    /// 创建续费、升级或降级订单；生效时间由服务端持久化并在确认时复验。
+    #[must_use]
+    pub const fn new_with_change(
+        plan_id: OrganizationPlanId,
+        request_id: OrganizationPlanOrderRequestId,
+        kind: OrganizationPlanOrderKind,
+        effective_at: Option<u64>,
+    ) -> Self {
+        Self {
+            plan_id,
+            request_id,
+            kind,
+            effective_at,
         }
     }
 
@@ -57,6 +77,14 @@ impl OrganizationPlanOrderCreateCommand {
     #[must_use]
     pub const fn request_id(self) -> OrganizationPlanOrderRequestId {
         self.request_id
+    }
+    #[must_use]
+    pub const fn kind(self) -> OrganizationPlanOrderKind {
+        self.kind
+    }
+    #[must_use]
+    pub const fn effective_at(self) -> Option<u64> {
+        self.effective_at
     }
 }
 
@@ -70,6 +98,8 @@ pub struct OrganizationPlanOrderView {
     provider: String,
     currency: String,
     amount_minor: i64,
+    kind: OrganizationPlanOrderKind,
+    effective_at: Option<u64>,
     status: OrganizationPlanOrderStatus,
     version: u64,
     payment_method: Option<String>,
@@ -92,6 +122,8 @@ impl OrganizationPlanOrderView {
             provider: record.provider().to_owned(),
             currency: record.currency().to_owned(),
             amount_minor: record.amount_minor(),
+            kind: record.kind(),
+            effective_at: record.effective_at(),
             status: record.status(),
             version: record.version(),
             payment_method: record.payment_method().map(str::to_owned),
@@ -135,6 +167,14 @@ impl OrganizationPlanOrderView {
     #[must_use]
     pub const fn amount_minor(&self) -> i64 {
         self.amount_minor
+    }
+    #[must_use]
+    pub const fn kind(&self) -> OrganizationPlanOrderKind {
+        self.kind
+    }
+    #[must_use]
+    pub const fn effective_at(&self) -> Option<u64> {
+        self.effective_at
     }
     #[must_use]
     pub const fn status(&self) -> OrganizationPlanOrderStatus {
@@ -394,9 +434,26 @@ impl OrganizationPlanOrderService for DatabaseOrganizationPlanOrderService {
             let expires_at = created_at
                 .checked_add(ORGANIZATION_PLAN_ORDER_TTL_SECONDS)
                 .ok_or(OrganizationPlanOrderServiceError::Internal)?;
+            let effective_at = match command.kind() {
+                OrganizationPlanOrderKind::Initial | OrganizationPlanOrderKind::Renewal => {
+                    if command.effective_at().is_some() {
+                        return Err(OrganizationPlanOrderServiceError::InvalidRequest);
+                    }
+                    None
+                }
+                OrganizationPlanOrderKind::Upgrade | OrganizationPlanOrderKind::Downgrade => {
+                    let effective_at = command
+                        .effective_at()
+                        .ok_or(OrganizationPlanOrderServiceError::InvalidRequest)?;
+                    if effective_at < created_at {
+                        return Err(OrganizationPlanOrderServiceError::InvalidRequest);
+                    }
+                    Some(effective_at)
+                }
+            };
             let plan_version = u64::try_from(plan.version())
                 .map_err(|_| OrganizationPlanOrderServiceError::Internal)?;
-            let write = OrganizationPlanOrderCreate::new(
+            let write = OrganizationPlanOrderCreate::new_with_change(
                 order_id,
                 command.request_id(),
                 organization_id,
@@ -406,6 +463,8 @@ impl OrganizationPlanOrderService for DatabaseOrganizationPlanOrderService {
                 plan.provider().to_owned(),
                 plan.currency().to_owned(),
                 plan.amount_minor(),
+                command.kind(),
+                effective_at,
                 created_at,
                 Some(expires_at),
             )
@@ -535,6 +594,8 @@ fn replay_existing(
     if record.payer_user_id() != principal.user_id()
         || record.plan_id() != command.plan_id()
         || record.request_id() != command.request_id()
+        || record.kind() != command.kind()
+        || record.effective_at() != command.effective_at()
     {
         return Err(OrganizationPlanOrderServiceError::Conflict);
     }

@@ -8,12 +8,12 @@ use std::sync::{
 
 use af_domain::{
     OrganizationId, OrganizationMembershipStatus, OrganizationPlanId, OrganizationPlanOrderId,
-    OrganizationPlanOrderRequestId, OrganizationPlanOrderStatus, OrganizationPlanPaymentEventId,
-    OrganizationPlanPaymentEventType, UserId,
+    OrganizationPlanOrderKind, OrganizationPlanOrderRequestId, OrganizationPlanOrderStatus,
+    OrganizationPlanPaymentEventId, OrganizationPlanPaymentEventType, UserId,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
-    QueryFilter, QuerySelect, Set, TransactionTrait,
+    QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Condition, Expr, LockType},
 };
@@ -175,6 +175,21 @@ impl OrganizationPlanOrderRepository {
             return Err(OrganizationPlanOrderRepositoryError::OutcomeUnknown);
         }
         Ok(outcome)
+    }
+
+    /// 在企业授权读取前应用已到生效时间的已支付变更订单。
+    pub async fn apply_due_entitlement_change(
+        &self,
+        organization_id: OrganizationId,
+        now: i64,
+    ) -> Result<(), OrganizationPlanOrderRepositoryError> {
+        let operation =
+            apply_due_entitlement_change_inner(self.pool.connection(), organization_id, now)
+                .with_subscriber(NoSubscriber::default());
+        match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result,
+            Err(_) => Err(OrganizationPlanOrderRepositoryError::Timeout),
+        }
     }
 
     #[cfg(test)]
@@ -611,52 +626,113 @@ async fn confirm_new_event(
             .map_err(map_organization_error)?;
         let current_version = u64::try_from(current.version)
             .map_err(|_| OrganizationPlanOrderRepositoryError::Invariant)?;
-        let valid_from = i64::try_from(processed_at)
+        let effective_at = order.effective_at().unwrap_or(processed_at);
+        let effective_at = i64::try_from(effective_at)
             .map_err(|_| OrganizationPlanOrderRepositoryError::Invariant)?;
         let duration = plan
             .validity_days
             .checked_mul(86_400)
             .ok_or(OrganizationPlanOrderRepositoryError::Invariant)?;
-        let valid_until = valid_from
-            .checked_add(duration)
-            .ok_or(OrganizationPlanOrderRepositoryError::Invariant)?;
-        let snapshot = af_domain::OrganizationEntitlementSnapshot::new(
-            af_domain::OrganizationEntitlementCapacity::new(
-                plan.seat_limit,
-                plan.team_limit,
-                plan.organization_key_limit,
-            )
-            .map_err(|_| OrganizationPlanOrderRepositoryError::Invariant)?,
-            plan.team_management_enabled,
-            plan.sso_enabled,
-            plan.custom_roles_enabled,
+        let plan_snapshot = af_domain::OrganizationPlanSnapshot::new(
+            af_domain::OrganizationPlanFeatures::new(
+                plan.team_management_enabled,
+                plan.sso_enabled,
+                plan.custom_roles_enabled,
+            ),
+            plan.seat_limit,
+            plan.team_limit,
+            plan.organization_key_limit,
             plan.audit_retention_days,
-            valid_from,
-            valid_until,
-            Some(valid_until),
+            plan.validity_days,
         )
         .map_err(|_| OrganizationPlanOrderRepositoryError::Invariant)?;
-        let entitlement_write = crate::OrganizationEntitlementWrite::new(
-            snapshot,
-            "organization_plan_order".to_owned(),
-            Some(order.order_id().persistence_key()),
-            Some(current_version),
-        )
-        .map_err(|_| OrganizationPlanOrderRepositoryError::Invariant)?;
-        Some(
-            organization_mutation::replace_entitlement_in_transaction(
-                transaction,
-                order.organization_id(),
-                entitlement_write,
+        let snapshot = match order.kind() {
+            OrganizationPlanOrderKind::Initial => {
+                let valid_until = effective_at
+                    .checked_add(duration)
+                    .ok_or(OrganizationPlanOrderRepositoryError::Invariant)?;
+                af_domain::OrganizationEntitlementSnapshot::new(
+                    af_domain::OrganizationEntitlementCapacity::new(
+                        plan.seat_limit,
+                        plan.team_limit,
+                        plan.organization_key_limit,
+                    )
+                    .map_err(|_| OrganizationPlanOrderRepositoryError::Invariant)?,
+                    plan.team_management_enabled,
+                    plan.sso_enabled,
+                    plan.custom_roles_enabled,
+                    plan.audit_retention_days,
+                    effective_at,
+                    valid_until,
+                    Some(valid_until),
+                )
+                .map_err(|_| OrganizationPlanOrderRepositoryError::Invariant)?
+            }
+            OrganizationPlanOrderKind::Renewal => {
+                let current_snapshot = organization_read::entitlement_snapshot(current.clone())
+                    .map_err(map_organization_error)?;
+                current_snapshot
+                    .renewed(effective_at, duration)
+                    .map_err(|_| OrganizationPlanOrderRepositoryError::Invariant)?
+            }
+            OrganizationPlanOrderKind::Upgrade | OrganizationPlanOrderKind::Downgrade => {
+                let change = af_domain::OrganizationEntitlementChangePlan::from_plan(
+                    plan_snapshot,
+                    effective_at,
+                    0,
+                )
+                .map_err(|_| OrganizationPlanOrderRepositoryError::Invariant)?;
+                if effective_at <= i64::try_from(processed_at).unwrap_or(i64::MAX) {
+                    match organization_mutation::preflight_entitlement_change_in_transaction(
+                        transaction,
+                        order.organization_id(),
+                        change,
+                    )
+                    .await
+                    .map_err(map_organization_error)?
+                    {
+                        crate::OrganizationEntitlementPreflightOutcome::Passed => {}
+                        crate::OrganizationEntitlementPreflightOutcome::Rejected(_) => {
+                            return Ok(OrganizationPlanPaymentConfirmationOutcome::RecordedUnprocessed {
+                                order,
+                                reason: OrganizationPlanPaymentEventRejection::EntitlementCapacityConflict,
+                            });
+                        }
+                    }
+                }
+                change.snapshot()
+            }
+        };
+        if effective_at > i64::try_from(processed_at).unwrap_or(i64::MAX) {
+            // 待生效订单先确认支付，授权事实由后续生效扫描按同一订单键推进。
+            None
+        } else {
+            let entitlement_write = crate::OrganizationEntitlementWrite::new(
+                snapshot,
+                "organization_plan_order".to_owned(),
+                Some(order.order_id().persistence_key()),
+                Some(current_version),
             )
-            .await
-            .map_err(map_organization_error)?,
-        )
+            .map_err(|_| OrganizationPlanOrderRepositoryError::Invariant)?;
+            Some(
+                organization_mutation::replace_entitlement_in_transaction(
+                    transaction,
+                    order.organization_id(),
+                    entitlement_write,
+                )
+                .await
+                .map_err(map_organization_error)?,
+            )
+        }
     } else {
         None
     };
 
+    let entitlement_applied = entitlement.is_some();
     transition_payment_order(transaction, order_model, write, processed_at).await?;
+    if entitlement_applied {
+        mark_order_applied(transaction, order_model.id, to_database_time(processed_at)?).await?;
+    }
     mark_payment_event_processed(transaction, event_model.id, processed_at).await?;
     append_payment_audit(transaction, &order, write).await?;
     let updated = load_order_by_database_id(transaction, order_model.id)
@@ -969,6 +1045,9 @@ async fn create_order_in_transaction(
         provider: Set(write.provider.clone()),
         currency: Set(write.currency.clone()),
         amount_minor: Set(write.amount_minor),
+        kind: Set(write.kind.code()),
+        effective_at: Set(write.effective_at.map(to_database_time).transpose()?),
+        applied_at: Set(None),
         status: Set(OrganizationPlanOrderStatus::Created.code()),
         idempotency_key: Set(write.request_id.persistence_key()),
         version: Set(1),
@@ -993,6 +1072,192 @@ async fn create_order_in_transaction(
         }
         Err(_) => Err(OrganizationPlanOrderRepositoryError::Query.into()),
     }
+}
+
+/// 领取最早到期的支付订单并在同一事务中尝试替换授权；预检拒绝只保留待生效事实。
+async fn apply_due_entitlement_change_inner(
+    connection: &sea_orm::DatabaseConnection,
+    organization_id: OrganizationId,
+    now: i64,
+) -> Result<(), OrganizationPlanOrderRepositoryError> {
+    if now < 0 {
+        return Err(OrganizationPlanOrderRepositoryError::InvalidInput);
+    }
+    let transaction = connection
+        .begin()
+        .await
+        .map_err(|_| OrganizationPlanOrderRepositoryError::Query)?;
+    let organization = organization_mutation::lock_organization(&transaction, organization_id)
+        .await
+        .map_err(map_organization_error)?;
+    if organization.status != af_domain::OrganizationStatus::Active.code()
+        || organization.closed_at.is_some()
+    {
+        transaction
+            .rollback()
+            .await
+            .map_err(|_| OrganizationPlanOrderRepositoryError::OutcomeUnknown)?;
+        return Ok(());
+    }
+    let current = organization_mutation::lock_entitlement(&transaction, organization_id)
+        .await
+        .map_err(map_organization_error)?;
+    let now = to_database_time(
+        u64::try_from(now).map_err(|_| OrganizationPlanOrderRepositoryError::InvalidInput)?,
+    )?;
+    let mut query = organization_plan_orders::Entity::find()
+        .filter(organization_plan_orders::Column::OrganizationId.eq(organization_id.get()))
+        .filter(
+            organization_plan_orders::Column::Status.eq(OrganizationPlanOrderStatus::Paid.code()),
+        )
+        .filter(organization_plan_orders::Column::EffectiveAt.is_not_null())
+        .filter(organization_plan_orders::Column::AppliedAt.is_null())
+        .filter(organization_plan_orders::Column::EffectiveAt.lte(now))
+        .order_by_asc(organization_plan_orders::Column::EffectiveAt)
+        .order_by_asc(organization_plan_orders::Column::Id);
+    if transaction.get_database_backend() != DbBackend::Sqlite {
+        query = query.lock(LockType::Update);
+    }
+    let Some(order_model) = query
+        .one(&transaction)
+        .await
+        .map_err(|_| OrganizationPlanOrderRepositoryError::Query)?
+    else {
+        transaction
+            .rollback()
+            .await
+            .map_err(|_| OrganizationPlanOrderRepositoryError::OutcomeUnknown)?;
+        return Ok(());
+    };
+    let order = order_record(order_model.clone())?;
+    if current.external_reference.as_deref() == Some(order.order_id().persistence_key().as_str()) {
+        mark_order_applied(&transaction, order_model.id, now).await?;
+        transaction
+            .commit()
+            .await
+            .map_err(|_| OrganizationPlanOrderRepositoryError::OutcomeUnknown)?;
+        return Ok(());
+    }
+    let Some(plan) = lock_plan(&transaction, order.plan_id()).await? else {
+        return Err(OrganizationPlanOrderRepositoryError::Invariant);
+    };
+    let effective_at = order
+        .effective_at()
+        .ok_or(OrganizationPlanOrderRepositoryError::Invariant)?;
+    let effective_at =
+        i64::try_from(effective_at).map_err(|_| OrganizationPlanOrderRepositoryError::Invariant)?;
+    let duration = plan
+        .validity_days
+        .checked_mul(86_400)
+        .ok_or(OrganizationPlanOrderRepositoryError::Invariant)?;
+    let snapshot = match order.kind() {
+        OrganizationPlanOrderKind::Initial => {
+            let valid_until = effective_at
+                .checked_add(duration)
+                .ok_or(OrganizationPlanOrderRepositoryError::Invariant)?;
+            af_domain::OrganizationEntitlementSnapshot::new(
+                af_domain::OrganizationEntitlementCapacity::new(
+                    plan.seat_limit,
+                    plan.team_limit,
+                    plan.organization_key_limit,
+                )
+                .map_err(|_| OrganizationPlanOrderRepositoryError::Invariant)?,
+                plan.team_management_enabled,
+                plan.sso_enabled,
+                plan.custom_roles_enabled,
+                plan.audit_retention_days,
+                effective_at,
+                valid_until,
+                Some(valid_until),
+            )
+            .map_err(|_| OrganizationPlanOrderRepositoryError::Invariant)?
+        }
+        OrganizationPlanOrderKind::Renewal => {
+            organization_read::entitlement_snapshot(current.clone())
+                .map_err(map_organization_error)?
+                .renewed(effective_at, duration)
+                .map_err(|_| OrganizationPlanOrderRepositoryError::Invariant)?
+        }
+        OrganizationPlanOrderKind::Upgrade | OrganizationPlanOrderKind::Downgrade => {
+            let plan_snapshot = af_domain::OrganizationPlanSnapshot::new(
+                af_domain::OrganizationPlanFeatures::new(
+                    plan.team_management_enabled,
+                    plan.sso_enabled,
+                    plan.custom_roles_enabled,
+                ),
+                plan.seat_limit,
+                plan.team_limit,
+                plan.organization_key_limit,
+                plan.audit_retention_days,
+                plan.validity_days,
+            )
+            .map_err(|_| OrganizationPlanOrderRepositoryError::Invariant)?;
+            let change = af_domain::OrganizationEntitlementChangePlan::from_plan(
+                plan_snapshot,
+                effective_at,
+                0,
+            )
+            .map_err(|_| OrganizationPlanOrderRepositoryError::Invariant)?;
+            match organization_mutation::preflight_entitlement_change_in_transaction(
+                &transaction,
+                organization_id,
+                change,
+            )
+            .await
+            .map_err(map_organization_error)?
+            {
+                crate::OrganizationEntitlementPreflightOutcome::Passed => change.snapshot(),
+                crate::OrganizationEntitlementPreflightOutcome::Rejected(_) => {
+                    transaction
+                        .rollback()
+                        .await
+                        .map_err(|_| OrganizationPlanOrderRepositoryError::OutcomeUnknown)?;
+                    return Ok(());
+                }
+            }
+        }
+    };
+    let current_version = u64::try_from(current.version)
+        .map_err(|_| OrganizationPlanOrderRepositoryError::Invariant)?;
+    let write = crate::OrganizationEntitlementWrite::new(
+        snapshot,
+        "organization_plan_order".to_owned(),
+        Some(order.order_id().persistence_key()),
+        Some(current_version),
+    )
+    .map_err(|_| OrganizationPlanOrderRepositoryError::Invariant)?;
+    organization_mutation::replace_entitlement_in_transaction(&transaction, organization_id, write)
+        .await
+        .map_err(map_organization_error)?;
+    mark_order_applied(&transaction, order_model.id, now).await?;
+    transaction
+        .commit()
+        .await
+        .map_err(|_| OrganizationPlanOrderRepositoryError::OutcomeUnknown)
+}
+
+async fn mark_order_applied(
+    transaction: &DatabaseTransaction,
+    order_id: i64,
+    applied_at: TimeDateTimeWithTimeZone,
+) -> Result<(), OrganizationPlanOrderRepositoryError> {
+    let update = organization_plan_orders::Entity::update_many()
+        .filter(organization_plan_orders::Column::Id.eq(order_id))
+        .filter(
+            organization_plan_orders::Column::Status.eq(OrganizationPlanOrderStatus::Paid.code()),
+        )
+        .filter(organization_plan_orders::Column::AppliedAt.is_null())
+        .col_expr(
+            organization_plan_orders::Column::AppliedAt,
+            Expr::value(applied_at),
+        )
+        .exec(transaction)
+        .await
+        .map_err(|_| OrganizationPlanOrderRepositoryError::Query)?;
+    if update.rows_affected != 1 {
+        return Err(OrganizationPlanOrderRepositoryError::Conflict);
+    }
+    Ok(())
 }
 
 async fn load_order_by_key<C: ConnectionTrait>(
@@ -1112,6 +1377,7 @@ fn order_record(
     let created_at = unix_seconds(model.created_at)?;
     let updated_at = unix_seconds(model.updated_at)?;
     let expires_at = optional_unix_seconds(model.expires_at)?;
+    let effective_at = optional_unix_seconds(model.effective_at)?;
     let paid_at = optional_unix_seconds(model.paid_at)?;
     let closed_at = optional_unix_seconds(model.closed_at)?;
     if model.id <= 0
@@ -1120,6 +1386,7 @@ fn order_record(
         || !valid_token(&model.provider, 32)
         || !valid_currency(&model.currency)
         || model.amount_minor <= 0
+        || OrganizationPlanOrderKind::try_from(model.kind).is_err()
         || (status.is_open() && (paid_at.is_some() || closed_at.is_some()))
         || (status == OrganizationPlanOrderStatus::Paid
             && (paid_at.is_none() || closed_at.is_some()))
@@ -1130,6 +1397,7 @@ fn order_record(
                 | OrganizationPlanOrderStatus::Expired
         ) && (paid_at.is_some() || closed_at.is_none()))
         || expires_at.is_some_and(|value| value <= created_at)
+        || effective_at.is_some_and(|value| value < created_at)
         || updated_at < created_at
     {
         return Err(OrganizationPlanOrderRepositoryError::Invariant);
@@ -1145,6 +1413,9 @@ fn order_record(
         provider: model.provider,
         currency: model.currency,
         amount_minor: model.amount_minor,
+        kind: OrganizationPlanOrderKind::try_from(model.kind)
+            .map_err(|_| OrganizationPlanOrderRepositoryError::Invariant)?,
+        effective_at,
         status,
         version,
         provider_order_id: model

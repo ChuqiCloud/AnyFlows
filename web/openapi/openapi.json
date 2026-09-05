@@ -39276,6 +39276,7 @@
           "provider",
           "currency",
           "amount_minor",
+          "kind",
           "status",
           "version",
           "created_at",
@@ -39311,6 +39312,17 @@
           "amount_minor": {
             "type": "integer",
             "format": "int64"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/OrganizationPlanOrderKind"
+          },
+          "effective_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
           },
           "status": {
             "$ref": "#/components/schemas/OrganizationPlanOrderStatus"
@@ -39377,8 +39389,35 @@
           },
           "idempotency_key": {
             "type": "string"
+          },
+          "kind": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OrganizationPlanOrderKind"
+              }
+            ]
+          },
+          "effective_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
           }
         }
+      },
+      "OrganizationPlanOrderKind": {
+        "type": "string",
+        "enum": [
+          "initial",
+          "renewal",
+          "upgrade",
+          "downgrade"
+        ]
       },
       "OrganizationPlanOrderPaymentRequest": {
         "type": "object",

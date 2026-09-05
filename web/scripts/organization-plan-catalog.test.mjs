@@ -44,6 +44,12 @@ test('企业套餐目录 OpenAPI 与生成入口保持完整', () => {
     'organization_plan_order',
     'other',
   ])
+  assert.deepEqual(openapi.components.schemas.OrganizationPlanOrderKind.enum, [
+    'initial', 'renewal', 'upgrade', 'downgrade',
+  ])
+  for (const field of ['kind', 'effective_at']) {
+    assert.ok(openapi.components.schemas.OrganizationPlanOrder.properties[field], `订单缺少 ${field}`)
+  }
 })
 
 test('企业套餐卡片展示容量、能力、有效期和价格边界', () => {
@@ -62,6 +68,11 @@ test('企业订单支付按企业与套餐隔离恢复且不持久化敏感材�
   assert.match(purchase, /paymentPaid/)
   assert.match(purchase, /entitlement\?\.applied_order_id === order\.order_id/)
   assert.match(purchase, /paymentEffective/)
+  assert.match(purchase, /effective_at/)
+  assert.match(purchase, /requiresEffectiveAt/)
+  assert.match(purchase, /paymentScheduled/)
+  assert.match(purchase, /effectiveAtLabel/)
+  assert.match(purchase, /candidate\.kind !== orderKind/)
   assert.match(component, /useUserTopupConfiguration\(canPurchase\)/)
 })
 
@@ -78,6 +89,9 @@ test('企业套餐目录双语文案同步且不含替换字符', () => {
     'paymentEffective',
     'currentEntitlement',
     'paymentOutcomeUnknown',
+    'orderKind',
+    'effectiveAt',
+    'paymentScheduled',
   ]
   for (const key of required) {
     const enValue = key === 'paymentOutcomeUnknown'

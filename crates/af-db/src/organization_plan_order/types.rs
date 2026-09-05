@@ -1,9 +1,9 @@
 use std::fmt;
 
 use af_domain::{
-    OrganizationId, OrganizationPlanId, OrganizationPlanOrderId, OrganizationPlanOrderRequestId,
-    OrganizationPlanOrderStatus, OrganizationPlanPaymentEventId, OrganizationPlanPaymentEventType,
-    UserId,
+    OrganizationId, OrganizationPlanId, OrganizationPlanOrderId, OrganizationPlanOrderKind,
+    OrganizationPlanOrderRequestId, OrganizationPlanOrderStatus, OrganizationPlanPaymentEventId,
+    OrganizationPlanPaymentEventType, UserId,
 };
 use thiserror::Error;
 
@@ -27,6 +27,8 @@ pub struct OrganizationPlanOrderCreate {
     pub(super) provider: String,
     pub(super) currency: String,
     pub(super) amount_minor: i64,
+    pub(super) kind: OrganizationPlanOrderKind,
+    pub(super) effective_at: Option<u64>,
     pub(super) created_at: u64,
     pub(super) expires_at: Option<u64>,
 }
@@ -47,6 +49,40 @@ impl OrganizationPlanOrderCreate {
         created_at: u64,
         expires_at: Option<u64>,
     ) -> Result<Self, OrganizationPlanOrderRepositoryError> {
+        Self::new_with_change(
+            order_id,
+            request_id,
+            organization_id,
+            payer_user_id,
+            plan_id,
+            plan_version,
+            provider,
+            currency,
+            amount_minor,
+            OrganizationPlanOrderKind::Initial,
+            None,
+            created_at,
+            expires_at,
+        )
+    }
+
+    /// 创建带续费/升级/降级动作和生效时间的订单事实。
+    #[allow(clippy::too_many_arguments, reason = "订单事实必须逐项固化")]
+    pub fn new_with_change(
+        order_id: OrganizationPlanOrderId,
+        request_id: OrganizationPlanOrderRequestId,
+        organization_id: OrganizationId,
+        payer_user_id: UserId,
+        plan_id: OrganizationPlanId,
+        plan_version: u64,
+        provider: String,
+        currency: String,
+        amount_minor: i64,
+        kind: OrganizationPlanOrderKind,
+        effective_at: Option<u64>,
+        created_at: u64,
+        expires_at: Option<u64>,
+    ) -> Result<Self, OrganizationPlanOrderRepositoryError> {
         if plan_version == 0
             || plan_version > i64::MAX as u64
             || !valid_token(&provider, MAX_ORGANIZATION_PLAN_ORDER_PROVIDER_BYTES)
@@ -54,6 +90,7 @@ impl OrganizationPlanOrderCreate {
             || amount_minor <= 0
             || created_at > i64::MAX as u64
             || expires_at.is_some_and(|value| value <= created_at || value > i64::MAX as u64)
+            || effective_at.is_some_and(|value| value < created_at || value > i64::MAX as u64)
         {
             return Err(OrganizationPlanOrderRepositoryError::InvalidInput);
         }
@@ -67,6 +104,8 @@ impl OrganizationPlanOrderCreate {
             provider,
             currency,
             amount_minor,
+            kind,
+            effective_at,
             created_at,
             expires_at,
         })
@@ -152,6 +191,8 @@ pub struct OrganizationPlanOrderRecord {
     pub(super) provider: String,
     pub(super) currency: String,
     pub(super) amount_minor: i64,
+    pub(super) kind: OrganizationPlanOrderKind,
+    pub(super) effective_at: Option<u64>,
     pub(super) status: OrganizationPlanOrderStatus,
     pub(super) version: u64,
     pub(super) provider_order_id: Option<String>,
@@ -207,6 +248,14 @@ impl OrganizationPlanOrderRecord {
         self.amount_minor
     }
     #[must_use]
+    pub const fn kind(&self) -> OrganizationPlanOrderKind {
+        self.kind
+    }
+    #[must_use]
+    pub const fn effective_at(&self) -> Option<u64> {
+        self.effective_at
+    }
+    #[must_use]
     pub const fn status(&self) -> OrganizationPlanOrderStatus {
         self.status
     }
@@ -257,6 +306,8 @@ impl OrganizationPlanOrderRecord {
             && self.provider == create.provider
             && self.currency == create.currency
             && self.amount_minor == create.amount_minor
+            && self.kind == create.kind
+            && self.effective_at == create.effective_at
             && self.created_at == create.created_at
             && self.expires_at == create.expires_at
     }
@@ -361,6 +412,8 @@ pub enum OrganizationPlanPaymentEventRejection {
     SubmissionRequired,
     TerminalConflict,
     PlanSnapshotConflict,
+    /// 目标套餐容量或能力与当前企业占用冲突。
+    EntitlementCapacityConflict,
 }
 
 impl fmt::Debug for OrganizationPlanOrderCreateOutcome {

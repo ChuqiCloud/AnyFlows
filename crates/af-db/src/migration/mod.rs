@@ -138,6 +138,7 @@ mod m20260903_000129_create_organization_approval_notification_receipts;
 mod m20260904_000130_create_organization_provisioning_requests;
 mod m20260904_000131_create_organization_plan_catalog;
 mod m20260905_000132_create_organization_plan_orders;
+mod m20260905_000133_add_organization_plan_order_changes;
 mod schema;
 
 #[cfg(test)]
@@ -321,6 +322,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260904_000130_create_organization_provisioning_requests::Migration),
             Box::new(m20260904_000131_create_organization_plan_catalog::Migration),
             Box::new(m20260905_000132_create_organization_plan_orders::Migration),
+            Box::new(m20260905_000133_add_organization_plan_order_changes::Migration),
         ]
     }
 }

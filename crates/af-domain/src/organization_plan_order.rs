@@ -124,6 +124,37 @@ pub enum OrganizationPlanOrderStatus {
     Expired = 6,
 }
 
+/// 企业授权订单的商业动作；动作一经建单不可修改。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(i16)]
+pub enum OrganizationPlanOrderKind {
+    Initial = 1,
+    Renewal = 2,
+    Upgrade = 3,
+    Downgrade = 4,
+}
+
+impl OrganizationPlanOrderKind {
+    #[must_use]
+    pub const fn code(self) -> i16 {
+        self as i16
+    }
+}
+
+impl TryFrom<i16> for OrganizationPlanOrderKind {
+    type Error = OrganizationPlanOrderStateError;
+
+    fn try_from(value: i16) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::Initial),
+            2 => Ok(Self::Renewal),
+            3 => Ok(Self::Upgrade),
+            4 => Ok(Self::Downgrade),
+            _ => Err(OrganizationPlanOrderStateError::InvalidOrderKind),
+        }
+    }
+}
+
 impl OrganizationPlanOrderStatus {
     /// 返回数据库使用的稳定状态码。
     #[must_use]
@@ -206,6 +237,9 @@ pub enum OrganizationPlanOrderStateError {
     /// 支付事件类型不属于闭合集合。
     #[error("企业授权支付事件类型无效")]
     InvalidPaymentEventType,
+    /// 订单商业动作不属于闭合集合。
+    #[error("企业授权订单动作无效")]
+    InvalidOrderKind,
 }
 
 const fn decode_hex(value: u8) -> Option<u8> {

@@ -5190,6 +5190,15 @@
         "enabled": "enabled",
         "disabled": "not included",
         "currentEntitlement": "Current entitlement plan",
+        "orderKind": "Order action",
+        "kind": {
+          "initial": "Initial purchase",
+          "renewal": "Renewal",
+          "upgrade": "Upgrade",
+          "downgrade": "Downgrade"
+        },
+        "effectiveAt": "Effective time",
+        "effectiveAtHint": "The server will apply this change at the selected time after payment is confirmed.",
         "permissionRequired": "Organization wallet management permission is required to create and pay for an entitlement order.",
         "paymentMethod": "Payment method",
         "paymentMethodsLoading": "Loading payment methods",
@@ -5214,6 +5223,7 @@
         },
         "paymentEffective": "The server confirmed payment and this order's organization entitlement is now active.",
         "paymentPaid": "Payment is confirmed by the server. Entitlement activation still depends on the server-side entitlement fact.",
+        "paymentScheduled": "Payment is confirmed. This plan change is waiting for its effective time or a capacity recheck.",
         "paymentConfirmed": "Payment completed in the browser. Refresh the server order status.",
         "paymentProcessing": "Payment is still processing. Refresh the server order status shortly.",
         "refreshPayment": "Refresh status",

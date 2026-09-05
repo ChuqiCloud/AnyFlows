@@ -48,6 +48,14 @@ pub(in crate::migration) async fn create_organization_plan_order_storage(
             .col(organization_plan_orders::Column::ExpiresAt)
             .to_owned(),
         Index::create()
+            .name("idx_organization_plan_orders_due")
+            .table(organization_plan_orders::Entity)
+            .col(organization_plan_orders::Column::OrganizationId)
+            .col(organization_plan_orders::Column::Status)
+            .col(organization_plan_orders::Column::EffectiveAt)
+            .col(organization_plan_orders::Column::AppliedAt)
+            .to_owned(),
+        Index::create()
             .name("uq_organization_plan_payment_events_event_key")
             .table(organization_plan_payment_events::Entity)
             .col(organization_plan_payment_events::Column::EventKey)
@@ -122,6 +130,20 @@ async fn create_orders(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
                 .not_null(),
         )
         .col(
+            ColumnDef::new(organization_plan_orders::Column::Kind)
+                .small_integer()
+                .not_null()
+                .default(1_i16),
+        )
+        .col(nullable_timestamp(
+            manager,
+            organization_plan_orders::Column::EffectiveAt,
+        ))
+        .col(nullable_timestamp(
+            manager,
+            organization_plan_orders::Column::AppliedAt,
+        ))
+        .col(
             ColumnDef::new(organization_plan_orders::Column::Status)
                 .small_integer()
                 .not_null(),
@@ -181,6 +203,7 @@ async fn create_orders(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
         .check(currency_check(manager.get_database_backend()))
         .check(Expr::col(organization_plan_orders::Column::PlanVersion).gt(0_i64))
         .check(Expr::col(organization_plan_orders::Column::AmountMinor).gt(0_i64))
+        .check(Expr::col(organization_plan_orders::Column::Kind).is_in([1_i16, 2, 3, 4]))
         .check(Expr::col(organization_plan_orders::Column::Status).is_in([1_i16, 2, 3, 4, 5, 6]))
         .check(Expr::col(organization_plan_orders::Column::Version).gt(0_i64))
         .check(order_state_shape())
@@ -189,6 +212,12 @@ async fn create_orders(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
                 .is_null()
                 .or(Expr::col(organization_plan_orders::Column::ExpiresAt)
                     .gt(Expr::col(organization_plan_orders::Column::CreatedAt))),
+        )
+        .check(
+            Expr::col(organization_plan_orders::Column::EffectiveAt)
+                .is_null()
+                .or(Expr::col(organization_plan_orders::Column::EffectiveAt)
+                    .gte(Expr::col(organization_plan_orders::Column::CreatedAt))),
         )
         .foreign_key(
             ForeignKey::create()
