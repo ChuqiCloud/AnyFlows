@@ -530,7 +530,8 @@ async fn future_plan_change_is_paid_then_applied_once_when_due() -> Result<(), B
     fixture
         .repository
         .apply_due_entitlement_change(organization.id(), i64::try_from(effective_at - 1)?)
-        .await?;
+        .await
+        .expect("生效前扫描不应产生冲突");
     assert_eq!(
         fixture
             .organization_repository
@@ -543,7 +544,8 @@ async fn future_plan_change_is_paid_then_applied_once_when_due() -> Result<(), B
     fixture
         .repository
         .apply_due_entitlement_change(organization.id(), i64::try_from(effective_at)?)
-        .await?;
+        .await
+        .expect("到期应用不应产生冲突");
     let applied = fixture
         .organization_repository
         .entitlement(organization.id())
@@ -552,7 +554,8 @@ async fn future_plan_change_is_paid_then_applied_once_when_due() -> Result<(), B
     fixture
         .repository
         .apply_due_entitlement_change(organization.id(), i64::try_from(effective_at + 1)?)
-        .await?;
+        .await
+        .expect("重复应用不应产生冲突");
     assert_eq!(
         fixture
             .organization_repository
