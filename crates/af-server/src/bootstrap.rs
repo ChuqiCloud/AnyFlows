@@ -2,10 +2,10 @@ use std::{future::Future, sync::Arc, time::Duration};
 
 use af_account::{
     ControlledOrganizationSsoDnsResolver, CredentialDecryptionError, CredentialDecryptor,
-    CredentialEncryptionError, CredentialEncryptor, DiagnosticSnapshotCipher, OAuthLoginClient,
-    OAuthProviderProfile, OAuthRefreshSupervisor, OrganizationInvitationCipher,
-    OrganizationSsoDnsResolverConfigError, PlainSystemSecret, SystemSecretCipher,
-    SystemSecretError, SystemSecretKind,
+    CredentialEncryptionError, CredentialEncryptor, DiagnosticSnapshotCipher,
+    OAuthConnectionCoordinator, OAuthLoginClient, OAuthProviderProfile, OAuthRefreshSupervisor,
+    OrganizationInvitationCipher, OrganizationSsoDnsResolverConfigError, PlainSystemSecret,
+    SystemSecretCipher, SystemSecretError, SystemSecretKind,
 };
 use af_admin::{
     AdminBalanceAlertSettingsService, AdminChannelReader, AdminChannelWriter,
@@ -211,6 +211,8 @@ use crate::{
 const BILLING_QUEUE_RETRY_DELAY: Duration = Duration::from_millis(100);
 /// 为数据库读取和任务调度保留的探活硬截止余量。
 const CHANNEL_PROBE_HARD_TIMEOUT_PADDING: Duration = Duration::from_secs(10);
+/// OAuth 一次性授权会话的固定清理周期；会话自身 TTL 仍由配置约束。
+const OAUTH_SESSION_CLEANUP_INTERVAL: Duration = Duration::from_secs(60);
 
 /// 已加载并校验静态配置。
 pub struct Configured;
@@ -321,6 +323,7 @@ pub struct RelayReady {
     oauth_login_service: Arc<dyn OAuthLoginService>,
     admin_network_settings_service: Arc<DatabaseAdminNetworkSettingsService>,
     admin_oauth_connection_service: Arc<dyn AdminOAuthConnectionService>,
+    oauth_connection_coordinator: Arc<OAuthConnectionCoordinator>,
     oauth_loopback_servers: Vec<PreparedOAuthLoopbackServer>,
     oauth_profiles: Vec<Arc<OAuthProviderProfile>>,
 }
@@ -346,6 +349,7 @@ pub struct BillingReady {
     oauth_login_service: Arc<dyn OAuthLoginService>,
     admin_network_settings_service: Arc<DatabaseAdminNetworkSettingsService>,
     admin_oauth_connection_service: Arc<dyn AdminOAuthConnectionService>,
+    oauth_connection_coordinator: Arc<OAuthConnectionCoordinator>,
     oauth_loopback_servers: Vec<PreparedOAuthLoopbackServer>,
     oauth_refresh_supervisor: Option<OAuthRefreshSupervisor>,
     channel_index: InMemoryChannelIndex,
@@ -1750,6 +1754,7 @@ impl Bootstrap<AuthenticationReady> {
                 oauth_login_service,
                 admin_network_settings_service,
                 admin_oauth_connection_service: oauth_runtime.admin_connection_service,
+                oauth_connection_coordinator: oauth_runtime.connection_coordinator,
                 oauth_loopback_servers: oauth_runtime.loopback_servers,
                 oauth_profiles: oauth_runtime.profiles,
             },
@@ -2235,6 +2240,7 @@ impl Bootstrap<RelayReady> {
                 oauth_login_service: stage.oauth_login_service,
                 admin_network_settings_service: stage.admin_network_settings_service,
                 admin_oauth_connection_service: stage.admin_oauth_connection_service,
+                oauth_connection_coordinator: stage.oauth_connection_coordinator,
                 oauth_loopback_servers: stage.oauth_loopback_servers,
                 oauth_refresh_supervisor,
                 channel_index,
@@ -2287,6 +2293,7 @@ impl Bootstrap<BillingReady> {
             oauth_login_service,
             admin_network_settings_service,
             admin_oauth_connection_service,
+            oauth_connection_coordinator,
             oauth_loopback_servers,
             oauth_refresh_supervisor,
             channel_index,
@@ -2311,6 +2318,9 @@ impl Bootstrap<BillingReady> {
         );
         register_scheduler_invalidation_tasks(&mut supervisor, scheduler_invalidation);
         register_oauth_loopback_servers(&mut supervisor, oauth_loopback_servers);
+        if oauth_connection_coordinator.profile_count() > 0 {
+            spawn_oauth_session_cleanup_task(&mut supervisor, oauth_connection_coordinator);
+        }
         if let Some(runtime) = oauth_refresh_supervisor {
             spawn_oauth_refresh_task(&mut supervisor, runtime);
         }
@@ -2518,6 +2528,51 @@ fn spawn_oauth_refresh_task(
             runtime.run_periodic_until(task_shutdown.cancelled()).await;
         }
     });
+}
+
+/// 注册启动即扫描、按固定周期清理且响应统一关闭信号的 OAuth 会话任务。
+fn spawn_oauth_session_cleanup_task(
+    supervisor: &mut BackgroundTaskSupervisor,
+    coordinator: Arc<OAuthConnectionCoordinator>,
+) {
+    supervisor.spawn("oauth-session-cleanup", move |task_shutdown| {
+        let coordinator = Arc::clone(&coordinator);
+        async move {
+            let mut cleanup_ticks = tokio::time::interval(OAUTH_SESSION_CLEANUP_INTERVAL);
+            cleanup_ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                tokio::select! {
+                    () = task_shutdown.cancelled() => return,
+                    _ = cleanup_ticks.tick() => {
+                        match coordinator.cleanup_expired_sessions() {
+                            Ok(removed) if removed > 0 => {
+                                tracing::debug!(removed, "OAuth 过期授权会话已清理");
+                            }
+                            Ok(_) => {}
+                            Err(error) => {
+                                tracing::warn!(
+                                    error_kind = oauth_session_cleanup_error_kind(&error),
+                                    "OAuth 过期授权会话清理失败"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+const fn oauth_session_cleanup_error_kind(
+    error: &af_account::OAuthConnectionError,
+) -> &'static str {
+    match error {
+        af_account::OAuthConnectionError::Authorization(
+            af_account::OAuthAuthorizationError::StoreUnavailable,
+        ) => "store_unavailable",
+        af_account::OAuthConnectionError::Authorization(_) => "authorization_state",
+        _ => "internal",
+    }
 }
 
 /// 注册启动即扫描、可重建且响应统一关闭信号的订阅周期任务。
