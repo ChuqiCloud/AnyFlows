@@ -16,6 +16,7 @@ mod organization_credit_terms;
 mod organization_department;
 mod organization_department_budget;
 mod organization_entitlement;
+mod organization_entitlement_renewal;
 mod organization_plan;
 mod organization_plan_order;
 mod organization_provisioning;
@@ -112,6 +113,7 @@ pub use organization_entitlement::{
     OrganizationEntitlementSnapshot, OrganizationEntitlementStateError,
     OrganizationEntitlementStatus,
 };
+pub use organization_entitlement_renewal::OrganizationEntitlementRenewalError;
 pub use organization_plan::{
     MAX_ORGANIZATION_PLAN_DESCRIPTION_BYTES, MAX_ORGANIZATION_PLAN_NAME_BYTES,
     MAX_ORGANIZATION_PLAN_PROVIDER_BYTES, MAX_ORGANIZATION_PLAN_VALIDITY_DAYS,
