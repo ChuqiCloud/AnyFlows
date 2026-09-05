@@ -83,6 +83,8 @@ pub(crate) enum ManagementError {
     OrganizationTeamInUse,
     /// 企业授权不允许当前生命周期写入。
     OrganizationEntitlementRestricted,
+    /// 企业授权投影暂时不可读取。
+    OrganizationEntitlementUnavailable,
     /// 企业合同价记录不存在或不属于路径企业。
     OrganizationContractPriceNotFound,
     /// 企业合同价有效区间与同模型协议事实冲突。
@@ -589,6 +591,13 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "organization_entitlement_restricted",
                     message: "Organization entitlement restricts this operation",
+                },
+            ),
+            Self::OrganizationEntitlementUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "organization_entitlement_unavailable",
+                    message: "Organization entitlement service unavailable",
                 },
             ),
             Self::OrganizationContractPriceNotFound => (

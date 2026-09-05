@@ -19,7 +19,11 @@ import { Button } from '@/components/ui/button'
 import type { PaymentMethod, UserTopupMethod } from '@/features/payment-settings/payment-settings-types'
 import { WalletStripePaymentForm } from '@/features/wallet/wallet-stripe-payment-form'
 import { stripeTopupAppearance } from '@/features/wallet/wallet-topup-runtime'
-import type { OrganizationPlan, OrganizationPlanOrder } from '@/lib/api/generated/types.gen'
+import type {
+  OrganizationEntitlementProjection,
+  OrganizationPlan,
+  OrganizationPlanOrder,
+} from '@/lib/api/generated/types.gen'
 
 import {
   createOrganizationPlanOrderIdempotencyKey,
@@ -47,6 +51,9 @@ type OrganizationPlanPurchaseProps = {
   methodsLoading: boolean
   methodsUnavailable: boolean
   canPurchase: boolean
+  entitlement?: OrganizationEntitlementProjection
+  entitlementRefreshing: boolean
+  onRefreshEntitlement?: () => Promise<unknown>
 }
 
 /** 管理企业授权订单的创建、同单支付恢复和服务端状态刷新。 */
@@ -57,6 +64,9 @@ export function OrganizationPlanPurchase({
   methodsLoading,
   methodsUnavailable,
   canPurchase,
+  entitlement,
+  entitlementRefreshing,
+  onRefreshEntitlement,
 }: OrganizationPlanPurchaseProps) {
   const { i18n, t } = useTranslation()
   const createMutation = useCreateOrganizationPlanOrder(organizationId)
@@ -92,6 +102,7 @@ export function OrganizationPlanPurchase({
     style: 'currency',
   }).format(plan.price_amount_minor / 100), [locale, plan.price_amount_minor, plan.price_currency])
   const busy = createMutation.isPending || paymentMutation.isPending
+  const factsRefreshing = orderQuery.isFetching || entitlementRefreshing
   const errorCode = organizationPlanOrderErrorCode(paymentMutation.error)
     ?? organizationPlanOrderErrorCode(createMutation.error)
 
@@ -181,14 +192,17 @@ export function OrganizationPlanPurchase({
     await submitPayment(attempt.orderId, method.payment_method)
   }
 
-  const refreshOrder = async () => {
-    const refreshed = await orderQuery.refetch()
+  const refreshFacts = async () => {
+    const [refreshed] = await Promise.all([
+      orderQuery.refetch(),
+      onRefreshEntitlement?.(),
+    ])
     if (refreshed.data !== undefined) setOrder(refreshed.data)
   }
 
   const paymentConfirmed = async (status: PaymentIntent.Status) => {
     setPhase(status === 'succeeded' ? 'succeeded' : 'processing')
-    await refreshOrder()
+    await refreshFacts()
   }
 
   const paymentErrorKey = errorCode === 'organization_plan_order_conflict'
@@ -203,6 +217,8 @@ export function OrganizationPlanPurchase({
             ? 'permission'
             : 'paymentSubmit'
   const redirectUrl = payment?.redirect_url ? safePaymentRedirectUrl(payment.redirect_url) : undefined
+  const entitlementApplied = order?.status === 'paid'
+    && entitlement?.applied_order_id === order.order_id
 
   if (!canPurchase) {
     return (
@@ -264,11 +280,13 @@ export function OrganizationPlanPurchase({
       </div>
       {order.status === 'paid' ? (
         <PaymentStatus
-          icon={CheckCircle2}
-          message={t('organizationConsole.overview.planCatalog.paymentPaid')}
-          refreshing={orderQuery.isFetching}
-          refresh={() => void refreshOrder()}
-          tone="text-success"
+          icon={entitlementApplied ? CheckCircle2 : RefreshCw}
+          message={t(entitlementApplied
+            ? 'organizationConsole.overview.planCatalog.paymentEffective'
+            : 'organizationConsole.overview.planCatalog.paymentPaid')}
+          refreshing={factsRefreshing}
+          refresh={() => void refreshFacts()}
+          tone={entitlementApplied ? 'text-success' : 'text-warning-foreground'}
         />
       ) : phase !== undefined ? (
         <PaymentStatus
@@ -276,8 +294,8 @@ export function OrganizationPlanPurchase({
           message={t(phase === 'succeeded'
             ? 'organizationConsole.overview.planCatalog.paymentConfirmed'
             : 'organizationConsole.overview.planCatalog.paymentProcessing')}
-          refreshing={orderQuery.isFetching}
-          refresh={() => void refreshOrder()}
+          refreshing={factsRefreshing}
+          refresh={() => void refreshFacts()}
           tone="text-warning-foreground"
         />
       ) : payment?.client_secret && stripe ? (
@@ -291,8 +309,8 @@ export function OrganizationPlanPurchase({
       ) : redirectUrl ? (
         <RedirectPayment
           url={redirectUrl}
-          refreshing={orderQuery.isFetching}
-          refresh={() => void refreshOrder()}
+          refreshing={factsRefreshing}
+          refresh={() => void refreshFacts()}
         />
       ) : paymentMutation.isError ? (
         <PaymentError

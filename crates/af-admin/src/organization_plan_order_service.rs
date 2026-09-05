@@ -8,7 +8,7 @@ use std::{
 
 use af_db::{
     OrganizationPlanOrderCreate, OrganizationPlanOrderCreateOutcome, OrganizationPlanOrderRecord,
-    OrganizationPlanOrderRepository, OrganizationPlanOrderRepositoryError,
+    OrganizationPlanOrderRepository, OrganizationPlanOrderRepositoryError, OrganizationRepository,
 };
 use af_domain::{
     OrganizationId, OrganizationPermission, OrganizationPlanId, OrganizationPlanOrderId,
@@ -18,8 +18,10 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::{
-    DatabaseOrganizationPlanOrderPaymentService, OrganizationAuthorizationError,
-    OrganizationAuthorizationService, OrganizationPlanOrderPaymentCommand,
+    DatabaseOrganizationEntitlementReader, DatabaseOrganizationPlanOrderPaymentService,
+    OrganizationActivityService, OrganizationAuditRequestContext, OrganizationAuthorizationError,
+    OrganizationAuthorizationService, OrganizationEntitlementServiceError,
+    OrganizationEntitlementView, OrganizationPlanOrderPaymentCommand,
     OrganizationPlanOrderPaymentError, OrganizationPlanOrderPaymentService,
     OrganizationPlanService, OrganizationPlanServiceError, SessionPrincipal, UserTopupError,
     UserTopupPaymentSession, UserTopupService,
@@ -251,8 +253,17 @@ pub type OrganizationPlanOrderPaymentViewFuture<'a> = Pin<
             + 'a,
     >,
 >;
+/// 企业授权投影读取结果。
+pub type OrganizationEntitlementFuture<'a> = Pin<
+    Box<
+        dyn Future<
+                Output = Result<OrganizationEntitlementView, OrganizationEntitlementServiceError>,
+            > + Send
+            + 'a,
+    >,
+>;
 
-/// 企业授权订单创建、读取与支付提交端口；支付确认和授权发放仍由验签事件负责。
+/// 企业授权订单与授权生效投影端口；支付确认和授权发放仍由验签事件负责。
 pub trait OrganizationPlanOrderService: Send + Sync {
     fn create<'a>(
         &'a self,
@@ -274,6 +285,22 @@ pub trait OrganizationPlanOrderService: Send + Sync {
         principal: SessionPrincipal,
         command: OrganizationPlanOrderPaymentCommand,
     ) -> OrganizationPlanOrderPaymentViewFuture<'a>;
+
+    /// 仅允许 Owner 读取路径企业的授权投影。
+    fn get_entitlement<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        organization_id: OrganizationId,
+    ) -> OrganizationEntitlementFuture<'a>;
+
+    /// 平台管理员说明理由后跨企业读取授权投影。
+    fn get_entitlement_as_platform<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        organization_id: OrganizationId,
+        platform_reason: String,
+        request: OrganizationAuditRequestContext,
+    ) -> OrganizationEntitlementFuture<'a>;
 }
 
 /// 使用企业 RBAC、活动套餐目录和幂等仓储实现订单创建与读取。
@@ -283,6 +310,7 @@ pub struct DatabaseOrganizationPlanOrderService {
     topup_service: Arc<dyn UserTopupService>,
     repository: OrganizationPlanOrderRepository,
     payment_service: DatabaseOrganizationPlanOrderPaymentService,
+    entitlement_reader: DatabaseOrganizationEntitlementReader,
 }
 
 impl DatabaseOrganizationPlanOrderService {
@@ -292,14 +320,23 @@ impl DatabaseOrganizationPlanOrderService {
         plan_service: Arc<dyn OrganizationPlanService>,
         topup_service: Arc<dyn UserTopupService>,
         repository: OrganizationPlanOrderRepository,
+        organization_repository: Arc<OrganizationRepository>,
+        activity_service: Arc<dyn OrganizationActivityService>,
     ) -> Self {
         let payment_service = DatabaseOrganizationPlanOrderPaymentService::new(repository.clone());
+        let entitlement_reader = DatabaseOrganizationEntitlementReader::new(
+            Arc::clone(&authorization_service),
+            activity_service,
+            organization_repository,
+            repository.clone(),
+        );
         Self {
             authorization_service,
             plan_service,
             topup_service,
             repository,
             payment_service,
+            entitlement_reader,
         }
     }
 }
@@ -456,6 +493,32 @@ impl OrganizationPlanOrderService for DatabaseOrganizationPlanOrderService {
                 .map_err(map_payment_error)
         })
     }
+
+    fn get_entitlement<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        organization_id: OrganizationId,
+    ) -> OrganizationEntitlementFuture<'a> {
+        Box::pin(async move {
+            self.entitlement_reader
+                .get_for_owner(principal, organization_id)
+                .await
+        })
+    }
+
+    fn get_entitlement_as_platform<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        organization_id: OrganizationId,
+        platform_reason: String,
+        request: OrganizationAuditRequestContext,
+    ) -> OrganizationEntitlementFuture<'a> {
+        Box::pin(async move {
+            self.entitlement_reader
+                .get_as_platform(principal, organization_id, platform_reason, request)
+                .await
+        })
+    }
 }
 
 impl fmt::Debug for DatabaseOrganizationPlanOrderService {
@@ -579,7 +642,9 @@ fn map_repository_error(
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use af_db::{DatabaseOptions, MigrationOptions};
+    use af_db::{
+        AdminUsageLogRepository, DatabaseOptions, MigrationOptions, OrganizationAuditRepository,
+    };
 
     use super::*;
     use crate::{
@@ -620,12 +685,28 @@ mod tests {
         .await
         .expect("测试数据库迁移成功");
         let authorization = Arc::new(DenyingAuthorizationService::default());
+        let organization_repository = Arc::new(
+            OrganizationRepository::new(pool.clone(), std::time::Duration::from_secs(5))
+                .expect("企业仓储配置有效"),
+        );
+        let activity_service = Arc::new(
+            crate::DatabaseOrganizationActivityService::new(
+                authorization.clone(),
+                AdminUsageLogRepository::new(pool.clone(), std::time::Duration::from_secs(5))
+                    .expect("调用日志仓储配置有效"),
+                OrganizationAuditRepository::new(pool.clone()),
+                Some("ERERERERERERERERERERERERERERERERERERERERERE"),
+            )
+            .expect("企业审计服务配置有效"),
+        );
         let service = DatabaseOrganizationPlanOrderService::new(
             authorization.clone(),
             Arc::new(UnavailablePlanService),
             Arc::new(UnavailableTopupService),
             OrganizationPlanOrderRepository::new(pool.clone(), std::time::Duration::from_secs(5))
                 .expect("企业订单仓储配置有效"),
+            organization_repository,
+            activity_service,
         );
         let organization_id = OrganizationId::new(23).expect("企业标识有效");
         let command = OrganizationPlanOrderPaymentCommand::new(

@@ -135,6 +135,7 @@ pub struct OrganizationEntitlementRecord {
     pub(super) source: String,
     pub(super) external_reference: Option<String>,
     pub(super) version: i64,
+    pub(super) updated_at: i64,
 }
 
 impl OrganizationEntitlementRecord {
@@ -166,6 +167,33 @@ impl OrganizationEntitlementRecord {
     #[must_use]
     pub const fn version(&self) -> i64 {
         self.version
+    }
+
+    /// 返回授权事实最近更新时间。
+    #[must_use]
+    pub const fn updated_at(&self) -> i64 {
+        self.updated_at
+    }
+}
+
+/// 企业生命周期与完整授权事实的同次读取结果。
+#[derive(Clone, Debug, PartialEq)]
+pub struct OrganizationEntitlementReadRecord {
+    pub(super) organization_status: OrganizationStatus,
+    pub(super) entitlement: OrganizationEntitlementRecord,
+}
+
+impl OrganizationEntitlementReadRecord {
+    /// 返回企业生命周期状态，用于推导当前授权状态。
+    #[must_use]
+    pub const fn organization_status(&self) -> OrganizationStatus {
+        self.organization_status
+    }
+
+    /// 返回完整授权事实。
+    #[must_use]
+    pub const fn entitlement(&self) -> &OrganizationEntitlementRecord {
+        &self.entitlement
     }
 }
 

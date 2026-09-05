@@ -20,7 +20,7 @@ use thiserror::Error;
 
 use crate::{
     AdminUsageLog, AdminUsageLogListQuery, AdminUsageLogReadError, OrganizationAuthorizationError,
-    OrganizationAuthorizationService, OrganizationContext, SessionPrincipal, SessionRole,
+    OrganizationAuthorizationService, OrganizationContext, PlatformPolicy, SessionPrincipal,
     UsageLogOperation, UsageLogProtocol,
     auth_challenge_security::{AuthChallengeSecurityKey, AuthChallengeSecurityKeyError},
 };
@@ -445,6 +445,22 @@ pub trait OrganizationActivityService: Send + Sync {
         outcome: OrganizationAuditOutcome,
         summary: Option<OrganizationAuditChangeSummary>,
     ) -> OrganizationAuditRecordFuture<'a>;
+
+    /// 为已验证理由的平台跨企业动作追加企业审计。
+    #[allow(clippy::too_many_arguments)]
+    fn record_platform_action<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        organization_id: OrganizationId,
+        request: OrganizationAuditRequestContext,
+        permission: PlatformPermission,
+        operation: &'static str,
+        target_type: &'static str,
+        target_identifier: String,
+        outcome: OrganizationAuditOutcome,
+        platform_reason: String,
+        summary: Option<OrganizationAuditChangeSummary>,
+    ) -> OrganizationAuditRecordFuture<'a>;
 }
 
 /// 数据库实现的企业调用日志与管理审计服务。
@@ -646,7 +662,11 @@ impl OrganizationActivityService for DatabaseOrganizationActivityService {
         request: OrganizationAuditRequestContext,
     ) -> OrganizationUsageLogFuture<'a> {
         Box::pin(async move {
-            require_platform(principal, &platform_reason)?;
+            authorize_platform(
+                principal,
+                PlatformPermission::OrganizationUsageLogsReadAll,
+                &platform_reason,
+            )?;
             let retention_days = self
                 .audit_repository
                 .retention_days(organization_id)
@@ -725,7 +745,11 @@ impl OrganizationActivityService for DatabaseOrganizationActivityService {
         request: OrganizationAuditRequestContext,
     ) -> OrganizationAuditListFuture<'a> {
         Box::pin(async move {
-            require_platform(principal, &platform_reason)?;
+            authorize_platform(
+                principal,
+                PlatformPermission::OrganizationAuditReadAll,
+                &platform_reason,
+            )?;
             let retention_days = self
                 .audit_repository
                 .retention_days(organization_id)
@@ -780,6 +804,44 @@ impl OrganizationActivityService for DatabaseOrganizationActivityService {
                 target_identifier,
                 outcome,
                 None,
+                summary,
+            )
+            .await
+        })
+    }
+
+    fn record_platform_action<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        organization_id: OrganizationId,
+        request: OrganizationAuditRequestContext,
+        permission: PlatformPermission,
+        operation: &'static str,
+        target_type: &'static str,
+        target_identifier: String,
+        outcome: OrganizationAuditOutcome,
+        platform_reason: String,
+        summary: Option<OrganizationAuditChangeSummary>,
+    ) -> OrganizationAuditRecordFuture<'a> {
+        Box::pin(async move {
+            authorize_platform(principal, permission, &platform_reason)?;
+            let retention_days = self
+                .audit_repository
+                .retention_days(organization_id)
+                .await
+                .map_err(map_audit_repository_error)?;
+            self.record(
+                organization_id,
+                principal.user_id(),
+                None,
+                retention_days,
+                request,
+                permission.code(),
+                operation,
+                target_type,
+                target_identifier,
+                outcome,
+                Some(platform_reason),
                 summary,
             )
             .await
@@ -893,13 +955,13 @@ fn sensitive_summary_key(key: &str) -> bool {
     .any(|marker| key.contains(marker))
 }
 
-fn require_platform(
+pub(crate) fn authorize_platform(
     principal: SessionPrincipal,
+    permission: PlatformPermission,
     reason: &str,
 ) -> Result<(), OrganizationActivityError> {
-    if principal.role() != SessionRole::Admin {
-        return Err(OrganizationActivityError::Forbidden);
-    }
+    PlatformPolicy::authorize(principal, permission)
+        .map_err(|_| OrganizationActivityError::Forbidden)?;
     if reason.is_empty()
         || reason.len() > MAX_PLATFORM_REASON_BYTES
         || reason.trim() != reason
@@ -949,6 +1011,7 @@ fn map_security_key_error(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::SessionRole;
 
     #[test]
     fn change_summary_rejects_sensitive_keys() {
@@ -965,12 +1028,12 @@ mod tests {
     fn platform_reason_and_request_context_are_bounded() {
         let user = SessionPrincipal::new(UserId::new(1).unwrap(), SessionRole::User);
         assert_eq!(
-            require_platform(user, "support"),
+            authorize_platform(user, PlatformPermission::OrganizationsReadAll, "support"),
             Err(OrganizationActivityError::Forbidden)
         );
         let admin = SessionPrincipal::new(UserId::new(1).unwrap(), SessionRole::Admin);
         assert_eq!(
-            require_platform(admin, ""),
+            authorize_platform(admin, PlatformPermission::OrganizationsReadAll, ""),
             Err(OrganizationActivityError::InvalidInput)
         );
         assert!(OrganizationAuditRequestContext::new("request", Some("browser")).is_ok());

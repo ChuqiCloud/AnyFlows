@@ -20910,6 +20910,191 @@
         ]
       }
     },
+    "/api/organizations/{organization_id}/entitlement": {
+      "get": {
+        "tags": [
+          "企业套餐"
+        ],
+        "operationId": "getOrganizationEntitlement",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationEntitlementProjection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/platform/organizations/{organization_id}/entitlement": {
+      "get": {
+        "tags": [
+          "企业套餐"
+        ],
+        "operationId": "getPlatformOrganizationEntitlement",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "x-anyflows-platform-reason",
+            "in": "header",
+            "description": "跨企业访问理由",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 255,
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationEntitlementProjection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/auth/organization-sso/discovery": {
       "post": {
         "tags": [
@@ -38089,6 +38274,109 @@
         },
         "additionalProperties": false
       },
+      "OrganizationEntitlementProjection": {
+        "type": "object",
+        "required": [
+          "organization_id",
+          "status",
+          "source",
+          "team_management_enabled",
+          "sso_enabled",
+          "custom_roles_enabled",
+          "seat_limit",
+          "team_limit",
+          "organization_key_limit",
+          "audit_retention_days",
+          "valid_from",
+          "valid_until",
+          "grace_until",
+          "version",
+          "updated_at",
+          "applied_order_id",
+          "plan_id",
+          "plan_version"
+        ],
+        "properties": {
+          "organization_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OrganizationEntitlementStatus"
+          },
+          "source": {
+            "$ref": "#/components/schemas/OrganizationEntitlementSource"
+          },
+          "team_management_enabled": {
+            "type": "boolean"
+          },
+          "sso_enabled": {
+            "type": "boolean"
+          },
+          "custom_roles_enabled": {
+            "type": "boolean"
+          },
+          "seat_limit": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "team_limit": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "organization_key_limit": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "audit_retention_days": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "valid_from": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "valid_until": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "grace_until": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "applied_order_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "plan_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "plan_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
       "OrganizationEntitlementResponse": {
         "type": "object",
         "required": [
@@ -38164,6 +38452,24 @@
           }
         },
         "additionalProperties": false
+      },
+      "OrganizationEntitlementSource": {
+        "type": "string",
+        "enum": [
+          "platform_provisioning",
+          "organization_plan_order",
+          "other"
+        ]
+      },
+      "OrganizationEntitlementStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "grace",
+          "read_only",
+          "suspended",
+          "closed"
+        ]
       },
       "OrganizationInvitationAcceptRequest": {
         "type": "object",
