@@ -95,6 +95,14 @@ pub(crate) enum ManagementError {
     OrganizationPlanNotFound,
     /// 企业套餐版本或不可变价格快照发生冲突。
     OrganizationPlanConflict,
+    /// 企业授权订单不存在或不属于路径企业。
+    OrganizationPlanOrderNotFound,
+    /// 企业授权订单幂等事实或状态冲突。
+    OrganizationPlanOrderConflict,
+    /// 企业授权订单写入结果未知，客户端必须复用同一幂等键确认。
+    OrganizationPlanOrderOutcomeUnknown,
+    /// 企业授权订单服务暂不可用。
+    OrganizationPlanOrderUnavailable,
     OrganizationSsoProviderNotFound,
     OrganizationSsoProviderConflict,
     OrganizationSsoProviderTransitionInvalid,
@@ -623,6 +631,34 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "organization_plan_conflict",
                     message: "Organization plan conflict",
+                },
+            ),
+            Self::OrganizationPlanOrderNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "organization_plan_order_not_found",
+                    message: "Organization plan order not found",
+                },
+            ),
+            Self::OrganizationPlanOrderConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_plan_order_conflict",
+                    message: "Organization plan order conflict",
+                },
+            ),
+            Self::OrganizationPlanOrderOutcomeUnknown => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "organization_plan_order_outcome_unknown",
+                    message: "Organization plan order outcome unknown",
+                },
+            ),
+            Self::OrganizationPlanOrderUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "organization_plan_order_unavailable",
+                    message: "Organization plan order service unavailable",
                 },
             ),
             Self::OrganizationSsoProviderNotFound => (

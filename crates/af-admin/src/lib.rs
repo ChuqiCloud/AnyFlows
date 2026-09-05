@@ -40,6 +40,7 @@ mod organization_invitation;
 mod organization_management;
 mod organization_plan;
 mod organization_plan_order;
+mod organization_plan_order_service;
 mod organization_provisioning;
 mod organization_scim;
 mod organization_service_account;
@@ -360,6 +361,11 @@ pub use organization_plan_order::{
     DatabaseOrganizationPlanOrderPaymentService, OrganizationPlanOrderPayment,
     OrganizationPlanOrderPaymentCommand, OrganizationPlanOrderPaymentError,
     OrganizationPlanOrderPaymentFuture, OrganizationPlanOrderPaymentService,
+};
+pub use organization_plan_order_service::{
+    DatabaseOrganizationPlanOrderService, OrganizationPlanOrderCreateCommand,
+    OrganizationPlanOrderFuture, OrganizationPlanOrderService, OrganizationPlanOrderServiceError,
+    OrganizationPlanOrderView,
 };
 pub use organization_provisioning::{
     DatabaseOrganizationProvisioningService, OrganizationProvisioningCreateCommand,

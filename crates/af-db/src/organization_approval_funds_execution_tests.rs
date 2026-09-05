@@ -8,9 +8,14 @@ use af_domain::{
     OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationId,
     OrganizationMembershipId, OrganizationRole, QuotaDelta, UserId, WalletEventId,
 };
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set, sea_query::Expr,
+};
 
-use crate::entity::{groups, organization_approval_funds_executions, organization_wallets, users};
+use crate::entity::{
+    groups, organization_approval_funds_executions, organization_approval_requests,
+    organization_wallets, users,
+};
 use crate::{
     DatabaseOptions, DatabaseTimestamp, MigrationOptions, OrganizationApprovalDecisionWrite,
     OrganizationApprovalExecutionRepository, OrganizationApprovalExecutionRepositoryError,
@@ -172,10 +177,19 @@ async fn funds_execution_rechecks_resource_decision_permission_expiration_and_sc
         51,
         expired_write.resource_summary(),
         OrganizationApprovalDecisionKind::Approved,
-        now() + 1,
+        now() + 3_600,
     )
     .await?;
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    // 直接构造已过期持久化事实，避免并发门禁的调度时延影响决定写入。
+    let update = organization_approval_requests::Entity::update_many()
+        .filter(organization_approval_requests::Column::Id.eq(expired_id.get()))
+        .col_expr(
+            organization_approval_requests::Column::ExpiresAt,
+            Expr::col(organization_approval_requests::Column::CreatedAt).into(),
+        )
+        .exec(fixture.pool.connection())
+        .await?;
+    assert_eq!(update.rows_affected, 1);
     assert_eq!(
         fixture
             .execution_repository

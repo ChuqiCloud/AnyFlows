@@ -1958,6 +1958,30 @@ export type OrganizationPlanListResponse = {
     plans: Array<OrganizationPlan>;
     next_cursor?: number | null;
 };
+export type OrganizationPlanOrder = {
+    order_id: string;
+    organization_id: number;
+    payer_user_id: number;
+    plan_id: string;
+    plan_version: number;
+    provider: string;
+    currency: string;
+    amount_minor: number;
+    status: OrganizationPlanOrderStatus;
+    version: number;
+    payment_method?: string | null;
+    expires_at?: number | null;
+    paid_at?: number | null;
+    closed_at?: number | null;
+    created_at: number;
+    updated_at: number;
+    replayed: boolean;
+};
+export type OrganizationPlanOrderCreateRequest = {
+    plan_id: string;
+    idempotency_key: string;
+};
+export type OrganizationPlanOrderStatus = 'created' | 'pending' | 'paid' | 'failed' | 'canceled' | 'expired';
 export type OrganizationPlanStatus = 'active' | 'disabled';
 export type OrganizationProvisioningCreateRequest = {
     idempotency_key: string;
@@ -7872,6 +7896,49 @@ export type GetOrganizationPlanCatalogResponses = {
     200: OrganizationPlanCatalogResponse;
 };
 export type GetOrganizationPlanCatalogResponse = GetOrganizationPlanCatalogResponses[keyof GetOrganizationPlanCatalogResponses];
+export type CreateOrganizationPlanOrderData = {
+    body: OrganizationPlanOrderCreateRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/plan-orders';
+};
+export type CreateOrganizationPlanOrderErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type CreateOrganizationPlanOrderError = CreateOrganizationPlanOrderErrors[keyof CreateOrganizationPlanOrderErrors];
+export type CreateOrganizationPlanOrderResponses = {
+    200: OrganizationPlanOrder;
+    201: OrganizationPlanOrder;
+};
+export type CreateOrganizationPlanOrderResponse = CreateOrganizationPlanOrderResponses[keyof CreateOrganizationPlanOrderResponses];
+export type GetOrganizationPlanOrderData = {
+    body?: never;
+    path: {
+        organization_id: number;
+        order_id: string;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/plan-orders/{order_id}';
+};
+export type GetOrganizationPlanOrderErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    503: ManagementError;
+};
+export type GetOrganizationPlanOrderError = GetOrganizationPlanOrderErrors[keyof GetOrganizationPlanOrderErrors];
+export type GetOrganizationPlanOrderResponses = {
+    200: OrganizationPlanOrder;
+};
+export type GetOrganizationPlanOrderResponse = GetOrganizationPlanOrderResponses[keyof GetOrganizationPlanOrderResponses];
 export type DiscoverOrganizationSsoData = {
     body: OrganizationSsoDiscoveryRequest;
     path?: never;
