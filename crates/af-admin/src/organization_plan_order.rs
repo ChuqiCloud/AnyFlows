@@ -377,23 +377,20 @@ mod tests {
         },
     };
 
+    use super::*;
     use af_billing::{PaymentClientSecret, PaymentOrderFuture, PaymentOrderProvider};
     use af_db::{
+        AdminGroupRepository, AdminGroupWriteRecord, AdminUserCreateRecord, AdminUserRepository,
         DatabaseOptions, MigrationOptions, OrganizationCreate, OrganizationEntitlementWrite,
         OrganizationPlanOrderCreate, OrganizationPlanOrderCreateOutcome,
         OrganizationPlanOrderRepository, OrganizationPlanRepository, OrganizationPlanWrite,
         OrganizationRepository,
-        entity::{groups, users},
     };
     use af_domain::{
         OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationId,
         OrganizationPlanFeatures, OrganizationPlanId, OrganizationPlanOrderId,
         OrganizationPlanOrderRequestId, OrganizationPlanPrice, OrganizationPlanSnapshot, UserId,
     };
-    use sea_orm::{ActiveModelTrait, Set};
-
-    use super::*;
-
     #[tokio::test]
     async fn submit_retries_unknown_provider_result_and_recovers_pending_order()
     -> Result<(), Box<dyn Error>> {
@@ -512,27 +509,36 @@ mod tests {
             MigrationOptions::default(),
         )
         .await?;
-        let group = groups::ActiveModel {
-            name: Set("organization-plan-payment-test".to_owned()),
-            display_name: Set("企业支付测试".to_owned()),
-            flags: Set(serde_json::json!({})),
-            ..Default::default()
-        }
-        .insert(pool.connection())
-        .await?;
-        let user = users::ActiveModel {
-            username: Set("organization-plan-payment-user".to_owned()),
-            email: Set(Some("organization-plan-payment@example.com".to_owned())),
-            password_hash: Set(None),
-            status: Set(1),
-            default_group_id: Set(group.id),
-            aff_code: Set("organization-plan-payment-aff".to_owned()),
-            settings: Set(serde_json::json!({})),
-            ..Default::default()
-        }
-        .insert(pool.connection())
-        .await?;
-        let payer_user_id = UserId::new(user.id)?;
+        let group = AdminGroupRepository::new(pool.clone(), std::time::Duration::from_secs(5))?
+            .create(AdminGroupWriteRecord::new(
+                "organization-plan-payment-test".to_owned(),
+                "企业支付测试".to_owned(),
+                1_000_000,
+                None,
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                serde_json::json!({}),
+            ))
+            .await?;
+        let payer_user_id =
+            AdminUserRepository::new(pool.clone(), std::time::Duration::from_secs(5))?
+                .create(AdminUserCreateRecord::new(
+                    "organization-plan-payment-user".to_owned(),
+                    Some("organization-plan-payment@example.com".to_owned()),
+                    None,
+                    0,
+                    1,
+                    group.group_id(),
+                    0,
+                    None,
+                    None,
+                ))
+                .await?
+                .user_id();
         let now = i64::try_from(now)?;
         let entitlement = OrganizationEntitlementWrite::new(
             OrganizationEntitlementSnapshot::new(
