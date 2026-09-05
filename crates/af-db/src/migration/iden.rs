@@ -2878,6 +2878,78 @@ pub(in crate::migration) mod organization_plan_prices {
     }
 }
 
+pub(in crate::migration) mod organization_plan_orders {
+    use super::DeriveIden;
+
+    /// `organization_plan_orders` 企业授权订单表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_plan_orders")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业授权订单固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrderKey,
+        OrganizationId,
+        PayerUserId,
+        PlanId,
+        PlanKey,
+        PlanVersion,
+        Provider,
+        Currency,
+        AmountMinor,
+        Status,
+        IdempotencyKey,
+        Version,
+        ProviderOrderId,
+        TradeNo,
+        PaymentMethod,
+        ExpiresAt,
+        PaidAt,
+        ClosedAt,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod organization_plan_payment_events {
+    use super::DeriveIden;
+
+    /// `organization_plan_payment_events` 企业授权支付事件表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_plan_payment_events")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业授权支付事件固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        EventKey,
+        OrderId,
+        Provider,
+        ProviderEventId,
+        TradeNo,
+        AmountMinor,
+        Currency,
+        PaymentMethod,
+        EventType,
+        SignatureKeyFingerprint,
+        PayloadSha256,
+        ReceivedAt,
+        ProcessedAt,
+        CreatedAt,
+    }
+}
+
 pub(in crate::migration) mod organization_invitations {
     use super::DeriveIden;
 
