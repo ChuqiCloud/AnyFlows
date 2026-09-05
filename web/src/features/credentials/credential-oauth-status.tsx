@@ -59,7 +59,7 @@ export function CredentialOAuthStatusView({ controller, credential, onDelete }: 
   )
 }
 
-function OAuthTerminalState({ action, controller, message, tone }: {
+function OAuthTerminalState({ action, controller, deleteLabel, message, onDelete, tone }: {
   action: string
   controller: CredentialOAuthController
   message: string
