@@ -12,6 +12,7 @@ import { SessionBoundary } from '@/features/auth/session-boundary'
 import { endManagementSession } from '@/features/auth/session-query'
 import { ApiKeyPage } from '@/features/api-keys/api-key-page'
 import { BillingSettingsPage } from '@/features/billing-settings/billing-settings-page'
+import { AnnouncementPage } from '@/features/announcements/announcement-page'
 import { ChannelPage } from '@/features/channels/channel-page'
 import { CredentialPage } from '@/features/credentials/credential-page'
 import { CredentialProxyPage } from '@/features/credential-proxies/credential-proxy-page'
@@ -144,6 +145,8 @@ function ManagementEntry({
 
   const titleKey = view === 'channels'
     ? 'channels.title'
+    : view === 'announcements'
+      ? 'announcements.title'
     : view === 'credentials'
       ? 'credentials.title'
     : view === 'credential-proxies'
@@ -229,6 +232,8 @@ function ManagementEntry({
                         : 'dashboard.title'
   const content = (admin: boolean) => view === 'channels'
     ? <ChannelPage />
+    : view === 'announcements'
+      ? <AnnouncementPage />
     : view === 'credentials'
       ? <CredentialPage initialChannelId={credentialChannelId} />
     : view === 'credential-proxies'
@@ -314,6 +319,7 @@ function ManagementEntry({
                         : <DashboardPage />
 
   const requireAdmin = view !== 'api-keys'
+    && view !== 'announcements'
     && view !== 'organization-api-keys'
     && view !== 'organization-activity'
     && view !== 'organization-budgets'

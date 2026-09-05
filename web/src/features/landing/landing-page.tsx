@@ -26,6 +26,7 @@ import { BillingVisual } from '@/features/landing/billing-visual'
 import { ApiConsole } from '@/features/landing/api-console'
 import { ProtocolMatrix } from '@/features/landing/protocol-matrix'
 import { RouteVisual } from '@/features/landing/route-visual'
+import { AnnouncementStrip } from '@/features/announcements/announcement-strip'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
 
 /** 三种部署形态，顺序对应 design/00-overview.md 里的场景编号 */
@@ -82,6 +83,7 @@ export function LandingPage() {
       <PublicSiteHeader siteName={siteName} logoUrl={site?.brand.logo_url} />
 
       <main>
+        <AnnouncementStrip />
         {/*
           isolate 是必需的：背景层用负 z-index，若本区不建立层叠上下文，
           它们会上浮到根节点并被外层 bg-background 整块盖掉。

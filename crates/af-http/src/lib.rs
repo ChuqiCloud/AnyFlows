@@ -1,5 +1,6 @@
 //! HTTP 路由、中间件、提取器与响应映射。
 
+mod announcements;
 mod anthropic_messages;
 mod audio_service;
 mod authentication;

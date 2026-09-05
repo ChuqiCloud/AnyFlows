@@ -1,5 +1,6 @@
 //! 从 Rust 路由契约生成管理 API 的 OpenAPI 文档。
 
+mod announcements;
 mod balance_alert_settings;
 mod channels;
 mod credential_proxies;
@@ -73,6 +74,7 @@ use utoipa::openapi::{
 pub fn openapi_document() -> OpenApi {
     let mut document = OpenApi::new(Info::new("AnyFlows 管理 API", "0.1.0"), Paths::new());
     document.merge(session::document());
+    document.merge(announcements::document());
     document.merge(setup::document());
     document.merge(registration::document());
     document.merge(rerank::document());
@@ -137,6 +139,7 @@ pub fn openapi_document() -> OpenApi {
 
     document.tags = Some(vec![
         Tag::new("公开注册"),
+        Tag::new("公告"),
         Tag::new("OpenAI Responses"),
         Tag::new("OpenAI Audio"),
         Tag::new("视频任务"),

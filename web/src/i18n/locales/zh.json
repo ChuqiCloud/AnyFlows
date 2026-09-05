@@ -62,6 +62,7 @@
     "refunds": "退款审批",
     "siteSettings": "站点设置",
     "authenticationSettings": "认证设置",
+    "announcements": "公告管理",
     "emailSettings": "邮件设置",
     "networkSettings": "网络与代理",
     "paymentSettings": "支付设置",
@@ -3339,6 +3340,51 @@
     "warning": {
       "title": "关闭密码登录前确认其他入口",
       "description": "关闭前请确认至少一个 OAuth 登录入口已经配置并可用；否则现有会话过期后，需要由运维恢复密码登录。"
+    }
+  },
+  "announcements": {
+    "eyebrow": "平台公告",
+    "title": "公告管理",
+    "subtitle": "发布有版本记录的双语公告，并通过可见时间窗控制公开展示。",
+    "public": {
+      "label": "最新公告"
+    },
+    "status": {
+      "draft": "草稿",
+      "published": "已发布",
+      "revoked": "已撤回"
+    },
+    "list": {
+      "title": "公告版本",
+      "description": "选择公告查看内容与发布状态。已发布版本不可直接编辑。",
+      "empty": "还没有公告，先创建一份草稿吧。"
+    },
+    "editor": {
+      "new": "新建公告草稿",
+      "edit": "编辑公告草稿",
+      "description": "保存会创建或更新草稿；发布与撤回操作会校验当前版本。"
+    },
+    "fields": {
+      "titleZh": "中文标题",
+      "titleEn": "英文标题",
+      "bodyZh": "中文正文",
+      "bodyEn": "英文正文",
+      "visibleFrom": "开始展示时间",
+      "visibleUntil": "停止展示时间"
+    },
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试",
+      "new": "新建公告",
+      "create": "创建草稿",
+      "save": "保存草稿",
+      "publish": "发布",
+      "revoke": "撤回"
+    },
+    "errors": {
+      "load": "公告暂时无法加载，请稍后重试。",
+      "save": "公告草稿保存失败，可能已被其他管理员更新。请刷新后重试。",
+      "transition": "公告状态变更失败，版本或状态可能已变化。请刷新后重试。"
     }
   },
   "billingSettings": {

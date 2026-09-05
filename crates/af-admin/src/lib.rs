@@ -1,5 +1,6 @@
 //! 登录用户与管理域应用服务。
 
+mod announcement;
 mod api_key;
 mod auth_challenge_security;
 mod balance_alert_settings;
@@ -115,6 +116,10 @@ pub use af_db::{
 };
 pub use af_db::{
     OrganizationScimAuditPageRecord, OrganizationScimAuditQuery, OrganizationScimAuditRecord,
+};
+pub use announcement::{
+    AnnouncementFuture, AnnouncementListFuture, AnnouncementService, AnnouncementServiceError,
+    AnnouncementStatus, AnnouncementView, AnnouncementWriteCommand, DatabaseAnnouncementService,
 };
 pub use api_key::{
     ApiKeyDigest, ApiKeyGenerationError, ApiKeyParseError, ApiKeyPrefix, IssuedApiKey,
