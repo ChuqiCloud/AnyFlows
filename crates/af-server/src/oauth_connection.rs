@@ -77,6 +77,7 @@ pub(crate) struct PreparedOAuthLoopbackServer {
 /// 已装配的连接向导运行时，以及供刷新任务复用的同一批 Provider profile。
 pub(crate) struct PreparedOAuthRuntime {
     pub(crate) admin_connection_service: Arc<dyn AdminOAuthConnectionService>,
+    pub(crate) connection_coordinator: Arc<OAuthConnectionCoordinator>,
     pub(crate) loopback_servers: Vec<PreparedOAuthLoopbackServer>,
     pub(crate) profiles: Vec<Arc<OAuthProviderProfile>>,
 }
@@ -91,12 +92,12 @@ struct RuntimeAdminOAuthConnectionService {
 
 impl RuntimeAdminOAuthConnectionService {
     fn new(
-        coordinator: OAuthConnectionCoordinator,
+        coordinator: Arc<OAuthConnectionCoordinator>,
         channel_reader: Arc<dyn AdminChannelReader>,
         bindings: Vec<OAuthLoopbackBinding>,
     ) -> Self {
         Self {
-            coordinator: Arc::new(coordinator),
+            coordinator,
             channel_reader,
             bindings,
             listener_ready: AtomicU8::new(0),
@@ -154,33 +155,49 @@ impl AdminOAuthConnectionService for RuntimeAdminOAuthConnectionService {
         Box::pin(async move {
             require_admin(principal)?;
             if self.binding(provider).is_none() {
-                return Err(AdminOAuthConnectionError::ProviderNotConfigured);
+                return Err(report_oauth_failure(
+                    provider,
+                    "begin",
+                    AdminOAuthConnectionError::ProviderNotConfigured,
+                ));
             }
             let credential = self
                 .channel_reader
                 .get_credential(principal, channel_id, credential_id)
                 .await
-                .map_err(map_channel_read_error)?;
+                .map_err(|error| {
+                    report_oauth_failure(provider, "begin", map_channel_read_error(error))
+                })?;
             if credential.kind() != CredentialKind::Oauth {
-                return Err(AdminOAuthConnectionError::TargetKindMismatch);
+                return Err(report_oauth_failure(
+                    provider,
+                    "begin",
+                    AdminOAuthConnectionError::TargetKindMismatch,
+                ));
             }
             let account_provider = account_provider(provider);
             if credential
                 .oauth_provider()
                 .is_some_and(|bound| bound != account_provider.as_str())
             {
-                return Err(AdminOAuthConnectionError::CredentialProviderMismatch);
+                return Err(report_oauth_failure(
+                    provider,
+                    "begin",
+                    AdminOAuthConnectionError::CredentialProviderMismatch,
+                ));
             }
             let context = OAuthAuthorizationContext::new(
                 principal.user_id(),
                 Some(channel_id),
                 Some(credential_id),
             )
-            .map_err(|_| AdminOAuthConnectionError::Internal)?;
+            .map_err(|_| {
+                report_oauth_failure(provider, "begin", AdminOAuthConnectionError::Internal)
+            })?;
             let start = self
                 .coordinator
                 .begin(account_provider, context)
-                .map_err(map_connection_error)?;
+                .map_err(|error| report_oauth_failure(provider, "begin", map_connection_error(error)))?;
             let expires_in_seconds = start
                 .expires_at()
                 .saturating_duration_since(Instant::now())
@@ -205,14 +222,22 @@ impl AdminOAuthConnectionService for RuntimeAdminOAuthConnectionService {
         Box::pin(async move {
             require_admin(principal)?;
             if self.binding(provider).is_none() {
-                return Err(AdminOAuthConnectionError::ProviderNotConfigured);
+                return Err(report_oauth_failure(
+                    provider,
+                    "manual_callback",
+                    AdminOAuthConnectionError::ProviderNotConfigured,
+                ));
             }
-            let callback = parse_callback(provider, callback_url)?;
+            let callback = parse_callback(provider, callback_url).map_err(|error| {
+                report_oauth_failure(provider, "manual_callback", error)
+            })?;
             let outcome = self
                 .coordinator
                 .complete_for(principal.user_id(), callback)
                 .await
-                .map_err(map_connection_error)?;
+                .map_err(|error| {
+                    report_oauth_failure(provider, "manual_callback", map_connection_error(error))
+                })?;
             Ok(map_connection_outcome(outcome))
         })
     }
@@ -224,14 +249,22 @@ impl AdminOAuthConnectionService for RuntimeAdminOAuthConnectionService {
     ) -> AdminOAuthCompleteFuture<'a> {
         Box::pin(async move {
             if self.binding(provider).is_none() {
-                return Err(AdminOAuthConnectionError::ProviderNotConfigured);
+                return Err(report_oauth_failure(
+                    provider,
+                    "loopback_callback",
+                    AdminOAuthConnectionError::ProviderNotConfigured,
+                ));
             }
-            let callback = parse_callback(provider, callback_url)?;
+            let callback = parse_callback(provider, callback_url).map_err(|error| {
+                report_oauth_failure(provider, "loopback_callback", error)
+            })?;
             let outcome = self
                 .coordinator
                 .complete(callback)
                 .await
-                .map_err(map_connection_error)?;
+                .map_err(|error| {
+                    report_oauth_failure(provider, "loopback_callback", map_connection_error(error))
+                })?;
             Ok(map_connection_outcome(outcome))
         })
     }
@@ -262,6 +295,7 @@ pub(crate) fn initialize_oauth_runtime(
         persistence,
     )
     .map_err(OAuthRuntimeConfigError::Coordinator)?;
+    let coordinator = Arc::new(coordinator);
     let bindings = coordinator
         .configured_loopback_redirects()
         .into_iter()
@@ -275,7 +309,7 @@ pub(crate) fn initialize_oauth_runtime(
         })
         .collect::<Result<Vec<_>, _>>()?;
     let service = Arc::new(RuntimeAdminOAuthConnectionService::new(
-        coordinator,
+        Arc::clone(&coordinator),
         channel_reader,
         bindings,
     ));
@@ -283,6 +317,7 @@ pub(crate) fn initialize_oauth_runtime(
     let service: Arc<dyn AdminOAuthConnectionService> = service;
     Ok(PreparedOAuthRuntime {
         admin_connection_service: service,
+        connection_coordinator: coordinator,
         loopback_servers: servers,
         profiles,
     })
@@ -613,6 +648,41 @@ const fn map_persistence_error(error: OAuthTokenPersistenceError) -> AdminOAuthC
         | OAuthTokenPersistenceError::Encryption
         | OAuthTokenPersistenceError::Invariant => AdminOAuthConnectionError::Internal,
         _ => AdminOAuthConnectionError::Internal,
+    }
+}
+
+/// 记录 OAuth 管理流程的固定失败分类；日志不携带回调 URL、state、授权码或 token。
+fn report_oauth_failure(
+    provider: AdminOAuthProvider,
+    stage: &'static str,
+    error: AdminOAuthConnectionError,
+) -> AdminOAuthConnectionError {
+    tracing::warn!(
+        provider = provider.as_str(),
+        stage,
+        error_kind = admin_oauth_error_kind(error),
+        "OAuth provider 操作失败"
+    );
+    error
+}
+
+const fn admin_oauth_error_kind(error: AdminOAuthConnectionError) -> &'static str {
+    match error {
+        AdminOAuthConnectionError::InvalidInput => "invalid_input",
+        AdminOAuthConnectionError::Forbidden => "forbidden",
+        AdminOAuthConnectionError::ProviderNotConfigured => "provider_not_configured",
+        AdminOAuthConnectionError::TargetNotFound => "target_not_found",
+        AdminOAuthConnectionError::TargetKindMismatch => "target_kind_mismatch",
+        AdminOAuthConnectionError::CredentialProviderMismatch => "provider_mismatch",
+        AdminOAuthConnectionError::AuthorizationCapacityExceeded => "authorization_capacity",
+        AdminOAuthConnectionError::AuthorizationNotFound => "authorization_not_found",
+        AdminOAuthConnectionError::AuthorizationExpired => "authorization_expired",
+        AdminOAuthConnectionError::AuthorizationDenied => "authorization_denied",
+        AdminOAuthConnectionError::UpstreamTimeout => "upstream_timeout",
+        AdminOAuthConnectionError::UpstreamRejected => "upstream_rejected",
+        AdminOAuthConnectionError::UpstreamInvalidResponse => "upstream_invalid_response",
+        AdminOAuthConnectionError::Unavailable => "unavailable",
+        AdminOAuthConnectionError::Internal => "internal",
     }
 }
 

@@ -548,16 +548,25 @@ async fn complete_oauth_manual_callback(
     request: Result<Json<AdminOAuthManualCallbackRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
     let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let provider = request.provider;
     let outcome = tokio::time::timeout(
         OAUTH_CALLBACK_COMPLETION_TIMEOUT,
         state.service.complete_manual(
             authentication.principal(),
-            request.provider,
+            provider,
             request.callback_url,
         ),
     )
     .await
-    .map_err(|_| ManagementError::OauthUpstreamTimeout)?
+    .map_err(|_| {
+        tracing::warn!(
+            provider = provider.as_str(),
+            stage = "manual_callback",
+            error_kind = "upstream_timeout",
+            "OAuth provider 操作超时"
+        );
+        ManagementError::OauthUpstreamTimeout
+    })?
     .map_err(map_oauth_error)?;
     completion_response(outcome)
 }
@@ -689,7 +698,15 @@ async fn complete_oauth_loopback_callback(
             | AdminOAuthCompletionOutcome::CredentialProviderMismatch,
         ))
         | Ok(Err(_)) => loopback_html(StatusCode::BAD_REQUEST, false),
-        Err(_) => loopback_html(StatusCode::GATEWAY_TIMEOUT, false),
+        Err(_) => {
+            tracing::warn!(
+                provider = state.binding.provider().as_str(),
+                stage = "loopback_callback",
+                error_kind = "upstream_timeout",
+                "OAuth provider 操作超时"
+            );
+            loopback_html(StatusCode::GATEWAY_TIMEOUT, false)
+        }
     }
 }
 

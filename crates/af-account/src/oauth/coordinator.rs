@@ -124,6 +124,11 @@ impl OAuthConnectionCoordinator {
         self.sessions.pending_count().map_err(Into::into)
     }
 
+    /// 清理已过期的一次性授权会话，供服务端后台任务周期调用。
+    pub fn cleanup_expired_sessions(&self) -> Result<usize, OAuthConnectionError> {
+        self.sessions.cleanup_expired().map_err(Into::into)
+    }
+
     /// 返回所有已配置 provider 的固定 loopback 合约。
     #[must_use]
     pub fn configured_loopback_redirects(&self) -> Vec<OAuthLoopbackRedirect> {
