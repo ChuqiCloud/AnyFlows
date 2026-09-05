@@ -1,7 +1,7 @@
 use std::{fmt, future::Future, pin::Pin};
 
 use af_db::MAX_PROVIDER_ORDER_ID_BYTES;
-use af_domain::{SubscriptionOrderId, TopupOrderId};
+use af_domain::{OrganizationPlanOrderId, SubscriptionOrderId, TopupOrderId};
 use thiserror::Error;
 use zeroize::Zeroize;
 
@@ -13,8 +13,12 @@ pub const MAX_PAYMENT_REDIRECT_URL_BYTES: usize = 16 * 1024;
 /// 创建 Provider 支付订单所需的不可变本地事实。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PaymentOrderId {
+    /// 个人或企业钱包充值订单。
     Topup(TopupOrderId),
+    /// 个人订阅购买订单。
     Subscription(SubscriptionOrderId),
+    /// 企业商业授权购买订单。
+    OrganizationPlanOrder(OrganizationPlanOrderId),
 }
 
 impl From<TopupOrderId> for PaymentOrderId {
@@ -29,12 +33,19 @@ impl From<SubscriptionOrderId> for PaymentOrderId {
     }
 }
 
+impl From<OrganizationPlanOrderId> for PaymentOrderId {
+    fn from(value: OrganizationPlanOrderId) -> Self {
+        Self::OrganizationPlanOrder(value)
+    }
+}
+
 impl PaymentOrderId {
     #[must_use]
     pub fn persistence_key(self) -> String {
         match self {
             Self::Topup(value) => value.persistence_key(),
             Self::Subscription(value) => value.persistence_key(),
+            Self::OrganizationPlanOrder(value) => value.persistence_key(),
         }
     }
 }
@@ -433,5 +444,14 @@ mod tests {
             "https://pay.example.test/submit.php?sign=secret-value"
         );
         assert!(!format!("{:?}", session.action()).contains("secret-value"));
+
+        let enterprise_order = OrganizationPlanOrderId::new([0x24; 16]).unwrap();
+        let request =
+            PaymentOrderRequest::new(enterprise_order, 100, "USD".to_owned(), "card".to_owned())
+                .unwrap();
+        assert_eq!(
+            request.order_id().persistence_key(),
+            enterprise_order.persistence_key()
+        );
     }
 }

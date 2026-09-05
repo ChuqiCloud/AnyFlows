@@ -168,19 +168,37 @@ pub(super) async fn replace_entitlement(
     organization_id: OrganizationId,
     write: OrganizationEntitlementWrite,
 ) -> Result<OrganizationEntitlementRecord, OrganizationRepositoryError> {
-    let expected_version = write
-        .expected_version
-        .ok_or(OrganizationRepositoryError::InvalidInput)?;
     let transaction = begin(repository).await?;
     let organization = lock_organization(&transaction, organization_id).await?;
     OrganizationStatus::try_from(organization.status).map_err(|_| invariant())?;
-    let current = lock_entitlement(&transaction, organization_id).await?;
+    match replace_entitlement_in_transaction(&transaction, organization_id, write).await {
+        Ok(record) => {
+            commit(transaction).await?;
+            Ok(record)
+        }
+        Err(error) => {
+            rollback(transaction).await?;
+            Err(error)
+        }
+    }
+}
+
+/// 在调用方已开启并按企业锁序持有事务中替换授权，保证订单与授权同提交。
+pub(crate) async fn replace_entitlement_in_transaction(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+    write: OrganizationEntitlementWrite,
+) -> Result<OrganizationEntitlementRecord, OrganizationRepositoryError> {
+    let expected_version = write
+        .expected_version
+        .ok_or(OrganizationRepositoryError::InvalidInput)?;
+    let current = lock_entitlement(transaction, organization_id).await?;
     if current.version != expected_version {
-        rollback(transaction).await?;
         return Err(OrganizationRepositoryError::Conflict);
     }
     let next_version = expected_version.checked_add(1).ok_or_else(invariant)?;
     let snapshot = write.snapshot;
+    let updated_at = TimeDateTimeWithTimeZone::now_utc();
     let result = organization_entitlements::Entity::update_many()
         .filter(organization_entitlements::Column::OrganizationId.eq(organization_id.get()))
         .filter(organization_entitlements::Column::Version.eq(expected_version))
@@ -238,19 +256,16 @@ pub(super) async fn replace_entitlement(
         )
         .col_expr(
             organization_entitlements::Column::UpdatedAt,
-            Expr::value(TimeDateTimeWithTimeZone::now_utc()),
+            Expr::value(updated_at),
         )
-        .exec(&transaction)
+        .exec(transaction)
         .await
         .map_err(query_error)?;
     if result.rows_affected != 1 {
-        rollback(transaction).await?;
         return Err(OrganizationRepositoryError::Conflict);
     }
-    let updated = lock_entitlement(&transaction, organization_id).await?;
-    let record = super::read::entitlement_record(updated)?;
-    commit(transaction).await?;
-    Ok(record)
+    let updated = lock_entitlement(transaction, organization_id).await?;
+    super::read::entitlement_record(updated)
 }
 
 pub(super) async fn add_membership(
@@ -799,7 +814,7 @@ pub(crate) async fn lock_organization(
         .ok_or(OrganizationRepositoryError::NotFound)
 }
 
-pub(super) async fn lock_entitlement(
+pub(crate) async fn lock_entitlement(
     transaction: &DatabaseTransaction,
     organization_id: OrganizationId,
 ) -> Result<organization_entitlements::Model, OrganizationRepositoryError> {

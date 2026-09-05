@@ -642,11 +642,14 @@ pub use organization_plan_order::{
     MAX_ORGANIZATION_PLAN_ORDER_PAGE_SIZE, MAX_ORGANIZATION_PLAN_ORDER_PAYMENT_METHOD_BYTES,
     MAX_ORGANIZATION_PLAN_ORDER_PROVIDER_BYTES,
     MAX_ORGANIZATION_PLAN_ORDER_PROVIDER_EVENT_ID_BYTES,
+    MAX_ORGANIZATION_PLAN_ORDER_PROVIDER_ORDER_ID_BYTES,
     MAX_ORGANIZATION_PLAN_ORDER_TRADE_NO_BYTES, OrganizationPlanOrderCreate,
     OrganizationPlanOrderCreateOutcome, OrganizationPlanOrderRecord,
     OrganizationPlanOrderRepository, OrganizationPlanOrderRepositoryConfigError,
-    OrganizationPlanOrderRepositoryError, OrganizationPlanPaymentEventOutcome,
-    OrganizationPlanPaymentEventRecord, OrganizationPlanPaymentEventWrite,
+    OrganizationPlanOrderRepositoryError, OrganizationPlanOrderSubmission,
+    OrganizationPlanOrderSubmitOutcome, OrganizationPlanPaymentConfirmationOutcome,
+    OrganizationPlanPaymentEventOutcome, OrganizationPlanPaymentEventRecord,
+    OrganizationPlanPaymentEventRejection, OrganizationPlanPaymentEventWrite,
 };
 pub use organization_provisioning::{
     OrganizationProvisioningDecisionWrite, OrganizationProvisioningRepository,

@@ -39,6 +39,7 @@ mod organization_custom_role_binding;
 mod organization_invitation;
 mod organization_management;
 mod organization_plan;
+mod organization_plan_order;
 mod organization_provisioning;
 mod organization_scim;
 mod organization_service_account;
@@ -354,6 +355,11 @@ pub use organization_plan::{
     OrganizationPlanFuture, OrganizationPlanListQuery, OrganizationPlanPage,
     OrganizationPlanPageFuture, OrganizationPlanService, OrganizationPlanServiceError,
     OrganizationPlanView,
+};
+pub use organization_plan_order::{
+    DatabaseOrganizationPlanOrderPaymentService, OrganizationPlanOrderPayment,
+    OrganizationPlanOrderPaymentCommand, OrganizationPlanOrderPaymentError,
+    OrganizationPlanOrderPaymentFuture, OrganizationPlanOrderPaymentService,
 };
 pub use organization_provisioning::{
     DatabaseOrganizationProvisioningService, OrganizationProvisioningCreateCommand,

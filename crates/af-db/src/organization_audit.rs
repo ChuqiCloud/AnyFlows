@@ -2,8 +2,8 @@ use std::{fmt, time::Duration};
 
 use af_domain::{MAX_ORGANIZATION_AUDIT_RETENTION_DAYS, OrganizationId, OrganizationRole, UserId};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DbErr, EntityTrait, QueryFilter, QueryOrder, QuerySelect, Set,
-    SqlErr, entity::prelude::TimeDateTimeWithTimeZone,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DbErr, EntityTrait, QueryFilter, QueryOrder,
+    QuerySelect, Set, SqlErr, entity::prelude::TimeDateTimeWithTimeZone,
 };
 use serde_json::Value;
 use thiserror::Error;
@@ -495,49 +495,40 @@ impl OrganizationAuditRepository {
         &self,
         write: &OrganizationAuditWrite,
     ) -> Result<OrganizationAuditWriteOutcome, OrganizationAuditRepositoryError> {
-        let model = organization_audit_logs::ActiveModel {
-            organization_id: Set(write.organization_id.get()),
-            actor_user_id: Set(write.actor_user_id.get()),
-            actor_role: Set(write.actor_role.map(OrganizationRole::code)),
-            permission_code: Set(write.permission_code.clone()),
-            operation: Set(write.operation.clone()),
-            target_type: Set(write.target_type.clone()),
-            target_identifier: Set(write.target_identifier.clone()),
-            outcome: Set(write.outcome.code()),
-            platform_proxy: Set(write.actor_role.is_none()),
-            platform_reason: Set(write.platform_reason.clone()),
-            request_id: Set(write.request_id.clone()),
-            client_fingerprint: Set(hex_fingerprint(write.client_fingerprint)),
-            change_summary: Set(write.change_summary.clone()),
-            created_at: Set(TimeDateTimeWithTimeZone::now_utc()),
-            ..Default::default()
-        };
-        match model.insert(self.pool.connection()).await {
-            Ok(_) => Ok(OrganizationAuditWriteOutcome::Applied),
-            Err(error) if is_unique_violation(&error) => self.classify_existing(write).await,
-            Err(_) => Err(internal_error(OrganizationAuditRepositoryError::Query)),
-        }
+        record_in_transaction(self.pool.connection(), write).await
     }
+}
 
-    async fn classify_existing(
-        &self,
-        write: &OrganizationAuditWrite,
-    ) -> Result<OrganizationAuditWriteOutcome, OrganizationAuditRepositoryError> {
-        let existing = organization_audit_logs::Entity::find()
-            .filter(organization_audit_logs::Column::OrganizationId.eq(write.organization_id.get()))
-            .filter(organization_audit_logs::Column::RequestId.eq(&write.request_id))
-            .filter(organization_audit_logs::Column::Operation.eq(&write.operation))
-            .one(self.pool.connection())
-            .await
-            .map_err(|_| internal_error(OrganizationAuditRepositoryError::Query))?
-            .ok_or_else(|| internal_error(OrganizationAuditRepositoryError::Invariant))?;
-        if matches_write(&existing, write) {
-            Ok(OrganizationAuditWriteOutcome::Existing)
-        } else {
-            Err(OrganizationAuditRepositoryError::Conflict)
-        }
+/// 在调用方事务内追加企业审计，供订单、审批等原子业务复用。
+pub(crate) async fn record_in_transaction<C: ConnectionTrait>(
+    connection: &C,
+    write: &OrganizationAuditWrite,
+) -> Result<OrganizationAuditWriteOutcome, OrganizationAuditRepositoryError> {
+    let model = organization_audit_logs::ActiveModel {
+        organization_id: Set(write.organization_id.get()),
+        actor_user_id: Set(write.actor_user_id.get()),
+        actor_role: Set(write.actor_role.map(OrganizationRole::code)),
+        permission_code: Set(write.permission_code.clone()),
+        operation: Set(write.operation.clone()),
+        target_type: Set(write.target_type.clone()),
+        target_identifier: Set(write.target_identifier.clone()),
+        outcome: Set(write.outcome.code()),
+        platform_proxy: Set(write.actor_role.is_none()),
+        platform_reason: Set(write.platform_reason.clone()),
+        request_id: Set(write.request_id.clone()),
+        client_fingerprint: Set(hex_fingerprint(write.client_fingerprint)),
+        change_summary: Set(write.change_summary.clone()),
+        created_at: Set(TimeDateTimeWithTimeZone::now_utc()),
+        ..Default::default()
+    };
+    match model.insert(connection).await {
+        Ok(_) => Ok(OrganizationAuditWriteOutcome::Applied),
+        Err(error) if is_unique_violation(&error) => classify_existing(connection, write).await,
+        Err(_) => Err(internal_error(OrganizationAuditRepositoryError::Query)),
     }
+}
 
+impl OrganizationAuditRepository {
     async fn list_inner(
         &self,
         organization_id: OrganizationId,
@@ -583,6 +574,25 @@ impl OrganizationAuditRepository {
             records,
             next_cursor,
         })
+    }
+}
+
+async fn classify_existing<C: ConnectionTrait>(
+    connection: &C,
+    write: &OrganizationAuditWrite,
+) -> Result<OrganizationAuditWriteOutcome, OrganizationAuditRepositoryError> {
+    let existing = organization_audit_logs::Entity::find()
+        .filter(organization_audit_logs::Column::OrganizationId.eq(write.organization_id.get()))
+        .filter(organization_audit_logs::Column::RequestId.eq(&write.request_id))
+        .filter(organization_audit_logs::Column::Operation.eq(&write.operation))
+        .one(connection)
+        .await
+        .map_err(|_| internal_error(OrganizationAuditRepositoryError::Query))?
+        .ok_or_else(|| internal_error(OrganizationAuditRepositoryError::Invariant))?;
+    if matches_write(&existing, write) {
+        Ok(OrganizationAuditWriteOutcome::Existing)
+    } else {
+        Err(OrganizationAuditRepositoryError::Conflict)
     }
 }
 

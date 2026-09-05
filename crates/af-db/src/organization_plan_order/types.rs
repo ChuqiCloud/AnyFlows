@@ -10,6 +10,7 @@ use thiserror::Error;
 pub const MAX_ORGANIZATION_PLAN_ORDER_PROVIDER_BYTES: usize = 32;
 pub const MAX_ORGANIZATION_PLAN_ORDER_CURRENCY_BYTES: usize = 3;
 pub const MAX_ORGANIZATION_PLAN_ORDER_IDEMPOTENCY_KEY_BYTES: usize = 32;
+pub const MAX_ORGANIZATION_PLAN_ORDER_PROVIDER_ORDER_ID_BYTES: usize = 128;
 pub const MAX_ORGANIZATION_PLAN_ORDER_PROVIDER_EVENT_ID_BYTES: usize = 128;
 pub const MAX_ORGANIZATION_PLAN_ORDER_TRADE_NO_BYTES: usize = 128;
 pub const MAX_ORGANIZATION_PLAN_ORDER_PAYMENT_METHOD_BYTES: usize = 32;
@@ -75,6 +76,66 @@ impl OrganizationPlanOrderCreate {
 impl fmt::Debug for OrganizationPlanOrderCreate {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("OrganizationPlanOrderCreate(<redacted>)")
+    }
+}
+
+/// 将企业授权订单绑定到 Provider 订单的版本 CAS 命令。
+#[derive(Clone)]
+pub struct OrganizationPlanOrderSubmission {
+    pub(super) organization_id: OrganizationId,
+    pub(super) order_id: OrganizationPlanOrderId,
+    pub(super) expected_version: i64,
+    pub(super) provider: String,
+    pub(super) provider_order_id: String,
+    pub(super) payment_method: String,
+    pub(super) submitted_at: u64,
+    pub(super) expires_at: u64,
+}
+
+impl OrganizationPlanOrderSubmission {
+    /// 校验企业边界、Provider 订单标识、支付方式和不可变有效期。
+    pub fn new(
+        organization_id: OrganizationId,
+        order_id: OrganizationPlanOrderId,
+        expected_version: u64,
+        provider: String,
+        provider_order_id: String,
+        payment_method: String,
+        submitted_at: u64,
+        expires_at: u64,
+    ) -> Result<Self, OrganizationPlanOrderRepositoryError> {
+        let expected_version = i64::try_from(expected_version)
+            .map_err(|_| OrganizationPlanOrderRepositoryError::InvalidInput)?;
+        if expected_version <= 0
+            || expected_version == i64::MAX
+            || !valid_token(&provider, MAX_ORGANIZATION_PLAN_ORDER_PROVIDER_BYTES)
+            || !valid_token(
+                &provider_order_id,
+                MAX_ORGANIZATION_PLAN_ORDER_PROVIDER_ORDER_ID_BYTES,
+            )
+            || !valid_payment_method(&payment_method)
+            || submitted_at > i64::MAX as u64
+            || expires_at > i64::MAX as u64
+            || expires_at <= submitted_at
+        {
+            return Err(OrganizationPlanOrderRepositoryError::InvalidInput);
+        }
+        Ok(Self {
+            organization_id,
+            order_id,
+            expected_version,
+            provider,
+            provider_order_id,
+            payment_method,
+            submitted_at,
+            expires_at,
+        })
+    }
+}
+
+impl fmt::Debug for OrganizationPlanOrderSubmission {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("OrganizationPlanOrderSubmission(<redacted>)")
     }
 }
 
@@ -199,6 +260,17 @@ impl OrganizationPlanOrderRecord {
             && self.created_at == create.created_at
             && self.expires_at == create.expires_at
     }
+
+    pub(super) fn matches_submission(&self, write: &OrganizationPlanOrderSubmission) -> bool {
+        self.organization_id == write.organization_id
+            && self.order_id == write.order_id
+            && self.provider == write.provider
+            && self.status == OrganizationPlanOrderStatus::Pending
+            && self.version == write.expected_version as u64 + 1
+            && self.provider_order_id.as_deref() == Some(write.provider_order_id.as_str())
+            && self.payment_method.as_deref() == Some(write.payment_method.as_str())
+            && self.expires_at == Some(write.expires_at)
+    }
 }
 
 impl fmt::Debug for OrganizationPlanOrderRecord {
@@ -214,11 +286,81 @@ pub enum OrganizationPlanOrderCreateOutcome {
     NotFound,
 }
 
+/// Provider 订单绑定后的闭合结果。
+pub enum OrganizationPlanOrderSubmitOutcome {
+    /// 本次调用把 Created 订单推进为 Pending。
+    Applied(OrganizationPlanOrderRecord),
+    /// 相同 Provider 订单和支付方式已经绑定。
+    Existing(OrganizationPlanOrderRecord),
+    /// 本企业订单不存在。
+    NotFound,
+}
+
 /// 已验签支付事件的追加结果；本阶段不推进订单状态或企业授权。
 pub enum OrganizationPlanPaymentEventOutcome {
     Recorded(OrganizationPlanPaymentEventRecord),
     Existing(OrganizationPlanPaymentEventRecord),
     NotFound,
+}
+
+/// 企业支付确认在订单、授权和审计事务中的闭合结果。
+pub enum OrganizationPlanPaymentConfirmationOutcome {
+    /// 首次确认并完成订单状态推进与授权替换。
+    Applied {
+        order: OrganizationPlanOrderRecord,
+        /// 支付成功时返回新授权；失败或过期只推进订单，不发放授权。
+        entitlement: Option<crate::OrganizationEntitlementRecord>,
+    },
+    /// 事件与已完成的同一终态一致，未重复发放授权。
+    Acknowledged {
+        order: OrganizationPlanOrderRecord,
+        entitlement: Option<crate::OrganizationEntitlementRecord>,
+    },
+    /// 相同事件已经处理过，返回既有事实。
+    Existing {
+        order: OrganizationPlanOrderRecord,
+        entitlement: Option<crate::OrganizationEntitlementRecord>,
+    },
+    /// 事件已保存但未推进订单，调用方可按拒绝原因记录指标。
+    RecordedUnprocessed {
+        order: OrganizationPlanOrderRecord,
+        reason: OrganizationPlanPaymentEventRejection,
+    },
+    /// 事件引用的企业订单不存在。
+    NotFound,
+}
+
+impl fmt::Debug for OrganizationPlanPaymentConfirmationOutcome {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Applied { .. } => formatter
+                .write_str("OrganizationPlanPaymentConfirmationOutcome::Applied(<redacted>)"),
+            Self::Acknowledged { .. } => formatter
+                .write_str("OrganizationPlanPaymentConfirmationOutcome::Acknowledged(<redacted>)"),
+            Self::Existing { .. } => formatter
+                .write_str("OrganizationPlanPaymentConfirmationOutcome::Existing(<redacted>)"),
+            Self::RecordedUnprocessed { .. } => formatter.write_str(
+                "OrganizationPlanPaymentConfirmationOutcome::RecordedUnprocessed(<redacted>)",
+            ),
+            Self::NotFound => {
+                formatter.write_str("OrganizationPlanPaymentConfirmationOutcome::NotFound")
+            }
+        }
+    }
+}
+
+/// 企业支付事件与订单事实不一致时的闭合拒绝原因。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OrganizationPlanPaymentEventRejection {
+    ProviderMismatch,
+    AmountMismatch,
+    CurrencyMismatch,
+    PaymentMethodMismatch,
+    TradeNumberConflict,
+    TimingConflict,
+    SubmissionRequired,
+    TerminalConflict,
+    PlanSnapshotConflict,
 }
 
 impl fmt::Debug for OrganizationPlanOrderCreateOutcome {
@@ -231,6 +373,20 @@ impl fmt::Debug for OrganizationPlanOrderCreateOutcome {
                 formatter.write_str("OrganizationPlanOrderCreateOutcome::Existing(<redacted>)")
             }
             Self::NotFound => formatter.write_str("OrganizationPlanOrderCreateOutcome::NotFound"),
+        }
+    }
+}
+
+impl fmt::Debug for OrganizationPlanOrderSubmitOutcome {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Applied(_) => {
+                formatter.write_str("OrganizationPlanOrderSubmitOutcome::Applied(<redacted>)")
+            }
+            Self::Existing(_) => {
+                formatter.write_str("OrganizationPlanOrderSubmitOutcome::Existing(<redacted>)")
+            }
+            Self::NotFound => formatter.write_str("OrganizationPlanOrderSubmitOutcome::NotFound"),
         }
     }
 }
@@ -451,4 +607,12 @@ fn valid_text(value: &str, maximum_bytes: usize) -> bool {
 fn valid_currency(value: &str) -> bool {
     value.len() == MAX_ORGANIZATION_PLAN_ORDER_CURRENCY_BYTES
         && value.bytes().all(|byte| byte.is_ascii_uppercase())
+}
+
+fn valid_payment_method(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_ORGANIZATION_PLAN_ORDER_PAYMENT_METHOD_BYTES
+        && value.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'_' | b'-')
+        })
 }
