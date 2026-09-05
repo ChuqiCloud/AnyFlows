@@ -1989,6 +1989,8 @@ export type OrganizationPlanOrder = {
     provider: string;
     currency: string;
     amount_minor: number;
+    kind: OrganizationPlanOrderKind;
+    effective_at?: number | null;
     status: OrganizationPlanOrderStatus;
     version: number;
     payment_method?: string | null;
@@ -2002,7 +2004,10 @@ export type OrganizationPlanOrder = {
 export type OrganizationPlanOrderCreateRequest = {
     plan_id: string;
     idempotency_key: string;
+    kind?: null | OrganizationPlanOrderKind;
+    effective_at?: number | null;
 };
+export type OrganizationPlanOrderKind = 'initial' | 'renewal' | 'upgrade' | 'downgrade';
 export type OrganizationPlanOrderPaymentRequest = {
     payment_method: string;
 };

@@ -87,6 +87,18 @@ pub(crate) struct OrganizationPlanCatalogResponseSchema {
 pub(crate) struct OrganizationPlanOrderCreateRequestSchema {
     pub(crate) plan_id: String,
     pub(crate) idempotency_key: String,
+    #[schema(required = false)]
+    pub(crate) kind: Option<OrganizationPlanOrderKindSchema>,
+    pub(crate) effective_at: Option<u64>,
+}
+
+#[derive(ToSchema)]
+#[schema(as = OrganizationPlanOrderKind, rename_all = "snake_case")]
+pub(crate) enum OrganizationPlanOrderKindSchema {
+    Initial,
+    Renewal,
+    Upgrade,
+    Downgrade,
 }
 
 #[derive(ToSchema)]
@@ -117,6 +129,8 @@ pub(crate) struct OrganizationPlanOrderResponseSchema {
     pub(crate) provider: String,
     pub(crate) currency: String,
     pub(crate) amount_minor: i64,
+    pub(crate) kind: OrganizationPlanOrderKindSchema,
+    pub(crate) effective_at: Option<u64>,
     pub(crate) status: OrganizationPlanOrderStatusSchema,
     pub(crate) version: u64,
     pub(crate) payment_method: Option<String>,

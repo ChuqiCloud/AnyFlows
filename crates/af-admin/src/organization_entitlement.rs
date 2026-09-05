@@ -202,6 +202,11 @@ impl DatabaseOrganizationEntitlementReader {
         &self,
         organization_id: OrganizationId,
     ) -> Result<OrganizationEntitlementView, OrganizationEntitlementServiceError> {
+        let now = unix_now()?;
+        self.order_repository
+            .apply_due_entitlement_change(organization_id, now)
+            .await
+            .map_err(map_order_repository_error)?;
         let record = self
             .organization_repository
             .entitlement(organization_id)

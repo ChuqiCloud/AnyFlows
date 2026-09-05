@@ -127,9 +127,9 @@ pub use organization_plan::{
     OrganizationPlanId, OrganizationPlanPrice, OrganizationPlanSnapshot, OrganizationPlanStatus,
 };
 pub use organization_plan_order::{
-    OrganizationPlanOrderId, OrganizationPlanOrderIdentifierError, OrganizationPlanOrderRequestId,
-    OrganizationPlanOrderStateError, OrganizationPlanOrderStatus, OrganizationPlanPaymentEventId,
-    OrganizationPlanPaymentEventType,
+    OrganizationPlanOrderId, OrganizationPlanOrderIdentifierError, OrganizationPlanOrderKind,
+    OrganizationPlanOrderRequestId, OrganizationPlanOrderStateError, OrganizationPlanOrderStatus,
+    OrganizationPlanPaymentEventId, OrganizationPlanPaymentEventType,
 };
 pub use organization_provisioning::{
     MAX_ORGANIZATION_PROVISIONING_DECISION_REASON_BYTES, MAX_ORGANIZATION_PROVISIONING_NAME_BYTES,

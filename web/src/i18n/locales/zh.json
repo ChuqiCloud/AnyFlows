@@ -5191,6 +5191,15 @@
         "enabled": "已包含",
         "disabled": "未包含",
         "currentEntitlement": "当前授权套餐",
+        "orderKind": "订单动作",
+        "kind": {
+          "initial": "首次购买",
+          "renewal": "续费",
+          "upgrade": "升级",
+          "downgrade": "降级"
+        },
+        "effectiveAt": "生效时间",
+        "effectiveAtHint": "支付确认后，服务端会在选择的时间应用套餐变更，并再次复验容量。",
         "permissionRequired": "需要企业钱包管理权限才能创建和支付授权订单。",
         "paymentMethod": "支付方式",
         "paymentMethodsLoading": "正在加载支付方式",
@@ -5215,6 +5224,7 @@
         },
         "paymentEffective": "服务端已确认支付，且该订单对应的企业授权已经生效。",
         "paymentPaid": "服务端已确认支付，授权是否生效仍以企业授权事实为准。",
+        "paymentScheduled": "服务端已确认支付，套餐变更等待生效时间或容量复验。",
         "paymentConfirmed": "浏览器已完成支付，请刷新服务端订单状态。",
         "paymentProcessing": "支付仍在处理，请稍后刷新服务端订单状态。",
         "refreshPayment": "刷新状态",

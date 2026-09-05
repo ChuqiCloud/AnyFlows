@@ -11,8 +11,8 @@ use af_admin::{
 };
 use af_domain::{
     OrganizationEntitlementStatus, OrganizationId, OrganizationPlanFeatures, OrganizationPlanId,
-    OrganizationPlanOrderId, OrganizationPlanOrderRequestId, OrganizationPlanOrderStatus,
-    OrganizationPlanStatus,
+    OrganizationPlanOrderId, OrganizationPlanOrderKind, OrganizationPlanOrderRequestId,
+    OrganizationPlanOrderStatus, OrganizationPlanStatus,
 };
 use af_telemetry::RequestId;
 use axum::{
@@ -223,6 +223,43 @@ pub(crate) struct OrganizationPlanOrderCreateRequest {
     plan_id: String,
     #[schema(min_length = 32, max_length = 32, pattern = "^[0-9a-f]{32}$")]
     idempotency_key: String,
+    #[serde(default)]
+    #[schema(required = false)]
+    kind: Option<OrganizationPlanOrderKindDto>,
+    #[schema(minimum = 0, required = true)]
+    effective_at: Option<u64>,
+}
+
+#[derive(Clone, Copy, Default, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum OrganizationPlanOrderKindDto {
+    #[default]
+    Initial,
+    Renewal,
+    Upgrade,
+    Downgrade,
+}
+
+impl From<OrganizationPlanOrderKindDto> for OrganizationPlanOrderKind {
+    fn from(value: OrganizationPlanOrderKindDto) -> Self {
+        match value {
+            OrganizationPlanOrderKindDto::Initial => Self::Initial,
+            OrganizationPlanOrderKindDto::Renewal => Self::Renewal,
+            OrganizationPlanOrderKindDto::Upgrade => Self::Upgrade,
+            OrganizationPlanOrderKindDto::Downgrade => Self::Downgrade,
+        }
+    }
+}
+
+impl From<OrganizationPlanOrderKind> for OrganizationPlanOrderKindDto {
+    fn from(value: OrganizationPlanOrderKind) -> Self {
+        match value {
+            OrganizationPlanOrderKind::Initial => Self::Initial,
+            OrganizationPlanOrderKind::Renewal => Self::Renewal,
+            OrganizationPlanOrderKind::Upgrade => Self::Upgrade,
+            OrganizationPlanOrderKind::Downgrade => Self::Downgrade,
+        }
+    }
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -275,6 +312,9 @@ pub(crate) struct OrganizationPlanOrderResponse {
     currency: String,
     #[schema(minimum = 1)]
     amount_minor: i64,
+    kind: OrganizationPlanOrderKindDto,
+    #[schema(minimum = 0, required = true)]
+    effective_at: Option<u64>,
     status: OrganizationPlanOrderStatusDto,
     #[schema(minimum = 1)]
     version: u64,
@@ -572,7 +612,12 @@ async fn create_organization_plan_order(
         .create(
             authentication.principal(),
             organization_id,
-            OrganizationPlanOrderCreateCommand::new(plan_id, request_id),
+            OrganizationPlanOrderCreateCommand::new_with_change(
+                plan_id,
+                request_id,
+                request.kind.unwrap_or_default().into(),
+                request.effective_at,
+            ),
         )
         .await
         .map_err(map_order_error)?;
@@ -688,6 +733,8 @@ impl OrganizationPlanOrderResponse {
             provider: view.provider().to_owned(),
             currency: view.currency().to_owned(),
             amount_minor: view.amount_minor(),
+            kind: view.kind().into(),
+            effective_at: view.effective_at(),
             status: view.status().into(),
             version: view.version(),
             payment_method: view.payment_method().map(str::to_owned),

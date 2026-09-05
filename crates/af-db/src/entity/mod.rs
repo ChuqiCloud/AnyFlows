@@ -18,13 +18,13 @@ use af_domain::{
     OrganizationCreditTermPeriod, OrganizationCreditTermStatus, OrganizationCustomRoleKey,
     OrganizationCustomRoleStatus, OrganizationDepartmentKey,
     OrganizationDepartmentMembershipStatus, OrganizationDepartmentStatus, OrganizationKey,
-    OrganizationMembershipStatus, OrganizationPermission, OrganizationPlanOrderStatus,
-    OrganizationPlanStatus, OrganizationRole, OrganizationServiceAccountKey,
-    OrganizationServiceAccountStatus, OrganizationStatus, OrganizationTeamStatus, Protocol, Quota,
-    QuotaDelta, RedemptionBatchId, RedemptionBatchStatus, RedemptionCodeId, RedemptionCodeStatus,
-    RouteMode, RouteStrategy, SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus,
-    SubscriptionWindow, UserSubscriptionId, UserSubscriptionStatus, WalletEventId,
-    validate_route_model_pattern,
+    OrganizationMembershipStatus, OrganizationPermission, OrganizationPlanOrderKind,
+    OrganizationPlanOrderStatus, OrganizationPlanStatus, OrganizationRole,
+    OrganizationServiceAccountKey, OrganizationServiceAccountStatus, OrganizationStatus,
+    OrganizationTeamStatus, Protocol, Quota, QuotaDelta, RedemptionBatchId, RedemptionBatchStatus,
+    RedemptionCodeId, RedemptionCodeStatus, RouteMode, RouteStrategy, SubscriptionCycle,
+    SubscriptionPlanId, SubscriptionPlanStatus, SubscriptionWindow, UserSubscriptionId,
+    UserSubscriptionStatus, WalletEventId, validate_route_model_pattern,
 };
 
 pub(crate) mod abilities;
@@ -2901,12 +2901,14 @@ where
     let status = model.status.try_as_ref().copied().unwrap_or_default();
     let version = model.version.try_as_ref().copied().unwrap_or_default();
     let amount_minor = model.amount_minor.try_as_ref().copied().unwrap_or_default();
+    let kind = model.kind.try_as_ref().copied().unwrap_or_default();
     let created_at = model
         .created_at
         .try_as_ref()
         .copied()
         .ok_or_else(|| DbErr::Custom("企业授权订单创建时间缺失".to_owned()))?;
     let expires_at = model.expires_at.try_as_ref().copied().flatten();
+    let effective_at = model.effective_at.try_as_ref().copied().flatten();
     let paid_at = model.paid_at.try_as_ref().copied().flatten();
     let closed_at = model.closed_at.try_as_ref().copied().flatten();
 
@@ -2924,9 +2926,11 @@ where
             .any(|byte| !(byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.')))
         || !valid_currency(currency)
         || amount_minor <= 0
+        || OrganizationPlanOrderKind::try_from(kind).is_err()
         || version != 1
         || created_at.unix_timestamp() < 0
         || expires_at.is_some_and(|value| value <= created_at)
+        || effective_at.is_some_and(|value| value < created_at)
         || !valid_organization_plan_order_state(status, paid_at, closed_at)
     {
         return Err(DbErr::Custom("企业授权订单状态无效".to_owned()));

@@ -23,6 +23,7 @@ import type {
   OrganizationEntitlementProjection,
   OrganizationPlan,
   OrganizationPlanOrder,
+  OrganizationPlanOrderKind,
 } from '@/lib/api/generated/types.gen'
 
 import {
@@ -40,6 +41,7 @@ type StoredOrganizationPlanPaymentAttempt = {
   paymentMethod: PaymentMethod
   planId: string
   provider: string
+  kind: OrganizationPlanOrderKind
 }
 
 type PaymentPhase = 'processing' | 'succeeded'
@@ -54,6 +56,7 @@ type OrganizationPlanPurchaseProps = {
   entitlement?: OrganizationEntitlementProjection
   entitlementRefreshing: boolean
   onRefreshEntitlement?: () => Promise<unknown>
+  orderKind: OrganizationPlanOrderKind
 }
 
 /** 管理企业授权订单的创建、同单支付恢复和服务端状态刷新。 */
@@ -67,6 +70,7 @@ export function OrganizationPlanPurchase({
   entitlement,
   entitlementRefreshing,
   onRefreshEntitlement,
+  orderKind,
 }: OrganizationPlanPurchaseProps) {
   const { i18n, t } = useTranslation()
   const createMutation = useCreateOrganizationPlanOrder(organizationId)
@@ -77,7 +81,7 @@ export function OrganizationPlanPurchase({
     && plan.price_amount_minor >= method.min_amount_minor
     && plan.price_amount_minor <= method.max_amount_minor
   )) ?? [], [methods, plan.price_amount_minor, plan.price_currency, plan.price_provider])
-  const [attempt, setAttempt] = useState(() => readStoredAttempt(organizationId, plan))
+  const [attempt, setAttempt] = useState(() => readStoredAttempt(organizationId, plan, orderKind))
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | undefined>(() => attempt?.paymentMethod)
   const [order, setOrder] = useState<OrganizationPlanOrder>()
   const [payment, setPayment] = useState<{
@@ -86,6 +90,10 @@ export function OrganizationPlanPurchase({
     redirect_url: string | null
   }>()
   const [phase, setPhase] = useState<PaymentPhase>()
+  const requiresEffectiveAt = orderKind === 'upgrade' || orderKind === 'downgrade'
+  const [effectiveAtInput, setEffectiveAtInput] = useState(() => defaultEffectiveAtInput())
+  const effectiveAt = requiresEffectiveAt ? parseEffectiveAt(effectiveAtInput) : undefined
+  const effectiveAtValid = !requiresEffectiveAt || (effectiveAt !== undefined && effectiveAt * 1_000 >= Date.now())
   const orderQuery = useOrganizationPlanOrder(
     organizationId,
     canPurchase ? attempt?.orderId : undefined,
@@ -105,6 +113,13 @@ export function OrganizationPlanPurchase({
   const factsRefreshing = orderQuery.isFetching || entitlementRefreshing
   const errorCode = organizationPlanOrderErrorCode(paymentMutation.error)
     ?? organizationPlanOrderErrorCode(createMutation.error)
+
+  useEffect(() => {
+    setAttempt(readStoredAttempt(organizationId, plan, orderKind))
+    setOrder(undefined)
+    setPayment(undefined)
+    setPhase(undefined)
+  }, [orderKind, organizationId, plan])
 
   useEffect(() => {
     if (orderQuery.data !== undefined) setOrder(orderQuery.data)
@@ -158,6 +173,7 @@ export function OrganizationPlanPurchase({
       paymentMethod,
       planId: plan.plan_id,
       provider: plan.price_provider,
+      kind: orderKind,
     })
   }
 
@@ -170,10 +186,13 @@ export function OrganizationPlanPurchase({
       paymentMethod: method.payment_method,
       planId: plan.plan_id,
       provider: plan.price_provider,
+      kind: orderKind,
     })
     const nextOrder = await createMutation.mutateAsync({
       idempotency_key: idempotencyKey,
       plan_id: plan.plan_id,
+      kind: orderKind,
+      effective_at: effectiveAt,
     })
     setOrder(nextOrder)
     persistAttempt({
@@ -183,6 +202,7 @@ export function OrganizationPlanPurchase({
       paymentMethod: method.payment_method,
       planId: plan.plan_id,
       provider: plan.price_provider,
+      kind: orderKind,
     })
     await submitPayment(nextOrder.order_id, method.payment_method, idempotencyKey)
   }
@@ -219,6 +239,15 @@ export function OrganizationPlanPurchase({
   const redirectUrl = payment?.redirect_url ? safePaymentRedirectUrl(payment.redirect_url) : undefined
   const entitlementApplied = order?.status === 'paid'
     && entitlement?.applied_order_id === order.order_id
+  const scheduled = order?.status === 'paid'
+    && !entitlementApplied
+    && order.effective_at !== null
+    && order.effective_at !== undefined
+    && order.effective_at * 1_000 > Date.now()
+  const displayOrderKind = order?.kind ?? orderKind
+  const effectiveAtLabel = order?.effective_at
+    ? new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(order.effective_at * 1_000)
+    : undefined
 
   if (!canPurchase) {
     return (
@@ -247,6 +276,23 @@ export function OrganizationPlanPurchase({
   if (order === undefined) {
     return (
       <div className="grid gap-3 border-t border-[var(--hairline)] pt-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+          <span className="font-medium">{t('organizationConsole.overview.planCatalog.orderKind')}</span>
+          <Badge className="bg-brand/10 text-brand">{t('organizationConsole.overview.planCatalog.kind.' + orderKind)}</Badge>
+        </div>
+        {requiresEffectiveAt ? (
+          <label className="grid gap-1 text-xs">
+            <span className="font-medium">{t('organizationConsole.overview.planCatalog.effectiveAt')}</span>
+            <input
+              type="datetime-local"
+              value={effectiveAtInput}
+              min={defaultEffectiveAtInput()}
+              onChange={(event) => setEffectiveAtInput(event.target.value)}
+              className="h-9 rounded-md border border-[var(--hairline)] bg-surface-1 px-2 text-xs"
+            />
+            <span className="text-[0.6875rem] leading-4 text-muted-foreground">{t('organizationConsole.overview.planCatalog.effectiveAtHint')}</span>
+          </label>
+        ) : null}
         <PaymentMethodPicker
           methods={availableMethods}
           method={method}
@@ -254,7 +300,7 @@ export function OrganizationPlanPurchase({
           unavailable={methodsUnavailable}
           onSelect={setSelectedMethod}
         />
-        <Button type="button" size="sm" className="w-fit" disabled={method === undefined || busy} onClick={() => void createOrder()}>
+        <Button type="button" size="sm" className="w-fit" disabled={method === undefined || busy || !effectiveAtValid} onClick={() => void createOrder()}>
           {busy ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <CreditCard aria-hidden="true" />}
           {t(busy ? 'organizationConsole.overview.planCatalog.paymentCreating' : 'organizationConsole.overview.planCatalog.orderCreate')}
         </Button>
@@ -272,18 +318,22 @@ export function OrganizationPlanPurchase({
   return (
     <div className="grid gap-3 border-t border-[var(--hairline)] pt-3">
       <div className="flex flex-wrap items-center gap-2 text-xs">
+        <Badge className="bg-brand/10 text-brand">{t('organizationConsole.overview.planCatalog.kind.' + displayOrderKind)}</Badge>
         <Badge className="bg-surface-2 font-mono text-muted-foreground">
           {t('organizationConsole.overview.planCatalog.status.' + order.status)}
         </Badge>
         <span className="text-muted-foreground">{t('organizationConsole.overview.planCatalog.orderId')}</span>
         <span className="font-mono text-muted-foreground">{order.order_id.slice(0, 12)}</span>
+        {effectiveAtLabel ? <span className="text-muted-foreground">· {t('organizationConsole.overview.planCatalog.effectiveAt')} {effectiveAtLabel}</span> : null}
       </div>
       {order.status === 'paid' ? (
         <PaymentStatus
           icon={entitlementApplied ? CheckCircle2 : RefreshCw}
           message={t(entitlementApplied
             ? 'organizationConsole.overview.planCatalog.paymentEffective'
-            : 'organizationConsole.overview.planCatalog.paymentPaid')}
+            : scheduled
+              ? 'organizationConsole.overview.planCatalog.paymentScheduled'
+              : 'organizationConsole.overview.planCatalog.paymentPaid')}
           refreshing={factsRefreshing}
           refresh={() => void refreshFacts()}
           tone={entitlementApplied ? 'text-success' : 'text-warning-foreground'}
@@ -480,6 +530,7 @@ function organizationPlanAttemptStorageKey(organizationId: number, planId: strin
 function readStoredAttempt(
   organizationId: number,
   plan: Pick<OrganizationPlan, 'plan_id' | 'price_provider'>,
+  orderKind: OrganizationPlanOrderKind,
 ): StoredOrganizationPlanPaymentAttempt | undefined {
   try {
     const value: unknown = JSON.parse(sessionStorage.getItem(
@@ -491,6 +542,7 @@ function readStoredAttempt(
       candidate.organizationId !== organizationId
       || candidate.planId !== plan.plan_id
       || candidate.provider !== plan.price_provider
+      || candidate.kind !== orderKind
       || typeof candidate.idempotencyKey !== 'string'
       || !/^[0-9a-f]{32}$/.test(candidate.idempotencyKey)
       || !['card', 'alipay', 'wxpay'].includes(candidate.paymentMethod ?? '')
@@ -517,4 +569,17 @@ function safePaymentRedirectUrl(value: string) {
   } catch {
     return undefined
   }
+}
+
+function defaultEffectiveAtInput() {
+  const date = new Date(Date.now() + 60 * 60 * 1_000)
+  date.setMinutes(Math.ceil(date.getMinutes() / 5) * 5, 0, 0)
+  const pad = (value: number) => value.toString().padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function parseEffectiveAt(value: string) {
+  const timestamp = Date.parse(value)
+  if (!Number.isFinite(timestamp)) return undefined
+  return Math.floor(timestamp / 1_000)
 }

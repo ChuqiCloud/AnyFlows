@@ -22,6 +22,9 @@ pub struct Model {
     #[sea_orm(column_type = "Char(Some(3))")]
     pub currency: String,
     pub amount_minor: i64,
+    pub kind: i16,
+    pub effective_at: Option<TimeDateTimeWithTimeZone>,
+    pub applied_at: Option<TimeDateTimeWithTimeZone>,
     pub status: i16,
     #[sea_orm(column_type = "Char(Some(32))")]
     pub idempotency_key: String,

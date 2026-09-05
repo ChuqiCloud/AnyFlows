@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { UserTopupMethod } from '@/features/payment-settings/payment-settings-types'
 import { useUserTopupConfiguration } from '@/features/wallet/wallet-api'
-import type { OrganizationEntitlementProjection, OrganizationPlan } from '@/lib/api/generated/types.gen'
+import type { OrganizationEntitlementProjection, OrganizationPlan, OrganizationPlanOrderKind } from '@/lib/api/generated/types.gen'
 
 import { useOrganizationPlanCatalog } from './organization-plan-api'
 import { OrganizationPlanPurchase } from './organization-plan-purchase'
@@ -101,6 +101,7 @@ export function OrganizationPlanCatalog({
               entitlement={entitlement}
               entitlementRefreshing={entitlementRefreshing}
               onRefreshEntitlement={onRefreshEntitlement}
+              orderKind={planOrderKind(plan, entitlement)}
             />
           ))}
         </div>
@@ -126,6 +127,7 @@ function PlanCard({
   entitlement,
   entitlementRefreshing,
   onRefreshEntitlement,
+  orderKind,
 }: {
   organizationId: number
   plan: OrganizationPlan
@@ -137,6 +139,7 @@ function PlanCard({
   entitlement?: OrganizationEntitlementProjection
   entitlementRefreshing: boolean
   onRefreshEntitlement?: () => Promise<unknown>
+  orderKind: OrganizationPlanOrderKind
 }) {
   const { t } = useTranslation()
   const features = [
@@ -190,10 +193,28 @@ function PlanCard({
           entitlement={entitlement}
           entitlementRefreshing={entitlementRefreshing}
           onRefreshEntitlement={onRefreshEntitlement}
+          orderKind={orderKind}
         />
       </CardContent>
     </Card>
   )
+}
+
+function planOrderKind(
+  plan: OrganizationPlan,
+  entitlement?: OrganizationEntitlementProjection,
+): OrganizationPlanOrderKind {
+  if (entitlement?.plan_id === undefined || entitlement.plan_id === null) return 'initial'
+  if (entitlement.plan_id === plan.plan_id) return 'renewal'
+  const currentDays = Math.max(1, Math.floor((entitlement.valid_until - entitlement.valid_from) / 86_400))
+  const expandsCapacity = plan.seat_limit >= entitlement.seat_limit
+    && plan.team_limit >= entitlement.team_limit
+    && plan.organization_key_limit >= entitlement.organization_key_limit
+    && plan.validity_days >= currentDays
+  const expandsFeatures = (plan.team_management_enabled || !entitlement.team_management_enabled)
+    && (plan.sso_enabled || !entitlement.sso_enabled)
+    && (plan.custom_roles_enabled || !entitlement.custom_roles_enabled)
+  return expandsCapacity && expandsFeatures ? 'upgrade' : 'downgrade'
 }
 
 function Capability({ enabled, label }: { enabled: boolean; label: string }) {

@@ -3,8 +3,9 @@ use std::{error::Error, time::Duration};
 use af_domain::{
     OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationId,
     OrganizationPlanFeatures, OrganizationPlanId, OrganizationPlanOrderId,
-    OrganizationPlanOrderRequestId, OrganizationPlanOrderStatus, OrganizationPlanPaymentEventId,
-    OrganizationPlanPaymentEventType, OrganizationPlanPrice, OrganizationPlanSnapshot, UserId,
+    OrganizationPlanOrderKind, OrganizationPlanOrderRequestId, OrganizationPlanOrderStatus,
+    OrganizationPlanPaymentEventId, OrganizationPlanPaymentEventType, OrganizationPlanPrice,
+    OrganizationPlanSnapshot, UserId,
 };
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set};
 
@@ -43,6 +44,28 @@ fn order_create_rejects_plan_version_outside_database_range() {
         result,
         Err(OrganizationPlanOrderRepositoryError::InvalidInput)
     ));
+}
+
+#[test]
+fn order_change_facts_preserve_action_and_effective_time() {
+    let order = OrganizationPlanOrderCreate::new_with_change(
+        OrganizationPlanOrderId::new([4; 16]).expect("订单标识有效"),
+        OrganizationPlanOrderRequestId::new([5; 16]).expect("幂等标识有效"),
+        OrganizationId::new(1).expect("企业标识有效"),
+        UserId::new(1).expect("用户标识有效"),
+        OrganizationPlanId::new([6; 16]).expect("套餐标识有效"),
+        1,
+        "stripe".to_owned(),
+        "USD".to_owned(),
+        100,
+        OrganizationPlanOrderKind::Downgrade,
+        Some(CREATED_AT + 3_600),
+        CREATED_AT,
+        Some(CREATED_AT + 7_200),
+    )
+    .expect("变更订单事实有效");
+    assert_eq!(order.kind, OrganizationPlanOrderKind::Downgrade);
+    assert_eq!(order.effective_at, Some(CREATED_AT + 3_600));
 }
 
 struct Fixture {
@@ -434,6 +457,113 @@ async fn payment_confirmation_rejects_mismatch_without_advancing_order()
             .count(fixture.pool.connection())
             .await?,
         0
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn future_plan_change_is_paid_then_applied_once_when_due() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let (organization, _) = fixture
+        .organization_repository
+        .create(organization(
+            "待生效企业",
+            "scheduled-enterprise",
+            fixture.users[0],
+        ))
+        .await?
+        .into_parts();
+    fixture
+        .plan_repository
+        .create(plan(&fixture, 0xb1, "待生效套餐")?)
+        .await?;
+    let effective_at = CREATED_AT + 3_600;
+    let order_write = OrganizationPlanOrderCreate::new_with_change(
+        OrganizationPlanOrderId::new([0xb2; 16])?,
+        OrganizationPlanOrderRequestId::new([0xb3; 16])?,
+        organization.id(),
+        fixture.users[0],
+        OrganizationPlanId::new([0xb1; 16])?,
+        1,
+        "stripe".to_owned(),
+        "USD".to_owned(),
+        100,
+        OrganizationPlanOrderKind::Upgrade,
+        Some(effective_at),
+        CREATED_AT,
+        Some(CREATED_AT + 7_200),
+    )?;
+    let order_id = order_write.order_id;
+    fixture.repository.create_order(order_write).await?;
+    fixture
+        .repository
+        .submit_order(OrganizationPlanOrderSubmission::new(
+            organization.id(),
+            order_id,
+            1,
+            "stripe".to_owned(),
+            "provider-order-scheduled".to_owned(),
+            "card".to_owned(),
+            CREATED_AT + 10,
+            CREATED_AT + 7_200,
+        )?)
+        .await?;
+    let result = fixture
+        .repository
+        .confirm_payment_event(event(
+            organization.id(),
+            order_id,
+            0xb4,
+            "provider-event-scheduled",
+            100,
+        ))
+        .await?;
+    let OrganizationPlanPaymentConfirmationOutcome::Applied { entitlement, order } = result else {
+        panic!("未来生效订单应先确认支付")
+    };
+    assert!(entitlement.is_none());
+    assert_eq!(order.status(), OrganizationPlanOrderStatus::Paid);
+    assert_eq!(order.effective_at(), Some(effective_at));
+    assert_eq!(order.version(), 3);
+
+    fixture
+        .repository
+        .apply_due_entitlement_change(organization.id(), i64::try_from(effective_at - 1)?)
+        .await
+        .expect("生效前扫描不应产生冲突");
+    assert_eq!(
+        fixture
+            .organization_repository
+            .entitlement(organization.id())
+            .await?
+            .entitlement()
+            .version(),
+        1
+    );
+    fixture
+        .repository
+        .apply_due_entitlement_change(organization.id(), i64::try_from(effective_at)?)
+        .await
+        .expect("到期应用不应产生冲突");
+    let applied = fixture
+        .organization_repository
+        .entitlement(organization.id())
+        .await?;
+    assert_eq!(applied.entitlement().version(), 2);
+    fixture
+        .repository
+        .apply_due_entitlement_change(organization.id(), i64::try_from(effective_at + 1)?)
+        .await
+        .expect("重复应用不应产生冲突");
+    assert_eq!(
+        fixture
+            .organization_repository
+            .entitlement(organization.id())
+            .await?
+            .entitlement()
+            .version(),
+        2
     );
     fixture.pool.close().await?;
     Ok(())
