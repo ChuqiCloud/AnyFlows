@@ -1,6 +1,8 @@
 use af_domain::{
+    OrganizationCustomRoleStatus, OrganizationEntitlementChangePlan, OrganizationEntitlementUsage,
     OrganizationId, OrganizationKey, OrganizationMembershipId, OrganizationMembershipStatus,
-    OrganizationRole, OrganizationStatus, OrganizationTeamId, OrganizationTeamStatus, UserId,
+    OrganizationRole, OrganizationSsoProviderStatus, OrganizationStatus, OrganizationTeamId,
+    OrganizationTeamStatus, UserId,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, DbErr,
@@ -11,8 +13,9 @@ use sea_orm::{
 };
 
 use crate::entity::{
-    organization_entitlements, organization_memberships, organization_sso_policies,
-    organization_teams, organization_wallets, organizations, tokens, users,
+    organization_custom_roles, organization_entitlements, organization_memberships,
+    organization_sso_policies, organization_sso_providers, organization_teams,
+    organization_wallets, organizations, tokens, users,
 };
 
 const ENABLED_TOKEN_STATUS: i16 = 1;
@@ -181,6 +184,89 @@ pub(super) async fn replace_entitlement(
             Err(error)
         }
     }
+}
+
+/// 在同一企业事务锁内统计占用并执行授权计划预检。
+pub(super) async fn preflight_entitlement_change(
+    repository: &OrganizationRepository,
+    organization_id: OrganizationId,
+    plan: OrganizationEntitlementChangePlan,
+) -> Result<super::OrganizationEntitlementPreflightOutcome, OrganizationRepositoryError> {
+    let transaction = begin(repository).await?;
+    let result =
+        preflight_entitlement_change_in_transaction(&transaction, organization_id, plan).await;
+    match result {
+        Ok(outcome) => {
+            commit(transaction).await?;
+            Ok(outcome)
+        }
+        Err(error) => {
+            rollback(transaction).await?;
+            Err(error)
+        }
+    }
+}
+
+/// 在调用方已持有企业事务的场景复用预检，保证最终写入前再次核对容量。
+pub(crate) async fn preflight_entitlement_change_in_transaction(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+    plan: OrganizationEntitlementChangePlan,
+) -> Result<super::OrganizationEntitlementPreflightOutcome, OrganizationRepositoryError> {
+    // 企业行和授权行是所有商业授权写入的统一锁边界，统计必须发生在锁之后。
+    let _organization = lock_organization(transaction, organization_id).await?;
+    let _entitlement = lock_entitlement(transaction, organization_id).await?;
+    let active_seats = organization_memberships::Entity::find()
+        .filter(organization_memberships::Column::OrganizationId.eq(organization_id.get()))
+        .filter(
+            organization_memberships::Column::Status
+                .eq(OrganizationMembershipStatus::Active.code()),
+        )
+        .count(transaction)
+        .await
+        .map_err(query_error)?;
+    let active_teams = organization_teams::Entity::find()
+        .filter(organization_teams::Column::OrganizationId.eq(organization_id.get()))
+        .filter(organization_teams::Column::Status.eq(OrganizationTeamStatus::Active.code()))
+        .count(transaction)
+        .await
+        .map_err(query_error)?;
+    let organization_keys = tokens::Entity::find()
+        .filter(tokens::Column::OrganizationId.eq(organization_id.get()))
+        .filter(tokens::Column::DeletedAt.is_null())
+        .count(transaction)
+        .await
+        .map_err(query_error)?;
+    let active_sso_providers = organization_sso_providers::Entity::find()
+        .filter(organization_sso_providers::Column::OrganizationId.eq(organization_id.get()))
+        .filter(
+            organization_sso_providers::Column::Status
+                .eq(OrganizationSsoProviderStatus::Active as i16),
+        )
+        .count(transaction)
+        .await
+        .map_err(query_error)?;
+    let active_custom_roles = organization_custom_roles::Entity::find()
+        .filter(organization_custom_roles::Column::OrganizationId.eq(organization_id.get()))
+        .filter(
+            organization_custom_roles::Column::Status
+                .eq(OrganizationCustomRoleStatus::Active.code()),
+        )
+        .count(transaction)
+        .await
+        .map_err(query_error)?;
+    let usage = OrganizationEntitlementUsage::new(
+        i64::try_from(active_seats).map_err(|_| invariant())?,
+        i64::try_from(active_teams).map_err(|_| invariant())?,
+        i64::try_from(organization_keys).map_err(|_| invariant())?,
+        i64::try_from(active_sso_providers).map_err(|_| invariant())?,
+        i64::try_from(active_custom_roles).map_err(|_| invariant())?,
+    )
+    .map_err(|_| invariant())?;
+    Ok(match plan.preflight(usage) {
+        Ok(()) => super::OrganizationEntitlementPreflightOutcome::Passed,
+        Err(error) => super::OrganizationEntitlementPreflightOutcome::Rejected(error),
+    })
 }
 
 /// 在调用方已开启并按企业锁序持有事务中替换授权，保证订单与授权同提交。

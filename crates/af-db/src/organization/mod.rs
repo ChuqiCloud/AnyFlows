@@ -20,7 +20,8 @@ pub use types::{
     MAX_ORGANIZATION_NAME_BYTES, MAX_ORGANIZATION_SLUG_BYTES,
     MAX_ORGANIZATION_TEAM_DESCRIPTION_BYTES, MAX_ORGANIZATION_TEAM_NAME_BYTES,
     OrganizationAccessRecord, OrganizationCreate, OrganizationCreatedRecord,
-    OrganizationEntitlementReadRecord, OrganizationEntitlementRecord, OrganizationEntitlementWrite,
+    OrganizationEntitlementPreflightOutcome, OrganizationEntitlementReadRecord,
+    OrganizationEntitlementRecord, OrganizationEntitlementWrite,
     OrganizationInvitationAcceptanceContext, OrganizationInvitationBatchRecord,
     OrganizationInvitationCreate, OrganizationInvitationPreviewItem,
     OrganizationInvitationPreviewRow, OrganizationInvitationPreviewSnapshot,
@@ -69,6 +70,20 @@ impl OrganizationRepository {
     ) -> Result<OrganizationEntitlementRecord, OrganizationRepositoryError> {
         self.run(mutation::replace_entitlement(self, organization_id, write))
             .await
+    }
+
+    /// 在企业事务锁内重新统计资源占用并预检定时授权计划，不改变数据库事实。
+    pub async fn preflight_entitlement_change(
+        &self,
+        organization_id: OrganizationId,
+        plan: af_domain::OrganizationEntitlementChangePlan,
+    ) -> Result<OrganizationEntitlementPreflightOutcome, OrganizationRepositoryError> {
+        self.run(mutation::preflight_entitlement_change(
+            self,
+            organization_id,
+            plan,
+        ))
+        .await
     }
 
     /// 按企业路径读取生命周期与完整授权事实。
