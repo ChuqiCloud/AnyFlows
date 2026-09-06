@@ -432,8 +432,10 @@ jobs:
     services:
       clickhouse:
         image: docker.io/clickhouse/clickhouse-server:25.8.9.20@sha256:8bc7c69999a7391548765753249eb83f3d93d62d6941484a97188d9d0545fac8
+        env:
+          CLICKHOUSE_PASSWORD: anyflows-integration
         options: >-
-          --health-cmd "clickhouse-client --query 'SELECT 1'"
+          --health-cmd "clickhouse-client --password anyflows-integration --query 'SELECT 1'"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 30
@@ -477,7 +479,7 @@ jobs:
         env:
           ANYFLOWS_CLICKHOUSE_INTEGRATION_URL: http://clickhouse:8123
           ANYFLOWS_CLICKHOUSE_INTEGRATION_USERNAME: default
-          ANYFLOWS_CLICKHOUSE_INTEGRATION_PASSWORD: ""
+          ANYFLOWS_CLICKHOUSE_INTEGRATION_PASSWORD: anyflows-integration
         run: bash tools/ci/run-clickhouse-integration-test.sh
 
   msrv:
