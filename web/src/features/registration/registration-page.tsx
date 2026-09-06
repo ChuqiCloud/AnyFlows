@@ -1,4 +1,4 @@
-import { AlertCircle, Boxes, RefreshCw, UserRoundX } from 'lucide-react'
+import { AlertCircle, ArrowRight, Boxes, Building2, RefreshCw, UserRoundX } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -72,6 +72,32 @@ export function RegistrationPage({ inviteCode, onAuthenticated }: RegistrationPa
             )}
           />
         )}
+
+        <section className="lg:col-span-2 border-t border-[var(--hairline)] pt-6" aria-labelledby="registration-enterprise-title">
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <Building2 className="size-4 text-info" aria-hidden="true" />
+                <h2 id="registration-enterprise-title">{t('registration.enterprise.title')}</h2>
+              </div>
+              <p className="mt-2 max-w-3xl text-xs leading-5 text-muted-foreground">{t('registration.enterprise.body')}</p>
+              <ol className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
+                {(['account', 'apply', 'setup'] as const).map((step, index) => (
+                  <li key={step} className="flex items-start gap-2">
+                    <span className="grid size-5 shrink-0 place-items-center rounded-full border border-[var(--hairline)] font-mono text-[0.6875rem]">{index + 1}</span>
+                    <span>{t(`registration.enterprise.steps.${step}`)}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+            <Button variant="secondary" asChild>
+              <a href="#/login">
+                {t('registration.enterprise.login')}
+                <ArrowRight aria-hidden="true" />
+              </a>
+            </Button>
+          </div>
+        </section>
       </div>
     </AuthPageShell>
   )

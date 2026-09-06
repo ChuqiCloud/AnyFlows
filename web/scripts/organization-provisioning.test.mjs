@@ -5,12 +5,13 @@ import test from 'node:test'
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8')
 
 test('企业开通申请的 HTTP、OpenAPI、生成客户端和前端入口保持同步', async () => {
-  const [openapi, sdk, types, route, page, en, zh] = await Promise.all([
+  const [openapi, sdk, types, route, page, registrationPage, en, zh] = await Promise.all([
     read('../openapi/openapi.json').then(JSON.parse),
     read('../src/lib/api/generated/sdk.gen.ts'),
     read('../src/lib/api/generated/types.gen.ts'),
     read('../src/app-route.ts'),
     read('../src/features/organization-provisioning/organization-provisioning-page.tsx'),
+    read('../src/features/registration/registration-page.tsx'),
     read('../src/i18n/locales/en.json').then(JSON.parse),
     read('../src/i18n/locales/zh.json').then(JSON.parse),
   ])
@@ -34,8 +35,15 @@ test('企业开通申请的 HTTP、OpenAPI、生成客户端和前端入口保�
   assert.match(route, /organization-provisioning/)
   assert.match(page, /useActiveOrganizationProvisioning/)
   assert.match(page, /useAdminOrganizationProvisioning/)
+  assert.match(page, /ProvisioningFlow current="apply"/)
+  assert.match(page, /ProvisioningFlow current="review"/)
+  assert.match(registrationPage, /registration\.enterprise\.steps/)
   assert.equal(typeof en.organizationProvisioning.title, 'string')
   assert.equal(typeof zh.organizationProvisioning.title, 'string')
+  for (const locale of [en, zh]) {
+    assert.deepEqual(Object.keys(locale.organizationProvisioning.flow), ['apply', 'review', 'setup', 'operate'])
+    assert.deepEqual(Object.keys(locale.registration.enterprise.steps), ['account', 'apply', 'setup'])
+  }
   assert.equal(typeof en.organizationConsole.empty.applyProvisioning, 'string')
   assert.equal(typeof zh.organizationConsole.empty.applyProvisioning, 'string')
 })
