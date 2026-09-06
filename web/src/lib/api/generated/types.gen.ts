@@ -2221,15 +2221,15 @@ export type OrganizationSsoDomain = {
     revoked_at?: number | null;
     version: number;
 };
-export type OrganizationSsoDomainCreated = {
-    domain: OrganizationSsoDomain;
-    txt_record_name: string;
-    txt_record_value: string;
-};
 export type OrganizationSsoDomainCreateRequest = {
     provider_key: string;
     domain: string;
     ttl_seconds: number;
+};
+export type OrganizationSsoDomainCreated = {
+    domain: OrganizationSsoDomain;
+    txt_record_name: string;
+    txt_record_value: string;
 };
 export type OrganizationSsoDomainList = {
     domains: Array<OrganizationSsoDomain>;
