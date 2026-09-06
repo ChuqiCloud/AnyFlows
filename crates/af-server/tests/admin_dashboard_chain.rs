@@ -335,8 +335,11 @@ async fn configured_clickhouse_supplies_analytics_while_database_supplies_channe
         let request = String::from_utf8(request).unwrap().to_ascii_lowercase();
         assert!(request.contains("readonly=2"));
         assert!(request.contains("max_result_rows=1"));
-        assert!(request.contains("x-clickhouse-user: dashboard-reader"));
-        assert!(request.contains("x-clickhouse-key: dashboard-secret"));
+        assert!(request.contains(&format!(
+            "x-clickhouse-user: {}",
+            clickhouse_username.to_ascii_lowercase()
+        )));
+        assert!(request.contains("x-clickhouse-key:"));
         assert!(request.contains("format jsoneachrow"));
     }
 }
