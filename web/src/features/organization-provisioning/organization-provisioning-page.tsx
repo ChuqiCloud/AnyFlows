@@ -73,6 +73,7 @@ function ApplicantProvisioningWorkspace() {
   return (
     <div className="grid gap-6">
       <PageHeader icon={Building2} title={t('organizationProvisioning.title')} subtitle={t('organizationProvisioning.subtitle')} />
+      <ProvisioningFlow current="apply" />
       {request ? <RequestStatus request={request} /> : null}
       {!request || request.status === 'rejected' ? (
         <section className="max-w-2xl rounded-xl border border-[var(--hairline)] bg-surface-1 p-5">
@@ -163,6 +164,7 @@ function AdminProvisioningWorkspace() {
   return (
     <div className="grid gap-6">
       <PageHeader icon={ClipboardCheck} title={t('organizationProvisioning.admin.title')} subtitle={t('organizationProvisioning.admin.subtitle')} />
+      <ProvisioningFlow current="review" />
       <div className="flex flex-wrap items-center gap-2">
         {(['all', 'pending', 'approved', 'rejected'] as const).map((value) => (
           <Button key={value} type="button" size="sm" variant={(status ?? 'all') === value ? 'default' : 'secondary'} onClick={() => setStatus(value === 'all' ? undefined : value)}>{t(`organizationProvisioning.admin.filters.${value}`)}</Button>
@@ -187,6 +189,29 @@ function AdminProvisioningWorkspace() {
         </section>
       )}
     </div>
+  )
+}
+
+type ProvisioningFlowStep = 'apply' | 'review' | 'setup' | 'operate'
+
+/** 把申请、审批和 Owner 后续动作固定成可扫描的顺序，避免管理员只看到一张审批表。 */
+function ProvisioningFlow({ current }: { current: ProvisioningFlowStep }) {
+  const { t } = useTranslation()
+  const steps: ProvisioningFlowStep[] = ['apply', 'review', 'setup', 'operate']
+  const currentIndex = steps.indexOf(current)
+  return (
+    <ol className="grid gap-2 rounded-xl border border-[var(--hairline)] bg-surface-1/45 p-4 sm:grid-cols-4 sm:gap-0">
+      {steps.map((step, index) => (
+        <li key={step} className="flex min-w-0 items-start gap-2 sm:relative sm:pr-4">
+          <span className={index <= currentIndex ? 'grid size-6 shrink-0 place-items-center rounded-full bg-brand text-xs font-semibold text-brand-foreground' : 'grid size-6 shrink-0 place-items-center rounded-full border border-[var(--hairline)] text-xs font-semibold text-muted-foreground'}>{index + 1}</span>
+          <div className="min-w-0">
+            <p className={index === currentIndex ? 'text-xs font-semibold text-foreground' : 'text-xs font-medium text-muted-foreground'}>{t(`organizationProvisioning.flow.${step}.title`)}</p>
+            <p className="mt-0.5 text-[0.6875rem] leading-4 text-muted-foreground">{t(`organizationProvisioning.flow.${step}.body`)}</p>
+          </div>
+          {index < steps.length - 1 ? <ArrowRight className="mt-1 ml-auto hidden size-3.5 shrink-0 text-muted-foreground/60 sm:block" aria-hidden="true" /> : null}
+        </li>
+      ))}
+    </ol>
   )
 }
 

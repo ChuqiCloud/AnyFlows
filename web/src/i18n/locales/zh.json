@@ -3005,6 +3005,7 @@
       "passkeyVerifying": "正在验证 Passkey",
       "organizationSso": {
         "title": "企业 SSO",
+        "description": "已加入企业的成员使用工作邮箱或企业公开标识进入身份平台；SSO 不会按邮箱自动接管个人账户。",
         "identifier": "企业邮箱或企业标识",
         "placeholder": "name@company.com 或企业公开标识",
         "check": "检查企业登录",
@@ -3013,7 +3014,9 @@
         "starting": "正在启动企业登录",
         "available": "检测到可用的企业登录方式，可以继续登录。",
         "unavailable": "未找到可用的企业登录方式。",
-        "error": "企业登录暂时不可用，请稍后重试。"
+        "error": "企业登录暂时不可用，请稍后重试。",
+        "noOrganization": "还没有企业账号？",
+        "createAccount": "先创建个人账户"
       }
     },
     "oauthCallback": {
@@ -3846,6 +3849,16 @@
       "retry": "重新检查",
       "login": "登录",
       "models": "浏览模型"
+    },
+    "enterprise": {
+      "title": "开通企业账号",
+      "body": "企业访问从个人账户和审核申请开始。平台批准后才会创建企业，避免浏览器自行接管或创建企业空间。",
+      "steps": {
+        "account": "创建个人账户并登录",
+        "apply": "提交企业开通申请",
+        "setup": "批准后完成 Owner 初始化"
+      },
+      "login": "前往企业登录"
     }
   },
   "invitations": {
@@ -5835,6 +5848,24 @@
       "retention": "审计天数",
       "emptyTitle": "暂无企业开通申请",
       "emptyBody": "用户提交申请后，会显示在这里。"
+    },
+    "flow": {
+      "apply": {
+        "title": "提交申请",
+        "body": "申请人填写企业资料并说明业务用途。"
+      },
+      "review": {
+        "title": "平台审核",
+        "body": "管理员审核申请，并设置首期企业能力和额度。"
+      },
+      "setup": {
+        "title": "Owner 初始化",
+        "body": "申请获批后，由申请人确认首个 Owner 账户和设置。"
+      },
+      "operate": {
+        "title": "开始运营",
+        "body": "成员、团队、Key、预算和 SSO 都在企业控制台管理。"
+      }
     },
     "errors": {
       "loadTitle": "无法加载企业开通事实",

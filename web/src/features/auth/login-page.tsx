@@ -294,6 +294,7 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                     <Building2 className="size-4 text-info" aria-hidden="true" />
                     <span className="text-sm font-medium">{t('auth.login.organizationSso.title')}</span>
                   </div>
+                  <p className="text-xs leading-5 text-muted-foreground">{t('auth.login.organizationSso.description')}</p>
                   <div className="grid gap-2">
                     <label htmlFor="organization-sso-identifier" className="text-sm font-medium">
                       {t('auth.login.organizationSso.identifier')}
@@ -357,6 +358,12 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                       {t(`auth.login.organizationSso.${organizationSsoStatus}`)}
                     </p>
                   ) : null}
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    {t('auth.login.organizationSso.noOrganization')}{' '}
+                    <a href="#/register" className="font-medium text-info underline-offset-4 hover:underline">
+                      {t('auth.login.organizationSso.createAccount')}
+                    </a>
+                  </p>
                 </div>
 
                 {oauthLoginEnabled && passwordLoginEnabled ? (
