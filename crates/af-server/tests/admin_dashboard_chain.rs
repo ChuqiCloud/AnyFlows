@@ -33,6 +33,45 @@ const ADMIN_PASSWORD: &str = "correct-password";
 const MEMBER_USERNAME: &str = "dashboard-member";
 const MEMBER_PASSWORD: &str = "member-password";
 
+// 真实 ClickHouse 门禁使用固定查询构造一行闭合快照，避免依赖外部业务表结构。
+const REAL_CLICKHOUSE_QUERY: &str = r#"
+SELECT
+    CAST(
+        (5, 55, 4, 1, 3, 1, 1),
+        'Tuple(request_count Int64, quota_consumed Int64, upstream_usage_count Int64, estimated_usage_count Int64, per_token_request_count Int64, per_call_request_count Int64, free_request_count Int64)'
+    ) AS usage,
+    CAST(
+        (
+            5,
+            4,
+            1,
+            3,
+            [CAST(('invalid_request', 1), 'Tuple(kind String, request_count Int64)')],
+            [CAST(('openai_chat', 7508, 'ClickHouse channel', 1), 'Tuple(protocol String, channel_id Int64, channel_name String, request_count Int64)')],
+            1,
+            55,
+            [CAST((7502, 7503, 'Dashboard', 7508, 'ClickHouse channel', 'gpt-5', 1, 55), 'Tuple(user_id Int64, group_id Int64, group_name String, channel_id Int64, channel_name String, model String, request_count Int64, quota_consumed Int64)')]
+        ),
+        'Tuple(request_count Int64, successful_request_count Int64, failed_request_count Int64, other_success_count Int64, failures Array(Tuple(kind String, request_count Int64)), channel_flows Array(Tuple(protocol String, channel_id Int64, channel_name String, request_count Int64)), flow_request_count Int64, flow_quota_consumed Int64, flow_paths Array(Tuple(user_id Int64, group_id Int64, group_name String, channel_id Int64, channel_name String, model String, request_count Int64, quota_consumed Int64)))'
+    ) AS outcomes,
+    arrayMap(
+        i -> CAST(
+            (
+                toInt64({period_start:Int64}) + toInt64(i) * 3600,
+                if(i = 23, toInt64({period_end:Int64}), toInt64({period_start:Int64}) + toInt64(i) * 3600 + 3600),
+                if(i = 0, toInt64(5), toInt64(0)),
+                if(i = 0, toInt64(55), toInt64(0))
+            ),
+            'Tuple(period_start Int64, period_end Int64, request_count Int64, quota_consumed Int64)'
+        ),
+        range(24)
+    ) AS hourly,
+    CAST(
+        (2, CAST(900 AS Nullable(Int64)), 0, 2000, 4, CAST(5000 AS Nullable(Int64)), 1, 10000),
+        'Tuple(first_token_sample_count Int64, average_first_token_ms Nullable(Int64), slow_first_token_count Int64, slow_first_token_threshold_ms Int64, duration_sample_count Int64, average_duration_ms Nullable(Int64), slow_request_count Int64, slow_request_threshold_ms Int64)'
+    ) AS performance
+"#;
+
 static NEXT_DATABASE: AtomicU64 = AtomicU64::new(0);
 
 struct TestDatabase {
@@ -189,13 +228,44 @@ async fn admin_dashboard_uses_real_aggregates_and_role_boundary() {
 async fn configured_clickhouse_supplies_analytics_while_database_supplies_channels() {
     let database = TestDatabase::new();
     seed_dashboard(&database.url).await;
-    let (clickhouse_address, clickhouse) = spawn_clickhouse_snapshot();
+    let live_clickhouse = std::env::var("ANYFLOWS_CLICKHOUSE_INTEGRATION_URL").ok();
+    let (
+        clickhouse_endpoint,
+        clickhouse_query,
+        clickhouse_username,
+        clickhouse_password,
+        http_client_config,
+        clickhouse,
+    ) = if let Some(endpoint) = live_clickhouse {
+        let (proxy_address, proxy_handle) = spawn_clickhouse_forwarder(&endpoint);
+        (
+            endpoint,
+            REAL_CLICKHOUSE_QUERY.to_owned(),
+            std::env::var("ANYFLOWS_CLICKHOUSE_INTEGRATION_USERNAME")
+                .unwrap_or_else(|_| "default".to_owned()),
+            std::env::var("ANYFLOWS_CLICKHOUSE_INTEGRATION_PASSWORD").unwrap_or_default(),
+            format!(
+                "[http_client]\nproxy_url = 'http://{proxy_address}'\ntrust_proxy_dns = true\n"
+            ),
+            Some(proxy_handle),
+        )
+    } else {
+        let (address, handle) = spawn_clickhouse_snapshot();
+        (
+            "http://clickhouse.example".to_owned(),
+            "SELECT {period_start:Int64}, {period_end:Int64}".to_owned(),
+            "dashboard-reader".to_owned(),
+            "dashboard-secret".to_owned(),
+            format!("[http_client]\nproxy_url = 'http://{address}'\ntrust_proxy_dns = true\n"),
+            Some(handle),
+        )
+    };
     let signing_key = URL_SAFE_NO_PAD.encode([0x45; 32]);
     let config_path = database.path.with_extension("toml");
     fs::write(
         &config_path,
         format!(
-            "[server]\nbind = '127.0.0.1:0'\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{}'\nhealth_check_timeout_secs = 1\n[billing]\nwal_directory = '{}'\n[credential_encryption]\nkey_id = 'clickhouse-dashboard-test'\nkey = '{signing_key}'\n[auth]\nlookup_timeout_secs = 2\nsession_signing_key = '{signing_key}'\nsession_ttl_secs = 3600\n[http_client]\nproxy_url = 'http://{clickhouse_address}'\ntrust_proxy_dns = true\n[clickhouse_analytics]\nendpoint = 'http://clickhouse.example'\nquery = 'SELECT {{period_start:Int64}}, {{period_end:Int64}}'\nusername = 'dashboard-reader'\npassword = 'dashboard-secret'\ntimeout_secs = 2\nmax_response_bytes = 65536\n",
+            "[server]\nbind = '127.0.0.1:0'\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{}'\nhealth_check_timeout_secs = 1\n[billing]\nwal_directory = '{}'\n[credential_encryption]\nkey_id = 'clickhouse-dashboard-test'\nkey = '{signing_key}'\n[auth]\nlookup_timeout_secs = 2\nsession_signing_key = '{signing_key}'\nsession_ttl_secs = 3600\n{http_client_config}[clickhouse_analytics]\nendpoint = '{clickhouse_endpoint}'\nquery = '''\n{clickhouse_query}\n'''\nusername = '{clickhouse_username}'\npassword = '{clickhouse_password}'\ntimeout_secs = 2\nmax_response_bytes = 65536\n",
             database.url,
             database
                 .billing_wal_directory()
@@ -239,7 +309,12 @@ async fn configured_clickhouse_supplies_analytics_while_database_supplies_channe
         &[("Authorization", &admin_authorization)],
     )
     .await;
-    assert_eq!(response.status, 200);
+    assert_eq!(
+        response.status,
+        200,
+        "ClickHouse 集成响应异常: {}",
+        String::from_utf8_lossy(&response.body)
+    );
     let body = response_json(&response);
     assert_eq!(body["request_count"], 5);
     assert_eq!(body["quota_consumed"], 55);
@@ -255,13 +330,145 @@ async fn configured_clickhouse_supplies_analytics_while_database_supplies_channe
     let report = timeout(IO_TIMEOUT, server).await.unwrap().unwrap().unwrap();
     assert_eq!(report.http, ServeOutcome::Drained);
     assert_eq!(report.background, SupervisorShutdown::Drained);
-    let request = clickhouse.join().unwrap();
-    let request = String::from_utf8(request).unwrap().to_ascii_lowercase();
-    assert!(request.contains("readonly=2"));
-    assert!(request.contains("max_result_rows=1"));
-    assert!(request.contains("x-clickhouse-user: dashboard-reader"));
-    assert!(request.contains("x-clickhouse-key: dashboard-secret"));
-    assert!(request.contains("format jsoneachrow"));
+    if let Some(clickhouse) = clickhouse {
+        let request = clickhouse.join().unwrap();
+        let request = String::from_utf8(request).unwrap().to_ascii_lowercase();
+        assert!(request.contains("readonly=2"));
+        assert!(request.contains("max_result_rows=1"));
+        assert!(request.contains(&format!(
+            "x-clickhouse-user: {}",
+            clickhouse_username.to_ascii_lowercase()
+        )));
+        assert!(request.contains("x-clickhouse-key:"));
+        assert!(request.contains("format jsoneachrow"));
+    }
+}
+
+/// 真实集成门禁使用一次性本地 HTTP 转发器，保留生产 Client 的代理与 SSRF 校验。
+fn spawn_clickhouse_forwarder(endpoint: &str) -> (SocketAddr, thread::JoinHandle<Vec<u8>>) {
+    let upstream = url::Url::parse(endpoint).expect("ClickHouse 集成端点有效");
+    let host = upstream.host_str().unwrap().to_owned();
+    let port = upstream.port_or_known_default().unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    let handle = thread::spawn(move || {
+        let deadline = Instant::now() + IO_TIMEOUT;
+        let (mut client, _) = loop {
+            match listener.accept() {
+                Ok(connection) => break connection,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(Instant::now() < deadline, "ClickHouse 转发器等待连接超时");
+                    thread::sleep(Duration::from_millis(1));
+                }
+                Err(error) => panic!("ClickHouse 转发器接受连接失败: {error}"),
+            }
+        };
+        client.set_read_timeout(Some(IO_TIMEOUT)).unwrap();
+        client.set_write_timeout(Some(IO_TIMEOUT)).unwrap();
+        let request = read_http_request(&mut client);
+        let forwarded = rewrite_proxy_request(&request);
+        let mut upstream_stream = std::net::TcpStream::connect((host.as_str(), port)).unwrap();
+        upstream_stream.set_read_timeout(Some(IO_TIMEOUT)).unwrap();
+        upstream_stream.set_write_timeout(Some(IO_TIMEOUT)).unwrap();
+        upstream_stream.write_all(&forwarded).unwrap();
+        upstream_stream.shutdown(std::net::Shutdown::Write).unwrap();
+        let response = read_http_response(&mut upstream_stream);
+        let response_status = std::str::from_utf8(&response)
+            .ok()
+            .and_then(|response| response.lines().next())
+            .unwrap_or("<invalid response>");
+        assert!(
+            response_status.contains(" 200 "),
+            "ClickHouse 集成上游返回异常: {response_status}\n{}",
+            String::from_utf8_lossy(&response)
+        );
+        client.write_all(&response).unwrap();
+        client.flush().unwrap();
+        request
+    });
+    (address, handle)
+}
+
+fn rewrite_proxy_request(request: &[u8]) -> Vec<u8> {
+    let header_end = request
+        .windows(4)
+        .position(|bytes| bytes == b"\r\n\r\n")
+        .expect("代理请求包含完整请求头")
+        + 4;
+    let headers = std::str::from_utf8(&request[..header_end]).expect("代理请求头为 UTF-8");
+    let mut lines = headers.split("\r\n");
+    let request_line = lines.next().unwrap();
+    let target = request_line.split_whitespace().nth(1).unwrap();
+    let target = url::Url::parse(target).expect("代理请求目标为绝对 URL");
+    let path = if target.path().is_empty() {
+        "/"
+    } else {
+        target.path()
+    };
+    let target = target
+        .query()
+        .map_or_else(|| path.to_owned(), |query| format!("{path}?{query}"));
+    let method = request_line.split_whitespace().next().unwrap();
+    let version = request_line.split_whitespace().nth(2).unwrap_or("HTTP/1.1");
+    let mut forwarded = format!("{method} {target} {version}\r\n").into_bytes();
+    let mut has_connection = false;
+    for line in lines {
+        if line.is_empty() {
+            break;
+        }
+        if line
+            .split_once(':')
+            .is_some_and(|(name, _)| name.eq_ignore_ascii_case("proxy-connection"))
+        {
+            continue;
+        }
+        if line
+            .split_once(':')
+            .is_some_and(|(name, _)| name.eq_ignore_ascii_case("connection"))
+        {
+            forwarded.extend_from_slice(b"Connection: close\r\n");
+            has_connection = true;
+        } else {
+            forwarded.extend_from_slice(line.as_bytes());
+            forwarded.extend_from_slice(b"\r\n");
+        }
+    }
+    if !has_connection {
+        forwarded.extend_from_slice(b"Connection: close\r\n");
+    }
+    forwarded.extend_from_slice(b"\r\n");
+    forwarded.extend_from_slice(&request[header_end..]);
+    forwarded
+}
+
+fn read_http_response(stream: &mut std::net::TcpStream) -> Vec<u8> {
+    let mut response = Vec::new();
+    let mut buffer = [0_u8; 4096];
+    let mut expected_length = None;
+    loop {
+        let read = stream.read(&mut buffer).unwrap();
+        if read == 0 {
+            return response;
+        }
+        response.extend_from_slice(&buffer[..read]);
+        if expected_length.is_none()
+            && let Some(header_end) = response.windows(4).position(|bytes| bytes == b"\r\n\r\n")
+        {
+            let header_end = header_end + 4;
+            let headers = std::str::from_utf8(&response[..header_end]).unwrap();
+            let content_length = headers.lines().find_map(|line| {
+                line.split_once(':').and_then(|(name, value)| {
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().unwrap())
+                })
+            });
+            expected_length = content_length.map(|length| header_end + length);
+        }
+        if expected_length.is_some_and(|length| response.len() >= length) {
+            return response;
+        }
+    }
 }
 
 fn spawn_clickhouse_snapshot() -> (SocketAddr, thread::JoinHandle<Vec<u8>>) {

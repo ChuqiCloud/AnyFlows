@@ -84,6 +84,8 @@ ClickHouse 配置默认关闭，只有对应配置段完整存在时才会启用
 
 `AF_CLICKHOUSE_EXPORT__USAGE_INSERT_QUERY` 与 `AF_CLICKHOUSE_EXPORT__OUTCOME_INSERT_QUERY` 必须是单条 `INSERT INTO` 查询，运行时追加 `FORMAT JSONEachRow`、异步写入参数和去重 token。批量大小默认 64（上限 256），扫描周期默认 5 秒（上限 3600），请求超时默认 5 秒（上限 300），请求体默认 4 MiB（上限 16 MiB），历史回填默认 128 条（上限 256）。投递失败只会延迟 outbox 事实并触发受控重试，不回滚主库事实、计费结算或请求终态。
 
+ClickHouse 查询超时、连接失败、响应超限或快照校验失败时，管理看板会返回统一的分析存储不可用状态，不展示部分或伪造数据；当前渠道状态仍从事务主库读取。上述故障不会阻断同步请求、计费、请求终态、权限判断或主库写入。恢复时先检查 ClickHouse `/ping`、只读账号和查询响应，再从管理员看板查看异步导出积压并执行有界重放；不要删除主库 outbox 事实或手工改写发布状态。
+
 ### 静态上游兼容配置
 
 `AF_OPENAI_UPSTREAM__BASE_URL`、`AF_OPENAI_UPSTREAM__MODEL` 和 `AF_OPENAI_UPSTREAM__API_KEY` 仅用于旧版嵌入式配置的兼容解析，三项必须同时提供。M1 生产路径不会读取这些字段进行选路，也不会在数据库渠道不可用时回退到静态目标；新部署应优先配置数据库渠道与加密凭据。
