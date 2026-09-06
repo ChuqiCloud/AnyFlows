@@ -371,6 +371,15 @@ fn spawn_clickhouse_forwarder(endpoint: &str) -> (SocketAddr, thread::JoinHandle
         upstream_stream.write_all(&forwarded).unwrap();
         upstream_stream.shutdown(std::net::Shutdown::Write).unwrap();
         let response = read_http_response(&mut upstream_stream);
+        let response_status = std::str::from_utf8(&response)
+            .ok()
+            .and_then(|response| response.lines().next())
+            .unwrap_or("<invalid response>");
+        assert!(
+            response_status.contains(" 200 "),
+            "ClickHouse 集成上游返回异常: {response_status}\n{}",
+            String::from_utf8_lossy(&response)
+        );
         client.write_all(&response).unwrap();
         client.flush().unwrap();
         request
