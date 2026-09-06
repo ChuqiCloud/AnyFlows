@@ -34,7 +34,43 @@ const MEMBER_USERNAME: &str = "dashboard-member";
 const MEMBER_PASSWORD: &str = "member-password";
 
 // 真实 ClickHouse 门禁使用固定查询构造一行闭合快照，避免依赖外部业务表结构。
-const REAL_CLICKHOUSE_QUERY: &str = r#"SELECT (toInt64(5) AS request_count, toInt64(55) AS quota_consumed, toInt64(4) AS upstream_usage_count, toInt64(1) AS estimated_usage_count, toInt64(3) AS per_token_request_count, toInt64(1) AS per_call_request_count, toInt64(1) AS free_request_count) AS usage, (toInt64(5) AS request_count, toInt64(4) AS successful_request_count, toInt64(1) AS failed_request_count, toInt64(3) AS other_success_count, array(('invalid_request' AS kind, toInt64(1) AS request_count)) AS failures, array(('openai_chat' AS protocol, toInt64(7508) AS channel_id, 'ClickHouse channel' AS channel_name, toInt64(1) AS request_count)) AS channel_flows, toInt64(1) AS flow_request_count, toInt64(55) AS flow_quota_consumed, array((toInt64(7502) AS user_id, toInt64(7503) AS group_id, 'Dashboard' AS group_name, toInt64(7508) AS channel_id, 'ClickHouse channel' AS channel_name, 'gpt-5' AS model, toInt64(1) AS request_count, toInt64(55) AS quota_consumed)) AS flow_paths) AS outcomes, arrayMap(i -> (toInt64({period_start:Int64}) + toInt64(i) * 3600 AS period_start, if(i = 23, toInt64({period_end:Int64}), toInt64({period_start:Int64}) + toInt64(i) * 3600 + 3600) AS period_end, if(i = 0, toInt64(5), toInt64(0)) AS request_count, if(i = 0, toInt64(55), toInt64(0)) AS quota_consumed), range(24)) AS hourly, (toInt64(2) AS first_token_sample_count, CAST(900 AS Nullable(Int64)) AS average_first_token_ms, toInt64(0) AS slow_first_token_count, toInt64(2000) AS slow_first_token_threshold_ms, toInt64(4) AS duration_sample_count, CAST(5000 AS Nullable(Int64)) AS average_duration_ms, toInt64(1) AS slow_request_count, toInt64(10000) AS slow_request_threshold_ms) AS performance"#;
+const REAL_CLICKHOUSE_QUERY: &str = r#"
+SELECT
+    CAST(
+        (5, 55, 4, 1, 3, 1, 1),
+        'Tuple(request_count Int64, quota_consumed Int64, upstream_usage_count Int64, estimated_usage_count Int64, per_token_request_count Int64, per_call_request_count Int64, free_request_count Int64)'
+    ) AS usage,
+    CAST(
+        (
+            5,
+            4,
+            1,
+            3,
+            [CAST(('invalid_request', 1), 'Tuple(kind String, request_count Int64)')],
+            [CAST(('openai_chat', 7508, 'ClickHouse channel', 1), 'Tuple(protocol String, channel_id Int64, channel_name String, request_count Int64)')],
+            1,
+            55,
+            [CAST((7502, 7503, 'Dashboard', 7508, 'ClickHouse channel', 'gpt-5', 1, 55), 'Tuple(user_id Int64, group_id Int64, group_name String, channel_id Int64, channel_name String, model String, request_count Int64, quota_consumed Int64)')]
+        ),
+        'Tuple(request_count Int64, successful_request_count Int64, failed_request_count Int64, other_success_count Int64, failures Array(Tuple(kind String, request_count Int64)), channel_flows Array(Tuple(protocol String, channel_id Int64, channel_name String, request_count Int64)), flow_request_count Int64, flow_quota_consumed Int64, flow_paths Array(Tuple(user_id Int64, group_id Int64, group_name String, channel_id Int64, channel_name String, model String, request_count Int64, quota_consumed Int64)))'
+    ) AS outcomes,
+    arrayMap(
+        i -> CAST(
+            (
+                toInt64({period_start:Int64}) + toInt64(i) * 3600,
+                if(i = 23, toInt64({period_end:Int64}), toInt64({period_start:Int64}) + toInt64(i) * 3600 + 3600),
+                if(i = 0, toInt64(5), toInt64(0)),
+                if(i = 0, toInt64(55), toInt64(0))
+            ),
+            'Tuple(period_start Int64, period_end Int64, request_count Int64, quota_consumed Int64)'
+        ),
+        range(24)
+    ) AS hourly,
+    CAST(
+        (2, CAST(900 AS Nullable(Int64)), 0, 2000, 4, CAST(5000 AS Nullable(Int64)), 1, 10000),
+        'Tuple(first_token_sample_count Int64, average_first_token_ms Nullable(Int64), slow_first_token_count Int64, slow_first_token_threshold_ms Int64, duration_sample_count Int64, average_duration_ms Nullable(Int64), slow_request_count Int64, slow_request_threshold_ms Int64)'
+    ) AS performance
+"#;
 
 static NEXT_DATABASE: AtomicU64 = AtomicU64::new(0);
 
