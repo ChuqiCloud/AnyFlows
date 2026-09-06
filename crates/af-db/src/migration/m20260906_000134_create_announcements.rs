@@ -39,12 +39,13 @@ impl MigrationTrait for Migration {
             )
             .col(
                 ColumnDef::new(announcements::Column::BodyZh)
-                    .string_len(8_192)
+                    // MySQL utf8mb4 下长 VARCHAR 会把整行推过 65535 字节；长度由仓储边界校验。
+                    .text()
                     .not_null(),
             )
             .col(
                 ColumnDef::new(announcements::Column::BodyEn)
-                    .string_len(8_192)
+                    .text()
                     .not_null(),
             )
             .col(nullable_timestamp(
