@@ -18,6 +18,7 @@ import {
 } from './announcement-api'
 
 type AnnouncementDraft = {
+  audience: 'public' | 'authenticated'
   title_zh: string
   title_en: string
   body_zh: string
@@ -27,6 +28,7 @@ type AnnouncementDraft = {
 }
 
 const emptyDraft: AnnouncementDraft = {
+  audience: 'public',
   title_zh: '',
   title_en: '',
   body_zh: '',
@@ -50,6 +52,7 @@ function toUnix(value: string) {
 
 function draftFromAnnouncement(announcement: Announcement): AnnouncementDraft {
   return {
+    audience: announcement.audience,
     title_zh: announcement.title_zh,
     title_en: announcement.title_en,
     body_zh: announcement.body_zh,
@@ -112,6 +115,7 @@ export function AnnouncementPage() {
     setSelectionInitialized(true)
   }
   const body = {
+    audience: draft.audience,
     title_zh: draft.title_zh,
     title_en: draft.title_en,
     body_zh: draft.body_zh,
@@ -167,6 +171,7 @@ export function AnnouncementPage() {
             <CardHeader><CardTitle>{selected ? t('announcements.editor.edit') : t('announcements.editor.new')}</CardTitle><CardDescription>{t('announcements.editor.description')}</CardDescription></CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-2">
+                <label className="grid gap-1.5 text-xs font-medium">{t('announcements.fields.audience')}<select value={draft.audience} disabled={pending || selected?.status !== 'draft' && Boolean(selected)} onChange={(event) => setDraft({ ...draft, audience: event.target.value as AnnouncementDraft['audience'] })} className="h-9 rounded-md border border-input bg-background px-3 text-sm"><option value="public">{t('announcements.audience.public')}</option><option value="authenticated">{t('announcements.audience.authenticated')}</option></select></label>
                 <label className="grid gap-1.5 text-xs font-medium">{t('announcements.fields.titleZh')}<Input value={draft.title_zh} maxLength={160} disabled={pending || selected?.status !== 'draft' && Boolean(selected)} onChange={(event) => setDraft({ ...draft, title_zh: event.target.value })} /></label>
                 <label className="grid gap-1.5 text-xs font-medium">{t('announcements.fields.titleEn')}<Input value={draft.title_en} maxLength={160} disabled={pending || selected?.status !== 'draft' && Boolean(selected)} onChange={(event) => setDraft({ ...draft, title_en: event.target.value })} /></label>
               </div>

@@ -53,6 +53,7 @@ pub(crate) enum NotificationKindResponse {
     BalanceAlert,
     SubscriptionBalanceAlert,
     SubscriptionPurchase,
+    ProductUpdate,
 }
 
 #[derive(Clone, Copy, Serialize, ToSchema)]
@@ -60,6 +61,7 @@ pub(crate) enum NotificationKindResponse {
 #[schema(as = NotificationChannel)]
 pub(crate) enum NotificationChannelResponse {
     Email,
+    InApp,
 }
 
 #[derive(Clone, Copy, Serialize, ToSchema)]
@@ -70,6 +72,7 @@ pub(crate) enum NotificationDeliveryStateResponse {
     Accepted,
     Failed,
     Canceled,
+    Available,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -92,6 +95,14 @@ pub(crate) struct UserNotificationResponse {
     quota_used: Option<i64>,
     threshold_percent: Option<i16>,
     read_at: Option<i64>,
+    announcement_id: Option<i64>,
+    announcement_version: Option<i64>,
+    announcement_title_zh: Option<String>,
+    announcement_title_en: Option<String>,
+    announcement_body_zh: Option<String>,
+    announcement_body_en: Option<String>,
+    announcement_status: Option<i16>,
+    announcement_visible_until: Option<i64>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -253,9 +264,11 @@ impl UserNotificationResponse {
                 UserNotificationKind::SubscriptionPurchase => {
                     NotificationKindResponse::SubscriptionPurchase
                 }
+                UserNotificationKind::ProductUpdate => NotificationKindResponse::ProductUpdate,
             },
             channel: match notification.channel() {
                 UserNotificationChannel::Email => NotificationChannelResponse::Email,
+                UserNotificationChannel::InApp => NotificationChannelResponse::InApp,
             },
             template_version: notification.template_version().to_owned(),
             occurred_at: notification.occurred_at(),
@@ -268,6 +281,9 @@ impl UserNotificationResponse {
                 UserNotificationDeliveryState::Canceled => {
                     NotificationDeliveryStateResponse::Canceled
                 }
+                UserNotificationDeliveryState::Available => {
+                    NotificationDeliveryStateResponse::Available
+                }
             },
             delivery_attempts: notification.delivery_attempts(),
             observed_quota: notification.observed_quota(),
@@ -278,6 +294,14 @@ impl UserNotificationResponse {
             quota_used: notification.quota_used(),
             threshold_percent: notification.threshold_percent(),
             read_at: notification.read_at(),
+            announcement_id: notification.announcement_id(),
+            announcement_version: notification.announcement_version(),
+            announcement_title_zh: notification.announcement_title_zh().map(str::to_owned),
+            announcement_title_en: notification.announcement_title_en().map(str::to_owned),
+            announcement_body_zh: notification.announcement_body_zh().map(str::to_owned),
+            announcement_body_en: notification.announcement_body_en().map(str::to_owned),
+            announcement_status: notification.announcement_status(),
+            announcement_visible_until: notification.announcement_visible_until(),
         }
     }
 }

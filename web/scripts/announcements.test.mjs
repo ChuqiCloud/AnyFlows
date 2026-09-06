@@ -19,15 +19,16 @@ test('公告 OpenAPI 覆盖公开读取与管理员版本操作', () => {
   }
 })
 
-test('公告 schema 保留状态、版本和可见时间窗', () => {
+test('公告 schema 保留状态、版本、受众和可见时间窗', () => {
   const announcement = openapi.components.schemas.Announcement
   assert.ok(announcement)
-  for (const field of ['id', 'version', 'status', 'title_zh', 'title_en', 'body_zh', 'body_en', 'visible_from', 'visible_until']) {
+  for (const field of ['id', 'version', 'status', 'audience', 'title_zh', 'title_en', 'body_zh', 'body_en', 'visible_from', 'visible_until']) {
     assert.ok(announcement.properties[field], `公告缺少字段 ${field}`)
   }
   assert.match(JSON.stringify(announcement.properties.status), /draft/)
   assert.match(JSON.stringify(announcement.properties.status), /published/)
   assert.match(JSON.stringify(announcement.properties.status), /revoked/)
+  assert.deepEqual(openapi.components.schemas.AnnouncementAudience.enum, ['public', 'authenticated'])
 })
 
 test('公告前端接入公开首页、管理员路由与操作页面', async () => {
@@ -46,6 +47,7 @@ test('公告前端接入公开首页、管理员路由与操作页面', async ()
   assert.match(navigation, /announcements.*system-settings\/announcements/s)
   assert.match(page, /expected_version/)
   assert.match(page, /publish|revoke/)
+  assert.match(page, /audience/)
   assert.match(strip, /usePublicAnnouncements/)
 })
 
@@ -68,11 +70,14 @@ test('公告中英文文案完整且没有空占位符', async () => {
       messages.editor.edit,
       messages.editor.description,
       messages.fields.titleZh,
+      messages.fields.audience,
       messages.fields.titleEn,
       messages.fields.bodyZh,
       messages.fields.bodyEn,
       messages.fields.visibleFrom,
       messages.fields.visibleUntil,
+      messages.audience.public,
+      messages.audience.authenticated,
       messages.actions.refresh,
       messages.actions.retry,
       messages.actions.new,

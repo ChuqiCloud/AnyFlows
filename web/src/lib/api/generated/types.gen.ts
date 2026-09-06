@@ -1223,6 +1223,7 @@ export type Announcement = {
     id: number;
     version: number;
     status: string;
+    audience: AnnouncementAudience;
     title_zh: string;
     title_en: string;
     body_zh: string;
@@ -1235,6 +1236,8 @@ export type Announcement = {
     created_at: number;
     updated_at: number;
 };
+export type AnnouncementAudience = 'public' | 'authenticated';
+export type AnnouncementAudienceRequest = 'public' | 'authenticated';
 export type AnnouncementListResponse = {
     entries: Array<Announcement>;
 };
@@ -1242,6 +1245,7 @@ export type AnnouncementMutationRequest = {
     expected_version: number;
 };
 export type AnnouncementUpdateRequest = {
+    audience?: null | AnnouncementAudienceRequest;
     title_zh: string;
     title_en: string;
     body_zh: string;
@@ -1251,6 +1255,7 @@ export type AnnouncementUpdateRequest = {
     expected_version: number;
 };
 export type AnnouncementWriteRequest = {
+    audience?: null | AnnouncementAudienceRequest;
     title_zh: string;
     title_en: string;
     body_zh: string;
@@ -1510,9 +1515,9 @@ export type ModelCatalogTokenPrices = {
     cache_creation_5m: string;
     cache_creation_1h: string;
 };
-export type NotificationChannel = 'email';
-export type NotificationDeliveryState = 'queued' | 'accepted' | 'failed' | 'canceled';
-export type NotificationKind = 'balance_alert' | 'subscription_balance_alert' | 'subscription_purchase';
+export type NotificationChannel = 'email' | 'in_app';
+export type NotificationDeliveryState = 'queued' | 'accepted' | 'failed' | 'canceled' | 'available';
+export type NotificationKind = 'balance_alert' | 'subscription_balance_alert' | 'subscription_purchase' | 'product_update';
 export type OAuthLoginExchangeRequest = {
     ticket: string;
 };
@@ -2883,6 +2888,14 @@ export type UserNotification = {
     quota_used?: number | null;
     threshold_percent?: number | null;
     read_at?: number | null;
+    announcement_id?: number | null;
+    announcement_version?: number | null;
+    announcement_title_zh?: string | null;
+    announcement_title_en?: string | null;
+    announcement_body_zh?: string | null;
+    announcement_body_en?: string | null;
+    announcement_status?: number | null;
+    announcement_visible_until?: number | null;
 };
 export type UserNotificationListResponse = {
     entries: Array<UserNotification>;

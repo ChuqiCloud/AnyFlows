@@ -118,8 +118,9 @@ pub use af_db::{
     OrganizationScimAuditPageRecord, OrganizationScimAuditQuery, OrganizationScimAuditRecord,
 };
 pub use announcement::{
-    AnnouncementFuture, AnnouncementListFuture, AnnouncementService, AnnouncementServiceError,
-    AnnouncementStatus, AnnouncementView, AnnouncementWriteCommand, DatabaseAnnouncementService,
+    AnnouncementAudience, AnnouncementFuture, AnnouncementListFuture, AnnouncementService,
+    AnnouncementServiceError, AnnouncementStatus, AnnouncementView, AnnouncementWriteCommand,
+    DatabaseAnnouncementService,
 };
 pub use api_key::{
     ApiKeyDigest, ApiKeyGenerationError, ApiKeyParseError, ApiKeyPrefix, IssuedApiKey,

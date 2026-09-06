@@ -9,7 +9,10 @@ use thiserror::Error;
 use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
-use crate::{DatabasePool, entity::announcements};
+use crate::{
+    DatabasePool,
+    entity::{announcements, users},
+};
 
 pub const MAX_ANNOUNCEMENT_PAGE_SIZE: usize = 100;
 pub const MAX_ANNOUNCEMENT_TITLE_BYTES: usize = 160;
@@ -18,6 +21,29 @@ pub const MAX_ANNOUNCEMENT_BODY_BYTES: usize = 8 * 1_024;
 const DRAFT: i16 = 1;
 const PUBLISHED: i16 = 2;
 const REVOKED: i16 = 3;
+const ENABLED_USER_STATUS: i16 = 1;
+const PUBLIC_AUDIENCE: i16 = 1;
+const AUTHENTICATED_AUDIENCE: i16 = 2;
+
+/// 公告公开端与站内通知使用的受众范围。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(i16)]
+pub enum AnnouncementAudienceRecord {
+    Public = PUBLIC_AUDIENCE,
+    Authenticated = AUTHENTICATED_AUDIENCE,
+}
+
+impl TryFrom<i16> for AnnouncementAudienceRecord {
+    type Error = AnnouncementRepositoryError;
+
+    fn try_from(value: i16) -> Result<Self, Self::Error> {
+        match value {
+            PUBLIC_AUDIENCE => Ok(Self::Public),
+            AUTHENTICATED_AUDIENCE => Ok(Self::Authenticated),
+            _ => Err(AnnouncementRepositoryError::Invariant),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(i16)]
@@ -42,6 +68,7 @@ impl TryFrom<i16> for AnnouncementStatusRecord {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AnnouncementWriteRecord {
+    audience: AnnouncementAudienceRecord,
     title_zh: String,
     title_en: String,
     body_zh: String,
@@ -59,7 +86,28 @@ impl AnnouncementWriteRecord {
         visible_from: Option<TimeDateTimeWithTimeZone>,
         visible_until: Option<TimeDateTimeWithTimeZone>,
     ) -> Result<Self, AnnouncementRepositoryError> {
+        Self::new_with_audience(
+            AnnouncementAudienceRecord::Public,
+            title_zh,
+            title_en,
+            body_zh,
+            body_en,
+            visible_from,
+            visible_until,
+        )
+    }
+
+    pub fn new_with_audience(
+        audience: AnnouncementAudienceRecord,
+        title_zh: String,
+        title_en: String,
+        body_zh: String,
+        body_en: String,
+        visible_from: Option<TimeDateTimeWithTimeZone>,
+        visible_until: Option<TimeDateTimeWithTimeZone>,
+    ) -> Result<Self, AnnouncementRepositoryError> {
         let record = Self {
+            audience,
             title_zh,
             title_en,
             body_zh,
@@ -69,6 +117,10 @@ impl AnnouncementWriteRecord {
         };
         record.validate()?;
         Ok(record)
+    }
+
+    pub const fn audience(&self) -> AnnouncementAudienceRecord {
+        self.audience
     }
 
     fn validate(&self) -> Result<(), AnnouncementRepositoryError> {
@@ -116,6 +168,7 @@ pub struct AnnouncementRecord {
     id: i64,
     version: i64,
     status: AnnouncementStatusRecord,
+    audience: AnnouncementAudienceRecord,
     title_zh: String,
     title_en: String,
     body_zh: String,
@@ -138,6 +191,9 @@ impl AnnouncementRecord {
     }
     pub const fn status(&self) -> AnnouncementStatusRecord {
         self.status
+    }
+    pub const fn audience(&self) -> AnnouncementAudienceRecord {
+        self.audience
     }
     pub fn title_zh(&self) -> &str {
         &self.title_zh
@@ -325,6 +381,7 @@ impl AnnouncementRepository {
             .add(announcements::Column::VisibleUntil.gt(now));
         let models = announcements::Entity::find()
             .filter(announcements::Column::Status.eq(PUBLISHED))
+            .filter(announcements::Column::Audience.eq(PUBLIC_AUDIENCE))
             .filter(visible_from)
             .filter(visible_until)
             .order_by_desc(announcements::Column::PublishedAt)
@@ -351,6 +408,7 @@ impl AnnouncementRepository {
             id: Default::default(),
             version: Set(1),
             status: Set(DRAFT),
+            audience: Set(record.audience as i16),
             title_zh: Set(record.title_zh),
             title_en: Set(record.title_en),
             body_zh: Set(record.body_zh),
@@ -393,6 +451,7 @@ impl AnnouncementRepository {
         }
         let mut active = existing.into_active_model();
         active.version = Set(expected_version + 1);
+        active.audience = Set(record.audience as i16);
         active.title_zh = Set(record.title_zh);
         active.title_en = Set(record.title_en);
         active.body_zh = Set(record.body_zh);
@@ -452,6 +511,28 @@ impl AnnouncementRepository {
             .await
             .map_err(|_| AnnouncementRepositoryError::Query)?;
         let result = record_from_model(saved)?;
+        if to == PUBLISHED && is_visible_at(&result, now) {
+            let recipients = users::Entity::find()
+                .filter(users::Column::Status.eq(ENABLED_USER_STATUS))
+                .filter(users::Column::DeletedAt.is_null())
+                .all(&transaction)
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(|_| AnnouncementRepositoryError::Query)?;
+            for recipient in recipients {
+                crate::notification::insert_product_update(
+                    &transaction,
+                    &crate::notification::UserNotificationWrite::product_update(
+                        recipient.id,
+                        result.id(),
+                        result.version(),
+                        now,
+                    ),
+                )
+                .await
+                .map_err(|_| AnnouncementRepositoryError::Query)?;
+            }
+        }
         transaction
             .commit()
             .with_subscriber(NoSubscriber::default())
@@ -459,6 +540,11 @@ impl AnnouncementRepository {
             .map_err(|_| AnnouncementRepositoryError::Query)?;
         Ok(result)
     }
+}
+
+fn is_visible_at(record: &AnnouncementRecord, now: TimeDateTimeWithTimeZone) -> bool {
+    record.visible_from().is_none_or(|value| value <= now)
+        && record.visible_until().is_none_or(|value| value > now)
 }
 
 async fn lock_row(
@@ -498,6 +584,7 @@ fn record_from_model(
     if model.id <= 0
         || model.version <= 0
         || model.created_by <= 0
+        || AnnouncementAudienceRecord::try_from(model.audience).is_err()
         || !valid_title(&model.title_zh)
         || !valid_title(&model.title_en)
         || !valid_body(&model.body_zh)
@@ -513,6 +600,7 @@ fn record_from_model(
         id: model.id,
         version: model.version,
         status: AnnouncementStatusRecord::try_from(model.status)?,
+        audience: AnnouncementAudienceRecord::try_from(model.audience)?,
         title_zh: model.title_zh,
         title_en: model.title_en,
         body_zh: model.body_zh,
@@ -568,6 +656,22 @@ mod tests {
         );
         assert_eq!(
             AnnouncementStatusRecord::try_from(4),
+            Err(AnnouncementRepositoryError::Invariant)
+        );
+    }
+
+    #[test]
+    fn audience_codes_are_closed() {
+        assert_eq!(
+            AnnouncementAudienceRecord::try_from(1),
+            Ok(AnnouncementAudienceRecord::Public)
+        );
+        assert_eq!(
+            AnnouncementAudienceRecord::try_from(2),
+            Ok(AnnouncementAudienceRecord::Authenticated)
+        );
+        assert_eq!(
+            AnnouncementAudienceRecord::try_from(3),
             Err(AnnouncementRepositoryError::Invariant)
         );
     }

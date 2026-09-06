@@ -18,6 +18,7 @@ pub(in crate::migration) mod announcements {
         Id,
         Version,
         Status,
+        Audience,
         TitleZh,
         TitleEn,
         BodyZh,
