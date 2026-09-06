@@ -1,4 +1,4 @@
-import { Building2, LoaderCircle, Search } from 'lucide-react'
+import { Building2, LoaderCircle, MailPlus, Pencil, Search } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -9,10 +9,13 @@ import { Label } from '@/components/ui/label'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import {
   isValidPlatformOrganizationReason,
+  usePlatformOrganizations,
   usePlatformUserOrganizations,
   type PlatformUserOrganizationAccess,
 } from '@/features/platform-organizations/platform-organization-api'
-import type { AdminUser, PlatformUserOrganizationSummaryResponse } from '@/lib/api/generated/types.gen'
+import { PlatformOrganizationInvitationDialog } from '@/features/platform-organizations/platform-organization-invitation-dialog'
+import { PlatformOrganizationMemberDialog } from '@/features/platform-organizations/platform-organization-member-dialog'
+import type { AdminUser, PlatformOrganizationMemberResponse, PlatformUserOrganizationSummaryResponse } from '@/lib/api/generated/types.gen'
 
 type UserOrganizationsSheetProps = {
   open: boolean
@@ -25,8 +28,12 @@ export function UserOrganizationsSheet({ open, user, onOpenChange }: UserOrganiz
   const { i18n, t } = useTranslation()
   const [reason, setReason] = useState('')
   const [access, setAccess] = useState<PlatformUserOrganizationAccess>()
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const [editing, setEditing] = useState<PlatformOrganizationMemberResponse>()
   const query = usePlatformUserOrganizations(open ? access : undefined)
+  const directoryQuery = usePlatformOrganizations(inviteOpen && access ? { reason: access.reason } : undefined, 100)
   const organizations = query.data?.pages.flatMap((page) => page.organizations) ?? []
+  const directory = directoryQuery.data?.pages.flatMap((page) => page.organizations) ?? []
   const validReason = isValidPlatformOrganizationReason(reason)
   const timeFormat = new Intl.DateTimeFormat(i18n.resolvedLanguage === 'zh' ? 'zh-CN' : 'en-US', {
     dateStyle: 'medium',
@@ -36,6 +43,8 @@ export function UserOrganizationsSheet({ open, user, onOpenChange }: UserOrganiz
   useEffect(() => {
     setReason('')
     setAccess(undefined)
+    setInviteOpen(false)
+    setEditing(undefined)
   }, [open, user?.id])
 
   const load = (event: FormEvent) => {
@@ -86,6 +95,16 @@ export function UserOrganizationsSheet({ open, user, onOpenChange }: UserOrganiz
               </Button>
             </form>
 
+            {access ? (
+              <div className="flex items-start justify-between gap-3 border-b border-[var(--hairline)] py-4">
+                <div>
+                  <p className="text-xs font-medium">{t('users.organizations.assignTitle')}</p>
+                  <p className="mt-1 text-[0.6875rem] leading-4 text-muted-foreground">{t('users.organizations.assignHint')}</p>
+                </div>
+                <Button type="button" size="sm" disabled={!user.email} onClick={() => setInviteOpen(true)}><MailPlus aria-hidden="true" />{t('users.organizations.assign')}</Button>
+              </div>
+            ) : null}
+
             {!access ? (
               <MembershipState title={t('users.organizations.initialTitle')} body={t('users.organizations.initialBody')} />
             ) : query.isPending ? (
@@ -101,7 +120,20 @@ export function UserOrganizationsSheet({ open, user, onOpenChange }: UserOrganiz
             ) : (
               <div className="divide-y divide-[var(--hairline)]">
                 {organizations.map((organization) => (
-                  <UserOrganizationRow key={organization.membership_id} organization={organization} timeFormat={timeFormat} />
+                  <UserOrganizationRow key={organization.membership_id} organization={organization} timeFormat={timeFormat} onEdit={() => setEditing({
+                    membership_id: organization.membership_id,
+                    organization_id: organization.organization_id,
+                    user_id: user.id,
+                    username: user.username,
+                    email: user.email,
+                    role: organization.role,
+                    team_id: null,
+                    status: organization.membership_status,
+                    joined_at: organization.joined_at,
+                    suspended_at: null,
+                    removed_at: null,
+                    version: organization.version,
+                  })} />
                 ))}
               </div>
             )}
@@ -122,6 +154,18 @@ export function UserOrganizationsSheet({ open, user, onOpenChange }: UserOrganiz
             ) : null}
           </div>
         ) : null}
+        <PlatformOrganizationMemberDialog organizationName={organizations.find((organization) => organization.membership_id === editing?.membership_id)?.organization_name ?? ''} member={editing} reason={access?.reason ?? ''} onOpenChange={(next) => { if (!next) setEditing(undefined) }} />
+        <PlatformOrganizationInvitationDialog
+          open={inviteOpen}
+          reason={access?.reason ?? ''}
+          organizations={directory.map((organization) => ({ id: organization.id, name: organization.name }))}
+          initialEmail={user?.email ?? undefined}
+          lockEmail
+          hasMoreOrganizations={directoryQuery.hasNextPage}
+          loadingMoreOrganizations={directoryQuery.isFetchingNextPage}
+          onLoadMoreOrganizations={() => void directoryQuery.fetchNextPage()}
+          onOpenChange={setInviteOpen}
+        />
       </SheetContent>
     </Sheet>
   )
@@ -130,9 +174,11 @@ export function UserOrganizationsSheet({ open, user, onOpenChange }: UserOrganiz
 function UserOrganizationRow({
   organization,
   timeFormat,
+  onEdit,
 }: {
   organization: PlatformUserOrganizationSummaryResponse
   timeFormat: Intl.DateTimeFormat
+  onEdit: () => void
 }) {
   const { t } = useTranslation()
   return (
@@ -154,6 +200,7 @@ function UserOrganizationRow({
         <div><dt className="text-muted-foreground">{t('users.organizations.joinedAt')}</dt><dd className="mt-1">{timeFormat.format(organization.joined_at * 1_000)}</dd></div>
         <div className="col-span-2"><dt className="text-muted-foreground">{t('users.organizations.membershipId')}</dt><dd className="mt-1 font-mono">#{organization.membership_id} · v{organization.version}</dd></div>
       </dl>
+      {organization.membership_status !== 'removed' && organization.role !== 'owner' ? <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={onEdit}><Pencil aria-hidden="true" />{t('users.organizations.manageMembership')}</Button> : null}
     </article>
   )
 }

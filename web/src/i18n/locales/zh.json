@@ -1193,7 +1193,8 @@
       "owner": "Owner",
       "members": "活动成员 / 席位",
       "status": "状态",
-      "validUntil": "授权有效期"
+      "validUntil": "授权有效期",
+      "actions": "操作"
     },
     "values": {
       "seats": "{{active}} / {{limit}}"
@@ -1222,6 +1223,55 @@
       "member": "成员",
       "viewer": "只读"
     },
+    "members": {
+      "title": "企业成员管理",
+      "description": "查看成员身份，并按平台理由调整固定角色或生命周期。所有操作都会写入平台审计。",
+      "loaded_one": "已加载 {{count}} 名成员",
+      "loaded_other": "已加载 {{count}} 名成员",
+      "invite": "邀请成员",
+      "edit": "调整",
+      "noEmail": "未设置邮箱",
+      "ownerProtected": "Owner 需走所有权转移",
+      "removedLocked": "已移除，不可恢复",
+      "emptyTitle": "暂无成员记录",
+      "emptyBody": "当前企业没有可展示的成员关系。",
+      "errorTitle": "无法读取企业成员",
+      "errorBody": "请确认平台权限与操作理由后重试。",
+      "status": {
+        "active": "正常",
+        "suspended": "已暂停",
+        "removed": "已移除"
+      },
+      "editor": {
+        "title": "调整企业成员",
+        "description": "正在调整 {{organization}} 中 {{username}} 的固定角色和状态。",
+        "role": "企业角色",
+        "status": "成员状态",
+        "boundary": "团队归属保持不变；Owner 必须通过企业所有权转移流程处理。",
+        "removedWarning": "移除后不可恢复，旧企业 Key 会立即停用。",
+        "error": "保存失败。请刷新成员列表，检查版本、最后 Owner、席位或授权状态。",
+        "cancel": "取消",
+        "save": "保存调整"
+      }
+    },
+    "invitation": {
+      "title": "邀请用户加入企业",
+      "description": "创建待接受邀请。平台不会直接把用户写入企业成员关系。",
+      "organization": "目标企业",
+      "email": "用户邮箱",
+      "role": "接受后的企业角色",
+      "acceptHint": "请将一次性令牌交给目标用户，由其登录后确认接受；邀请默认七天有效。",
+      "loadingOrganizations": "正在加载企业…",
+      "loadMoreOrganizations": "加载更多企业",
+      "issued": "邀请已创建。成员关系会在目标用户接受后生成。",
+      "token": "一次性邀请令牌",
+      "tokenHint": "令牌只显示这一次，关闭后无法再次查看。",
+      "copy": "复制邀请令牌",
+      "error": "邀请创建失败。请检查邮箱、重复邀请、企业席位和授权状态。",
+      "cancel": "取消",
+      "submit": "创建邀请",
+      "done": "完成"
+    },
     "loading": "正在加载企业目录",
     "empty": {
       "title": "暂无企业",
@@ -1235,7 +1285,8 @@
     "actions": {
       "refresh": "刷新",
       "retry": "重试",
-      "loadMore": "加载更多"
+      "loadMore": "加载更多",
+      "manageMembers": "管理成员"
     }
   },
   "users": {
@@ -1440,7 +1491,11 @@
       "loadMore": "加载更多",
       "entitlement": "企业授权",
       "joinedAt": "加入时间",
-      "membershipId": "成员关系"
+      "membershipId": "成员关系",
+      "assignTitle": "添加企业归属",
+      "assignHint": "通过企业邀请分配归属，用户接受后才会正式加入。",
+      "assign": "邀请加入企业",
+      "manageMembership": "调整此归属"
     }
   },
   "groups": {

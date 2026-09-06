@@ -65,6 +65,7 @@ mod payment_settings;
 #[cfg(test)]
 mod payment_settings_tests;
 mod platform_organization_directory;
+mod platform_organization_management;
 mod platform_rbac;
 mod playground_conversation;
 mod playground_share;
@@ -494,6 +495,14 @@ pub use platform_organization_directory::{
     PlatformOrganizationDirectoryService, PlatformOrganizationSummary,
     PlatformUserOrganizationFuture, PlatformUserOrganizationPage, PlatformUserOrganizationQuery,
     PlatformUserOrganizationSummary,
+};
+pub use platform_organization_management::{
+    DEFAULT_PLATFORM_ORGANIZATION_MEMBER_PAGE_SIZE, DatabasePlatformOrganizationManagementService,
+    PlatformOrganizationInvitationFuture, PlatformOrganizationManagementError,
+    PlatformOrganizationManagementService, PlatformOrganizationMember,
+    PlatformOrganizationMemberChangeCommand, PlatformOrganizationMemberFuture,
+    PlatformOrganizationMemberPage, PlatformOrganizationMemberPageFuture,
+    PlatformOrganizationMemberQuery,
 };
 pub use platform_rbac::{
     DEFAULT_PLATFORM_AUDIT_PAGE_SIZE, DatabasePlatformAuditService, PlatformAuditEntry,

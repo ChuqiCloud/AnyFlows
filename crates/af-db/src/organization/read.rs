@@ -20,7 +20,8 @@ use super::{
     OrganizationMembershipPageRecord, OrganizationMembershipRecord, OrganizationRecord,
     OrganizationRepository, OrganizationRepositoryError, OrganizationTeamPageRecord,
     OrganizationTeamRecord, PlatformOrganizationDirectoryPageRecord,
-    PlatformOrganizationDirectoryRecord, PlatformUserOrganizationPageRecord,
+    PlatformOrganizationDirectoryRecord, PlatformOrganizationMemberPageRecord,
+    PlatformOrganizationMemberRecord, PlatformUserOrganizationPageRecord,
     PlatformUserOrganizationRecord, record_internal_error,
 };
 
@@ -324,6 +325,110 @@ pub(super) async fn list_user_organizations(
     Ok(PlatformUserOrganizationPageRecord::new(
         records,
         next_cursor,
+    ))
+}
+
+/// 按企业范围读取成员身份摘要，成员与用户必须在同一批结果中完整对应。
+pub(super) async fn list_platform_members(
+    repository: &OrganizationRepository,
+    organization_id: OrganizationId,
+    after: Option<OrganizationMembershipId>,
+    limit: usize,
+) -> Result<PlatformOrganizationMemberPageRecord, OrganizationRepositoryError> {
+    validate_directory_limit(limit)?;
+    let organization_exists = organizations::Entity::find_by_id(organization_id.get())
+        .one(repository.pool.connection())
+        .await
+        .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?
+        .is_some();
+    if !organization_exists {
+        return Err(OrganizationRepositoryError::NotFound);
+    }
+
+    let mut query = organization_memberships::Entity::find()
+        .filter(organization_memberships::Column::OrganizationId.eq(organization_id.get()))
+        .order_by_asc(organization_memberships::Column::Id);
+    if let Some(after) = after {
+        query = query.filter(organization_memberships::Column::Id.gt(after.get()));
+    }
+    let fetch_limit =
+        u64::try_from(limit.checked_add(1).ok_or_else(invariant)?).map_err(|_| invariant())?;
+    let mut memberships = query
+        .limit(fetch_limit)
+        .all(repository.pool.connection())
+        .await
+        .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?;
+    let has_more = memberships.len() > limit;
+    if has_more {
+        memberships.truncate(limit);
+    }
+    if memberships.is_empty() {
+        return Ok(PlatformOrganizationMemberPageRecord::new(Vec::new(), None));
+    }
+
+    let user_ids = memberships
+        .iter()
+        .map(|membership| membership.user_id)
+        .collect::<Vec<_>>();
+    let user_models = users::Entity::find()
+        .filter(users::Column::Id.is_in(user_ids))
+        .all(repository.pool.connection())
+        .await
+        .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?;
+    let mut identities = HashMap::with_capacity(user_models.len());
+    for user in user_models {
+        if identities
+            .insert(user.id, (user.username, user.email))
+            .is_some()
+        {
+            return Err(invariant());
+        }
+    }
+    let next_cursor = has_more
+        .then(|| {
+            memberships
+                .last()
+                .and_then(|model| OrganizationMembershipId::new(model.id).ok())
+        })
+        .flatten();
+    let mut records = Vec::with_capacity(memberships.len());
+    for membership in memberships {
+        let (username, email) = identities
+            .remove(&membership.user_id)
+            .ok_or_else(invariant)?;
+        records.push(PlatformOrganizationMemberRecord::new(
+            membership_record(membership)?,
+            username,
+            email,
+        ));
+    }
+    Ok(PlatformOrganizationMemberPageRecord::new(
+        records,
+        next_cursor,
+    ))
+}
+
+/// 按企业和成员双重范围读取平台成员身份，禁止跨企业复用成员 ID。
+pub(super) async fn platform_member(
+    repository: &OrganizationRepository,
+    organization_id: OrganizationId,
+    membership_id: OrganizationMembershipId,
+) -> Result<PlatformOrganizationMemberRecord, OrganizationRepositoryError> {
+    let membership = organization_memberships::Entity::find_by_id(membership_id.get())
+        .filter(organization_memberships::Column::OrganizationId.eq(organization_id.get()))
+        .one(repository.pool.connection())
+        .await
+        .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?
+        .ok_or(OrganizationRepositoryError::NotFound)?;
+    let user = users::Entity::find_by_id(membership.user_id)
+        .one(repository.pool.connection())
+        .await
+        .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?
+        .ok_or_else(invariant)?;
+    Ok(PlatformOrganizationMemberRecord::new(
+        membership_record(membership)?,
+        user.username,
+        user.email,
     ))
 }
 

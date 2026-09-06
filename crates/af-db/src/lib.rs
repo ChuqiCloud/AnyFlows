@@ -532,6 +532,7 @@ pub use organization::{
     OrganizationRepositoryConfigError, OrganizationRepositoryError, OrganizationTeamChange,
     OrganizationTeamCreate, OrganizationTeamPageRecord, OrganizationTeamRecord,
     PlatformOrganizationDirectoryPageRecord, PlatformOrganizationDirectoryRecord,
+    PlatformOrganizationMemberPageRecord, PlatformOrganizationMemberRecord,
     PlatformUserOrganizationPageRecord, PlatformUserOrganizationRecord,
 };
 pub use organization_approval::{

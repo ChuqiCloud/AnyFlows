@@ -30,7 +30,8 @@ pub use types::{
     OrganizationOwnershipTransferRecord, OrganizationRecord, OrganizationRepositoryConfigError,
     OrganizationRepositoryError, OrganizationTeamChange, OrganizationTeamCreate,
     OrganizationTeamPageRecord, OrganizationTeamRecord, PlatformOrganizationDirectoryPageRecord,
-    PlatformOrganizationDirectoryRecord, PlatformUserOrganizationPageRecord,
+    PlatformOrganizationDirectoryRecord, PlatformOrganizationMemberPageRecord,
+    PlatformOrganizationMemberRecord, PlatformUserOrganizationPageRecord,
     PlatformUserOrganizationRecord,
 };
 
@@ -161,6 +162,32 @@ impl OrganizationRepository {
         limit: usize,
     ) -> Result<PlatformUserOrganizationPageRecord, OrganizationRepositoryError> {
         self.run(read::list_user_organizations(self, user_id, after, limit))
+            .await
+    }
+
+    /// 按成员关系 ID 游标读取指定企业的成员身份摘要。
+    pub async fn list_platform_members(
+        &self,
+        organization_id: OrganizationId,
+        after: Option<OrganizationMembershipId>,
+        limit: usize,
+    ) -> Result<PlatformOrganizationMemberPageRecord, OrganizationRepositoryError> {
+        self.run(read::list_platform_members(
+            self,
+            organization_id,
+            after,
+            limit,
+        ))
+        .await
+    }
+
+    /// 按企业和成员双重范围读取单个成员身份摘要。
+    pub async fn platform_member(
+        &self,
+        organization_id: OrganizationId,
+        membership_id: OrganizationMembershipId,
+    ) -> Result<PlatformOrganizationMemberRecord, OrganizationRepositoryError> {
+        self.run(read::platform_member(self, organization_id, membership_id))
             .await
     }
 
