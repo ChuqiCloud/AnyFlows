@@ -29,6 +29,7 @@
     "sections": {
       "personal": "Personal account",
       "organization": "Organization",
+      "enterprise": "Organizations & users",
       "operations": "Users & commerce",
       "gateway": "Models & gateway",
       "platform": "Platform settings"
@@ -1291,6 +1292,20 @@
   "users": {
     "title": "User management",
     "subtitle": "Manage platform accounts, roles, default groups, wallets, and request limits. Administrators retain their own user features.",
+    "enterpriseGuide": {
+      "title": "How to add a user to an organization",
+      "body": "Confirm the target organization in the directory, then open Organization memberships from the user's row. Create an invitation and give the one-time token to the user; the membership becomes effective only after the user signs in and accepts it. Existing members can have their role or status adjusted from the same sheet.",
+      "steps": {
+        "directory": "Confirm the organization, seats, and entitlement.",
+        "membership": "Enter an audited platform reason, then invite or adjust.",
+        "accept": "The user must sign in and accept the one-time token."
+      },
+      "links": {
+        "directory": "Open organization directory",
+        "provisioning": "Review organization applications",
+        "verification": "Review organization verification"
+      }
+    },
     "count_one": "{{count}} user loaded",
     "count_other": "{{count}} users loaded",
     "pages_one": "{{count}} page loaded",

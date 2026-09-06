@@ -87,7 +87,7 @@ function RowActions(props: {
         <TooltipContent>{t('users.actions.wallet')}</TooltipContent>
       </Tooltip>
       <Tooltip>
-        <TooltipTrigger asChild><Button type="button" size="icon-sm" variant="ghost" className="size-10 md:size-8" aria-label={t('users.actions.organizations')} onClick={() => props.onOrganizations(props.user)}><UsersRound aria-hidden="true" /></Button></TooltipTrigger>
+        <TooltipTrigger asChild><Button type="button" size="icon-sm" variant="ghost" className="size-10 gap-1.5 px-2 md:size-8 xl:h-8 xl:w-auto" aria-label={t('users.actions.organizations')} onClick={() => props.onOrganizations(props.user)}><UsersRound aria-hidden="true" /><span className="hidden xl:inline text-[0.6875rem]">{t('users.actions.organizations')}</span></Button></TooltipTrigger>
         <TooltipContent>{t('users.actions.organizations')}</TooltipContent>
       </Tooltip>
       <Tooltip>

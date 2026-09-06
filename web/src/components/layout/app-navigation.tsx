@@ -131,6 +131,7 @@ const navItems = {
 const sectionIcons = {
   personal: CircleUserRound,
   organization: Building2,
+  enterprise: Building2,
   operations: BriefcaseBusiness,
   gateway: Waypoints,
   platform: Settings2,

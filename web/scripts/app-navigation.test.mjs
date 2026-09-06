@@ -31,7 +31,7 @@ test('管理员导航覆盖全部入口且没有重复项', () => {
 test('管理员工作台和任务域保持规划顺序', () => {
   assert.deepEqual(adminWorkspaceItems, ['overview', 'usage', 'models', 'playground', 'videoTasks'])
   assert.deepEqual(adminNavigationSections.map((section) => section.key), [
-    'personal', 'organization', 'operations', 'gateway', 'platform',
+    'personal', 'organization', 'enterprise', 'operations', 'gateway', 'platform',
   ])
   assert.deepEqual(adminSystemItems, ['debugTraces'])
 })
@@ -65,10 +65,24 @@ test('管理员导航分组具备完整中英文文案', async () => {
     assert.equal(typeof locale.nav.groups.workspace, 'string')
     assert.equal(typeof locale.nav.groups.personal, 'string')
     assert.equal(typeof locale.nav.groups.organization, 'string')
+    assert.equal(typeof locale.nav.sections.enterprise, 'string')
     for (const section of adminNavigationSections) {
       assert.equal(typeof locale.nav.sections[section.key], 'string')
     }
   }
+})
+
+test('管理员用户页明确企业归属的邀请接受边界', async () => {
+  const [page, table, zh] = await Promise.all([
+    readFile(new URL('../src/features/users/user-page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/features/users/user-table.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/i18n/locales/zh.json', import.meta.url), 'utf8').then(JSON.parse),
+  ])
+  assert.match(page, /EnterpriseManagementGuide/)
+  assert.match(page, /organization-provisioning/)
+  assert.match(page, /organization-verification/)
+  assert.match(table, /users\.actions\.organizations/)
+  assert.equal(typeof zh.users.enterpriseGuide.steps.accept, 'string')
 })
 
 test('子菜单仅为当前活动项使用强调色图标', async () => {

@@ -29,6 +29,7 @@
     "sections": {
       "personal": "个人账户",
       "organization": "企业空间",
+      "enterprise": "企业管理",
       "operations": "用户与商业化",
       "gateway": "模型与网关",
       "platform": "平台配置"
@@ -1293,6 +1294,20 @@
   "users": {
     "title": "用户管理",
     "subtitle": "管理平台账户、角色、默认分组、钱包与请求限制。管理员仍保留自己的用户功能。",
+    "enterpriseGuide": {
+      "title": "给用户加入企业的正确流程",
+      "body": "先在企业目录确认目标企业，再从用户行末的“企业归属”打开抽屉。创建邀请后，把一次性令牌交给用户；用户登录后在邀请中心接受，成员关系才会生效。已加入的成员可在同一抽屉调整角色或暂停状态。",
+      "steps": {
+        "directory": "确认目标企业和席位/授权状态。",
+        "membership": "输入平台审计理由，创建邀请或调整成员。",
+        "accept": "用户必须登录并接受一次性邀请令牌。"
+      },
+      "links": {
+        "directory": "打开企业目录",
+        "provisioning": "审批企业开通",
+        "verification": "审核企业认证"
+      }
+    },
     "count_one": "已加载 {{count}} 个用户",
     "count_other": "已加载 {{count}} 个用户",
     "pages_one": "已读取 {{count}} 页",
