@@ -3368,8 +3368,13 @@
       "titleEn": "English title",
       "bodyZh": "Chinese body",
       "bodyEn": "English body",
+      "audience": "Audience",
       "visibleFrom": "Visible from",
       "visibleUntil": "Visible until"
+    },
+    "audience": {
+      "public": "Public visitors",
+      "authenticated": "Signed-in users"
     },
     "actions": {
       "refresh": "Refresh",
@@ -6246,7 +6251,7 @@
     },
     "notificationHistory": {
       "title": "Notification history",
-      "subtitle": "System-known delivery facts for balance and subscription alerts. SMTP acceptance does not prove inbox delivery or reading.",
+      "subtitle": "System-known notification facts for balance alerts, subscription alerts, and product updates. SMTP acceptance does not prove inbox delivery or reading.",
       "loadError": "Notification history is temporarily unavailable.",
       "olderLoadError": "Older notifications could not be loaded.",
       "empty": "No notification facts yet.",
@@ -6259,24 +6264,33 @@
       "kind": {
         "balance_alert": "Balance alert",
         "subscription_balance_alert": "Subscription window alert",
-        "subscription_purchase": "Subscription purchase"
+        "subscription_purchase": "Subscription purchase",
+        "product_update": "Product update"
       },
       "state": {
         "queued": "Queued",
         "accepted": "SMTP accepted",
         "failed": "Failed",
-        "canceled": "Canceled"
+        "canceled": "Canceled",
+        "available": "Available"
       },
       "readState": {
         "read": "Read",
         "unread": "Unread"
       },
       "channel": {
-        "email": "Email"
+        "email": "Email",
+        "in_app": "In-app"
       },
       "balanceDetail": "Observed quota {{observed}}, threshold {{threshold}}",
       "subscriptionDetail": "Used {{used}} / {{amount}}, threshold {{threshold}}%",
       "purchaseDetail": "Subscription purchase confirmation recorded",
+      "productUpdateDetail": "Product update recorded",
+      "announcementStatus": {
+        "published": "Currently published",
+        "expired": "Expired",
+        "revoked": "Revoked"
+      },
       "meta": "{{time}} · Attempts {{attempts}} · #{{id}}"
     },
     "organizationApprovalNotifications": {

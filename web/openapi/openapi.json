@@ -35544,6 +35544,7 @@
           "id",
           "version",
           "status",
+          "audience",
           "title_zh",
           "title_en",
           "body_zh",
@@ -35566,6 +35567,9 @@
           "status": {
             "type": "string",
             "pattern": "^(draft|published|revoked)$"
+          },
+          "audience": {
+            "$ref": "#/components/schemas/AnnouncementAudience"
           },
           "title_zh": {
             "type": "string",
@@ -35631,6 +35635,20 @@
         },
         "additionalProperties": false
       },
+      "AnnouncementAudience": {
+        "type": "string",
+        "enum": [
+          "public",
+          "authenticated"
+        ]
+      },
+      "AnnouncementAudienceRequest": {
+        "type": "string",
+        "enum": [
+          "public",
+          "authenticated"
+        ]
+      },
       "AnnouncementListResponse": {
         "type": "object",
         "required": [
@@ -35670,6 +35688,16 @@
           "expected_version"
         ],
         "properties": {
+          "audience": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AnnouncementAudienceRequest"
+              }
+            ]
+          },
           "title_zh": {
             "type": "string",
             "maxLength": 160,
@@ -35721,6 +35749,16 @@
           "body_en"
         ],
         "properties": {
+          "audience": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AnnouncementAudienceRequest"
+              }
+            ]
+          },
           "title_zh": {
             "type": "string",
             "maxLength": 160,
@@ -37363,7 +37401,8 @@
       "NotificationChannel": {
         "type": "string",
         "enum": [
-          "email"
+          "email",
+          "in_app"
         ]
       },
       "NotificationDeliveryState": {
@@ -37372,7 +37411,8 @@
           "queued",
           "accepted",
           "failed",
-          "canceled"
+          "canceled",
+          "available"
         ]
       },
       "NotificationKind": {
@@ -37380,7 +37420,8 @@
         "enum": [
           "balance_alert",
           "subscription_balance_alert",
-          "subscription_purchase"
+          "subscription_purchase",
+          "product_update"
         ]
       },
       "OAuthLoginExchangeRequest": {
@@ -44651,6 +44692,58 @@
             "format": "int32"
           },
           "read_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "announcement_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "announcement_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "announcement_title_zh": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "announcement_title_en": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "announcement_body_zh": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "announcement_body_en": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "announcement_status": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "announcement_visible_until": {
             "type": [
               "integer",
               "null"

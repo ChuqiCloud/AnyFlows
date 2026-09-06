@@ -1,8 +1,9 @@
 use std::{fmt, future::Future, pin::Pin, sync::Arc};
 
 use af_db::{
-    AnnouncementRecord, AnnouncementRepository, AnnouncementRepositoryError,
-    AnnouncementStatusRecord, AnnouncementWriteRecord, DatabaseTimestamp,
+    AnnouncementAudienceRecord, AnnouncementRecord, AnnouncementRepository,
+    AnnouncementRepositoryError, AnnouncementStatusRecord, AnnouncementWriteRecord,
+    DatabaseTimestamp,
 };
 use thiserror::Error;
 
@@ -10,6 +11,7 @@ use crate::{SessionPrincipal, SessionRole};
 
 /// 管理员提交的公告正文与可见时间窗口。
 pub struct AnnouncementWriteCommand {
+    audience: AnnouncementAudience,
     title_zh: String,
     title_en: String,
     body_zh: String,
@@ -28,6 +30,27 @@ impl AnnouncementWriteCommand {
         visible_from: Option<i64>,
         visible_until: Option<i64>,
     ) -> Result<Self, AnnouncementServiceError> {
+        Self::new_with_audience(
+            AnnouncementAudience::Public,
+            title_zh,
+            title_en,
+            body_zh,
+            body_en,
+            visible_from,
+            visible_until,
+        )
+    }
+
+    /// 构造指定受众范围的公告写入命令。
+    pub fn new_with_audience(
+        audience: AnnouncementAudience,
+        title_zh: String,
+        title_en: String,
+        body_zh: String,
+        body_en: String,
+        visible_from: Option<i64>,
+        visible_until: Option<i64>,
+    ) -> Result<Self, AnnouncementServiceError> {
         let visible_from = visible_from
             .map(DatabaseTimestamp::from_unix_timestamp)
             .transpose()
@@ -36,7 +59,8 @@ impl AnnouncementWriteCommand {
             .map(DatabaseTimestamp::from_unix_timestamp)
             .transpose()
             .map_err(|_| AnnouncementServiceError::InvalidRequest)?;
-        AnnouncementWriteRecord::new(
+        AnnouncementWriteRecord::new_with_audience(
+            audience.into_record(),
             title_zh.clone(),
             title_en.clone(),
             body_zh.clone(),
@@ -46,6 +70,7 @@ impl AnnouncementWriteCommand {
         )
         .map_err(|_| AnnouncementServiceError::InvalidRequest)?;
         Ok(Self {
+            audience,
             title_zh,
             title_en,
             body_zh,
@@ -56,7 +81,8 @@ impl AnnouncementWriteCommand {
     }
 
     fn into_record(self) -> Result<AnnouncementWriteRecord, AnnouncementServiceError> {
-        AnnouncementWriteRecord::new(
+        AnnouncementWriteRecord::new_with_audience(
+            self.audience.into_record(),
             self.title_zh,
             self.title_en,
             self.body_zh,
@@ -71,6 +97,22 @@ impl AnnouncementWriteCommand {
                 .map_err(|_| AnnouncementServiceError::InvalidRequest)?,
         )
         .map_err(|_| AnnouncementServiceError::InvalidRequest)
+    }
+}
+
+/// 公告是否可被未登录访客读取；登录用户两种范围都会产生站内投影。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AnnouncementAudience {
+    Public,
+    Authenticated,
+}
+
+impl AnnouncementAudience {
+    fn into_record(self) -> AnnouncementAudienceRecord {
+        match self {
+            Self::Public => AnnouncementAudienceRecord::Public,
+            Self::Authenticated => AnnouncementAudienceRecord::Authenticated,
+        }
     }
 }
 
@@ -94,6 +136,7 @@ pub struct AnnouncementView {
     id: i64,
     version: i64,
     status: AnnouncementStatus,
+    audience: AnnouncementAudience,
     title_zh: String,
     title_en: String,
     body_zh: String,
@@ -114,10 +157,15 @@ impl AnnouncementView {
             AnnouncementStatusRecord::Published => AnnouncementStatus::Published,
             AnnouncementStatusRecord::Revoked => AnnouncementStatus::Revoked,
         };
+        let audience = match record.audience() {
+            AnnouncementAudienceRecord::Public => AnnouncementAudience::Public,
+            AnnouncementAudienceRecord::Authenticated => AnnouncementAudience::Authenticated,
+        };
         Ok(Self {
             id: record.id(),
             version: record.version(),
             status,
+            audience,
             title_zh: record.title_zh().to_owned(),
             title_en: record.title_en().to_owned(),
             body_zh: record.body_zh().to_owned(),
@@ -143,6 +191,10 @@ impl AnnouncementView {
     #[must_use]
     pub const fn status(&self) -> AnnouncementStatus {
         self.status
+    }
+    #[must_use]
+    pub const fn audience(&self) -> AnnouncementAudience {
+        self.audience
     }
     #[must_use]
     pub fn title_zh(&self) -> &str {

@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use af_admin::{
-    AnnouncementService, AnnouncementServiceError, AnnouncementStatus, AnnouncementView,
-    AnnouncementWriteCommand, SessionAuthentication, SessionAuthenticator,
+    AnnouncementAudience, AnnouncementService, AnnouncementServiceError, AnnouncementStatus,
+    AnnouncementView, AnnouncementWriteCommand, SessionAuthentication, SessionAuthenticator,
 };
 use axum::{
     Router,
@@ -36,6 +36,7 @@ pub(crate) struct AnnouncementResponse {
     version: i64,
     #[schema(pattern = "^(draft|published|revoked)$")]
     status: &'static str,
+    audience: AnnouncementAudienceResponse,
     #[schema(min_length = 1, max_length = 160)]
     title_zh: String,
     #[schema(min_length = 1, max_length = 160)]
@@ -65,6 +66,8 @@ pub(crate) struct AnnouncementListResponse {
 #[serde(deny_unknown_fields)]
 #[schema(as = AnnouncementWriteRequest)]
 pub(crate) struct AnnouncementWriteRequest {
+    #[serde(default)]
+    audience: Option<AnnouncementAudienceRequest>,
     #[schema(min_length = 1, max_length = 160)]
     title_zh: String,
     #[schema(min_length = 1, max_length = 160)]
@@ -83,6 +86,31 @@ pub(crate) struct AnnouncementWriteRequest {
 pub(crate) struct AnnouncementMutationRequest {
     #[schema(minimum = 1)]
     expected_version: i64,
+}
+
+#[derive(Clone, Copy, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[schema(as = AnnouncementAudience)]
+pub(crate) enum AnnouncementAudienceResponse {
+    Public,
+    Authenticated,
+}
+
+#[derive(Clone, Copy, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[schema(as = AnnouncementAudienceRequest)]
+pub(crate) enum AnnouncementAudienceRequest {
+    Public,
+    Authenticated,
+}
+
+impl AnnouncementAudienceRequest {
+    fn into_domain(self) -> AnnouncementAudience {
+        match self {
+            Self::Public => AnnouncementAudience::Public,
+            Self::Authenticated => AnnouncementAudience::Authenticated,
+        }
+    }
 }
 
 /// 构建公告公开读取与管理员版本化管理路由。
@@ -165,7 +193,11 @@ async fn update_admin_announcement(
     request: Result<Json<AnnouncementUpdateRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
     let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
-    let command = AnnouncementWriteCommand::new(
+    let command = AnnouncementWriteCommand::new_with_audience(
+        request
+            .audience
+            .map(AnnouncementAudienceRequest::into_domain)
+            .unwrap_or(AnnouncementAudience::Public),
         request.title_zh.clone(),
         request.title_en.clone(),
         request.body_zh.clone(),
@@ -220,6 +252,8 @@ async fn revoke_admin_announcement(
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct AnnouncementUpdateRequest {
+    #[serde(default)]
+    audience: Option<AnnouncementAudienceRequest>,
     #[schema(min_length = 1, max_length = 160)]
     title_zh: String,
     #[schema(min_length = 1, max_length = 160)]
@@ -236,7 +270,10 @@ pub(crate) struct AnnouncementUpdateRequest {
 
 impl AnnouncementWriteRequest {
     fn into_command(self) -> Result<AnnouncementWriteCommand, ManagementError> {
-        AnnouncementWriteCommand::new(
+        AnnouncementWriteCommand::new_with_audience(
+            self.audience
+                .map(AnnouncementAudienceRequest::into_domain)
+                .unwrap_or(AnnouncementAudience::Public),
             self.title_zh,
             self.title_en,
             self.body_zh,
@@ -255,10 +292,15 @@ impl AnnouncementResponse {
             AnnouncementStatus::Published => "published",
             AnnouncementStatus::Revoked => "revoked",
         };
+        let audience = match view.audience() {
+            AnnouncementAudience::Public => AnnouncementAudienceResponse::Public,
+            AnnouncementAudience::Authenticated => AnnouncementAudienceResponse::Authenticated,
+        };
         Self {
             id: view.id(),
             version: view.version(),
             status,
+            audience,
             title_zh: view.title_zh().to_owned(),
             title_en: view.title_en().to_owned(),
             body_zh: view.body_zh().to_owned(),

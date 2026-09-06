@@ -35,3 +35,17 @@ test('notification read receipts use server facts and the generated client', () 
   assert.match(page, /markReadMutation\.mutateAsync\(\[id\]\)/)
   assert.match(shell, /pages\[0\]\?\.unread_count/)
 })
+
+test('公告通知使用真实公告来源并支持站内渠道', () => {
+  const openapi = JSON.parse(readFileSync(new URL('../openapi/openapi.json', import.meta.url), 'utf8'))
+  const schema = openapi.components.schemas.UserNotification
+  assert.deepEqual(openapi.components.schemas.NotificationKind.enum.at(-1), 'product_update')
+  assert.ok(openapi.components.schemas.NotificationChannel.enum.includes('in_app'))
+  assert.ok(openapi.components.schemas.NotificationDeliveryState.enum.includes('available'))
+  assert.ok(schema.properties.announcement_id)
+  assert.ok(schema.properties.announcement_version)
+  assert.ok(schema.properties.announcement_title_zh)
+  assert.ok(schema.properties.announcement_title_en)
+  assert.ok(schema.properties.announcement_body_zh)
+  assert.ok(schema.properties.announcement_body_en)
+})

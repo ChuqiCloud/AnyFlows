@@ -26,7 +26,7 @@ use crate::entity::{
     BillingBatchFingerprint, BillingBatchWriterKey, BillingReservationKey, ChannelBaseUrl,
     EncryptedJson, HeaderOverrides, PasswordHash, PlaygroundConversationKey, SensitiveDecimal,
     SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist, WalletLedgerKey, abilities,
-    analytics_export_outbox_events, auth_challenge_rate_limits, auth_challenges,
+    analytics_export_outbox_events, announcements, auth_challenge_rate_limits, auth_challenges,
     authentication_settings, balance_alert_events, balance_alert_settings,
     billing_batch_checkpoints, billing_group_window_reservations,
     billing_organization_reservation_departments, billing_organization_reservations,
@@ -2219,7 +2219,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 75);
+    assert_eq!(pending_migrations.len(), 76);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -2519,6 +2519,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[74].name(),
         "m20260906_000134_create_announcements"
+    );
+    assert_eq!(
+        pending_migrations[75].name(),
+        "m20260906_000135_add_announcement_audience_notifications"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
@@ -4154,6 +4158,7 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     .await?;
     assert_entity_columns::<user_notification_events::Column>(&manager, "user_notification_events")
         .await?;
+    assert_entity_columns::<announcements::Column>(&manager, "announcements").await?;
     assert_entity_columns::<user_notification_receipts::Column>(
         &manager,
         "user_notification_receipts",

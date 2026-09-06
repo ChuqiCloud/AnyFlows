@@ -21,11 +21,13 @@ pub enum UserNotificationKind {
     BalanceAlert,
     SubscriptionBalanceAlert,
     SubscriptionPurchase,
+    ProductUpdate,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UserNotificationChannel {
     Email,
+    InApp,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -34,6 +36,7 @@ pub enum UserNotificationDeliveryState {
     Accepted,
     Failed,
     Canceled,
+    Available,
 }
 
 /// 管理服务层公开的稳定复合游标，不向 HTTP 层泄漏数据库契约。
@@ -127,12 +130,14 @@ impl UserNotification {
             DatabaseNotificationKind::SubscriptionBalanceAlert => {
                 UserNotificationKind::SubscriptionBalanceAlert
             }
+            DatabaseNotificationKind::ProductUpdate => UserNotificationKind::ProductUpdate,
         }
     }
     #[must_use]
     pub const fn channel(&self) -> UserNotificationChannel {
         match self.record.channel() {
             DatabaseNotificationChannel::Email => UserNotificationChannel::Email,
+            DatabaseNotificationChannel::InApp => UserNotificationChannel::InApp,
         }
     }
     #[must_use]
@@ -150,6 +155,9 @@ impl UserNotification {
             DatabaseNotificationDeliveryState::Accepted => UserNotificationDeliveryState::Accepted,
             DatabaseNotificationDeliveryState::Failed => UserNotificationDeliveryState::Failed,
             DatabaseNotificationDeliveryState::Canceled => UserNotificationDeliveryState::Canceled,
+            DatabaseNotificationDeliveryState::Available => {
+                UserNotificationDeliveryState::Available
+            }
         }
     }
     #[must_use]
@@ -187,6 +195,40 @@ impl UserNotification {
     #[must_use]
     pub const fn read_at(&self) -> Option<i64> {
         self.record.read_at()
+    }
+
+    #[must_use]
+    pub const fn announcement_id(&self) -> Option<i64> {
+        self.record.announcement_id()
+    }
+
+    #[must_use]
+    pub const fn announcement_version(&self) -> Option<i64> {
+        self.record.announcement_version()
+    }
+    #[must_use]
+    pub fn announcement_title_zh(&self) -> Option<&str> {
+        self.record.announcement_title_zh()
+    }
+    #[must_use]
+    pub fn announcement_title_en(&self) -> Option<&str> {
+        self.record.announcement_title_en()
+    }
+    #[must_use]
+    pub fn announcement_body_zh(&self) -> Option<&str> {
+        self.record.announcement_body_zh()
+    }
+    #[must_use]
+    pub fn announcement_body_en(&self) -> Option<&str> {
+        self.record.announcement_body_en()
+    }
+    #[must_use]
+    pub const fn announcement_status(&self) -> Option<i16> {
+        self.record.announcement_status()
+    }
+    #[must_use]
+    pub const fn announcement_visible_until(&self) -> Option<i64> {
+        self.record.announcement_visible_until()
     }
 }
 

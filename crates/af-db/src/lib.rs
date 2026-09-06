@@ -341,9 +341,10 @@ pub use analytics_export::{
     AnalyticsExportLease, AnalyticsExportRepository, AnalyticsExportRepositoryError,
 };
 pub use announcement::{
-    AnnouncementRecord, AnnouncementRepository, AnnouncementRepositoryConfigError,
-    AnnouncementRepositoryError, AnnouncementStatusRecord, AnnouncementWriteRecord,
-    MAX_ANNOUNCEMENT_BODY_BYTES, MAX_ANNOUNCEMENT_PAGE_SIZE, MAX_ANNOUNCEMENT_TITLE_BYTES,
+    AnnouncementAudienceRecord, AnnouncementRecord, AnnouncementRepository,
+    AnnouncementRepositoryConfigError, AnnouncementRepositoryError, AnnouncementStatusRecord,
+    AnnouncementWriteRecord, MAX_ANNOUNCEMENT_BODY_BYTES, MAX_ANNOUNCEMENT_PAGE_SIZE,
+    MAX_ANNOUNCEMENT_TITLE_BYTES,
 };
 pub use async_task::{
     AsyncTaskBillingAccept, AsyncTaskBillingClear, AsyncTaskBillingMark,

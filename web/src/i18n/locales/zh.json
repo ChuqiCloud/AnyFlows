@@ -3369,8 +3369,13 @@
       "titleEn": "英文标题",
       "bodyZh": "中文正文",
       "bodyEn": "英文正文",
+      "audience": "可见范围",
       "visibleFrom": "开始展示时间",
       "visibleUntil": "停止展示时间"
+    },
+    "audience": {
+      "public": "公开访客",
+      "authenticated": "登录用户"
     },
     "actions": {
       "refresh": "刷新",
@@ -6254,7 +6259,7 @@
         "unread": "\u672a\u8bfb"
       },
       "title": "通知历史",
-      "subtitle": "展示余额和订阅预警的系统已知投递事实；SMTP 接受不代表已送达收件箱或已读。",
+      "subtitle": "展示余额、订阅预警和产品更新的系统已知通知事实；SMTP 接受不代表已送达收件箱或已读。",
       "loadError": "通知历史暂时无法加载。",
       "olderLoadError": "更早的通知加载失败。",
       "empty": "暂时没有通知事实。",
@@ -6263,20 +6268,29 @@
       "kind": {
         "balance_alert": "余额预警",
         "subscription_balance_alert": "订阅窗口预警",
-        "subscription_purchase": "订阅购买确认"
+        "subscription_purchase": "订阅购买确认",
+        "product_update": "产品更新"
       },
       "state": {
         "queued": "排队中",
         "accepted": "SMTP 已接受",
         "failed": "失败",
-        "canceled": "已取消"
+        "canceled": "已取消",
+        "available": "可读取"
       },
       "channel": {
-        "email": "邮件"
+        "email": "邮件",
+        "in_app": "站内"
       },
       "balanceDetail": "观测额度 {{observed}}，阈值 {{threshold}}",
       "subscriptionDetail": "已用 {{used}} / {{amount}}，阈值 {{threshold}}%",
       "purchaseDetail": "订阅购买确认已记录",
+      "productUpdateDetail": "产品更新已记录",
+      "announcementStatus": {
+        "published": "当前已发布",
+        "expired": "已过期",
+        "revoked": "已撤回"
+      },
       "meta": "{{time}} · 尝试 {{attempts}} 次 · #{{id}}"
     },
     "organizationApprovalNotifications": {

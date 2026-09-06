@@ -9,6 +9,7 @@ pub struct Model {
     pub id: i64,
     pub version: i64,
     pub status: i16,
+    pub audience: i16,
     #[sea_orm(column_type = "String(StringLen::N(160))")]
     pub title_zh: String,
     #[sea_orm(column_type = "String(StringLen::N(160))")]
