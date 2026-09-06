@@ -201,15 +201,13 @@ async fn configured_clickhouse_supplies_analytics_while_database_supplies_channe
         http_client_config,
         clickhouse,
     ) = if let Some(endpoint) = live_clickhouse {
-        let proxy_config =
-            format!("[http_client]\nproxy_url = '{endpoint}'\ntrust_proxy_dns = true\n");
         (
             endpoint,
             REAL_CLICKHOUSE_QUERY.to_owned(),
             std::env::var("ANYFLOWS_CLICKHOUSE_INTEGRATION_USERNAME")
                 .unwrap_or_else(|_| "default".to_owned()),
             std::env::var("ANYFLOWS_CLICKHOUSE_INTEGRATION_PASSWORD").unwrap_or_default(),
-            proxy_config,
+            String::new(),
             None,
         )
     } else {
@@ -272,7 +270,12 @@ async fn configured_clickhouse_supplies_analytics_while_database_supplies_channe
         &[("Authorization", &admin_authorization)],
     )
     .await;
-    assert_eq!(response.status, 200);
+    assert_eq!(
+        response.status,
+        200,
+        "ClickHouse 集成响应异常: {}",
+        String::from_utf8_lossy(&response.body)
+    );
     let body = response_json(&response);
     assert_eq!(body["request_count"], 5);
     assert_eq!(body["quota_consumed"], 55);
