@@ -2547,6 +2547,43 @@ export type PlatformOrganizationDirectoryResponse = {
     organizations: Array<PlatformOrganizationSummaryResponse>;
     next_cursor: number | null;
 };
+export type PlatformOrganizationInvitationIssuedResponse = {
+    invitation_key: string;
+    organization_id: number;
+    role: string;
+    status: string;
+    expires_at: number;
+    version: number;
+    token: string;
+};
+export type PlatformOrganizationInvitationRequest = {
+    email: string;
+    role: string;
+    expires_at: number | null;
+};
+export type PlatformOrganizationMemberChangeRequest = {
+    role: string;
+    status: string;
+    expected_version: number;
+};
+export type PlatformOrganizationMemberListResponse = {
+    members: Array<PlatformOrganizationMemberResponse>;
+    next_cursor: number | null;
+};
+export type PlatformOrganizationMemberResponse = {
+    membership_id: number;
+    organization_id: number;
+    user_id: number;
+    username: string;
+    email: string | null;
+    role: string;
+    team_id: number | null;
+    status: string;
+    joined_at: number;
+    suspended_at: number | null;
+    removed_at: number | null;
+    version: number;
+};
 export type PlatformOrganizationSummaryResponse = {
     id: number;
     name: string;
@@ -9384,6 +9421,81 @@ export type ListPlatformUserOrganizationsResponses = {
     200: PlatformUserOrganizationListResponse;
 };
 export type ListPlatformUserOrganizationsResponse = ListPlatformUserOrganizationsResponses[keyof ListPlatformUserOrganizationsResponses];
+export type ListPlatformOrganizationMembersData = {
+    body?: never;
+    headers: {
+        'x-anyflows-platform-reason': string;
+    };
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        after?: number;
+        limit?: number;
+    };
+    url: '/api/platform/organizations/{organization_id}/members';
+};
+export type ListPlatformOrganizationMembersErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListPlatformOrganizationMembersError = ListPlatformOrganizationMembersErrors[keyof ListPlatformOrganizationMembersErrors];
+export type ListPlatformOrganizationMembersResponses = {
+    200: PlatformOrganizationMemberListResponse;
+};
+export type ListPlatformOrganizationMembersResponse = ListPlatformOrganizationMembersResponses[keyof ListPlatformOrganizationMembersResponses];
+export type ChangePlatformOrganizationMemberData = {
+    body: PlatformOrganizationMemberChangeRequest;
+    headers: {
+        'x-anyflows-platform-reason': string;
+    };
+    path: {
+        organization_id: number;
+        membership_id: number;
+    };
+    query?: never;
+    url: '/api/platform/organizations/{organization_id}/members/{membership_id}';
+};
+export type ChangePlatformOrganizationMemberErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type ChangePlatformOrganizationMemberError = ChangePlatformOrganizationMemberErrors[keyof ChangePlatformOrganizationMemberErrors];
+export type ChangePlatformOrganizationMemberResponses = {
+    200: PlatformOrganizationMemberResponse;
+};
+export type ChangePlatformOrganizationMemberResponse = ChangePlatformOrganizationMemberResponses[keyof ChangePlatformOrganizationMemberResponses];
+export type InvitePlatformOrganizationMemberData = {
+    body: PlatformOrganizationInvitationRequest;
+    headers: {
+        'x-anyflows-platform-reason': string;
+    };
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/platform/organizations/{organization_id}/invitations';
+};
+export type InvitePlatformOrganizationMemberErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type InvitePlatformOrganizationMemberError = InvitePlatformOrganizationMemberErrors[keyof InvitePlatformOrganizationMemberErrors];
+export type InvitePlatformOrganizationMemberResponses = {
+    200: PlatformOrganizationInvitationIssuedResponse;
+};
+export type InvitePlatformOrganizationMemberResponse = InvitePlatformOrganizationMemberResponses[keyof InvitePlatformOrganizationMemberResponses];
 export type StartOidcLoginData = {
     body?: never;
     path?: never;

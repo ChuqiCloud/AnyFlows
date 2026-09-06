@@ -1016,6 +1016,86 @@ pub struct PlatformUserOrganizationPageRecord {
     next_cursor: Option<OrganizationMembershipId>,
 }
 
+/// 平台跨企业成员管理使用的身份与成员关系安全快照。
+#[derive(Clone, PartialEq)]
+pub struct PlatformOrganizationMemberRecord {
+    membership: OrganizationMembershipRecord,
+    username: String,
+    email: Option<String>,
+}
+
+impl PlatformOrganizationMemberRecord {
+    pub(super) fn new(
+        membership: OrganizationMembershipRecord,
+        username: String,
+        email: Option<String>,
+    ) -> Self {
+        Self {
+            membership,
+            username,
+            email,
+        }
+    }
+
+    /// 返回企业范围内的成员关系事实。
+    #[must_use]
+    pub const fn membership(&self) -> &OrganizationMembershipRecord {
+        &self.membership
+    }
+
+    /// 返回成员对应的全局用户名。
+    #[must_use]
+    pub fn username(&self) -> &str {
+        &self.username
+    }
+
+    /// 返回成员用于身份确认的全局邮箱。
+    #[must_use]
+    pub fn email(&self) -> Option<&str> {
+        self.email.as_deref()
+    }
+}
+
+impl fmt::Debug for PlatformOrganizationMemberRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PlatformOrganizationMemberRecord")
+            .field("membership", &self.membership)
+            .field("has_email", &self.email.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
+/// 平台企业成员目录稳定游标页。
+#[derive(Debug, PartialEq)]
+pub struct PlatformOrganizationMemberPageRecord {
+    records: Vec<PlatformOrganizationMemberRecord>,
+    next_cursor: Option<OrganizationMembershipId>,
+}
+
+impl PlatformOrganizationMemberPageRecord {
+    pub(super) const fn new(
+        records: Vec<PlatformOrganizationMemberRecord>,
+        next_cursor: Option<OrganizationMembershipId>,
+    ) -> Self {
+        Self {
+            records,
+            next_cursor,
+        }
+    }
+
+    /// 拆出成员身份摘要与下一页游标。
+    #[must_use]
+    pub fn into_parts(
+        self,
+    ) -> (
+        Vec<PlatformOrganizationMemberRecord>,
+        Option<OrganizationMembershipId>,
+    ) {
+        (self.records, self.next_cursor)
+    }
+}
+
 impl PlatformUserOrganizationPageRecord {
     pub(super) const fn new(
         records: Vec<PlatformUserOrganizationRecord>,

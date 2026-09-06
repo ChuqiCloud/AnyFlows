@@ -3,9 +3,9 @@ use std::{error::Error, time::Duration};
 use af_domain::{
     OrganizationEntitlementCapacity, OrganizationEntitlementChangePlan,
     OrganizationEntitlementPreflightError, OrganizationEntitlementSnapshot,
-    OrganizationEntitlementStatus, OrganizationInvitationKey, OrganizationInvitationStatus,
-    OrganizationMembershipStatus, OrganizationPlanFeatures, OrganizationPlanSnapshot,
-    OrganizationRole, OrganizationTeamId, OrganizationTeamStatus, UserId,
+    OrganizationEntitlementStatus, OrganizationId, OrganizationInvitationKey,
+    OrganizationInvitationStatus, OrganizationMembershipStatus, OrganizationPlanFeatures,
+    OrganizationPlanSnapshot, OrganizationRole, OrganizationTeamId, OrganizationTeamStatus, UserId,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set,
@@ -80,7 +80,7 @@ async fn create_is_atomic_and_installs_one_active_owner() -> Result<(), Box<dyn 
 async fn platform_directory_and_user_memberships_return_only_scoped_summaries()
 -> Result<(), Box<dyn Error>> {
     let fixture = fixture().await?;
-    let (first, _) = fixture
+    let (first, first_owner) = fixture
         .repository
         .create(OrganizationCreate::new(
             "Alpha Company".to_owned(),
@@ -156,6 +156,33 @@ async fn platform_directory_and_user_memberships_return_only_scoped_summaries()
     assert_eq!(records[0].membership().role(), OrganizationRole::Admin);
     assert_eq!(records[1].organization().id(), second.id());
     assert_eq!(cursor, None);
+
+    let first_member_page = fixture
+        .repository
+        .list_platform_members(first.id(), None, 1)
+        .await?;
+    let (records, cursor) = first_member_page.into_parts();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].membership().id(), first_owner.id());
+    assert_eq!(records[0].username(), "organization-user-0");
+    assert_eq!(records[0].email(), Some("organization-user-0@example.com"));
+    assert_eq!(cursor, Some(first_owner.id()));
+    let (records, cursor) = fixture
+        .repository
+        .list_platform_members(first.id(), cursor, 1)
+        .await?
+        .into_parts();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].membership().id(), member.id());
+    assert_eq!(records[0].username(), "organization-user-1");
+    assert_eq!(cursor, None);
+    assert!(matches!(
+        fixture
+            .repository
+            .list_platform_members(OrganizationId::new(9_999)?, None, 100)
+            .await,
+        Err(OrganizationRepositoryError::NotFound)
+    ));
 
     assert!(matches!(
         fixture

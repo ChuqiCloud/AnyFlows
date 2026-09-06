@@ -1191,7 +1191,8 @@
       "owner": "Owner",
       "members": "Active members / seats",
       "status": "Status",
-      "validUntil": "Entitlement expiry"
+      "validUntil": "Entitlement expiry",
+      "actions": "Actions"
     },
     "values": {
       "seats": "{{active}} / {{limit}}"
@@ -1220,6 +1221,55 @@
       "member": "Member",
       "viewer": "Viewer"
     },
+    "members": {
+      "title": "Organization members",
+      "description": "Review member identities and adjust fixed roles or lifecycle states with an audited platform reason.",
+      "loaded_one": "{{count}} member loaded",
+      "loaded_other": "{{count}} members loaded",
+      "invite": "Invite member",
+      "edit": "Adjust",
+      "noEmail": "No email",
+      "ownerProtected": "Owner requires ownership transfer",
+      "removedLocked": "Removed permanently",
+      "emptyTitle": "No member records",
+      "emptyBody": "This organization has no member relationships to display.",
+      "errorTitle": "Organization members could not be loaded",
+      "errorBody": "Check the platform permission and operation reason, then try again.",
+      "status": {
+        "active": "Active",
+        "suspended": "Suspended",
+        "removed": "Removed"
+      },
+      "editor": {
+        "title": "Adjust organization member",
+        "description": "Adjusting the fixed role and status of {{username}} in {{organization}}.",
+        "role": "Organization role",
+        "status": "Member status",
+        "boundary": "Team assignment remains unchanged. Owners must use the organization ownership transfer flow.",
+        "removedWarning": "Removal is permanent and disables existing organization keys immediately.",
+        "error": "The change failed. Refresh the list and check the version, last owner, seats, or entitlement state.",
+        "cancel": "Cancel",
+        "save": "Save change"
+      }
+    },
+    "invitation": {
+      "title": "Invite user to organization",
+      "description": "Create a pending invitation. The platform does not write the user directly into the organization.",
+      "organization": "Organization",
+      "email": "User email",
+      "role": "Role after acceptance",
+      "acceptHint": "Give the one-time token to the target user, who must sign in and accept it. Invitations expire after seven days by default.",
+      "loadingOrganizations": "Loading organizations…",
+      "loadMoreOrganizations": "Load more organizations",
+      "issued": "Invitation created. The membership will be created after the target user accepts it.",
+      "token": "One-time invitation token",
+      "tokenHint": "The token is shown once and cannot be viewed again after closing.",
+      "copy": "Copy invitation token",
+      "error": "The invitation could not be created. Check the email, duplicate invitations, seats, and entitlement state.",
+      "cancel": "Cancel",
+      "submit": "Create invitation",
+      "done": "Done"
+    },
     "loading": "Loading organization directory",
     "empty": {
       "title": "No organizations",
@@ -1233,7 +1283,8 @@
     "actions": {
       "refresh": "Refresh",
       "retry": "Retry",
-      "loadMore": "Load more"
+      "loadMore": "Load more",
+      "manageMembers": "Manage members"
     }
   },
   "users": {
@@ -1438,7 +1489,11 @@
       "loadMore": "Load more",
       "entitlement": "Entitlement",
       "joinedAt": "Joined",
-      "membershipId": "Membership"
+      "membershipId": "Membership",
+      "assignTitle": "Add organization membership",
+      "assignHint": "Assign through an invitation. The user joins only after accepting it.",
+      "assign": "Invite to organization",
+      "manageMembership": "Adjust membership"
     }
   },
   "groups": {

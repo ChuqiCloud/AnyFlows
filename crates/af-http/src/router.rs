@@ -12,10 +12,10 @@ use af_admin::{
     OrganizationBudgetService, OrganizationContractPriceService, OrganizationPlanService,
     OrganizationScimService, OrganizationTokenService, OrganizationWalletService,
     PasskeyAuthenticationService, PasswordResetService, PlatformAuditService,
-    PlatformOrganizationDirectoryService, PlaygroundConversationService, PlaygroundShareService,
-    RedemptionService, RegistrationService, SessionAuthenticator, SiteSettingsService,
-    SubscriptionService, TokenAuthenticator, UserInvitationService, UserNotificationService,
-    UserTopupService, UserWalletService,
+    PlatformOrganizationDirectoryService, PlatformOrganizationManagementService,
+    PlaygroundConversationService, PlaygroundShareService, RedemptionService, RegistrationService,
+    SessionAuthenticator, SiteSettingsService, SubscriptionService, TokenAuthenticator,
+    UserInvitationService, UserNotificationService, UserTopupService, UserWalletService,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -266,7 +266,10 @@ pub fn build_router(
         Arc<dyn af_admin::OrganizationServiceAccountRuntimeAuthenticator>,
     >,
     platform_audit_service: Option<Arc<dyn PlatformAuditService>>,
-    platform_organization_directory_service: Option<Arc<dyn PlatformOrganizationDirectoryService>>,
+    platform_organization_services: Option<(
+        Arc<dyn PlatformOrganizationDirectoryService>,
+        Arc<dyn PlatformOrganizationManagementService>,
+    )>,
     organization_sso_provider_service: Option<Arc<dyn af_admin::OrganizationSsoProviderService>>,
     organization_sso_policy_service: Option<Arc<dyn af_admin::OrganizationSsoPolicyService>>,
     organization_sso_domain_service: Option<Arc<dyn af_admin::OrganizationSsoDomainService>>,
@@ -1060,11 +1063,14 @@ pub fn build_router(
         )),
         None => management_routes,
     };
-    let management_routes = match platform_organization_directory_service {
-        Some(service) => management_routes.merge(build_platform_organization_router(
-            service,
-            Arc::clone(&http_state.session_authenticator),
-        )),
+    let management_routes = match platform_organization_services {
+        Some((directory_service, management_service)) => {
+            management_routes.merge(build_platform_organization_router(
+                directory_service,
+                management_service,
+                Arc::clone(&http_state.session_authenticator),
+            ))
+        }
         None => management_routes,
     };
     HttpRouter::new(build_router_with_routes_and_frontend(

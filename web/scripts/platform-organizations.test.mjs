@@ -23,8 +23,35 @@ test('跨企业理由遵守服务端 UTF-8 与空白边界', () => {
 test('企业目录与用户归属请求只通过审计 Header 传递理由', async () => {
   const source = await read('../src/features/platform-organizations/platform-organization-api.ts')
   assert.match(source, /'x-anyflows-platform-reason': access\.reason/)
+  assert.match(source, /listPlatformOrganizationMembers/)
+  assert.match(source, /changePlatformOrganizationMember/)
+  assert.match(source, /invitePlatformOrganizationMember/)
   assert.doesNotMatch(source, /localStorage|sessionStorage/)
   assert.match(source, /gcTime: 0/)
+})
+
+test('平台成员调配保留邀请接受与版本 CAS 边界', async () => {
+  const openapi = JSON.parse(await read('../openapi/openapi.json'))
+  const members = openapi.paths['/api/platform/organizations/{organization_id}/members'].get
+  const change = openapi.paths['/api/platform/organizations/{organization_id}/members/{membership_id}'].patch
+  const invitation = openapi.paths['/api/platform/organizations/{organization_id}/invitations'].post
+  assert.equal(members.operationId, 'listPlatformOrganizationMembers')
+  assert.equal(change.operationId, 'changePlatformOrganizationMember')
+  assert.equal(invitation.operationId, 'invitePlatformOrganizationMember')
+  for (const operation of [members, change, invitation]) {
+    const reason = operation.parameters.find((parameter) => parameter.name === 'x-anyflows-platform-reason')
+    assert.equal(reason.in, 'header')
+    assert.equal(reason.required, true)
+  }
+  assert.deepEqual(
+    Object.keys(openapi.components.schemas.PlatformOrganizationMemberChangeRequest.properties),
+    ['role', 'status', 'expected_version'],
+  )
+  assert.deepEqual(
+    Object.keys(openapi.components.schemas.PlatformOrganizationInvitationRequest.properties),
+    ['email', 'role', 'expires_at'],
+  )
+  assert.doesNotMatch(JSON.stringify(openapi.components.schemas.PlatformOrganizationMemberResponse), /password|passkey|oauth|wallet|secret/i)
 })
 
 test('平台企业响应固定为不含资金密钥与认证材料的安全字段', async () => {
@@ -59,7 +86,11 @@ test('平台企业目录具备中英文完整文案', async () => {
     const messages = JSON.parse(await read(`../src/i18n/locales/${locale}.json`))
     assert.equal(typeof messages.nav.platformOrganizations, 'string')
     assert.equal(typeof messages.platformOrganizations.title, 'string')
+    assert.equal(typeof messages.platformOrganizations.actions.manageMembers, 'string')
+    assert.equal(typeof messages.platformOrganizations.members.editor.save, 'string')
+    assert.equal(typeof messages.platformOrganizations.invitation.acceptHint, 'string')
     assert.equal(typeof messages.users.actions.organizations, 'string')
     assert.equal(typeof messages.users.organizations.reasonLabel, 'string')
+    assert.equal(typeof messages.users.organizations.assign, 'string')
   }
 })

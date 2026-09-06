@@ -1,4 +1,4 @@
-import { Building2, LoaderCircle, RefreshCw, ShieldCheck } from 'lucide-react'
+import { Building2, LoaderCircle, RefreshCw, ShieldCheck, UsersRound } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -15,6 +15,7 @@ import {
   usePlatformOrganizations,
   type PlatformOrganizationAccess,
 } from './platform-organization-api'
+import { PlatformOrganizationMembersSheet } from './platform-organization-members-sheet'
 
 const statusStyles: Readonly<Record<string, string>> = {
   active: 'border-transparent bg-success/10 text-success',
@@ -29,6 +30,7 @@ export function PlatformOrganizationPage() {
   const { i18n, t } = useTranslation()
   const [reason, setReason] = useState('')
   const [access, setAccess] = useState<PlatformOrganizationAccess>()
+  const [selectedOrganization, setSelectedOrganization] = useState<PlatformOrganizationSummaryResponse>()
   const query = usePlatformOrganizations(access)
   const organizations = query.data?.pages.flatMap((page) => page.organizations) ?? []
   const timeFormat = useMemo(
@@ -140,7 +142,7 @@ export function PlatformOrganizationPage() {
               title={t('platformOrganizations.empty.title')}
               body={t('platformOrganizations.empty.body')}
             />
-          ) : <OrganizationDirectory organizations={organizations} timeFormat={timeFormat} />}
+          ) : <OrganizationDirectory organizations={organizations} timeFormat={timeFormat} onManage={setSelectedOrganization} />}
           {query.isFetchNextPageError ? (
             <div role="alert" className="text-xs text-destructive">{t('platformOrganizations.error.more')}</div>
           ) : null}
@@ -159,6 +161,12 @@ export function PlatformOrganizationPage() {
           ) : null}
         </>
       )}
+      <PlatformOrganizationMembersSheet
+        open={selectedOrganization !== undefined}
+        organization={selectedOrganization}
+        reason={access?.reason ?? ''}
+        onOpenChange={(open) => { if (!open) setSelectedOrganization(undefined) }}
+      />
     </div>
   )
 }
@@ -166,9 +174,11 @@ export function PlatformOrganizationPage() {
 function OrganizationDirectory({
   organizations,
   timeFormat,
+  onManage,
 }: {
   organizations: PlatformOrganizationSummaryResponse[]
   timeFormat: Intl.DateTimeFormat
+  onManage: (organization: PlatformOrganizationSummaryResponse) => void
 }) {
   const { t } = useTranslation()
   return (
@@ -177,11 +187,12 @@ function OrganizationDirectory({
         <table className="w-full table-fixed text-left text-xs">
           <thead className="bg-surface-2/60 text-muted-foreground">
             <tr>
-              <th className="w-[27%] px-3 py-2 font-medium">{t('platformOrganizations.columns.organization')}</th>
-              <th className="w-[22%] px-3 py-2 font-medium">{t('platformOrganizations.columns.owner')}</th>
+              <th className="w-[23%] px-3 py-2 font-medium">{t('platformOrganizations.columns.organization')}</th>
+              <th className="w-[19%] px-3 py-2 font-medium">{t('platformOrganizations.columns.owner')}</th>
               <th className="w-[14%] px-3 py-2 font-medium">{t('platformOrganizations.columns.members')}</th>
-              <th className="w-[18%] px-3 py-2 font-medium">{t('platformOrganizations.columns.status')}</th>
-              <th className="w-[19%] px-3 py-2 font-medium">{t('platformOrganizations.columns.validUntil')}</th>
+              <th className="w-[17%] px-3 py-2 font-medium">{t('platformOrganizations.columns.status')}</th>
+              <th className="w-[16%] px-3 py-2 font-medium">{t('platformOrganizations.columns.validUntil')}</th>
+              <th className="w-[11%] px-3 py-2 text-right font-medium">{t('platformOrganizations.columns.actions')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--hairline)]">
@@ -192,6 +203,7 @@ function OrganizationDirectory({
                 <td className="px-3 py-3 tabular-nums">{t('platformOrganizations.values.seats', { active: organization.active_member_count, limit: organization.seat_limit })}</td>
                 <td className="px-3 py-3"><StatusPair organization={organization} /></td>
                 <td className="px-3 py-3">{timeFormat.format(organization.valid_until * 1_000)}</td>
+                <td className="px-3 py-3 text-right"><Button type="button" size="sm" variant="ghost" onClick={() => onManage(organization)}><UsersRound aria-hidden="true" />{t('platformOrganizations.actions.manageMembers')}</Button></td>
               </tr>
             ))}
           </tbody>
@@ -209,6 +221,7 @@ function OrganizationDirectory({
               <div><dt className="text-muted-foreground">{t('platformOrganizations.columns.members')}</dt><dd className="mt-1 tabular-nums">{t('platformOrganizations.values.seats', { active: organization.active_member_count, limit: organization.seat_limit })}</dd></div>
               <div className="col-span-2"><dt className="text-muted-foreground">{t('platformOrganizations.columns.validUntil')}</dt><dd className="mt-1">{timeFormat.format(organization.valid_until * 1_000)}</dd></div>
             </dl>
+            <Button type="button" size="sm" variant="secondary" className="mt-3 w-full" onClick={() => onManage(organization)}><UsersRound aria-hidden="true" />{t('platformOrganizations.actions.manageMembers')}</Button>
           </article>
         ))}
       </div>
