@@ -116,6 +116,8 @@ pub(crate) mod organization_sso_login_transactions;
 pub(crate) mod organization_sso_policies;
 pub(crate) mod organization_sso_providers;
 pub(crate) mod organization_teams;
+pub(crate) mod organization_verification_cases;
+pub(crate) mod organization_verification_materials;
 pub(crate) mod organization_wallet_ledger_entries;
 pub(crate) mod organization_wallets;
 pub(crate) mod organizations;
@@ -3592,6 +3594,12 @@ impl ActiveModelBehavior for organization_approval_notifications::ActiveModel {
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for organization_provisioning_requests::ActiveModel {}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_verification_cases::ActiveModel {}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_verification_materials::ActiveModel {}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for organization_approval_notification_receipts::ActiveModel {}

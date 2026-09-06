@@ -32,15 +32,15 @@ use af_admin::{
     DatabaseOrganizationSsoIdentityBindingService, DatabaseOrganizationSsoLoginTransactionService,
     DatabaseOrganizationSsoPolicyService, DatabaseOrganizationSsoProviderService,
     DatabaseOrganizationSsoRecoveryService, DatabaseOrganizationTokenService,
-    DatabaseOrganizationWalletService, DatabasePasskeyAuthenticationService,
-    DatabasePasswordResetService, DatabasePlatformAuditService,
-    DatabasePlatformOrganizationDirectoryService, DatabasePlatformOrganizationManagementService,
-    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
-    DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
-    DatabaseSiteSettingsService, DatabaseSubscriptionService, DatabaseTokenAuthenticator,
-    DatabaseUserInvitationService, DatabaseUserNotificationService, DatabaseUserProfileService,
-    DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery, InitialSetup,
-    ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
+    DatabaseOrganizationVerificationService, DatabaseOrganizationWalletService,
+    DatabasePasskeyAuthenticationService, DatabasePasswordResetService,
+    DatabasePlatformAuditService, DatabasePlatformOrganizationDirectoryService,
+    DatabasePlatformOrganizationManagementService, DatabasePlaygroundConversationService,
+    DatabasePlaygroundShareService, DatabaseRedemptionService, DatabaseRegistrationService,
+    DatabaseSessionAuthenticator, DatabaseSiteSettingsService, DatabaseSubscriptionService,
+    DatabaseTokenAuthenticator, DatabaseUserInvitationService, DatabaseUserNotificationService,
+    DatabaseUserProfileService, DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery,
+    InitialSetup, ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
     OAuthLoginService, OrganizationActivityService, OrganizationActivityServiceConfigError,
     OrganizationApprovalNotificationService, OrganizationApprovalService,
     OrganizationBudgetService, OrganizationContractPriceService, OrganizationCreditTermsService,
@@ -123,6 +123,7 @@ use af_db::{
     OrganizationServiceAccountRepository, OrganizationServiceAccountRepositoryError,
     OrganizationSsoProviderRepository, OrganizationSsoProviderRepositoryConfigError,
     OrganizationTokenRepository, OrganizationTokenRepositoryConfigError,
+    OrganizationVerificationRepository, OrganizationVerificationRepositoryConfigError,
     OrganizationWalletRepository, OrganizationWalletRepositoryConfigError, PasskeyRepository,
     PasswordResetRepository, PasswordResetRepositoryConfigError, PaymentSecretUpdate,
     PaymentSettingsRepository, PaymentSettingsRepositoryConfigError,
@@ -262,6 +263,7 @@ pub struct AuthenticationReady {
     organization_scim_service: Arc<dyn OrganizationScimService>,
     organization_approval_service: Arc<dyn OrganizationApprovalService>,
     organization_provisioning_service: Arc<dyn af_admin::OrganizationProvisioningService>,
+    organization_verification_service: Arc<dyn af_admin::OrganizationVerificationService>,
     organization_plan_service: Arc<dyn af_admin::OrganizationPlanService>,
     organization_plan_order_repository: OrganizationPlanOrderRepository,
     organization_repository: Arc<OrganizationRepository>,
@@ -517,6 +519,9 @@ pub enum BootstrapError {
     /// 企业开通申请事实仓储的启动参数无效。
     #[error("企业开通申请仓储启动参数无效")]
     OrganizationProvisioningRepository(#[source] OrganizationProvisioningRepositoryConfigError),
+    /// 企业认证事实仓储的启动参数无效。
+    #[error("企业认证仓储启动参数无效")]
+    OrganizationVerificationRepository(#[source] OrganizationVerificationRepositoryConfigError),
     /// 企业套餐目录仓储的启动参数无效。
     #[error("企业套餐仓储启动参数无效")]
     OrganizationPlanRepository(#[source] OrganizationPlanRepositoryConfigError),
@@ -1118,6 +1123,13 @@ impl Bootstrap<DatabaseReady> {
             )
             .map_err(BootstrapError::OrganizationProvisioningRepository)?,
         );
+        let organization_verification_repository = Arc::new(
+            OrganizationVerificationRepository::new(
+                self.stage.database.clone(),
+                Duration::from_secs(auth.lookup_timeout_secs()),
+            )
+            .map_err(BootstrapError::OrganizationVerificationRepository)?,
+        );
         let organization_plan_repository = Arc::new(
             OrganizationPlanRepository::new(
                 self.stage.database.clone(),
@@ -1557,6 +1569,13 @@ impl Bootstrap<DatabaseReady> {
                 organization_provisioning_service: Arc::new(
                     af_admin::DatabaseOrganizationProvisioningService::new(
                         organization_provisioning_repository,
+                    ),
+                ),
+                organization_verification_service: Arc::new(
+                    DatabaseOrganizationVerificationService::new(
+                        organization_verification_repository,
+                        Arc::clone(&organization_authorization_service),
+                        Arc::clone(&platform_audit_service),
                     ),
                 ),
                 organization_plan_service,
@@ -2985,6 +3004,9 @@ impl Bootstrap<Supervised> {
             )),
             Some(Arc::clone(
                 &self.stage.infrastructure.organization_provisioning_service,
+            )),
+            Some(Arc::clone(
+                &self.stage.infrastructure.organization_verification_service,
             )),
             Some(Arc::clone(
                 &self.stage.infrastructure.organization_plan_service,

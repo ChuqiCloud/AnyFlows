@@ -79,6 +79,16 @@ pub(crate) enum ManagementError {
     OrganizationProvisioningForbidden,
     /// 企业开通申请服务暂不可用。
     OrganizationProvisioningUnavailable,
+    /// 企业认证案件不存在或当前用户不可见。
+    OrganizationVerificationNotFound,
+    /// 企业认证案件版本或状态发生冲突。
+    OrganizationVerificationConflict,
+    /// 企业认证请求字段无效。
+    OrganizationVerificationInvalidRequest,
+    /// 当前用户没有企业认证操作权限。
+    OrganizationVerificationForbidden,
+    /// 企业认证服务暂不可用。
+    OrganizationVerificationUnavailable,
     /// 企业成员或团队 CAS 版本冲突。
     OrganizationLifecycleConflict,
     /// 企业成员或团队生命周期状态不允许当前转换。
@@ -583,6 +593,41 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "organization_provisioning_unavailable",
                     message: "Organization provisioning is temporarily unavailable",
+                },
+            ),
+            Self::OrganizationVerificationNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "organization_verification_not_found",
+                    message: "Organization verification case not found",
+                },
+            ),
+            Self::OrganizationVerificationConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_verification_conflict",
+                    message: "Organization verification case conflict",
+                },
+            ),
+            Self::OrganizationVerificationInvalidRequest => (
+                StatusCode::BAD_REQUEST,
+                ManagementErrorBody {
+                    code: "organization_verification_invalid_request",
+                    message: "Organization verification request is invalid",
+                },
+            ),
+            Self::OrganizationVerificationForbidden => (
+                StatusCode::FORBIDDEN,
+                ManagementErrorBody {
+                    code: "organization_verification_forbidden",
+                    message: "Organization verification access is forbidden",
+                },
+            ),
+            Self::OrganizationVerificationUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "organization_verification_unavailable",
+                    message: "Organization verification service is temporarily unavailable",
                 },
             ),
             Self::OrganizationLifecycleConflict => (

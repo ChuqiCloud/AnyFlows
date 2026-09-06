@@ -1,4 +1,4 @@
-import { Building2, Crown, ShieldCheck, UsersRound } from 'lucide-react'
+import { Building2, ClipboardCheck, Crown, ShieldCheck, UsersRound } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -52,6 +52,7 @@ export function OrganizationSettingsPage() {
         icon={ShieldCheck}
         title={t('organizationConsole.settings.title')}
         subtitle={t('organizationConsole.settings.subtitle')}
+        actions={<Button asChild type="button" size="sm" variant="secondary"><a href="#/console/organization-verification"><ClipboardCheck aria-hidden="true" />{t('organizationVerification.title')}</a></Button>}
       />
       <OrganizationPageBoundary state={state}>
         {(organizationId, overview) => (
