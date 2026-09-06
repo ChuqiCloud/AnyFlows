@@ -768,10 +768,10 @@ impl UserNotificationRepository {
             .map(|model| {
                 let read_at = read_at_by_id.get(&model.id).copied();
                 let mut record = UserNotificationRecord::from_model(model, read_at)?;
-                if let Some(id) = record.announcement_id {
-                    if let Some(announcement) = announcements_by_id.get(&id) {
-                        record.attach_announcement(announcement);
-                    }
+                if let Some(id) = record.announcement_id
+                    && let Some(announcement) = announcements_by_id.get(&id)
+                {
+                    record.attach_announcement(announcement);
                 }
                 Ok(record)
             })
