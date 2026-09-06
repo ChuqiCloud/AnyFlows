@@ -33,6 +33,9 @@ const ADMIN_PASSWORD: &str = "correct-password";
 const MEMBER_USERNAME: &str = "dashboard-member";
 const MEMBER_PASSWORD: &str = "member-password";
 
+// 真实 ClickHouse 门禁使用固定查询构造一行闭合快照，避免依赖外部业务表结构。
+const REAL_CLICKHOUSE_QUERY: &str = r#"SELECT (toInt64(5) AS request_count, toInt64(55) AS quota_consumed, toInt64(4) AS upstream_usage_count, toInt64(1) AS estimated_usage_count, toInt64(3) AS per_token_request_count, toInt64(1) AS per_call_request_count, toInt64(1) AS free_request_count) AS usage, (toInt64(5) AS request_count, toInt64(4) AS successful_request_count, toInt64(1) AS failed_request_count, toInt64(3) AS other_success_count, array(('invalid_request' AS kind, toInt64(1) AS request_count)) AS failures, array(('openai_chat' AS protocol, toInt64(7508) AS channel_id, 'ClickHouse channel' AS channel_name, toInt64(1) AS request_count)) AS channel_flows, toInt64(1) AS flow_request_count, toInt64(55) AS flow_quota_consumed, array((toInt64(7502) AS user_id, toInt64(7503) AS group_id, 'Dashboard' AS group_name, toInt64(7508) AS channel_id, 'ClickHouse channel' AS channel_name, 'gpt-5' AS model, toInt64(1) AS request_count, toInt64(55) AS quota_consumed)) AS flow_paths) AS outcomes, arrayMap(i -> (toInt64({period_start:Int64}) + toInt64(i) * 3600 AS period_start, toInt64({period_start:Int64}) + toInt64(i) * 3600 + 3600 AS period_end, if(i = 0, toInt64(5), toInt64(0)) AS request_count, if(i = 0, toInt64(55), toInt64(0)) AS quota_consumed), range(24)) AS hourly, (toInt64(2) AS first_token_sample_count, CAST(900 AS Nullable(Int64)) AS average_first_token_ms, toInt64(0) AS slow_first_token_count, toInt64(2000) AS slow_first_token_threshold_ms, toInt64(4) AS duration_sample_count, CAST(5000 AS Nullable(Int64)) AS average_duration_ms, toInt64(1) AS slow_request_count, toInt64(10000) AS slow_request_threshold_ms) AS performance"#;
+
 static NEXT_DATABASE: AtomicU64 = AtomicU64::new(0);
 
 struct TestDatabase {
@@ -189,13 +192,43 @@ async fn admin_dashboard_uses_real_aggregates_and_role_boundary() {
 async fn configured_clickhouse_supplies_analytics_while_database_supplies_channels() {
     let database = TestDatabase::new();
     seed_dashboard(&database.url).await;
-    let (clickhouse_address, clickhouse) = spawn_clickhouse_snapshot();
+    let live_clickhouse = std::env::var("AF_CLICKHOUSE_INTEGRATION_URL").ok();
+    let (
+        clickhouse_endpoint,
+        clickhouse_query,
+        clickhouse_username,
+        clickhouse_password,
+        http_client_config,
+        clickhouse,
+    ) = if let Some(endpoint) = live_clickhouse {
+        let proxy_config =
+            format!("[http_client]\nproxy_url = '{endpoint}'\ntrust_proxy_dns = true\n");
+        (
+            endpoint,
+            REAL_CLICKHOUSE_QUERY.to_owned(),
+            std::env::var("AF_CLICKHOUSE_INTEGRATION_USERNAME")
+                .unwrap_or_else(|_| "default".to_owned()),
+            std::env::var("AF_CLICKHOUSE_INTEGRATION_PASSWORD").unwrap_or_default(),
+            proxy_config,
+            None,
+        )
+    } else {
+        let (address, handle) = spawn_clickhouse_snapshot();
+        (
+            "http://clickhouse.example".to_owned(),
+            "SELECT {period_start:Int64}, {period_end:Int64}".to_owned(),
+            "dashboard-reader".to_owned(),
+            "dashboard-secret".to_owned(),
+            format!("[http_client]\nproxy_url = 'http://{address}'\ntrust_proxy_dns = true\n"),
+            Some(handle),
+        )
+    };
     let signing_key = URL_SAFE_NO_PAD.encode([0x45; 32]);
     let config_path = database.path.with_extension("toml");
     fs::write(
         &config_path,
         format!(
-            "[server]\nbind = '127.0.0.1:0'\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{}'\nhealth_check_timeout_secs = 1\n[billing]\nwal_directory = '{}'\n[credential_encryption]\nkey_id = 'clickhouse-dashboard-test'\nkey = '{signing_key}'\n[auth]\nlookup_timeout_secs = 2\nsession_signing_key = '{signing_key}'\nsession_ttl_secs = 3600\n[http_client]\nproxy_url = 'http://{clickhouse_address}'\ntrust_proxy_dns = true\n[clickhouse_analytics]\nendpoint = 'http://clickhouse.example'\nquery = 'SELECT {{period_start:Int64}}, {{period_end:Int64}}'\nusername = 'dashboard-reader'\npassword = 'dashboard-secret'\ntimeout_secs = 2\nmax_response_bytes = 65536\n",
+            "[server]\nbind = '127.0.0.1:0'\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{}'\nhealth_check_timeout_secs = 1\n[billing]\nwal_directory = '{}'\n[credential_encryption]\nkey_id = 'clickhouse-dashboard-test'\nkey = '{signing_key}'\n[auth]\nlookup_timeout_secs = 2\nsession_signing_key = '{signing_key}'\nsession_ttl_secs = 3600\n{http_client_config}[clickhouse_analytics]\nendpoint = '{clickhouse_endpoint}'\nquery = '''\n{clickhouse_query}\n'''\nusername = '{clickhouse_username}'\npassword = '{clickhouse_password}'\ntimeout_secs = 2\nmax_response_bytes = 65536\n",
             database.url,
             database
                 .billing_wal_directory()
@@ -255,13 +288,15 @@ async fn configured_clickhouse_supplies_analytics_while_database_supplies_channe
     let report = timeout(IO_TIMEOUT, server).await.unwrap().unwrap().unwrap();
     assert_eq!(report.http, ServeOutcome::Drained);
     assert_eq!(report.background, SupervisorShutdown::Drained);
-    let request = clickhouse.join().unwrap();
-    let request = String::from_utf8(request).unwrap().to_ascii_lowercase();
-    assert!(request.contains("readonly=2"));
-    assert!(request.contains("max_result_rows=1"));
-    assert!(request.contains("x-clickhouse-user: dashboard-reader"));
-    assert!(request.contains("x-clickhouse-key: dashboard-secret"));
-    assert!(request.contains("format jsoneachrow"));
+    if let Some(clickhouse) = clickhouse {
+        let request = clickhouse.join().unwrap();
+        let request = String::from_utf8(request).unwrap().to_ascii_lowercase();
+        assert!(request.contains("readonly=2"));
+        assert!(request.contains("max_result_rows=1"));
+        assert!(request.contains("x-clickhouse-user: dashboard-reader"));
+        assert!(request.contains("x-clickhouse-key: dashboard-secret"));
+        assert!(request.contains("format jsoneachrow"));
+    }
 }
 
 fn spawn_clickhouse_snapshot() -> (SocketAddr, thread::JoinHandle<Vec<u8>>) {

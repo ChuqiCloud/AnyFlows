@@ -37,6 +37,7 @@ jobs:
       rust: ${{ steps.paths.outputs.rust }}
       database: ${{ steps.paths.outputs.database }}
       redis: ${{ steps.paths.outputs.redis }}
+      clickhouse: ${{ steps.paths.outputs.clickhouse }}
       deployment: ${{ steps.paths.outputs.deployment }}
       systemd: ${{ steps.paths.outputs.systemd }}
     steps:
@@ -67,6 +68,7 @@ jobs:
               echo "rust=true"
               echo "database=true"
               echo "redis=true"
+              echo "clickhouse=true"
               echo "deployment=true"
               echo "systemd=true"
             } >> "$GITHUB_OUTPUT"
@@ -115,6 +117,7 @@ jobs:
             echo "rust=$(matches '^(crates/|tools/|\.cargo/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|rustfmt\.toml$|clippy\.toml$|deny\.toml$)')"
             echo "database=$(matches '^(crates/af-db/|tools/ci/run-db-migration-test\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
             echo "redis=$(matches '^(crates/af-cache/|tools/ci/run-cache-redis-test\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
+            echo "clickhouse=$(matches '^(crates/af-server/src/admin_dashboard_storage/clickhouse\.rs$|crates/af-server/tests/admin_dashboard_chain\.rs$|tools/ci/run-clickhouse-integration-test\.sh$)')"
             echo "deployment=$(matches '^(Dockerfile$|docker-compose\.ya?ml$|\.dockerignore$|scripts/deploy/)')"
             echo "systemd=$(matches '^(scripts/systemd/|tools/ci/(package-release|finalize-release|test-release-scripts)\.sh$)')"
           } >> "$GITHUB_OUTPUT"
@@ -419,6 +422,63 @@ jobs:
 
       - name: Audit dependencies
         run: cargo deny --all-features --locked check advisories bans licenses sources
+
+  clickhouse-integration:
+    name: ClickHouse integration
+    needs: [changes, rust-quality]
+    if: ${{ always() && needs.changes.outputs.clickhouse == 'true' && needs.rust-quality.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      clickhouse:
+        image: docker.io/clickhouse/clickhouse-server:25.8.9.20@sha256:8bc7c69999a7391548765753249eb83f3d93d62d6941484a97188d9d0545fac8
+        options: >-
+          --health-cmd "clickhouse-client --query 'SELECT 1'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - name: Configure external Gitea checkout endpoint
+        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+
+      - name: Check out repository
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
+
+      - name: Ensure Rust toolchain manager
+        shell: bash
+        run: bash tools/ci/install-rustup.sh
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          toolchain="$(sed -n 's/^channel = \"\(.*\)\"/\1/p' rust-toolchain.toml)"
+          test -n "$toolchain"
+          rustup toolchain install "$toolchain" --profile minimal
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - name: Run real ClickHouse integration test
+        env:
+          AF_CLICKHOUSE_INTEGRATION_URL: http://clickhouse:8123
+          AF_CLICKHOUSE_INTEGRATION_USERNAME: default
+          AF_CLICKHOUSE_INTEGRATION_PASSWORD: ""
+        run: bash tools/ci/run-clickhouse-integration-test.sh
 
   msrv:
     name: Minimum supported Rust version
