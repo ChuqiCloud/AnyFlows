@@ -25,6 +25,7 @@ const STATUS_PUBLISHED: i16 = 3;
 const CLAIM_CANDIDATE_LIMIT: u64 = 32;
 const DELIVERY_LEASE_SECONDS: u64 = 120;
 const MAX_BACKFILL_BATCH: u64 = 256;
+const MAX_REPLAY_BATCH: u64 = 256;
 
 /// 可异步投递到 ClickHouse 的主库事实类型。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -95,6 +96,47 @@ pub enum AnalyticsExportCompletionOutcome {
     Completed,
     /// 租约已经过期或被其他实例推进。
     Stale,
+}
+
+/// ClickHouse 异步事实 outbox 的状态计数快照。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AnalyticsExportQueueCounts {
+    pending_count: u64,
+    leased_count: u64,
+    published_count: u64,
+}
+
+impl AnalyticsExportQueueCounts {
+    /// 构造状态计数快照；计数由数据库聚合后传入。
+    #[must_use]
+    pub const fn new(pending_count: u64, leased_count: u64, published_count: u64) -> Self {
+        Self {
+            pending_count,
+            leased_count,
+            published_count,
+        }
+    }
+
+    #[must_use]
+    pub const fn pending_count(self) -> u64 {
+        self.pending_count
+    }
+
+    #[must_use]
+    pub const fn leased_count(self) -> u64 {
+        self.leased_count
+    }
+
+    #[must_use]
+    pub const fn published_count(self) -> u64 {
+        self.published_count
+    }
+
+    /// 返回尚未闭合为已发布的事件数量。
+    #[must_use]
+    pub const fn backlog_count(self) -> u64 {
+        self.pending_count.saturating_add(self.leased_count)
+    }
 }
 
 /// 待写入 ClickHouse 的脱敏事实载荷。
@@ -270,6 +312,70 @@ impl AnalyticsExportRepository {
         .await
     }
 
+    /// 按状态读取 outbox 计数，供管理员健康面板使用。
+    pub async fn queue_counts(
+        &self,
+    ) -> Result<AnalyticsExportQueueCounts, AnalyticsExportRepositoryError> {
+        self.run(async {
+            let rows = self
+                .pool
+                .connection()
+                .query_all(Statement::from_string(
+                    self.pool.connection().get_database_backend(),
+                    "SELECT status, COUNT(*) AS row_count FROM analytics_export_outbox_events GROUP BY status".to_owned(),
+                ))
+                .await
+                .map_err(|_| AnalyticsExportRepositoryError::Query)?;
+            let mut counts = AnalyticsExportQueueCounts::new(0, 0, 0);
+            for row in rows {
+                let status = row
+                    .try_get::<i16>("", "status")
+                    .map_err(|_| AnalyticsExportRepositoryError::Invariant)?;
+                let value = row
+                    .try_get::<i64>("", "row_count")
+                    .map_err(|_| AnalyticsExportRepositoryError::Invariant)?;
+                let value = u64::try_from(value)
+                    .map_err(|_| AnalyticsExportRepositoryError::Invariant)?;
+                counts = match status {
+                    STATUS_PENDING => AnalyticsExportQueueCounts::new(
+                        value,
+                        counts.leased_count,
+                        counts.published_count,
+                    ),
+                    STATUS_LEASED => AnalyticsExportQueueCounts::new(
+                        counts.pending_count,
+                        value,
+                        counts.published_count,
+                    ),
+                    STATUS_PUBLISHED => AnalyticsExportQueueCounts::new(
+                        counts.pending_count,
+                        counts.leased_count,
+                        value,
+                    ),
+                    _ => return Err(AnalyticsExportRepositoryError::Invariant),
+                };
+            }
+            Ok(counts)
+        })
+        .await
+    }
+
+    /// 有界重排待处理或已过期租约，使后台 worker 立即重新尝试。
+    pub async fn replay(
+        &self,
+        limit: u64,
+        now: TimeDateTimeWithTimeZone,
+    ) -> Result<u64, AnalyticsExportRepositoryError> {
+        let limit = limit.clamp(1, MAX_REPLAY_BATCH);
+        self.run(replay_inner(self.pool.clone(), limit, now)).await
+    }
+
+    /// 使用数据库统一的 UTC 当前时间重排积压事件。
+    pub async fn replay_now(&self, limit: u64) -> Result<u64, AnalyticsExportRepositoryError> {
+        self.replay(limit, TimeDateTimeWithTimeZone::now_utc())
+            .await
+    }
+
     /// 读取租约对应的事实；主库读取失败时不会推进 outbox 状态。
     pub async fn load_fact(
         &self,
@@ -434,6 +540,79 @@ fn due_condition(now: TimeDateTimeWithTimeZone) -> Condition {
                 .add(analytics_export_outbox_events::Column::NextAttemptAt.lte(now))
                 .add(analytics_export_outbox_events::Column::LeaseExpiresAt.lte(now)),
         )
+}
+
+fn replay_condition(now: TimeDateTimeWithTimeZone) -> Condition {
+    Condition::any()
+        .add(analytics_export_outbox_events::Column::Status.eq(STATUS_PENDING))
+        .add(
+            Condition::all()
+                .add(analytics_export_outbox_events::Column::Status.eq(STATUS_LEASED))
+                .add(analytics_export_outbox_events::Column::LeaseExpiresAt.lte(now)),
+        )
+}
+
+async fn replay_inner(
+    pool: DatabasePool,
+    limit: u64,
+    now: TimeDateTimeWithTimeZone,
+) -> Result<u64, AnalyticsExportRepositoryError> {
+    let transaction = pool
+        .connection()
+        .begin()
+        .await
+        .map_err(|_| AnalyticsExportRepositoryError::Query)?;
+    let candidates = analytics_export_outbox_events::Entity::find()
+        .filter(replay_condition(now))
+        .order_by_asc(analytics_export_outbox_events::Column::Id)
+        .limit(limit)
+        .all(&transaction)
+        .await
+        .map_err(|_| AnalyticsExportRepositoryError::Query)?;
+    let mut replayed = 0_u64;
+    for candidate in candidates {
+        let version = candidate
+            .version
+            .checked_add(1)
+            .ok_or(AnalyticsExportRepositoryError::Invariant)?;
+        let result = analytics_export_outbox_events::Entity::update_many()
+            .col_expr(
+                analytics_export_outbox_events::Column::Status,
+                Expr::value(STATUS_PENDING),
+            )
+            .col_expr(
+                analytics_export_outbox_events::Column::NextAttemptAt,
+                Expr::value(now),
+            )
+            .col_expr(
+                analytics_export_outbox_events::Column::LeaseExpiresAt,
+                Expr::value(Option::<TimeDateTimeWithTimeZone>::None),
+            )
+            .col_expr(
+                analytics_export_outbox_events::Column::Version,
+                Expr::value(version),
+            )
+            .col_expr(
+                analytics_export_outbox_events::Column::UpdatedAt,
+                Expr::value(now),
+            )
+            .filter(analytics_export_outbox_events::Column::Id.eq(candidate.id))
+            .filter(analytics_export_outbox_events::Column::Version.eq(candidate.version))
+            .filter(replay_condition(now))
+            .exec(&transaction)
+            .await
+            .map_err(|_| AnalyticsExportRepositoryError::Query)?;
+        if result.rows_affected == 1 {
+            replayed = replayed.saturating_add(1);
+        } else if result.rows_affected > 1 {
+            return Err(AnalyticsExportRepositoryError::Invariant);
+        }
+    }
+    transaction
+        .commit()
+        .await
+        .map_err(|_| AnalyticsExportRepositoryError::Query)?;
+    Ok(replayed)
 }
 
 async fn mark_published_inner(

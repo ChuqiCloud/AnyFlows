@@ -1219,6 +1219,22 @@ export type AdminWalletListResponse = {
     entries: Array<AdminWalletEntry>;
     next_cursor: number | null;
 };
+export type AnalyticsExportHealthState = 'disabled' | 'healthy' | 'backlog' | 'unavailable';
+export type AnalyticsExportReplayRequest = {
+    limit?: number | null;
+};
+export type AnalyticsExportReplayResponse = {
+    replayed_count: number;
+    backlog_count?: number | null;
+};
+export type AnalyticsExportStatusResponse = {
+    enabled: boolean;
+    state: AnalyticsExportHealthState;
+    pending_count?: number | null;
+    leased_count?: number | null;
+    published_count?: number | null;
+    backlog_count?: number | null;
+};
 export type Announcement = {
     id: number;
     version: number;
@@ -5910,6 +5926,38 @@ export type GetAdminDashboardResponses = {
     200: AdminDashboardResponse;
 };
 export type GetAdminDashboardResponse = GetAdminDashboardResponses[keyof GetAdminDashboardResponses];
+export type GetAdminAnalyticsExportStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/analytics/export-status';
+};
+export type GetAdminAnalyticsExportStatusErrors = {
+    401: ManagementError;
+    403: ManagementError;
+};
+export type GetAdminAnalyticsExportStatusError = GetAdminAnalyticsExportStatusErrors[keyof GetAdminAnalyticsExportStatusErrors];
+export type GetAdminAnalyticsExportStatusResponses = {
+    200: AnalyticsExportStatusResponse;
+};
+export type GetAdminAnalyticsExportStatusResponse = GetAdminAnalyticsExportStatusResponses[keyof GetAdminAnalyticsExportStatusResponses];
+export type ReplayAdminAnalyticsExportData = {
+    body: AnalyticsExportReplayRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/analytics/export-replay';
+};
+export type ReplayAdminAnalyticsExportErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ReplayAdminAnalyticsExportError = ReplayAdminAnalyticsExportErrors[keyof ReplayAdminAnalyticsExportErrors];
+export type ReplayAdminAnalyticsExportResponses = {
+    200: AnalyticsExportReplayResponse;
+};
+export type ReplayAdminAnalyticsExportResponse = ReplayAdminAnalyticsExportResponses[keyof ReplayAdminAnalyticsExportResponses];
 export type ListAdminUsersData = {
     body?: never;
     path?: never;

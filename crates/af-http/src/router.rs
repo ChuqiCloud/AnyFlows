@@ -43,6 +43,9 @@ use crate::email_settings::build_email_settings_router;
 use crate::frontend_assets::{FrontendAssetSource, frontend_fallback};
 use crate::gemini_generate_content::gemini_generate_content;
 use crate::invitations::build_user_invitation_router;
+use crate::management_analytics_export::{
+    get_admin_analytics_export_status, replay_admin_analytics_export,
+};
 use crate::management_auth::{
     ManagementAuthenticationState, authenticate_management_session,
     authenticate_optional_management_session,
@@ -239,6 +242,7 @@ pub fn build_router(
     admin_token_reader: Arc<dyn AdminTokenReader>,
     admin_token_writer: Arc<dyn AdminTokenWriter>,
     admin_dashboard_reader: Arc<dyn AdminDashboardReader>,
+    analytics_export_control: Option<Arc<dyn af_analytics::AnalyticsExportControl>>,
     admin_usage_log_reader: Arc<dyn AdminUsageLogReader>,
     admin_user_reader: Arc<dyn AdminUserReader>,
     admin_user_writer: Arc<dyn AdminUserWriter>,
@@ -334,6 +338,7 @@ pub fn build_router(
     .with_admin_channel_writer(admin_channel_writer)
     .with_admin_channel_probe(admin_channel_probe)
     .with_admin_dashboard_reader(admin_dashboard_reader)
+    .with_analytics_export_control(analytics_export_control)
     .with_admin_usage_log_reader(admin_usage_log_reader)
     .with_admin_wallet_service(admin_wallet_service)
     .with_admin_refund_service(admin_refund_service)
@@ -797,6 +802,18 @@ pub fn build_router(
         .route(
             "/api/admin/dashboard",
             get(get_admin_dashboard)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(dashboard_authentication.clone()),
+        )
+        .route(
+            "/api/admin/analytics/export-status",
+            get(get_admin_analytics_export_status)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(dashboard_authentication.clone()),
+        )
+        .route(
+            "/api/admin/analytics/export-replay",
+            post(replay_admin_analytics_export)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(dashboard_authentication),
         )

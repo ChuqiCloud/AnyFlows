@@ -7,7 +7,7 @@ use af_admin::{
     AdminUserReader, AdminUserWriter, AdminWalletService, InitialSetup, PlatformAuditService,
     SessionAuthenticator, TokenAuthentication,
 };
-use af_analytics::AdminDashboardReader;
+use af_analytics::{AdminDashboardReader, AnalyticsExportControl};
 use af_domain::{AfError, Protocol, TokenModelPolicy};
 use af_protocol::{
     CanonicalRequestEnvelope, apply_reasoning_model_suffix, openai_chat::parse_request_envelope,
@@ -48,6 +48,7 @@ pub(crate) struct HttpState {
     pub(crate) admin_channel_writer: Option<Arc<dyn AdminChannelWriter>>,
     pub(crate) admin_channel_probe: Option<Arc<dyn crate::AdminChannelProbe>>,
     pub(crate) admin_dashboard_reader: Option<Arc<dyn AdminDashboardReader>>,
+    pub(crate) analytics_export_control: Option<Arc<dyn AnalyticsExportControl>>,
     pub(crate) admin_group_reader: Arc<dyn AdminGroupReader>,
     pub(crate) admin_group_writer: Arc<dyn AdminGroupWriter>,
     pub(crate) admin_model_reader: Option<Arc<dyn AdminModelReader>>,
@@ -100,6 +101,7 @@ impl HttpState {
             admin_channel_writer: None,
             admin_channel_probe: None,
             admin_dashboard_reader: None,
+            analytics_export_control: None,
             admin_group_reader,
             admin_group_writer,
             admin_model_reader: None,
@@ -309,6 +311,15 @@ impl HttpState {
         reader: Arc<dyn AdminDashboardReader>,
     ) -> Self {
         self.admin_dashboard_reader = Some(reader);
+        self
+    }
+
+    /// 为分析导出运维路由注入不含敏感材料的状态与重放端口。
+    pub(crate) fn with_analytics_export_control(
+        mut self,
+        control: Option<Arc<dyn AnalyticsExportControl>>,
+    ) -> Self {
+        self.analytics_export_control = control;
         self
     }
 

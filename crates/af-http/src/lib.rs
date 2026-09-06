@@ -22,6 +22,7 @@ mod image_service;
 mod invitations;
 #[cfg(test)]
 mod invitations_tests;
+mod management_analytics_export;
 mod management_auth;
 mod management_authorization;
 mod management_channel_probe;

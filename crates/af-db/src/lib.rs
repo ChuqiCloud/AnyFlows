@@ -338,7 +338,8 @@ pub use admin_user_write::{
 };
 pub use analytics_export::{
     AnalyticsExportCompletionOutcome, AnalyticsExportFact, AnalyticsExportFactKind,
-    AnalyticsExportLease, AnalyticsExportRepository, AnalyticsExportRepositoryError,
+    AnalyticsExportLease, AnalyticsExportQueueCounts, AnalyticsExportRepository,
+    AnalyticsExportRepositoryError,
 };
 pub use announcement::{
     AnnouncementAudienceRecord, AnnouncementRecord, AnnouncementRepository,

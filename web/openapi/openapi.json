@@ -11117,6 +11117,128 @@
         ]
       }
     },
+    "/api/admin/analytics/export-status": {
+      "get": {
+        "tags": [
+          "分析导出"
+        ],
+        "summary": "读取 ClickHouse 异步事实导出状态",
+        "operationId": "getAdminAnalyticsExportStatus",
+        "responses": {
+          "200": {
+            "description": "导出开关、队列积压和已发布计数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyticsExportStatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/analytics/export-replay": {
+      "post": {
+        "tags": [
+          "分析导出"
+        ],
+        "summary": "有界重放 ClickHouse 异步事实积压",
+        "operationId": "replayAdminAnalyticsExport",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyticsExportReplayRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "本次重排数量与当前积压",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyticsExportReplayResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "重放上限无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/users": {
       "get": {
         "tags": [
@@ -35538,6 +35660,104 @@
         },
         "additionalProperties": false
       },
+      "AnalyticsExportHealthState": {
+        "type": "string",
+        "description": "ClickHouse 异步事实导出的健康状态。",
+        "enum": [
+          "disabled",
+          "healthy",
+          "backlog",
+          "unavailable"
+        ]
+      },
+      "AnalyticsExportReplayRequest": {
+        "type": "object",
+        "description": "管理端手动重放请求；默认只推进有限数量的积压事件。",
+        "properties": {
+          "limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "maximum": 256,
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AnalyticsExportReplayResponse": {
+        "type": "object",
+        "description": "管理端手动重放结果。",
+        "required": [
+          "replayed_count"
+        ],
+        "properties": {
+          "replayed_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "backlog_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "AnalyticsExportStatusResponse": {
+        "type": "object",
+        "description": "管理端 ClickHouse 异步事实导出状态。",
+        "required": [
+          "enabled",
+          "state"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "state": {
+            "$ref": "#/components/schemas/AnalyticsExportHealthState"
+          },
+          "pending_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "leased_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "published_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "backlog_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
       "Announcement": {
         "type": "object",
         "required": [
@@ -46506,6 +46726,9 @@
     },
     {
       "name": "管理看板"
+    },
+    {
+      "name": "分析导出"
     },
     {
       "name": "用户管理"

@@ -1,5 +1,6 @@
 //! 从 Rust 路由契约生成管理 API 的 OpenAPI 文档。
 
+mod analytics_export;
 mod announcements;
 mod balance_alert_settings;
 mod channels;
@@ -99,6 +100,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(balance_alert_settings::document());
     document.merge(site_settings::document());
     document.merge(dashboard::document());
+    document.merge(analytics_export::document());
     document.merge(users::document());
     document.merge(wallet::document());
     document.merge(groups::document());
@@ -177,6 +179,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("管理会话"),
         Tag::new("首次安装"),
         Tag::new("管理看板"),
+        Tag::new("分析导出"),
         Tag::new("用户管理"),
         Tag::new("钱包账本"),
         Tag::new("分组管理"),
