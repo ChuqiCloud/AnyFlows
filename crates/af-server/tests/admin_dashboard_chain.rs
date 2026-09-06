@@ -192,7 +192,7 @@ async fn admin_dashboard_uses_real_aggregates_and_role_boundary() {
 async fn configured_clickhouse_supplies_analytics_while_database_supplies_channels() {
     let database = TestDatabase::new();
     seed_dashboard(&database.url).await;
-    let live_clickhouse = std::env::var("AF_CLICKHOUSE_INTEGRATION_URL").ok();
+    let live_clickhouse = std::env::var("ANYFLOWS_CLICKHOUSE_INTEGRATION_URL").ok();
     let (
         clickhouse_endpoint,
         clickhouse_query,
@@ -206,9 +206,9 @@ async fn configured_clickhouse_supplies_analytics_while_database_supplies_channe
         (
             endpoint,
             REAL_CLICKHOUSE_QUERY.to_owned(),
-            std::env::var("AF_CLICKHOUSE_INTEGRATION_USERNAME")
+            std::env::var("ANYFLOWS_CLICKHOUSE_INTEGRATION_USERNAME")
                 .unwrap_or_else(|_| "default".to_owned()),
-            std::env::var("AF_CLICKHOUSE_INTEGRATION_PASSWORD").unwrap_or_default(),
+            std::env::var("ANYFLOWS_CLICKHOUSE_INTEGRATION_PASSWORD").unwrap_or_default(),
             proxy_config,
             None,
         )

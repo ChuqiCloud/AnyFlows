@@ -475,9 +475,9 @@ jobs:
 
       - name: Run real ClickHouse integration test
         env:
-          AF_CLICKHOUSE_INTEGRATION_URL: http://clickhouse:8123
-          AF_CLICKHOUSE_INTEGRATION_USERNAME: default
-          AF_CLICKHOUSE_INTEGRATION_PASSWORD: ""
+          ANYFLOWS_CLICKHOUSE_INTEGRATION_URL: http://clickhouse:8123
+          ANYFLOWS_CLICKHOUSE_INTEGRATION_USERNAME: default
+          ANYFLOWS_CLICKHOUSE_INTEGRATION_PASSWORD: ""
         run: bash tools/ci/run-clickhouse-integration-test.sh
 
   msrv:
