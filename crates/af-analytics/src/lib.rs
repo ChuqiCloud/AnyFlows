@@ -2,8 +2,14 @@
 
 use af_domain::{ChannelId, Protocol};
 
+mod export;
 mod reader;
 mod storage;
+
+pub use export::{
+    AnalyticsExportControl, AnalyticsExportControlError, AnalyticsExportQueueSnapshot,
+    AnalyticsExportReplayFuture, AnalyticsExportStatusFuture,
+};
 
 pub use reader::{
     AdminDashboardReadError, AdminDashboardReadFuture, AdminDashboardReader,

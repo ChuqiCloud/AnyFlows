@@ -265,6 +265,23 @@
     "error": {
       "title": "无法读取看板指标",
       "body": "服务暂时没有返回已确认用量与渠道状态，请稍后重试。"
+    },
+    "analyticsExport": {
+      "title": "分析事实导出",
+      "subtitle": "ClickHouse 只接收异步事实，不参与计费或请求终态判定",
+      "loading": "正在读取导出状态",
+      "error": "导出状态暂时不可用",
+      "noCount": "暂无计数",
+      "backlog": "积压 {{count}} 条",
+      "replay": "重放积压",
+      "replayError": "重放暂时失败，请稍后重试。",
+      "replayed": "本次已重新排队 {{count}} 条",
+      "states": {
+        "disabled": "未启用",
+        "healthy": "运行正常",
+        "backlog": "存在积压",
+        "unavailable": "状态不可用"
+      }
     }
   },
   "channels": {

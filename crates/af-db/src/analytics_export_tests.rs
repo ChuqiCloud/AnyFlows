@@ -35,6 +35,10 @@ async fn outbox_claim_retry_and_completion_are_versioned() -> Result<(), Box<dyn
     transaction.commit().await?;
 
     assert_eq!(repository.backlog_count().await?, 1);
+    assert_eq!(
+        repository.queue_counts().await?,
+        crate::AnalyticsExportQueueCounts::new(1, 0, 0)
+    );
     let lease = repository.claim_next_due().await?.expect("应领取一条事件");
     assert_eq!(lease.fact_kind(), AnalyticsExportFactKind::UsageLog);
     assert_eq!(lease.fact_id(), 1);
@@ -45,6 +49,43 @@ async fn outbox_claim_retry_and_completion_are_versioned() -> Result<(), Box<dyn
     let retry = repository.claim_next_due().await?;
     assert!(retry.is_none(), "失败事件应进入退避窗口");
     assert_eq!(repository.backlog_count().await?, 1);
+    assert_eq!(
+        repository.queue_counts().await?,
+        crate::AnalyticsExportQueueCounts::new(1, 0, 0)
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn replay_releases_only_pending_or_expired_leases() -> Result<(), Box<dyn std::error::Error>>
+{
+    let pool = connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
+    let repository = AnalyticsExportRepository::new(pool.clone(), Duration::from_secs(2))?;
+    let transaction = pool.connection().begin().await?;
+    for fact_id in [1, 2, 3] {
+        AnalyticsExportRepository::enqueue_in_transaction(
+            &transaction,
+            AnalyticsExportFactKind::UsageLog,
+            fact_id,
+            TimeDateTimeWithTimeZone::now_utc(),
+        )
+        .await?;
+    }
+    transaction.commit().await?;
+
+    let active = repository.claim_next_due().await?.expect("应领取活动租约");
+    assert_eq!(repository.replay_now(10).await?, 2);
+    assert_eq!(repository.queue_counts().await?.pending_count(), 2);
+    assert_eq!(
+        repository.mark_published_now(&active).await?,
+        AnalyticsExportCompletionOutcome::Completed
+    );
+    assert_eq!(repository.queue_counts().await?.published_count(), 1);
+    pool.close().await?;
     Ok(())
 }
 

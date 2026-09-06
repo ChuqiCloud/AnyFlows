@@ -8,6 +8,7 @@ import type { AdminDashboardResponse } from '@/lib/api/generated/types.gen'
 import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import { useAdminDashboard } from './dashboard-api'
 import { DashboardAvailability } from './dashboard-availability'
+import { DashboardAnalyticsExport } from './dashboard-analytics-export'
 import { DashboardComposition } from './dashboard-composition'
 import { DashboardPerformance } from './dashboard-performance'
 import { DashboardOutcomes } from './dashboard-outcomes'
@@ -122,6 +123,7 @@ export function DashboardPage() {
           <DashboardOutcomes dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} formatQuota={formatQuota} />
         </>
       ) : null}
+      <DashboardAnalyticsExport formatNumber={formatNumber} />
     </div>
   )
 }

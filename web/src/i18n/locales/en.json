@@ -263,6 +263,23 @@
     "error": {
       "title": "Dashboard metrics could not be loaded",
       "body": "The service did not return confirmed usage and channel status. Try again shortly."
+    },
+    "analyticsExport": {
+      "title": "Analytics fact export",
+      "subtitle": "ClickHouse receives asynchronous facts only; it never decides billing or request outcomes",
+      "loading": "Loading export status",
+      "error": "Export status is temporarily unavailable",
+      "noCount": "No count available",
+      "backlog": "{{count}} queued",
+      "replay": "Replay backlog",
+      "replayError": "Replay failed temporarily. Try again shortly.",
+      "replayed": "Re-queued {{count}} fact(s)",
+      "states": {
+        "disabled": "Disabled",
+        "healthy": "Healthy",
+        "backlog": "Backlog present",
+        "unavailable": "Status unavailable"
+      }
     }
   },
   "channels": {

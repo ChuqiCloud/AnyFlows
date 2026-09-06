@@ -398,6 +398,7 @@ pub struct Supervised {
     admin_channel_probe: Arc<dyn AdminChannelProbe>,
     debug_trace_repository: DebugTraceRepository,
     debug_trace_runtime: DebugTraceRuntime,
+    analytics_export_control: Option<Arc<dyn af_analytics::AnalyticsExportControl>>,
     supervisor: BackgroundTaskSupervisor,
 }
 
@@ -2327,6 +2328,11 @@ impl Bootstrap<BillingReady> {
             debug_trace_worker,
             analytics_export_repository,
         } = stage;
+        let analytics_export_control = analytics_export_repository.as_ref().map(|repository| {
+            Arc::new(crate::analytics_export::ClickHouseExportControl::new(
+                repository.clone(),
+            )) as Arc<dyn af_analytics::AnalyticsExportControl>
+        });
         spawn_channel_index_refresh_task(
             &mut supervisor,
             channel_index.clone(),
@@ -2513,6 +2519,7 @@ impl Bootstrap<BillingReady> {
                 admin_channel_probe,
                 debug_trace_repository,
                 debug_trace_runtime,
+                analytics_export_control,
                 supervisor,
             },
         }
@@ -3005,6 +3012,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.admin_token_reader),
             Arc::clone(&self.stage.infrastructure.admin_token_writer),
             Arc::clone(&self.stage.infrastructure.admin_dashboard_reader),
+            self.stage.analytics_export_control.clone(),
             Arc::clone(&self.stage.infrastructure.admin_usage_log_reader),
             Arc::clone(&self.stage.infrastructure.admin_user_reader),
             Arc::clone(&self.stage.infrastructure.admin_user_writer),
@@ -3194,6 +3202,7 @@ impl Bootstrap<ListenerReady> {
             admin_channel_probe: _,
             debug_trace_repository: _,
             debug_trace_runtime: _,
+            analytics_export_control: _,
             video_task: _,
         } = runtime;
         let shutdown_signal = begin_draining_on_signal(shutdown_signal, readiness);

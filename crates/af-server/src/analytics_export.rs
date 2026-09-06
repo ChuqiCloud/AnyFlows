@@ -1,9 +1,13 @@
 use std::{fmt, time::Duration};
 
+use af_analytics::{
+    AnalyticsExportControl, AnalyticsExportControlError, AnalyticsExportQueueSnapshot,
+    AnalyticsExportReplayFuture, AnalyticsExportStatusFuture,
+};
 use af_config::ClickHouseExportSettings;
 use af_db::{
     AnalyticsExportCompletionOutcome, AnalyticsExportFact, AnalyticsExportFactKind,
-    AnalyticsExportRepository,
+    AnalyticsExportRepository, AnalyticsExportRepositoryError,
 };
 use af_httpclient::{
     Body, HeaderMap, HeaderName, HeaderValue, HttpClientProvider, Method, StatusCode,
@@ -14,6 +18,51 @@ use tokio::time::sleep;
 use url::Url;
 
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
+
+/// 将主库 outbox 仓储暴露为不含敏感材料的管理运维端口。
+#[derive(Clone)]
+pub(crate) struct ClickHouseExportControl {
+    repository: AnalyticsExportRepository,
+}
+
+impl ClickHouseExportControl {
+    pub(crate) fn new(repository: AnalyticsExportRepository) -> Self {
+        Self { repository }
+    }
+}
+
+impl AnalyticsExportControl for ClickHouseExportControl {
+    fn status(&self) -> AnalyticsExportStatusFuture<'_> {
+        let repository = self.repository.clone();
+        Box::pin(async move {
+            let counts = repository.queue_counts().await.map_err(map_control_error)?;
+            Ok(AnalyticsExportQueueSnapshot::new(
+                counts.pending_count(),
+                counts.leased_count(),
+                counts.published_count(),
+            ))
+        })
+    }
+
+    fn replay(&self, limit: u16) -> AnalyticsExportReplayFuture<'_> {
+        let repository = self.repository.clone();
+        Box::pin(async move {
+            repository
+                .replay_now(u64::from(limit))
+                .await
+                .map_err(map_control_error)
+        })
+    }
+}
+
+fn map_control_error(error: AnalyticsExportRepositoryError) -> AnalyticsExportControlError {
+    match error {
+        AnalyticsExportRepositoryError::Query | AnalyticsExportRepositoryError::Timeout => {
+            AnalyticsExportControlError::Unavailable
+        }
+        AnalyticsExportRepositoryError::Invariant => AnalyticsExportControlError::Invariant,
+    }
+}
 
 /// ClickHouse 事实投递运行时的装配错误。
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]

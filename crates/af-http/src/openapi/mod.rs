@@ -1,5 +1,6 @@
 //! 从 Rust 路由契约生成管理 API 的 OpenAPI 文档。
 
+mod analytics_export;
 mod announcements;
 mod balance_alert_settings;
 mod channels;
@@ -99,6 +100,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(balance_alert_settings::document());
     document.merge(site_settings::document());
     document.merge(dashboard::document());
+    document.merge(analytics_export::document());
     document.merge(users::document());
     document.merge(wallet::document());
     document.merge(groups::document());
@@ -177,6 +179,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("管理会话"),
         Tag::new("首次安装"),
         Tag::new("管理看板"),
+        Tag::new("分析导出"),
         Tag::new("用户管理"),
         Tag::new("钱包账本"),
         Tag::new("分组管理"),
@@ -259,7 +262,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 239);
+        assert_eq!(document.paths.paths.len(), 241);
         let operation_count = document
             .paths
             .paths
@@ -281,7 +284,7 @@ mod tests {
             })
             .sum::<usize>();
         // 公开发现、SSO 启动、审批与部门目录管理接口扩展了既有管理面，保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 316);
+        assert_eq!(operation_count, 318);
         assert!(
             document
                 .components
@@ -518,6 +521,7 @@ mod tests {
             "getAdminCredential",
             "getAdminCredentialProxy",
             "getAdminDashboard",
+            "getAdminAnalyticsExportStatus",
             "getAdminDebugTrace",
             "getAdminDebugTraceSettings",
             "getAdminEmailSettings",
@@ -637,6 +641,7 @@ mod tests {
             "createScimGroup",
             "replaceScimGroup",
             "deleteScimGroup",
+            "replayAdminAnalyticsExport",
         ]
         .into_iter()
         .map(str::to_owned)
@@ -644,7 +649,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 518);
+        assert_eq!(schemas.len(), 522);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("OrganizationSsoDiscoveryErrorResponse"));
         assert!(schemas.contains_key("Announcement"));
@@ -652,6 +657,10 @@ mod tests {
         assert!(schemas.contains_key("AnnouncementMutationRequest"));
         assert!(schemas.contains_key("AnnouncementUpdateRequest"));
         assert!(schemas.contains_key("AnnouncementWriteRequest"));
+        assert!(schemas.contains_key("AnalyticsExportHealthState"));
+        assert!(schemas.contains_key("AnalyticsExportReplayRequest"));
+        assert!(schemas.contains_key("AnalyticsExportReplayResponse"));
+        assert!(schemas.contains_key("AnalyticsExportStatusResponse"));
         assert!(schemas.contains_key("CreditAllocationListResponse"));
         assert!(schemas.contains_key("CreditAllocationResponse"));
         assert!(schemas.contains_key("CreditInvoiceListResponse"));
