@@ -132,6 +132,491 @@
         ]
       }
     },
+    "/api/announcements": {
+      "get": {
+        "tags": [
+          "公告"
+        ],
+        "summary": "读取当前已发布公告",
+        "operationId": "listPublicAnnouncements",
+        "responses": {
+          "200": {
+            "description": "可见时间窗内的已发布公告",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnouncementListResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/announcements": {
+      "get": {
+        "tags": [
+          "公告"
+        ],
+        "summary": "读取公告版本事实",
+        "operationId": "listAdminAnnouncements",
+        "responses": {
+          "200": {
+            "description": "包含草稿、已发布和已撤回公告",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnouncementListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "公告"
+        ],
+        "summary": "创建公告草稿",
+        "operationId": "createAdminAnnouncement",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnnouncementWriteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "创建后的公告草稿",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Announcement"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "公告正文或时间窗口无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/announcements/{id}": {
+      "put": {
+        "tags": [
+          "公告"
+        ],
+        "summary": "按版本更新公告草稿",
+        "operationId": "updateAdminAnnouncement",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "公告标识",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnnouncementUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "更新后的公告草稿",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Announcement"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "公告正文或版本无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "公告不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "公告版本或状态已变化",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/announcements/{id}/publish": {
+      "post": {
+        "tags": [
+          "公告"
+        ],
+        "summary": "发布公告草稿",
+        "operationId": "publishAdminAnnouncement",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "公告标识",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnnouncementMutationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "已发布的公告",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Announcement"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "公告版本无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "公告不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "公告版本或状态已变化",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/announcements/{id}/revoke": {
+      "post": {
+        "tags": [
+          "公告"
+        ],
+        "summary": "撤回已发布公告",
+        "operationId": "revokeAdminAnnouncement",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "公告标识",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnnouncementMutationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "已撤回的公告",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Announcement"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "公告版本无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "公告不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "公告版本或状态已变化",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/setup/status": {
       "get": {
         "tags": [
@@ -35053,6 +35538,226 @@
         },
         "additionalProperties": false
       },
+      "Announcement": {
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "status",
+          "title_zh",
+          "title_en",
+          "body_zh",
+          "body_en",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "status": {
+            "type": "string",
+            "pattern": "^(draft|published|revoked)$"
+          },
+          "title_zh": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1
+          },
+          "title_en": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1
+          },
+          "body_zh": {
+            "type": "string",
+            "maxLength": 8192,
+            "minLength": 1
+          },
+          "body_en": {
+            "type": "string",
+            "maxLength": 8192,
+            "minLength": 1
+          },
+          "visible_from": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "visible_until": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "created_by": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "published_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "revoked_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AnnouncementListResponse": {
+        "type": "object",
+        "required": [
+          "entries"
+        ],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Announcement"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "AnnouncementMutationRequest": {
+        "type": "object",
+        "required": [
+          "expected_version"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AnnouncementUpdateRequest": {
+        "type": "object",
+        "required": [
+          "title_zh",
+          "title_en",
+          "body_zh",
+          "body_en",
+          "expected_version"
+        ],
+        "properties": {
+          "title_zh": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1
+          },
+          "title_en": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1
+          },
+          "body_zh": {
+            "type": "string",
+            "maxLength": 8192,
+            "minLength": 1
+          },
+          "body_en": {
+            "type": "string",
+            "maxLength": 8192,
+            "minLength": 1
+          },
+          "visible_from": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "visible_until": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "expected_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AnnouncementWriteRequest": {
+        "type": "object",
+        "required": [
+          "title_zh",
+          "title_en",
+          "body_zh",
+          "body_en"
+        ],
+        "properties": {
+          "title_zh": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1
+          },
+          "title_en": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1
+          },
+          "body_zh": {
+            "type": "string",
+            "maxLength": 8192,
+            "minLength": 1
+          },
+          "body_en": {
+            "type": "string",
+            "maxLength": 8192,
+            "minLength": 1
+          },
+          "visible_from": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "visible_until": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
       "AudioSpeechBinary": {
         "type": "string",
         "format": "binary"
@@ -36197,6 +36902,9 @@
               "forbidden",
               "setup_conflict",
               "site_settings_conflict",
+              "announcement_invalid_request",
+              "announcement_not_found",
+              "announcement_conflict",
               "user_not_found",
               "group_not_found",
               "token_not_found",
@@ -45591,6 +46299,9 @@
   "tags": [
     {
       "name": "公开注册"
+    },
+    {
+      "name": "公告"
     },
     {
       "name": "OpenAI Responses"

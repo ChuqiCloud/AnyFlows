@@ -2,6 +2,36 @@
 
 use sea_orm_migration::prelude::DeriveIden;
 
+pub(in crate::migration) mod announcements {
+    use super::DeriveIden;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "announcements")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        Version,
+        Status,
+        TitleZh,
+        TitleEn,
+        BodyZh,
+        BodyEn,
+        VisibleFrom,
+        VisibleUntil,
+        CreatedBy,
+        PublishedAt,
+        RevokedAt,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
 pub(in crate::migration) mod async_tasks {
     use super::DeriveIden;
 

@@ -19,7 +19,7 @@ const expectedAdminItems = [
   'organizationWallet', 'organizationActivity', 'organizationSettings', 'organizationCredit', 'organizationProvisioning',
   'users', 'subscriptionManagement', 'organizationPlans', 'redemptionCodes', 'refunds', 'paymentSettings', 'billingSettings',
   'modelSettings', 'groupSettings', 'channels', 'credentials', 'credentialProxies', 'routes',
-  'siteSettings', 'authenticationSettings', 'emailSettings', 'networkSettings', 'keys',
+  'siteSettings', 'authenticationSettings', 'announcements', 'emailSettings', 'networkSettings', 'keys',
   'usage', 'debugTraces',
 ]
 

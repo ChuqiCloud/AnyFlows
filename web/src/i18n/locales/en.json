@@ -60,6 +60,7 @@
     "refunds": "Refund approvals",
     "siteSettings": "Site settings",
     "authenticationSettings": "Authentication",
+    "announcements": "Announcements",
     "emailSettings": "Email settings",
     "networkSettings": "Network & proxy",
     "paymentSettings": "Payment settings",
@@ -3338,6 +3339,51 @@
     "warning": {
       "title": "Confirm another entry point before disabling passwords",
       "description": "Confirm that at least one OAuth sign-in method is configured and working. Otherwise, an operator must restore password sign-in after existing sessions expire."
+    }
+  },
+  "announcements": {
+    "eyebrow": "Platform announcements",
+    "title": "Announcement management",
+    "subtitle": "Publish versioned bilingual announcements and control public visibility with a time window.",
+    "public": {
+      "label": "Latest announcements"
+    },
+    "status": {
+      "draft": "Draft",
+      "published": "Published",
+      "revoked": "Revoked"
+    },
+    "list": {
+      "title": "Announcement versions",
+      "description": "Select an announcement to inspect its content and status. Published versions cannot be edited directly.",
+      "empty": "No announcements yet. Create a draft to get started."
+    },
+    "editor": {
+      "new": "New announcement draft",
+      "edit": "Edit announcement draft",
+      "description": "Saving creates or updates a draft. Publish and revoke actions verify the current version."
+    },
+    "fields": {
+      "titleZh": "Chinese title",
+      "titleEn": "English title",
+      "bodyZh": "Chinese body",
+      "bodyEn": "English body",
+      "visibleFrom": "Visible from",
+      "visibleUntil": "Visible until"
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Try again",
+      "new": "New announcement",
+      "create": "Create draft",
+      "save": "Save draft",
+      "publish": "Publish",
+      "revoke": "Revoke"
+    },
+    "errors": {
+      "load": "Announcements could not be loaded. Try again shortly.",
+      "save": "The announcement draft could not be saved; another administrator may have updated it. Refresh and try again.",
+      "transition": "The announcement state could not be changed; its version or status may have changed. Refresh and try again."
     }
   },
   "billingSettings": {

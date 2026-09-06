@@ -32,6 +32,7 @@ use http::{
 };
 use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer, trace::TraceLayer};
 
+use crate::announcements::build_announcement_router;
 use crate::anthropic_messages::anthropic_messages;
 use crate::authentication::{AuthenticationState, authenticate_api_key};
 use crate::balance_alert_settings::build_balance_alert_settings_router;
@@ -212,6 +213,7 @@ pub fn build_router(
     subscription_service: Arc<dyn SubscriptionService>,
     user_invitation_service: Arc<dyn UserInvitationService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
+    announcement_service: Arc<dyn af_admin::AnnouncementService>,
     admin_custom_oauth2_provider_service: Option<Arc<dyn AdminCustomOAuth2ProviderService>>,
     oauth_login_service: Option<Arc<dyn OAuthLoginService>>,
     turnstile_verifier: Option<Arc<dyn crate::TurnstileVerifier>>,
@@ -554,6 +556,10 @@ pub fn build_router(
         turnstile_site_key,
         Arc::clone(&http_state.session_authenticator),
     );
+    let announcement_routes = build_announcement_router(
+        announcement_service,
+        Arc::clone(&http_state.session_authenticator),
+    );
     let custom_oauth2_routes = admin_custom_oauth2_provider_service
         .map(|service| {
             build_custom_oauth2_router(service, Arc::clone(&http_state.session_authenticator))
@@ -856,6 +862,7 @@ pub fn build_router(
         .merge(subscription_routes)
         .merge(user_invitation_routes)
         .merge(site_settings_routes)
+        .merge(announcement_routes)
         .merge(custom_oauth2_routes)
         .merge(email_settings_routes)
         .merge(network_settings_routes)

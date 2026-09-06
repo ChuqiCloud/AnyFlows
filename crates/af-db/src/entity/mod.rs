@@ -29,6 +29,7 @@ use af_domain::{
 
 pub(crate) mod abilities;
 pub(crate) mod analytics_export_outbox_events;
+pub(crate) mod announcements;
 pub(crate) mod async_task_billings;
 pub(crate) mod async_task_submission_claims;
 pub(crate) mod async_tasks;
@@ -3476,6 +3477,9 @@ impl ActiveModelBehavior for organization_custom_role_permissions::ActiveModel {
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for user_notification_events::ActiveModel {}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for announcements::ActiveModel {}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for user_notification_receipts::ActiveModel {}

@@ -31,6 +31,12 @@ pub(crate) enum ManagementError {
     SetupConflict,
     /// 站点设置版本已被其他管理员推进。
     SiteSettingsConflict,
+    /// 公告写入请求字段无效。
+    AnnouncementInvalidRequest,
+    /// 公告不存在或已不可见。
+    AnnouncementNotFound,
+    /// 公告版本或生命周期状态发生冲突。
+    AnnouncementConflict,
     /// 用户不存在或已经被软删除。
     UserNotFound,
     /// 用户名或邮箱与当前有效用户冲突。
@@ -409,6 +415,27 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "site_settings_conflict",
                     message: "Site settings changed",
+                },
+            ),
+            Self::AnnouncementInvalidRequest => (
+                StatusCode::BAD_REQUEST,
+                ManagementErrorBody {
+                    code: "announcement_invalid_request",
+                    message: "Announcement request is invalid",
+                },
+            ),
+            Self::AnnouncementNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "announcement_not_found",
+                    message: "Announcement not found",
+                },
+            ),
+            Self::AnnouncementConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "announcement_conflict",
+                    message: "Announcement version or state changed",
                 },
             ),
             Self::UserNotFound => (

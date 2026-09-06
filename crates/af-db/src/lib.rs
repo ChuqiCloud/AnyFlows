@@ -45,6 +45,7 @@ mod admin_user_write;
 mod analytics_export;
 #[cfg(test)]
 mod analytics_export_tests;
+mod announcement;
 mod async_task;
 mod auth;
 mod auth_challenge;
@@ -338,6 +339,11 @@ pub use admin_user_write::{
 pub use analytics_export::{
     AnalyticsExportCompletionOutcome, AnalyticsExportFact, AnalyticsExportFactKind,
     AnalyticsExportLease, AnalyticsExportRepository, AnalyticsExportRepositoryError,
+};
+pub use announcement::{
+    AnnouncementRecord, AnnouncementRepository, AnnouncementRepositoryConfigError,
+    AnnouncementRepositoryError, AnnouncementStatusRecord, AnnouncementWriteRecord,
+    MAX_ANNOUNCEMENT_BODY_BYTES, MAX_ANNOUNCEMENT_PAGE_SIZE, MAX_ANNOUNCEMENT_TITLE_BYTES,
 };
 pub use async_task::{
     AsyncTaskBillingAccept, AsyncTaskBillingClear, AsyncTaskBillingMark,
