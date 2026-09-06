@@ -5249,18 +5249,43 @@ export const listPlatformOrganizationsInfiniteOptions = (options: Options<ListPl
     });
     return opts as Omit<typeof opts, 'initialData'>;
 };
-export const invitePlatformOrganizationMemberMutation = (options?: Partial<Options<InvitePlatformOrganizationMemberData>>): UseMutationOptions<InvitePlatformOrganizationMemberResponse, InvitePlatformOrganizationMemberError, Options<InvitePlatformOrganizationMemberData>> => {
-    const mutationOptions: UseMutationOptions<InvitePlatformOrganizationMemberResponse, InvitePlatformOrganizationMemberError, Options<InvitePlatformOrganizationMemberData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await invitePlatformOrganizationMember({
+export const listPlatformUserOrganizationsQueryKey = (options: Options<ListPlatformUserOrganizationsData>) => createQueryKey('listPlatformUserOrganizations', options);
+export const listPlatformUserOrganizationsOptions = (options: Options<ListPlatformUserOrganizationsData>) => queryOptions<ListPlatformUserOrganizationsResponse, ListPlatformUserOrganizationsError, ListPlatformUserOrganizationsResponse, ReturnType<typeof listPlatformUserOrganizationsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await listPlatformUserOrganizations({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: listPlatformUserOrganizationsQueryKey(options)
+});
+export const listPlatformUserOrganizationsInfiniteQueryKey = (options: Options<ListPlatformUserOrganizationsData>): QueryKey<Options<ListPlatformUserOrganizationsData>> => createQueryKey('listPlatformUserOrganizations', options, true);
+export const listPlatformUserOrganizationsInfiniteOptions = (options: Options<ListPlatformUserOrganizationsData>) => {
+    const opts = infiniteQueryOptions<ListPlatformUserOrganizationsResponse, ListPlatformUserOrganizationsError, InfiniteData<ListPlatformUserOrganizationsResponse>, QueryKey<Options<ListPlatformUserOrganizationsData>>, number | Pick<QueryKey<Options<ListPlatformUserOrganizationsData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
+    // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
+    {
+        queryFn: async ({ pageParam, queryKey, signal }) => {
+            // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
+            const page: Pick<QueryKey<Options<ListPlatformUserOrganizationsData>>[0], 'body' | 'headers' | 'path' | 'query'> = typeof pageParam === 'object' ? pageParam : {
+                query: {
+                    after: pageParam
+                }
+            };
+            const params = createInfiniteParams(queryKey, page);
+            const { data } = await listPlatformUserOrganizations({
                 ...options,
-                ...fnOptions,
+                ...params,
+                signal,
                 throwOnError: true
             });
             return data;
-        }
-    };
-    return mutationOptions;
+        },
+        queryKey: listPlatformUserOrganizationsInfiniteQueryKey(options)
+    });
+    return opts as Omit<typeof opts, 'initialData'>;
 };
 export const listPlatformOrganizationMembersQueryKey = (options: Options<ListPlatformOrganizationMembersData>) => createQueryKey('listPlatformOrganizationMembers', options);
 export const listPlatformOrganizationMembersOptions = (options: Options<ListPlatformOrganizationMembersData>) => queryOptions<ListPlatformOrganizationMembersResponse, ListPlatformOrganizationMembersError, ListPlatformOrganizationMembersResponse, ReturnType<typeof listPlatformOrganizationMembersQueryKey>>({
@@ -5313,43 +5338,18 @@ export const changePlatformOrganizationMemberMutation = (options?: Partial<Optio
     };
     return mutationOptions;
 };
-export const listPlatformUserOrganizationsQueryKey = (options: Options<ListPlatformUserOrganizationsData>) => createQueryKey('listPlatformUserOrganizations', options);
-export const listPlatformUserOrganizationsOptions = (options: Options<ListPlatformUserOrganizationsData>) => queryOptions<ListPlatformUserOrganizationsResponse, ListPlatformUserOrganizationsError, ListPlatformUserOrganizationsResponse, ReturnType<typeof listPlatformUserOrganizationsQueryKey>>({
-    queryFn: async ({ queryKey, signal }) => {
-        const { data } = await listPlatformUserOrganizations({
-            ...options,
-            ...queryKey[0],
-            signal,
-            throwOnError: true
-        });
-        return data;
-    },
-    queryKey: listPlatformUserOrganizationsQueryKey(options)
-});
-export const listPlatformUserOrganizationsInfiniteQueryKey = (options: Options<ListPlatformUserOrganizationsData>): QueryKey<Options<ListPlatformUserOrganizationsData>> => createQueryKey('listPlatformUserOrganizations', options, true);
-export const listPlatformUserOrganizationsInfiniteOptions = (options: Options<ListPlatformUserOrganizationsData>) => {
-    const opts = infiniteQueryOptions<ListPlatformUserOrganizationsResponse, ListPlatformUserOrganizationsError, InfiniteData<ListPlatformUserOrganizationsResponse>, QueryKey<Options<ListPlatformUserOrganizationsData>>, number | Pick<QueryKey<Options<ListPlatformUserOrganizationsData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
-    // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
-    {
-        queryFn: async ({ pageParam, queryKey, signal }) => {
-            // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
-            const page: Pick<QueryKey<Options<ListPlatformUserOrganizationsData>>[0], 'body' | 'headers' | 'path' | 'query'> = typeof pageParam === 'object' ? pageParam : {
-                query: {
-                    after: pageParam
-                }
-            };
-            const params = createInfiniteParams(queryKey, page);
-            const { data } = await listPlatformUserOrganizations({
+export const invitePlatformOrganizationMemberMutation = (options?: Partial<Options<InvitePlatformOrganizationMemberData>>): UseMutationOptions<InvitePlatformOrganizationMemberResponse, InvitePlatformOrganizationMemberError, Options<InvitePlatformOrganizationMemberData>> => {
+    const mutationOptions: UseMutationOptions<InvitePlatformOrganizationMemberResponse, InvitePlatformOrganizationMemberError, Options<InvitePlatformOrganizationMemberData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await invitePlatformOrganizationMember({
                 ...options,
-                ...params,
-                signal,
+                ...fnOptions,
                 throwOnError: true
             });
             return data;
-        },
-        queryKey: listPlatformUserOrganizationsInfiniteQueryKey(options)
-    });
-    return opts as Omit<typeof opts, 'initialData'>;
+        }
+    };
+    return mutationOptions;
 };
 export const startOidcLoginMutation = (options?: Partial<Options<StartOidcLoginData>>): UseMutationOptions<StartOidcLoginResponse, StartOidcLoginError, Options<StartOidcLoginData>> => {
     const mutationOptions: UseMutationOptions<StartOidcLoginResponse, StartOidcLoginError, Options<StartOidcLoginData>> = {

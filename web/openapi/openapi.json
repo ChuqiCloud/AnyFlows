@@ -26832,16 +26832,16 @@
         ]
       }
     },
-    "/api/platform/organizations/{organization_id}/invitations": {
-      "post": {
+    "/api/platform/users/{user_id}/organizations": {
+      "get": {
         "tags": [
           "平台企业目录"
         ],
-        "summary": "按目标用户接受语义创建企业邀请",
-        "operationId": "invitePlatformOrganizationMember",
+        "summary": "读取指定用户的企业成员归属",
+        "operationId": "listPlatformUserOrganizations",
         "parameters": [
           {
-            "name": "organization_id",
+            "name": "user_id",
             "in": "path",
             "required": true,
             "schema": {
@@ -26851,9 +26851,29 @@
             }
           },
           {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1
+            }
+          },
+          {
             "name": "x-anyflows-platform-reason",
             "in": "header",
-            "description": "跨企业操作理由",
+            "description": "跨企业访问理由",
             "required": true,
             "schema": {
               "type": "string",
@@ -26862,23 +26882,13 @@
             }
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PlatformOrganizationInvitationRequest"
-              }
-            }
-          },
-          "required": true
-        },
         "responses": {
           "200": {
             "description": "",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PlatformOrganizationInvitationIssuedResponse"
+                  "$ref": "#/components/schemas/PlatformUserOrganizationListResponse"
                 }
               }
             }
@@ -26914,16 +26924,6 @@
             }
           },
           "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "409": {
             "description": "",
             "content": {
               "application/json": {
@@ -27199,16 +27199,16 @@
         ]
       }
     },
-    "/api/platform/users/{user_id}/organizations": {
-      "get": {
+    "/api/platform/organizations/{organization_id}/invitations": {
+      "post": {
         "tags": [
           "平台企业目录"
         ],
-        "summary": "读取指定用户的企业成员归属",
-        "operationId": "listPlatformUserOrganizations",
+        "summary": "按目标用户接受语义创建企业邀请",
+        "operationId": "invitePlatformOrganizationMember",
         "parameters": [
           {
-            "name": "user_id",
+            "name": "organization_id",
             "in": "path",
             "required": true,
             "schema": {
@@ -27218,29 +27218,9 @@
             }
           },
           {
-            "name": "after",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "minimum": 1
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 100,
-              "minimum": 1
-            }
-          },
-          {
             "name": "x-anyflows-platform-reason",
             "in": "header",
-            "description": "跨企业访问理由",
+            "description": "跨企业操作理由",
             "required": true,
             "schema": {
               "type": "string",
@@ -27249,13 +27229,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformOrganizationInvitationRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PlatformUserOrganizationListResponse"
+                  "$ref": "#/components/schemas/PlatformOrganizationInvitationIssuedResponse"
                 }
               }
             }
@@ -27291,6 +27281,16 @@
             }
           },
           "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
             "description": "",
             "content": {
               "application/json": {

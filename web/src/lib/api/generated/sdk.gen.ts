@@ -3090,18 +3090,14 @@ export const listPlatformOrganizations = <ThrowOnError extends boolean = true>(o
     url: '/api/platform/organizations',
     ...options
 });
-export const invitePlatformOrganizationMember = <ThrowOnError extends boolean = true>(options: Options<InvitePlatformOrganizationMemberData, ThrowOnError>): RequestResult<InvitePlatformOrganizationMemberResponses, InvitePlatformOrganizationMemberErrors, ThrowOnError> => (options.client ?? client).post<InvitePlatformOrganizationMemberResponses, InvitePlatformOrganizationMemberErrors, ThrowOnError>({
+export const listPlatformUserOrganizations = <ThrowOnError extends boolean = true>(options: Options<ListPlatformUserOrganizationsData, ThrowOnError>): RequestResult<ListPlatformUserOrganizationsResponses, ListPlatformUserOrganizationsErrors, ThrowOnError> => (options.client ?? client).get<ListPlatformUserOrganizationsResponses, ListPlatformUserOrganizationsErrors, ThrowOnError>({
     security: [{
             key: 'bearerAuth',
             scheme: 'bearer',
             type: 'http'
         }],
-    url: '/api/platform/organizations/{organization_id}/invitations',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
+    url: '/api/platform/users/{user_id}/organizations',
+    ...options
 });
 export const listPlatformOrganizationMembers = <ThrowOnError extends boolean = true>(options: Options<ListPlatformOrganizationMembersData, ThrowOnError>): RequestResult<ListPlatformOrganizationMembersResponses, ListPlatformOrganizationMembersErrors, ThrowOnError> => (options.client ?? client).get<ListPlatformOrganizationMembersResponses, ListPlatformOrganizationMembersErrors, ThrowOnError>({
     security: [{
@@ -3125,14 +3121,18 @@ export const changePlatformOrganizationMember = <ThrowOnError extends boolean = 
         ...options.headers
     }
 });
-export const listPlatformUserOrganizations = <ThrowOnError extends boolean = true>(options: Options<ListPlatformUserOrganizationsData, ThrowOnError>): RequestResult<ListPlatformUserOrganizationsResponses, ListPlatformUserOrganizationsErrors, ThrowOnError> => (options.client ?? client).get<ListPlatformUserOrganizationsResponses, ListPlatformUserOrganizationsErrors, ThrowOnError>({
+export const invitePlatformOrganizationMember = <ThrowOnError extends boolean = true>(options: Options<InvitePlatformOrganizationMemberData, ThrowOnError>): RequestResult<InvitePlatformOrganizationMemberResponses, InvitePlatformOrganizationMemberErrors, ThrowOnError> => (options.client ?? client).post<InvitePlatformOrganizationMemberResponses, InvitePlatformOrganizationMemberErrors, ThrowOnError>({
     security: [{
             key: 'bearerAuth',
             scheme: 'bearer',
             type: 'http'
         }],
-    url: '/api/platform/users/{user_id}/organizations',
-    ...options
+    url: '/api/platform/organizations/{organization_id}/invitations',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 export const startOidcLogin = <ThrowOnError extends boolean = true>(options?: Options<StartOidcLoginData, ThrowOnError>): RequestResult<StartOidcLoginResponses, StartOidcLoginErrors, ThrowOnError> => (options?.client ?? client).post<StartOidcLoginResponses, StartOidcLoginErrors, ThrowOnError>({ url: '/api/auth/oauth/oidc/start', ...options });
 export const startLinuxDoLogin = <ThrowOnError extends boolean = true>(options?: Options<StartLinuxDoLoginData, ThrowOnError>): RequestResult<StartLinuxDoLoginResponses, StartLinuxDoLoginErrors, ThrowOnError> => (options?.client ?? client).post<StartLinuxDoLoginResponses, StartLinuxDoLoginErrors, ThrowOnError>({ url: '/api/auth/oauth/linuxdo/start', ...options });
