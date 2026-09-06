@@ -34,12 +34,12 @@ use af_admin::{
     DatabaseOrganizationSsoRecoveryService, DatabaseOrganizationTokenService,
     DatabaseOrganizationWalletService, DatabasePasskeyAuthenticationService,
     DatabasePasswordResetService, DatabasePlatformAuditService,
-    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
-    DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
-    DatabaseSiteSettingsService, DatabaseSubscriptionService, DatabaseTokenAuthenticator,
-    DatabaseUserInvitationService, DatabaseUserNotificationService, DatabaseUserProfileService,
-    DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery, InitialSetup,
-    ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
+    DatabasePlatformOrganizationDirectoryService, DatabasePlaygroundConversationService,
+    DatabasePlaygroundShareService, DatabaseRedemptionService, DatabaseRegistrationService,
+    DatabaseSessionAuthenticator, DatabaseSiteSettingsService, DatabaseSubscriptionService,
+    DatabaseTokenAuthenticator, DatabaseUserInvitationService, DatabaseUserNotificationService,
+    DatabaseUserProfileService, DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery,
+    InitialSetup, ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
     OAuthLoginService, OrganizationActivityService, OrganizationActivityServiceConfigError,
     OrganizationApprovalNotificationService, OrganizationApprovalService,
     OrganizationBudgetService, OrganizationContractPriceService, OrganizationCreditTermsService,
@@ -2903,6 +2903,12 @@ impl Bootstrap<Supervised> {
                     .clone(),
                 self.stage.infrastructure.system_secret_cipher.clone(),
             ));
+        let platform_organization_directory_service: Arc<
+            dyn af_admin::PlatformOrganizationDirectoryService,
+        > = Arc::new(DatabasePlatformOrganizationDirectoryService::new(
+            Arc::clone(&self.stage.infrastructure.organization_repository),
+            Arc::clone(&self.stage.infrastructure.platform_audit_service),
+        ));
         let payment_webhook_registry: Arc<dyn PaymentWebhookProcessorRegistry> =
             self.stage.payment_runtime.clone();
         let refund_receipt_registry: Arc<dyn RefundReceiptProcessorRegistry> =
@@ -3051,6 +3057,7 @@ impl Bootstrap<Supervised> {
             Some(Arc::clone(
                 &self.stage.infrastructure.platform_audit_service,
             )),
+            Some(platform_organization_directory_service),
             Some(Arc::clone(
                 &self.stage.infrastructure.organization_sso_provider_service,
             )),

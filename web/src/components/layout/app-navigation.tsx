@@ -106,6 +106,7 @@ const navItems = {
   users: { key: 'users', icon: UsersRound, href: '#/console/users' },
   subscriptionManagement: { key: 'subscriptionManagement', icon: ListChecks, href: '#/console/subscription-management' },
   organizationPlans: { key: 'organizationPlans', icon: Layers3, href: '#/console/organization-plans' },
+  platformOrganizations: { key: 'platformOrganizations', icon: Building2, href: '#/console/platform-organizations' },
   redemptionCodes: { key: 'redemptionCodes', icon: Ticket, href: '#/console/redemption-codes' },
   refunds: { key: 'refunds', icon: CircleCheckBig, href: '#/console/refunds' },
   siteSettings: { key: 'siteSettings', icon: PanelsTopLeft, href: '#/console/system-settings/site' },

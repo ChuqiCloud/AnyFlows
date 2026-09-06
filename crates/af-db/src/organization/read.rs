@@ -10,7 +10,7 @@ use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
 
 use crate::entity::{
     organization_custom_roles, organization_entitlements, organization_memberships,
-    organization_teams, organizations,
+    organization_teams, organizations, users,
 };
 use crate::organization_custom_role_binding::active_custom_role_permissions;
 
@@ -19,7 +19,9 @@ use super::{
     OrganizationEntitlementReadRecord, OrganizationEntitlementRecord,
     OrganizationMembershipPageRecord, OrganizationMembershipRecord, OrganizationRecord,
     OrganizationRepository, OrganizationRepositoryError, OrganizationTeamPageRecord,
-    OrganizationTeamRecord, record_internal_error,
+    OrganizationTeamRecord, PlatformOrganizationDirectoryPageRecord,
+    PlatformOrganizationDirectoryRecord, PlatformUserOrganizationPageRecord,
+    PlatformUserOrganizationRecord, record_internal_error,
 };
 
 /// 在同一查询中读取企业生命周期与完整授权事实。
@@ -92,6 +94,237 @@ pub(super) async fn list_memberships(
         .then(|| records.last().map(OrganizationMembershipRecord::id))
         .flatten();
     Ok(OrganizationMembershipPageRecord::new(records, next_cursor))
+}
+
+/// 批量读取平台企业目录，避免目录页按企业逐条查询成员和授权。
+pub(super) async fn list_platform_directory(
+    repository: &OrganizationRepository,
+    after: Option<OrganizationId>,
+    limit: usize,
+) -> Result<PlatformOrganizationDirectoryPageRecord, OrganizationRepositoryError> {
+    validate_directory_limit(limit)?;
+    let fetch_limit =
+        u64::try_from(limit.checked_add(1).ok_or_else(invariant)?).map_err(|_| invariant())?;
+    let mut query = organizations::Entity::find().order_by_asc(organizations::Column::Id);
+    if let Some(after) = after {
+        query = query.filter(organizations::Column::Id.gt(after.get()));
+    }
+    let mut models = query
+        .limit(fetch_limit)
+        .all(repository.pool.connection())
+        .await
+        .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?;
+    let has_more = models.len() > limit;
+    if has_more {
+        models.truncate(limit);
+    }
+    if models.is_empty() {
+        return Ok(PlatformOrganizationDirectoryPageRecord::new(
+            Vec::new(),
+            None,
+        ));
+    }
+    let next_cursor = has_more
+        .then(|| {
+            models
+                .last()
+                .and_then(|model| OrganizationId::new(model.id).ok())
+        })
+        .flatten();
+    let records = hydrate_platform_directory(repository, models).await?;
+    Ok(PlatformOrganizationDirectoryPageRecord::new(
+        records,
+        next_cursor,
+    ))
+}
+
+async fn hydrate_platform_directory(
+    repository: &OrganizationRepository,
+    models: Vec<organizations::Model>,
+) -> Result<Vec<PlatformOrganizationDirectoryRecord>, OrganizationRepositoryError> {
+    let organization_ids = models.iter().map(|model| model.id).collect::<Vec<_>>();
+    let entitlement_models = organization_entitlements::Entity::find()
+        .filter(organization_entitlements::Column::OrganizationId.is_in(organization_ids.clone()))
+        .all(repository.pool.connection())
+        .await
+        .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?;
+    let mut entitlements = HashMap::with_capacity(entitlement_models.len());
+    for model in entitlement_models {
+        let organization_id = model.organization_id;
+        if entitlements
+            .insert(organization_id, entitlement_snapshot(model)?)
+            .is_some()
+        {
+            return Err(invariant());
+        }
+    }
+
+    let owner_models = organization_memberships::Entity::find()
+        .filter(organization_memberships::Column::OrganizationId.is_in(organization_ids.clone()))
+        .filter(organization_memberships::Column::Role.eq(OrganizationRole::Owner.code()))
+        .filter(
+            organization_memberships::Column::Status
+                .eq(OrganizationMembershipStatus::Active.code()),
+        )
+        .all(repository.pool.connection())
+        .await
+        .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?;
+    let owner_user_ids = owner_models
+        .iter()
+        .map(|model| model.user_id)
+        .collect::<Vec<_>>();
+    let user_models = users::Entity::find()
+        .filter(users::Column::Id.is_in(owner_user_ids))
+        .all(repository.pool.connection())
+        .await
+        .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?;
+    let mut usernames = HashMap::with_capacity(user_models.len());
+    for user in user_models {
+        if usernames.insert(user.id, user.username).is_some() {
+            return Err(invariant());
+        }
+    }
+    let mut owners = HashMap::with_capacity(owner_models.len());
+    for owner in owner_models {
+        let organization_id = owner.organization_id;
+        let username = usernames
+            .get(&owner.user_id)
+            .cloned()
+            .ok_or_else(invariant)?;
+        if owners
+            .insert(organization_id, (membership_record(owner)?, username))
+            .is_some()
+        {
+            return Err(invariant());
+        }
+    }
+
+    let counts = organization_memberships::Entity::find()
+        .select_only()
+        .column(organization_memberships::Column::OrganizationId)
+        .column_as(
+            organization_memberships::Column::Id.count(),
+            "active_member_count",
+        )
+        .filter(organization_memberships::Column::OrganizationId.is_in(organization_ids))
+        .filter(
+            organization_memberships::Column::Status
+                .eq(OrganizationMembershipStatus::Active.code()),
+        )
+        .group_by(organization_memberships::Column::OrganizationId)
+        .into_tuple::<(i64, i64)>()
+        .all(repository.pool.connection())
+        .await
+        .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?;
+    let counts = counts.into_iter().collect::<HashMap<_, _>>();
+
+    let mut records = Vec::with_capacity(models.len());
+    for model in models {
+        let organization_id = model.id;
+        let entitlement = entitlements
+            .remove(&organization_id)
+            .ok_or_else(invariant)?;
+        let (owner, owner_username) = owners.remove(&organization_id).ok_or_else(invariant)?;
+        let active_member_count = counts
+            .get(&organization_id)
+            .copied()
+            .filter(|count| *count > 0)
+            .ok_or_else(invariant)?;
+        records.push(PlatformOrganizationDirectoryRecord::new(
+            organization_record(model)?,
+            entitlement,
+            owner,
+            owner_username,
+            active_member_count,
+        ));
+    }
+    Ok(records)
+}
+
+/// 读取指定用户的企业归属，空页和用户不存在必须保持可区分。
+pub(super) async fn list_user_organizations(
+    repository: &OrganizationRepository,
+    user_id: UserId,
+    after: Option<OrganizationMembershipId>,
+    limit: usize,
+) -> Result<PlatformUserOrganizationPageRecord, OrganizationRepositoryError> {
+    validate_directory_limit(limit)?;
+    let user_exists = users::Entity::find_by_id(user_id.get())
+        .filter(users::Column::DeletedAt.is_null())
+        .one(repository.pool.connection())
+        .await
+        .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?
+        .is_some();
+    if !user_exists {
+        return Err(OrganizationRepositoryError::NotFound);
+    }
+
+    let mut query = organization_memberships::Entity::find()
+        .filter(organization_memberships::Column::UserId.eq(user_id.get()))
+        .order_by_asc(organization_memberships::Column::Id);
+    if let Some(after) = after {
+        query = query.filter(organization_memberships::Column::Id.gt(after.get()));
+    }
+    let fetch_limit =
+        u64::try_from(limit.checked_add(1).ok_or_else(invariant)?).map_err(|_| invariant())?;
+    let mut memberships = query
+        .limit(fetch_limit)
+        .all(repository.pool.connection())
+        .await
+        .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?;
+    let has_more = memberships.len() > limit;
+    if has_more {
+        memberships.truncate(limit);
+    }
+    let organization_ids = memberships
+        .iter()
+        .map(|membership| membership.organization_id)
+        .collect::<Vec<_>>();
+    if organization_ids.is_empty() {
+        return Ok(PlatformUserOrganizationPageRecord::new(Vec::new(), None));
+    }
+    let organization_models = organizations::Entity::find()
+        .filter(organizations::Column::Id.is_in(organization_ids.clone()))
+        .all(repository.pool.connection())
+        .await
+        .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?;
+    let mut organizations = organization_models
+        .into_iter()
+        .map(|model| Ok((model.id, organization_record(model)?)))
+        .collect::<Result<HashMap<_, _>, OrganizationRepositoryError>>()?;
+    let entitlement_models = organization_entitlements::Entity::find()
+        .filter(organization_entitlements::Column::OrganizationId.is_in(organization_ids))
+        .all(repository.pool.connection())
+        .await
+        .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?;
+    let mut entitlements = entitlement_models
+        .into_iter()
+        .map(|model| Ok((model.organization_id, entitlement_snapshot(model)?)))
+        .collect::<Result<HashMap<_, _>, OrganizationRepositoryError>>()?;
+    let next_cursor = has_more
+        .then(|| {
+            memberships
+                .last()
+                .and_then(|model| OrganizationMembershipId::new(model.id).ok())
+        })
+        .flatten();
+    let mut records = Vec::with_capacity(memberships.len());
+    for membership in memberships {
+        let organization_id = membership.organization_id;
+        records.push(PlatformUserOrganizationRecord::new(
+            organizations
+                .remove(&organization_id)
+                .ok_or_else(invariant)?,
+            membership_record(membership)?,
+            entitlements
+                .remove(&organization_id)
+                .ok_or_else(invariant)?,
+        ));
+    }
+    Ok(PlatformUserOrganizationPageRecord::new(
+        records,
+        next_cursor,
+    ))
 }
 
 /// 按稳定团队 ID 游标列出企业内活动和已禁用团队。

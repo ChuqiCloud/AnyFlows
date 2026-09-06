@@ -881,6 +881,164 @@ pub struct OrganizationAccessRecord {
     active_teams: i64,
 }
 
+/// 平台企业目录使用的最小安全快照，不包含资金、密钥或认证配置。
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlatformOrganizationDirectoryRecord {
+    organization: OrganizationRecord,
+    entitlement: OrganizationEntitlementSnapshot,
+    owner_membership: OrganizationMembershipRecord,
+    owner_username: String,
+    active_member_count: i64,
+}
+
+impl PlatformOrganizationDirectoryRecord {
+    pub(super) fn new(
+        organization: OrganizationRecord,
+        entitlement: OrganizationEntitlementSnapshot,
+        owner_membership: OrganizationMembershipRecord,
+        owner_username: String,
+        active_member_count: i64,
+    ) -> Self {
+        Self {
+            organization,
+            entitlement,
+            owner_membership,
+            owner_username,
+            active_member_count,
+        }
+    }
+
+    /// 返回企业基础事实。
+    #[must_use]
+    pub const fn organization(&self) -> &OrganizationRecord {
+        &self.organization
+    }
+
+    /// 返回企业当前授权快照。
+    #[must_use]
+    pub const fn entitlement(&self) -> OrganizationEntitlementSnapshot {
+        self.entitlement
+    }
+
+    /// 返回当前活动 Owner 成员关系。
+    #[must_use]
+    pub const fn owner_membership(&self) -> &OrganizationMembershipRecord {
+        &self.owner_membership
+    }
+
+    /// 返回当前活动 Owner 的非敏感用户名。
+    #[must_use]
+    pub fn owner_username(&self) -> &str {
+        &self.owner_username
+    }
+
+    /// 返回企业当前活动成员数。
+    #[must_use]
+    pub const fn active_member_count(&self) -> i64 {
+        self.active_member_count
+    }
+}
+
+/// 平台企业目录稳定游标页。
+#[derive(Debug, PartialEq)]
+pub struct PlatformOrganizationDirectoryPageRecord {
+    records: Vec<PlatformOrganizationDirectoryRecord>,
+    next_cursor: Option<OrganizationId>,
+}
+
+impl PlatformOrganizationDirectoryPageRecord {
+    pub(super) const fn new(
+        records: Vec<PlatformOrganizationDirectoryRecord>,
+        next_cursor: Option<OrganizationId>,
+    ) -> Self {
+        Self {
+            records,
+            next_cursor,
+        }
+    }
+
+    /// 拆出本页企业摘要和下一游标。
+    #[must_use]
+    pub fn into_parts(
+        self,
+    ) -> (
+        Vec<PlatformOrganizationDirectoryRecord>,
+        Option<OrganizationId>,
+    ) {
+        (self.records, self.next_cursor)
+    }
+}
+
+/// 平台按用户查询到的企业成员关系安全快照。
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlatformUserOrganizationRecord {
+    organization: OrganizationRecord,
+    membership: OrganizationMembershipRecord,
+    entitlement: OrganizationEntitlementSnapshot,
+}
+
+impl PlatformUserOrganizationRecord {
+    pub(super) const fn new(
+        organization: OrganizationRecord,
+        membership: OrganizationMembershipRecord,
+        entitlement: OrganizationEntitlementSnapshot,
+    ) -> Self {
+        Self {
+            organization,
+            membership,
+            entitlement,
+        }
+    }
+
+    /// 返回企业基础事实。
+    #[must_use]
+    pub const fn organization(&self) -> &OrganizationRecord {
+        &self.organization
+    }
+
+    /// 返回用户在该企业中的成员关系。
+    #[must_use]
+    pub const fn membership(&self) -> &OrganizationMembershipRecord {
+        &self.membership
+    }
+
+    /// 返回企业当前授权快照。
+    #[must_use]
+    pub const fn entitlement(&self) -> OrganizationEntitlementSnapshot {
+        self.entitlement
+    }
+}
+
+/// 平台用户企业归属稳定游标页。
+#[derive(Debug, PartialEq)]
+pub struct PlatformUserOrganizationPageRecord {
+    records: Vec<PlatformUserOrganizationRecord>,
+    next_cursor: Option<OrganizationMembershipId>,
+}
+
+impl PlatformUserOrganizationPageRecord {
+    pub(super) const fn new(
+        records: Vec<PlatformUserOrganizationRecord>,
+        next_cursor: Option<OrganizationMembershipId>,
+    ) -> Self {
+        Self {
+            records,
+            next_cursor,
+        }
+    }
+
+    /// 拆出本页归属摘要和下一游标。
+    #[must_use]
+    pub fn into_parts(
+        self,
+    ) -> (
+        Vec<PlatformUserOrganizationRecord>,
+        Option<OrganizationMembershipId>,
+    ) {
+        (self.records, self.next_cursor)
+    }
+}
+
 impl OrganizationAccessRecord {
     pub(super) fn new(
         organization: OrganizationRecord,

@@ -26733,6 +26733,224 @@
         ]
       }
     },
+    "/api/platform/organizations": {
+      "get": {
+        "tags": [
+          "平台企业目录"
+        ],
+        "summary": "按稳定游标读取平台企业安全摘要",
+        "operationId": "listPlatformOrganizations",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "x-anyflows-platform-reason",
+            "in": "header",
+            "description": "跨企业访问理由",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 255,
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformOrganizationDirectoryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/platform/users/{user_id}/organizations": {
+      "get": {
+        "tags": [
+          "平台企业目录"
+        ],
+        "summary": "读取指定用户的企业成员归属",
+        "operationId": "listPlatformUserOrganizations",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "x-anyflows-platform-reason",
+            "in": "header",
+            "description": "跨企业访问理由",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 255,
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformUserOrganizationListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/auth/oauth/oidc/start": {
       "post": {
         "tags": [
@@ -36130,7 +36348,7 @@
               "null"
             ],
             "format": "double",
-            "default": 1.0,
+            "default": 1,
             "maximum": 4,
             "minimum": 0.25
           },
@@ -41143,6 +41361,28 @@
         },
         "additionalProperties": false
       },
+      "OrganizationSsoDomainCreated": {
+        "type": "object",
+        "required": [
+          "domain",
+          "txt_record_name",
+          "txt_record_value"
+        ],
+        "properties": {
+          "domain": {
+            "$ref": "#/components/schemas/OrganizationSsoDomain"
+          },
+          "txt_record_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "txt_record_value": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
       "OrganizationSsoDomainCreateRequest": {
         "type": "object",
         "required": [
@@ -41162,28 +41402,6 @@
             "format": "int64",
             "maximum": 604800,
             "minimum": 900
-          }
-        },
-        "additionalProperties": false
-      },
-      "OrganizationSsoDomainCreated": {
-        "type": "object",
-        "required": [
-          "domain",
-          "txt_record_name",
-          "txt_record_value"
-        ],
-        "properties": {
-          "domain": {
-            "$ref": "#/components/schemas/OrganizationSsoDomain"
-          },
-          "txt_record_name": {
-            "type": "string",
-            "minLength": 1
-          },
-          "txt_record_value": {
-            "type": "string",
-            "minLength": 1
           }
         },
         "additionalProperties": false
@@ -42948,6 +43166,186 @@
           "denied",
           "failed"
         ]
+      },
+      "PlatformOrganizationDirectoryResponse": {
+        "type": "object",
+        "required": [
+          "organizations",
+          "next_cursor"
+        ],
+        "properties": {
+          "organizations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlatformOrganizationSummaryResponse"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "PlatformOrganizationSummaryResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "organization_status",
+          "entitlement_status",
+          "owner_membership_id",
+          "owner_user_id",
+          "owner_username",
+          "active_member_count",
+          "seat_limit",
+          "valid_until",
+          "grace_until",
+          "version"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "organization_status": {
+            "type": "string"
+          },
+          "entitlement_status": {
+            "type": "string"
+          },
+          "owner_membership_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "owner_user_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "owner_username": {
+            "type": "string"
+          },
+          "active_member_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "seat_limit": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "valid_until": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "grace_until": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "PlatformUserOrganizationListResponse": {
+        "type": "object",
+        "required": [
+          "organizations",
+          "next_cursor"
+        ],
+        "properties": {
+          "organizations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlatformUserOrganizationSummaryResponse"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "PlatformUserOrganizationSummaryResponse": {
+        "type": "object",
+        "required": [
+          "organization_id",
+          "organization_name",
+          "organization_slug",
+          "organization_status",
+          "entitlement_status",
+          "membership_id",
+          "role",
+          "membership_status",
+          "joined_at",
+          "version"
+        ],
+        "properties": {
+          "organization_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "organization_name": {
+            "type": "string"
+          },
+          "organization_slug": {
+            "type": "string"
+          },
+          "organization_status": {
+            "type": "string"
+          },
+          "entitlement_status": {
+            "type": "string"
+          },
+          "membership_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "role": {
+            "type": "string"
+          },
+          "membership_status": {
+            "type": "string"
+          },
+          "joined_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
       },
       "PlaygroundConversationListResponse": {
         "type": "object",
@@ -46714,6 +47112,9 @@
     },
     {
       "name": "平台管理审计"
+    },
+    {
+      "name": "平台企业目录"
     },
     {
       "name": "余额预警"

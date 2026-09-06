@@ -29,7 +29,9 @@ pub use types::{
     OrganizationMembershipPageRecord, OrganizationMembershipRecord, OrganizationOwnershipTransfer,
     OrganizationOwnershipTransferRecord, OrganizationRecord, OrganizationRepositoryConfigError,
     OrganizationRepositoryError, OrganizationTeamChange, OrganizationTeamCreate,
-    OrganizationTeamPageRecord, OrganizationTeamRecord,
+    OrganizationTeamPageRecord, OrganizationTeamRecord, PlatformOrganizationDirectoryPageRecord,
+    PlatformOrganizationDirectoryRecord, PlatformUserOrganizationPageRecord,
+    PlatformUserOrganizationRecord,
 };
 
 /// 企业主体、真实成员和扁平团队的事务仓储。
@@ -138,6 +140,27 @@ impl OrganizationRepository {
         limit: usize,
     ) -> Result<OrganizationMembershipPageRecord, OrganizationRepositoryError> {
         self.run(read::list_memberships(self, organization_id, after, limit))
+            .await
+    }
+
+    /// 按企业 ID 游标读取平台企业目录安全摘要。
+    pub async fn list_platform_directory(
+        &self,
+        after: Option<OrganizationId>,
+        limit: usize,
+    ) -> Result<PlatformOrganizationDirectoryPageRecord, OrganizationRepositoryError> {
+        self.run(read::list_platform_directory(self, after, limit))
+            .await
+    }
+
+    /// 按成员关系 ID 游标读取指定用户的全部企业归属。
+    pub async fn list_user_organizations(
+        &self,
+        user_id: UserId,
+        after: Option<OrganizationMembershipId>,
+        limit: usize,
+    ) -> Result<PlatformUserOrganizationPageRecord, OrganizationRepositoryError> {
+        self.run(read::list_user_organizations(self, user_id, after, limit))
             .await
     }
 

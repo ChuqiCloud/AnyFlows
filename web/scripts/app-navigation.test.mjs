@@ -17,7 +17,7 @@ const expectedAdminItems = [
   'apiKeys', 'wallet', 'subscriptions', 'invitations', 'profile',
   'organizationOverview', 'organizationMembers', 'organizationDepartments', 'organizationApiKeys', 'organizationServiceAccounts', 'organizationBudgets', 'organizationContractPrices', 'organizationApprovals',
   'organizationWallet', 'organizationActivity', 'organizationSettings', 'organizationCredit', 'organizationProvisioning',
-  'users', 'subscriptionManagement', 'organizationPlans', 'redemptionCodes', 'refunds', 'paymentSettings', 'billingSettings',
+  'platformOrganizations', 'users', 'subscriptionManagement', 'organizationPlans', 'redemptionCodes', 'refunds', 'paymentSettings', 'billingSettings',
   'modelSettings', 'groupSettings', 'channels', 'credentials', 'credentialProxies', 'routes',
   'siteSettings', 'authenticationSettings', 'announcements', 'emailSettings', 'networkSettings', 'keys',
   'usage', 'debugTraces',

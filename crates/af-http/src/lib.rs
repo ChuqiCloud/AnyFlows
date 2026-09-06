@@ -80,6 +80,7 @@ mod password_reset;
 mod payment_settings;
 mod payment_webhook;
 mod platform_audit;
+mod platform_organizations;
 mod playground_conversations;
 mod playground_shares;
 mod redemption;

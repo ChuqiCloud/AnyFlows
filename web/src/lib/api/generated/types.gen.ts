@@ -2221,15 +2221,15 @@ export type OrganizationSsoDomain = {
     revoked_at?: number | null;
     version: number;
 };
-export type OrganizationSsoDomainCreateRequest = {
-    provider_key: string;
-    domain: string;
-    ttl_seconds: number;
-};
 export type OrganizationSsoDomainCreated = {
     domain: OrganizationSsoDomain;
     txt_record_name: string;
     txt_record_value: string;
+};
+export type OrganizationSsoDomainCreateRequest = {
+    provider_key: string;
+    domain: string;
+    ttl_seconds: number;
 };
 export type OrganizationSsoDomainList = {
     domains: Array<OrganizationSsoDomain>;
@@ -2543,6 +2543,41 @@ export type PlatformAuditLogListResponse = {
     next_cursor: number | null;
 };
 export type PlatformAuditOutcome = 'succeeded' | 'denied' | 'failed';
+export type PlatformOrganizationDirectoryResponse = {
+    organizations: Array<PlatformOrganizationSummaryResponse>;
+    next_cursor: number | null;
+};
+export type PlatformOrganizationSummaryResponse = {
+    id: number;
+    name: string;
+    slug: string;
+    organization_status: string;
+    entitlement_status: string;
+    owner_membership_id: number;
+    owner_user_id: number;
+    owner_username: string;
+    active_member_count: number;
+    seat_limit: number;
+    valid_until: number;
+    grace_until: number | null;
+    version: number;
+};
+export type PlatformUserOrganizationListResponse = {
+    organizations: Array<PlatformUserOrganizationSummaryResponse>;
+    next_cursor: number | null;
+};
+export type PlatformUserOrganizationSummaryResponse = {
+    organization_id: number;
+    organization_name: string;
+    organization_slug: string;
+    organization_status: string;
+    entitlement_status: string;
+    membership_id: number;
+    role: string;
+    membership_status: string;
+    joined_at: number;
+    version: number;
+};
 export type PlaygroundConversationListResponse = {
     conversations: Array<PlaygroundConversationSummary>;
 };
@@ -9300,6 +9335,55 @@ export type ListSelfPlatformAuditLogsResponses = {
     200: PlatformAuditLogListResponse;
 };
 export type ListSelfPlatformAuditLogsResponse = ListSelfPlatformAuditLogsResponses[keyof ListSelfPlatformAuditLogsResponses];
+export type ListPlatformOrganizationsData = {
+    body?: never;
+    headers: {
+        'x-anyflows-platform-reason': string;
+    };
+    path?: never;
+    query?: {
+        after?: number;
+        limit?: number;
+    };
+    url: '/api/platform/organizations';
+};
+export type ListPlatformOrganizationsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListPlatformOrganizationsError = ListPlatformOrganizationsErrors[keyof ListPlatformOrganizationsErrors];
+export type ListPlatformOrganizationsResponses = {
+    200: PlatformOrganizationDirectoryResponse;
+};
+export type ListPlatformOrganizationsResponse = ListPlatformOrganizationsResponses[keyof ListPlatformOrganizationsResponses];
+export type ListPlatformUserOrganizationsData = {
+    body?: never;
+    headers: {
+        'x-anyflows-platform-reason': string;
+    };
+    path: {
+        user_id: number;
+    };
+    query?: {
+        after?: number;
+        limit?: number;
+    };
+    url: '/api/platform/users/{user_id}/organizations';
+};
+export type ListPlatformUserOrganizationsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListPlatformUserOrganizationsError = ListPlatformUserOrganizationsErrors[keyof ListPlatformUserOrganizationsErrors];
+export type ListPlatformUserOrganizationsResponses = {
+    200: PlatformUserOrganizationListResponse;
+};
+export type ListPlatformUserOrganizationsResponse = ListPlatformUserOrganizationsResponses[keyof ListPlatformUserOrganizationsResponses];
 export type StartOidcLoginData = {
     body?: never;
     path?: never;

@@ -26,6 +26,7 @@ export type AppView =
   | 'organization-overview'
   | 'organization-onboarding'
   | 'organization-plans'
+  | 'platform-organizations'
   | 'organization-provisioning'
   | 'organization-settings'
   | 'organization-service-accounts'
@@ -153,6 +154,7 @@ export function routeFromHash(hash: string): AppRoute {
     return { view: 'organization-onboarding', organizationId: positiveIntegerQuery(hash, 'organization_id') }
   }
   if (hash.startsWith('#/console/organization-plans')) return { view: 'organization-plans' }
+  if (hash.startsWith('#/console/platform-organizations')) return { view: 'platform-organizations' }
   if (hash.startsWith('#/console/organization-provisioning')) return { view: 'organization-provisioning' }
   if (hash.startsWith('#/console/organization-settings')) return { view: 'organization-settings' }
   if (hash.startsWith('#/console/organization-service-accounts')) return { view: 'organization-service-accounts' }

@@ -14,6 +14,7 @@ import { UserEditorSheet } from './user-editor-sheet'
 import { userRequestWithStatus } from './user-form-model'
 import { UserTable } from './user-table'
 import { UserWalletSheet } from './user-wallet-sheet'
+import { UserOrganizationsSheet } from './user-organizations-sheet'
 
 type EditorState = AdminUser | 'create' | undefined
 
@@ -32,9 +33,11 @@ export function UserPage() {
   const [deleting, setDeleting] = useState<AdminUser>()
   const [togglingId, setTogglingId] = useState<number>()
   const [walletUserId, setWalletUserId] = useState<number>()
+  const [organizationUserId, setOrganizationUserId] = useState<number>()
   const users = usersQuery.data?.pages[pagination.pageIndex]?.users ?? []
   const groupNames = useMemo(() => new Map((groupsQuery.data ?? []).map((group) => [group.id, group.display_name])), [groupsQuery.data])
   const walletUser = users.find((user) => user.id === walletUserId)
+  const organizationUser = users.find((user) => user.id === organizationUserId)
 
   const toggle = async (user: AdminUser) => {
     setTogglingId(user.id)
@@ -79,7 +82,7 @@ export function UserPage() {
           <p className="mt-1 text-xs text-muted-foreground">{t('users.error.body')}</p>
           <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => void usersQuery.refetch()}>{t('users.actions.retry')}</Button>
         </div>
-      ) : <UserTable users={users} groupNames={groupNames} togglingId={togglingId} onDelete={setDeleting} onEdit={setEditor} onToggle={(user) => void toggle(user)} onWallet={(user) => setWalletUserId(user.id)} />}
+      ) : <UserTable users={users} groupNames={groupNames} togglingId={togglingId} onDelete={setDeleting} onEdit={setEditor} onOrganizations={(user) => setOrganizationUserId(user.id)} onToggle={(user) => void toggle(user)} onWallet={(user) => setWalletUserId(user.id)} />}
 
       {usersQuery.isFetchNextPageError ? <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-destructive/20 bg-destructive/8 px-3 py-2 text-xs text-destructive"><span>{t('users.error.more')}</span><Button type="button" size="sm" variant="ghost" onClick={() => void usersQuery.fetchNextPage()}>{t('users.actions.retry')}</Button></div> : null}
       {!usersQuery.isPending && !initialError ? (
@@ -100,6 +103,7 @@ export function UserPage() {
 
       <UserEditorSheet open={editor !== undefined} user={editor === 'create' ? undefined : editor} onOpenChange={(open) => !open && setEditor(undefined)} />
       <UserWalletSheet open={walletUser !== undefined} user={walletUser} onOpenChange={(open) => !open && setWalletUserId(undefined)} />
+      <UserOrganizationsSheet open={organizationUser !== undefined} user={organizationUser} onOpenChange={(open) => !open && setOrganizationUserId(undefined)} />
       <UserDeleteDialog key={deleting?.id ?? 'no-user'} user={deleting} onClose={() => setDeleting(undefined)} />
     </div>
   )

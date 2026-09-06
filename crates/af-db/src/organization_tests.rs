@@ -77,6 +77,98 @@ async fn create_is_atomic_and_installs_one_active_owner() -> Result<(), Box<dyn 
 }
 
 #[tokio::test]
+async fn platform_directory_and_user_memberships_return_only_scoped_summaries()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let (first, _) = fixture
+        .repository
+        .create(OrganizationCreate::new(
+            "Alpha Company".to_owned(),
+            "alpha-company".to_owned(),
+            fixture.users[0],
+            active_entitlement(3, 2, None)?,
+        ))
+        .await?
+        .into_parts();
+    let (second, _) = fixture
+        .repository
+        .create(OrganizationCreate::new(
+            "Beta Company".to_owned(),
+            "beta-company".to_owned(),
+            fixture.users[0],
+            active_entitlement(4, 2, None)?,
+        ))
+        .await?
+        .into_parts();
+    let member = fixture
+        .repository
+        .add_membership(
+            first.id(),
+            OrganizationMembershipCreate::new(
+                fixture.users[1],
+                OrganizationRole::Admin,
+                None,
+                Some(fixture.users[0]),
+            ),
+        )
+        .await?;
+    fixture
+        .repository
+        .add_membership(
+            second.id(),
+            OrganizationMembershipCreate::new(
+                fixture.users[1],
+                OrganizationRole::Viewer,
+                None,
+                Some(fixture.users[0]),
+            ),
+        )
+        .await?;
+
+    let first_page = fixture.repository.list_platform_directory(None, 1).await?;
+    let (records, cursor) = first_page.into_parts();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].organization().id(), first.id());
+    assert_eq!(records[0].owner_membership().user_id(), fixture.users[0]);
+    assert_eq!(records[0].owner_username(), "organization-user-0");
+    assert_eq!(records[0].active_member_count(), 2);
+    assert_eq!(cursor, Some(first.id()));
+
+    let second_page = fixture
+        .repository
+        .list_platform_directory(cursor, 1)
+        .await?;
+    let (records, cursor) = second_page.into_parts();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].organization().id(), second.id());
+    assert_eq!(records[0].owner_membership().user_id(), fixture.users[0]);
+    assert_eq!(records[0].owner_username(), "organization-user-0");
+    assert_eq!(cursor, None);
+
+    let memberships = fixture
+        .repository
+        .list_user_organizations(fixture.users[1], None, 100)
+        .await?;
+    let (records, cursor) = memberships.into_parts();
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0].membership().id(), member.id());
+    assert_eq!(records[0].organization().id(), first.id());
+    assert_eq!(records[0].membership().role(), OrganizationRole::Admin);
+    assert_eq!(records[1].organization().id(), second.id());
+    assert_eq!(cursor, None);
+
+    assert!(matches!(
+        fixture
+            .repository
+            .list_user_organizations(UserId::new(9_999)?, None, 100)
+            .await,
+        Err(OrganizationRepositoryError::NotFound)
+    ));
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn last_owner_is_protected_and_transfer_is_atomic() -> Result<(), Box<dyn Error>> {
     let fixture = fixture().await?;
     let (organization, owner) = fixture
