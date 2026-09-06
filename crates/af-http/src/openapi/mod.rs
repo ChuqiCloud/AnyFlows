@@ -265,7 +265,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 243);
+        assert_eq!(document.paths.paths.len(), 246);
         let operation_count = document
             .paths
             .paths
@@ -287,7 +287,7 @@ mod tests {
             })
             .sum::<usize>();
         // 平台企业目录与用户归属只读接口扩展了既有管理面，保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 320);
+        assert_eq!(operation_count, 323);
         assert!(
             document
                 .components
