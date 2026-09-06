@@ -201,14 +201,17 @@ async fn configured_clickhouse_supplies_analytics_while_database_supplies_channe
         http_client_config,
         clickhouse,
     ) = if let Some(endpoint) = live_clickhouse {
+        let (proxy_address, proxy_handle) = spawn_clickhouse_forwarder(&endpoint);
         (
             endpoint,
             REAL_CLICKHOUSE_QUERY.to_owned(),
             std::env::var("ANYFLOWS_CLICKHOUSE_INTEGRATION_USERNAME")
                 .unwrap_or_else(|_| "default".to_owned()),
             std::env::var("ANYFLOWS_CLICKHOUSE_INTEGRATION_PASSWORD").unwrap_or_default(),
-            String::new(),
-            None,
+            format!(
+                "[http_client]\nproxy_url = 'http://{proxy_address}'\ntrust_proxy_dns = true\n"
+            ),
+            Some(proxy_handle),
         )
     } else {
         let (address, handle) = spawn_clickhouse_snapshot();
@@ -299,6 +302,124 @@ async fn configured_clickhouse_supplies_analytics_while_database_supplies_channe
         assert!(request.contains("x-clickhouse-user: dashboard-reader"));
         assert!(request.contains("x-clickhouse-key: dashboard-secret"));
         assert!(request.contains("format jsoneachrow"));
+    }
+}
+
+/// 真实集成门禁使用一次性本地 HTTP 转发器，保留生产 Client 的代理与 SSRF 校验。
+fn spawn_clickhouse_forwarder(endpoint: &str) -> (SocketAddr, thread::JoinHandle<Vec<u8>>) {
+    let upstream = url::Url::parse(endpoint).expect("ClickHouse 集成端点有效");
+    let host = upstream.host_str().unwrap().to_owned();
+    let port = upstream.port_or_known_default().unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    let handle = thread::spawn(move || {
+        let deadline = Instant::now() + IO_TIMEOUT;
+        let (mut client, _) = loop {
+            match listener.accept() {
+                Ok(connection) => break connection,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(Instant::now() < deadline, "ClickHouse 转发器等待连接超时");
+                    thread::sleep(Duration::from_millis(1));
+                }
+                Err(error) => panic!("ClickHouse 转发器接受连接失败: {error}"),
+            }
+        };
+        client.set_read_timeout(Some(IO_TIMEOUT)).unwrap();
+        client.set_write_timeout(Some(IO_TIMEOUT)).unwrap();
+        let request = read_http_request(&mut client);
+        let forwarded = rewrite_proxy_request(&request);
+        let mut upstream_stream = std::net::TcpStream::connect((host.as_str(), port)).unwrap();
+        upstream_stream.set_read_timeout(Some(IO_TIMEOUT)).unwrap();
+        upstream_stream.set_write_timeout(Some(IO_TIMEOUT)).unwrap();
+        upstream_stream.write_all(&forwarded).unwrap();
+        upstream_stream.shutdown(std::net::Shutdown::Write).unwrap();
+        let response = read_http_response(&mut upstream_stream);
+        client.write_all(&response).unwrap();
+        client.flush().unwrap();
+        request
+    });
+    (address, handle)
+}
+
+fn rewrite_proxy_request(request: &[u8]) -> Vec<u8> {
+    let header_end = request
+        .windows(4)
+        .position(|bytes| bytes == b"\r\n\r\n")
+        .expect("代理请求包含完整请求头")
+        + 4;
+    let headers = std::str::from_utf8(&request[..header_end]).expect("代理请求头为 UTF-8");
+    let mut lines = headers.split("\r\n");
+    let request_line = lines.next().unwrap();
+    let target = request_line.split_whitespace().nth(1).unwrap();
+    let target = url::Url::parse(target).expect("代理请求目标为绝对 URL");
+    let path = if target.path().is_empty() {
+        "/"
+    } else {
+        target.path()
+    };
+    let target = target
+        .query()
+        .map_or_else(|| path.to_owned(), |query| format!("{path}?{query}"));
+    let method = request_line.split_whitespace().next().unwrap();
+    let version = request_line.split_whitespace().nth(2).unwrap_or("HTTP/1.1");
+    let mut forwarded = format!("{method} {target} {version}\r\n").into_bytes();
+    let mut has_connection = false;
+    for line in lines {
+        if line.is_empty() {
+            break;
+        }
+        if line
+            .split_once(':')
+            .is_some_and(|(name, _)| name.eq_ignore_ascii_case("proxy-connection"))
+        {
+            continue;
+        }
+        if line
+            .split_once(':')
+            .is_some_and(|(name, _)| name.eq_ignore_ascii_case("connection"))
+        {
+            forwarded.extend_from_slice(b"Connection: close\r\n");
+            has_connection = true;
+        } else {
+            forwarded.extend_from_slice(line.as_bytes());
+            forwarded.extend_from_slice(b"\r\n");
+        }
+    }
+    if !has_connection {
+        forwarded.extend_from_slice(b"Connection: close\r\n");
+    }
+    forwarded.extend_from_slice(b"\r\n");
+    forwarded.extend_from_slice(&request[header_end..]);
+    forwarded
+}
+
+fn read_http_response(stream: &mut std::net::TcpStream) -> Vec<u8> {
+    let mut response = Vec::new();
+    let mut buffer = [0_u8; 4096];
+    let mut expected_length = None;
+    loop {
+        let read = stream.read(&mut buffer).unwrap();
+        if read == 0 {
+            return response;
+        }
+        response.extend_from_slice(&buffer[..read]);
+        if expected_length.is_none()
+            && let Some(header_end) = response.windows(4).position(|bytes| bytes == b"\r\n\r\n")
+        {
+            let header_end = header_end + 4;
+            let headers = std::str::from_utf8(&response[..header_end]).unwrap();
+            let content_length = headers.lines().find_map(|line| {
+                line.split_once(':').and_then(|(name, value)| {
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().unwrap())
+                })
+            });
+            expected_length = content_length.map(|length| header_end + length);
+        }
+        if expected_length.is_some_and(|length| response.len() >= length) {
+            return response;
+        }
     }
 }
 
