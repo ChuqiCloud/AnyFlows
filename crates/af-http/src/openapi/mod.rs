@@ -573,6 +573,8 @@ mod tests {
             "listOrganizationScimAuditLogs",
             "listPlatformOrganizationUsageLogs",
             "listPlatformOrganizationAuditLogs",
+            "listPlatformOrganizations",
+            "listPlatformUserOrganizations",
             "listUserUsageLogs",
             "listSelfPlatformAuditLogs",
             "listAdminUsers",
@@ -652,7 +654,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 522);
+        assert_eq!(schemas.len(), 526);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("OrganizationSsoDiscoveryErrorResponse"));
         assert!(schemas.contains_key("Announcement"));
