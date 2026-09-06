@@ -47,6 +47,7 @@
     "organizationOverview": "Organization overview",
     "organizationProvisioning": "Organization provisioning",
     "organizationPlans": "Organization plans",
+    "platformOrganizations": "Organization directory",
     "organizationMembers": "Members and teams",
     "organizationWallet": "Organization wallet",
     "organizationSettings": "Organization settings",
@@ -1164,6 +1165,77 @@
       "failed": "Deletion failed. The key is still valid. Try again shortly."
     }
   },
+  "platformOrganizations": {
+    "eyebrow": "Platform organization operations",
+    "title": "Organization directory",
+    "subtitle": "Review organizations, owners, active members, and entitlement status. Every cross-organization read is added to the platform audit log.",
+    "reason": {
+      "label": "Access reason",
+      "placeholder": "For example: verify account organization ownership",
+      "hint": "The reason is sent only with this request for auditing and is not stored in the browser.",
+      "invalid": "Use a non-empty reason without surrounding whitespace or control characters, up to 255 bytes.",
+      "submit": "Load organizations"
+    },
+    "initial": {
+      "title": "Enter a reason to view organizations",
+      "body": "The directory does not load automatically, preventing accidental cross-organization access."
+    },
+    "summary": {
+      "loaded_one": "{{count}} organization loaded",
+      "loaded_other": "{{count}} organizations loaded",
+      "pages_one": "{{count}} page loaded",
+      "pages_other": "{{count}} pages loaded"
+    },
+    "columns": {
+      "organization": "Organization",
+      "owner": "Owner",
+      "members": "Active members / seats",
+      "status": "Status",
+      "validUntil": "Entitlement expiry"
+    },
+    "values": {
+      "seats": "{{active}} / {{limit}}"
+    },
+    "organizationStatus": {
+      "active": "Organization active",
+      "suspended": "Organization suspended",
+      "closed": "Organization closed"
+    },
+    "entitlementStatus": {
+      "active": "Entitlement active",
+      "grace": "Grace period",
+      "read_only": "Read only",
+      "suspended": "Entitlement suspended",
+      "closed": "Entitlement closed"
+    },
+    "membershipStatus": {
+      "active": "Member active",
+      "suspended": "Member suspended",
+      "removed": "Member removed"
+    },
+    "roles": {
+      "owner": "Owner",
+      "admin": "Administrator",
+      "billing": "Billing",
+      "member": "Member",
+      "viewer": "Viewer"
+    },
+    "loading": "Loading organization directory",
+    "empty": {
+      "title": "No organizations",
+      "body": "No organizations have been provisioned on this platform."
+    },
+    "error": {
+      "title": "Organization directory could not be loaded",
+      "body": "Check the administrator permission and access reason, then try again.",
+      "more": "The next page could not be loaded. Existing organizations remain visible."
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Retry",
+      "loadMore": "Load more"
+    }
+  },
   "users": {
     "title": "User management",
     "subtitle": "Manage platform accounts, roles, default groups, wallets, and request limits. Administrators retain their own user features.",
@@ -1202,6 +1274,7 @@
       "create": "Create user",
       "edit": "Edit user",
       "wallet": "Wallet and ledger",
+      "organizations": "Organization memberships",
       "delete": "Delete user",
       "enable": "Enable user",
       "disable": "Disable user",
@@ -1345,6 +1418,27 @@
       "title": "Delete user",
       "description": "Deleting {{username}} soft-deletes the account and its directly issued API keys. The user can no longer sign in or call the gateway. This action cannot be undone.",
       "failed": "Deletion failed. The user remains active. Try again shortly."
+    },
+    "organizations": {
+      "title": "Organization memberships",
+      "description": "Review this user's role and status in each organization.",
+      "reasonLabel": "Access reason",
+      "reasonPlaceholder": "For example: verify the user's organization memberships",
+      "reasonHint": "The reason is sent only with this request for auditing and is cleared when the sheet closes.",
+      "reasonInvalid": "Use a non-empty reason without surrounding whitespace or control characters, up to 255 bytes.",
+      "load": "Load memberships",
+      "initialTitle": "Enter a reason to query memberships",
+      "initialBody": "Cross-organization memberships are not loaded with the user list.",
+      "loading": "Loading organization memberships",
+      "emptyTitle": "No organization memberships",
+      "emptyBody": "This user has no organization membership records.",
+      "errorTitle": "Organization memberships could not be loaded",
+      "errorBody": "Check the administrator permission and access reason, then try again.",
+      "moreError": "More organization memberships could not be loaded.",
+      "loadMore": "Load more",
+      "entitlement": "Entitlement",
+      "joinedAt": "Joined",
+      "membershipId": "Membership"
     }
   },
   "groups": {

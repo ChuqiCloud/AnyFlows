@@ -48,6 +48,7 @@
     "organizationOverview": "企业概览",
     "organizationProvisioning": "企业开通申请",
     "organizationPlans": "企业套餐管理",
+    "platformOrganizations": "企业目录",
     "organizationMembers": "成员与团队",
     "organizationDepartments": "部门目录",
     "organizationWallet": "企业钱包",
@@ -1166,6 +1167,77 @@
       "failed": "删除失败，Key 仍然有效，请稍后重试。"
     }
   },
+  "platformOrganizations": {
+    "eyebrow": "平台企业运营",
+    "title": "企业目录",
+    "subtitle": "查看全站企业、Owner、活动成员与商业授权状态。每次跨企业读取都会记录平台审计。",
+    "reason": {
+      "label": "访问理由",
+      "placeholder": "例如：协助核查企业账号归属",
+      "hint": "理由仅随本次请求写入审计，不会保存到浏览器。",
+      "invalid": "理由不能为空、包含首尾空白或控制字符，且不能超过 255 字节。",
+      "submit": "加载企业目录"
+    },
+    "initial": {
+      "title": "填写理由后查看企业目录",
+      "body": "目录不会自动加载，避免无意触发跨企业数据访问。"
+    },
+    "summary": {
+      "loaded_one": "已加载 {{count}} 家企业",
+      "loaded_other": "已加载 {{count}} 家企业",
+      "pages_one": "已读取 {{count}} 页",
+      "pages_other": "已读取 {{count}} 页"
+    },
+    "columns": {
+      "organization": "企业",
+      "owner": "Owner",
+      "members": "活动成员 / 席位",
+      "status": "状态",
+      "validUntil": "授权有效期"
+    },
+    "values": {
+      "seats": "{{active}} / {{limit}}"
+    },
+    "organizationStatus": {
+      "active": "企业正常",
+      "suspended": "企业已暂停",
+      "closed": "企业已关闭"
+    },
+    "entitlementStatus": {
+      "active": "授权有效",
+      "grace": "授权宽限期",
+      "read_only": "授权只读",
+      "suspended": "授权已暂停",
+      "closed": "授权已关闭"
+    },
+    "membershipStatus": {
+      "active": "成员正常",
+      "suspended": "成员已暂停",
+      "removed": "成员已移除"
+    },
+    "roles": {
+      "owner": "Owner",
+      "admin": "管理员",
+      "billing": "财务",
+      "member": "成员",
+      "viewer": "只读"
+    },
+    "loading": "正在加载企业目录",
+    "empty": {
+      "title": "暂无企业",
+      "body": "当前平台还没有已开通的企业。"
+    },
+    "error": {
+      "title": "无法读取企业目录",
+      "body": "请确认当前管理员权限和访问理由后重试。",
+      "more": "下一页读取失败，已加载企业仍可查看。"
+    },
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试",
+      "loadMore": "加载更多"
+    }
+  },
   "users": {
     "title": "用户管理",
     "subtitle": "管理平台账户、角色、默认分组、钱包与请求限制。管理员仍保留自己的用户功能。",
@@ -1204,6 +1276,7 @@
       "create": "创建用户",
       "edit": "编辑用户",
       "wallet": "钱包与账本",
+      "organizations": "企业归属",
       "delete": "删除用户",
       "enable": "启用用户",
       "disable": "停用用户",
@@ -1347,6 +1420,27 @@
       "title": "删除用户",
       "description": "删除 {{username}} 后，该账户及其直接签发的 API Key 将被软删除，无法继续登录或调用。此操作不可撤销。",
       "failed": "删除失败，用户仍然有效，请稍后重试。"
+    },
+    "organizations": {
+      "title": "企业归属",
+      "description": "查看该用户在各企业中的成员角色与状态。",
+      "reasonLabel": "访问理由",
+      "reasonPlaceholder": "例如：核查用户所属企业",
+      "reasonHint": "理由仅随本次请求写入审计，关闭抽屉后清除。",
+      "reasonInvalid": "理由不能为空、包含首尾空白或控制字符，且不能超过 255 字节。",
+      "load": "查询企业归属",
+      "initialTitle": "填写理由后查询",
+      "initialBody": "企业归属属于跨企业信息，不会随用户列表自动加载。",
+      "loading": "正在加载企业归属",
+      "emptyTitle": "该用户没有企业归属",
+      "emptyBody": "当前没有该用户的企业成员关系记录。",
+      "errorTitle": "无法读取企业归属",
+      "errorBody": "请确认管理员权限和访问理由后重试。",
+      "moreError": "更多企业归属读取失败。",
+      "loadMore": "加载更多",
+      "entitlement": "企业授权",
+      "joinedAt": "加入时间",
+      "membershipId": "成员关系"
     }
   },
   "groups": {

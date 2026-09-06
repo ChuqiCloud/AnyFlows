@@ -531,6 +531,8 @@ pub use organization::{
     OrganizationOwnershipTransferRecord, OrganizationRecord, OrganizationRepository,
     OrganizationRepositoryConfigError, OrganizationRepositoryError, OrganizationTeamChange,
     OrganizationTeamCreate, OrganizationTeamPageRecord, OrganizationTeamRecord,
+    PlatformOrganizationDirectoryPageRecord, PlatformOrganizationDirectoryRecord,
+    PlatformUserOrganizationPageRecord, PlatformUserOrganizationRecord,
 };
 pub use organization_approval::{
     OrganizationApprovalDecisionOutcome, OrganizationApprovalDecisionRecord,

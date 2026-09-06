@@ -38,6 +38,7 @@ mod password_reset;
 mod payment_settings;
 mod payment_webhook;
 mod platform_audit;
+mod platform_organizations;
 mod playground_conversations;
 mod playground_shares;
 mod redemptions;
@@ -137,6 +138,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(scim::document());
     document.merge(passkey_auth::document());
     document.merge(platform_audit::document());
+    document.merge(platform_organizations::document());
     document.merge(oauth_login::oidc_document());
 
     document.tags = Some(vec![
@@ -175,6 +177,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("企业 SCIM"),
         Tag::new("平台企业活动"),
         Tag::new("平台管理审计"),
+        Tag::new("平台企业目录"),
         Tag::new("余额预警"),
         Tag::new("管理会话"),
         Tag::new("首次安装"),
@@ -262,7 +265,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 241);
+        assert_eq!(document.paths.paths.len(), 243);
         let operation_count = document
             .paths
             .paths
@@ -283,8 +286,8 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        // 公开发现、SSO 启动、审批与部门目录管理接口扩展了既有管理面，保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 318);
+        // 平台企业目录与用户归属只读接口扩展了既有管理面，保持操作总数与生成文档同步。
+        assert_eq!(operation_count, 320);
         assert!(
             document
                 .components
@@ -570,6 +573,8 @@ mod tests {
             "listOrganizationScimAuditLogs",
             "listPlatformOrganizationUsageLogs",
             "listPlatformOrganizationAuditLogs",
+            "listPlatformOrganizations",
+            "listPlatformUserOrganizations",
             "listUserUsageLogs",
             "listSelfPlatformAuditLogs",
             "listAdminUsers",
@@ -649,7 +654,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 522);
+        assert_eq!(schemas.len(), 526);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("OrganizationSsoDiscoveryErrorResponse"));
         assert!(schemas.contains_key("Announcement"));
@@ -925,6 +930,10 @@ mod tests {
         assert!(schemas.contains_key("AdminCustomOAuth2Provider"));
         assert!(schemas.contains_key("AdminCustomOAuth2ProviderList"));
         assert!(schemas.contains_key("AdminCustomOAuth2ProviderRequest"));
+        assert!(schemas.contains_key("PlatformOrganizationSummaryResponse"));
+        assert!(schemas.contains_key("PlatformOrganizationDirectoryResponse"));
+        assert!(schemas.contains_key("PlatformUserOrganizationSummaryResponse"));
+        assert!(schemas.contains_key("PlatformUserOrganizationListResponse"));
         assert!(schemas.contains_key("AdminUserCreateRequest"));
         assert!(schemas.contains_key("AdminUserUpdateRequest"));
         assert!(schemas.contains_key("AdminWalletEntry"));

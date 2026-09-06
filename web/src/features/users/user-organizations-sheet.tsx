@@ -1,0 +1,172 @@
+import { Building2, LoaderCircle, Search } from 'lucide-react'
+import { useEffect, useState, type FormEvent } from 'react'
+import { useTranslation } from 'react-i18next'
+
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import {
+  isValidPlatformOrganizationReason,
+  usePlatformUserOrganizations,
+  type PlatformUserOrganizationAccess,
+} from '@/features/platform-organizations/platform-organization-api'
+import type { AdminUser, PlatformUserOrganizationSummaryResponse } from '@/lib/api/generated/types.gen'
+
+type UserOrganizationsSheetProps = {
+  open: boolean
+  user?: AdminUser
+  onOpenChange: (open: boolean) => void
+}
+
+/** 按管理员明确选择的用户和临时理由读取企业归属，不预取其他用户。 */
+export function UserOrganizationsSheet({ open, user, onOpenChange }: UserOrganizationsSheetProps) {
+  const { i18n, t } = useTranslation()
+  const [reason, setReason] = useState('')
+  const [access, setAccess] = useState<PlatformUserOrganizationAccess>()
+  const query = usePlatformUserOrganizations(open ? access : undefined)
+  const organizations = query.data?.pages.flatMap((page) => page.organizations) ?? []
+  const validReason = isValidPlatformOrganizationReason(reason)
+  const timeFormat = new Intl.DateTimeFormat(i18n.resolvedLanguage === 'zh' ? 'zh-CN' : 'en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  })
+
+  useEffect(() => {
+    setReason('')
+    setAccess(undefined)
+  }, [open, user?.id])
+
+  const load = (event: FormEvent) => {
+    event.preventDefault()
+    if (!user || !validReason) return
+    if (access?.userId === user.id && access.reason === reason) {
+      void query.refetch()
+      return
+    }
+    setAccess({ userId: user.id, reason })
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="gap-0 overflow-y-auto data-[side=right]:w-full data-[side=right]:sm:max-w-2xl" aria-describedby="user-organizations-description">
+        <SheetHeader className="border-b border-[var(--hairline)] pr-12">
+          <div className="flex min-w-0 items-center gap-2">
+            <SheetTitle className="truncate">{t('users.organizations.title')}</SheetTitle>
+            {user ? <Badge className="shrink-0">{user.username}</Badge> : null}
+          </div>
+          <SheetDescription id="user-organizations-description">
+            {t('users.organizations.description')}
+          </SheetDescription>
+        </SheetHeader>
+        {user ? (
+          <div className="p-4">
+            <form className="border-b border-[var(--hairline)] pb-4" onSubmit={load}>
+              <Label htmlFor="user-organizations-reason">{t('users.organizations.reasonLabel')}</Label>
+              <Input
+                id="user-organizations-reason"
+                className="mt-2"
+                value={reason}
+                maxLength={255}
+                autoComplete="off"
+                placeholder={t('users.organizations.reasonPlaceholder')}
+                aria-describedby="user-organizations-reason-hint"
+                aria-invalid={reason.length > 0 && !validReason}
+                onChange={(event) => setReason(event.target.value)}
+              />
+              <p id="user-organizations-reason-hint" className="mt-1.5 text-[0.6875rem] leading-4 text-muted-foreground">
+                {reason.length > 0 && !validReason
+                  ? t('users.organizations.reasonInvalid')
+                  : t('users.organizations.reasonHint')}
+              </p>
+              <Button type="submit" size="sm" className="mt-3" disabled={!validReason || query.isFetching}>
+                {query.isFetching && !query.data ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <Search aria-hidden="true" />}
+                {t('users.organizations.load')}
+              </Button>
+            </form>
+
+            {!access ? (
+              <MembershipState title={t('users.organizations.initialTitle')} body={t('users.organizations.initialBody')} />
+            ) : query.isPending ? (
+              <div className="py-8 text-center text-xs text-muted-foreground">{t('users.organizations.loading')}</div>
+            ) : query.isError && query.data === undefined ? (
+              <MembershipState
+                title={t('users.organizations.errorTitle')}
+                body={t('users.organizations.errorBody')}
+                action={<Button type="button" size="sm" variant="secondary" onClick={() => void query.refetch()}>{t('users.actions.retry')}</Button>}
+              />
+            ) : organizations.length === 0 ? (
+              <MembershipState title={t('users.organizations.emptyTitle')} body={t('users.organizations.emptyBody')} />
+            ) : (
+              <div className="divide-y divide-[var(--hairline)]">
+                {organizations.map((organization) => (
+                  <UserOrganizationRow key={organization.membership_id} organization={organization} timeFormat={timeFormat} />
+                ))}
+              </div>
+            )}
+
+            {query.isFetchNextPageError ? <p role="alert" className="mt-3 text-xs text-destructive">{t('users.organizations.moreError')}</p> : null}
+            {query.hasNextPage ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="mt-4 w-full"
+                disabled={query.isFetchingNextPage}
+                onClick={() => void query.fetchNextPage()}
+              >
+                {query.isFetchingNextPage ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : null}
+                {t('users.organizations.loadMore')}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+function UserOrganizationRow({
+  organization,
+  timeFormat,
+}: {
+  organization: PlatformUserOrganizationSummaryResponse
+  timeFormat: Intl.DateTimeFormat
+}) {
+  const { t } = useTranslation()
+  return (
+    <article className="py-4 first:pt-0 last:pb-0">
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="truncate text-sm font-semibold">{organization.organization_name}</h3>
+          <p className="mt-1 truncate font-mono text-[0.6875rem] text-muted-foreground">
+            {organization.organization_slug} · #{organization.organization_id}
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap justify-end gap-1">
+          <Badge>{t(`platformOrganizations.roles.${organization.role}`, { defaultValue: organization.role })}</Badge>
+          <Badge>{t(`platformOrganizations.membershipStatus.${organization.membership_status}`, { defaultValue: organization.membership_status })}</Badge>
+        </div>
+      </div>
+      <dl className="mt-3 grid grid-cols-2 gap-3 text-xs">
+        <div><dt className="text-muted-foreground">{t('users.organizations.entitlement')}</dt><dd className="mt-1">{t(`platformOrganizations.entitlementStatus.${organization.entitlement_status}`, { defaultValue: organization.entitlement_status })}</dd></div>
+        <div><dt className="text-muted-foreground">{t('users.organizations.joinedAt')}</dt><dd className="mt-1">{timeFormat.format(organization.joined_at * 1_000)}</dd></div>
+        <div className="col-span-2"><dt className="text-muted-foreground">{t('users.organizations.membershipId')}</dt><dd className="mt-1 font-mono">#{organization.membership_id} · v{organization.version}</dd></div>
+      </dl>
+    </article>
+  )
+}
+
+function MembershipState({ title, body, action }: { title: string; body: string; action?: React.ReactNode }) {
+  return (
+    <div className="grid min-h-48 place-items-center py-8 text-center">
+      <div className="max-w-sm">
+        <Building2 className="mx-auto size-5 text-muted-foreground" aria-hidden="true" />
+        <h3 className="mt-3 text-sm font-semibold">{title}</h3>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">{body}</p>
+        {action ? <div className="mt-4">{action}</div> : null}
+      </div>
+    </div>
+  )
+}

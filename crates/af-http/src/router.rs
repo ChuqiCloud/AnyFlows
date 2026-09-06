@@ -12,9 +12,10 @@ use af_admin::{
     OrganizationBudgetService, OrganizationContractPriceService, OrganizationPlanService,
     OrganizationScimService, OrganizationTokenService, OrganizationWalletService,
     PasskeyAuthenticationService, PasswordResetService, PlatformAuditService,
-    PlaygroundConversationService, PlaygroundShareService, RedemptionService, RegistrationService,
-    SessionAuthenticator, SiteSettingsService, SubscriptionService, TokenAuthenticator,
-    UserInvitationService, UserNotificationService, UserTopupService, UserWalletService,
+    PlatformOrganizationDirectoryService, PlaygroundConversationService, PlaygroundShareService,
+    RedemptionService, RegistrationService, SessionAuthenticator, SiteSettingsService,
+    SubscriptionService, TokenAuthenticator, UserInvitationService, UserNotificationService,
+    UserTopupService, UserWalletService,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -123,6 +124,7 @@ use crate::passkey_auth::build_passkey_authentication_router;
 use crate::password_reset::build_password_reset_router;
 use crate::payment_settings::build_payment_settings_router;
 use crate::platform_audit::build_platform_audit_router;
+use crate::platform_organizations::build_platform_organization_router;
 use crate::playground_conversations::build_playground_conversation_router;
 use crate::playground_shares::build_playground_share_router;
 use crate::redemption::build_redemption_router;
@@ -264,6 +266,7 @@ pub fn build_router(
         Arc<dyn af_admin::OrganizationServiceAccountRuntimeAuthenticator>,
     >,
     platform_audit_service: Option<Arc<dyn PlatformAuditService>>,
+    platform_organization_directory_service: Option<Arc<dyn PlatformOrganizationDirectoryService>>,
     organization_sso_provider_service: Option<Arc<dyn af_admin::OrganizationSsoProviderService>>,
     organization_sso_policy_service: Option<Arc<dyn af_admin::OrganizationSsoPolicyService>>,
     organization_sso_domain_service: Option<Arc<dyn af_admin::OrganizationSsoDomainService>>,
@@ -1052,6 +1055,13 @@ pub fn build_router(
     };
     let management_routes = match platform_audit_service {
         Some(service) => management_routes.merge(build_platform_audit_router(
+            service,
+            Arc::clone(&http_state.session_authenticator),
+        )),
+        None => management_routes,
+    };
+    let management_routes = match platform_organization_directory_service {
+        Some(service) => management_routes.merge(build_platform_organization_router(
             service,
             Arc::clone(&http_state.session_authenticator),
         )),

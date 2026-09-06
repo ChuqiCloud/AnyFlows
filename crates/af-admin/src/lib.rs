@@ -64,6 +64,7 @@ mod password_reset;
 mod payment_settings;
 #[cfg(test)]
 mod payment_settings_tests;
+mod platform_organization_directory;
 mod platform_rbac;
 mod playground_conversation;
 mod playground_share;
@@ -484,6 +485,15 @@ pub use payment_settings::{
     AdminPaymentSettingsReadFuture, AdminPaymentSettingsService, AdminPaymentSettingsUpdateFuture,
     DatabaseAdminPaymentSettingsService, PaymentSettingsApplyFuture, PaymentSettingsRuntimeApplier,
     PaymentSettingsRuntimeError,
+};
+pub use platform_organization_directory::{
+    DEFAULT_PLATFORM_ORGANIZATION_DIRECTORY_PAGE_SIZE,
+    DatabasePlatformOrganizationDirectoryService, MAX_PLATFORM_ORGANIZATION_REASON_BYTES,
+    PlatformOrganizationDirectoryError, PlatformOrganizationDirectoryFuture,
+    PlatformOrganizationDirectoryPage, PlatformOrganizationDirectoryQuery,
+    PlatformOrganizationDirectoryService, PlatformOrganizationSummary,
+    PlatformUserOrganizationFuture, PlatformUserOrganizationPage, PlatformUserOrganizationQuery,
+    PlatformUserOrganizationSummary,
 };
 pub use platform_rbac::{
     DEFAULT_PLATFORM_AUDIT_PAGE_SIZE, DatabasePlatformAuditService, PlatformAuditEntry,

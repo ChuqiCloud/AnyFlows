@@ -42,6 +42,7 @@ import { OrganizationServiceAccountPage } from '@/features/organization-service-
 import { OrganizationWalletPage } from '@/features/organization-wallet/organization-wallet-page'
 import { OrganizationWorkspaceProvider } from '@/features/organization-console/organization-workspace-context'
 import { PaymentSettingsPage } from '@/features/payment-settings/payment-settings-page'
+import { PlatformOrganizationPage } from '@/features/platform-organizations/platform-organization-page'
 import { PublicModelPage } from '@/features/models/public-model-page'
 import { PlaygroundPage } from '@/features/playground/playground-page'
 import { PublicPlaygroundSharePage } from '@/features/playground/public-playground-share-page'
@@ -203,6 +204,8 @@ function ManagementEntry({
                   ? 'organizationOnboarding.title'
                 : view === 'organization-plans'
                   ? 'organizationPlans.title'
+                : view === 'platform-organizations'
+                  ? 'platformOrganizations.title'
                 : view === 'organization-provisioning'
                   ? 'organizationProvisioning.title'
                 : view === 'organization-settings'
@@ -290,6 +293,8 @@ function ManagementEntry({
                   ? <OrganizationOnboardingPage requestedOrganizationId={organizationId} />
                 : view === 'organization-plans'
                   ? <OrganizationPlanManagementPage />
+                : view === 'platform-organizations'
+                  ? <PlatformOrganizationPage />
                 : view === 'organization-provisioning'
                   ? <OrganizationProvisioningPage admin={admin} />
                 : view === 'organization-settings'
