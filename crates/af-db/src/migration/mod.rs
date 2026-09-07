@@ -141,6 +141,7 @@ mod m20260905_000132_create_organization_plan_orders;
 mod m20260905_000133_add_organization_plan_order_changes;
 mod m20260906_000134_create_announcements;
 mod m20260906_000135_add_announcement_audience_notifications;
+mod m20260907_000136_create_organization_verification;
 mod schema;
 
 #[cfg(test)]
@@ -327,6 +328,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260905_000133_add_organization_plan_order_changes::Migration),
             Box::new(m20260906_000134_create_announcements::Migration),
             Box::new(m20260906_000135_add_announcement_audience_notifications::Migration),
+            Box::new(m20260907_000136_create_organization_verification::Migration),
         ]
     }
 }

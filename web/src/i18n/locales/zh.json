@@ -29,6 +29,7 @@
     "sections": {
       "personal": "个人账户",
       "organization": "企业空间",
+      "enterprise": "企业管理",
       "operations": "用户与商业化",
       "gateway": "模型与网关",
       "platform": "平台配置"
@@ -47,6 +48,7 @@
     "organizationActivity": "企业日志与审计",
     "organizationOverview": "企业概览",
     "organizationProvisioning": "企业开通申请",
+    "organizationVerification": "企业认证",
     "organizationPlans": "企业套餐管理",
     "platformOrganizations": "企业目录",
     "organizationMembers": "成员与团队",
@@ -1292,6 +1294,20 @@
   "users": {
     "title": "用户管理",
     "subtitle": "管理平台账户、角色、默认分组、钱包与请求限制。管理员仍保留自己的用户功能。",
+    "enterpriseGuide": {
+      "title": "给用户加入企业的正确流程",
+      "body": "先在企业目录确认目标企业，再从用户行末的“企业归属”打开抽屉。创建邀请后，把一次性令牌交给用户；用户登录后在邀请中心接受，成员关系才会生效。已加入的成员可在同一抽屉调整角色或暂停状态。",
+      "steps": {
+        "directory": "确认目标企业和席位/授权状态。",
+        "membership": "输入平台审计理由，创建邀请或调整成员。",
+        "accept": "用户必须登录并接受一次性邀请令牌。"
+      },
+      "links": {
+        "directory": "打开企业目录",
+        "provisioning": "审批企业开通",
+        "verification": "审核企业认证"
+      }
+    },
     "count_one": "已加载 {{count}} 个用户",
     "count_other": "已加载 {{count}} 个用户",
     "pages_one": "已读取 {{count}} 页",
@@ -6022,6 +6038,90 @@
       "mutation": "操作没有返回可靠结果，请保留当前内容后重试。",
       "conflict": "申请已被并发更新，请刷新后按最新服务端版本审核。",
       "unavailable": "企业开通服务暂时不可用，请稍后重试。"
+    }
+  },
+  "organizationVerification": {
+    "title": "企业认证",
+    "subtitle": "提交受控的企业材料供平台审核。此处只展示元数据，原始对象仍保存在受控存储中。",
+    "status": {
+      "submitted": "已提交",
+      "in_review": "审核中",
+      "needs_supplement": "需要补充",
+      "approved": "已通过",
+      "rejected": "已拒绝"
+    },
+    "form": {
+      "title": "认证材料",
+      "body": "填写简明企业说明和受控文件引用。不要把密钥或材料正文粘贴到此表单。",
+      "summary": "企业说明",
+      "summaryPlaceholder": "法定名称、业务范围以及申请认证的原因",
+      "kind": "材料类型",
+      "reference": "受控对象引用",
+      "fileName": "文件名",
+      "contentType": "MIME 类型",
+      "size": "大小（字节）",
+      "addMaterial": "添加材料",
+      "removeMaterial": "移除材料",
+      "material": "材料 {{index}}"
+    },
+    "actions": {
+      "submit": "提交审核",
+      "resubmit": "提交补充材料",
+      "refresh": "刷新",
+      "retry": "重试",
+      "openSettings": "打开企业设置",
+      "openDirectory": "打开企业目录",
+      "loadMore": "加载更多"
+    },
+    "applicant": {
+      "emptyTitle": "尚未提交认证",
+      "emptyBody": "企业 Owner 或管理员可以在这里提交第一份认证案件。",
+      "readOnly": "案件正在等待平台处理，状态和审核理由均来自服务端。",
+      "supplement": "平台要求补充信息。修改说明或材料后重新提交。",
+      "rejected": "上一份案件已被拒绝，请修正材料后重新提交。",
+      "approved": "企业认证已通过，请为合规记录保留已提交材料。",
+      "reviewReason": "审核理由",
+      "submittedAt": "提交时间",
+      "updatedAt": "更新时间",
+      "materialCount": "{{count}} 份材料"
+    },
+    "admin": {
+      "title": "企业认证审核",
+      "subtitle": "审核企业认证案件并记录服务端决定。此工作台不会返回材料正文。",
+      "filters": { "all": "全部", "submitted": "已提交", "in_review": "审核中", "needs_supplement": "需补充", "approved": "已通过", "rejected": "已拒绝" },
+      "review": "审核案件",
+      "case": "案件 #{{id}}",
+      "organization": "企业 #{{id}}",
+      "applicant": "申请人 #{{id}}",
+      "version": "版本 v{{version}}",
+      "decision": "审核决定",
+      "reason": "审核理由",
+      "reasonPlaceholder": "说明通过、拒绝或要求补充的原因",
+      "requestSupplement": "要求补充",
+      "approve": "通过",
+      "reject": "拒绝",
+      "close": "关闭",
+      "emptyTitle": "暂无认证案件",
+      "emptyBody": "企业提交认证后，案件会显示在这里。",
+      "initialTitle": "认证审核队列",
+      "initialBody": "选择状态筛选后加载平台审核队列。",
+      "materialAccess": "受控材料元数据",
+      "materialAccessHint": "这里只能看到文件元数据，对象正文留在受控存储并记录访问审计。",
+      "loading": "正在加载认证案件",
+      "errorTitle": "无法加载认证案件",
+      "errorBody": "审核服务暂时不可用，现有案件不会改变。",
+      "decisionSaved": "审核决定已记录",
+      "conflict": "审核期间案件已被更新，请刷新后按最新版本处理。",
+      "mutation": "审核决定未能确认，请保留理由后重试。"
+    },
+    "errors": {
+      "loadTitle": "无法加载认证状态",
+      "loadBody": "认证服务暂时不可用，已有提交不会改变。",
+      "mutation": "提交结果未能确认，请保留当前表单后重试。",
+      "invalid": "请检查企业说明和材料元数据。",
+      "forbidden": "当前企业角色无权提交认证材料。",
+      "conflict": "案件已被并发更新，请刷新后查看最新状态。",
+      "unavailable": "认证服务暂时不可用，请稍后重试。"
     }
   },
   "organizationPlans": {

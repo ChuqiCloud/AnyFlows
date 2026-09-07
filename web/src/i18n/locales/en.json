@@ -29,6 +29,7 @@
     "sections": {
       "personal": "Personal account",
       "organization": "Organization",
+      "enterprise": "Organizations & users",
       "operations": "Users & commerce",
       "gateway": "Models & gateway",
       "platform": "Platform settings"
@@ -46,6 +47,7 @@
     "organizationActivity": "Organization logs & audit",
     "organizationOverview": "Organization overview",
     "organizationProvisioning": "Organization provisioning",
+    "organizationVerification": "Organization verification",
     "organizationPlans": "Organization plans",
     "platformOrganizations": "Organization directory",
     "organizationMembers": "Members and teams",
@@ -1290,6 +1292,20 @@
   "users": {
     "title": "User management",
     "subtitle": "Manage platform accounts, roles, default groups, wallets, and request limits. Administrators retain their own user features.",
+    "enterpriseGuide": {
+      "title": "How to add a user to an organization",
+      "body": "Confirm the target organization in the directory, then open Organization memberships from the user's row. Create an invitation and give the one-time token to the user; the membership becomes effective only after the user signs in and accepts it. Existing members can have their role or status adjusted from the same sheet.",
+      "steps": {
+        "directory": "Confirm the organization, seats, and entitlement.",
+        "membership": "Enter an audited platform reason, then invite or adjust.",
+        "accept": "The user must sign in and accept the one-time token."
+      },
+      "links": {
+        "directory": "Open organization directory",
+        "provisioning": "Review organization applications",
+        "verification": "Review organization verification"
+      }
+    },
     "count_one": "{{count}} user loaded",
     "count_other": "{{count}} users loaded",
     "pages_one": "{{count}} page loaded",
@@ -6022,6 +6038,90 @@
       "mutation": "The operation did not return a reliable result. Keep the current input and retry.",
       "conflict": "The request changed concurrently. Refresh and review the latest server version.",
       "unavailable": "The provisioning service is temporarily unavailable. Try again shortly."
+    }
+  },
+  "organizationVerification": {
+    "title": "Organization verification",
+    "subtitle": "Submit controlled business materials for platform review. Only metadata is shown here; the source object remains in managed storage.",
+    "status": {
+      "submitted": "Submitted",
+      "in_review": "In review",
+      "needs_supplement": "More information required",
+      "approved": "Approved",
+      "rejected": "Rejected"
+    },
+    "form": {
+      "title": "Verification materials",
+      "body": "Provide a concise organization summary and references to the controlled files. Do not paste secrets or document contents into this form.",
+      "summary": "Organization summary",
+      "summaryPlaceholder": "Legal name, business scope, and the reason for verification",
+      "kind": "Material type",
+      "reference": "Controlled object reference",
+      "fileName": "File name",
+      "contentType": "MIME type",
+      "size": "Size (bytes)",
+      "addMaterial": "Add material",
+      "removeMaterial": "Remove material",
+      "material": "Material {{index}}"
+    },
+    "actions": {
+      "submit": "Submit for review",
+      "resubmit": "Submit supplement",
+      "refresh": "Refresh",
+      "retry": "Try again",
+      "openSettings": "Open organization settings",
+      "openDirectory": "Open organization directory",
+      "loadMore": "Load more"
+    },
+    "applicant": {
+      "emptyTitle": "Verification has not been submitted",
+      "emptyBody": "Organization Owners and administrators can submit the first verification case here.",
+      "readOnly": "This case is awaiting platform action. Its status and review reason come from the server.",
+      "supplement": "The platform requested additional information. Update the summary or materials and submit again.",
+      "rejected": "The previous case was rejected. Correct the materials and submit a new case.",
+      "approved": "The organization is verified. Keep the submitted materials available for your compliance records.",
+      "reviewReason": "Review reason",
+      "submittedAt": "Submitted",
+      "updatedAt": "Updated",
+      "materialCount": "{{count}} material(s)"
+    },
+    "admin": {
+      "title": "Organization verification review",
+      "subtitle": "Review submitted organization cases and record a server-side decision. Material bodies are never returned by this console.",
+      "filters": { "all": "All", "submitted": "Submitted", "in_review": "In review", "needs_supplement": "Needs supplement", "approved": "Approved", "rejected": "Rejected" },
+      "review": "Review case",
+      "case": "Case #{{id}}",
+      "organization": "Organization #{{id}}",
+      "applicant": "Applicant #{{id}}",
+      "version": "Version v{{version}}",
+      "decision": "Decision",
+      "reason": "Decision reason",
+      "reasonPlaceholder": "Explain the approval, rejection, or requested supplement",
+      "requestSupplement": "Request supplement",
+      "approve": "Approve",
+      "reject": "Reject",
+      "close": "Close",
+      "emptyTitle": "No verification cases",
+      "emptyBody": "Submitted organization verification cases will appear here.",
+      "initialTitle": "Verification review queue",
+      "initialBody": "Choose a status filter to load the platform review queue.",
+      "materialAccess": "Controlled material metadata",
+      "materialAccessHint": "Only file metadata is visible. Access to the object itself stays in controlled storage and is audited.",
+      "loading": "Loading verification cases",
+      "errorTitle": "Verification cases could not be loaded",
+      "errorBody": "The review service is temporarily unavailable. Existing cases are unchanged.",
+      "decisionSaved": "Decision recorded",
+      "conflict": "The case changed while you were reviewing it. Refresh and review the latest version.",
+      "mutation": "The decision could not be confirmed. Keep the reason and retry."
+    },
+    "errors": {
+      "loadTitle": "Verification status could not be loaded",
+      "loadBody": "The verification service is temporarily unavailable. Existing submissions are unchanged.",
+      "mutation": "The submission could not be confirmed. Keep the current form and retry.",
+      "invalid": "Check the summary and material metadata before submitting.",
+      "forbidden": "Your organization role cannot submit verification materials.",
+      "conflict": "The case changed concurrently. Refresh and review the latest server state.",
+      "unavailable": "The verification service is temporarily unavailable. Try again shortly."
     }
   },
   "organizationPlans": {

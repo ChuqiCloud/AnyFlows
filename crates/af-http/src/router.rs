@@ -118,6 +118,7 @@ use crate::organization_sso_login::{
     OrganizationSsoPublicLoginProtection, build_organization_sso_login_router_with_protection,
 };
 use crate::organization_tokens::build_organization_token_router;
+use crate::organization_verification::build_organization_verification_router;
 use crate::organization_wallet::build_organization_wallet_router;
 use crate::organizations::build_organization_router_with_domain;
 use crate::passkey_auth::build_passkey_authentication_router;
@@ -211,6 +212,7 @@ pub fn build_router(
     organization_scim_service: Option<Arc<dyn OrganizationScimService>>,
     organization_approval_service: Option<Arc<dyn OrganizationApprovalService>>,
     organization_provisioning_service: Option<Arc<dyn af_admin::OrganizationProvisioningService>>,
+    organization_verification_service: Option<Arc<dyn af_admin::OrganizationVerificationService>>,
     organization_plan_service: Option<Arc<dyn OrganizationPlanService>>,
     organization_plan_order_service: Option<Arc<dyn af_admin::OrganizationPlanOrderService>>,
     user_topup_service: Option<Arc<dyn UserTopupService>>,
@@ -938,6 +940,10 @@ pub fn build_router(
     };
     let management_routes = management_routes.merge(build_organization_provisioning_router(
         organization_provisioning_service,
+        Arc::clone(&http_state.session_authenticator),
+    ));
+    let management_routes = management_routes.merge(build_organization_verification_router(
+        organization_verification_service,
         Arc::clone(&http_state.session_authenticator),
     ));
     let management_routes = management_routes.merge(build_organization_plan_router(

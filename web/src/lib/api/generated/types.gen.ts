@@ -2464,6 +2464,59 @@ export type OrganizationUsageLogSummaryResponse = {
     quota: number;
     duration_ms: number;
 };
+export type OrganizationVerificationCase = {
+    id: number;
+    organization_id: number;
+    applicant_user_id: number;
+    status: OrganizationVerificationStatus;
+    version: number;
+    summary: string;
+    reviewer_user_id?: number | null;
+    review_reason?: string | null;
+    created_at: number;
+    updated_at: number;
+    decided_at?: number | null;
+};
+export type OrganizationVerificationDecisionKind = 'request_supplement' | 'approve' | 'reject';
+export type OrganizationVerificationDecisionRequest = {
+    expected_version: number;
+    decision: OrganizationVerificationDecisionKind;
+    reason?: string | null;
+};
+export type OrganizationVerificationListQuerySchema = {
+    before?: number | null;
+    limit?: number | null;
+    status?: null | OrganizationVerificationStatus;
+};
+export type OrganizationVerificationListResponse = {
+    cases: Array<OrganizationVerificationResponse>;
+    next_cursor?: number | null;
+};
+export type OrganizationVerificationMaterial = {
+    id: number;
+    case_id: number;
+    kind: string;
+    file_name: string;
+    content_type: string;
+    size_bytes: number;
+    created_at: number;
+};
+export type OrganizationVerificationMaterialRequest = {
+    kind: string;
+    object_reference: string;
+    file_name: string;
+    content_type: string;
+    size_bytes: number;
+};
+export type OrganizationVerificationResponse = {
+    case: OrganizationVerificationCase;
+    materials: Array<OrganizationVerificationMaterial>;
+};
+export type OrganizationVerificationStatus = 'submitted' | 'in_review' | 'needs_supplement' | 'approved' | 'rejected';
+export type OrganizationVerificationSubmitRequest = {
+    summary: string;
+    materials: Array<OrganizationVerificationMaterialRequest>;
+};
 export type OrganizationWalletAdjustmentRequest = {
     event_id: string;
     quota_delta: number;
@@ -8144,6 +8197,109 @@ export type DecideOrganizationProvisioningRequestResponses = {
     202: OrganizationProvisioningRequest;
 };
 export type DecideOrganizationProvisioningRequestResponse = DecideOrganizationProvisioningRequestResponses[keyof DecideOrganizationProvisioningRequestResponses];
+export type GetOrganizationVerificationData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/verification';
+};
+export type GetOrganizationVerificationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    503: ManagementError;
+};
+export type GetOrganizationVerificationError = GetOrganizationVerificationErrors[keyof GetOrganizationVerificationErrors];
+export type GetOrganizationVerificationResponses = {
+    200: OrganizationVerificationResponse;
+};
+export type GetOrganizationVerificationResponse = GetOrganizationVerificationResponses[keyof GetOrganizationVerificationResponses];
+export type SubmitOrganizationVerificationData = {
+    body: OrganizationVerificationSubmitRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/verification';
+};
+export type SubmitOrganizationVerificationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type SubmitOrganizationVerificationError = SubmitOrganizationVerificationErrors[keyof SubmitOrganizationVerificationErrors];
+export type SubmitOrganizationVerificationResponses = {
+    200: OrganizationVerificationResponse;
+};
+export type SubmitOrganizationVerificationResponse = SubmitOrganizationVerificationResponses[keyof SubmitOrganizationVerificationResponses];
+export type ListAdminOrganizationVerificationsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before?: number;
+        limit?: number;
+        status?: OrganizationVerificationStatus;
+    };
+    url: '/api/admin/organization-verifications';
+};
+export type ListAdminOrganizationVerificationsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    503: ManagementError;
+};
+export type ListAdminOrganizationVerificationsError = ListAdminOrganizationVerificationsErrors[keyof ListAdminOrganizationVerificationsErrors];
+export type ListAdminOrganizationVerificationsResponses = {
+    200: OrganizationVerificationListResponse;
+};
+export type ListAdminOrganizationVerificationsResponse = ListAdminOrganizationVerificationsResponses[keyof ListAdminOrganizationVerificationsResponses];
+export type GetAdminOrganizationVerificationData = {
+    body?: never;
+    path: {
+        case_id: number;
+    };
+    query?: never;
+    url: '/api/admin/organization-verifications/{case_id}';
+};
+export type GetAdminOrganizationVerificationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    503: ManagementError;
+};
+export type GetAdminOrganizationVerificationError = GetAdminOrganizationVerificationErrors[keyof GetAdminOrganizationVerificationErrors];
+export type GetAdminOrganizationVerificationResponses = {
+    200: OrganizationVerificationResponse;
+};
+export type GetAdminOrganizationVerificationResponse = GetAdminOrganizationVerificationResponses[keyof GetAdminOrganizationVerificationResponses];
+export type DecideOrganizationVerificationData = {
+    body: OrganizationVerificationDecisionRequest;
+    path: {
+        case_id: number;
+    };
+    query?: never;
+    url: '/api/admin/organization-verifications/{case_id}/decision';
+};
+export type DecideOrganizationVerificationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type DecideOrganizationVerificationError = DecideOrganizationVerificationErrors[keyof DecideOrganizationVerificationErrors];
+export type DecideOrganizationVerificationResponses = {
+    200: OrganizationVerificationResponse;
+};
+export type DecideOrganizationVerificationResponse = DecideOrganizationVerificationResponses[keyof DecideOrganizationVerificationResponses];
 export type ListAdminOrganizationPlansData = {
     body?: never;
     path?: never;

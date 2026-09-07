@@ -96,6 +96,7 @@ const navItems = {
   organizationDepartments: { key: 'organizationDepartments', icon: Building2, href: '#/console/organization-departments' },
   organizationOverview: { key: 'organizationOverview', icon: Gauge, href: '#/console/organization' },
   organizationProvisioning: { key: 'organizationProvisioning', icon: ClipboardCheck, href: '#/console/organization-provisioning' },
+  organizationVerification: { key: 'organizationVerification', icon: ShieldCheck, href: '#/console/organization-verification' },
   organizationSettings: { key: 'organizationSettings', icon: Settings2, href: '#/console/organization-settings' },
   organizationServiceAccounts: { key: 'organizationServiceAccounts', icon: Bot, href: '#/console/organization-service-accounts' },
   organizationWallet: { key: 'organizationWallet', icon: WalletCards, href: '#/console/organization-wallet' },
@@ -130,6 +131,7 @@ const navItems = {
 const sectionIcons = {
   personal: CircleUserRound,
   organization: Building2,
+  enterprise: Building2,
   operations: BriefcaseBusiness,
   gateway: Waypoints,
   platform: Settings2,

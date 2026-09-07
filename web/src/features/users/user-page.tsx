@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Plus, RefreshCw } from 'lucide-react'
+import { ArrowRight, Building2, Plus, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -66,6 +66,8 @@ export function UserPage() {
         </div>
       </header>
 
+      <EnterpriseManagementGuide />
+
       <div className="flex items-center justify-between border-y border-[var(--hairline)] py-2 text-xs text-muted-foreground">
         <span>{t('users.count', { count: users.length })}</span>
         <span>{t('users.pages', { count: pagination.currentPage })}</span>
@@ -107,4 +109,37 @@ export function UserPage() {
       <UserDeleteDialog key={deleting?.id ?? 'no-user'} user={deleting} onClose={() => setDeleting(undefined)} />
     </div>
   )
+}
+
+/** 在管理员用户列表中固定展示企业归属的既有操作顺序，避免误以为修改个人角色即可加入企业。 */
+function EnterpriseManagementGuide() {
+  const { t } = useTranslation()
+  return (
+    <section className="grid gap-3 border-y border-[var(--hairline)] py-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start" aria-labelledby="users-enterprise-guide-title">
+      <div className="flex min-w-0 items-start gap-3">
+        <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-brand/10 text-brand"><Building2 className="size-4" aria-hidden="true" /></span>
+        <div className="min-w-0">
+          <h2 id="users-enterprise-guide-title" className="text-sm font-semibold">{t('users.enterpriseGuide.title')}</h2>
+          <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">{t('users.enterpriseGuide.body')}</p>
+        </div>
+      </div>
+      <ol className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-3 lg:min-w-[34rem]">
+        {(['directory', 'membership', 'accept'] as const).map((step, index) => (
+          <li key={step} className="flex min-w-0 items-start gap-2">
+            <span className="grid size-5 shrink-0 place-items-center rounded-full border border-[var(--hairline)] font-mono text-[0.6875rem]">{index + 1}</span>
+            <span>{t(`users.enterpriseGuide.steps.${step}`)}</span>
+          </li>
+        ))}
+      </ol>
+      <div className="flex flex-wrap gap-2 lg:col-span-2">
+        <GuideLink href="#/console/platform-organizations" label={t('users.enterpriseGuide.links.directory')} />
+        <GuideLink href="#/console/organization-provisioning" label={t('users.enterpriseGuide.links.provisioning')} />
+        <GuideLink href="#/console/organization-verification" label={t('users.enterpriseGuide.links.verification')} />
+      </div>
+    </section>
+  )
+}
+
+function GuideLink({ href, label }: { href: string; label: string }) {
+  return <a href={href} className="inline-flex items-center gap-1 text-xs font-medium text-info underline-offset-4 hover:underline">{label}<ArrowRight className="size-3.5" aria-hidden="true" /></a>
 }

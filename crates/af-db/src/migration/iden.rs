@@ -3330,6 +3330,61 @@ pub(in crate::migration) mod organization_provisioning_requests {
     }
 }
 
+pub(in crate::migration) mod organization_verification_cases {
+    use super::DeriveIden;
+
+    /// 企业认证案件事实表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_verification_cases")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业认证案件字段标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        ApplicantUserId,
+        Status,
+        Version,
+        Summary,
+        ReviewerUserId,
+        ReviewReason,
+        CreatedAt,
+        UpdatedAt,
+        DecidedAt,
+    }
+}
+
+pub(in crate::migration) mod organization_verification_materials {
+    use super::DeriveIden;
+
+    /// 企业认证材料元数据表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_verification_materials")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业认证材料元数据字段标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        CaseId,
+        Kind,
+        ObjectReference,
+        FileName,
+        ContentType,
+        SizeBytes,
+        CreatedAt,
+    }
+}
+
 pub(in crate::migration) mod refund_requests {
     use super::DeriveIden;
 

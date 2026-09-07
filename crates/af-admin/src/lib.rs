@@ -57,6 +57,7 @@ mod organization_sso_policy;
 mod organization_sso_recovery;
 mod organization_sso_session;
 mod organization_token;
+mod organization_verification;
 mod organization_wallet;
 mod passkey;
 mod passkey_auth;
@@ -457,6 +458,13 @@ pub use organization_token::{
     IssuedOrganizationToken, OrganizationToken, OrganizationTokenError, OrganizationTokenListQuery,
     OrganizationTokenPage, OrganizationTokenService, OrganizationTokenStatus,
     OrganizationTokenWriteCommand,
+};
+pub use organization_verification::{
+    DatabaseOrganizationVerificationService, OrganizationVerificationBundle,
+    OrganizationVerificationDecisionCommand, OrganizationVerificationDecisionKind,
+    OrganizationVerificationListQuery, OrganizationVerificationMaterialWrite,
+    OrganizationVerificationPage, OrganizationVerificationService,
+    OrganizationVerificationServiceError, OrganizationVerificationSubmitCommand,
 };
 pub use organization_wallet::{
     DEFAULT_ORGANIZATION_WALLET_PAGE_SIZE, DatabaseOrganizationWalletService,

@@ -15,6 +15,7 @@ export type NavKey =
   | 'organizationDepartments'
   | 'organizationOverview'
   | 'organizationProvisioning'
+  | 'organizationVerification'
   | 'organizationPlans'
   | 'platformOrganizations'
   | 'organizationSettings'
@@ -44,11 +45,11 @@ export type NavKey =
   | 'usage'
   | 'debugTraces'
 
-export type AdminSectionKey = 'personal' | 'organization' | 'operations' | 'gateway' | 'platform'
+export type AdminSectionKey = 'personal' | 'organization' | 'enterprise' | 'operations' | 'gateway' | 'platform'
 
 export const userNavigationGroups = [
   { key: 'use', items: ['models', 'playground', 'videoTasks'] },
-  { key: 'organization', items: ['organizationOverview', 'organizationMembers', 'organizationDepartments', 'organizationApiKeys', 'organizationServiceAccounts', 'organizationBudgets', 'organizationContractPrices', 'organizationCredit', 'organizationApprovals', 'organizationWallet', 'organizationActivity', 'organizationSettings'] },
+  { key: 'organization', items: ['organizationOverview', 'organizationMembers', 'organizationDepartments', 'organizationApiKeys', 'organizationServiceAccounts', 'organizationBudgets', 'organizationContractPrices', 'organizationCredit', 'organizationApprovals', 'organizationWallet', 'organizationActivity', 'organizationVerification', 'organizationSettings'] },
   { key: 'account', items: ['apiKeys', 'wallet', 'usage', 'subscriptions', 'invitations', 'organizationProvisioning', 'profile'] },
 ] as const satisfies ReadonlyArray<{ key: 'use' | 'organization' | 'account'; items: readonly NavKey[] }>
 
@@ -57,9 +58,11 @@ export const adminWorkspaceItems = ['overview', 'usage', 'models', 'playground',
 export const adminNavigationSections = [
   { key: 'personal', items: ['apiKeys', 'wallet', 'subscriptions', 'invitations', 'profile'] },
   { key: 'organization', items: ['organizationOverview', 'organizationMembers', 'organizationDepartments', 'organizationApiKeys', 'organizationServiceAccounts', 'organizationBudgets', 'organizationContractPrices', 'organizationCredit', 'organizationApprovals', 'organizationWallet', 'organizationActivity', 'organizationSettings'] },
-  { key: 'operations', items: ['platformOrganizations', 'users', 'subscriptionManagement', 'organizationPlans', 'redemptionCodes', 'refunds', 'paymentSettings', 'billingSettings'] },
+  // 企业申请、认证、目录和用户归属必须在同一个管理员分组内，避免跨页面寻找关键入口。
+  { key: 'enterprise', items: ['platformOrganizations', 'organizationProvisioning', 'organizationVerification', 'users', 'organizationPlans'] },
+  { key: 'operations', items: ['subscriptionManagement', 'redemptionCodes', 'refunds', 'paymentSettings', 'billingSettings'] },
   { key: 'gateway', items: ['modelSettings', 'groupSettings', 'channels', 'credentials', 'credentialProxies', 'routes'] },
-  { key: 'platform', items: ['siteSettings', 'authenticationSettings', 'announcements', 'emailSettings', 'networkSettings', 'organizationProvisioning', 'keys'] },
+  { key: 'platform', items: ['siteSettings', 'authenticationSettings', 'announcements', 'emailSettings', 'networkSettings', 'keys'] },
 ] as const satisfies ReadonlyArray<{ key: AdminSectionKey; items: readonly NavKey[] }>
 
 export const adminSystemItems = ['debugTraces'] as const satisfies readonly NavKey[]
@@ -88,6 +91,7 @@ export const activeKeyByView: Readonly<Record<string, NavKey>> = {
   'organization-departments': 'organizationDepartments',
   'organization-overview': 'organizationOverview',
   'organization-provisioning': 'organizationProvisioning',
+  'organization-verification': 'organizationVerification',
   'organization-plans': 'organizationPlans',
   'platform-organizations': 'platformOrganizations',
   'organization-settings': 'organizationSettings',

@@ -37,6 +37,7 @@ import { OrganizationOverviewPage } from '@/features/organization-console/organi
 import { OrganizationOnboardingPage } from '@/features/organization-onboarding/organization-onboarding-page'
 import { OrganizationPlanManagementPage } from '@/features/organization-console/organization-plan-management-page'
 import { OrganizationProvisioningPage } from '@/features/organization-provisioning/organization-provisioning-page'
+import { OrganizationVerificationPage } from '@/features/organization-verification/organization-verification-page'
 import { OrganizationSettingsPage } from '@/features/organization-console/organization-settings-page'
 import { OrganizationServiceAccountPage } from '@/features/organization-service-accounts/organization-service-account-page'
 import { OrganizationWalletPage } from '@/features/organization-wallet/organization-wallet-page'
@@ -208,6 +209,8 @@ function ManagementEntry({
                   ? 'platformOrganizations.title'
                 : view === 'organization-provisioning'
                   ? 'organizationProvisioning.title'
+                : view === 'organization-verification'
+                  ? 'organizationVerification.title'
                 : view === 'organization-settings'
                   ? 'organizationConsole.settings.title'
                 : view === 'organization-service-accounts'
@@ -297,6 +300,8 @@ function ManagementEntry({
                   ? <PlatformOrganizationPage />
                 : view === 'organization-provisioning'
                   ? <OrganizationProvisioningPage admin={admin} />
+                : view === 'organization-verification'
+                  ? <OrganizationVerificationPage admin={admin} />
                 : view === 'organization-settings'
                   ? <OrganizationSettingsPage />
                 : view === 'organization-service-accounts'
@@ -336,6 +341,7 @@ function ManagementEntry({
     && view !== 'organization-onboarding'
     && view !== 'organization-plans'
     && view !== 'organization-provisioning'
+    && view !== 'organization-verification'
     && view !== 'organization-settings'
     && view !== 'organization-service-accounts'
     && view !== 'organization-wallet'

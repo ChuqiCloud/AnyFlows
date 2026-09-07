@@ -175,6 +175,16 @@ principal_id! {
 }
 
 principal_id! {
+    /// 企业认证案件的持久化标识。
+    OrganizationVerificationCaseId
+}
+
+principal_id! {
+    /// 企业认证材料的持久化标识。
+    OrganizationVerificationMaterialId
+}
+
+principal_id! {
     /// 企业 SCIM 令牌的持久化标识。
     OrganizationScimTokenId
 }

@@ -30,6 +30,7 @@ mod organization_sso;
 mod organization_sso_domain_verification;
 mod organization_sso_identity;
 mod organization_sso_public_login_rate_limit;
+mod organization_verification;
 mod payment;
 mod principal;
 mod quota;
@@ -207,6 +208,13 @@ pub use organization_sso_public_login_rate_limit::{
     OrganizationSsoPublicLoginRateLimitFuture, OrganizationSsoPublicLoginRateLimitKey,
     OrganizationSsoPublicLoginRateLimitStore,
 };
+pub use organization_verification::{
+    MAX_ORGANIZATION_VERIFICATION_MATERIAL_KIND_BYTES,
+    MAX_ORGANIZATION_VERIFICATION_OBJECT_REFERENCE_BYTES,
+    MAX_ORGANIZATION_VERIFICATION_REVIEW_REASON_BYTES, MAX_ORGANIZATION_VERIFICATION_SUMMARY_BYTES,
+    OrganizationVerificationCase, OrganizationVerificationError, OrganizationVerificationMaterial,
+    OrganizationVerificationStatus,
+};
 pub use payment::{
     TopupIdentifierError, TopupOrderId, TopupOrderStatus, TopupPaymentEventId,
     TopupPaymentEventType, TopupRequestId, TopupStateCodeError,
@@ -219,7 +227,8 @@ pub use principal::{
     OrganizationCreditTermId, OrganizationCustomRoleId, OrganizationDepartmentId,
     OrganizationGatewayPrincipal, OrganizationId, OrganizationMembershipId,
     OrganizationProvisioningRequestId, OrganizationScimTokenId, OrganizationServiceAccountId,
-    OrganizationTeamId, PrincipalIdError, ProxyId, RouteChannelId, RouteId, TokenId, UserId,
+    OrganizationTeamId, OrganizationVerificationCaseId, OrganizationVerificationMaterialId,
+    PrincipalIdError, ProxyId, RouteChannelId, RouteId, TokenId, UserId,
 };
 pub use quota::{Quota, QuotaDelta, QuotaError};
 pub use redemption::{

@@ -193,6 +193,7 @@ mod organization_sso_tests;
 #[cfg(test)]
 mod organization_tests;
 mod organization_token;
+mod organization_verification;
 mod organization_wallet;
 mod passkey;
 #[cfg(test)]
@@ -718,6 +719,12 @@ pub use organization_token::{
     OrganizationTokenLookupOutcome, OrganizationTokenMutationOutcome, OrganizationTokenPageRecord,
     OrganizationTokenRecord, OrganizationTokenRepository, OrganizationTokenRepositoryConfigError,
     OrganizationTokenRepositoryError, OrganizationTokenWriteRecord,
+};
+pub use organization_verification::{
+    OrganizationVerificationBundle, OrganizationVerificationMaterialWrite,
+    OrganizationVerificationRepository, OrganizationVerificationRepositoryConfigError,
+    OrganizationVerificationRepositoryError, OrganizationVerificationWrite,
+    OrganizationVerificationWriteOutcome,
 };
 pub use organization_wallet::{
     MAX_ORGANIZATION_WALLET_ADJUSTMENT_REASON_BYTES, MAX_ORGANIZATION_WALLET_LEDGER_PAGE_SIZE,
