@@ -20376,14 +20376,14 @@
         ],
         "operationId": "createOrganizationProvisioningRequest",
         "requestBody": {
-          "required": true,
           "content": {
             "multipart/form-data": {
               "schema": {
                 "$ref": "#/components/schemas/OrganizationProvisioningCreateRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -20853,6 +20853,189 @@
             }
           },
           "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/organization-provisioning/{request_key}/materials": {
+      "get": {
+        "tags": [
+          "企业开通"
+        ],
+        "operationId": "listAdminOrganizationProvisioningMaterials",
+        "parameters": [
+          {
+            "name": "request_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OrganizationProvisioningMaterial"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/organization-provisioning/{request_key}/materials/{material_id}": {
+      "get": {
+        "tags": [
+          "企业开通"
+        ],
+        "operationId": "downloadAdminOrganizationProvisioningMaterial",
+        "parameters": [
+          {
+            "name": "request_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "material_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "受平台权限保护的企业开通材料正文",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
             "description": "",
             "content": {
               "application/json": {
@@ -29193,190 +29376,6 @@
           }
         ]
       }
-    },
-    "/api/admin/organization-provisioning/{request_key}/materials": {
-      "get": {
-        "tags": [
-          "企业开通"
-        ],
-        "operationId": "listAdminOrganizationProvisioningMaterials",
-        "parameters": [
-          {
-            "name": "request_key",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/OrganizationProvisioningMaterial"
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/admin/organization-provisioning/{request_key}/materials/{material_id}": {
-      "get": {
-        "tags": [
-          "企业开通"
-        ],
-        "operationId": "downloadAdminOrganizationProvisioningMaterial",
-        "parameters": [
-          {
-            "name": "request_key",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "material_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "minimum": 1
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "受平台权限保护的企业开通材料正文",
-            "content": {
-              "application/octet-stream": {
-                "schema": {
-                  "type": "string",
-                  "format": "binary"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
     }
   },
   "components": {
@@ -37478,7 +37477,7 @@
               "null"
             ],
             "format": "double",
-            "default": 1,
+            "default": 1.0,
             "maximum": 4,
             "minimum": 0.25
           },
@@ -41817,12 +41816,12 @@
         "properties": {
           "metadata": {
             "type": "string",
-            "description": "JSON metadata containing idempotency_key, organization_name, organization_slug, business_reason and materials[{kind,file_field}]"
+            "description": "multipart 的 metadata 部件，内容为 JSON 文档。"
           },
           "file_0": {
             "type": "string",
             "format": "binary",
-            "description": "Example binary part; actual file parts use file:<file_field>"
+            "description": "文档工具展示的二进制部件；服务端实际接受多个 `file:<file_field>` 部件。"
           }
         }
       },
@@ -41949,6 +41948,49 @@
                 "$ref": "#/components/schemas/OrganizationProvisioningStatus"
               }
             ]
+          }
+        }
+      },
+      "OrganizationProvisioningMaterial": {
+        "type": "object",
+        "required": [
+          "id",
+          "request_key",
+          "kind",
+          "file_name",
+          "content_type",
+          "size_bytes",
+          "content_available",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "request_key": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "file_name": {
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "content_available": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
           }
         }
       },
@@ -48542,48 +48584,6 @@
           "expired",
           "failed"
         ]
-      },
-      "OrganizationProvisioningMaterial": {
-        "type": "object",
-        "required": [
-          "id",
-          "request_key",
-          "kind",
-          "file_name",
-          "content_type",
-          "size_bytes",
-          "content_available",
-          "created_at"
-        ],
-        "properties": {
-          "id": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "request_key": {
-            "type": "string"
-          },
-          "kind": {
-            "type": "string"
-          },
-          "file_name": {
-            "type": "string"
-          },
-          "content_type": {
-            "type": "string"
-          },
-          "size_bytes": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "content_available": {
-            "type": "boolean"
-          },
-          "created_at": {
-            "type": "integer",
-            "format": "int64"
-          }
-        }
       }
     },
     "securitySchemes": {
