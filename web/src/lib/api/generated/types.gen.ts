@@ -2083,10 +2083,8 @@ export type OrganizationPlanPayment = {
 };
 export type OrganizationPlanStatus = 'active' | 'disabled';
 export type OrganizationProvisioningCreateRequest = {
-    idempotency_key: string;
-    organization_name: string;
-    organization_slug: string;
-    business_reason: string;
+    metadata: string;
+    file_0: Blob | File;
 };
 export type OrganizationProvisioningDecisionKind = 'approve' | 'reject';
 export type OrganizationProvisioningDecisionRequest = {
@@ -2111,6 +2109,16 @@ export type OrganizationProvisioningListQuerySchema = {
     before?: number | null;
     limit?: number | null;
     status?: null | OrganizationProvisioningStatus;
+};
+export type OrganizationProvisioningMaterial = {
+    id: number;
+    request_key: string;
+    kind: string;
+    file_name: string;
+    content_type: string;
+    size_bytes: number;
+    content_available: boolean;
+    created_at: number;
 };
 export type OrganizationProvisioningRequest = {
     id: number;
@@ -2499,14 +2507,17 @@ export type OrganizationVerificationMaterial = {
     file_name: string;
     content_type: string;
     size_bytes: number;
+    content_available: boolean;
     created_at: number;
 };
 export type OrganizationVerificationMaterialRequest = {
     kind: string;
-    object_reference: string;
-    file_name: string;
-    content_type: string;
-    size_bytes: number;
+    file_field: string;
+};
+export type OrganizationVerificationMultipartSubmitRequest = {
+    summary: string;
+    materials: string;
+    file_0: Blob | File;
 };
 export type OrganizationVerificationResponse = {
     case: OrganizationVerificationCase;
@@ -8197,6 +8208,47 @@ export type DecideOrganizationProvisioningRequestResponses = {
     202: OrganizationProvisioningRequest;
 };
 export type DecideOrganizationProvisioningRequestResponse = DecideOrganizationProvisioningRequestResponses[keyof DecideOrganizationProvisioningRequestResponses];
+export type ListAdminOrganizationProvisioningMaterialsData = {
+    body?: never;
+    path: {
+        request_key: string;
+    };
+    query?: never;
+    url: '/api/admin/organization-provisioning/{request_key}/materials';
+};
+export type ListAdminOrganizationProvisioningMaterialsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    503: ManagementError;
+};
+export type ListAdminOrganizationProvisioningMaterialsError = ListAdminOrganizationProvisioningMaterialsErrors[keyof ListAdminOrganizationProvisioningMaterialsErrors];
+export type ListAdminOrganizationProvisioningMaterialsResponses = {
+    200: Array<OrganizationProvisioningMaterial>;
+};
+export type ListAdminOrganizationProvisioningMaterialsResponse = ListAdminOrganizationProvisioningMaterialsResponses[keyof ListAdminOrganizationProvisioningMaterialsResponses];
+export type DownloadAdminOrganizationProvisioningMaterialData = {
+    body?: never;
+    path: {
+        request_key: string;
+        material_id: number;
+    };
+    query?: never;
+    url: '/api/admin/organization-provisioning/{request_key}/materials/{material_id}';
+};
+export type DownloadAdminOrganizationProvisioningMaterialErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    503: ManagementError;
+};
+export type DownloadAdminOrganizationProvisioningMaterialError = DownloadAdminOrganizationProvisioningMaterialErrors[keyof DownloadAdminOrganizationProvisioningMaterialErrors];
+export type DownloadAdminOrganizationProvisioningMaterialResponses = {
+    200: Blob | File;
+};
+export type DownloadAdminOrganizationProvisioningMaterialResponse = DownloadAdminOrganizationProvisioningMaterialResponses[keyof DownloadAdminOrganizationProvisioningMaterialResponses];
 export type GetOrganizationVerificationData = {
     body?: never;
     path: {
@@ -8218,7 +8270,7 @@ export type GetOrganizationVerificationResponses = {
 };
 export type GetOrganizationVerificationResponse = GetOrganizationVerificationResponses[keyof GetOrganizationVerificationResponses];
 export type SubmitOrganizationVerificationData = {
-    body: OrganizationVerificationSubmitRequest;
+    body: OrganizationVerificationMultipartSubmitRequest;
     path: {
         organization_id: number;
     };
@@ -8300,6 +8352,27 @@ export type DecideOrganizationVerificationResponses = {
     200: OrganizationVerificationResponse;
 };
 export type DecideOrganizationVerificationResponse = DecideOrganizationVerificationResponses[keyof DecideOrganizationVerificationResponses];
+export type DownloadAdminOrganizationVerificationMaterialData = {
+    body?: never;
+    path: {
+        case_id: number;
+        material_id: number;
+    };
+    query?: never;
+    url: '/api/admin/organization-verifications/{case_id}/materials/{material_id}';
+};
+export type DownloadAdminOrganizationVerificationMaterialErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    503: ManagementError;
+};
+export type DownloadAdminOrganizationVerificationMaterialError = DownloadAdminOrganizationVerificationMaterialErrors[keyof DownloadAdminOrganizationVerificationMaterialErrors];
+export type DownloadAdminOrganizationVerificationMaterialResponses = {
+    200: Blob | File;
+};
+export type DownloadAdminOrganizationVerificationMaterialResponse = DownloadAdminOrganizationVerificationMaterialResponses[keyof DownloadAdminOrganizationVerificationMaterialResponses];
 export type ListAdminOrganizationPlansData = {
     body?: never;
     path?: never;

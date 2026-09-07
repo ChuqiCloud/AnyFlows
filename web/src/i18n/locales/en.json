@@ -6017,8 +6017,14 @@
       "name": "Organization name",
       "slug": "Organization slug",
       "slugHint": "Lowercase letters, numbers, and hyphens; must start and end with a letter or number.",
-      "reason": "Business reason",
-      "idempotent": "Repeated submission with the same request key only restores the server fact."
+    "reason": "Business reason",
+    "material": "Supporting materials",
+    "materialKind": "Material type",
+    "materialFile": "Upload file",
+    "materialHint": "PDF, PNG, JPG, or WebP; 50 MB per file and 100 MB total.",
+    "addMaterial": "Add material",
+    "removeMaterial": "Remove material",
+    "idempotent": "Repeated submission with the same request key only restores the server fact."
     },
     "retry": {
       "title": "Submit a new request",
@@ -6059,8 +6065,14 @@
       "teams": "Teams",
       "keys": "Organization keys",
       "retention": "Audit days",
-      "emptyTitle": "No provisioning requests",
-      "emptyBody": "New organization requests will appear here after a user submits them."
+    "emptyTitle": "No provisioning requests",
+    "emptyBody": "New organization requests will appear here after a user submits them.",
+    "materials": "Supporting materials",
+    "materialsLoading": "Loading material metadata...",
+    "materialsError": "Materials could not be loaded or downloaded. Try again later.",
+    "materialsEmpty": "The applicant did not submit materials.",
+    "download": "Download material",
+    "unavailable": "Content unavailable"
     },
     "flow": {
       "apply": {
@@ -6083,8 +6095,9 @@
     "errors": {
       "loadTitle": "Provisioning facts could not be loaded",
       "loadBody": "The service is temporarily unavailable. Existing requests and entitlements are unchanged.",
-      "mutation": "The operation did not return a reliable result. Keep the current input and retry.",
-      "conflict": "The request changed concurrently. Refresh and review the latest server version.",
+    "mutation": "The operation did not return a reliable result. Keep the current input and retry.",
+    "materials": "Each material must be a PDF, PNG, JPG, or WebP file no larger than 50 MB; all materials together must be no larger than 100 MB.",
+    "conflict": "The request changed concurrently. Refresh and review the latest server version.",
       "unavailable": "The provisioning service is temporarily unavailable. Try again shortly."
     }
   },
@@ -6100,14 +6113,12 @@
     },
     "form": {
       "title": "Verification materials",
-      "body": "Provide a concise organization summary and references to the controlled files. Do not paste secrets or document contents into this form.",
+      "body": "Provide a concise organization summary and upload the actual materials. Files are kept in controlled storage and never persisted in the browser.",
       "summary": "Organization summary",
       "summaryPlaceholder": "Legal name, business scope, and the reason for verification",
       "kind": "Material type",
-      "reference": "Controlled object reference",
-      "fileName": "File name",
-      "contentType": "MIME type",
-      "size": "Size (bytes)",
+      "file": "Material file",
+      "fileHint": "PDF, PNG, JPG, and WebP up to 50 MB per file",
       "addMaterial": "Add material",
       "removeMaterial": "Remove material",
       "material": "Material {{index}}"
@@ -6155,6 +6166,8 @@
       "initialBody": "Choose a status filter to load the platform review queue.",
       "materialAccess": "Controlled material metadata",
       "materialAccessHint": "Only file metadata is visible. Access to the object itself stays in controlled storage and is audited.",
+      "download": "Download material",
+      "unavailable": "Content unavailable",
       "loading": "Loading verification cases",
       "errorTitle": "Verification cases could not be loaded",
       "errorBody": "The review service is temporarily unavailable. Existing cases are unchanged.",
@@ -6166,7 +6179,7 @@
       "loadTitle": "Verification status could not be loaded",
       "loadBody": "The verification service is temporarily unavailable. Existing submissions are unchanged.",
       "mutation": "The submission could not be confirmed. Keep the current form and retry.",
-      "invalid": "Check the summary and material metadata before submitting.",
+      "invalid": "Check the summary, material types, and uploaded files before submitting.",
       "forbidden": "Your organization role cannot submit verification materials.",
       "conflict": "The case changed concurrently. Refresh and review the latest server state.",
       "unavailable": "The verification service is temporarily unavailable. Try again shortly."

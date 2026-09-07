@@ -4,10 +4,11 @@ use af_domain::{
     MAX_ORGANIZATION_PROVISIONING_DECISION_REASON_BYTES, OrganizationId, OrganizationKey,
     OrganizationMembershipStatus, OrganizationProvisioningCreateOutcome,
     OrganizationProvisioningDecisionKind, OrganizationProvisioningDecisionOutcome,
-    OrganizationProvisioningIdempotencyKey, OrganizationProvisioningRecord,
-    OrganizationProvisioningRequest, OrganizationProvisioningRequestId,
-    OrganizationProvisioningRequestKey, OrganizationProvisioningStatus, OrganizationRole,
-    OrganizationSsoEnforcementPolicy, OrganizationStatus, PlatformPermission, UserId,
+    OrganizationProvisioningIdempotencyKey, OrganizationProvisioningMaterial,
+    OrganizationProvisioningRecord, OrganizationProvisioningRequest,
+    OrganizationProvisioningRequestId, OrganizationProvisioningRequestKey,
+    OrganizationProvisioningStatus, OrganizationRole, OrganizationSsoEnforcementPolicy,
+    OrganizationStatus, PlatformPermission, UserId,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
@@ -24,8 +25,8 @@ use crate::{
     DatabasePool, OrganizationCreate, OrganizationEntitlementWrite, OrganizationRepositoryError,
     entity::{
         SensitiveString, organization_entitlements, organization_memberships,
-        organization_provisioning_requests, organization_sso_policies, organization_wallets,
-        organizations, platform_audit_logs, users,
+        organization_provisioning_materials, organization_provisioning_requests,
+        organization_sso_policies, organization_wallets, organizations, platform_audit_logs, users,
     },
     organization::mutation,
 };
@@ -36,6 +37,16 @@ const ADMIN_USER_ROLE: i16 = 1;
 const PLATFORM_AUDIT_ROUTE: &str =
     "/api/management/organization-provisioning/{request_key}/decision";
 const PLATFORM_AUDIT_RESOURCE: &str = "organization_provisioning_request";
+
+/// 待写入的企业开通材料；正文仅在本次受控写入事务中暂存。
+pub struct OrganizationProvisioningMaterialWrite {
+    pub kind: String,
+    pub object_reference: String,
+    pub file_name: String,
+    pub content_type: String,
+    pub size_bytes: i64,
+    pub content_bytes: Vec<u8>,
+}
 
 /// 平台管理员以申请版本 CAS 提交的企业开通决定。
 #[derive(Clone)]
@@ -543,15 +554,50 @@ impl OrganizationProvisioningRepository {
         request: OrganizationProvisioningRequest,
     ) -> Result<OrganizationProvisioningCreateOutcome, OrganizationProvisioningRepositoryError>
     {
+        self.create_request_with_materials(request, Vec::new())
+            .await
+    }
+
+    /// 幂等创建申请并在同一事务中保存真实材料正文。
+    pub async fn create_request_with_materials(
+        &self,
+        request: OrganizationProvisioningRequest,
+        materials: Vec<OrganizationProvisioningMaterialWrite>,
+    ) -> Result<OrganizationProvisioningCreateOutcome, OrganizationProvisioningRepositoryError>
+    {
         match timeout(
             self.operation_timeout,
-            create_request_inner(self.pool.connection(), &request),
+            create_request_inner(self.pool.connection(), &request, materials),
         )
         .await
         {
             Ok(result) => result,
             Err(_) => Err(OrganizationProvisioningRepositoryError::OutcomeUnknown),
         }
+    }
+
+    /// 按申请键读取管理员可见的材料元数据，不返回正文。
+    pub async fn list_materials(
+        &self,
+        request_key: OrganizationProvisioningRequestKey,
+    ) -> Result<Vec<OrganizationProvisioningMaterial>, OrganizationProvisioningRepositoryError>
+    {
+        self.run_read(list_materials_inner(self.pool.connection(), request_key))
+            .await
+    }
+
+    /// 按申请和材料边界读取正文；调用方必须先完成平台权限校验。
+    pub async fn read_material_content(
+        &self,
+        request_key: OrganizationProvisioningRequestKey,
+        material_id: i64,
+    ) -> Result<Vec<u8>, OrganizationProvisioningRepositoryError> {
+        self.run_read(read_material_content_inner(
+            self.pool.connection(),
+            request_key,
+            material_id,
+        ))
+        .await
     }
 
     /// 按当前用户和公开申请键读取事实；跨用户申请统一不可见。
@@ -684,6 +730,7 @@ impl fmt::Debug for OrganizationProvisioningRepository {
 async fn create_request_inner(
     connection: &DatabaseConnection,
     request: &OrganizationProvisioningRequest,
+    materials: Vec<OrganizationProvisioningMaterialWrite>,
 ) -> Result<OrganizationProvisioningCreateOutcome, OrganizationProvisioningRepositoryError> {
     if let Some(existing) = find_by_idempotency_key(
         connection,
@@ -727,12 +774,61 @@ async fn create_request_inner(
         ..Default::default()
     };
 
-    match model.insert(connection).await {
-        Ok(model) => Ok(OrganizationProvisioningCreateOutcome::Created(to_record(
-            model,
-        )?)),
-        Err(_) => recover_create_conflict(connection, request).await,
+    let transaction = connection.begin().await.map_err(query_error)?;
+    match model.insert(&transaction).await {
+        Ok(model) => {
+            let request_id = model.id;
+            if let Err(error) =
+                append_materials(&transaction, request_id, request.created_at(), materials).await
+            {
+                transaction
+                    .rollback()
+                    .await
+                    .map_err(|_| OrganizationProvisioningRepositoryError::OutcomeUnknown)?;
+                return Err(error);
+            }
+            transaction
+                .commit()
+                .await
+                .map_err(|_| OrganizationProvisioningRepositoryError::OutcomeUnknown)?;
+            Ok(OrganizationProvisioningCreateOutcome::Created(to_record(
+                model,
+            )?))
+        }
+        Err(_) => {
+            transaction
+                .rollback()
+                .await
+                .map_err(|_| OrganizationProvisioningRepositoryError::OutcomeUnknown)?;
+            recover_create_conflict(connection, request).await
+        }
     }
+}
+
+async fn append_materials(
+    connection: &DatabaseTransaction,
+    request_id: i64,
+    created_at: u64,
+    materials: Vec<OrganizationProvisioningMaterialWrite>,
+) -> Result<(), OrganizationProvisioningRepositoryError> {
+    let created_at = to_database_time(created_at)?;
+    for material in materials {
+        organization_provisioning_materials::ActiveModel {
+            request_id: Set(request_id),
+            kind: Set(material.kind),
+            object_reference: Set(SensitiveString::from(material.object_reference)),
+            file_name: Set(SensitiveString::from(material.file_name)),
+            content_type: Set(material.content_type),
+            size_bytes: Set(material.size_bytes),
+            content_bytes: Set(Some(material.content_bytes)),
+            created_at: Set(created_at),
+            ..Default::default()
+        }
+        .insert(connection)
+        .await
+        .map_err(query_error)?;
+    }
+    Ok(())
 }
 
 /// 并发唯一冲突发生后按全部稳定事实回读，只恢复完全一致的原申请。
@@ -927,6 +1023,61 @@ async fn find_active_by_slug(
         .map_err(query_error)
 }
 
+async fn list_materials_inner(
+    connection: &DatabaseConnection,
+    request_key: OrganizationProvisioningRequestKey,
+) -> Result<Vec<OrganizationProvisioningMaterial>, OrganizationProvisioningRepositoryError> {
+    let request = find_by_request_key(connection, request_key)
+        .await?
+        .ok_or(OrganizationProvisioningRepositoryError::NotFound)?;
+    organization_provisioning_materials::Entity::find()
+        .filter(organization_provisioning_materials::Column::RequestId.eq(request.id))
+        .order_by_asc(organization_provisioning_materials::Column::Id)
+        .all(connection)
+        .await
+        .map_err(query_error)?
+        .into_iter()
+        .map(|model| to_material(model, request_key))
+        .collect()
+}
+
+async fn read_material_content_inner(
+    connection: &DatabaseConnection,
+    request_key: OrganizationProvisioningRequestKey,
+    material_id: i64,
+) -> Result<Vec<u8>, OrganizationProvisioningRepositoryError> {
+    let request = find_by_request_key(connection, request_key)
+        .await?
+        .ok_or(OrganizationProvisioningRepositoryError::NotFound)?;
+    let material = organization_provisioning_materials::Entity::find_by_id(material_id)
+        .filter(organization_provisioning_materials::Column::RequestId.eq(request.id))
+        .one(connection)
+        .await
+        .map_err(query_error)?
+        .ok_or(OrganizationProvisioningRepositoryError::MaterialNotFound)?;
+    material
+        .content_bytes
+        .ok_or(OrganizationProvisioningRepositoryError::MaterialContentUnavailable)
+}
+
+fn to_material(
+    model: organization_provisioning_materials::Model,
+    request_key: OrganizationProvisioningRequestKey,
+) -> Result<OrganizationProvisioningMaterial, OrganizationProvisioningRepositoryError> {
+    OrganizationProvisioningMaterial::from_persistence(
+        model.id,
+        request_key,
+        model.kind,
+        model.object_reference.as_str().to_owned(),
+        model.file_name.as_str().to_owned(),
+        model.content_type,
+        model.size_bytes,
+        model.content_bytes.is_some(),
+        unix_seconds(model.created_at)?,
+    )
+    .map_err(|_| OrganizationProvisioningRepositoryError::Invariant)
+}
+
 fn to_record(
     model: organization_provisioning_requests::Model,
 ) -> Result<OrganizationProvisioningRecord, OrganizationProvisioningRepositoryError> {
@@ -1034,4 +1185,8 @@ pub enum OrganizationProvisioningRepositoryError {
     Timeout,
     #[error("企业开通申请持久化状态损坏")]
     Invariant,
+    #[error("企业开通材料不存在")]
+    MaterialNotFound,
+    #[error("企业开通材料正文不可用")]
+    MaterialContentUnavailable,
 }

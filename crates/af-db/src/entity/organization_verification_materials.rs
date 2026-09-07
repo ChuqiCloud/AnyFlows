@@ -19,6 +19,9 @@ pub struct Model {
     #[sea_orm(column_type = "String(StringLen::N(128))")]
     pub content_type: String,
     pub size_bytes: i64,
+    /// 文件正文；旧版本仅保存元数据时允许为空，新的上传必须写入正文。
+    #[sea_orm(column_type = "Blob")]
+    pub content_bytes: Option<Vec<u8>>,
     pub created_at: TimeDateTimeWithTimeZone,
 }
 

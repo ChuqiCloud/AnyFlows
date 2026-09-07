@@ -5,11 +5,14 @@ use af_admin::{
     OrganizationVerificationListQuery, OrganizationVerificationService,
     OrganizationVerificationServiceError, OrganizationVerificationSubmitCommand,
 };
-use af_domain::{OrganizationId, OrganizationVerificationCaseId, OrganizationVerificationStatus};
+use af_domain::{
+    OrganizationId, OrganizationVerificationCaseId, OrganizationVerificationMaterialId,
+    OrganizationVerificationStatus,
+};
 use af_telemetry::RequestId;
 use axum::{
     Extension, Json, Router,
-    extract::{Path, RawQuery, State, rejection::JsonRejection},
+    extract::{DefaultBodyLimit, Multipart, Path, RawQuery, State, rejection::JsonRejection},
     middleware,
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -52,8 +55,13 @@ pub fn build_organization_verification_router(
             "/api/admin/organization-verifications/{case_id}/decision",
             post(decide),
         )
+        .route(
+            "/api/admin/organization-verifications/{case_id}/materials/{material_id}",
+            get(download_material),
+        )
         .layer(authentication)
         .layer(middleware::from_fn(ensure_request_id))
+        .layer(DefaultBodyLimit::max(MAX_SUBMIT_BODY_BYTES))
         .with_state(OrganizationVerificationHttpState { service })
 }
 
@@ -71,15 +79,13 @@ struct SubmitRequest {
 struct MaterialRequest {
     #[schema(min_length = 1, max_length = 64)]
     kind: String,
-    #[schema(min_length = 1, max_length = 256)]
-    object_reference: String,
-    #[schema(min_length = 1, max_length = 255)]
-    file_name: String,
-    #[schema(min_length = 1, max_length = 128)]
-    content_type: String,
-    #[schema(minimum = 0, maximum = 50000000)]
-    size_bytes: i64,
+    #[schema(min_length = 1, max_length = 64)]
+    file_field: String,
 }
+
+const MAX_MATERIAL_BYTES: usize = 50_000_000;
+const MAX_TOTAL_MATERIAL_BYTES: usize = 100_000_000;
+const MAX_SUBMIT_BODY_BYTES: usize = MAX_TOTAL_MATERIAL_BYTES + 2 * 1024 * 1024;
 
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -131,6 +137,7 @@ struct MaterialResponse {
     file_name: String,
     content_type: String,
     size_bytes: i64,
+    content_available: bool,
     created_at: u64,
 }
 
@@ -155,31 +162,177 @@ async fn submit(
     State(state): State<OrganizationVerificationHttpState>,
     Path(organization_id): Path<i64>,
     Extension(authentication): Extension<af_admin::SessionAuthentication>,
-    request: Result<Json<SubmitRequest>, JsonRejection>,
+    multipart: Result<Multipart, axum::extract::multipart::MultipartRejection>,
 ) -> Result<Response, ManagementError> {
     let organization_id = OrganizationId::new(organization_id)
         .map_err(|_| ManagementError::OrganizationVerificationInvalidRequest)?;
-    let Json(request) =
-        request.map_err(|_| ManagementError::OrganizationVerificationInvalidRequest)?;
+    let mut multipart =
+        multipart.map_err(|_| ManagementError::OrganizationVerificationInvalidRequest)?;
+    let mut summary = None;
+    let mut metadata = None;
+    let mut files = std::collections::HashMap::new();
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|_| ManagementError::OrganizationVerificationInvalidRequest)?
+    {
+        let name = field
+            .name()
+            .ok_or(ManagementError::OrganizationVerificationInvalidRequest)?
+            .to_owned();
+        if name == "summary" {
+            if summary.is_some() {
+                return Err(ManagementError::OrganizationVerificationInvalidRequest);
+            }
+            summary = Some(
+                field
+                    .text()
+                    .await
+                    .map_err(|_| ManagementError::OrganizationVerificationInvalidRequest)?,
+            );
+        } else if name == "materials" {
+            if metadata.is_some() {
+                return Err(ManagementError::OrganizationVerificationInvalidRequest);
+            }
+            metadata = Some(
+                field
+                    .text()
+                    .await
+                    .map_err(|_| ManagementError::OrganizationVerificationInvalidRequest)?,
+            );
+        } else if let Some(file_field) = name.strip_prefix("file:") {
+            let content_type = field
+                .content_type()
+                .unwrap_or("application/octet-stream")
+                .to_owned();
+            let file_name = normalize_upload_name(field.file_name().unwrap_or("material"))
+                .ok_or(ManagementError::OrganizationVerificationInvalidRequest)?;
+            let bytes = field
+                .bytes()
+                .await
+                .map_err(|_| ManagementError::OrganizationVerificationInvalidRequest)?;
+            if bytes.len() > MAX_MATERIAL_BYTES {
+                return Err(ManagementError::OrganizationVerificationInvalidRequest);
+            }
+            if files
+                .insert(
+                    file_field.to_owned(),
+                    (file_name, content_type, bytes.to_vec()),
+                )
+                .is_some()
+            {
+                return Err(ManagementError::OrganizationVerificationInvalidRequest);
+            }
+        } else {
+            return Err(ManagementError::OrganizationVerificationInvalidRequest);
+        }
+    }
+    let request = SubmitRequest {
+        summary: summary.ok_or(ManagementError::OrganizationVerificationInvalidRequest)?,
+        materials: serde_json::from_str(
+            &metadata.ok_or(ManagementError::OrganizationVerificationInvalidRequest)?,
+        )
+        .map_err(|_| ManagementError::OrganizationVerificationInvalidRequest)?,
+    };
+    if request.materials.is_empty() || request.materials.len() > 20 {
+        return Err(ManagementError::OrganizationVerificationInvalidRequest);
+    }
+    let mut total_size = 0_usize;
+    let mut writes = Vec::with_capacity(request.materials.len());
+    for material in request.materials {
+        let (file_name, content_type, content_bytes) = files
+            .remove(&material.file_field)
+            .ok_or(ManagementError::OrganizationVerificationInvalidRequest)?;
+        if material.kind.trim() != material.kind
+            || material.kind.is_empty()
+            || material.kind.len() > 64
+            || material.kind.chars().any(char::is_control)
+            || content_type.is_empty()
+            || content_type.len() > 128
+            || content_type.chars().any(char::is_control)
+            || !matches!(
+                content_type.as_str(),
+                "application/pdf" | "image/png" | "image/jpeg" | "image/webp"
+            )
+        {
+            return Err(ManagementError::OrganizationVerificationInvalidRequest);
+        }
+        total_size = total_size
+            .checked_add(content_bytes.len())
+            .ok_or(ManagementError::OrganizationVerificationInvalidRequest)?;
+        writes.push(af_admin::OrganizationVerificationMaterialWrite {
+            kind: material.kind,
+            object_reference: format!("verification/material/{}", uuid::Uuid::new_v4()),
+            file_name,
+            content_type,
+            size_bytes: i64::try_from(content_bytes.len())
+                .map_err(|_| ManagementError::OrganizationVerificationInvalidRequest)?,
+            content_bytes,
+        });
+    }
+    if total_size > MAX_TOTAL_MATERIAL_BYTES || !files.is_empty() {
+        return Err(ManagementError::OrganizationVerificationInvalidRequest);
+    }
     let command = OrganizationVerificationSubmitCommand {
         summary: request.summary,
-        materials: request
-            .materials
-            .into_iter()
-            .map(|material| af_admin::OrganizationVerificationMaterialWrite {
-                kind: material.kind,
-                object_reference: material.object_reference,
-                file_name: material.file_name,
-                content_type: material.content_type,
-                size_bytes: material.size_bytes,
-            })
-            .collect(),
+        materials: writes,
     };
     let bundle = service(&state)?
         .submit(authentication.principal(), organization_id, command)
         .await
         .map_err(map_error)?;
     Ok(no_store_status_json(StatusCode::OK, to_response(&bundle)))
+}
+
+async fn download_material(
+    State(state): State<OrganizationVerificationHttpState>,
+    Path((case_id, material_id)): Path<(i64, i64)>,
+    Extension(authentication): Extension<af_admin::SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+) -> Result<Response, ManagementError> {
+    let case_id = OrganizationVerificationCaseId::new(case_id)
+        .map_err(|_| ManagementError::OrganizationVerificationInvalidRequest)?;
+    let material_id = OrganizationVerificationMaterialId::new(material_id)
+        .map_err(|_| ManagementError::OrganizationVerificationInvalidRequest)?;
+    let download = service(&state)?
+        .download_admin(
+            authentication.principal(),
+            case_id,
+            material_id,
+            request_id.as_str().to_owned(),
+        )
+        .await
+        .map_err(map_error)?;
+    let disposition = format!(
+        "attachment; filename=\"{}\"",
+        safe_download_name(&download.file_name)
+    );
+    Ok((
+        StatusCode::OK,
+        [
+            (http::header::CONTENT_TYPE, download.content_type),
+            (http::header::CONTENT_DISPOSITION, disposition),
+            (http::header::CACHE_CONTROL, "no-store".to_owned()),
+        ],
+        download.content,
+    )
+        .into_response())
+}
+
+fn safe_download_name(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| match character {
+            '"' | '\\' | '/' | '\r' | '\n' => '_',
+            _ => character,
+        })
+        .collect()
+}
+
+fn normalize_upload_name(value: &str) -> Option<String> {
+    let name = value.rsplit(['/', '\\']).next()?.trim();
+    (!name.is_empty() && name.len() <= 255 && !name.chars().any(char::is_control))
+        .then(|| name.to_owned())
 }
 
 async fn get_self(
@@ -307,6 +460,7 @@ fn to_response(bundle: &af_admin::OrganizationVerificationBundle) -> Verificatio
                 file_name: material.file_name().to_owned(),
                 content_type: material.content_type().to_owned(),
                 size_bytes: material.size_bytes(),
+                content_available: material.content_available(),
                 created_at: material.created_at(),
             })
             .collect(),

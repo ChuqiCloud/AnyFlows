@@ -346,10 +346,11 @@ async fn budget_execution_rechecks_policy_version_and_expiration() -> Result<(),
             1,
         ),
         OrganizationApprovalDecisionKind::Approved,
-        now() + 1,
+        // 给创建决策和数据库事务留出余量，避免全量并发测试时在写入决策前就过期。
+        now() + 5,
     )
     .await?;
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    tokio::time::sleep(Duration::from_secs(6)).await;
     assert_eq!(
         fixture
             .execution_repository

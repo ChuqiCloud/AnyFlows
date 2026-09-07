@@ -1,5 +1,6 @@
 use std::{fmt, future::Future, pin::Pin, sync::Arc};
 
+pub use af_db::OrganizationProvisioningMaterialWrite;
 use af_db::{
     OrganizationEntitlementWrite, OrganizationProvisioningDecisionWrite,
     OrganizationProvisioningRepository, OrganizationProvisioningRepositoryError,
@@ -8,12 +9,18 @@ use af_domain::{
     OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot,
     OrganizationProvisioningCreateOutcome, OrganizationProvisioningDecisionKind,
     OrganizationProvisioningDecisionOutcome, OrganizationProvisioningIdempotencyKey,
-    OrganizationProvisioningRequest, OrganizationProvisioningRequestKey, UserId,
+    OrganizationProvisioningRequest, OrganizationProvisioningRequestKey, PlatformPermission,
+    UserId,
 };
-pub use af_domain::{OrganizationProvisioningRecord, OrganizationProvisioningStatus};
+pub use af_domain::{
+    OrganizationProvisioningMaterial, OrganizationProvisioningRecord,
+    OrganizationProvisioningStatus,
+};
 use thiserror::Error;
 
-use crate::{SessionPrincipal, SessionRole};
+use crate::{
+    PlatformAuditEntry, PlatformAuditOutcome, PlatformAuditService, SessionPrincipal, SessionRole,
+};
 
 /// 当前用户提交企业开通申请所需的资料。
 pub struct OrganizationProvisioningCreateCommand {
@@ -21,6 +28,7 @@ pub struct OrganizationProvisioningCreateCommand {
     organization_name: String,
     organization_slug: String,
     business_reason: String,
+    materials: Vec<OrganizationProvisioningMaterialWrite>,
 }
 
 impl OrganizationProvisioningCreateCommand {
@@ -37,7 +45,15 @@ impl OrganizationProvisioningCreateCommand {
             organization_name,
             organization_slug,
             business_reason,
+            materials: Vec::new(),
         }
+    }
+
+    /// 附加本次申请要在同一事务保存的真实材料。
+    #[must_use]
+    pub fn with_materials(mut self, materials: Vec<OrganizationProvisioningMaterialWrite>) -> Self {
+        self.materials = materials;
+        self
     }
 }
 
@@ -226,6 +242,24 @@ pub type OrganizationProvisioningPageFuture<'a> = Pin<
             + 'a,
     >,
 >;
+pub type OrganizationProvisioningMaterialPageFuture<'a> = Pin<
+    Box<
+        dyn Future<
+                Output = Result<
+                    Vec<OrganizationProvisioningMaterial>,
+                    OrganizationProvisioningServiceError,
+                >,
+            > + Send
+            + 'a,
+    >,
+>;
+pub type OrganizationProvisioningMaterialDownloadFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<(String, String, Vec<u8>), OrganizationProvisioningServiceError>>
+            + Send
+            + 'a,
+    >,
+>;
 
 /// 企业开通申请服务；普通用户与平台管理员入口共享仓储但不共享读取边界。
 pub trait OrganizationProvisioningService: Send + Sync {
@@ -256,17 +290,34 @@ pub trait OrganizationProvisioningService: Send + Sync {
         principal: SessionPrincipal,
         command: OrganizationProvisioningDecisionCommand,
     ) -> OrganizationProvisioningResultFuture<'a>;
+    fn list_materials_admin<'a>(
+        &'a self,
+        request_key: OrganizationProvisioningRequestKey,
+        principal: SessionPrincipal,
+        request_id: String,
+    ) -> OrganizationProvisioningMaterialPageFuture<'a>;
+    fn download_material_admin<'a>(
+        &'a self,
+        request_key: OrganizationProvisioningRequestKey,
+        material_id: i64,
+        principal: SessionPrincipal,
+        request_id: String,
+    ) -> OrganizationProvisioningMaterialDownloadFuture<'a>;
 }
 
 /// 数据库开通申请服务实现；管理员资格仍在仓储审批事务中复验。
 pub struct DatabaseOrganizationProvisioningService {
     repository: Arc<OrganizationProvisioningRepository>,
+    audit: Arc<dyn PlatformAuditService>,
 }
 
 impl DatabaseOrganizationProvisioningService {
     #[must_use]
-    pub fn new(repository: Arc<OrganizationProvisioningRepository>) -> Self {
-        Self { repository }
+    pub fn new(
+        repository: Arc<OrganizationProvisioningRepository>,
+        audit: Arc<dyn PlatformAuditService>,
+    ) -> Self {
+        Self { repository, audit }
     }
 }
 
@@ -308,7 +359,7 @@ impl OrganizationProvisioningService for DatabaseOrganizationProvisioningService
             .map_err(|_| OrganizationProvisioningServiceError::InvalidRequest)?;
             let outcome = self
                 .repository
-                .create_request(request)
+                .create_request_with_materials(request, command.materials)
                 .await
                 .map_err(map_error)?;
             let (record, replayed) = match outcome {
@@ -410,6 +461,106 @@ impl OrganizationProvisioningService for DatabaseOrganizationProvisioningService
             Ok(OrganizationProvisioningResult { record, replayed })
         })
     }
+
+    fn list_materials_admin<'a>(
+        &'a self,
+        request_key: OrganizationProvisioningRequestKey,
+        principal: SessionPrincipal,
+        request_id: String,
+    ) -> OrganizationProvisioningMaterialPageFuture<'a> {
+        Box::pin(async move {
+            require_admin(principal)?;
+            let materials = self
+                .repository
+                .list_materials(request_key)
+                .await
+                .map_err(map_error)?;
+            self.audit_material_access(
+                principal,
+                request_key,
+                None,
+                "list",
+                &request_id,
+                materials.len(),
+            )
+            .await?;
+            Ok(materials)
+        })
+    }
+
+    fn download_material_admin<'a>(
+        &'a self,
+        request_key: OrganizationProvisioningRequestKey,
+        material_id: i64,
+        principal: SessionPrincipal,
+        request_id: String,
+    ) -> OrganizationProvisioningMaterialDownloadFuture<'a> {
+        Box::pin(async move {
+            require_admin(principal)?;
+            let material = self
+                .repository
+                .list_materials(request_key)
+                .await
+                .map_err(map_error)?
+                .into_iter()
+                .find(|material| material.id() == material_id)
+                .ok_or(OrganizationProvisioningServiceError::NotFound)?;
+            let content = self
+                .repository
+                .read_material_content(request_key, material_id)
+                .await
+                .map_err(map_error)?;
+            self.audit_material_access(
+                principal,
+                request_key,
+                Some(material_id),
+                "download",
+                &request_id,
+                1,
+            )
+            .await?;
+            Ok((
+                material.file_name().to_owned(),
+                material.content_type().to_owned(),
+                content,
+            ))
+        })
+    }
+}
+
+impl DatabaseOrganizationProvisioningService {
+    async fn audit_material_access(
+        &self,
+        principal: SessionPrincipal,
+        request_key: OrganizationProvisioningRequestKey,
+        material_id: Option<i64>,
+        operation: &'static str,
+        request_id: &str,
+        material_count: usize,
+    ) -> Result<(), OrganizationProvisioningServiceError> {
+        let resource_id = material_id.map_or_else(
+            || request_key.persistence_key(),
+            |material_id| format!("{}:{material_id}", request_key.persistence_key()),
+        );
+        let entry = PlatformAuditEntry::new(
+            principal,
+            PlatformPermission::OrganizationsReadAll,
+            "/api/admin/organization-provisioning/{request_key}/materials",
+            operation,
+            "organization_provisioning_material",
+            Some(resource_id),
+            PlatformAuditOutcome::Succeeded,
+            None,
+            None,
+            Some(serde_json::json!({ "material_count": material_count })),
+            request_id,
+        )
+        .map_err(|_| OrganizationProvisioningServiceError::Internal)?;
+        self.audit
+            .record(entry)
+            .await
+            .map_err(|_| OrganizationProvisioningServiceError::Internal)
+    }
 }
 
 impl fmt::Debug for DatabaseOrganizationProvisioningService {
@@ -493,6 +644,12 @@ fn map_error(
         OrganizationProvisioningRepositoryError::Invariant
         | OrganizationProvisioningRepositoryError::EntropyUnavailable => {
             OrganizationProvisioningServiceError::Internal
+        }
+        OrganizationProvisioningRepositoryError::MaterialNotFound => {
+            OrganizationProvisioningServiceError::NotFound
+        }
+        OrganizationProvisioningRepositoryError::MaterialContentUnavailable => {
+            OrganizationProvisioningServiceError::Unavailable
         }
     }
 }

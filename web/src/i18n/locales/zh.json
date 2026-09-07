@@ -6017,8 +6017,14 @@
       "name": "企业名称",
       "slug": "企业标识",
       "slugHint": "仅允许小写字母、数字和连字符，且必须以字母或数字开头和结尾。",
-      "reason": "业务用途",
-      "idempotent": "使用同一请求键重复提交只会恢复服务端申请事实。"
+    "reason": "业务用途",
+    "material": "申请材料",
+    "materialKind": "材料类型",
+    "materialFile": "上传文件",
+    "materialHint": "支持 PDF、PNG、JPG 或 WebP，单个文件不超过 50 MB，全部材料不超过 100 MB。",
+    "addMaterial": "添加材料",
+    "removeMaterial": "移除材料",
+    "idempotent": "使用同一请求键重复提交只会恢复服务端申请事实。"
     },
     "retry": {
       "title": "提交新的申请",
@@ -6059,8 +6065,14 @@
       "teams": "团队",
       "keys": "企业 Key",
       "retention": "审计天数",
-      "emptyTitle": "暂无企业开通申请",
-      "emptyBody": "用户提交申请后，会显示在这里。"
+    "emptyTitle": "暂无企业开通申请",
+    "emptyBody": "用户提交申请后，会显示在这里。",
+    "materials": "申请材料",
+    "materialsLoading": "正在加载材料元数据…",
+    "materialsError": "材料暂时无法加载或下载，请稍后重试。",
+    "materialsEmpty": "申请人未提交材料。",
+    "download": "下载材料",
+    "unavailable": "正文不可用"
     },
     "flow": {
       "apply": {
@@ -6083,8 +6095,9 @@
     "errors": {
       "loadTitle": "无法加载企业开通事实",
       "loadBody": "服务暂时不可用，现有申请和授权不会改变。",
-      "mutation": "操作没有返回可靠结果，请保留当前内容后重试。",
-      "conflict": "申请已被并发更新，请刷新后按最新服务端版本审核。",
+    "mutation": "操作没有返回可靠结果，请保留当前内容后重试。",
+    "materials": "每份材料必须是 PDF、PNG、JPG 或 WebP，单个文件不超过 50 MB，全部材料不超过 100 MB。",
+    "conflict": "申请已被并发更新，请刷新后按最新服务端版本审核。",
       "unavailable": "企业开通服务暂时不可用，请稍后重试。"
     }
   },
@@ -6100,14 +6113,12 @@
     },
     "form": {
       "title": "认证材料",
-      "body": "填写简明企业说明和受控文件引用。不要把密钥或材料正文粘贴到此表单。",
+      "body": "填写简明企业说明并上传真实材料。文件只会进入受控存储，不会写入浏览器持久化。",
       "summary": "企业说明",
       "summaryPlaceholder": "法定名称、业务范围以及申请认证的原因",
       "kind": "材料类型",
-      "reference": "受控对象引用",
-      "fileName": "文件名",
-      "contentType": "MIME 类型",
-      "size": "大小（字节）",
+      "file": "材料文件",
+      "fileHint": "支持 PDF、PNG、JPG 和 WebP，单文件不超过 50 MB",
       "addMaterial": "添加材料",
       "removeMaterial": "移除材料",
       "material": "材料 {{index}}"
@@ -6155,6 +6166,8 @@
       "initialBody": "选择状态筛选后加载平台审核队列。",
       "materialAccess": "受控材料元数据",
       "materialAccessHint": "这里只能看到文件元数据，对象正文留在受控存储并记录访问审计。",
+      "download": "下载材料",
+      "unavailable": "正文不可用",
       "loading": "正在加载认证案件",
       "errorTitle": "无法加载认证案件",
       "errorBody": "审核服务暂时不可用，现有案件不会改变。",
@@ -6166,7 +6179,7 @@
       "loadTitle": "无法加载认证状态",
       "loadBody": "认证服务暂时不可用，已有提交不会改变。",
       "mutation": "提交结果未能确认，请保留当前表单后重试。",
-      "invalid": "请检查企业说明和材料元数据。",
+      "invalid": "请检查企业说明、材料类型和上传文件。",
       "forbidden": "当前企业角色无权提交认证材料。",
       "conflict": "案件已被并发更新，请刷新后查看最新状态。",
       "unavailable": "认证服务暂时不可用，请稍后重试。"

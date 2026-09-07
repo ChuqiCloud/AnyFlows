@@ -16,6 +16,10 @@ pub const MAX_ORGANIZATION_PROVISIONING_SLUG_BYTES: usize = 64;
 pub const MAX_ORGANIZATION_PROVISIONING_REASON_BYTES: usize = 2_000;
 /// 企业开通审批理由最大 UTF-8 字节数。
 pub const MAX_ORGANIZATION_PROVISIONING_DECISION_REASON_BYTES: usize = 512;
+/// 企业开通材料类型最大字节数。
+pub const MAX_ORGANIZATION_PROVISIONING_MATERIAL_KIND_BYTES: usize = 64;
+/// 企业开通材料对象引用最大字节数。
+pub const MAX_ORGANIZATION_PROVISIONING_OBJECT_REFERENCE_BYTES: usize = 256;
 
 macro_rules! provisioning_key {
     ($(#[$meta:meta])* $name:ident, $debug_name:literal) => {
@@ -375,6 +379,98 @@ impl fmt::Debug for OrganizationProvisioningRecord {
     }
 }
 
+/// 企业开通材料的安全元数据；正文只由受控下载边界读取。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrganizationProvisioningMaterial {
+    id: i64,
+    request_key: OrganizationProvisioningRequestKey,
+    kind: String,
+    object_reference: String,
+    file_name: String,
+    content_type: String,
+    size_bytes: i64,
+    content_available: bool,
+    created_at: u64,
+}
+
+impl OrganizationProvisioningMaterial {
+    /// 从持久化投影构造材料元数据，不接受文件正文。
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_persistence(
+        id: i64,
+        request_key: OrganizationProvisioningRequestKey,
+        kind: String,
+        object_reference: String,
+        file_name: String,
+        content_type: String,
+        size_bytes: i64,
+        content_available: bool,
+        created_at: u64,
+    ) -> Result<Self, OrganizationProvisioningError> {
+        if id <= 0
+            || !valid_text(&kind, MAX_ORGANIZATION_PROVISIONING_MATERIAL_KIND_BYTES)
+            || !valid_text(
+                &object_reference,
+                MAX_ORGANIZATION_PROVISIONING_OBJECT_REFERENCE_BYTES,
+            )
+            || !valid_text(&file_name, 255)
+            || !valid_text(&content_type, 128)
+            || !(0..=50_000_000).contains(&size_bytes)
+            || created_at > i64::MAX as u64
+        {
+            return Err(OrganizationProvisioningError::InvalidMaterial);
+        }
+        Ok(Self {
+            id,
+            request_key,
+            kind,
+            object_reference,
+            file_name,
+            content_type,
+            size_bytes,
+            content_available,
+            created_at,
+        })
+    }
+
+    #[must_use]
+    pub const fn id(&self) -> i64 {
+        self.id
+    }
+    #[must_use]
+    pub const fn request_key(&self) -> OrganizationProvisioningRequestKey {
+        self.request_key
+    }
+    #[must_use]
+    pub fn kind(&self) -> &str {
+        &self.kind
+    }
+    #[must_use]
+    pub fn object_reference(&self) -> &str {
+        &self.object_reference
+    }
+    #[must_use]
+    pub fn file_name(&self) -> &str {
+        &self.file_name
+    }
+    #[must_use]
+    pub fn content_type(&self) -> &str {
+        &self.content_type
+    }
+    #[must_use]
+    pub const fn size_bytes(&self) -> i64 {
+        self.size_bytes
+    }
+    #[must_use]
+    pub const fn content_available(&self) -> bool {
+        self.content_available
+    }
+    #[must_use]
+    pub const fn created_at(&self) -> u64 {
+        self.created_at
+    }
+}
+
 /// 企业开通申请创建结果。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OrganizationProvisioningCreateOutcome {
@@ -410,6 +506,8 @@ pub enum OrganizationProvisioningError {
     InvalidTimestamp,
     #[error("企业开通申请状态组合无效")]
     InvalidState,
+    #[error("企业开通材料无效")]
+    InvalidMaterial,
 }
 
 fn valid_text(value: &str, maximum_bytes: usize) -> bool {

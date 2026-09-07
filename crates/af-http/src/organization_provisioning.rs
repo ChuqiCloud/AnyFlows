@@ -3,6 +3,7 @@ use std::sync::Arc;
 use af_admin::{
     OrganizationProvisioningCreateCommand, OrganizationProvisioningDecisionCommand,
     OrganizationProvisioningEntitlementCommand, OrganizationProvisioningListQuery,
+    OrganizationProvisioningMaterial, OrganizationProvisioningMaterialWrite,
     OrganizationProvisioningService, OrganizationProvisioningServiceError,
     OrganizationProvisioningStatus, SessionAuthentication, SessionAuthenticator,
 };
@@ -10,9 +11,10 @@ use af_domain::{
     OrganizationProvisioningDecisionKind, OrganizationProvisioningRecord,
     OrganizationProvisioningRequestKey,
 };
+use af_telemetry::RequestId;
 use axum::{
     Extension, Json, Router,
-    extract::{Path, RawQuery, State, rejection::JsonRejection},
+    extract::{DefaultBodyLimit, Multipart, Path, RawQuery, State, rejection::JsonRejection},
     middleware,
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -24,9 +26,13 @@ use utoipa::ToSchema;
 use crate::{
     management_auth::{ManagementAuthenticationState, authenticate_management_session},
     management_error::ManagementError,
+    middleware::ensure_request_id,
 };
 
 const DEFAULT_PAGE_SIZE: u64 = 50;
+const MAX_MATERIAL_BYTES: usize = 50_000_000;
+const MAX_TOTAL_MATERIAL_BYTES: usize = 100_000_000;
+const MAX_SUBMIT_BODY_BYTES: usize = MAX_TOTAL_MATERIAL_BYTES + 2 * 1024 * 1024;
 
 #[derive(Clone)]
 struct OrganizationProvisioningHttpState {
@@ -67,7 +73,17 @@ pub fn build_organization_provisioning_router(
             "/api/admin/organization-provisioning/{request_key}/decision",
             post(decide_request),
         )
+        .route(
+            "/api/admin/organization-provisioning/{request_key}/materials",
+            get(list_materials),
+        )
+        .route(
+            "/api/admin/organization-provisioning/{request_key}/materials/{material_id}",
+            get(download_material),
+        )
         .route_layer(authentication)
+        .layer(middleware::from_fn(ensure_request_id))
+        .layer(DefaultBodyLimit::max(MAX_SUBMIT_BODY_BYTES))
         .with_state(OrganizationProvisioningHttpState { service })
 }
 
@@ -86,6 +102,15 @@ struct CreateRequest {
     organization_slug: String,
     #[schema(min_length = 1, max_length = 2000)]
     business_reason: String,
+    #[serde(default)]
+    materials: Vec<MaterialRequest>,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+struct MaterialRequest {
+    kind: String,
+    file_field: String,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -164,17 +189,69 @@ struct AdminListResponse {
 async fn create_request(
     State(state): State<OrganizationProvisioningHttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
-    request: Result<Json<CreateRequest>, JsonRejection>,
+    multipart: Result<Multipart, axum::extract::multipart::MultipartRejection>,
 ) -> Result<Response, ManagementError> {
     let service = service(&state)?;
-    let Json(request) =
-        request.map_err(|_| ManagementError::OrganizationProvisioningInvalidRequest)?;
+    let mut multipart =
+        multipart.map_err(|_| ManagementError::OrganizationProvisioningInvalidRequest)?;
+    let mut metadata = None;
+    let mut files = std::collections::HashMap::new();
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|_| ManagementError::OrganizationProvisioningInvalidRequest)?
+    {
+        let name = field
+            .name()
+            .ok_or(ManagementError::OrganizationProvisioningInvalidRequest)?
+            .to_owned();
+        if name == "metadata" {
+            if metadata.is_some() {
+                return Err(ManagementError::OrganizationProvisioningInvalidRequest);
+            }
+            metadata = Some(
+                field
+                    .text()
+                    .await
+                    .map_err(|_| ManagementError::OrganizationProvisioningInvalidRequest)?,
+            );
+        } else if let Some(file_field) = name.strip_prefix("file:") {
+            let content_type = field
+                .content_type()
+                .unwrap_or("application/octet-stream")
+                .to_owned();
+            let file_name = normalize_upload_name(field.file_name().unwrap_or("material"))
+                .ok_or(ManagementError::OrganizationProvisioningInvalidRequest)?;
+            let bytes = field
+                .bytes()
+                .await
+                .map_err(|_| ManagementError::OrganizationProvisioningInvalidRequest)?;
+            if bytes.len() > MAX_MATERIAL_BYTES
+                || files
+                    .insert(
+                        file_field.to_owned(),
+                        (file_name, content_type, bytes.to_vec()),
+                    )
+                    .is_some()
+            {
+                return Err(ManagementError::OrganizationProvisioningInvalidRequest);
+            }
+        } else {
+            return Err(ManagementError::OrganizationProvisioningInvalidRequest);
+        }
+    }
+    let request: CreateRequest = serde_json::from_str(
+        &metadata.ok_or(ManagementError::OrganizationProvisioningInvalidRequest)?,
+    )
+    .map_err(|_| ManagementError::OrganizationProvisioningInvalidRequest)?;
+    let materials = request_materials(&request, &mut files)?;
     let command = OrganizationProvisioningCreateCommand::new(
         request.idempotency_key,
         request.organization_name,
         request.organization_slug,
         request.business_reason,
-    );
+    )
+    .with_materials(materials);
     let result = service
         .create(authentication.principal().user_id(), command)
         .await
@@ -188,6 +265,156 @@ async fn create_request(
         status,
         ProvisioningResponse::from_result(result)?,
     ))
+}
+
+fn request_materials(
+    request: &CreateRequest,
+    files: &mut std::collections::HashMap<String, (String, String, Vec<u8>)>,
+) -> Result<Vec<OrganizationProvisioningMaterialWrite>, ManagementError> {
+    let mut total_size = 0_usize;
+    let mut writes = Vec::with_capacity(request.materials.len());
+    // 材料元数据随申请字段传入；旧 JSON 结构不再接受，避免正文与元数据分离。
+    if request.materials.is_empty() || request.materials.len() > 20 {
+        return Err(ManagementError::OrganizationProvisioningInvalidRequest);
+    }
+    for material in &request.materials {
+        let file_field = material.file_field.trim();
+        if file_field != material.file_field
+            || file_field.is_empty()
+            || file_field.len() > 64
+            || file_field.chars().any(char::is_control)
+            || material.kind.trim() != material.kind
+            || material.kind.is_empty()
+            || material.kind.len() > 64
+            || material.kind.chars().any(char::is_control)
+        {
+            return Err(ManagementError::OrganizationProvisioningInvalidRequest);
+        }
+        let (file_name, content_type, content_bytes) = files
+            .remove(file_field)
+            .ok_or(ManagementError::OrganizationProvisioningInvalidRequest)?;
+        if !matches!(
+            content_type.as_str(),
+            "application/pdf" | "image/png" | "image/jpeg" | "image/webp"
+        ) {
+            return Err(ManagementError::OrganizationProvisioningInvalidRequest);
+        }
+        total_size = total_size
+            .checked_add(content_bytes.len())
+            .ok_or(ManagementError::OrganizationProvisioningInvalidRequest)?;
+        writes.push(OrganizationProvisioningMaterialWrite {
+            kind: material.kind.clone(),
+            object_reference: format!("provisioning/material/{}", uuid::Uuid::new_v4()),
+            file_name,
+            content_type,
+            size_bytes: i64::try_from(content_bytes.len())
+                .map_err(|_| ManagementError::OrganizationProvisioningInvalidRequest)?,
+            content_bytes,
+        });
+    }
+    if total_size > MAX_TOTAL_MATERIAL_BYTES || !files.is_empty() {
+        return Err(ManagementError::OrganizationProvisioningInvalidRequest);
+    }
+    Ok(writes)
+}
+
+fn normalize_upload_name(value: &str) -> Option<String> {
+    let name = value.rsplit(['/', '\\']).next()?.trim();
+    (!name.is_empty() && name.len() <= 255 && !name.chars().any(char::is_control))
+        .then(|| name.to_owned())
+}
+
+fn safe_download_name(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| match character {
+            '"' | '\\' | '/' | '\r' | '\n' => '_',
+            _ => character,
+        })
+        .collect()
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+struct MaterialResponse {
+    id: i64,
+    request_key: String,
+    kind: String,
+    file_name: String,
+    content_type: String,
+    size_bytes: i64,
+    content_available: bool,
+    created_at: u64,
+}
+
+async fn list_materials(
+    State(state): State<OrganizationProvisioningHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path(request_key): Path<String>,
+) -> Result<Response, ManagementError> {
+    let request_key = parse_request_key(&request_key)?;
+    let materials = service(&state)?
+        .list_materials_admin(
+            request_key,
+            authentication.principal(),
+            request_id.as_str().to_owned(),
+        )
+        .await
+        .map_err(map_error)?;
+    Ok(no_store_json(
+        materials
+            .iter()
+            .map(to_material_response)
+            .collect::<Vec<_>>(),
+    ))
+}
+
+async fn download_material(
+    State(state): State<OrganizationProvisioningHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path((request_key, material_id)): Path<(String, i64)>,
+) -> Result<Response, ManagementError> {
+    let request_key = parse_request_key(&request_key)?;
+    let (file_name, content_type, content) = service(&state)?
+        .download_material_admin(
+            request_key,
+            material_id,
+            authentication.principal(),
+            request_id.as_str().to_owned(),
+        )
+        .await
+        .map_err(map_error)?;
+    Ok((
+        StatusCode::OK,
+        [
+            (http::header::CONTENT_TYPE, content_type),
+            (
+                http::header::CONTENT_DISPOSITION,
+                format!(
+                    "attachment; filename=\"{}\"",
+                    safe_download_name(&file_name)
+                ),
+            ),
+            (http::header::CACHE_CONTROL, "no-store".to_owned()),
+        ],
+        content,
+    )
+        .into_response())
+}
+
+fn to_material_response(material: &OrganizationProvisioningMaterial) -> MaterialResponse {
+    MaterialResponse {
+        id: material.id(),
+        request_key: material.request_key().persistence_key(),
+        kind: material.kind().to_owned(),
+        file_name: material.file_name().to_owned(),
+        content_type: material.content_type().to_owned(),
+        size_bytes: material.size_bytes(),
+        content_available: material.content_available(),
+        created_at: material.created_at(),
+    }
 }
 
 async fn get_active_request(

@@ -24,14 +24,22 @@ pub(crate) enum OrganizationVerificationStatusSchema {
 }
 
 #[derive(ToSchema)]
+#[schema(as = OrganizationVerificationMultipartSubmitRequest)]
+pub(crate) struct OrganizationVerificationMultipartSubmitRequestSchema {
+    pub(crate) summary: String,
+    /// JSON 数组，元素为 `{kind, file_field}`；正文使用同名 `file:<file_field>` 部件。
+    pub(crate) materials: String,
+    /// 文档工具展示的二进制部件示例；服务端实际接受多个 `file:<file_field>` 部件。
+    #[schema(value_type = String, format = Binary)]
+    pub(crate) file_0: String,
+}
+
+#[derive(ToSchema)]
 #[schema(as = OrganizationVerificationMaterialRequest)]
 pub(crate) struct OrganizationVerificationMaterialRequestSchema {
     pub(crate) kind: String,
-    /// 受控对象存储引用；接口不会回显此字段。
-    pub(crate) object_reference: String,
-    pub(crate) file_name: String,
-    pub(crate) content_type: String,
-    pub(crate) size_bytes: i64,
+    /// multipart 中对应的文件字段后缀，例如 `0` 对应 `file:0`。
+    pub(crate) file_field: String,
 }
 
 #[derive(ToSchema)]
@@ -50,6 +58,7 @@ pub(crate) struct OrganizationVerificationMaterialSchema {
     pub(crate) file_name: String,
     pub(crate) content_type: String,
     pub(crate) size_bytes: i64,
+    pub(crate) content_available: bool,
     pub(crate) created_at: u64,
 }
 
@@ -116,11 +125,22 @@ fn get_organization_verification() {}
     operation_id = "submitOrganizationVerification",
     tag = "企业认证",
     params(("organization_id" = i64, Path, minimum = 1)),
-    request_body = OrganizationVerificationSubmitRequestSchema,
+    request_body(content = OrganizationVerificationMultipartSubmitRequestSchema, content_type = "multipart/form-data"),
     responses((status = 200, body = OrganizationVerificationResponseSchema), (status = 400, body = ManagementErrorBody), (status = 401, body = ManagementErrorBody), (status = 403, body = ManagementErrorBody), (status = 404, body = ManagementErrorBody), (status = 409, body = ManagementErrorBody), (status = 503, body = ManagementErrorBody)),
     security(("bearerAuth" = []))
 )]
 fn submit_organization_verification() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/admin/organization-verifications/{case_id}/materials/{material_id}",
+    operation_id = "downloadAdminOrganizationVerificationMaterial",
+    tag = "企业认证",
+    params(("case_id" = i64, Path, minimum = 1), ("material_id" = i64, Path, minimum = 1)),
+    responses((status = 200, description = "受平台权限与审计保护的材料正文", content((String = "application/octet-stream"))), (status = 400, body = ManagementErrorBody), (status = 401, body = ManagementErrorBody), (status = 403, body = ManagementErrorBody), (status = 404, body = ManagementErrorBody), (status = 503, body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn download_admin_organization_verification_material() {}
 
 #[utoipa::path(
     get,
@@ -163,11 +183,13 @@ fn decide_organization_verification() {}
         submit_organization_verification,
         list_admin_organization_verifications,
         get_admin_organization_verification,
-        decide_organization_verification
+        decide_organization_verification,
+        download_admin_organization_verification_material
     ),
     components(schemas(
         OrganizationVerificationListQuerySchema,
         OrganizationVerificationStatusSchema,
+        OrganizationVerificationMultipartSubmitRequestSchema,
         OrganizationVerificationMaterialRequestSchema,
         OrganizationVerificationSubmitRequestSchema,
         OrganizationVerificationMaterialSchema,

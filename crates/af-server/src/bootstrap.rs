@@ -1569,6 +1569,7 @@ impl Bootstrap<DatabaseReady> {
                 organization_provisioning_service: Arc::new(
                     af_admin::DatabaseOrganizationProvisioningService::new(
                         organization_provisioning_repository,
+                        Arc::clone(&platform_audit_service),
                     ),
                 ),
                 organization_verification_service: Arc::new(

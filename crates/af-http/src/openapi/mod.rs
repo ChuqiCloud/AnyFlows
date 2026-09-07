@@ -267,7 +267,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 250);
+        assert_eq!(document.paths.paths.len(), 253);
         let operation_count = document
             .paths
             .paths
@@ -289,7 +289,7 @@ mod tests {
             })
             .sum::<usize>();
         // 平台企业目录与用户归属只读接口扩展了既有管理面，保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 328);
+        assert_eq!(operation_count, 331);
         assert!(
             document
                 .components
@@ -485,11 +485,14 @@ mod tests {
             "listAdminOrganizationProvisioningRequests",
             "getAdminOrganizationProvisioningRequest",
             "decideOrganizationProvisioningRequest",
+            "listAdminOrganizationProvisioningMaterials",
+            "downloadAdminOrganizationProvisioningMaterial",
             "getOrganizationVerification",
             "submitOrganizationVerification",
             "listAdminOrganizationVerifications",
             "getAdminOrganizationVerification",
             "decideOrganizationVerification",
+            "downloadAdminOrganizationVerificationMaterial",
             "listAdminOrganizationPlans",
             "createAdminOrganizationPlan",
             "disableAdminOrganizationPlan",
@@ -664,7 +667,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 541);
+        assert_eq!(schemas.len(), 543);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("OrganizationSsoDiscoveryErrorResponse"));
         assert!(schemas.contains_key("Announcement"));
@@ -726,7 +729,6 @@ mod tests {
         assert!(schemas.contains_key("OrganizationVerificationListQuerySchema"));
         assert!(schemas.contains_key("OrganizationVerificationListResponse"));
         assert!(schemas.contains_key("OrganizationVerificationMaterial"));
-        assert!(schemas.contains_key("OrganizationVerificationMaterialRequest"));
         assert!(schemas.contains_key("OrganizationVerificationResponse"));
         assert!(schemas.contains_key("OrganizationVerificationStatus"));
         assert!(schemas.contains_key("OrganizationVerificationSubmitRequest"));

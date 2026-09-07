@@ -21,13 +21,14 @@ use crate::{
     },
 };
 
-/// 待提交的企业认证材料元数据；文件正文由外部受控对象存储负责。
+/// 待提交的企业认证材料；正文写入数据库受控二进制列，不进入普通查询投影。
 pub struct OrganizationVerificationMaterialWrite {
     pub kind: String,
     pub object_reference: String,
     pub file_name: String,
     pub content_type: String,
     pub size_bytes: i64,
+    pub content_bytes: Vec<u8>,
 }
 
 /// 企业认证案件创建或补充写入。
@@ -163,6 +164,20 @@ impl OrganizationVerificationRepository {
         )
         .await
         .map_err(|_| OrganizationVerificationRepositoryError::OutcomeUnknown)?
+    }
+
+    /// 按案件边界读取材料正文，调用方必须先完成平台权限校验。
+    pub async fn read_material_content(
+        &self,
+        case_id: OrganizationVerificationCaseId,
+        material_id: OrganizationVerificationMaterialId,
+    ) -> Result<Vec<u8>, OrganizationVerificationRepositoryError> {
+        timeout(
+            self.operation_timeout,
+            read_material_content_inner(self.pool.connection(), case_id, material_id),
+        )
+        .await
+        .map_err(|_| OrganizationVerificationRepositoryError::Query)?
     }
 }
 
@@ -376,6 +391,7 @@ async fn append_materials<C: ConnectionTrait>(
             file_name: Set(SensitiveString::from(write.file_name)),
             content_type: Set(write.content_type),
             size_bytes: Set(write.size_bytes),
+            content_bytes: Set(Some(write.content_bytes)),
             created_at: Set(to_database_time(created_at)?),
             ..Default::default()
         };
@@ -440,9 +456,26 @@ fn to_material(
         model.file_name.as_str().to_owned(),
         model.content_type,
         model.size_bytes,
+        model.content_bytes.is_some(),
         unix_seconds(model.created_at)?,
     )
     .map_err(|_| OrganizationVerificationRepositoryError::Invariant)
+}
+
+async fn read_material_content_inner(
+    connection: &DatabaseConnection,
+    case_id: OrganizationVerificationCaseId,
+    material_id: OrganizationVerificationMaterialId,
+) -> Result<Vec<u8>, OrganizationVerificationRepositoryError> {
+    let material = organization_verification_materials::Entity::find_by_id(material_id.get())
+        .filter(organization_verification_materials::Column::CaseId.eq(case_id.get()))
+        .one(connection)
+        .await
+        .map_err(query_error)?
+        .ok_or(OrganizationVerificationRepositoryError::MaterialNotFound)?;
+    material
+        .content_bytes
+        .ok_or(OrganizationVerificationRepositoryError::MaterialContentUnavailable)
 }
 
 async fn ensure_active_user<C: ConnectionTrait>(
@@ -503,4 +536,8 @@ pub enum OrganizationVerificationRepositoryError {
     Invariant,
     #[error("企业认证写入结果未知")]
     OutcomeUnknown,
+    #[error("企业认证材料不存在")]
+    MaterialNotFound,
+    #[error("企业认证材料正文不可用")]
+    MaterialContentUnavailable,
 }

@@ -99,6 +99,7 @@ pub(crate) mod organization_plan_orders;
 pub(crate) mod organization_plan_payment_events;
 pub(crate) mod organization_plan_prices;
 pub(crate) mod organization_plans;
+pub(crate) mod organization_provisioning_materials;
 pub(crate) mod organization_provisioning_requests;
 pub(crate) mod organization_scim_audit_logs;
 pub(crate) mod organization_scim_group_resources;
@@ -3594,6 +3595,9 @@ impl ActiveModelBehavior for organization_approval_notifications::ActiveModel {
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for organization_provisioning_requests::ActiveModel {}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_provisioning_materials::ActiveModel {}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for organization_verification_cases::ActiveModel {}

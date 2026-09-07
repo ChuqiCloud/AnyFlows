@@ -214,6 +214,7 @@ pub struct OrganizationVerificationMaterial {
     file_name: String,
     content_type: String,
     size_bytes: i64,
+    content_available: bool,
     created_at: u64,
 }
 
@@ -228,6 +229,7 @@ impl OrganizationVerificationMaterial {
         file_name: String,
         content_type: String,
         size_bytes: i64,
+        content_available: bool,
         created_at: u64,
     ) -> Result<Self, OrganizationVerificationError> {
         for (value, max, error) in [
@@ -265,6 +267,7 @@ impl OrganizationVerificationMaterial {
             file_name,
             content_type,
             size_bytes,
+            content_available,
             created_at,
         })
     }
@@ -296,6 +299,10 @@ impl OrganizationVerificationMaterial {
     #[must_use]
     pub const fn size_bytes(&self) -> i64 {
         self.size_bytes
+    }
+    #[must_use]
+    pub const fn content_available(&self) -> bool {
+        self.content_available
     }
     #[must_use]
     pub const fn created_at(&self) -> u64 {
