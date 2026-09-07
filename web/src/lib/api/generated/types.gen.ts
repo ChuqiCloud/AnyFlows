@@ -2110,6 +2110,16 @@ export type OrganizationProvisioningListQuerySchema = {
     limit?: number | null;
     status?: null | OrganizationProvisioningStatus;
 };
+export type OrganizationProvisioningMaterial = {
+    id: number;
+    request_key: string;
+    kind: string;
+    file_name: string;
+    content_type: string;
+    size_bytes: number;
+    content_available: boolean;
+    created_at: number;
+};
 export type OrganizationProvisioningRequest = {
     id: number;
     request_key: string;
@@ -3302,16 +3312,6 @@ export type VideoTaskListResponse = {
     next_cursor: string | null;
 };
 export type VideoTaskStatus = 'pending' | 'done' | 'expired' | 'failed';
-export type OrganizationProvisioningMaterial = {
-    id: number;
-    request_key: string;
-    kind: string;
-    file_name: string;
-    content_type: string;
-    size_bytes: number;
-    content_available: boolean;
-    created_at: number;
-};
 export type AdminChannelCreateRequestWritable = {
     name: string;
     type: 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
@@ -8200,6 +8200,47 @@ export type DecideOrganizationProvisioningRequestResponses = {
     202: OrganizationProvisioningRequest;
 };
 export type DecideOrganizationProvisioningRequestResponse = DecideOrganizationProvisioningRequestResponses[keyof DecideOrganizationProvisioningRequestResponses];
+export type ListAdminOrganizationProvisioningMaterialsData = {
+    body?: never;
+    path: {
+        request_key: string;
+    };
+    query?: never;
+    url: '/api/admin/organization-provisioning/{request_key}/materials';
+};
+export type ListAdminOrganizationProvisioningMaterialsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    503: ManagementError;
+};
+export type ListAdminOrganizationProvisioningMaterialsError = ListAdminOrganizationProvisioningMaterialsErrors[keyof ListAdminOrganizationProvisioningMaterialsErrors];
+export type ListAdminOrganizationProvisioningMaterialsResponses = {
+    200: Array<OrganizationProvisioningMaterial>;
+};
+export type ListAdminOrganizationProvisioningMaterialsResponse = ListAdminOrganizationProvisioningMaterialsResponses[keyof ListAdminOrganizationProvisioningMaterialsResponses];
+export type DownloadAdminOrganizationProvisioningMaterialData = {
+    body?: never;
+    path: {
+        request_key: string;
+        material_id: number;
+    };
+    query?: never;
+    url: '/api/admin/organization-provisioning/{request_key}/materials/{material_id}';
+};
+export type DownloadAdminOrganizationProvisioningMaterialErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    503: ManagementError;
+};
+export type DownloadAdminOrganizationProvisioningMaterialError = DownloadAdminOrganizationProvisioningMaterialErrors[keyof DownloadAdminOrganizationProvisioningMaterialErrors];
+export type DownloadAdminOrganizationProvisioningMaterialResponses = {
+    200: Blob | File;
+};
+export type DownloadAdminOrganizationProvisioningMaterialResponse = DownloadAdminOrganizationProvisioningMaterialResponses[keyof DownloadAdminOrganizationProvisioningMaterialResponses];
 export type GetOrganizationVerificationData = {
     body?: never;
     path: {
@@ -10025,44 +10066,3 @@ export type UpdateAdminGoogleOAuthLoginSettingsResponses = {
     200: AdminOAuthLoginProviderSettings;
 };
 export type UpdateAdminGoogleOAuthLoginSettingsResponse = UpdateAdminGoogleOAuthLoginSettingsResponses[keyof UpdateAdminGoogleOAuthLoginSettingsResponses];
-export type ListAdminOrganizationProvisioningMaterialsData = {
-    body?: never;
-    path: {
-        request_key: string;
-    };
-    query?: never;
-    url: '/api/admin/organization-provisioning/{request_key}/materials';
-};
-export type ListAdminOrganizationProvisioningMaterialsErrors = {
-    400: ManagementError;
-    401: ManagementError;
-    403: ManagementError;
-    404: ManagementError;
-    503: ManagementError;
-};
-export type ListAdminOrganizationProvisioningMaterialsError = ListAdminOrganizationProvisioningMaterialsErrors[keyof ListAdminOrganizationProvisioningMaterialsErrors];
-export type ListAdminOrganizationProvisioningMaterialsResponses = {
-    200: Array<OrganizationProvisioningMaterial>;
-};
-export type ListAdminOrganizationProvisioningMaterialsResponse = ListAdminOrganizationProvisioningMaterialsResponses[keyof ListAdminOrganizationProvisioningMaterialsResponses];
-export type DownloadAdminOrganizationProvisioningMaterialData = {
-    body?: never;
-    path: {
-        request_key: string;
-        material_id: number;
-    };
-    query?: never;
-    url: '/api/admin/organization-provisioning/{request_key}/materials/{material_id}';
-};
-export type DownloadAdminOrganizationProvisioningMaterialErrors = {
-    400: ManagementError;
-    401: ManagementError;
-    403: ManagementError;
-    404: ManagementError;
-    503: ManagementError;
-};
-export type DownloadAdminOrganizationProvisioningMaterialError = DownloadAdminOrganizationProvisioningMaterialErrors[keyof DownloadAdminOrganizationProvisioningMaterialErrors];
-export type DownloadAdminOrganizationProvisioningMaterialResponses = {
-    200: Blob | File;
-};
-export type DownloadAdminOrganizationProvisioningMaterialResponse = DownloadAdminOrganizationProvisioningMaterialResponses[keyof DownloadAdminOrganizationProvisioningMaterialResponses];

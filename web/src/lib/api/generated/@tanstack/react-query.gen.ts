@@ -4119,6 +4119,32 @@ export const decideOrganizationProvisioningRequestMutation = (options?: Partial<
     };
     return mutationOptions;
 };
+export const listAdminOrganizationProvisioningMaterialsQueryKey = (options: Options<ListAdminOrganizationProvisioningMaterialsData>) => createQueryKey('listAdminOrganizationProvisioningMaterials', options);
+export const listAdminOrganizationProvisioningMaterialsOptions = (options: Options<ListAdminOrganizationProvisioningMaterialsData>) => queryOptions<ListAdminOrganizationProvisioningMaterialsResponse, ListAdminOrganizationProvisioningMaterialsError, ListAdminOrganizationProvisioningMaterialsResponse, ReturnType<typeof listAdminOrganizationProvisioningMaterialsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await listAdminOrganizationProvisioningMaterials({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: listAdminOrganizationProvisioningMaterialsQueryKey(options)
+});
+export const downloadAdminOrganizationProvisioningMaterialQueryKey = (options: Options<DownloadAdminOrganizationProvisioningMaterialData>) => createQueryKey('downloadAdminOrganizationProvisioningMaterial', options);
+export const downloadAdminOrganizationProvisioningMaterialOptions = (options: Options<DownloadAdminOrganizationProvisioningMaterialData>) => queryOptions<DownloadAdminOrganizationProvisioningMaterialResponse, DownloadAdminOrganizationProvisioningMaterialError, DownloadAdminOrganizationProvisioningMaterialResponse, ReturnType<typeof downloadAdminOrganizationProvisioningMaterialQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await downloadAdminOrganizationProvisioningMaterial({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: downloadAdminOrganizationProvisioningMaterialQueryKey(options)
+});
 export const getOrganizationVerificationQueryKey = (options: Options<GetOrganizationVerificationData>) => createQueryKey('getOrganizationVerification', options);
 export const getOrganizationVerificationOptions = (options: Options<GetOrganizationVerificationData>) => queryOptions<GetOrganizationVerificationResponse, GetOrganizationVerificationError, GetOrganizationVerificationResponse, ReturnType<typeof getOrganizationVerificationQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -5740,29 +5766,3 @@ export const updateAdminGoogleOAuthLoginSettingsMutation = (options?: Partial<Op
     };
     return mutationOptions;
 };
-export const listAdminOrganizationProvisioningMaterialsQueryKey = (options: Options<ListAdminOrganizationProvisioningMaterialsData>) => createQueryKey('listAdminOrganizationProvisioningMaterials', options);
-export const listAdminOrganizationProvisioningMaterialsOptions = (options: Options<ListAdminOrganizationProvisioningMaterialsData>) => queryOptions<ListAdminOrganizationProvisioningMaterialsResponse, ListAdminOrganizationProvisioningMaterialsError, ListAdminOrganizationProvisioningMaterialsResponse, ReturnType<typeof listAdminOrganizationProvisioningMaterialsQueryKey>>({
-    queryFn: async ({ queryKey, signal }) => {
-        const { data } = await listAdminOrganizationProvisioningMaterials({
-            ...options,
-            ...queryKey[0],
-            signal,
-            throwOnError: true
-        });
-        return data;
-    },
-    queryKey: listAdminOrganizationProvisioningMaterialsQueryKey(options)
-});
-export const downloadAdminOrganizationProvisioningMaterialQueryKey = (options: Options<DownloadAdminOrganizationProvisioningMaterialData>) => createQueryKey('downloadAdminOrganizationProvisioningMaterial', options);
-export const downloadAdminOrganizationProvisioningMaterialOptions = (options: Options<DownloadAdminOrganizationProvisioningMaterialData>) => queryOptions<DownloadAdminOrganizationProvisioningMaterialResponse, DownloadAdminOrganizationProvisioningMaterialError, DownloadAdminOrganizationProvisioningMaterialResponse, ReturnType<typeof downloadAdminOrganizationProvisioningMaterialQueryKey>>({
-    queryFn: async ({ queryKey, signal }) => {
-        const { data } = await downloadAdminOrganizationProvisioningMaterial({
-            ...options,
-            ...queryKey[0],
-            signal,
-            throwOnError: true
-        });
-        return data;
-    },
-    queryKey: downloadAdminOrganizationProvisioningMaterialQueryKey(options)
-});

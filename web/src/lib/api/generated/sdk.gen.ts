@@ -2472,6 +2472,24 @@ export const decideOrganizationProvisioningRequest = <ThrowOnError extends boole
         ...options.headers
     }
 });
+export const listAdminOrganizationProvisioningMaterials = <ThrowOnError extends boolean = true>(options: Options<ListAdminOrganizationProvisioningMaterialsData, ThrowOnError>): RequestResult<ListAdminOrganizationProvisioningMaterialsResponses, ListAdminOrganizationProvisioningMaterialsErrors, ThrowOnError> => (options.client ?? client).get<ListAdminOrganizationProvisioningMaterialsResponses, ListAdminOrganizationProvisioningMaterialsErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/organization-provisioning/{request_key}/materials',
+    ...options
+});
+export const downloadAdminOrganizationProvisioningMaterial = <ThrowOnError extends boolean = true>(options: Options<DownloadAdminOrganizationProvisioningMaterialData, ThrowOnError>): RequestResult<DownloadAdminOrganizationProvisioningMaterialResponses, DownloadAdminOrganizationProvisioningMaterialErrors, ThrowOnError> => (options.client ?? client).get<DownloadAdminOrganizationProvisioningMaterialResponses, DownloadAdminOrganizationProvisioningMaterialErrors, ThrowOnError>({
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/admin/organization-provisioning/{request_key}/materials/{material_id}',
+    ...options
+});
 export const getOrganizationVerification = <ThrowOnError extends boolean = true>(options: Options<GetOrganizationVerificationData, ThrowOnError>): RequestResult<GetOrganizationVerificationResponses, GetOrganizationVerificationErrors, ThrowOnError> => (options.client ?? client).get<GetOrganizationVerificationResponses, GetOrganizationVerificationErrors, ThrowOnError>({
     security: [{
             key: 'bearerAuth',
@@ -3319,22 +3337,4 @@ export const updateAdminGoogleOAuthLoginSettings = <ThrowOnError extends boolean
         'Content-Type': 'application/json',
         ...options.headers
     }
-});
-export const listAdminOrganizationProvisioningMaterials = <ThrowOnError extends boolean = true>(options: Options<ListAdminOrganizationProvisioningMaterialsData, ThrowOnError>): RequestResult<ListAdminOrganizationProvisioningMaterialsResponses, ListAdminOrganizationProvisioningMaterialsErrors, ThrowOnError> => (options.client ?? client).get<ListAdminOrganizationProvisioningMaterialsResponses, ListAdminOrganizationProvisioningMaterialsErrors, ThrowOnError>({
-    security: [{
-            key: 'bearerAuth',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/api/admin/organization-provisioning/{request_key}/materials',
-    ...options
-});
-export const downloadAdminOrganizationProvisioningMaterial = <ThrowOnError extends boolean = true>(options: Options<DownloadAdminOrganizationProvisioningMaterialData, ThrowOnError>): RequestResult<DownloadAdminOrganizationProvisioningMaterialResponses, DownloadAdminOrganizationProvisioningMaterialErrors, ThrowOnError> => (options.client ?? client).get<DownloadAdminOrganizationProvisioningMaterialResponses, DownloadAdminOrganizationProvisioningMaterialErrors, ThrowOnError>({
-    security: [{
-            key: 'bearerAuth',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/api/admin/organization-provisioning/{request_key}/materials/{material_id}',
-    ...options
 });
