@@ -46,6 +46,7 @@
     "organizationApprovals": "Approvals",
     "organizationActivity": "Organization logs & audit",
     "organizationOverview": "Organization overview",
+    "organizationOnboarding": "Organization setup",
     "organizationProvisioning": "Organization provisioning",
     "organizationVerification": "Organization verification",
     "organizationPlans": "Organization plans",
@@ -5858,6 +5859,48 @@
         "protocol": { "oidc": "OpenID Connect", "saml": "SAML 2.0" },
         "status": { "draft": "Draft", "active": "Active", "disabled": "Disabled" },
         "fields": { "protocol": "Protocol", "version": "Version", "secret": "Secret", "metadata": "Metadata" },
+        "providers": {
+          "add": "Add Provider",
+          "edit": "Edit",
+          "createTitle": "Add SSO Provider",
+          "editTitle": "Edit SSO Provider",
+          "editorHint": "Fill the protocol-specific fields. The server validates and encrypts secrets; the browser never stores them.",
+          "displayName": "Display name",
+          "protocol": "Protocol",
+          "protocols": { "oidc": "OpenID Connect", "saml": "SAML 2.0" },
+          "status": "Status",
+          "statuses": { "draft": "Draft", "active": "Active", "disabled": "Disabled" },
+          "clientSecret": "Client Secret",
+          "clientSecretHint": "Leave this blank while editing to keep the stored secret; enter a value to replace it.",
+          "clearClientSecret": "Clear the stored secret",
+          "oidc": {
+            "issuer": "Issuer",
+            "authorizationEndpoint": "Authorization endpoint",
+            "tokenEndpoint": "Token endpoint",
+            "jwksUri": "JWKS URI",
+            "clientId": "Client ID",
+            "audience": "Audience",
+            "redirectUri": "Redirect URI",
+            "redirectHint": "Use the fixed enterprise OIDC callback URL served by this installation."
+          },
+          "saml": {
+            "idpEntityId": "IdP entity ID",
+            "ssoUrl": "IdP SSO URL",
+            "spEntityId": "SP entity ID",
+            "acsUrl": "ACS URL",
+            "nameIdFormat": "NameID format",
+            "certificates": "Trusted signing certificates",
+            "certificatesHint": "Paste PEM certificates; separate multiple certificates at each BEGIN CERTIFICATE line."
+          },
+          "activeHint": {
+            "oidc": "Before enabling OIDC, confirm the Client Secret, verified organization domain, and callback URL are ready.",
+            "saml": "Before enabling SAML, confirm the verified organization domain, IdP certificate, and SSO URL are ready."
+          },
+          "save": "Save configuration",
+          "create": "Create Provider",
+          "cancel": "Cancel",
+          "errors": { "generic": "The Provider could not be saved. Check the fields and entitlement, then try again.", "conflict": "The Provider changed in another administrator session. Refresh and edit the latest version." }
+        },
         "login": {
           "start": "Start SAML login",
           "starting": "Preparing SAML login",
@@ -5937,7 +5980,7 @@
         },
         "empty": {
           "title": "No organization SSO Provider is configured",
-          "manageBody": "The current role can manage SSO, but create and update forms will arrive in a later slice.",
+          "manageBody": "The current role can manage SSO. Use Add Provider or Edit on an existing row to complete the configuration.",
           "readBody": "This organization has no Provider configuration visible to the current role."
         },
   "closure": {
