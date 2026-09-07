@@ -48,10 +48,10 @@ import {
   adminNavigationSections,
   adminSystemItems,
   adminWorkspaceItems,
+  filterOrganizationNavigationItems,
   type AdminSectionKey,
   type NavKey,
   userNavigationGroups,
-  userNavigationItems,
 } from '@/components/layout/app-navigation-model'
 import {
   SidebarGroup,
@@ -66,6 +66,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
+import { useOrganizationWorkspace } from '@/features/organization-console/organization-workspace-context'
 
 type AppNavigationProps = {
   className?: string
@@ -265,7 +266,17 @@ function AdminNavigation({ activeKey }: { activeKey: NavKey }) {
   }
 
   const personalSection = adminNavigationSections.find((section) => section.key === 'personal')
-  const systemSections = adminNavigationSections.filter((section) => section.key !== 'personal')
+  const organizationSection = adminNavigationSections.find((section) => section.key === 'organization')
+  const enterpriseSection = adminNavigationSections.find((section) => section.key === 'enterprise')
+  const systemSections = adminNavigationSections.filter((section) => (
+    section.key !== 'personal' && section.key !== 'organization' && section.key !== 'enterprise'
+  ))
+  const renderSectionGroup = (label: string, section: typeof adminNavigationSections[number] | undefined) => section ? (
+    <SidebarGroup className="p-0">
+      <SidebarGroupLabel className="h-7 px-2 text-[0.6875rem]">{label}</SidebarGroupLabel>
+      <SidebarGroupContent><SidebarMenu>{renderSection(section)}</SidebarMenu></SidebarGroupContent>
+    </SidebarGroup>
+  ) : null
   return (
     <>
       <NavigationGroup label={t('nav.groups.workspace')} items={adminWorkspaceItems} activeKey={activeKey} />
@@ -275,6 +286,8 @@ function AdminNavigation({ activeKey }: { activeKey: NavKey }) {
           <SidebarGroupContent><SidebarMenu>{renderSection(personalSection)}</SidebarMenu></SidebarGroupContent>
         </SidebarGroup>
       ) : null}
+      {renderSectionGroup(t('nav.groups.organization'), organizationSection)}
+      {renderSectionGroup(t('nav.sections.enterprise'), enterpriseSection)}
       <SidebarGroup className="p-0">
         <SidebarGroupLabel className="h-7 px-2 text-[0.6875rem]">{t('nav.groups.system')}</SidebarGroupLabel>
         <SidebarGroupContent>
@@ -291,7 +304,19 @@ function AdminNavigation({ activeKey }: { activeKey: NavKey }) {
 export function AppNavigation({ className, compact = false, role }: AppNavigationProps) {
   const { t } = useTranslation()
   const activeKey = useActiveKey()
-  const visibleItems = role === 'admin' ? adminNavigationItems : userNavigationItems
+  const workspace = useOrganizationWorkspace()
+  const organizationItems = filterOrganizationNavigationItems(
+    userNavigationGroups.find((group) => group.key === 'organization')?.items ?? [],
+    workspace.organizationPermissions,
+    workspace.selectedId !== undefined,
+    workspace.organizationPermissionsLoading,
+  )
+  const visibleUserGroups = userNavigationGroups
+    .map((group) => group.key === 'organization' ? { ...group, items: organizationItems } : group)
+    .filter((group) => group.key !== 'organization' || group.items.length > 0)
+  const visibleItems = role === 'admin'
+    ? adminNavigationItems
+    : visibleUserGroups.flatMap((group) => group.items)
 
   if (compact) {
     return (
@@ -323,7 +348,7 @@ export function AppNavigation({ className, compact = false, role }: AppNavigatio
     <div className={cn('flex flex-col gap-1', className)}>
       {role === 'admin'
         ? <AdminNavigation activeKey={activeKey} />
-        : userNavigationGroups.map((group) => (
+        : visibleUserGroups.map((group) => (
           <NavigationGroup key={group.key} label={t(`nav.groups.${group.key}`)} items={group.items} activeKey={activeKey} />
         ))}
     </div>

@@ -24,7 +24,7 @@
       "account": "Account",
       "workspace": "Workspace",
       "personal": "Personal",
-      "system": "System management"
+      "system": "Platform administration"
     },
     "sections": {
       "personal": "Personal account",

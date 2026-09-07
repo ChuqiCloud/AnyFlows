@@ -76,6 +76,46 @@ export const adminNavigationItems: readonly NavKey[] = [
 
 export const userNavigationItems: readonly NavKey[] = userNavigationGroups.flatMap((group) => group.items)
 
+/** 企业菜单按当前成员的服务端权限投影裁剪，避免把无权页面伪装成可用功能。 */
+export const organizationNavigationPermissions: Readonly<Partial<Record<NavKey, readonly string[]>>> = {
+  organizationOverview: ['organization.overview.read'],
+  organizationOnboarding: ['organization.profile.write'],
+  organizationMembers: ['organization.overview.read'],
+  organizationDepartments: ['organization.departments.read'],
+  organizationApiKeys: ['organization.keys.manage_self', 'organization.keys.read_all'],
+  organizationServiceAccounts: ['organization.service_accounts.read'],
+  organizationBudgets: ['organization.budgets.manage'],
+  organizationContractPrices: ['organization.contract_prices.read'],
+  organizationCredit: ['organization.credit.read'],
+  organizationApprovals: ['organization.approvals.read', 'organization.approvals.create'],
+  organizationWallet: ['organization.wallet.read'],
+  organizationActivity: ['organization.usage_logs.read_all', 'organization.usage_logs.read_self', 'organization.audit.read'],
+  organizationVerification: ['organization.profile.write'],
+  organizationSettings: ['organization.profile.write', 'organization.roles.read'],
+}
+
+/**
+ * 只返回当前工作空间可用的企业入口；权限尚未加载时保留概览，避免导航闪现全部管理项。
+ */
+export function filterOrganizationNavigationItems(
+  items: readonly NavKey[],
+  permissions: readonly string[] | undefined,
+  workspaceSelected: boolean,
+  permissionsLoading: boolean,
+): readonly NavKey[] {
+  if (!workspaceSelected) {
+    return []
+  }
+  if (permissionsLoading || permissions === undefined) {
+    return items.filter((item) => item === 'organizationOverview')
+  }
+  const granted = new Set(permissions)
+  return items.filter((item) => {
+    const required = organizationNavigationPermissions[item]
+    return required === undefined || required.some((permission) => granted.has(permission))
+  })
+}
+
 export const activeKeyByView: Readonly<Record<string, NavKey>> = {
   overview: 'overview',
   models: 'models',
