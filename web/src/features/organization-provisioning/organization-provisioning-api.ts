@@ -90,6 +90,9 @@ export function useCreateOrganizationProvisioning() {
       const result = await apiClient.post<OrganizationProvisioningRequest>({
         url: '/api/account/organization-provisioning',
         body: form,
+        // FormData 已包含动态 file:<index> 部件，必须绕过共享客户端的 JSON 序列化器。
+        bodySerializer: null,
+        headers: { 'Content-Type': null },
         security: [{ key: 'bearerAuth', scheme: 'bearer', type: 'http' }],
       }) as unknown as { data: OrganizationProvisioningRequest }
       return result.data

@@ -5,11 +5,12 @@ import test from 'node:test'
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8')
 
 test('企业开通申请的 HTTP、OpenAPI、生成客户端和前端入口保持同步', async () => {
-  const [openapi, sdk, types, route, page, registrationPage, en, zh] = await Promise.all([
+  const [openapi, sdk, types, route, api, page, registrationPage, en, zh] = await Promise.all([
     read('../openapi/openapi.json').then(JSON.parse),
     read('../src/lib/api/generated/sdk.gen.ts'),
     read('../src/lib/api/generated/types.gen.ts'),
     read('../src/app-route.ts'),
+    read('../src/features/organization-provisioning/organization-provisioning-api.ts'),
     read('../src/features/organization-provisioning/organization-provisioning-page.tsx'),
     read('../src/features/registration/registration-page.tsx'),
     read('../src/i18n/locales/en.json').then(JSON.parse),
@@ -50,6 +51,8 @@ test('企业开通申请的 HTTP、OpenAPI、生成客户端和前端入口保�
   assert.match(page, /MAX_TOTAL_MATERIAL_BYTES/)
   assert.match(page, /useAdminOrganizationProvisioningMaterials/)
   assert.match(page, /downloadAdminOrganizationProvisioningMaterial/)
+  assert.match(api, /bodySerializer: null/)
+  assert.match(api, /headers: \{ 'Content-Type': null \}/)
   assert.match(sdk, /formDataBodySerializer/)
   assert.match(registrationPage, /registration\.enterprise\.steps/)
   assert.equal(typeof en.organizationProvisioning.title, 'string')
