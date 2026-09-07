@@ -25,9 +25,40 @@ type OrganizationProvisioningPageProps = {
   admin?: boolean
 }
 
-/** 企业开通申请入口；管理员模式展示同一 HTTP 事实的审批工作台。 */
+type AdminProvisioningView = 'review' | 'apply'
+
+/** 企业开通入口；管理员可在审批工作台和自己的申请表单之间切换。 */
 export function OrganizationProvisioningPage({ admin = false }: OrganizationProvisioningPageProps) {
-  return admin ? <AdminProvisioningWorkspace /> : <ApplicantProvisioningWorkspace />
+  const { t } = useTranslation()
+  const [adminView, setAdminView] = useState<AdminProvisioningView>('review')
+
+  if (!admin) return <ApplicantProvisioningWorkspace />
+
+  return (
+    <div className="grid gap-4">
+      <div
+        role="tablist"
+        aria-label={t('organizationProvisioning.admin.views.label')}
+        className="flex w-fit max-w-full gap-1 overflow-x-auto rounded-lg border border-[var(--hairline)] bg-surface-2/60 p-1"
+      >
+        {(['review', 'apply'] as const).map((view) => (
+          <Button
+            key={view}
+            type="button"
+            role="tab"
+            size="sm"
+            variant={adminView === view ? 'default' : 'ghost'}
+            aria-selected={adminView === view}
+            onClick={() => setAdminView(view)}
+          >
+            {view === 'review' ? <ClipboardCheck aria-hidden="true" /> : <Building2 aria-hidden="true" />}
+            {t(`organizationProvisioning.admin.views.${view}`)}
+          </Button>
+        ))}
+      </div>
+      {adminView === 'review' ? <AdminProvisioningWorkspace /> : <ApplicantProvisioningWorkspace />}
+    </div>
+  )
 }
 
 function ApplicantProvisioningWorkspace() {

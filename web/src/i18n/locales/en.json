@@ -6045,6 +6045,11 @@
     "admin": {
       "title": "Organization provisioning",
       "subtitle": "Review requests and write the initial entitlement snapshot atomically on the server.",
+      "views": {
+        "label": "Organization provisioning view",
+        "review": "Review requests",
+        "apply": "Apply for access"
+      },
       "filters": { "all": "All", "pending": "Pending", "approved": "Approved", "rejected": "Rejected" },
       "review": "Review",
       "approve": "Approve and provision",
