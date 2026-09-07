@@ -40,6 +40,8 @@ test('企业开通申请的 HTTP、OpenAPI、生成客户端和前端入口保�
   assert.match(page, /type AdminProvisioningView = 'review' \| 'apply'/)
   assert.match(page, /role="tablist"/)
   assert.match(page, /adminView === 'review' \? <AdminProvisioningWorkspace \/> : <ApplicantProvisioningWorkspace \/>/)
+  assert.match(page, /const shouldLoadRequest = requestKey !== undefined && !activeQuery\.isPending && activeQuery\.data === null/)
+  assert.match(page, /shouldLoadRequest && requestQuery\.isPending/)
   assert.match(registrationPage, /registration\.enterprise\.steps/)
   assert.equal(typeof en.organizationProvisioning.title, 'string')
   assert.equal(typeof zh.organizationProvisioning.title, 'string')
