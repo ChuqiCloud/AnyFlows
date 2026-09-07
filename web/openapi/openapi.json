@@ -44124,6 +44124,22 @@
           }
         }
       },
+      "OrganizationVerificationMaterialRequest": {
+        "type": "object",
+        "required": [
+          "kind",
+          "file_field"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "file_field": {
+            "type": "string",
+            "description": "multipart 中对应的文件字段后缀，例如 `0` 对应 `file:0`。"
+          }
+        }
+      },
       "OrganizationVerificationMultipartSubmitRequest": {
         "type": "object",
         "required": [
@@ -44173,6 +44189,24 @@
           "approved",
           "rejected"
         ]
+      },
+      "OrganizationVerificationSubmitRequest": {
+        "type": "object",
+        "required": [
+          "summary",
+          "materials"
+        ],
+        "properties": {
+          "summary": {
+            "type": "string"
+          },
+          "materials": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrganizationVerificationMaterialRequest"
+            }
+          }
+        }
       },
       "OrganizationWalletAdjustmentRequest": {
         "type": "object",
