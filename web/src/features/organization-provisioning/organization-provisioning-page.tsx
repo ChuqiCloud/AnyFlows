@@ -65,9 +65,10 @@ function ApplicantProvisioningWorkspace() {
   const { t } = useTranslation()
   const activeQuery = useActiveOrganizationProvisioning()
   const [requestKey, setRequestKey] = useState(() => readRequestKey())
+  const shouldLoadRequest = requestKey !== undefined && !activeQuery.isPending && activeQuery.data === null
   const requestQuery = useOrganizationProvisioningRequest(
     requestKey,
-    !activeQuery.isPending && activeQuery.data === null,
+    shouldLoadRequest,
   )
   const createMutation = useCreateOrganizationProvisioning()
   const [form, setForm] = useState(() => ({
@@ -93,7 +94,7 @@ function ApplicantProvisioningWorkspace() {
     }
   }
 
-  if (activeQuery.isPending || (requestKey !== undefined && requestQuery.isPending)) return <ProvisioningLoading />
+  if (activeQuery.isPending || (shouldLoadRequest && requestQuery.isPending)) return <ProvisioningLoading />
   if (activeQuery.isError && activeQuery.error instanceof Error && organizationProvisioningErrorStatus(activeQuery.error) !== 404) {
     return <ProvisioningState title={t('organizationProvisioning.errors.loadTitle')} body={t('organizationProvisioning.errors.loadBody')} action={<Button type="button" size="sm" variant="secondary" onClick={() => void activeQuery.refetch()}><RefreshCw aria-hidden="true" />{t('organizationProvisioning.actions.retry')}</Button>} />
   }
