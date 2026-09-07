@@ -6045,6 +6045,11 @@
     "admin": {
       "title": "企业开通审批",
       "subtitle": "审核申请，并由服务端原子写入首个企业授权快照。",
+      "views": {
+        "label": "企业开通页面",
+        "review": "审批申请",
+        "apply": "申请开通"
+      },
       "filters": { "all": "全部", "pending": "待审核", "approved": "已批准", "rejected": "已拒绝" },
       "review": "审核",
       "approve": "批准并开通",

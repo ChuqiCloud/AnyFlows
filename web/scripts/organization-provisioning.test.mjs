@@ -37,11 +37,15 @@ test('企业开通申请的 HTTP、OpenAPI、生成客户端和前端入口保�
   assert.match(page, /useAdminOrganizationProvisioning/)
   assert.match(page, /ProvisioningFlow current="apply"/)
   assert.match(page, /ProvisioningFlow current="review"/)
+  assert.match(page, /type AdminProvisioningView = 'review' \| 'apply'/)
+  assert.match(page, /role="tablist"/)
+  assert.match(page, /adminView === 'review' \? <AdminProvisioningWorkspace \/> : <ApplicantProvisioningWorkspace \/>/)
   assert.match(registrationPage, /registration\.enterprise\.steps/)
   assert.equal(typeof en.organizationProvisioning.title, 'string')
   assert.equal(typeof zh.organizationProvisioning.title, 'string')
   for (const locale of [en, zh]) {
     assert.deepEqual(Object.keys(locale.organizationProvisioning.flow), ['apply', 'review', 'setup', 'operate'])
+    assert.deepEqual(Object.keys(locale.organizationProvisioning.admin.views), ['label', 'review', 'apply'])
     assert.deepEqual(Object.keys(locale.registration.enterprise.steps), ['account', 'apply', 'setup'])
   }
   assert.equal(typeof en.organizationConsole.empty.applyProvisioning, 'string')
