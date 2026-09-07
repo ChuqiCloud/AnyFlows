@@ -2510,6 +2510,10 @@ export type OrganizationVerificationMaterial = {
     content_available: boolean;
     created_at: number;
 };
+export type OrganizationVerificationMaterialRequest = {
+    kind: string;
+    file_field: string;
+};
 export type OrganizationVerificationMultipartSubmitRequest = {
     summary: string;
     materials: string;
@@ -2520,6 +2524,10 @@ export type OrganizationVerificationResponse = {
     materials: Array<OrganizationVerificationMaterial>;
 };
 export type OrganizationVerificationStatus = 'submitted' | 'in_review' | 'needs_supplement' | 'approved' | 'rejected';
+export type OrganizationVerificationSubmitRequest = {
+    summary: string;
+    materials: Array<OrganizationVerificationMaterialRequest>;
+};
 export type OrganizationWalletAdjustmentRequest = {
     event_id: string;
     quota_delta: number;
