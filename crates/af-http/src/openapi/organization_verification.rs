@@ -190,6 +190,8 @@ fn decide_organization_verification() {}
         OrganizationVerificationListQuerySchema,
         OrganizationVerificationStatusSchema,
         OrganizationVerificationMultipartSubmitRequestSchema,
+        OrganizationVerificationMaterialRequestSchema,
+        OrganizationVerificationSubmitRequestSchema,
         OrganizationVerificationMaterialSchema,
         OrganizationVerificationCaseSchema,
         OrganizationVerificationResponseSchema,
