@@ -289,7 +289,7 @@ mod tests {
             })
             .sum::<usize>();
         // 平台企业目录与用户归属只读接口扩展了既有管理面，保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 328);
+        assert_eq!(operation_count, 331);
         assert!(
             document
                 .components
@@ -485,11 +485,14 @@ mod tests {
             "listAdminOrganizationProvisioningRequests",
             "getAdminOrganizationProvisioningRequest",
             "decideOrganizationProvisioningRequest",
+            "listAdminOrganizationProvisioningMaterials",
+            "downloadAdminOrganizationProvisioningMaterial",
             "getOrganizationVerification",
             "submitOrganizationVerification",
             "listAdminOrganizationVerifications",
             "getAdminOrganizationVerification",
             "decideOrganizationVerification",
+            "downloadAdminOrganizationVerificationMaterial",
             "listAdminOrganizationPlans",
             "createAdminOrganizationPlan",
             "disableAdminOrganizationPlan",
