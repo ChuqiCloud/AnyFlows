@@ -8,6 +8,7 @@ import {
   adminNavigationSections,
   adminSystemItems,
   adminWorkspaceItems,
+  filterOrganizationNavigationItems,
   userNavigationGroups,
   userNavigationItems,
 } from '../src/components/layout/app-navigation-model.ts'
@@ -49,6 +50,20 @@ test('普通用户导航增加独立企业空间且保留原账户入口', () =>
     'organizationOverview', 'organizationOnboarding', 'organizationMembers', 'organizationDepartments', 'organizationApiKeys', 'organizationServiceAccounts', 'organizationBudgets', 'organizationContractPrices', 'organizationCredit', 'organizationApprovals',
     'organizationWallet', 'organizationActivity', 'organizationVerification', 'organizationSettings',
   'apiKeys', 'wallet', 'usage', 'subscriptions', 'invitations', 'organizationProvisioning', 'profile',
+  ])
+})
+
+test('普通用户企业导航按当前企业权限投影裁剪', () => {
+  const organizationItems = userNavigationGroups.find((group) => group.key === 'organization').items
+  assert.deepEqual(filterOrganizationNavigationItems(organizationItems, undefined, false, false), [])
+  assert.deepEqual(filterOrganizationNavigationItems(organizationItems, undefined, true, true), ['organizationOverview'])
+  assert.deepEqual(filterOrganizationNavigationItems(organizationItems, [
+    'organization.overview.read',
+    'organization.keys.manage_self',
+    'organization.usage_logs.read_self',
+    'organization.approvals.create',
+  ], true, false), [
+    'organizationOverview', 'organizationMembers', 'organizationApiKeys', 'organizationApprovals', 'organizationActivity',
   ])
 })
 

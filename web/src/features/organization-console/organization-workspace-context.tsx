@@ -11,6 +11,7 @@ import {
 
 import {
   clearOrganizationWorkspaceCache,
+  useOrganizationOverview,
   useOrganizationDirectory,
 } from '@/features/organization-budgets/organization-budget-api'
 import type { OrganizationSummaryResponse } from '@/lib/api/generated/types.gen'
@@ -22,6 +23,9 @@ type OrganizationWorkspaceContextValue = {
   organizationsQuery: UseQueryResult<OrganizationSummaryResponse[], Error>
   selectedId?: number
   selectedOrganization?: OrganizationSummaryResponse
+  /** 当前企业服务端权限投影；个人空间或尚未加载时为空。 */
+  organizationPermissions?: string[]
+  organizationPermissionsLoading: boolean
   switching: boolean
   selectOrganization: (organizationId: number) => Promise<void>
   selectPersonalWorkspace: () => Promise<void>
@@ -42,6 +46,7 @@ export function OrganizationWorkspaceProvider({ children, enterpriseView }: Orga
   const [preferredId, setPreferredId] = useState(readStoredOrganizationId)
   const [switching, setSwitching] = useState(false)
   const selectedId = enterpriseView ? preferredId : undefined
+  const organizationOverviewQuery = useOrganizationOverview(selectedId ?? 0, selectedId !== undefined)
 
   useEffect(() => {
     if (!organizationsQuery.data) return
@@ -84,10 +89,12 @@ export function OrganizationWorkspaceProvider({ children, enterpriseView }: Orga
     organizationsQuery,
     selectedId,
     selectedOrganization: organizations.find((organization) => organization.id === selectedId),
+    organizationPermissions: organizationOverviewQuery.data?.permissions,
+    organizationPermissionsLoading: selectedId !== undefined && organizationOverviewQuery.isPending,
     switching,
     selectOrganization: changeSelection,
     selectPersonalWorkspace,
-  }), [changeSelection, organizations, organizationsQuery, selectPersonalWorkspace, selectedId, switching])
+  }), [changeSelection, organizationOverviewQuery.data?.permissions, organizationOverviewQuery.isPending, organizations, organizationsQuery, selectPersonalWorkspace, selectedId, switching])
 
   return (
     <OrganizationWorkspaceContext.Provider value={value}>
