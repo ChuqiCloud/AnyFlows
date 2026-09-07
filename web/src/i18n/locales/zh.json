@@ -47,6 +47,7 @@
     "organizationApprovals": "企业审批",
     "organizationActivity": "企业日志与审计",
     "organizationOverview": "企业概览",
+    "organizationOnboarding": "企业初始化",
     "organizationProvisioning": "企业开通申请",
     "organizationVerification": "企业认证",
     "organizationPlans": "企业套餐管理",
@@ -5858,6 +5859,48 @@
         "protocol": { "oidc": "OpenID Connect", "saml": "SAML 2.0" },
         "status": { "draft": "草稿", "active": "活动", "disabled": "已停用" },
         "fields": { "protocol": "协议", "version": "版本", "secret": "密钥", "metadata": "元数据" },
+        "providers": {
+          "add": "添加 Provider",
+          "edit": "编辑",
+          "createTitle": "添加 SSO Provider",
+          "editTitle": "编辑 SSO Provider",
+          "editorHint": "按协议填写配置，保存时由服务端校验并加密托管密钥；浏览器不保存密钥。",
+          "displayName": "显示名称",
+          "protocol": "协议",
+          "protocols": { "oidc": "OpenID Connect", "saml": "SAML 2.0" },
+          "status": "状态",
+          "statuses": { "draft": "草稿", "active": "活动", "disabled": "已停用" },
+          "clientSecret": "Client Secret",
+          "clientSecretHint": "编辑时留空表示沿用已有密钥；需要替换时输入新值。",
+          "clearClientSecret": "清除已托管密钥",
+          "oidc": {
+            "issuer": "Issuer",
+            "authorizationEndpoint": "Authorization Endpoint",
+            "tokenEndpoint": "Token Endpoint",
+            "jwksUri": "JWKS URI",
+            "clientId": "Client ID",
+            "audience": "Audience",
+            "redirectUri": "Redirect URI",
+            "redirectHint": "必须使用服务端固定的企业 OIDC 回调地址。"
+          },
+          "saml": {
+            "idpEntityId": "IdP Entity ID",
+            "ssoUrl": "IdP SSO URL",
+            "spEntityId": "SP Entity ID",
+            "acsUrl": "ACS URL",
+            "nameIdFormat": "NameID 格式",
+            "certificates": "受信签名证书",
+            "certificatesHint": "粘贴 PEM 证书；多个证书以新的 BEGIN CERTIFICATE 行分隔。"
+          },
+          "activeHint": {
+            "oidc": "启用 OIDC 前请确认 Client Secret、已验证企业域名和回调地址均已就绪。",
+            "saml": "启用 SAML 前请确认已验证企业域名、IdP 证书和 SSO 地址均已就绪。"
+          },
+          "save": "保存配置",
+          "create": "创建 Provider",
+          "cancel": "取消",
+          "errors": { "generic": "Provider 保存失败，请检查字段和授权状态后重试。", "conflict": "Provider 已被其他管理员更新，请刷新后重新编辑。" }
+        },
         "login": {
           "start": "发起 SAML 登录",
           "starting": "正在准备 SAML 登录",
@@ -5937,7 +5980,7 @@
         },
         "empty": {
           "title": "尚未配置企业 SSO Provider",
-          "manageBody": "当前角色拥有管理权限，但创建与更新表单将在后续切片接入。",
+          "manageBody": "当前角色拥有管理权限，可使用右上角“添加 Provider”或每行的“编辑”完成配置。",
           "readBody": "当前企业还没有可读取的 Provider 配置。"
         },
   "closure": {

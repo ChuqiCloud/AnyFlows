@@ -69,6 +69,8 @@ test('企业成员、团队、邀请和钱包使用现有服务端契约', () =>
     ['/api/organizations/{organization_id}/wallet/entries', 'get', 'listOrganizationWalletEntries'],
     ['/api/organizations/{organization_id}/topups', 'post', 'createOrganizationTopupOrder'],
     ['/api/organizations/{organization_id}/sso/providers', 'get', 'listOrganizationSsoProviders'],
+    ['/api/organizations/{organization_id}/sso/providers', 'post', 'createOrganizationSsoProvider'],
+    ['/api/organizations/{organization_id}/sso/providers/{provider_key}', 'put', 'updateOrganizationSsoProvider'],
     ['/api/organizations/{organization_id}/sso/domains', 'get', 'listOrganizationSsoDomains'],
     ['/api/organizations/{organization_id}/sso/domains', 'post', 'createOrganizationSsoDomain'],
     ['/api/organizations/{organization_id}/sso/domains/{domain_id}/verify', 'post', 'verifyOrganizationSsoDomain'],
@@ -81,21 +83,31 @@ test('企业成员、团队、邀请和钱包使用现有服务端契约', () =>
 })
 
 test('企业 SSO 面板只在授权允许时读取 Provider，并显式保留未闭环状态', async () => {
-  const [apiSource, panelSource, domainsSource, policySource, pageSource] = await Promise.all([
+  const [apiSource, panelSource, editorSource, domainsSource, policySource, pageSource] = await Promise.all([
     readFile(new URL('../src/features/organization-sso/organization-sso-api.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/features/organization-sso/organization-sso-panel.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/features/organization-sso/organization-sso-provider-editor.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/features/organization-sso/organization-sso-domains.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/features/organization-sso/organization-sso-policy.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/features/organization-console/organization-settings-page.tsx', import.meta.url), 'utf8'),
   ])
   assert.match(apiSource, /enabled,\n    queryFn/)
   assert.match(apiSource, /listOrganizationSsoProviders/)
+  assert.match(apiSource, /createOrganizationSsoProvider/)
+  assert.match(apiSource, /updateOrganizationSsoProvider/)
   assert.match(panelSource, /organization\.sso\.read/)
   assert.match(panelSource, /organization\.sso\.manage/)
   assert.match(panelSource, /query\.isPending/)
   assert.match(panelSource, /query\.isError/)
   assert.match(panelSource, /providers\.length === 0/)
   assert.match(panelSource, /OrganizationSsoDomains/)
+  assert.match(panelSource, /OrganizationSsoProviderEditor/)
+  assert.match(editorSource, /buildMetadata/)
+  assert.match(editorSource, /splitCertificates/)
+  assert.ok(editorSource.includes('client_secret: draft.clientSecret.trim() || undefined'))
+  assert.match(editorSource, /protocols\.oidc/)
+  assert.match(editorSource, /protocols\.saml/)
+  assert.match(editorSource, /clearClientSecret/)
   assert.match(domainsSource, /useOrganizationSsoDomains/)
   assert.match(domainsSource, /useCreateOrganizationSsoDomain/)
   assert.match(domainsSource, /useVerifyOrganizationSsoDomain/)
@@ -194,6 +206,7 @@ test('企业控制台具备中英文入口和关键状态文案', async () => {
     assert.equal(typeof locale.organizationConsole.customRoles.disable.description, 'string')
     assert.equal(typeof locale.organizationConsole.permissions.organization.roles.read, 'string')
     assert.equal(typeof locale.organizationConsole.settings.sso.title, 'string')
+    assert.equal(typeof locale.organizationConsole.settings.sso.providers.editorHint, 'string')
     assert.equal(typeof locale.organizationConsole.settings.sso.domains.title, 'string')
     assert.equal(typeof locale.organizationConsole.settings.sso.domains.verify, 'string')
     assert.equal(typeof locale.organizationConsole.settings.sso.closure.available, 'string')

@@ -95,6 +95,7 @@ const navItems = {
   organizationMembers: { key: 'organizationMembers', icon: UsersRound, href: '#/console/organization-members' },
   organizationDepartments: { key: 'organizationDepartments', icon: Building2, href: '#/console/organization-departments' },
   organizationOverview: { key: 'organizationOverview', icon: Gauge, href: '#/console/organization' },
+  organizationOnboarding: { key: 'organizationOnboarding', icon: ClipboardCheck, href: '#/console/organization-onboarding' },
   organizationProvisioning: { key: 'organizationProvisioning', icon: ClipboardCheck, href: '#/console/organization-provisioning' },
   organizationVerification: { key: 'organizationVerification', icon: ShieldCheck, href: '#/console/organization-verification' },
   organizationSettings: { key: 'organizationSettings', icon: Settings2, href: '#/console/organization-settings' },

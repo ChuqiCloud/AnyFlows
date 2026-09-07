@@ -4,6 +4,7 @@ import { organizationQueryKey } from '@/features/organization-budgets/organizati
 import { apiClient, ApiError } from '@/lib/api'
 import {
   createOrganizationSsoDomain,
+  createOrganizationSsoProvider,
   listOrganizationSsoDomains,
   listOrganizationSsoProviders,
   getOrganizationSsoPolicy,
@@ -11,6 +12,7 @@ import {
   establishOrganizationSsoRecovery,
   suspendOrganizationSsoRequired,
   startOrganizationSsoLogin,
+  updateOrganizationSsoProvider,
   verifyOrganizationSsoDomain,
 } from '@/lib/api/generated/sdk.gen'
 import type {
@@ -19,6 +21,7 @@ import type {
   OrganizationSsoPolicyRequest,
   OrganizationSsoRecoveryRequestWritable,
   OrganizationSsoLoginStartRequest,
+  OrganizationSsoProviderRequestWritable,
 } from '@/lib/api/generated/types.gen'
 
 /** 按企业权限读取脱敏 SSO Provider；未授权时不发起请求。 */
@@ -34,6 +37,38 @@ export function useOrganizationSsoProviders(organizationId: number, enabled: boo
       })
       return data.providers
     },
+  })
+}
+
+/** 创建企业 SSO Provider；明文密钥只在本次请求中提交，不写入查询缓存。 */
+export function useCreateOrganizationSsoProvider(organizationId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (body: OrganizationSsoProviderRequestWritable) => {
+      const { data } = await createOrganizationSsoProvider({
+        body,
+        client: apiClient,
+        path: { organization_id: organizationId },
+      })
+      return data
+    },
+    onSuccess: () => invalidateOrganizationSsoProviders(queryClient, organizationId),
+  })
+}
+
+/** 按 Provider 版本 CAS 更新配置；服务端负责重新绑定密钥封套。 */
+export function useUpdateOrganizationSsoProvider(organizationId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ providerKey, body }: { providerKey: string; body: OrganizationSsoProviderRequestWritable }) => {
+      const { data } = await updateOrganizationSsoProvider({
+        body,
+        client: apiClient,
+        path: { organization_id: organizationId, provider_key: providerKey },
+      })
+      return data
+    },
+    onSuccess: () => invalidateOrganizationSsoProviders(queryClient, organizationId),
   })
 }
 
@@ -179,6 +214,13 @@ export function useVerifyOrganizationSsoDomain(organizationId: number) {
 function invalidateOrganizationSsoDomains(queryClient: ReturnType<typeof useQueryClient>, organizationId: number) {
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: organizationQueryKey(organizationId, 'sso', 'domains') }),
+    queryClient.invalidateQueries({ queryKey: organizationQueryKey(organizationId, 'overview') }),
+  ])
+}
+
+function invalidateOrganizationSsoProviders(queryClient: ReturnType<typeof useQueryClient>, organizationId: number) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: organizationQueryKey(organizationId, 'sso', 'providers') }),
     queryClient.invalidateQueries({ queryKey: organizationQueryKey(organizationId, 'overview') }),
   ])
 }

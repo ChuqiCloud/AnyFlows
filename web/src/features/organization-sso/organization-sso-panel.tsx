@@ -1,4 +1,4 @@
-import { ArrowUpRight, CircleAlert, Fingerprint, LoaderCircle, LogIn, RefreshCw, ShieldBan, ShieldCheck } from 'lucide-react'
+import { ArrowUpRight, CircleAlert, Fingerprint, LoaderCircle, LogIn, Pencil, Plus, RefreshCw, ShieldBan, ShieldCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useState, type ReactNode } from 'react'
 
@@ -17,6 +17,7 @@ import {
 import { createOrganizationSsoRequestDigest, submitOrganizationSsoSamlAuthnRequest } from './organization-sso-authn-request'
 import { OrganizationSsoDomains } from './organization-sso-domains'
 import { OrganizationSsoPolicyPanel } from './organization-sso-policy'
+import { OrganizationSsoProviderEditor } from './organization-sso-provider-editor'
 
 const SSO_READ = 'organization.sso.read'
 const SSO_MANAGE = 'organization.sso.manage'
@@ -46,6 +47,7 @@ export function OrganizationSsoPanel({
   const policyQuery = useOrganizationSsoPolicy(organizationId, enabled)
   const startMutation = useStartOrganizationSsoLogin(organizationId)
   const [startError, setStartError] = useState<'invalid' | 'unavailable'>()
+  const [providerEditor, setProviderEditor] = useState<OrganizationSsoProvider | null | undefined>()
   const auditQuery = useOrganizationAuditLogs(organizationId, undefined, 1, {}, ssoEnabled && canAudit)
   const providers = providersQuery.data ?? []
   async function startSamlLogin(providerKey: string) {
@@ -78,10 +80,13 @@ export function OrganizationSsoPanel({
             </div>
           </div>
           {enabled ? (
-            <Button type="button" size="icon-sm" variant="ghost" title={t('organizationConsole.actions.refresh')} disabled={providersQuery.isFetching || domainsQuery.isFetching || policyQuery.isFetching || auditQuery.isFetching} onClick={() => void Promise.all([providersQuery.refetch(), domainsQuery.refetch(), policyQuery.refetch(), auditQuery.refetch()])}>
-              <RefreshCw className={providersQuery.isFetching || domainsQuery.isFetching || policyQuery.isFetching || auditQuery.isFetching ? 'animate-spin' : undefined} aria-hidden="true" />
-              <span className="sr-only">{t('organizationConsole.actions.refresh')}</span>
-            </Button>
+            <div className="flex items-center gap-1">
+              {canManage ? <Button type="button" size="sm" variant="secondary" onClick={() => setProviderEditor(null)}><Plus aria-hidden="true" />{t('organizationConsole.settings.sso.providers.add')}</Button> : null}
+              <Button type="button" size="icon-sm" variant="ghost" title={t('organizationConsole.actions.refresh')} disabled={providersQuery.isFetching || domainsQuery.isFetching || policyQuery.isFetching || auditQuery.isFetching} onClick={() => void Promise.all([providersQuery.refetch(), domainsQuery.refetch(), policyQuery.refetch(), auditQuery.refetch()])}>
+                <RefreshCw className={providersQuery.isFetching || domainsQuery.isFetching || policyQuery.isFetching || auditQuery.isFetching ? 'animate-spin' : undefined} aria-hidden="true" />
+                <span className="sr-only">{t('organizationConsole.actions.refresh')}</span>
+              </Button>
+            </div>
           ) : null}
         </div>
       </CardHeader>
@@ -91,8 +96,9 @@ export function OrganizationSsoPanel({
         {enabled && providersQuery.isPending ? <SsoPanelLoading /> : null}
         {enabled && providersQuery.isError ? <SsoPanelState icon={CircleAlert} title={t('organizationConsole.settings.sso.errors.title')} body={t(canManage ? 'organizationConsole.settings.sso.errors.body' : 'organizationConsole.settings.sso.errors.readOnlyBody')} action={<Button type="button" size="sm" variant="secondary" onClick={() => void providersQuery.refetch()}><RefreshCw aria-hidden="true" />{t('organizationConsole.actions.retry')}</Button>} /> : null}
         {enabled && providersQuery.isSuccess && providers.length === 0 ? <SsoPanelState icon={ShieldCheck} title={t('organizationConsole.settings.sso.empty.title')} body={t(canManage ? 'organizationConsole.settings.sso.empty.manageBody' : 'organizationConsole.settings.sso.empty.readBody')} /> : null}
-        {enabled && providers.length > 0 ? <div className="divide-y divide-[var(--hairline)]">{providers.map((provider) => <SsoProviderRow key={provider.provider_key} provider={provider} canManage={canManage} startDisabled={startMutation.isPending} starting={startMutation.isPending && startMutation.variables?.provider_key === provider.provider_key} onStart={() => void startSamlLogin(provider.provider_key)} />)}</div> : null}
+        {enabled && providers.length > 0 ? <div className="divide-y divide-[var(--hairline)]">{providers.map((provider) => <SsoProviderRow key={provider.provider_key} provider={provider} canManage={canManage} startDisabled={startMutation.isPending} starting={startMutation.isPending && startMutation.variables?.provider_key === provider.provider_key} onStart={() => void startSamlLogin(provider.provider_key)} onEdit={() => setProviderEditor(provider)} />)}</div> : null}
         {startError ? <p role="alert" className="border-t border-[var(--hairline)] px-4 py-3 text-xs leading-5 text-destructive">{t(`organizationConsole.settings.sso.login.${startError}`)}</p> : null}
+        {enabled && canManage && providerEditor !== undefined ? <OrganizationSsoProviderEditor key={providerEditor?.provider_key ?? 'new'} organizationId={organizationId} provider={providerEditor ?? undefined} onClose={() => setProviderEditor(undefined)} /> : null}
         {enabled ? <OrganizationSsoDomains organizationId={organizationId} providers={providers} canManage={canManage} providersLoaded={providersQuery.isSuccess} query={domainsQuery} /> : null}
         {enabled ? <OrganizationSsoPolicyPanel organizationId={organizationId} ssoEnabled={ssoEnabled} permissions={permissions} query={policyQuery} /> : null}
         <SsoClosureStatus
@@ -190,7 +196,7 @@ function closureStatusClass(status: ClosureStatus) {
   return 'shrink-0 text-muted-foreground'
 }
 
-function SsoProviderRow({ provider, canManage, startDisabled, starting, onStart }: { provider: OrganizationSsoProvider; canManage: boolean; startDisabled: boolean; starting: boolean; onStart: () => void }) {
+function SsoProviderRow({ provider, canManage, startDisabled, starting, onStart, onEdit }: { provider: OrganizationSsoProvider; canManage: boolean; startDisabled: boolean; starting: boolean; onStart: () => void; onEdit: () => void }) {
   const { t } = useTranslation()
   const active = provider.status === 'active'
   return (
@@ -209,7 +215,10 @@ function SsoProviderRow({ provider, canManage, startDisabled, starting, onStart 
         <div><dt className="text-muted-foreground">{t('organizationConsole.settings.sso.fields.secret')}</dt><dd className="font-medium">{t(provider.secret_configured ? 'organizationConsole.settings.sso.configured' : 'organizationConsole.settings.sso.notConfigured')}</dd></div>
         <div><dt className="text-muted-foreground">{t('organizationConsole.settings.sso.fields.metadata')}</dt><dd className="font-medium">{t(provider.metadata_projection ? 'organizationConsole.settings.sso.configured' : 'organizationConsole.settings.sso.notConfigured')}</dd></div>
         </dl>
-        {canManage && active && provider.protocol === 'saml' ? <Button type="button" size="sm" variant="secondary" disabled={startDisabled} onClick={onStart}>{starting ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : <LogIn className="size-3.5" aria-hidden="true" />}{starting ? t('organizationConsole.settings.sso.login.starting') : t('organizationConsole.settings.sso.login.start')}</Button> : null}
+        <div className="flex flex-wrap gap-2">
+          {canManage ? <Button type="button" size="sm" variant="ghost" onClick={onEdit}><Pencil className="size-3.5" aria-hidden="true" />{t('organizationConsole.settings.sso.providers.edit')}</Button> : null}
+          {canManage && active && provider.protocol === 'saml' ? <Button type="button" size="sm" variant="secondary" disabled={startDisabled} onClick={onStart}>{starting ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : <LogIn className="size-3.5" aria-hidden="true" />}{starting ? t('organizationConsole.settings.sso.login.starting') : t('organizationConsole.settings.sso.login.start')}</Button> : null}
+        </div>
       </div>
     </article>
   )
