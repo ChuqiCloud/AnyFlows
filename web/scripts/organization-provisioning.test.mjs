@@ -23,12 +23,14 @@ test('企业开通申请的 HTTP、OpenAPI、生成客户端和前端入口保�
     ['/api/admin/organization-provisioning', 'get', 'listAdminOrganizationProvisioningRequests'],
     ['/api/admin/organization-provisioning/{request_key}', 'get', 'getAdminOrganizationProvisioningRequest'],
     ['/api/admin/organization-provisioning/{request_key}/decision', 'post', 'decideOrganizationProvisioningRequest'],
+    ['/api/admin/organization-provisioning/{request_key}/materials', 'get', 'listAdminOrganizationProvisioningMaterials'],
+    ['/api/admin/organization-provisioning/{request_key}/materials/{material_id}', 'get', 'downloadAdminOrganizationProvisioningMaterial'],
   ]
   for (const [path, method, operationId] of paths) {
     assert.equal(openapi.paths[path]?.[method]?.operationId, operationId)
     assert.match(sdk, new RegExp(`export const ${operationId}\\b`))
   }
-  for (const schema of ['OrganizationProvisioningStatus', 'OrganizationProvisioningDecisionKind', 'OrganizationProvisioningCreateRequest', 'OrganizationProvisioningEntitlement', 'OrganizationProvisioningDecisionRequest', 'OrganizationProvisioningRequest', 'OrganizationProvisioningRequestListResponse']) {
+  for (const schema of ['OrganizationProvisioningStatus', 'OrganizationProvisioningDecisionKind', 'OrganizationProvisioningCreateRequest', 'OrganizationProvisioningMaterial', 'OrganizationProvisioningEntitlement', 'OrganizationProvisioningDecisionRequest', 'OrganizationProvisioningRequest', 'OrganizationProvisioningRequestListResponse']) {
     assert.ok(openapi.components.schemas[schema])
     assert.match(types, new RegExp(`export type ${schema}\\b`))
   }
@@ -42,6 +44,13 @@ test('企业开通申请的 HTTP、OpenAPI、生成客户端和前端入口保�
   assert.match(page, /adminView === 'review' \? <AdminProvisioningWorkspace \/> : <ApplicantProvisioningWorkspace \/>/)
   assert.match(page, /const shouldLoadRequest = requestKey !== undefined && !activeQuery\.isPending && activeQuery\.data === null/)
   assert.match(page, /shouldLoadRequest && requestQuery\.isPending/)
+  assert.match(page, /const \[submittedRequest, setSubmittedRequest\]/)
+  assert.match(page, /setSubmittedRequest\(result\)/)
+  assert.match(page, /type="file"/)
+  assert.match(page, /MAX_TOTAL_MATERIAL_BYTES/)
+  assert.match(page, /useAdminOrganizationProvisioningMaterials/)
+  assert.match(page, /downloadAdminOrganizationProvisioningMaterial/)
+  assert.match(sdk, /formDataBodySerializer/)
   assert.match(registrationPage, /registration\.enterprise\.steps/)
   assert.equal(typeof en.organizationProvisioning.title, 'string')
   assert.equal(typeof zh.organizationProvisioning.title, 'string')

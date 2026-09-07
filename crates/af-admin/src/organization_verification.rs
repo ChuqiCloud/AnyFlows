@@ -6,7 +6,7 @@ use af_db::{
 };
 use af_domain::{
     OrganizationId, OrganizationPermission, OrganizationVerificationCaseId,
-    OrganizationVerificationStatus, PlatformPermission,
+    OrganizationVerificationMaterialId, OrganizationVerificationStatus, PlatformPermission,
 };
 use serde_json::json;
 use thiserror::Error;
@@ -18,10 +18,17 @@ use crate::{
 
 pub use af_db::{OrganizationVerificationBundle, OrganizationVerificationMaterialWrite};
 
-/// 企业认证材料提交命令；只携带受控对象存储元数据。
+/// 企业认证材料提交命令；正文由受控存储写入，服务层不把正文放进响应或审计。
 pub struct OrganizationVerificationSubmitCommand {
     pub summary: String,
     pub materials: Vec<OrganizationVerificationMaterialWrite>,
+}
+
+/// 管理员下载材料时返回的受控正文与下载所需响应头信息。
+pub struct OrganizationVerificationMaterialDownload {
+    pub file_name: String,
+    pub content_type: String,
+    pub content: Vec<u8>,
 }
 
 /// 平台审核动作。
@@ -83,6 +90,17 @@ pub type OrganizationVerificationPageFuture<'a> = Pin<
             + 'a,
     >,
 >;
+pub type OrganizationVerificationMaterialDownloadFuture<'a> = Pin<
+    Box<
+        dyn Future<
+                Output = Result<
+                    OrganizationVerificationMaterialDownload,
+                    OrganizationVerificationServiceError,
+                >,
+            > + Send
+            + 'a,
+    >,
+>;
 
 /// 企业认证服务；企业成员权限和平台管理员权限保持独立。
 pub trait OrganizationVerificationService: Send + Sync {
@@ -116,6 +134,13 @@ pub trait OrganizationVerificationService: Send + Sync {
         command: OrganizationVerificationDecisionCommand,
         request_id: String,
     ) -> OrganizationVerificationBundleFuture<'a>;
+    fn download_admin<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        case_id: OrganizationVerificationCaseId,
+        material_id: OrganizationVerificationMaterialId,
+        request_id: String,
+    ) -> OrganizationVerificationMaterialDownloadFuture<'a>;
 }
 
 /// 数据库企业认证服务实现。
@@ -314,6 +339,42 @@ impl OrganizationVerificationService for DatabaseOrganizationVerificationService
             Ok(bundle)
         })
     }
+
+    fn download_admin<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        case_id: OrganizationVerificationCaseId,
+        material_id: OrganizationVerificationMaterialId,
+        request_id: String,
+    ) -> OrganizationVerificationMaterialDownloadFuture<'a> {
+        Box::pin(async move {
+            PlatformPolicy::authorize(principal, PlatformPermission::OrganizationsReadAll)
+                .map_err(|_| OrganizationVerificationServiceError::Forbidden)?;
+            let bundle = self
+                .repository
+                .get_by_id(case_id)
+                .await
+                .map_err(map_repository)?
+                .ok_or(OrganizationVerificationServiceError::NotFound)?;
+            let material = bundle
+                .materials()
+                .iter()
+                .find(|material| material.id() == material_id)
+                .ok_or(OrganizationVerificationServiceError::NotFound)?;
+            let content = self
+                .repository
+                .read_material_content(case_id, material_id)
+                .await
+                .map_err(map_repository)?;
+            self.audit_material_access(principal, case_id, "download", &request_id)
+                .await?;
+            Ok(OrganizationVerificationMaterialDownload {
+                file_name: material.file_name().to_owned(),
+                content_type: material.content_type().to_owned(),
+                content,
+            })
+        })
+    }
 }
 
 impl DatabaseOrganizationVerificationService {
@@ -394,6 +455,12 @@ fn map_repository(
         }
         OrganizationVerificationRepositoryError::OutcomeUnknown
         | OrganizationVerificationRepositoryError::Query => {
+            OrganizationVerificationServiceError::Unavailable
+        }
+        OrganizationVerificationRepositoryError::MaterialNotFound => {
+            OrganizationVerificationServiceError::NotFound
+        }
+        OrganizationVerificationRepositoryError::MaterialContentUnavailable => {
             OrganizationVerificationServiceError::Unavailable
         }
         OrganizationVerificationRepositoryError::Invariant => {

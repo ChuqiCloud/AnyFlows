@@ -385,7 +385,9 @@ pub use organization_plan_order_service::{
 pub use organization_provisioning::{
     DatabaseOrganizationProvisioningService, OrganizationProvisioningCreateCommand,
     OrganizationProvisioningDecisionCommand, OrganizationProvisioningEntitlementCommand,
-    OrganizationProvisioningListQuery, OrganizationProvisioningPage,
+    OrganizationProvisioningListQuery, OrganizationProvisioningMaterial,
+    OrganizationProvisioningMaterialDownloadFuture, OrganizationProvisioningMaterialPageFuture,
+    OrganizationProvisioningMaterialWrite, OrganizationProvisioningPage,
     OrganizationProvisioningRecord, OrganizationProvisioningRecordFuture,
     OrganizationProvisioningResult, OrganizationProvisioningResultFuture,
     OrganizationProvisioningService, OrganizationProvisioningServiceError,
@@ -462,7 +464,8 @@ pub use organization_token::{
 pub use organization_verification::{
     DatabaseOrganizationVerificationService, OrganizationVerificationBundle,
     OrganizationVerificationDecisionCommand, OrganizationVerificationDecisionKind,
-    OrganizationVerificationListQuery, OrganizationVerificationMaterialWrite,
+    OrganizationVerificationListQuery, OrganizationVerificationMaterialDownload,
+    OrganizationVerificationMaterialDownloadFuture, OrganizationVerificationMaterialWrite,
     OrganizationVerificationPage, OrganizationVerificationService,
     OrganizationVerificationServiceError, OrganizationVerificationSubmitCommand,
 };

@@ -1,4 +1,4 @@
-import { ArrowRight, Building2, CheckCircle2, ClipboardCheck, LoaderCircle, RefreshCw, XCircle } from 'lucide-react'
+import { ArrowRight, Building2, CheckCircle2, ClipboardCheck, Download, LoaderCircle, Plus, RefreshCw, XCircle } from 'lucide-react'
 import type { FormEvent, ReactNode } from 'react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -12,12 +12,16 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   organizationProvisioningErrorCode,
   organizationProvisioningErrorStatus,
+  downloadAdminOrganizationProvisioningMaterial,
   useActiveOrganizationProvisioning,
   useAdminOrganizationProvisioning,
+  useAdminOrganizationProvisioningMaterials,
   useCreateOrganizationProvisioning,
   useDecideOrganizationProvisioning,
   useOrganizationProvisioningRequest,
   type OrganizationProvisioningRequest,
+  type OrganizationProvisioningMaterialDraft,
+  type OrganizationProvisioningMaterial,
   type OrganizationProvisioningStatus,
 } from './organization-provisioning-api'
 
@@ -26,6 +30,10 @@ type OrganizationProvisioningPageProps = {
 }
 
 type AdminProvisioningView = 'review' | 'apply'
+const MAX_MATERIAL_BYTES = 50_000_000
+const MAX_TOTAL_MATERIAL_BYTES = 100_000_000
+const ALLOWED_MATERIAL_TYPES = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/webp'])
+const emptyMaterial = (): OrganizationProvisioningMaterialDraft => ({ id: createIdempotencyKey(), kind: '' })
 
 /** 企业开通入口；管理员可在审批工作台和自己的申请表单之间切换。 */
 export function OrganizationProvisioningPage({ admin = false }: OrganizationProvisioningPageProps) {
@@ -65,7 +73,8 @@ function ApplicantProvisioningWorkspace() {
   const { t } = useTranslation()
   const activeQuery = useActiveOrganizationProvisioning()
   const [requestKey, setRequestKey] = useState(() => readRequestKey())
-  const shouldLoadRequest = requestKey !== undefined && !activeQuery.isPending && activeQuery.data === null
+  const [submittedRequest, setSubmittedRequest] = useState<OrganizationProvisioningRequest>()
+  const shouldLoadRequest = requestKey !== undefined && !activeQuery.isPending && activeQuery.data === null && !submittedRequest
   const requestQuery = useOrganizationProvisioningRequest(
     requestKey,
     shouldLoadRequest,
@@ -76,17 +85,28 @@ function ApplicantProvisioningWorkspace() {
     organization_name: '',
     organization_slug: '',
     business_reason: '',
+    materials: [emptyMaterial()],
   }))
-  const request = activeQuery.data ?? requestQuery.data
+  const [materialError, setMaterialError] = useState(false)
+  const request = submittedRequest ?? activeQuery.data ?? requestQuery.data
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    const totalBytes = form.materials.reduce((total, material) => total + (material.file?.size ?? 0), 0)
+    if (form.materials.some((material) => !material.file || !ALLOWED_MATERIAL_TYPES.has(material.file.type) || material.file.size > MAX_MATERIAL_BYTES) || totalBytes > MAX_TOTAL_MATERIAL_BYTES) {
+      setMaterialError(true)
+      return
+    }
+    setMaterialError(false)
     const result = await createMutation.mutateAsync({
       ...form,
       organization_name: form.organization_name.trim(),
       organization_slug: form.organization_slug.trim().toLowerCase(),
       business_reason: form.business_reason.trim(),
+      materials: form.materials.map((material) => ({ id: material.id, kind: material.kind.trim(), file: material.file })),
     })
+    // 直接使用提交响应渲染状态，避免等待 active 查询切换时把已成功的页面重新置为全屏加载。
+    setSubmittedRequest(result)
     setRequestKey(result.request_key)
     storeRequestKey(result.request_key)
     if (result.status === 'rejected') {
@@ -94,11 +114,11 @@ function ApplicantProvisioningWorkspace() {
     }
   }
 
-  if (activeQuery.isPending || (shouldLoadRequest && requestQuery.isPending)) return <ProvisioningLoading />
-  if (activeQuery.isError && activeQuery.error instanceof Error && organizationProvisioningErrorStatus(activeQuery.error) !== 404) {
+  if (!submittedRequest && (activeQuery.isPending || (shouldLoadRequest && requestQuery.isPending))) return <ProvisioningLoading />
+  if (!submittedRequest && activeQuery.isError && activeQuery.error instanceof Error && organizationProvisioningErrorStatus(activeQuery.error) !== 404) {
     return <ProvisioningState title={t('organizationProvisioning.errors.loadTitle')} body={t('organizationProvisioning.errors.loadBody')} action={<Button type="button" size="sm" variant="secondary" onClick={() => void activeQuery.refetch()}><RefreshCw aria-hidden="true" />{t('organizationProvisioning.actions.retry')}</Button>} />
   }
-  if (requestKey !== undefined && requestQuery.isError) {
+  if (!submittedRequest && requestKey !== undefined && requestQuery.isError) {
     return <ProvisioningState title={t('organizationProvisioning.errors.loadTitle')} body={t('organizationProvisioning.errors.loadBody')} action={<Button type="button" size="sm" variant="secondary" onClick={() => void requestQuery.refetch()}><RefreshCw aria-hidden="true" />{t('organizationProvisioning.actions.retry')}</Button>} />
   }
 
@@ -127,6 +147,11 @@ function ApplicantProvisioningWorkspace() {
               <label htmlFor="organization-provisioning-reason" className="text-xs font-medium">{t('organizationProvisioning.form.reason')}</label>
               <Textarea id="organization-provisioning-reason" required minLength={1} maxLength={2000} value={form.business_reason} onChange={(event) => setForm((current) => ({ ...current, business_reason: event.target.value }))} />
             </div>
+            <div className="grid gap-3">
+              {form.materials.map((material, index) => <ProvisioningMaterialFields key={material.id} index={index} material={material} canRemove={form.materials.length > 1} onChange={(value) => setForm((current) => ({ ...current, materials: current.materials.map((entry, currentIndex) => currentIndex === index ? value : entry) }))} onRemove={() => setForm((current) => ({ ...current, materials: current.materials.filter((_, currentIndex) => currentIndex !== index) }))} />)}
+              {form.materials.length < 20 ? <Button type="button" size="sm" variant="secondary" className="justify-self-start" onClick={() => setForm((current) => ({ ...current, materials: [...current.materials, emptyMaterial()] }))}><Plus aria-hidden="true" />{t('organizationProvisioning.form.addMaterial')}</Button> : null}
+            </div>
+            {materialError ? <p role="alert" className="rounded-lg bg-destructive/8 px-3 py-2 text-xs leading-5 text-destructive">{t('organizationProvisioning.errors.materials')}</p> : null}
             {createMutation.isError ? <p role="alert" className="rounded-lg bg-destructive/8 px-3 py-2 text-xs leading-5 text-destructive">{t(errorKey(createMutation.error))}</p> : null}
             <div className="flex flex-wrap items-center gap-3">
               <Button type="submit" disabled={createMutation.isPending}>
@@ -140,6 +165,12 @@ function ApplicantProvisioningWorkspace() {
       ) : null}
     </div>
   )
+}
+
+function ProvisioningMaterialFields({ index, material, canRemove, onChange, onRemove }: { index: number; material: OrganizationProvisioningMaterialDraft; canRemove: boolean; onChange: (value: OrganizationProvisioningMaterialDraft) => void; onRemove: () => void }) {
+  const { t } = useTranslation()
+  const prefix = `organization-provisioning-material-${index}`
+  return <fieldset className="grid gap-3 rounded-lg border border-[var(--hairline)] p-3"><legend className="px-1 text-xs font-medium">{t('organizationProvisioning.form.material', { index: index + 1 })}</legend><div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1.5 text-xs"><span className="font-medium">{t('organizationProvisioning.form.materialKind')}</span><Input id={`${prefix}-kind`} required value={material.kind} onChange={(event) => onChange({ ...material, kind: event.target.value })} /></label><label className="grid gap-1.5 text-xs"><span className="font-medium">{t('organizationProvisioning.form.materialFile')}</span><Input id={`${prefix}-file`} type="file" required={!material.file} accept=".pdf,.png,.jpg,.jpeg,.webp" onChange={(event) => onChange({ ...material, file: event.target.files?.[0] })} /><span className="text-[0.6875rem] text-muted-foreground">{material.file ? `${material.file.name} · ${Math.ceil(material.file.size / 1024)} KB` : t('organizationProvisioning.form.materialHint')}</span></label></div>{canRemove ? <Button type="button" size="sm" variant="ghost" className="justify-self-start text-destructive" onClick={onRemove}>{t('organizationProvisioning.form.removeMaterial')}</Button> : null}</fieldset>
 }
 
 function AdminProvisioningWorkspace() {
@@ -304,6 +335,7 @@ function DecisionPanel({
   onCancel,
 }: DecisionPanelProps) {
   const { t } = useTranslation()
+  const materialsQuery = useAdminOrganizationProvisioningMaterials(request.request_key)
   const validUntilSeconds = datetimeLocalToSeconds(validUntil)
   const graceUntilSeconds = graceUntil ? datetimeLocalToSeconds(graceUntil) : undefined
   const validCapacity = [seatLimit, teamLimit, keyLimit, retentionDays].every(isPositiveSafeInteger)
@@ -314,6 +346,10 @@ function DecisionPanel({
 
   return (
     <div className="mt-4 grid gap-4 border-t border-[var(--hairline)] pt-4">
+      <div className="grid gap-2">
+        <h4 className="text-xs font-semibold">{t('organizationProvisioning.admin.materials')}</h4>
+        {materialsQuery.isPending ? <p className="text-xs text-muted-foreground">{t('organizationProvisioning.admin.materialsLoading')}</p> : materialsQuery.isError ? <p role="alert" className="text-xs text-destructive">{t('organizationProvisioning.admin.materialsError')}</p> : materialsQuery.data?.length ? <div className="divide-y divide-[var(--hairline)] rounded-lg border border-[var(--hairline)]">{materialsQuery.data.map((material) => <ProvisioningMaterialRow key={material.id} requestKey={request.request_key} material={material} />)}</div> : <p className="text-xs text-muted-foreground">{t('organizationProvisioning.admin.materialsEmpty')}</p>}
+      </div>
       <div className="grid gap-3 sm:grid-cols-4">
         <NumberField label={t('organizationProvisioning.admin.seats')} value={seatLimit} onChange={setSeatLimit} />
         <NumberField label={t('organizationProvisioning.admin.teams')} value={teamLimit} onChange={setTeamLimit} />
@@ -348,6 +384,31 @@ function DecisionPanel({
       <span className="sr-only">{request.request_key}</span>
     </div>
   )
+}
+
+function ProvisioningMaterialRow({ requestKey, material }: { requestKey: string; material: OrganizationProvisioningMaterial }) {
+  const { t } = useTranslation()
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState(false)
+  const download = async () => {
+    if (!material.content_available || pending) return
+    setPending(true)
+    setError(false)
+    try {
+      const { blob, response } = await downloadAdminOrganizationProvisioningMaterial(requestKey, material.id)
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = response.headers.get('content-disposition')?.match(/filename="([^"]+)"/)?.[1] ?? material.file_name
+      anchor.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      setError(true)
+    } finally {
+      setPending(false)
+    }
+  }
+  return <div className="grid gap-1 px-3 py-2 text-xs sm:grid-cols-[minmax(0,1fr)_auto_auto]"><span className="truncate font-medium">{material.file_name}</span><span className="text-muted-foreground">{material.kind} · {material.content_type} · {material.size_bytes} B</span>{material.content_available ? <Button type="button" size="icon-sm" variant="ghost" title={t('organizationProvisioning.admin.download')} disabled={pending} onClick={() => void download()}>{pending ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <Download aria-hidden="true" />}<span className="sr-only">{t('organizationProvisioning.admin.download')}</span></Button> : <span className="text-muted-foreground">{t('organizationProvisioning.admin.unavailable')}</span>}{error ? <span role="alert" className="text-destructive">{t('organizationProvisioning.admin.materialsError')}</span> : null}</div>
 }
 
 function NumberField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {

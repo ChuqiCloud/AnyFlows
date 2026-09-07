@@ -665,8 +665,9 @@ pub use organization_plan_order::{
     OrganizationPlanPaymentEventRejection, OrganizationPlanPaymentEventWrite,
 };
 pub use organization_provisioning::{
-    OrganizationProvisioningDecisionWrite, OrganizationProvisioningRepository,
-    OrganizationProvisioningRepositoryConfigError, OrganizationProvisioningRepositoryError,
+    OrganizationProvisioningDecisionWrite, OrganizationProvisioningMaterialWrite,
+    OrganizationProvisioningRepository, OrganizationProvisioningRepositoryConfigError,
+    OrganizationProvisioningRepositoryError,
 };
 pub use organization_scim::{
     OrganizationScimGroupRecord, OrganizationScimGroupRepository,

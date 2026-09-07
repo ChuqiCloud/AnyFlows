@@ -3330,6 +3330,33 @@ pub(in crate::migration) mod organization_provisioning_requests {
     }
 }
 
+pub(in crate::migration) mod organization_provisioning_materials {
+    use super::DeriveIden;
+
+    /// 企业开通材料表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_provisioning_materials")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业开通材料字段标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        RequestId,
+        Kind,
+        ObjectReference,
+        FileName,
+        ContentType,
+        SizeBytes,
+        ContentBytes,
+        CreatedAt,
+    }
+}
+
 pub(in crate::migration) mod organization_verification_cases {
     use super::DeriveIden;
 
@@ -3381,6 +3408,7 @@ pub(in crate::migration) mod organization_verification_materials {
         FileName,
         ContentType,
         SizeBytes,
+        ContentBytes,
         CreatedAt,
     }
 }

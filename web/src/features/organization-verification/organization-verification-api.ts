@@ -3,16 +3,15 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { apiClient, ApiError } from '@/lib/api'
 import {
   decideOrganizationVerification,
+  downloadAdminOrganizationVerificationMaterial as downloadAdminOrganizationVerificationMaterialRequest,
   getOrganizationVerification,
   listAdminOrganizationVerifications,
-  submitOrganizationVerification,
 } from '@/lib/api/generated/sdk.gen'
 import type {
   OrganizationVerificationDecisionRequest,
   OrganizationVerificationListResponse,
   OrganizationVerificationResponse,
   OrganizationVerificationStatus,
-  OrganizationVerificationSubmitRequest,
 } from '@/lib/api/generated/types.gen'
 
 export type {
@@ -20,7 +19,11 @@ export type {
   OrganizationVerificationListResponse,
   OrganizationVerificationResponse,
   OrganizationVerificationStatus,
-  OrganizationVerificationSubmitRequest,
+}
+
+export type OrganizationVerificationMaterialDraft = {
+  kind: string
+  file?: File
 }
 
 const verificationRoot = ['organization-verification'] as const
@@ -45,12 +48,33 @@ export function useOrganizationVerification(organizationId: number, enabled = tr
 export function useSubmitOrganizationVerification(organizationId: number) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (body: OrganizationVerificationSubmitRequest) => {
-      const { data } = await submitOrganizationVerification({ client: apiClient, path: { organization_id: organizationId }, body })
-      return data
+    mutationFn: async (body: { summary: string; materials: OrganizationVerificationMaterialDraft[] }) => {
+      const form = new FormData()
+      form.append('summary', body.summary)
+      form.append('materials', JSON.stringify(body.materials.map((material, index) => ({ kind: material.kind.trim(), file_field: String(index) }))))
+      body.materials.forEach((material, index) => {
+        if (material.file) form.append(`file:${index}`, material.file, material.file.name)
+      })
+      const result = await apiClient.post<OrganizationVerificationResponse>({
+        url: '/api/organizations/{organization_id}/verification',
+        path: { organization_id: organizationId },
+        body: form,
+        security: [{ key: 'bearerAuth', scheme: 'bearer', type: 'http' }],
+      }) as unknown as { data: OrganizationVerificationResponse }
+      return result.data
     },
     onSuccess: (data) => queryClient.setQueryData([...verificationRoot, organizationId], data),
   })
+}
+
+/** 使用平台管理员权限下载单份材料，正文不写入 React Query 或浏览器持久化。 */
+export async function downloadAdminOrganizationVerificationMaterial(caseId: number, materialId: number) {
+  const result = await downloadAdminOrganizationVerificationMaterialRequest({
+    client: apiClient,
+    path: { case_id: caseId, material_id: materialId },
+    parseAs: 'blob',
+  }) as unknown as { data: Blob; response: Response }
+  return { blob: result.data, response: result.response }
 }
 
 export function useAdminOrganizationVerifications(status?: OrganizationVerificationStatus) {
@@ -82,4 +106,3 @@ export function organizationVerificationErrorCode(error: unknown) {
   const code = (error.details as { code?: unknown }).code
   return typeof code === 'string' ? code : undefined
 }
-

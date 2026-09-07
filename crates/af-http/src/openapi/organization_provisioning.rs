@@ -31,10 +31,24 @@ pub(crate) enum OrganizationProvisioningDecisionKindSchema {
 #[derive(ToSchema)]
 #[schema(as = OrganizationProvisioningCreateRequest)]
 pub(crate) struct OrganizationProvisioningCreateRequestSchema {
-    pub(crate) idempotency_key: String,
-    pub(crate) organization_name: String,
-    pub(crate) organization_slug: String,
-    pub(crate) business_reason: String,
+    /// multipart 的 metadata 部件，内容为 JSON 文档。
+    pub(crate) metadata: String,
+    /// 文档工具展示的二进制部件；服务端实际接受多个 `file:<file_field>` 部件。
+    #[schema(value_type = String, format = Binary)]
+    pub(crate) file_0: String,
+}
+
+#[derive(ToSchema)]
+#[schema(as = OrganizationProvisioningMaterial)]
+pub(crate) struct OrganizationProvisioningMaterialSchema {
+    pub(crate) id: i64,
+    pub(crate) request_key: String,
+    pub(crate) kind: String,
+    pub(crate) file_name: String,
+    pub(crate) content_type: String,
+    pub(crate) size_bytes: i64,
+    pub(crate) content_available: bool,
+    pub(crate) created_at: u64,
 }
 
 #[derive(ToSchema)]
@@ -94,11 +108,33 @@ pub(crate) struct OrganizationProvisioningRequestListResponseSchema {
     path = "/api/account/organization-provisioning",
     operation_id = "createOrganizationProvisioningRequest",
     tag = "企业开通",
-    request_body = OrganizationProvisioningCreateRequestSchema,
+    request_body(content = OrganizationProvisioningCreateRequestSchema, content_type = "multipart/form-data"),
     responses((status = 201, body = OrganizationProvisioningRequestSchema), (status = 200, body = OrganizationProvisioningRequestSchema), (status = 400, body = ManagementErrorBody), (status = 401, body = ManagementErrorBody), (status = 409, body = ManagementErrorBody), (status = 503, body = ManagementErrorBody)),
     security(("bearerAuth" = []))
 )]
 fn create_organization_provisioning_request() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/admin/organization-provisioning/{request_key}/materials",
+    operation_id = "listAdminOrganizationProvisioningMaterials",
+    tag = "企业开通",
+    params(("request_key" = String, Path)),
+    responses((status = 200, body = [OrganizationProvisioningMaterialSchema]), (status = 400, body = ManagementErrorBody), (status = 401, body = ManagementErrorBody), (status = 403, body = ManagementErrorBody), (status = 404, body = ManagementErrorBody), (status = 503, body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn list_admin_organization_provisioning_materials() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/admin/organization-provisioning/{request_key}/materials/{material_id}",
+    operation_id = "downloadAdminOrganizationProvisioningMaterial",
+    tag = "企业开通",
+    params(("request_key" = String, Path), ("material_id" = i64, Path, minimum = 1)),
+    responses((status = 200, description = "受平台权限保护的企业开通材料正文", content((String = "application/octet-stream"))), (status = 400, body = ManagementErrorBody), (status = 401, body = ManagementErrorBody), (status = 403, body = ManagementErrorBody), (status = 404, body = ManagementErrorBody), (status = 503, body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn download_admin_organization_provisioning_material() {}
 
 #[utoipa::path(
     get,
@@ -163,13 +199,16 @@ fn decide_organization_provisioning_request() {}
         get_organization_provisioning_request,
         list_admin_organization_provisioning_requests,
         get_admin_organization_provisioning_request,
-        decide_organization_provisioning_request
+        decide_organization_provisioning_request,
+        list_admin_organization_provisioning_materials,
+        download_admin_organization_provisioning_material
     ),
     components(schemas(
         OrganizationProvisioningListQuerySchema,
         OrganizationProvisioningStatusSchema,
         OrganizationProvisioningDecisionKindSchema,
         OrganizationProvisioningCreateRequestSchema,
+        OrganizationProvisioningMaterialSchema,
         OrganizationProvisioningEntitlementSchema,
         OrganizationProvisioningDecisionRequestSchema,
         OrganizationProvisioningRequestSchema,

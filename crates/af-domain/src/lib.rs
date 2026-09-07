@@ -133,13 +133,15 @@ pub use organization_plan_order::{
     OrganizationPlanPaymentEventId, OrganizationPlanPaymentEventType,
 };
 pub use organization_provisioning::{
-    MAX_ORGANIZATION_PROVISIONING_DECISION_REASON_BYTES, MAX_ORGANIZATION_PROVISIONING_NAME_BYTES,
+    MAX_ORGANIZATION_PROVISIONING_DECISION_REASON_BYTES,
+    MAX_ORGANIZATION_PROVISIONING_MATERIAL_KIND_BYTES, MAX_ORGANIZATION_PROVISIONING_NAME_BYTES,
+    MAX_ORGANIZATION_PROVISIONING_OBJECT_REFERENCE_BYTES,
     MAX_ORGANIZATION_PROVISIONING_REASON_BYTES, MAX_ORGANIZATION_PROVISIONING_SLUG_BYTES,
     OrganizationProvisioningCreateOutcome, OrganizationProvisioningDecisionKind,
     OrganizationProvisioningDecisionOutcome, OrganizationProvisioningError,
-    OrganizationProvisioningIdempotencyKey, OrganizationProvisioningRecord,
-    OrganizationProvisioningRequest, OrganizationProvisioningRequestKey,
-    OrganizationProvisioningStatus,
+    OrganizationProvisioningIdempotencyKey, OrganizationProvisioningMaterial,
+    OrganizationProvisioningRecord, OrganizationProvisioningRequest,
+    OrganizationProvisioningRequestKey, OrganizationProvisioningStatus,
 };
 pub use organization_scim::{
     MAX_ORGANIZATION_SCIM_DISPLAY_NAME_BYTES, MAX_ORGANIZATION_SCIM_GROUP_MEMBER_COUNT,

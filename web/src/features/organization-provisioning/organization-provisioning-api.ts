@@ -2,14 +2,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { apiClient, ApiError } from '@/lib/api'
 import {
-  createOrganizationProvisioningRequest,
+  downloadAdminOrganizationProvisioningMaterial as downloadAdminOrganizationProvisioningMaterialRequest,
   decideOrganizationProvisioningRequest,
   getActiveOrganizationProvisioningRequest,
   getOrganizationProvisioningRequest,
+  listAdminOrganizationProvisioningMaterials,
   listAdminOrganizationProvisioningRequests,
 } from '@/lib/api/generated/sdk.gen'
 import type {
-  OrganizationProvisioningCreateRequest,
   OrganizationProvisioningDecisionRequest,
   OrganizationProvisioningEntitlement,
   OrganizationProvisioningRequest,
@@ -17,7 +17,26 @@ import type {
   OrganizationProvisioningStatus,
 } from '@/lib/api/generated/types.gen'
 
-export type { OrganizationProvisioningCreateRequest, OrganizationProvisioningDecisionRequest, OrganizationProvisioningEntitlement, OrganizationProvisioningRequest, OrganizationProvisioningStatus }
+export type OrganizationProvisioningCreateInput = {
+  idempotency_key: string
+  organization_name: string
+  organization_slug: string
+  business_reason: string
+}
+
+export type { OrganizationProvisioningDecisionRequest, OrganizationProvisioningEntitlement, OrganizationProvisioningRequest, OrganizationProvisioningStatus }
+
+export type OrganizationProvisioningMaterialDraft = { id: string; kind: string; file?: File }
+export type OrganizationProvisioningMaterial = {
+  id: number
+  request_key: string
+  kind: string
+  file_name: string
+  content_type: string
+  size_bytes: number
+  content_available: boolean
+  created_at: number
+}
 
 const provisioningRoot = ['organization-provisioning'] as const
 export const organizationProvisioningQueryKey = [...provisioningRoot, 'active'] as const
@@ -56,14 +75,50 @@ export function useOrganizationProvisioningRequest(requestKey: string | undefine
 export function useCreateOrganizationProvisioning() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (body: OrganizationProvisioningCreateRequest) => {
-      const result = await createOrganizationProvisioningRequest({ client: apiClient, body }) as unknown as { data: OrganizationProvisioningRequest }
+    mutationFn: async (body: OrganizationProvisioningCreateInput & { materials: OrganizationProvisioningMaterialDraft[] }) => {
+      const form = new FormData()
+      form.append('metadata', JSON.stringify({
+        idempotency_key: body.idempotency_key,
+        organization_name: body.organization_name,
+        organization_slug: body.organization_slug,
+        business_reason: body.business_reason,
+        materials: body.materials.map((material, index) => ({ kind: material.kind.trim(), file_field: String(index) })),
+      }))
+      body.materials.forEach((material, index) => {
+        if (material.file) form.append(`file:${index}`, material.file, material.file.name)
+      })
+      const result = await apiClient.post<OrganizationProvisioningRequest>({
+        url: '/api/account/organization-provisioning',
+        body: form,
+        security: [{ key: 'bearerAuth', scheme: 'bearer', type: 'http' }],
+      }) as unknown as { data: OrganizationProvisioningRequest }
       return result.data
     },
     onSuccess: (data) => {
       queryClient.setQueryData(organizationProvisioningQueryKey, data)
     },
   })
+}
+
+export function useAdminOrganizationProvisioningMaterials(requestKey: string | undefined) {
+  return useQuery({
+    queryKey: [...provisioningRoot, 'materials', requestKey],
+    enabled: requestKey !== undefined,
+    retry: false,
+    queryFn: async ({ signal }) => {
+      const result = await listAdminOrganizationProvisioningMaterials({ client: apiClient, path: { request_key: requestKey ?? '' }, signal }) as unknown as { data: OrganizationProvisioningMaterial[] }
+      return result.data
+    },
+  })
+}
+
+export async function downloadAdminOrganizationProvisioningMaterial(requestKey: string, materialId: number) {
+  const result = await downloadAdminOrganizationProvisioningMaterialRequest({
+    client: apiClient,
+    path: { request_key: requestKey, material_id: materialId },
+    parseAs: 'blob',
+  }) as unknown as { data: Blob; response: Response }
+  return { blob: result.data, response: result.response }
 }
 
 /** 平台管理员读取申请队列，筛选和游标均交由服务端校验。 */
