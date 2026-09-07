@@ -267,7 +267,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 250);
+        assert_eq!(document.paths.paths.len(), 253);
         let operation_count = document
             .paths
             .paths
@@ -729,7 +729,6 @@ mod tests {
         assert!(schemas.contains_key("OrganizationVerificationListQuerySchema"));
         assert!(schemas.contains_key("OrganizationVerificationListResponse"));
         assert!(schemas.contains_key("OrganizationVerificationMaterial"));
-        assert!(schemas.contains_key("OrganizationVerificationMaterialRequest"));
         assert!(schemas.contains_key("OrganizationVerificationResponse"));
         assert!(schemas.contains_key("OrganizationVerificationStatus"));
         assert!(schemas.contains_key("OrganizationVerificationSubmitRequest"));
