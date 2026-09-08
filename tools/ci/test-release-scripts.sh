@@ -63,5 +63,7 @@ tar -tzf "$temporary_directory/release/anyflows-${tag}-linux-amd64.tar.gz" \
   | grep -q "/anyflows.service$"
 tar -tzf "$temporary_directory/release/anyflows-${tag}-linux-amd64.tar.gz" \
   | grep -q "/CHANGELOG.md$"
+tar -tzf "$temporary_directory/release/anyflows-${tag}-linux-amd64.tar.gz" \
+  | grep -q "/anyflows.conf$"
 
 printf '发布脚本回归通过。\n'
