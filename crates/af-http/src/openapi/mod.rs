@@ -75,7 +75,10 @@ use utoipa::openapi::{
 
 /// 构建可导出、可供客户端生成和 Apifox 导入的完整管理 API 文档。
 pub fn openapi_document() -> OpenApi {
-    let mut document = OpenApi::new(Info::new("AnyFlows 管理 API", "0.1.0"), Paths::new());
+    let mut document = OpenApi::new(
+        Info::new("AnyFlows 管理 API", env!("CARGO_PKG_VERSION")),
+        Paths::new(),
+    );
     document.merge(session::document());
     document.merge(announcements::document());
     document.merge(setup::document());
