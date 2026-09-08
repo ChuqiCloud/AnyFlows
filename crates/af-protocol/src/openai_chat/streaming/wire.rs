@@ -8,6 +8,9 @@ use super::super::response_wire::{CompletionUsageWire, FinishReasonWire, Service
 #[serde(deny_unknown_fields)]
 pub(super) struct ChatStreamChunkWire {
     pub(super) id: String,
+    /// NewAPI 兼容字段；流式身份仍以 OpenAI `id` 为准。
+    #[serde(default)]
+    pub(super) request_id: Option<String>,
     pub(super) object: ChatStreamObjectWire,
     pub(super) created: i64,
     pub(super) model: String,

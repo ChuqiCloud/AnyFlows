@@ -108,6 +108,7 @@ fn choice_uses_unsupported_feature(choice: &Value) -> bool {
 fn convert_response(wire: ChatResponseWire) -> Result<CanonicalResponse, ParseResponseError> {
     let ChatResponseWire {
         id,
+        request_id,
         object,
         created,
         model,
@@ -117,6 +118,7 @@ fn convert_response(wire: ChatResponseWire) -> Result<CanonicalResponse, ParseRe
         usage,
         moderation,
     } = wire;
+    let _ = request_id;
     if moderation.is_some() {
         return Err(ParseResponseError::UnsupportedFeature);
     }
@@ -286,6 +288,7 @@ fn convert_message(
     message: ResponseMessageWire,
     state: &mut ResponseConvertState,
 ) -> Result<Message, ParseResponseError> {
+    let _ = (&message.reasoning_content, &message.reasoning);
     if !matches!(message.role, AssistantRoleWire::Assistant) {
         return Err(ParseResponseError::InvalidValue);
     }

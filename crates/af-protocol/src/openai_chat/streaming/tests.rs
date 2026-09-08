@@ -229,6 +229,37 @@ fn decoder_handles_multi_choice_tools_usage_and_done_across_every_byte() {
 }
 
 #[test]
+fn decoder_accepts_newapi_request_id_on_stream_chunks() {
+    let mut decoder = OpenAiChatStreamDecoder::new();
+    let mut role = chunk(
+        json!([{ "index": 0, "delta": { "role": "assistant" }, "finish_reason": null }]),
+        None,
+    );
+    role["request_id"] = json!("newapi-request-id");
+    decoder.push(&sse(&role)).unwrap();
+
+    let mut reasoning = chunk(
+        json!([{ "index": 0, "delta": { "reasoning_content": "think" }, "finish_reason": null }]),
+        None,
+    );
+    reasoning["request_id"] = json!("newapi-request-id");
+    let events = decoder.push(&sse(&reasoning)).unwrap();
+    assert!(events.iter().any(|event| matches!(
+        event,
+        CanonicalStreamEvent::ReasoningDelta { text, .. } if text == "think"
+    )));
+
+    let mut finish = chunk(
+        json!([{ "index": 0, "delta": {}, "finish_reason": "stop" }]),
+        None,
+    );
+    finish["request_id"] = json!("newapi-request-id");
+    decoder.push(&sse(&finish)).unwrap();
+    decoder.push(b"data: [DONE]\n\n").unwrap();
+    decoder.finish().unwrap();
+}
+
+#[test]
 fn decoder_rejects_duplicate_json_and_becomes_terminal() {
     let mut decoder = OpenAiChatStreamDecoder::new();
     let error = decoder

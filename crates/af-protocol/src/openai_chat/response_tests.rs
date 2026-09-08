@@ -49,6 +49,27 @@ fn parses_minimal_non_streaming_response() {
 }
 
 #[test]
+fn parses_newapi_non_streaming_metadata_and_reasoning_fields() {
+    let mut response = response_with_choices(vec![json!({
+        "index": 0,
+        "message": {
+            "role": "assistant",
+            "content": "answer",
+            "reasoning_content": "think",
+            "reasoning": null
+        },
+        "finish_reason": "stop"
+    })]);
+    response["request_id"] = json!("newapi-request-id");
+
+    let parsed = parse_json(response).expect("NewAPI 扩展字段不应破坏非流式响应解析");
+    assert!(matches!(
+        parsed.choices[0].message.content.as_slice(),
+        [ContentBlock::Text(text)] if text == "answer"
+    ));
+}
+
+#[test]
 fn preserves_sparse_choice_order_tool_calls_and_content_filter() {
     let response = parse_json(response_with_choices(vec![
         json!({
