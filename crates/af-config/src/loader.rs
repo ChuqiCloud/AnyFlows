@@ -18,8 +18,9 @@ use crate::{
     TelemetrySettings,
 };
 
-/// 默认配置文件名；文件不存在时仅使用默认值与环境变量。
-pub const DEFAULT_CONFIG_FILE: &str = "anyflows.toml";
+/// 默认配置文件名；文件不存在时兼容读取旧版 `anyflows.toml`。
+pub const DEFAULT_CONFIG_FILE: &str = "anyflows.conf";
+const LEGACY_CONFIG_FILE: &str = "anyflows.toml";
 /// 配置文件选择环境变量。
 pub const CONFIG_FILE_ENV: &str = "AF_CONFIG_FILE";
 /// 业务配置环境变量前缀；该命名空间中的未知键会拒绝启动。
@@ -156,7 +157,15 @@ pub fn load() -> Result<AppConfig, ConfigError> {
             field: CONFIG_FILE_ENV,
         }),
         Some(path) => load_file(PathBuf::from(path), true),
-        None => load_file(PathBuf::from(DEFAULT_CONFIG_FILE), false),
+        None => {
+            let default_path = PathBuf::from(DEFAULT_CONFIG_FILE);
+            if default_path.exists() {
+                load_file(default_path, false)
+            } else {
+                // 旧版部署仍使用 anyflows.toml，保留无迁移读取兼容。
+                load_file(PathBuf::from(LEGACY_CONFIG_FILE), false)
+            }
+        }
     }
 }
 
@@ -1638,6 +1647,31 @@ mod tests {
             let config = load().unwrap();
             assert_eq!(config.database().url().expose(), "sqlite::memory:");
         });
+    }
+
+    #[test]
+    fn conf_default_is_preferred_and_toml_remains_legacy_fallback() {
+        with_clean_env(|_| {
+            fs::write(DEFAULT_CONFIG_FILE, "[database]\nurl = 'sqlite::memory:'\n").unwrap();
+            let config = load().unwrap();
+            assert_eq!(config.database().url().expose(), "sqlite::memory:");
+            fs::remove_file(DEFAULT_CONFIG_FILE).unwrap();
+
+            fs::write(LEGACY_CONFIG_FILE, "[database]\nurl = 'sqlite::memory:'\n").unwrap();
+            let config = load().unwrap();
+            assert_eq!(config.database().url().expose(), "sqlite::memory:");
+            fs::remove_file(LEGACY_CONFIG_FILE).unwrap();
+        });
+    }
+
+    #[test]
+    fn checked_in_conf_template_loads_without_environment_overrides() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../anyflows.conf");
+        let result = load_from(path);
+        assert!(
+            result.is_ok(),
+            "仓库 anyflows.conf 必须是可解析的完整配置: {result:?}"
+        );
     }
 
     #[test]

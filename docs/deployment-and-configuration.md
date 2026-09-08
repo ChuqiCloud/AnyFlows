@@ -1,6 +1,20 @@
 # 部署与配置参考
 
-本文说明 AnyFlows 当前支持的 Linux 部署方式和关键配置边界。部署前请复制仓库根目录的 `.env.example`，只在部署机上填写密钥；不要把生产 `.env` 提交到 Git、写入镜像或粘贴到日志。
+本文说明 AnyFlows 当前支持的 Linux 部署方式和关键配置边界。手工启动使用仓库根目录或 Release 归档内的 `anyflows.conf`（TOML）；Docker/systemd 使用 `.env.example`（EnvironmentFile）。两类配置都只在部署机上填写密钥，不要把生产配置提交到 Git、写入镜像或粘贴到日志。
+
+## 手工启动
+
+Release 归档和仓库均提供完整的 `anyflows.conf`。设置 `AF_CONFIG_FILE`，再通过环境变量注入管理会话签名和凭据加密密钥：
+
+```bash
+export AF_CONFIG_FILE="$PWD/anyflows.conf"
+export AF_AUTH__SESSION_SIGNING_KEY="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')"
+export AF_CREDENTIAL_ENCRYPTION__KEY_ID=primary
+export AF_CREDENTIAL_ENCRYPTION__KEY="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')"
+./anyflows
+```
+
+`AF_CONFIG_FILE` 指向的文件必须是 TOML；`.env.example` 不是 TOML，不能直接改名后交给 `AF_CONFIG_FILE`。数据库 URL、计费 WAL 目录和 `server.bind` 应按部署机修改。填写后的 `anyflows.conf` 应限制为仅服务用户可读。
 
 ## 选择部署方式
 
