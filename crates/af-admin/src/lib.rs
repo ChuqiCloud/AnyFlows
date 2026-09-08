@@ -195,7 +195,7 @@ pub use group_write::{
 pub use initial_setup::{
     DatabaseInitialSetup, InitialSetup, InitialSetupCommand, InitialSetupError, InitialSetupFuture,
     InitialSetupStatus, InitialSetupStatusFuture, MAX_INITIAL_ADMIN_PASSWORD_BYTES,
-    MIN_INITIAL_ADMIN_PASSWORD_BYTES,
+    MIN_INITIAL_ADMIN_PASSWORD_BYTES, RuntimeRefreshingInitialSetup,
 };
 pub use invitation::{
     DatabaseUserInvitationService, UserInvitationError, UserInvitationReadFuture,

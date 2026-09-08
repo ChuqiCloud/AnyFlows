@@ -1,10 +1,12 @@
-use std::{fmt, future::Future, pin::Pin};
+use std::{fmt, future::Future, pin::Pin, sync::Arc};
 
 use af_db::{
     InitialSetupOutcome as RepositorySetupOutcome, InitialSetupRecord, InitialSetupRepository,
     InitialSetupRepositoryError, InitialSetupStatus as RepositorySetupStatus,
 };
 use thiserror::Error;
+
+use crate::GroupPricingRuntimeRefresher;
 
 /// 首次安装管理员密码的最小 UTF-8 字节数。
 pub const MIN_INITIAL_ADMIN_PASSWORD_BYTES: usize = 12;
@@ -84,6 +86,45 @@ pub trait InitialSetup: Send + Sync {
     fn initialize(&self, command: InitialSetupCommand) -> InitialSetupFuture<'_>;
 }
 
+/// 在首次安装事务提交后同步刷新运行时分组计费快照。
+pub struct RuntimeRefreshingInitialSetup {
+    setup: Arc<dyn InitialSetup>,
+    refresher: Arc<dyn GroupPricingRuntimeRefresher>,
+}
+
+impl RuntimeRefreshingInitialSetup {
+    /// 包装首次安装端口，保持数据库事务与运行时缓存发布职责分离。
+    #[must_use]
+    pub fn new(
+        setup: Arc<dyn InitialSetup>,
+        refresher: Arc<dyn GroupPricingRuntimeRefresher>,
+    ) -> Self {
+        Self { setup, refresher }
+    }
+}
+
+impl InitialSetup for RuntimeRefreshingInitialSetup {
+    fn status(&self) -> InitialSetupStatusFuture<'_> {
+        self.setup.status()
+    }
+
+    fn initialize(&self, command: InitialSetupCommand) -> InitialSetupFuture<'_> {
+        Box::pin(async move {
+            self.setup.initialize(command).await?;
+            self.refresher
+                .refresh()
+                .await
+                .map_err(|_| InitialSetupError::Internal)
+        })
+    }
+}
+
+impl fmt::Debug for RuntimeRefreshingInitialSetup {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("RuntimeRefreshingInitialSetup(<受控>)")
+    }
+}
+
 /// 使用数据库仓储实现首次安装应用服务。
 pub struct DatabaseInitialSetup {
     repository: InitialSetupRepository,
@@ -139,7 +180,38 @@ fn map_repository_error(error: InitialSetupRepositoryError) -> InitialSetupError
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
     use super::*;
+    use crate::GroupPricingRuntimeRefreshFuture;
+
+    struct SuccessfulSetup;
+
+    impl InitialSetup for SuccessfulSetup {
+        fn status(&self) -> InitialSetupStatusFuture<'_> {
+            Box::pin(async { Ok(InitialSetupStatus::Complete) })
+        }
+
+        fn initialize(&self, _command: InitialSetupCommand) -> InitialSetupFuture<'_> {
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    struct RecordingRefresher {
+        calls: AtomicUsize,
+    }
+
+    impl GroupPricingRuntimeRefresher for RecordingRefresher {
+        fn refresh<'a>(&'a self) -> GroupPricingRuntimeRefreshFuture<'a> {
+            Box::pin(async move {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            })
+        }
+    }
 
     #[test]
     fn command_enforces_setup_specific_password_boundary() {
@@ -167,5 +239,24 @@ mod tests {
         let rendered = format!("{command:?}");
         assert_eq!(rendered, "InitialSetupCommand(<redacted>)");
         assert!(!rendered.contains("sensitive"));
+    }
+
+    #[tokio::test]
+    async fn runtime_refresh_runs_after_successful_initialization() {
+        let refresher = Arc::new(RecordingRefresher {
+            calls: AtomicUsize::new(0),
+        });
+        let setup =
+            RuntimeRefreshingInitialSetup::new(Arc::new(SuccessfulSetup), refresher.clone());
+
+        setup
+            .initialize(
+                InitialSetupCommand::new("owner".to_owned(), "long-enough-password".to_owned())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(refresher.calls.load(Ordering::SeqCst), 1);
     }
 }
