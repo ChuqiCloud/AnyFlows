@@ -59,7 +59,11 @@ impl RedisBackend {
         Ok(backend)
     }
 
-    async fn query<T>(&self, operation: CacheOperation, command: &mut Cmd) -> Result<T, CacheError>
+    pub(crate) async fn query<T>(
+        &self,
+        operation: CacheOperation,
+        command: &mut Cmd,
+    ) -> Result<T, CacheError>
     where
         T: FromRedisValue,
     {
@@ -153,7 +157,7 @@ impl RemoteCache for RedisBackend {
     }
 }
 
-fn redis_error(operation: CacheOperation, error: &redis::RedisError) -> CacheError {
+pub(crate) fn redis_error(operation: CacheOperation, error: &redis::RedisError) -> CacheError {
     let kind = if error.is_timeout() {
         RedisFailureKind::Timeout
     } else {
@@ -211,5 +215,45 @@ mod tests {
             }
         );
         assert!(!format!("{error:?}").contains("secret"));
+    }
+
+    #[test]
+    fn classifies_unavailable_protocol_and_server_rejection_without_details() {
+        let unavailable = redis_error(
+            CacheOperation::RateLimitCheck,
+            &redis::RedisError::from((ErrorKind::Io, "connection refused")),
+        );
+        assert_eq!(
+            unavailable,
+            CacheError::Redis {
+                operation: CacheOperation::RateLimitCheck,
+                kind: RedisFailureKind::Unavailable,
+            }
+        );
+
+        let protocol = redis_error(
+            CacheOperation::RateLimitCheck,
+            &redis::RedisError::from((ErrorKind::UnexpectedReturnType, "malformed response")),
+        );
+        assert_eq!(
+            protocol,
+            CacheError::Redis {
+                operation: CacheOperation::RateLimitCheck,
+                kind: RedisFailureKind::Protocol,
+            }
+        );
+
+        let rejected = redis_error(
+            CacheOperation::RateLimitCheck,
+            &redis::RedisError::from((ErrorKind::Extension, "private key")),
+        );
+        assert_eq!(
+            rejected,
+            CacheError::Redis {
+                operation: CacheOperation::RateLimitCheck,
+                kind: RedisFailureKind::Rejected,
+            }
+        );
+        assert!(!format!("{rejected:?}").contains("private key"));
     }
 }

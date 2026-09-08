@@ -6,8 +6,10 @@ use std::{
 };
 
 use af_adapter::{
-    Adaptor, AdaptorError, AdaptorResult, AdaptorSendExt, AdaptorTransportError, Bytes,
-    ChannelType, Credential, CredentialKind, HeaderMap, HeaderName, HeaderValue,
+    Adaptor, AdaptorError, AdaptorResult, AdaptorSendExt, AdaptorTarget, AdaptorTransportError,
+    AnthropicAdaptor, BedrockAdaptor, Bytes, ChannelType, Credential, CredentialKind,
+    CustomAdaptor, CustomAuthentication, CustomEndpointTemplate, CustomHeaderAuthentication,
+    CustomStreamEndpoint, GeminiAdaptor, HeaderMap, HeaderName, HeaderValue,
     MAX_UPSTREAM_RESPONSE_BODY_BYTES, Method, OpenAiAdaptor, Operation, Protocol, RelayContext,
     ResponseMode, StatusCode, UpstreamRequest,
 };
@@ -34,9 +36,15 @@ impl Adaptor for TestAdaptor {
         vec!["test-model".to_owned()]
     }
 
-    fn build_url(&self, context: &RelayContext, operation: Operation) -> AdaptorResult<String> {
-        if operation != Operation::Chat {
-            return Err(AdaptorError::UnsupportedOperation { operation });
+    fn build_url(
+        &self,
+        context: &RelayContext,
+        target: AdaptorTarget<'_>,
+    ) -> AdaptorResult<String> {
+        if target.operation() != Operation::Chat {
+            return Err(AdaptorError::UnsupportedOperation {
+                operation: target.operation(),
+            });
         }
         context.append_path(self.default_base_url(), "v1/chat/completions")
     }
@@ -106,7 +114,12 @@ async fn object_safe_adaptor_uses_managed_default_transport() {
             &context,
         )
         .unwrap();
-    let target = adaptor.build_url(&context, Operation::Chat).unwrap();
+    let target = adaptor
+        .build_url(
+            &context,
+            AdaptorTarget::new("test-model", Operation::Chat, ResponseMode::Stream),
+        )
+        .unwrap();
     let request = UpstreamRequest::new(
         Method::POST,
         target,
@@ -174,7 +187,12 @@ async fn openai_adaptor_builds_and_sends_chat_request() {
         .unwrap();
     let request = UpstreamRequest::new(
         Method::POST,
-        adaptor.build_url(&context, Operation::Chat).unwrap(),
+        adaptor
+            .build_url(
+                &context,
+                AdaptorTarget::new("gpt-test", Operation::Chat, ResponseMode::Full),
+            )
+            .unwrap(),
         headers,
         Some(Bytes::from_static(br#"{"model":"gpt-test","messages":[]}"#)),
     )
@@ -185,6 +203,306 @@ async fn openai_adaptor_builds_and_sends_chat_request() {
     assert_eq!(
         body.into_bytes().await.unwrap(),
         Bytes::from_static(br#"{"choices":[]}"#)
+    );
+
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn anthropic_adaptor_builds_and_sends_messages_request() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream.set_read_timeout(Some(SERVER_TIMEOUT)).unwrap();
+        let request = read_request(&mut stream);
+        let lowercase = request.to_ascii_lowercase();
+        assert!(
+            request
+                .starts_with("POST http://upstream.example/proxy/anthropic/v1/messages HTTP/1.1")
+        );
+        assert!(lowercase.contains("x-api-key: anthropic-loopback-secret"));
+        assert!(!lowercase.contains("\r\nauthorization:"));
+        assert!(lowercase.contains("anthropic-version: 2023-06-01"));
+        assert!(lowercase.contains("content-type: application/json"));
+        assert!(lowercase.contains("accept: application/json"));
+        assert!(lowercase.contains("x-request-id: request-anthropic-loopback"));
+        assert!(request.ends_with(r#"{"model":"claude-test","max_tokens":16,"messages":[]}"#));
+        stream
+            .write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 18\r\nConnection: close\r\n\r\n{\"type\":\"message\"}",
+            )
+            .unwrap();
+        stream.flush().unwrap();
+    });
+
+    let client = HttpClientPool::default()
+        .get(&loopback_proxy_config(address))
+        .unwrap();
+    let context = RelayContext::new(client)
+        .with_base_url("http://upstream.example/proxy/anthropic")
+        .unwrap()
+        .with_request_id("request-anthropic-loopback")
+        .unwrap();
+    let adaptor = AnthropicAdaptor::with_supported_models(["claude-test"]);
+    assert_eq!(adaptor.supported_models(), ["claude-test"]);
+    let mut headers = HeaderMap::new();
+    adaptor
+        .setup_headers(
+            &mut headers,
+            &Credential::api_key("anthropic-loopback-secret").unwrap(),
+            &context,
+        )
+        .unwrap();
+    let request = UpstreamRequest::new(
+        Method::POST,
+        adaptor
+            .build_url(
+                &context,
+                AdaptorTarget::new("claude-test", Operation::Chat, ResponseMode::Full),
+            )
+            .unwrap(),
+        headers,
+        Some(Bytes::from_static(
+            br#"{"model":"claude-test","max_tokens":16,"messages":[]}"#,
+        )),
+    )
+    .unwrap();
+    let response = adaptor.send(request, &context).await.unwrap();
+    let body = response.into_body();
+    assert!(!body.is_streaming());
+    assert_eq!(
+        body.into_bytes().await.unwrap(),
+        Bytes::from_static(br#"{"type":"message"}"#)
+    );
+
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn gemini_adaptor_builds_and_sends_stream_generate_content_request() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream.set_read_timeout(Some(SERVER_TIMEOUT)).unwrap();
+        let request = read_request(&mut stream);
+        let lowercase = request.to_ascii_lowercase();
+        assert!(request.starts_with(
+            "POST http://upstream.example/proxy/gemini/v1beta/models/gemini-test:streamGenerateContent?alt=sse HTTP/1.1"
+        ));
+        assert!(lowercase.contains("x-goog-api-key: gemini-loopback-secret"));
+        assert!(!lowercase.contains("\r\nauthorization:"));
+        assert!(lowercase.contains("content-type: application/json"));
+        assert!(lowercase.contains("accept: application/json"));
+        assert!(lowercase.contains("x-request-id: request-gemini-loopback"));
+        assert!(request.ends_with(r#"{"contents":[]}"#));
+        stream
+            .write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 17\r\nConnection: close\r\n\r\n{\"candidates\":[]}",
+            )
+            .unwrap();
+        stream.flush().unwrap();
+    });
+
+    let client = HttpClientPool::default()
+        .get(&loopback_proxy_config(address))
+        .unwrap();
+    let context = RelayContext::new(client)
+        .with_base_url("http://upstream.example/proxy/gemini")
+        .unwrap()
+        .with_request_id("request-gemini-loopback")
+        .unwrap();
+    let adaptor = GeminiAdaptor::with_supported_models(["gemini-test"]);
+    assert_eq!(adaptor.supported_models(), ["gemini-test"]);
+    let mut headers = HeaderMap::new();
+    adaptor
+        .setup_headers(
+            &mut headers,
+            &Credential::api_key("gemini-loopback-secret").unwrap(),
+            &context,
+        )
+        .unwrap();
+    let request = UpstreamRequest::new(
+        Method::POST,
+        adaptor
+            .build_url(
+                &context,
+                AdaptorTarget::new("gemini-test", Operation::Chat, ResponseMode::Stream),
+            )
+            .unwrap(),
+        headers,
+        Some(Bytes::from_static(br#"{"contents":[]}"#)),
+    )
+    .unwrap()
+    .with_response_mode(ResponseMode::Stream);
+    let response = adaptor.send(request, &context).await.unwrap();
+    let body = response.into_body();
+    assert!(body.is_streaming());
+    assert_eq!(
+        body.into_bytes().await.unwrap(),
+        Bytes::from_static(br#"{"candidates":[]}"#)
+    );
+
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn custom_adaptor_rebuilds_header_auth_and_uses_managed_transport() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream.set_read_timeout(Some(SERVER_TIMEOUT)).unwrap();
+        let request = read_request(&mut stream);
+        let lowercase = request.to_ascii_lowercase();
+        assert!(request.starts_with(
+            "POST http://upstream.example/proxy/custom/v2/models/custom-model%2Fversion:invoke?mode=chat HTTP/1.1"
+        ));
+        assert!(lowercase.contains("x-provider-token: token custom-loopback-secret"));
+        assert!(!lowercase.contains("malicious-override"));
+        assert!(!lowercase.contains("\r\nauthorization:"));
+        assert!(lowercase.contains("content-type: application/json"));
+        assert!(lowercase.contains("accept: application/json"));
+        assert!(lowercase.contains("x-request-id: request-custom-loopback"));
+        assert!(request.ends_with(r#"{"model":"custom-model/version"}"#));
+        stream
+            .write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 14\r\nConnection: close\r\n\r\n{\"choices\":[]}",
+            )
+            .unwrap();
+        stream.flush().unwrap();
+    });
+
+    let client = HttpClientPool::default()
+        .get(&loopback_proxy_config(address))
+        .unwrap();
+    let context = RelayContext::new(client)
+        .with_base_url("http://upstream.example/proxy/custom")
+        .unwrap()
+        .with_request_id("request-custom-loopback")
+        .unwrap();
+    let adaptor = CustomAdaptor::with_supported_models(
+        Protocol::OpenAiChat,
+        CustomEndpointTemplate::parse("/v2/models/{model}:invoke?mode=chat").unwrap(),
+        CustomStreamEndpoint::Same,
+        CustomAuthentication::Header(
+            CustomHeaderAuthentication::new("x-provider-token", "Token {credential}").unwrap(),
+        ),
+        ["custom-model/version"],
+    );
+    let credential = Credential::api_key("custom-loopback-secret").unwrap();
+    let mut headers = HeaderMap::new();
+    adaptor
+        .setup_headers(&mut headers, &credential, &context)
+        .unwrap();
+    headers.insert(
+        HeaderName::from_static("x-provider-token"),
+        HeaderValue::from_static("malicious-override"),
+    );
+    let request = UpstreamRequest::new(
+        Method::POST,
+        adaptor
+            .build_url(
+                &context,
+                AdaptorTarget::new("custom-model/version", Operation::Chat, ResponseMode::Full),
+            )
+            .unwrap(),
+        headers,
+        Some(Bytes::from_static(br#"{"model":"custom-model/version"}"#)),
+    )
+    .unwrap();
+    let request = adaptor
+        .finalize_request(request, &credential, &context)
+        .await
+        .unwrap();
+    let response = adaptor.send(request, &context).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.into_body().into_bytes().await.unwrap(),
+        Bytes::from_static(br#"{"choices":[]}"#)
+    );
+
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn bedrock_adaptor_signs_and_sends_invoke_model_request() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream.set_read_timeout(Some(SERVER_TIMEOUT)).unwrap();
+        let request = read_request(&mut stream);
+        let lowercase = request.to_ascii_lowercase();
+        assert!(request.starts_with(
+            "POST http://upstream.example/proxy/bedrock/model/us.anthropic.claude-test-v1%3A0/invoke HTTP/1.1"
+        ));
+        assert!(
+            lowercase.contains("authorization: aws4-hmac-sha256 credential=akidexample00000001/")
+        );
+        assert!(lowercase.contains("/us-east-1/bedrock/aws4_request"));
+        assert!(lowercase.contains("x-amz-date:"));
+        assert!(lowercase.contains("x-amz-security-token: bedrock-loopback-session"));
+        assert!(lowercase.contains("content-type: application/json"));
+        assert!(lowercase.contains("accept: application/json"));
+        assert!(lowercase.contains("x-request-id: request-bedrock-loopback"));
+        assert!(request.ends_with(r#"{"messages":[]}"#));
+        stream
+            .write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 18\r\nConnection: close\r\n\r\n{\"type\":\"message\"}",
+            )
+            .unwrap();
+        stream.flush().unwrap();
+    });
+
+    let client = HttpClientPool::default()
+        .get(&loopback_proxy_config(address))
+        .unwrap();
+    let context = RelayContext::new(client)
+        .with_base_url("http://upstream.example/proxy/bedrock")
+        .unwrap()
+        .with_request_id("request-bedrock-loopback")
+        .unwrap();
+    let adaptor =
+        BedrockAdaptor::with_supported_models("us-east-1", ["us.anthropic.claude-test-v1:0"])
+            .unwrap();
+    let credential = Credential::bedrock(
+        "AKIDEXAMPLE00000001",
+        "bedrock-loopback-secret",
+        Some("bedrock-loopback-session".to_owned()),
+    )
+    .unwrap();
+    let mut headers = HeaderMap::new();
+    adaptor
+        .setup_headers(&mut headers, &credential, &context)
+        .unwrap();
+    let request = UpstreamRequest::new(
+        Method::POST,
+        adaptor
+            .build_url(
+                &context,
+                AdaptorTarget::new(
+                    "us.anthropic.claude-test-v1:0",
+                    Operation::Chat,
+                    ResponseMode::Full,
+                ),
+            )
+            .unwrap(),
+        headers,
+        Some(Bytes::from_static(br#"{"messages":[]}"#)),
+    )
+    .unwrap();
+    let request = adaptor
+        .finalize_request(request, &credential, &context)
+        .await
+        .unwrap();
+    let response = adaptor.send(request, &context).await.unwrap();
+    let body = response.into_body();
+    assert!(!body.is_streaming());
+    assert_eq!(
+        body.into_bytes().await.unwrap(),
+        Bytes::from_static(br#"{"type":"message"}"#)
     );
 
     server.join().unwrap();

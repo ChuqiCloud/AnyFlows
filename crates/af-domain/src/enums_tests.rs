@@ -1,6 +1,11 @@
 use std::collections::HashSet;
 
-use crate::{ChannelType, CredentialKind, Operation, Protocol, PublicErrorCode, Role, Status};
+use crate::{
+    ChannelType, ClientSimulationBodyPatchResult, ClientSimulationBodyProfile,
+    ClientSimulationProfile, ClientSimulationResult, CredentialKind, CredentialQuotaDimension,
+    Operation, Protocol, PublicErrorCode, ResponsesCompactMode, ResponsesCompactProbeResult, Role,
+    Status,
+};
 
 macro_rules! assert_string_enum_contract {
     ($type:ty, $all:expr, [$(($value:path, $wire:literal)),+ $(,)?]) => {{
@@ -28,6 +33,13 @@ fn string_enums_have_unique_stable_parse_and_json_contracts() {
         [
             (Protocol::OpenAiChat, "openai_chat"),
             (Protocol::OpenAiResponses, "openai_responses"),
+            (Protocol::OpenAiEmbeddings, "openai_embeddings"),
+            (Protocol::OpenAiImages, "openai_images"),
+            (Protocol::OpenAiAudio, "openai_audio"),
+            (Protocol::OpenAiSpeech, "openai_speech"),
+            (Protocol::JinaRerank, "jina_rerank"),
+            (Protocol::CohereRerank, "cohere_rerank"),
+            (Protocol::XaiVideo, "xai_video"),
             (Protocol::Anthropic, "anthropic"),
             (Protocol::Gemini, "gemini"),
         ]
@@ -38,12 +50,64 @@ fn string_enums_have_unique_stable_parse_and_json_contracts() {
         [
             (Operation::Chat, "chat"),
             (Operation::Responses, "responses"),
+            (Operation::ResponsesCompact, "responses_compact"),
             (Operation::Embedding, "embedding"),
             (Operation::Image, "image"),
             (Operation::Audio, "audio"),
             (Operation::Rerank, "rerank"),
             (Operation::Video, "video"),
             (Operation::CountTokens, "count_tokens"),
+        ]
+    );
+    assert_string_enum_contract!(
+        ResponsesCompactMode,
+        ResponsesCompactMode::ALL,
+        [
+            (ResponsesCompactMode::Auto, "auto"),
+            (ResponsesCompactMode::ForceOn, "force_on"),
+            (ResponsesCompactMode::ForceOff, "force_off"),
+        ]
+    );
+    assert_string_enum_contract!(
+        ResponsesCompactProbeResult,
+        ResponsesCompactProbeResult::ALL,
+        [
+            (ResponsesCompactProbeResult::Unknown, "unknown"),
+            (ResponsesCompactProbeResult::Supported, "supported"),
+            (ResponsesCompactProbeResult::Unsupported, "unsupported"),
+        ]
+    );
+    assert_string_enum_contract!(
+        ClientSimulationProfile,
+        ClientSimulationProfile::ALL,
+        [(
+            ClientSimulationProfile::AnthropicCliHeadersV1,
+            "anthropic_cli_headers_v1"
+        )]
+    );
+    assert_string_enum_contract!(
+        ClientSimulationBodyProfile,
+        ClientSimulationBodyProfile::ALL,
+        [(
+            ClientSimulationBodyProfile::AnthropicCliSystemDateV1,
+            "anthropic_cli_system_date_v1"
+        )]
+    );
+    assert_string_enum_contract!(
+        ClientSimulationResult,
+        ClientSimulationResult::ALL,
+        [
+            (ClientSimulationResult::NotApplied, "not_applied"),
+            (ClientSimulationResult::Applied, "applied"),
+            (ClientSimulationResult::Failed, "failed"),
+        ]
+    );
+    assert_string_enum_contract!(
+        ClientSimulationBodyPatchResult,
+        ClientSimulationBodyPatchResult::ALL,
+        [
+            (ClientSimulationBodyPatchResult::Applied, "applied"),
+            (ClientSimulationBodyPatchResult::Rejected, "rejected"),
         ]
     );
     assert_string_enum_contract!(
@@ -55,6 +119,9 @@ fn string_enums_have_unique_stable_parse_and_json_contracts() {
             (ChannelType::Gemini, "gemini"),
             (ChannelType::Bedrock, "bedrock"),
             (ChannelType::Vertex, "vertex"),
+            (ChannelType::Jina, "jina"),
+            (ChannelType::Cohere, "cohere"),
+            (ChannelType::Xai, "xai"),
             (ChannelType::Custom, "custom"),
         ]
     );
@@ -68,6 +135,14 @@ fn string_enums_have_unique_stable_parse_and_json_contracts() {
             (CredentialKind::Bedrock, "bedrock"),
             (CredentialKind::ServiceAccount, "service_account"),
             (CredentialKind::Upstream, "upstream"),
+        ]
+    );
+    assert_string_enum_contract!(
+        CredentialQuotaDimension,
+        CredentialQuotaDimension::ALL,
+        [
+            (CredentialQuotaDimension::Global, "global"),
+            (CredentialQuotaDimension::Spark, "spark"),
         ]
     );
     assert_string_enum_contract!(
@@ -89,11 +164,36 @@ fn string_enums_have_unique_stable_parse_and_json_contracts() {
             (PublicErrorCode::InvalidApiKey, "invalid_api_key"),
             (PublicErrorCode::InsufficientQuota, "insufficient_quota"),
             (PublicErrorCode::ModelNotFound, "model_not_found"),
+            (PublicErrorCode::TaskNotFound, "task_not_found"),
+            (PublicErrorCode::IdempotencyConflict, "idempotency_conflict"),
+            (
+                PublicErrorCode::RequestOutcomeUnknown,
+                "request_outcome_unknown"
+            ),
             (PublicErrorCode::UpstreamUnavailable, "upstream_unavailable"),
             (PublicErrorCode::RateLimited, "rate_limited"),
             (PublicErrorCode::InternalError, "internal_error"),
         ]
     );
+}
+
+#[test]
+fn credential_quota_dimension_only_selects_spark_for_the_closed_model() {
+    assert_eq!(
+        CredentialQuotaDimension::for_canonical_model("gpt-5.3-codex-spark"),
+        CredentialQuotaDimension::Spark
+    );
+    for model in [
+        "gpt-5.3-codex",
+        "gpt-5.3-codex-spark-high",
+        "GPT-5.3-CODEX-SPARK",
+        "",
+    ] {
+        assert_eq!(
+            CredentialQuotaDimension::for_canonical_model(model),
+            CredentialQuotaDimension::Global
+        );
+    }
 }
 
 #[test]

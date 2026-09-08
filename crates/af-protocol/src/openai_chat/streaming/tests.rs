@@ -1,10 +1,10 @@
-use af_domain::{Role, UpstreamError};
+use af_domain::{Protocol, Role, UpstreamError};
 use serde_json::{Value, json};
 
 use super::*;
 use crate::{
-    CanonicalStreamEvent, ContentDelta, FinishReason, TokenCount, Usage, UsageDetails,
-    UsageSemantics, UsageSource,
+    CacheHint, CanonicalStreamEvent, ContentDelta, FinishReason, ProtocolCapability,
+    StreamCapability, TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource,
 };
 
 fn chunk(choices: Value, usage: Option<Value>) -> Value {
@@ -215,10 +215,12 @@ fn decoder_handles_multi_choice_tools_usage_and_done_across_every_byte() {
             CanonicalStreamEvent::Finish {
                 choice_index: 0,
                 reason: FinishReason::ToolCalls,
+                stop_sequence: None,
             },
             CanonicalStreamEvent::Finish {
                 choice_index: 1,
                 reason: FinishReason::Stop,
+                stop_sequence: None,
             },
             CanonicalStreamEvent::Usage(canonical_usage()),
             CanonicalStreamEvent::StreamEnd,
@@ -403,6 +405,7 @@ fn encoder_round_trips_supported_canonical_events() {
         CanonicalStreamEvent::Finish {
             choice_index: 0,
             reason: FinishReason::ToolCalls,
+            stop_sequence: None,
         },
         CanonicalStreamEvent::Usage(canonical_usage()),
         CanonicalStreamEvent::StreamEnd,
@@ -448,6 +451,7 @@ fn encoder_emits_openai_shape_and_exact_done_marker() {
         .encode(CanonicalStreamEvent::Finish {
             choice_index: 7,
             reason: FinishReason::Stop,
+            stop_sequence: None,
         })
         .unwrap();
     assert_eq!(
@@ -514,7 +518,9 @@ fn encoder_rejects_unsupported_events_invalid_sequences_and_reuse() {
                 mime_type: "image/png".to_owned(),
             },
         },
-        CanonicalStreamEvent::Error(UpstreamError::Network),
+        CanonicalStreamEvent::Error(UpstreamError::network(
+            af_domain::NetworkFailureKind::ResponseBody,
+        )),
     ] {
         let mut encoder =
             OpenAiChatStreamEncoder::new("chatcmpl-unsupported", "gpt-unsupported", 0).unwrap();
@@ -586,13 +592,21 @@ fn encoder_rejects_incomplete_tool_json_and_unrepresentable_usage() {
         .encode(CanonicalStreamEvent::Finish {
             choice_index: 0,
             reason: FinishReason::Stop,
+            stop_sequence: None,
         })
         .unwrap();
+    let error = encoder
+        .encode(CanonicalStreamEvent::Usage(usage))
+        .expect_err("OpenAI Chat 不支持缓存写入 usage");
+    let EncodeStreamError::UnsupportedCapability(error) = error else {
+        panic!("必须返回结构化能力错误，实际为 {error:?}");
+    };
+    assert_eq!(error.target_protocol(), Protocol::OpenAiChat);
     assert_eq!(
-        encoder
-            .encode(CanonicalStreamEvent::Usage(usage))
-            .unwrap_err(),
-        EncodeStreamError::InvalidUsage
+        error.capability(),
+        ProtocolCapability::Stream(StreamCapability::UsageCacheCreation(
+            CacheHint::Ephemeral5Minutes
+        ))
     );
 }
 

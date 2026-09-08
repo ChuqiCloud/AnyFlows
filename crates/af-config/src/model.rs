@@ -29,6 +29,14 @@ pub const DEFAULT_AUTH_SESSION_TTL_SECS: u64 = 3_600;
 pub const MAX_AUTH_SESSION_TTL_SECS: u64 = 86_400;
 /// 管理会话签名密钥要求的随机字节数。
 pub const AUTH_SESSION_SIGNING_KEY_BYTES: usize = 32;
+/// Turnstile 服务端验证请求的默认硬超时。
+pub const DEFAULT_TURNSTILE_TIMEOUT_SECS: u64 = 5;
+/// Turnstile 服务端验证请求允许的最大硬超时。
+pub const MAX_TURNSTILE_TIMEOUT_SECS: u64 = 30;
+/// Turnstile site key 允许的最大 ASCII 字节数。
+pub const MAX_TURNSTILE_SITE_KEY_BYTES: usize = 256;
+/// Turnstile secret key 允许的最大 ASCII 字节数。
+pub const MAX_TURNSTILE_SECRET_KEY_BYTES: usize = 4 * 1_024;
 /// 计费 WAL 批量落库的默认周期。
 pub const DEFAULT_BILLING_FLUSH_INTERVAL_SECS: u64 = 5;
 /// 计费 WAL 单次启动恢复或关闭收尾的默认截止时间。
@@ -37,6 +45,16 @@ pub const DEFAULT_BILLING_FLUSH_TIMEOUT_SECS: u64 = 30;
 pub const MAX_BILLING_FLUSH_INTERVAL_SECS: u64 = 3_600;
 /// 计费 WAL 启动恢复或关闭收尾允许配置的硬上限。
 pub const MAX_BILLING_FLUSH_TIMEOUT_SECS: u64 = 300;
+/// Stripe webhook 签名时间容差默认值。
+pub const DEFAULT_PAYMENT_SIGNATURE_TOLERANCE_SECS: u64 = 300;
+/// Stripe webhook 签名时间容差允许的最大值。
+pub const MAX_PAYMENT_SIGNATURE_TOLERANCE_SECS: u64 = 86_400;
+/// Stripe API 密钥允许的最大字节数。
+pub const MAX_PAYMENT_SECRET_KEY_BYTES: usize = 4 * 1_024;
+/// Stripe publishable key 允许的最大字节数。
+const MAX_PAYMENT_PUBLISHABLE_KEY_BYTES: usize = 512;
+/// 支付 Provider webhook 密钥允许的最大字节数。
+pub const MAX_PAYMENT_WEBHOOK_SECRET_BYTES: usize = 4 * 1_024;
 /// 用量记录内存接收队列的默认容量。
 pub const DEFAULT_USAGE_RECORD_QUEUE_CAPACITY: usize = 4_096;
 /// 单实例用量记录队列允许配置的硬容量上限。
@@ -45,6 +63,20 @@ pub const MAX_USAGE_RECORD_QUEUE_CAPACITY: usize = 1_000_000;
 pub const DEFAULT_USAGE_RECORD_WORKER_COUNT: usize = 1;
 /// 单实例用量记录持久化 worker 数量硬上限。
 pub const MAX_USAGE_RECORD_WORKER_COUNT: usize = 64;
+/// 订阅生命周期周期任务默认开启，确保到期窗口和取消订阅能够自动收敛。
+pub const DEFAULT_SUBSCRIPTION_CYCLE_ENABLED: bool = true;
+/// 订阅生命周期周期任务默认单批记录数。
+pub const DEFAULT_SUBSCRIPTION_CYCLE_BATCH_SIZE: usize = 64;
+/// 订阅生命周期周期任务默认执行间隔。
+pub const DEFAULT_SUBSCRIPTION_CYCLE_INTERVAL_SECS: u64 = 60;
+/// 每类订阅状态单轮默认最多扫描的批次数。
+pub const DEFAULT_SUBSCRIPTION_CYCLE_MAX_BATCHES_PER_RUN: usize = 8;
+/// 订阅生命周期单批记录数硬上限，与数据库分页边界保持一致。
+pub const MAX_SUBSCRIPTION_CYCLE_BATCH_SIZE: usize = 100;
+/// 订阅生命周期执行间隔允许配置的硬上限。
+pub const MAX_SUBSCRIPTION_CYCLE_INTERVAL_SECS: u64 = 3_600;
+/// 每类订阅状态单轮扫描批次数硬上限。
+pub const MAX_SUBSCRIPTION_CYCLE_BATCHES_PER_RUN: usize = 64;
 /// 渠道探活后台任务默认关闭，避免凭据运行时尚未接线时产生无效调用。
 pub const DEFAULT_CHANNEL_PROBE_ENABLED: bool = false;
 /// 渠道探活默认单轮批次。
@@ -71,6 +103,69 @@ pub const MAX_OPENAI_UPSTREAM_BASE_URL_BYTES: usize = 2_048;
 pub const MAX_OPENAI_UPSTREAM_MODEL_BYTES: usize = MAX_MODEL_NAME_BYTES;
 /// 静态单上游 API Key 的最大 UTF-8 字节数。
 pub const MAX_OPENAI_UPSTREAM_API_KEY_BYTES: usize = 16 * 1_024;
+/// 单实例默认允许保留的待完成 OAuth 授权数量。
+pub const DEFAULT_OAUTH_MAX_PENDING_AUTHORIZATIONS: usize = 256;
+/// 单实例允许保留的待完成 OAuth 授权硬上限。
+pub const MAX_OAUTH_PENDING_AUTHORIZATIONS: usize = 4_096;
+/// OAuth 授权会话默认有效期。
+pub const DEFAULT_OAUTH_SESSION_TTL_SECS: u64 = 10 * 60;
+/// OAuth 授权会话允许的最短有效期。
+pub const MIN_OAUTH_SESSION_TTL_SECS: u64 = 60;
+/// OAuth 授权会话允许的最长有效期。
+pub const MAX_OAUTH_SESSION_TTL_SECS: u64 = 15 * 60;
+/// OAuth 公共客户端标识允许配置的最大 ASCII 字节数。
+pub const MAX_OAUTH_CLIENT_ID_BYTES: usize = 256;
+/// OAuth 客户端密钥允许配置的最大 ASCII 字节数。
+pub const MAX_OAUTH_CLIENT_SECRET_BYTES: usize = 16 * 1_024;
+/// OAuth token 周期刷新默认开启。
+pub const DEFAULT_OAUTH_REFRESH_ENABLED: bool = true;
+/// OAuth 到期候选的默认扫描周期。
+pub const DEFAULT_OAUTH_REFRESH_INTERVAL_SECS: u64 = 60;
+/// OAuth access token 默认提前刷新秒数。
+pub const DEFAULT_OAUTH_REFRESH_BEFORE_EXPIRY_SECS: u64 = 5 * 60;
+/// OAuth 单轮默认读取的候选数量。
+pub const DEFAULT_OAUTH_REFRESH_BATCH_SIZE: usize = 64;
+/// OAuth 单实例默认并发刷新数量。
+pub const DEFAULT_OAUTH_REFRESH_CONCURRENCY: usize = 8;
+/// OAuth 到期候选扫描周期硬上限。
+pub const MAX_OAUTH_REFRESH_INTERVAL_SECS: u64 = 3_600;
+/// OAuth token 提前刷新时间硬上限。
+pub const MAX_OAUTH_REFRESH_BEFORE_EXPIRY_SECS: u64 = 24 * 60 * 60;
+/// OAuth 单轮候选数量硬上限，与数据库查询边界保持一致。
+pub const MAX_OAUTH_REFRESH_BATCH_SIZE: usize = 256;
+/// OAuth 单实例刷新并发硬上限。
+pub const MAX_OAUTH_REFRESH_CONCURRENCY: usize = 64;
+/// ClickHouse 分析读取的默认查询超时。
+pub const DEFAULT_CLICKHOUSE_ANALYTICS_TIMEOUT_SECS: u64 = 5;
+/// ClickHouse 分析读取允许配置的最大查询超时。
+pub const MAX_CLICKHOUSE_ANALYTICS_TIMEOUT_SECS: u64 = 300;
+/// ClickHouse 单行分析快照的默认响应体上限。
+pub const DEFAULT_CLICKHOUSE_ANALYTICS_RESPONSE_BYTES: usize = 1024 * 1024;
+/// ClickHouse 单行分析快照允许配置的最大响应体上限。
+pub const MAX_CLICKHOUSE_ANALYTICS_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+/// ClickHouse 异步事实投递的默认批量大小。
+pub const DEFAULT_CLICKHOUSE_EXPORT_BATCH_SIZE: usize = 64;
+/// ClickHouse 异步事实投递允许配置的最大批量大小。
+pub const MAX_CLICKHOUSE_EXPORT_BATCH_SIZE: usize = 256;
+/// ClickHouse 异步事实投递的默认扫描周期。
+pub const DEFAULT_CLICKHOUSE_EXPORT_INTERVAL_SECS: u64 = 5;
+/// ClickHouse 异步事实投递允许配置的最大扫描周期。
+pub const MAX_CLICKHOUSE_EXPORT_INTERVAL_SECS: u64 = 3_600;
+/// ClickHouse 异步事实投递的默认请求超时。
+pub const DEFAULT_CLICKHOUSE_EXPORT_TIMEOUT_SECS: u64 = 5;
+/// ClickHouse 异步事实投递允许配置的最大请求超时。
+pub const MAX_CLICKHOUSE_EXPORT_TIMEOUT_SECS: u64 = 300;
+/// ClickHouse 异步事实投递的默认请求体上限。
+pub const DEFAULT_CLICKHOUSE_EXPORT_REQUEST_BYTES: usize = 4 * 1024 * 1024;
+/// ClickHouse 异步事实投递允许配置的最大请求体上限。
+pub const MAX_CLICKHOUSE_EXPORT_REQUEST_BYTES: usize = 16 * 1024 * 1024;
+/// ClickHouse 历史事实单轮默认回填大小。
+pub const DEFAULT_CLICKHOUSE_EXPORT_BACKFILL_BATCH_SIZE: usize = 128;
+/// ClickHouse 历史事实单轮最大回填大小。
+pub const MAX_CLICKHOUSE_EXPORT_BACKFILL_BATCH_SIZE: usize = 256;
+const MAX_CLICKHOUSE_ANALYTICS_QUERY_BYTES: usize = 64 * 1024;
+const MAX_CLICKHOUSE_ANALYTICS_USERNAME_BYTES: usize = 256;
+const MAX_CLICKHOUSE_ANALYTICS_PASSWORD_BYTES: usize = 1024;
 
 /// 经过规范化的 HTTP(S) CORS Origin，不包含路径、凭据或通配语义。
 #[derive(Clone, Eq, Hash, PartialEq, Serialize)]
@@ -376,6 +471,100 @@ impl Default for BillingSettings {
     }
 }
 
+/// 订阅窗口推进与到期迁移的启动期周期任务设置。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SubscriptionSettings {
+    enabled: bool,
+    batch_size: usize,
+    interval_secs: u64,
+    max_batches_per_run: usize,
+}
+
+impl SubscriptionSettings {
+    /// 返回是否注册订阅生命周期周期任务。
+    #[must_use]
+    pub const fn enabled(self) -> bool {
+        self.enabled
+    }
+
+    /// 返回单次数据库分页最多读取的订阅数量。
+    #[must_use]
+    pub const fn batch_size(self) -> usize {
+        self.batch_size
+    }
+
+    /// 返回两轮订阅生命周期扫描之间的等待秒数。
+    #[must_use]
+    pub const fn interval_secs(self) -> u64 {
+        self.interval_secs
+    }
+
+    /// 返回每类订阅状态单轮最多扫描的批次数。
+    #[must_use]
+    pub const fn max_batches_per_run(self) -> usize {
+        self.max_batches_per_run
+    }
+}
+
+impl Default for SubscriptionSettings {
+    fn default() -> Self {
+        Self {
+            enabled: DEFAULT_SUBSCRIPTION_CYCLE_ENABLED,
+            batch_size: DEFAULT_SUBSCRIPTION_CYCLE_BATCH_SIZE,
+            interval_secs: DEFAULT_SUBSCRIPTION_CYCLE_INTERVAL_SECS,
+            max_batches_per_run: DEFAULT_SUBSCRIPTION_CYCLE_MAX_BATCHES_PER_RUN,
+        }
+    }
+}
+
+/// 支付 Provider 的启动期安全配置。
+#[derive(Clone, Debug, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct PaymentSettings {
+    stripe_secret_key: Option<SecretString>,
+    stripe_publishable_key: Option<String>,
+    stripe_webhook_secret: Option<SecretString>,
+    stripe_signature_tolerance_secs: u64,
+}
+
+impl PaymentSettings {
+    /// 返回 Stripe 服务端 API 密钥；未配置时禁止创建 PaymentIntent。
+    #[must_use]
+    pub fn stripe_secret_key(&self) -> Option<&SecretString> {
+        self.stripe_secret_key.as_ref()
+    }
+
+    /// 返回可安全交给 Stripe.js 的 publishable key。
+    #[must_use]
+    pub fn stripe_publishable_key(&self) -> Option<&str> {
+        self.stripe_publishable_key.as_deref()
+    }
+
+    /// 返回 Stripe webhook 密钥；未配置时回调路由保持禁用。
+    #[must_use]
+    pub fn stripe_webhook_secret(&self) -> Option<&SecretString> {
+        self.stripe_webhook_secret.as_ref()
+    }
+
+    /// 返回 Stripe webhook 的重放保护时间容差。
+    #[must_use]
+    pub const fn stripe_signature_tolerance_secs(&self) -> u64 {
+        self.stripe_signature_tolerance_secs
+    }
+}
+
+impl Default for PaymentSettings {
+    fn default() -> Self {
+        Self {
+            stripe_secret_key: None,
+            stripe_publishable_key: None,
+            stripe_webhook_secret: None,
+            stripe_signature_tolerance_secs: DEFAULT_PAYMENT_SIGNATURE_TOLERANCE_SECS,
+        }
+    }
+}
+
 /// 自动禁用渠道的周期探活设置。
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(default, deny_unknown_fields)]
@@ -405,7 +594,7 @@ impl ChannelProbeSettings {
         self.interval_secs
     }
 
-    /// 返回单渠道探活允许占用的最大秒数。
+    /// 返回未设置渠道超时时，单次真实探活使用的默认秒数。
     #[must_use]
     pub const fn probe_timeout_secs(&self) -> u64 {
         self.probe_timeout_secs
@@ -485,6 +674,8 @@ impl fmt::Debug for BillingSettings {
 #[serde(default, deny_unknown_fields)]
 pub struct RedisSettings {
     url: Option<SecretString>,
+    /// 请求限流使用的 Redis 键空间；缺省值由服务端保持稳定兼容命名。
+    request_rate_limit_namespace: Option<String>,
 }
 
 impl RedisSettings {
@@ -493,6 +684,194 @@ impl RedisSettings {
     pub fn url(&self) -> Option<&SecretString> {
         self.url.as_ref()
     }
+
+    /// 返回请求限流键空间；未配置时由服务端使用默认命名。
+    #[must_use]
+    pub fn request_rate_limit_namespace(&self) -> Option<&str> {
+        self.request_rate_limit_namespace.as_deref()
+    }
+}
+
+/// 可选的 ClickHouse 管理看板分析读取配置；整个配置段缺失时保持主库读取。
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClickHouseAnalyticsSettings {
+    endpoint: SecretString,
+    query: SecretString,
+    username: SecretString,
+    password: SecretString,
+    #[serde(default = "default_clickhouse_analytics_timeout_secs")]
+    timeout_secs: u64,
+    #[serde(default = "default_clickhouse_analytics_response_bytes")]
+    max_response_bytes: usize,
+}
+
+impl ClickHouseAnalyticsSettings {
+    /// 返回仅供 ClickHouse HTTP 适配器使用的受保护端点。
+    #[must_use]
+    pub const fn endpoint(&self) -> &SecretString {
+        &self.endpoint
+    }
+
+    /// 返回固定的参数化分析查询；调用方不得记录其正文。
+    #[must_use]
+    pub const fn query(&self) -> &SecretString {
+        &self.query
+    }
+
+    /// 返回 ClickHouse 只读用户名称。
+    #[must_use]
+    pub const fn username(&self) -> &SecretString {
+        &self.username
+    }
+
+    /// 返回 ClickHouse 只读用户密码。
+    #[must_use]
+    pub const fn password(&self) -> &SecretString {
+        &self.password
+    }
+
+    /// 返回单次分析查询的硬超时秒数。
+    #[must_use]
+    pub const fn timeout_secs(&self) -> u64 {
+        self.timeout_secs
+    }
+
+    /// 返回单行分析快照允许读取的最大响应字节数。
+    #[must_use]
+    pub const fn max_response_bytes(&self) -> usize {
+        self.max_response_bytes
+    }
+}
+
+impl fmt::Debug for ClickHouseAnalyticsSettings {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ClickHouseAnalyticsSettings")
+            .field("endpoint", &"<redacted>")
+            .field("query", &"<redacted>")
+            .field("username", &"<redacted>")
+            .field("password", &"<redacted>")
+            .field("timeout_secs", &self.timeout_secs)
+            .field("max_response_bytes", &self.max_response_bytes)
+            .finish()
+    }
+}
+
+/// 可选的 ClickHouse 异步事实投递配置；与只读分析账号严格分离。
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClickHouseExportSettings {
+    endpoint: SecretString,
+    usage_insert_query: SecretString,
+    outcome_insert_query: SecretString,
+    username: SecretString,
+    password: SecretString,
+    #[serde(default = "default_clickhouse_export_batch_size")]
+    batch_size: usize,
+    #[serde(default = "default_clickhouse_export_interval_secs")]
+    interval_secs: u64,
+    #[serde(default = "default_clickhouse_export_timeout_secs")]
+    timeout_secs: u64,
+    #[serde(default = "default_clickhouse_export_request_bytes")]
+    max_request_bytes: usize,
+    #[serde(default = "default_clickhouse_export_backfill_batch_size")]
+    backfill_batch_size: usize,
+}
+
+impl ClickHouseExportSettings {
+    /// 返回事实投递端点。
+    #[must_use]
+    pub const fn endpoint(&self) -> &SecretString {
+        &self.endpoint
+    }
+    /// 返回用量事实 INSERT 查询。
+    #[must_use]
+    pub const fn usage_insert_query(&self) -> &SecretString {
+        &self.usage_insert_query
+    }
+    /// 返回请求终态事实 INSERT 查询。
+    #[must_use]
+    pub const fn outcome_insert_query(&self) -> &SecretString {
+        &self.outcome_insert_query
+    }
+    /// 返回独立的 ClickHouse 写入用户名。
+    #[must_use]
+    pub const fn username(&self) -> &SecretString {
+        &self.username
+    }
+    /// 返回独立的 ClickHouse 写入密码。
+    #[must_use]
+    pub const fn password(&self) -> &SecretString {
+        &self.password
+    }
+    /// 返回单轮投递批量大小。
+    #[must_use]
+    pub const fn batch_size(&self) -> usize {
+        self.batch_size
+    }
+    /// 返回后台扫描周期秒数。
+    #[must_use]
+    pub const fn interval_secs(&self) -> u64 {
+        self.interval_secs
+    }
+    /// 返回单次 ClickHouse 请求超时秒数。
+    #[must_use]
+    pub const fn timeout_secs(&self) -> u64 {
+        self.timeout_secs
+    }
+    /// 返回单次批量请求体硬上限。
+    #[must_use]
+    pub const fn max_request_bytes(&self) -> usize {
+        self.max_request_bytes
+    }
+    /// 返回历史事实单轮回填大小。
+    #[must_use]
+    pub const fn backfill_batch_size(&self) -> usize {
+        self.backfill_batch_size
+    }
+}
+
+impl fmt::Debug for ClickHouseExportSettings {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ClickHouseExportSettings")
+            .field("endpoint", &"<redacted>")
+            .field("usage_insert_query", &"<redacted>")
+            .field("outcome_insert_query", &"<redacted>")
+            .field("username", &"<redacted>")
+            .field("password", &"<redacted>")
+            .field("batch_size", &self.batch_size)
+            .field("interval_secs", &self.interval_secs)
+            .field("timeout_secs", &self.timeout_secs)
+            .field("max_request_bytes", &self.max_request_bytes)
+            .field("backfill_batch_size", &self.backfill_batch_size)
+            .finish()
+    }
+}
+
+const fn default_clickhouse_export_batch_size() -> usize {
+    DEFAULT_CLICKHOUSE_EXPORT_BATCH_SIZE
+}
+const fn default_clickhouse_export_interval_secs() -> u64 {
+    DEFAULT_CLICKHOUSE_EXPORT_INTERVAL_SECS
+}
+const fn default_clickhouse_export_timeout_secs() -> u64 {
+    DEFAULT_CLICKHOUSE_EXPORT_TIMEOUT_SECS
+}
+const fn default_clickhouse_export_request_bytes() -> usize {
+    DEFAULT_CLICKHOUSE_EXPORT_REQUEST_BYTES
+}
+const fn default_clickhouse_export_backfill_batch_size() -> usize {
+    DEFAULT_CLICKHOUSE_EXPORT_BACKFILL_BATCH_SIZE
+}
+
+const fn default_clickhouse_analytics_timeout_secs() -> u64 {
+    DEFAULT_CLICKHOUSE_ANALYTICS_TIMEOUT_SECS
+}
+
+const fn default_clickhouse_analytics_response_bytes() -> usize {
+    DEFAULT_CLICKHOUSE_ANALYTICS_RESPONSE_BYTES
 }
 
 /// 下游 API Key 认证的静态设置。
@@ -538,6 +917,208 @@ impl Default for AuthSettings {
             lookup_timeout_secs: DEFAULT_AUTH_LOOKUP_TIMEOUT_SECS,
             session_signing_key: None,
             session_ttl_secs: DEFAULT_AUTH_SESSION_TTL_SECS,
+        }
+    }
+}
+
+/// 登录与注册使用的 Turnstile 启动期配置。
+///
+/// 只有同时提供 site key 与 secret key 时才启用；任意半配置都会在启动期拒绝，
+/// 避免前端显示挑战但服务端无法完成验证。
+#[derive(Clone, Debug, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct TurnstileSettings {
+    site_key: Option<String>,
+    secret_key: Option<SecretString>,
+    timeout_secs: u64,
+}
+
+impl TurnstileSettings {
+    /// 返回公开给浏览器的 site key；未配置时 Turnstile 关闭。
+    #[must_use]
+    pub fn site_key(&self) -> Option<&str> {
+        self.site_key.as_deref()
+    }
+
+    /// 返回仅供服务端验证使用的 Turnstile secret key。
+    #[must_use]
+    pub fn secret_key(&self) -> Option<&SecretString> {
+        self.secret_key.as_ref()
+    }
+
+    /// 返回服务端验证请求的硬超时。
+    #[must_use]
+    pub const fn timeout_secs(&self) -> u64 {
+        self.timeout_secs
+    }
+
+    /// 返回是否已完成成对配置。
+    #[must_use]
+    pub const fn enabled(&self) -> bool {
+        self.site_key.is_some() && self.secret_key.is_some()
+    }
+}
+
+impl Default for TurnstileSettings {
+    fn default() -> Self {
+        Self {
+            site_key: None,
+            secret_key: None,
+            timeout_secs: DEFAULT_TURNSTILE_TIMEOUT_SECS,
+        }
+    }
+}
+
+/// 只使用公共客户端标识的 OAuth provider 配置。
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OAuthPublicClientSettings {
+    client_id: SecretString,
+}
+
+impl OAuthPublicClientSettings {
+    /// 返回只应交给闭合 provider profile 的客户端标识。
+    #[must_use]
+    pub const fn client_id(&self) -> &SecretString {
+        &self.client_id
+    }
+}
+
+/// 同时要求客户端标识与密钥的 OAuth provider 配置。
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OAuthConfidentialClientSettings {
+    client_id: SecretString,
+    client_secret: SecretString,
+}
+
+impl OAuthConfidentialClientSettings {
+    /// 返回只应交给闭合 provider profile 的客户端标识。
+    #[must_use]
+    pub const fn client_id(&self) -> &SecretString {
+        &self.client_id
+    }
+
+    /// 返回只应移动到受控 token 交换器的客户端密钥。
+    #[must_use]
+    pub const fn client_secret(&self) -> &SecretString {
+        &self.client_secret
+    }
+}
+
+/// 上游订阅账号 OAuth 的启动期闭合配置。
+#[derive(Clone, Debug, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct OAuthSettings {
+    max_pending_authorizations: usize,
+    session_ttl_secs: u64,
+    refresh_enabled: bool,
+    refresh_interval_secs: u64,
+    refresh_before_expiry_secs: u64,
+    refresh_batch_size: usize,
+    refresh_concurrency: usize,
+    claude_code: Option<OAuthPublicClientSettings>,
+    codex: Option<OAuthPublicClientSettings>,
+    gemini: Option<OAuthConfidentialClientSettings>,
+    antigravity: Option<OAuthConfidentialClientSettings>,
+}
+
+impl OAuthSettings {
+    /// 返回单实例待授权会话容量。
+    #[must_use]
+    pub const fn max_pending_authorizations(&self) -> usize {
+        self.max_pending_authorizations
+    }
+
+    /// 返回授权会话有效期秒数。
+    #[must_use]
+    pub const fn session_ttl_secs(&self) -> u64 {
+        self.session_ttl_secs
+    }
+
+    /// 返回是否启用 OAuth token 周期刷新任务。
+    #[must_use]
+    pub const fn refresh_enabled(&self) -> bool {
+        self.refresh_enabled
+    }
+
+    /// 返回两轮 OAuth 到期候选扫描之间的秒数。
+    #[must_use]
+    pub const fn refresh_interval_secs(&self) -> u64 {
+        self.refresh_interval_secs
+    }
+
+    /// 返回 access token 到期前进入刷新候选集的秒数。
+    #[must_use]
+    pub const fn refresh_before_expiry_secs(&self) -> u64 {
+        self.refresh_before_expiry_secs
+    }
+
+    /// 返回单轮最多读取的 OAuth 刷新候选数。
+    #[must_use]
+    pub const fn refresh_batch_size(&self) -> usize {
+        self.refresh_batch_size
+    }
+
+    /// 返回单实例同时执行的 OAuth 刷新上限。
+    #[must_use]
+    pub const fn refresh_concurrency(&self) -> usize {
+        self.refresh_concurrency
+    }
+
+    /// 返回可选 Claude Code 公共客户端配置。
+    #[must_use]
+    pub const fn claude_code(&self) -> Option<&OAuthPublicClientSettings> {
+        self.claude_code.as_ref()
+    }
+
+    /// 返回可选 Codex 公共客户端配置。
+    #[must_use]
+    pub const fn codex(&self) -> Option<&OAuthPublicClientSettings> {
+        self.codex.as_ref()
+    }
+
+    /// 返回可选 Gemini CLI 客户端配置。
+    #[must_use]
+    pub const fn gemini(&self) -> Option<&OAuthConfidentialClientSettings> {
+        self.gemini.as_ref()
+    }
+
+    /// 返回可选 Antigravity 客户端配置。
+    #[must_use]
+    pub const fn antigravity(&self) -> Option<&OAuthConfidentialClientSettings> {
+        self.antigravity.as_ref()
+    }
+
+    /// 返回当前实际配置的 provider 数量。
+    #[must_use]
+    pub fn configured_provider_count(&self) -> usize {
+        [
+            self.claude_code.is_some(),
+            self.codex.is_some(),
+            self.gemini.is_some(),
+            self.antigravity.is_some(),
+        ]
+        .into_iter()
+        .filter(|configured| *configured)
+        .count()
+    }
+}
+
+impl Default for OAuthSettings {
+    fn default() -> Self {
+        Self {
+            max_pending_authorizations: DEFAULT_OAUTH_MAX_PENDING_AUTHORIZATIONS,
+            session_ttl_secs: DEFAULT_OAUTH_SESSION_TTL_SECS,
+            refresh_enabled: DEFAULT_OAUTH_REFRESH_ENABLED,
+            refresh_interval_secs: DEFAULT_OAUTH_REFRESH_INTERVAL_SECS,
+            refresh_before_expiry_secs: DEFAULT_OAUTH_REFRESH_BEFORE_EXPIRY_SECS,
+            refresh_batch_size: DEFAULT_OAUTH_REFRESH_BATCH_SIZE,
+            refresh_concurrency: DEFAULT_OAUTH_REFRESH_CONCURRENCY,
+            claude_code: None,
+            codex: None,
+            gemini: None,
+            antigravity: None,
         }
     }
 }
@@ -647,13 +1228,25 @@ pub struct AppConfig {
     #[serde(default)]
     billing: BillingSettings,
     #[serde(default)]
+    subscription: SubscriptionSettings,
+    #[serde(default)]
+    payment: PaymentSettings,
+    #[serde(default)]
     channel_probe: ChannelProbeSettings,
     #[serde(default)]
     credential_encryption: CredentialEncryptionSettings,
     #[serde(default)]
     redis: RedisSettings,
     #[serde(default)]
+    clickhouse_analytics: Option<ClickHouseAnalyticsSettings>,
+    #[serde(default)]
+    clickhouse_export: Option<ClickHouseExportSettings>,
+    #[serde(default)]
     auth: AuthSettings,
+    #[serde(default)]
+    turnstile: TurnstileSettings,
+    #[serde(default)]
+    oauth: OAuthSettings,
     #[serde(default)]
     openai_upstream: Option<OpenAiUpstreamConfig>,
     #[serde(default)]
@@ -685,6 +1278,18 @@ impl AppConfig {
         &self.billing
     }
 
+    /// 返回订阅生命周期周期任务设置。
+    #[must_use]
+    pub const fn subscription(&self) -> &SubscriptionSettings {
+        &self.subscription
+    }
+
+    /// 返回支付 Provider 的启动期安全配置。
+    #[must_use]
+    pub const fn payment(&self) -> &PaymentSettings {
+        &self.payment
+    }
+
     /// 返回自动禁用渠道的周期探活设置。
     #[must_use]
     pub const fn channel_probe(&self) -> &ChannelProbeSettings {
@@ -703,10 +1308,34 @@ impl AppConfig {
         &self.redis
     }
 
+    /// 返回可选的 ClickHouse 分析事实源；缺失时继续使用事务主库。
+    #[must_use]
+    pub const fn clickhouse_analytics(&self) -> Option<&ClickHouseAnalyticsSettings> {
+        self.clickhouse_analytics.as_ref()
+    }
+
+    /// 返回可选的 ClickHouse 异步事实投递配置；缺失时导出保持关闭。
+    #[must_use]
+    pub const fn clickhouse_export(&self) -> Option<&ClickHouseExportSettings> {
+        self.clickhouse_export.as_ref()
+    }
+
     /// 返回下游 API Key 认证设置。
     #[must_use]
     pub const fn auth(&self) -> &AuthSettings {
         &self.auth
+    }
+
+    /// 返回登录与注册使用的 Turnstile 启动配置。
+    #[must_use]
+    pub const fn turnstile(&self) -> &TurnstileSettings {
+        &self.turnstile
+    }
+
+    /// 返回上游订阅账号 OAuth 启动配置。
+    #[must_use]
+    pub const fn oauth(&self) -> &OAuthSettings {
+        &self.oauth
     }
 
     /// 返回可选的 M0 静态上游兼容配置；生产转发不得使用该值作为回退。
@@ -772,6 +1401,7 @@ impl AppConfig {
                 field: "database.url",
             });
         }
+        validate_turnstile_settings(&self.turnstile)?;
         if self.database.migration_timeout_secs == Some(0) {
             return Err(ConfigError::NonPositive {
                 field: "database.migration_timeout_secs",
@@ -836,6 +1466,109 @@ impl AppConfig {
                 field: "billing.wal_directory",
             });
         }
+        if self.subscription.batch_size == 0 {
+            return Err(ConfigError::NonPositive {
+                field: "subscription.batch_size",
+            });
+        }
+        if self.subscription.batch_size > MAX_SUBSCRIPTION_CYCLE_BATCH_SIZE {
+            return Err(ConfigError::OutOfRange {
+                field: "subscription.batch_size",
+            });
+        }
+        if self.subscription.interval_secs == 0 {
+            return Err(ConfigError::NonPositive {
+                field: "subscription.interval_secs",
+            });
+        }
+        if self.subscription.interval_secs > MAX_SUBSCRIPTION_CYCLE_INTERVAL_SECS {
+            return Err(ConfigError::OutOfRange {
+                field: "subscription.interval_secs",
+            });
+        }
+        if self.subscription.max_batches_per_run == 0 {
+            return Err(ConfigError::NonPositive {
+                field: "subscription.max_batches_per_run",
+            });
+        }
+        if self.subscription.max_batches_per_run > MAX_SUBSCRIPTION_CYCLE_BATCHES_PER_RUN {
+            return Err(ConfigError::OutOfRange {
+                field: "subscription.max_batches_per_run",
+            });
+        }
+        if self.payment.stripe_signature_tolerance_secs == 0 {
+            return Err(ConfigError::NonPositive {
+                field: "payment.stripe_signature_tolerance_secs",
+            });
+        }
+        if self.payment.stripe_signature_tolerance_secs > MAX_PAYMENT_SIGNATURE_TOLERANCE_SECS {
+            return Err(ConfigError::OutOfRange {
+                field: "payment.stripe_signature_tolerance_secs",
+            });
+        }
+        if let Some(secret) = self.payment.stripe_secret_key.as_ref() {
+            validate_nonempty_text(
+                secret.expose(),
+                "payment.stripe_secret_key",
+                MAX_PAYMENT_SECRET_KEY_BYTES,
+            )?;
+            if !secret
+                .expose()
+                .bytes()
+                .all(|byte| (0x21..=0x7e).contains(&byte))
+            {
+                return Err(ConfigError::InvalidField {
+                    field: "payment.stripe_secret_key",
+                });
+            }
+            // 禁止创建无法通过可信 webhook 原子到账的真实支付订单。
+            if self.payment.stripe_webhook_secret.is_none() {
+                return Err(ConfigError::EmptyValue {
+                    field: "payment.stripe_webhook_secret",
+                });
+            }
+            if self.payment.stripe_publishable_key.is_none() {
+                return Err(ConfigError::EmptyValue {
+                    field: "payment.stripe_publishable_key",
+                });
+            }
+        }
+        if let Some(key) = self.payment.stripe_publishable_key.as_deref() {
+            validate_nonempty_text(
+                key,
+                "payment.stripe_publishable_key",
+                MAX_PAYMENT_PUBLISHABLE_KEY_BYTES,
+            )?;
+            if !key.bytes().all(|byte| (0x21..=0x7e).contains(&byte))
+                || !(key.starts_with("pk_test_") || key.starts_with("pk_live_"))
+            {
+                return Err(ConfigError::InvalidField {
+                    field: "payment.stripe_publishable_key",
+                });
+            }
+            // 单独公开客户端密钥无法创建订单，启动期直接拒绝半配置状态。
+            if self.payment.stripe_secret_key.is_none() {
+                return Err(ConfigError::EmptyValue {
+                    field: "payment.stripe_secret_key",
+                });
+            }
+        }
+        if let Some(secret) = self.payment.stripe_webhook_secret.as_ref() {
+            validate_nonempty_text(
+                secret.expose(),
+                "payment.stripe_webhook_secret",
+                MAX_PAYMENT_WEBHOOK_SECRET_BYTES,
+            )?;
+            if secret
+                .expose()
+                .bytes()
+                .any(|byte| byte < b' ' || byte == 0x7f)
+            {
+                return Err(ConfigError::InvalidField {
+                    field: "payment.stripe_webhook_secret",
+                });
+            }
+        }
         if self.channel_probe.batch_size == 0 {
             return Err(ConfigError::NonPositive {
                 field: "channel_probe.batch_size",
@@ -872,6 +1605,12 @@ impl AppConfig {
         {
             return Err(ConfigError::EmptyValue { field: "redis.url" });
         }
+        if let Some(settings) = self.clickhouse_analytics.as_ref() {
+            validate_clickhouse_analytics(settings)?;
+        }
+        if let Some(settings) = self.clickhouse_export.as_ref() {
+            validate_clickhouse_export(settings)?;
+        }
         if self.auth.lookup_timeout_secs == 0 {
             return Err(ConfigError::NonPositive {
                 field: "auth.lookup_timeout_secs",
@@ -904,6 +1643,7 @@ impl AppConfig {
                 });
             }
         }
+        validate_oauth_settings(&self.oauth)?;
         if let Some(openai_upstream) = &self.openai_upstream {
             validate_openai_upstream(openai_upstream)?;
         }
@@ -933,6 +1673,319 @@ impl AppConfig {
         validate_proxy_settings(&self.http_client)?;
         Ok(())
     }
+}
+
+fn validate_clickhouse_analytics(
+    settings: &ClickHouseAnalyticsSettings,
+) -> Result<(), ConfigError> {
+    let endpoint = settings.endpoint.expose();
+    let parsed = Url::parse(endpoint).map_err(|_| ConfigError::InvalidField {
+        field: "clickhouse_analytics.endpoint",
+    })?;
+    if endpoint.trim() != endpoint
+        || !matches!(parsed.scheme(), "http" | "https")
+        || !parsed.has_host()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+        || parsed.port() == Some(0)
+    {
+        return Err(ConfigError::InvalidField {
+            field: "clickhouse_analytics.endpoint",
+        });
+    }
+
+    let query = settings.query.expose();
+    let trimmed = query.trim();
+    if trimmed.is_empty()
+        || trimmed.len() > MAX_CLICKHOUSE_ANALYTICS_QUERY_BYTES
+        || trimmed.contains(';')
+        || trimmed
+            .chars()
+            .any(|character| character.is_control() && !matches!(character, '\n' | '\r' | '\t'))
+        || !trimmed.contains("{period_start:Int64}")
+        || !trimmed.contains("{period_end:Int64}")
+    {
+        return Err(ConfigError::InvalidField {
+            field: "clickhouse_analytics.query",
+        });
+    }
+    validate_clickhouse_header_value(
+        settings.username.expose(),
+        MAX_CLICKHOUSE_ANALYTICS_USERNAME_BYTES,
+        false,
+        "clickhouse_analytics.username",
+    )?;
+    validate_clickhouse_header_value(
+        settings.password.expose(),
+        MAX_CLICKHOUSE_ANALYTICS_PASSWORD_BYTES,
+        true,
+        "clickhouse_analytics.password",
+    )?;
+    if settings.timeout_secs == 0 {
+        return Err(ConfigError::NonPositive {
+            field: "clickhouse_analytics.timeout_secs",
+        });
+    }
+    if settings.timeout_secs > MAX_CLICKHOUSE_ANALYTICS_TIMEOUT_SECS {
+        return Err(ConfigError::OutOfRange {
+            field: "clickhouse_analytics.timeout_secs",
+        });
+    }
+    if settings.max_response_bytes == 0 {
+        return Err(ConfigError::NonPositive {
+            field: "clickhouse_analytics.max_response_bytes",
+        });
+    }
+    if settings.max_response_bytes > MAX_CLICKHOUSE_ANALYTICS_RESPONSE_BYTES {
+        return Err(ConfigError::OutOfRange {
+            field: "clickhouse_analytics.max_response_bytes",
+        });
+    }
+    Ok(())
+}
+
+fn validate_clickhouse_export(settings: &ClickHouseExportSettings) -> Result<(), ConfigError> {
+    let endpoint = settings.endpoint.expose();
+    let parsed = Url::parse(endpoint).map_err(|_| ConfigError::InvalidField {
+        field: "clickhouse_export.endpoint",
+    })?;
+    if endpoint.trim() != endpoint
+        || !matches!(parsed.scheme(), "http" | "https")
+        || !parsed.has_host()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+        || parsed.port() == Some(0)
+    {
+        return Err(ConfigError::InvalidField {
+            field: "clickhouse_export.endpoint",
+        });
+    }
+
+    for (query, field) in [
+        (
+            &settings.usage_insert_query,
+            "clickhouse_export.usage_insert_query",
+        ),
+        (
+            &settings.outcome_insert_query,
+            "clickhouse_export.outcome_insert_query",
+        ),
+    ] {
+        let trimmed = query.expose().trim();
+        if trimmed.is_empty()
+            || trimmed.len() > MAX_CLICKHOUSE_ANALYTICS_QUERY_BYTES
+            || trimmed.contains(';')
+            || trimmed.chars().any(char::is_control)
+            || !is_clickhouse_insert_query(trimmed)
+        {
+            return Err(ConfigError::InvalidField { field });
+        }
+    }
+    validate_clickhouse_header_value(
+        settings.username.expose(),
+        MAX_CLICKHOUSE_ANALYTICS_USERNAME_BYTES,
+        false,
+        "clickhouse_export.username",
+    )?;
+    validate_clickhouse_header_value(
+        settings.password.expose(),
+        MAX_CLICKHOUSE_ANALYTICS_PASSWORD_BYTES,
+        true,
+        "clickhouse_export.password",
+    )?;
+    if settings.batch_size == 0 {
+        return Err(ConfigError::NonPositive {
+            field: "clickhouse_export.batch_size",
+        });
+    }
+    if settings.batch_size > MAX_CLICKHOUSE_EXPORT_BATCH_SIZE {
+        return Err(ConfigError::OutOfRange {
+            field: "clickhouse_export.batch_size",
+        });
+    }
+    if settings.interval_secs == 0 {
+        return Err(ConfigError::NonPositive {
+            field: "clickhouse_export.interval_secs",
+        });
+    }
+    if settings.interval_secs > MAX_CLICKHOUSE_EXPORT_INTERVAL_SECS {
+        return Err(ConfigError::OutOfRange {
+            field: "clickhouse_export.interval_secs",
+        });
+    }
+    if settings.timeout_secs == 0 {
+        return Err(ConfigError::NonPositive {
+            field: "clickhouse_export.timeout_secs",
+        });
+    }
+    if settings.timeout_secs > MAX_CLICKHOUSE_EXPORT_TIMEOUT_SECS {
+        return Err(ConfigError::OutOfRange {
+            field: "clickhouse_export.timeout_secs",
+        });
+    }
+    if settings.max_request_bytes == 0 {
+        return Err(ConfigError::NonPositive {
+            field: "clickhouse_export.max_request_bytes",
+        });
+    }
+    if settings.max_request_bytes > MAX_CLICKHOUSE_EXPORT_REQUEST_BYTES {
+        return Err(ConfigError::OutOfRange {
+            field: "clickhouse_export.max_request_bytes",
+        });
+    }
+    if settings.backfill_batch_size == 0 {
+        return Err(ConfigError::NonPositive {
+            field: "clickhouse_export.backfill_batch_size",
+        });
+    }
+    if settings.backfill_batch_size > MAX_CLICKHOUSE_EXPORT_BACKFILL_BATCH_SIZE {
+        return Err(ConfigError::OutOfRange {
+            field: "clickhouse_export.backfill_batch_size",
+        });
+    }
+    Ok(())
+}
+
+fn is_clickhouse_insert_query(query: &str) -> bool {
+    let mut words = query.split_ascii_whitespace();
+    matches!(
+        (words.next(), words.next()),
+        (Some(insert), Some(into))
+            if insert.eq_ignore_ascii_case("insert") && into.eq_ignore_ascii_case("into")
+    )
+}
+
+fn validate_clickhouse_header_value(
+    value: &str,
+    max_bytes: usize,
+    allow_empty: bool,
+    field: &'static str,
+) -> Result<(), ConfigError> {
+    if (!allow_empty && value.is_empty())
+        || value.len() > max_bytes
+        || value.trim() != value
+        || !value.bytes().all(|byte| (0x20..=0x7e).contains(&byte))
+    {
+        return Err(ConfigError::InvalidField { field });
+    }
+    Ok(())
+}
+
+fn validate_oauth_settings(settings: &OAuthSettings) -> Result<(), ConfigError> {
+    if settings.max_pending_authorizations == 0 {
+        return Err(ConfigError::NonPositive {
+            field: "oauth.max_pending_authorizations",
+        });
+    }
+    if settings.max_pending_authorizations > MAX_OAUTH_PENDING_AUTHORIZATIONS {
+        return Err(ConfigError::OutOfRange {
+            field: "oauth.max_pending_authorizations",
+        });
+    }
+    if settings.session_ttl_secs < MIN_OAUTH_SESSION_TTL_SECS
+        || settings.session_ttl_secs > MAX_OAUTH_SESSION_TTL_SECS
+    {
+        return Err(ConfigError::OutOfRange {
+            field: "oauth.session_ttl_secs",
+        });
+    }
+    if settings.refresh_interval_secs == 0 {
+        return Err(ConfigError::NonPositive {
+            field: "oauth.refresh_interval_secs",
+        });
+    }
+    if settings.refresh_interval_secs > MAX_OAUTH_REFRESH_INTERVAL_SECS {
+        return Err(ConfigError::OutOfRange {
+            field: "oauth.refresh_interval_secs",
+        });
+    }
+    if settings.refresh_before_expiry_secs == 0 {
+        return Err(ConfigError::NonPositive {
+            field: "oauth.refresh_before_expiry_secs",
+        });
+    }
+    if settings.refresh_before_expiry_secs > MAX_OAUTH_REFRESH_BEFORE_EXPIRY_SECS {
+        return Err(ConfigError::OutOfRange {
+            field: "oauth.refresh_before_expiry_secs",
+        });
+    }
+    if settings.refresh_batch_size == 0 {
+        return Err(ConfigError::NonPositive {
+            field: "oauth.refresh_batch_size",
+        });
+    }
+    if settings.refresh_batch_size > MAX_OAUTH_REFRESH_BATCH_SIZE {
+        return Err(ConfigError::OutOfRange {
+            field: "oauth.refresh_batch_size",
+        });
+    }
+    if settings.refresh_concurrency == 0 {
+        return Err(ConfigError::NonPositive {
+            field: "oauth.refresh_concurrency",
+        });
+    }
+    if settings.refresh_concurrency > MAX_OAUTH_REFRESH_CONCURRENCY
+        || settings.refresh_concurrency > settings.refresh_batch_size
+    {
+        return Err(ConfigError::OutOfRange {
+            field: "oauth.refresh_concurrency",
+        });
+    }
+    for (client, field) in [
+        (settings.claude_code(), "oauth.claude_code.client_id"),
+        (settings.codex(), "oauth.codex.client_id"),
+    ] {
+        if let Some(client) = client {
+            validate_oauth_client_id(client.client_id(), field)?;
+        }
+    }
+    for (client, id_field, secret_field) in [
+        (
+            settings.gemini(),
+            "oauth.gemini.client_id",
+            "oauth.gemini.client_secret",
+        ),
+        (
+            settings.antigravity(),
+            "oauth.antigravity.client_id",
+            "oauth.antigravity.client_secret",
+        ),
+    ] {
+        if let Some(client) = client {
+            validate_oauth_client_id(client.client_id(), id_field)?;
+            validate_oauth_client_secret(client.client_secret(), secret_field)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_oauth_client_id(value: &SecretString, field: &'static str) -> Result<(), ConfigError> {
+    let value = value.expose();
+    if value.is_empty()
+        || value.len() > MAX_OAUTH_CLIENT_ID_BYTES
+        || !value.bytes().all(|byte| (0x21..=0x7e).contains(&byte))
+    {
+        return Err(ConfigError::InvalidField { field });
+    }
+    Ok(())
+}
+
+fn validate_oauth_client_secret(
+    value: &SecretString,
+    field: &'static str,
+) -> Result<(), ConfigError> {
+    let value = value.expose();
+    if value.is_empty()
+        || value.len() > MAX_OAUTH_CLIENT_SECRET_BYTES
+        || !value.bytes().all(|byte| (0x21..=0x7e).contains(&byte))
+    {
+        return Err(ConfigError::InvalidField { field });
+    }
+    Ok(())
 }
 
 fn validate_credential_encryption(
@@ -1050,6 +2103,53 @@ fn validate_proxy_settings(settings: &HttpClientSettings) -> Result<(), ConfigEr
     Ok(())
 }
 
+fn validate_turnstile_settings(settings: &TurnstileSettings) -> Result<(), ConfigError> {
+    if settings.timeout_secs == 0 {
+        return Err(ConfigError::NonPositive {
+            field: "turnstile.timeout_secs",
+        });
+    }
+    if settings.timeout_secs > MAX_TURNSTILE_TIMEOUT_SECS {
+        return Err(ConfigError::OutOfRange {
+            field: "turnstile.timeout_secs",
+        });
+    }
+    match (settings.site_key.as_deref(), settings.secret_key.as_ref()) {
+        (None, None) => Ok(()),
+        (Some(site_key), Some(secret_key)) => {
+            validate_turnstile_text(site_key, "turnstile.site_key", MAX_TURNSTILE_SITE_KEY_BYTES)?;
+            validate_turnstile_text(
+                secret_key.expose(),
+                "turnstile.secret_key",
+                MAX_TURNSTILE_SECRET_KEY_BYTES,
+            )
+        }
+        (None, Some(_)) => Err(ConfigError::InvalidField {
+            field: "turnstile.site_key",
+        }),
+        (Some(_), None) => Err(ConfigError::InvalidField {
+            field: "turnstile.secret_key",
+        }),
+    }
+}
+
+fn validate_turnstile_text(
+    value: &str,
+    field: &'static str,
+    max_bytes: usize,
+) -> Result<(), ConfigError> {
+    if value.is_empty() {
+        return Err(ConfigError::EmptyValue { field });
+    }
+    if value.len() > max_bytes
+        || value.trim() != value
+        || !value.bytes().all(|byte| (0x21..=0x7e).contains(&byte))
+    {
+        return Err(ConfigError::InvalidField { field });
+    }
+    Ok(())
+}
+
 fn validate_nonempty_text(
     value: &str,
     field: &'static str,
@@ -1115,5 +2215,22 @@ mod tests {
             .unwrap();
         let debug = format!("{origin:?}");
         assert!(!debug.contains("internal-console.example"));
+    }
+
+    #[test]
+    fn clickhouse_export_query_requires_insert_into_tokens() {
+        assert!(is_clickhouse_insert_query(
+            "INSERT INTO usage_facts (fact_id)"
+        ));
+        assert!(is_clickhouse_insert_query(
+            "insert\ninto outcome_facts (fact_id)"
+        ));
+        for query in [
+            "INSERT usage_facts (fact_id)",
+            "INSERTED INTO usage_facts (fact_id)",
+            "SELECT fact_id FROM usage_facts",
+        ] {
+            assert!(!is_clickhouse_insert_query(query));
+        }
     }
 }

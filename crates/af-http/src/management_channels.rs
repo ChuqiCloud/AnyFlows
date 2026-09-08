@@ -1,15 +1,61 @@
 use af_admin::{AdminChannel, AdminChannelListQuery, AdminChannelPage, AdminChannelReadError};
-use af_domain::{ChannelId, CredentialId};
+use af_domain::{ChannelAutoBanRules, ChannelId, CredentialId};
 use axum::{
     Json,
     extract::{Extension, Path, RawQuery, State},
     response::{IntoResponse, Response},
 };
 use http::{HeaderValue, StatusCode, header::CACHE_CONTROL};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::{chat_completions::HttpState, management_error::ManagementError};
+
+/// 管理端可配置的精确 5xx 状态码与关键词规则。
+#[derive(Clone, Default, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminChannelAutoBanRules)]
+pub(crate) struct AdminChannelAutoBanRulesDto {
+    #[schema(min_items = 0, max_items = 64)]
+    pub(crate) status_codes: Vec<u16>,
+    #[schema(min_items = 0, max_items = 64)]
+    pub(crate) keywords: Vec<String>,
+}
+
+impl AdminChannelAutoBanRulesDto {
+    pub(crate) fn into_domain(self) -> Result<ChannelAutoBanRules, ManagementError> {
+        ChannelAutoBanRules::new(self.status_codes, self.keywords)
+            .map_err(|_| ManagementError::InvalidRequest)
+    }
+}
+
+impl From<&ChannelAutoBanRules> for AdminChannelAutoBanRulesDto {
+    fn from(rules: &ChannelAutoBanRules) -> Self {
+        Self {
+            status_codes: rules
+                .server_statuses()
+                .iter()
+                .map(|status| status.get())
+                .collect(),
+            keywords: rules.keywords().to_vec(),
+        }
+    }
+}
+
+/// 管理端可见的最近一次确定性 Compact 探测事实。
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminResponsesCompactProbe)]
+pub(crate) struct AdminResponsesCompactProbeDto {
+    #[schema(value_type = crate::openapi::schema::ResponsesCompactProbeResultSchema)]
+    result: af_domain::ResponsesCompactProbeResult,
+    /// Unix 毫秒时间戳；尚未得到确定性结论时为空。
+    #[schema(minimum = 1, required = true)]
+    checked_at: Option<i64>,
+    /// 最近一次受控 HTTP 状态；传输错误或未探测时为空。
+    #[schema(minimum = 100, maximum = 599, required = true)]
+    http_status: Option<u16>,
+}
 
 #[derive(Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -27,20 +73,40 @@ pub(crate) struct AdminChannelResponse {
     /// 不含 userinfo、查询串或片段的 HTTP(S) 基础地址。
     #[schema(max_length = 2048, format = "uri", required = true)]
     base_url: Option<String>,
+    /// 渠道级读取与完整请求超时；null 表示使用对应场景的服务默认值。
+    #[schema(minimum = 1, maximum = 900, required = true)]
+    timeout_secs: Option<u64>,
     #[schema(value_type = crate::openapi::schema::AdminRoutingStatusSchema)]
     status: af_admin::AdminRoutingStatus,
     #[schema(minimum = 0)]
     weight: i32,
     priority: i32,
     auto_ban: bool,
+    auto_ban_rules: AdminChannelAutoBanRulesDto,
+    /// 外部账号池模式开启时不维护渠道级本地故障状态。
+    pool_mode: bool,
+    /// 默认关闭的版本化客户端仿真档案。
+    #[schema(value_type = Option<crate::openapi::schema::ClientSimulationProfileSchema>)]
+    client_simulation_profile: Option<af_domain::ClientSimulationProfile>,
+    /// 默认关闭的版本化客户端仿真正文档案。
+    #[schema(value_type = Option<crate::openapi::schema::ClientSimulationBodyProfileSchema>)]
+    client_simulation_body_profile: Option<af_domain::ClientSimulationBodyProfile>,
+    /// 是否显式允许该原生 Responses 渠道使用 WebSocket。
+    responses_websocket_enabled: bool,
+    /// Compact 能力由探测决定、强制开启或强制关闭。
+    #[schema(value_type = crate::openapi::schema::ResponsesCompactModeSchema)]
+    responses_compact_mode: af_domain::ResponsesCompactMode,
+    #[schema(schema_with = crate::openapi::schema::model_mapping_schema)]
+    responses_compact_model_mapping: serde_json::Value,
+    responses_compact_probe: AdminResponsesCompactProbeDto,
     #[schema(schema_with = crate::openapi::schema::channel_models_schema)]
     models: Vec<String>,
     #[schema(schema_with = crate::openapi::schema::channel_group_ids_schema)]
     group_ids: Vec<i64>,
     #[schema(schema_with = crate::openapi::schema::model_mapping_schema)]
     model_mapping: serde_json::Value,
-    /// 不包含认证信息的请求参数覆盖对象。
-    #[schema(schema_with = crate::openapi::schema::free_form_object_schema)]
+    /// 不包含认证信息的闭合 Canonical 采样参数覆盖。
+    #[schema(schema_with = crate::openapi::schema::channel_parameter_overrides_schema)]
     param_override: serde_json::Value,
     #[schema(required = true)]
     balance: Option<i64>,
@@ -123,10 +189,23 @@ impl AdminChannelResponse {
             name: channel.name().to_owned(),
             protocol: channel.protocol(),
             base_url: channel.base_url().map(str::to_owned),
+            timeout_secs: channel.timeout().map(af_domain::ChannelTimeout::seconds),
             status: channel.status(),
             weight: channel.weight(),
             priority: channel.priority(),
             auto_ban: channel.auto_ban(),
+            auto_ban_rules: AdminChannelAutoBanRulesDto::from(channel.auto_ban_rules()),
+            pool_mode: channel.pool_mode(),
+            client_simulation_profile: channel.client_simulation_profile(),
+            client_simulation_body_profile: channel.client_simulation_body_profile(),
+            responses_websocket_enabled: channel.responses_websocket_enabled(),
+            responses_compact_mode: channel.responses_compact_mode(),
+            responses_compact_model_mapping: channel.responses_compact_model_mapping().clone(),
+            responses_compact_probe: AdminResponsesCompactProbeDto {
+                result: channel.responses_compact_probe_result(),
+                checked_at: channel.responses_compact_probe_checked_at(),
+                http_status: channel.responses_compact_probe_http_status(),
+            },
             models: channel.models().to_vec(),
             group_ids: channel
                 .group_ids()

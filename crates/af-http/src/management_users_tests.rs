@@ -1,6 +1,6 @@
 use std::sync::{
     Arc,
-    atomic::{AtomicUsize, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
 use af_admin::{
@@ -13,12 +13,14 @@ use af_admin::{
     AdminUser, AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture,
     AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserPage, AdminUserReadError,
     AdminUserReader, AdminUserStatus, AdminUserUpdateCommand, AdminUserUpdateFuture,
-    AdminUserWriteError, AdminUserWriter, LoginCredentials, SessionAuthentication,
-    SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
-    SessionLoginFuture, SessionPrincipal, SessionRole,
+    AdminUserWriteError, AdminUserWriter, LoginCredentials, PlatformAuditEntry, PlatformAuditError,
+    PlatformAuditListFuture, PlatformAuditListQuery, PlatformAuditRecordFuture, PlatformAuditScope,
+    PlatformAuditService, SessionAuthentication, SessionAuthenticationError,
+    SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, SessionPrincipal,
+    SessionRole,
 };
 use af_domain::{AfError, GatewayPrincipal, GroupId, TokenId, UserId};
-use af_protocol::CanonicalRequest;
+use af_protocol::CanonicalRequestEnvelope;
 use axum::{
     Router,
     body::{Body, to_bytes},
@@ -40,6 +42,7 @@ use crate::{
     management_users::{
         create_admin_user, delete_admin_user, get_admin_user, list_admin_users, update_admin_user,
     },
+    middleware::ensure_request_id,
 };
 
 const ADMIN_TOKEN: &str = "admin-token";
@@ -53,8 +56,11 @@ impl ChatService for UnusedChatService {
     fn chat_completions<'a>(
         &'a self,
         _principal: &'a GatewayPrincipal,
-        _request: CanonicalRequest,
+        _user_concurrency: Option<af_domain::ConcurrencyLimit>,
+        _request: CanonicalRequestEnvelope,
+        _response_protocol: af_domain::Protocol,
         _request_id: &'a str,
+        _diagnostic: af_relay::RelayDiagnosticInput,
     ) -> ChatServiceFuture<'a> {
         Box::pin(async { Err(AfError::Internal) })
     }
@@ -171,7 +177,13 @@ impl SessionAuthenticator for FakeSessionAuthenticator {
         };
         Box::pin(async move {
             principal
-                .map(|principal| SessionAuthentication::new(principal, current_timestamp() + 60))
+                .map(|principal| {
+                    SessionAuthentication::new(
+                        principal,
+                        GroupId::new(1).unwrap(),
+                        current_timestamp() + 60,
+                    )
+                })
                 .ok_or(SessionAuthenticationError::InvalidSession)
         })
     }
@@ -183,6 +195,8 @@ struct FakeAdminUserReader {
     create_calls: AtomicUsize,
     update_calls: AtomicUsize,
     delete_calls: AtomicUsize,
+    audit_calls: AtomicUsize,
+    audit_fails: AtomicBool,
 }
 
 impl FakeAdminUserReader {
@@ -193,7 +207,32 @@ impl FakeAdminUserReader {
             create_calls: AtomicUsize::new(0),
             update_calls: AtomicUsize::new(0),
             delete_calls: AtomicUsize::new(0),
+            audit_calls: AtomicUsize::new(0),
+            audit_fails: AtomicBool::new(false),
         }
+    }
+}
+
+impl PlatformAuditService for FakeAdminUserReader {
+    fn record<'a>(&'a self, _entry: PlatformAuditEntry) -> PlatformAuditRecordFuture<'a> {
+        self.audit_calls.fetch_add(1, Ordering::Relaxed);
+        let fails = self.audit_fails.load(Ordering::Relaxed);
+        Box::pin(async move {
+            if fails {
+                Err(PlatformAuditError::Internal)
+            } else {
+                Ok(())
+            }
+        })
+    }
+
+    fn list<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _scope: PlatformAuditScope,
+        _query: PlatformAuditListQuery,
+    ) -> PlatformAuditListFuture<'a> {
+        Box::pin(async { Err(PlatformAuditError::Internal) })
     }
 }
 
@@ -318,7 +357,8 @@ impl AdminUserWriter for FakeAdminUserReader {
 fn router(reader: Arc<FakeAdminUserReader>) -> Router {
     let session_authenticator: Arc<dyn SessionAuthenticator> = Arc::new(FakeSessionAuthenticator);
     let admin_user_reader: Arc<dyn AdminUserReader> = reader.clone();
-    let admin_user_writer: Arc<dyn AdminUserWriter> = reader;
+    let admin_user_writer: Arc<dyn AdminUserWriter> = reader.clone();
+    let platform_audit_service: Arc<dyn PlatformAuditService> = reader;
     let admin_groups = Arc::new(UnusedAdminGroupReader);
     let admin_tokens = Arc::new(UnusedAdminTokenReader);
     let collection_authentication = middleware::from_fn_with_state(
@@ -329,14 +369,16 @@ fn router(reader: Arc<FakeAdminUserReader>) -> Router {
         ManagementAuthenticationState::new(Arc::clone(&session_authenticator)),
         authenticate_management_session,
     );
-    Router::new()
-        .route(
-            "/api/admin/users",
-            get(list_admin_users)
-                .post(create_admin_user)
+    let collection_routes = get(list_admin_users)
+        .route_layer(middleware::from_fn(ensure_request_id))
+        .route_layer(collection_authentication.clone())
+        .merge(
+            axum::routing::post(create_admin_user)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(collection_authentication),
-        )
+        );
+    Router::new()
+        .route("/api/admin/users", collection_routes)
         .route(
             "/api/admin/users/{id}",
             get(get_admin_user)
@@ -345,16 +387,19 @@ fn router(reader: Arc<FakeAdminUserReader>) -> Router {
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(item_authentication),
         )
-        .with_state(HttpState::new(
-            Arc::new(UnusedChatService),
-            session_authenticator,
-            admin_groups.clone(),
-            admin_groups,
-            admin_tokens.clone(),
-            admin_tokens,
-            admin_user_reader,
-            admin_user_writer,
-        ))
+        .with_state(
+            HttpState::new(
+                Arc::new(UnusedChatService),
+                session_authenticator,
+                admin_groups.clone(),
+                admin_groups,
+                admin_tokens.clone(),
+                admin_tokens,
+                admin_user_reader,
+                admin_user_writer,
+            )
+            .with_platform_audit_service(Some(platform_audit_service)),
+        )
 }
 
 #[tokio::test]
@@ -409,13 +454,14 @@ async fn admin_can_read_user_list_and_detail_with_no_store_responses() {
     );
     assert_eq!(reader.list_calls.load(Ordering::Relaxed), 1);
     assert_eq!(reader.get_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(reader.audit_calls.load(Ordering::Relaxed), 1);
 }
 
 #[tokio::test]
 async fn admin_can_create_update_and_delete_users_with_no_store_responses() {
     let reader = Arc::new(FakeAdminUserReader::new());
     let app = router(Arc::clone(&reader));
-    let body = valid_write_body();
+    let create_body = valid_create_body();
 
     let created = app
         .clone()
@@ -423,7 +469,7 @@ async fn admin_can_create_update_and_delete_users_with_no_store_responses() {
             "POST",
             "/api/admin/users",
             ADMIN_TOKEN,
-            body.clone(),
+            create_body,
         ))
         .await
         .unwrap();
@@ -440,7 +486,7 @@ async fn admin_can_create_update_and_delete_users_with_no_store_responses() {
             "PUT",
             "/api/admin/users/21",
             ADMIN_TOKEN,
-            body,
+            valid_update_body(),
         ))
         .await
         .unwrap();
@@ -499,7 +545,7 @@ async fn non_admin_and_invalid_requests_do_not_reach_user_service() {
             "PUT",
             "/api/admin/users/10",
             ADMIN_TOKEN,
-            json!({"username":" bad ","role":"user","status":"enabled","default_group_id":20,"quota":0}),
+            json!({"username":" bad ","role":"user","status":"enabled","default_group_id":20}),
         ),
     ] {
         let response = app.clone().oneshot(request).await.unwrap();
@@ -510,6 +556,27 @@ async fn non_admin_and_invalid_requests_do_not_reach_user_service() {
     assert_eq!(reader.create_calls.load(Ordering::Relaxed), 0);
     assert_eq!(reader.update_calls.load(Ordering::Relaxed), 0);
     assert_eq!(reader.delete_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(reader.audit_calls.load(Ordering::Relaxed), 2);
+}
+
+#[tokio::test]
+async fn audit_persistence_failure_closes_the_user_directory_response() {
+    let reader = Arc::new(FakeAdminUserReader::new());
+    reader.audit_fails.store(true, Ordering::Relaxed);
+    let app = router(Arc::clone(&reader));
+
+    let response = app
+        .oneshot(authorized_request("GET", "/api/admin/users", ADMIN_TOKEN))
+        .await
+        .unwrap();
+    assert_management_error(
+        response,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "internal_error",
+    )
+    .await;
+    assert_eq!(reader.list_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(reader.audit_calls.load(Ordering::Relaxed), 1);
 }
 
 #[tokio::test]
@@ -548,7 +615,7 @@ async fn reader_failures_map_to_stable_management_errors() {
 async fn writer_failures_map_to_stable_management_errors() {
     let reader = Arc::new(FakeAdminUserReader::new());
     let app = router(reader);
-    let body = valid_write_body();
+    let body = valid_update_body();
 
     let missing = app
         .clone()
@@ -690,7 +757,7 @@ fn authorized_json_request(method: &str, uri: &str, token: &str, body: Value) ->
         .unwrap()
 }
 
-fn valid_write_body() -> Value {
+fn valid_create_body() -> Value {
     json!({
         "username": "new-user",
         "email": "new-user@example.com",
@@ -699,6 +766,19 @@ fn valid_write_body() -> Value {
         "status": "enabled",
         "default_group_id": 20,
         "quota": 1000,
+        "rpm_limit": 60,
+        "concurrency": 3
+    })
+}
+
+fn valid_update_body() -> Value {
+    json!({
+        "username": "updated-user",
+        "email": "updated@example.com",
+        "password": null,
+        "role": "admin",
+        "status": "disabled",
+        "default_group_id": 20,
         "rpm_limit": 60,
         "concurrency": 3
     })

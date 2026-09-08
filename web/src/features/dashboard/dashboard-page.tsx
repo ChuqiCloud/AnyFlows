@@ -5,10 +5,15 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { AdminDashboardResponse } from '@/lib/api/generated/types.gen'
+import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import { useAdminDashboard } from './dashboard-api'
-import { DashboardChannelStatus } from './dashboard-channel-status'
+import { DashboardAvailability } from './dashboard-availability'
+import { DashboardAnalyticsExport } from './dashboard-analytics-export'
 import { DashboardComposition } from './dashboard-composition'
+import { DashboardPerformance } from './dashboard-performance'
+import { DashboardOutcomes } from './dashboard-outcomes'
 import { DashboardSummary } from './dashboard-summary'
+import { DashboardTrend } from './dashboard-trend'
 
 function isEmptyDashboard(dashboard: AdminDashboardResponse) {
   return dashboard.request_count === 0
@@ -20,6 +25,7 @@ function isEmptyDashboard(dashboard: AdminDashboardResponse) {
 export function DashboardPage() {
   const { t, i18n } = useTranslation()
   const dashboardQuery = useAdminDashboard()
+  const { formatQuota } = useBalanceDisplay()
   const dashboard = dashboardQuery.data
   const locale = i18n.resolvedLanguage === 'zh' ? 'zh-CN' : 'en-US'
   const formatNumber = (value: number) => new Intl.NumberFormat(locale).format(value)
@@ -30,6 +36,10 @@ export function DashboardPage() {
   const formatDateTime = (value: number) => new Intl.DateTimeFormat(locale, {
     month: 'short',
     day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(value * 1000)
+  const formatHour = (value: number) => new Intl.DateTimeFormat(locale, {
     hour: '2-digit',
     minute: '2-digit',
   }).format(value * 1000)
@@ -70,6 +80,10 @@ export function DashboardPage() {
             <Skeleton className="h-52 rounded-xl" />
             <Skeleton className="h-52 rounded-xl" />
           </div>
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1.55fr)_minmax(15rem,0.75fr)]">
+            <Skeleton className="h-52 rounded-xl" />
+            <Skeleton className="h-52 rounded-xl" />
+          </div>
         </div>
       ) : dashboardQuery.isError ? (
         <div role="alert" className="rounded-xl border border-destructive/25 bg-destructive/8 p-4">
@@ -93,13 +107,23 @@ export function DashboardPage() {
         </Card>
       ) : dashboard ? (
         <>
-          <DashboardSummary dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} />
+          <DashboardSummary dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} formatQuota={formatQuota} />
+          <section className="grid gap-3 xl:grid-cols-[minmax(0,1.55fr)_minmax(15rem,0.75fr)]">
+            <DashboardTrend dashboard={dashboard} formatHour={formatHour} formatNumber={formatNumber} formatQuota={formatQuota} />
+            <DashboardPerformance dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} />
+          </section>
           <section className="grid gap-3 xl:grid-cols-[minmax(0,1.55fr)_minmax(15rem,0.75fr)]">
             <DashboardComposition dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} />
-            <DashboardChannelStatus dashboard={dashboard} formatNumber={formatNumber} />
+            <DashboardAvailability
+              dashboard={dashboard}
+              formatNumber={formatNumber}
+              formatPercent={formatPercent}
+            />
           </section>
+          <DashboardOutcomes dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} formatQuota={formatQuota} />
         </>
       ) : null}
+      <DashboardAnalyticsExport formatNumber={formatNumber} />
     </div>
   )
 }

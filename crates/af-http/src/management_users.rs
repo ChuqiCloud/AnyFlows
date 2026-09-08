@@ -1,8 +1,10 @@
 use af_admin::{
     AdminUser, AdminUserCreateCommand, AdminUserListQuery, AdminUserPage, AdminUserReadError,
-    AdminUserUpdateCommand, AdminUserWriteError,
+    AdminUserUpdateCommand, AdminUserWriteError, PlatformAuditEntry, PlatformAuditOutcome,
+    PlatformAuditService, PlatformPolicy,
 };
-use af_domain::{GroupId, UserId};
+use af_domain::{GroupId, PlatformPermission, UserId};
+use af_telemetry::RequestId;
 use axum::{
     Json,
     extract::{Extension, Path, RawQuery, State, rejection::JsonRejection},
@@ -10,6 +12,7 @@ use axum::{
 };
 use http::{HeaderValue, StatusCode, header::CACHE_CONTROL};
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 use utoipa::ToSchema;
 
 use crate::{chat_completions::HttpState, management_error::ManagementError};
@@ -59,9 +62,9 @@ pub(crate) struct AdminUserListResponse {
 
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
-#[schema(as = AdminUserWriteRequest)]
-/// 管理端创建或完整更新用户时使用的写入正文。
-pub(crate) struct AdminUserWriteRequest {
+#[schema(as = AdminUserCreateRequest)]
+/// 管理端创建用户时使用的写入正文；初始额度会同步写入 opening 账本。
+pub(crate) struct AdminUserCreateRequest {
     #[schema(min_length = 1, max_length = 64)]
     username: String,
     #[schema(min_length = 1, max_length = 320)]
@@ -85,19 +88,131 @@ pub(crate) struct AdminUserWriteRequest {
     concurrency: Option<i32>,
 }
 
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminUserUpdateRequest)]
+/// 管理端更新用户资料时使用的写入正文；额度只能通过独立调账接口变更。
+pub(crate) struct AdminUserUpdateRequest {
+    #[schema(min_length = 1, max_length = 64)]
+    username: String,
+    #[schema(min_length = 1, max_length = 320)]
+    email: Option<String>,
+    #[schema(min_length = 1, max_length = 4096, format = Password)]
+    password: Option<String>,
+    #[schema(
+        value_type = crate::openapi::schema::AdminSessionRoleSchema,
+        inline
+    )]
+    role: af_admin::SessionRole,
+    #[schema(value_type = crate::openapi::schema::AdminUserStatusSchema)]
+    status: af_admin::AdminUserStatus,
+    #[schema(minimum = 1)]
+    default_group_id: i64,
+    #[schema(minimum = 0)]
+    rpm_limit: Option<i32>,
+    #[schema(minimum = 0)]
+    concurrency: Option<i32>,
+}
+
 /// 返回管理员可见的用户只读列表，查询参数必须保持稳定且可预测。
 pub(crate) async fn list_admin_users(
     State(state): State<HttpState>,
     RawQuery(raw_query): RawQuery,
     Extension(authentication): Extension<af_admin::SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
 ) -> Result<Response, ManagementError> {
-    let query = parse_list_query(raw_query.as_deref())?;
-    let page = state
-        .admin_user_reader
-        .list(authentication.principal(), query)
-        .await
-        .map_err(map_read_error)?;
+    let principal = authentication.principal();
+    let audit_service = state
+        .platform_audit_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    if !PlatformPolicy::allows(principal, PlatformPermission::UserDirectoryReadAll) {
+        record_user_directory_audit(
+            audit_service,
+            principal,
+            &request_id,
+            PlatformAuditOutcome::Denied,
+            json!({"reason": "forbidden"}),
+        )
+        .await?;
+        return Err(ManagementError::Forbidden);
+    }
+    let query = match parse_list_query(raw_query.as_deref()) {
+        Ok(query) => query,
+        Err(error) => {
+            record_user_directory_audit(
+                audit_service,
+                principal,
+                &request_id,
+                PlatformAuditOutcome::Failed,
+                json!({"reason": "invalid_pagination"}),
+            )
+            .await?;
+            return Err(error);
+        }
+    };
+    let page = match state.admin_user_reader.list(principal, query).await {
+        Ok(page) => page,
+        Err(error) => {
+            record_user_directory_audit(
+                audit_service,
+                principal,
+                &request_id,
+                PlatformAuditOutcome::Failed,
+                json!({"reason": read_error_code(error)}),
+            )
+            .await?;
+            return Err(map_read_error(error));
+        }
+    };
+    record_user_directory_audit(
+        audit_service,
+        principal,
+        &request_id,
+        PlatformAuditOutcome::Succeeded,
+        json!({
+            "after": query.after().map(UserId::get),
+            "limit": query.limit(),
+        }),
+    )
+    .await?;
     Ok(no_store_json(AdminUserListResponse::from_page(page)))
+}
+
+async fn record_user_directory_audit(
+    service: &std::sync::Arc<dyn PlatformAuditService>,
+    principal: af_admin::SessionPrincipal,
+    request_id: &RequestId,
+    outcome: PlatformAuditOutcome,
+    audit_info: Value,
+) -> Result<(), ManagementError> {
+    let entry = PlatformAuditEntry::new(
+        principal,
+        PlatformPermission::UserDirectoryReadAll,
+        "/api/admin/users",
+        "platform.user_directory.list",
+        "user_directory",
+        None,
+        outcome,
+        None,
+        None,
+        Some(audit_info),
+        request_id.as_str(),
+    )
+    .map_err(|_| ManagementError::Internal)?;
+    service
+        .record(entry)
+        .await
+        .map_err(|_| ManagementError::Internal)
+}
+
+const fn read_error_code(error: AdminUserReadError) -> &'static str {
+    match error {
+        AdminUserReadError::InvalidPagination => "invalid_pagination",
+        AdminUserReadError::Forbidden => "forbidden",
+        AdminUserReadError::NotFound => "not_found",
+        AdminUserReadError::Internal => "internal",
+    }
 }
 
 /// 返回单个未软删除用户的非敏感管理快照。
@@ -119,7 +234,7 @@ pub(crate) async fn get_admin_user(
 pub(crate) async fn create_admin_user(
     State(state): State<HttpState>,
     Extension(authentication): Extension<af_admin::SessionAuthentication>,
-    request: Result<Json<AdminUserWriteRequest>, JsonRejection>,
+    request: Result<Json<AdminUserCreateRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
     let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
     let user = state
@@ -138,7 +253,7 @@ pub(crate) async fn update_admin_user(
     State(state): State<HttpState>,
     Path(user_id): Path<String>,
     Extension(authentication): Extension<af_admin::SessionAuthentication>,
-    request: Result<Json<AdminUserWriteRequest>, JsonRejection>,
+    request: Result<Json<AdminUserUpdateRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
     let user_id = parse_user_id(&user_id)?;
     let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
@@ -201,7 +316,7 @@ impl AdminUserResponse {
     }
 }
 
-impl AdminUserWriteRequest {
+impl AdminUserCreateRequest {
     fn into_create_command(self) -> Result<AdminUserCreateCommand, ManagementError> {
         AdminUserCreateCommand::new(
             self.username,
@@ -216,7 +331,9 @@ impl AdminUserWriteRequest {
         )
         .map_err(map_write_error)
     }
+}
 
+impl AdminUserUpdateRequest {
     fn into_update_command(self) -> Result<AdminUserUpdateCommand, ManagementError> {
         AdminUserUpdateCommand::new(
             self.username,
@@ -225,7 +342,6 @@ impl AdminUserWriteRequest {
             self.role,
             self.status,
             parse_group_id(self.default_group_id)?,
-            self.quota,
             self.rpm_limit,
             self.concurrency,
         )

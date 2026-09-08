@@ -195,6 +195,7 @@ fn map_write_error(error: AdminGroupWriteError) -> ManagementError {
         AdminGroupWriteError::Conflict => ManagementError::GroupConflict,
         AdminGroupWriteError::NotFound => ManagementError::GroupNotFound,
         AdminGroupWriteError::InUse => ManagementError::GroupInUse,
+        AdminGroupWriteError::RuntimeRefreshFailed => ManagementError::Internal,
         AdminGroupWriteError::Internal => ManagementError::Internal,
     }
 }

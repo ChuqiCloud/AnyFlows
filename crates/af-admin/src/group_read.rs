@@ -88,6 +88,44 @@ impl AdminGroupPeak {
     }
 }
 
+/// 管理 API 可读取的单个 UTC 日历共享额度窗口。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AdminGroupWindow {
+    usage: i64,
+    started_at: i64,
+    resets_at: i64,
+}
+
+impl AdminGroupWindow {
+    /// 组合已经由持久化层校验的窗口字段。
+    #[must_use]
+    pub const fn from_parts(usage: i64, started_at: i64, resets_at: i64) -> Self {
+        Self {
+            usage,
+            started_at,
+            resets_at,
+        }
+    }
+
+    /// 返回当前窗口内已结算的共享额度。
+    #[must_use]
+    pub const fn usage(self) -> i64 {
+        self.usage
+    }
+
+    /// 返回当前窗口的 UTC Unix 秒起点。
+    #[must_use]
+    pub const fn started_at(self) -> i64 {
+        self.started_at
+    }
+
+    /// 返回当前窗口的 UTC Unix 秒重置时间。
+    #[must_use]
+    pub const fn resets_at(self) -> i64 {
+        self.resets_at
+    }
+}
+
 /// 管理 API 可读取的分组快照。
 pub struct AdminGroup {
     group_id: GroupId,
@@ -99,6 +137,9 @@ pub struct AdminGroup {
     daily_limit: Option<i64>,
     weekly_limit: Option<i64>,
     monthly_limit: Option<i64>,
+    daily_window: AdminGroupWindow,
+    weekly_window: AdminGroupWindow,
+    monthly_window: AdminGroupWindow,
     rpm_limit: Option<i32>,
     fallback_group_id: Option<GroupId>,
     flags: serde_json::Value,
@@ -118,6 +159,9 @@ impl AdminGroup {
         daily_limit: Option<i64>,
         weekly_limit: Option<i64>,
         monthly_limit: Option<i64>,
+        daily_window: AdminGroupWindow,
+        weekly_window: AdminGroupWindow,
+        monthly_window: AdminGroupWindow,
         rpm_limit: Option<i32>,
         fallback_group_id: Option<GroupId>,
         flags: serde_json::Value,
@@ -132,6 +176,9 @@ impl AdminGroup {
             daily_limit,
             weekly_limit,
             monthly_limit,
+            daily_window,
+            weekly_window,
+            monthly_window,
             rpm_limit,
             fallback_group_id,
             flags,
@@ -192,6 +239,24 @@ impl AdminGroup {
         self.monthly_limit
     }
 
+    /// 返回 UTC 自然日共享额度窗口。
+    #[must_use]
+    pub const fn daily_window(&self) -> AdminGroupWindow {
+        self.daily_window
+    }
+
+    /// 返回 UTC 周一开始自然周共享额度窗口。
+    #[must_use]
+    pub const fn weekly_window(&self) -> AdminGroupWindow {
+        self.weekly_window
+    }
+
+    /// 返回 UTC 自然月共享额度窗口。
+    #[must_use]
+    pub const fn monthly_window(&self) -> AdminGroupWindow {
+        self.monthly_window
+    }
+
     /// 返回分组级 RPM 限制。
     #[must_use]
     pub const fn rpm_limit(&self) -> Option<i32> {
@@ -214,6 +279,9 @@ impl AdminGroup {
         let peak = record.peak().map(|peak| {
             AdminGroupPeak::from_parts(peak.ratio_micros(), peak.start_second(), peak.end_second())
         });
+        let daily_window = record.daily_window();
+        let weekly_window = record.weekly_window();
+        let monthly_window = record.monthly_window();
         Self::from_parts(
             record.group_id(),
             record.name().to_owned(),
@@ -224,6 +292,21 @@ impl AdminGroup {
             record.daily_limit(),
             record.weekly_limit(),
             record.monthly_limit(),
+            AdminGroupWindow::from_parts(
+                daily_window.usage(),
+                daily_window.started_at(),
+                daily_window.resets_at(),
+            ),
+            AdminGroupWindow::from_parts(
+                weekly_window.usage(),
+                weekly_window.started_at(),
+                weekly_window.resets_at(),
+            ),
+            AdminGroupWindow::from_parts(
+                monthly_window.usage(),
+                monthly_window.started_at(),
+                monthly_window.resets_at(),
+            ),
             record.rpm_limit(),
             record.fallback_group_id(),
             record.flags().clone(),
@@ -356,7 +439,7 @@ impl AdminGroupReader for DatabaseAdminGroupReader {
                 .await
                 .map_err(map_repository_error)?
             {
-                AdminGroupLookupOutcome::Found(record) => Ok(AdminGroup::from_record(record)),
+                AdminGroupLookupOutcome::Found(record) => Ok(AdminGroup::from_record(*record)),
                 AdminGroupLookupOutcome::NotFound => Err(AdminGroupReadError::NotFound),
             }
         })
@@ -409,6 +492,9 @@ mod tests {
             None,
             None,
             None,
+            AdminGroupWindow::from_parts(0, 0, 1),
+            AdminGroupWindow::from_parts(0, 0, 1),
+            AdminGroupWindow::from_parts(0, 0, 1),
             None,
             None,
             serde_json::json!({"internal_switch": true}),

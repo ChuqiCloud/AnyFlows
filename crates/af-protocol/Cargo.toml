@@ -8,9 +8,13 @@ publish.workspace = true
 [dependencies]
 af-domain = { path = "../af-domain", version = "0.1.0" }
 base64.workspace = true
+bytes.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 url.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
 
 [lints]
 workspace = true

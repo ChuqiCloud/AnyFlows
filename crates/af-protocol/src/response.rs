@@ -18,7 +18,7 @@ use crate::{FinishReason, Message, RawPassthrough, Usage};
 ///     Operation::Chat,
 ///     "id".to_owned(),
 ///     "model".to_owned(),
-///     0,
+///     None,
 ///     vec![],
 ///     None,
 /// );
@@ -32,8 +32,8 @@ pub struct CanonicalResponse {
     pub id: String,
     /// 实际生成响应的模型名。
     pub model: String,
-    /// 上游创建时间的 Unix 秒时间戳。
-    pub created_at: i64,
+    /// 上游创建时间的 Unix 秒时间戳；协议未提供时保持 `None`。
+    pub created_at: Option<i64>,
     /// 按上游顺序保存的候选结果。
     pub choices: Vec<ResponseChoice>,
     /// 上游返回的用量；缺失时保持 `None`。
@@ -48,7 +48,7 @@ impl CanonicalResponse {
         operation: Operation,
         id: String,
         model: String,
-        created_at: i64,
+        created_at: Option<i64>,
         choices: Vec<ResponseChoice>,
         usage: Option<Usage>,
     ) -> Self {
@@ -105,6 +105,8 @@ pub struct ResponseChoice {
     pub message: Message,
     /// 上游声明的结束原因。
     pub finish_reason: FinishReason,
+    /// 实际命中的停止序列；仅在协议明确返回时存在。
+    pub stop_sequence: Option<String>,
 }
 
 impl ResponseChoice {
@@ -115,7 +117,15 @@ impl ResponseChoice {
             index,
             message,
             finish_reason,
+            stop_sequence: None,
         }
+    }
+
+    /// 附加协议明确返回的停止序列。
+    #[must_use]
+    pub fn with_stop_sequence(mut self, stop_sequence: Option<String>) -> Self {
+        self.stop_sequence = stop_sequence;
+        self
     }
 }
 
@@ -126,6 +136,10 @@ impl fmt::Debug for ResponseChoice {
             .field("index", &self.index)
             .field("message", &self.message)
             .field("finish_reason", &self.finish_reason)
+            .field(
+                "stop_sequence",
+                &self.stop_sequence.as_ref().map(|_| "<已脱敏>"),
+            )
             .finish()
     }
 }

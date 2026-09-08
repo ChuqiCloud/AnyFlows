@@ -172,6 +172,53 @@ async fn admin_user_list_and_detail_use_real_database_reader() {
         }])
     );
 
+    let admin_audit = send_request(
+        address,
+        "GET",
+        "/api/admin/audit-logs?limit=10",
+        b"",
+        &[("Authorization", &authorization)],
+    )
+    .await;
+    assert_eq!(admin_audit.status, 200);
+    let admin_audit_body = response_json(&admin_audit);
+    assert_eq!(admin_audit_body["logs"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        admin_audit_body["logs"][0]["permission_code"],
+        "platform.user_directory.read_all"
+    );
+    assert_eq!(
+        admin_audit_body["logs"][0]["operation"],
+        "platform.user_directory.list"
+    );
+    assert_eq!(admin_audit_body["logs"][0]["outcome"], "succeeded");
+    assert_eq!(
+        admin_audit_body["logs"][0]["operator_username"],
+        ADMIN_USERNAME
+    );
+    assert_eq!(
+        admin_audit_body["logs"][0]["audit_info"]["after"],
+        MEMBER_ID
+    );
+    assert_eq!(admin_audit_body["logs"][0]["audit_info"]["limit"], 2);
+
+    let self_audit = send_request(
+        address,
+        "GET",
+        "/api/account/audit-logs?limit=10",
+        b"",
+        &[("Authorization", &authorization)],
+    )
+    .await;
+    assert_eq!(self_audit.status, 200);
+    let self_audit_body = response_json(&self_audit);
+    assert_eq!(self_audit_body["logs"].as_array().unwrap().len(), 2);
+    assert_eq!(self_audit_body["logs"][0]["operator_user_id"], ADMIN_ID);
+    assert_eq!(self_audit_body["logs"][0]["operator_username"], Value::Null);
+    assert_eq!(self_audit_body["logs"][0]["before_value"], Value::Null);
+    assert_eq!(self_audit_body["logs"][0]["after_value"], Value::Null);
+    assert_eq!(self_audit_body["logs"][0]["audit_info"], Value::Null);
+
     let detail = send_request(
         address,
         "GET",
@@ -283,7 +330,6 @@ async fn admin_user_list_and_detail_use_real_database_reader() {
         "role": "admin",
         "status": "enabled",
         "default_group_id": GROUP_ID,
-        "quota": 300,
         "rpm_limit": Value::Null,
         "concurrency": 2
     }))
@@ -309,7 +355,7 @@ async fn admin_user_list_and_detail_use_real_database_reader() {
             "role": "admin",
             "status": "enabled",
             "default_group_id": GROUP_ID,
-            "quota": 300,
+            "quota": 250,
             "used_quota": 0,
             "frozen_quota": 0,
             "request_count": 0,

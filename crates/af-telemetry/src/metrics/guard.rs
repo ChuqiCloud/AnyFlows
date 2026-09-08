@@ -9,11 +9,22 @@ use metrics_exporter_prometheus::PrometheusRecorder;
 use crate::MetricLabelError;
 
 use super::{
-    BILLING_FLUSH_LAG, BILLING_FLUSH_LAG_DESCRIPTION, CHANNEL_HEALTH, CHANNEL_HEALTH_DESCRIPTION,
+    ANALYTICS_EXPORT_BACKLOG, ANALYTICS_EXPORT_BACKLOG_DESCRIPTION, BILLING_FLUSH_LAG,
+    BILLING_FLUSH_LAG_DESCRIPTION, CHANNEL_HEALTH, CHANNEL_HEALTH_DESCRIPTION,
+    CLIENT_SIMULATION_ATTEMPTS_DESCRIPTION, CLIENT_SIMULATION_ATTEMPTS_TOTAL,
+    CLIENT_SIMULATION_BODY_PATCHES_DESCRIPTION, CLIENT_SIMULATION_BODY_PATCHES_TOTAL,
     CONCURRENCY_SLOTS, CONCURRENCY_SLOTS_DESCRIPTION, FIRST_TOKEN_DESCRIPTION, FIRST_TOKEN_SECONDS,
-    OTHER_LABEL, QUOTA_CONSUMED_DESCRIPTION, QUOTA_CONSUMED_TOTAL, REQUEST_DURATION_DESCRIPTION,
-    REQUEST_DURATION_SECONDS, REQUESTS_DESCRIPTION, REQUESTS_TOTAL, UPSTREAM_ERRORS_DESCRIPTION,
-    UPSTREAM_ERRORS_TOTAL,
+    ORGANIZATION_APPROVAL_TIMEOUT_DESCRIPTION, ORGANIZATION_APPROVAL_TIMEOUT_LABELS,
+    ORGANIZATION_APPROVAL_TIMEOUT_TOTAL, OTHER_LABEL, PAYMENT_CONFIRMATION_LABELS,
+    PAYMENT_WEBHOOK_CONFIRMATIONS_DESCRIPTION, PAYMENT_WEBHOOK_CONFIRMATIONS_TOTAL,
+    QUOTA_CONSUMED_DESCRIPTION, QUOTA_CONSUMED_TOTAL, REQUEST_DURATION_DESCRIPTION,
+    REQUEST_DURATION_SECONDS, REQUEST_RATE_LIMIT_ADMISSIONS_DESCRIPTION,
+    REQUEST_RATE_LIMIT_ADMISSIONS_TOTAL, REQUEST_RATE_LIMIT_FAILURES_DESCRIPTION,
+    REQUEST_RATE_LIMIT_FAILURES_TOTAL, REQUEST_RATE_LIMIT_REJECTIONS_DESCRIPTION,
+    REQUEST_RATE_LIMIT_REJECTIONS_TOTAL, REQUEST_RATE_LIMIT_RETRY_AFTER_DESCRIPTION,
+    REQUEST_RATE_LIMIT_RETRY_AFTER_SECONDS, REQUEST_RATE_LIMIT_RULES_DESCRIPTION,
+    REQUEST_RATE_LIMIT_RULES_PER_CHECK, REQUESTS_DESCRIPTION, REQUESTS_TOTAL,
+    UPSTREAM_ERRORS_DESCRIPTION, UPSTREAM_ERRORS_TOTAL,
 };
 
 const REQUEST_LABELS: &[&str] = &["protocol", "model", "status"];
@@ -22,6 +33,10 @@ const CHANNEL_LABELS: &[&str] = &["channel"];
 const UPSTREAM_ERROR_LABELS: &[&str] = &["channel", "type"];
 const GROUP_LABELS: &[&str] = &["group"];
 const CONCURRENCY_LABELS: &[&str] = &["level"];
+const CLIENT_SIMULATION_LABELS: &[&str] = &["profile", "result"];
+const CLIENT_SIMULATION_BODY_LABELS: &[&str] = &["profile", "result"];
+const RATE_LIMIT_SUBJECT_LABELS: &[&str] = &["subject"];
+const RATE_LIMIT_FAILURE_LABELS: &[&str] = &["reason"];
 const NO_LABELS: &[&str] = &[];
 const METRICS_CALLSITE: &str = super::METRICS_CALLSITE;
 const ENUM_LABEL_MAX_BYTES: usize = 32;
@@ -104,6 +119,76 @@ const METRIC_CONTRACTS: &[MetricContract] = &[
         labels: NO_LABELS,
         unit: Some(Unit::Seconds),
         description: BILLING_FLUSH_LAG_DESCRIPTION,
+    },
+    MetricContract {
+        name: CLIENT_SIMULATION_ATTEMPTS_TOTAL,
+        kind: MetricKind::Counter,
+        labels: CLIENT_SIMULATION_LABELS,
+        unit: Some(Unit::Count),
+        description: CLIENT_SIMULATION_ATTEMPTS_DESCRIPTION,
+    },
+    MetricContract {
+        name: CLIENT_SIMULATION_BODY_PATCHES_TOTAL,
+        kind: MetricKind::Counter,
+        labels: CLIENT_SIMULATION_BODY_LABELS,
+        unit: Some(Unit::Count),
+        description: CLIENT_SIMULATION_BODY_PATCHES_DESCRIPTION,
+    },
+    MetricContract {
+        name: ANALYTICS_EXPORT_BACKLOG,
+        kind: MetricKind::Gauge,
+        labels: NO_LABELS,
+        unit: Some(Unit::Count),
+        description: ANALYTICS_EXPORT_BACKLOG_DESCRIPTION,
+    },
+    MetricContract {
+        name: REQUEST_RATE_LIMIT_ADMISSIONS_TOTAL,
+        kind: MetricKind::Counter,
+        labels: NO_LABELS,
+        unit: Some(Unit::Count),
+        description: REQUEST_RATE_LIMIT_ADMISSIONS_DESCRIPTION,
+    },
+    MetricContract {
+        name: REQUEST_RATE_LIMIT_REJECTIONS_TOTAL,
+        kind: MetricKind::Counter,
+        labels: RATE_LIMIT_SUBJECT_LABELS,
+        unit: Some(Unit::Count),
+        description: REQUEST_RATE_LIMIT_REJECTIONS_DESCRIPTION,
+    },
+    MetricContract {
+        name: REQUEST_RATE_LIMIT_FAILURES_TOTAL,
+        kind: MetricKind::Counter,
+        labels: RATE_LIMIT_FAILURE_LABELS,
+        unit: Some(Unit::Count),
+        description: REQUEST_RATE_LIMIT_FAILURES_DESCRIPTION,
+    },
+    MetricContract {
+        name: REQUEST_RATE_LIMIT_RULES_PER_CHECK,
+        kind: MetricKind::Histogram,
+        labels: NO_LABELS,
+        unit: Some(Unit::Count),
+        description: REQUEST_RATE_LIMIT_RULES_DESCRIPTION,
+    },
+    MetricContract {
+        name: REQUEST_RATE_LIMIT_RETRY_AFTER_SECONDS,
+        kind: MetricKind::Histogram,
+        labels: RATE_LIMIT_SUBJECT_LABELS,
+        unit: Some(Unit::Seconds),
+        description: REQUEST_RATE_LIMIT_RETRY_AFTER_DESCRIPTION,
+    },
+    MetricContract {
+        name: PAYMENT_WEBHOOK_CONFIRMATIONS_TOTAL,
+        kind: MetricKind::Counter,
+        labels: PAYMENT_CONFIRMATION_LABELS,
+        unit: Some(Unit::Count),
+        description: PAYMENT_WEBHOOK_CONFIRMATIONS_DESCRIPTION,
+    },
+    MetricContract {
+        name: ORGANIZATION_APPROVAL_TIMEOUT_TOTAL,
+        kind: MetricKind::Counter,
+        labels: ORGANIZATION_APPROVAL_TIMEOUT_LABELS,
+        unit: Some(Unit::Count),
+        description: ORGANIZATION_APPROVAL_TIMEOUT_DESCRIPTION,
     },
 ];
 
@@ -397,6 +482,43 @@ fn allowed_label_value(key: &str, value: &str, registries: &LabelRegistries) -> 
                 | "other"
         ),
         "level" => matches!(value, "account" | "user" | "token"),
+        "profile" => matches!(
+            value,
+            "anthropic_cli_headers_v1" | "anthropic_cli_system_date_v1"
+        ),
+        "result" => matches!(value, "not_applied" | "applied" | "failed" | "rejected"),
+        "subject" => matches!(value, "user" | "group" | "token"),
+        "reason" => matches!(
+            value,
+            "invalid_rule"
+                | "store_missing"
+                | "store_unavailable"
+                | "store_protocol"
+                | "store_other"
+                | "invalid_retry_after"
+        ),
+        "outcome" => matches!(
+            value,
+            "applied"
+                | "acknowledged"
+                | "existing"
+                | "rejected"
+                | "ignored_non_terminal"
+                | "not_found"
+                | "verification_rejected"
+                | "conflict"
+                | "binding_conflict"
+                | "outcome_unknown"
+                | "unavailable"
+                | "invariant"
+                | "invalid_request"
+                | "lease_held"
+                | "scan_failed"
+                | "skipped"
+                | "failed"
+                | "outcome_unknown_replay"
+                | "truncated"
+        ),
         _ => false,
     }
 }

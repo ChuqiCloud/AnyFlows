@@ -2,7 +2,7 @@ use std::{error::Error, time::Duration};
 
 use af_domain::{ChannelId, Status};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, Set,
+    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, Set,
     entity::prelude::{Json, TimeDateTimeWithTimeZone},
     sea_query::Expr,
 };
@@ -12,7 +12,7 @@ use crate::{
     ChannelStateRepositoryError, DatabaseOptions, MAX_CHANNEL_PROBE_BATCH, MigrationOptions,
     entity::{
         ChannelBaseUrl, HeaderOverrides, SensitiveJson, abilities, channel_groups, channel_models,
-        channels, groups,
+        channels, groups, scheduler_outbox_events,
     },
 };
 
@@ -61,6 +61,7 @@ async fn auto_disable_obeys_flag_status_and_soft_delete_boundaries() -> Result<(
     assert_status(&pool, manual.id, Status::Disabled).await?;
     assert_status(&pool, deleted.id, Status::Enabled).await?;
     assert_ability_enabled(&pool, eligible.id, false).await?;
+    assert_eq!(channel_outbox_count(&pool, eligible.id).await?, 1);
 
     pool.close().await?;
     Ok(())
@@ -109,6 +110,7 @@ async fn probe_recovery_only_reenables_auto_disabled_live_channels() -> Result<(
     assert_status(&pool, manual.id, Status::Disabled).await?;
     assert_status(&pool, deleted.id, Status::AutoDisabled).await?;
     assert_ability_enabled(&pool, automatic.id, true).await?;
+    assert_eq!(channel_outbox_count(&pool, automatic.id).await?, 1);
 
     pool.close().await?;
     Ok(())
@@ -339,6 +341,17 @@ async fn assert_ability_enabled(
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].enabled, expected);
     Ok(())
+}
+
+async fn channel_outbox_count(
+    pool: &crate::DatabasePool,
+    channel_id: i64,
+) -> Result<u64, sea_orm::DbErr> {
+    scheduler_outbox_events::Entity::find()
+        .filter(scheduler_outbox_events::Column::SubjectKind.eq(1_i16))
+        .filter(scheduler_outbox_events::Column::SubjectId.eq(channel_id))
+        .count(pool.connection())
+        .await
 }
 
 fn channel_id(value: i64) -> ChannelId {

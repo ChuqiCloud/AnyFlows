@@ -18,6 +18,11 @@ pub struct Model {
     pub name: String,
     pub status: i16,
     pub group_id: Option<i64>,
+    pub organization_id: Option<i64>,
+    pub organization_membership_id: Option<i64>,
+    pub organization_team_id: Option<i64>,
+    /// 创建/认证时固化的部门归属；空值表示迁移前的旧 Key。
+    pub organization_department_id: Option<i64>,
     pub remain_quota: i64,
     pub unlimited_quota: bool,
     pub used_quota: i64,

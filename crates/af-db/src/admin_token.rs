@@ -48,6 +48,8 @@ pub struct AdminTokenRecord {
     window_7d_start: i64,
     max_requests: Option<i64>,
     used_requests: i64,
+    created_at: i64,
+    updated_at: i64,
 }
 
 impl AdminTokenRecord {
@@ -193,6 +195,18 @@ impl AdminTokenRecord {
     #[must_use]
     pub const fn used_requests(&self) -> i64 {
         self.used_requests
+    }
+
+    /// 返回令牌创建时间的 Unix 秒数。
+    #[must_use]
+    pub const fn created_at(&self) -> i64 {
+        self.created_at
+    }
+
+    /// 返回令牌最近更新时间的 Unix 秒数。
+    #[must_use]
+    pub const fn updated_at(&self) -> i64 {
+        self.updated_at
     }
 }
 
@@ -364,7 +378,7 @@ impl fmt::Debug for AdminTokenRepository {
 }
 
 impl AdminTokenRecord {
-    pub(super) fn try_from_query_result(
+    pub(crate) fn try_from_query_result(
         result: &QueryResult,
     ) -> Result<Self, AdminTokenRepositoryError> {
         let row = AdminTokenRow::try_from_query_result(result)
@@ -404,6 +418,8 @@ struct AdminTokenRow {
     window_7d_start: TimeDateTimeWithTimeZone,
     max_requests: Option<i64>,
     used_requests: i64,
+    created_at: TimeDateTimeWithTimeZone,
+    updated_at: TimeDateTimeWithTimeZone,
 }
 
 impl AdminTokenRow {
@@ -439,6 +455,8 @@ impl AdminTokenRow {
             window_7d_start: result.try_get("", "window_7d_start")?,
             max_requests: result.try_get("", "max_requests")?,
             used_requests: result.try_get("", "used_requests")?,
+            created_at: result.try_get("", "created_at")?,
+            updated_at: result.try_get("", "updated_at")?,
         })
     }
 
@@ -527,6 +545,8 @@ impl AdminTokenRow {
             window_7d_start: self.window_7d_start.unix_timestamp(),
             max_requests: self.max_requests,
             used_requests: self.used_requests,
+            created_at: self.created_at.unix_timestamp(),
+            updated_at: self.updated_at.unix_timestamp(),
         })
     }
 }
@@ -538,6 +558,7 @@ fn list_query(
 ) -> SelectStatement {
     let mut query = base_query(database_backend);
     query
+        .and_where(Expr::col((tokens::Entity, tokens::Column::OrganizationId)).is_null())
         .and_where(Expr::col((tokens::Entity, tokens::Column::DeletedAt)).is_null())
         .order_by((tokens::Entity, tokens::Column::Id), Order::Asc)
         .limit((limit + 1) as u64);
@@ -550,12 +571,13 @@ fn list_query(
 pub(super) fn detail_query(database_backend: DbBackend, token_id: TokenId) -> SelectStatement {
     base_query(database_backend)
         .and_where(Expr::col((tokens::Entity, tokens::Column::Id)).eq(token_id.get()))
+        .and_where(Expr::col((tokens::Entity, tokens::Column::OrganizationId)).is_null())
         .and_where(Expr::col((tokens::Entity, tokens::Column::DeletedAt)).is_null())
         .limit(2)
         .to_owned()
 }
 
-fn base_query(database_backend: DbBackend) -> SelectStatement {
+pub(crate) fn base_query(database_backend: DbBackend) -> SelectStatement {
     let model_limits_length =
         token_json_serialized_length(database_backend, tokens::Column::ModelLimits);
     let allow_ips_length = token_json_serialized_length(database_backend, tokens::Column::AllowIps);
@@ -706,6 +728,14 @@ fn base_query(database_backend: DbBackend) -> SelectStatement {
         .expr_as(
             Expr::col((tokens::Entity, tokens::Column::UsedRequests)),
             Alias::new("used_requests"),
+        )
+        .expr_as(
+            Expr::col((tokens::Entity, tokens::Column::CreatedAt)),
+            Alias::new("created_at"),
+        )
+        .expr_as(
+            Expr::col((tokens::Entity, tokens::Column::UpdatedAt)),
+            Alias::new("updated_at"),
         )
         .from(tokens::Entity)
         .left_join(

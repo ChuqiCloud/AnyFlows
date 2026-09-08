@@ -6,8 +6,8 @@ use serde_json::{Map, Value, json};
 
 use super::{BuildRequestError, build_request, parse_request};
 use crate::{
-    Attachment, CacheHint, CanonicalRequest, ContentBlock, MediaSource, Message, RequestMetadata,
-    StreamOptions,
+    Attachment, CacheHint, CanonicalRequest, ContentBlock, MediaSource, Message,
+    ProtocolCapability, RequestCapability, RequestContinuation, RequestMetadata, StreamOptions,
 };
 
 fn parsed_request(value: Value) -> CanonicalRequest {
@@ -26,6 +26,15 @@ fn minimal_request() -> CanonicalRequest {
     );
     request.tool_choice = crate::ToolChoice::None;
     request
+}
+
+fn assert_unsupported_capability(request: &CanonicalRequest, expected: RequestCapability) {
+    let error = build_request(request).expect_err("请求能力必须被明确拒绝");
+    let BuildRequestError::UnsupportedCapability(error) = error else {
+        panic!("必须返回结构化能力错误，实际为 {error:?}");
+    };
+    assert_eq!(error.target_protocol(), Protocol::OpenAiChat);
+    assert_eq!(error.capability(), ProtocolCapability::Request(expected));
 }
 
 #[test]
@@ -192,39 +201,66 @@ fn rejects_wrong_operation_and_unmapped_request_fields() {
         mime_type: None,
         filename: None,
     });
-    assert_eq!(
-        build_request(&attachments),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&attachments, RequestCapability::Attachments);
 
     let mut session = minimal_request();
     session.metadata = RequestMetadata::new(None, Some("session-1".to_owned()));
+    assert_unsupported_capability(&session, RequestCapability::SessionMetadata);
+
+    let mut continuation = minimal_request();
+    continuation.continuation = RequestContinuation::new(Some("resp-1".to_owned()), None, None);
+    assert_unsupported_capability(
+        &continuation,
+        RequestCapability::PreviousResponseContinuation,
+    );
+}
+
+#[test]
+fn preserves_explicit_function_tool_strictness() {
+    let request = parsed_request(json!({
+        "model": "gpt-test",
+        "messages": [{"role": "user", "content": "hello"}],
+        "tools": [{
+            "type": "function",
+            "function": {
+                "name": "lookup",
+                "parameters": {"type": "object"},
+                "strict": true
+            }
+        }]
+    }));
+
+    let value = build_request(&request).unwrap();
+    assert_eq!(value["tools"][0]["function"]["strict"], true);
     assert_eq!(
-        build_request(&session),
-        Err(BuildRequestError::UnsupportedFeature)
+        parse_request(&serde_json::to_vec(&value).unwrap()).unwrap(),
+        request
     );
 }
 
 #[test]
 fn rejects_content_that_openai_chat_cannot_encode_losslessly() {
     let unsupported_blocks = [
-        ContentBlock::Thinking {
-            text: "secret".to_owned(),
-            signature: None,
-        },
-        ContentBlock::CacheControl(CacheHint::Ephemeral5Minutes),
+        (
+            ContentBlock::Thinking {
+                text: "secret".to_owned(),
+                signature: None,
+            },
+            RequestCapability::Thinking,
+        ),
+        (
+            ContentBlock::CacheControl(CacheHint::Ephemeral5Minutes),
+            RequestCapability::CacheControl(CacheHint::Ephemeral5Minutes),
+        ),
     ];
-    for block in unsupported_blocks {
+    for (block, capability) in unsupported_blocks {
         let request = CanonicalRequest::new(
             Operation::Chat,
             "gpt-test".to_owned(),
             vec![Message::new(Role::User, vec![block])],
             false,
         );
-        assert_eq!(
-            build_request(&request),
-            Err(BuildRequestError::UnsupportedFeature)
-        );
+        assert_unsupported_capability(&request, capability);
     }
 
     let image_without_mime = CanonicalRequest::new(
@@ -256,10 +292,7 @@ fn rejects_content_that_openai_chat_cannot_encode_losslessly() {
         )],
         false,
     );
-    assert_eq!(
-        build_request(&url_audio),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&url_audio, RequestCapability::AudioUrl);
 }
 
 #[test]
@@ -274,6 +307,7 @@ fn revalidates_tool_order_arguments_and_result_semantics() {
                     id: "call-1".to_owned(),
                     name: "lookup".to_owned(),
                     input: json!({}),
+                    signature: None,
                 },
                 ContentBlock::Text("late".to_owned()),
             ],
@@ -294,6 +328,7 @@ fn revalidates_tool_order_arguments_and_result_semantics() {
                 id: "call-1".to_owned(),
                 name: "lookup".to_owned(),
                 input: json!([1, 2]),
+                signature: None,
             }],
         )],
         false,
@@ -311,15 +346,45 @@ fn revalidates_tool_order_arguments_and_result_semantics() {
             vec![ContentBlock::ToolResult {
                 tool_use_id: "call-1".to_owned(),
                 content: vec![ContentBlock::Text("failed".to_owned())],
+                structured_content: None,
                 is_error: true,
             }],
         )],
         false,
     );
-    assert_eq!(
-        build_request(&error_result),
-        Err(BuildRequestError::UnsupportedFeature)
+    assert_unsupported_capability(&error_result, RequestCapability::ToolResultErrors);
+
+    let signed_call = CanonicalRequest::new(
+        Operation::Chat,
+        "gpt-test".to_owned(),
+        vec![Message::new(
+            Role::Assistant,
+            vec![ContentBlock::ToolUse {
+                id: "call-1".to_owned(),
+                name: "lookup".to_owned(),
+                input: json!({}),
+                signature: Some("c2ln".to_owned()),
+            }],
+        )],
+        false,
     );
+    assert_unsupported_capability(&signed_call, RequestCapability::ToolCallSignatures);
+
+    let structured_result = CanonicalRequest::new(
+        Operation::Chat,
+        "gpt-test".to_owned(),
+        vec![Message::new(
+            Role::Tool,
+            vec![ContentBlock::ToolResult {
+                tool_use_id: "call-1".to_owned(),
+                content: Vec::new(),
+                structured_content: Some(json!({"ok": true})),
+                is_error: false,
+            }],
+        )],
+        false,
+    );
+    assert_unsupported_capability(&structured_result, RequestCapability::StructuredToolResults);
 }
 
 #[test]
@@ -430,6 +495,7 @@ fn rejects_combined_schema_node_budget() {
             name: format!("tool-{index}"),
             description: None,
             input_schema: schema(index),
+            strict: None,
         })
         .collect();
     let mut request = minimal_request();

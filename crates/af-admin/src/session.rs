@@ -5,11 +5,12 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use af_account::SystemSecretCipher;
 use af_db::{
     UserSessionLookupByIdOutcome, UserSessionLookupOutcome, UserSessionRepository,
     UserSessionRepositoryError,
 };
-use af_domain::UserId;
+use af_domain::{GroupId, UserId};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize, Serializer};
@@ -25,6 +26,7 @@ const MAX_SESSION_TTL_SECS: u64 = 86_400;
 pub struct LoginCredentials {
     username: String,
     password: Zeroizing<String>,
+    totp_code: Option<Zeroizing<String>>,
 }
 
 impl LoginCredentials {
@@ -34,7 +36,15 @@ impl LoginCredentials {
         Self {
             username,
             password: Zeroizing::new(password),
+            totp_code: None,
         }
+    }
+
+    /// 附加登录二次验证码；验证码只在本次认证调用期间存活。
+    #[must_use]
+    pub fn with_totp_code(mut self, totp_code: Option<String>) -> Self {
+        self.totp_code = totp_code.map(Zeroizing::new);
+        self
     }
 
     /// 返回待查询的精确用户名。
@@ -47,6 +57,12 @@ impl LoginCredentials {
     #[must_use]
     pub fn password(&self) -> &[u8] {
         self.password.as_bytes()
+    }
+
+    /// 返回可选的 TOTP 或备份码；调用方不得记录该值。
+    #[must_use]
+    pub fn totp_code(&self) -> Option<&str> {
+        self.totp_code.as_deref().map(String::as_str)
     }
 }
 
@@ -196,15 +212,17 @@ impl IssuedSession {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SessionAuthentication {
     principal: SessionPrincipal,
+    group_id: GroupId,
     expires_at: u64,
 }
 
 impl SessionAuthentication {
     /// 组合已回查的主体和令牌过期时间。
     #[must_use]
-    pub const fn new(principal: SessionPrincipal, expires_at: u64) -> Self {
+    pub const fn new(principal: SessionPrincipal, group_id: GroupId, expires_at: u64) -> Self {
         Self {
             principal,
+            group_id,
             expires_at,
         }
     }
@@ -213,6 +231,12 @@ impl SessionAuthentication {
     #[must_use]
     pub const fn principal(self) -> SessionPrincipal {
         self.principal
+    }
+
+    /// 返回本次数据库回查得到的用户默认分组。
+    #[must_use]
+    pub const fn group_id(self) -> GroupId {
+        self.group_id
     }
 
     /// 返回 JWT 的 Unix 秒级过期时间。
@@ -228,6 +252,12 @@ pub enum SessionAuthenticationError {
     /// 用户名不存在、密码错误、禁用或软删除。
     #[error("登录凭据无效")]
     InvalidCredentials,
+    /// 用户名密码已通过，但账户要求第二因素。
+    #[error("需要二次验证")]
+    TwoFactorRequired,
+    /// TOTP 或备份码无效，不能继续签发会话。
+    #[error("二次验证失败")]
+    TwoFactorInvalid,
     /// JWT 缺失、篡改、过期或对应用户已失效。
     #[error("管理会话无效")]
     InvalidSession,
@@ -249,6 +279,11 @@ pub type SessionLoginFuture<'a> =
 pub trait SessionAuthenticator: Send + Sync {
     /// 校验用户名密码并签发新会话。
     fn login<'a>(&'a self, credentials: &'a LoginCredentials) -> SessionLoginFuture<'a>;
+
+    /// 为已经通过其他认证方式解析出的有效用户签发统一会话。
+    fn issue_for_user(&self, _user_id: UserId) -> SessionLoginFuture<'_> {
+        Box::pin(async { Err(SessionAuthenticationError::Internal) })
+    }
 
     /// 校验 JWT 并回查当前用户状态。
     fn authenticate<'a>(&'a self, token: &'a str) -> SessionAuthenticationFuture<'a>;
@@ -272,6 +307,7 @@ pub enum SessionAuthenticatorConfigError {
 pub struct DatabaseSessionAuthenticator {
     repository: UserSessionRepository,
     codec: SessionCodec,
+    two_factor_cipher: Option<SystemSecretCipher>,
 }
 
 impl DatabaseSessionAuthenticator {
@@ -283,7 +319,18 @@ impl DatabaseSessionAuthenticator {
     ) -> Result<Self, SessionAuthenticatorConfigError> {
         let signing_key = signing_key.ok_or(SessionAuthenticatorConfigError::MissingSigningKey)?;
         let codec = SessionCodec::new(signing_key, ttl_secs)?;
-        Ok(Self { repository, codec })
+        Ok(Self {
+            repository,
+            codec,
+            two_factor_cipher: None,
+        })
+    }
+
+    /// 注入已通过启动期强度校验的 TOTP 加密器。
+    #[must_use]
+    pub fn with_two_factor_cipher(mut self, cipher: SystemSecretCipher) -> Self {
+        self.two_factor_cipher = Some(cipher);
+        self
     }
 }
 
@@ -302,10 +349,46 @@ impl SessionAuthenticator for DatabaseSessionAuthenticator {
                 .await
                 .map_err(map_repository_error)?
             {
-                UserSessionLookupOutcome::Authenticated { user_id, role } => {
+                UserSessionLookupOutcome::Authenticated {
+                    user_id,
+                    role,
+                    session_version,
+                    totp_secret,
+                } => {
+                    if let Some(totp_secret) = totp_secret {
+                        let Some(cipher) = self.two_factor_cipher.as_ref() else {
+                            return Err(SessionAuthenticationError::Internal);
+                        };
+                        let code = credentials
+                            .totp_code()
+                            .ok_or(SessionAuthenticationError::TwoFactorRequired)?;
+                        match crate::two_factor::verify_login_code(
+                            cipher,
+                            user_id,
+                            &totp_secret,
+                            code,
+                            current_timestamp().ok_or(SessionAuthenticationError::Internal)?,
+                        ) {
+                            Ok(crate::two_factor::LoginFactorResult::Totp) => {}
+                            Ok(crate::two_factor::LoginFactorResult::Backup { replacement }) => {
+                                if !self
+                                    .repository
+                                    .consume_totp_backup_code(user_id, totp_secret, replacement)
+                                    .await
+                                    .map_err(map_repository_error)?
+                                {
+                                    return Err(SessionAuthenticationError::TwoFactorInvalid);
+                                }
+                            }
+                            Err(crate::two_factor::TwoFactorError::InvalidCode) => {
+                                return Err(SessionAuthenticationError::TwoFactorInvalid);
+                            }
+                            Err(_) => return Err(SessionAuthenticationError::Internal),
+                        }
+                    }
                     let principal =
                         SessionPrincipal::new(user_id, SessionRole::from_database(role)?);
-                    self.codec.issue(principal)
+                    self.codec.issue(principal, session_version)
                 }
                 UserSessionLookupOutcome::Rejected => {
                     Err(SessionAuthenticationError::InvalidCredentials)
@@ -330,17 +413,51 @@ impl SessionAuthenticator for DatabaseSessionAuthenticator {
                 .await
                 .map_err(map_repository_error)?
             {
-                UserSessionLookupByIdOutcome::Authenticated { user_id, role } => {
-                    Ok(SessionAuthentication {
-                        principal: SessionPrincipal::new(
-                            user_id,
-                            SessionRole::from_database(role)?,
-                        ),
-                        expires_at: claims.exp,
-                    })
+                UserSessionLookupByIdOutcome::Authenticated {
+                    user_id,
+                    role,
+                    group_id,
+                    session_version,
+                    ..
+                } if session_version == claims.session_version => Ok(SessionAuthentication::new(
+                    SessionPrincipal::new(user_id, SessionRole::from_database(role)?),
+                    group_id,
+                    claims.exp,
+                )),
+                UserSessionLookupByIdOutcome::Authenticated { .. } => {
+                    Err(SessionAuthenticationError::InvalidSession)
                 }
                 UserSessionLookupByIdOutcome::Rejected => {
                     Err(SessionAuthenticationError::InvalidSession)
+                }
+            }
+        })
+    }
+
+    fn issue_for_user(&self, user_id: UserId) -> SessionLoginFuture<'_> {
+        Box::pin(async move {
+            match self
+                .repository
+                .lookup_by_id(user_id)
+                .await
+                .map_err(map_repository_error)?
+            {
+                UserSessionLookupByIdOutcome::Authenticated {
+                    user_id,
+                    role,
+                    session_version,
+                    totp_enabled,
+                    ..
+                } => {
+                    if totp_enabled {
+                        return Err(SessionAuthenticationError::TwoFactorRequired);
+                    }
+                    let principal =
+                        SessionPrincipal::new(user_id, SessionRole::from_database(role)?);
+                    self.codec.issue(principal, session_version)
+                }
+                UserSessionLookupByIdOutcome::Rejected => {
+                    Err(SessionAuthenticationError::InvalidCredentials)
                 }
             }
         })
@@ -372,6 +489,7 @@ struct SessionClaims {
     aud: String,
     exp: u64,
     iat: u64,
+    session_version: i64,
 }
 
 impl SessionCodec {
@@ -404,7 +522,11 @@ impl SessionCodec {
     fn issue(
         &self,
         principal: SessionPrincipal,
+        session_version: i64,
     ) -> Result<IssuedSession, SessionAuthenticationError> {
+        if session_version < 1 {
+            return Err(SessionAuthenticationError::Internal);
+        }
         let issued_at = current_timestamp().ok_or(SessionAuthenticationError::Internal)?;
         let expires_at = issued_at
             .checked_add(self.ttl_secs)
@@ -415,6 +537,7 @@ impl SessionCodec {
             aud: SESSION_AUDIENCE.to_owned(),
             exp: expires_at,
             iat: issued_at,
+            session_version,
         };
         let token = encode(&Header::new(Algorithm::HS256), &claims, &self.encoding_key)
             .map_err(|_| SessionAuthenticationError::Internal)?;
@@ -438,6 +561,7 @@ impl SessionCodec {
             || decoded.claims.exp <= decoded.claims.iat
             || decoded.claims.iat > now.saturating_add(60)
             || decoded.claims.exp - decoded.claims.iat > self.ttl_secs
+            || decoded.claims.session_version < 1
         {
             return Err(SessionAuthenticationError::InvalidSession);
         }
@@ -465,7 +589,7 @@ mod tests {
         let key = signing_key();
         let codec = SessionCodec::new(&key, 3_600).unwrap();
         let principal = SessionPrincipal::new(UserId::new(7).unwrap(), SessionRole::Admin);
-        let issued = codec.issue(principal).unwrap();
+        let issued = codec.issue(principal, 1).unwrap();
         let claims = codec.decode(issued.token().as_str()).unwrap();
 
         assert_eq!(claims.sub, "7");
@@ -484,7 +608,7 @@ mod tests {
         let key = signing_key();
         let codec = SessionCodec::new(&key, 3_600).unwrap();
         let principal = SessionPrincipal::new(UserId::new(7).unwrap(), SessionRole::User);
-        let issued = codec.issue(principal).unwrap();
+        let issued = codec.issue(principal, 1).unwrap();
         let mut tampered = issued.token().as_str().to_owned();
         let replacement = if tampered.ends_with('a') { 'b' } else { 'a' };
         tampered.pop();
@@ -501,6 +625,7 @@ mod tests {
             aud: SESSION_AUDIENCE.to_owned(),
             exp: now - 1,
             iat: now - 100,
+            session_version: 1,
         };
         let secret = [0x42; SESSION_SIGNING_KEY_BYTES];
         let expired_token = encode(

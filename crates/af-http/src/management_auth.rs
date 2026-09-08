@@ -26,6 +26,26 @@ impl ManagementAuthenticationState {
 /// 从唯一 Bearer Header 提取 JWT，校验后把当前主体注入请求扩展。
 pub(crate) async fn authenticate_management_session(
     State(state): State<ManagementAuthenticationState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    authenticate_present_session(state, request, next).await
+}
+
+/// 没有 Authorization 时按游客放行，携带后仍执行完整会话认证。
+pub(crate) async fn authenticate_optional_management_session(
+    State(state): State<ManagementAuthenticationState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    if !request.headers().contains_key(AUTHORIZATION) {
+        return next.run(request).await;
+    }
+    authenticate_present_session(state, request, next).await
+}
+
+async fn authenticate_present_session(
+    state: ManagementAuthenticationState,
     mut request: Request,
     next: Next,
 ) -> Response {
@@ -42,6 +62,10 @@ pub(crate) async fn authenticate_management_session(
             ManagementError::InvalidSession.into_response()
         }
         Err(SessionAuthenticationError::InvalidCredentials) => {
+            ManagementError::InvalidSession.into_response()
+        }
+        Err(SessionAuthenticationError::TwoFactorRequired)
+        | Err(SessionAuthenticationError::TwoFactorInvalid) => {
             ManagementError::InvalidSession.into_response()
         }
         Err(SessionAuthenticationError::Internal) => ManagementError::Internal.into_response(),
@@ -78,10 +102,24 @@ use axum::response::IntoResponse;
 
 #[cfg(test)]
 mod tests {
-    use axum::body::Body;
-    use http::{HeaderValue, Request, header::AUTHORIZATION};
+    use af_admin::{LoginCredentials, SessionAuthenticationFuture, SessionLoginFuture};
+    use axum::{Router, body::Body, middleware, routing::get};
+    use http::{HeaderValue, Request, StatusCode, header::AUTHORIZATION};
+    use tower::ServiceExt;
 
     use super::*;
+
+    struct RejectSessionAuthenticator;
+
+    impl SessionAuthenticator for RejectSessionAuthenticator {
+        fn login<'a>(&'a self, _credentials: &'a LoginCredentials) -> SessionLoginFuture<'a> {
+            Box::pin(async { Err(SessionAuthenticationError::InvalidCredentials) })
+        }
+
+        fn authenticate<'a>(&'a self, _token: &'a str) -> SessionAuthenticationFuture<'a> {
+            Box::pin(async { Err(SessionAuthenticationError::InvalidSession) })
+        }
+    }
 
     #[test]
     fn bearer_extraction_requires_one_header_and_removes_it() {
@@ -121,5 +159,34 @@ mod tests {
             extract_bearer_token(&mut duplicate).unwrap_err(),
             ManagementError::InvalidSession
         );
+    }
+
+    #[tokio::test]
+    async fn optional_authentication_allows_guests_but_rejects_present_invalid_tokens() {
+        let layer = middleware::from_fn_with_state(
+            ManagementAuthenticationState::new(Arc::new(RejectSessionAuthenticator)),
+            authenticate_optional_management_session,
+        );
+        let router = Router::new()
+            .route("/", get(|| async { StatusCode::NO_CONTENT }))
+            .layer(layer);
+
+        let guest = router
+            .clone()
+            .oneshot(Request::new(Body::empty()))
+            .await
+            .unwrap();
+        assert_eq!(guest.status(), StatusCode::NO_CONTENT);
+
+        let invalid = router
+            .oneshot(
+                Request::builder()
+                    .header(AUTHORIZATION, "Bearer invalid")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(invalid.status(), StatusCode::UNAUTHORIZED);
     }
 }

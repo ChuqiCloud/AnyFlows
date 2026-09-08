@@ -1,5 +1,6 @@
 import {
   ArrowRight,
+  ChevronDown,
   Gauge,
   KeyRound,
   Layers,
@@ -17,10 +18,7 @@ import { LogoMarquee } from '@/components/brand/logo-marquee'
 import { ParticleField } from '@/components/brand/particle-field'
 import { RibbonBeam } from '@/components/brand/ribbon-beam'
 import { KineticText } from '@/components/kinetic/kinetic-text'
-import { BrandMark } from '@/components/layout/brand-mark'
-import { LanguageToggle } from '@/components/language-toggle'
-import { MotionToggle } from '@/components/motion-toggle'
-import { ThemeToggle } from '@/components/theme-toggle'
+import { PublicSiteHeader } from '@/components/layout/public-site-header'
 import { Button } from '@/components/ui/button'
 import { InView } from '@/components/ui/in-view'
 import { SpotlightCard } from '@/components/ui/spotlight-card'
@@ -28,6 +26,8 @@ import { BillingVisual } from '@/features/landing/billing-visual'
 import { ApiConsole } from '@/features/landing/api-console'
 import { ProtocolMatrix } from '@/features/landing/protocol-matrix'
 import { RouteVisual } from '@/features/landing/route-visual'
+import { AnnouncementStrip } from '@/features/announcements/announcement-strip'
+import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
 
 /** 三种部署形态，顺序对应 design/00-overview.md 里的场景编号 */
 const deployModes = [
@@ -44,35 +44,46 @@ const secondaryFeatures = [
   { key: 'observability', icon: ShieldCheck },
 ] as const
 
-const openConsole = () => {
-  window.location.hash = '#/console'
-}
+/** 公开 FAQ 只解释当前产品已经交付的能力，不承诺未落地的运营功能。 */
+const faqItems = [
+  'whatIsAnyFlows',
+  'whichProtocols',
+  'howRoutingWorks',
+  'howBillingWorks',
+  'canSelfHost',
+  'whereToStart',
+] as const
 
 export function LandingPage() {
   const { t } = useTranslation()
+  const siteQuery = usePublicSiteSettings()
+  const site = siteQuery.data
+  const siteName = site?.site_name ?? t('brand.name')
+  const heroTagline = site?.brand.tagline ?? t('landing.hero.eyebrow')
+  const heroDescription = site?.brand.description ?? t('landing.hero.subtitle')
+  const authentication = site?.authentication
+  const registrationAvailable = Boolean(
+    authentication?.password_login_enabled && authentication.registration_enabled,
+  )
+  const accountCtaKey = registrationAvailable
+    ? 'register'
+    : authentication?.password_login_enabled
+      ? 'login'
+      : 'models'
+  const openAccount = () => {
+    window.location.hash = accountCtaKey === 'register'
+      ? '#/register'
+      : accountCtaKey === 'login'
+        ? '#/login'
+        : '#/models'
+  }
 
   return (
     <div className="min-h-dvh bg-background text-foreground">
-      <header className="fixed inset-x-0 top-0 z-50 border-b border-[var(--hairline)] bg-background/80 backdrop-blur-xl">
-        <div className="mx-auto flex h-14 max-w-[1120px] items-center justify-between px-3 sm:px-6">
-          <div className="flex items-center gap-2.5">
-            <BrandMark />
-            <span className="hidden text-[0.9375rem] font-semibold sm:inline">
-              {t('brand.name')}
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <LanguageToggle />
-            <MotionToggle />
-            <ThemeToggle />
-            <Button size="sm" onClick={openConsole}>
-              {t('landing.nav.console')}
-            </Button>
-          </div>
-        </div>
-      </header>
+      <PublicSiteHeader siteName={siteName} logoUrl={site?.brand.logo_url} />
 
       <main>
+        <AnnouncementStrip />
         {/*
           isolate 是必需的：背景层用负 z-index，若本区不建立层叠上下文，
           它们会上浮到根节点并被外层 bg-background 整块盖掉。
@@ -86,8 +97,8 @@ export function LandingPage() {
             className="pointer-events-none absolute top-[42%] left-1/2 -z-10 h-[34rem] w-[58rem] max-w-[130vw] -translate-x-1/2 -translate-y-1/2 animate-aurora blur-[110px]"
             style={{
               background:
-                'radial-gradient(ellipse 60% 50% at 40% 45%, rgb(255 99 99 / 0.16), transparent 70%),' +
-                'radial-gradient(ellipse 55% 45% at 65% 55%, rgb(85 179 255 / 0.12), transparent 70%)',
+                'radial-gradient(ellipse 60% 50% at 40% 45%, rgb(49 94 251 / 0.2), transparent 70%),' +
+                'radial-gradient(ellipse 55% 45% at 65% 55%, rgb(138 120 255 / 0.16), transparent 70%)',
             }}
             aria-hidden="true"
           />
@@ -119,14 +130,14 @@ export function LandingPage() {
 
           <div className="w-full max-w-[1120px] text-center">
             <p className="text-[0.8125rem] font-medium text-muted-foreground">
-              {t('landing.hero.eyebrow')}
+              {heroTagline}
             </p>
 
             {/* 字标即标题，不翻译，保留原始大小写 */}
             <h1 className="mt-6">
               <KineticText
                 as="span"
-                text={t('brand.name')}
+                text={siteName}
                 className="block text-[clamp(3.75rem,13vw,11rem)]"
                 delay={0.05}
                 stagger={0.04}
@@ -135,16 +146,18 @@ export function LandingPage() {
             </h1>
 
             <p className="mx-auto mt-7 max-w-lg text-lg leading-relaxed text-muted-foreground">
-              {t('landing.hero.subtitle')}
+              {heroDescription}
             </p>
 
             <div className="mt-9 flex flex-wrap items-center justify-center gap-2.5">
-              <Button size="lg" onClick={openConsole}>
-                {t('landing.hero.cta')}
+              <Button size="lg" onClick={openAccount}>
+                {t(`landing.hero.cta.${accountCtaKey}`)}
                 <ArrowRight className="size-4" aria-hidden="true" />
               </Button>
-              <Button variant="secondary" size="lg">
-                {t('landing.hero.secondary')}
+              <Button variant="secondary" size="lg" asChild>
+                <a href="#faq">
+                  {t('landing.hero.secondary')}
+                </a>
               </Button>
             </div>
 
@@ -303,13 +316,44 @@ export function LandingPage() {
           </div>
         </section>
 
+        <section id="faq" className="mx-auto max-w-[1120px] scroll-mt-20 px-6 py-32">
+          <InView className="mx-auto max-w-2xl text-center">
+            <p className="text-xs font-medium tracking-normal text-brand uppercase">
+              {t('landing.faq.eyebrow')}
+            </p>
+            <h2 className="mt-5 text-[clamp(1.875rem,4.5vw,3rem)] leading-[1.1] font-semibold tracking-normal">
+              {t('landing.faq.heading')}
+            </h2>
+            <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-muted-foreground">
+              {t('landing.faq.subheading')}
+            </p>
+          </InView>
+
+          <InView delay={120} className="mx-auto mt-16 max-w-3xl">
+            <div className="border-y border-[var(--hairline)]">
+              {faqItems.map((item) => (
+                <details key={item} className="group border-b border-[var(--hairline)] last:border-b-0">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-6 py-5 text-left text-base font-medium focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+                    <span>{t(`landing.faq.items.${item}.question`)}</span>
+                    <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-open:rotate-180" aria-hidden="true" />
+                  </summary>
+                  <p className="max-w-2xl pb-5 pr-10 text-sm leading-6 text-muted-foreground">
+                    {t(`landing.faq.items.${item}.answer`)}
+                  </p>
+                </details>
+              ))}
+            </div>
+          </InView>
+        </section>
+
         {/* 收尾 CTA：与 hero 呼应，但用极光而非粒子，避免两处动效等量齐观 */}
         <section className="relative isolate overflow-hidden border-t border-[var(--hairline)] px-6 py-36">
           <div
             className="pointer-events-none absolute top-1/2 left-1/2 -z-10 h-80 w-[46rem] max-w-[130vw] -translate-x-1/2 -translate-y-1/2 animate-aurora blur-[100px]"
             style={{
               background:
-                'radial-gradient(ellipse 60% 50% at 45% 50%, rgb(255 99 99 / 0.14), transparent 70%)',
+                'radial-gradient(ellipse 60% 50% at 40% 50%, rgb(49 94 251 / 0.18), transparent 70%),' +
+                'radial-gradient(ellipse 48% 42% at 68% 56%, rgb(83 191 242 / 0.14), transparent 72%)',
             }}
             aria-hidden="true"
           />
@@ -322,12 +366,14 @@ export function LandingPage() {
               {t('landing.closing.body')}
             </p>
             <div className="mt-9 flex flex-wrap items-center justify-center gap-2.5">
-              <Button size="lg" onClick={openConsole}>
-                {t('landing.closing.cta')}
+              <Button size="lg" onClick={openAccount}>
+                {t(`landing.hero.cta.${accountCtaKey}`)}
                 <ArrowRight className="size-4" aria-hidden="true" />
               </Button>
-              <Button variant="secondary" size="lg">
-                {t('landing.closing.secondary')}
+              <Button variant="secondary" size="lg" asChild>
+                <a href="#faq">
+                  {t('landing.closing.secondary')}
+                </a>
               </Button>
             </div>
           </InView>

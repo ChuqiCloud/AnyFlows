@@ -4,7 +4,8 @@ use af_domain::ChannelId;
 use thiserror::Error;
 
 use crate::{
-    MAX_SCHEDULER_CANDIDATES, SchedulerCandidate, WeightedSelectionError, WeightedStrategy,
+    ChannelRoutingHealth, MAX_SCHEDULER_CANDIDATES, SchedulerCandidate, WeightedSelectionError,
+    WeightedStrategy, health::healthy_channel,
 };
 
 /// 失败重试计划返回的一次候选选择。
@@ -16,6 +17,19 @@ pub struct RetrySelection {
 }
 
 impl RetrySelection {
+    /// 从已经完成策略排序的候选构造固定尝试位置。
+    pub(crate) fn from_ordered_candidate(
+        candidate: SchedulerCandidate,
+        attempt: NonZeroUsize,
+        priority_rank: usize,
+    ) -> Self {
+        Self {
+            candidate,
+            attempt,
+            priority_rank,
+        }
+    }
+
     /// 返回本次应尝试的候选渠道。
     #[must_use]
     pub const fn candidate(self) -> SchedulerCandidate {
@@ -32,6 +46,11 @@ impl RetrySelection {
     #[must_use]
     pub const fn priority_rank(self) -> usize {
         self.priority_rank
+    }
+
+    /// 按路由重排后的实际候选位置更新尝试序号；优先级层仍保留 weighted 基线。
+    pub(crate) const fn with_attempt(self, attempt: NonZeroUsize) -> Self {
+        Self { attempt, ..self }
     }
 }
 
@@ -67,16 +86,35 @@ pub struct WeightedRetryPlan {
     excluded_channels: BTreeSet<ChannelId>,
     attempts_started: usize,
     strategy: WeightedStrategy,
+    health: std::collections::BTreeMap<ChannelId, ChannelRoutingHealth>,
 }
 
 impl WeightedRetryPlan {
     /// 校验候选容量、分组一致性和渠道唯一性后创建重试计划。
     pub fn new(candidates: Vec<SchedulerCandidate>) -> Result<Self, WeightedRetryPlanError> {
+        Self::new_with_health(candidates, &std::collections::BTreeMap::new())
+    }
+
+    /// 创建应用共享健康惩罚的重试计划；冷却渠道在优先级分层前移除。
+    pub fn new_with_health(
+        mut candidates: Vec<SchedulerCandidate>,
+        health: &std::collections::BTreeMap<ChannelId, ChannelRoutingHealth>,
+    ) -> Result<Self, WeightedRetryPlanError> {
         if candidates.len() > MAX_SCHEDULER_CANDIDATES {
             return Err(WeightedRetryPlanError::TooManyCandidates);
         }
+        candidates.retain(|candidate| healthy_channel(candidate.channel_id(), health));
         validate_single_group(&candidates)?;
         validate_unique_channels(&candidates)?;
+        let bounded_health = candidates
+            .iter()
+            .filter_map(|candidate| {
+                health
+                    .get(&candidate.channel_id())
+                    .copied()
+                    .map(|state| (candidate.channel_id(), state))
+            })
+            .collect();
 
         let mut priorities = candidates
             .iter()
@@ -91,6 +129,7 @@ impl WeightedRetryPlan {
             excluded_channels: BTreeSet::new(),
             attempts_started: 0,
             strategy: WeightedStrategy,
+            health: bounded_health,
         })
     }
 
@@ -120,7 +159,7 @@ impl WeightedRetryPlan {
             .ok_or(WeightedRetryPlanError::Invariant)?;
         let selected = self
             .strategy
-            .select(&eligible)?
+            .select_with_health(&eligible, &self.health)?
             .ok_or(WeightedRetryPlanError::Invariant)?
             .candidate();
         if !self.excluded_channels.insert(selected.channel_id()) {
@@ -161,6 +200,7 @@ impl fmt::Debug for WeightedRetryPlan {
             .field("priority_count", &self.priorities.len())
             .field("excluded_count", &self.excluded_channels.len())
             .field("attempts_started", &self.attempts_started)
+            .field("health_count", &self.health.len())
             .finish()
     }
 }
@@ -195,9 +235,10 @@ fn validate_unique_channels(
 mod tests {
     use std::collections::BTreeSet;
 
-    use af_domain::GroupId;
+    use af_domain::{GroupId, UpstreamError, UpstreamServerStatus};
 
     use super::*;
+    use crate::{FailureAction, FailureContext, FailurePolicy};
 
     #[test]
     fn retries_descend_priorities_and_then_exhaust_the_lowest_tier() {
@@ -279,6 +320,62 @@ mod tests {
         assert_eq!(plan.select_next(), Ok(None));
         assert_eq!(plan.attempts_started(), 0);
         assert!(plan.into_retry_order().unwrap().is_empty());
+    }
+
+    #[test]
+    fn cooling_channel_is_removed_before_priority_selection() {
+        let first = candidate(1, 1, 10);
+        let second = candidate(1, 2, 10);
+        let health = std::collections::BTreeMap::from([
+            (first.channel_id(), ChannelRoutingHealth::new(0, true)),
+            (
+                second.channel_id(),
+                ChannelRoutingHealth::new(2_500_000, false),
+            ),
+        ]);
+
+        let order = WeightedRetryPlan::new_with_health(vec![first, second], &health)
+            .unwrap()
+            .into_retry_order()
+            .unwrap();
+
+        assert_eq!(order.len(), 1);
+        assert_eq!(order[0].candidate().channel_id(), second.channel_id());
+    }
+
+    #[test]
+    fn exhausted_transient_retry_fails_over_to_next_healthy_priority() {
+        let first = candidate(1, 11, 20);
+        let cooling = candidate(1, 12, 30);
+        let fallback = candidate(1, 13, 10);
+        let health = std::collections::BTreeMap::from([(
+            cooling.channel_id(),
+            ChannelRoutingHealth::new(0, true),
+        )]);
+        let policy = FailurePolicy::default();
+        let error = UpstreamError::ServerError {
+            status: UpstreamServerStatus::new(503).unwrap(),
+        };
+        let mut plan =
+            WeightedRetryPlan::new_with_health(vec![first, cooling, fallback], &health).unwrap();
+
+        let initial = plan.select_next().unwrap().unwrap();
+        assert_eq!(initial.candidate().channel_id(), first.channel_id());
+        assert_eq!(initial.attempt().get(), 1);
+        assert_eq!(
+            policy.action_for(error, FailureContext::new(0, false)),
+            FailureAction::RetrySameChannel
+        );
+        assert_eq!(
+            policy.action_for(error, FailureContext::new(1, false)),
+            FailureAction::Failover
+        );
+
+        let failover = plan.select_next().unwrap().unwrap();
+        assert_eq!(failover.candidate().channel_id(), fallback.channel_id());
+        assert_eq!(failover.priority_rank(), 1);
+        assert_eq!(failover.attempt().get(), 2);
+        assert_eq!(plan.select_next(), Ok(None));
     }
 
     #[test]

@@ -38,10 +38,16 @@ pub struct Model {
     pub proxy_id: Option<i64>,
     #[sea_orm(column_type = "String(StringLen::N(64))", nullable)]
     pub oauth_provider: Option<String>,
+    /// OAuth token 尚未交换成功时保持待授权状态，禁止进入运行时调度。
+    pub oauth_token_pending: bool,
     #[sea_orm(column_type = "String(StringLen::N(255))", nullable)]
     pub oauth_account_key: Option<String>,
     #[sea_orm(column_type = "String(StringLen::N(255))", nullable)]
     pub oauth_project_id: Option<String>,
+    /// 仅在 OAuth token 集合成功持久化后单调递增。
+    pub oauth_revision: i64,
+    /// OAuth access token 的可索引绝对到期时间；token 本体仍只保存在密文中。
+    pub oauth_expires_at_epoch_seconds: Option<i64>,
     pub last_used_at: Option<TimeDateTimeWithTimeZone>,
     pub created_at: TimeDateTimeWithTimeZone,
     pub updated_at: TimeDateTimeWithTimeZone,
@@ -66,10 +72,24 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     Parent,
+    #[sea_orm(
+        belongs_to = "super::proxies::Entity",
+        from = "Column::ProxyId",
+        to = "super::proxies::Column::Id",
+        on_update = "Cascade",
+        on_delete = "Restrict"
+    )]
+    Proxy,
 }
 
 impl Related<super::channels::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Channel.def()
+    }
+}
+
+impl Related<super::proxies::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Proxy.def()
     }
 }

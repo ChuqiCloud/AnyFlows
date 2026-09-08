@@ -96,6 +96,50 @@ fn ratio_mode_prices_five_disjoint_token_buckets_and_three_ratios() {
 }
 
 #[test]
+fn catalog_prices_reuse_checked_three_ratio_formula_without_quota_rounding() {
+    let resolver = RatioPricingResolver::metered(
+        prices([
+            Decimal::ONE,
+            Decimal::from(2),
+            Decimal::from(3),
+            Decimal::from(4),
+            Decimal::from(5),
+        ]),
+        PricingRatios::new(ratio(2_000_000), ratio(1_500_000), ratio(500_000)),
+    );
+    let effective = resolver.effective_token_prices().unwrap().unwrap();
+    assert_eq!(
+        effective.into_values(),
+        [
+            Decimal::new(15, 1),
+            Decimal::from(3),
+            Decimal::new(45, 1),
+            Decimal::from(6),
+            Decimal::new(75, 1),
+        ]
+    );
+
+    let zero_ratio = RatioPricingResolver::metered(
+        prices([Decimal::ONE; 5]),
+        PricingRatios::new(PricingRatio::ZERO, PricingRatio::ONE, PricingRatio::ONE),
+    );
+    assert_eq!(
+        zero_ratio
+            .effective_token_prices()
+            .unwrap()
+            .unwrap()
+            .into_values(),
+        [Decimal::ZERO; 5]
+    );
+    assert!(
+        RatioPricingResolver::free()
+            .effective_token_prices()
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
 fn ratio_mode_rounds_only_after_summing_all_components() {
     let resolver = RatioPricingResolver::metered(
         prices([

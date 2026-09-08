@@ -19,24 +19,22 @@ if [[ "$output_directory" != /* ]]; then
 fi
 mkdir -p "$output_directory"
 
-for release_arch in amd64 arm64; do
-  archive_name="anyflows-${tag}-linux-${release_arch}.tar.gz"
-  for file_name in "$archive_name" "$archive_name.sha256"; do
-    if [[ -f "$workspace/$file_name" && ! -f "$output_directory/$file_name" ]]; then
-      mv "$workspace/$file_name" "$output_directory/$file_name"
-    fi
-    [[ -f "$output_directory/$file_name" ]] || fail "缺少 $file_name"
-  done
-
-  (
-    cd "$output_directory"
-    sha256sum --check --strict "$archive_name.sha256"
-  )
+archive_name="anyflows-${tag}-linux-amd64.tar.gz"
+for file_name in "$archive_name" "$archive_name.sha256"; do
+  if [[ -f "$workspace/$file_name" && ! -f "$output_directory/$file_name" ]]; then
+    mv "$workspace/$file_name" "$output_directory/$file_name"
+  fi
+  [[ -f "$output_directory/$file_name" ]] || fail "缺少 $file_name"
 done
 
 (
   cd "$output_directory"
-  cat ./*.tar.gz.sha256 | LC_ALL=C sort -k2 >SHA256SUMS
+  sha256sum --check --strict "$archive_name.sha256"
+)
+
+(
+  cd "$output_directory"
+  cat "$archive_name.sha256" >SHA256SUMS
   sha256sum --check --strict SHA256SUMS
 )
 
@@ -49,9 +47,8 @@ cat >"$release_notes" <<EOF
 ## 发行包
 
 - \`anyflows-${tag}-linux-amd64.tar.gz\`：Linux x86_64
-- \`anyflows-${tag}-linux-arm64.tar.gz\`：Linux AArch64
 
-两个归档均包含内嵌完整前端资源的 \`anyflows\` 单二进制、\`README.md\`、\`.env.example\` 和 \`VERSION\`。
+归档包含内嵌完整前端资源的 \`anyflows\` 单二进制、\`README.md\`、\`.env.example\`、\`CHANGELOG.md\`、systemd 安装脚本/服务单元和 \`VERSION\`。
 
 ## SHA-256
 
@@ -70,4 +67,4 @@ else
     >>"$release_notes"
 fi
 
-printf '双架构归档与摘要已通过校验。\n'
+printf 'amd64 归档与摘要已通过校验。\n'

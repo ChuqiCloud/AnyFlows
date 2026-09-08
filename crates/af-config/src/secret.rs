@@ -1,6 +1,7 @@
 use std::fmt;
 
 use serde::Deserialize;
+use zeroize::Zeroize as _;
 
 /// 保存数据库、缓存等敏感文本，并在调试输出中统一脱敏。
 #[derive(Clone, Deserialize, Eq, PartialEq)]
@@ -42,5 +43,11 @@ impl From<&str> for SecretString {
 impl fmt::Debug for SecretString {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("<redacted>")
+    }
+}
+
+impl Drop for SecretString {
+    fn drop(&mut self) {
+        self.0.zeroize();
     }
 }

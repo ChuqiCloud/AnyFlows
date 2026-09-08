@@ -1,4 +1,6 @@
-use af_domain::{UpstreamError, UpstreamServerStatus};
+use af_domain::{
+    CredentialKind, RateLimitScope, UpstreamError, UpstreamRetryAfter, UpstreamServerStatus,
+};
 
 /// M1 默认只允许一次同渠道 5xx 短重试，避免上游持续故障时放大延迟。
 pub const DEFAULT_TRANSIENT_SERVER_RETRY_LIMIT: u8 = 1;
@@ -15,6 +17,127 @@ pub enum FailureAction {
     RetrySameChannel,
     /// 刷新当前 OAuth 凭据后再重试当前渠道。
     RefreshAuthAndRetry,
+}
+
+/// 上游故障对凭据持久状态的闭合影响。
+///
+/// 本类型只表达业务语义，不执行数据库写入。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CredentialFailureDisposition {
+    /// 当前错误不应改变凭据持久状态。
+    NoChange,
+    /// 凭据仍可能自行恢复，只进入有界冷却。
+    Temporary(TemporaryCredentialFailure),
+    /// 结构化信号已经确认凭据或账号无法继续使用。
+    Permanent(PermanentCredentialFailure),
+}
+
+/// 凭据失败决策所需的非敏感恢复上下文。
+///
+/// 构造器会忽略非 OAuth 凭据传入的 refresh token 标记，避免把 API Key 的未知认证
+/// 错误误判成“缺少 refresh token”。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CredentialFailureContext {
+    credential_kind: CredentialKind,
+    oauth_has_refresh_token: bool,
+}
+
+impl CredentialFailureContext {
+    /// 从凭据类型与解密阶段提取的布尔能力创建上下文，不保留任何令牌内容。
+    #[must_use]
+    pub const fn new(credential_kind: CredentialKind, oauth_has_refresh_token: bool) -> Self {
+        Self {
+            credential_kind,
+            oauth_has_refresh_token: matches!(credential_kind, CredentialKind::Oauth)
+                && oauth_has_refresh_token,
+        }
+    }
+
+    /// 返回数据库声明的凭据类型。
+    #[must_use]
+    pub const fn credential_kind(self) -> CredentialKind {
+        self.credential_kind
+    }
+
+    /// 返回当前 OAuth 凭据是否具备 refresh token；非 OAuth 凭据始终返回假。
+    #[must_use]
+    pub const fn oauth_has_refresh_token(self) -> bool {
+        self.oauth_has_refresh_token
+    }
+
+    const fn is_oauth_without_refresh_token(self) -> bool {
+        matches!(self.credential_kind, CredentialKind::Oauth) && !self.oauth_has_refresh_token
+    }
+}
+
+/// 可恢复凭据故障的稳定原因和受控等待提示。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TemporaryCredentialFailure {
+    /// 认证可能只是 access token 过期。
+    AuthExpired,
+    /// 上游限流；模型级信号不得扩大成整凭据冷却。
+    RateLimited {
+        scope: RateLimitScope,
+        retry_after: Option<UpstreamRetryAfter>,
+    },
+    /// 余额或额度可能在充值、重置后恢复。
+    QuotaExhausted,
+    /// 上游过载，按短窗口冷却。
+    Overloaded {
+        retry_after: Option<UpstreamRetryAfter>,
+    },
+}
+
+/// 只有确定性死亡信号才能进入的永久凭据状态。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PermanentCredentialFailure {
+    /// OAuth 认证已失效且没有 refresh token，无法自动恢复。
+    MissingRefreshToken,
+    /// API Key 或 token 已被明确吊销。
+    AuthRevoked,
+    /// 上游账号、组织或工作区已被明确停用。
+    AccountDisabled,
+}
+
+/// 将闭合上游错误映射为凭据持久状态语义。
+#[must_use]
+pub const fn credential_failure_disposition(
+    error: UpstreamError,
+    context: CredentialFailureContext,
+) -> CredentialFailureDisposition {
+    match error {
+        UpstreamError::AuthExpired if context.is_oauth_without_refresh_token() => {
+            CredentialFailureDisposition::Permanent(PermanentCredentialFailure::MissingRefreshToken)
+        }
+        UpstreamError::AuthExpired => {
+            CredentialFailureDisposition::Temporary(TemporaryCredentialFailure::AuthExpired)
+        }
+        UpstreamError::RateLimited { scope, retry_after } => {
+            CredentialFailureDisposition::Temporary(TemporaryCredentialFailure::RateLimited {
+                scope,
+                retry_after,
+            })
+        }
+        UpstreamError::QuotaExhausted => {
+            CredentialFailureDisposition::Temporary(TemporaryCredentialFailure::QuotaExhausted)
+        }
+        UpstreamError::Overloaded { retry_after } => {
+            CredentialFailureDisposition::Temporary(TemporaryCredentialFailure::Overloaded {
+                retry_after,
+            })
+        }
+        UpstreamError::AuthRevoked => {
+            CredentialFailureDisposition::Permanent(PermanentCredentialFailure::AuthRevoked)
+        }
+        UpstreamError::AccountDisabled => {
+            CredentialFailureDisposition::Permanent(PermanentCredentialFailure::AccountDisabled)
+        }
+        UpstreamError::BadRequest
+        | UpstreamError::ModelUnsupported
+        | UpstreamError::ProtocolError
+        | UpstreamError::Network { .. }
+        | UpstreamError::ServerError { .. } => CredentialFailureDisposition::NoChange,
+    }
 }
 
 /// 计算故障动作所需的请求级上下文。
@@ -88,13 +211,14 @@ impl FailurePolicy {
             {
                 FailureAction::RetrySameChannel
             }
-            UpstreamError::RateLimited
-            | UpstreamError::Overloaded
+            UpstreamError::RateLimited { .. }
+            | UpstreamError::Overloaded { .. }
             | UpstreamError::AuthExpired
             | UpstreamError::AuthRevoked
+            | UpstreamError::AccountDisabled
             | UpstreamError::QuotaExhausted
             | UpstreamError::ModelUnsupported
-            | UpstreamError::Network
+            | UpstreamError::Network { .. }
             | UpstreamError::ServerError { .. } => FailureAction::Failover,
         }
     }
@@ -131,12 +255,13 @@ mod tests {
         let policy = FailurePolicy::default();
 
         for error in [
-            UpstreamError::RateLimited,
-            UpstreamError::Overloaded,
+            UpstreamError::rate_limited(RateLimitScope::Unknown),
+            UpstreamError::overloaded(),
             UpstreamError::AuthRevoked,
+            UpstreamError::AccountDisabled,
             UpstreamError::QuotaExhausted,
             UpstreamError::ModelUnsupported,
-            UpstreamError::Network,
+            UpstreamError::network(af_domain::NetworkFailureKind::Connect),
         ] {
             assert_eq!(
                 policy.action_for(error, FailureContext::default()),
@@ -225,6 +350,58 @@ mod tests {
         assert_eq!(
             format!("{context:?}"),
             "FailureContext { same_channel_retries_started: 7, auth_refresh_retry_available: true }"
+        );
+    }
+
+    #[test]
+    fn credential_disposition_separates_recovery_from_permanent_death() {
+        let retry_after = UpstreamRetryAfter::from_seconds(90).unwrap();
+        let api_key = CredentialFailureContext::new(CredentialKind::ApiKey, false);
+        let renewable_oauth = CredentialFailureContext::new(CredentialKind::Oauth, true);
+        assert_eq!(
+            credential_failure_disposition(
+                UpstreamError::rate_limited_after(RateLimitScope::Window, retry_after),
+                api_key,
+            ),
+            CredentialFailureDisposition::Temporary(TemporaryCredentialFailure::RateLimited {
+                scope: RateLimitScope::Window,
+                retry_after: Some(retry_after),
+            })
+        );
+        assert_eq!(
+            credential_failure_disposition(UpstreamError::AuthExpired, renewable_oauth),
+            CredentialFailureDisposition::Temporary(TemporaryCredentialFailure::AuthExpired)
+        );
+        assert_eq!(
+            credential_failure_disposition(UpstreamError::AuthRevoked, api_key),
+            CredentialFailureDisposition::Permanent(PermanentCredentialFailure::AuthRevoked)
+        );
+        assert_eq!(
+            credential_failure_disposition(UpstreamError::AccountDisabled, api_key),
+            CredentialFailureDisposition::Permanent(PermanentCredentialFailure::AccountDisabled)
+        );
+        assert_eq!(
+            credential_failure_disposition(UpstreamError::BadRequest, api_key),
+            CredentialFailureDisposition::NoChange
+        );
+    }
+
+    #[test]
+    fn only_oauth_without_refresh_token_turns_auth_expiry_permanent() {
+        let missing = CredentialFailureContext::new(CredentialKind::Oauth, false);
+        assert_eq!(
+            credential_failure_disposition(UpstreamError::AuthExpired, missing),
+            CredentialFailureDisposition::Permanent(
+                PermanentCredentialFailure::MissingRefreshToken
+            )
+        );
+
+        let api_key = CredentialFailureContext::new(CredentialKind::ApiKey, true);
+        assert_eq!(api_key.credential_kind(), CredentialKind::ApiKey);
+        assert!(!api_key.oauth_has_refresh_token());
+        assert_eq!(
+            credential_failure_disposition(UpstreamError::AuthExpired, api_key),
+            CredentialFailureDisposition::Temporary(TemporaryCredentialFailure::AuthExpired)
         );
     }
 

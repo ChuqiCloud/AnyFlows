@@ -6,9 +6,14 @@ use utoipa::OpenApi;
 
 use crate::{
     management_error::ManagementErrorBody,
-    management_usage_logs::{AdminUsageLogListResponse, AdminUsageLogResponse},
+    management_usage_logs::{
+        AdminUsageLogListResponse, AdminUsageLogResponse, UserUsageLogListResponse,
+        UserUsageLogResponse,
+    },
     openapi::schema::{
         AdminUsageLogBillingModeSchema, AdminUsageLogSemanticsSchema, AdminUsageLogSourceSchema,
+        AdminUsageLogVideoResolutionSchema, UsageLogOperationSchema, UsageLogProtocolSchema,
+        UsageLogReasoningEffortSchema,
     },
 };
 
@@ -33,15 +38,41 @@ use crate::{
 )]
 fn list_admin_usage_logs() {}
 
+#[utoipa::path(
+    get,
+    path = "/api/account/usage-logs",
+    operation_id = "listUserUsageLogs",
+    tag = "调用日志",
+    summary = "读取当前用户调用日志列表",
+    params(
+        ("before" = Option<i64>, Query, minimum = 1, description = "上一页末尾的日志 ID"),
+        ("limit" = Option<i32>, Query, minimum = 1, maximum = 100, description = "每页数量，默认 50")
+    ),
+    responses(
+        (status = 200, description = "从新到旧排列的本人已结算调用", body = UserUsageLogListResponse),
+        (status = 400, description = "分页参数无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn list_user_usage_logs() {}
+
 #[derive(OpenApi)]
 #[openapi(
-    paths(list_admin_usage_logs),
+    paths(list_admin_usage_logs, list_user_usage_logs),
     components(schemas(
         AdminUsageLogBillingModeSchema,
         AdminUsageLogSourceSchema,
         AdminUsageLogSemanticsSchema,
+        AdminUsageLogVideoResolutionSchema,
+        UsageLogProtocolSchema,
+        UsageLogOperationSchema,
+        UsageLogReasoningEffortSchema,
         AdminUsageLogResponse,
         AdminUsageLogListResponse,
+        UserUsageLogResponse,
+        UserUsageLogListResponse,
         ManagementErrorBody
     ))
 )]

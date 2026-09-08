@@ -19,6 +19,8 @@ pub const DEFAULT_MAX_CACHED_CLIENTS: usize = 128;
 pub const DEFAULT_POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 /// 每个上游主机默认最多保留 10 条空闲连接。
 pub const DEFAULT_POOL_MAX_IDLE_PER_HOST: usize = 10;
+/// 受控客户端统一声明真实产品与版本，兼容会拒绝空 User-Agent 的上游网关。
+pub(crate) const DEFAULT_USER_AGENT: &str = concat!("AnyFlows/", env!("CARGO_PKG_VERSION"));
 
 /// 按代理、超时与目标安全策略复用 reqwest Client 的严格容量 LRU。
 pub struct HttpClientPool {
@@ -117,6 +119,7 @@ fn build_client_with_resolver(
     let proxy_host = config.proxy().endpoint_host().map(normalize_dns_name);
     let mut builder = ReqwestClient::builder()
         .no_proxy()
+        .user_agent(DEFAULT_USER_AGENT)
         .redirect(Policy::none())
         .referer(false)
         // 重试由 af-relay 统一编排，传输层不得隐式重放请求。
@@ -144,6 +147,7 @@ fn build_client_with_resolver(
     let client = builder.build().map_err(|_| HttpClientError::ClientBuild)?;
     Ok(PooledClient::new(
         client,
+        timeouts.read(),
         timeouts.request(),
         config.target_address_policy().clone(),
         target_dns_strategy,

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+source "$(dirname "${BASH_SOURCE[0]}")/container-test-runner.sh"
+
 readonly DIALECT="${1:-}"
 readonly POSTGRES_IMAGE="docker.io/library/postgres:17.10-bookworm@sha256:67870dc097790edf2bd6726658db995dcc830f799d41bb2b78ef07c9a2d5f010"
 readonly MYSQL_IMAGE="docker.io/library/mysql:8.4.10@sha256:6ec1dc148edc412cce3ae27dd5b78dcd4e026976648424b3d31d9a8c6204db4e"
@@ -10,15 +12,23 @@ readonly TEST_DATABASE="anyflows_migration_test_ci"
 readonly SMOKE_TEST_NAME="migration::tests::migration_runner_smoke"
 
 container_name=""
+network_name=""
+runner_name=""
 
 cleanup() {
     local status=$?
     trap - EXIT
+    if [[ -n "${runner_name}" ]]; then
+        docker rm --force "${runner_name}" >/dev/null 2>&1 || true
+    fi
     if [[ -n "${container_name}" ]]; then
         if ((status != 0)); then
             docker logs "${container_name}" >&2 || true
         fi
         docker rm --force "${container_name}" >/dev/null 2>&1 || true
+    fi
+    if [[ -n "${network_name}" ]]; then
+        docker network rm "${network_name}" >/dev/null 2>&1 || true
     fi
     exit "${status}"
 }
@@ -50,43 +60,9 @@ wait_for_mysql() {
     return 1
 }
 
-docker_daemon_host() {
-    local endpoint="${DOCKER_HOST:-}"
-    local gateway=""
-
-    if [[ "${endpoint}" =~ ^tcp://(\[[^]]+\]|[^:/]+)(:[0-9]+)?/?$ ]]; then
-        printf '%s\n' "${BASH_REMATCH[1]}"
-        return 0
-    fi
-
-    # Unix socket 场景优先使用 Docker bridge 网关，兼容宿主机与容器内客户端。
-    gateway="$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || true)"
-    printf '%s\n' "${gateway:-127.0.0.1}"
-}
-
-url_host() {
-    local host="$1"
-    if [[ "${host}" == *:* && "${host}" != \[*\] ]]; then
-        printf '[%s]\n' "${host}"
-    else
-        printf '%s\n' "${host}"
-    fi
-}
-
-published_port() {
-    local container_port="$1"
-    local mapping=""
-
-    mapping="$(docker port "${container_name}" "${container_port}/tcp" | head -n 1)"
-    if [[ -z "${mapping}" ]]; then
-        echo "无法读取容器 ${container_port}/tcp 的随机映射端口" >&2
-        return 1
-    fi
-    printf '%s\n' "${mapping##*:}"
-}
-
 run_smoke_test() {
     local test_list=""
+    local test_binary=""
 
     test_list="$(cargo test --locked --package af-db --lib -- --list)"
     if ! grep --fixed-strings --line-regexp --quiet "${SMOKE_TEST_NAME}: test" <<<"${test_list}"; then
@@ -94,10 +70,21 @@ run_smoke_test() {
         return 1
     fi
 
+    if [[ -n "${network_name}" ]]; then
+        test_binary="$(ci_build_test_binary af-db lib)"
+        runner_name="anyflows-db-test-${BASHPID}"
+        ci_run_test_binary "${network_name}" "${runner_name}" "${test_binary}" \
+            "AF_TEST_DATABASE_URL=${database_url}" \
+            "AF_REQUIRE_LIVE_DATABASE=1" \
+            "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST=1" \
+            -- "${SMOKE_TEST_NAME}" --exact --include-ignored
+        return
+    fi
+
     AF_TEST_DATABASE_URL="${database_url}" \
-    AF_REQUIRE_LIVE_DATABASE=1 \
-    AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST=1 \
-    cargo test --locked --package af-db --lib "${SMOKE_TEST_NAME}" -- --exact --include-ignored
+        AF_REQUIRE_LIVE_DATABASE=1 \
+        AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST=1 \
+        cargo test --locked --package af-db --lib "${SMOKE_TEST_NAME}" -- --exact --include-ignored
 }
 
 database_url="${AF_TEST_DATABASE_URL:-}"
@@ -108,25 +95,31 @@ if [[ -z "${database_url}" ]]; then
             database_url="sqlite::memory:"
             ;;
         postgres)
+            network_name="anyflows-postgres-network-${BASHPID}"
             container_name="anyflows-postgres-${BASHPID}"
-            docker run --detach --name "${container_name}" --publish 5432 \
+            docker network create "${network_name}" >/dev/null
+            docker run --detach --name "${container_name}" --network "${network_name}" \
+                --network-alias postgres \
                 --env POSTGRES_USER="${TEST_USER}" \
                 --env POSTGRES_PASSWORD="${TEST_PASSWORD}" \
                 --env POSTGRES_DB="${TEST_DATABASE}" \
                 "${POSTGRES_IMAGE}" >/dev/null
             wait_for_postgres
-            database_url="postgres://${TEST_USER}:${TEST_PASSWORD}@$(url_host "$(docker_daemon_host)"):$(published_port 5432)/${TEST_DATABASE}"
+            database_url="postgres://${TEST_USER}:${TEST_PASSWORD}@postgres:5432/${TEST_DATABASE}"
             ;;
         mysql)
+            network_name="anyflows-mysql-network-${BASHPID}"
             container_name="anyflows-mysql-${BASHPID}"
-            docker run --detach --name "${container_name}" --publish 3306 \
+            docker network create "${network_name}" >/dev/null
+            docker run --detach --name "${container_name}" --network "${network_name}" \
+                --network-alias mysql \
                 --env MYSQL_USER="${TEST_USER}" \
                 --env MYSQL_PASSWORD="${TEST_PASSWORD}" \
                 --env MYSQL_ROOT_PASSWORD="root_ci" \
                 --env MYSQL_DATABASE="${TEST_DATABASE}" \
-                "${MYSQL_IMAGE}" >/dev/null
+                "${MYSQL_IMAGE}" --log-bin-trust-function-creators=1 >/dev/null
             wait_for_mysql
-            database_url="mysql://${TEST_USER}:${TEST_PASSWORD}@$(url_host "$(docker_daemon_host)"):$(published_port 3306)/${TEST_DATABASE}?timezone=%2B08:00"
+            database_url="mysql://${TEST_USER}:${TEST_PASSWORD}@mysql:3306/${TEST_DATABASE}?timezone=%2B08:00"
             ;;
         *)
             echo "用法：$0 <sqlite|postgres|mysql>" >&2

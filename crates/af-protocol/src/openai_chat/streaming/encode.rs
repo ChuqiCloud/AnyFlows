@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, fmt};
 
-use af_domain::Role;
+use af_domain::{Protocol, Role};
 
 use super::{
     EncodeStreamError, MAX_SSE_EVENT_BYTES,
@@ -9,8 +9,8 @@ use super::{
         EncodedPromptDetails, EncodedToolCall, EncodedUsage,
     },
 };
+use crate::bounded_json::{BoundedJsonError, parse_value};
 use crate::openai_chat::{
-    bounded_json::{BoundedJsonError, parse_value},
     convert::{
         ARGUMENT_JSON_LIMITS, MAX_ARGUMENT_BYTES, MAX_CONTENT_BLOCKS, MAX_TEXT_BYTES,
         MAX_TOOL_CALLS, MAX_TOTAL_ARGUMENT_BYTES, MAX_TOTAL_ARGUMENT_NODES, MAX_TOTAL_TEXT_BYTES,
@@ -18,7 +18,9 @@ use crate::openai_chat::{
     },
     parse_response::{MAX_RESPONSE_CHOICES, validate_response_id},
 };
-use crate::{CanonicalStreamEvent, ContentDelta, FinishReason, Usage};
+use crate::{
+    CanonicalStreamEvent, ContentDelta, FinishReason, Usage, validate_stream_event_capabilities,
+};
 
 /// 将 Canonical 流事件编码为 OpenAI Chat Completions SSE。
 ///
@@ -72,7 +74,9 @@ impl OpenAiChatStreamEncoder {
             self.failed = true;
             return Err(EncodeStreamError::InvalidSequence);
         }
-        let result = self.encode_inner(event);
+        let result = validate_stream_event_capabilities(Protocol::OpenAiChat, &event)
+            .map_err(EncodeStreamError::UnsupportedCapability)
+            .and_then(|()| self.encode_inner(event));
         if result.is_err() {
             self.failed = true;
         }
@@ -156,6 +160,10 @@ impl OpenAiChatStreamEncoder {
                     self.include_usage_null,
                 )
             }
+            CanonicalStreamEvent::CompactionStart { .. }
+            | CanonicalStreamEvent::CompactionEnd { .. } => {
+                Err(EncodeStreamError::UnsupportedEvent)
+            }
             CanonicalStreamEvent::ToolCallStart {
                 choice_index,
                 tool_index,
@@ -192,6 +200,9 @@ impl OpenAiChatStreamEncoder {
                 state.tools.insert(tool_index, ToolState::default());
                 self.totals.tool_calls += 1;
                 Ok(bytes)
+            }
+            CanonicalStreamEvent::ToolCallSignature { .. } => {
+                Err(EncodeStreamError::UnsupportedEvent)
             }
             CanonicalStreamEvent::ToolCallArgsDelta {
                 choice_index,
@@ -265,7 +276,11 @@ impl OpenAiChatStreamEncoder {
             CanonicalStreamEvent::Finish {
                 choice_index,
                 reason,
+                stop_sequence,
             } => {
+                if stop_sequence.is_some() {
+                    return Err(EncodeStreamError::UnsupportedEvent);
+                }
                 let state = active_choice(&mut self.choices, choice_index)?;
                 if state.tools.values().any(|tool| !tool.ended)
                     || (reason == FinishReason::ToolCalls) != !state.tools.is_empty()
@@ -291,6 +306,7 @@ impl OpenAiChatStreamEncoder {
                 self.usage_seen = true;
                 Ok(bytes)
             }
+            CanonicalStreamEvent::PromptBlocked => Err(EncodeStreamError::UnsupportedEvent),
             CanonicalStreamEvent::Ping => Ok(b": ping\n\n".to_vec()),
             CanonicalStreamEvent::StreamEnd => {
                 if self.choices.is_empty() || !self.all_choices_finished() {

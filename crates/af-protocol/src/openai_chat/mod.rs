@@ -2,13 +2,15 @@
 
 use std::{error::Error, fmt};
 
-use bounded_json::{BoundedJsonError, JsonLimits};
+use crate::bounded_json::{self, BoundedJsonError, JsonLimits};
+use af_domain::Protocol;
+use bytes::Bytes;
 use serde_json::Value;
 
-use crate::CanonicalRequest;
+use crate::{CanonicalRequest, CanonicalRequestEnvelope};
 
-mod bounded_json;
 mod build;
+mod build_response;
 mod convert;
 mod error;
 mod error_response;
@@ -18,6 +20,8 @@ mod streaming;
 mod wire;
 
 pub use build::{BuildRequestError, build_request};
+pub use build_response::{BuildResponseError, build_response};
+pub use convert::{MAX_STOP_BYTES, MAX_STOP_SEQUENCES};
 pub use error::encode_error;
 pub use error_response::{OpenAiUpstreamErrorKind, classify_error_response};
 pub use parse_response::{ParseResponseError, parse_response};
@@ -26,6 +30,8 @@ pub use streaming::{
     OpenAiChatStreamEncoder, ParseStreamError, SseEvent, SseParseError, SseParser,
 };
 
+#[cfg(test)]
+mod build_response_tests;
 #[cfg(test)]
 mod build_tests;
 #[cfg(test)]
@@ -63,6 +69,16 @@ pub fn parse_request(body: &[u8]) -> Result<CanonicalRequest, ParseRequestError>
     }
     let wire = serde_json::from_value(value).map_err(|_| ParseRequestError::InvalidValue)?;
     convert::convert_request(wire)
+}
+
+/// 解析请求并保留只可用于 OpenAI Chat 同协议直通的原始正文。
+pub fn parse_request_envelope(body: Bytes) -> Result<CanonicalRequestEnvelope, ParseRequestError> {
+    let canonical = parse_request(&body)?;
+    Ok(CanonicalRequestEnvelope::from_validated_source(
+        canonical,
+        Protocol::OpenAiChat,
+        body,
+    ))
 }
 
 fn uses_known_unsupported_feature(value: &Value) -> bool {

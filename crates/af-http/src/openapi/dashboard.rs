@@ -4,7 +4,15 @@
 
 use utoipa::OpenApi;
 
-use crate::{management_dashboard::AdminDashboardResponse, management_error::ManagementErrorBody};
+use crate::{
+    management_dashboard::{
+        AdminDashboardChannelFlowResponse, AdminDashboardFailureKindResponse,
+        AdminDashboardFailureResponse, AdminDashboardFlowPathResponse,
+        AdminDashboardHourlyPointResponse, AdminDashboardPerformanceResponse,
+        AdminDashboardResponse,
+    },
+    management_error::ManagementErrorBody,
+};
 
 #[utoipa::path(
     get,
@@ -13,7 +21,7 @@ use crate::{management_dashboard::AdminDashboardResponse, management_error::Mana
     tag = "管理看板",
     summary = "读取管理员看板概览",
     responses(
-        (status = 200, description = "最近 24 小时用量和当前渠道状态", body = AdminDashboardResponse),
+        (status = 200, description = "最近 24 小时用量、请求终态和当前渠道状态", body = AdminDashboardResponse),
         (status = 401, description = "会话无效", body = ManagementErrorBody),
         (status = 403, description = "需要管理员权限", body = ManagementErrorBody),
         (status = 500, description = "服务内部错误", body = ManagementErrorBody)
@@ -25,7 +33,16 @@ fn get_admin_dashboard() {}
 #[derive(OpenApi)]
 #[openapi(
     paths(get_admin_dashboard),
-    components(schemas(AdminDashboardResponse, ManagementErrorBody))
+    components(schemas(
+        AdminDashboardResponse,
+        AdminDashboardFailureKindResponse,
+        AdminDashboardFailureResponse,
+        AdminDashboardChannelFlowResponse,
+        AdminDashboardFlowPathResponse,
+        AdminDashboardHourlyPointResponse,
+        AdminDashboardPerformanceResponse,
+        ManagementErrorBody
+    ))
 )]
 struct DashboardApi;
 

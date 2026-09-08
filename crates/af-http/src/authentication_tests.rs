@@ -12,7 +12,7 @@ use af_admin::{
 };
 use af_config::{ClientIpSource, CorsOrigin, ServerConfig};
 use af_domain::{
-    GatewayPrincipal, GroupId, IpCidr, TokenId, TokenModelPolicy, TrustedClientIp, UserId,
+    GatewayPrincipal, GroupId, IpCidr, Protocol, TokenId, TokenModelPolicy, TrustedClientIp, UserId,
 };
 use axum::{
     Extension, Router,
@@ -26,7 +26,7 @@ use http::{
     HeaderMap, HeaderValue, Method, Request, StatusCode, Uri,
     header::{
         ACCESS_CONTROL_ALLOW_ORIGIN, ACCESS_CONTROL_EXPOSE_HEADERS, ACCESS_CONTROL_REQUEST_METHOD,
-        AUTHORIZATION, CONTENT_LENGTH, ORIGIN,
+        AUTHORIZATION, CONTENT_LENGTH, ORIGIN, RETRY_AFTER,
     },
 };
 use serde_json::{Value, json};
@@ -49,6 +49,8 @@ enum AuthenticationOutcome {
     Success,
     InvalidApiKey,
     Internal,
+    RateLimited,
+    RequestLimitReached,
 }
 
 struct FakeAuthenticator {
@@ -109,6 +111,12 @@ impl TokenAuthenticator for FakeAuthenticator {
                     Err(TokenAuthenticationError::InvalidApiKey)
                 }
                 AuthenticationOutcome::Internal => Err(TokenAuthenticationError::Internal),
+                AuthenticationOutcome::RateLimited => Err(TokenAuthenticationError::RateLimited {
+                    retry_after: af_domain::UpstreamRetryAfter::from_seconds(37).unwrap(),
+                }),
+                AuthenticationOutcome::RequestLimitReached => {
+                    Err(TokenAuthenticationError::RequestLimitReached)
+                }
             }
         })
     }
@@ -250,6 +258,62 @@ async fn valid_key_is_hashed_once_and_verified_principal_reaches_handler() {
 }
 
 #[tokio::test]
+async fn authenticated_rate_limit_returns_retry_after_header() {
+    let authenticator = Arc::new(FakeAuthenticator::new(AuthenticationOutcome::RateLimited));
+    let response = authenticated_router(
+        Arc::clone(&authenticator),
+        QueryApiKeyPolicy::Deny,
+        &[ALLOWED_ORIGIN],
+        64,
+    )
+    .oneshot({
+        let mut request = bearer_request("/protected");
+        request
+            .headers_mut()
+            .insert(ORIGIN, HeaderValue::from_static(ALLOWED_ORIGIN));
+        request
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(response.headers()[RETRY_AFTER], "37");
+    let body = response_json(response).await;
+    assert_eq!(body["error"]["code"], "rate_limited");
+    assert_eq!(body["error"]["type"], "rate_limit_error");
+    assert_eq!(authenticator.calls(), 1);
+}
+
+#[tokio::test]
+async fn cumulative_request_limit_returns_insufficient_quota_without_retry_after() {
+    let authenticator = Arc::new(FakeAuthenticator::new(
+        AuthenticationOutcome::RequestLimitReached,
+    ));
+    let response = authenticated_router(
+        Arc::clone(&authenticator),
+        QueryApiKeyPolicy::Deny,
+        &[ALLOWED_ORIGIN],
+        64,
+    )
+    .oneshot({
+        let mut request = bearer_request("/protected");
+        request
+            .headers_mut()
+            .insert(ORIGIN, HeaderValue::from_static(ALLOWED_ORIGIN));
+        request
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert!(!response.headers().contains_key(RETRY_AFTER));
+    let body = response_json(response).await;
+    assert_eq!(body["error"]["code"], "insufficient_quota");
+    assert_eq!(body["error"]["type"], "insufficient_quota");
+    assert_eq!(authenticator.calls(), 1);
+}
+
+#[tokio::test]
 async fn query_key_requires_router_opt_in_and_is_removed_before_handler() {
     let denied_authenticator = Arc::new(FakeAuthenticator::new(AuthenticationOutcome::Success));
     let denied = authenticated_router(
@@ -354,6 +418,131 @@ async fn presentation_and_repository_failures_use_closed_openai_errors() {
         assert_eq!(authenticator.calls(), 1);
         assert_eq!(authenticator.digests(), vec![expected_digest()]);
     }
+}
+
+#[tokio::test]
+async fn anthropic_route_authentication_failure_uses_anthropic_error_wire() {
+    let config = ServerConfig::default();
+    let authenticator = Arc::new(FakeAuthenticator::new(AuthenticationOutcome::InvalidApiKey));
+    let authentication_port: Arc<dyn TokenAuthenticator> = authenticator.clone();
+    let authentication = middleware::from_fn_with_state(
+        AuthenticationState::new(authentication_port, QueryApiKeyPolicy::Deny, &config)
+            .with_error_protocol(Protocol::Anthropic),
+        authenticate_api_key,
+    );
+    let router = Router::new()
+        .route(
+            "/v1/messages",
+            post(protected_handler).route_layer(authentication),
+        )
+        .layer(Extension(ConnectInfo(SocketAddr::new(
+            TEST_PEER_IP.parse().unwrap(),
+            45123,
+        ))));
+
+    let response = router
+        .oneshot(bearer_request("/v1/messages"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let body = response_json(response).await;
+    assert_eq!(
+        body,
+        json!({
+            "type": "error",
+            "error": {
+                "type": "authentication_error",
+                "message": "Invalid API key."
+            }
+        })
+    );
+    assert_eq!(authenticator.calls(), 1);
+}
+
+#[tokio::test]
+async fn responses_route_authentication_failure_uses_openai_error_wire() {
+    let config = ServerConfig::default();
+    let authenticator = Arc::new(FakeAuthenticator::new(AuthenticationOutcome::InvalidApiKey));
+    let authentication_port: Arc<dyn TokenAuthenticator> = authenticator.clone();
+    let authentication = middleware::from_fn_with_state(
+        AuthenticationState::new(authentication_port, QueryApiKeyPolicy::Deny, &config)
+            .with_error_protocol(Protocol::OpenAiResponses),
+        authenticate_api_key,
+    );
+    let router = Router::new()
+        .route(
+            "/v1/responses",
+            post(protected_handler).route_layer(authentication),
+        )
+        .layer(Extension(ConnectInfo(SocketAddr::new(
+            TEST_PEER_IP.parse().unwrap(),
+            45123,
+        ))));
+
+    let response = router
+        .oneshot(bearer_request("/v1/responses"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let body = response_json(response).await;
+    assert_eq!(
+        body,
+        json!({
+            "error": {
+                "message": "Invalid API key.",
+                "type": "invalid_request_error",
+                "param": null,
+                "code": "invalid_api_key",
+            }
+        })
+    );
+    assert_eq!(authenticator.calls(), 1);
+}
+
+#[tokio::test]
+async fn gemini_route_authentication_failure_uses_google_error_wire() {
+    let config = ServerConfig::default();
+    let authenticator = Arc::new(FakeAuthenticator::new(AuthenticationOutcome::InvalidApiKey));
+    let authentication_port: Arc<dyn TokenAuthenticator> = authenticator.clone();
+    let authentication = middleware::from_fn_with_state(
+        AuthenticationState::new(authentication_port, QueryApiKeyPolicy::Deny, &config)
+            .with_error_protocol(Protocol::Gemini),
+        authenticate_api_key,
+    );
+    let router = Router::new()
+        .route(
+            "/v1beta/models/{model_action}",
+            post(protected_handler).route_layer(authentication),
+        )
+        .layer(Extension(ConnectInfo(SocketAddr::new(
+            TEST_PEER_IP.parse().unwrap(),
+            45123,
+        ))));
+
+    let response = router
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/v1beta/models/test-model:generateContent")
+                .header("x-goog-api-key", TEST_KEY)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let body = response_json(response).await;
+    assert_eq!(
+        body,
+        json!({
+            "error": {
+                "code": 401,
+                "message": "Invalid API key.",
+                "status": "UNAUTHENTICATED",
+            }
+        })
+    );
+    assert_eq!(authenticator.calls(), 1);
 }
 
 #[tokio::test]

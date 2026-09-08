@@ -5,7 +5,9 @@ use std::{
     task::{Context, Poll},
 };
 
-use af_httpclient::{Bytes, HeaderMap, HttpBodyStream, HttpResponse, Method, StatusCode};
+use af_httpclient::{
+    Bytes, HeaderMap, HeaderName, HttpBodyStream, HttpResponse, Method, StatusCode,
+};
 use futures_core::Stream;
 use url::Url;
 
@@ -23,6 +25,8 @@ pub const MAX_UPSTREAM_REQUEST_HEADERS_BYTES: usize = 128 * 1_024;
 pub const MAX_UPSTREAM_REQUEST_BODY_BYTES: usize = 32 * 1_024 * 1_024;
 /// 非流式上游响应体最大 32 MiB。
 pub const MAX_UPSTREAM_RESPONSE_BODY_BYTES: usize = 32 * 1_024 * 1_024;
+/// 单请求可申请的上游响应体绝对上限，供受控大响应协议使用。
+pub const MAX_UPSTREAM_RESPONSE_BODY_LIMIT_BYTES: usize = 192 * 1_024 * 1_024;
 /// 上游响应头最大字段数量。
 pub const MAX_UPSTREAM_RESPONSE_HEADER_COUNT: usize = 128;
 /// 单个上游响应头值最大字节数。
@@ -49,6 +53,7 @@ pub struct UpstreamRequest {
     headers: HeaderMap,
     body: Option<Bytes>,
     response_mode: ResponseMode,
+    response_body_limit: usize,
 }
 
 impl UpstreamRequest {
@@ -76,6 +81,7 @@ impl UpstreamRequest {
             headers,
             body,
             response_mode: ResponseMode::default(),
+            response_body_limit: MAX_UPSTREAM_RESPONSE_BODY_BYTES,
         })
     }
 
@@ -84,6 +90,22 @@ impl UpstreamRequest {
     pub const fn with_response_mode(mut self, response_mode: ResponseMode) -> Self {
         self.response_mode = response_mode;
         self
+    }
+
+    /// 为已知会返回大正文的单次请求设置受控收集上限。
+    pub fn with_response_body_limit(mut self, max_bytes: usize) -> AdaptorResult<Self> {
+        if max_bytes == 0 || max_bytes > MAX_UPSTREAM_RESPONSE_BODY_LIMIT_BYTES {
+            return Err(AdaptorError::ResponseBodyTooLarge);
+        }
+        self.response_body_limit = max_bytes;
+        Ok(self)
+    }
+
+    /// 合并已经由渠道配置边界校验的非认证请求头并重新检查总预算。
+    pub fn with_header_overrides(mut self, overrides: HeaderMap) -> AdaptorResult<Self> {
+        self.headers.extend(overrides);
+        validate_headers(&self.headers)?;
+        Ok(self)
     }
 
     /// 返回请求方法。
@@ -116,13 +138,29 @@ impl UpstreamRequest {
         self.response_mode
     }
 
-    pub(crate) fn into_parts(self) -> (Method, String, HeaderMap, Option<Bytes>, ResponseMode) {
+    /// 返回本次请求允许收集的最大响应正文字节数。
+    #[must_use]
+    pub const fn response_body_limit(&self) -> usize {
+        self.response_body_limit
+    }
+
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        Method,
+        String,
+        HeaderMap,
+        Option<Bytes>,
+        ResponseMode,
+        usize,
+    ) {
         (
             self.method,
             self.target,
             self.headers,
             self.body,
             self.response_mode,
+            self.response_body_limit,
         )
     }
 }
@@ -135,6 +173,7 @@ impl fmt::Debug for UpstreamRequest {
             .field("target", &"<已脱敏>")
             .field("header_count", &self.headers.len())
             .field("body_bytes", &self.body.as_ref().map(Bytes::len))
+            .field("response_body_limit", &self.response_body_limit)
             .finish()
     }
 }
@@ -143,6 +182,7 @@ impl fmt::Debug for UpstreamRequest {
 pub struct UpstreamBodyStream {
     inner: Pin<Box<dyn Stream<Item = AdaptorResult<Bytes>> + Send + 'static>>,
     terminated: bool,
+    max_chunk_bytes: usize,
 }
 
 impl UpstreamBodyStream {
@@ -151,14 +191,22 @@ impl UpstreamBodyStream {
     where
         S: Stream<Item = AdaptorResult<Bytes>> + Send + 'static,
     {
+        Self::with_chunk_limit(stream, MAX_UPSTREAM_RESPONSE_CHUNK_BYTES)
+    }
+
+    fn with_chunk_limit<S>(stream: S, max_chunk_bytes: usize) -> Self
+    where
+        S: Stream<Item = AdaptorResult<Bytes>> + Send + 'static,
+    {
         Self {
             inner: Box::pin(stream),
             terminated: false,
+            max_chunk_bytes,
         }
     }
 
-    fn from_http(stream: HttpBodyStream) -> Self {
-        Self::new(HttpBodyStreamAdapter { inner: stream })
+    fn from_http(stream: HttpBodyStream, max_chunk_bytes: usize) -> Self {
+        Self::with_chunk_limit(HttpBodyStreamAdapter { inner: stream }, max_chunk_bytes)
     }
 
     /// 等待下一段响应体字节，流结束时返回 `None`。
@@ -185,7 +233,7 @@ impl Stream for UpstreamBodyStream {
                 this.terminated = true;
                 Poll::Ready(Some(Err(error)))
             }
-            Poll::Ready(Some(Ok(bytes))) if bytes.len() > MAX_UPSTREAM_RESPONSE_CHUNK_BYTES => {
+            Poll::Ready(Some(Ok(bytes))) if bytes.len() > this.max_chunk_bytes => {
                 this.terminated = true;
                 Poll::Ready(Some(Err(AdaptorError::ResponseBodyTooLarge)))
             }
@@ -231,9 +279,18 @@ impl UpstreamBody {
 
     /// 将响应体收集为字节，并在累计过程中执行 checked 上限校验。
     pub async fn into_bytes(self) -> AdaptorResult<Bytes> {
+        self.into_bytes_with_limit(MAX_UPSTREAM_RESPONSE_BODY_BYTES)
+            .await
+    }
+
+    /// 按调用链已校验的请求级上限收集响应体，绝不突破适配层绝对预算。
+    pub async fn into_bytes_with_limit(self, max_bytes: usize) -> AdaptorResult<Bytes> {
+        if max_bytes == 0 || max_bytes > MAX_UPSTREAM_RESPONSE_BODY_LIMIT_BYTES {
+            return Err(AdaptorError::ResponseBodyTooLarge);
+        }
         match self {
             Self::Full(bytes) => {
-                if bytes.len() > MAX_UPSTREAM_RESPONSE_BODY_BYTES {
+                if bytes.len() > max_bytes {
                     return Err(AdaptorError::ResponseBodyTooLarge);
                 }
                 Ok(bytes)
@@ -246,7 +303,7 @@ impl UpstreamBody {
                         .len()
                         .checked_add(chunk.len())
                         .ok_or(AdaptorError::ResponseBodyTooLarge)?;
-                    if next_len > MAX_UPSTREAM_RESPONSE_BODY_BYTES {
+                    if next_len > max_bytes {
                         return Err(AdaptorError::ResponseBodyTooLarge);
                     }
                     collected
@@ -282,8 +339,17 @@ pub struct UpstreamResponse {
 impl UpstreamResponse {
     /// 构造已完整缓冲的响应，供特殊传输实现使用。
     pub fn full(status: StatusCode, headers: HeaderMap, body: Bytes) -> AdaptorResult<Self> {
+        Self::full_with_limit(status, headers, body, MAX_UPSTREAM_RESPONSE_BODY_BYTES)
+    }
+
+    fn full_with_limit(
+        status: StatusCode,
+        headers: HeaderMap,
+        body: Bytes,
+        max_bytes: usize,
+    ) -> AdaptorResult<Self> {
         validate_response_headers(&headers)?;
-        if body.len() > MAX_UPSTREAM_RESPONSE_BODY_BYTES {
+        if body.len() > max_bytes {
             return Err(AdaptorError::ResponseBodyTooLarge);
         }
         Ok(Self {
@@ -294,33 +360,44 @@ impl UpstreamResponse {
     }
 
     /// 将受控 HTTP Client 响应转换为保留流式语义的适配层响应。
-    pub(crate) fn from_http_stream(response: HttpResponse) -> AdaptorResult<Self> {
+    pub(crate) fn from_http_stream(
+        response: HttpResponse,
+        response_body_limit: usize,
+    ) -> AdaptorResult<Self> {
         let status = response.status();
         let headers = response.headers().clone();
         validate_response_headers(&headers)?;
         Ok(Self {
             status,
             headers,
-            body: UpstreamBody::Stream(UpstreamBodyStream::from_http(response.into_bytes_stream())),
+            body: UpstreamBody::Stream(UpstreamBodyStream::from_http(
+                response.into_bytes_stream(),
+                response_body_limit,
+            )),
         })
     }
 
-    /// 收集受控 HTTP Client 响应，并在读取期间执行 32 MiB 上限。
-    pub(crate) async fn from_http_full(response: HttpResponse) -> AdaptorResult<Self> {
+    /// 收集受控 HTTP Client 响应，并在读取期间执行请求级上限。
+    pub(crate) async fn from_http_full(
+        response: HttpResponse,
+        response_body_limit: usize,
+    ) -> AdaptorResult<Self> {
         if response
             .content_length()
-            .is_some_and(|length| length > MAX_UPSTREAM_RESPONSE_BODY_BYTES as u64)
+            .is_some_and(|length| length > response_body_limit as u64)
         {
             return Err(AdaptorError::ResponseBodyTooLarge);
         }
         let status = response.status();
         let headers = response.headers().clone();
         validate_response_headers(&headers)?;
-        let body =
-            UpstreamBody::Stream(UpstreamBodyStream::from_http(response.into_bytes_stream()))
-                .into_bytes()
-                .await?;
-        Self::full(status, headers, body)
+        let body = UpstreamBody::Stream(UpstreamBodyStream::from_http(
+            response.into_bytes_stream(),
+            response_body_limit,
+        ))
+        .into_bytes_with_limit(response_body_limit)
+        .await?;
+        Self::full_with_limit(status, headers, body, response_body_limit)
     }
 
     /// 构造特殊传输提供的自定义流式响应。
@@ -352,6 +429,15 @@ impl UpstreamResponse {
     #[must_use]
     pub const fn headers_mut(&mut self) -> &mut HeaderMap {
         &mut self.headers
+    }
+
+    /// 返回已完整缓冲的响应正文；流式响应必须保持背压，因而返回空。
+    #[must_use]
+    pub const fn full_body(&self) -> Option<&Bytes> {
+        match &self.body {
+            UpstreamBody::Full(body) => Some(body),
+            UpstreamBody::Stream(_) => None,
+        }
     }
 
     /// 消费响应并返回响应体。
@@ -410,20 +496,8 @@ fn validate_headers(headers: &HeaderMap) -> AdaptorResult<()> {
     }
     let mut total_bytes = 0_usize;
     for (name, value) in headers {
-        if matches!(
-            name.as_str(),
-            "host"
-                | "content-length"
-                | "connection"
-                | "proxy-connection"
-                | "keep-alive"
-                | "transfer-encoding"
-                | "upgrade"
-                | "te"
-                | "trailer"
-                | "proxy-authorization"
-                | "cookie"
-        ) || value.len() > MAX_UPSTREAM_REQUEST_HEADER_VALUE_BYTES
+        if is_forbidden_request_header(name)
+            || value.len() > MAX_UPSTREAM_REQUEST_HEADER_VALUE_BYTES
         {
             return Err(AdaptorError::InvalidHeader);
         }
@@ -436,6 +510,24 @@ fn validate_headers(headers: &HeaderMap) -> AdaptorResult<()> {
         }
     }
     Ok(())
+}
+
+/// 判断 Header 是否会改变目标、消息分帧、代理认证或 Cookie 边界。
+pub(crate) fn is_forbidden_request_header(name: &HeaderName) -> bool {
+    matches!(
+        name.as_str(),
+        "host"
+            | "content-length"
+            | "connection"
+            | "proxy-connection"
+            | "keep-alive"
+            | "transfer-encoding"
+            | "upgrade"
+            | "te"
+            | "trailer"
+            | "proxy-authorization"
+            | "cookie"
+    )
 }
 
 fn validate_response_headers(headers: &HeaderMap) -> AdaptorResult<()> {
@@ -541,6 +633,56 @@ mod tests {
             body.into_bytes().await,
             Err(AdaptorError::ResponseBodyTooLarge)
         );
+    }
+
+    #[tokio::test]
+    async fn explicit_large_response_budget_is_bounded_and_preserves_the_default() {
+        let default = UpstreamRequest::new(
+            Method::POST,
+            "https://upstream.example",
+            HeaderMap::new(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            default.response_body_limit(),
+            MAX_UPSTREAM_RESPONSE_BODY_BYTES
+        );
+
+        for invalid_limit in [0, MAX_UPSTREAM_RESPONSE_BODY_LIMIT_BYTES + 1] {
+            assert_eq!(
+                UpstreamRequest::new(
+                    Method::POST,
+                    "https://upstream.example",
+                    HeaderMap::new(),
+                    None,
+                )
+                .unwrap()
+                .with_response_body_limit(invalid_limit)
+                .unwrap_err(),
+                AdaptorError::ResponseBodyTooLarge
+            );
+        }
+
+        let request = UpstreamRequest::new(
+            Method::POST,
+            "https://upstream.example",
+            HeaderMap::new(),
+            None,
+        )
+        .unwrap()
+        .with_response_body_limit(MAX_UPSTREAM_RESPONSE_BODY_LIMIT_BYTES)
+        .unwrap();
+        assert_eq!(
+            request.response_body_limit(),
+            MAX_UPSTREAM_RESPONSE_BODY_LIMIT_BYTES
+        );
+
+        let bytes = UpstreamBody::Full(Bytes::from(vec![0; MAX_UPSTREAM_RESPONSE_BODY_BYTES + 1]))
+            .into_bytes_with_limit(MAX_UPSTREAM_RESPONSE_BODY_LIMIT_BYTES)
+            .await
+            .unwrap();
+        assert_eq!(bytes.len(), MAX_UPSTREAM_RESPONSE_BODY_BYTES + 1);
     }
 
     #[test]

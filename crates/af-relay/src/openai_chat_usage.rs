@@ -16,6 +16,7 @@ const MESSAGE_OVERHEAD_TOKENS: i64 = 3;
 const REPLY_PRIMING_TOKENS: i64 = 3;
 const NAMED_FIELD_OVERHEAD_TOKENS: i64 = 1;
 const TOOL_OVERHEAD_TOKENS: i64 = 8;
+const ENCRYPTED_REASONING_ITEM_OVERHEAD_TOKENS: i64 = 16;
 const MAX_ESTIMATED_OUTPUT_BYTES: usize = 12 * 1024 * 1024;
 
 /// OpenAI Chat usage 无法可靠得到时的闭合原因。
@@ -36,6 +37,9 @@ pub enum UsageResolutionError {
     /// 结构化内容无法转换为稳定估算输入。
     #[error("usage 估算输入无法编码")]
     EstimationFailed,
+    /// Responses 远程续接上下文无法在预扣前确定输入令牌数。
+    #[error("远程续接上下文无法安全预估")]
+    StatefulContextUnsupported,
 }
 
 /// 流式响应完成后可消费一次的规范化 usage 结果。
@@ -80,6 +84,19 @@ pub(crate) struct OpenAiChatUsageEstimator {
 pub fn estimate_openai_chat_request_upper_bound(
     request: &CanonicalRequest,
 ) -> Result<Usage, UsageResolutionError> {
+    estimate_openai_request_upper_bound(request)
+}
+
+/// 按 Canonical 请求边界估算 Chat 或 Responses 调用的最大 usage。
+pub fn estimate_openai_request_upper_bound(
+    request: &CanonicalRequest,
+) -> Result<Usage, UsageResolutionError> {
+    if request.operation == af_domain::Operation::Responses
+        && (request.continuation.previous_response_id().is_some()
+            || request.continuation.conversation_id().is_some())
+    {
+        return Err(UsageResolutionError::StatefulContextUnsupported);
+    }
     let estimator = OpenAiChatUsageEstimator::new(request);
     let input_tokens = estimator.input_tokens?;
     let output_tokens = request
@@ -103,6 +120,21 @@ pub fn estimate_openai_chat_request_upper_bound(
     .map_err(|_| UsageResolutionError::Overflow)
 }
 
+/// 使用模型对应的 OpenAI tokenizer 估算一组纯文本字段的令牌总数。
+///
+/// 未知兼容模型会取 `cl100k` 与 `o200k` 的较大值，降低第三方模型名导致少计费的风险。
+pub fn estimate_openai_text_tokens<'a>(
+    model: &str,
+    texts: impl IntoIterator<Item = &'a str>,
+) -> Result<TokenCount, UsageResolutionError> {
+    let counter = TokenCounter::for_model(model);
+    let mut total = 0_i64;
+    for text in texts {
+        checked_add(&mut total, counter.count(text)?)?;
+    }
+    TokenCount::new(total).map_err(|_| UsageResolutionError::Overflow)
+}
+
 impl OpenAiChatUsageEstimator {
     pub(crate) fn new(request: &CanonicalRequest) -> Self {
         let counter = TokenCounter::for_model(&request.model);
@@ -117,6 +149,25 @@ impl OpenAiChatUsageEstimator {
 
     pub(crate) const fn has_upstream_usage(&self) -> bool {
         self.upstream_usage.is_some()
+    }
+
+    /// 返回流起点可公开的受控本地输入用量，不用零值代替未知输入。
+    pub(crate) fn initial_usage(&self) -> Result<Usage, UsageResolutionError> {
+        Usage::new(
+            self.input_tokens?,
+            TokenCount::ZERO,
+            UsageDetails::new(
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+            ),
+            UsageSource::Estimated,
+            UsageSemantics::Inclusive,
+        )
+        .map_err(|_| UsageResolutionError::Overflow)
     }
 
     pub(crate) fn observe(&mut self, event: &CanonicalStreamEvent) {
@@ -153,7 +204,11 @@ impl OpenAiChatUsageEstimator {
                 }
             }
             CanonicalStreamEvent::ToolCallEnd { .. }
+            | CanonicalStreamEvent::ToolCallSignature { .. }
+            | CanonicalStreamEvent::CompactionStart { .. }
+            | CanonicalStreamEvent::CompactionEnd { .. }
             | CanonicalStreamEvent::Finish { .. }
+            | CanonicalStreamEvent::PromptBlocked
             | CanonicalStreamEvent::Ping
             | CanonicalStreamEvent::StreamEnd => {}
             CanonicalStreamEvent::Error(_) => {
@@ -166,6 +221,11 @@ impl OpenAiChatUsageEstimator {
         if let Some(usage) = self.upstream_usage {
             return Ok(usage);
         }
+        self.resolve_estimated()
+    }
+
+    /// 忽略上游快照并按本地计数器闭合 usage，供要求流起点 usage 的目标协议使用。
+    pub(crate) fn resolve_estimated(&self) -> Result<Usage, UsageResolutionError> {
         estimate_usage(self.input_tokens, &self.output, self.counter)
     }
 
@@ -238,11 +298,12 @@ fn estimate_input_tokens(
     counter: TokenCounter,
 ) -> Result<TokenCount, UsageResolutionError> {
     let mut total = REPLY_PRIMING_TOKENS;
+    let allow_encrypted_reasoning = request.operation == af_domain::Operation::Responses;
     for message in &request.messages {
         checked_add(&mut total, MESSAGE_OVERHEAD_TOKENS)?;
         checked_add(&mut total, counter.count(message.role.as_str())?)?;
         for block in &message.content {
-            add_input_block(&mut total, block, counter)?;
+            add_input_block(&mut total, block, counter, allow_encrypted_reasoning)?;
         }
     }
     for tool in &request.tools {
@@ -265,13 +326,22 @@ fn add_input_block(
     total: &mut i64,
     block: &ContentBlock,
     counter: TokenCounter,
+    allow_encrypted_reasoning: bool,
 ) -> Result<(), UsageResolutionError> {
     match block {
         ContentBlock::Text(text) => checked_add(total, counter.count(text)?),
         ContentBlock::Image { .. } | ContentBlock::Audio { .. } => {
             Err(UsageResolutionError::UnsupportedContent)
         }
-        ContentBlock::ToolUse { id, name, input } => {
+        ContentBlock::ToolUse {
+            id,
+            name,
+            input,
+            signature,
+        } => {
+            if signature.is_some() {
+                return Err(UsageResolutionError::UnsupportedContent);
+            }
             checked_add(total, TOOL_OVERHEAD_TOKENS)?;
             checked_add(total, counter.count(id)?)?;
             checked_add(total, counter.count(name)?)?;
@@ -282,18 +352,33 @@ fn add_input_block(
         ContentBlock::ToolResult {
             tool_use_id,
             content,
+            structured_content,
             is_error: _,
         } => {
+            if structured_content.is_some() {
+                return Err(UsageResolutionError::UnsupportedContent);
+            }
             checked_add(total, NAMED_FIELD_OVERHEAD_TOKENS)?;
             checked_add(total, counter.count(tool_use_id)?)?;
             for nested in content {
-                add_input_block(total, nested, counter)?;
+                add_input_block(total, nested, counter, allow_encrypted_reasoning)?;
             }
             Ok(())
         }
-        ContentBlock::Thinking { .. } | ContentBlock::CacheControl(_) => {
-            Err(UsageResolutionError::UnsupportedContent)
+        ContentBlock::Thinking {
+            text,
+            signature: Some(signature),
+        } if allow_encrypted_reasoning && !signature.is_empty() => {
+            // 加密推理内容是不透明字节串，按一字节一 Token 预扣可避免 tokenizer 低估。
+            let signature_tokens =
+                i64::try_from(signature.len()).map_err(|_| UsageResolutionError::Overflow)?;
+            checked_add(total, ENCRYPTED_REASONING_ITEM_OVERHEAD_TOKENS)?;
+            checked_add(total, signature_tokens)?;
+            checked_add(total, counter.count(text)?)
         }
+        ContentBlock::Thinking { .. }
+        | ContentBlock::CacheControl(_)
+        | ContentBlock::Compaction(_) => Err(UsageResolutionError::UnsupportedContent),
     }
 }
 
@@ -417,7 +502,16 @@ impl OutputAccumulator {
                 ContentBlock::Thinking { text, .. } => {
                     self.push_reasoning(choice_index, text);
                 }
-                ContentBlock::ToolUse { id, name, input } => {
+                ContentBlock::ToolUse {
+                    id,
+                    name,
+                    input,
+                    signature,
+                } => {
+                    if signature.is_some() {
+                        self.fail(UsageResolutionError::UnsupportedContent);
+                        continue;
+                    }
                     let tool_index = self
                         .choices
                         .get(&choice_index)
@@ -439,7 +533,8 @@ impl OutputAccumulator {
                 ContentBlock::Image { .. }
                 | ContentBlock::Audio { .. }
                 | ContentBlock::ToolResult { .. }
-                | ContentBlock::CacheControl(_) => {
+                | ContentBlock::CacheControl(_)
+                | ContentBlock::Compaction(_) => {
                     self.fail(UsageResolutionError::UnsupportedContent);
                 }
             }
@@ -514,7 +609,7 @@ fn checked_add(total: &mut i64, value: i64) -> Result<(), UsageResolutionError> 
 #[cfg(test)]
 mod tests {
     use af_domain::{Operation, Role};
-    use af_protocol::{FinishReason, MediaSource, ResponseChoice, StreamOptions};
+    use af_protocol::{FinishReason, MediaSource, ResponseChoice, StreamOptions, openai_responses};
     use serde_json::json;
 
     use super::*;
@@ -597,12 +692,19 @@ mod tests {
     }
 
     #[test]
+    fn plain_text_estimator_uses_model_tokenizer_without_chat_overhead() {
+        let tokens = estimate_openai_text_tokens("gpt-4o-mini-tts", ["hello", "calm"]).unwrap();
+        assert_eq!(tokens.get(), 3);
+    }
+
+    #[test]
     fn text_reasoning_and_tools_produce_estimated_usage() {
         let mut request = text_request("gpt-4o");
         request.tools.push(af_protocol::ToolDef {
             name: "lookup".to_owned(),
             description: Some("look up a record".to_owned()),
             input_schema: json!({"type":"object","properties":{"id":{"type":"integer"}}}),
+            strict: None,
         });
         request.stream_options = StreamOptions::new(true);
         let mut estimator = OpenAiChatUsageEstimator::new(&request);
@@ -640,6 +742,7 @@ mod tests {
             CanonicalStreamEvent::Finish {
                 choice_index: 0,
                 reason: FinishReason::ToolCalls,
+                stop_sequence: None,
             },
         ] {
             estimator.observe(&event);
@@ -691,12 +794,65 @@ mod tests {
     }
 
     #[test]
+    fn responses_encrypted_reasoning_uses_conservative_input_upper_bound() {
+        let signature = "encrypted-reasoning-canary";
+        let request = openai_responses::parse_request(
+            br#"{
+                "model":"gpt-5.5",
+                "input":[
+                    {
+                        "type":"reasoning",
+                        "encrypted_content":"encrypted-reasoning-canary",
+                        "summary":[{"type":"summary_text","text":"brief summary"}]
+                    },
+                    {"role":"user","content":[{"type":"input_text","text":"continue"}]}
+                ],
+                "include":["reasoning.encrypted_content"],
+                "store":false
+            }"#,
+        )
+        .unwrap();
+
+        let upper_bound = estimate_openai_request_upper_bound(&request).unwrap();
+        let encrypted_floor =
+            i64::try_from(signature.len()).unwrap() + ENCRYPTED_REASONING_ITEM_OVERHEAD_TOKENS;
+        assert!(upper_bound.input_tokens().get() > encrypted_floor);
+        assert_eq!(upper_bound.source(), UsageSource::Estimated);
+    }
+
+    #[test]
+    fn thinking_without_responses_encrypted_contract_remains_unsupported() {
+        for (operation, signature) in [
+            (Operation::Chat, Some("signed".to_owned())),
+            (Operation::Chat, None),
+            (Operation::Responses, None),
+        ] {
+            let request = CanonicalRequest::new(
+                operation,
+                "gpt-test".to_owned(),
+                vec![Message::new(
+                    Role::Assistant,
+                    vec![ContentBlock::Thinking {
+                        text: "reasoning".to_owned(),
+                        signature,
+                    }],
+                )],
+                false,
+            );
+            assert_eq!(
+                estimate_openai_request_upper_bound(&request),
+                Err(UsageResolutionError::UnsupportedContent)
+            );
+        }
+    }
+
+    #[test]
     fn non_streaming_response_prefers_upstream_and_estimates_when_missing() {
         let response_without_usage = CanonicalResponse::new(
             Operation::Chat,
             "response-id".to_owned(),
             "gpt-4o".to_owned(),
-            1,
+            Some(1),
             vec![ResponseChoice::new(
                 0,
                 Message::new(
@@ -716,7 +872,7 @@ mod tests {
             Operation::Chat,
             "response-id".to_owned(),
             "gpt-4o".to_owned(),
-            1,
+            Some(1),
             response_without_usage.choices.clone(),
             Some(upstream_usage()),
         );

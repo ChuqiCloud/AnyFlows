@@ -1,6 +1,7 @@
+use af_domain::RateLimitScope;
 use serde_json::Value;
 
-use super::bounded_json::{JsonLimits, parse_value};
+use crate::bounded_json::{JsonLimits, parse_value};
 
 /// 上游错误 JSON 的最大解析大小；传输缓冲仍由适配层 32 MiB 硬上限保护。
 const MAX_ERROR_BODY_BYTES: usize = 64 * 1024;
@@ -21,8 +22,13 @@ const ERROR_JSON_LIMITS: JsonLimits = JsonLimits {
 pub enum OpenAiUpstreamErrorKind {
     /// 明确的上游 API Key 无效或已撤销。
     AuthRevoked,
+    /// 明确的上游账号、组织或工作区已停用。
+    AccountDisabled,
     /// 明确的请求或 token 速率限制。
-    RateLimited,
+    RateLimited {
+        /// 从稳定错误码中推断的最小影响范围。
+        scope: RateLimitScope,
+    },
     /// 明确的上游账户额度或账单硬上限。
     QuotaExhausted,
     /// 明确的模型不存在或不可用。
@@ -43,20 +49,36 @@ pub fn classify_error_response(body: &[u8]) -> OpenAiUpstreamErrorKind {
     let Ok(value) = parse_value(body, ERROR_JSON_LIMITS) else {
         return OpenAiUpstreamErrorKind::Unknown;
     };
-    let Some(error) = value.get("error").and_then(Value::as_object) else {
+    let error = value.get("error").and_then(Value::as_object);
+    let detail = value.get("detail").and_then(Value::as_object);
+    if error.is_none() && detail.is_none() {
         return OpenAiUpstreamErrorKind::Unknown;
-    };
+    }
     let signals = [
-        safe_signal(error.get("code")),
-        safe_signal(error.get("type")),
+        error.and_then(|error| safe_signal(error.get("code"))),
+        error.and_then(|error| safe_signal(error.get("type"))),
+        detail.and_then(|detail| safe_signal(detail.get("code"))),
     ];
 
-    if signals
-        .iter()
-        .flatten()
-        .any(|signal| *signal == "invalid_api_key")
-    {
+    if signals.iter().flatten().any(|signal| {
+        matches!(
+            *signal,
+            "invalid_api_key" | "token_invalidated" | "token_revoked"
+        )
+    }) {
         return OpenAiUpstreamErrorKind::AuthRevoked;
+    }
+    if signals.iter().flatten().any(|signal| {
+        matches!(
+            *signal,
+            "account_deactivated"
+                | "deactivated_workspace"
+                | "organization_deactivated"
+                | "organization_disabled"
+                | "workspace_deactivated"
+        )
+    }) {
+        return OpenAiUpstreamErrorKind::AccountDisabled;
     }
     if signals.iter().flatten().any(|signal| {
         matches!(
@@ -66,12 +88,37 @@ pub fn classify_error_response(body: &[u8]) -> OpenAiUpstreamErrorKind {
     }) {
         return OpenAiUpstreamErrorKind::QuotaExhausted;
     }
-    if signals
-        .iter()
-        .flatten()
-        .any(|signal| matches!(*signal, "rate_limit_exceeded" | "rate_limit_error"))
-    {
-        return OpenAiUpstreamErrorKind::RateLimited;
+    if signals.iter().flatten().any(|signal| {
+        matches!(
+            *signal,
+            "model_rate_limit_exceeded" | "model_rate_limit_error"
+        )
+    }) {
+        return OpenAiUpstreamErrorKind::RateLimited {
+            scope: RateLimitScope::Model,
+        };
+    }
+    if signals.iter().flatten().any(|signal| {
+        matches!(
+            *signal,
+            "account_rate_limit_exceeded"
+                | "organization_rate_limit_exceeded"
+                | "project_rate_limit_exceeded"
+        )
+    }) {
+        return OpenAiUpstreamErrorKind::RateLimited {
+            scope: RateLimitScope::Credential,
+        };
+    }
+    if signals.iter().flatten().any(|signal| {
+        matches!(
+            *signal,
+            "rate_limit_exceeded" | "rate_limit_error" | "requests" | "tokens"
+        )
+    }) {
+        return OpenAiUpstreamErrorKind::RateLimited {
+            scope: RateLimitScope::Window,
+        };
     }
     if signals
         .iter()
@@ -108,7 +155,23 @@ mod tests {
             ),
             (
                 br#"{"error":{"message":"private","type":"tokens","code":"rate_limit_exceeded"}}"#.as_slice(),
-                OpenAiUpstreamErrorKind::RateLimited,
+                OpenAiUpstreamErrorKind::RateLimited {
+                    scope: RateLimitScope::Window,
+                },
+            ),
+            (
+                br#"{"error":{"message":"private","type":"invalid_request_error","code":"model_rate_limit_exceeded"}}"#.as_slice(),
+                OpenAiUpstreamErrorKind::RateLimited {
+                    scope: RateLimitScope::Model,
+                },
+            ),
+            (
+                br#"{"error":{"message":"private","type":"invalid_request_error","code":"token_revoked"}}"#.as_slice(),
+                OpenAiUpstreamErrorKind::AuthRevoked,
+            ),
+            (
+                br#"{"detail":{"code":"deactivated_workspace","message":"private"}}"#.as_slice(),
+                OpenAiUpstreamErrorKind::AccountDisabled,
             ),
             (
                 br#"{"error":{"message":"private","type":"invalid_request_error","code":"model_not_found"}}"#.as_slice(),

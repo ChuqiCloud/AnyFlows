@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use af_domain::{ChannelId, Status};
+use af_domain::{ChannelId, ProxyId, Status};
 use sea_orm::{
     ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
     entity::prelude::TimeDateTimeWithTimeZone,
@@ -16,8 +16,8 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
     DatabasePool, SchedulerAbilityRecord, SchedulerAbilityRepository,
-    SchedulerAbilityRepositoryError,
-    entity::{channels, credentials},
+    SchedulerAbilityRepositoryError, SchedulerCatalogSubject,
+    entity::{channels, credentials, proxies},
 };
 
 use super::{
@@ -25,13 +25,14 @@ use super::{
     selection::{SchedulerRuntimeSelectionError, select_supported_targets},
     source::{
         SchedulerRuntimeChannelSource, SchedulerRuntimeCredentialSource,
-        SchedulerRuntimeSourceError,
+        SchedulerRuntimeSourceError, proxy_from_entity,
     },
 };
 
 const DEFAULT_LOAD_TIMEOUT: Duration = Duration::from_secs(5);
 /// 一次运行时目录重建允许读取的凭据总数。
 pub const MAX_SCHEDULER_RUNTIME_CREDENTIAL_ENTRIES: usize = 200_000;
+const RUNTIME_PARENT_QUERY_BATCH_SIZE: usize = 500;
 
 /// 运行时渠道目录读取失败；错误不携带 URL、Header、模型或凭据内容。
 #[non_exhaustive]
@@ -118,6 +119,38 @@ impl SchedulerRuntimeRepository {
             .load_all()
             .await
             .map_err(SchedulerRuntimeRepositoryError::Ability)?;
+        self.load_records(abilities).await
+    }
+
+    /// 按闭合渠道或分组主体读取当前运行时投影；删除后的主体返回空集合。
+    pub async fn load_subject(
+        &self,
+        subject: SchedulerCatalogSubject,
+    ) -> Result<Vec<SchedulerRuntimeRecord>, SchedulerRuntimeRepositoryError> {
+        let abilities = self
+            .abilities
+            .load_subject(subject)
+            .await
+            .map_err(SchedulerRuntimeRepositoryError::Ability)?;
+        let records = self.load_records(abilities).await?;
+        if records.iter().any(|record| {
+            let ability = record.ability();
+            match subject {
+                SchedulerCatalogSubject::Channel(channel_id) => ability.channel_id() != channel_id,
+                SchedulerCatalogSubject::Group(group_id) => ability.group_id() != group_id,
+            }
+        }) {
+            return Err(record_internal_error(
+                SchedulerRuntimeRepositoryError::Invariant,
+            ));
+        }
+        Ok(records)
+    }
+
+    async fn load_records(
+        &self,
+        abilities: Vec<SchedulerAbilityRecord>,
+    ) -> Result<Vec<SchedulerRuntimeRecord>, SchedulerRuntimeRepositoryError> {
         if abilities.is_empty() {
             return Ok(Vec::new());
         }
@@ -143,6 +176,7 @@ impl SchedulerRuntimeRepository {
                 .filter(credentials::Column::ChannelId.is_in(raw_channel_ids))
                 .filter(credentials::Column::Status.eq(Status::Enabled.code()))
                 .filter(credentials::Column::Schedulable.eq(true))
+                .filter(credentials::Column::OauthTokenPending.eq(false))
                 .filter(credentials::Column::DeletedAt.is_null())
                 .order_by_asc(credentials::Column::ChannelId)
                 .order_by_desc(credentials::Column::Priority)
@@ -154,12 +188,73 @@ impl SchedulerRuntimeRepository {
             if credentials.len() > MAX_SCHEDULER_RUNTIME_CREDENTIAL_ENTRIES {
                 return Err(SchedulerRuntimeRepositoryError::Invariant);
             }
+            let parent_ids = credentials
+                .iter()
+                .filter_map(|credential| credential.parent_id)
+                .collect::<BTreeSet<_>>();
+            let parent_records =
+                load_parent_credentials(self.pool.connection(), &parent_ids).await?;
+            if parent_records.len() != parent_ids.len() {
+                return Err(SchedulerRuntimeRepositoryError::Invariant);
+            }
+            let proxy_ids = credentials
+                .iter()
+                .filter_map(|credential| match credential.parent_id {
+                    Some(parent_id) => parent_records
+                        .get(&parent_id)
+                        .and_then(|parent| parent.proxy_id),
+                    None => credential.proxy_id,
+                })
+                .collect::<BTreeSet<_>>();
+            let proxy_records = if proxy_ids.is_empty() {
+                BTreeMap::new()
+            } else {
+                proxies::Entity::find()
+                    .filter(proxies::Column::Id.is_in(proxy_ids.iter().copied()))
+                    .filter(proxies::Column::Enabled.eq(true))
+                    .filter(proxies::Column::DeletedAt.is_null())
+                    .all(self.pool.connection())
+                    .await
+                    .map_err(|_| SchedulerRuntimeRepositoryError::Query)?
+                    .into_iter()
+                    .try_fold(BTreeMap::new(), |mut records, proxy| {
+                        let record = proxy_from_entity(proxy)?;
+                        if records.insert(record.proxy_id(), record).is_some() {
+                            return Err(SchedulerRuntimeRepositoryError::Invariant);
+                        }
+                        Ok(records)
+                    })?
+            };
+            if proxy_records.len() != proxy_ids.len() {
+                return Err(SchedulerRuntimeRepositoryError::Invariant);
+            }
             let now = TimeDateTimeWithTimeZone::now_utc();
-            let credentials = credentials
-                .into_iter()
-                .try_fold(Vec::new(), |sources, credential| {
-                    collect_credential_source(sources, credential, &now)
-                })?;
+            let credentials =
+                credentials
+                    .into_iter()
+                    .try_fold(Vec::new(), |sources, credential| {
+                        let parent = credential
+                            .parent_id
+                            .map(|parent_id| {
+                                parent_records
+                                    .get(&parent_id)
+                                    .cloned()
+                                    .ok_or(SchedulerRuntimeRepositoryError::Invariant)
+                            })
+                            .transpose()?;
+                        let effective_proxy_id = parent
+                            .as_ref()
+                            .map_or(credential.proxy_id, |parent| parent.proxy_id);
+                        let proxy = effective_proxy_id
+                            .map(|proxy_id| {
+                                ProxyId::new(proxy_id)
+                                    .ok()
+                                    .and_then(|proxy_id| proxy_records.get(&proxy_id).cloned())
+                                    .ok_or(SchedulerRuntimeRepositoryError::Invariant)
+                            })
+                            .transpose()?;
+                        collect_credential_source(sources, credential, parent, proxy, &now)
+                    })?;
             let targets = select_supported_targets(&channels, credentials)?;
             Ok(abilities
                 .into_iter()
@@ -179,6 +274,27 @@ impl SchedulerRuntimeRepository {
             )),
         }
     }
+}
+
+async fn load_parent_credentials(
+    connection: &sea_orm::DatabaseConnection,
+    parent_ids: &BTreeSet<i64>,
+) -> Result<BTreeMap<i64, credentials::Model>, SchedulerRuntimeRepositoryError> {
+    let mut records = BTreeMap::new();
+    let parent_ids = parent_ids.iter().copied().collect::<Vec<_>>();
+    for batch in parent_ids.chunks(RUNTIME_PARENT_QUERY_BATCH_SIZE) {
+        for parent in credentials::Entity::find()
+            .filter(credentials::Column::Id.is_in(batch.iter().copied()))
+            .all(connection)
+            .await
+            .map_err(|_| SchedulerRuntimeRepositoryError::Query)?
+        {
+            if records.insert(parent.id, parent).is_some() {
+                return Err(SchedulerRuntimeRepositoryError::Invariant);
+            }
+        }
+    }
+    Ok(records)
 }
 
 impl fmt::Debug for SchedulerRuntimeRepository {
@@ -213,10 +329,12 @@ fn collect_channel_source(
 fn collect_credential_source(
     mut sources: Vec<SchedulerRuntimeCredentialSource>,
     credential: credentials::Model,
+    parent: Option<credentials::Model>,
+    proxy: Option<super::SchedulerRuntimeProxyRecord>,
     now: &TimeDateTimeWithTimeZone,
 ) -> Result<Vec<SchedulerRuntimeCredentialSource>, SchedulerRuntimeRepositoryError> {
-    if let Some(source) =
-        SchedulerRuntimeCredentialSource::from_entity(credential)?.filter(|source| {
+    if let Some(source) = SchedulerRuntimeCredentialSource::from_entity(credential, parent, proxy)?
+        .filter(|source| {
             // 冷却窗口属于持久化调度元数据，进入纯选择策略前先按当前快照时间排除。
             !source.is_cooling_down(now)
         })

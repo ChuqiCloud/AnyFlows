@@ -4,7 +4,10 @@ use std::{
     sync::Arc,
 };
 
-use af_domain::{BillingReservationId, GatewayPrincipal, Quota};
+use af_db::OrganizationContractPriceSnapshot;
+use af_domain::{
+    BillingReservationId, GatewayPrincipal, OrganizationServiceAccountRuntimeIdentity, Quota,
+};
 use af_protocol::Usage;
 use thiserror::Error;
 
@@ -20,12 +23,19 @@ pub use ports::{
     BillingPrechargeError, BillingPrechargeFuture, BillingPrechargePort, BillingSettlementError,
     BillingSettlementFuture, BillingSettlementPort, UsageRecordOutcome, UsageRecordPort,
 };
-pub use records::{BillingCompletion, BillingUsageRecord};
+pub use records::{
+    BillingCompletion, BillingUsageContext, BillingUsageDimensions, BillingUsageObservation,
+    BillingUsageObservationError, BillingUsageRecord, BillingUsageTiming, MAX_USAGE_MODEL_BYTES,
+    MAX_USAGE_REQUEST_ID_BYTES,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PlanMode {
     Free,
-    PerToken { precharge: Quota },
+    Metered {
+        billing_mode: BillingMode,
+        precharge: Quota,
+    },
 }
 
 /// 使用同一不可变定价解析器准备的一次请求计费计划。
@@ -36,6 +46,7 @@ enum PlanMode {
 pub struct BillingRequestPlan {
     resolver: Arc<dyn PricingResolver>,
     mode: PlanMode,
+    contract_price: Option<OrganizationContractPriceSnapshot>,
 }
 
 impl BillingRequestPlan {
@@ -50,7 +61,8 @@ impl BillingRequestPlan {
         let estimated = resolver.resolve(&PricingContext::new(estimated_usage))?;
         let mode = match estimated.billing_mode() {
             BillingMode::Free => PlanMode::Free,
-            BillingMode::PerToken => PlanMode::PerToken {
+            BillingMode::PerToken | BillingMode::PerCall => PlanMode::Metered {
+                billing_mode: estimated.billing_mode(),
                 precharge: if estimated.quota().is_zero() {
                     Quota::new(1).expect("1 必须始终是合法的最小正额度")
                 } else {
@@ -58,7 +70,27 @@ impl BillingRequestPlan {
                 },
             },
         };
-        Ok(Self { resolver, mode })
+        Ok(Self {
+            resolver,
+            mode,
+            contract_price: None,
+        })
+    }
+
+    /// 绑定请求快照命中的企业合同价，随后只能随本计划进入预扣。
+    #[must_use = "必须保留绑定合同价后的计费计划"]
+    pub const fn with_contract_price(
+        mut self,
+        contract_price: Option<OrganizationContractPriceSnapshot>,
+    ) -> Self {
+        self.contract_price = contract_price;
+        self
+    }
+
+    /// 返回本计划固定的合同价快照。
+    #[must_use]
+    pub const fn contract_price(&self) -> Option<OrganizationContractPriceSnapshot> {
+        self.contract_price
     }
 
     /// 返回计划固定的计费模式。
@@ -66,7 +98,7 @@ impl BillingRequestPlan {
     pub const fn billing_mode(&self) -> BillingMode {
         match self.mode {
             PlanMode::Free => BillingMode::Free,
-            PlanMode::PerToken { .. } => BillingMode::PerToken,
+            PlanMode::Metered { billing_mode, .. } => billing_mode,
         }
     }
 
@@ -75,7 +107,7 @@ impl BillingRequestPlan {
     pub const fn precharge_quota(&self) -> Option<Quota> {
         match self.mode {
             PlanMode::Free => None,
-            PlanMode::PerToken { precharge } => Some(precharge),
+            PlanMode::Metered { precharge, .. } => Some(precharge),
         }
     }
 
@@ -93,6 +125,7 @@ impl BillingRequestPlan {
         }
         Ok(BillingRequestLifecycle {
             principal,
+            service_account_identity: None,
             event_id,
             resolver: self.resolver,
             state: LifecycleState::Free,
@@ -110,17 +143,19 @@ impl BillingRequestPlan {
         settlement_port: Arc<dyn BillingSettlementPort>,
         usage_port: Arc<dyn UsageRecordPort>,
     ) -> Result<BillingRequestLifecycle, BillingLifecycleError> {
-        if !matches!(self.mode, PlanMode::PerToken { .. }) {
+        let PlanMode::Metered { billing_mode, .. } = self.mode else {
             return Err(BillingLifecycleError::InvalidActivation);
-        }
+        };
         Ok(BillingRequestLifecycle {
             principal,
+            service_account_identity: None,
             event_id: reservation_id,
             resolver: self.resolver,
-            state: LifecycleState::Metered(BillingSession::from_reserved(
-                reservation_id,
-                refund_port,
-            )),
+            state: LifecycleState::Metered {
+                billing_mode,
+                session: BillingSession::from_reserved(reservation_id, refund_port),
+                pending_completion: None,
+            },
             settlement_port: Some(settlement_port),
             usage_port,
         })
@@ -138,7 +173,11 @@ impl fmt::Debug for BillingRequestPlan {
 
 enum LifecycleState {
     Free,
-    Metered(BillingSession),
+    Metered {
+        billing_mode: BillingMode,
+        session: BillingSession,
+        pending_completion: Option<BillingCompletion>,
+    },
     UsagePending(BillingCompletion),
     Completed(BillingCompletion),
 }
@@ -151,7 +190,7 @@ pub enum BillingLifecycleState {
     Free,
     /// 持久化预扣已确认，尚未发起结算。
     Reserved,
-    /// 结算请求已经固化，只能使用相同额度重放。
+    /// 结算请求和完整用量事实已经固化，只能使用相同参数重放。
     SettlementPending,
     /// 额度结算已确认，等待同一 usage 记录被端口接收。
     UsagePending,
@@ -168,6 +207,7 @@ pub enum BillingLifecycleState {
 #[must_use = "请求计费生命周期必须保留到完成结算或触发 RAII 退款责任"]
 pub struct BillingRequestLifecycle {
     principal: GatewayPrincipal,
+    service_account_identity: Option<OrganizationServiceAccountRuntimeIdentity>,
     event_id: BillingReservationId,
     resolver: Arc<dyn PricingResolver>,
     state: LifecycleState,
@@ -181,7 +221,7 @@ impl BillingRequestLifecycle {
     pub const fn state(&self) -> BillingLifecycleState {
         match &self.state {
             LifecycleState::Free => BillingLifecycleState::Free,
-            LifecycleState::Metered(session) => match session.state() {
+            LifecycleState::Metered { session, .. } => match session.state() {
                 BillingSessionState::Reserved => BillingLifecycleState::Reserved,
                 BillingSessionState::SettlementPending => BillingLifecycleState::SettlementPending,
                 BillingSessionState::Settled => BillingLifecycleState::UsagePending,
@@ -192,30 +232,107 @@ impl BillingRequestLifecycle {
         }
     }
 
+    /// 绑定已由运行时鉴权固定的服务账号身份，后续完成时写入企业审计投影。
+    ///
+    /// 该方法只设置脱敏身份，不改变现有个人/API Key 主体；应在首次完成请求前调用。
+    pub const fn with_service_account_identity(
+        mut self,
+        identity: OrganizationServiceAccountRuntimeIdentity,
+    ) -> Self {
+        self.service_account_identity = Some(identity);
+        self
+    }
+
     /// 用最终 usage 完成免费记录或按量结算；相同 usage 的终态重放不会重复副作用。
     pub async fn complete(
         &mut self,
         usage: Usage,
     ) -> Result<BillingCompletion, BillingLifecycleError> {
+        self.complete_with_dimensions(usage, BillingUsageDimensions::empty())
+            .await
+    }
+
+    /// 用最终 usage 和可选多模态事实完成结算；终态重放必须同时匹配两者。
+    pub async fn complete_with_dimensions(
+        &mut self,
+        usage: Usage,
+        dimensions: BillingUsageDimensions,
+    ) -> Result<BillingCompletion, BillingLifecycleError> {
+        self.complete_with_observation(usage, dimensions, BillingUsageObservation::default())
+            .await
+    }
+
+    /// 用最终用量、多模态维度和调用观测完成同一条结算事实。
+    pub async fn complete_with_observation(
+        &mut self,
+        usage: Usage,
+        dimensions: BillingUsageDimensions,
+        observation: BillingUsageObservation,
+    ) -> Result<BillingCompletion, BillingLifecycleError> {
         match self.state {
             LifecycleState::UsagePending(completion) => {
-                ensure_same_usage(completion, usage)?;
+                ensure_same_completion(completion, usage, dimensions, observation)?;
                 return self.try_record_usage();
             }
             LifecycleState::Completed(completion) => {
-                ensure_same_usage(completion, usage)?;
+                ensure_same_completion(completion, usage, dimensions, observation)?;
                 return Ok(completion);
             }
-            LifecycleState::Free | LifecycleState::Metered(_) => {}
+            LifecycleState::Free | LifecycleState::Metered { .. } => {}
         }
 
-        let price = self.resolver.resolve(&PricingContext::new(&usage))?;
-        let settlement_request = match &mut self.state {
-            LifecycleState::Free if price.billing_mode() == BillingMode::Free => None,
-            LifecycleState::Metered(session) if price.billing_mode() == BillingMode::PerToken => {
-                Some(session.begin_settlement(price.quota())?)
+        let frozen_completion = match self.state {
+            LifecycleState::Metered {
+                pending_completion: Some(completion),
+                ..
+            } => {
+                ensure_same_completion(completion, usage, dimensions, observation)?;
+                Some(completion)
             }
-            LifecycleState::Free | LifecycleState::Metered(_) => {
+            LifecycleState::Free
+            | LifecycleState::Metered {
+                pending_completion: None,
+                ..
+            } => None,
+            LifecycleState::UsagePending(_) | LifecycleState::Completed(_) => {
+                unreachable!("终态与待记录状态已在定价前返回")
+            }
+        };
+        let completion = if let Some(completion) = frozen_completion {
+            completion
+        } else {
+            let price = self.resolver.resolve(&PricingContext::new(&usage))?;
+            BillingCompletion::new(
+                BillingUsageRecord::new_with_dimensions(
+                    self.event_id,
+                    self.principal,
+                    usage,
+                    dimensions,
+                    price.billing_mode(),
+                    price.quota(),
+                )
+                .with_service_account_identity_opt(self.service_account_identity)
+                .with_observation(observation),
+            )
+        };
+        let settlement_port = self.settlement_port.clone();
+        let settlement = match &mut self.state {
+            LifecycleState::Free if completion.billing_mode() == BillingMode::Free => None,
+            LifecycleState::Metered {
+                billing_mode,
+                session,
+                pending_completion,
+            } if completion.billing_mode() == *billing_mode => {
+                let settlement_port = settlement_port
+                    .as_ref()
+                    .cloned()
+                    .ok_or(BillingLifecycleError::InvalidActivation)?;
+                let request = session.begin_settlement(completion.quota())?;
+                // 在任何持久化 IO 前冻结额度、usage 与多模态维度，结果未知时只能原样重放。
+                *pending_completion = Some(completion);
+                Some((request, settlement_port))
+            }
+            LifecycleState::Free | LifecycleState::Metered { .. } => {
                 return Err(BillingLifecycleError::BillingModeChanged);
             }
             LifecycleState::UsagePending(_) | LifecycleState::Completed(_) => {
@@ -223,25 +340,22 @@ impl BillingRequestLifecycle {
             }
         };
 
-        if let Some(request) = settlement_request {
-            let settlement_port = self
-                .settlement_port
-                .as_ref()
-                .ok_or(BillingLifecycleError::InvalidActivation)?;
+        if let Some((request, settlement_port)) = settlement {
             settlement_port.settle(request).await?;
-            let LifecycleState::Metered(session) = &mut self.state else {
+            let LifecycleState::Metered {
+                session,
+                pending_completion: Some(pending_completion),
+                ..
+            } = &mut self.state
+            else {
                 return Err(BillingLifecycleError::InvalidActivation);
             };
+            if *pending_completion != completion {
+                return Err(BillingLifecycleError::InvalidActivation);
+            }
             session.mark_settled()?;
         }
 
-        let completion = BillingCompletion::new(BillingUsageRecord::new(
-            self.event_id,
-            self.principal,
-            usage,
-            price.billing_mode(),
-            price.quota(),
-        ));
         self.state = LifecycleState::UsagePending(completion);
         self.try_record_usage()
     }
@@ -275,11 +389,16 @@ impl fmt::Debug for BillingRequestLifecycle {
     }
 }
 
-fn ensure_same_usage(
+fn ensure_same_completion(
     completion: BillingCompletion,
     usage: Usage,
+    dimensions: BillingUsageDimensions,
+    observation: BillingUsageObservation,
 ) -> Result<(), BillingLifecycleError> {
-    if completion.usage() == usage {
+    if completion.usage() == usage
+        && completion.dimensions() == dimensions
+        && completion.observation() == observation
+    {
         Ok(())
     } else {
         Err(BillingLifecycleError::CompletionConflict)
@@ -296,7 +415,7 @@ pub enum BillingLifecycleError {
     /// 同一不可变解析器在预估和实际阶段返回了不同计费模式。
     #[error("请求生命周期内计费模式发生变化")]
     BillingModeChanged,
-    /// 终态重放携带了不同的最终 usage。
+    /// 结果未知或终态重放携带了不同的最终 usage 或审计维度。
     #[error("计费完成重放的用量不一致")]
     CompletionConflict,
     /// 定价解析失败。

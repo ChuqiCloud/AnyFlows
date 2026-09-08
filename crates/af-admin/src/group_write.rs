@@ -1,4 +1,4 @@
-use std::{fmt, future::Future, pin::Pin};
+use std::{fmt, future::Future, pin::Pin, sync::Arc};
 
 use af_db::{
     AdminGroupDeleteOutcome, AdminGroupMutationOutcome, AdminGroupPeakWriteRecord,
@@ -252,6 +252,9 @@ pub enum AdminGroupWriteError {
     /// 分组仍被有效用户或有效令牌引用。
     #[error("管理分组仍在使用")]
     InUse,
+    /// 数据已提交，但当前进程无法发布新的分组计费快照。
+    #[error("管理分组运行时刷新失败")]
+    RuntimeRefreshFailed,
     /// 数据库失败或持久化状态损坏。
     #[error("管理分组写入内部失败")]
     Internal,
@@ -268,6 +271,21 @@ pub type AdminGroupUpdateFuture<'a> =
 /// 管理分组删除调用的对象安全 Future。
 pub type AdminGroupDeleteFuture<'a> =
     Pin<Box<dyn Future<Output = Result<(), AdminGroupWriteError>> + Send + 'a>>;
+
+/// 分组正式写入后刷新运行时计费快照的稳定错误。
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+#[error("运行时分组计费快照刷新失败")]
+pub struct GroupPricingRuntimeRefreshError;
+
+/// 分组计费运行时刷新的对象安全 Future。
+pub type GroupPricingRuntimeRefreshFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<(), GroupPricingRuntimeRefreshError>> + Send + 'a>>;
+
+/// 隔离管理应用域与具体计费缓存实现的刷新端口。
+pub trait GroupPricingRuntimeRefresher: Send + Sync {
+    /// 失效并刷新当前进程使用的完整分组计费快照。
+    fn refresh<'a>(&'a self) -> GroupPricingRuntimeRefreshFuture<'a>;
+}
 
 /// 管理分组写入应用端口；角色校验必须在进入仓储前完成。
 pub trait AdminGroupWriter: Send + Sync {
@@ -292,6 +310,74 @@ pub trait AdminGroupWriter: Send + Sync {
         principal: SessionPrincipal,
         group_id: GroupId,
     ) -> AdminGroupDeleteFuture<'a>;
+}
+
+/// 在持久化成功后同步发布运行时分组计费快照的写入装饰器。
+pub struct RuntimeRefreshingAdminGroupWriter {
+    writer: Arc<dyn AdminGroupWriter>,
+    refresher: Arc<dyn GroupPricingRuntimeRefresher>,
+}
+
+impl RuntimeRefreshingAdminGroupWriter {
+    /// 包装现有写入端口，保持数据库事务与运行时发布职责分离。
+    #[must_use]
+    pub fn new(
+        writer: Arc<dyn AdminGroupWriter>,
+        refresher: Arc<dyn GroupPricingRuntimeRefresher>,
+    ) -> Self {
+        Self { writer, refresher }
+    }
+
+    async fn refresh_runtime(&self) -> Result<(), AdminGroupWriteError> {
+        self.refresher
+            .refresh()
+            .await
+            .map_err(|_| AdminGroupWriteError::RuntimeRefreshFailed)
+    }
+}
+
+impl AdminGroupWriter for RuntimeRefreshingAdminGroupWriter {
+    fn create<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        command: AdminGroupCreateCommand,
+    ) -> AdminGroupCreateFuture<'a> {
+        Box::pin(async move {
+            let group = self.writer.create(principal, command).await?;
+            self.refresh_runtime().await?;
+            Ok(group)
+        })
+    }
+
+    fn update<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        group_id: GroupId,
+        command: AdminGroupUpdateCommand,
+    ) -> AdminGroupUpdateFuture<'a> {
+        Box::pin(async move {
+            let group = self.writer.update(principal, group_id, command).await?;
+            self.refresh_runtime().await?;
+            Ok(group)
+        })
+    }
+
+    fn delete<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        group_id: GroupId,
+    ) -> AdminGroupDeleteFuture<'a> {
+        Box::pin(async move {
+            self.writer.delete(principal, group_id).await?;
+            self.refresh_runtime().await
+        })
+    }
+}
+
+impl fmt::Debug for RuntimeRefreshingAdminGroupWriter {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("RuntimeRefreshingAdminGroupWriter(<受控>)")
+    }
 }
 
 /// 使用数据库仓储实现管理员分组写入。
@@ -341,7 +427,7 @@ impl AdminGroupWriter for DatabaseAdminGroupWriter {
                 .await
                 .map_err(map_repository_error)?
             {
-                AdminGroupMutationOutcome::Mutated(record) => Ok(AdminGroup::from_record(record)),
+                AdminGroupMutationOutcome::Mutated(record) => Ok(AdminGroup::from_record(*record)),
                 AdminGroupMutationOutcome::NotFound => Err(AdminGroupWriteError::NotFound),
             }
         })
@@ -412,6 +498,8 @@ fn validate_non_negative(value: i64) -> Result<(), AdminGroupWriteError> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use af_domain::UserId;
 
     use super::*;
@@ -485,5 +573,202 @@ mod tests {
             require_admin(principal),
             Err(AdminGroupWriteError::Forbidden)
         );
+    }
+
+    struct SuccessfulGroupWriter;
+
+    impl AdminGroupWriter for SuccessfulGroupWriter {
+        fn create<'a>(
+            &'a self,
+            _principal: SessionPrincipal,
+            _command: AdminGroupCreateCommand,
+        ) -> AdminGroupCreateFuture<'a> {
+            Box::pin(async { Ok(test_group()) })
+        }
+
+        fn update<'a>(
+            &'a self,
+            _principal: SessionPrincipal,
+            _group_id: GroupId,
+            _command: AdminGroupUpdateCommand,
+        ) -> AdminGroupUpdateFuture<'a> {
+            Box::pin(async { Ok(test_group()) })
+        }
+
+        fn delete<'a>(
+            &'a self,
+            _principal: SessionPrincipal,
+            _group_id: GroupId,
+        ) -> AdminGroupDeleteFuture<'a> {
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    struct FailingGroupWriter;
+
+    impl AdminGroupWriter for FailingGroupWriter {
+        fn create<'a>(
+            &'a self,
+            _principal: SessionPrincipal,
+            _command: AdminGroupCreateCommand,
+        ) -> AdminGroupCreateFuture<'a> {
+            Box::pin(async { Err(AdminGroupWriteError::Internal) })
+        }
+
+        fn update<'a>(
+            &'a self,
+            _principal: SessionPrincipal,
+            _group_id: GroupId,
+            _command: AdminGroupUpdateCommand,
+        ) -> AdminGroupUpdateFuture<'a> {
+            Box::pin(async { Err(AdminGroupWriteError::Internal) })
+        }
+
+        fn delete<'a>(
+            &'a self,
+            _principal: SessionPrincipal,
+            _group_id: GroupId,
+        ) -> AdminGroupDeleteFuture<'a> {
+            Box::pin(async { Err(AdminGroupWriteError::Internal) })
+        }
+    }
+
+    struct RecordingRefresher {
+        calls: AtomicUsize,
+        fail: bool,
+    }
+
+    impl RecordingRefresher {
+        fn new(fail: bool) -> Self {
+            Self {
+                calls: AtomicUsize::new(0),
+                fail,
+            }
+        }
+    }
+
+    impl GroupPricingRuntimeRefresher for RecordingRefresher {
+        fn refresh<'a>(&'a self) -> GroupPricingRuntimeRefreshFuture<'a> {
+            Box::pin(async move {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                if self.fail {
+                    Err(GroupPricingRuntimeRefreshError)
+                } else {
+                    Ok(())
+                }
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn runtime_refresh_runs_after_each_successful_mutation() {
+        let refresher = Arc::new(RecordingRefresher::new(false));
+        let writer = RuntimeRefreshingAdminGroupWriter::new(
+            Arc::new(SuccessfulGroupWriter),
+            refresher.clone(),
+        );
+        let principal = admin_principal();
+        let group_id = GroupId::new(1).unwrap();
+
+        writer.create(principal, create_command()).await.unwrap();
+        writer
+            .update(principal, group_id, update_command())
+            .await
+            .unwrap();
+        writer.delete(principal, group_id).await.unwrap();
+
+        assert_eq!(refresher.calls.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn runtime_refresh_failure_is_returned_after_commit() {
+        let refresher = Arc::new(RecordingRefresher::new(true));
+        let writer = RuntimeRefreshingAdminGroupWriter::new(
+            Arc::new(SuccessfulGroupWriter),
+            refresher.clone(),
+        );
+
+        assert_eq!(
+            writer
+                .create(admin_principal(), create_command())
+                .await
+                .unwrap_err(),
+            AdminGroupWriteError::RuntimeRefreshFailed
+        );
+        assert_eq!(refresher.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn failed_persistence_does_not_refresh_runtime() {
+        let refresher = Arc::new(RecordingRefresher::new(false));
+        let writer =
+            RuntimeRefreshingAdminGroupWriter::new(Arc::new(FailingGroupWriter), refresher.clone());
+
+        assert_eq!(
+            writer
+                .create(admin_principal(), create_command())
+                .await
+                .unwrap_err(),
+            AdminGroupWriteError::Internal
+        );
+        assert_eq!(refresher.calls.load(Ordering::SeqCst), 0);
+    }
+
+    fn admin_principal() -> SessionPrincipal {
+        SessionPrincipal::new(UserId::new(1).unwrap(), SessionRole::Admin)
+    }
+
+    fn create_command() -> AdminGroupCreateCommand {
+        AdminGroupCreateCommand::new(
+            "standard".to_owned(),
+            "Standard".to_owned(),
+            1_000_000,
+            None,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            serde_json::json!({}),
+        )
+        .unwrap()
+    }
+
+    fn update_command() -> AdminGroupUpdateCommand {
+        AdminGroupUpdateCommand::new(
+            "standard".to_owned(),
+            "Standard".to_owned(),
+            1_000_000,
+            None,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            serde_json::json!({}),
+        )
+        .unwrap()
+    }
+
+    fn test_group() -> AdminGroup {
+        AdminGroup::from_parts(
+            GroupId::new(1).unwrap(),
+            "standard".to_owned(),
+            "Standard".to_owned(),
+            1_000_000,
+            None,
+            false,
+            None,
+            None,
+            None,
+            crate::AdminGroupWindow::from_parts(0, 0, 1),
+            crate::AdminGroupWindow::from_parts(0, 0, 1),
+            crate::AdminGroupWindow::from_parts(0, 0, 1),
+            None,
+            None,
+            serde_json::json!({}),
+        )
     }
 }

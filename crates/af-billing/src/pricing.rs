@@ -5,7 +5,10 @@ use af_protocol::{Usage, UsageError, UsageSemantics};
 use rust_decimal::Decimal;
 use thiserror::Error;
 
-use crate::quota_math::{self, QuotaMathError};
+use crate::{
+    BillingExpressionError,
+    quota_math::{self, QuotaMathError},
+};
 
 /// 定价解析器的最小只读上下文。
 ///
@@ -47,6 +50,8 @@ pub trait PricingResolver: Send + Sync + 'static {
 pub enum BillingMode {
     /// 按互斥 token 分项及其每百万 token 单价计费。
     PerToken,
+    /// 按请求次数或已校验业务维度直接计费。
+    PerCall,
     /// 显式免费；上层仍须记录 usage，但跳过预扣和结算。
     Free,
 }
@@ -129,6 +134,60 @@ impl fmt::Debug for TokenPrices {
     }
 }
 
+/// 应用请求三层倍率后的五类精确美元/百万 token 单价。
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct EffectiveTokenPrices {
+    values: [Decimal; 5],
+}
+
+impl EffectiveTokenPrices {
+    const fn from_values(values: [Decimal; 5]) -> Self {
+        Self { values }
+    }
+
+    /// 返回普通输入单价。
+    #[must_use]
+    pub const fn input(self) -> Decimal {
+        self.values[0]
+    }
+
+    /// 返回输出单价。
+    #[must_use]
+    pub const fn output(self) -> Decimal {
+        self.values[1]
+    }
+
+    /// 返回缓存读取单价。
+    #[must_use]
+    pub const fn cache_read(self) -> Decimal {
+        self.values[2]
+    }
+
+    /// 返回五分钟缓存创建单价。
+    #[must_use]
+    pub const fn cache_creation_5m(self) -> Decimal {
+        self.values[3]
+    }
+
+    /// 返回一小时缓存创建单价。
+    #[must_use]
+    pub const fn cache_creation_1h(self) -> Decimal {
+        self.values[4]
+    }
+
+    /// 按固定顺序返回五类单价，供目录边界做精确字符串序列化。
+    #[must_use]
+    pub const fn into_values(self) -> [Decimal; 5] {
+        self.values
+    }
+}
+
+impl fmt::Debug for EffectiveTokenPrices {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("EffectiveTokenPrices(<已脱敏>)")
+    }
+}
+
 /// 百万分比定点倍率，`1_000_000` 表示 `1.0`。
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct PricingRatio(i64);
@@ -202,7 +261,7 @@ impl PricingRatios {
         self.applied_peak
     }
 
-    const fn micros(self) -> [i64; 3] {
+    pub(crate) const fn micros(self) -> [i64; 3] {
         [
             self.group.micros(),
             self.group_model.micros(),
@@ -256,6 +315,14 @@ impl CostBreakdown {
             cache_creation_5m_usd,
             cache_creation_1h_usd,
             total_usd,
+        }
+    }
+
+    /// 表达式只能可靠提供聚合成本，不能伪造五类固定单价分解。
+    const fn from_expression_total(total_usd: Decimal) -> Self {
+        Self {
+            total_usd,
+            ..Self::ZERO
         }
     }
 
@@ -328,6 +395,15 @@ impl PriceData {
         }
     }
 
+    /// 构造表达式解析得到的按量结果；生命周期仍执行预扣和结算。
+    pub(crate) const fn expression(quota: Quota, total_usd: Decimal) -> Self {
+        Self {
+            quota,
+            billing_mode: BillingMode::PerToken,
+            breakdown: CostBreakdown::from_expression_total(total_usd),
+        }
+    }
+
     /// 返回最终一次舍入后的非负额度。
     #[must_use]
     pub const fn quota(&self) -> Quota {
@@ -392,6 +468,24 @@ impl RatioPricingResolver {
         Self {
             mode: RatioMode::Metered { prices, ratios },
         }
+    }
+
+    /// 返回目录展示使用的倍率后单价；显式免费与按 token 零价保持不同语义。
+    pub fn effective_token_prices(&self) -> Result<Option<EffectiveTokenPrices>, PricingError> {
+        let RatioMode::Metered { prices, ratios } = self.mode else {
+            return Ok(None);
+        };
+        let values = quota_math::token_prices_after_ratios(
+            [
+                prices.input(),
+                prices.output(),
+                prices.cache_read(),
+                prices.cache_creation_5m(),
+                prices.cache_creation_1h(),
+            ],
+            ratios.micros(),
+        )?;
+        Ok(Some(EffectiveTokenPrices::from_values(values)))
     }
 }
 
@@ -471,4 +565,7 @@ pub enum PricingError {
     /// Decimal 中间运算或最终 quota 换算越界。
     #[error(transparent)]
     Math(#[from] QuotaMathError),
+    /// 表达式在受限执行环境中无法生成合法价格。
+    #[error(transparent)]
+    Expression(#[from] BillingExpressionError),
 }

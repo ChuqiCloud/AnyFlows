@@ -7,18 +7,18 @@ use af_admin::{
     AdminGroup, AdminGroupCreateCommand, AdminGroupCreateFuture, AdminGroupDeleteFuture,
     AdminGroupGetFuture, AdminGroupListFuture, AdminGroupListQuery, AdminGroupPage, AdminGroupPeak,
     AdminGroupReadError, AdminGroupReader, AdminGroupUpdateCommand, AdminGroupUpdateFuture,
-    AdminGroupWriteError, AdminGroupWriter, AdminTokenCreateCommand, AdminTokenCreateFuture,
-    AdminTokenDeleteFuture, AdminTokenGetFuture, AdminTokenListFuture, AdminTokenListQuery,
-    AdminTokenReadError, AdminTokenReader, AdminTokenUpdateCommand, AdminTokenUpdateFuture,
-    AdminTokenWriteError, AdminTokenWriter, AdminUserCreateCommand, AdminUserCreateFuture,
-    AdminUserDeleteFuture, AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery,
-    AdminUserReadError, AdminUserReader, AdminUserUpdateCommand, AdminUserUpdateFuture,
-    AdminUserWriteError, AdminUserWriter, LoginCredentials, SessionAuthentication,
-    SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
-    SessionLoginFuture, SessionPrincipal, SessionRole,
+    AdminGroupWindow, AdminGroupWriteError, AdminGroupWriter, AdminTokenCreateCommand,
+    AdminTokenCreateFuture, AdminTokenDeleteFuture, AdminTokenGetFuture, AdminTokenListFuture,
+    AdminTokenListQuery, AdminTokenReadError, AdminTokenReader, AdminTokenUpdateCommand,
+    AdminTokenUpdateFuture, AdminTokenWriteError, AdminTokenWriter, AdminUserCreateCommand,
+    AdminUserCreateFuture, AdminUserDeleteFuture, AdminUserGetFuture, AdminUserListFuture,
+    AdminUserListQuery, AdminUserReadError, AdminUserReader, AdminUserUpdateCommand,
+    AdminUserUpdateFuture, AdminUserWriteError, AdminUserWriter, LoginCredentials,
+    SessionAuthentication, SessionAuthenticationError, SessionAuthenticationFuture,
+    SessionAuthenticator, SessionLoginFuture, SessionPrincipal, SessionRole,
 };
 use af_domain::{AfError, GatewayPrincipal, GroupId, TokenId, UserId};
-use af_protocol::CanonicalRequest;
+use af_protocol::CanonicalRequestEnvelope;
 use axum::{
     Router,
     body::{Body, to_bytes},
@@ -51,8 +51,11 @@ impl ChatService for UnusedChatService {
     fn chat_completions<'a>(
         &'a self,
         _principal: &'a GatewayPrincipal,
-        _request: CanonicalRequest,
+        _user_concurrency: Option<af_domain::ConcurrencyLimit>,
+        _request: CanonicalRequestEnvelope,
+        _response_protocol: af_domain::Protocol,
         _request_id: &'a str,
+        _diagnostic: af_relay::RelayDiagnosticInput,
     ) -> ChatServiceFuture<'a> {
         Box::pin(async { Err(AfError::Internal) })
     }
@@ -79,7 +82,13 @@ impl SessionAuthenticator for FakeSessionAuthenticator {
         };
         Box::pin(async move {
             principal
-                .map(|principal| SessionAuthentication::new(principal, current_timestamp() + 60))
+                .map(|principal| {
+                    SessionAuthentication::new(
+                        principal,
+                        GroupId::new(1).unwrap(),
+                        current_timestamp() + 60,
+                    )
+                })
                 .ok_or(SessionAuthenticationError::InvalidSession)
         })
     }
@@ -439,6 +448,9 @@ fn sample_group(id: i64, name: &str) -> AdminGroup {
         Some(10_000),
         Some(60_000),
         Some(200_000),
+        AdminGroupWindow::from_parts(100, 1_700_000_000, 1_700_086_400),
+        AdminGroupWindow::from_parts(200, 1_699_833_600, 1_700_438_400),
+        AdminGroupWindow::from_parts(300, 1_698_796_800, 1_701_388_800),
         Some(120),
         Some(GroupId::new(1).unwrap()),
         json!({"claude_code_only": true}),

@@ -1,37 +1,7 @@
 use std::{error::Error, fmt};
 
-/// 增量 SSE framing 错误；不保留原始行、事件名或数据。
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SseParseError {
-    /// 调用方提供的单事件上限为零或超过协议硬上限。
-    InvalidLimit,
-    /// 当前 SSE 事件超过配置的字节上限。
-    EventTooLarge,
-    /// SSE 文本不是合法 UTF-8。
-    InvalidUtf8,
-    /// 传输结束时仍有未用空行封闭的事件。
-    TruncatedEvent,
-    /// parser 已因前一次错误进入终止状态。
-    ParserFailed,
-    /// parser 已完成，不能继续接收字节。
-    ParserClosed,
-}
-
-impl fmt::Display for SseParseError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let message = match self {
-            Self::InvalidLimit => "SSE 事件上限无效",
-            Self::EventTooLarge => "SSE 事件超过大小限制",
-            Self::InvalidUtf8 => "SSE 事件不是有效 UTF-8",
-            Self::TruncatedEvent => "SSE 流在事件结束前截断",
-            Self::ParserFailed => "SSE parser 已失败",
-            Self::ParserClosed => "SSE parser 已结束",
-        };
-        formatter.write_str(message)
-    }
-}
-
-impl Error for SseParseError {}
+use crate::UnsupportedCapability;
+use crate::sse::SseParseError;
 
 /// OpenAI Chat 流式解码错误；所有分类均不携带上游正文或元数据。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -100,6 +70,8 @@ pub enum EncodeStreamError {
     InvalidSequence,
     /// 单事件或累计编码状态超过预算。
     StructureLimitExceeded,
+    /// 目标协议缺少一项已声明的流式能力。
+    UnsupportedCapability(UnsupportedCapability),
     /// OpenAI Chat 无法无损表达该 Canonical 事件。
     UnsupportedEvent,
     /// usage 无法按 OpenAI Chat 口径安全表达。
@@ -116,12 +88,16 @@ impl fmt::Display for EncodeStreamError {
             Self::InvalidMetadata => "OpenAI 流式响应元数据无效",
             Self::InvalidSequence => "Canonical 流事件顺序无效",
             Self::StructureLimitExceeded => "Canonical 流事件超过编码限制",
+            Self::UnsupportedCapability(_) => "OpenAI Chat 缺少所需流式能力",
             Self::UnsupportedEvent => "OpenAI Chat 无法表达该流事件",
             Self::InvalidUsage => "OpenAI Chat 无法表达该 usage",
             Self::Serialization => "OpenAI 流式事件序列化失败",
             Self::EncoderFailed => "OpenAI 流式 encoder 已失败",
         };
-        formatter.write_str(message)
+        match self {
+            Self::UnsupportedCapability(error) => fmt::Display::fmt(error, formatter),
+            _ => formatter.write_str(message),
+        }
     }
 }
 

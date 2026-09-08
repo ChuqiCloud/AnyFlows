@@ -7,11 +7,15 @@ use utoipa::OpenApi;
 use crate::{
     management_channel_probe::{AdminChannelProbeResponse, AdminChannelProbeStatus},
     management_channel_writes::{AdminChannelCreateRequest, AdminChannelUpdateRequest},
-    management_channels::{AdminChannelListResponse, AdminChannelResponse},
+    management_channels::{
+        AdminChannelListResponse, AdminChannelResponse, AdminResponsesCompactProbeDto,
+    },
     management_error::ManagementErrorBody,
     openapi::schema::{
         AdminChannelProtocolSchema, AdminChannelTypeSchema, AdminRoutingStatusSchema,
-        AdminRoutingWriteStatusSchema,
+        AdminRoutingWriteStatusSchema, ClientSimulationBodyProfileSchema,
+        ClientSimulationProfileSchema, ResponsesCompactModeSchema,
+        ResponsesCompactProbeResultSchema,
     },
 };
 
@@ -145,10 +149,15 @@ fn probe_admin_channel() {}
         AdminChannelProtocolSchema,
         AdminRoutingStatusSchema,
         AdminRoutingWriteStatusSchema,
+        ClientSimulationBodyProfileSchema,
+        ClientSimulationProfileSchema,
+        ResponsesCompactModeSchema,
+        ResponsesCompactProbeResultSchema,
         AdminChannelResponse,
         AdminChannelListResponse,
         AdminChannelCreateRequest,
         AdminChannelUpdateRequest,
+        AdminResponsesCompactProbeDto,
         AdminChannelProbeStatus,
         AdminChannelProbeResponse,
         ManagementErrorBody

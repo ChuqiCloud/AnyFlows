@@ -12,9 +12,10 @@ use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
-    AdminTokenRecord, AdminTokenRepository,
+    AdminTokenRecord, AdminTokenRepository, MAX_USER_TOKENS_PER_USER,
     admin_token::detail_query,
-    entity::{TokenHash, TokenIpAllowlist, TokenModelAllowlist, groups, tokens, users},
+    entity::{TokenHash, TokenIpAllowlist, TokenModelAllowlist, groups, tokens},
+    token_owner_guard::{TokenOwnerGuardError, lock_non_deleted_owner, non_deleted_token_count},
 };
 
 /// 管理员签发令牌时写入的密钥材料和完整配置。
@@ -149,6 +150,9 @@ pub enum AdminTokenWriteRepositoryError {
     /// 用户或分组引用不存在或已经软删除。
     #[error("管理令牌引用无效")]
     InvalidReference,
+    /// 用户现有未软删除令牌已经达到统一容量上限。
+    #[error("用户 API Key 数量已达上限")]
+    LimitReached,
     /// 获取连接、事务或执行 SQL 失败。
     #[error("管理令牌数据库写入失败")]
     Query,
@@ -235,7 +239,8 @@ impl AdminTokenRepository {
         }
 
         let transaction = begin_transaction(self).await?;
-        ensure_create_references(&transaction, record.user_id, fields.group_id).await?;
+        ensure_create_references_and_capacity(&transaction, record.user_id, fields.group_id)
+            .await?;
         let now = TimeDateTimeWithTimeZone::now_utc();
         let inserted = tokens::ActiveModel {
             user_id: Set(record.user_id.get()),
@@ -244,6 +249,9 @@ impl AdminTokenRepository {
             name: Set(fields.name),
             status: Set(fields.status),
             group_id: Set(fields.group_id.map(GroupId::get)),
+            organization_id: Set(None),
+            organization_membership_id: Set(None),
+            organization_team_id: Set(None),
             remain_quota: Set(fields.remain_quota),
             unlimited_quota: Set(fields.unlimited_quota),
             expired_at: Set(fields.expired_at),
@@ -289,6 +297,7 @@ impl AdminTokenRepository {
         let now = TimeDateTimeWithTimeZone::now_utc();
         let result = tokens::Entity::update_many()
             .filter(Expr::col((tokens::Entity, tokens::Column::Id)).eq(token_id.get()))
+            .filter(Expr::col((tokens::Entity, tokens::Column::OrganizationId)).is_null())
             .filter(Expr::col((tokens::Entity, tokens::Column::DeletedAt)).is_null())
             .col_expr(tokens::Column::Name, Expr::value(fields.name))
             .col_expr(tokens::Column::Status, Expr::value(fields.status))
@@ -352,6 +361,7 @@ impl AdminTokenRepository {
         let now = TimeDateTimeWithTimeZone::now_utc();
         let result = tokens::Entity::update_many()
             .filter(Expr::col((tokens::Entity, tokens::Column::Id)).eq(token_id.get()))
+            .filter(Expr::col((tokens::Entity, tokens::Column::OrganizationId)).is_null())
             .filter(Expr::col((tokens::Entity, tokens::Column::DeletedAt)).is_null())
             .col_expr(tokens::Column::DeletedAt, Expr::value(now))
             .col_expr(tokens::Column::UpdatedAt, Expr::value(now))
@@ -466,20 +476,27 @@ async fn fetch_token_snapshot(
     }
 }
 
-async fn ensure_create_references(
+async fn ensure_create_references_and_capacity(
     transaction: &DatabaseTransaction,
     user_id: UserId,
     group_id: Option<GroupId>,
 ) -> Result<(), AdminTokenWriteRepositoryError> {
-    let default_group_id = load_user_default_group(transaction, user_id)
+    let owner = lock_non_deleted_owner(transaction, user_id)
         .await?
         .ok_or(AdminTokenWriteRepositoryError::InvalidReference)?;
-    let effective_group_id = group_id.unwrap_or(default_group_id);
-    if active_group_exists(transaction, effective_group_id).await? {
-        Ok(())
-    } else {
-        Err(AdminTokenWriteRepositoryError::InvalidReference)
+    if !matches!(owner.status(), 1 | 2) {
+        return Err(record_internal_error(
+            AdminTokenWriteRepositoryError::Invariant,
+        ));
     }
+    let effective_group_id = group_id.unwrap_or(owner.default_group_id());
+    if !active_group_exists(transaction, effective_group_id).await? {
+        return Err(AdminTokenWriteRepositoryError::InvalidReference);
+    }
+    if non_deleted_token_count(transaction, user_id).await? >= MAX_USER_TOKENS_PER_USER as u64 {
+        return Err(AdminTokenWriteRepositoryError::LimitReached);
+    }
+    Ok(())
 }
 
 async fn ensure_existing_owner_and_group(
@@ -487,10 +504,15 @@ async fn ensure_existing_owner_and_group(
     user_id: UserId,
     group_id: Option<GroupId>,
 ) -> Result<(), AdminTokenWriteRepositoryError> {
-    let default_group_id = load_user_default_group(transaction, user_id)
+    let owner = lock_non_deleted_owner(transaction, user_id)
         .await?
         .ok_or_else(|| record_internal_error(AdminTokenWriteRepositoryError::Invariant))?;
-    let effective_group_id = group_id.unwrap_or(default_group_id);
+    if !matches!(owner.status(), 1 | 2) {
+        return Err(record_internal_error(
+            AdminTokenWriteRepositoryError::Invariant,
+        ));
+    }
+    let effective_group_id = group_id.unwrap_or(owner.default_group_id());
     if active_group_exists(transaction, effective_group_id).await? {
         Ok(())
     } else if group_id.is_some() {
@@ -513,6 +535,7 @@ async fn active_token_owner(
         )
         .from(tokens::Entity)
         .and_where(Expr::col((tokens::Entity, tokens::Column::Id)).eq(token_id.get()))
+        .and_where(Expr::col((tokens::Entity, tokens::Column::OrganizationId)).is_null())
         .and_where(Expr::col((tokens::Entity, tokens::Column::DeletedAt)).is_null())
         .limit(2)
         .to_owned();
@@ -526,52 +549,6 @@ async fn active_token_owner(
                 .try_get("", "user_id")
                 .map_err(|_| record_internal_error(AdminTokenWriteRepositoryError::Invariant))?;
             UserId::new(value)
-                .map(Some)
-                .map_err(|_| record_internal_error(AdminTokenWriteRepositoryError::Invariant))
-        }
-        _ => Err(record_internal_error(
-            AdminTokenWriteRepositoryError::Invariant,
-        )),
-    }
-}
-
-async fn load_user_default_group(
-    transaction: &DatabaseTransaction,
-    user_id: UserId,
-) -> Result<Option<GroupId>, AdminTokenWriteRepositoryError> {
-    let query = Query::select()
-        .expr_as(
-            Expr::col((users::Entity, users::Column::Status)),
-            Alias::new("status"),
-        )
-        .expr_as(
-            Expr::col((users::Entity, users::Column::DefaultGroupId)),
-            Alias::new("default_group_id"),
-        )
-        .from(users::Entity)
-        .and_where(Expr::col((users::Entity, users::Column::Id)).eq(user_id.get()))
-        .and_where(Expr::col((users::Entity, users::Column::DeletedAt)).is_null())
-        .limit(2)
-        .to_owned();
-    let mut rows = query_all(transaction, query).await?;
-    match rows.len() {
-        0 => Ok(None),
-        1 => {
-            let row = rows
-                .pop()
-                .ok_or_else(|| record_internal_error(AdminTokenWriteRepositoryError::Invariant))?;
-            let status: i16 = row
-                .try_get("", "status")
-                .map_err(|_| record_internal_error(AdminTokenWriteRepositoryError::Invariant))?;
-            let group_id: i64 = row
-                .try_get("", "default_group_id")
-                .map_err(|_| record_internal_error(AdminTokenWriteRepositoryError::Invariant))?;
-            if !matches!(status, 1 | 2) {
-                return Err(record_internal_error(
-                    AdminTokenWriteRepositoryError::Invariant,
-                ));
-            }
-            GroupId::new(group_id)
                 .map(Some)
                 .map_err(|_| record_internal_error(AdminTokenWriteRepositoryError::Invariant))
         }
@@ -637,6 +614,7 @@ fn record_internal_error(error: AdminTokenWriteRepositoryError) -> AdminTokenWri
     let error_kind = match error {
         AdminTokenWriteRepositoryError::InvalidInput => "admin_token_write_invalid_input",
         AdminTokenWriteRepositoryError::InvalidReference => "admin_token_write_invalid_reference",
+        AdminTokenWriteRepositoryError::LimitReached => return error,
         AdminTokenWriteRepositoryError::Query => "admin_token_write_query",
         AdminTokenWriteRepositoryError::Timeout => "admin_token_write_timeout",
         AdminTokenWriteRepositoryError::Invariant => "admin_token_write_invariant",
@@ -647,6 +625,19 @@ fn record_internal_error(error: AdminTokenWriteRepositoryError) -> AdminTokenWri
         "管理令牌写入仓储发生内部错误"
     );
     error
+}
+
+impl From<TokenOwnerGuardError> for AdminTokenWriteRepositoryError {
+    fn from(error: TokenOwnerGuardError) -> Self {
+        match error {
+            TokenOwnerGuardError::Query => {
+                record_internal_error(AdminTokenWriteRepositoryError::Query)
+            }
+            TokenOwnerGuardError::Invariant => {
+                record_internal_error(AdminTokenWriteRepositoryError::Invariant)
+            }
+        }
+    }
 }
 
 #[cfg(test)]

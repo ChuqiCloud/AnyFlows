@@ -1,7 +1,9 @@
-use std::{fmt, future::Future, pin::Pin};
+use std::{fmt, future::Future, num::NonZeroU32, pin::Pin};
 
 use af_db::{TokenAuthLookup, TokenAuthLookupOutcome, TokenAuthRepository};
-use af_domain::{GatewayPrincipal, TokenModelPolicy, TrustedClientIp};
+use af_domain::{
+    ConcurrencyLimit, GatewayPrincipal, TokenModelPolicy, TrustedClientIp, UpstreamRetryAfter,
+};
 use thiserror::Error;
 
 use crate::ApiKeyDigest;
@@ -16,6 +18,9 @@ pub type TokenAuthenticationFuture<'a> = Pin<
 pub struct TokenAuthentication {
     principal: GatewayPrincipal,
     model_policy: TokenModelPolicy,
+    user_concurrency: Option<ConcurrencyLimit>,
+    user_rpm_limit: Option<NonZeroU32>,
+    group_rpm_limit: Option<NonZeroU32>,
 }
 
 impl TokenAuthentication {
@@ -25,7 +30,32 @@ impl TokenAuthentication {
         Self {
             principal,
             model_policy,
+            user_concurrency: None,
+            user_rpm_limit: None,
+            group_rpm_limit: None,
         }
+    }
+
+    /// 绑定与主体同一次数据库鉴权取得的用户并发限制快照。
+    #[must_use]
+    pub const fn with_user_concurrency(
+        mut self,
+        user_concurrency: Option<ConcurrencyLimit>,
+    ) -> Self {
+        self.user_concurrency = user_concurrency;
+        self
+    }
+
+    /// 绑定认证查询得到的用户与分组 RPM 快照；空值表示对应主体不限速。
+    #[must_use]
+    pub const fn with_rpm_limits(
+        mut self,
+        user_rpm_limit: Option<NonZeroU32>,
+        group_rpm_limit: Option<NonZeroU32>,
+    ) -> Self {
+        self.user_rpm_limit = user_rpm_limit;
+        self.group_rpm_limit = group_rpm_limit;
+        self
     }
 
     /// 返回只携带稳定标识的网关主体。
@@ -38,6 +68,24 @@ impl TokenAuthentication {
     #[must_use]
     pub const fn model_policy(&self) -> &TokenModelPolicy {
         &self.model_policy
+    }
+
+    /// 返回用户级并发限制；空值表示不限并发。
+    #[must_use]
+    pub const fn user_concurrency(&self) -> Option<ConcurrencyLimit> {
+        self.user_concurrency
+    }
+
+    /// 返回本次请求固定的用户 RPM 上限。
+    #[must_use]
+    pub const fn user_rpm_limit(&self) -> Option<NonZeroU32> {
+        self.user_rpm_limit
+    }
+
+    /// 返回本次请求固定的分组 RPM 上限。
+    #[must_use]
+    pub const fn group_rpm_limit(&self) -> Option<NonZeroU32> {
+        self.group_rpm_limit
     }
 }
 
@@ -56,6 +104,15 @@ pub enum TokenAuthenticationError {
     /// 持久化查询失败、超时或数据违反鉴权不变量。
     #[error("令牌认证内部失败")]
     Internal,
+    /// 已认证请求需要限流，但权威 Redis 存储不可用或未配置。
+    #[error("请求限流存储不可用")]
+    RateLimitUnavailable,
+    /// 已认证主体触发用户或分组 RPM 窗口。
+    #[error("请求达到 RPM 限制")]
+    RateLimited { retry_after: UpstreamRetryAfter },
+    /// 已认证令牌达到累计请求数上限。
+    #[error("令牌达到累计请求数上限")]
+    RequestLimitReached,
 }
 
 /// 下游 API Key 认证端口；HTTP 层只提交摘要，不跨异步边界保留明文。
@@ -94,7 +151,12 @@ impl TokenAuthenticator for DatabaseTokenAuthenticator {
                 Ok(TokenAuthLookupOutcome::Authenticated {
                     principal,
                     model_policy,
-                }) => Ok(TokenAuthentication::new(principal, model_policy)),
+                    user_concurrency,
+                    user_rpm_limit,
+                    group_rpm_limit,
+                }) => Ok(TokenAuthentication::new(principal, model_policy)
+                    .with_user_concurrency(user_concurrency)
+                    .with_rpm_limits(user_rpm_limit, group_rpm_limit)),
                 Ok(TokenAuthLookupOutcome::Rejected) => {
                     Err(TokenAuthenticationError::InvalidApiKey)
                 }

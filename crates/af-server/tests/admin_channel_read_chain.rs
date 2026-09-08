@@ -239,6 +239,10 @@ async fn admin_channel_and_credential_reads_use_real_database_services() {
             "weight": 15,
             "priority": 25,
             "auto_ban": true,
+            "client_simulation_profile": null,
+            "client_simulation_risk_accepted": false,
+            "client_simulation_body_profile": null,
+            "client_simulation_body_risk_accepted": false,
             "models": ["public-model"],
             "group_ids": [GROUP_ID],
             "model_mapping": {"public-model": "write-upstream-model"},
@@ -275,6 +279,10 @@ async fn admin_channel_and_credential_reads_use_real_database_services() {
             "weight": 16,
             "priority": 26,
             "auto_ban": false,
+            "client_simulation_profile": null,
+            "client_simulation_risk_accepted": false,
+            "client_simulation_body_profile": null,
+            "client_simulation_body_risk_accepted": false,
             "models": ["public-model", "second-model"],
             "group_ids": [GROUP_ID],
             "model_mapping": {"public-model": "write-upstream-model"},
@@ -303,7 +311,10 @@ async fn admin_channel_and_credential_reads_use_real_database_services() {
         &authorization,
         json!({
             "kind": "api_key",
-            "secret": WRITE_CREDENTIAL_CANARY,
+            "secret": {
+                "kind": "api_key",
+                "api_key": WRITE_CREDENTIAL_CANARY
+            },
             "status": "disabled",
             "multi_key_mode": "random",
             "priority": 5,

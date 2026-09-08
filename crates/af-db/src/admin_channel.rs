@@ -1,6 +1,10 @@
 use std::{fmt, str::FromStr as _, time::Duration};
 
-use af_domain::{ChannelId, ChannelType, GroupId, Protocol, Status};
+use af_domain::{
+    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ClientSimulationBodyProfile,
+    ClientSimulationProfile, GroupId, Protocol, ResponsesCompactMode, ResponsesCompactProbeResult,
+    Status,
+};
 use sea_orm::{
     ConnectionTrait, DbBackend, DbErr, JsonValue, QueryResult,
     entity::prelude::TimeDateTimeWithTimeZone,
@@ -11,8 +15,20 @@ use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
-    DatabasePool,
+    ChannelModelMappings, ChannelParameterOverrides, DatabasePool,
     ability_write::{AbilityWriteError, ChannelRoutingSnapshot, load_channel_routing_snapshots},
+    channel_settings::{
+        AUTO_BAN_RULES_KEY, CLIENT_SIMULATION_BODY_PROFILE_KEY, CLIENT_SIMULATION_PROFILE_KEY,
+        RESPONSES_COMPACT_MODE_KEY, RESPONSES_COMPACT_MODEL_MAPPING_KEY,
+        RESPONSES_COMPACT_PROBE_CHECKED_AT_KEY, RESPONSES_COMPACT_PROBE_HTTP_STATUS_KEY,
+        RESPONSES_COMPACT_PROBE_RESULT_KEY, client_simulation_body_profile,
+        client_simulation_profile, parse_auto_ban_rules_value, pool_mode, responses_compact_mode,
+        responses_compact_model_mapping, responses_compact_probe_record,
+        responses_websocket_enabled, validate_client_simulation_body_capability,
+        validate_client_simulation_capability, validate_responses_compact_capability,
+        validate_responses_compact_model_mapping, validate_responses_compact_probe_result,
+        validate_responses_websocket_capability,
+    },
     entity::{ChannelBaseUrl, channels},
 };
 
@@ -28,10 +44,21 @@ pub struct AdminChannelRecord {
     channel_type: ChannelType,
     protocol: Protocol,
     base_url: Option<String>,
+    timeout: Option<ChannelTimeout>,
     status: Status,
     weight: i32,
     priority: i32,
     auto_ban: bool,
+    auto_ban_rules: ChannelAutoBanRules,
+    pool_mode: bool,
+    client_simulation_profile: Option<ClientSimulationProfile>,
+    client_simulation_body_profile: Option<ClientSimulationBodyProfile>,
+    responses_websocket_enabled: bool,
+    responses_compact_mode: ResponsesCompactMode,
+    responses_compact_model_mapping: JsonValue,
+    responses_compact_probe_result: ResponsesCompactProbeResult,
+    responses_compact_probe_checked_at: Option<i64>,
+    responses_compact_probe_http_status: Option<u16>,
     models: Vec<String>,
     group_ids: Vec<GroupId>,
     model_mapping: JsonValue,
@@ -55,22 +82,74 @@ impl AdminChannelRecord {
             Ok(encoded) => encoded.len() > MAX_ADMIN_CHANNEL_JSON_BYTES as usize,
             Err(_) => true,
         };
+        let settings = model.settings.into_inner();
+        let settings_oversized = match serde_json::to_vec(&settings) {
+            Ok(encoded) => encoded.len() > MAX_ADMIN_CHANNEL_JSON_BYTES as usize,
+            Err(_) => true,
+        };
+        let auto_ban_rules_value = if settings_oversized {
+            None
+        } else {
+            settings.as_object().map(|object| {
+                object
+                    .get(AUTO_BAN_RULES_KEY)
+                    .cloned()
+                    .unwrap_or_else(|| JsonValue::Object(Default::default()))
+            })
+        };
         AdminChannelRow {
             channel_id: model.id,
             name: model.name,
             channel_type: model.r#type,
             protocol: model.protocol,
             base_url: model.base_url.map(|value| value.as_str().to_owned()),
+            timeout_secs: model.timeout_secs,
             status: model.status,
             weight: model.weight,
             priority: model.priority,
             auto_ban: model.auto_ban,
+            auto_ban_rules: auto_ban_rules_value,
+            pool_mode_state: if settings_oversized {
+                -1
+            } else {
+                pool_mode(&settings).map(i64::from).unwrap_or(-1)
+            },
+            client_simulation_profile: setting_value(&settings, CLIENT_SIMULATION_PROFILE_KEY),
+            client_simulation_body_profile: setting_value(
+                &settings,
+                CLIENT_SIMULATION_BODY_PROFILE_KEY,
+            ),
             models: Vec::new(),
             group_ids: Vec::new(),
             model_mapping: Some(model.model_mapping),
             model_mapping_oversized,
             param_override: Some(model.param_override),
             param_override_oversized,
+            responses_websocket_state: if settings_oversized {
+                -1
+            } else {
+                responses_websocket_enabled(&settings)
+                    .map(i64::from)
+                    .unwrap_or(-1)
+            },
+            responses_compact_mode: setting_value(&settings, RESPONSES_COMPACT_MODE_KEY),
+            responses_compact_model_mapping: setting_value(
+                &settings,
+                RESPONSES_COMPACT_MODEL_MAPPING_KEY,
+            ),
+            responses_compact_probe_result: setting_value(
+                &settings,
+                RESPONSES_COMPACT_PROBE_RESULT_KEY,
+            ),
+            responses_compact_probe_checked_at: setting_value(
+                &settings,
+                RESPONSES_COMPACT_PROBE_CHECKED_AT_KEY,
+            ),
+            responses_compact_probe_http_status: setting_value(
+                &settings,
+                RESPONSES_COMPACT_PROBE_HTTP_STATUS_KEY,
+            ),
+            settings_oversized,
             balance: model.balance,
             used_quota: model.used_quota,
             tag: model.tag,
@@ -110,6 +189,12 @@ impl AdminChannelRecord {
         self.base_url.as_deref()
     }
 
+    /// 返回可选渠道超时；空值表示使用对应场景的服务默认值。
+    #[must_use]
+    pub const fn timeout(&self) -> Option<ChannelTimeout> {
+        self.timeout
+    }
+
     /// 返回渠道运行状态。
     #[must_use]
     pub const fn status(&self) -> Status {
@@ -132,6 +217,66 @@ impl AdminChannelRecord {
     #[must_use]
     pub const fn auto_ban(&self) -> bool {
         self.auto_ban
+    }
+
+    /// 返回已校验的渠道自动禁用状态码与关键词规则。
+    #[must_use]
+    pub const fn auto_ban_rules(&self) -> &ChannelAutoBanRules {
+        &self.auto_ban_rules
+    }
+
+    /// 返回渠道是否把上游账号健康交由外部池管理。
+    #[must_use]
+    pub const fn pool_mode(&self) -> bool {
+        self.pool_mode
+    }
+
+    /// 返回渠道显式选择的版本化客户端仿真档案。
+    #[must_use]
+    pub const fn client_simulation_profile(&self) -> Option<ClientSimulationProfile> {
+        self.client_simulation_profile
+    }
+
+    /// 返回渠道显式选择的版本化客户端仿真正文档案。
+    #[must_use]
+    pub const fn client_simulation_body_profile(&self) -> Option<ClientSimulationBodyProfile> {
+        self.client_simulation_body_profile
+    }
+
+    /// 返回渠道是否显式开启原生 Responses WebSocket。
+    #[must_use]
+    pub const fn responses_websocket_enabled(&self) -> bool {
+        self.responses_websocket_enabled
+    }
+
+    /// 返回 Compact 三态能力策略。
+    #[must_use]
+    pub const fn responses_compact_mode(&self) -> ResponsesCompactMode {
+        self.responses_compact_mode
+    }
+
+    /// 返回 Compact 专属模型映射对象。
+    #[must_use]
+    pub const fn responses_compact_model_mapping(&self) -> &JsonValue {
+        &self.responses_compact_model_mapping
+    }
+
+    /// 返回最近一次确定性 Compact 探测结论。
+    #[must_use]
+    pub const fn responses_compact_probe_result(&self) -> ResponsesCompactProbeResult {
+        self.responses_compact_probe_result
+    }
+
+    /// 返回最近一次确定性 Compact 探测时间（Unix 毫秒）。
+    #[must_use]
+    pub const fn responses_compact_probe_checked_at(&self) -> Option<i64> {
+        self.responses_compact_probe_checked_at
+    }
+
+    /// 返回最近一次 Compact 探测的受控 HTTP 状态。
+    #[must_use]
+    pub const fn responses_compact_probe_http_status(&self) -> Option<u16> {
+        self.responses_compact_probe_http_status
     }
 
     /// 返回按 Canonical 原文排序的渠道模型集合。
@@ -410,16 +555,28 @@ struct AdminChannelRow {
     channel_type: String,
     protocol: String,
     base_url: Option<String>,
+    timeout_secs: Option<i32>,
     status: i16,
     weight: i32,
     priority: i32,
     auto_ban: bool,
+    auto_ban_rules: Option<JsonValue>,
+    pool_mode_state: i64,
+    client_simulation_profile: Option<JsonValue>,
+    client_simulation_body_profile: Option<JsonValue>,
     models: Vec<String>,
     group_ids: Vec<GroupId>,
     model_mapping: Option<JsonValue>,
     model_mapping_oversized: bool,
     param_override: Option<JsonValue>,
     param_override_oversized: bool,
+    responses_websocket_state: i64,
+    responses_compact_mode: Option<JsonValue>,
+    responses_compact_model_mapping: Option<JsonValue>,
+    responses_compact_probe_result: Option<JsonValue>,
+    responses_compact_probe_checked_at: Option<JsonValue>,
+    responses_compact_probe_http_status: Option<JsonValue>,
+    settings_oversized: bool,
     balance: Option<i64>,
     used_quota: i64,
     tag: Option<String>,
@@ -435,16 +592,31 @@ impl AdminChannelRow {
             channel_type: result.try_get("", "channel_type")?,
             protocol: result.try_get("", "protocol")?,
             base_url: result.try_get("", "base_url")?,
+            timeout_secs: result.try_get("", "timeout_secs")?,
             status: result.try_get("", "status")?,
             weight: result.try_get("", "weight")?,
             priority: result.try_get("", "priority")?,
             auto_ban: result.try_get("", "auto_ban")?,
+            auto_ban_rules: result.try_get("", "auto_ban_rules")?,
+            pool_mode_state: result.try_get("", "pool_mode")?,
+            client_simulation_profile: result.try_get("", "client_simulation_profile")?,
+            client_simulation_body_profile: result.try_get("", "client_simulation_body_profile")?,
             models: Vec::new(),
             group_ids: Vec::new(),
             model_mapping: result.try_get("", "model_mapping")?,
             model_mapping_oversized: result.try_get("", "model_mapping_oversized")?,
             param_override: result.try_get("", "param_override")?,
             param_override_oversized: result.try_get("", "param_override_oversized")?,
+            responses_websocket_state: result.try_get("", "responses_websocket_enabled")?,
+            responses_compact_mode: result.try_get("", "responses_compact_mode")?,
+            responses_compact_model_mapping: result
+                .try_get("", "responses_compact_model_mapping")?,
+            responses_compact_probe_result: result.try_get("", "responses_compact_probe_result")?,
+            responses_compact_probe_checked_at: result
+                .try_get("", "responses_compact_probe_checked_at")?,
+            responses_compact_probe_http_status: result
+                .try_get("", "responses_compact_probe_http_status")?,
+            settings_oversized: result.try_get("", "settings_oversized")?,
             balance: result.try_get("", "balance")?,
             used_quota: result.try_get("", "used_quota")?,
             tag: result.try_get("", "tag")?,
@@ -467,10 +639,97 @@ impl AdminChannelRow {
                     .map_err(|_| internal_invariant())
             })
             .transpose()?;
+        let timeout = self
+            .timeout_secs
+            .map(|value| {
+                <u64 as std::convert::TryFrom<i32>>::try_from(value)
+                    .ok()
+                    .and_then(|value| ChannelTimeout::new(value).ok())
+                    .ok_or_else(internal_invariant)
+            })
+            .transpose()?;
         let model_mapping =
             validated_json_object(self.model_mapping, self.model_mapping_oversized, true)?;
+        ChannelModelMappings::parse(&model_mapping).map_err(|_| internal_invariant())?;
         let param_override =
             validated_json_object(self.param_override, self.param_override_oversized, false)?;
+        ChannelParameterOverrides::parse(&param_override).map_err(|_| internal_invariant())?;
+        let responses_websocket_enabled = match self.responses_websocket_state {
+            0 => false,
+            1 => true,
+            _ => return Err(internal_invariant()),
+        };
+        if self.settings_oversized {
+            return Err(internal_invariant());
+        }
+        let settings = compact_settings_projection(
+            self.client_simulation_profile,
+            self.client_simulation_body_profile,
+            self.responses_compact_mode,
+            self.responses_compact_model_mapping,
+            self.responses_compact_probe_result,
+            self.responses_compact_probe_checked_at,
+            self.responses_compact_probe_http_status,
+        );
+        let responses_compact_mode =
+            responses_compact_mode(&settings).map_err(|_| internal_invariant())?;
+        let client_simulation_profile =
+            client_simulation_profile(&settings).map_err(|_| internal_invariant())?;
+        let client_simulation_body_profile =
+            client_simulation_body_profile(&settings).map_err(|_| internal_invariant())?;
+        validate_client_simulation_capability(channel_type, protocol, client_simulation_profile)
+            .map_err(|_| internal_invariant())?;
+        validate_client_simulation_body_capability(
+            channel_type,
+            protocol,
+            client_simulation_profile,
+            client_simulation_body_profile,
+        )
+        .map_err(|_| internal_invariant())?;
+        let responses_compact_model_mapping =
+            responses_compact_model_mapping(&settings).map_err(|_| internal_invariant())?;
+        validate_responses_compact_capability(channel_type, protocol, responses_compact_mode)
+            .map_err(|_| internal_invariant())?;
+        validate_responses_compact_model_mapping(
+            channel_type,
+            protocol,
+            &responses_compact_model_mapping,
+        )
+        .map_err(|_| internal_invariant())?;
+        let responses_compact_model_mapping = responses_compact_model_mapping.to_projection_json();
+        let responses_compact_probe =
+            responses_compact_probe_record(&settings).map_err(|_| internal_invariant())?;
+        let responses_compact_probe_result = responses_compact_probe
+            .map_or(ResponsesCompactProbeResult::Unknown, |record| {
+                record.result()
+            });
+        validate_responses_compact_probe_result(
+            channel_type,
+            protocol,
+            responses_compact_probe_result,
+        )
+        .map_err(|_| internal_invariant())?;
+        let responses_compact_probe_checked_at =
+            responses_compact_probe.map(|record| record.checked_at());
+        let responses_compact_probe_http_status =
+            responses_compact_probe.and_then(|record| record.http_status());
+        let auto_ban_rules_value = self
+            .auto_ban_rules
+            .as_ref()
+            .ok_or_else(internal_invariant)?;
+        let auto_ban_rules = parse_auto_ban_rules_value(Some(auto_ban_rules_value))
+            .map_err(|_| internal_invariant())?;
+        let pool_mode = match self.pool_mode_state {
+            0 => false,
+            1 => true,
+            _ => return Err(internal_invariant()),
+        };
+        validate_responses_websocket_capability(
+            channel_type,
+            protocol,
+            responses_websocket_enabled,
+        )
+        .map_err(|_| internal_invariant())?;
         let created_at = self.created_at.unix_timestamp();
         let updated_at = self.updated_at.unix_timestamp();
         if !valid_text(&self.name, 128)
@@ -491,10 +750,21 @@ impl AdminChannelRow {
             channel_type,
             protocol,
             base_url,
+            timeout,
             status,
             weight: self.weight,
             priority: self.priority,
             auto_ban: self.auto_ban,
+            auto_ban_rules,
+            pool_mode,
+            client_simulation_profile,
+            client_simulation_body_profile,
+            responses_websocket_enabled,
+            responses_compact_mode,
+            responses_compact_model_mapping,
+            responses_compact_probe_result,
+            responses_compact_probe_checked_at,
+            responses_compact_probe_http_status,
             models: self.models,
             group_ids: self.group_ids,
             model_mapping,
@@ -537,8 +807,16 @@ pub(crate) fn channel_base_query(database_backend: DbBackend) -> SelectStatement
         channel_json_length(database_backend, channels::Column::ModelMapping);
     let param_override_length =
         channel_json_length(database_backend, channels::Column::ParamOverride);
+    let settings_length = channel_json_length(database_backend, channels::Column::Settings);
     let model_mapping_column = || Expr::col((channels::Entity, channels::Column::ModelMapping));
     let param_override_column = || Expr::col((channels::Entity, channels::Column::ParamOverride));
+    let bounded_setting = |key| {
+        Expr::case(
+            settings_length.clone().lte(MAX_ADMIN_CHANNEL_JSON_BYTES),
+            channel_setting_projection(database_backend, key),
+        )
+        .finally(Expr::value(Option::<JsonValue>::None))
+    };
 
     Query::select()
         .expr_as(
@@ -560,6 +838,10 @@ pub(crate) fn channel_base_query(database_backend: DbBackend) -> SelectStatement
         .expr_as(
             Expr::col((channels::Entity, channels::Column::BaseUrl)),
             Alias::new("base_url"),
+        )
+        .expr_as(
+            Expr::col((channels::Entity, channels::Column::TimeoutSecs)),
+            Alias::new("timeout_secs"),
         )
         .expr_as(
             Expr::col((channels::Entity, channels::Column::Status)),
@@ -606,6 +888,50 @@ pub(crate) fn channel_base_query(database_backend: DbBackend) -> SelectStatement
             Alias::new("param_override_oversized"),
         )
         .expr_as(
+            channel_responses_websocket_projection(database_backend),
+            Alias::new("responses_websocket_enabled"),
+        )
+        .expr_as(
+            bounded_setting(CLIENT_SIMULATION_PROFILE_KEY),
+            Alias::new("client_simulation_profile"),
+        )
+        .expr_as(
+            bounded_setting(CLIENT_SIMULATION_BODY_PROFILE_KEY),
+            Alias::new("client_simulation_body_profile"),
+        )
+        .expr_as(
+            bounded_setting(RESPONSES_COMPACT_MODE_KEY),
+            Alias::new("responses_compact_mode"),
+        )
+        .expr_as(
+            bounded_setting(RESPONSES_COMPACT_MODEL_MAPPING_KEY),
+            Alias::new("responses_compact_model_mapping"),
+        )
+        .expr_as(
+            bounded_setting(RESPONSES_COMPACT_PROBE_RESULT_KEY),
+            Alias::new("responses_compact_probe_result"),
+        )
+        .expr_as(
+            bounded_setting(RESPONSES_COMPACT_PROBE_CHECKED_AT_KEY),
+            Alias::new("responses_compact_probe_checked_at"),
+        )
+        .expr_as(
+            bounded_setting(RESPONSES_COMPACT_PROBE_HTTP_STATUS_KEY),
+            Alias::new("responses_compact_probe_http_status"),
+        )
+        .expr_as(
+            Expr::case(settings_length.gt(MAX_ADMIN_CHANNEL_JSON_BYTES), true).finally(false),
+            Alias::new("settings_oversized"),
+        )
+        .expr_as(
+            channel_auto_ban_rules_projection(database_backend),
+            Alias::new("auto_ban_rules"),
+        )
+        .expr_as(
+            channel_pool_mode_projection(database_backend),
+            Alias::new("pool_mode"),
+        )
+        .expr_as(
             Expr::col((channels::Entity, channels::Column::Balance)),
             Alias::new("balance"),
         )
@@ -629,6 +955,56 @@ pub(crate) fn channel_base_query(database_backend: DbBackend) -> SelectStatement
         .to_owned()
 }
 
+fn channel_setting_projection(database_backend: DbBackend, key: &str) -> SimpleExpr {
+    match database_backend {
+        DbBackend::Postgres => Expr::cust(format!(
+            r#"CASE WHEN jsonb_typeof("channels"."settings") <> 'object' THEN NULL ELSE "channels"."settings" -> '{key}' END"#,
+        )),
+        DbBackend::MySql => Expr::cust(format!(
+            "CASE WHEN JSON_TYPE(`channels`.`settings`) <> 'OBJECT' THEN NULL ELSE JSON_EXTRACT(`channels`.`settings`, '$.{key}') END",
+        )),
+        DbBackend::Sqlite => Expr::cust(format!(
+            r#"CASE WHEN json_type("channels"."settings") <> 'object' THEN NULL WHEN json_type("channels"."settings", '$.{key}') IS NULL THEN NULL ELSE json_quote(json_extract("channels"."settings", '$.{key}')) END"#,
+        )),
+    }
+}
+
+fn setting_value(settings: &JsonValue, key: &str) -> Option<JsonValue> {
+    settings
+        .as_object()
+        .and_then(|object| object.get(key))
+        .cloned()
+}
+
+fn compact_settings_projection(
+    client_simulation_profile: Option<JsonValue>,
+    client_simulation_body_profile: Option<JsonValue>,
+    mode: Option<JsonValue>,
+    model_mapping: Option<JsonValue>,
+    probe_result: Option<JsonValue>,
+    probe_checked_at: Option<JsonValue>,
+    probe_http_status: Option<JsonValue>,
+) -> JsonValue {
+    let mut settings = serde_json::Map::new();
+    for (key, value) in [
+        (CLIENT_SIMULATION_PROFILE_KEY, client_simulation_profile),
+        (
+            CLIENT_SIMULATION_BODY_PROFILE_KEY,
+            client_simulation_body_profile,
+        ),
+        (RESPONSES_COMPACT_MODE_KEY, mode),
+        (RESPONSES_COMPACT_MODEL_MAPPING_KEY, model_mapping),
+        (RESPONSES_COMPACT_PROBE_RESULT_KEY, probe_result),
+        (RESPONSES_COMPACT_PROBE_CHECKED_AT_KEY, probe_checked_at),
+        (RESPONSES_COMPACT_PROBE_HTTP_STATUS_KEY, probe_http_status),
+    ] {
+        if let Some(value) = value {
+            settings.insert(key.to_owned(), value);
+        }
+    }
+    JsonValue::Object(settings)
+}
+
 fn channel_json_length(database_backend: DbBackend, column: channels::Column) -> SimpleExpr {
     let value = Expr::col((channels::Entity, column));
     match database_backend {
@@ -639,6 +1015,48 @@ fn channel_json_length(database_backend: DbBackend, column: channels::Column) ->
             .arg(value.cast_as(Alias::new("CHAR")))
             .into(),
         DbBackend::Sqlite => Func::char_length(value.cast_as(Alias::new("BLOB"))).into(),
+    }
+}
+
+fn channel_responses_websocket_projection(database_backend: DbBackend) -> SimpleExpr {
+    match database_backend {
+        DbBackend::Postgres => Expr::cust(
+            r#"CASE WHEN jsonb_typeof("channels"."settings") <> 'object' THEN -1 WHEN NOT ("channels"."settings" ? 'responses_websocket_enabled') THEN 0 WHEN jsonb_typeof("channels"."settings" -> 'responses_websocket_enabled') <> 'boolean' THEN -1 WHEN ("channels"."settings" ->> 'responses_websocket_enabled')::boolean THEN 1 ELSE 0 END"#,
+        ),
+        DbBackend::MySql => Expr::cust(
+            "CASE WHEN JSON_TYPE(`channels`.`settings`) <> 'OBJECT' THEN -1 WHEN JSON_CONTAINS_PATH(`channels`.`settings`, 'one', '$.responses_websocket_enabled') = 0 THEN 0 WHEN JSON_TYPE(JSON_EXTRACT(`channels`.`settings`, '$.responses_websocket_enabled')) <> 'BOOLEAN' THEN -1 WHEN JSON_UNQUOTE(JSON_EXTRACT(`channels`.`settings`, '$.responses_websocket_enabled')) = 'true' THEN 1 ELSE 0 END",
+        ),
+        DbBackend::Sqlite => Expr::cust(
+            r#"CASE WHEN json_type("channels"."settings") <> 'object' THEN -1 WHEN json_type("channels"."settings", '$.responses_websocket_enabled') IS NULL THEN 0 WHEN json_type("channels"."settings", '$.responses_websocket_enabled') NOT IN ('true', 'false') THEN -1 WHEN json_extract("channels"."settings", '$.responses_websocket_enabled') = 1 THEN 1 ELSE 0 END"#,
+        ),
+    }
+}
+
+fn channel_pool_mode_projection(database_backend: DbBackend) -> SimpleExpr {
+    match database_backend {
+        DbBackend::Postgres => Expr::cust(
+            r#"CASE WHEN jsonb_typeof("channels"."settings") <> 'object' THEN -1 WHEN NOT ("channels"."settings" ? 'pool_mode') THEN 0 WHEN jsonb_typeof("channels"."settings" -> 'pool_mode') <> 'boolean' THEN -1 WHEN ("channels"."settings" ->> 'pool_mode')::boolean THEN 1 ELSE 0 END"#,
+        ),
+        DbBackend::MySql => Expr::cust(
+            "CASE WHEN JSON_TYPE(`channels`.`settings`) <> 'OBJECT' THEN -1 WHEN JSON_CONTAINS_PATH(`channels`.`settings`, 'one', '$.pool_mode') = 0 THEN 0 WHEN JSON_TYPE(JSON_EXTRACT(`channels`.`settings`, '$.pool_mode')) <> 'BOOLEAN' THEN -1 WHEN JSON_UNQUOTE(JSON_EXTRACT(`channels`.`settings`, '$.pool_mode')) = 'true' THEN 1 ELSE 0 END",
+        ),
+        DbBackend::Sqlite => Expr::cust(
+            r#"CASE WHEN json_type("channels"."settings") <> 'object' THEN -1 WHEN json_type("channels"."settings", '$.pool_mode') IS NULL THEN 0 WHEN json_type("channels"."settings", '$.pool_mode') NOT IN ('true', 'false') THEN -1 WHEN json_extract("channels"."settings", '$.pool_mode') = 1 THEN 1 ELSE 0 END"#,
+        ),
+    }
+}
+
+fn channel_auto_ban_rules_projection(database_backend: DbBackend) -> SimpleExpr {
+    match database_backend {
+        DbBackend::Postgres => Expr::cust(
+            r#"CASE WHEN jsonb_typeof("channels"."settings") <> 'object' THEN NULL WHEN NOT ("channels"."settings" ? 'auto_ban_rules') THEN '{}'::jsonb ELSE "channels"."settings" -> 'auto_ban_rules' END"#,
+        ),
+        DbBackend::MySql => Expr::cust(
+            "CASE WHEN JSON_TYPE(`channels`.`settings`) <> 'OBJECT' THEN NULL WHEN JSON_CONTAINS_PATH(`channels`.`settings`, 'one', '$.auto_ban_rules') = 0 THEN JSON_OBJECT() ELSE JSON_EXTRACT(`channels`.`settings`, '$.auto_ban_rules') END",
+        ),
+        DbBackend::Sqlite => Expr::cust(
+            r#"CASE WHEN json_type("channels"."settings") <> 'object' THEN NULL WHEN json_type("channels"."settings", '$.auto_ban_rules') IS NULL THEN json('{}') ELSE json_quote(json_extract("channels"."settings", '$.auto_ban_rules')) END"#,
+        ),
     }
 }
 

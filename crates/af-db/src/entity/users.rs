@@ -15,6 +15,7 @@ pub struct Model {
     pub email: Option<String>,
     #[sea_orm(column_type = "String(StringLen::N(255))", nullable)]
     pub password_hash: Option<PasswordHash>,
+    pub session_version: i64,
     pub role: i16,
     pub status: i16,
     pub default_group_id: i64,
@@ -31,6 +32,12 @@ pub struct Model {
     pub totp_secret: Option<EncryptedJson>,
     pub rpm_limit: Option<i32>,
     pub concurrency: Option<i32>,
+    /// 是否接收产品更新邮件；默认关闭，避免未经选择的营销触达。
+    pub email_product_updates: bool,
+    /// 是否接收用量提醒邮件；默认开启，便于用户及时发现额度风险。
+    pub email_usage_alerts: bool,
+    /// 个人余额预警阈值；空值表示继承系统默认值。
+    pub balance_alert_threshold: Option<i64>,
     #[sea_orm(column_type = "JsonBinary")]
     pub settings: Json,
     pub created_at: TimeDateTimeWithTimeZone,

@@ -6,7 +6,8 @@ use sea_orm::{ConnectionTrait, DbBackend, Statement};
 use super::{
     AdminTokenCreateRecord, AdminTokenDeleteOutcome, AdminTokenMutationOutcome,
     AdminTokenRepository, AdminTokenWriteRecord, AdminTokenWriteRepositoryError, DatabaseOptions,
-    MigrationOptions,
+    MAX_USER_TOKENS_PER_USER, MigrationOptions, UserTokenCreateRecord, UserTokenDeleteOutcome,
+    UserTokenRepository, UserTokenRepositoryError, UserTokenWriteRecord,
 };
 
 #[tokio::test]
@@ -127,6 +128,53 @@ async fn writes_reject_invalid_references_and_owner_transfer() -> Result<(), Box
 }
 
 #[tokio::test]
+async fn admin_and_user_creation_share_atomic_capacity_guard() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let user_repository = UserTokenRepository::new(fixture.pool.clone(), Duration::from_secs(2))?;
+    for index in 1..MAX_USER_TOKENS_PER_USER {
+        user_repository
+            .create(user_create_record(fixture.user_id, index))
+            .await?;
+    }
+
+    let admin_repository = fixture.repository.clone();
+    let concurrent_user_repository = user_repository.clone();
+    let (admin_result, user_result) = tokio::join!(
+        admin_repository.create_token(create_record(fixture.user_id, fixture.vip_group_id)),
+        concurrent_user_repository.create(user_create_record(fixture.user_id, 100)),
+    );
+    assert!(matches!(
+        (&admin_result, &user_result),
+        (Ok(_), Err(UserTokenRepositoryError::LimitReached))
+            | (Err(AdminTokenWriteRepositoryError::LimitReached), Ok(_))
+    ));
+
+    let (tokens, _) = user_repository
+        .list(fixture.user_id, None, MAX_USER_TOKENS_PER_USER)
+        .await?
+        .into_parts();
+    assert_eq!(tokens.len(), MAX_USER_TOKENS_PER_USER);
+    assert_eq!(
+        user_repository
+            .delete(fixture.user_id, tokens[0].token_id())
+            .await?,
+        UserTokenDeleteOutcome::Deleted
+    );
+    fixture
+        .repository
+        .create_token(AdminTokenCreateRecord::new(
+            fixture.user_id,
+            "22".repeat(32),
+            "sk-af-public000002".to_owned(),
+            write_record("released-slot", Some(fixture.vip_group_id), false),
+        ))
+        .await?;
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn delete_writes_one_tombstone_and_hides_token() -> Result<(), Box<dyn Error>> {
     let fixture = fixture().await?;
     let token_id = fixture
@@ -217,6 +265,23 @@ fn create_record(user_id: UserId, group_id: GroupId) -> AdminTokenCreateRecord {
         "11".repeat(32),
         "sk-af-public000001".to_owned(),
         write_record("primary", Some(group_id), true),
+    )
+}
+
+fn user_create_record(user_id: UserId, index: usize) -> UserTokenCreateRecord {
+    UserTokenCreateRecord::new(
+        user_id,
+        format!("{index:064x}"),
+        format!("sk-af-{index:012}"),
+        UserTokenWriteRecord::new(
+            format!("user-key-{index}"),
+            1,
+            1_000,
+            false,
+            None,
+            None,
+            None,
+        ),
     )
 }
 

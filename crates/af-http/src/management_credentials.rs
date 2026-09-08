@@ -36,6 +36,7 @@ pub(crate) struct AdminCredentialResponse {
     priority: i32,
     #[schema(minimum = 0)]
     weight: i32,
+    /// 普通凭据的独立并发上限；Spark 影子为 null 并继承母凭据。
     #[schema(minimum = 0, required = true)]
     concurrency: Option<i32>,
     #[schema(minimum = 0, required = true)]
@@ -52,23 +53,33 @@ pub(crate) struct AdminCredentialResponse {
     overload_until: Option<i64>,
     #[schema(minimum = 0, required = true)]
     temp_unschedulable_until: Option<i64>,
+    /// 当前凭据的共享认证健康是否会阻断 Spark 影子；普通额度冷却不会置为 true。
+    blocks_spark_shadow: bool,
     #[schema(minimum = 0, required = true)]
     session_window_start: Option<i64>,
     #[schema(minimum = 0, required = true)]
     session_window_end: Option<i64>,
+    /// Spark 影子的 OAuth 母凭据 ID；普通凭据为 null。
     #[schema(minimum = 1, required = true)]
     parent_id: Option<i64>,
+    /// `global` 表示普通凭据，`spark` 表示仅供 Spark 模型使用的影子。
     #[schema(value_type = crate::openapi::schema::AdminCredentialQuotaDimensionSchema)]
     quota_dimension: af_admin::AdminCredentialQuotaDimension,
+    /// 普通凭据的专属代理；Spark 影子为 null 并继承母凭据。
     #[schema(minimum = 1, required = true)]
     proxy_id: Option<i64>,
     #[schema(min_length = 1, max_length = 64, required = true)]
     oauth_provider: Option<String>,
+    /// OAuth token 尚未完成首次交换时为 true，此状态不会进入运行时调度。
+    oauth_token_pending: bool,
     /// OAuth 账号的非令牌业务标识。
     #[schema(min_length = 1, max_length = 255, required = true)]
     oauth_account_key: Option<String>,
     #[schema(min_length = 1, max_length = 255, required = true)]
     oauth_project_id: Option<String>,
+    /// 仅在 OAuth token 集合成功持久化后单调递增。
+    #[schema(minimum = 0)]
+    oauth_revision: i64,
     #[schema(minimum = 0, required = true)]
     last_used_at: Option<i64>,
     #[schema(minimum = 0)]
@@ -164,17 +175,28 @@ impl AdminCredentialResponse {
             rate_limit_reset_at: credential.rate_limit_reset_at(),
             overload_until: credential.overload_until(),
             temp_unschedulable_until: credential.temp_unschedulable_until(),
+            blocks_spark_shadow: credential.blocks_spark_shadow(current_unix_timestamp()),
             session_window_start: credential.session_window_start(),
             session_window_end: credential.session_window_end(),
             parent_id: credential.parent_id().map(CredentialId::get),
             quota_dimension: credential.quota_dimension(),
             proxy_id: credential.proxy_id(),
             oauth_provider: credential.oauth_provider().map(str::to_owned),
+            oauth_token_pending: credential.oauth_token_pending(),
             oauth_account_key: credential.oauth_account_key().map(str::to_owned),
             oauth_project_id: credential.oauth_project_id().map(str::to_owned),
+            oauth_revision: credential.oauth_revision(),
             last_used_at: credential.last_used_at(),
             created_at: credential.created_at(),
             updated_at: credential.updated_at(),
         }
     }
+}
+
+fn current_unix_timestamp() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| i64::try_from(duration.as_secs()).ok())
+        .unwrap_or(i64::MAX)
 }

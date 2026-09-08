@@ -10,8 +10,10 @@ mod error;
 #[cfg(test)]
 mod http_client_tests;
 mod pool;
+mod provider;
 mod resolver;
 mod transport;
+mod websocket;
 
 pub use bytes::Bytes;
 pub(crate) use config::TargetAddressPolicy;
@@ -25,5 +27,10 @@ pub use pool::{
     DEFAULT_MAX_CACHED_CLIENTS, DEFAULT_POOL_IDLE_TIMEOUT, DEFAULT_POOL_MAX_IDLE_PER_HOST,
     HttpClientPool,
 };
+pub use provider::HttpClientProvider;
 pub use reqwest::Body;
-pub use transport::{HttpBodyStream, HttpResponse, PooledClient};
+pub use transport::{HttpBodyStream, HttpResponse, PooledClient, PooledClientIdentity};
+pub use websocket::{
+    MAX_MANAGED_WEBSOCKET_MESSAGE_BYTES, WebSocketConnection, WebSocketFrame,
+    WebSocketTransportError,
+};

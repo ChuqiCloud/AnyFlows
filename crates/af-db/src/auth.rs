@@ -1,8 +1,16 @@
-use std::{fmt, time::Duration};
+use std::{fmt, num::NonZeroU32, time::Duration};
 
-use af_domain::{GatewayPrincipal, GroupId, TokenId, TokenModelPolicy, TrustedClientIp, UserId};
+use af_domain::{
+    ConcurrencyLimit, GatewayPrincipal, GroupId, OrganizationDepartmentId,
+    OrganizationDepartmentMembershipStatus, OrganizationDepartmentStatus,
+    OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationGatewayPrincipal,
+    OrganizationId, OrganizationMembershipId, OrganizationMembershipStatus, OrganizationStatus,
+    OrganizationTeamId, OrganizationTeamStatus, PLAYGROUND_TOKEN_NAME, TokenId, TokenModelPolicy,
+    TrustedClientIp, UserId,
+};
 use sea_orm::{
-    ConnectionTrait, DbBackend, DbErr, QueryResult,
+    ColumnTrait, ConnectionTrait, DbBackend, DbErr, EntityTrait, PaginatorTrait, QueryFilter,
+    QueryResult,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Alias, Expr, ExprTrait, Func, Query, SelectStatement, SimpleExpr},
 };
@@ -14,7 +22,9 @@ use crate::{
     DatabasePool,
     entity::{
         MAX_TOKEN_IP_ALLOWLIST_SERIALIZED_BYTES, MAX_TOKEN_MODEL_ALLOWLIST_SERIALIZED_BYTES,
-        TokenHash, TokenIpAllowlist, TokenModelAllowlist, groups, tokens, users,
+        TokenHash, TokenIpAllowlist, TokenModelAllowlist, groups,
+        organization_department_memberships, organization_departments, organization_entitlements,
+        organization_memberships, organization_teams, organizations, tokens, users,
     },
 };
 
@@ -56,6 +66,12 @@ pub enum TokenAuthLookupOutcome {
         principal: GatewayPrincipal,
         /// 已完整解码的不可变令牌模型策略。
         model_policy: TokenModelPolicy,
+        /// 与用户状态同一次查询取得的并发限制快照；空值表示不限并发。
+        user_concurrency: Option<ConcurrencyLimit>,
+        /// 与用户和分组状态同一次查询取得的 RPM 限制快照；空值表示不限。
+        user_rpm_limit: Option<NonZeroU32>,
+        /// 当前令牌实际使用分组的 RPM 限制快照；空值表示不限。
+        group_rpm_limit: Option<NonZeroU32>,
     },
     /// Key 不存在，或状态、软删除、过期、客户端 IP 不允许继续访问。
     Rejected,
@@ -141,7 +157,7 @@ impl TokenAuthRepository {
         };
         let row = TokenAuthRow::try_from_query_result(&result)
             .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
-        row.validate(client_ip)
+        row.validate(client_ip, connection).await
     }
 }
 
@@ -168,6 +184,10 @@ fn lookup_query(database_backend: DbBackend, lookup: &TokenAuthLookup) -> Select
             Alias::new("token_id"),
         )
         .expr_as(
+            Expr::col((tokens::Entity, tokens::Column::Name)),
+            Alias::new("token_name"),
+        )
+        .expr_as(
             Expr::col((tokens::Entity, tokens::Column::Status)),
             Alias::new("token_status"),
         )
@@ -178,6 +198,22 @@ fn lookup_query(database_backend: DbBackend, lookup: &TokenAuthLookup) -> Select
         .expr_as(
             Expr::col((tokens::Entity, tokens::Column::DeletedAt)),
             Alias::new("token_deleted_at"),
+        )
+        .expr_as(
+            Expr::col((tokens::Entity, tokens::Column::OrganizationId)),
+            Alias::new("token_organization_id"),
+        )
+        .expr_as(
+            Expr::col((tokens::Entity, tokens::Column::OrganizationMembershipId)),
+            Alias::new("token_organization_membership_id"),
+        )
+        .expr_as(
+            Expr::col((tokens::Entity, tokens::Column::OrganizationTeamId)),
+            Alias::new("token_organization_team_id"),
+        )
+        .expr_as(
+            Expr::col((tokens::Entity, tokens::Column::OrganizationDepartmentId)),
+            Alias::new("token_organization_department_id"),
         )
         .expr_as(
             Expr::case(
@@ -232,12 +268,147 @@ fn lookup_query(database_backend: DbBackend, lookup: &TokenAuthLookup) -> Select
             Alias::new("user_deleted_at"),
         )
         .expr_as(
+            Expr::col((users::Entity, users::Column::Concurrency)),
+            Alias::new("user_concurrency"),
+        )
+        .expr_as(
+            Expr::col((users::Entity, users::Column::RpmLimit)),
+            Alias::new("user_rpm_limit"),
+        )
+        .expr_as(
             Expr::col((groups::Entity, groups::Column::Id)),
             Alias::new("group_id"),
         )
         .expr_as(
             Expr::col((groups::Entity, groups::Column::DeletedAt)),
             Alias::new("group_deleted_at"),
+        )
+        .expr_as(
+            Expr::col((groups::Entity, groups::Column::RpmLimit)),
+            Alias::new("group_rpm_limit"),
+        )
+        .expr_as(
+            Expr::col((organizations::Entity, organizations::Column::Status)),
+            Alias::new("organization_status"),
+        )
+        .expr_as(
+            Expr::col((
+                organization_memberships::Entity,
+                organization_memberships::Column::Id,
+            )),
+            Alias::new("membership_id"),
+        )
+        .expr_as(
+            Expr::col((
+                organization_memberships::Entity,
+                organization_memberships::Column::Status,
+            )),
+            Alias::new("membership_status"),
+        )
+        .expr_as(
+            Expr::col((
+                organization_memberships::Entity,
+                organization_memberships::Column::OrganizationId,
+            )),
+            Alias::new("membership_organization_id"),
+        )
+        .expr_as(
+            Expr::col((
+                organization_memberships::Entity,
+                organization_memberships::Column::UserId,
+            )),
+            Alias::new("membership_user_id"),
+        )
+        .expr_as(
+            Expr::col((
+                organization_memberships::Entity,
+                organization_memberships::Column::TeamId,
+            )),
+            Alias::new("membership_team_id"),
+        )
+        .expr_as(
+            Expr::col((
+                organization_teams::Entity,
+                organization_teams::Column::Status,
+            )),
+            Alias::new("organization_team_status"),
+        )
+        .expr_as(
+            Expr::col((
+                organization_teams::Entity,
+                organization_teams::Column::OrganizationId,
+            )),
+            Alias::new("organization_team_organization_id"),
+        )
+        .expr_as(
+            Expr::col((
+                organization_entitlements::Entity,
+                organization_entitlements::Column::TeamManagementEnabled,
+            )),
+            Alias::new("entitlement_team_management_enabled"),
+        )
+        .expr_as(
+            Expr::col((
+                organization_entitlements::Entity,
+                organization_entitlements::Column::SeatLimit,
+            )),
+            Alias::new("entitlement_seat_limit"),
+        )
+        .expr_as(
+            Expr::col((
+                organization_entitlements::Entity,
+                organization_entitlements::Column::TeamLimit,
+            )),
+            Alias::new("entitlement_team_limit"),
+        )
+        .expr_as(
+            Expr::col((
+                organization_entitlements::Entity,
+                organization_entitlements::Column::OrganizationKeyLimit,
+            )),
+            Alias::new("entitlement_organization_key_limit"),
+        )
+        .expr_as(
+            Expr::col((
+                organization_entitlements::Entity,
+                organization_entitlements::Column::AuditRetentionDays,
+            )),
+            Alias::new("entitlement_audit_retention_days"),
+        )
+        .expr_as(
+            Expr::col((
+                organization_entitlements::Entity,
+                organization_entitlements::Column::SsoEnabled,
+            )),
+            Alias::new("entitlement_sso_enabled"),
+        )
+        .expr_as(
+            Expr::col((
+                organization_entitlements::Entity,
+                organization_entitlements::Column::CustomRolesEnabled,
+            )),
+            Alias::new("entitlement_custom_roles_enabled"),
+        )
+        .expr_as(
+            Expr::col((
+                organization_entitlements::Entity,
+                organization_entitlements::Column::ValidFrom,
+            )),
+            Alias::new("entitlement_valid_from"),
+        )
+        .expr_as(
+            Expr::col((
+                organization_entitlements::Entity,
+                organization_entitlements::Column::ValidUntil,
+            )),
+            Alias::new("entitlement_valid_until"),
+        )
+        .expr_as(
+            Expr::col((
+                organization_entitlements::Entity,
+                organization_entitlements::Column::GraceUntil,
+            )),
+            Alias::new("entitlement_grace_until"),
         )
         .from(tokens::Entity)
         .left_join(
@@ -251,6 +422,30 @@ fn lookup_query(database_backend: DbBackend, lookup: &TokenAuthLookup) -> Select
                 Expr::col((tokens::Entity, tokens::Column::GroupId)).into(),
                 Expr::col((users::Entity, users::Column::DefaultGroupId)).into(),
             ])),
+        )
+        .left_join(
+            organizations::Entity,
+            Expr::col((tokens::Entity, tokens::Column::OrganizationId))
+                .equals((organizations::Entity, organizations::Column::Id)),
+        )
+        .left_join(
+            organization_memberships::Entity,
+            Expr::col((tokens::Entity, tokens::Column::OrganizationMembershipId)).equals((
+                organization_memberships::Entity,
+                organization_memberships::Column::Id,
+            )),
+        )
+        .left_join(
+            organization_teams::Entity,
+            Expr::col((tokens::Entity, tokens::Column::OrganizationTeamId))
+                .equals((organization_teams::Entity, organization_teams::Column::Id)),
+        )
+        .left_join(
+            organization_entitlements::Entity,
+            Expr::col((tokens::Entity, tokens::Column::OrganizationId)).equals((
+                organization_entitlements::Entity,
+                organization_entitlements::Column::OrganizationId,
+            )),
         )
         .and_where(Expr::col((tokens::Entity, tokens::Column::KeyHash)).eq(lookup.0.clone()))
         .limit(2)
@@ -279,9 +474,14 @@ pub(crate) fn token_json_serialized_length(
 
 struct TokenAuthRow {
     token_id: i64,
+    token_name: String,
     token_status: i16,
     token_expired_at: Option<TimeDateTimeWithTimeZone>,
     token_deleted_at: Option<TimeDateTimeWithTimeZone>,
+    token_organization_id: Option<i64>,
+    token_organization_membership_id: Option<i64>,
+    token_organization_team_id: Option<i64>,
+    token_organization_department_id: Option<i64>,
     token_model_limits: Option<TokenModelAllowlist>,
     token_model_limits_oversized: bool,
     token_allow_ips: Option<TokenIpAllowlist>,
@@ -289,17 +489,45 @@ struct TokenAuthRow {
     user_id: Option<i64>,
     user_status: Option<i16>,
     user_deleted_at: Option<TimeDateTimeWithTimeZone>,
+    user_concurrency: Option<i32>,
+    user_rpm_limit: Option<i32>,
     group_id: Option<i64>,
     group_deleted_at: Option<TimeDateTimeWithTimeZone>,
+    group_rpm_limit: Option<i32>,
+    organization_status: Option<i16>,
+    membership_id: Option<i64>,
+    membership_status: Option<i16>,
+    membership_organization_id: Option<i64>,
+    membership_user_id: Option<i64>,
+    membership_team_id: Option<i64>,
+    organization_team_status: Option<i16>,
+    organization_team_organization_id: Option<i64>,
+    entitlement_team_management_enabled: Option<bool>,
+    entitlement_seat_limit: Option<i64>,
+    entitlement_team_limit: Option<i64>,
+    entitlement_organization_key_limit: Option<i64>,
+    entitlement_audit_retention_days: Option<i64>,
+    entitlement_sso_enabled: Option<bool>,
+    entitlement_custom_roles_enabled: Option<bool>,
+    entitlement_valid_from: Option<TimeDateTimeWithTimeZone>,
+    entitlement_valid_until: Option<TimeDateTimeWithTimeZone>,
+    entitlement_grace_until: Option<TimeDateTimeWithTimeZone>,
 }
 
 impl TokenAuthRow {
     fn try_from_query_result(result: &QueryResult) -> Result<Self, DbErr> {
         Ok(Self {
             token_id: result.try_get("", "token_id")?,
+            token_name: result.try_get("", "token_name")?,
             token_status: result.try_get("", "token_status")?,
             token_expired_at: result.try_get("", "token_expired_at")?,
             token_deleted_at: result.try_get("", "token_deleted_at")?,
+            token_organization_id: result.try_get("", "token_organization_id")?,
+            token_organization_membership_id: result
+                .try_get("", "token_organization_membership_id")?,
+            token_organization_team_id: result.try_get("", "token_organization_team_id")?,
+            token_organization_department_id: result
+                .try_get("", "token_organization_department_id")?,
             token_model_limits: result.try_get("", "token_model_limits")?,
             token_model_limits_oversized: result.try_get("", "token_model_limits_oversized")?,
             token_allow_ips: result.try_get("", "token_allow_ips")?,
@@ -307,22 +535,45 @@ impl TokenAuthRow {
             user_id: result.try_get("", "user_id")?,
             user_status: result.try_get("", "user_status")?,
             user_deleted_at: result.try_get("", "user_deleted_at")?,
+            user_concurrency: result.try_get("", "user_concurrency")?,
+            user_rpm_limit: result.try_get("", "user_rpm_limit")?,
             group_id: result.try_get("", "group_id")?,
             group_deleted_at: result.try_get("", "group_deleted_at")?,
+            group_rpm_limit: result.try_get("", "group_rpm_limit")?,
+            organization_status: result.try_get("", "organization_status")?,
+            membership_id: result.try_get("", "membership_id")?,
+            membership_status: result.try_get("", "membership_status")?,
+            membership_organization_id: result.try_get("", "membership_organization_id")?,
+            membership_user_id: result.try_get("", "membership_user_id")?,
+            membership_team_id: result.try_get("", "membership_team_id")?,
+            organization_team_status: result.try_get("", "organization_team_status")?,
+            organization_team_organization_id: result
+                .try_get("", "organization_team_organization_id")?,
+            entitlement_team_management_enabled: result
+                .try_get("", "entitlement_team_management_enabled")?,
+            entitlement_seat_limit: result.try_get("", "entitlement_seat_limit")?,
+            entitlement_team_limit: result.try_get("", "entitlement_team_limit")?,
+            entitlement_organization_key_limit: result
+                .try_get("", "entitlement_organization_key_limit")?,
+            entitlement_audit_retention_days: result
+                .try_get("", "entitlement_audit_retention_days")?,
+            entitlement_sso_enabled: result.try_get("", "entitlement_sso_enabled")?,
+            entitlement_custom_roles_enabled: result
+                .try_get("", "entitlement_custom_roles_enabled")?,
+            entitlement_valid_from: result.try_get("", "entitlement_valid_from")?,
+            entitlement_valid_until: result.try_get("", "entitlement_valid_until")?,
+            entitlement_grace_until: result.try_get("", "entitlement_grace_until")?,
         })
     }
 
-    fn validate(
+    async fn validate(
         self,
         client_ip: TrustedClientIp,
+        connection: &impl ConnectionTrait,
     ) -> Result<TokenAuthLookupOutcome, TokenAuthRepositoryError> {
         if self.token_model_limits_oversized || self.token_allow_ips_oversized {
             return Err(record_internal_error(TokenAuthRepositoryError::Invariant));
         }
-        let model_policy = self.token_model_limits.map_or_else(
-            TokenModelPolicy::unrestricted,
-            TokenModelAllowlist::into_policy,
-        );
         let token_enabled = enabled_or_rejected(self.token_status)?;
         let ip_allowed = self
             .token_allow_ips
@@ -335,17 +586,31 @@ impl TokenAuthRow {
             return Err(record_internal_error(TokenAuthRepositoryError::Invariant));
         };
         let user_enabled = enabled_or_rejected(user_status)?;
+        let user_concurrency = normalize_concurrency(self.user_concurrency)?;
+        let user_rpm_limit = normalize_rpm_limit(self.user_rpm_limit)?;
         let Some(group_id) = self.group_id else {
             return Err(record_internal_error(TokenAuthRepositoryError::Invariant));
         };
-        let principal = GatewayPrincipal::new(
-            TokenId::new(self.token_id)
-                .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?,
-            UserId::new(user_id)
-                .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?,
-            GroupId::new(group_id)
-                .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?,
+        let group_rpm_limit = normalize_rpm_limit(self.group_rpm_limit)?;
+        let token_id = TokenId::new(self.token_id)
+            .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
+        let user_id = UserId::new(user_id)
+            .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
+        let group_id = GroupId::new(group_id)
+            .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
+        let organization = self.validate_organization(connection, user_id).await?;
+        let model_policy = self.token_model_limits.map_or_else(
+            TokenModelPolicy::unrestricted,
+            TokenModelAllowlist::into_policy,
         );
+        // 仅个人空间的内部托管 Key 允许试炼场路由策略。
+        let principal = if let Some(organization) = organization {
+            GatewayPrincipal::organization(token_id, user_id, group_id, organization)
+        } else if self.token_name == PLAYGROUND_TOKEN_NAME {
+            GatewayPrincipal::playground(token_id, user_id, group_id)
+        } else {
+            GatewayPrincipal::new(token_id, user_id, group_id)
+        };
 
         if !token_enabled
             || self.token_deleted_at.is_some()
@@ -362,7 +627,203 @@ impl TokenAuthRow {
         Ok(TokenAuthLookupOutcome::Authenticated {
             principal,
             model_policy,
+            user_concurrency,
+            user_rpm_limit,
+            group_rpm_limit,
         })
+    }
+
+    /// 企业 Key 每次使用都重新核对成员、授权、团队和当前容量。
+    async fn validate_organization(
+        &self,
+        connection: &impl ConnectionTrait,
+        user_id: UserId,
+    ) -> Result<Option<OrganizationGatewayPrincipal>, TokenAuthRepositoryError> {
+        let Some(organization_value) = self.token_organization_id else {
+            if self.token_organization_membership_id.is_some()
+                || self.token_organization_team_id.is_some()
+                || self.token_organization_department_id.is_some()
+            {
+                return Err(record_internal_error(TokenAuthRepositoryError::Invariant));
+            }
+            return Ok(None);
+        };
+        let organization_id = OrganizationId::new(organization_value)
+            .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
+        let membership_value = self
+            .token_organization_membership_id
+            .ok_or_else(|| record_internal_error(TokenAuthRepositoryError::Invariant))?;
+        if self.membership_id != Some(membership_value)
+            || self.membership_organization_id != Some(organization_value)
+            || self.membership_user_id != Some(user_id.get())
+            || self.membership_team_id != self.token_organization_team_id
+        {
+            return Ok(None);
+        }
+        let membership_status = OrganizationMembershipStatus::try_from(
+            self.membership_status
+                .ok_or_else(|| record_internal_error(TokenAuthRepositoryError::Invariant))?,
+        )
+        .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
+        if !membership_status.is_active() {
+            return Ok(None);
+        }
+        let organization_status = OrganizationStatus::try_from(
+            self.organization_status
+                .ok_or_else(|| record_internal_error(TokenAuthRepositoryError::Invariant))?,
+        )
+        .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
+        let capacity = OrganizationEntitlementCapacity::new(
+            self.entitlement_seat_limit
+                .ok_or_else(|| record_internal_error(TokenAuthRepositoryError::Invariant))?,
+            self.entitlement_team_limit
+                .ok_or_else(|| record_internal_error(TokenAuthRepositoryError::Invariant))?,
+            self.entitlement_organization_key_limit
+                .ok_or_else(|| record_internal_error(TokenAuthRepositoryError::Invariant))?,
+        )
+        .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
+        let entitlement = OrganizationEntitlementSnapshot::new(
+            capacity,
+            self.entitlement_team_management_enabled
+                .ok_or_else(|| record_internal_error(TokenAuthRepositoryError::Invariant))?,
+            self.entitlement_sso_enabled
+                .ok_or_else(|| record_internal_error(TokenAuthRepositoryError::Invariant))?,
+            self.entitlement_custom_roles_enabled
+                .ok_or_else(|| record_internal_error(TokenAuthRepositoryError::Invariant))?,
+            self.entitlement_audit_retention_days
+                .ok_or_else(|| record_internal_error(TokenAuthRepositoryError::Invariant))?,
+            self.entitlement_valid_from
+                .ok_or_else(|| record_internal_error(TokenAuthRepositoryError::Invariant))?
+                .unix_timestamp(),
+            self.entitlement_valid_until
+                .ok_or_else(|| record_internal_error(TokenAuthRepositoryError::Invariant))?
+                .unix_timestamp(),
+            self.entitlement_grace_until
+                .map(|value| value.unix_timestamp()),
+        )
+        .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
+        if !entitlement
+            .status(
+                organization_status,
+                TimeDateTimeWithTimeZone::now_utc().unix_timestamp(),
+            )
+            .allows_existing_consumption()
+        {
+            return Ok(None);
+        }
+        let team_id = match self.token_organization_team_id {
+            Some(value) => {
+                let status =
+                    OrganizationTeamStatus::try_from(self.organization_team_status.ok_or_else(
+                        || record_internal_error(TokenAuthRepositoryError::Invariant),
+                    )?)
+                    .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
+                if !status.is_active()
+                    || self.organization_team_organization_id != Some(organization_value)
+                    || !entitlement.team_management_enabled()
+                {
+                    return Ok(None);
+                }
+                Some(
+                    OrganizationTeamId::new(value)
+                        .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?,
+                )
+            }
+            None => None,
+        };
+        let department_id = match self.token_organization_department_id {
+            Some(value) => {
+                let department_id = OrganizationDepartmentId::new(value)
+                    .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
+                let department = organization_departments::Entity::find_by_id(value)
+                    .filter(organization_departments::Column::OrganizationId.eq(organization_value))
+                    .one(connection)
+                    .await
+                    .map_err(|_| record_internal_error(TokenAuthRepositoryError::Query))?;
+                let Some(department) = department else {
+                    return Ok(None);
+                };
+                if OrganizationDepartmentStatus::try_from(department.status)
+                    .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?
+                    != OrganizationDepartmentStatus::Active
+                {
+                    return Ok(None);
+                }
+                let binding = organization_department_memberships::Entity::find()
+                    .filter(
+                        organization_department_memberships::Column::OrganizationId
+                            .eq(organization_value),
+                    )
+                    .filter(
+                        organization_department_memberships::Column::MembershipId
+                            .eq(membership_value),
+                    )
+                    .filter(organization_department_memberships::Column::DepartmentId.eq(value))
+                    .filter(
+                        organization_department_memberships::Column::Status
+                            .eq(OrganizationDepartmentMembershipStatus::Active.code()),
+                    )
+                    .one(connection)
+                    .await
+                    .map_err(|_| record_internal_error(TokenAuthRepositoryError::Query))?;
+                if binding.is_none() {
+                    return Ok(None);
+                }
+                Some(department_id)
+            }
+            None => None,
+        };
+        let key_count = tokens::Entity::find()
+            .filter(tokens::Column::OrganizationId.eq(organization_value))
+            .filter(tokens::Column::DeletedAt.is_null())
+            .count(connection)
+            .await
+            .map_err(|_| record_internal_error(TokenAuthRepositoryError::Query))?;
+        let key_limit = u64::try_from(capacity.organization_key_limit())
+            .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
+        if key_count > key_limit {
+            return Ok(None);
+        }
+        let membership_id = OrganizationMembershipId::new(membership_value)
+            .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
+        Ok(Some(match department_id {
+            Some(department_id) => OrganizationGatewayPrincipal::with_department(
+                organization_id,
+                membership_id,
+                team_id,
+                department_id,
+            ),
+            None => OrganizationGatewayPrincipal::new(organization_id, membership_id, team_id),
+        }))
+    }
+}
+
+/// 数据库空值和零值都表示不限并发，负数或无法表示的值视为持久化损坏。
+fn normalize_concurrency(
+    value: Option<i32>,
+) -> Result<Option<ConcurrencyLimit>, TokenAuthRepositoryError> {
+    match value {
+        None | Some(0) => Ok(None),
+        Some(value) if value > 0 => u32::try_from(value)
+            .ok()
+            .and_then(|value| ConcurrencyLimit::new(value).ok())
+            .map(Some)
+            .ok_or_else(|| record_internal_error(TokenAuthRepositoryError::Invariant)),
+        Some(_) => Err(record_internal_error(TokenAuthRepositoryError::Invariant)),
+    }
+}
+
+/// 将持久化的 RPM 字段收敛为安全的正数快照；负值表示数据损坏并拒绝请求。
+fn normalize_rpm_limit(value: Option<i32>) -> Result<Option<NonZeroU32>, TokenAuthRepositoryError> {
+    match value {
+        None | Some(0) => Ok(None),
+        Some(value) if value > 0 => NonZeroU32::new(
+            u32::try_from(value)
+                .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?,
+        )
+        .map(Some)
+        .ok_or_else(|| record_internal_error(TokenAuthRepositoryError::Invariant)),
+        Some(_) => Err(record_internal_error(TokenAuthRepositoryError::Invariant)),
     }
 }
 

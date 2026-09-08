@@ -1,8 +1,10 @@
 use std::{
     fmt,
     future::{Future, poll_fn},
+    hash::{Hash, Hasher},
     net::IpAddr,
     pin::Pin,
+    sync::Arc,
     task::{Context, Poll},
     time::Duration,
 };
@@ -22,10 +24,49 @@ use crate::{
 type ReqwestBodyStream =
     Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static>>;
 
+struct PooledClientIdentityMarker {
+    _opaque: u8,
+}
+
+/// 受控 Client 的不透明传输身份。
+///
+/// 同一 Client 的克隆共享身份；代理、DNS 或超时配置变化后新建的 Client 使用新身份。
+/// 调用方只能用它做相等比较和哈希分桶，不能据此恢复配置或底层连接信息。
+#[derive(Clone)]
+pub struct PooledClientIdentity(Arc<PooledClientIdentityMarker>);
+
+impl PooledClientIdentity {
+    fn new() -> Self {
+        Self(Arc::new(PooledClientIdentityMarker { _opaque: 0 }))
+    }
+}
+
+impl PartialEq for PooledClientIdentity {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for PooledClientIdentity {}
+
+impl Hash for PooledClientIdentity {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        Arc::as_ptr(&self.0).hash(state);
+    }
+}
+
+impl fmt::Debug for PooledClientIdentity {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("PooledClientIdentity(<受控>)")
+    }
+}
+
 /// 只能通过连接池取得的受控 HTTP Client。
 #[derive(Clone)]
 pub struct PooledClient {
+    identity: PooledClientIdentity,
     inner: Client,
+    read_timeout: Duration,
     request_timeout: Duration,
     target_address_policy: TargetAddressPolicy,
     target_dns_strategy: TargetDnsStrategy,
@@ -36,6 +77,7 @@ pub struct PooledClient {
 impl PooledClient {
     pub(crate) fn new(
         inner: Client,
+        read_timeout: Duration,
         request_timeout: Duration,
         target_address_policy: TargetAddressPolicy,
         target_dns_strategy: TargetDnsStrategy,
@@ -43,13 +85,33 @@ impl PooledClient {
         proxy_host: Option<String>,
     ) -> Self {
         Self {
+            identity: PooledClientIdentity::new(),
             inner,
+            read_timeout,
             request_timeout,
             target_address_policy,
             target_dns_strategy,
             remote_dns_policy,
             proxy_host,
         }
+    }
+
+    /// 返回本 Client 覆盖完整响应体生命周期的总超时。
+    #[must_use]
+    pub const fn request_timeout(&self) -> Duration {
+        self.request_timeout
+    }
+
+    /// 返回升级后 WebSocket 单次读写停顿所使用的超时。
+    #[must_use]
+    pub const fn read_timeout(&self) -> Duration {
+        self.read_timeout
+    }
+
+    /// 返回仅供传输资源分桶使用的不透明 Client 身份。
+    #[must_use]
+    pub fn identity(&self) -> PooledClientIdentity {
+        self.identity.clone()
     }
 
     /// 按池配置发送上游请求；建连前会执行字面量或域名目标安全策略。
@@ -72,6 +134,25 @@ impl PooledClient {
         *request.body_mut() = body;
 
         // 总时限贯穿完整响应体；同时就绪时优先判定硬 deadline。
+        let (response, request_timeout) = self.execute_managed_request(request).await?;
+        Ok(HttpResponse::new(response, request_timeout))
+    }
+
+    /// 使用当前 Client 的强制代理、DNS、SSRF、TLS 与超时策略建立 WebSocket 连接。
+    ///
+    /// 调用方只提供业务 Header；协议升级与代理 Header 由本层独占生成，避免覆盖受控路由。
+    pub async fn connect_websocket(
+        &self,
+        target: &str,
+        headers: HeaderMap,
+    ) -> Result<crate::WebSocketConnection, crate::WebSocketTransportError> {
+        crate::websocket::connect(self, target, headers).await
+    }
+
+    pub(crate) async fn execute_managed_request(
+        &self,
+        request: Request,
+    ) -> Result<(Response, Pin<Box<Sleep>>), HttpTransportError> {
         let mut request_timeout = Box::pin(sleep(self.request_timeout));
         let response = tokio::select! {
             biased;
@@ -80,10 +161,10 @@ impl PooledClient {
                 result.map_err(|error| HttpTransportError::from_send(&error))?
             }
         };
-        Ok(HttpResponse::new(response, request_timeout))
+        Ok((response, request_timeout))
     }
 
-    fn validate_target(&self, target: &Url) -> Result<(), HttpTransportError> {
+    pub(crate) fn validate_target(&self, target: &Url) -> Result<(), HttpTransportError> {
         match target.host() {
             Some(Host::Ipv4(address)) => self.validate_literal_address(IpAddr::V4(address)),
             Some(Host::Ipv6(address)) => self.validate_literal_address(IpAddr::V6(address)),

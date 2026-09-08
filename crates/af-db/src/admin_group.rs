@@ -1,7 +1,10 @@
 use std::{fmt, time::Duration};
 
-use af_domain::GroupId;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
+use af_domain::{GroupId, SubscriptionCycle, SubscriptionWindow};
+use sea_orm::{
+    ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
+    entity::prelude::TimeDateTimeWithTimeZone,
+};
 use thiserror::Error;
 use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
@@ -47,6 +50,40 @@ impl fmt::Debug for AdminGroupPeakRecord {
     }
 }
 
+/// 管理端可读取的单个 UTC 日历额度窗口快照。
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct AdminGroupWindowRecord {
+    usage: i64,
+    started_at: i64,
+    resets_at: i64,
+}
+
+impl AdminGroupWindowRecord {
+    /// 返回当前窗口内已结算的共享额度。
+    #[must_use]
+    pub const fn usage(self) -> i64 {
+        self.usage
+    }
+
+    /// 返回当前窗口的 UTC Unix 秒起点。
+    #[must_use]
+    pub const fn started_at(self) -> i64 {
+        self.started_at
+    }
+
+    /// 返回当前窗口的 UTC Unix 秒重置时间。
+    #[must_use]
+    pub const fn resets_at(self) -> i64 {
+        self.resets_at
+    }
+}
+
+impl fmt::Debug for AdminGroupWindowRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("AdminGroupWindowRecord(<redacted>)")
+    }
+}
+
 /// 管理端可读取的已校验分组快照。
 pub struct AdminGroupRecord {
     group_id: GroupId,
@@ -58,6 +95,9 @@ pub struct AdminGroupRecord {
     daily_limit: Option<i64>,
     weekly_limit: Option<i64>,
     monthly_limit: Option<i64>,
+    daily_window: AdminGroupWindowRecord,
+    weekly_window: AdminGroupWindowRecord,
+    monthly_window: AdminGroupWindowRecord,
     rpm_limit: Option<i32>,
     fallback_group_id: Option<GroupId>,
     flags: serde_json::Value,
@@ -118,6 +158,24 @@ impl AdminGroupRecord {
         self.monthly_limit
     }
 
+    /// 返回按 UTC 自然日累计的共享额度窗口。
+    #[must_use]
+    pub const fn daily_window(&self) -> AdminGroupWindowRecord {
+        self.daily_window
+    }
+
+    /// 返回按 UTC 周一开始自然周累计的共享额度窗口。
+    #[must_use]
+    pub const fn weekly_window(&self) -> AdminGroupWindowRecord {
+        self.weekly_window
+    }
+
+    /// 返回按 UTC 自然月累计的共享额度窗口。
+    #[must_use]
+    pub const fn monthly_window(&self) -> AdminGroupWindowRecord {
+        self.monthly_window
+    }
+
     /// 返回分组级 RPM 限制。
     #[must_use]
     pub const fn rpm_limit(&self) -> Option<i32> {
@@ -137,6 +195,7 @@ impl AdminGroupRecord {
     }
 
     pub(super) fn try_from_model(model: groups::Model) -> Result<Self, AdminGroupRepositoryError> {
+        let now = TimeDateTimeWithTimeZone::now_utc();
         let group_id = GroupId::new(model.id).map_err(|_| internal_invariant())?;
         let valid_name = valid_text(&model.name, 64);
         let valid_display_name = valid_text(&model.display_name, 128);
@@ -164,6 +223,24 @@ impl AdminGroupRecord {
         let valid_flags = model.flags.is_object()
             && serde_json::to_vec(&model.flags)
                 .is_ok_and(|encoded| encoded.len() <= MAX_ADMIN_GROUP_FLAGS_BYTES);
+        let daily_window = normalize_window_record(
+            SubscriptionCycle::Daily,
+            model.daily_usage,
+            model.daily_window_start,
+            now,
+        )?;
+        let weekly_window = normalize_window_record(
+            SubscriptionCycle::Weekly,
+            model.weekly_usage,
+            model.weekly_window_start,
+            now,
+        )?;
+        let monthly_window = normalize_window_record(
+            SubscriptionCycle::Monthly,
+            model.monthly_usage,
+            model.monthly_window_start,
+            now,
+        )?;
         if !valid_name
             || !valid_display_name
             || model.ratio_micros < 0
@@ -187,11 +264,53 @@ impl AdminGroupRecord {
             daily_limit: model.daily_limit,
             weekly_limit: model.weekly_limit,
             monthly_limit: model.monthly_limit,
+            daily_window,
+            weekly_window,
+            monthly_window,
             rpm_limit: model.rpm_limit,
             fallback_group_id,
             flags: model.flags,
         })
     }
+}
+
+fn normalize_window_record(
+    cycle: SubscriptionCycle,
+    usage: i64,
+    started_at: TimeDateTimeWithTimeZone,
+    now: TimeDateTimeWithTimeZone,
+) -> Result<AdminGroupWindowRecord, AdminGroupRepositoryError> {
+    if usage < 0 || started_at.unix_timestamp() < 0 || started_at > now {
+        return Err(internal_invariant());
+    }
+    let now_seconds = u64::try_from(now.unix_timestamp()).map_err(|_| internal_invariant())?;
+    let observed_seconds =
+        u64::try_from(started_at.unix_timestamp()).map_err(|_| internal_invariant())?;
+    let current =
+        SubscriptionWindow::initial(cycle, now_seconds).map_err(|_| internal_invariant())?;
+    let observed =
+        SubscriptionWindow::initial(cycle, observed_seconds).map_err(|_| internal_invariant())?;
+    let observed_start = TimeDateTimeWithTimeZone::from_unix_timestamp(
+        i64::try_from(observed.started_at()).map_err(|_| internal_invariant())?,
+    )
+    .map_err(|_| internal_invariant())?;
+    let noncanonical = observed_start != started_at;
+    if noncanonical && usage != 0 {
+        return Err(internal_invariant());
+    }
+    let current_started_at =
+        i64::try_from(current.started_at()).map_err(|_| internal_invariant())?;
+    let observed_started_at =
+        i64::try_from(observed.started_at()).map_err(|_| internal_invariant())?;
+    if observed_started_at > current_started_at {
+        return Err(internal_invariant());
+    }
+    let stale = noncanonical || observed_started_at < current_started_at;
+    Ok(AdminGroupWindowRecord {
+        usage: if stale { 0 } else { usage },
+        started_at: current_started_at,
+        resets_at: i64::try_from(current.ends_at()).map_err(|_| internal_invariant())?,
+    })
 }
 
 impl fmt::Debug for AdminGroupRecord {
@@ -223,7 +342,7 @@ impl fmt::Debug for AdminGroupPageRecord {
 /// 分组详情查询结果。
 pub enum AdminGroupLookupOutcome {
     /// 找到当前未软删除分组。
-    Found(AdminGroupRecord),
+    Found(Box<AdminGroupRecord>),
     /// 分组不存在或已经软删除。
     NotFound,
 }
@@ -352,9 +471,9 @@ impl AdminGroupRepository {
         };
         match models.len() {
             0 => Ok(AdminGroupLookupOutcome::NotFound),
-            1 => Ok(AdminGroupLookupOutcome::Found(
+            1 => Ok(AdminGroupLookupOutcome::Found(Box::new(
                 AdminGroupRecord::try_from_model(models.pop().ok_or_else(internal_invariant)?)?,
-            )),
+            ))),
             _ => Err(internal_invariant()),
         }
     }

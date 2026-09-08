@@ -6,12 +6,19 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { AdminToken } from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
+import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 
 type TokenTableProps = {
   tokens: AdminToken[]
   onDelete: (token: AdminToken) => void
   onEdit: (token: AdminToken) => void
 }
+
+const TOKEN_WINDOWS = [
+  { label: '5h', limit: 'rate_limit_5h', usage: 'usage_5h', startedAt: 'window_5h_start', duration: 5 * 60 * 60 },
+  { label: '1d', limit: 'rate_limit_1d', usage: 'usage_1d', startedAt: 'window_1d_start', duration: 24 * 60 * 60 },
+  { label: '7d', limit: 'rate_limit_7d', usage: 'usage_7d', startedAt: 'window_7d_start', duration: 7 * 24 * 60 * 60 },
+] as const
 
 function isExpired(token: AdminToken) {
   return token.expired_at !== null && token.expired_at <= Math.floor(Date.now() / 1000)
@@ -56,11 +63,46 @@ function RowActions({ token, onDelete, onEdit }: {
 
 function QuotaValue({ token }: { token: AdminToken }) {
   const { i18n, t } = useTranslation()
-  const format = (value: number) => new Intl.NumberFormat(i18n.language).format(value)
+  const { formatQuota } = useBalanceDisplay()
+  const resetFormat = new Intl.DateTimeFormat(i18n.language, {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+  const now = Math.floor(Date.now() / 1000)
   return (
     <>
-      <div>{token.unlimited_quota ? t('tokens.values.unlimited') : t('tokens.values.remaining', { value: format(token.remain_quota) })}</div>
-      <div className="mt-1 text-[0.6875rem] text-muted-foreground">{t('tokens.values.usedQuota', { value: format(token.used_quota) })}</div>
+      <div>{token.unlimited_quota ? t('tokens.values.unlimited') : t('tokens.values.remaining', { value: formatQuota(token.remain_quota) })}</div>
+      <div className="mt-1 text-[0.6875rem] text-muted-foreground">{t('tokens.values.usedQuota', { value: formatQuota(token.used_quota) })}</div>
+      <div className="mt-2 grid gap-1.5 border-t border-[var(--hairline)] pt-2">
+        {TOKEN_WINDOWS.map((window) => {
+          const limit = token[window.limit]
+          const usage = token[window.usage]
+          const resetAt = token[window.startedAt] + window.duration
+          return (
+            <div key={window.label} className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-1.5 text-[0.6875rem] leading-4">
+              <Badge className="h-4 rounded px-1 text-[0.625rem] font-medium text-muted-foreground">{window.label}</Badge>
+              <div className="min-w-0">
+                <div className="truncate font-medium tabular-nums">
+                  {limit === null
+                    ? t('tokens.values.windowUsageUnlimited', { used: formatQuota(usage) })
+                    : t('tokens.values.windowUsage', { used: formatQuota(usage), limit: formatQuota(limit) })}
+                </div>
+                <time
+                  className="block truncate text-[0.625rem] text-muted-foreground"
+                  dateTime={new Date(resetAt * 1000).toISOString()}
+                  title={resetFormat.format(resetAt * 1000)}
+                >
+                  {resetAt <= now
+                    ? t('tokens.values.windowResetPending')
+                    : t('tokens.values.windowResetsAt', { value: resetFormat.format(resetAt * 1000) })}
+                </time>
+              </div>
+            </div>
+          )
+        })}
+      </div>
     </>
   )
 }
@@ -111,7 +153,7 @@ export function TokenTable({ tokens, onDelete, onEdit }: TokenTableProps) {
       <div className="hidden overflow-hidden rounded-xl border border-[var(--hairline)] bg-surface-1 md:block">
         <table className="w-full table-fixed text-left text-xs">
           <thead className="bg-surface-2/60 text-muted-foreground">
-            <tr><th className="w-[27%] px-3 py-2 font-medium">{t('tokens.columns.token')}</th><th className="w-[14%] px-3 py-2 font-medium">{t('tokens.columns.owner')}</th><th className="w-[18%] px-3 py-2 font-medium">{t('tokens.columns.quota')}</th><th className="w-[17%] px-3 py-2 font-medium">{t('tokens.columns.policy')}</th><th className="w-[16%] px-3 py-2 font-medium">{t('tokens.columns.validity')}</th><th className="w-[8%] px-3 py-2"><span className="sr-only">{t('tokens.columns.actions')}</span></th></tr>
+            <tr><th className="w-[24%] px-3 py-2 font-medium">{t('tokens.columns.token')}</th><th className="w-[13%] px-3 py-2 font-medium">{t('tokens.columns.owner')}</th><th className="w-[23%] px-3 py-2 font-medium">{t('tokens.columns.quota')}</th><th className="w-[16%] px-3 py-2 font-medium">{t('tokens.columns.policy')}</th><th className="w-[16%] px-3 py-2 font-medium">{t('tokens.columns.validity')}</th><th className="w-[8%] px-3 py-2"><span className="sr-only">{t('tokens.columns.actions')}</span></th></tr>
           </thead>
           <tbody className="divide-y divide-[var(--hairline)]">
             {tokens.map((token) => (
@@ -130,7 +172,7 @@ export function TokenTable({ tokens, onDelete, onEdit }: TokenTableProps) {
 
       <div className="grid gap-2 md:hidden">
         {tokens.map((token) => (
-          <article key={token.id} className="rounded-xl border border-[var(--hairline)] bg-surface-1 p-3">
+          <article key={token.id} className="min-w-0 rounded-xl border border-[var(--hairline)] bg-surface-1 p-3">
             <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex items-center gap-2"><h2 className="truncate text-sm font-semibold">{token.name}</h2><StatusBadge token={token} /></div><p className="mt-1 truncate font-mono text-[0.6875rem] text-muted-foreground">{token.key_prefix}… · #{token.id}</p></div><RowActions token={token} onDelete={onDelete} onEdit={onEdit} /></div>
             <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-[var(--hairline)] pt-3 text-xs">
               <div><dt className="text-muted-foreground">{t('tokens.columns.owner')}</dt><dd className="mt-1">{t('tokens.values.user', { id: token.user_id })}</dd></div>

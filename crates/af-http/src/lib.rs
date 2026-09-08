@@ -1,13 +1,28 @@
 //! HTTP 路由、中间件、提取器与响应映射。
 
+mod announcements;
+mod anthropic_messages;
+mod audio_service;
 mod authentication;
+mod balance_alert_settings;
 mod channel_probe;
 mod chat_completions;
 mod chat_service;
 mod client_ip;
+mod credential_proxies;
 mod credentials;
+mod custom_oauth2;
+mod debug_traces;
+mod email_settings;
+mod embedding_service;
 mod error_response;
 mod frontend_assets;
+mod gemini_generate_content;
+mod image_service;
+mod invitations;
+#[cfg(test)]
+mod invitations_tests;
+mod management_analytics_export;
 mod management_auth;
 mod management_authorization;
 mod management_channel_probe;
@@ -19,31 +34,131 @@ mod management_dashboard;
 mod management_error;
 mod management_group_writes;
 mod management_groups;
+mod management_model_prices;
+mod management_model_sync;
+mod management_model_writes;
+mod management_models;
+mod management_refunds;
+mod management_route_writes;
+mod management_routes;
 mod management_session;
 mod management_setup;
 mod management_token_writes;
 mod management_tokens;
 mod management_usage_logs;
 mod management_users;
+mod management_wallet;
 mod middleware;
+mod model_catalog;
+mod network_settings;
+mod oauth_connections;
+mod oauth_login;
+mod openai_audio;
+mod openai_embeddings;
+mod openai_images;
+mod openai_responses;
+mod openai_responses_compact;
+mod openai_speech;
 mod openapi;
 mod operations;
+mod organization_activity;
+mod organization_approval;
+mod organization_approval_notifications;
+mod organization_budget;
+mod organization_contract_price;
+mod organization_credit_terms;
+mod organization_plan;
+mod organization_provisioning;
+mod organization_scim_audit;
+mod organization_service_account_runtime;
+mod organization_sso_login;
+mod organization_tokens;
+mod organization_verification;
+mod organization_wallet;
+mod organizations;
+mod passkey_auth;
+mod password_reset;
+mod payment_settings;
+mod payment_webhook;
+mod platform_audit;
+mod platform_organizations;
+mod playground_conversations;
+mod playground_shares;
+mod redemption;
+mod refund_webhook;
+mod registration;
+mod rerank;
+mod rerank_service;
+mod responses_compact_service;
 mod router;
+mod scim;
 mod serve;
+mod site_settings;
+mod speech_service;
 mod streaming;
+mod subscriptions;
+mod turnstile;
+mod user_notifications;
+mod user_profile;
+mod user_tokens;
+mod user_topups;
+mod user_wallet;
+mod video_task_service;
+mod wallet_query;
+mod xai_video;
 
+pub use audio_service::{AudioService, AudioServiceFuture};
+pub use axum::{
+    Router,
+    body::{Body, to_bytes},
+    http,
+    response::Response,
+};
 pub use channel_probe::{AdminChannelProbe, AdminChannelProbeFuture, AdminChannelProbeOutcome};
 pub use chat_service::{ChatService, ChatServiceFuture};
 pub use credentials::{ApiKeyExtractionError, QueryApiKeyPolicy, extract_presented_api_key};
+pub use embedding_service::{EmbeddingService, EmbeddingServiceFuture};
 pub use error_response::OpenAiHttpError;
 pub use frontend_assets::{FrontendAsset, FrontendAssetSource};
+pub use image_service::{ImageService, ImageServiceFuture};
 pub use middleware::REQUEST_ID_HEADER_NAME;
+pub use oauth_connections::{
+    AdminOAuthAuthorizationStart, AdminOAuthBeginFuture, AdminOAuthCompleteFuture,
+    AdminOAuthCompletionOutcome, AdminOAuthConnectionError, AdminOAuthConnectionService,
+    AdminOAuthProvider, AdminOAuthProviderStatus, MAX_ADMIN_OAUTH_CALLBACK_BODY_BYTES,
+    MAX_OAUTH_LOOPBACK_QUERY_BYTES, OAUTH_CALLBACK_COMPLETION_TIMEOUT, OAuthLoopbackBinding,
+    OAuthLoopbackBindingError, build_admin_oauth_connection_router,
+    build_oauth_loopback_callback_router,
+};
 pub use openapi::openapi_document;
 pub use operations::{
     HEALTH_PATH, READINESS_PATH, ReadinessFuture, ReadinessHandle, ReadinessProbe,
 };
+pub use organization_activity::build_organization_activity_router;
+pub use organization_approval::build_organization_approval_router;
+pub use organization_budget::build_organization_budget_router;
+pub use organization_contract_price::build_organization_contract_price_router;
+pub use organization_credit_terms::build_organization_credit_terms_router;
+pub use organization_plan::build_organization_plan_router;
+pub use organization_provisioning::build_organization_provisioning_router;
+pub use organization_scim_audit::build_organization_scim_audit_router;
+pub use organization_service_account_runtime::build_organization_service_account_runtime_router;
+pub use organization_tokens::build_organization_token_router;
+pub use organization_verification::build_organization_verification_router;
+pub use organization_wallet::build_organization_wallet_router;
+pub use organizations::build_organization_router;
+pub use payment_webhook::{PaymentWebhookProcessorRegistry, build_payment_webhook_router};
+pub use refund_webhook::{RefundReceiptProcessorRegistry, build_refund_receipt_webhook_router};
+pub use rerank_service::{RerankService, RerankServiceFuture};
+pub use responses_compact_service::{ResponsesCompactService, ResponsesCompactServiceFuture};
 pub use router::{DEFAULT_REQUEST_BODY_LIMIT_BYTES, HttpRouter, build_router};
 pub use serve::{HttpListener, ServeError, ServeOutcome, serve_with_graceful_shutdown};
+pub use speech_service::{SpeechService, SpeechServiceFuture};
+pub use turnstile::{TurnstileVerification, TurnstileVerificationFuture, TurnstileVerifier};
+pub use video_task_service::{
+    VideoTaskListCursor, VideoTaskListFuture, VideoTaskListItem, VideoTaskPage, VideoTaskService,
+    VideoTaskServiceFuture, VideoTaskSnapshot,
+};
 
 #[cfg(test)]
 mod authentication_tests;
@@ -51,6 +166,10 @@ mod authentication_tests;
 mod client_ip_tests;
 #[cfg(test)]
 mod credentials_tests;
+#[cfg(test)]
+mod custom_oauth2_tests;
+#[cfg(test)]
+mod email_settings_tests;
 #[cfg(test)]
 mod error_response_tests;
 #[cfg(test)]
@@ -68,6 +187,38 @@ mod management_tokens_tests;
 #[cfg(test)]
 mod management_users_tests;
 #[cfg(test)]
+mod management_wallet_tests;
+#[cfg(test)]
+mod network_settings_tests;
+#[cfg(test)]
+mod oauth_connections_tests;
+#[cfg(test)]
+mod oauth_login_tests;
+#[cfg(test)]
 mod operations_tests;
 #[cfg(test)]
+mod organization_provisioning_tests;
+#[cfg(test)]
+mod passkey_auth_tests;
+#[cfg(test)]
+mod password_reset_tests;
+#[cfg(test)]
+mod payment_settings_tests;
+#[cfg(test)]
+mod payment_webhook_tests;
+#[cfg(test)]
+mod playground_conversations_tests;
+#[cfg(test)]
+mod playground_shares_tests;
+#[cfg(test)]
+mod registration_tests;
+#[cfg(test)]
+mod site_settings_tests;
+#[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod user_tokens_tests;
+#[cfg(test)]
+mod user_topups_tests;
+#[cfg(test)]
+mod user_wallet_tests;

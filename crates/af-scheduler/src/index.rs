@@ -9,28 +9,71 @@ use std::{
 
 use af_db::{
     DatabasePool, MAX_SCHEDULER_ABILITY_SNAPSHOT_ENTRIES, SchedulerAbilityRepositoryError,
-    SchedulerRuntimeRepository, SchedulerRuntimeRepositoryError, SchedulerRuntimeTargetRecord,
+    SchedulerCatalogSubject, SchedulerOutboxRepository, SchedulerOutboxRepositoryError,
+    SchedulerRuntimeRecord, SchedulerRuntimeRepository, SchedulerRuntimeRepositoryError,
+    SchedulerRuntimeTargetRecord,
 };
 use af_domain::{ChannelId, GroupId, MAX_MODEL_NAME_BYTES};
 use thiserror::Error;
 use tokio::time::sleep;
 
 use crate::{
-    SchedulerCandidate, WeightedRetryPlan, WeightedRetryPlanError, WeightedSelection,
-    WeightedSelectionError, WeightedStrategy,
+    ChannelRoutingHealth, SchedulerCandidate, StableFirstPlanError, WeightedRetryPlan,
+    WeightedRetryPlanError, WeightedSelection, WeightedSelectionError, WeightedStrategy,
 };
 
+mod bound_route;
+mod projection;
 mod route;
 
+pub use bound_route::{BoundRouteCandidate, BoundRouteCandidateError};
+pub use projection::ChannelIndexProjectionApplyReport;
 pub use route::{IndexedRouteCandidate, IndexedRoutePlan};
 
 /// 默认渠道索引全量重建周期；后续 M3 会改为事件驱动增量并保留周期校正。
 pub const DEFAULT_CHANNEL_INDEX_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
+const CHANNEL_INDEX_OUTBOX_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// 渠道索引数据源的一次全量读取结果。
 pub type ChannelIndexSourceFuture<'a> = Pin<
     Box<
         dyn Future<Output = Result<Vec<ChannelIndexSourceRecord>, ChannelIndexSourceError>>
+            + Send
+            + 'a,
+    >,
+>;
+
+/// 带数据库目录高水位的一次全量来源读取结果。
+pub struct ChannelIndexSourceSnapshot {
+    records: Vec<ChannelIndexSourceRecord>,
+    catalog_version: u64,
+}
+
+impl ChannelIndexSourceSnapshot {
+    /// 使用完整记录和读取前取得的 outbox 高水位构造来源快照。
+    #[must_use]
+    pub const fn new(records: Vec<ChannelIndexSourceRecord>, catalog_version: u64) -> Self {
+        Self {
+            records,
+            catalog_version,
+        }
+    }
+}
+
+impl fmt::Debug for ChannelIndexSourceSnapshot {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ChannelIndexSourceSnapshot")
+            .field("record_count", &self.records.len())
+            .field("catalog_version", &self.catalog_version)
+            .finish()
+    }
+}
+
+/// 可替换来源的一次带目录高水位读取结果。
+pub type ChannelIndexVersionedSourceFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<ChannelIndexSourceSnapshot, ChannelIndexSourceError>>
             + Send
             + 'a,
     >,
@@ -43,6 +86,11 @@ pub type ChannelIndexSourceFuture<'a> = Pin<
 pub trait ChannelIndexSource: Send + Sync + 'static {
     /// 读取一个完整且内部一致的渠道能力与运行时目标目录。
     fn load<'a>(&'a self) -> ChannelIndexSourceFuture<'a>;
+
+    /// 先取得目录事件高水位，再读取完整目录；普通测试来源默认使用零高水位。
+    fn load_versioned<'a>(&'a self) -> ChannelIndexVersionedSourceFuture<'a> {
+        Box::pin(async move { Ok(ChannelIndexSourceSnapshot::new(self.load().await?, 0)) })
+    }
 }
 
 /// 来源读取错误；不携带模型、渠道或底层数据库诊断。
@@ -145,6 +193,9 @@ pub enum ChannelIndexSnapshotError {
 /// 可由请求侧无锁持有的不可变渠道索引快照。
 pub struct ChannelIndexSnapshot {
     generation: u64,
+    catalog_version: u64,
+    subject_versions: BTreeMap<SchedulerCatalogSubject, u64>,
+    runtime_target_versions: BTreeMap<ChannelId, u64>,
     entries: BTreeMap<GroupId, BTreeMap<String, Arc<[SchedulerCandidate]>>>,
     runtime_targets: BTreeMap<ChannelId, Arc<SchedulerRuntimeTargetRecord>>,
     key_count: usize,
@@ -156,6 +207,14 @@ impl ChannelIndexSnapshot {
     pub fn from_records(
         records: Vec<ChannelIndexSourceRecord>,
         generation: u64,
+    ) -> Result<Self, ChannelIndexSnapshotError> {
+        Self::from_versioned_records(records, generation, 0)
+    }
+
+    fn from_versioned_records(
+        records: Vec<ChannelIndexSourceRecord>,
+        generation: u64,
+        catalog_version: u64,
     ) -> Result<Self, ChannelIndexSnapshotError> {
         if generation == 0 {
             return Err(ChannelIndexSnapshotError::Invariant);
@@ -218,6 +277,9 @@ impl ChannelIndexSnapshot {
 
         Ok(Self {
             generation,
+            catalog_version,
+            subject_versions: BTreeMap::new(),
+            runtime_target_versions: BTreeMap::new(),
             entries,
             runtime_targets,
             key_count,
@@ -229,6 +291,12 @@ impl ChannelIndexSnapshot {
     #[must_use]
     pub const fn generation(&self) -> u64 {
         self.generation
+    }
+
+    /// 返回最近一次全量数据库读取前取得的 outbox 高水位。
+    #[must_use]
+    pub const fn catalog_version(&self) -> u64 {
+        self.catalog_version
     }
 
     /// 返回当前包含的 `(group_id, model)` 键数量。
@@ -255,6 +323,16 @@ impl ChannelIndexSnapshot {
         self.runtime_targets.get(&channel_id).map(Arc::as_ref)
     }
 
+    /// 按字典序遍历指定分组当前确有运行时目标的 Canonical 模型名。
+    ///
+    /// 返回值只暴露模型键，不暴露渠道、凭据或候选权重。
+    pub fn model_names(&self, group_id: GroupId) -> impl Iterator<Item = &str> {
+        self.entries
+            .get(&group_id)
+            .into_iter()
+            .flat_map(|models| models.keys().map(String::as_str))
+    }
+
     /// 查询一个分组与模型下的候选；未知键返回空切片。
     pub fn candidates(
         &self,
@@ -270,6 +348,49 @@ impl ChannelIndexSnapshot {
             .and_then(|models| models.get(model))
             .map_or(&[], Arc::as_ref))
     }
+
+    /// 判断指定模型是否在任一有效分组中存在明确具备 Compact 资格的候选。
+    pub fn responses_compact_available_any_group(
+        &self,
+        model: &str,
+    ) -> Result<bool, ChannelIndexSnapshotError> {
+        if !is_valid_model(model) {
+            return Err(ChannelIndexSnapshotError::InvalidModel);
+        }
+        for models in self.entries.values() {
+            let Some(candidates) = models.get(model) else {
+                continue;
+            };
+            for candidate in candidates.iter() {
+                let target = self
+                    .runtime_targets
+                    .get(&candidate.channel_id())
+                    .ok_or(ChannelIndexSnapshotError::Invariant)?;
+                if target.schedulable_responses_compact_model(model).is_some() {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    /// 判断指定分组与模型是否存在明确具备 Compact 资格的候选。
+    pub fn responses_compact_available(
+        &self,
+        group_id: GroupId,
+        model: &str,
+    ) -> Result<bool, ChannelIndexSnapshotError> {
+        for candidate in self.candidates(group_id, model)? {
+            let target = self
+                .runtime_targets
+                .get(&candidate.channel_id())
+                .ok_or(ChannelIndexSnapshotError::Invariant)?;
+            if target.schedulable_responses_compact_model(model).is_some() {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
 }
 
 impl fmt::Debug for ChannelIndexSnapshot {
@@ -277,6 +398,12 @@ impl fmt::Debug for ChannelIndexSnapshot {
         formatter
             .debug_struct("ChannelIndexSnapshot")
             .field("generation", &self.generation)
+            .field("catalog_version", &self.catalog_version)
+            .field("subject_version_count", &self.subject_versions.len())
+            .field(
+                "runtime_target_version_count",
+                &self.runtime_target_versions.len(),
+            )
             .field("key_count", &self.key_count)
             .field("candidate_count", &self.candidate_count)
             .field("runtime_target_count", &self.runtime_targets.len())
@@ -317,7 +444,12 @@ pub struct InMemoryChannelIndex {
 impl InMemoryChannelIndex {
     /// 从来源完整加载首个快照；失败时不得发布空索引冒充成功。
     pub async fn load(source: Arc<dyn ChannelIndexSource>) -> Result<Self, ChannelIndexCacheError> {
-        let snapshot = Arc::new(ChannelIndexSnapshot::from_records(source.load().await?, 1)?);
+        let loaded = source.load_versioned().await?;
+        let snapshot = Arc::new(ChannelIndexSnapshot::from_versioned_records(
+            loaded.records,
+            1,
+            loaded.catalog_version,
+        )?);
         Ok(Self {
             inner: Arc::new(InMemoryChannelIndexInner {
                 source,
@@ -351,9 +483,11 @@ impl InMemoryChannelIndex {
             .generation()
             .checked_add(1)
             .ok_or(ChannelIndexCacheError::GenerationExhausted)?;
-        let next = Arc::new(ChannelIndexSnapshot::from_records(
-            self.inner.source.load().await?,
+        let loaded = self.inner.source.load_versioned().await?;
+        let next = Arc::new(ChannelIndexSnapshot::from_versioned_records(
+            loaded.records,
             generation,
+            loaded.catalog_version,
         )?);
         let mut current = self
             .inner
@@ -403,6 +537,20 @@ impl IndexedWeightedScheduler {
         }
     }
 
+    /// 串行刷新底层不可变快照；失败时继续保留上一代可用快照。
+    pub async fn refresh(&self) -> Result<(), IndexedWeightedSchedulerError> {
+        self.index.refresh().await.map(|_| ()).map_err(Into::into)
+    }
+
+    /// 按渠道标识取得当前快照中的运行时目标，用于异步任务校验原目标绑定。
+    pub fn runtime_target(
+        &self,
+        channel_id: ChannelId,
+    ) -> Result<Option<Arc<SchedulerRuntimeTargetRecord>>, IndexedWeightedSchedulerError> {
+        let snapshot = self.index.snapshot()?;
+        Ok(snapshot.runtime_targets.get(&channel_id).cloned())
+    }
+
     /// 查询一个分组与 Canonical 模型的可用渠道，并从最高优先级层加权选择。
     pub fn select(
         &self,
@@ -443,30 +591,132 @@ impl IndexedWeightedScheduler {
         group_id: GroupId,
         model: &str,
     ) -> Result<Option<IndexedRoutePlan>, IndexedWeightedSchedulerError> {
-        let snapshot = self.index.snapshot()?;
-        let retry_order = WeightedRetryPlan::new(snapshot.candidates(group_id, model)?.to_vec())?
-            .into_retry_order()?;
-        let Some(first) = retry_order.first() else {
-            return Ok(None);
-        };
-        let target_group_id = first.candidate().group_id();
-        let mut candidates = Vec::with_capacity(retry_order.len());
-        for selection in retry_order {
-            let runtime_target = snapshot
-                .runtime_targets
-                .get(&selection.candidate().channel_id())
-                .cloned()
-                .ok_or(IndexedWeightedSchedulerError::Cache(
-                    ChannelIndexCacheError::Snapshot(ChannelIndexSnapshotError::Invariant),
-                ))?;
-            candidates.push(IndexedRouteCandidate::new(selection, runtime_target));
-        }
-        Ok(Some(IndexedRoutePlan::new(
-            snapshot.generation(),
-            target_group_id,
-            candidates,
-        )))
+        self.route_plan_with_health(group_id, model, &BTreeMap::new())
     }
+
+    /// 返回当前快照下最多 64 个候选渠道标识，供一次 Redis 健康批量读取使用。
+    pub fn route_channel_ids(
+        &self,
+        group_id: GroupId,
+        model: &str,
+    ) -> Result<Vec<ChannelId>, IndexedWeightedSchedulerError> {
+        let snapshot = self.index.snapshot()?;
+        Ok(snapshot
+            .candidates(group_id, model)?
+            .iter()
+            .map(|candidate| candidate.channel_id())
+            .collect())
+    }
+
+    /// 返回当前快照下明确具备 Responses Compact 资格的候选渠道标识。
+    pub fn responses_compact_route_channel_ids(
+        &self,
+        group_id: GroupId,
+        model: &str,
+    ) -> Result<Vec<ChannelId>, IndexedWeightedSchedulerError> {
+        let snapshot = self.index.snapshot()?;
+        let candidates = compact_candidates(&snapshot, group_id, model)?;
+        Ok(candidates
+            .iter()
+            .map(|candidate| candidate.channel_id())
+            .collect())
+    }
+
+    /// 从同一代快照生成仅包含明确支持渠道的 Responses Compact 路由计划。
+    pub fn responses_compact_route_plan(
+        &self,
+        group_id: GroupId,
+        model: &str,
+    ) -> Result<Option<IndexedRoutePlan>, IndexedWeightedSchedulerError> {
+        self.responses_compact_route_plan_with_health(group_id, model, &BTreeMap::new())
+    }
+
+    /// 过滤 Compact 资格后再应用渠道健康和 weighted 重试顺序。
+    pub fn responses_compact_route_plan_with_health(
+        &self,
+        group_id: GroupId,
+        model: &str,
+        health: &BTreeMap<ChannelId, ChannelRoutingHealth>,
+    ) -> Result<Option<IndexedRoutePlan>, IndexedWeightedSchedulerError> {
+        let snapshot = self.index.snapshot()?;
+        let candidates = compact_candidates(&snapshot, group_id, model)?;
+        build_route_plan(&snapshot, candidates, health)
+    }
+
+    /// 在同一代快照中先过滤熔断渠道，再以衰减惩罚修正 weighted 抽样票数。
+    pub fn route_plan_with_health(
+        &self,
+        group_id: GroupId,
+        model: &str,
+        health: &BTreeMap<ChannelId, ChannelRoutingHealth>,
+    ) -> Result<Option<IndexedRoutePlan>, IndexedWeightedSchedulerError> {
+        let snapshot = self.index.snapshot()?;
+        build_route_plan(
+            &snapshot,
+            snapshot.candidates(group_id, model)?.to_vec(),
+            health,
+        )
+    }
+}
+
+fn compact_candidates(
+    snapshot: &ChannelIndexSnapshot,
+    group_id: GroupId,
+    model: &str,
+) -> Result<Vec<SchedulerCandidate>, IndexedWeightedSchedulerError> {
+    let mut eligible = Vec::new();
+    for candidate in snapshot.candidates(group_id, model)? {
+        let target = snapshot
+            .runtime_targets
+            .get(&candidate.channel_id())
+            .ok_or(IndexedWeightedSchedulerError::Cache(
+                ChannelIndexCacheError::Snapshot(ChannelIndexSnapshotError::Invariant),
+            ))?;
+        if target.schedulable_responses_compact_model(model).is_some() {
+            eligible.push(*candidate);
+        }
+    }
+    Ok(eligible)
+}
+
+fn build_route_plan(
+    snapshot: &ChannelIndexSnapshot,
+    candidates: Vec<SchedulerCandidate>,
+    health: &BTreeMap<ChannelId, ChannelRoutingHealth>,
+) -> Result<Option<IndexedRoutePlan>, IndexedWeightedSchedulerError> {
+    // 池模式把上游账号健康交给外部池管理，历史渠道惩罚也不能继续影响选路。
+    let effective_health = health
+        .iter()
+        .filter(|(channel_id, _)| {
+            !snapshot
+                .runtime_targets
+                .get(channel_id)
+                .is_some_and(|target| target.pool_mode())
+        })
+        .map(|(channel_id, state)| (*channel_id, *state))
+        .collect();
+    let retry_order =
+        WeightedRetryPlan::new_with_health(candidates, &effective_health)?.into_retry_order()?;
+    let Some(first) = retry_order.first() else {
+        return Ok(None);
+    };
+    let target_group_id = first.candidate().group_id();
+    let mut candidates = Vec::with_capacity(retry_order.len());
+    for selection in retry_order {
+        let runtime_target = snapshot
+            .runtime_targets
+            .get(&selection.candidate().channel_id())
+            .cloned()
+            .ok_or(IndexedWeightedSchedulerError::Cache(
+                ChannelIndexCacheError::Snapshot(ChannelIndexSnapshotError::Invariant),
+            ))?;
+        candidates.push(IndexedRouteCandidate::new(selection, runtime_target));
+    }
+    Ok(Some(IndexedRoutePlan::new(
+        snapshot.generation(),
+        target_group_id,
+        candidates,
+    )))
 }
 
 /// 内存索引 weighted 调度失败；模型名和持久化诊断不会进入错误文本。
@@ -485,6 +735,9 @@ pub enum IndexedWeightedSchedulerError {
     /// 候选集合无法构造安全的失败重试计划。
     #[error("构造上游重试计划失败")]
     RetryPlan(#[from] WeightedRetryPlanError),
+    /// StableFirst 无法生成闭合主池计划。
+    #[error("构造 StableFirst 上游计划失败")]
+    StableFirst(#[from] StableFirstPlanError),
 }
 
 impl From<ChannelIndexSnapshotError> for IndexedWeightedSchedulerError {
@@ -636,12 +889,15 @@ impl fmt::Debug for ChannelIndexRefreshSupervisor {
 #[derive(Clone)]
 struct DatabaseChannelIndexSource {
     repository: SchedulerRuntimeRepository,
+    outbox: SchedulerOutboxRepository,
 }
 
 impl DatabaseChannelIndexSource {
     fn new(database: DatabasePool) -> Self {
         Self {
-            repository: SchedulerRuntimeRepository::new(database),
+            repository: SchedulerRuntimeRepository::new(database.clone()),
+            outbox: SchedulerOutboxRepository::new(database, CHANNEL_INDEX_OUTBOX_TIMEOUT)
+                .expect("固定调度 outbox 查询超时必须有效"),
         }
     }
 }
@@ -655,19 +911,39 @@ impl ChannelIndexSource for DatabaseChannelIndexSource {
                 .map_err(map_repository_error)?
                 .into_iter()
                 .map(|record| {
-                    let (ability, target) = record.into_parts();
-                    ChannelIndexSourceRecord::with_runtime_target(
-                        ability.group_id(),
-                        ability.model().to_owned(),
-                        ability.priority(),
-                        ability.weight(),
-                        target,
-                    )
-                    .map_err(|_| ChannelIndexSourceError::Invariant)
+                    runtime_record_to_source(record).map_err(|_| ChannelIndexSourceError::Invariant)
                 })
                 .collect()
         })
     }
+
+    fn load_versioned<'a>(&'a self) -> ChannelIndexVersionedSourceFuture<'a> {
+        Box::pin(async move {
+            // 高水位必须先于目录读取，避免把读取后的并发事件错误标记为已包含。
+            let catalog_version = self
+                .outbox
+                .latest_event_id()
+                .await
+                .map_err(map_outbox_repository_error)?;
+            Ok(ChannelIndexSourceSnapshot::new(
+                self.load().await?,
+                catalog_version,
+            ))
+        })
+    }
+}
+
+fn runtime_record_to_source(
+    record: SchedulerRuntimeRecord,
+) -> Result<ChannelIndexSourceRecord, ChannelIndexSnapshotError> {
+    let (ability, target) = record.into_parts();
+    ChannelIndexSourceRecord::with_runtime_target(
+        ability.group_id(),
+        ability.model().to_owned(),
+        ability.priority(),
+        ability.weight(),
+        target,
+    )
 }
 
 fn validate_candidates(candidates: &[SchedulerCandidate]) -> Result<(), ChannelIndexSnapshotError> {
@@ -710,6 +986,14 @@ fn map_repository_error(error: SchedulerRuntimeRepositoryError) -> ChannelIndexS
     }
 }
 
+fn map_outbox_repository_error(error: SchedulerOutboxRepositoryError) -> ChannelIndexSourceError {
+    match error {
+        SchedulerOutboxRepositoryError::Query => ChannelIndexSourceError::Unavailable,
+        SchedulerOutboxRepositoryError::Timeout => ChannelIndexSourceError::Timeout,
+        SchedulerOutboxRepositoryError::Invariant => ChannelIndexSourceError::Invariant,
+    }
+}
+
 fn channel_index_cache_error_kind(error: ChannelIndexCacheError) -> &'static str {
     match error {
         ChannelIndexCacheError::Source(ChannelIndexSourceError::Unavailable) => {
@@ -735,9 +1019,15 @@ mod tests {
     use std::{collections::VecDeque, sync::Mutex};
 
     use af_db::{
-        EncryptedCredentialEnvelope, SchedulerRuntimeCredentialRecord, SchedulerRuntimeTargetRecord,
+        EncryptedCredentialEnvelope, SchedulerRuntimeCredentialRecord, SchedulerRuntimeProjection,
+        SchedulerRuntimeTargetRecord,
     };
-    use af_domain::{ChannelType, CredentialKind, Protocol};
+    use af_domain::{
+        ChannelType, CredentialId, CredentialKind, Protocol, ResponsesCompactMode,
+        ResponsesCompactProbeResult, RouteChannelId, RouteStrategy,
+    };
+
+    use crate::{RouteWaitKind, StickyRouteOutcome, StickyWaitPolicy};
 
     use super::*;
 
@@ -760,6 +1050,12 @@ mod tests {
         assert_eq!(snapshot.key_count(), 1);
         assert_eq!(snapshot.candidate_count(), 2);
         assert_eq!(snapshot.runtime_target_count(), 2);
+        assert_eq!(
+            snapshot
+                .model_names(GroupId::new(1).unwrap())
+                .collect::<Vec<_>>(),
+            vec!["gpt-secret"]
+        );
         assert_eq!(candidates[0].channel_id(), ChannelId::new(1).unwrap());
         assert_eq!(candidates[0].priority(), 9);
         assert!(
@@ -823,6 +1119,90 @@ mod tests {
         );
     }
 
+    #[test]
+    fn compact_route_filters_by_native_target_mode_and_probe_fact() {
+        let snapshot = ChannelIndexSnapshot::from_records(
+            vec![
+                compact_record(
+                    7,
+                    "gpt-compact",
+                    1,
+                    4,
+                    ResponsesCompactMode::Auto,
+                    ResponsesCompactProbeResult::Supported,
+                ),
+                compact_record(
+                    7,
+                    "gpt-compact",
+                    2,
+                    3,
+                    ResponsesCompactMode::Auto,
+                    ResponsesCompactProbeResult::Unknown,
+                ),
+                compact_record(
+                    7,
+                    "gpt-compact",
+                    3,
+                    2,
+                    ResponsesCompactMode::ForceOff,
+                    ResponsesCompactProbeResult::Supported,
+                ),
+                compact_record(
+                    7,
+                    "gpt-compact",
+                    4,
+                    1,
+                    ResponsesCompactMode::ForceOn,
+                    ResponsesCompactProbeResult::Unsupported,
+                ),
+                record(7, "gpt-compact", 5, 0, 1),
+            ],
+            9,
+        )
+        .unwrap();
+        assert!(
+            snapshot
+                .responses_compact_available(GroupId::new(7).unwrap(), "gpt-compact")
+                .unwrap()
+        );
+        assert!(
+            snapshot
+                .responses_compact_available_any_group("gpt-compact")
+                .unwrap()
+        );
+        assert!(
+            !snapshot
+                .responses_compact_available(GroupId::new(8).unwrap(), "gpt-compact")
+                .unwrap()
+        );
+        let index = InMemoryChannelIndex {
+            inner: Arc::new(InMemoryChannelIndexInner {
+                source: Arc::new(SequenceSource::new(Vec::new())),
+                snapshot: RwLock::new(Arc::new(snapshot)),
+                refresh_gate: tokio::sync::Mutex::new(()),
+            }),
+        };
+        let scheduler = IndexedWeightedScheduler::new(index);
+
+        assert_eq!(
+            scheduler
+                .responses_compact_route_channel_ids(GroupId::new(7).unwrap(), "gpt-compact",)
+                .unwrap(),
+            vec![ChannelId::new(1).unwrap(), ChannelId::new(4).unwrap()]
+        );
+        let route = scheduler
+            .responses_compact_route_plan(GroupId::new(7).unwrap(), "gpt-compact")
+            .unwrap()
+            .unwrap();
+        assert_eq!(route.candidates().len(), 2);
+        assert!(
+            route
+                .candidates()
+                .iter()
+                .all(|candidate| { matches!(candidate.channel_id().get(), 1 | 4) })
+        );
+    }
+
     #[tokio::test]
     async fn refresh_replaces_snapshot_and_keeps_old_snapshot_on_failure() {
         let source = Arc::new(SequenceSource::new(vec![
@@ -848,6 +1228,92 @@ mod tests {
             ChannelIndexCacheError::Source(ChannelIndexSourceError::Unavailable)
         );
         assert_eq!(index.snapshot().unwrap().generation(), 2);
+    }
+
+    #[tokio::test]
+    async fn subject_projection_replaces_only_its_scope_and_ignores_stale_versions() {
+        let index = InMemoryChannelIndex::load(Arc::new(SequenceSource::new(vec![Ok(vec![
+            record(1, "gpt-5", 1, 9, 0),
+            record(1, "gpt-5", 2, 8, 0),
+            record(2, "claude", 1, 7, 0),
+        ])])))
+        .await
+        .unwrap();
+        let channel_subject = SchedulerCatalogSubject::Channel(ChannelId::new(1).unwrap());
+
+        let report = index
+            .apply_projections(vec![
+                SchedulerRuntimeProjection::new(5, channel_subject, Vec::new()).unwrap(),
+            ])
+            .await
+            .unwrap();
+        assert_eq!(report.applied_subject_count(), 1);
+        assert_eq!(report.generation(), 2);
+        let snapshot = index.snapshot().unwrap();
+        assert_eq!(snapshot.candidate_count(), 1);
+        assert_eq!(
+            snapshot
+                .candidates(GroupId::new(1).unwrap(), "gpt-5")
+                .unwrap()[0]
+                .channel_id(),
+            ChannelId::new(2).unwrap()
+        );
+        assert!(
+            snapshot
+                .candidates(GroupId::new(2).unwrap(), "claude")
+                .unwrap()
+                .is_empty()
+        );
+
+        let stale = index
+            .apply_projections(vec![
+                SchedulerRuntimeProjection::new(4, channel_subject, Vec::new()).unwrap(),
+            ])
+            .await
+            .unwrap();
+        assert_eq!(stale.applied_subject_count(), 0);
+        assert_eq!(stale.generation(), 2);
+
+        let group_subject = SchedulerCatalogSubject::Group(GroupId::new(1).unwrap());
+        let deduplicated = index
+            .apply_projections(vec![
+                SchedulerRuntimeProjection::new(6, group_subject, Vec::new()).unwrap(),
+                SchedulerRuntimeProjection::new(7, group_subject, Vec::new()).unwrap(),
+            ])
+            .await
+            .unwrap();
+        assert_eq!(deduplicated.applied_subject_count(), 1);
+        assert_eq!(deduplicated.generation(), 3);
+        assert_eq!(index.snapshot().unwrap().candidate_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn full_snapshot_high_watermark_blocks_late_projection() {
+        let snapshot =
+            ChannelIndexSnapshot::from_versioned_records(vec![record(1, "gpt-5", 1, 1, 0)], 3, 10)
+                .unwrap();
+        let index = InMemoryChannelIndex {
+            inner: Arc::new(InMemoryChannelIndexInner {
+                source: Arc::new(SequenceSource::new(Vec::new())),
+                snapshot: RwLock::new(Arc::new(snapshot)),
+                refresh_gate: tokio::sync::Mutex::new(()),
+            }),
+        };
+        let report = index
+            .apply_projections(vec![
+                SchedulerRuntimeProjection::new(
+                    10,
+                    SchedulerCatalogSubject::Channel(ChannelId::new(1).unwrap()),
+                    Vec::new(),
+                )
+                .unwrap(),
+            ])
+            .await
+            .unwrap();
+
+        assert_eq!(report.applied_subject_count(), 0);
+        assert_eq!(report.generation(), 3);
+        assert_eq!(index.snapshot().unwrap().candidate_count(), 1);
     }
 
     #[test]
@@ -899,8 +1365,6 @@ mod tests {
         assert_eq!(route.generation(), 11);
         assert_eq!(route.target_group_id(), GroupId::new(7).unwrap());
         assert_eq!(route.candidates().len(), 2);
-        assert_eq!(route.candidates()[0].selection().priority_rank(), 0);
-        assert_eq!(route.candidates()[1].selection().priority_rank(), 1);
         for candidate in route.candidates() {
             assert_eq!(
                 candidate.selection().candidate().channel_id(),
@@ -908,6 +1372,235 @@ mod tests {
             );
         }
         assert!(!format!("{route:?}").contains("gpt-route"));
+    }
+
+    #[test]
+    fn bound_route_plan_intersects_abilities_and_keeps_only_bound_credentials() {
+        let snapshot = ChannelIndexSnapshot::from_records(
+            vec![
+                ChannelIndexSourceRecord::with_runtime_target(
+                    GroupId::new(7).unwrap(),
+                    "gpt-routed",
+                    1,
+                    1,
+                    Arc::new(runtime_target_with_credentials(1, &[101, 102])),
+                )
+                .unwrap(),
+            ],
+            12,
+        )
+        .unwrap();
+        let index = InMemoryChannelIndex {
+            inner: Arc::new(InMemoryChannelIndexInner {
+                source: Arc::new(SequenceSource::new(Vec::new())),
+                snapshot: RwLock::new(Arc::new(snapshot)),
+                refresh_gate: tokio::sync::Mutex::new(()),
+            }),
+        };
+        let scheduler = IndexedWeightedScheduler::new(index);
+        let bindings = [BoundRouteCandidate::new(
+            RouteChannelId::new(41).unwrap(),
+            ChannelId::new(1).unwrap(),
+            CredentialId::new(102).unwrap(),
+            20,
+            5,
+            None,
+        )
+        .unwrap()];
+
+        assert!(
+            scheduler
+                .bound_route_plan(
+                    GroupId::new(8).unwrap(),
+                    "gpt-routed",
+                    RouteStrategy::Weighted,
+                    &bindings,
+                    &BTreeMap::new(),
+                )
+                .unwrap()
+                .is_none()
+        );
+
+        let plan = scheduler
+            .bound_route_plan(
+                GroupId::new(7).unwrap(),
+                "gpt-routed",
+                RouteStrategy::Weighted,
+                &bindings,
+                &BTreeMap::new(),
+            )
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(plan.target_group_id(), GroupId::new(7).unwrap());
+        assert_eq!(plan.candidates().len(), 1);
+        assert_eq!(
+            plan.candidates()[0]
+                .runtime_target()
+                .credentials()
+                .iter()
+                .map(SchedulerRuntimeCredentialRecord::credential_id)
+                .collect::<Vec<_>>(),
+            [102]
+        );
+        assert_eq!(
+            plan.candidates()[0].route_channel_id(CredentialId::new(102).unwrap()),
+            Some(RouteChannelId::new(41).unwrap())
+        );
+    }
+
+    #[test]
+    fn pool_mode_ignores_channel_cooling_but_keeps_other_channels_filtered() {
+        let snapshot = ChannelIndexSnapshot::from_records(
+            vec![
+                record(7, "gpt-pool", 1, 0, 1),
+                pool_record(7, "gpt-pool", 2, 0, 1),
+            ],
+            11,
+        )
+        .unwrap();
+        let index = InMemoryChannelIndex {
+            inner: Arc::new(InMemoryChannelIndexInner {
+                source: Arc::new(SequenceSource::new(Vec::new())),
+                snapshot: RwLock::new(Arc::new(snapshot)),
+                refresh_gate: tokio::sync::Mutex::new(()),
+            }),
+        };
+        let health = BTreeMap::from([
+            (
+                ChannelId::new(1).unwrap(),
+                ChannelRoutingHealth::new(0, true),
+            ),
+            (
+                ChannelId::new(2).unwrap(),
+                ChannelRoutingHealth::new(0, true),
+            ),
+        ]);
+
+        let route = IndexedWeightedScheduler::new(index)
+            .route_plan_with_health(GroupId::new(7).unwrap(), "gpt-pool", &health)
+            .unwrap()
+            .unwrap();
+        assert_eq!(route.candidates().len(), 1);
+        assert_eq!(
+            route.candidates()[0].channel_id(),
+            ChannelId::new(2).unwrap()
+        );
+    }
+
+    #[test]
+    fn sticky_channel_moves_first_and_exposes_short_then_fallback_waits() {
+        let snapshot = ChannelIndexSnapshot::from_records(
+            vec![
+                record(7, "gpt-sticky", 1, 10, 1),
+                record(7, "gpt-sticky", 2, 0, 1),
+            ],
+            12,
+        )
+        .unwrap();
+        let index = InMemoryChannelIndex {
+            inner: Arc::new(InMemoryChannelIndexInner {
+                source: Arc::new(SequenceSource::new(Vec::new())),
+                snapshot: RwLock::new(Arc::new(snapshot)),
+                refresh_gate: tokio::sync::Mutex::new(()),
+            }),
+        };
+        let mut route = IndexedWeightedScheduler::new(index)
+            .route_plan(GroupId::new(7).unwrap(), "gpt-sticky")
+            .unwrap()
+            .unwrap();
+        let policy = StickyWaitPolicy::new(
+            std::time::Duration::from_secs(1),
+            std::time::Duration::from_secs(10),
+        )
+        .unwrap();
+
+        assert_eq!(
+            route.prefer_sticky_channel(ChannelId::new(2).unwrap(), policy),
+            StickyRouteOutcome::Applied
+        );
+        assert_eq!(
+            route.candidates()[0].channel_id(),
+            ChannelId::new(2).unwrap()
+        );
+        assert_eq!(
+            route.candidates()[0].wait_plan().kind(),
+            RouteWaitKind::Sticky
+        );
+        assert_eq!(
+            route.candidates()[0].wait_plan().timeout(),
+            std::time::Duration::from_secs(1)
+        );
+        assert_eq!(route.candidates()[0].selection().attempt().get(), 1);
+        assert_eq!(route.candidates()[0].selection().priority_rank(), 1);
+        assert_eq!(
+            route.candidates()[1].wait_plan().kind(),
+            RouteWaitKind::Fallback
+        );
+        assert_eq!(
+            route.candidates()[1].wait_plan().timeout(),
+            std::time::Duration::from_secs(10)
+        );
+        assert_eq!(route.candidates()[1].selection().attempt().get(), 2);
+        assert_eq!(route.candidates()[1].selection().priority_rank(), 0);
+        assert_eq!(
+            route.prefer_sticky_channel(ChannelId::new(99).unwrap(), policy),
+            StickyRouteOutcome::Unavailable
+        );
+    }
+
+    #[test]
+    fn unavailable_sticky_channel_resets_all_candidates_to_fallback_waits() {
+        let snapshot = ChannelIndexSnapshot::from_records(
+            vec![
+                record(7, "gpt-sticky-unavailable", 1, 10, 1),
+                record(7, "gpt-sticky-unavailable", 2, 0, 1),
+            ],
+            13,
+        )
+        .unwrap();
+        let index = InMemoryChannelIndex {
+            inner: Arc::new(InMemoryChannelIndexInner {
+                source: Arc::new(SequenceSource::new(Vec::new())),
+                snapshot: RwLock::new(Arc::new(snapshot)),
+                refresh_gate: tokio::sync::Mutex::new(()),
+            }),
+        };
+        let mut route = IndexedWeightedScheduler::new(index)
+            .route_plan(GroupId::new(7).unwrap(), "gpt-sticky-unavailable")
+            .unwrap()
+            .unwrap();
+        let policy = StickyWaitPolicy::new(
+            std::time::Duration::from_secs(1),
+            std::time::Duration::from_secs(10),
+        )
+        .unwrap();
+
+        assert_eq!(
+            route.prefer_sticky_channel(ChannelId::new(99).unwrap(), policy),
+            StickyRouteOutcome::Unavailable
+        );
+        assert_eq!(
+            route
+                .candidates()
+                .iter()
+                .map(|candidate| candidate.channel_id())
+                .collect::<Vec<_>>(),
+            vec![ChannelId::new(1).unwrap(), ChannelId::new(2).unwrap()]
+        );
+        assert!(
+            route
+                .candidates()
+                .iter()
+                .all(|candidate| candidate.wait_plan().kind() == RouteWaitKind::Fallback)
+        );
+        assert!(
+            route
+                .candidates()
+                .iter()
+                .all(|candidate| candidate.wait_plan().timeout()
+                    == std::time::Duration::from_secs(10))
+        );
     }
 
     fn record(
@@ -927,6 +1620,60 @@ mod tests {
         .unwrap()
     }
 
+    fn pool_record(
+        group_id: i64,
+        model: &str,
+        channel_id: i64,
+        priority: i32,
+        weight: u32,
+    ) -> ChannelIndexSourceRecord {
+        ChannelIndexSourceRecord::with_runtime_target(
+            GroupId::new(group_id).unwrap(),
+            model,
+            priority,
+            weight,
+            Arc::new(runtime_target(channel_id).with_pool_mode(true)),
+        )
+        .unwrap()
+    }
+
+    fn compact_record(
+        group_id: i64,
+        model: &str,
+        channel_id: i64,
+        weight: u32,
+        mode: ResponsesCompactMode,
+        result: ResponsesCompactProbeResult,
+    ) -> ChannelIndexSourceRecord {
+        let credential = SchedulerRuntimeCredentialRecord::new(
+            100 + channel_id,
+            CredentialKind::ApiKey,
+            EncryptedCredentialEnvelope::new("test-key", [0x42; 24], vec![0x24; 16]).unwrap(),
+            false,
+        )
+        .unwrap();
+        let target = SchedulerRuntimeTargetRecord::new(
+            ChannelId::new(channel_id).unwrap(),
+            ChannelType::OpenAi,
+            Protocol::OpenAiResponses,
+            Some(format!("https://channel-{channel_id}.example.com")),
+            credential,
+            Vec::new(),
+        )
+        .unwrap()
+        .with_responses_compact_mode(mode)
+        .and_then(|target| target.with_responses_compact_probe_result(result))
+        .unwrap();
+        ChannelIndexSourceRecord::with_runtime_target(
+            GroupId::new(group_id).unwrap(),
+            model,
+            0,
+            weight,
+            Arc::new(target),
+        )
+        .unwrap()
+    }
+
     fn runtime_target(channel_id: i64) -> SchedulerRuntimeTargetRecord {
         let credential = SchedulerRuntimeCredentialRecord::new(
             100 + channel_id,
@@ -941,6 +1688,38 @@ mod tests {
             Protocol::OpenAiChat,
             Some(format!("https://channel-{channel_id}.example.com")),
             credential,
+            Vec::new(),
+        )
+        .unwrap()
+    }
+
+    fn runtime_target_with_credentials(
+        channel_id: i64,
+        credential_ids: &[i64],
+    ) -> SchedulerRuntimeTargetRecord {
+        let credentials = credential_ids
+            .iter()
+            .map(|credential_id| {
+                SchedulerRuntimeCredentialRecord::new(
+                    *credential_id,
+                    CredentialKind::ApiKey,
+                    EncryptedCredentialEnvelope::new(
+                        "test-key",
+                        [u8::try_from(*credential_id).unwrap_or(0x42); 24],
+                        vec![0x24; 16],
+                    )
+                    .unwrap(),
+                    false,
+                )
+                .unwrap()
+            })
+            .collect();
+        SchedulerRuntimeTargetRecord::new_pool(
+            ChannelId::new(channel_id).unwrap(),
+            ChannelType::OpenAi,
+            Protocol::OpenAiChat,
+            Some(format!("https://channel-{channel_id}.example.com")),
+            credentials,
             Vec::new(),
         )
         .unwrap()

@@ -1,0 +1,194 @@
+export type AppView =
+  | 'api-keys'
+  | 'announcements'
+  | 'authentication-settings'
+  | 'billing-settings'
+  | 'channels'
+  | 'credentials'
+  | 'credential-proxies'
+  | 'debug-traces'
+  | 'email-settings'
+  | 'forgot-password'
+  | 'group-settings'
+  | 'invitations'
+  | 'models'
+  | 'model-settings'
+  | 'network-settings'
+  | 'oauth-callback'
+  | 'organization-api-keys'
+  | 'organization-activity'
+  | 'organization-budgets'
+  | 'organization-contract-prices'
+  | 'organization-credit'
+  | 'organization-approvals'
+  | 'organization-members'
+  | 'organization-departments'
+  | 'organization-overview'
+  | 'organization-onboarding'
+  | 'organization-plans'
+  | 'platform-organizations'
+  | 'organization-provisioning'
+  | 'organization-verification'
+  | 'organization-settings'
+  | 'organization-service-accounts'
+  | 'organization-wallet'
+  | 'payment-settings'
+  | 'playground'
+  | 'profile'
+  | 'public-models'
+  | 'register'
+  | 'redemption-codes'
+  | 'refunds'
+  | 'routes'
+  | 'reset-password'
+  | 'site-settings'
+  | 'share'
+  | 'subscription-management'
+  | 'subscriptions'
+  | 'tokens'
+  | 'usage-logs'
+  | 'users'
+  | 'video-tasks'
+  | 'wallet'
+  | 'overview'
+  | 'login'
+  | 'setup'
+  | 'landing'
+
+export type AppRoute = {
+  view: AppView
+  channelId?: number
+  organizationId?: number
+  shareToken?: string
+  resetToken?: string
+  inviteCode?: string
+  profileSection?: 'notifications'
+  activityTab?: 'audit' | 'scim' | 'usage'
+}
+
+const shareRoutePrefix = '#/share/'
+const shareTokenPattern = /^sh-af-[A-Za-z0-9_-]{43}$/
+const resetRoutePrefix = '#/reset-password'
+const resetTokenPattern = /^[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/
+const invitationCodePattern = /^af-[A-Za-z0-9_-]{22}$/
+
+/** 只接受单个十进制正整数查询参数，避免宽松转换产生错误渠道深链。 */
+function positiveIntegerQuery(hash: string, key: string) {
+  const queryStart = hash.indexOf('?')
+  if (queryStart < 0) return undefined
+  const values = new URLSearchParams(hash.slice(queryStart + 1)).getAll(key)
+  if (values.length !== 1 || !/^[1-9]\d*$/.test(values[0])) return undefined
+  const value = Number(values[0])
+  return Number.isSafeInteger(value) ? value : undefined
+}
+
+/** 只接受通知偏好深链，避免把任意查询值带入个人资料页面状态。 */
+function profileSectionQuery(hash: string): AppRoute['profileSection'] {
+  const queryStart = hash.indexOf('?')
+  if (queryStart < 0) return undefined
+  const values = new URLSearchParams(hash.slice(queryStart + 1)).getAll('section')
+  return values.length === 1 && values[0] === 'notifications' ? 'notifications' : undefined
+}
+
+/** 只接受企业活动页签深链，避免把任意查询值带入页内状态。 */
+function activityTabQuery(hash: string): AppRoute['activityTab'] {
+  const queryStart = hash.indexOf('?')
+  if (queryStart < 0) return undefined
+  const values = new URLSearchParams(hash.slice(queryStart + 1)).getAll('tab')
+  return values.length === 1 && (values[0] === 'audit' || values[0] === 'scim' || values[0] === 'usage')
+    ? values[0]
+    : undefined
+}
+
+/** 解析临时 hash 路由，并严格限制公开分享令牌的可接受格式。 */
+export function routeFromHash(hash: string): AppRoute {
+  if (hash.startsWith(shareRoutePrefix)) {
+    const token = hash.slice(shareRoutePrefix.length)
+    return {
+      view: 'share',
+      shareToken: shareTokenPattern.test(token) ? token : undefined,
+    }
+  }
+  if (hash.startsWith(resetRoutePrefix)) {
+    const queryStart = hash.indexOf('?')
+    const query = queryStart >= 0 ? new URLSearchParams(hash.slice(queryStart + 1)) : undefined
+    const token = query?.get('token') ?? undefined
+    return {
+      view: 'reset-password',
+      resetToken: token && resetTokenPattern.test(token) ? token : undefined,
+    }
+  }
+  if (hash === '#/console/credentials' || hash.startsWith('#/console/credentials?')) {
+    return { view: 'credentials', channelId: positiveIntegerQuery(hash, 'channel') }
+  }
+  if (hash.startsWith('#/console/channels')) return { view: 'channels' }
+  if (hash.startsWith('#/console/proxies')) return { view: 'credential-proxies' }
+  if (hash.startsWith('#/console/debug-traces')) return { view: 'debug-traces' }
+  if (hash.startsWith('#/console/redemption-codes')) return { view: 'redemption-codes' }
+  if (hash.startsWith('#/console/refunds')) return { view: 'refunds' }
+  if (hash.startsWith('#/console/subscription-management')) return { view: 'subscription-management' }
+  if (hash.startsWith('#/console/subscriptions')) return { view: 'subscriptions' }
+  if (hash.startsWith('#/console/routes')) return { view: 'routes' }
+  if (hash.startsWith('#/console/system-settings/site')) return { view: 'site-settings' }
+  if (hash.startsWith('#/console/system-settings/announcements')) return { view: 'announcements' }
+  if (hash.startsWith('#/console/system-settings/authentication')) return { view: 'authentication-settings' }
+  if (hash.startsWith('#/console/system-settings/email')) return { view: 'email-settings' }
+  if (hash.startsWith('#/console/system-settings/network')) return { view: 'network-settings' }
+  if (hash.startsWith('#/console/system-settings/payment')) return { view: 'payment-settings' }
+  if (hash.startsWith('#/console/system-settings/billing')) return { view: 'billing-settings' }
+  if (hash.startsWith('#/console/system-settings/groups')) return { view: 'group-settings' }
+  if (hash.startsWith('#/console/system-settings/models')) return { view: 'model-settings' }
+  if (hash.startsWith('#/console/api-keys')) return { view: 'api-keys' }
+  if (hash.startsWith('#/console/organization-api-keys')) return { view: 'organization-api-keys' }
+  if (hash.startsWith('#/console/organization-activity')) {
+    const activityTab = activityTabQuery(hash)
+    return activityTab ? { view: 'organization-activity', activityTab } : { view: 'organization-activity' }
+  }
+  if (hash.startsWith('#/console/organization-budgets')) return { view: 'organization-budgets' }
+  if (hash.startsWith('#/console/organization-contract-prices')) return { view: 'organization-contract-prices' }
+  if (hash.startsWith('#/console/organization-credit')) return { view: 'organization-credit' }
+  if (hash.startsWith('#/console/organization-approvals')) return { view: 'organization-approvals' }
+  if (hash.startsWith('#/console/organization-members')) return { view: 'organization-members' }
+  if (hash.startsWith('#/console/organization-departments')) return { view: 'organization-departments' }
+  if (hash.startsWith('#/console/organization-wallet')) return { view: 'organization-wallet' }
+  if (hash.startsWith('#/console/organization-onboarding')) {
+    return { view: 'organization-onboarding', organizationId: positiveIntegerQuery(hash, 'organization_id') }
+  }
+  if (hash.startsWith('#/console/organization-plans')) return { view: 'organization-plans' }
+  if (hash.startsWith('#/console/platform-organizations')) return { view: 'platform-organizations' }
+  if (hash.startsWith('#/console/organization-provisioning')) return { view: 'organization-provisioning' }
+  if (hash.startsWith('#/console/organization-verification')) return { view: 'organization-verification' }
+  if (hash.startsWith('#/console/organization-settings')) return { view: 'organization-settings' }
+  if (hash.startsWith('#/console/organization-service-accounts')) return { view: 'organization-service-accounts' }
+  if (hash === '#/console/organization' || hash.startsWith('#/console/organization?')) return { view: 'organization-overview' }
+  if (hash.startsWith('#/console/wallet')) return { view: 'wallet' }
+  if (hash.startsWith('#/console/models')) return { view: 'models' }
+  if (hash.startsWith('#/console/playground')) return { view: 'playground' }
+  if (hash.startsWith('#/console/video-tasks')) return { view: 'video-tasks' }
+  if (hash.startsWith('#/console/invitations')) return { view: 'invitations' }
+  if (hash.startsWith('#/console/profile')) {
+    const section = profileSectionQuery(hash)
+    return section ? { view: 'profile', profileSection: section } : { view: 'profile' }
+  }
+  if (hash.startsWith('#/console/tokens')) return { view: 'tokens' }
+  if (hash.startsWith('#/console/usage-logs')) return { view: 'usage-logs' }
+  if (hash.startsWith('#/console/users')) return { view: 'users' }
+  if (hash.startsWith('#/console/registration')) return { view: 'authentication-settings' }
+  if (hash.startsWith('#/console')) return { view: 'overview' }
+  if (hash.startsWith('#/models')) return { view: 'public-models' }
+  if (hash.startsWith('#/register')) {
+    const queryStart = hash.indexOf('?')
+    const query = queryStart >= 0 ? new URLSearchParams(hash.slice(queryStart + 1)) : undefined
+    const inviteCode = query?.get('invite') ?? undefined
+    return inviteCode && invitationCodePattern.test(inviteCode)
+      ? { view: 'register', inviteCode }
+      : { view: 'register' }
+  }
+  if (hash.startsWith('#/forgot-password')) return { view: 'forgot-password' }
+  if (hash === '#/oauth/callback' || hash.startsWith('#/oauth/callback?')) {
+    return { view: 'oauth-callback' }
+  }
+  if (hash.startsWith('#/login')) return { view: 'login' }
+  if (hash.startsWith('#/setup')) return { view: 'setup' }
+  return { view: 'landing' }
+}

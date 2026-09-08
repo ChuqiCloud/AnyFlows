@@ -7,7 +7,6 @@ use url::Url;
 
 use super::{
     MAX_OUTPUT_TOKENS, ParseRequestError,
-    bounded_json::{BoundedJsonError, JsonLimits, parse_value},
     wire::{
         AssistantContentWire, AssistantMessageWire, ChatRequestWire, DeveloperMessageWire, Field,
         FunctionDefinitionWire, FunctionTypeWire, ImageDetailWire, InputAudioFormatWire,
@@ -17,6 +16,7 @@ use super::{
         UserContentWire, UserMessageWire,
     },
 };
+use crate::bounded_json::{BoundedJsonError, JsonLimits, parse_value};
 use crate::{
     CanonicalRequest, ContentBlock, MediaSource, Message, ReasoningConfig, ReasoningEffort,
     RequestMetadata, Sampling, StreamOptions, TokenCount, ToolChoice, ToolDef,
@@ -36,8 +36,8 @@ pub(super) const MAX_TOTAL_ARGUMENT_BYTES: usize = 2 * 1024 * 1024;
 pub(super) const MAX_TOTAL_ARGUMENT_NODES: usize = 32_768;
 const MAX_SCHEMA_BYTES: usize = 64 * 1024;
 const MAX_TOTAL_SCHEMA_BYTES: usize = 512 * 1024;
-pub(super) const MAX_STOP_SEQUENCES: usize = 4;
-pub(super) const MAX_STOP_BYTES: usize = 1024;
+pub const MAX_STOP_SEQUENCES: usize = 4;
+pub const MAX_STOP_BYTES: usize = 1024;
 pub(super) const MAX_USER_ID_BYTES: usize = 512;
 pub(super) const MAX_MEDIA_URL_BYTES: usize = 8 * 1024;
 pub(super) const MAX_MEDIA_BYTES: usize = 20 * 1024 * 1024;
@@ -298,10 +298,7 @@ fn convert_tools(
         {
             return Err(ParseRequestError::StructureLimitExceeded);
         }
-        match strict {
-            Field::Missing | Field::Value(false) => {}
-            Field::Value(true) => return Err(ParseRequestError::UnsupportedFeature),
-        }
+        let strict = field_value(strict);
 
         let input_schema = field_value(parameters).unwrap_or_else(|| Value::Object(Map::new()));
         validate_schema(&input_schema, &mut total_schema_bytes)?;
@@ -309,6 +306,7 @@ fn convert_tools(
             name,
             description,
             input_schema,
+            strict,
         });
     }
     Ok((converted, names))
@@ -627,6 +625,7 @@ fn convert_tool_call(
         id: payload.id,
         name: payload.function.name,
         input,
+        signature: None,
     })
 }
 
@@ -660,6 +659,7 @@ fn convert_tool_message(
         vec![ContentBlock::ToolResult {
             tool_use_id: message.tool_call_id,
             content: result_content,
+            structured_content: None,
             is_error: false,
         }],
     ))

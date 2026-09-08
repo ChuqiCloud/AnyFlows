@@ -18,7 +18,7 @@ use crate::{
 #[derive(Serialize, ToSchema)]
 #[schema(as = AdminCredentialWriteFields)]
 struct AdminCredentialWriteFieldsSchema {
-    /// 当前写链路仅支持 API Key 与 OAuth access token。
+    /// 当前写链路支持的闭合凭据类型。
     #[schema(value_type = AdminCredentialWriteKindSchema, inline)]
     kind: String,
     #[schema(value_type = AdminRoutingWriteStatusSchema)]
@@ -28,7 +28,8 @@ struct AdminCredentialWriteFieldsSchema {
     priority: i32,
     #[schema(minimum = 0)]
     weight: i32,
-    #[schema(minimum = 0, required = true)]
+    /// 普通凭据的独立并发上限；Spark 影子必须为 null 并继承母凭据。
+    #[schema(minimum = 0, required = true, example = 8)]
     concurrency: Option<i32>,
     #[schema(minimum = 0, required = true)]
     load_factor_micros: Option<i64>,
@@ -36,13 +37,16 @@ struct AdminCredentialWriteFieldsSchema {
     #[schema(minimum = 0, required = true)]
     rate_multiplier_micros: Option<i64>,
     schedulable: bool,
-    /// 同渠道且同类型的母凭据 ID；母凭据本身不得再有父级。
-    #[schema(minimum = 1, required = true)]
+    /// 普通凭据必须为 null；Spark 影子填写同渠道、已授权 OAuth 根凭据 ID。
+    #[schema(minimum = 1, required = true, example = 41)]
     parent_id: Option<i64>,
-    #[schema(value_type = AdminCredentialQuotaDimensionSchema)]
+    /// 普通凭据固定为 global；Spark 影子固定为 spark，创建后不可修改。
+    #[schema(value_type = AdminCredentialQuotaDimensionSchema, example = "global")]
     quota_dimension: String,
-    #[schema(minimum = 1, required = true)]
+    /// 普通凭据可绑定专属代理；Spark 影子必须为 null 并继承母凭据。
+    #[schema(minimum = 1, required = true, example = 7)]
     proxy_id: Option<i64>,
+    /// 仅普通 OAuth 凭据可写；Spark 影子必须为 null。
     #[schema(min_length = 1, max_length = 64, required = true)]
     oauth_provider: Option<String>,
     /// OAuth 账号的非令牌业务标识。
@@ -53,15 +57,49 @@ struct AdminCredentialWriteFieldsSchema {
 }
 
 #[derive(Serialize, ToSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[schema(as = AdminCredentialSecret)]
+enum AdminCredentialSecretSchema {
+    /// 通用 API Key。
+    ApiKey {
+        #[schema(min_length = 1, max_length = 16384, write_only)]
+        api_key: String,
+    },
+    /// 仅含现有 access token 的 OAuth 凭据；完整授权材料由 OAuth 连接向导写入。
+    Oauth {
+        #[schema(min_length = 1, max_length = 16384, write_only)]
+        access_token: String,
+    },
+    /// AWS Bedrock SigV4 长期或 STS 临时凭据。
+    Bedrock {
+        #[schema(min_length = 1, max_length = 128, write_only)]
+        access_key_id: String,
+        #[schema(min_length = 1, max_length = 4096, write_only)]
+        secret_access_key: String,
+        #[schema(min_length = 1, max_length = 16384, required = true, write_only)]
+        session_token: Option<String>,
+    },
+    /// Google Service Account JWT 凭据；不接受可覆盖的 token URI。
+    ServiceAccount {
+        #[schema(min_length = 1, max_length = 320, write_only)]
+        client_email: String,
+        #[schema(min_length = 1, max_length = 128, required = true, write_only)]
+        private_key_id: Option<String>,
+        #[schema(min_length = 1, max_length = 16384, write_only)]
+        private_key: String,
+    },
+}
+
+#[derive(Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 #[schema(as = AdminCredentialCreateRequest)]
 struct AdminCredentialCreateRequestSchema {
-    /// 当前写链路仅支持 API Key 与 OAuth access token。
+    /// 普通凭据与非空 secret 的 kind 必须一致；Spark 影子固定为 oauth。
     #[schema(value_type = AdminCredentialWriteKindSchema, inline)]
     kind: String,
-    /// API Key 或 OAuth access token 明文；只用于本次加密，永不随响应返回。
-    #[schema(min_length = 1, max_length = 16384, write_only)]
-    secret: String,
+    /// 普通 OAuth 可传 null 创建待授权凭据；Spark 影子也必须传 null 且不进入授权流程。
+    #[schema(required = true, write_only)]
+    secret: Option<AdminCredentialSecretSchema>,
     #[schema(value_type = AdminRoutingWriteStatusSchema)]
     status: String,
     #[schema(value_type = Option<AdminCredentialMultiKeyModeSchema>, required = true)]
@@ -69,7 +107,8 @@ struct AdminCredentialCreateRequestSchema {
     priority: i32,
     #[schema(minimum = 0)]
     weight: i32,
-    #[schema(minimum = 0, required = true)]
+    /// 普通凭据的独立并发上限；Spark 影子必须为 null 并继承母凭据。
+    #[schema(minimum = 0, required = true, example = 8)]
     concurrency: Option<i32>,
     #[schema(minimum = 0, required = true)]
     load_factor_micros: Option<i64>,
@@ -77,13 +116,16 @@ struct AdminCredentialCreateRequestSchema {
     #[schema(minimum = 0, required = true)]
     rate_multiplier_micros: Option<i64>,
     schedulable: bool,
-    /// 同渠道且同类型的母凭据 ID；母凭据本身不得再有父级。
-    #[schema(minimum = 1, required = true)]
+    /// 普通凭据必须为 null；Spark 影子填写同渠道、已授权 OAuth 根凭据 ID。
+    #[schema(minimum = 1, required = true, example = 41)]
     parent_id: Option<i64>,
-    #[schema(value_type = AdminCredentialQuotaDimensionSchema)]
+    /// 普通凭据固定为 global；Spark 影子固定为 spark。
+    #[schema(value_type = AdminCredentialQuotaDimensionSchema, example = "global")]
     quota_dimension: String,
-    #[schema(minimum = 1, required = true)]
+    /// 普通凭据可绑定专属代理；Spark 影子必须为 null 并继承母凭据。
+    #[schema(minimum = 1, required = true, example = 7)]
     proxy_id: Option<i64>,
+    /// 仅普通 OAuth 凭据可写；Spark 影子必须为 null。
     #[schema(min_length = 1, max_length = 64, required = true)]
     oauth_provider: Option<String>,
     /// OAuth 账号的非令牌业务标识。
@@ -97,12 +139,12 @@ struct AdminCredentialCreateRequestSchema {
 #[serde(deny_unknown_fields)]
 #[schema(as = AdminCredentialUpdateRequest)]
 struct AdminCredentialUpdateRequestSchema {
-    /// 当前写链路仅支持 API Key 与 OAuth access token。
+    /// 类型创建后不可修改；Spark 影子始终为 oauth。
     #[schema(value_type = AdminCredentialWriteKindSchema, inline)]
     kind: String,
-    /// 新明文用于轮换；null 表示保留已有密文。
-    #[schema(min_length = 1, max_length = 16384, required = true, write_only)]
-    secret: Option<String>,
+    /// 普通凭据用新明文轮换，null 表示保留；Spark 影子必须为 null。
+    #[schema(required = true, write_only)]
+    secret: Option<AdminCredentialSecretSchema>,
     #[schema(value_type = AdminRoutingWriteStatusSchema)]
     status: String,
     #[schema(value_type = Option<AdminCredentialMultiKeyModeSchema>, required = true)]
@@ -110,7 +152,8 @@ struct AdminCredentialUpdateRequestSchema {
     priority: i32,
     #[schema(minimum = 0)]
     weight: i32,
-    #[schema(minimum = 0, required = true)]
+    /// 普通凭据的独立并发上限；Spark 影子必须为 null 并继承母凭据。
+    #[schema(minimum = 0, required = true, example = 8)]
     concurrency: Option<i32>,
     #[schema(minimum = 0, required = true)]
     load_factor_micros: Option<i64>,
@@ -118,13 +161,16 @@ struct AdminCredentialUpdateRequestSchema {
     #[schema(minimum = 0, required = true)]
     rate_multiplier_micros: Option<i64>,
     schedulable: bool,
-    /// 同渠道且同类型的母凭据 ID；母凭据本身不得再有父级。
-    #[schema(minimum = 1, required = true)]
+    /// 父级创建后不可修改；普通凭据为 null，Spark 影子保留原母凭据 ID。
+    #[schema(minimum = 1, required = true, example = 41)]
     parent_id: Option<i64>,
-    #[schema(value_type = AdminCredentialQuotaDimensionSchema)]
+    /// 额度维度创建后不可修改；普通凭据为 global，Spark 影子为 spark。
+    #[schema(value_type = AdminCredentialQuotaDimensionSchema, example = "global")]
     quota_dimension: String,
-    #[schema(minimum = 1, required = true)]
+    /// 普通凭据可绑定专属代理；Spark 影子必须为 null 并继承母凭据。
+    #[schema(minimum = 1, required = true, example = 7)]
     proxy_id: Option<i64>,
+    /// 仅普通 OAuth 凭据可写；Spark 影子必须为 null。
     #[schema(min_length = 1, max_length = 64, required = true)]
     oauth_provider: Option<String>,
     /// OAuth 账号的非令牌业务标识。
@@ -260,6 +306,7 @@ fn delete_admin_credential() {}
         AdminRoutingStatusSchema,
         AdminRoutingWriteStatusSchema,
         AdminCredentialWriteFieldsSchema,
+        AdminCredentialSecretSchema,
         AdminCredentialCreateRequestSchema,
         AdminCredentialUpdateRequestSchema,
         AdminCredentialResponse,

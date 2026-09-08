@@ -1,9 +1,4 @@
-use std::{
-    collections::HashSet,
-    error::Error,
-    fmt,
-    io::{self, Write},
-};
+use std::{collections::HashSet, error::Error, fmt};
 
 use af_domain::{Operation, Protocol, Role};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -19,8 +14,10 @@ use super::{
         validate_raw_fields, validate_schema, validate_tool_name, validate_value_shape,
     },
 };
+use crate::bounded_json::validate_object;
 use crate::{
     CanonicalRequest, ContentBlock, MediaSource, Message, ReasoningEffort, ToolChoice, ToolDef,
+    UnsupportedCapability, validate_request_capabilities,
 };
 
 /// 将 Canonical 请求构造为 OpenAI Chat Completions JSON。
@@ -31,8 +28,13 @@ pub fn build_request(request: &CanonicalRequest) -> Result<Value, BuildRequestEr
     if request.operation != Operation::Chat {
         return Err(BuildRequestError::UnsupportedOperation);
     }
+    validate_request_capabilities(Protocol::OpenAiChat, request)
+        .map_err(BuildRequestError::UnsupportedCapability)?;
     validate_model(&request.model).map_err(map_request_validation_error)?;
     if !request.attachments.is_empty() {
+        return Err(BuildRequestError::UnsupportedFeature);
+    }
+    if !request.continuation.is_empty() {
         return Err(BuildRequestError::UnsupportedFeature);
     }
 
@@ -74,134 +76,8 @@ pub fn build_request(request: &CanonicalRequest) -> Result<Value, BuildRequestEr
 }
 
 fn validate_final_request(root: &Map<String, Value>) -> Result<(), BuildRequestError> {
-    let mut state = OutboundJsonState::default();
-    state.visit_object(root, 0)?;
-
-    let mut writer = BoundedWriter::new(super::MAX_BODY_BYTES);
-    serde_json::to_writer(&mut writer, root).map_err(|_| BuildRequestError::StructureLimitExceeded)
-}
-
-#[derive(Default)]
-struct OutboundJsonState {
-    nodes: usize,
-    string_bytes: usize,
-}
-
-impl OutboundJsonState {
-    fn visit_value(&mut self, value: &Value, depth: usize) -> Result<(), BuildRequestError> {
-        self.add_node(depth)?;
-        match value {
-            Value::Object(object) => self.visit_object_entries(object, depth),
-            Value::Array(array) => self.visit_array_items(array, depth),
-            Value::String(value) => self.add_string(value.len()),
-            Value::Null | Value::Bool(_) | Value::Number(_) => Ok(()),
-        }
-    }
-
-    fn visit_object(
-        &mut self,
-        object: &Map<String, Value>,
-        depth: usize,
-    ) -> Result<(), BuildRequestError> {
-        self.add_node(depth)?;
-        self.visit_object_entries(object, depth)
-    }
-
-    fn visit_object_entries(
-        &mut self,
-        object: &Map<String, Value>,
-        depth: usize,
-    ) -> Result<(), BuildRequestError> {
-        if object.len() > super::REQUEST_JSON_LIMITS.max_object_entries {
-            return Err(BuildRequestError::StructureLimitExceeded);
-        }
-        for (key, value) in object {
-            if key.len() > super::REQUEST_JSON_LIMITS.max_key_bytes {
-                return Err(BuildRequestError::StructureLimitExceeded);
-            }
-            self.add_string(key.len())?;
-            let child_depth = depth
-                .checked_add(1)
-                .ok_or(BuildRequestError::StructureLimitExceeded)?;
-            self.visit_value(value, child_depth)?;
-        }
-        Ok(())
-    }
-
-    fn visit_array_items(
-        &mut self,
-        array: &[Value],
-        depth: usize,
-    ) -> Result<(), BuildRequestError> {
-        if array.len() > super::REQUEST_JSON_LIMITS.max_array_items {
-            return Err(BuildRequestError::StructureLimitExceeded);
-        }
-        let child_depth = depth
-            .checked_add(1)
-            .ok_or(BuildRequestError::StructureLimitExceeded)?;
-        for value in array {
-            self.visit_value(value, child_depth)?;
-        }
-        Ok(())
-    }
-
-    fn add_node(&mut self, depth: usize) -> Result<(), BuildRequestError> {
-        if depth > super::REQUEST_JSON_LIMITS.max_depth {
-            return Err(BuildRequestError::StructureLimitExceeded);
-        }
-        self.nodes = self
-            .nodes
-            .checked_add(1)
-            .ok_or(BuildRequestError::StructureLimitExceeded)?;
-        if self.nodes > super::REQUEST_JSON_LIMITS.max_nodes {
-            return Err(BuildRequestError::StructureLimitExceeded);
-        }
-        Ok(())
-    }
-
-    fn add_string(&mut self, bytes: usize) -> Result<(), BuildRequestError> {
-        self.string_bytes = self
-            .string_bytes
-            .checked_add(bytes)
-            .ok_or(BuildRequestError::StructureLimitExceeded)?;
-        if self.string_bytes > super::REQUEST_JSON_LIMITS.max_string_bytes {
-            return Err(BuildRequestError::StructureLimitExceeded);
-        }
-        Ok(())
-    }
-}
-
-struct BoundedWriter {
-    bytes: usize,
-    limit: usize,
-}
-
-impl BoundedWriter {
-    const fn new(limit: usize) -> Self {
-        Self { bytes: 0, limit }
-    }
-}
-
-impl Write for BoundedWriter {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        let bytes = self
-            .bytes
-            .checked_add(buffer.len())
-            .ok_or_else(limit_writer_error)?;
-        if bytes > self.limit {
-            return Err(limit_writer_error());
-        }
-        self.bytes = bytes;
-        Ok(buffer.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-fn limit_writer_error() -> io::Error {
-    io::Error::other("OpenAI Chat 请求超过序列化大小限制")
+    validate_object(root, super::REQUEST_JSON_LIMITS, super::MAX_BODY_BYTES)
+        .map_err(|_| BuildRequestError::StructureLimitExceeded)
 }
 
 fn build_tools(tools: &[ToolDef]) -> Result<Vec<Value>, BuildRequestError> {
@@ -232,6 +108,9 @@ fn build_tools(tools: &[ToolDef]) -> Result<Vec<Value>, BuildRequestError> {
             function.insert("description".to_owned(), Value::String(description.clone()));
         }
         function.insert("parameters".to_owned(), tool.input_schema.clone());
+        if let Some(strict) = tool.strict {
+            function.insert("strict".to_owned(), Value::Bool(strict));
+        }
 
         let mut wrapper = Map::new();
         wrapper.insert("type".to_owned(), Value::String("function".to_owned()));
@@ -568,7 +447,8 @@ fn build_user_message(
             ContentBlock::ToolUse { .. }
             | ContentBlock::ToolResult { .. }
             | ContentBlock::Thinking { .. }
-            | ContentBlock::CacheControl(_) => {
+            | ContentBlock::CacheControl(_)
+            | ContentBlock::Compaction(_) => {
                 return Err(BuildRequestError::UnsupportedFeature);
             }
         });
@@ -593,7 +473,15 @@ fn build_assistant_message(
                 state.add_text(text)?;
                 texts.push(text.clone());
             }
-            ContentBlock::ToolUse { id, name, input } => {
+            ContentBlock::ToolUse {
+                id,
+                name,
+                input,
+                signature,
+            } => {
+                if signature.is_some() {
+                    return Err(BuildRequestError::UnsupportedFeature);
+                }
                 saw_tool_call = true;
                 tool_calls.push(build_tool_call(id, name, input, state)?);
             }
@@ -602,7 +490,8 @@ fn build_assistant_message(
             | ContentBlock::Audio { .. }
             | ContentBlock::ToolResult { .. }
             | ContentBlock::Thinking { .. }
-            | ContentBlock::CacheControl(_) => {
+            | ContentBlock::CacheControl(_)
+            | ContentBlock::Compaction(_) => {
                 return Err(BuildRequestError::UnsupportedFeature);
             }
         }
@@ -660,13 +549,14 @@ fn build_tool_message(
         ContentBlock::ToolResult {
             tool_use_id,
             content,
+            structured_content,
             is_error,
         },
     ] = blocks
     else {
         return Err(BuildRequestError::InvalidValue);
     };
-    if *is_error {
+    if *is_error || structured_content.is_some() {
         return Err(BuildRequestError::UnsupportedFeature);
     }
     validate_call_id(tool_use_id).map_err(map_request_validation_error)?;
@@ -836,6 +726,8 @@ pub enum BuildRequestError {
     InvalidValue,
     /// Canonical 请求超过协议结构预算。
     StructureLimitExceeded,
+    /// 目标协议缺少一项已声明的请求能力。
+    UnsupportedCapability(UnsupportedCapability),
     /// Canonical 请求使用了 OpenAI Chat 无法无损表达的特性。
     UnsupportedFeature,
     /// raw 字段来源协议与 OpenAI Chat 不一致。
@@ -850,6 +742,7 @@ impl fmt::Display for BuildRequestError {
             Self::UnsupportedOperation => formatter.write_str("请求操作不是 Chat"),
             Self::InvalidValue => formatter.write_str("Canonical 请求字段值无效"),
             Self::StructureLimitExceeded => formatter.write_str("Canonical 请求结构超过限制"),
+            Self::UnsupportedCapability(error) => fmt::Display::fmt(error, formatter),
             Self::UnsupportedFeature => formatter.write_str("Canonical 请求包含当前不支持的特性"),
             Self::RawProtocolMismatch => formatter.write_str("未归一化字段不得跨协议透传"),
             Self::FieldConflict => formatter.write_str("未归一化字段与 Canonical 字段冲突"),

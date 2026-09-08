@@ -3,11 +3,19 @@
 mod auto_ban;
 mod auto_ban_keyword;
 mod candidate;
+mod concurrency;
 mod database;
 mod failure;
+mod health;
 mod index;
+mod organization_approval_timeout;
+mod organization_sso_domain_reverification;
+mod organization_sso_login_transaction_cleanup;
 mod probe;
 mod retry;
+mod stable_first;
+mod sticky;
+mod subscription_cycle;
 mod weighted;
 
 pub use auto_ban::{
@@ -20,17 +28,56 @@ pub use auto_ban_keyword::{
     MAX_AUTO_BAN_KEYWORD_TOTAL_BYTES,
 };
 pub use candidate::SchedulerCandidate;
+pub use concurrency::{
+    CONCURRENCY_EXTRA_WAIT_SLOTS, ConcurrencyWaitBackoff, INITIAL_CONCURRENCY_WAIT_BACKOFF,
+    MAX_CONCURRENCY_WAIT_BACKOFF, concurrency_wait_queue_limit,
+};
 pub use database::{DatabaseWeightedScheduler, DatabaseWeightedSchedulerError};
 pub use failure::{
-    DEFAULT_TRANSIENT_SERVER_RETRY_LIMIT, FailureAction, FailureContext, FailurePolicy,
+    CredentialFailureContext, CredentialFailureDisposition, DEFAULT_TRANSIENT_SERVER_RETRY_LIMIT,
+    FailureAction, FailureContext, FailurePolicy, PermanentCredentialFailure,
+    TemporaryCredentialFailure, credential_failure_disposition,
 };
+pub use health::{ChannelRoutingHealth, ROUTING_HEALTH_PENALTY_SCALE};
 pub use index::{
-    ChannelIndexCacheError, ChannelIndexRefreshConfig, ChannelIndexRefreshConfigError,
+    BoundRouteCandidate, BoundRouteCandidateError, ChannelIndexCacheError,
+    ChannelIndexProjectionApplyReport, ChannelIndexRefreshConfig, ChannelIndexRefreshConfigError,
     ChannelIndexRefreshReport, ChannelIndexRefreshSupervisor, ChannelIndexSnapshot,
     ChannelIndexSnapshotError, ChannelIndexSource, ChannelIndexSourceError,
-    ChannelIndexSourceFuture, ChannelIndexSourceRecord, DEFAULT_CHANNEL_INDEX_REFRESH_INTERVAL,
+    ChannelIndexSourceFuture, ChannelIndexSourceRecord, ChannelIndexSourceSnapshot,
+    ChannelIndexVersionedSourceFuture, DEFAULT_CHANNEL_INDEX_REFRESH_INTERVAL,
     InMemoryChannelIndex, IndexedRouteCandidate, IndexedRoutePlan, IndexedWeightedScheduler,
     IndexedWeightedSchedulerError,
+};
+pub use organization_approval_timeout::{
+    DEFAULT_ORGANIZATION_APPROVAL_TIMEOUT_BATCH_SIZE,
+    DEFAULT_ORGANIZATION_APPROVAL_TIMEOUT_INTERVAL, DEFAULT_ORGANIZATION_APPROVAL_TIMEOUT_LEASE,
+    DEFAULT_ORGANIZATION_APPROVAL_TIMEOUT_MAX_BATCHES_PER_RUN,
+    MAX_ORGANIZATION_APPROVAL_TIMEOUT_MAX_BATCHES_PER_RUN, OrganizationApprovalTimeoutRunReport,
+    OrganizationApprovalTimeoutStore, OrganizationApprovalTimeoutSupervisor,
+    OrganizationApprovalTimeoutSupervisorConfig, OrganizationApprovalTimeoutSupervisorConfigError,
+};
+pub use organization_sso_domain_reverification::{
+    DEFAULT_ORGANIZATION_SSO_DOMAIN_REVERIFICATION_BATCH_SIZE,
+    DEFAULT_ORGANIZATION_SSO_DOMAIN_REVERIFICATION_INTERVAL,
+    DEFAULT_ORGANIZATION_SSO_DOMAIN_REVERIFICATION_LEASE,
+    DEFAULT_ORGANIZATION_SSO_DOMAIN_REVERIFICATION_MAX_BATCHES_PER_RUN,
+    MAX_ORGANIZATION_SSO_DOMAIN_REVERIFICATION_MAX_BATCHES_PER_RUN,
+    OrganizationSsoDomainReverificationResolver, OrganizationSsoDomainReverificationRunReport,
+    OrganizationSsoDomainReverificationStore, OrganizationSsoDomainReverificationSupervisor,
+    OrganizationSsoDomainReverificationSupervisorConfig,
+    OrganizationSsoDomainReverificationSupervisorConfigError,
+};
+pub use organization_sso_login_transaction_cleanup::{
+    DEFAULT_ORGANIZATION_SSO_LOGIN_TRANSACTION_CLEANUP_BATCH_SIZE,
+    DEFAULT_ORGANIZATION_SSO_LOGIN_TRANSACTION_CLEANUP_INTERVAL,
+    DEFAULT_ORGANIZATION_SSO_LOGIN_TRANSACTION_CLEANUP_LEASE,
+    DEFAULT_ORGANIZATION_SSO_LOGIN_TRANSACTION_CLEANUP_MAX_BATCHES_PER_RUN,
+    MAX_ORGANIZATION_SSO_LOGIN_TRANSACTION_CLEANUP_MAX_BATCHES_PER_RUN,
+    OrganizationSsoLoginTransactionCleanupRunReport, OrganizationSsoLoginTransactionCleanupStore,
+    OrganizationSsoLoginTransactionCleanupSupervisor,
+    OrganizationSsoLoginTransactionCleanupSupervisorConfig,
+    OrganizationSsoLoginTransactionCleanupSupervisorConfigError,
 };
 pub use probe::{
     ChannelProbe, ChannelProbeRunReport, ChannelProbeStatus, ChannelProbeStore,
@@ -39,6 +86,21 @@ pub use probe::{
     DEFAULT_CHANNEL_PROBE_TIMEOUT,
 };
 pub use retry::{RetrySelection, WeightedRetryPlan, WeightedRetryPlanError};
+pub use stable_first::{
+    DEFAULT_PRIMARY_SCORE_RATIO_MICROS, StableFirstPlan, StableFirstPlanError, StableFirstPool,
+    StableFirstStrategy,
+};
+pub use sticky::{
+    RouteWaitKind, RouteWaitPlan, StickyRouteOutcome, StickyWaitPolicy, StickyWaitPolicyError,
+};
+pub use subscription_cycle::{
+    DEFAULT_SUBSCRIPTION_CYCLE_BATCH_SIZE, DEFAULT_SUBSCRIPTION_CYCLE_INTERVAL,
+    DEFAULT_SUBSCRIPTION_CYCLE_MAX_BATCHES_PER_RUN, MAX_SUBSCRIPTION_CYCLE_BATCHES_PER_RUN,
+    SubscriptionCycleMutationOutcome, SubscriptionCyclePhaseReport, SubscriptionCycleRunReport,
+    SubscriptionCycleStore, SubscriptionCycleSupervisor, SubscriptionCycleSupervisorConfig,
+    SubscriptionCycleSupervisorConfigError, SubscriptionCycleSupervisorError,
+    SubscriptionExpirationBatch, SubscriptionWindowAdvanceBatch,
+};
 pub use weighted::{
     MAX_SCHEDULER_CANDIDATES, WEIGHT_BASE, WeightedSelection, WeightedSelectionError,
     WeightedStrategy,

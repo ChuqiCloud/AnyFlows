@@ -16,6 +16,8 @@ const TOKENS_PER_MILLION: i64 = 1_000_000;
 pub enum QuotaMathOperation {
     /// 美元金额换算为内部额度。
     UsdConversion,
+    /// 人民币整数分按每元额度换算为内部额度。
+    CnyMinorConversion,
     /// 按 token 数和每百万 token 单价换算额度。
     TokenConversion,
     /// 按多个 token 分项和倍率解析最终定价。
@@ -30,6 +32,7 @@ impl QuotaMathOperation {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::UsdConversion => "quota_from_usd",
+            Self::CnyMinorConversion => "quota_from_cny_minor",
             Self::TokenConversion => "quota_from_tokens",
             Self::PricingResolution => "pricing_resolution",
             Self::Multiplication => "checked_mul_quota",
@@ -140,6 +143,31 @@ pub fn quota_from_usd(usd: Decimal) -> Result<Quota, QuotaMathError> {
     quota_from_usd_for(usd, QuotaMathOperation::UsdConversion)
 }
 
+/// 将人民币整数分按每元额度换算为内部额度。
+///
+/// 公式为 `amount_minor * quota_per_cny / 100`，只使用 checked 整数运算；结果按中点远离零
+/// 舍入。负的每元额度违反非负额度约束，任何中间值或最终 `i64` 越界都返回可审计的溢出错误。
+pub fn quota_from_cny_minor(
+    amount_minor: u64,
+    quota_per_cny: i64,
+) -> Result<Quota, QuotaMathError> {
+    if quota_per_cny < 0 {
+        return Err(QuotaError::Negative.into());
+    }
+
+    let operation = QuotaMathOperation::CnyMinorConversion;
+    let weighted = i128::from(amount_minor)
+        .checked_mul(i128::from(quota_per_cny))
+        .ok_or_else(|| QuotaClamp::overflow(operation))?;
+    // 输入均非负，中点远离零等价于除法前增加半个分母。
+    let rounded = weighted
+        .checked_add(50)
+        .ok_or_else(|| QuotaClamp::overflow(operation))?
+        / 100;
+    let units = i64::try_from(rounded).map_err(|_| QuotaClamp::overflow(operation))?;
+    Quota::new(units).map_err(Into::into)
+}
+
 fn quota_from_usd_for(
     usd: Decimal,
     operation: QuotaMathOperation,
@@ -169,6 +197,37 @@ pub(crate) struct TokenPricingResult {
     pub(crate) quota: Quota,
     pub(crate) component_usd: [Decimal; 5],
     pub(crate) total_usd: Decimal,
+}
+
+/// 表达式定价完成倍率换算后的内部结果。
+pub(crate) struct ExpressionPricingResult {
+    pub(crate) quota: Quota,
+    pub(crate) base_usd: Decimal,
+    pub(crate) total_usd: Decimal,
+}
+
+/// 把表达式返回的 token 加权美元单价换算为最终额度。
+///
+/// 表达式系数单位为美元/百万 token，因此先应用请求倍率，再统一除以一百万；最终额度
+/// 仍只在 [`quota_from_usd_for`] 中舍入一次。
+pub(crate) fn quota_from_expression_cost(
+    weighted_cost: Decimal,
+    ratio_micros: [i64; 3],
+) -> Result<ExpressionPricingResult, QuotaMathError> {
+    if weighted_cost < Decimal::ZERO || ratio_micros.into_iter().any(|ratio| ratio < 0) {
+        return Err(QuotaError::Negative.into());
+    }
+
+    let base_usd = weighted_cost
+        .checked_div(Decimal::from(TOKENS_PER_MILLION))
+        .ok_or_else(|| QuotaMathError::Clamp(pricing_overflow()))?;
+    let total_usd = apply_pricing_ratios(weighted_cost, ratio_micros)?;
+    let quota = quota_from_usd_for(total_usd, QuotaMathOperation::PricingResolution)?;
+    Ok(ExpressionPricingResult {
+        quota,
+        base_usd,
+        total_usd,
+    })
 }
 
 /// 按真实美元单价和百万分比倍率计算五类 token 的最终额度。
@@ -222,6 +281,33 @@ pub(crate) fn quota_from_token_components(
     })
 }
 
+/// 将五类美元/百万 token 基础单价应用与请求结算相同的三层倍率。
+///
+/// 本入口只返回精确 Decimal 展示价，不执行 quota 整数舍入；实际请求仍在五类成本
+/// 汇总后只舍入一次。倍率为零时保留按 token 模式并返回五项零价。
+pub(crate) fn token_prices_after_ratios(
+    prices: [Decimal; 5],
+    ratio_micros: [i64; 3],
+) -> Result<[Decimal; 5], QuotaMathError> {
+    if ratio_micros.into_iter().any(|ratio| ratio < 0)
+        || prices.into_iter().any(|price| price < Decimal::ZERO)
+    {
+        return Err(QuotaError::Negative.into());
+    }
+    if ratio_micros.into_iter().any(|ratio| ratio == 0) {
+        return Ok([Decimal::ZERO; 5]);
+    }
+
+    let mut effective = [Decimal::ZERO; 5];
+    for (index, price) in prices.into_iter().enumerate() {
+        let weighted = Decimal::from(TOKENS_PER_MILLION)
+            .checked_mul(price)
+            .ok_or_else(pricing_overflow)?;
+        effective[index] = apply_pricing_ratios(weighted, ratio_micros)?;
+    }
+    Ok(effective)
+}
+
 fn apply_pricing_ratios(
     weighted_cost: Decimal,
     ratio_micros: [i64; 3],
@@ -235,6 +321,22 @@ fn apply_pricing_ratios(
 
     cost.checked_div(Decimal::from(TOKENS_PER_MILLION))
         .ok_or_else(|| pricing_overflow().into())
+}
+
+/// 把已经过业务边界校验的美元金额应用三层请求倍率并转换为额度。
+pub(crate) fn quota_from_usd_with_ratios(
+    usd: Decimal,
+    ratio_micros: [i64; 3],
+) -> Result<Quota, QuotaMathError> {
+    if usd < Decimal::ZERO || ratio_micros.into_iter().any(|ratio| ratio < 0) {
+        return Err(QuotaError::Negative.into());
+    }
+    // 公共倍率函数会在末尾消除一次百万尺度；美元金额必须先补齐同一固定点尺度。
+    let weighted = Decimal::from(TOKENS_PER_MILLION)
+        .checked_mul(usd)
+        .ok_or_else(pricing_overflow)?;
+    let effective = apply_pricing_ratios(weighted, ratio_micros)?;
+    quota_from_usd_for(effective, QuotaMathOperation::PricingResolution)
 }
 
 const fn pricing_overflow() -> QuotaClamp {

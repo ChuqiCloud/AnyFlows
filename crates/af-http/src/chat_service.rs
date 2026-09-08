@@ -1,23 +1,26 @@
 use std::{future::Future, pin::Pin};
 
-use af_domain::{AfError, GatewayPrincipal};
-use af_protocol::CanonicalRequest;
-use af_relay::{OpenAiChatResponse, RelayService};
+use af_domain::{AfError, ConcurrencyLimit, GatewayPrincipal, Protocol};
+use af_protocol::CanonicalRequestEnvelope;
+use af_relay::{ChatResponse, RelayDiagnosticInput, RelayService};
 
 /// Chat 业务服务的一次异步调用结果，保持完整响应与流式 usage 句柄不变。
 pub type ChatServiceFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<OpenAiChatResponse, AfError>> + Send + 'a>>;
+    Pin<Box<dyn Future<Output = Result<ChatResponse, AfError>> + Send + 'a>>;
 
 /// HTTP 层依赖的对象安全 Chat 服务端口。
 ///
-/// 端口只接收已经完成协议归一和鉴权的请求，不负责鉴权、计费或调度。
+/// 端口只接收已经完成协议归一和鉴权的不可变请求，不负责鉴权、计费或调度。
 pub trait ChatService: Send + Sync {
     /// 转发一次 Chat 请求，并保留非流式 usage 或流式 usage 句柄供上层消费。
     fn chat_completions<'a>(
         &'a self,
         principal: &'a GatewayPrincipal,
-        request: CanonicalRequest,
+        user_concurrency: Option<ConcurrencyLimit>,
+        request: CanonicalRequestEnvelope,
+        response_protocol: Protocol,
         request_id: &'a str,
+        diagnostic: RelayDiagnosticInput,
     ) -> ChatServiceFuture<'a>;
 }
 
@@ -25,11 +28,15 @@ impl ChatService for RelayService {
     fn chat_completions<'a>(
         &'a self,
         principal: &'a GatewayPrincipal,
-        request: CanonicalRequest,
+        _user_concurrency: Option<ConcurrencyLimit>,
+        request: CanonicalRequestEnvelope,
+        response_protocol: Protocol,
         request_id: &'a str,
+        _diagnostic: RelayDiagnosticInput,
     ) -> ChatServiceFuture<'a> {
         Box::pin(async move {
-            RelayService::chat_completions(self, principal, request, request_id).await
+            RelayService::chat_completions(self, principal, request, response_protocol, request_id)
+                .await
         })
     }
 }
@@ -49,11 +56,14 @@ mod tests {
         fn chat_completions<'a>(
             &'a self,
             _principal: &'a GatewayPrincipal,
-            _request: CanonicalRequest,
+            _user_concurrency: Option<ConcurrencyLimit>,
+            _request: CanonicalRequestEnvelope,
+            _response_protocol: Protocol,
             _request_id: &'a str,
+            _diagnostic: RelayDiagnosticInput,
         ) -> ChatServiceFuture<'a> {
             Box::pin(async {
-                Ok(OpenAiChatResponse::Full {
+                Ok(ChatResponse::Full {
                     body: Bytes::from_static(b"{}"),
                     usage: Err(af_relay::UsageResolutionError::UnsupportedContent),
                 })
@@ -69,13 +79,30 @@ mod tests {
             UserId::new(2).unwrap(),
             GroupId::new(3).unwrap(),
         );
-        let request =
-            CanonicalRequest::new(Operation::Chat, "test-model".to_owned(), vec![], false);
+        let request = af_protocol::CanonicalRequest::new(
+            Operation::Chat,
+            "test-model".to_owned(),
+            vec![],
+            false,
+        )
+        .into();
 
         let response = service
-            .chat_completions(&principal, request, "request-id")
+            .chat_completions(
+                &principal,
+                None,
+                request,
+                Protocol::OpenAiChat,
+                "request-id",
+                RelayDiagnosticInput::capture(
+                    "POST",
+                    "/v1/chat/completions",
+                    &http::HeaderMap::new(),
+                    &axum::body::Bytes::from_static(b"{}"),
+                ),
+            )
             .await
             .unwrap();
-        assert!(matches!(response, OpenAiChatResponse::Full { .. }));
+        assert!(matches!(response, ChatResponse::Full { .. }));
     }
 }

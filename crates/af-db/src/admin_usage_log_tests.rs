@@ -9,7 +9,8 @@ use sea_orm::{
 use super::{
     AdminUsageLogRecord, AdminUsageLogRepository, AdminUsageLogRepositoryConfigError,
     AdminUsageLogRepositoryError, DatabaseOptions, MigrationOptions, UsageLogBillingMode,
-    UsageLogRepository, UsageLogSemantics, UsageLogSource, UsageLogUsage, UsageLogWrite,
+    UsageLogRepository, UsageLogSemantics, UsageLogSource, UsageLogUsage, UsageLogVideoResolution,
+    UsageLogWrite,
 };
 use crate::entity::{TokenHash, groups, tokens, usage_logs, users};
 
@@ -24,11 +25,23 @@ async fn list_uses_newest_first_cursor_and_preserves_usage_dimensions() -> Resul
     assert_eq!(logs[1].quota(), 200);
     assert_eq!(next_cursor, Some(logs[1].id()));
 
+    let own = fixture
+        .repository
+        .list_for_user(fixture.user_id, None, 10)
+        .await?;
+    assert_eq!(own.into_parts().0.len(), 3);
+    let unrelated = fixture
+        .repository
+        .list_for_user(UserId::new(fixture.user_id.get() + 1_000)?, None, 10)
+        .await?;
+    assert!(unrelated.into_parts().0.is_empty());
+
     let newest = &logs[0];
     assert_eq!(newest.user_id(), fixture.user_id);
+    assert_eq!(newest.username(), "usage-owner");
     assert_eq!(newest.token_id(), fixture.token_id);
     assert_eq!(newest.group_id(), fixture.group_id);
-    assert_eq!(newest.billing_mode(), 1);
+    assert_eq!(newest.billing_mode(), 3);
     assert_eq!(newest.usage_source(), 1);
     assert_eq!(newest.usage_semantics(), 2);
     assert_eq!(newest.usage().input_tokens(), 30);
@@ -39,6 +52,12 @@ async fn list_uses_newest_first_cursor_and_preserves_usage_dimensions() -> Resul
     assert_eq!(newest.usage().reasoning_tokens(), 9);
     assert_eq!(newest.usage().audio_input_tokens(), 0);
     assert_eq!(newest.usage().audio_output_tokens(), 0);
+    assert_eq!(newest.audio_duration_nanoseconds(), Some(3_500_000_000));
+    assert_eq!(newest.video_duration_seconds(), Some(8));
+    assert_eq!(
+        newest.video_resolution(),
+        Some(UsageLogVideoResolution::P720)
+    );
     assert_eq!(newest.event_id().len(), 32);
     assert!(newest.created_at() > 0);
     assert_eq!(format!("{newest:?}"), "AdminUsageLogRecord(<redacted>)");
@@ -71,7 +90,7 @@ async fn invalid_pagination_corrupt_state_and_closed_pool_fail_closed() -> Resul
         .expect("测试用量日志必须存在");
     broken.usage_source = 9;
     assert_eq!(
-        AdminUsageLogRecord::try_from_model(broken).unwrap_err(),
+        AdminUsageLogRecord::try_from_model(broken, "usage-owner".to_owned()).unwrap_err(),
         AdminUsageLogRepositoryError::Invariant
     );
 
@@ -182,29 +201,46 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
             0,
             0,
         )?;
-        writer
-            .record(&UsageLogWrite::new(
-                BillingReservationId::new(event_id)?,
-                principal,
-                if marker == 2 {
-                    UsageLogBillingMode::Free
-                } else {
-                    UsageLogBillingMode::PerToken
-                },
-                usage,
-                if marker == 2 {
-                    UsageLogSource::Estimated
-                } else {
-                    UsageLogSource::Upstream
-                },
-                if marker == 3 {
-                    UsageLogSemantics::CacheSeparated
-                } else {
-                    UsageLogSemantics::Inclusive
-                },
-                Quota::new(i64::from(marker) * 100)?,
-            ))
-            .await?;
+        let write = UsageLogWrite::new(
+            BillingReservationId::new(event_id)?,
+            principal,
+            match marker {
+                2 => UsageLogBillingMode::Free,
+                3 => UsageLogBillingMode::PerCall,
+                _ => UsageLogBillingMode::PerToken,
+            },
+            usage,
+            if marker == 2 {
+                UsageLogSource::Estimated
+            } else {
+                UsageLogSource::Upstream
+            },
+            if marker == 3 {
+                UsageLogSemantics::CacheSeparated
+            } else {
+                UsageLogSemantics::Inclusive
+            },
+            Quota::new(i64::from(marker) * 100)?,
+        );
+        let write = if marker == 3 {
+            write
+                .with_audio_duration_nanoseconds(Some(3_500_000_000))?
+                .with_video_dimensions(Some(8), Some(UsageLogVideoResolution::P720))?
+                .with_call_observation(
+                    "request-admin-3",
+                    "gpt-test",
+                    af_domain::Protocol::OpenAiResponses,
+                    af_domain::Operation::Responses,
+                    true,
+                    Some(5),
+                    Some(4_096),
+                    Some(120),
+                    640,
+                )?
+        } else {
+            write
+        };
+        writer.record(&write).await?;
     }
     Ok(Fixture {
         repository: AdminUsageLogRepository::new(pool.clone(), Duration::from_secs(2))?,

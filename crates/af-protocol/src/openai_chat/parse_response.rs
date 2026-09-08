@@ -5,7 +5,6 @@ use serde_json::{Map, Value};
 
 use super::{
     ParseRequestError,
-    bounded_json::{BoundedJsonError, JsonLimits, parse_value},
     convert::{
         ARGUMENT_JSON_LIMITS, MAX_ARGUMENT_BYTES, MAX_CONTENT_BLOCKS, MAX_TEXT_BYTES,
         MAX_TOOL_CALLS, MAX_TOTAL_ARGUMENT_BYTES, MAX_TOTAL_ARGUMENT_NODES, MAX_TOTAL_TEXT_BYTES,
@@ -17,6 +16,7 @@ use super::{
         ResponseMessageWire,
     },
 };
+use crate::bounded_json::{BoundedJsonError, JsonLimits, parse_value};
 use crate::{
     CanonicalResponse, ContentBlock, FinishReason, Message, ResponseChoice, TokenCount, Usage,
     UsageDetails, UsageSemantics, UsageSource,
@@ -24,7 +24,7 @@ use crate::{
 
 pub(super) const MAX_RESPONSE_CHOICES: usize = 128;
 const MAX_RESPONSE_ID_BYTES: usize = 256;
-const MAX_RESPONSE_FINGERPRINT_BYTES: usize = 256;
+pub(super) const MAX_RESPONSE_FINGERPRINT_BYTES: usize = 256;
 const RESPONSE_JSON_LIMITS: JsonLimits = JsonLimits {
     max_depth: 32,
     max_nodes: 100_000,
@@ -168,7 +168,7 @@ fn convert_response(wire: ChatResponseWire) -> Result<CanonicalResponse, ParseRe
         Operation::Chat,
         id,
         model,
-        created,
+        Some(created),
         converted_choices,
         usage,
     )
@@ -339,6 +339,7 @@ fn convert_message(
             id: payload.id,
             name: payload.function.name,
             input,
+            signature: None,
         });
     }
     Ok(Message::new(af_domain::Role::Assistant, content))

@@ -8,12 +8,14 @@ publish.workspace = true
 [dependencies]
 bytes.workspace = true
 futures-core.workspace = true
+futures-util.workspace = true
 http.workspace = true
 lru.workspace = true
 reqwest.workspace = true
 rustls.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tokio-tungstenite.workspace = true
 url.workspace = true
 
 [lints]

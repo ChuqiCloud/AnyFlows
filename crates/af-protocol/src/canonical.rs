@@ -3,8 +3,10 @@ use std::{error::Error, fmt};
 use af_domain::{Operation, Protocol, Role};
 use serde_json::{Map, Value};
 
+use crate::ResponsesCompactionItem;
 use crate::request::{
-    Attachment, ReasoningConfig, RequestMetadata, Sampling, StreamOptions, ToolChoice, ToolDef,
+    Attachment, ReasoningConfig, RequestContinuation, RequestMetadata, Sampling, StreamOptions,
+    ToolChoice, ToolDef,
 };
 
 /// 一次请求的协议无关中间表示。
@@ -51,6 +53,8 @@ pub struct CanonicalRequest {
     pub attachments: Vec<Attachment>,
     /// 用于会话粘性等网关能力的请求元数据。
     pub metadata: RequestMetadata,
+    /// 跨请求延续响应、会话和提示缓存的引用。
+    pub continuation: RequestContinuation,
     raw_passthrough: Option<RawPassthrough>,
 }
 
@@ -70,6 +74,7 @@ impl CanonicalRequest {
             stream_options: StreamOptions::EMPTY,
             attachments: Vec::new(),
             metadata: RequestMetadata::EMPTY,
+            continuation: RequestContinuation::EMPTY,
             raw_passthrough: None,
         }
         .with_validated_raw_passthrough(None)
@@ -91,6 +96,15 @@ impl CanonicalRequest {
     pub const fn raw_passthrough(&self) -> Option<&RawPassthrough> {
         self.raw_passthrough.as_ref()
     }
+
+    /// 用已校验的消息序列替换正文，并取消私有字段直通资格。
+    ///
+    /// 正文语义发生变化后必须由目标协议重新编码，不能复用来源 JSON 的私有字段。
+    pub(crate) fn with_rewritten_messages(mut self, messages: Vec<Message>) -> Self {
+        self.messages = messages;
+        self.raw_passthrough = None;
+        self
+    }
 }
 
 impl fmt::Debug for CanonicalRequest {
@@ -108,6 +122,7 @@ impl fmt::Debug for CanonicalRequest {
             .field("stream_options", &self.stream_options)
             .field("attachment_count", &self.attachments.len())
             .field("metadata", &self.metadata)
+            .field("continuation", &self.continuation)
             .field("raw_passthrough", &self.raw_passthrough)
             .finish()
     }
@@ -194,6 +209,8 @@ pub enum ContentBlock {
         name: String,
         /// 已解析的工具参数。
         input: Value,
+        /// 供应商用于延续推理上下文的不透明签名。
+        signature: Option<String>,
     },
     /// 工具执行结果。
     ToolResult {
@@ -201,6 +218,8 @@ pub enum ContentBlock {
         tool_use_id: String,
         /// 工具返回的内容块。
         content: Vec<ContentBlock>,
+        /// 无法等价表示为普通内容块的结构化 JSON 结果。
+        structured_content: Option<Value>,
         /// 工具是否以错误结束。
         is_error: bool,
     },
@@ -213,6 +232,8 @@ pub enum ContentBlock {
     },
     /// 在当前位置声明提示缓存断点。
     CacheControl(CacheHint),
+    /// OpenAI Responses 专用的不透明上下文压缩 Item。
+    Compaction(ResponsesCompactionItem),
 }
 
 impl fmt::Debug for ContentBlock {
@@ -223,15 +244,20 @@ impl fmt::Debug for ContentBlock {
             Self::Audio { .. } => formatter.write_str("Audio(<已脱敏>)"),
             Self::ToolUse { .. } => formatter.write_str("ToolUse(<已脱敏>)"),
             Self::ToolResult {
-                content, is_error, ..
+                content,
+                structured_content,
+                is_error,
+                ..
             } => formatter
                 .debug_struct("ToolResult")
                 .field("tool_use_id", &"<已脱敏>")
                 .field("content_count", &content.len())
+                .field("has_structured_content", &structured_content.is_some())
                 .field("is_error", is_error)
                 .finish(),
             Self::Thinking { .. } => formatter.write_str("Thinking(<已脱敏>)"),
             Self::CacheControl(hint) => formatter.debug_tuple("CacheControl").field(hint).finish(),
+            Self::Compaction(_) => formatter.write_str("Compaction(<已脱敏>)"),
         }
     }
 }
@@ -259,6 +285,12 @@ impl RawPassthrough {
     #[must_use]
     pub const fn source_protocol(&self) -> Protocol {
         self.source_protocol
+    }
+
+    /// 判断私有字段集合是否为空。
+    #[must_use]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.fields.is_empty()
     }
 
     /// 仅向同源协议返回保持原始 JSON 结构的私有字段。

@@ -1,7 +1,9 @@
 use std::{collections::BTreeSet, fmt, future::Future};
 
 use af_db::{ChannelAutoDisableOutcome, ChannelStateRepository, ChannelStateRepositoryError};
-use af_domain::{ChannelId, UpstreamError, UpstreamServerStatus};
+use af_domain::{
+    ChannelAutoBanRules, ChannelId, MAX_CHANNEL_AUTO_BAN_RULES, UpstreamError, UpstreamServerStatus,
+};
 use thiserror::Error;
 
 use crate::{
@@ -10,7 +12,7 @@ use crate::{
 };
 
 /// 单份自动禁用策略允许的结构化规则上限。
-pub const MAX_AUTO_BAN_RULES: usize = 64;
+pub const MAX_AUTO_BAN_RULES: usize = MAX_CHANNEL_AUTO_BAN_RULES;
 
 /// 可配置的结构化渠道自动禁用规则。
 ///
@@ -26,6 +28,8 @@ pub enum AutoBanRule {
     AuthExpired,
     /// 上游凭据已撤销。
     AuthRevoked,
+    /// 上游账号、组织或工作区已停用。
+    AccountDisabled,
     /// 上游额度耗尽。
     QuotaExhausted,
     /// 上游不支持当前模型。
@@ -63,6 +67,19 @@ pub struct AutoBanPolicy {
 }
 
 impl AutoBanPolicy {
+    /// 从跨持久化边界的渠道规则创建不可变运行时策略。
+    pub fn from_channel_rules(rules: &ChannelAutoBanRules) -> Result<Self, AutoBanPolicyError> {
+        Self::with_keywords(
+            rules
+                .server_statuses()
+                .iter()
+                .copied()
+                .map(AutoBanRule::ServerStatus)
+                .collect(),
+            rules.keywords().to_vec(),
+        )
+    }
+
     /// 校验规则容量并创建不可变策略；重复规则会被安全去重。
     pub fn new(rules: Vec<AutoBanRule>) -> Result<Self, AutoBanPolicyError> {
         Self::with_keywords(rules, Vec::new())
@@ -134,17 +151,35 @@ impl AutoBanPolicy {
         action: FailureAction,
         evidence: Option<&AutoBanEvidence>,
     ) -> bool {
+        self.should_auto_disable_with_server_status_and_evidence(error, action, None, evidence)
+    }
+
+    /// 同时使用原始 5xx 状态、闭合分类与受限证据判断是否自动停用。
+    ///
+    /// 上游分类可能把 503/529 收敛为 `Overloaded`，因此精确状态码必须独立保留；
+    /// `BadRequest` 仍优先失败关闭，不能因异常服务端状态或关键词改变渠道状态。
+    #[must_use]
+    pub fn should_auto_disable_with_server_status_and_evidence(
+        &self,
+        error: UpstreamError,
+        action: FailureAction,
+        server_status: Option<UpstreamServerStatus>,
+        evidence: Option<&AutoBanEvidence>,
+    ) -> bool {
         if matches!(
             action,
             FailureAction::RetrySameChannel | FailureAction::RefreshAuthAndRetry
         ) {
             return false;
         }
-        if structured_rule(error).is_some_and(|rule| self.rules.contains(&rule)) {
-            return true;
-        }
         if error == UpstreamError::BadRequest {
             return false;
+        }
+        if server_status
+            .is_some_and(|status| self.rules.contains(&AutoBanRule::ServerStatus(status)))
+            || structured_rule(error).is_some_and(|rule| self.rules.contains(&rule))
+        {
+            return true;
         }
         evidence.is_some_and(|evidence| {
             self.keyword_matcher
@@ -309,16 +344,17 @@ impl<S> fmt::Debug for ChannelFailureCoordinator<S> {
 
 const fn structured_rule(error: UpstreamError) -> Option<AutoBanRule> {
     match error {
-        UpstreamError::RateLimited => Some(AutoBanRule::RateLimited),
-        UpstreamError::Overloaded => Some(AutoBanRule::Overloaded),
+        UpstreamError::RateLimited { .. } => Some(AutoBanRule::RateLimited),
+        UpstreamError::Overloaded { .. } => Some(AutoBanRule::Overloaded),
         UpstreamError::AuthExpired => Some(AutoBanRule::AuthExpired),
         UpstreamError::AuthRevoked => Some(AutoBanRule::AuthRevoked),
+        UpstreamError::AccountDisabled => Some(AutoBanRule::AccountDisabled),
         UpstreamError::QuotaExhausted => Some(AutoBanRule::QuotaExhausted),
         UpstreamError::ModelUnsupported => Some(AutoBanRule::ModelUnsupported),
         UpstreamError::ProtocolError => Some(AutoBanRule::ProtocolError),
         UpstreamError::ServerError { status } => Some(AutoBanRule::ServerStatus(status)),
         UpstreamError::BadRequest => None,
-        UpstreamError::Network => Some(AutoBanRule::Network),
+        UpstreamError::Network { .. } => Some(AutoBanRule::Network),
     }
 }
 
@@ -454,6 +490,25 @@ mod tests {
             format!("{policy:?}"),
             "AutoBanPolicy { structured_rule_count: 1, keyword_rule_count: 1 }"
         );
+    }
+
+    #[test]
+    fn exact_http_status_survives_more_specific_error_classification() {
+        let status = server_status(529);
+        let policy = AutoBanPolicy::new(vec![AutoBanRule::ServerStatus(status)]).unwrap();
+
+        assert!(policy.should_auto_disable_with_server_status_and_evidence(
+            UpstreamError::overloaded(),
+            FailureAction::Failover,
+            Some(status),
+            None,
+        ));
+        assert!(!policy.should_auto_disable_with_server_status_and_evidence(
+            UpstreamError::overloaded(),
+            FailureAction::Failover,
+            Some(server_status(503)),
+            None,
+        ));
     }
 
     #[tokio::test]

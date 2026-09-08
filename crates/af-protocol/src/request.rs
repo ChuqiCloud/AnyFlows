@@ -13,6 +13,8 @@ pub struct ToolDef {
     pub description: Option<String>,
     /// 工具参数的 JSON Schema。
     pub input_schema: Value,
+    /// 是否要求上游严格遵循工具参数 Schema；`None` 表示来源协议未声明。
+    pub strict: Option<bool>,
 }
 
 impl fmt::Debug for ToolDef {
@@ -22,6 +24,7 @@ impl fmt::Debug for ToolDef {
             .field("name", &"<已脱敏>")
             .field("has_description", &self.description.is_some())
             .field("input_schema", &"<已脱敏>")
+            .field("strict", &self.strict)
             .finish()
     }
 }
@@ -267,6 +270,77 @@ pub struct Attachment {
     pub mime_type: Option<String>,
     /// 提供给模型的可选文件名。
     pub filename: Option<String>,
+}
+
+/// 跨请求延续模型上下文所需的协议无关引用。
+#[derive(Clone, Eq, PartialEq)]
+pub struct RequestContinuation {
+    previous_response_id: Option<String>,
+    conversation_id: Option<String>,
+    prompt_cache_key: Option<String>,
+}
+
+impl RequestContinuation {
+    /// 未声明任何延续引用的显式空值。
+    pub const EMPTY: Self = Self {
+        previous_response_id: None,
+        conversation_id: None,
+        prompt_cache_key: None,
+    };
+
+    /// 构造已由协议边界校验的响应、会话与提示缓存引用。
+    #[must_use]
+    pub const fn new(
+        previous_response_id: Option<String>,
+        conversation_id: Option<String>,
+        prompt_cache_key: Option<String>,
+    ) -> Self {
+        Self {
+            previous_response_id,
+            conversation_id,
+            prompt_cache_key,
+        }
+    }
+
+    /// 返回需要接续的上一响应标识。
+    #[must_use]
+    pub fn previous_response_id(&self) -> Option<&str> {
+        self.previous_response_id.as_deref()
+    }
+
+    /// 返回需要接续的持久会话标识。
+    #[must_use]
+    pub fn conversation_id(&self) -> Option<&str> {
+        self.conversation_id.as_deref()
+    }
+
+    /// 返回用于上游提示缓存亲和的稳定键。
+    #[must_use]
+    pub fn prompt_cache_key(&self) -> Option<&str> {
+        self.prompt_cache_key.as_deref()
+    }
+
+    /// 判断请求是否没有任何延续引用。
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.previous_response_id.is_none()
+            && self.conversation_id.is_none()
+            && self.prompt_cache_key.is_none()
+    }
+}
+
+impl fmt::Debug for RequestContinuation {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RequestContinuation")
+            .field(
+                "has_previous_response_id",
+                &self.previous_response_id.is_some(),
+            )
+            .field("has_conversation_id", &self.conversation_id.is_some())
+            .field("has_prompt_cache_key", &self.prompt_cache_key.is_some())
+            .finish()
+    }
 }
 
 impl fmt::Debug for Attachment {

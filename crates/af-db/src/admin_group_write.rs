@@ -103,7 +103,7 @@ impl fmt::Debug for AdminGroupWriteRecord {
 /// 分组更新结果；不存在和已软删除统一视为未找到。
 pub enum AdminGroupMutationOutcome {
     /// 分组已更新，并返回最新管理快照。
-    Mutated(AdminGroupRecord),
+    Mutated(Box<AdminGroupRecord>),
     /// 分组不存在或已经软删除。
     NotFound,
 }
@@ -259,7 +259,7 @@ impl AdminGroupRepository {
         }
         let snapshot = fetch_group_snapshot(&transaction, group_id).await?;
         commit_transaction(transaction).await?;
-        Ok(AdminGroupMutationOutcome::Mutated(snapshot))
+        Ok(AdminGroupMutationOutcome::Mutated(Box::new(snapshot)))
     }
 
     async fn delete_inner(
@@ -429,7 +429,7 @@ async fn clear_safe_references(
         .with_subscriber(NoSubscriber::default())
         .await
         .map_err(map_write_db_error)?;
-    delete_group_abilities(transaction, group_id)
+    delete_group_abilities(transaction, group_id, now)
         .await
         .map_err(map_ability_write_error)?;
     channel_groups::Entity::delete_many()

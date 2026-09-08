@@ -37,13 +37,24 @@ async fn login_and_session_recheck_current_user_state() -> Result<(), Box<dyn Er
 
     assert!(matches!(
         fixture.repository.login("admin", PASSWORD.as_bytes()).await?,
-        UserSessionLookupOutcome::Authenticated { user_id, role: 1 }
+        UserSessionLookupOutcome::Authenticated {
+            user_id,
+            role: 1,
+            session_version: 1,
+            totp_secret: None,
+        }
             if user_id == fixture.user_id
     ));
     assert!(matches!(
         fixture.repository.lookup_by_id(fixture.user_id).await?,
-        UserSessionLookupByIdOutcome::Authenticated { user_id, role: 1 }
-            if user_id == fixture.user_id
+        UserSessionLookupByIdOutcome::Authenticated {
+            user_id,
+            role: 1,
+            group_id,
+            session_version: 1,
+            totp_enabled: false,
+        }
+            if user_id == fixture.user_id && group_id.get() == fixture.group_id
     ));
     for (username, password) in [
         ("admin", "wrong-password"),

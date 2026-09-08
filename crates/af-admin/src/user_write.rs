@@ -4,7 +4,7 @@ use af_db::{
     AdminUserCreateRecord, AdminUserDeleteOutcome, AdminUserMutationOutcome, AdminUserRepository,
     AdminUserRepositoryError, AdminUserUpdateRecord,
 };
-use af_domain::{GroupId, UserId};
+use af_domain::{GroupId, Quota, UserId};
 use thiserror::Error;
 
 use crate::{AdminUser, AdminUserReadError, AdminUserStatus, SessionPrincipal, SessionRole};
@@ -20,7 +20,7 @@ pub struct AdminUserCreateCommand {
     role: SessionRole,
     status: AdminUserStatus,
     default_group_id: GroupId,
-    quota: i64,
+    quota: Quota,
     rpm_limit: Option<i32>,
     concurrency: Option<i32>,
 }
@@ -42,7 +42,7 @@ impl AdminUserCreateCommand {
         validate_username(&username)?;
         validate_email(email.as_deref())?;
         validate_password(password.as_deref())?;
-        validate_non_negative(quota)?;
+        let quota = Quota::new(quota).map_err(|_| AdminUserWriteError::InvalidInput)?;
         validate_optional_i32(rpm_limit)?;
         validate_optional_i32(concurrency)?;
         Ok(Self {
@@ -66,7 +66,7 @@ impl AdminUserCreateCommand {
             self.role.to_database(),
             self.status.to_database(),
             self.default_group_id,
-            self.quota,
+            self.quota.units(),
             self.rpm_limit,
             self.concurrency,
         )
@@ -87,7 +87,6 @@ pub struct AdminUserUpdateCommand {
     role: SessionRole,
     status: AdminUserStatus,
     default_group_id: GroupId,
-    quota: i64,
     rpm_limit: Option<i32>,
     concurrency: Option<i32>,
 }
@@ -102,14 +101,12 @@ impl AdminUserUpdateCommand {
         role: SessionRole,
         status: AdminUserStatus,
         default_group_id: GroupId,
-        quota: i64,
         rpm_limit: Option<i32>,
         concurrency: Option<i32>,
     ) -> Result<Self, AdminUserWriteError> {
         validate_username(&username)?;
         validate_email(email.as_deref())?;
         validate_password(password.as_deref())?;
-        validate_non_negative(quota)?;
         validate_optional_i32(rpm_limit)?;
         validate_optional_i32(concurrency)?;
         Ok(Self {
@@ -119,7 +116,6 @@ impl AdminUserUpdateCommand {
             role,
             status,
             default_group_id,
-            quota,
             rpm_limit,
             concurrency,
         })
@@ -133,7 +129,6 @@ impl AdminUserUpdateCommand {
             self.role.to_database(),
             self.status.to_database(),
             self.default_group_id,
-            self.quota,
             self.rpm_limit,
             self.concurrency,
         )
@@ -340,13 +335,6 @@ fn validate_password(password: Option<&str>) -> Result<(), AdminUserWriteError> 
     Ok(())
 }
 
-fn validate_non_negative(value: i64) -> Result<(), AdminUserWriteError> {
-    if value < 0 {
-        return Err(AdminUserWriteError::InvalidInput);
-    }
-    Ok(())
-}
-
 fn validate_optional_i32(value: Option<i32>) -> Result<(), AdminUserWriteError> {
     if value.is_some_and(|value| value < 0) {
         return Err(AdminUserWriteError::InvalidInput);
@@ -391,7 +379,7 @@ mod tests {
             AdminUserWriteError::InvalidInput
         );
         assert_eq!(
-            AdminUserUpdateCommand::new(
+            AdminUserCreateCommand::new(
                 "ok".to_owned(),
                 Some(String::new()),
                 None,

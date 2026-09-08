@@ -12,6 +12,22 @@ use crate::{
     entity::{SensitiveDecimal, SensitiveString, model_prices},
 };
 
+#[test]
+fn price_decimal_matches_production_column_precision() {
+    assert!(crate::model_price::is_valid_model_price_decimal(
+        Decimal::from(9_999_999_999_i64)
+    ));
+    assert!(crate::model_price::is_valid_model_price_decimal(
+        Decimal::new(1, 28)
+    ));
+    assert!(!crate::model_price::is_valid_model_price_decimal(
+        Decimal::from(10_000_000_000_i64)
+    ));
+    assert!(!crate::model_price::is_valid_model_price_decimal(
+        Decimal::NEGATIVE_ONE
+    ));
+}
+
 #[tokio::test]
 async fn repository_loads_a_stable_validated_catalog() -> Result<(), Box<dyn Error>> {
     let pool = crate::connect_and_migrate(
@@ -37,6 +53,7 @@ async fn repository_loads_a_stable_validated_catalog() -> Result<(), Box<dyn Err
     assert_eq!(records[1].billing_mode(), ModelPriceBillingMode::PerToken);
     assert_eq!(records[1].prices(), [Decimal::new(1, 28); 5]);
     assert_eq!(records[1].version(), 7);
+    assert_eq!(records[1].billing_expression(), None);
 
     let rendered = format!("{:?}", records[1]);
     assert!(!rendered.contains("z-model"));
@@ -70,6 +87,48 @@ async fn database_and_repository_reject_invalid_pricing_states() -> Result<(), B
             .insert(pool.connection())
             .await
             .is_err()
+    );
+    assert!(
+        model_price_with_expression(
+            "valid-expression",
+            3,
+            [Decimal::ZERO; 5],
+            1,
+            Some("tier(\"base\", p)")
+        )
+        .insert(pool.connection())
+        .await
+        .is_ok()
+    );
+    assert!(
+        model_price_with_expression(
+            "expression-with-price",
+            3,
+            [Decimal::ONE; 5],
+            1,
+            Some("tier(\"base\", p)")
+        )
+        .insert(pool.connection())
+        .await
+        .is_err()
+    );
+    assert!(
+        model_price_with_expression("expression-without-source", 3, [Decimal::ZERO; 5], 1, None)
+            .insert(pool.connection())
+            .await
+            .is_err()
+    );
+    assert!(
+        model_price_with_expression(
+            "per-token-with-source",
+            1,
+            [Decimal::ONE; 5],
+            1,
+            Some("tier(\"base\", p)")
+        )
+        .insert(pool.connection())
+        .await
+        .is_err()
     );
     assert!(
         model_price(" invalid-name ", 1, [Decimal::ZERO; 5], 1)
@@ -112,6 +171,7 @@ async fn active_model_enforces_pricing_invariants_without_database_checks()
         model_price("invalid-free", 2, [Decimal::ONE; 5], 1),
         model_price("invalid-mode", 3, [Decimal::ZERO; 5], 1),
         model_price("invalid-version", 1, [Decimal::ZERO; 5], 0),
+        model_price("too-large", 1, [Decimal::from(10_000_000_000_i64); 5], 1),
         model_price(" invalid-name ", 1, [Decimal::ZERO; 5], 1),
     ] {
         assert!(invalid.before_save(pool.connection(), true).await.is_err());
@@ -134,6 +194,16 @@ fn model_price(
     prices: [Decimal; 5],
     version: i64,
 ) -> model_prices::ActiveModel {
+    model_price_with_expression(model, billing_mode, prices, version, None)
+}
+
+fn model_price_with_expression(
+    model: &str,
+    billing_mode: i16,
+    prices: [Decimal; 5],
+    version: i64,
+    billing_expression: Option<&str>,
+) -> model_prices::ActiveModel {
     let [
         input_price,
         output_price,
@@ -149,6 +219,7 @@ fn model_price(
         cache_read_price: Set(SensitiveDecimal::from(cache_read_price)),
         cache_creation_5m_price: Set(SensitiveDecimal::from(cache_creation_5m_price)),
         cache_creation_1h_price: Set(SensitiveDecimal::from(cache_creation_1h_price)),
+        billing_expression: Set(billing_expression.map(SensitiveString::from)),
         version: Set(version),
         ..Default::default()
     }

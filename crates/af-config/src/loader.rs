@@ -13,7 +13,8 @@ use serde::Serialize;
 
 use crate::{
     AppConfig, BillingSettings, ChannelProbeSettings, ConfigError,
-    DEFAULT_AUTH_LOOKUP_TIMEOUT_SECS, DEFAULT_AUTH_SESSION_TTL_SECS, ServerConfig,
+    DEFAULT_AUTH_LOOKUP_TIMEOUT_SECS, DEFAULT_AUTH_SESSION_TTL_SECS,
+    DEFAULT_PAYMENT_SIGNATURE_TOLERANCE_SECS, ServerConfig, SubscriptionSettings,
     TelemetrySettings,
 };
 
@@ -30,11 +31,34 @@ struct ConfigDefaults {
     telemetry: TelemetrySettings,
     database: DatabaseDefaults,
     billing: BillingSettings,
+    subscription: SubscriptionSettings,
+    payment: PaymentDefaults,
     channel_probe: ChannelProbeSettings,
     credential_encryption: CredentialEncryptionDefaults,
     redis: RedisDefaults,
     auth: AuthDefaults,
+    turnstile: TurnstileDefaults,
+    oauth: OAuthDefaults,
     http_client: HttpClientDefaults,
+}
+
+#[derive(Serialize)]
+struct PaymentDefaults {
+    stripe_secret_key: Option<String>,
+    stripe_publishable_key: Option<String>,
+    stripe_webhook_secret: Option<String>,
+    stripe_signature_tolerance_secs: u64,
+}
+
+impl Default for PaymentDefaults {
+    fn default() -> Self {
+        Self {
+            stripe_secret_key: None,
+            stripe_publishable_key: None,
+            stripe_webhook_secret: None,
+            stripe_signature_tolerance_secs: DEFAULT_PAYMENT_SIGNATURE_TOLERANCE_SECS,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -43,6 +67,23 @@ struct AuthDefaults {
     lookup_timeout_secs: u64,
     session_signing_key: Option<String>,
     session_ttl_secs: u64,
+}
+
+#[derive(Serialize)]
+struct TurnstileDefaults {
+    site_key: Option<String>,
+    secret_key: Option<String>,
+    timeout_secs: u64,
+}
+
+impl Default for TurnstileDefaults {
+    fn default() -> Self {
+        Self {
+            site_key: None,
+            secret_key: None,
+            timeout_secs: crate::DEFAULT_TURNSTILE_TIMEOUT_SECS,
+        }
+    }
 }
 
 impl Default for AuthDefaults {
@@ -64,6 +105,7 @@ struct DatabaseDefaults {
 #[derive(Default, Serialize)]
 struct RedisDefaults {
     url: Option<String>,
+    request_rate_limit_namespace: Option<String>,
 }
 
 #[derive(Default, Serialize)]
@@ -80,6 +122,31 @@ struct HttpClientDefaults {
     request_timeout_secs: Option<u64>,
     proxy_url: Option<String>,
     trust_proxy_dns: bool,
+}
+
+#[derive(Serialize)]
+struct OAuthDefaults {
+    max_pending_authorizations: usize,
+    session_ttl_secs: u64,
+    refresh_enabled: bool,
+    refresh_interval_secs: u64,
+    refresh_before_expiry_secs: u64,
+    refresh_batch_size: usize,
+    refresh_concurrency: usize,
+}
+
+impl Default for OAuthDefaults {
+    fn default() -> Self {
+        Self {
+            max_pending_authorizations: crate::DEFAULT_OAUTH_MAX_PENDING_AUTHORIZATIONS,
+            session_ttl_secs: crate::DEFAULT_OAUTH_SESSION_TTL_SECS,
+            refresh_enabled: crate::DEFAULT_OAUTH_REFRESH_ENABLED,
+            refresh_interval_secs: crate::DEFAULT_OAUTH_REFRESH_INTERVAL_SECS,
+            refresh_before_expiry_secs: crate::DEFAULT_OAUTH_REFRESH_BEFORE_EXPIRY_SECS,
+            refresh_batch_size: crate::DEFAULT_OAUTH_REFRESH_BATCH_SIZE,
+            refresh_concurrency: crate::DEFAULT_OAUTH_REFRESH_CONCURRENCY,
+        }
+    }
 }
 
 /// 加载默认文件与环境变量覆盖后的应用配置。
@@ -189,6 +256,16 @@ fn known_field(path: &str) -> Option<&'static str> {
         "billing.usage_record_queue_capacity" => "billing.usage_record_queue_capacity",
         "billing.usage_record_worker_count" => "billing.usage_record_worker_count",
         "billing.wal_directory" => "billing.wal_directory",
+        "subscription" => "subscription",
+        "subscription.enabled" => "subscription.enabled",
+        "subscription.batch_size" => "subscription.batch_size",
+        "subscription.interval_secs" => "subscription.interval_secs",
+        "subscription.max_batches_per_run" => "subscription.max_batches_per_run",
+        "payment" => "payment",
+        "payment.stripe_secret_key" => "payment.stripe_secret_key",
+        "payment.stripe_publishable_key" => "payment.stripe_publishable_key",
+        "payment.stripe_webhook_secret" => "payment.stripe_webhook_secret",
+        "payment.stripe_signature_tolerance_secs" => "payment.stripe_signature_tolerance_secs",
         "channel_probe" => "channel_probe",
         "channel_probe.enabled" => "channel_probe.enabled",
         "channel_probe.batch_size" => "channel_probe.batch_size",
@@ -199,11 +276,52 @@ fn known_field(path: &str) -> Option<&'static str> {
         "credential_encryption.key" => "credential_encryption.key",
         "redis" => "redis",
         "redis.url" => "redis.url",
+        "redis.request_rate_limit_namespace" => "redis.request_rate_limit_namespace",
+        "clickhouse_analytics" => "clickhouse_analytics",
+        "clickhouse_analytics.endpoint" => "clickhouse_analytics.endpoint",
+        "clickhouse_analytics.query" => "clickhouse_analytics.query",
+        "clickhouse_analytics.username" => "clickhouse_analytics.username",
+        "clickhouse_analytics.password" => "clickhouse_analytics.password",
+        "clickhouse_analytics.timeout_secs" => "clickhouse_analytics.timeout_secs",
+        "clickhouse_analytics.max_response_bytes" => "clickhouse_analytics.max_response_bytes",
+        "clickhouse_export" => "clickhouse_export",
+        "clickhouse_export.endpoint" => "clickhouse_export.endpoint",
+        "clickhouse_export.usage_insert_query" => "clickhouse_export.usage_insert_query",
+        "clickhouse_export.outcome_insert_query" => "clickhouse_export.outcome_insert_query",
+        "clickhouse_export.username" => "clickhouse_export.username",
+        "clickhouse_export.password" => "clickhouse_export.password",
+        "clickhouse_export.batch_size" => "clickhouse_export.batch_size",
+        "clickhouse_export.interval_secs" => "clickhouse_export.interval_secs",
+        "clickhouse_export.timeout_secs" => "clickhouse_export.timeout_secs",
+        "clickhouse_export.max_request_bytes" => "clickhouse_export.max_request_bytes",
+        "clickhouse_export.backfill_batch_size" => "clickhouse_export.backfill_batch_size",
         "auth" => "auth",
         "auth.allow_query_api_key" => "auth.allow_query_api_key",
         "auth.lookup_timeout_secs" => "auth.lookup_timeout_secs",
         "auth.session_signing_key" => "auth.session_signing_key",
         "auth.session_ttl_secs" => "auth.session_ttl_secs",
+        "turnstile" => "turnstile",
+        "turnstile.site_key" => "turnstile.site_key",
+        "turnstile.secret_key" => "turnstile.secret_key",
+        "turnstile.timeout_secs" => "turnstile.timeout_secs",
+        "oauth" => "oauth",
+        "oauth.max_pending_authorizations" => "oauth.max_pending_authorizations",
+        "oauth.session_ttl_secs" => "oauth.session_ttl_secs",
+        "oauth.refresh_enabled" => "oauth.refresh_enabled",
+        "oauth.refresh_interval_secs" => "oauth.refresh_interval_secs",
+        "oauth.refresh_before_expiry_secs" => "oauth.refresh_before_expiry_secs",
+        "oauth.refresh_batch_size" => "oauth.refresh_batch_size",
+        "oauth.refresh_concurrency" => "oauth.refresh_concurrency",
+        "oauth.claude_code" => "oauth.claude_code",
+        "oauth.claude_code.client_id" => "oauth.claude_code.client_id",
+        "oauth.codex" => "oauth.codex",
+        "oauth.codex.client_id" => "oauth.codex.client_id",
+        "oauth.gemini" => "oauth.gemini",
+        "oauth.gemini.client_id" => "oauth.gemini.client_id",
+        "oauth.gemini.client_secret" => "oauth.gemini.client_secret",
+        "oauth.antigravity" => "oauth.antigravity",
+        "oauth.antigravity.client_id" => "oauth.antigravity.client_id",
+        "oauth.antigravity.client_secret" => "oauth.antigravity.client_secret",
         "openai_upstream" => "openai_upstream",
         "openai_upstream.base_url" => "openai_upstream.base_url",
         "openai_upstream.model" => "openai_upstream.model",
@@ -287,16 +405,41 @@ mod tests {
                 config.billing().wal_directory(),
                 Path::new("data/billing-wal")
             );
+            assert!(config.subscription().enabled());
+            assert_eq!(config.subscription().batch_size(), 64);
+            assert_eq!(config.subscription().interval_secs(), 60);
+            assert_eq!(config.subscription().max_batches_per_run(), 8);
+            assert!(config.payment().stripe_secret_key().is_none());
+            assert!(config.payment().stripe_publishable_key().is_none());
+            assert!(config.payment().stripe_webhook_secret().is_none());
+            assert_eq!(
+                config.payment().stripe_signature_tolerance_secs(),
+                DEFAULT_PAYMENT_SIGNATURE_TOLERANCE_SECS
+            );
             assert!(!config.channel_probe().enabled());
             assert_eq!(config.channel_probe().batch_size(), 16);
             assert_eq!(config.channel_probe().interval_secs(), 60);
             assert_eq!(config.channel_probe().probe_timeout_secs(), 10);
             assert!(!config.credential_encryption().is_configured());
             assert!(config.redis().url().is_none());
+            assert!(config.clickhouse_analytics().is_none());
+            assert!(config.clickhouse_export().is_none());
             assert!(!config.auth().allow_query_api_key());
             assert_eq!(config.auth().lookup_timeout_secs(), 2);
             assert!(config.auth().session_signing_key().is_none());
             assert_eq!(config.auth().session_ttl_secs(), 3_600);
+            assert!(!config.turnstile().enabled());
+            assert!(config.turnstile().site_key().is_none());
+            assert!(config.turnstile().secret_key().is_none());
+            assert_eq!(config.turnstile().timeout_secs(), 5);
+            assert_eq!(config.oauth().max_pending_authorizations(), 256);
+            assert_eq!(config.oauth().session_ttl_secs(), 600);
+            assert!(config.oauth().refresh_enabled());
+            assert_eq!(config.oauth().refresh_interval_secs(), 60);
+            assert_eq!(config.oauth().refresh_before_expiry_secs(), 300);
+            assert_eq!(config.oauth().refresh_batch_size(), 64);
+            assert_eq!(config.oauth().refresh_concurrency(), 8);
+            assert_eq!(config.oauth().configured_provider_count(), 0);
             assert_eq!(
                 config.openai_upstream().unwrap().base_url(),
                 "https://upstream.example"
@@ -328,6 +471,387 @@ mod tests {
                         field: "server.bind"
                     }
                 );
+            }
+        });
+    }
+
+    #[test]
+    fn turnstile_requires_complete_bounded_startup_credentials() {
+        with_clean_env(|_| {
+            let valid = temp_file(
+                "[database]\nurl = 'sqlite::memory:'\n[turnstile]\nsite_key = 'site-key'\nsecret_key = 'secret-key'\ntimeout_secs = 7\n",
+            );
+            let config = load_from(&valid).unwrap();
+            let _ = fs::remove_file(valid);
+            assert!(config.turnstile().enabled());
+            assert_eq!(config.turnstile().site_key(), Some("site-key"));
+            assert_eq!(
+                config.turnstile().secret_key().unwrap().expose(),
+                "secret-key"
+            );
+            assert_eq!(config.turnstile().timeout_secs(), 7);
+            let debug = format!("{:?}", config.turnstile());
+            assert!(!debug.contains("secret-key"));
+
+            for (field, turnstile) in [
+                ("turnstile.secret_key", "site_key = 'site-key'"),
+                ("turnstile.site_key", "secret_key = 'secret-key'"),
+                (
+                    "turnstile.timeout_secs",
+                    "site_key = 'site-key'\nsecret_key = 'secret-key'\ntimeout_secs = 0",
+                ),
+            ] {
+                let path = temp_file(&format!(
+                    "[database]\nurl = 'sqlite::memory:'\n[turnstile]\n{turnstile}\n"
+                ));
+                let error = load_from(&path).unwrap_err();
+                let _ = fs::remove_file(path);
+                assert!(matches!(
+                    error,
+                    ConfigError::InvalidField { field: actual }
+                        | ConfigError::NonPositive { field: actual }
+                        if actual == field
+                ));
+            }
+        });
+    }
+
+    #[test]
+    fn clickhouse_analytics_is_optional_complete_bounded_and_redacted() {
+        with_clean_env(|_| {
+            let valid = temp_file(
+                "[database]\nurl = 'sqlite::memory:'\n[clickhouse_analytics]\nendpoint = 'https://clickhouse.example:8443/'\nquery = 'SELECT {period_start:Int64}, {period_end:Int64}'\nusername = 'dashboard-reader'\npassword = 'dashboard-secret'\ntimeout_secs = 7\nmax_response_bytes = 65536\n",
+            );
+            let config = load_from(&valid).unwrap();
+            let _ = fs::remove_file(valid);
+            let settings = config.clickhouse_analytics().unwrap();
+            assert_eq!(
+                settings.endpoint().expose(),
+                "https://clickhouse.example:8443/"
+            );
+            assert_eq!(
+                settings.query().expose(),
+                "SELECT {period_start:Int64}, {period_end:Int64}"
+            );
+            assert_eq!(settings.username().expose(), "dashboard-reader");
+            assert_eq!(settings.password().expose(), "dashboard-secret");
+            assert_eq!(settings.timeout_secs(), 7);
+            assert_eq!(settings.max_response_bytes(), 65_536);
+            let debug = format!("{settings:?}");
+            for secret in [
+                "clickhouse.example",
+                "period_start",
+                "dashboard-reader",
+                "dashboard-secret",
+            ] {
+                assert!(!debug.contains(secret));
+            }
+
+            for field in ["endpoint", "query", "username", "password"] {
+                let values = [
+                    ("endpoint", "endpoint = 'https://clickhouse.example'"),
+                    (
+                        "query",
+                        "query = 'SELECT {period_start:Int64}, {period_end:Int64}'",
+                    ),
+                    ("username", "username = 'dashboard-reader'"),
+                    ("password", "password = 'dashboard-secret'"),
+                ]
+                .into_iter()
+                .filter_map(|(name, value)| (name != field).then_some(value))
+                .collect::<Vec<_>>()
+                .join("\n");
+                let path = raw_temp_file(&format!(
+                    "[database]\nurl = 'sqlite::memory:'\n[clickhouse_analytics]\n{values}\n"
+                ));
+                let error = load_from(&path).unwrap_err();
+                let _ = fs::remove_file(path);
+                assert_eq!(
+                    error,
+                    ConfigError::InvalidField {
+                        field: match field {
+                            "endpoint" => "clickhouse_analytics.endpoint",
+                            "query" => "clickhouse_analytics.query",
+                            "username" => "clickhouse_analytics.username",
+                            "password" => "clickhouse_analytics.password",
+                            _ => unreachable!(),
+                        }
+                    }
+                );
+            }
+
+            for (field, override_value, expected) in [
+                (
+                    "clickhouse_analytics.timeout_secs",
+                    "timeout_secs = 0",
+                    ConfigError::NonPositive {
+                        field: "clickhouse_analytics.timeout_secs",
+                    },
+                ),
+                (
+                    "clickhouse_analytics.timeout_secs",
+                    "timeout_secs = 301",
+                    ConfigError::OutOfRange {
+                        field: "clickhouse_analytics.timeout_secs",
+                    },
+                ),
+                (
+                    "clickhouse_analytics.max_response_bytes",
+                    "max_response_bytes = 0",
+                    ConfigError::NonPositive {
+                        field: "clickhouse_analytics.max_response_bytes",
+                    },
+                ),
+                (
+                    "clickhouse_analytics.max_response_bytes",
+                    "max_response_bytes = 4194305",
+                    ConfigError::OutOfRange {
+                        field: "clickhouse_analytics.max_response_bytes",
+                    },
+                ),
+            ] {
+                let path = temp_file(&format!(
+                    "[database]\nurl = 'sqlite::memory:'\n[clickhouse_analytics]\nendpoint = 'https://clickhouse.example'\nquery = 'SELECT {{period_start:Int64}}, {{period_end:Int64}}'\nusername = 'dashboard-reader'\npassword = 'dashboard-secret'\n{override_value}\n"
+                ));
+                let error = load_from(&path).unwrap_err();
+                let _ = fs::remove_file(path);
+                assert_eq!(error, expected, "{field}");
+            }
+        });
+    }
+
+    #[test]
+    fn clickhouse_analytics_rejects_invalid_values_without_echoing_them() {
+        with_clean_env(|_| {
+            for (field, override_value, canary) in [
+                (
+                    "clickhouse_analytics.endpoint",
+                    "endpoint = 'https://user:endpoint-canary@clickhouse.example'",
+                    "endpoint-canary",
+                ),
+                (
+                    "clickhouse_analytics.query",
+                    "query = 'SELECT query-canary; DROP TABLE usage_logs'",
+                    "query-canary",
+                ),
+                (
+                    "clickhouse_analytics.username",
+                    "username = ' username-canary '",
+                    "username-canary",
+                ),
+                (
+                    "clickhouse_analytics.password",
+                    "password = '密码-password-canary'",
+                    "password-canary",
+                ),
+            ] {
+                let defaults = [
+                    ("endpoint", "endpoint = 'https://clickhouse.example'"),
+                    (
+                        "query",
+                        "query = 'SELECT {period_start:Int64}, {period_end:Int64}'",
+                    ),
+                    ("username", "username = 'dashboard-reader'"),
+                    ("password", "password = 'dashboard-secret'"),
+                ];
+                let overridden_name = field.rsplit('.').next().unwrap();
+                let values = defaults
+                    .into_iter()
+                    .filter_map(|(name, value)| (name != overridden_name).then_some(value))
+                    .chain(std::iter::once(override_value))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let path = raw_temp_file(&format!(
+                    "[database]\nurl = 'sqlite::memory:'\n[clickhouse_analytics]\n{values}\n"
+                ));
+                let error = load_from(&path).unwrap_err();
+                let rendered = format!("{error:?}\n{error}");
+                let _ = fs::remove_file(path);
+                assert_eq!(error, ConfigError::InvalidField { field });
+                assert!(!rendered.contains(canary));
+            }
+        });
+    }
+
+    #[test]
+    fn clickhouse_export_is_optional_complete_bounded_and_redacted() {
+        with_clean_env(|_| {
+            let valid = raw_temp_file(
+                "[database]\nurl = 'sqlite::memory:'\n[clickhouse_export]\nendpoint = 'https://clickhouse.example:8443'\nusage_insert_query = 'INSERT INTO usage_facts (fact_id)'\noutcome_insert_query = 'INSERT INTO outcome_facts (fact_id)'\nusername = 'export-writer'\npassword = 'export-secret'\nbatch_size = 12\ninterval_secs = 9\ntimeout_secs = 17\nmax_request_bytes = 65536\nbackfill_batch_size = 23\n",
+            );
+            let config = load_from(&valid).unwrap();
+            let _ = fs::remove_file(valid);
+            let settings = config.clickhouse_export().unwrap();
+            assert_eq!(
+                settings.endpoint().expose(),
+                "https://clickhouse.example:8443"
+            );
+            assert_eq!(
+                settings.usage_insert_query().expose(),
+                "INSERT INTO usage_facts (fact_id)"
+            );
+            assert_eq!(
+                settings.outcome_insert_query().expose(),
+                "INSERT INTO outcome_facts (fact_id)"
+            );
+            assert_eq!(settings.username().expose(), "export-writer");
+            assert_eq!(settings.password().expose(), "export-secret");
+            assert_eq!(settings.batch_size(), 12);
+            assert_eq!(settings.interval_secs(), 9);
+            assert_eq!(settings.timeout_secs(), 17);
+            assert_eq!(settings.max_request_bytes(), 65_536);
+            assert_eq!(settings.backfill_batch_size(), 23);
+
+            let debug = format!("{settings:?}");
+            for secret in [
+                "clickhouse.example",
+                "usage_facts",
+                "outcome_facts",
+                "export-writer",
+                "export-secret",
+            ] {
+                assert!(!debug.contains(secret));
+            }
+
+            for field in [
+                "endpoint",
+                "usage_insert_query",
+                "outcome_insert_query",
+                "username",
+                "password",
+            ] {
+                let values = [
+                    ("endpoint", "endpoint = 'https://clickhouse.example'"),
+                    (
+                        "usage_insert_query",
+                        "usage_insert_query = 'INSERT INTO usage_facts (fact_id)'",
+                    ),
+                    (
+                        "outcome_insert_query",
+                        "outcome_insert_query = 'INSERT INTO outcome_facts (fact_id)'",
+                    ),
+                    ("username", "username = 'export-writer'"),
+                    ("password", "password = 'export-secret'"),
+                ]
+                .into_iter()
+                .filter_map(|(name, value)| (name != field).then_some(value))
+                .collect::<Vec<_>>()
+                .join("\n");
+                let path = raw_temp_file(&format!(
+                    "[database]\nurl = 'sqlite::memory:'\n[clickhouse_export]\n{values}\n"
+                ));
+                let error = load_from(&path).unwrap_err();
+                let _ = fs::remove_file(path);
+                assert_eq!(
+                    error,
+                    ConfigError::InvalidField {
+                        field: match field {
+                            "endpoint" => "clickhouse_export.endpoint",
+                            "usage_insert_query" => "clickhouse_export.usage_insert_query",
+                            "outcome_insert_query" => "clickhouse_export.outcome_insert_query",
+                            "username" => "clickhouse_export.username",
+                            "password" => "clickhouse_export.password",
+                            _ => unreachable!(),
+                        }
+                    }
+                );
+            }
+
+            for (field, override_value, expected) in [
+                (
+                    "clickhouse_export.batch_size",
+                    "batch_size = 0",
+                    ConfigError::NonPositive {
+                        field: "clickhouse_export.batch_size",
+                    },
+                ),
+                (
+                    "clickhouse_export.interval_secs",
+                    "interval_secs = 3601",
+                    ConfigError::OutOfRange {
+                        field: "clickhouse_export.interval_secs",
+                    },
+                ),
+                (
+                    "clickhouse_export.timeout_secs",
+                    "timeout_secs = 0",
+                    ConfigError::NonPositive {
+                        field: "clickhouse_export.timeout_secs",
+                    },
+                ),
+                (
+                    "clickhouse_export.max_request_bytes",
+                    "max_request_bytes = 16777217",
+                    ConfigError::OutOfRange {
+                        field: "clickhouse_export.max_request_bytes",
+                    },
+                ),
+                (
+                    "clickhouse_export.backfill_batch_size",
+                    "backfill_batch_size = 257",
+                    ConfigError::OutOfRange {
+                        field: "clickhouse_export.backfill_batch_size",
+                    },
+                ),
+            ] {
+                let path = raw_temp_file(&format!(
+                    "[database]\nurl = 'sqlite::memory:'\n[clickhouse_export]\nendpoint = 'https://clickhouse.example'\nusage_insert_query = 'INSERT INTO usage_facts (fact_id)'\noutcome_insert_query = 'INSERT INTO outcome_facts (fact_id)'\nusername = 'export-writer'\npassword = 'export-secret'\n{override_value}\n"
+                ));
+                let error = load_from(&path).unwrap_err();
+                let _ = fs::remove_file(path);
+                assert_eq!(error, expected, "{field}");
+            }
+
+            for (field, override_value, canary) in [
+                (
+                    "clickhouse_export.endpoint",
+                    "endpoint = 'https://user:endpoint-canary@clickhouse.example'",
+                    "endpoint-canary",
+                ),
+                (
+                    "clickhouse_export.usage_insert_query",
+                    "usage_insert_query = 'INSERT INTO usage_facts (usage-query-canary); DROP TABLE usage_logs'",
+                    "usage-query-canary",
+                ),
+                (
+                    "clickhouse_export.username",
+                    "username = ' username-canary ' \n",
+                    "username-canary",
+                ),
+                (
+                    "clickhouse_export.password",
+                    "password = '密码-password-canary'",
+                    "password-canary",
+                ),
+            ] {
+                let defaults = [
+                    ("endpoint", "endpoint = 'https://clickhouse.example'"),
+                    (
+                        "usage_insert_query",
+                        "usage_insert_query = 'INSERT INTO usage_facts (fact_id)'",
+                    ),
+                    (
+                        "outcome_insert_query",
+                        "outcome_insert_query = 'INSERT INTO outcome_facts (fact_id)'",
+                    ),
+                    ("username", "username = 'export-writer'"),
+                    ("password", "password = 'export-secret'"),
+                ];
+                let overridden_name = field.rsplit('.').next().unwrap();
+                let values = defaults
+                    .into_iter()
+                    .filter_map(|(name, value)| (name != overridden_name).then_some(value))
+                    .chain(std::iter::once(override_value))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let path = raw_temp_file(&format!(
+                    "[database]\nurl = 'sqlite::memory:'\n[clickhouse_export]\n{values}\n"
+                ));
+                let error = load_from(&path).unwrap_err();
+                let rendered = format!("{error:?}\n{error}");
+                let _ = fs::remove_file(path);
+                assert_eq!(error, ConfigError::InvalidField { field });
+                assert!(!rendered.contains(canary));
             }
         });
     }
@@ -515,7 +1039,7 @@ mod tests {
     fn toml_values_override_defaults() {
         with_clean_env(|_| {
             let path = temp_file(
-                "[server]\nbind = '127.0.0.2:9000'\ncors_allowed_origins = ['https://Console.Example:443/']\nshutdown_timeout_secs = 45\n[telemetry]\nlevel = 'debug'\n[database]\nurl = 'postgres://user:secret@db/app'\nmigration_timeout_secs = 42\nhealth_check_timeout_secs = 3\n[billing]\nbatch_enabled = true\nflush_interval_secs = 11\nflush_timeout_secs = 17\nwal_directory = 'private-billing-wal'\n[auth]\nallow_query_api_key = true\nlookup_timeout_secs = 7\n[http_client]\nmax_cached_clients = 7\nconnect_timeout_secs = 2\nread_timeout_secs = 8\nrequest_timeout_secs = 13\nproxy_url = 'socks5://127.0.0.1:10808'\n",
+                "[server]\nbind = '127.0.0.2:9000'\ncors_allowed_origins = ['https://Console.Example:443/']\nshutdown_timeout_secs = 45\n[telemetry]\nlevel = 'debug'\n[database]\nurl = 'postgres://user:secret@db/app'\nmigration_timeout_secs = 42\nhealth_check_timeout_secs = 3\n[billing]\nbatch_enabled = true\nflush_interval_secs = 11\nflush_timeout_secs = 17\nwal_directory = 'private-billing-wal'\n[subscription]\nenabled = false\nbatch_size = 48\ninterval_secs = 75\nmax_batches_per_run = 12\n[payment]\nstripe_secret_key = 'sk-test-secret'\nstripe_publishable_key = 'pk_test_public'\nstripe_webhook_secret = 'whsec-test-secret'\nstripe_signature_tolerance_secs = 42\n[auth]\nallow_query_api_key = true\nlookup_timeout_secs = 7\n[http_client]\nmax_cached_clients = 7\nconnect_timeout_secs = 2\nread_timeout_secs = 8\nrequest_timeout_secs = 13\nproxy_url = 'socks5://127.0.0.1:10808'\n",
             );
             let config = load_from(&path).unwrap();
             let _ = fs::remove_file(path);
@@ -537,6 +1061,25 @@ mod tests {
                 Path::new("private-billing-wal")
             );
             assert!(!format!("{:?}", config.billing()).contains("private-billing-wal"));
+            assert!(!config.subscription().enabled());
+            assert_eq!(config.subscription().batch_size(), 48);
+            assert_eq!(config.subscription().interval_secs(), 75);
+            assert_eq!(config.subscription().max_batches_per_run(), 12);
+            assert_eq!(
+                config.payment().stripe_secret_key().unwrap().expose(),
+                "sk-test-secret"
+            );
+            assert_eq!(
+                config.payment().stripe_publishable_key(),
+                Some("pk_test_public")
+            );
+            assert_eq!(
+                config.payment().stripe_webhook_secret().unwrap().expose(),
+                "whsec-test-secret"
+            );
+            assert_eq!(config.payment().stripe_signature_tolerance_secs(), 42);
+            assert!(!format!("{:?}", config.payment()).contains("sk-test-secret"));
+            assert!(!format!("{:?}", config.payment()).contains("whsec-test-secret"));
             assert!(config.auth().allow_query_api_key());
             assert_eq!(config.auth().lookup_timeout_secs(), 7);
             assert_eq!(config.http_client().max_cached_clients(), Some(7));
@@ -545,6 +1088,152 @@ mod tests {
                 config.http_client().proxy_url().unwrap().expose(),
                 "socks5://127.0.0.1:10808"
             );
+        });
+    }
+
+    #[test]
+    fn stripe_api_key_requires_a_webhook_secret_before_client_configuration() {
+        with_clean_env(|_| {
+            let path = temp_file(
+                "[database]\nurl = 'sqlite::memory:'\n[payment]\nstripe_secret_key = 'sk-test-secret'\n",
+            );
+            let error = load_from(&path).unwrap_err();
+            let _ = fs::remove_file(path);
+
+            assert_eq!(
+                error,
+                ConfigError::EmptyValue {
+                    field: "payment.stripe_webhook_secret"
+                }
+            );
+        });
+    }
+
+    #[test]
+    fn stripe_api_key_requires_a_publishable_key() {
+        with_clean_env(|_| {
+            let path = temp_file(
+                "[database]\nurl = 'sqlite::memory:'\n[payment]\nstripe_secret_key = 'sk-test-secret'\nstripe_webhook_secret = 'whsec-test-secret'\n",
+            );
+            let error = load_from(&path).unwrap_err();
+            let _ = fs::remove_file(path);
+
+            assert_eq!(
+                error,
+                ConfigError::EmptyValue {
+                    field: "payment.stripe_publishable_key"
+                }
+            );
+        });
+    }
+
+    #[test]
+    fn oauth_clients_are_closed_validated_and_redacted() {
+        with_clean_env(|_| {
+            let path = temp_file(
+                "[database]\nurl = 'sqlite::memory:'\n[oauth]\nmax_pending_authorizations = 32\nsession_ttl_secs = 120\nrefresh_enabled = false\nrefresh_interval_secs = 45\nrefresh_before_expiry_secs = 240\nrefresh_batch_size = 24\nrefresh_concurrency = 6\n[oauth.claude_code]\nclient_id = 'claude-client-marker'\n[oauth.codex]\nclient_id = 'codex-client-marker'\n[oauth.gemini]\nclient_id = 'gemini-client-marker'\nclient_secret = 'gemini-secret-marker'\n[oauth.antigravity]\nclient_id = 'antigravity-client-marker'\nclient_secret = 'antigravity-secret-marker'\n",
+            );
+            let config = load_from(&path).unwrap();
+            let _ = fs::remove_file(path);
+
+            assert_eq!(config.oauth().max_pending_authorizations(), 32);
+            assert_eq!(config.oauth().session_ttl_secs(), 120);
+            assert!(!config.oauth().refresh_enabled());
+            assert_eq!(config.oauth().refresh_interval_secs(), 45);
+            assert_eq!(config.oauth().refresh_before_expiry_secs(), 240);
+            assert_eq!(config.oauth().refresh_batch_size(), 24);
+            assert_eq!(config.oauth().refresh_concurrency(), 6);
+            assert_eq!(config.oauth().configured_provider_count(), 4);
+            assert_eq!(
+                config.oauth().claude_code().unwrap().client_id().expose(),
+                "claude-client-marker"
+            );
+            assert_eq!(
+                config.oauth().codex().unwrap().client_id().expose(),
+                "codex-client-marker"
+            );
+            assert_eq!(
+                config.oauth().gemini().unwrap().client_secret().expose(),
+                "gemini-secret-marker"
+            );
+            let debug = format!("{:?}", config.oauth());
+            for private in [
+                "claude-client-marker",
+                "codex-client-marker",
+                "gemini-client-marker",
+                "gemini-secret-marker",
+                "antigravity-client-marker",
+                "antigravity-secret-marker",
+            ] {
+                assert!(!debug.contains(private));
+            }
+        });
+    }
+
+    #[test]
+    fn oauth_configuration_rejects_incomplete_or_unbounded_values() {
+        with_clean_env(|_| {
+            for (body, expected) in [
+                (
+                    "[database]\nurl = 'sqlite::memory:'\n[oauth]\nmax_pending_authorizations = 0\n",
+                    ConfigError::NonPositive {
+                        field: "oauth.max_pending_authorizations",
+                    },
+                ),
+                (
+                    "[database]\nurl = 'sqlite::memory:'\n[oauth]\nsession_ttl_secs = 59\n",
+                    ConfigError::OutOfRange {
+                        field: "oauth.session_ttl_secs",
+                    },
+                ),
+                (
+                    "[database]\nurl = 'sqlite::memory:'\n[oauth]\nrefresh_interval_secs = 0\n",
+                    ConfigError::NonPositive {
+                        field: "oauth.refresh_interval_secs",
+                    },
+                ),
+                (
+                    "[database]\nurl = 'sqlite::memory:'\n[oauth]\nrefresh_before_expiry_secs = 86401\n",
+                    ConfigError::OutOfRange {
+                        field: "oauth.refresh_before_expiry_secs",
+                    },
+                ),
+                (
+                    "[database]\nurl = 'sqlite::memory:'\n[oauth]\nrefresh_batch_size = 257\n",
+                    ConfigError::OutOfRange {
+                        field: "oauth.refresh_batch_size",
+                    },
+                ),
+                (
+                    "[database]\nurl = 'sqlite::memory:'\n[oauth]\nrefresh_batch_size = 8\nrefresh_concurrency = 9\n",
+                    ConfigError::OutOfRange {
+                        field: "oauth.refresh_concurrency",
+                    },
+                ),
+                (
+                    "[database]\nurl = 'sqlite::memory:'\n[oauth.claude_code]\nclient_id = ''\n",
+                    ConfigError::InvalidField {
+                        field: "oauth.claude_code.client_id",
+                    },
+                ),
+                (
+                    "[database]\nurl = 'sqlite::memory:'\n[oauth.codex]\nclient_id = ''\n",
+                    ConfigError::InvalidField {
+                        field: "oauth.codex.client_id",
+                    },
+                ),
+                (
+                    "[database]\nurl = 'sqlite::memory:'\n[oauth.gemini]\nclient_id = 'client'\n",
+                    ConfigError::InvalidField {
+                        field: "oauth.gemini.client_secret",
+                    },
+                ),
+            ] {
+                let path = raw_temp_file(body);
+                let error = load_from(&path).unwrap_err();
+                let _ = fs::remove_file(path);
+                assert_eq!(error, expected);
+            }
         });
     }
 
@@ -573,10 +1262,36 @@ mod tests {
                 config.billing().wal_directory(),
                 Path::new("environment-billing-wal")
             );
+            assert!(!config.subscription().enabled());
+            assert_eq!(config.subscription().batch_size(), 32);
+            assert_eq!(config.subscription().interval_secs(), 90);
+            assert_eq!(config.subscription().max_batches_per_run(), 6);
+            assert_eq!(
+                config.payment().stripe_secret_key().unwrap().expose(),
+                "sk-environment-secret"
+            );
+            assert_eq!(
+                config.payment().stripe_publishable_key(),
+                Some("pk_test_environment")
+            );
+            assert_eq!(
+                config.payment().stripe_webhook_secret().unwrap().expose(),
+                "whsec-environment-secret"
+            );
+            assert_eq!(config.payment().stripe_signature_tolerance_secs(), 120);
             assert!(config.channel_probe().enabled());
             assert_eq!(config.channel_probe().batch_size(), 8);
             assert_eq!(config.channel_probe().interval_secs(), 120);
             assert_eq!(config.channel_probe().probe_timeout_secs(), 15);
+            assert!(!config.oauth().refresh_enabled());
+            assert_eq!(config.oauth().refresh_interval_secs(), 90);
+            assert_eq!(config.oauth().refresh_before_expiry_secs(), 420);
+            assert_eq!(config.oauth().refresh_batch_size(), 12);
+            assert_eq!(config.oauth().refresh_concurrency(), 3);
+            assert_eq!(
+                config.oauth().claude_code().unwrap().client_id().expose(),
+                "environment-claude-client"
+            );
             assert_eq!(config.credential_encryption().key_id(), Some("primary"));
             assert_eq!(
                 config.credential_encryption().key().unwrap().expose(),
@@ -632,10 +1347,30 @@ mod tests {
                 .env("AF_BILLING__FLUSH_INTERVAL_SECS", "19")
                 .env("AF_BILLING__FLUSH_TIMEOUT_SECS", "23")
                 .env("AF_BILLING__WAL_DIRECTORY", "environment-billing-wal")
+                .env("AF_SUBSCRIPTION__ENABLED", "false")
+                .env("AF_SUBSCRIPTION__BATCH_SIZE", "32")
+                .env("AF_SUBSCRIPTION__INTERVAL_SECS", "90")
+                .env("AF_SUBSCRIPTION__MAX_BATCHES_PER_RUN", "6")
+                .env("AF_PAYMENT__STRIPE_SECRET_KEY", "sk-environment-secret")
+                .env("AF_PAYMENT__STRIPE_PUBLISHABLE_KEY", "pk_test_environment")
+                .env(
+                    "AF_PAYMENT__STRIPE_WEBHOOK_SECRET",
+                    "whsec-environment-secret",
+                )
+                .env("AF_PAYMENT__STRIPE_SIGNATURE_TOLERANCE_SECS", "120")
                 .env("AF_CHANNEL_PROBE__ENABLED", "true")
                 .env("AF_CHANNEL_PROBE__BATCH_SIZE", "8")
                 .env("AF_CHANNEL_PROBE__INTERVAL_SECS", "120")
                 .env("AF_CHANNEL_PROBE__PROBE_TIMEOUT_SECS", "15")
+                .env("AF_OAUTH__REFRESH_ENABLED", "false")
+                .env("AF_OAUTH__REFRESH_INTERVAL_SECS", "90")
+                .env("AF_OAUTH__REFRESH_BEFORE_EXPIRY_SECS", "420")
+                .env("AF_OAUTH__REFRESH_BATCH_SIZE", "12")
+                .env("AF_OAUTH__REFRESH_CONCURRENCY", "3")
+                .env(
+                    "AF_OAUTH__CLAUDE_CODE__CLIENT_ID",
+                    "environment-claude-client",
+                )
                 .env("AF_CREDENTIAL_ENCRYPTION__KEY_ID", "primary")
                 .env(
                     "AF_CREDENTIAL_ENCRYPTION__KEY",
@@ -966,6 +1701,22 @@ mod tests {
                     "[database]\nurl = 'sqlite::memory:'\n[billing]\nusage_record_worker_count = 0\n",
                 ),
                 (
+                    "subscription.batch_size",
+                    "[database]\nurl = 'sqlite::memory:'\n[subscription]\nbatch_size = 0\n",
+                ),
+                (
+                    "subscription.interval_secs",
+                    "[database]\nurl = 'sqlite::memory:'\n[subscription]\ninterval_secs = 0\n",
+                ),
+                (
+                    "subscription.max_batches_per_run",
+                    "[database]\nurl = 'sqlite::memory:'\n[subscription]\nmax_batches_per_run = 0\n",
+                ),
+                (
+                    "payment.stripe_signature_tolerance_secs",
+                    "[database]\nurl = 'sqlite::memory:'\n[payment]\nstripe_signature_tolerance_secs = 0\n",
+                ),
+                (
                     "channel_probe.batch_size",
                     "[database]\nurl = 'sqlite::memory:'\n[channel_probe]\nbatch_size = 0\n",
                 ),
@@ -1123,6 +1874,22 @@ mod tests {
                 (
                     "billing.usage_record_worker_count",
                     "[database]\nurl = 'sqlite::memory:'\n[billing]\nusage_record_worker_count = 65\n",
+                ),
+                (
+                    "subscription.batch_size",
+                    "[database]\nurl = 'sqlite::memory:'\n[subscription]\nbatch_size = 101\n",
+                ),
+                (
+                    "subscription.interval_secs",
+                    "[database]\nurl = 'sqlite::memory:'\n[subscription]\ninterval_secs = 3601\n",
+                ),
+                (
+                    "subscription.max_batches_per_run",
+                    "[database]\nurl = 'sqlite::memory:'\n[subscription]\nmax_batches_per_run = 65\n",
+                ),
+                (
+                    "payment.stripe_signature_tolerance_secs",
+                    "[database]\nurl = 'sqlite::memory:'\n[payment]\nstripe_signature_tolerance_secs = 86401\n",
                 ),
                 (
                     "channel_probe.batch_size",

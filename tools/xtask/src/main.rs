@@ -384,15 +384,30 @@ fn allowed_restricted_external_dependency(dependency: &DeclaredDependency) -> bo
             dependency.to.as_str(),
             dependency.kind.as_str(),
         ),
-        ("af-domain", "serde", "normal")
+        // DNS 证明领域只使用熵源和摘要算法，不引入网络或运行时依赖。
+        ("af-domain", "getrandom", "normal")
+            | ("af-domain", "serde", "normal")
             | ("af-domain", "serde_json", "dev")
+            | ("af-domain", "regex", "normal")
+            | ("af-domain", "sha2", "normal")
             | ("af-domain", "thiserror", "normal")
             | ("af-adapter", "async-trait", "normal")
+            | ("af-adapter", "aws-credential-types", "normal")
+            | ("af-adapter", "aws-sigv4", "normal")
             | ("af-adapter", "futures-core", "normal")
+            | ("af-adapter", "futures-util", "normal")
+            | ("af-adapter", "jsonwebtoken", "normal")
+            | ("af-adapter", "percent-encoding", "normal")
+            | ("af-adapter", "serde", "normal")
+            | ("af-adapter", "serde_json", "normal")
+            | ("af-adapter", "sha2", "normal")
             | ("af-adapter", "thiserror", "normal")
+            | ("af-adapter", "tokio", "normal")
             | ("af-adapter", "url", "normal")
-            | ("af-adapter", "tokio", "dev")
+            | ("af-adapter", "zeroize", "normal")
             | ("af-protocol", "base64", "normal")
+            | ("af-protocol", "bytes", "normal")
+            | ("af-protocol", "insta", "dev")
             | ("af-protocol", "serde", "normal")
             | ("af-protocol", "serde_json", "normal")
             | ("af-protocol", "url", "normal")
@@ -426,6 +441,8 @@ fn allowed_internal_dependencies(name: &str) -> &'static [&'static str] {
             "af-config",
             "af-db",
             "af-domain",
+            // 企业 SSO 回调编排只能通过受控 HTTP Client 访问 Provider。
+            "af-httpclient",
             "af-scheduler",
         ],
         "af-relay" => &[
@@ -441,6 +458,7 @@ fn allowed_internal_dependencies(name: &str) -> &'static [&'static str] {
         "af-http" => &[
             "af-admin",
             "af-analytics",
+            "af-billing",
             "af-config",
             "af-domain",
             "af-protocol",
@@ -572,23 +590,36 @@ mod tests {
         let serde = dependency("af-domain", "serde", false);
         let mut serde_json = dependency("af-domain", "serde_json", false);
         serde_json.kind = "dev".to_owned();
+        let regex = dependency("af-domain", "regex", false);
+        let getrandom = dependency("af-domain", "getrandom", false);
+        let sha2 = dependency("af-domain", "sha2", false);
         let thiserror = dependency("af-domain", "thiserror", false);
 
-        let violations = validate_workspace(&baseline_workspace(), &[serde, serde_json, thiserror]);
+        let violations = validate_workspace(
+            &baseline_workspace(),
+            &[serde, serde_json, regex, getrandom, sha2, thiserror],
+        );
 
         assert!(violations.is_empty());
     }
 
     #[test]
     fn accepts_reviewed_adapter_dependencies() {
-        let mut tokio = dependency("af-adapter", "tokio", false);
-        tokio.kind = "dev".to_owned();
         let dependencies = [
             dependency("af-adapter", "async-trait", false),
+            dependency("af-adapter", "aws-credential-types", false),
+            dependency("af-adapter", "aws-sigv4", false),
             dependency("af-adapter", "futures-core", false),
+            dependency("af-adapter", "futures-util", false),
+            dependency("af-adapter", "jsonwebtoken", false),
+            dependency("af-adapter", "percent-encoding", false),
+            dependency("af-adapter", "serde", false),
+            dependency("af-adapter", "serde_json", false),
+            dependency("af-adapter", "sha2", false),
             dependency("af-adapter", "thiserror", false),
+            dependency("af-adapter", "tokio", false),
             dependency("af-adapter", "url", false),
-            tokio,
+            dependency("af-adapter", "zeroize", false),
         ];
 
         let violations = validate_workspace(&baseline_workspace(), &dependencies);
@@ -598,8 +629,12 @@ mod tests {
 
     #[test]
     fn accepts_reviewed_protocol_dependencies() {
-        let dependencies = ["base64", "serde", "serde_json", "url"]
-            .map(|name| dependency("af-protocol", name, false));
+        let mut dependencies = ["base64", "bytes", "serde", "serde_json", "url"]
+            .map(|name| dependency("af-protocol", name, false))
+            .to_vec();
+        let mut insta = dependency("af-protocol", "insta", false);
+        insta.kind = "dev".to_owned();
+        dependencies.push(insta);
 
         let violations = validate_workspace(&baseline_workspace(), &dependencies);
 
@@ -721,7 +756,7 @@ mod tests {
 
     #[test]
     fn rejects_unreviewed_protocol_dependency_shapes() {
-        let dependencies = ["base64", "serde", "serde_json", "url"]
+        let dependencies = ["base64", "bytes", "serde", "serde_json", "url"]
             .into_iter()
             .flat_map(|name| {
                 let mut wrong_kind = dependency("af-protocol", name, false);
@@ -738,7 +773,7 @@ mod tests {
 
         let violations = validate_workspace(&baseline_workspace(), &dependencies);
 
-        assert_eq!(violations.len(), 16);
+        assert_eq!(violations.len(), 20);
         assert!(
             violations
                 .iter()
@@ -750,6 +785,7 @@ mod tests {
             "optional=true",
             "target=cfg(unix)",
             "alias=base64_alias",
+            "alias=bytes_alias",
             "alias=serde_alias",
             "alias=serde_json_alias",
             "alias=url_alias",
@@ -760,6 +796,33 @@ mod tests {
                     .any(|violation| violation.detail.contains(detail))
             );
         }
+    }
+
+    #[test]
+    fn rejects_snapshot_dependency_outside_exact_dev_shape() {
+        let normal = dependency("af-protocol", "insta", false);
+        let mut optional = dependency("af-protocol", "insta", false);
+        optional.kind = "dev".to_owned();
+        optional.optional = true;
+        let mut targeted = dependency("af-protocol", "insta", false);
+        targeted.kind = "dev".to_owned();
+        targeted.target = Some("cfg(unix)".to_owned());
+        let mut aliased = dependency("af-protocol", "insta", false);
+        aliased.kind = "dev".to_owned();
+        aliased.alias = Some("insta_alias".to_owned());
+
+        let violations = validate_workspace(
+            &baseline_workspace(),
+            &[normal, optional, targeted, aliased],
+        );
+
+        assert_eq!(violations.len(), 4);
+        assert!(
+            violations
+                .iter()
+                .all(|violation| violation.rule
+                    == "restricted-crate-external-dependency-not-allowed")
+        );
     }
 
     #[test]

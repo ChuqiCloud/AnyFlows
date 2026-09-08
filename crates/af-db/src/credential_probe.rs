@@ -1,13 +1,21 @@
 use std::{fmt, time::Duration};
 
-use af_domain::{ChannelId, ChannelType, CredentialKind, Protocol, Status};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+use af_domain::{
+    ChannelId, ChannelTimeout, ChannelType, CredentialKind, Protocol, ResponsesCompactMode, Status,
+};
+use sea_orm::{
+    ColumnTrait, EntityTrait, QueryFilter, QueryOrder, entity::prelude::TimeDateTimeWithTimeZone,
+};
 use thiserror::Error;
 use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
-    DatabasePool,
+    ChannelModelMappings, DatabasePool,
+    channel_settings::{
+        responses_compact_mode, responses_compact_model_mapping,
+        validate_responses_compact_capability, validate_responses_compact_model_mapping,
+    },
     entity::{channel_models, channels, credentials},
     model_price::is_valid_model_name,
 };
@@ -128,11 +136,32 @@ pub struct ChannelProbeTargetRecord {
     channel_type: ChannelType,
     protocol: Protocol,
     base_url: Option<String>,
+    timeout: Option<ChannelTimeout>,
     model: String,
     credential_kind: CredentialKind,
     envelope: EncryptedCredentialEnvelope,
     headers: Vec<ChannelProbeHeader>,
     proxy_required: bool,
+    revision: ChannelProbeTargetRevision,
+    responses_compact_mode: ResponsesCompactMode,
+    responses_compact_model: Option<String>,
+}
+
+/// 渠道探活开始时观察到的配置版本，用于拒绝旧探测覆盖新配置。
+#[derive(Clone, Eq, PartialEq)]
+pub struct ChannelProbeTargetRevision(TimeDateTimeWithTimeZone);
+
+impl ChannelProbeTargetRevision {
+    /// 返回数据库 CAS 使用的原始时间戳；仅限仓储边界读取。
+    pub(crate) fn timestamp(&self) -> TimeDateTimeWithTimeZone {
+        self.0
+    }
+}
+
+impl fmt::Debug for ChannelProbeTargetRevision {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("ChannelProbeTargetRevision(<已脱敏>)")
+    }
 }
 
 impl ChannelProbeTargetRecord {
@@ -166,6 +195,12 @@ impl ChannelProbeTargetRecord {
         self.base_url.as_deref()
     }
 
+    /// 返回渠道级读取与完整请求超时；空值表示使用探活默认值。
+    #[must_use]
+    pub const fn timeout(&self) -> Option<ChannelTimeout> {
+        self.timeout
+    }
+
     /// 返回用于最小探活请求的规范模型名；调用方不得写入日志。
     #[must_use]
     pub fn model(&self) -> &str {
@@ -195,6 +230,24 @@ impl ChannelProbeTargetRecord {
     pub const fn proxy_required(&self) -> bool {
         self.proxy_required
     }
+
+    /// 返回探活开始时的渠道配置版本，供确定性能力事实执行 CAS 写回。
+    #[must_use]
+    pub fn revision(&self) -> ChannelProbeTargetRevision {
+        self.revision.clone()
+    }
+
+    /// 返回渠道配置的 Compact 三态策略。
+    #[must_use]
+    pub const fn responses_compact_mode(&self) -> ResponsesCompactMode {
+        self.responses_compact_mode
+    }
+
+    /// 返回依次应用普通映射与 Compact 专属映射后的探测模型。
+    #[must_use]
+    pub fn responses_compact_model(&self) -> Option<&str> {
+        self.responses_compact_model.as_deref()
+    }
 }
 
 impl fmt::Debug for ChannelProbeTargetRecord {
@@ -206,11 +259,17 @@ impl fmt::Debug for ChannelProbeTargetRecord {
             .field("channel_type", &self.channel_type)
             .field("protocol", &self.protocol)
             .field("base_url", &self.base_url.as_ref().map(|_| "<已脱敏>"))
+            .field("timeout", &self.timeout)
             .field("model", &"<已脱敏>")
             .field("credential_kind", &self.credential_kind)
             .field("envelope", &self.envelope)
             .field("header_count", &self.headers.len())
             .field("proxy_required", &self.proxy_required)
+            .field("responses_compact_mode", &self.responses_compact_mode)
+            .field(
+                "has_responses_compact_model",
+                &self.responses_compact_model.is_some(),
+            )
             .finish()
     }
 }
@@ -261,7 +320,10 @@ impl ChannelProbeTargetRepository {
         Ok(Self { pool, load_timeout })
     }
 
-    /// 读取仍处于自动禁用状态的渠道、首个稳定模型和最高优先级可调度凭据。
+    /// 读取活动渠道、首个稳定模型和最高优先级可调度凭据。
+    ///
+    /// 自动恢复资格仍由 `ChannelProbeLease` 单独约束；本仓储同时服务管理端手动测活，
+    /// 因此不能把启用或手动停用渠道错误隐藏。
     pub async fn load(
         &self,
         channel_id: ChannelId,
@@ -274,9 +336,9 @@ impl ChannelProbeTargetRepository {
             else {
                 return Ok(None);
             };
-            let status = Status::try_from(channel.status)
+            Status::try_from(channel.status)
                 .map_err(|_| ChannelProbeTargetRepositoryError::Invariant)?;
-            if status != Status::AutoDisabled || !channel.auto_ban || channel.deleted_at.is_some() {
+            if channel.deleted_at.is_some() {
                 return Ok(None);
             }
 
@@ -297,6 +359,7 @@ impl ChannelProbeTargetRepository {
                 .filter(credentials::Column::ChannelId.eq(channel_id.get()))
                 .filter(credentials::Column::Status.eq(Status::Enabled.code()))
                 .filter(credentials::Column::Schedulable.eq(true))
+                .filter(credentials::Column::OauthTokenPending.eq(false))
                 .filter(credentials::Column::DeletedAt.is_null())
                 .order_by_desc(credentials::Column::Priority)
                 .order_by_asc(credentials::Column::Id)
@@ -322,6 +385,41 @@ impl ChannelProbeTargetRepository {
                 .kind
                 .parse()
                 .map_err(|_| ChannelProbeTargetRepositoryError::Invariant)?;
+            let settings = channel.settings.clone().into_inner();
+            let responses_compact_mode = responses_compact_mode(&settings)
+                .map_err(|_| ChannelProbeTargetRepositoryError::Invariant)?;
+            validate_responses_compact_capability(channel_type, protocol, responses_compact_mode)
+                .map_err(|_| ChannelProbeTargetRepositoryError::Invariant)?;
+            let compact_model_mappings = responses_compact_model_mapping(&settings)
+                .map_err(|_| ChannelProbeTargetRepositoryError::Invariant)?;
+            validate_responses_compact_model_mapping(
+                channel_type,
+                protocol,
+                &compact_model_mappings,
+            )
+            .map_err(|_| ChannelProbeTargetRepositoryError::Invariant)?;
+            let model_mappings = ChannelModelMappings::parse(&channel.model_mapping)
+                .map_err(|_| ChannelProbeTargetRepositoryError::Invariant)?;
+            let responses_compact_model = (channel_type == ChannelType::OpenAi
+                && protocol == Protocol::OpenAiResponses)
+                .then(|| {
+                    let base_model = model_mappings
+                        .resolve(&channel_model.model)
+                        .unwrap_or(&channel_model.model);
+                    compact_model_mappings
+                        .resolve(base_model)
+                        .unwrap_or(base_model)
+                        .to_owned()
+                });
+            let channel_timeout = channel
+                .timeout_secs
+                .map(|value| {
+                    <u64 as std::convert::TryFrom<i32>>::try_from(value)
+                        .ok()
+                        .and_then(|value| ChannelTimeout::new(value).ok())
+                        .ok_or(ChannelProbeTargetRepositoryError::Invariant)
+                })
+                .transpose()?;
             let (key_id, nonce, ciphertext) = credential
                 .secret
                 .envelope_parts()
@@ -342,11 +440,15 @@ impl ChannelProbeTargetRepository {
                 channel_type,
                 protocol,
                 base_url: channel.base_url.map(|value| value.as_str().to_owned()),
+                timeout: channel_timeout,
                 model: channel_model.model,
                 credential_kind,
                 envelope,
                 headers,
                 proxy_required: credential.proxy_id.is_some(),
+                revision: ChannelProbeTargetRevision(channel.updated_at),
+                responses_compact_mode,
+                responses_compact_model,
             }))
         }
         .with_subscriber(NoSubscriber::default());

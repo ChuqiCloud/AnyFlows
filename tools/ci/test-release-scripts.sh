@@ -37,21 +37,31 @@ fake_binary="$temporary_directory/af-server"
 printf '#!/usr/bin/env sh\nexit 0\n' >"$fake_binary"
 chmod 0755 "$fake_binary"
 
-for release_arch in amd64 arm64; do
-  RELEASE_SKIP_ARCH_CHECK=1 SOURCE_DATE_EPOCH=0 \
-    bash "$workspace/tools/ci/package-release.sh" \
-    "$tag" "$release_arch" "$fake_binary" "$temporary_directory/release"
-done
+RELEASE_SKIP_ARCH_CHECK=1 SOURCE_DATE_EPOCH=0 \
+  bash "$workspace/tools/ci/package-release.sh" \
+  "$tag" amd64 "$fake_binary" "$temporary_directory/release"
 
 printf '测试变更摘要。\n' >"$temporary_directory/release/CHANGELOG.md"
 bash "$workspace/tools/ci/finalize-release.sh" \
   "$tag" "$commit" "$temporary_directory/release"
 
-test "$(wc -l <"$temporary_directory/release/SHA256SUMS")" -eq 2
+test "$(wc -l <"$temporary_directory/release/SHA256SUMS")" -eq 1
+test -x "$workspace/scripts/systemd/install.sh"
+bash -n "$workspace/scripts/systemd/install.sh"
+test -s "$workspace/CHANGELOG.md"
+grep -q 'ProtectSystem=strict' "$workspace/scripts/systemd/anyflows.service"
 grep -q "anyflows-${tag}-linux-amd64.tar.gz" \
+  "$temporary_directory/release/RELEASE_NOTES.md"
+! grep -q "anyflows-${tag}-linux-arm64.tar.gz" \
   "$temporary_directory/release/RELEASE_NOTES.md"
 grep -q '测试变更摘要。' "$temporary_directory/release/RELEASE_NOTES.md"
 tar -tzf "$temporary_directory/release/anyflows-${tag}-linux-amd64.tar.gz" \
   | grep -q "/anyflows$"
+tar -tzf "$temporary_directory/release/anyflows-${tag}-linux-amd64.tar.gz" \
+  | grep -q "/install.sh$"
+tar -tzf "$temporary_directory/release/anyflows-${tag}-linux-amd64.tar.gz" \
+  | grep -q "/anyflows.service$"
+tar -tzf "$temporary_directory/release/anyflows-${tag}-linux-amd64.tar.gz" \
+  | grep -q "/CHANGELOG.md$"
 
 printf '发布脚本回归通过。\n'

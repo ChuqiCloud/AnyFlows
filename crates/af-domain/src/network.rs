@@ -23,10 +23,35 @@ impl TrustedClientIp {
         Self(normalize_ip(address))
     }
 
+    /// 返回仅供受控上游安全验证请求使用的规范 IP 地址。
+    #[must_use]
+    pub const fn as_ip(self) -> IpAddr {
+        self.0
+    }
+
     /// 返回白名单匹配所需的规范地址。
     #[must_use]
     pub(crate) const fn get(self) -> IpAddr {
         self.0
+    }
+
+    /// 将地址族和规范化地址写入固定缓冲区，仅供带密钥隐私指纹计算使用。
+    ///
+    /// 返回实际写入长度。调用方不得记录、持久化或向外发送该缓冲区。
+    #[must_use]
+    pub fn write_fingerprint_input(self, output: &mut [u8; 17]) -> usize {
+        match self.0 {
+            IpAddr::V4(address) => {
+                output[0] = 4;
+                output[1..5].copy_from_slice(&address.octets());
+                5
+            }
+            IpAddr::V6(address) => {
+                output[0] = 6;
+                output[1..17].copy_from_slice(&address.octets());
+                17
+            }
+        }
     }
 }
 

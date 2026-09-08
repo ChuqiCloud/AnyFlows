@@ -16,7 +16,7 @@ use chacha20poly1305::{
     aead::{Aead as _, KeyInit as _, Payload},
 };
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
-use serde_json::json;
+use serde_json::{Value, json};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
@@ -33,9 +33,39 @@ pub const USER_ID: i64 = 8_100_002;
 pub const GROUP_ID: i64 = 8_100_003;
 pub const CHANNEL_ID: i64 = 8_100_004;
 pub const CREDENTIAL_ID: i64 = 8_100_005;
+pub const ANTHROPIC_CHANNEL_ID: i64 = 8_100_006;
+pub const ANTHROPIC_CREDENTIAL_ID: i64 = 8_100_007;
+pub const GEMINI_CHANNEL_ID: i64 = 8_100_008;
+pub const GEMINI_CREDENTIAL_ID: i64 = 8_100_009;
+pub const OPENAI_RESPONSES_CHANNEL_ID: i64 = 8_100_010;
+pub const OPENAI_RESPONSES_CREDENTIAL_ID: i64 = 8_100_011;
+pub const OPENAI_EMBEDDINGS_CHANNEL_ID: i64 = 8_100_012;
+pub const OPENAI_EMBEDDINGS_CREDENTIAL_ID: i64 = 8_100_013;
+pub const OPENAI_IMAGES_CHANNEL_ID: i64 = 8_100_014;
+pub const OPENAI_IMAGES_CREDENTIAL_ID: i64 = 8_100_015;
+pub const OPENAI_AUDIO_CHANNEL_ID: i64 = 8_100_016;
+pub const OPENAI_AUDIO_CREDENTIAL_ID: i64 = 8_100_017;
+pub const OPENAI_SPEECH_CHANNEL_ID: i64 = 8_100_018;
+pub const OPENAI_SPEECH_CREDENTIAL_ID: i64 = 8_100_019;
+pub const JINA_RERANK_CHANNEL_ID: i64 = 8_100_020;
+pub const JINA_RERANK_CREDENTIAL_ID: i64 = 8_100_021;
+pub const COHERE_RERANK_CHANNEL_ID: i64 = 8_100_022;
+pub const COHERE_RERANK_CREDENTIAL_ID: i64 = 8_100_023;
 pub const RUNTIME_HEADER_NAME: &str = "x-runtime-header";
 pub const RUNTIME_HEADER_VALUE: &str = "runtime-header-value";
 const CREDENTIAL_KEY_ID: &str = "gateway-test-key";
+
+struct OpenAiRuntimeChannel<'a> {
+    channel_id: i64,
+    credential_id: i64,
+    name: &'a str,
+    protocol: &'a str,
+    base_url: &'a str,
+    public_model: &'a str,
+    upstream_model: &'a str,
+    api_key: &'a str,
+    timeout_secs: Option<i32>,
+}
 
 /// 返回真实 TCP 回归使用的 32 字节 Base64URL 凭据解密密钥。
 pub fn credential_encryption_key() -> String {
@@ -44,17 +74,190 @@ pub fn credential_encryption_key() -> String {
 
 /// 写入一条可由生产运行时目录选中的 OpenAI Chat 渠道和加密凭据。
 pub async fn seed_runtime_channel(connection: &DatabaseConnection, group_id: i64) {
+    seed_openai_runtime_channel_with(
+        connection,
+        group_id,
+        OpenAiRuntimeChannel {
+            channel_id: CHANNEL_ID,
+            credential_id: CREDENTIAL_ID,
+            name: "runtime-openai",
+            protocol: "openai_chat",
+            base_url: UPSTREAM_BASE_URL,
+            public_model: UPSTREAM_MODEL,
+            upstream_model: UPSTREAM_MODEL,
+            api_key: UPSTREAM_KEY,
+            timeout_secs: None,
+        },
+    )
+    .await;
+}
+
+/// 按显式地址、模型映射和凭据写入 OpenAI Responses 测试渠道。
+pub async fn seed_openai_responses_runtime_channel_with(
+    connection: &DatabaseConnection,
+    group_id: i64,
+    base_url: &str,
+    public_model: &str,
+    upstream_model: &str,
+    api_key: &str,
+    timeout_secs: Option<i32>,
+) {
+    seed_openai_runtime_channel_with(
+        connection,
+        group_id,
+        OpenAiRuntimeChannel {
+            channel_id: OPENAI_RESPONSES_CHANNEL_ID,
+            credential_id: OPENAI_RESPONSES_CREDENTIAL_ID,
+            name: "runtime-openai-responses",
+            protocol: "openai_responses",
+            base_url,
+            public_model,
+            upstream_model,
+            api_key,
+            timeout_secs,
+        },
+    )
+    .await;
+}
+
+/// 按显式地址、模型映射和凭据写入 OpenAI Embeddings 测试渠道。
+pub async fn seed_openai_embeddings_runtime_channel_with(
+    connection: &DatabaseConnection,
+    group_id: i64,
+    base_url: &str,
+    public_model: &str,
+    upstream_model: &str,
+    api_key: &str,
+    timeout_secs: Option<i32>,
+) {
+    seed_openai_runtime_channel_with(
+        connection,
+        group_id,
+        OpenAiRuntimeChannel {
+            channel_id: OPENAI_EMBEDDINGS_CHANNEL_ID,
+            credential_id: OPENAI_EMBEDDINGS_CREDENTIAL_ID,
+            name: "runtime-openai-embeddings",
+            protocol: "openai_embeddings",
+            base_url,
+            public_model,
+            upstream_model,
+            api_key,
+            timeout_secs,
+        },
+    )
+    .await;
+}
+
+/// 按显式地址、模型映射和凭据写入 OpenAI Images 测试渠道。
+pub async fn seed_openai_images_runtime_channel_with(
+    connection: &DatabaseConnection,
+    group_id: i64,
+    base_url: &str,
+    public_model: &str,
+    upstream_model: &str,
+    api_key: &str,
+    timeout_secs: Option<i32>,
+) {
+    seed_openai_runtime_channel_with(
+        connection,
+        group_id,
+        OpenAiRuntimeChannel {
+            channel_id: OPENAI_IMAGES_CHANNEL_ID,
+            credential_id: OPENAI_IMAGES_CREDENTIAL_ID,
+            name: "runtime-openai-images",
+            protocol: "openai_images",
+            base_url,
+            public_model,
+            upstream_model,
+            api_key,
+            timeout_secs,
+        },
+    )
+    .await;
+}
+
+/// 按显式地址、模型映射和凭据写入 OpenAI Audio 测试渠道。
+pub async fn seed_openai_audio_runtime_channel_with(
+    connection: &DatabaseConnection,
+    group_id: i64,
+    base_url: &str,
+    public_model: &str,
+    upstream_model: &str,
+    api_key: &str,
+    timeout_secs: Option<i32>,
+) {
+    seed_openai_runtime_channel_with(
+        connection,
+        group_id,
+        OpenAiRuntimeChannel {
+            channel_id: OPENAI_AUDIO_CHANNEL_ID,
+            credential_id: OPENAI_AUDIO_CREDENTIAL_ID,
+            name: "runtime-openai-audio",
+            protocol: "openai_audio",
+            base_url,
+            public_model,
+            upstream_model,
+            api_key,
+            timeout_secs,
+        },
+    )
+    .await;
+}
+
+/// 按显式地址、模型映射和凭据写入 OpenAI Speech 测试渠道。
+pub async fn seed_openai_speech_runtime_channel_with(
+    connection: &DatabaseConnection,
+    group_id: i64,
+    base_url: &str,
+    public_model: &str,
+    upstream_model: &str,
+    api_key: &str,
+    timeout_secs: Option<i32>,
+) {
+    seed_openai_runtime_channel_with(
+        connection,
+        group_id,
+        OpenAiRuntimeChannel {
+            channel_id: OPENAI_SPEECH_CHANNEL_ID,
+            credential_id: OPENAI_SPEECH_CREDENTIAL_ID,
+            name: "runtime-openai-speech",
+            protocol: "openai_speech",
+            base_url,
+            public_model,
+            upstream_model,
+            api_key,
+            timeout_secs,
+        },
+    )
+    .await;
+}
+
+async fn seed_openai_runtime_channel_with(
+    connection: &DatabaseConnection,
+    group_id: i64,
+    channel: OpenAiRuntimeChannel<'_>,
+) {
+    let model_mapping = if channel.public_model == channel.upstream_model {
+        "{}".to_owned()
+    } else {
+        serde_json::Value::Object(serde_json::Map::from_iter([(
+            channel.public_model.to_owned(),
+            serde_json::Value::String(channel.upstream_model.to_owned()),
+        )]))
+        .to_string()
+    };
     for (sql, values) in [
         (
-            "INSERT INTO channels (id, name, type, protocol, base_url, status, model_mapping, param_override, header_override, settings) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO channels (id, name, type, protocol, base_url, timeout_secs, status, model_mapping, param_override, header_override, settings) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             vec![
-                CHANNEL_ID.into(),
-                "runtime-openai".into(),
+                channel.channel_id.into(),
+                channel.name.into(),
                 "openai".into(),
-                "openai_chat".into(),
-                UPSTREAM_BASE_URL.into(),
+                channel.protocol.into(),
+                channel.base_url.into(),
+                channel.timeout_secs.into(),
                 1_i16.into(),
-                "{}".into(),
+                model_mapping.clone().into(),
                 "{}".into(),
                 json!({"x-runtime-header": RUNTIME_HEADER_VALUE})
                     .to_string()
@@ -64,18 +267,18 @@ pub async fn seed_runtime_channel(connection: &DatabaseConnection, group_id: i64
         ),
         (
             "INSERT INTO channel_models (channel_id, model) VALUES (?, ?)",
-            vec![CHANNEL_ID.into(), UPSTREAM_MODEL.into()],
+            vec![channel.channel_id.into(), channel.public_model.into()],
         ),
         (
             "INSERT INTO channel_groups (channel_id, group_id) VALUES (?, ?)",
-            vec![CHANNEL_ID.into(), group_id.into()],
+            vec![channel.channel_id.into(), group_id.into()],
         ),
         (
             "INSERT INTO abilities (group_id, model, channel_id, enabled, priority, weight) VALUES (?, ?, ?, ?, ?, ?)",
             vec![
                 group_id.into(),
-                UPSTREAM_MODEL.into(),
-                CHANNEL_ID.into(),
+                channel.public_model.into(),
+                channel.channel_id.into(),
                 true.into(),
                 10_i32.into(),
                 0_i32.into(),
@@ -84,10 +287,11 @@ pub async fn seed_runtime_channel(connection: &DatabaseConnection, group_id: i64
         (
             "INSERT INTO credentials (id, channel_id, kind, secret, status, priority, schedulable) VALUES (?, ?, ?, ?, ?, ?, ?)",
             vec![
-                CREDENTIAL_ID.into(),
-                CHANNEL_ID.into(),
+                channel.credential_id.into(),
+                channel.channel_id.into(),
                 "api_key".into(),
-                encrypted_api_key().into(),
+                encrypted_api_key_for(channel.channel_id, channel.credential_id, channel.api_key)
+                    .into(),
                 1_i16.into(),
                 10_i32.into(),
                 true.into(),
@@ -105,19 +309,339 @@ pub async fn seed_runtime_channel(connection: &DatabaseConnection, group_id: i64
     }
 }
 
-fn encrypted_api_key() -> String {
+/// 按显式地址、模型映射和凭据写入 Jina Rerank 测试渠道。
+pub async fn seed_jina_rerank_runtime_channel_with(
+    connection: &DatabaseConnection,
+    group_id: i64,
+    base_url: &str,
+    public_model: &str,
+    upstream_model: &str,
+    api_key: &str,
+    timeout_secs: Option<i32>,
+) {
+    seed_rerank_runtime_channel_with(
+        connection,
+        group_id,
+        JINA_RERANK_CHANNEL_ID,
+        JINA_RERANK_CREDENTIAL_ID,
+        "runtime-jina-rerank",
+        "jina",
+        "jina_rerank",
+        base_url,
+        public_model,
+        upstream_model,
+        api_key,
+        timeout_secs,
+    )
+    .await;
+}
+
+/// 按显式地址、模型映射和凭据写入 Cohere v2 Rerank 测试渠道。
+pub async fn seed_cohere_rerank_runtime_channel_with(
+    connection: &DatabaseConnection,
+    group_id: i64,
+    base_url: &str,
+    public_model: &str,
+    upstream_model: &str,
+    api_key: &str,
+    timeout_secs: Option<i32>,
+) {
+    seed_rerank_runtime_channel_with(
+        connection,
+        group_id,
+        COHERE_RERANK_CHANNEL_ID,
+        COHERE_RERANK_CREDENTIAL_ID,
+        "runtime-cohere-rerank",
+        "cohere",
+        "cohere_rerank",
+        base_url,
+        public_model,
+        upstream_model,
+        api_key,
+        timeout_secs,
+    )
+    .await;
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "参数与测试渠道持久化字段一一对应"
+)]
+async fn seed_rerank_runtime_channel_with(
+    connection: &DatabaseConnection,
+    group_id: i64,
+    channel_id: i64,
+    credential_id: i64,
+    channel_name: &str,
+    channel_type: &str,
+    protocol: &str,
+    base_url: &str,
+    public_model: &str,
+    upstream_model: &str,
+    api_key: &str,
+    timeout_secs: Option<i32>,
+) {
+    let model_mapping = if public_model == upstream_model {
+        "{}".to_owned()
+    } else {
+        serde_json::Value::Object(serde_json::Map::from_iter([(
+            public_model.to_owned(),
+            serde_json::Value::String(upstream_model.to_owned()),
+        )]))
+        .to_string()
+    };
+    for (sql, values) in [
+        (
+            "INSERT INTO channels (id, name, type, protocol, base_url, timeout_secs, status, model_mapping, param_override, header_override, settings) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            vec![
+                channel_id.into(),
+                channel_name.into(),
+                channel_type.into(),
+                protocol.into(),
+                base_url.into(),
+                timeout_secs.into(),
+                1_i16.into(),
+                model_mapping.into(),
+                "{}".into(),
+                json!({"x-runtime-header": RUNTIME_HEADER_VALUE})
+                    .to_string()
+                    .into(),
+                "{}".into(),
+            ],
+        ),
+        (
+            "INSERT INTO channel_models (channel_id, model) VALUES (?, ?)",
+            vec![channel_id.into(), public_model.into()],
+        ),
+        (
+            "INSERT INTO channel_groups (channel_id, group_id) VALUES (?, ?)",
+            vec![channel_id.into(), group_id.into()],
+        ),
+        (
+            "INSERT INTO abilities (group_id, model, channel_id, enabled, priority, weight) VALUES (?, ?, ?, ?, ?, ?)",
+            vec![
+                group_id.into(),
+                public_model.into(),
+                channel_id.into(),
+                true.into(),
+                10_i32.into(),
+                0_i32.into(),
+            ],
+        ),
+        (
+            "INSERT INTO credentials (id, channel_id, kind, secret, status, priority, schedulable) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            vec![
+                credential_id.into(),
+                channel_id.into(),
+                "api_key".into(),
+                encrypted_api_key_for(channel_id, credential_id, api_key).into(),
+                1_i16.into(),
+                10_i32.into(),
+                true.into(),
+            ],
+        ),
+    ] {
+        connection
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Sqlite,
+                sql,
+                values,
+            ))
+            .await
+            .unwrap();
+    }
+}
+
+/// 写入一条标准 Anthropic Messages 渠道，用于生产调度的真实 TCP 回归。
+pub async fn seed_anthropic_runtime_channel(connection: &DatabaseConnection, group_id: i64) {
+    seed_anthropic_runtime_channel_with(
+        connection,
+        group_id,
+        UPSTREAM_BASE_URL,
+        UPSTREAM_MODEL,
+        UPSTREAM_MODEL,
+        UPSTREAM_KEY,
+        None,
+    )
+    .await;
+}
+
+/// 按显式地址、模型映射和凭据写入标准 Anthropic 测试渠道。
+pub async fn seed_anthropic_runtime_channel_with(
+    connection: &DatabaseConnection,
+    group_id: i64,
+    base_url: &str,
+    public_model: &str,
+    upstream_model: &str,
+    api_key: &str,
+    timeout_secs: Option<i32>,
+) {
+    let model_mapping = if public_model == upstream_model {
+        "{}".to_owned()
+    } else {
+        serde_json::Value::Object(serde_json::Map::from_iter([(
+            public_model.to_owned(),
+            serde_json::Value::String(upstream_model.to_owned()),
+        )]))
+        .to_string()
+    };
+    for (sql, values) in [
+        (
+            "INSERT INTO channels (id, name, type, protocol, base_url, timeout_secs, status, model_mapping, param_override, header_override, settings) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            vec![
+                ANTHROPIC_CHANNEL_ID.into(),
+                "runtime-anthropic".into(),
+                "anthropic".into(),
+                "anthropic".into(),
+                base_url.into(),
+                timeout_secs.into(),
+                1_i16.into(),
+                model_mapping.clone().into(),
+                "{}".into(),
+                json!({"x-runtime-header": RUNTIME_HEADER_VALUE})
+                    .to_string()
+                    .into(),
+                "{}".into(),
+            ],
+        ),
+        (
+            "INSERT INTO channel_models (channel_id, model) VALUES (?, ?)",
+            vec![ANTHROPIC_CHANNEL_ID.into(), public_model.into()],
+        ),
+        (
+            "INSERT INTO channel_groups (channel_id, group_id) VALUES (?, ?)",
+            vec![ANTHROPIC_CHANNEL_ID.into(), group_id.into()],
+        ),
+        (
+            "INSERT INTO abilities (group_id, model, channel_id, enabled, priority, weight) VALUES (?, ?, ?, ?, ?, ?)",
+            vec![
+                group_id.into(),
+                public_model.into(),
+                ANTHROPIC_CHANNEL_ID.into(),
+                true.into(),
+                10_i32.into(),
+                0_i32.into(),
+            ],
+        ),
+        (
+            "INSERT INTO credentials (id, channel_id, kind, secret, status, priority, schedulable) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            vec![
+                ANTHROPIC_CREDENTIAL_ID.into(),
+                ANTHROPIC_CHANNEL_ID.into(),
+                "api_key".into(),
+                encrypted_api_key_for(ANTHROPIC_CHANNEL_ID, ANTHROPIC_CREDENTIAL_ID, api_key)
+                    .into(),
+                1_i16.into(),
+                10_i32.into(),
+                true.into(),
+            ],
+        ),
+    ] {
+        connection
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Sqlite,
+                sql,
+                values,
+            ))
+            .await
+            .unwrap();
+    }
+}
+
+/// 按显式地址、模型映射和凭据写入标准 Gemini Developer API 测试渠道。
+pub async fn seed_gemini_runtime_channel_with(
+    connection: &DatabaseConnection,
+    group_id: i64,
+    base_url: &str,
+    public_model: &str,
+    upstream_model: &str,
+    api_key: &str,
+    timeout_secs: Option<i32>,
+) {
+    let model_mapping = if public_model == upstream_model {
+        "{}".to_owned()
+    } else {
+        serde_json::Value::Object(serde_json::Map::from_iter([(
+            public_model.to_owned(),
+            serde_json::Value::String(upstream_model.to_owned()),
+        )]))
+        .to_string()
+    };
+    for (sql, values) in [
+        (
+            "INSERT INTO channels (id, name, type, protocol, base_url, timeout_secs, status, model_mapping, param_override, header_override, settings) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            vec![
+                GEMINI_CHANNEL_ID.into(),
+                "runtime-gemini".into(),
+                "gemini".into(),
+                "gemini".into(),
+                base_url.into(),
+                timeout_secs.into(),
+                1_i16.into(),
+                model_mapping.clone().into(),
+                "{}".into(),
+                json!({"x-runtime-header": RUNTIME_HEADER_VALUE})
+                    .to_string()
+                    .into(),
+                "{}".into(),
+            ],
+        ),
+        (
+            "INSERT INTO channel_models (channel_id, model) VALUES (?, ?)",
+            vec![GEMINI_CHANNEL_ID.into(), public_model.into()],
+        ),
+        (
+            "INSERT INTO channel_groups (channel_id, group_id) VALUES (?, ?)",
+            vec![GEMINI_CHANNEL_ID.into(), group_id.into()],
+        ),
+        (
+            "INSERT INTO abilities (group_id, model, channel_id, enabled, priority, weight) VALUES (?, ?, ?, ?, ?, ?)",
+            vec![
+                group_id.into(),
+                public_model.into(),
+                GEMINI_CHANNEL_ID.into(),
+                true.into(),
+                10_i32.into(),
+                0_i32.into(),
+            ],
+        ),
+        (
+            "INSERT INTO credentials (id, channel_id, kind, secret, status, priority, schedulable) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            vec![
+                GEMINI_CREDENTIAL_ID.into(),
+                GEMINI_CHANNEL_ID.into(),
+                "api_key".into(),
+                encrypted_api_key_for(GEMINI_CHANNEL_ID, GEMINI_CREDENTIAL_ID, api_key).into(),
+                1_i16.into(),
+                10_i32.into(),
+                true.into(),
+            ],
+        ),
+    ] {
+        connection
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Sqlite,
+                sql,
+                values,
+            ))
+            .await
+            .unwrap();
+    }
+}
+
+fn encrypted_api_key_for(channel_id: i64, credential_id: i64, api_key: &str) -> String {
     let key = [0x42; CREDENTIAL_ENCRYPTION_KEY_BYTES];
     let nonce = [0x24; 24];
     let cipher = XChaCha20Poly1305::new_from_slice(&key).unwrap();
-    let plaintext = json!({"kind": "api_key", "api_key": UPSTREAM_KEY}).to_string();
+    let plaintext = json!({"kind": "api_key", "api_key": api_key}).to_string();
     let ciphertext = cipher
         .encrypt(
             XNonce::from_slice(&nonce),
             Payload {
                 msg: plaintext.as_bytes(),
                 aad: &credential_plaintext_aad(
-                    ChannelId::new(CHANNEL_ID).unwrap(),
-                    CREDENTIAL_ID,
+                    ChannelId::new(channel_id).unwrap(),
+                    credential_id,
                     CredentialKind::ApiKey,
                 ),
             },
@@ -146,6 +670,30 @@ pub struct RawResponse {
     pub body: Vec<u8>,
 }
 
+/// 从 JSON 错误响应中提取受限错误码，供真实联调失败诊断使用。
+///
+/// 仅保留短 ASCII 标识，错误消息、正文和控制字符永不进入构建日志。
+pub fn sanitized_json_error_code(body: &[u8]) -> Option<String> {
+    if body.len() > 64 * 1024 {
+        return None;
+    }
+    let value = serde_json::from_slice::<Value>(body).ok()?;
+    let code = ["/code", "/error/code", "/response/error/code"]
+        .into_iter()
+        .find_map(|pointer| value.pointer(pointer).and_then(Value::as_str))?;
+    let code = code.trim();
+    if !code.is_empty()
+        && code.len() <= 96
+        && code
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+    {
+        Some(code.to_owned())
+    } else {
+        Some("无效错误码".to_owned())
+    }
+}
+
 /// 通过原始 TCP 请求测试服务，避免客户端自动改写协议边界。
 pub async fn send_request(
     address: SocketAddr,
@@ -153,6 +701,18 @@ pub async fn send_request(
     path: &str,
     body: &[u8],
     headers: &[(&str, &str)],
+) -> RawResponse {
+    send_request_with_timeout(address, method, path, body, headers, IO_TIMEOUT).await
+}
+
+/// 发送一次原始 HTTP 请求，并允许真实供应商联调使用更长的响应等待上限。
+pub async fn send_request_with_timeout(
+    address: SocketAddr,
+    method: &str,
+    path: &str,
+    body: &[u8],
+    headers: &[(&str, &str)],
+    response_timeout: Duration,
 ) -> RawResponse {
     let deadline = Instant::now() + IO_TIMEOUT;
     let mut stream = loop {
@@ -183,7 +743,7 @@ pub async fn send_request(
     stream.write_all(body).await.unwrap();
 
     let mut bytes = Vec::new();
-    timeout(IO_TIMEOUT, stream.read_to_end(&mut bytes))
+    timeout(response_timeout, stream.read_to_end(&mut bytes))
         .await
         .unwrap()
         .unwrap();
@@ -227,6 +787,20 @@ pub fn spawn_proxy(
     mpsc::Receiver<CapturedRequest>,
     thread::JoinHandle<()>,
 ) {
+    spawn_delayed_proxy(status_line, body, headers, Duration::ZERO)
+}
+
+/// 启动只处理一次请求且可延迟响应头的本地代理。
+pub fn spawn_delayed_proxy(
+    status_line: &str,
+    body: &[u8],
+    headers: &[(&str, &str)],
+    response_delay: Duration,
+) -> (
+    SocketAddr,
+    mpsc::Receiver<CapturedRequest>,
+    thread::JoinHandle<()>,
+) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let address = listener.local_addr().unwrap();
@@ -254,6 +828,7 @@ pub fn spawn_proxy(
         stream.set_write_timeout(Some(IO_TIMEOUT)).unwrap();
         let captured = read_proxy_request(&mut stream);
         captured_tx.send(captured).unwrap();
+        thread::sleep(response_delay);
 
         let mut response = format!(
             "HTTP/1.1 {status_line}\r\nContent-Length: {}\r\nConnection: close\r\n",

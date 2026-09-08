@@ -2,7 +2,7 @@
 
 use sea_orm::entity::prelude::*;
 
-use super::BillingReservationKey;
+use super::{BillingReservationKey, SensitiveDecimal};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "billing_reservations")]
@@ -12,7 +12,17 @@ pub struct Model {
     pub user_id: i64,
     pub token_id: i64,
     pub group_id: i64,
+    pub organization_id: Option<i64>,
+    pub contract_price_id: Option<i64>,
+    pub contract_price_version: Option<i64>,
+    pub contract_input_price: Option<SensitiveDecimal>,
+    pub contract_output_price: Option<SensitiveDecimal>,
+    pub contract_cache_read_price: Option<SensitiveDecimal>,
+    pub contract_cache_creation_5m_price: Option<SensitiveDecimal>,
+    pub contract_cache_creation_1h_price: Option<SensitiveDecimal>,
     pub status: i16,
+    pub reservation_kind: i16,
+    pub funding_source: i16,
     pub reserved_quota: i64,
     pub token_reserved_quota: i64,
     pub actual_quota: Option<i64>,

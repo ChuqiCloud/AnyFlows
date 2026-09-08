@@ -142,10 +142,36 @@ string_enum! {
         OpenAiChat => "openai_chat",
         /// OpenAI Responses 协议。
         OpenAiResponses => "openai_responses",
+        /// OpenAI Embeddings 协议。
+        OpenAiEmbeddings => "openai_embeddings",
+        /// OpenAI Images 非流式生成协议。
+        OpenAiImages => "openai_images",
+        /// OpenAI Audio 非流式文件转录协议。
+        OpenAiAudio => "openai_audio",
+        /// OpenAI Audio 非 SSE 文本转语音协议。
+        OpenAiSpeech => "openai_speech",
+        /// Jina 原生 Rerank 协议。
+        JinaRerank => "jina_rerank",
+        /// Cohere v2 原生 Rerank 协议。
+        CohereRerank => "cohere_rerank",
+        /// xAI Grok Imagine Video 异步任务协议。
+        XaiVideo => "xai_video",
         /// Anthropic Messages 协议。
         Anthropic => "anthropic",
         /// Gemini generateContent 协议。
         Gemini => "gemini",
+    }
+}
+
+impl CredentialQuotaDimension {
+    /// 根据已归一化的 Canonical 模型选择固定额度维度。
+    #[must_use]
+    pub fn for_canonical_model(model: &str) -> Self {
+        if model == "gpt-5.3-codex-spark" {
+            Self::Spark
+        } else {
+            Self::Global
+        }
     }
 }
 
@@ -156,6 +182,8 @@ string_enum! {
         Chat => "chat",
         /// OpenAI Responses 风格响应。
         Responses => "responses",
+        /// OpenAI Responses 独立上下文压缩。
+        ResponsesCompact => "responses_compact",
         /// 文本向量化。
         Embedding => "embedding",
         /// 图像生成或处理。
@@ -172,6 +200,72 @@ string_enum! {
 }
 
 string_enum! {
+    /// OpenAI Responses Compact 渠道能力的显式策略。
+    pub enum ResponsesCompactMode {
+        /// 由后续探测结果决定是否使用 Compact。
+        Auto => "auto",
+        /// 仅允许在明确支持 Compact 的原生 Responses 渠道上使用。
+        ForceOn => "force_on",
+        /// 即使探测到支持，也不为该渠道使用 Compact。
+        ForceOff => "force_off",
+    }
+}
+
+string_enum! {
+    /// OpenAI Responses Compact 端点的最近一次确定性探测结论。
+    pub enum ResponsesCompactProbeResult {
+        /// 尚未完成有效探测，不能据此参与 Compact 调度。
+        Unknown => "unknown",
+        /// 上游返回并通过 `response.compaction` 完整结构校验。
+        Supported => "supported",
+        /// 上游明确不提供该端点，或成功响应不符合 Compact 协议。
+        Unsupported => "unsupported",
+    }
+}
+
+string_enum! {
+    /// 出站请求可显式选择的版本化客户端仿真档案。
+    ///
+    /// 关闭状态由配置缺失表达，避免把默认关闭误序列化为已选择档案。
+    pub enum ClientSimulationProfile {
+        /// 只模拟 Anthropic CLI 的稳定 HTTP 身份 Header，不改变正文或协议能力。
+        AnthropicCliHeadersV1 => "anthropic_cli_headers_v1",
+    }
+}
+
+string_enum! {
+    /// 出站请求可显式选择的版本化客户端仿真正文档案。
+    ///
+    /// 关闭状态由配置缺失表达；正文档案不得携带管理员自定义文本或模板。
+    pub enum ClientSimulationBodyProfile {
+        /// 在受控 Anthropic CLI 仿真请求开头插入冻结的 UTC 日期指令。
+        AnthropicCliSystemDateV1 => "anthropic_cli_system_date_v1",
+    }
+}
+
+string_enum! {
+    /// 单个上游 Attempt 的客户端仿真应用结果。
+    pub enum ClientSimulationResult {
+        /// 当前候选配置了档案，但在应用前已结束。
+        NotApplied => "not_applied",
+        /// 白名单身份 Header 已通过统一请求预算校验。
+        Applied => "applied",
+        /// 档案不匹配或补丁校验失败，请求未发送。
+        Failed => "failed",
+    }
+}
+
+string_enum! {
+    /// 请求级客户端仿真正文补丁结果。
+    pub enum ClientSimulationBodyPatchResult {
+        /// 正文已按闭合档案重新构建，原始正文直通资格已清除。
+        Applied => "applied",
+        /// 正文形状或受信时钟不满足档案约束，请求在发送前被拒绝。
+        Rejected => "rejected",
+    }
+}
+
+string_enum! {
     /// 渠道选择的上游适配器类型。
     pub enum ChannelType {
         /// OpenAI 及其兼容 API。
@@ -184,6 +278,12 @@ string_enum! {
         Bedrock => "bedrock",
         /// Google Vertex AI。
         Vertex => "vertex",
+        /// Jina AI 原生 API。
+        Jina => "jina",
+        /// Cohere 原生 API。
+        Cohere => "cohere",
+        /// xAI 原生 API。
+        Xai => "xai",
         /// 配置驱动的自定义适配器。
         Custom => "custom",
     }
@@ -204,6 +304,16 @@ string_enum! {
         ServiceAccount => "service_account",
         /// 存储为 `upstream` 的凭据种类。
         Upstream => "upstream",
+    }
+}
+
+string_enum! {
+    /// 凭据使用的固定上游额度维度。
+    pub enum CredentialQuotaDimension {
+        /// 普通模型共享的全局额度。
+        Global => "global",
+        /// GPT-5.3 Codex Spark 使用的独立额度。
+        Spark => "spark",
     }
 }
 
@@ -234,6 +344,12 @@ string_enum! {
         InsufficientQuota => "insufficient_quota",
         /// 请求的模型不存在或不可用。
         ModelNotFound => "model_not_found",
+        /// 当前认证用户范围内不存在指定异步任务。
+        TaskNotFound => "task_not_found",
+        /// 相同幂等键已经绑定到不同请求载荷。
+        IdempotencyConflict => "idempotency_conflict",
+        /// 提交或持久化结果未知，调用方必须使用相同幂等键重试。
+        RequestOutcomeUnknown => "request_outcome_unknown",
         /// 当前没有可用上游。
         UpstreamUnavailable => "upstream_unavailable",
         /// 请求受到网关或上游限流。

@@ -28,7 +28,7 @@ use af_domain::{
     AfError, ChannelId, ChannelType, CredentialId, CredentialKind, GatewayPrincipal, GroupId,
     Protocol, TokenId, UserId,
 };
-use af_protocol::CanonicalRequest;
+use af_protocol::CanonicalRequestEnvelope;
 use axum::{
     Router,
     body::{Body, to_bytes},
@@ -88,8 +88,11 @@ impl ChatService for UnusedChatService {
     fn chat_completions<'a>(
         &'a self,
         _principal: &'a GatewayPrincipal,
-        _request: CanonicalRequest,
+        _user_concurrency: Option<af_domain::ConcurrencyLimit>,
+        _request: CanonicalRequestEnvelope,
+        _response_protocol: af_domain::Protocol,
         _request_id: &'a str,
+        _diagnostic: af_relay::RelayDiagnosticInput,
     ) -> ChatServiceFuture<'a> {
         Box::pin(async { Err(AfError::Internal) })
     }
@@ -247,7 +250,13 @@ impl SessionAuthenticator for FakeSessionAuthenticator {
         };
         Box::pin(async move {
             principal
-                .map(|principal| SessionAuthentication::new(principal, current_timestamp() + 60))
+                .map(|principal| {
+                    SessionAuthentication::new(
+                        principal,
+                        GroupId::new(1).unwrap(),
+                        current_timestamp() + 60,
+                    )
+                })
                 .ok_or(SessionAuthenticationError::InvalidSession)
         })
     }
@@ -602,14 +611,26 @@ async fn admin_can_create_update_and_delete_channels_and_credentials() {
         "type": "openai",
         "protocol": "openai_chat",
         "base_url": "https://private.example.com/v1",
+        "timeout_secs": 60,
         "status": "disabled",
         "weight": 10,
         "priority": 20,
         "auto_ban": true,
+        "pool_mode": true,
+        "client_simulation_profile": null,
+        "client_simulation_risk_accepted": false,
+        "client_simulation_body_profile": null,
+        "client_simulation_body_risk_accepted": false,
+        "responses_websocket_enabled": false,
         "models": ["public"],
         "group_ids": [1],
         "model_mapping": {"public": "upstream"},
-        "param_override": {},
+        "param_override": {
+            "temperature": 0.25,
+            "top_p": 0.8,
+            "max_output_tokens": 4096,
+            "stop_sequences": ["stop"]
+        },
         "header_override": {"x-private": "header-secret-canary"},
         "settings": {"private": "settings-secret-canary"},
         "tag": null
@@ -627,8 +648,154 @@ async fn admin_can_create_update_and_delete_channels_and_credentials() {
     assert_eq!(created.status(), StatusCode::CREATED);
     let created = response_json(created).await;
     assert_eq!(created["id"], 90);
+    assert_eq!(created["timeout_secs"], 60);
+    assert_eq!(created["pool_mode"], false);
+    assert_eq!(
+        created["client_simulation_profile"],
+        serde_json::Value::Null
+    );
+    assert_eq!(
+        created["client_simulation_body_profile"],
+        serde_json::Value::Null
+    );
+    assert_eq!(created["responses_websocket_enabled"], false);
     for secret in ["header-secret-canary", "settings-secret-canary"] {
         assert!(!created.to_string().contains(secret));
+    }
+
+    let mut gemini_body = channel_body.clone();
+    let gemini_object = gemini_body
+        .as_object_mut()
+        .expect("Gemini 测试渠道正文必须是对象");
+    gemini_object.insert("name".to_owned(), json!("gemini"));
+    gemini_object.insert("type".to_owned(), json!("gemini"));
+    gemini_object.insert("protocol".to_owned(), json!("gemini"));
+    let gemini_created = app
+        .clone()
+        .oneshot(write_request(
+            "POST",
+            "/api/admin/channels",
+            ADMIN_TOKEN,
+            &gemini_body,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(gemini_created.status(), StatusCode::CREATED);
+
+    let mut anthropic_body = channel_body.clone();
+    {
+        let anthropic_object = anthropic_body
+            .as_object_mut()
+            .expect("Anthropic 测试渠道正文必须是对象");
+        anthropic_object.insert("name".to_owned(), json!("anthropic-simulation"));
+        anthropic_object.insert("type".to_owned(), json!("anthropic"));
+        anthropic_object.insert("protocol".to_owned(), json!("anthropic"));
+        anthropic_object.insert(
+            "client_simulation_profile".to_owned(),
+            json!("anthropic_cli_headers_v1"),
+        );
+    }
+    let rejected_risk = app
+        .clone()
+        .oneshot(write_request(
+            "POST",
+            "/api/admin/channels",
+            ADMIN_TOKEN,
+            &anthropic_body,
+        ))
+        .await
+        .unwrap();
+    assert_error(rejected_risk, StatusCode::BAD_REQUEST, "invalid_request").await;
+    anthropic_body
+        .as_object_mut()
+        .expect("Anthropic 测试渠道正文必须是对象")
+        .insert("client_simulation_risk_accepted".to_owned(), json!(true));
+    let anthropic_created = app
+        .clone()
+        .oneshot(write_request(
+            "POST",
+            "/api/admin/channels",
+            ADMIN_TOKEN,
+            &anthropic_body,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(anthropic_created.status(), StatusCode::CREATED);
+
+    let mut anthropic_body_patch = anthropic_body.clone();
+    anthropic_body_patch
+        .as_object_mut()
+        .expect("Anthropic 测试渠道正文必须是对象")
+        .insert(
+            "client_simulation_body_profile".to_owned(),
+            json!("anthropic_cli_system_date_v1"),
+        );
+    let rejected_body_risk = app
+        .clone()
+        .oneshot(write_request(
+            "POST",
+            "/api/admin/channels",
+            ADMIN_TOKEN,
+            &anthropic_body_patch,
+        ))
+        .await
+        .unwrap();
+    assert_error(
+        rejected_body_risk,
+        StatusCode::BAD_REQUEST,
+        "invalid_request",
+    )
+    .await;
+    anthropic_body_patch
+        .as_object_mut()
+        .expect("Anthropic 测试渠道正文必须是对象")
+        .insert(
+            "client_simulation_body_risk_accepted".to_owned(),
+            json!(true),
+        );
+    let body_patch_created = app
+        .clone()
+        .oneshot(write_request(
+            "POST",
+            "/api/admin/channels",
+            ADMIN_TOKEN,
+            &anthropic_body_patch,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(body_patch_created.status(), StatusCode::CREATED);
+
+    for (field, invalid) in [
+        ("param_override", json!({"messages": []})),
+        ("param_override", json!({"max_output_tokens": 0})),
+        ("timeout_secs", json!(0)),
+        ("timeout_secs", json!(901)),
+        ("header_override", json!({"content-type": "text/plain"})),
+        ("header_override", json!({"x-request-id": "untrusted"})),
+        ("responses_websocket_enabled", json!(true)),
+    ] {
+        let mut invalid_body = channel_body.clone();
+        invalid_body
+            .as_object_mut()
+            .expect("测试渠道正文必须是对象")
+            .insert(field.to_owned(), invalid);
+        let calls_before_rejection = reader.calls.load(Ordering::Relaxed);
+        let rejected = app
+            .clone()
+            .oneshot(write_request(
+                "POST",
+                "/api/admin/channels",
+                ADMIN_TOKEN,
+                &invalid_body,
+            ))
+            .await
+            .unwrap();
+        assert_error(rejected, StatusCode::BAD_REQUEST, "invalid_request").await;
+        assert_eq!(
+            reader.calls.load(Ordering::Relaxed),
+            calls_before_rejection,
+            "无效请求覆盖不得进入写端口"
+        );
     }
 
     let mut channel_update_body = channel_body.clone();
@@ -651,7 +818,10 @@ async fn admin_can_create_update_and_delete_channels_and_credentials() {
 
     let credential_body = json!({
         "kind": "api_key",
-        "secret": "credential-secret-canary",
+        "secret": {
+            "kind": "api_key",
+            "api_key": "credential-secret-canary"
+        },
         "status": "disabled",
         "multi_key_mode": "random",
         "priority": 10,
@@ -733,7 +903,7 @@ async fn admin_can_create_update_and_delete_channels_and_credentials() {
             .unwrap();
         assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
     }
-    assert_eq!(reader.calls.load(Ordering::Relaxed), 6);
+    assert_eq!(reader.calls.load(Ordering::Relaxed), 9);
 }
 
 #[tokio::test]
@@ -774,6 +944,9 @@ async fn admin_can_read_channel_and_credential_snapshots() {
     let credentials = response_json(credentials).await;
     assert_eq!(credentials["credentials"][0]["kind"], "api_key");
     assert_eq!(credentials["credentials"][0]["multi_key_mode"], "random");
+    assert_eq!(credentials["credentials"][0]["oauth_revision"], 0);
+    assert_eq!(credentials["credentials"][0]["oauth_token_pending"], false);
+    assert_eq!(credentials["credentials"][0]["blocks_spark_shadow"], true);
     assert!(!credentials.to_string().contains("secret"));
 
     let credential = app
@@ -844,6 +1017,7 @@ fn sample_channel(id: i64, name: &str) -> AdminChannel {
         ChannelType::OpenAi,
         Protocol::OpenAiChat,
         Some("https://api.example.com/v1".to_owned()),
+        Some(af_domain::ChannelTimeout::new(60).unwrap()),
         AdminRoutingStatus::Enabled,
         10,
         20,
@@ -877,14 +1051,17 @@ fn sample_credential(channel_id: ChannelId, id: i64) -> AdminCredential {
         None,
         None,
         None,
+        false,
         None,
         None,
         None,
         AdminCredentialQuotaDimension::Global,
         None,
         Some("example-oauth".to_owned()),
+        false,
         Some("account-public-id".to_owned()),
         Some("project-public-id".to_owned()),
+        0,
         None,
         1_000,
         2_000,

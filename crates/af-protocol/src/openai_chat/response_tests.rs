@@ -35,7 +35,7 @@ fn parses_minimal_non_streaming_response() {
     assert_eq!(response.operation, Operation::Chat);
     assert_eq!(response.id, "chatcmpl-test");
     assert_eq!(response.model, "gpt-test");
-    assert_eq!(response.created_at, 1_700_000_000);
+    assert_eq!(response.created_at, Some(1_700_000_000));
     assert_eq!(response.choices.len(), 1);
     assert_eq!(response.choices[0].index, 0);
     assert_eq!(response.choices[0].message.role, Role::Assistant);
@@ -87,10 +87,16 @@ fn preserves_sparse_choice_order_tool_calls_and_content_filter() {
     assert_eq!(response.choices[1].index, 2);
     assert_eq!(response.choices[1].finish_reason, FinishReason::ToolCalls);
     match &response.choices[1].message.content[0] {
-        ContentBlock::ToolUse { id, name, input } => {
+        ContentBlock::ToolUse {
+            id,
+            name,
+            input,
+            signature,
+        } => {
             assert_eq!(id, "call-1");
             assert_eq!(name, "lookup");
             assert_eq!(input, &json!({ "id": 7 }));
+            assert!(signature.is_none());
         }
         _ => panic!("第二个候选应包含工具调用"),
     }

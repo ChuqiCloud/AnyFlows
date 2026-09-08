@@ -1,6 +1,6 @@
 use std::{fmt, str::FromStr as _};
 
-use af_domain::{ChannelId, CredentialId, CredentialKind, Status};
+use af_domain::{ChannelId, CredentialId, CredentialKind, CredentialQuotaDimension, Status};
 use sea_orm::{
     DbErr, QueryResult,
     entity::prelude::TimeDateTimeWithTimeZone,
@@ -30,14 +30,17 @@ pub struct AdminCredentialRecord {
     rate_limit_reset_at: Option<i64>,
     overload_until: Option<i64>,
     temp_unschedulable_until: Option<i64>,
+    shared_auth_cooling: bool,
     session_window_start: Option<i64>,
     session_window_end: Option<i64>,
     parent_id: Option<CredentialId>,
-    quota_dimension: String,
+    quota_dimension: CredentialQuotaDimension,
     proxy_id: Option<i64>,
     oauth_provider: Option<String>,
+    oauth_token_pending: bool,
     oauth_account_key: Option<String>,
     oauth_project_id: Option<String>,
+    oauth_revision: i64,
     last_used_at: Option<i64>,
     created_at: i64,
     updated_at: i64,
@@ -63,14 +66,17 @@ impl AdminCredentialRecord {
             rate_limit_reset_at: model.rate_limit_reset_at,
             overload_until: model.overload_until,
             temp_unschedulable_until: model.temp_unschedulable_until,
+            temp_unschedulable_reason: model.temp_unschedulable_reason,
             session_window_start: model.session_window_start,
             session_window_end: model.session_window_end,
             parent_id: model.parent_id,
             quota_dimension: model.quota_dimension,
             proxy_id: model.proxy_id,
             oauth_provider: model.oauth_provider,
+            oauth_token_pending: model.oauth_token_pending,
             oauth_account_key: model.oauth_account_key,
             oauth_project_id: model.oauth_project_id,
+            oauth_revision: model.oauth_revision,
             last_used_at: model.last_used_at,
             created_at: model.created_at,
             updated_at: model.updated_at,
@@ -168,6 +174,12 @@ impl AdminCredentialRecord {
         self.temp_unschedulable_until
     }
 
+    /// 返回临时不可调度原因是否属于母子共享的认证健康域。
+    #[must_use]
+    pub const fn shared_auth_cooling(&self) -> bool {
+        self.shared_auth_cooling
+    }
+
     /// 返回订阅额度窗口起点的 Unix 秒数。
     #[must_use]
     pub const fn session_window_start(&self) -> Option<i64> {
@@ -188,8 +200,8 @@ impl AdminCredentialRecord {
 
     /// 返回影子账号配额维度。
     #[must_use]
-    pub fn quota_dimension(&self) -> &str {
-        &self.quota_dimension
+    pub const fn quota_dimension(&self) -> CredentialQuotaDimension {
+        self.quota_dimension
     }
 
     /// 返回可选的专属代理标识。
@@ -204,6 +216,12 @@ impl AdminCredentialRecord {
         self.oauth_provider.as_deref()
     }
 
+    /// 返回 OAuth token 是否仍等待首次授权交换。
+    #[must_use]
+    pub const fn oauth_token_pending(&self) -> bool {
+        self.oauth_token_pending
+    }
+
     /// 返回 OAuth 账号的非令牌业务标识。
     #[must_use]
     pub fn oauth_account_key(&self) -> Option<&str> {
@@ -214,6 +232,12 @@ impl AdminCredentialRecord {
     #[must_use]
     pub fn oauth_project_id(&self) -> Option<&str> {
         self.oauth_project_id.as_deref()
+    }
+
+    /// 返回仅由 OAuth token 持久化推进的非敏感版本号。
+    #[must_use]
+    pub const fn oauth_revision(&self) -> i64 {
+        self.oauth_revision
     }
 
     /// 返回最近一次调度时间的 Unix 秒数。
@@ -404,14 +428,17 @@ struct AdminCredentialRow {
     rate_limit_reset_at: Option<TimeDateTimeWithTimeZone>,
     overload_until: Option<TimeDateTimeWithTimeZone>,
     temp_unschedulable_until: Option<TimeDateTimeWithTimeZone>,
+    temp_unschedulable_reason: Option<String>,
     session_window_start: Option<TimeDateTimeWithTimeZone>,
     session_window_end: Option<TimeDateTimeWithTimeZone>,
     parent_id: Option<i64>,
     quota_dimension: String,
     proxy_id: Option<i64>,
     oauth_provider: Option<String>,
+    oauth_token_pending: bool,
     oauth_account_key: Option<String>,
     oauth_project_id: Option<String>,
+    oauth_revision: i64,
     last_used_at: Option<TimeDateTimeWithTimeZone>,
     created_at: TimeDateTimeWithTimeZone,
     updated_at: TimeDateTimeWithTimeZone,
@@ -435,14 +462,17 @@ impl AdminCredentialRow {
             rate_limit_reset_at: result.try_get("", "rate_limit_reset_at")?,
             overload_until: result.try_get("", "overload_until")?,
             temp_unschedulable_until: result.try_get("", "temp_unschedulable_until")?,
+            temp_unschedulable_reason: result.try_get("", "temp_unschedulable_reason")?,
             session_window_start: result.try_get("", "session_window_start")?,
             session_window_end: result.try_get("", "session_window_end")?,
             parent_id: result.try_get("", "parent_id")?,
             quota_dimension: result.try_get("", "quota_dimension")?,
             proxy_id: result.try_get("", "proxy_id")?,
             oauth_provider: result.try_get("", "oauth_provider")?,
+            oauth_token_pending: result.try_get("", "oauth_token_pending")?,
             oauth_account_key: result.try_get("", "oauth_account_key")?,
             oauth_project_id: result.try_get("", "oauth_project_id")?,
+            oauth_revision: result.try_get("", "oauth_revision")?,
             last_used_at: result.try_get("", "last_used_at")?,
             created_at: result.try_get("", "created_at")?,
             updated_at: result.try_get("", "updated_at")?,
@@ -460,12 +490,19 @@ impl AdminCredentialRow {
             .map(CredentialId::new)
             .transpose()
             .map_err(|_| internal_invariant())?;
+        let quota_dimension = CredentialQuotaDimension::from_str(&self.quota_dimension)
+            .map_err(|_| internal_invariant())?;
         let created_at = self.created_at.unix_timestamp();
         let updated_at = self.updated_at.unix_timestamp();
         let rate_limited_at = unix_timestamp(self.rate_limited_at)?;
         let rate_limit_reset_at = unix_timestamp(self.rate_limit_reset_at)?;
         let overload_until = unix_timestamp(self.overload_until)?;
         let temp_unschedulable_until = unix_timestamp(self.temp_unschedulable_until)?;
+        // quota_exhausted 只属于当前额度维度；未知旧原因按共享故障失败关闭。
+        let shared_auth_cooling = !matches!(
+            self.temp_unschedulable_reason.as_deref(),
+            None | Some("quota_exhausted")
+        );
         let session_window_start = unix_timestamp(self.session_window_start)?;
         let session_window_end = unix_timestamp(self.session_window_end)?;
         let last_used_at = unix_timestamp(self.last_used_at)?;
@@ -477,11 +514,13 @@ impl AdminCredentialRow {
             || self.load_factor_micros.is_some_and(|value| value < 0)
             || self.rate_multiplier_micros.is_some_and(|value| value < 0)
             || parent_id == Some(credential_id)
-            || !matches!(self.quota_dimension.as_str(), "global" | "spark")
             || self.proxy_id.is_some_and(|value| value <= 0)
             || !valid_optional_text(self.oauth_provider.as_deref(), 64)
             || !valid_optional_text(self.oauth_account_key.as_deref(), 255)
             || !valid_optional_text(self.oauth_project_id.as_deref(), 255)
+            || (self.oauth_token_pending
+                && (kind != CredentialKind::Oauth || self.oauth_provider.is_none()))
+            || self.oauth_revision < 0
             || created_at < 0
             || updated_at < created_at
             || session_window_start.is_some() != session_window_end.is_some()
@@ -504,14 +543,17 @@ impl AdminCredentialRow {
             rate_limit_reset_at,
             overload_until,
             temp_unschedulable_until,
+            shared_auth_cooling,
             session_window_start,
             session_window_end,
             parent_id,
-            quota_dimension: self.quota_dimension,
+            quota_dimension,
             proxy_id: self.proxy_id,
             oauth_provider: self.oauth_provider,
+            oauth_token_pending: self.oauth_token_pending,
             oauth_account_key: self.oauth_account_key,
             oauth_project_id: self.oauth_project_id,
+            oauth_revision: self.oauth_revision,
             last_used_at,
             created_at,
             updated_at,
@@ -635,6 +677,13 @@ pub(crate) fn credential_base_query() -> SelectStatement {
             Alias::new("temp_unschedulable_until"),
         )
         .expr_as(
+            Expr::col((
+                credentials::Entity,
+                credentials::Column::TempUnschedulableReason,
+            )),
+            Alias::new("temp_unschedulable_reason"),
+        )
+        .expr_as(
             Expr::col((credentials::Entity, credentials::Column::SessionWindowStart)),
             Alias::new("session_window_start"),
         )
@@ -659,12 +708,20 @@ pub(crate) fn credential_base_query() -> SelectStatement {
             Alias::new("oauth_provider"),
         )
         .expr_as(
+            Expr::col((credentials::Entity, credentials::Column::OauthTokenPending)),
+            Alias::new("oauth_token_pending"),
+        )
+        .expr_as(
             Expr::col((credentials::Entity, credentials::Column::OauthAccountKey)),
             Alias::new("oauth_account_key"),
         )
         .expr_as(
             Expr::col((credentials::Entity, credentials::Column::OauthProjectId)),
             Alias::new("oauth_project_id"),
+        )
+        .expr_as(
+            Expr::col((credentials::Entity, credentials::Column::OauthRevision)),
+            Alias::new("oauth_revision"),
         )
         .expr_as(
             Expr::col((credentials::Entity, credentials::Column::LastUsedAt)),

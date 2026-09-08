@@ -1,7 +1,10 @@
 use std::{future::Future, pin::Pin};
 
-use af_db::{QuotaMutationOutcome, QuotaRepository, QuotaRepositoryError, QuotaReservationStatus};
-use af_domain::{BillingReservationId, GatewayPrincipal, Quota};
+use af_db::{
+    OrganizationContractPriceSnapshot, QuotaMutationOutcome, QuotaRepository, QuotaRepositoryError,
+    QuotaReservationStatus,
+};
+use af_domain::{BillingReservationId, GatewayPrincipal, Quota, QuotaWindowRetryAfter};
 use thiserror::Error;
 
 use crate::SettlementRequest;
@@ -31,6 +34,18 @@ pub trait BillingPrechargePort: Send + Sync + 'static {
         principal: GatewayPrincipal,
         amount: Quota,
     ) -> BillingPrechargeFuture<'a>;
+
+    /// 使用同一预留绑定可选合同价快照；未覆盖的实现兼容旧预扣入口。
+    fn precharge_with_snapshot<'a>(
+        &'a self,
+        reservation_id: BillingReservationId,
+        principal: GatewayPrincipal,
+        amount: Quota,
+        contract_price: Option<OrganizationContractPriceSnapshot>,
+    ) -> BillingPrechargeFuture<'a> {
+        let _ = contract_price;
+        self.precharge(reservation_id, principal, amount)
+    }
 }
 
 /// 持久化预扣的闭合结果；不携带主体、预留标识或额度。
@@ -40,6 +55,12 @@ pub enum BillingPrechargeError {
     /// 预扣时用户或有限令牌额度不足。
     #[error("预扣额度不足")]
     InsufficientQuota,
+    /// 当前令牌或分组额度窗口已满，可在指定秒数后重试。
+    #[error("预扣额度窗口已达上限")]
+    RateLimited {
+        /// 当前所有阻塞窗口中最长的剩余等待时间。
+        retry_after: QuotaWindowRetryAfter,
+    },
     /// 超时或提交失败导致终态未知，只能重放同一请求。
     #[error("持久化预扣结果未知")]
     OutcomeUnknown,
@@ -65,6 +86,35 @@ impl BillingPrechargePort for QuotaRepository {
             let outcome = QuotaRepository::precharge(self, reservation_id, principal, amount)
                 .await
                 .map_err(map_quota_repository_precharge_error)?;
+            match outcome {
+                QuotaMutationOutcome::Applied
+                | QuotaMutationOutcome::Existing(QuotaReservationStatus::Reserved) => Ok(()),
+                QuotaMutationOutcome::Existing(
+                    QuotaReservationStatus::SettlementPending
+                    | QuotaReservationStatus::Settled
+                    | QuotaReservationStatus::Refunded,
+                ) => Err(BillingPrechargeError::Conflict),
+            }
+        })
+    }
+
+    fn precharge_with_snapshot<'a>(
+        &'a self,
+        reservation_id: BillingReservationId,
+        principal: GatewayPrincipal,
+        amount: Quota,
+        contract_price: Option<OrganizationContractPriceSnapshot>,
+    ) -> BillingPrechargeFuture<'a> {
+        Box::pin(async move {
+            let outcome = QuotaRepository::precharge_with_contract_price(
+                self,
+                reservation_id,
+                principal,
+                amount,
+                contract_price,
+            )
+            .await
+            .map_err(map_quota_repository_precharge_error)?;
             match outcome {
                 QuotaMutationOutcome::Applied
                 | QuotaMutationOutcome::Existing(QuotaReservationStatus::Reserved) => Ok(()),
@@ -124,7 +174,12 @@ impl BillingSettlementPort for QuotaRepository {
 const fn map_quota_repository_error(error: QuotaRepositoryError) -> BillingSettlementError {
     match error {
         QuotaRepositoryError::UserQuotaInsufficient
-        | QuotaRepositoryError::TokenQuotaInsufficient => BillingSettlementError::InsufficientQuota,
+        | QuotaRepositoryError::OrganizationQuotaInsufficient
+        | QuotaRepositoryError::TokenQuotaInsufficient
+        | QuotaRepositoryError::GroupWindowQuotaInsufficient { .. }
+        | QuotaRepositoryError::TokenWindowQuotaInsufficient { .. } => {
+            BillingSettlementError::InsufficientQuota
+        }
         QuotaRepositoryError::OutcomeUnknown => BillingSettlementError::OutcomeUnknown,
         QuotaRepositoryError::NotFound | QuotaRepositoryError::Conflict => {
             BillingSettlementError::Conflict
@@ -146,7 +201,18 @@ const fn map_quota_repository_precharge_error(
 ) -> BillingPrechargeError {
     match error {
         QuotaRepositoryError::UserQuotaInsufficient
+        | QuotaRepositoryError::OrganizationQuotaInsufficient
         | QuotaRepositoryError::TokenQuotaInsufficient => BillingPrechargeError::InsufficientQuota,
+        QuotaRepositoryError::GroupWindowQuotaInsufficient {
+            retry_after: Some(retry_after),
+        }
+        | QuotaRepositoryError::TokenWindowQuotaInsufficient {
+            retry_after: Some(retry_after),
+        } => BillingPrechargeError::RateLimited { retry_after },
+        QuotaRepositoryError::GroupWindowQuotaInsufficient { retry_after: None }
+        | QuotaRepositoryError::TokenWindowQuotaInsufficient { retry_after: None } => {
+            BillingPrechargeError::InsufficientQuota
+        }
         QuotaRepositoryError::OutcomeUnknown => BillingPrechargeError::OutcomeUnknown,
         QuotaRepositoryError::NotFound | QuotaRepositoryError::Conflict => {
             BillingPrechargeError::Conflict
@@ -183,4 +249,34 @@ pub enum UsageRecordOutcome {
 pub trait UsageRecordPort: Send + Sync + 'static {
     /// 尝试接收一条不含模型名或请求内容的规范化用量记录。
     fn try_record(&self, record: BillingUsageRecord) -> UsageRecordOutcome;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn token_window_precharge_preserves_only_recoverable_retry_after() {
+        let retry_after = QuotaWindowRetryAfter::from_seconds(37).unwrap();
+        assert_eq!(
+            map_quota_repository_precharge_error(
+                QuotaRepositoryError::TokenWindowQuotaInsufficient {
+                    retry_after: Some(retry_after),
+                }
+            ),
+            BillingPrechargeError::RateLimited { retry_after }
+        );
+        assert_eq!(
+            map_quota_repository_precharge_error(
+                QuotaRepositoryError::TokenWindowQuotaInsufficient { retry_after: None }
+            ),
+            BillingPrechargeError::InsufficientQuota
+        );
+        assert_eq!(
+            map_quota_repository_error(QuotaRepositoryError::TokenWindowQuotaInsufficient {
+                retry_after: Some(retry_after),
+            }),
+            BillingSettlementError::InsufficientQuota
+        );
+    }
 }

@@ -3,11 +3,8 @@ use std::error::Error as _;
 use af_domain::{Operation, Protocol, Role};
 use serde_json::{Value, json};
 
-use super::{
-    MAX_BODY_BYTES, ParseRequestError,
-    bounded_json::{BoundedJsonError, JsonLimits, parse_value},
-    parse_request,
-};
+use super::{MAX_BODY_BYTES, ParseRequestError, parse_request};
+use crate::bounded_json::{BoundedJsonError, JsonLimits, parse_value};
 use crate::{
     CanonicalRequest, ContentBlock, MediaSource, RawPassthroughError, ReasoningEffort, ToolChoice,
 };
@@ -220,10 +217,16 @@ fn maps_tool_call_arguments_and_associated_tool_result() {
     .unwrap();
 
     match &request.messages[0].content[0] {
-        ContentBlock::ToolUse { id, name, input } => {
+        ContentBlock::ToolUse {
+            id,
+            name,
+            input,
+            signature,
+        } => {
             assert_eq!(id, "call-1");
             assert_eq!(name, "lookup");
             assert_eq!(input, &json!({ "id": 7, "tags": ["a", "b"] }));
+            assert!(signature.is_none());
         }
         _ => panic!("助手消息应映射为工具调用"),
     }
@@ -231,9 +234,11 @@ fn maps_tool_call_arguments_and_associated_tool_result() {
         ContentBlock::ToolResult {
             tool_use_id,
             content,
+            structured_content,
             is_error,
         } => {
             assert_eq!(tool_use_id, "call-1");
+            assert!(structured_content.is_none());
             assert!(!is_error);
             assert!(matches!(
                 content.as_slice(),
@@ -859,11 +864,10 @@ fn rejects_invalid_tool_names_choices_and_remote_schema_references() {
         parse_json(remote_reference),
         Err(ParseRequestError::UnsupportedFeature)
     );
-    assert!(parse_json(explicit_non_strict_tool).is_ok());
-    assert_eq!(
-        parse_json(strict_tool),
-        Err(ParseRequestError::UnsupportedFeature)
-    );
+    let explicit_non_strict_tool = parse_json(explicit_non_strict_tool).unwrap();
+    assert_eq!(explicit_non_strict_tool.tools[0].strict, Some(false));
+    let strict_tool = parse_json(strict_tool).unwrap();
+    assert_eq!(strict_tool.tools[0].strict, Some(true));
 }
 
 #[test]

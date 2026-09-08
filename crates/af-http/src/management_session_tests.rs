@@ -15,11 +15,13 @@ use af_admin::{
     SessionRole, SessionToken,
 };
 use af_domain::{AfError, GatewayPrincipal, GroupId, TokenId, UserId};
-use af_protocol::CanonicalRequest;
+use af_protocol::CanonicalRequestEnvelope;
 use axum::{
-    Router,
+    Json, Router,
     body::{Body, to_bytes},
+    extract::{State, rejection::JsonRejection},
     middleware,
+    response::Response,
     routing::{get, post},
 };
 use http::{
@@ -33,7 +35,8 @@ use crate::{
     ChatService, ChatServiceFuture,
     chat_completions::HttpState,
     management_auth::{ManagementAuthenticationState, authenticate_management_session},
-    management_session::{current_session, login},
+    management_error::ManagementError,
+    management_session::{LoginRequest, current_session, login_with_credentials},
 };
 
 const SESSION_TOKEN: &str = "signed.jwt.value";
@@ -47,8 +50,11 @@ impl ChatService for UnusedChatService {
     fn chat_completions<'a>(
         &'a self,
         _principal: &'a GatewayPrincipal,
-        _request: CanonicalRequest,
+        _user_concurrency: Option<af_domain::ConcurrencyLimit>,
+        _request: CanonicalRequestEnvelope,
+        _response_protocol: af_domain::Protocol,
         _request_id: &'a str,
+        _diagnostic: af_relay::RelayDiagnosticInput,
     ) -> ChatServiceFuture<'a> {
         Box::pin(async { Err(AfError::Internal) })
     }
@@ -222,6 +228,7 @@ impl SessionAuthenticator for FakeSessionAuthenticator {
         let outcome = if token == SESSION_TOKEN {
             Ok(SessionAuthentication::new(
                 test_principal(),
+                GroupId::new(3).unwrap(),
                 current_timestamp() + 3_600,
             ))
         } else {
@@ -261,6 +268,15 @@ fn router(authenticator: Arc<FakeSessionAuthenticator>) -> Router {
                 admin_users,
             )
         })
+}
+
+/// 复用生产登录响应构造，能力开关本身由注册路由回归覆盖。
+async fn login(
+    State(state): State<HttpState>,
+    request: Result<Json<LoginRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    login_with_credentials(&state, request.username, request.password).await
 }
 
 #[tokio::test]

@@ -1,24 +1,43 @@
-use std::{fmt, sync::Arc};
+use std::{collections::BTreeMap, fmt, num::NonZeroUsize, sync::Arc};
 
 use af_db::SchedulerRuntimeTargetRecord;
-use af_domain::GroupId;
+use af_domain::{ChannelId, CredentialId, GroupId, RouteChannelId};
 
-use crate::RetrySelection;
+use crate::{RetrySelection, RouteWaitPlan, StickyRouteOutcome, StickyWaitPolicy};
 
 /// 从同一代不可变快照固定下来的单个转发候选。
 pub struct IndexedRouteCandidate {
     selection: RetrySelection,
     runtime_target: Arc<SchedulerRuntimeTargetRecord>,
+    route_channel_ids: BTreeMap<CredentialId, RouteChannelId>,
+    wait_plan: RouteWaitPlan,
 }
 
 impl IndexedRouteCandidate {
-    pub(super) const fn new(
+    pub(super) fn new(
         selection: RetrySelection,
         runtime_target: Arc<SchedulerRuntimeTargetRecord>,
     ) -> Self {
         Self {
             selection,
             runtime_target,
+            route_channel_ids: BTreeMap::new(),
+            wait_plan: StickyWaitPolicy::default()
+                .fallback_plan(selection.candidate().channel_id()),
+        }
+    }
+
+    pub(super) fn new_bound(
+        selection: RetrySelection,
+        runtime_target: Arc<SchedulerRuntimeTargetRecord>,
+        route_channel_ids: BTreeMap<CredentialId, RouteChannelId>,
+    ) -> Self {
+        Self {
+            selection,
+            runtime_target,
+            route_channel_ids,
+            wait_plan: StickyWaitPolicy::default()
+                .fallback_plan(selection.candidate().channel_id()),
         }
     }
 
@@ -33,6 +52,24 @@ impl IndexedRouteCandidate {
     pub fn runtime_target(&self) -> &SchedulerRuntimeTargetRecord {
         self.runtime_target.as_ref()
     }
+
+    /// 返回候选所属渠道；它是粘性等待契约的稳定关联键。
+    #[must_use]
+    pub const fn channel_id(&self) -> ChannelId {
+        self.selection.candidate().channel_id()
+    }
+
+    /// 返回供并发槽位层消费的等待契约。
+    #[must_use]
+    pub const fn wait_plan(&self) -> RouteWaitPlan {
+        self.wait_plan
+    }
+
+    /// 返回当前凭据在管理员智能路由中的候选记录标识。
+    #[must_use]
+    pub fn route_channel_id(&self, credential_id: CredentialId) -> Option<RouteChannelId> {
+        self.route_channel_ids.get(&credential_id).copied()
+    }
 }
 
 impl fmt::Debug for IndexedRouteCandidate {
@@ -41,6 +78,7 @@ impl fmt::Debug for IndexedRouteCandidate {
             .debug_struct("IndexedRouteCandidate")
             .field("selection", &self.selection)
             .field("runtime_target", &self.runtime_target)
+            .field("route_binding_count", &self.route_channel_ids.len())
             .finish()
     }
 }
@@ -84,6 +122,38 @@ impl IndexedRoutePlan {
     #[must_use]
     pub fn candidates(&self) -> &[IndexedRouteCandidate] {
         &self.candidates
+    }
+
+    /// 为当前快照中的所有候选设置普通回退等待边界。
+    pub fn configure_wait_policy(&mut self, policy: StickyWaitPolicy) {
+        for candidate in &mut self.candidates {
+            candidate.wait_plan = policy.fallback_plan(candidate.channel_id());
+        }
+    }
+
+    /// 将当前快照中的指定渠道移动到首位，并标记粘性/回退等待阶段。
+    pub fn prefer_sticky_channel(
+        &mut self,
+        channel_id: ChannelId,
+        policy: StickyWaitPolicy,
+    ) -> StickyRouteOutcome {
+        self.configure_wait_policy(policy);
+        let Some(index) = self
+            .candidates
+            .iter()
+            .position(|candidate| candidate.channel_id() == channel_id)
+        else {
+            return StickyRouteOutcome::Unavailable;
+        };
+
+        let mut sticky = self.candidates.remove(index);
+        sticky.wait_plan = policy.sticky_plan(channel_id);
+        self.candidates.insert(0, sticky);
+        for (index, candidate) in self.candidates.iter_mut().enumerate() {
+            let attempt = NonZeroUsize::new(index + 1).expect("路由候选索引从零开始");
+            candidate.selection = candidate.selection.with_attempt(attempt);
+        }
+        StickyRouteOutcome::Applied
     }
 }
 

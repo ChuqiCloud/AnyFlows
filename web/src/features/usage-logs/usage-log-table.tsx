@@ -1,177 +1,209 @@
-import { ScrollText } from 'lucide-react'
+import { useState, type MouseEvent } from 'react'
+import { Check, ChevronRight, CircleCheck, Clock3, Coins, Copy, ScrollText, UserRound, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
-import type { AdminUsageLog } from '@/lib/api/generated/types.gen'
+import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import {
+  formatCompactRequestId,
+  formatUsageDate,
+  formatUsageLatency,
+  formatUsageNumber,
+  usageLatencyTone,
+  type UsageLatencyKind,
+} from './usage-log-format'
+import { isAdminUsageLog, type UsageLogRow, usageLogTotalTokens } from './usage-log-model'
 
 type UsageLogTableProps = {
-  logs: AdminUsageLog[]
+  logs: UsageLogRow[]
+  admin: boolean
+  showPrincipal?: boolean
+  filtered: boolean
+  formatQuota: (value: number) => string
+  onSelect: (log: UsageLogRow) => void
+  onUserSelect?: (userId: number) => void
 }
 
-function useFormatters() {
-  const { i18n } = useTranslation()
-  return {
-    number: (value: number) => new Intl.NumberFormat(i18n.language).format(value),
-    date: (value: number) => new Intl.DateTimeFormat(i18n.language, {
-      dateStyle: 'medium',
-      timeStyle: 'medium',
-    }).format(value * 1000),
+function ProtocolBadge({ log }: { log: UsageLogRow }) {
+  const { t } = useTranslation()
+  if (!log.protocol) return <Badge className="shrink-0 text-muted-foreground">{t('usageLogs.values.legacy')}</Badge>
+  return <Badge className="shrink-0 border-transparent bg-info/10 text-info">{t(`usageLogs.protocol.${log.protocol}`)}</Badge>
+}
+
+const latencyToneClasses = {
+  neutral: 'text-muted-foreground',
+  success: 'text-success',
+  warning: 'text-warning',
+  destructive: 'text-destructive',
+} as const
+
+function latencyClass(value: number | null, kind: UsageLatencyKind) {
+  return latencyToneClasses[usageLatencyTone(value, kind)]
+}
+
+function RequestIdCopy({ requestId, onClick }: { requestId: string; onClick: (event: MouseEvent) => void }) {
+  const { t } = useTranslation()
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
+
+  const copy = async (event: MouseEvent) => {
+    onClick(event)
+    try {
+      await navigator.clipboard.writeText(requestId)
+      setState('copied')
+    } catch {
+      setState('failed')
+    }
   }
-}
 
-function SourceBadge({ log }: { log: AdminUsageLog }) {
-  const { t } = useTranslation()
+  const label = state === 'copied'
+    ? t('usageLogs.actions.copiedRequestId')
+    : state === 'failed'
+      ? t('usageLogs.actions.copyRequestIdFailed')
+      : t('usageLogs.actions.copyRequestId')
+
   return (
-    <Badge className={cn(
-      'border-transparent',
-      log.usage_source === 'upstream'
-        ? 'bg-success/10 text-success'
-        : 'bg-warning/10 text-warning',
-    )}>
-      {t('usageLogs.values.source.' + log.usage_source)}
-    </Badge>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button type="button" size="sm" variant="ghost" className={cn('h-6 min-w-0 max-w-48 gap-1 px-1.5 font-mono text-[0.6875rem] font-normal text-muted-foreground', state === 'failed' && 'text-destructive')} aria-label={label} onClick={(event) => void copy(event)}>
+          <span className="truncate">{formatCompactRequestId(requestId)}</span>
+          {state === 'copied' ? <Check className="size-3 shrink-0 text-success" aria-hidden="true" /> : <Copy className="size-3 shrink-0" aria-hidden="true" />}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   )
 }
 
-function CoreUsage({ log }: { log: AdminUsageLog }) {
-  const { t } = useTranslation()
-  const { number } = useFormatters()
+function UsageLogItem({ log, showPrincipal, formatQuota, onSelect, onUserSelect }: {
+  log: UsageLogRow
+  showPrincipal: boolean
+  formatQuota: (value: number) => string
+  onSelect: (log: UsageLogRow) => void
+  onUserSelect?: (userId: number) => void
+}) {
+  const { t, i18n } = useTranslation()
+  const locale = i18n.language
+  const number = (value: number) => formatUsageNumber(value, locale)
+  const stop = (event: MouseEvent) => event.stopPropagation()
+
   return (
-    <>
-      <div>{t('usageLogs.values.input', { value: number(log.input_tokens) })}</div>
-      <div className="mt-1 text-[0.6875rem] text-muted-foreground">
-        {t('usageLogs.values.output', { value: number(log.output_tokens) })}
+    <article
+      className="group grid w-full cursor-pointer gap-3 border-b border-[var(--hairline)] px-3 py-3 text-left transition-colors last:border-b-0 hover:bg-surface-2/45 lg:min-h-[4.5rem] lg:grid-cols-[7rem_minmax(11rem,1.4fr)_8.25rem_10rem_7.5rem_2rem] lg:items-center lg:px-4 lg:py-2.5"
+      onClick={() => onSelect(log)}
+    >
+      <div className="hidden text-xs text-muted-foreground lg:block">
+        <div className="tabular-nums text-foreground">{formatUsageDate(log.created_at, locale)}</div>
+        <div className="mt-1 inline-flex items-center gap-1 text-[0.6875rem] text-success">
+          <CircleCheck className="size-3" aria-hidden="true" />
+          {t('usageLogs.status.settled')}
+        </div>
       </div>
-    </>
+
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-2">
+          <button type="button" className="truncate text-sm font-semibold outline-none hover:text-brand focus-visible:text-brand focus-visible:underline" onClick={(event) => { stop(event); onSelect(log) }}>
+            {log.model ?? t('usageLogs.values.legacyModel')}
+          </button>
+          <ProtocolBadge log={log} />
+        </div>
+        <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[0.6875rem] text-muted-foreground">
+          <span>{log.operation ? t(`usageLogs.operation.${log.operation}`) : t('usageLogs.values.notSpecified')}</span>
+          <span>{log.is_stream === null ? t('usageLogs.values.legacy') : t(log.is_stream ? 'usageLogs.values.stream' : 'usageLogs.values.sync')}</span>
+          {showPrincipal && isAdminUsageLog(log) ? onUserSelect ? (
+            <button type="button" className="inline-flex min-w-0 items-center gap-1 font-medium text-foreground outline-none hover:text-brand focus-visible:text-brand focus-visible:underline" onClick={(event) => { stop(event); onUserSelect(log.user_id) }}>
+              <UserRound className="size-3 shrink-0" aria-hidden="true" />
+              <span className="truncate">{log.username}</span>
+            </button>
+          ) : (
+            <span className="inline-flex min-w-0 items-center gap-1 font-medium text-foreground">
+              <UserRound className="size-3 shrink-0" aria-hidden="true" />
+              <span className="truncate">{log.username}</span>
+            </span>
+          ) : null}
+          {log.request_id ? <RequestIdCopy requestId={log.request_id} onClick={stop} /> : null}
+        </div>
+      </div>
+
+      <div className="hidden grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-xs tabular-nums lg:grid">
+        <span className="text-muted-foreground">{t('usageLogs.values.firstToken')}</span>
+        <span className={cn('text-right font-medium', latencyClass(log.first_token_ms, 'first-token'))}>{formatUsageLatency(log.first_token_ms, locale)}</span>
+        <span className="text-muted-foreground">{t('usageLogs.values.duration')}</span>
+        <span className={cn('text-right font-medium', latencyClass(log.duration_ms, 'duration'))}>{formatUsageLatency(log.duration_ms, locale)}</span>
+      </div>
+
+      <div className="hidden min-w-0 lg:block">
+        <div className="text-sm font-semibold tabular-nums">{number(usageLogTotalTokens(log))}</div>
+        <div className="mt-1 truncate text-[0.6875rem] tabular-nums text-muted-foreground">
+          {t('usageLogs.values.inputOutputCompact', { input: number(log.input_tokens), output: number(log.output_tokens) })}
+        </div>
+      </div>
+
+      <div className="hidden text-right lg:block">
+        <div className="text-sm font-semibold tabular-nums">{formatQuota(log.quota)}</div>
+        <div className="mt-1 text-[0.6875rem] text-muted-foreground">{t(`usageLogs.values.billingMode.${log.billing_mode}`)}</div>
+      </div>
+
+      <Button type="button" size="icon-sm" variant="ghost" className="hidden lg:inline-flex" aria-label={t('usageLogs.actions.openDetails', { model: log.model ?? t('usageLogs.values.legacyModel') })} onClick={(event) => { stop(event); onSelect(log) }}>
+        <ChevronRight className="size-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+      </Button>
+
+      <div className="flex min-w-0 items-center justify-between gap-3 lg:hidden">
+        <div className="flex min-w-0 items-center gap-2 text-[0.6875rem] text-muted-foreground">
+          <span className="inline-flex shrink-0 items-center gap-1 text-success"><CircleCheck className="size-3" aria-hidden="true" />{t('usageLogs.status.settled')}</span>
+          <span className="truncate tabular-nums">{formatUsageDate(log.created_at, locale)}</span>
+        </div>
+        <Button type="button" size="icon-sm" variant="ghost" aria-label={t('usageLogs.actions.openDetails', { model: log.model ?? t('usageLogs.values.legacyModel') })} onClick={(event) => { stop(event); onSelect(log) }}><ChevronRight className="size-4" aria-hidden="true" /></Button>
+      </div>
+
+      <div className="grid grid-cols-3 divide-x divide-[var(--hairline)] border-t border-[var(--hairline)] pt-3 lg:hidden">
+        <div className="min-w-0 pr-2">
+          <span className="flex items-center gap-1 text-[0.6875rem] text-muted-foreground"><Clock3 className="size-3" aria-hidden="true" />{t('usageLogs.columns.latency')}</span>
+          <span className="mt-1 block truncate text-[0.6875rem] font-semibold tabular-nums" title={`${formatUsageLatency(log.first_token_ms, locale)} / ${formatUsageLatency(log.duration_ms, locale)}`}>
+            <span className={latencyClass(log.first_token_ms, 'first-token')}>{formatUsageLatency(log.first_token_ms, locale)}</span>
+            <span className="text-muted-foreground"> / </span>
+            <span className={latencyClass(log.duration_ms, 'duration')}>{formatUsageLatency(log.duration_ms, locale)}</span>
+          </span>
+        </div>
+        <div className="min-w-0 px-2">
+          <span className="flex items-center gap-1 text-[0.6875rem] text-muted-foreground"><Zap className="size-3" aria-hidden="true" />Token</span>
+          <span className="mt-1 block truncate text-xs font-semibold tabular-nums">{number(usageLogTotalTokens(log))}</span>
+        </div>
+        <div className="min-w-0 pl-2">
+          <span className="flex items-center gap-1 text-[0.6875rem] text-muted-foreground"><Coins className="size-3" aria-hidden="true" />{t('usageLogs.values.quotaShort')}</span>
+          <span className="mt-1 block truncate text-xs font-semibold tabular-nums">{formatQuota(log.quota)}</span>
+        </div>
+      </div>
+    </article>
   )
 }
 
-function DetailedUsage({ log }: { log: AdminUsageLog }) {
+export function UsageLogTable({ logs, admin, showPrincipal = admin, filtered, formatQuota, onSelect, onUserSelect }: UsageLogTableProps) {
   const { t } = useTranslation()
-  const { number } = useFormatters()
-  return (
-    <>
-      <div>{t('usageLogs.values.cacheRead', { value: number(log.cache_read) })}</div>
-      <div className="mt-1 text-[0.6875rem] text-muted-foreground">
-        {t('usageLogs.values.cacheCreate', {
-          five: number(log.cache_creation_5m),
-          hour: number(log.cache_creation_1h),
-        })}
-      </div>
-      <div className="mt-1 text-[0.6875rem] text-muted-foreground">
-        {t('usageLogs.values.reasoningAudio', {
-          reasoning: number(log.reasoning_tokens),
-          audio: number(log.audio_input_tokens + log.audio_output_tokens),
-        })}
-      </div>
-    </>
-  )
-}
-
-function BillingValue({ log }: { log: AdminUsageLog }) {
-  const { t } = useTranslation()
-  const { number } = useFormatters()
-  return (
-    <>
-      <div className="flex items-center gap-2">
-        <span>{t('usageLogs.values.billingMode.' + log.billing_mode)}</span>
-        <SourceBadge log={log} />
-      </div>
-      <div className="mt-1 text-[0.6875rem] text-muted-foreground">
-        {t('usageLogs.values.quotaSemantics', {
-          quota: number(log.quota),
-          semantics: t('usageLogs.values.semantics.' + log.usage_semantics),
-        })}
-      </div>
-    </>
-  )
-}
-
-export function UsageLogTable({ logs }: UsageLogTableProps) {
-  const { t } = useTranslation()
-  const { date } = useFormatters()
   if (logs.length === 0) {
     return (
-      <div className="grid min-h-64 place-items-center border-y border-[var(--hairline)] py-10 text-center">
-        <div className="max-w-xs">
-          <div className="mx-auto grid size-10 place-items-center rounded-lg bg-surface-2 text-muted-foreground">
-            <ScrollText className="size-4" aria-hidden="true" />
-          </div>
-          <h2 className="mt-3 text-sm font-semibold">{t('usageLogs.empty.title')}</h2>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('usageLogs.empty.body')}</p>
+      <div className="grid min-h-64 place-items-center rounded-lg border border-[var(--hairline)] py-10 text-center">
+        <div className="max-w-xs px-5">
+          <div className="mx-auto grid size-10 place-items-center rounded-lg bg-surface-2 text-muted-foreground"><ScrollText className="size-4" aria-hidden="true" /></div>
+          <h2 className="mt-3 text-sm font-semibold">{t(filtered ? 'usageLogs.empty.filteredTitle' : 'usageLogs.empty.title')}</h2>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">{t(filtered ? 'usageLogs.empty.filteredBody' : 'usageLogs.empty.body')}</p>
         </div>
       </div>
     )
   }
 
   return (
-    <>
-      <div className="hidden overflow-hidden rounded-xl border border-[var(--hairline)] bg-surface-1 md:block">
-        <table className="w-full table-fixed text-left text-xs">
-          <thead className="bg-surface-2/60 text-muted-foreground">
-            <tr>
-              <th className="w-[24%] px-3 py-2 font-medium">{t('usageLogs.columns.event')}</th>
-              <th className="w-[16%] px-3 py-2 font-medium">{t('usageLogs.columns.principal')}</th>
-              <th className="w-[18%] px-3 py-2 font-medium">{t('usageLogs.columns.usage')}</th>
-              <th className="w-[20%] px-3 py-2 font-medium">{t('usageLogs.columns.details')}</th>
-              <th className="w-[22%] px-3 py-2 font-medium">{t('usageLogs.columns.billing')}</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[var(--hairline)]">
-            {logs.map((log) => (
-              <tr key={log.id} className="hover:bg-surface-2/35">
-                <td className="px-3 py-2.5">
-                  <div className="font-medium tabular-nums">{date(log.created_at)}</div>
-                  <div title={log.event_id} className="mt-1 truncate font-mono text-[0.6875rem] text-muted-foreground">
-                    {log.event_id} · #{log.id}
-                  </div>
-                </td>
-                <td className="px-3 py-2.5">
-                  <div>{t('usageLogs.values.userToken', { user: log.user_id, token: log.token_id })}</div>
-                  <div className="mt-1 text-[0.6875rem] text-muted-foreground">
-                    {t('usageLogs.values.group', { id: log.group_id })}
-                  </div>
-                </td>
-                <td className="px-3 py-2.5 tabular-nums"><CoreUsage log={log} /></td>
-                <td className="px-3 py-2.5 tabular-nums"><DetailedUsage log={log} /></td>
-                <td className="px-3 py-2.5 tabular-nums"><BillingValue log={log} /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <section className="overflow-hidden rounded-lg border border-[var(--hairline)] bg-surface-1" aria-label={t('usageLogs.listLabel')}>
+      <div className="hidden grid-cols-[7rem_minmax(11rem,1.4fr)_8.25rem_10rem_7.5rem_2rem] gap-3 border-b border-[var(--hairline)] bg-surface-2/60 px-4 py-2 text-[0.6875rem] font-medium text-muted-foreground lg:grid">
+        <span>{t('usageLogs.columns.time')}</span>
+        <span>{t('usageLogs.columns.call')}</span>
+        <span>{t('usageLogs.columns.latency')}</span>
+        <span>{t('usageLogs.columns.tokens')}</span>
+        <span className="text-right">{t('usageLogs.columns.billing')}</span>
+        <span />
       </div>
-
-      <div className="grid gap-2 md:hidden">
-        {logs.map((log) => (
-          <article key={log.id} className="rounded-xl border border-[var(--hairline)] bg-surface-1 p-3">
-            <div className="min-w-0">
-              <div className="text-sm font-semibold tabular-nums">{date(log.created_at)}</div>
-              <p title={log.event_id} className="mt-1 truncate font-mono text-[0.6875rem] text-muted-foreground">
-                {log.event_id} · #{log.id}
-              </p>
-            </div>
-            <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-[var(--hairline)] pt-3 text-xs">
-              <div>
-                <dt className="text-muted-foreground">{t('usageLogs.columns.principal')}</dt>
-                <dd className="mt-1">{t('usageLogs.values.userToken', { user: log.user_id, token: log.token_id })}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">{t('usageLogs.columns.usage')}</dt>
-                <dd className="mt-1 tabular-nums"><CoreUsage log={log} /></dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">{t('usageLogs.columns.details')}</dt>
-                <dd className="mt-1 tabular-nums"><DetailedUsage log={log} /></dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">{t('usageLogs.columns.billing')}</dt>
-                <dd className="mt-1 tabular-nums"><BillingValue log={log} /></dd>
-              </div>
-            </dl>
-          </article>
-        ))}
-      </div>
-    </>
+      {logs.map((log) => <UsageLogItem key={log.id} log={log} showPrincipal={showPrincipal} formatQuota={formatQuota} onSelect={onSelect} onUserSelect={onUserSelect} />)}
+    </section>
   )
 }

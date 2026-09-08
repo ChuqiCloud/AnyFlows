@@ -19,7 +19,7 @@ use af_admin::{
     SessionRole,
 };
 use af_domain::{AfError, GatewayPrincipal, GroupId, TokenId, UserId};
-use af_protocol::CanonicalRequest;
+use af_protocol::CanonicalRequestEnvelope;
 use axum::{
     Router,
     body::{Body, to_bytes},
@@ -53,8 +53,11 @@ impl ChatService for UnusedChatService {
     fn chat_completions<'a>(
         &'a self,
         _principal: &'a GatewayPrincipal,
-        _request: CanonicalRequest,
+        _user_concurrency: Option<af_domain::ConcurrencyLimit>,
+        _request: CanonicalRequestEnvelope,
+        _response_protocol: af_domain::Protocol,
         _request_id: &'a str,
+        _diagnostic: af_relay::RelayDiagnosticInput,
     ) -> ChatServiceFuture<'a> {
         Box::pin(async { Err(AfError::Internal) })
     }
@@ -167,7 +170,13 @@ impl SessionAuthenticator for FakeSessionAuthenticator {
         };
         Box::pin(async move {
             principal
-                .map(|principal| SessionAuthentication::new(principal, current_timestamp() + 60))
+                .map(|principal| {
+                    SessionAuthentication::new(
+                        principal,
+                        GroupId::new(1).unwrap(),
+                        current_timestamp() + 60,
+                    )
+                })
                 .ok_or(SessionAuthenticationError::InvalidSession)
         })
     }
