@@ -71,7 +71,17 @@ docker compose --env-file .env down
 
 ### Linux systemd 部署
 
-Linux amd64 Release 归档同时包含 `anyflows`、`install.sh` 和 `anyflows.service`。在解压后的归档目录执行以下命令，首次安装会在 `/etc/anyflows/anyflows.env` 生成 SQLite 与随机密钥配置，升级会保留现有配置并在 `/readyz` 未恢复时自动回滚上一份二进制：
+Linux amd64 Release 归档同时包含 `anyflows`、`anyflows.conf`、`install.sh` 和 `anyflows.service`。手工启动时使用归档内的 TOML 配置并注入两项密钥：
+
+```bash
+export AF_CONFIG_FILE="$PWD/anyflows.conf"
+export AF_AUTH__SESSION_SIGNING_KEY="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')"
+export AF_CREDENTIAL_ENCRYPTION__KEY_ID=primary
+export AF_CREDENTIAL_ENCRYPTION__KEY="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')"
+./anyflows
+```
+
+首次使用 systemd 安装时执行以下命令，安装脚本会在 `/etc/anyflows/anyflows.env` 生成 SQLite 与随机密钥配置；升级会保留现有配置并在 `/readyz` 未恢复时自动回滚上一份二进制：
 
 ```bash
 sudo ./install.sh install
