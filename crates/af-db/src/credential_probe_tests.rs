@@ -166,6 +166,7 @@ async fn load_resolves_compact_probe_model_through_both_mapping_layers()
         target.responses_compact_mode(),
         ResponsesCompactMode::ForceOn
     );
+    assert_eq!(target.model(), "responses-upstream-model");
     assert_eq!(
         target.responses_compact_model(),
         Some("compact-upstream-model")

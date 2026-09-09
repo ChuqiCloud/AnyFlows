@@ -148,6 +148,7 @@ impl OpenAiChatStreamDecoder {
     ) -> Result<(), ParseStreamError> {
         let ChatStreamChunkWire {
             id,
+            request_id,
             object,
             created,
             model,
@@ -157,6 +158,7 @@ impl OpenAiChatStreamDecoder {
             usage,
             moderation,
         } = chunk;
+        let _ = request_id;
         if !matches!(object, ChatStreamObjectWire::ChatCompletionChunk) || moderation.is_some() {
             return Err(ParseStreamError::UnsupportedFeature);
         }
