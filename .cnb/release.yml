@@ -71,17 +71,6 @@
     RUST_BACKTRACE: "1"
     RELEASE_ARCH: amd64
 
-"(master|develop)":
-  pull_request:
-    - name: 验证 Linux amd64 发布包
-      <<: *release-amd64-base
-      ifModify: *release-files
-      stages:
-        - *release-install-stage
-        - *release-frontend-stage
-        - *release-binary-stage
-        - *release-package-stage
-
 "$":
   tag_push:
     - name: 校验版本发布边界
