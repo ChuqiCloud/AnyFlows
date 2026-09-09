@@ -1,8 +1,8 @@
 use std::{error::Error, time::Duration};
 
 use af_domain::{
-    ChannelId, ClientSimulationProfile, CredentialId, GroupId, ResponsesCompactMode,
-    ResponsesCompactProbeResult, Status,
+    ChannelId, ChannelType, ClientSimulationProfile, CredentialId, GroupId, Protocol,
+    ResponsesCompactMode, ResponsesCompactProbeResult, Status,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::sea_query::{MysqlQueryBuilder, PostgresQueryBuilder, SqliteQueryBuilder};
@@ -10,8 +10,8 @@ use sea_orm::{ActiveModelTrait, EntityTrait, JsonValue, Set};
 
 use super::{
     AdminChannelLookupOutcome, AdminChannelRepository, AdminChannelRepositoryConfigError,
-    AdminChannelRepositoryError, AdminCredentialLookupOutcome, AdminCredentialPageOutcome,
-    DatabaseOptions, MigrationOptions,
+    AdminChannelRepositoryError, AdminChannelWriteRecord, AdminCredentialLookupOutcome,
+    AdminCredentialPageOutcome, DatabaseOptions, MigrationOptions,
 };
 use crate::{
     admin_channel::channel_base_query,
@@ -424,6 +424,132 @@ struct Fixture {
     secondary_channel_id: ChannelId,
     deleted_channel_id: ChannelId,
     primary_credential_id: CredentialId,
+}
+
+#[tokio::test]
+async fn newly_created_channels_remain_readable() -> Result<(), Box<dyn Error>> {
+    let pool = crate::connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
+    exercise_newly_created_channels(&pool).await?;
+    pool.close().await?;
+    Ok(())
+}
+
+/// 同时由 SQLite 单测和三方言迁移冒烟调用，验证写入后真实查询的类型解码。
+pub(crate) async fn exercise_newly_created_channels(
+    pool: &super::DatabasePool,
+) -> Result<(), Box<dyn Error>> {
+    let repository = AdminChannelRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let group = groups::ActiveModel {
+        name: Set("channel-read-regression".to_owned()),
+        display_name: Set("渠道读取回归".to_owned()),
+        flags: Set(serde_json::json!({})),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+    for (protocol, enabled) in [
+        (Protocol::OpenAiChat, false),
+        (Protocol::OpenAiResponses, true),
+    ] {
+        let models = if enabled {
+            vec!["public-model".to_owned()]
+        } else {
+            Vec::new()
+        };
+        let group_ids = if enabled {
+            vec![GroupId::new(group.id)?]
+        } else {
+            Vec::new()
+        };
+        let created = repository
+            .create_channel(
+                AdminChannelWriteRecord::new(
+                    format!("channel-read-{}", protocol.as_str()),
+                    ChannelType::OpenAi,
+                    protocol,
+                    Some("https://api.example.com".to_owned()),
+                    None,
+                    Status::Enabled,
+                    1,
+                    0,
+                    true,
+                    models.clone(),
+                    group_ids.clone(),
+                    serde_json::json!({}),
+                    serde_json::json!({}),
+                    serde_json::json!({}),
+                    serde_json::json!({}),
+                    None,
+                )
+                .with_pool_mode(enabled)
+                .with_responses_websocket_enabled(enabled),
+            )
+            .await?;
+        let channel_id = created.channel_id();
+        let AdminChannelLookupOutcome::Found(detail) = repository.get(channel_id).await? else {
+            panic!("刚创建的渠道必须能读取详情");
+        };
+        assert_eq!(detail.models(), models);
+        assert_eq!(detail.group_ids(), group_ids);
+        assert_eq!(detail.model_mapping(), &serde_json::json!({}));
+        assert_eq!(detail.param_override(), &serde_json::json!({}));
+        assert_eq!(detail.pool_mode(), enabled);
+        assert_eq!(detail.responses_websocket_enabled(), enabled);
+        let (page, cursor) = repository
+            .list(ChannelId::new(channel_id.get() - 1).ok(), 1)
+            .await?
+            .into_parts();
+        assert_eq!(page.len(), 1);
+        assert_eq!(page[0].channel_id(), channel_id);
+        assert_eq!(page[0].pool_mode(), enabled);
+        assert_eq!(page[0].responses_websocket_enabled(), enabled);
+        assert_eq!(cursor, None);
+        let AdminCredentialPageOutcome::Found(empty) =
+            repository.list_credentials(channel_id, None, 20).await?
+        else {
+            panic!("无凭据的新渠道必须返回空凭据页");
+        };
+        assert!(empty.into_parts().0.is_empty());
+        let credential = insert_credential(pool, channel_id.get(), "api_key", None).await?;
+        let AdminCredentialPageOutcome::Found(page) =
+            repository.list_credentials(channel_id, None, 20).await?
+        else {
+            panic!("添加凭据后必须能读取凭据页");
+        };
+        assert_eq!(page.into_parts().0.len(), 1);
+        assert!(matches!(
+            repository
+                .get_credential(channel_id, CredentialId::new(credential.id)?)
+                .await?,
+            AdminCredentialLookupOutcome::Found(_)
+        ));
+
+        // 类型修复不能把非法 JSON 状态静默当成关闭。
+        let model = channels::Entity::find_by_id(channel_id.get())
+            .one(pool.connection())
+            .await?
+            .unwrap();
+        for settings in [
+            serde_json::json!({"pool_mode": "true"}),
+            serde_json::json!({"responses_websocket_enabled": "true"}),
+        ] {
+            let mut active = channels::ActiveModel::from(model.clone());
+            active.settings = Set(SensitiveJson::from(settings));
+            active.update(pool.connection()).await?;
+            assert_eq!(
+                repository.get(channel_id).await.unwrap_err(),
+                AdminChannelRepositoryError::Invariant
+            );
+        }
+        let mut active = channels::ActiveModel::from(model.clone());
+        active.settings = Set(model.settings);
+        active.update(pool.connection()).await?;
+    }
+    Ok(())
 }
 
 async fn fixture() -> Result<Fixture, Box<dyn Error>> {

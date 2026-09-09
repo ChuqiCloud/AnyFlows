@@ -2594,6 +2594,9 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     eprintln!("迁移冒烟阶段：企业仓储");
     exercise_organization_repository(&pool).await?;
 
+    eprintln!("迁移冒烟阶段：新建渠道列表、详情与凭据读取");
+    crate::admin_channel_tests::exercise_newly_created_channels(&pool).await?;
+
     Migrator::down(pool.connection(), None).await?;
     assert_core_tables_absent(pool.connection()).await?;
 
@@ -2902,6 +2905,22 @@ async fn exercise_scheduler_outbox_repository(pool: &DatabasePool) -> Result<(),
         second.latest_event_id().await?
             >= <u64 as std::convert::TryFrom<i64>>::try_from(retried.event_id())?
     );
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "仅在显式启用的隔离数据库中验证渠道读写"]
+async fn admin_channel_repository_smoke() -> Result<(), Box<dyn Error>> {
+    let database_url = test_database_url();
+    validate_destructive_test_target(
+        &database_url,
+        env::var(ALLOW_DESTRUCTIVE_MIGRATION_TEST).ok().as_deref(),
+    )?;
+    let pool = connect(&DatabaseOptions::new(database_url)?).await?;
+    Migrator::up(pool.connection(), None).await?;
+    crate::admin_channel_tests::exercise_newly_created_channels(&pool).await?;
+    Migrator::down(pool.connection(), None).await?;
+    pool.close().await?;
     Ok(())
 }
 
