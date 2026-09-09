@@ -400,6 +400,11 @@ impl ChannelProbeTargetRepository {
             .map_err(|_| ChannelProbeTargetRepositoryError::Invariant)?;
             let model_mappings = ChannelModelMappings::parse(&channel.model_mapping)
                 .map_err(|_| ChannelProbeTargetRepositoryError::Invariant)?;
+            // 探活必须使用与真实转发相同的上游模型名，否则配置模型映射的渠道会被误判为不健康。
+            let probe_model = model_mappings
+                .resolve(&channel_model.model)
+                .unwrap_or(&channel_model.model)
+                .to_owned();
             let responses_compact_model = (channel_type == ChannelType::OpenAi
                 && protocol == Protocol::OpenAiResponses)
                 .then(|| {
@@ -441,7 +446,7 @@ impl ChannelProbeTargetRepository {
                 protocol,
                 base_url: channel.base_url.map(|value| value.as_str().to_owned()),
                 timeout: channel_timeout,
-                model: channel_model.model,
+                model: probe_model,
                 credential_kind,
                 envelope,
                 headers,

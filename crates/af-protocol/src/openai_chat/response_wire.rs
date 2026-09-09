@@ -9,6 +9,9 @@ use super::wire::ToolCallWire;
 pub(super) struct ChatResponseWire {
     /// 上游响应标识。
     pub(super) id: String,
+    /// NewAPI 兼容字段；Canonical 响应使用 `id` 作为稳定标识。
+    #[serde(default)]
+    pub(super) request_id: Option<String>,
     /// 固定的响应对象类型。
     pub(super) object: ChatCompletionObjectWire,
     /// 响应创建时间的 Unix 秒时间戳。
@@ -77,6 +80,12 @@ pub(super) struct ResponseMessageWire {
     /// 文本内容；工具调用响应通常为 `null`。
     #[serde(default)]
     pub(super) content: Option<String>,
+    /// NewAPI 返回的非流式推理文本；当前 Canonical Chat 响应不单独暴露该字段。
+    #[serde(default)]
+    pub(super) reasoning_content: Option<String>,
+    /// 部分 NewAPI 版本使用的推理文本别名。
+    #[serde(default)]
+    pub(super) reasoning: Option<String>,
     /// 固定的助手角色。
     pub(super) role: AssistantRoleWire,
     /// 当前 Canonical 尚未建模的拒绝内容。

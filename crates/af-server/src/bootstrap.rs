@@ -52,9 +52,9 @@ use af_admin::{
     PasskeyAuthenticationServiceConfigError, PasswordResetService, PasswordResetServiceConfigError,
     PlatformAuditService, PlaygroundConversationService, PlaygroundShareService, RedemptionService,
     RegistrationService, RegistrationServiceConfigError, RuntimeRefreshingAdminGroupWriter,
-    SessionAuthenticator, SessionAuthenticatorConfigError, SiteSettingsService,
-    SubscriptionService, TokenAuthenticator, UserInvitationService, UserProfileService,
-    UserTokenService, UserTopupService, UserWalletService,
+    RuntimeRefreshingInitialSetup, SessionAuthenticator, SessionAuthenticatorConfigError,
+    SiteSettingsService, SubscriptionService, TokenAuthenticator, UserInvitationService,
+    UserProfileService, UserTokenService, UserTopupService, UserWalletService,
 };
 use af_analytics::{
     AdminDashboardChannelStorage, AdminDashboardReader, SplitAdminDashboardStorage,
@@ -1904,10 +1904,12 @@ impl Bootstrap<RelayReady> {
         )
         .await
         .map_err(BootstrapError::GroupPricingCache)?;
+        let group_pricing_refresher: Arc<dyn af_admin::GroupPricingRuntimeRefresher> =
+            Arc::new(RuntimeGroupPricingRefresher::new(group_pricing.clone()));
         let admin_group_writer: Arc<dyn AdminGroupWriter> =
             Arc::new(RuntimeRefreshingAdminGroupWriter::new(
                 Arc::clone(&self.stage.infrastructure.admin_group_writer),
-                Arc::new(RuntimeGroupPricingRefresher::new(group_pricing.clone())),
+                Arc::clone(&group_pricing_refresher),
             ));
         let model_catalog_metadata = AdminModelRepository::new(
             self.stage.infrastructure.infrastructure.database.clone(),
@@ -2249,6 +2251,10 @@ impl Bootstrap<RelayReady> {
         } = self;
         let mut infrastructure = stage.infrastructure;
         infrastructure.admin_group_writer = admin_group_writer;
+        infrastructure.initial_setup = Arc::new(RuntimeRefreshingInitialSetup::new(
+            infrastructure.initial_setup,
+            group_pricing_refresher,
+        ));
         let authenticator = Arc::clone(&infrastructure.authenticator);
         infrastructure.authenticator = Arc::new(RuntimeTokenAuthenticator::new(
             authenticator,
