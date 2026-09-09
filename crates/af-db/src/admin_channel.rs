@@ -1018,10 +1018,11 @@ fn channel_json_length(database_backend: DbBackend, column: channels::Column) ->
     }
 }
 
+// PostgreSQL 将 CASE 中的 -1/0/1 推断为 INT4；显式转为 BIGINT 以匹配 i64 解码。
 fn channel_responses_websocket_projection(database_backend: DbBackend) -> SimpleExpr {
     match database_backend {
         DbBackend::Postgres => Expr::cust(
-            r#"CASE WHEN jsonb_typeof("channels"."settings") <> 'object' THEN -1 WHEN NOT ("channels"."settings" ? 'responses_websocket_enabled') THEN 0 WHEN jsonb_typeof("channels"."settings" -> 'responses_websocket_enabled') <> 'boolean' THEN -1 WHEN ("channels"."settings" ->> 'responses_websocket_enabled')::boolean THEN 1 ELSE 0 END"#,
+            r#"CAST(CASE WHEN jsonb_typeof("channels"."settings") <> 'object' THEN -1 WHEN NOT ("channels"."settings" ? 'responses_websocket_enabled') THEN 0 WHEN jsonb_typeof("channels"."settings" -> 'responses_websocket_enabled') <> 'boolean' THEN -1 WHEN ("channels"."settings" ->> 'responses_websocket_enabled')::boolean THEN 1 ELSE 0 END AS BIGINT)"#,
         ),
         DbBackend::MySql => Expr::cust(
             "CASE WHEN JSON_TYPE(`channels`.`settings`) <> 'OBJECT' THEN -1 WHEN JSON_CONTAINS_PATH(`channels`.`settings`, 'one', '$.responses_websocket_enabled') = 0 THEN 0 WHEN JSON_TYPE(JSON_EXTRACT(`channels`.`settings`, '$.responses_websocket_enabled')) <> 'BOOLEAN' THEN -1 WHEN JSON_UNQUOTE(JSON_EXTRACT(`channels`.`settings`, '$.responses_websocket_enabled')) = 'true' THEN 1 ELSE 0 END",
@@ -1035,7 +1036,7 @@ fn channel_responses_websocket_projection(database_backend: DbBackend) -> Simple
 fn channel_pool_mode_projection(database_backend: DbBackend) -> SimpleExpr {
     match database_backend {
         DbBackend::Postgres => Expr::cust(
-            r#"CASE WHEN jsonb_typeof("channels"."settings") <> 'object' THEN -1 WHEN NOT ("channels"."settings" ? 'pool_mode') THEN 0 WHEN jsonb_typeof("channels"."settings" -> 'pool_mode') <> 'boolean' THEN -1 WHEN ("channels"."settings" ->> 'pool_mode')::boolean THEN 1 ELSE 0 END"#,
+            r#"CAST(CASE WHEN jsonb_typeof("channels"."settings") <> 'object' THEN -1 WHEN NOT ("channels"."settings" ? 'pool_mode') THEN 0 WHEN jsonb_typeof("channels"."settings" -> 'pool_mode') <> 'boolean' THEN -1 WHEN ("channels"."settings" ->> 'pool_mode')::boolean THEN 1 ELSE 0 END AS BIGINT)"#,
         ),
         DbBackend::MySql => Expr::cust(
             "CASE WHEN JSON_TYPE(`channels`.`settings`) <> 'OBJECT' THEN -1 WHEN JSON_CONTAINS_PATH(`channels`.`settings`, 'one', '$.pool_mode') = 0 THEN 0 WHEN JSON_TYPE(JSON_EXTRACT(`channels`.`settings`, '$.pool_mode')) <> 'BOOLEAN' THEN -1 WHEN JSON_UNQUOTE(JSON_EXTRACT(`channels`.`settings`, '$.pool_mode')) = 'true' THEN 1 ELSE 0 END",
