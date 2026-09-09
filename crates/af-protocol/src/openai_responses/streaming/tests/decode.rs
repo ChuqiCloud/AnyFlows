@@ -1312,6 +1312,39 @@ fn lifecycle_identity_is_stable() {
     assert_eq!(CREATED_AT, 1_700_000_000);
 }
 
+#[test]
+fn accepts_provider_builtin_tool_echo_on_terminal_frame() {
+    let mut terminal = current_echo_response("completed", Vec::new(), None);
+    terminal["tools"] = json!([{
+        "type": "image_generation",
+        "background": "auto",
+        "model": "gpt-image-2-codex",
+        "moderation": "auto",
+        "n": 1,
+        "output_compression": 100,
+        "output_format": "png",
+        "quality": "auto",
+        "size": "auto"
+    }]);
+    let bytes = join([
+        frame(
+            "response.created",
+            0,
+            json!({"response": initial_response()}),
+        ),
+        frame(
+            "response.in_progress",
+            1,
+            json!({"response": initial_response()}),
+        ),
+        frame("response.completed", 2, json!({"response": terminal})),
+    ]);
+    let mut decoder = OpenAiResponsesStreamDecoder::new();
+    let events = decoder.push(&bytes).unwrap();
+    decoder.finish().unwrap();
+    assert_eq!(events.last(), Some(&CanonicalStreamEvent::StreamEnd));
+}
+
 fn current_echo_response(status: &str, output: Vec<Value>, usage: Option<Value>) -> Value {
     let mut value = response(status, output, usage, None, None);
     let object = value.as_object_mut().expect("测试响应必须是对象");
