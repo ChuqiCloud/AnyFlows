@@ -86,7 +86,7 @@ pub(super) fn validate_raw_fields(
         }
     }
 
-    let tool_names = validate_tools(fields.get("tools"))?;
+    let tool_names = validate_response_tools(fields.get("tools"))?;
     validate_tool_choice(fields.get("tool_choice"), &tool_names)?;
     for (key, value) in fields {
         if value.is_null() || matches!(key.as_str(), "tools" | "tool_choice") {
@@ -128,7 +128,7 @@ pub(super) fn validate_raw_fields(
             }
             "temperature" => validate_number_range(value, 0.0, 2.0)?,
             "text" => validate_text_config(value)?,
-            "tool_usage" => validate_zero_tool_usage(value)?,
+            "tool_usage" => validate_tool_usage(value)?,
             "top_logprobs" => validate_top_logprobs(value)?,
             "top_p" => validate_number_range(value, 0.0, 1.0)?,
             "truncation" => validate_enum(value, &["auto", "disabled"])?,
@@ -325,7 +325,7 @@ fn validate_json_schema_format(format: &Map<String, Value>) -> Result<(), Respon
     Ok(())
 }
 
-fn validate_tools(value: Option<&Value>) -> Result<HashSet<String>, ResponseRawError> {
+fn validate_response_tools(value: Option<&Value>) -> Result<HashSet<String>, ResponseRawError> {
     let Some(value) = value else {
         return Ok(HashSet::new());
     };
@@ -340,59 +340,96 @@ fn validate_tools(value: Option<&Value>) -> Result<HashSet<String>, ResponseRawE
     let mut total_schema_bytes = 0;
     for tool in tools {
         let tool = tool.as_object().ok_or(ResponseRawError::InvalidValue)?;
-        if tool.keys().any(|key| {
-            !matches!(
-                key.as_str(),
-                "type"
-                    | "name"
-                    | "parameters"
-                    | "strict"
-                    | "description"
-                    | "allowed_callers"
-                    | "defer_loading"
-                    | "output_schema"
-            )
-        }) {
-            return Err(ResponseRawError::InvalidValue);
-        }
-        if tool.get("type").and_then(Value::as_str) != Some("function") {
-            return Err(ResponseRawError::UnsupportedFeature);
-        }
-        let name = tool
-            .get("name")
-            .and_then(Value::as_str)
-            .ok_or(ResponseRawError::InvalidValue)?;
-        validate_tool_name(name).map_err(map_request_error)?;
-        if !names.insert(name.to_owned()) {
-            return Err(ResponseRawError::InvalidValue);
-        }
-        let parameters = tool
-            .get("parameters")
-            .ok_or(ResponseRawError::InvalidValue)?;
-        validate_schema(parameters, &mut total_schema_bytes).map_err(map_request_error)?;
-        // `strict` 在 Responses 函数工具中是可选字段；供应商回显省略值时仍属于合法协议。
-        if tool
-            .get("strict")
-            .is_some_and(|value| !value.is_null() && !value.is_boolean())
-        {
-            return Err(ResponseRawError::InvalidValue);
-        }
-        if tool.get("description").is_some_and(|value| {
-            !value.is_null()
-                && value
-                    .as_str()
-                    .is_none_or(|value| value.len() > MAX_TOOL_DESCRIPTION_BYTES)
-        }) {
-            return Err(ResponseRawError::InvalidValue);
-        }
-        if ["allowed_callers", "defer_loading", "output_schema"]
-            .iter()
-            .any(|key| tool.get(*key).is_some_and(|value| !value.is_null()))
-        {
-            return Err(ResponseRawError::UnsupportedFeature);
+        match tool.get("type").and_then(Value::as_str) {
+            Some("function") => {
+                if tool.keys().any(|key| {
+                    !matches!(
+                        key.as_str(),
+                        "type"
+                            | "name"
+                            | "parameters"
+                            | "strict"
+                            | "description"
+                            | "allowed_callers"
+                            | "defer_loading"
+                            | "output_schema"
+                    )
+                }) {
+                    return Err(ResponseRawError::InvalidValue);
+                }
+                let name = tool
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .ok_or(ResponseRawError::InvalidValue)?;
+                validate_tool_name(name).map_err(map_request_error)?;
+                if !names.insert(name.to_owned()) {
+                    return Err(ResponseRawError::InvalidValue);
+                }
+                let parameters = tool
+                    .get("parameters")
+                    .ok_or(ResponseRawError::InvalidValue)?;
+                validate_schema(parameters, &mut total_schema_bytes).map_err(map_request_error)?;
+                // `strict` 在 Responses 函数工具中是可选字段；供应商回显省略值时仍属于合法协议。
+                if tool
+                    .get("strict")
+                    .is_some_and(|value| !value.is_null() && !value.is_boolean())
+                {
+                    return Err(ResponseRawError::InvalidValue);
+                }
+                if tool.get("description").is_some_and(|value| {
+                    !value.is_null()
+                        && value
+                            .as_str()
+                            .is_none_or(|value| value.len() > MAX_TOOL_DESCRIPTION_BYTES)
+                }) {
+                    return Err(ResponseRawError::InvalidValue);
+                }
+                if ["allowed_callers", "defer_loading", "output_schema"]
+                    .iter()
+                    .any(|key| tool.get(*key).is_some_and(|value| !value.is_null()))
+                {
+                    return Err(ResponseRawError::UnsupportedFeature);
+                }
+            }
+            Some(kind) if is_builtin_response_tool_kind(kind) => {
+                // Responses 上游会回显内置工具；这些工具不进入当前 Canonical 工具调用模型，
+                // 但必须保留其有界 JSON 形状，才能透传同源字段而不误报协议错误。
+                validate_builtin_response_tool(tool)?;
+                validate_object(tool, RESPONSE_RAW_LIMITS, MAX_RAW_BYTES)
+                    .map_err(|_| ResponseRawError::StructureLimitExceeded)?;
+            }
+            Some(_) | None => return Err(ResponseRawError::UnsupportedFeature),
         }
     }
     Ok(names)
+}
+
+fn validate_builtin_response_tool(tool: &Map<String, Value>) -> Result<(), ResponseRawError> {
+    if tool.keys().any(|key| {
+        key.is_empty()
+            || key.len() > 128
+            || !key
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+    }) {
+        return Err(ResponseRawError::InvalidValue);
+    }
+    Ok(())
+}
+
+fn is_builtin_response_tool_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "code_interpreter"
+            | "computer_use_preview"
+            | "computer_use"
+            | "file_search"
+            | "image_generation"
+            | "mcp"
+            | "web_search"
+            | "web_search_preview"
+    ) || kind.ends_with("_generation")
+        || kind.starts_with("web_search")
 }
 
 fn validate_tool_choice(
@@ -443,12 +480,12 @@ fn validate_number_range(value: &Value, min: f64, max: f64) -> Result<(), Respon
     }
 }
 
-fn validate_zero_tool_usage(value: &Value) -> Result<(), ResponseRawError> {
+fn validate_tool_usage(value: &Value) -> Result<(), ResponseRawError> {
     let mut visited = 0_usize;
-    validate_zero_tool_usage_value(value, 0, &mut visited)
+    validate_tool_usage_value(value, 0, &mut visited)
 }
 
-fn validate_zero_tool_usage_value(
+fn validate_tool_usage_value(
     value: &Value,
     depth: usize,
     visited: &mut usize,
@@ -473,14 +510,12 @@ fn validate_zero_tool_usage_value(
                 {
                     return Err(ResponseRawError::InvalidValue);
                 }
-                validate_zero_tool_usage_value(child, depth + 1, visited)?;
+                validate_tool_usage_value(child, depth + 1, visited)?;
             }
             Ok(())
         }
-        Value::Number(number) if number.as_i64() == Some(0) || number.as_f64() == Some(0.0) => {
-            Ok(())
-        }
-        Value::Number(_) => Err(ResponseRawError::UnsupportedFeature),
+        Value::Number(number) if number.as_u64().is_some() => Ok(()),
+        Value::Number(_) => Err(ResponseRawError::InvalidValue),
         _ => Err(ResponseRawError::InvalidValue),
     }
 }

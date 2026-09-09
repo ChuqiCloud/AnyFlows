@@ -762,10 +762,7 @@ fn rejects_invalid_or_unsupported_same_protocol_echoes() {
     nonzero_tool_usage["tool_usage"] = json!({
         "web_search": { "num_requests": 1 }
     });
-    assert_eq!(
-        parse_json(nonzero_tool_usage),
-        Err(ParseResponseError::UnsupportedFeature)
-    );
+    assert!(parse_json(nonzero_tool_usage).is_ok());
 
     let mut malformed_tool_usage = response(vec![], "completed");
     malformed_tool_usage["tool_usage"] = json!({
@@ -825,4 +822,30 @@ fn redacts_response_and_error_debug_output() {
     let rendered = format!("{error:?}|{error}");
     assert!(!rendered.contains("canary-51aa"));
     assert!(error.source().is_none());
+}
+#[test]
+fn accepts_standard_provider_tool_echo() {
+    let mut value = response(vec![], "completed");
+    value["tools"] = json!([{
+        "type": "image_generation",
+        "background": "auto",
+        "model": "gpt-image-2-codex",
+        "moderation": "auto",
+        "n": 1,
+        "output_compression": 100,
+        "output_format": "png",
+        "quality": "auto",
+        "size": "auto"
+    }]);
+    value["tool_usage"] = json!({
+        "image_gen": {
+            "input_tokens": 0,
+            "input_tokens_details": {"image_tokens": 0, "text_tokens": 0},
+            "output_tokens": 0,
+            "output_tokens_details": {"image_tokens": 0, "text_tokens": 0},
+            "total_tokens": 0
+        },
+        "web_search": {"num_requests": 0}
+    });
+    assert!(parse_json(value).is_ok());
 }
