@@ -19,7 +19,6 @@ import type { PlaygroundDisplayStatus } from './playground-status'
 import type { PlaygroundSession } from './playground-types'
 
 type PlaygroundComparisonPanelProps = {
-  apiKeyReady: boolean
   canSend: boolean
   draft: string
   modelPicker: ReactNode
@@ -151,9 +150,7 @@ export function PlaygroundComparisonPanel(props: PlaygroundComparisonPanelProps)
             value={props.draft}
             className="max-h-44 min-h-20 resize-y rounded-none border-0 bg-transparent px-4 py-3.5 text-sm leading-6 shadow-none focus-visible:ring-0"
             maxLength={100_000}
-            placeholder={t(props.apiKeyReady
-              ? 'playground.composer.placeholder'
-              : 'playground.composer.apiKeyRequired')}
+            placeholder={t('playground.composer.placeholder')}
             disabled={props.streaming}
             aria-label={t('playground.composer.label')}
             onChange={(event) => props.onDraftChange(event.target.value)}

@@ -7,8 +7,10 @@ use std::{
 };
 
 use af_admin::{
-    ApiKeyDigest, PresentedApiKey, TokenAuthentication, TokenAuthenticationError,
-    TokenAuthenticationFuture, TokenAuthenticator,
+    ApiKeyDigest, LoginCredentials, PlaygroundAuthenticationFuture, PresentedApiKey,
+    SessionAuthentication, SessionAuthenticationError, SessionAuthenticationFuture,
+    SessionAuthenticator, SessionLoginFuture, SessionPrincipal, SessionRole, TokenAuthentication,
+    TokenAuthenticationError, TokenAuthenticationFuture, TokenAuthenticator,
 };
 use af_config::{ClientIpSource, CorsOrigin, ServerConfig};
 use af_domain::{
@@ -35,7 +37,8 @@ use tower::ServiceExt;
 use crate::{
     HEALTH_PATH, QueryApiKeyPolicy, READINESS_PATH, REQUEST_ID_HEADER_NAME, ReadinessFuture,
     ReadinessHandle, ReadinessProbe,
-    authentication::{AuthenticationState, authenticate_api_key},
+    authentication::{AuthenticationState, authenticate_api_key, authenticate_playground_session},
+    management_auth::{ManagementAuthenticationState, authenticate_management_session},
     operations::operations_router,
     router::build_router_with_routes,
 };
@@ -59,6 +62,13 @@ struct FakeAuthenticator {
     digests: Mutex<Vec<String>>,
     client_ips: Mutex<Vec<TrustedClientIp>>,
 }
+
+struct FakePlaygroundAuthenticator {
+    api_key_calls: AtomicUsize,
+    user_ids: Mutex<Vec<UserId>>,
+}
+
+struct FakeSessionAuthenticator;
 
 struct AlwaysReadyProbe;
 
@@ -88,6 +98,23 @@ impl FakeAuthenticator {
 
     fn client_ips(&self) -> Vec<TrustedClientIp> {
         self.client_ips.lock().unwrap().clone()
+    }
+}
+
+impl FakePlaygroundAuthenticator {
+    fn new() -> Self {
+        Self {
+            api_key_calls: AtomicUsize::new(0),
+            user_ids: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn api_key_calls(&self) -> usize {
+        self.api_key_calls.load(Ordering::Relaxed)
+    }
+
+    fn user_ids(&self) -> Vec<UserId> {
+        self.user_ids.lock().unwrap().clone()
     }
 }
 
@@ -122,6 +149,44 @@ impl TokenAuthenticator for FakeAuthenticator {
     }
 }
 
+impl TokenAuthenticator for FakePlaygroundAuthenticator {
+    fn authenticate<'a>(
+        &'a self,
+        _digest: &'a ApiKeyDigest,
+        _client_ip: TrustedClientIp,
+    ) -> TokenAuthenticationFuture<'a> {
+        self.api_key_calls.fetch_add(1, Ordering::Relaxed);
+        Box::pin(async { Err(TokenAuthenticationError::Internal) })
+    }
+
+    fn authenticate_playground<'a>(
+        &'a self,
+        user_id: UserId,
+    ) -> PlaygroundAuthenticationFuture<'a> {
+        self.user_ids.lock().unwrap().push(user_id);
+        Box::pin(async { Ok(test_playground_authentication()) })
+    }
+}
+
+impl SessionAuthenticator for FakeSessionAuthenticator {
+    fn login<'a>(&'a self, _credentials: &'a LoginCredentials) -> SessionLoginFuture<'a> {
+        Box::pin(async { Err(SessionAuthenticationError::InvalidCredentials) })
+    }
+
+    fn authenticate<'a>(&'a self, token: &'a str) -> SessionAuthenticationFuture<'a> {
+        Box::pin(async move {
+            if token != "valid-session" {
+                return Err(SessionAuthenticationError::InvalidSession);
+            }
+            Ok(SessionAuthentication::new(
+                SessionPrincipal::new(UserId::new(22).unwrap(), SessionRole::User),
+                GroupId::new(33).unwrap(),
+                u64::MAX,
+            ))
+        })
+    }
+}
+
 fn test_principal() -> GatewayPrincipal {
     GatewayPrincipal::new(
         TokenId::new(11).unwrap(),
@@ -132,6 +197,50 @@ fn test_principal() -> GatewayPrincipal {
 
 fn test_authentication() -> TokenAuthentication {
     TokenAuthentication::new(test_principal(), TokenModelPolicy::unrestricted())
+}
+
+fn test_playground_authentication() -> TokenAuthentication {
+    TokenAuthentication::new(
+        GatewayPrincipal::playground(
+            TokenId::new(41).unwrap(),
+            UserId::new(22).unwrap(),
+            GroupId::new(33).unwrap(),
+        ),
+        TokenModelPolicy::unrestricted(),
+    )
+}
+
+async fn playground_handler(
+    Extension(authentication): Extension<TokenAuthentication>,
+    headers: HeaderMap,
+) -> StatusCode {
+    assert!(authentication.principal().is_playground());
+    assert_eq!(
+        authentication.principal().user_id(),
+        UserId::new(22).unwrap()
+    );
+    assert!(headers.get(AUTHORIZATION).is_none());
+    assert!(headers.get("x-api-key").is_none());
+    assert!(headers.get("x-goog-api-key").is_none());
+    StatusCode::NO_CONTENT
+}
+
+fn playground_router(authenticator: Arc<FakePlaygroundAuthenticator>) -> Router {
+    let config = ServerConfig::default();
+    let playground_authentication = middleware::from_fn_with_state(
+        AuthenticationState::new(authenticator, QueryApiKeyPolicy::Deny, &config),
+        authenticate_playground_session,
+    );
+    let session_authentication = middleware::from_fn_with_state(
+        ManagementAuthenticationState::new(Arc::new(FakeSessionAuthenticator)),
+        authenticate_management_session,
+    );
+    Router::new()
+        .route(
+            "/api/playground/v1/chat/completions",
+            post(playground_handler).route_layer(playground_authentication),
+        )
+        .layer(session_authentication)
 }
 
 fn server_config(origins: &[&str]) -> ServerConfig {
@@ -255,6 +364,40 @@ async fn valid_key_is_hashed_once_and_verified_principal_reaches_handler() {
         authenticator.client_ips(),
         vec![TrustedClientIp::new(TEST_PEER_IP.parse().unwrap())]
     );
+}
+
+#[tokio::test]
+async fn playground_requires_session_and_authenticates_by_session_user() {
+    let authenticator = Arc::new(FakePlaygroundAuthenticator::new());
+    let missing_session = playground_router(Arc::clone(&authenticator))
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/playground/v1/chat/completions")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(missing_session.status(), StatusCode::UNAUTHORIZED);
+    assert!(authenticator.user_ids().is_empty());
+
+    let valid_session = playground_router(Arc::clone(&authenticator))
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/playground/v1/chat/completions")
+                .header(AUTHORIZATION, "Bearer valid-session")
+                .header("x-api-key", "sdk-placeholder")
+                .header("x-goog-api-key", "sdk-placeholder")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(valid_session.status(), StatusCode::NO_CONTENT);
+    assert_eq!(authenticator.user_ids(), vec![UserId::new(22).unwrap()]);
+    assert_eq!(authenticator.api_key_calls(), 0);
 }
 
 #[tokio::test]

@@ -7,6 +7,7 @@ import type {
   VideoTaskListPage,
   VideoTaskStatus,
 } from './video-task-types'
+import { getManagementSessionToken } from '@/lib/api/session-token'
 
 const MAX_RESPONSE_BYTES = 1024 * 1024
 const taskIdPattern = /^[0-9a-f]{32}$/
@@ -24,15 +25,14 @@ class VideoTaskRequestError extends Error {
 
 /** 提交任务时不做自动重试，结果未知由调用方复用原幂等键显式恢复。 */
 export async function submitVideoTask(
-  apiKey: string,
   idempotencyKey: string,
   request: VideoTaskRequest,
   signal?: AbortSignal,
 ) {
-  const response = await fetch('/v1/videos/generations', {
+  const response = await fetch('/api/playground/v1/videos/generations', {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: sessionAuthorization(),
       'Content-Type': 'application/json',
       'Idempotency-Key': idempotencyKey,
     },
@@ -52,13 +52,12 @@ export async function submitVideoTask(
 
 /** 查询只读取 owner-scoped 本地任务，并允许服务端重取原任务的短期结果地址。 */
 export async function pollVideoTask(
-  apiKey: string,
   taskId: string,
   signal?: AbortSignal,
 ): Promise<VideoTaskPollResponse> {
   if (!taskIdPattern.test(taskId)) throw requestError(404, undefined)
-  const response = await fetch(`/v1/videos/${encodeURIComponent(taskId)}`, {
-    headers: { Authorization: `Bearer ${apiKey}` },
+  const response = await fetch(`/api/playground/v1/videos/${encodeURIComponent(taskId)}`, {
+    headers: { Authorization: sessionAuthorization() },
     cache: 'no-store',
     signal,
   })
@@ -69,7 +68,6 @@ export async function pollVideoTask(
 
 /** 列表只读取 owner-scoped 持久化摘要，不会触发上游轮询。 */
 export async function listVideoTasks(
-  apiKey: string,
   before?: string,
   signal?: AbortSignal,
 ): Promise<VideoTaskListPage> {
@@ -78,14 +76,19 @@ export async function listVideoTasks(
   }
   const query = new URLSearchParams({ limit: '20' })
   if (before) query.set('before', before)
-  const response = await fetch(`/v1/videos?${query.toString()}`, {
-    headers: { Authorization: `Bearer ${apiKey}` },
+  const response = await fetch(`/api/playground/v1/videos?${query.toString()}`, {
+    headers: { Authorization: sessionAuthorization() },
     cache: 'no-store',
     signal,
   })
   const payload = await readJson(response)
   if (!response.ok) throw requestError(response.status, payload)
   return parseListPage(payload)
+}
+
+function sessionAuthorization() {
+  const token = getManagementSessionToken()
+  return token ? `Bearer ${token}` : ''
 }
 
 export function videoTaskError(error: unknown): VideoTaskApiError {

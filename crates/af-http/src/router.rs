@@ -35,7 +35,9 @@ use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer, trace::TraceLaye
 
 use crate::announcements::build_announcement_router;
 use crate::anthropic_messages::anthropic_messages;
-use crate::authentication::{AuthenticationState, authenticate_api_key};
+use crate::authentication::{
+    AuthenticationState, authenticate_api_key, authenticate_playground_session,
+};
 use crate::balance_alert_settings::build_balance_alert_settings_router;
 use crate::credential_proxies::build_credential_proxy_router;
 use crate::custom_oauth2::build_custom_oauth2_router;
@@ -313,9 +315,28 @@ pub fn build_router(
         authenticate_api_key,
     );
     let gemini_authentication = middleware::from_fn_with_state(
-        AuthenticationState::new(authenticator, query_api_key_policy, config)
+        AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config)
             .with_error_protocol(Protocol::Gemini),
         authenticate_api_key,
+    );
+    let playground_openai_authentication = middleware::from_fn_with_state(
+        AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config),
+        authenticate_playground_session,
+    );
+    let playground_responses_authentication = middleware::from_fn_with_state(
+        AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config)
+            .with_error_protocol(Protocol::OpenAiResponses),
+        authenticate_playground_session,
+    );
+    let playground_anthropic_authentication = middleware::from_fn_with_state(
+        AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config)
+            .with_error_protocol(Protocol::Anthropic),
+        authenticate_playground_session,
+    );
+    let playground_video_authentication = middleware::from_fn_with_state(
+        AuthenticationState::new(authenticator, query_api_key_policy, config)
+            .with_error_protocol(Protocol::XaiVideo),
+        authenticate_playground_session,
     );
     let http_state = HttpState::new(
         chat,
@@ -420,6 +441,38 @@ pub fn build_router(
             // Google 风格动作与模型共享一个路径段，由 handler 严格拆分两个已实现动作。
             post(gemini_generate_content).route_layer(gemini_authentication),
         )
+        .with_state(http_state.clone());
+    let playground_session_authentication = middleware::from_fn_with_state(
+        ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
+        authenticate_management_session,
+    );
+    let playground_routes = Router::new()
+        .route(
+            "/api/playground/v1/chat/completions",
+            post(chat_completions).route_layer(playground_openai_authentication),
+        )
+        .route(
+            "/api/playground/v1/responses",
+            post(openai_responses).route_layer(playground_responses_authentication),
+        )
+        .route(
+            "/api/playground/v1/messages",
+            post(anthropic_messages).route_layer(playground_anthropic_authentication),
+        )
+        .route(
+            "/api/playground/v1/videos/generations",
+            post(submit_video_task).route_layer(playground_video_authentication.clone()),
+        )
+        .route(
+            "/api/playground/v1/videos",
+            get(list_video_tasks).route_layer(playground_video_authentication.clone()),
+        )
+        .route(
+            "/api/playground/v1/videos/{task_id}",
+            get(poll_video_task).route_layer(playground_video_authentication),
+        )
+        // 最外层先校验 JWT，内层才能把会话用户解析为试炼场主体。
+        .layer(playground_session_authentication)
         .with_state(http_state.clone());
     let session_route_authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(session_authenticator),
@@ -1081,6 +1134,7 @@ pub fn build_router(
     };
     HttpRouter::new(build_router_with_routes_and_frontend(
         public_routes
+            .merge(playground_routes)
             .merge(management_routes)
             .merge(payment_webhook_routes.unwrap_or_else(Router::new)),
         operations_router(readiness),

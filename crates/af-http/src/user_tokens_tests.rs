@@ -204,20 +204,6 @@ async fn authenticated_user_can_manage_only_principal_scoped_keys() {
     assert_eq!(created_body["token"]["name"], "created");
     assert_eq!(created_body["api_key"].as_str().unwrap().len(), 49);
 
-    let playground = app
-        .clone()
-        .oneshot(request("POST", "/api/playground/token", USER_SESSION, None))
-        .await
-        .unwrap();
-    assert_eq!(playground.status(), StatusCode::CREATED);
-    assert_eq!(
-        response_json(playground).await["api_key"]
-            .as_str()
-            .unwrap()
-            .len(),
-        49
-    );
-
     let updated = app
         .clone()
         .oneshot(request(

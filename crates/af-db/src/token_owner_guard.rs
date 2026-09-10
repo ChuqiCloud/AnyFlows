@@ -12,6 +12,8 @@ use crate::entity::{tokens, users};
 pub(crate) struct LockedTokenOwner {
     status: i16,
     default_group_id: GroupId,
+    concurrency: Option<i32>,
+    rpm_limit: Option<i32>,
 }
 
 impl LockedTokenOwner {
@@ -23,6 +25,16 @@ impl LockedTokenOwner {
     /// 返回数据库中的默认分组。
     pub(crate) const fn default_group_id(self) -> GroupId {
         self.default_group_id
+    }
+
+    /// 返回用户级并发限制原始值，由认证边界统一校验。
+    pub(crate) const fn concurrency(self) -> Option<i32> {
+        self.concurrency
+    }
+
+    /// 返回用户级 RPM 限制原始值，由认证边界统一校验。
+    pub(crate) const fn rpm_limit(self) -> Option<i32> {
+        self.rpm_limit
     }
 }
 
@@ -56,13 +68,15 @@ pub(crate) async fn lock_non_deleted_owner(
         .select_only()
         .column(users::Column::Status)
         .column(users::Column::DefaultGroupId)
+        .column(users::Column::Concurrency)
+        .column(users::Column::RpmLimit)
         .filter(users::Column::Id.eq(owner_user_id.get()))
         .filter(users::Column::DeletedAt.is_null());
     if transaction.get_database_backend() != DbBackend::Sqlite {
         query = query.lock(LockType::Update);
     }
-    let Some((status, default_group_id)) = query
-        .into_tuple::<(i16, i64)>()
+    let Some((status, default_group_id, concurrency, rpm_limit)) = query
+        .into_tuple::<(i16, i64, Option<i32>, Option<i32>)>()
         .one(transaction)
         .await
         .map_err(|_| TokenOwnerGuardError::Query)?
@@ -73,6 +87,8 @@ pub(crate) async fn lock_non_deleted_owner(
         status,
         default_group_id: GroupId::new(default_group_id)
             .map_err(|_| TokenOwnerGuardError::Invariant)?,
+        concurrency,
+        rpm_limit,
     }))
 }
 
@@ -84,6 +100,7 @@ pub(crate) async fn non_deleted_token_count(
     tokens::Entity::find()
         .filter(tokens::Column::UserId.eq(owner_user_id.get()))
         .filter(tokens::Column::OrganizationId.is_null())
+        .filter(tokens::Column::Name.ne(af_domain::PLAYGROUND_TOKEN_NAME))
         .filter(tokens::Column::DeletedAt.is_null())
         .count(transaction)
         .await

@@ -3,6 +3,7 @@ use std::{fmt, future::Future, num::NonZeroU32, pin::Pin};
 use af_db::{TokenAuthLookup, TokenAuthLookupOutcome, TokenAuthRepository};
 use af_domain::{
     ConcurrencyLimit, GatewayPrincipal, TokenModelPolicy, TrustedClientIp, UpstreamRetryAfter,
+    UserId,
 };
 use thiserror::Error;
 
@@ -12,6 +13,9 @@ use crate::ApiKeyDigest;
 pub type TokenAuthenticationFuture<'a> = Pin<
     Box<dyn Future<Output = Result<TokenAuthentication, TokenAuthenticationError>> + Send + 'a>,
 >;
+
+/// 会话试炼场认证调用的对象安全 Future。
+pub type PlaygroundAuthenticationFuture<'a> = TokenAuthenticationFuture<'a>;
 
 /// 单次请求完成持久化校验后的身份与不可变令牌策略快照。
 #[derive(Clone, Eq, PartialEq)]
@@ -123,6 +127,14 @@ pub trait TokenAuthenticator: Send + Sync {
         digest: &'a ApiKeyDigest,
         client_ip: TrustedClientIp,
     ) -> TokenAuthenticationFuture<'a>;
+
+    /// 按已认证管理会话解析试炼场内部主体；不会接收或返回浏览器 API Key。
+    fn authenticate_playground<'a>(
+        &'a self,
+        _user_id: UserId,
+    ) -> PlaygroundAuthenticationFuture<'a> {
+        Box::pin(async { Err(TokenAuthenticationError::Internal) })
+    }
 }
 
 /// 使用 `af-db` 仓储完成令牌与客户端 IP 认证的生产实现。
@@ -148,6 +160,29 @@ impl TokenAuthenticator for DatabaseTokenAuthenticator {
             let lookup = TokenAuthLookup::new(digest.as_str())
                 .map_err(|_| TokenAuthenticationError::Internal)?;
             match self.repository.lookup(&lookup, client_ip).await {
+                Ok(TokenAuthLookupOutcome::Authenticated {
+                    principal,
+                    model_policy,
+                    user_concurrency,
+                    user_rpm_limit,
+                    group_rpm_limit,
+                }) => Ok(TokenAuthentication::new(principal, model_policy)
+                    .with_user_concurrency(user_concurrency)
+                    .with_rpm_limits(user_rpm_limit, group_rpm_limit)),
+                Ok(TokenAuthLookupOutcome::Rejected) => {
+                    Err(TokenAuthenticationError::InvalidApiKey)
+                }
+                Err(_) => Err(TokenAuthenticationError::Internal),
+            }
+        })
+    }
+
+    fn authenticate_playground<'a>(
+        &'a self,
+        user_id: UserId,
+    ) -> PlaygroundAuthenticationFuture<'a> {
+        Box::pin(async move {
+            match self.repository.lookup_playground(user_id).await {
                 Ok(TokenAuthLookupOutcome::Authenticated {
                     principal,
                     model_policy,

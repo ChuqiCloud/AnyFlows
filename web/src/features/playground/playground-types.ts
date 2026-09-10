@@ -29,7 +29,6 @@ export type PlaygroundRequestState = 'idle' | 'streaming' | 'complete' | 'cancel
 export type PlaygroundOverallState = PlaygroundRequestState | 'partial'
 
 export type PlaygroundGenerationSettings = {
-  apiKey: string
   model: string
   protocol: PlaygroundProtocol
   systemPrompt: string
