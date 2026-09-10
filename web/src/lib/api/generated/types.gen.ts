@@ -6911,22 +6911,6 @@ export type CreateUserTokenResponses = {
     201: IssuedUserToken;
 };
 export type CreateUserTokenResponse = CreateUserTokenResponses[keyof CreateUserTokenResponses];
-export type CreatePlaygroundTokenData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/api/playground/token';
-};
-export type CreatePlaygroundTokenErrors = {
-    401: ManagementError;
-    409: ManagementError;
-    500: ManagementError;
-};
-export type CreatePlaygroundTokenError = CreatePlaygroundTokenErrors[keyof CreatePlaygroundTokenErrors];
-export type CreatePlaygroundTokenResponses = {
-    201: IssuedUserToken;
-};
-export type CreatePlaygroundTokenResponse = CreatePlaygroundTokenResponses[keyof CreatePlaygroundTokenResponses];
 export type DeleteUserTokenData = {
     body?: never;
     path: {

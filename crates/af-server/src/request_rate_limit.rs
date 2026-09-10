@@ -1,13 +1,14 @@
 use std::{future::Future, num::NonZeroU32, pin::Pin, sync::Arc, time::Duration};
 
 use af_admin::{
-    ApiKeyDigest, TokenAuthenticationError, TokenAuthenticationFuture, TokenAuthenticator,
+    ApiKeyDigest, PlaygroundAuthenticationFuture, TokenAuthentication, TokenAuthenticationError,
+    TokenAuthenticationFuture, TokenAuthenticator,
 };
 use af_cache::{
     CacheError, RedisFailureKind, RedisRequestRateLimitStore, RequestRateLimitOutcome,
     RequestRateLimitRule, RequestRateLimitSubject,
 };
-use af_domain::{GatewayPrincipal, UpstreamRetryAfter};
+use af_domain::{GatewayPrincipal, UpstreamRetryAfter, UserId};
 use af_telemetry::{
     MetricRequestRateLimitFailure, MetricRequestRateLimitSubject,
     record_request_rate_limit_admission, record_request_rate_limit_check,
@@ -54,69 +55,83 @@ impl TokenAuthenticator for RuntimeTokenAuthenticator {
     ) -> TokenAuthenticationFuture<'a> {
         let store = self.store.clone();
         Box::pin(async move {
-            let authentication = self.inner.authenticate(digest, client_ip).await?;
-            let rules = build_rules(
-                authentication.principal(),
-                authentication.user_rpm_limit(),
-                authentication.group_rpm_limit(),
-            )
-            .map_err(|_| {
-                record_request_rate_limit_failure(MetricRequestRateLimitFailure::InvalidRule);
-                tracing::error!(
-                    target: "af_server::request_rate_limit",
-                    error_kind = "request_rate_limit_rule_invalid",
-                    "认证快照中的 RPM 规则无效"
-                );
-                TokenAuthenticationError::RateLimitUnavailable
-            })?;
-            if rules.is_empty() {
-                return Ok(authentication);
-            }
-            record_request_rate_limit_check(u32::try_from(rules.len()).unwrap_or(u32::MAX));
+            admit_authentication(self.inner.authenticate(digest, client_ip).await?, store).await
+        })
+    }
 
-            let Some(store) = store else {
-                record_request_rate_limit_failure(MetricRequestRateLimitFailure::StoreMissing);
+    fn authenticate_playground<'a>(
+        &'a self,
+        user_id: UserId,
+    ) -> PlaygroundAuthenticationFuture<'a> {
+        let store = self.store.clone();
+        Box::pin(async move {
+            admit_authentication(self.inner.authenticate_playground(user_id).await?, store).await
+        })
+    }
+}
+
+async fn admit_authentication(
+    authentication: TokenAuthentication,
+    store: Option<Arc<dyn RequestRateLimitStore>>,
+) -> Result<TokenAuthentication, TokenAuthenticationError> {
+    let rules = build_rules(
+        authentication.principal(),
+        authentication.user_rpm_limit(),
+        authentication.group_rpm_limit(),
+    )
+    .map_err(|_| {
+        record_request_rate_limit_failure(MetricRequestRateLimitFailure::InvalidRule);
+        tracing::error!(
+            target: "af_server::request_rate_limit",
+            error_kind = "request_rate_limit_rule_invalid",
+            "认证快照中的 RPM 规则无效"
+        );
+        TokenAuthenticationError::RateLimitUnavailable
+    })?;
+    if rules.is_empty() {
+        return Ok(authentication);
+    }
+    record_request_rate_limit_check(u32::try_from(rules.len()).unwrap_or(u32::MAX));
+
+    let Some(store) = store else {
+        record_request_rate_limit_failure(MetricRequestRateLimitFailure::StoreMissing);
+        tracing::error!(
+            target: "af_server::request_rate_limit",
+            error_kind = "request_rate_limit_store_missing",
+            "有限 RPM 策略缺少权威限流存储"
+        );
+        return Err(TokenAuthenticationError::RateLimitUnavailable);
+    };
+    match store.admit(&rules).await {
+        Ok(RequestRateLimitOutcome::Admitted) => {
+            record_request_rate_limit_admission();
+            Ok(authentication)
+        }
+        Ok(RequestRateLimitOutcome::Limited(rejection)) => {
+            let Some(retry_after) = retry_after(rejection.retry_after()) else {
+                record_request_rate_limit_failure(MetricRequestRateLimitFailure::InvalidRetryAfter);
                 tracing::error!(
                     target: "af_server::request_rate_limit",
-                    error_kind = "request_rate_limit_store_missing",
-                    "有限 RPM 策略缺少权威限流存储"
+                    error_kind = "request_rate_limit_retry_after_invalid",
+                    "限流存储返回了无法表达的重试时间"
                 );
                 return Err(TokenAuthenticationError::RateLimitUnavailable);
             };
-            match store.admit(&rules).await {
-                Ok(RequestRateLimitOutcome::Admitted) => {
-                    record_request_rate_limit_admission();
-                    Ok(authentication)
-                }
-                Ok(RequestRateLimitOutcome::Limited(rejection)) => {
-                    let Some(retry_after) = retry_after(rejection.retry_after()) else {
-                        record_request_rate_limit_failure(
-                            MetricRequestRateLimitFailure::InvalidRetryAfter,
-                        );
-                        tracing::error!(
-                            target: "af_server::request_rate_limit",
-                            error_kind = "request_rate_limit_retry_after_invalid",
-                            "限流存储返回了无法表达的重试时间"
-                        );
-                        return Err(TokenAuthenticationError::RateLimitUnavailable);
-                    };
-                    record_request_rate_limit_rejection(
-                        metric_subject(rejection.subject()),
-                        rejection.retry_after(),
-                    );
-                    Err(TokenAuthenticationError::RateLimited { retry_after })
-                }
-                Err(error) => {
-                    record_request_rate_limit_failure(metric_failure(error));
-                    tracing::error!(
-                        target: "af_server::request_rate_limit",
-                        error_kind = "request_rate_limit_store_error",
-                        "生产请求限流存储调用失败"
-                    );
-                    Err(TokenAuthenticationError::RateLimitUnavailable)
-                }
-            }
-        })
+            record_request_rate_limit_rejection(
+                metric_subject(rejection.subject()),
+                rejection.retry_after(),
+            );
+            Err(TokenAuthenticationError::RateLimited { retry_after })
+        }
+        Err(error) => {
+            record_request_rate_limit_failure(metric_failure(error));
+            tracing::error!(
+                target: "af_server::request_rate_limit",
+                error_kind = "request_rate_limit_store_error",
+                "生产请求限流存储调用失败"
+            );
+            Err(TokenAuthenticationError::RateLimitUnavailable)
+        }
     }
 }
 

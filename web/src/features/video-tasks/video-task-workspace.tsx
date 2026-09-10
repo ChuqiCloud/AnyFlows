@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { EMPTY_MODEL_CATALOG_FILTERS, useModelCatalog } from '@/features/models/model-api'
-import { VideoTaskAccessPanel } from './video-task-access-panel'
 import { VideoTaskHistoryPanel } from './video-task-history-panel'
 import { VideoTaskRequestPanel } from './video-task-request-panel'
 import { VideoTaskResultPanel } from './video-task-result-panel'
@@ -18,7 +17,7 @@ type VideoTaskWorkspaceProps = {
 export function VideoTaskWorkspace(props: VideoTaskWorkspaceProps) {
   const { t } = useTranslation()
   const workspace = useVideoTaskWorkspace()
-  const history = useVideoTaskHistory(workspace.apiKey)
+  const history = useVideoTaskHistory()
   const refreshHistory = history.refresh
   const [submittedRequest, setSubmittedRequest] = useState<VideoTaskRequest>()
   const catalogQuery = useModelCatalog('', {
@@ -63,15 +62,10 @@ export function VideoTaskWorkspace(props: VideoTaskWorkspaceProps) {
 
       <div className="grid min-h-0 min-w-0 flex-1 gap-2.5 lg:grid-cols-[20rem_minmax(0,1fr)]">
         <aside className="self-start overflow-hidden rounded-xl border border-dashed border-[var(--hairline)] bg-surface-1/82 shadow-subtle backdrop-blur-xl lg:sticky lg:top-3">
-          <VideoTaskAccessPanel
-            apiKeyReady={workspace.apiKey.length > 0}
-            apiKeyProvisioning={workspace.apiKeyProvisioning}
-            onProvisionApiKey={workspace.provisionApiKey}
-          />
           <VideoTaskRequestPanel
             key={workspace.idempotencyKey}
             busy={workspace.busy}
-            credentialReady={workspace.apiKey.length > 0}
+            credentialReady
             idempotencyKey={workspace.idempotencyKey}
             locked={workspace.requestLocked}
             models={models}

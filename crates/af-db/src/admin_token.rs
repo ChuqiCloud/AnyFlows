@@ -1,6 +1,6 @@
 use std::{fmt, time::Duration};
 
-use af_domain::{GroupId, TokenId, UserId};
+use af_domain::{GroupId, PLAYGROUND_TOKEN_NAME, TokenId, UserId};
 use sea_orm::{
     ConnectionTrait, DbBackend, DbErr, QueryResult,
     entity::prelude::TimeDateTimeWithTimeZone,
@@ -559,6 +559,7 @@ fn list_query(
     let mut query = base_query(database_backend);
     query
         .and_where(Expr::col((tokens::Entity, tokens::Column::OrganizationId)).is_null())
+        .and_where(Expr::col((tokens::Entity, tokens::Column::Name)).ne(PLAYGROUND_TOKEN_NAME))
         .and_where(Expr::col((tokens::Entity, tokens::Column::DeletedAt)).is_null())
         .order_by((tokens::Entity, tokens::Column::Id), Order::Asc)
         .limit((limit + 1) as u64);
@@ -572,6 +573,7 @@ pub(super) fn detail_query(database_backend: DbBackend, token_id: TokenId) -> Se
     base_query(database_backend)
         .and_where(Expr::col((tokens::Entity, tokens::Column::Id)).eq(token_id.get()))
         .and_where(Expr::col((tokens::Entity, tokens::Column::OrganizationId)).is_null())
+        .and_where(Expr::col((tokens::Entity, tokens::Column::Name)).ne(PLAYGROUND_TOKEN_NAME))
         .and_where(Expr::col((tokens::Entity, tokens::Column::DeletedAt)).is_null())
         .limit(2)
         .to_owned()

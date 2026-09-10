@@ -1,9 +1,6 @@
 import type { ReactNode } from 'react'
-import { LoaderCircle, RefreshCw, ShieldCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
@@ -11,14 +8,11 @@ import { Textarea } from '@/components/ui/textarea'
 type PlaygroundSettingsProps = {
   idPrefix: string
   modelPicker?: ReactNode
-  apiKeyReady: boolean
-  apiKeyProvisioning: 'idle' | 'pending' | 'failed'
   systemPrompt: string
   temperatureEnabled: boolean
   temperature: number
   maxOutputTokensEnabled: boolean
   maxOutputTokens: number
-  onProvisionApiKey: () => void
   onSystemPromptChange: (value: string) => void
   onTemperatureEnabledChange: (value: boolean) => void
   onTemperatureChange: (value: number) => void
@@ -32,38 +26,8 @@ export function PlaygroundSettings(props: PlaygroundSettingsProps) {
   const temperatureId = `${props.idPrefix}-temperature`
   const maxTokensId = `${props.idPrefix}-max-tokens`
 
-  const keyStatus = props.apiKeyReady
-    ? 'ready'
-    : props.apiKeyProvisioning === 'pending'
-      ? 'provisioning'
-      : props.apiKeyProvisioning === 'failed'
-        ? 'failed'
-        : 'missing'
-
   return (
     <div className="grid p-4">
-      <section className="grid gap-2.5 border-b border-dashed border-[var(--hairline)] pb-4">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-xs font-semibold">{t('playground.settings.access')}</h2>
-          <Badge className={keyStatus === 'ready' ? 'bg-success/12 text-success' : 'bg-warning/12 text-warning'}>
-            {keyStatus === 'provisioning' ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : null}
-            {t(`playground.apiKey.${keyStatus}`)}
-          </Badge>
-        </div>
-        <div className="flex gap-2.5 rounded-md border border-[var(--hairline)] bg-surface-2/60 p-2.5">
-          <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
-          <div className="min-w-0 text-[0.6875rem] leading-5">
-            <p className="font-medium text-foreground">{t('playground.apiKey.platformTitle')}</p>
-            <p className="text-muted-foreground">{t('playground.apiKey.platformDescription')}</p>
-          </div>
-        </div>
-        {keyStatus === 'failed' || keyStatus === 'missing' ? (
-          <Button type="button" size="sm" variant="secondary" onClick={props.onProvisionApiKey}>
-            <RefreshCw aria-hidden="true" />{t('playground.apiKey.retry')}
-          </Button>
-        ) : null}
-      </section>
-
       {props.modelPicker ? (
         <section className="grid gap-2.5 border-b border-dashed border-[var(--hairline)] py-4">
           <h2 className="text-xs font-semibold">{t('playground.settings.model')}</h2>

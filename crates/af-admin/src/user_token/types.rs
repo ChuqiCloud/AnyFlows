@@ -301,20 +301,6 @@ impl UserTokenWriteCommand {
         })
     }
 
-    /// 构造服务端专用的试炼场托管 Key，调用方不能覆盖名称、额度或访问范围。
-    #[must_use]
-    pub fn playground() -> Self {
-        Self {
-            name: PLAYGROUND_TOKEN_NAME.to_owned(),
-            status: UserTokenStatus::Enabled,
-            remain_quota: 0,
-            unlimited_quota: true,
-            expired_at: None,
-            model_limits: None,
-            allow_ips: None,
-        }
-    }
-
     pub(super) fn into_record(self) -> UserTokenWriteRecord {
         UserTokenWriteRecord::new(
             self.name,
@@ -433,8 +419,5 @@ mod tests {
             .unwrap_err(),
             UserTokenError::InvalidInput
         );
-        let playground = UserTokenWriteCommand::playground();
-        assert_eq!(playground.name, PLAYGROUND_TOKEN_NAME);
-        assert!(playground.unlimited_quota);
     }
 }

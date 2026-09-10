@@ -70,14 +70,11 @@ export function PlaygroundPage() {
   const renderSettings = (idPrefix: string) => (
     <PlaygroundSettings
       idPrefix={idPrefix}
-      apiKeyReady={configuration.apiKey.length > 0}
-      apiKeyProvisioning={configuration.apiKeyProvisioning}
       systemPrompt={configuration.systemPrompt}
       temperatureEnabled={configuration.temperatureEnabled}
       temperature={configuration.temperature}
       maxOutputTokensEnabled={configuration.maxOutputTokensEnabled}
       maxOutputTokens={configuration.maxOutputTokens}
-      onProvisionApiKey={configuration.provisionApiKey}
       onSystemPromptChange={configuration.setSystemPrompt}
       onTemperatureEnabledChange={configuration.setTemperatureEnabled}
       onTemperatureChange={configuration.setTemperature}
@@ -97,12 +94,11 @@ export function PlaygroundPage() {
       || !configuration.selectedProtocolsReady
     ) {
       status = 'modelUnavailable'
-    } else if (!configuration.apiKey) status = 'keyRequired'
+    }
   }
 
   const canSend = Boolean(
-    configuration.apiKey
-    && configuration.selectedModels.length > 0
+    configuration.selectedModels.length > 0
     && configuration.selectedProtocolsReady
     && !configuration.catalogInvalid
     && comparison.draft.trim()
@@ -111,7 +107,6 @@ export function PlaygroundPage() {
   )
 
   const changeMode = (nextMode: PlaygroundMode) => {
-    if (nextMode === 'chat') configuration.reloadApiKey()
     setMode(nextMode)
   }
 
@@ -172,7 +167,6 @@ export function PlaygroundPage() {
           )}
         >
           <PlaygroundComparisonPanel
-            apiKeyReady={configuration.apiKey.length > 0}
             canSend={canSend}
             draft={comparison.draft}
             modelPicker={renderModelPicker(true)}

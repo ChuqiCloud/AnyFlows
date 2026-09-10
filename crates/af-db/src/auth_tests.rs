@@ -189,8 +189,7 @@ async fn valid_lookup_uses_token_override_and_user_default_group() -> Result<(),
 }
 
 #[tokio::test]
-async fn playground_token_name_marks_only_the_authenticated_principal() -> Result<(), Box<dyn Error>>
-{
+async fn reserved_playground_key_cannot_authenticate_externally() -> Result<(), Box<dyn Error>> {
     let fixture = fixture(Duration::from_secs(1)).await?;
     set_token_column(
         &fixture,
@@ -199,14 +198,13 @@ async fn playground_token_name_marks_only_the_authenticated_principal() -> Resul
     )
     .await?;
 
-    let TokenAuthLookupOutcome::Authenticated { principal, .. } = fixture
-        .repository
-        .lookup(&fixture.lookup, test_client_ip())
-        .await?
-    else {
-        return Err("试炼场 Token 必须返回已认证主体".into());
-    };
-    assert!(principal.is_playground());
+    assert!(matches!(
+        fixture
+            .repository
+            .lookup(&fixture.lookup, test_client_ip())
+            .await?,
+        TokenAuthLookupOutcome::Rejected
+    ));
 
     set_token_column(&fixture, tokens::Column::Name, Expr::value("regular-token")).await?;
     let TokenAuthLookupOutcome::Authenticated { principal, .. } = fixture
@@ -217,6 +215,108 @@ async fn playground_token_name_marks_only_the_authenticated_principal() -> Resul
         return Err("普通 Token 必须返回已认证主体".into());
     };
     assert!(!principal.is_playground());
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn playground_session_reuses_one_internal_principal_and_rotates_legacy_hash()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture(Duration::from_secs(1)).await?;
+    set_token_column(
+        &fixture,
+        tokens::Column::Name,
+        Expr::value(af_domain::PLAYGROUND_TOKEN_NAME),
+    )
+    .await?;
+
+    let first = fixture
+        .repository
+        .lookup_playground(af_domain::UserId::new(fixture.user_id)?)
+        .await?;
+    let second = fixture
+        .repository
+        .lookup_playground(af_domain::UserId::new(fixture.user_id)?)
+        .await?;
+    let (
+        TokenAuthLookupOutcome::Authenticated {
+            principal: first_principal,
+            ..
+        },
+        TokenAuthLookupOutcome::Authenticated {
+            principal: second_principal,
+            ..
+        },
+    ) = (first, second)
+    else {
+        return Err("有效会话必须解析为试炼场主体".into());
+    };
+    assert!(first_principal.is_playground());
+    assert_eq!(first_principal.token_id(), second_principal.token_id());
+    assert_eq!(first_principal.token_id().get(), fixture.token_id);
+
+    let stored = tokens::Entity::find_by_id(fixture.token_id)
+        .one(fixture.pool.connection())
+        .await?
+        .expect("内部试炼场主体必须存在");
+    assert_eq!(stored.key_prefix, "internal-playground");
+    assert_ne!(stored.key_hash, TokenHash::parse(VALID_HASH)?);
+    assert!(stored.deleted_at.is_none());
+    assert!(matches!(
+        fixture
+            .repository
+            .lookup(&fixture.lookup, test_client_ip())
+            .await?,
+        TokenAuthLookupOutcome::Rejected
+    ));
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn playground_session_soft_deletes_duplicate_legacy_principals() -> Result<(), Box<dyn Error>>
+{
+    let fixture = fixture(Duration::from_secs(1)).await?;
+    set_token_column(
+        &fixture,
+        tokens::Column::Name,
+        Expr::value(af_domain::PLAYGROUND_TOKEN_NAME),
+    )
+    .await?;
+    let duplicate = tokens::ActiveModel {
+        user_id: Set(fixture.user_id),
+        key_hash: Set(TokenHash::parse(
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        )?),
+        key_prefix: Set("sk-af-legacy".to_owned()),
+        name: Set(af_domain::PLAYGROUND_TOKEN_NAME.to_owned()),
+        status: Set(1),
+        ..Default::default()
+    }
+    .insert(fixture.pool.connection())
+    .await?;
+
+    let outcome = fixture
+        .repository
+        .lookup_playground(af_domain::UserId::new(fixture.user_id)?)
+        .await?;
+    let TokenAuthLookupOutcome::Authenticated { principal, .. } = outcome else {
+        return Err("有效会话必须解析为试炼场主体".into());
+    };
+    assert_eq!(principal.token_id().get(), fixture.token_id);
+
+    let canonical = tokens::Entity::find_by_id(fixture.token_id)
+        .one(fixture.pool.connection())
+        .await?
+        .expect("规范试炼场主体必须存在");
+    let duplicate = tokens::Entity::find_by_id(duplicate.id)
+        .one(fixture.pool.connection())
+        .await?
+        .expect("重复主体必须保留审计记录");
+    assert!(canonical.deleted_at.is_none());
+    assert!(duplicate.deleted_at.is_some());
+
     fixture.pool.close().await?;
     Ok(())
 }

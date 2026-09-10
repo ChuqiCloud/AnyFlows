@@ -9,7 +9,7 @@ use axum::{
     extract::{DefaultBodyLimit, Extension, Path, RawQuery, State, rejection::JsonRejection},
     middleware,
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::get,
 };
 use http::{HeaderValue, StatusCode, header::CACHE_CONTROL};
 use tower_http::limit::RequestBodyLimitLayer;
@@ -51,7 +51,6 @@ pub(crate) fn build_user_token_router(
     );
     Router::new()
         .route("/api/tokens", get(list_tokens).post(create_token))
-        .route("/api/playground/token", post(create_playground_token))
         .route(
             "/api/tokens/{id}",
             get(get_token).put(update_token).delete(delete_token),
@@ -102,24 +101,6 @@ pub(crate) async fn create_token(
     let issued = state
         .service
         .create(authentication.principal(), request.into_command()?)
-        .await
-        .map_err(map_user_token_error)?;
-    let mut response = no_store_json(IssuedUserTokenResponse::from_application(&issued));
-    *response.status_mut() = StatusCode::CREATED;
-    Ok(response)
-}
-
-/// 为当前登录会话签发字段完全由服务端固定的试炼场托管 Key。
-pub(crate) async fn create_playground_token(
-    State(state): State<UserTokenHttpState>,
-    Extension(authentication): Extension<SessionAuthentication>,
-) -> Result<Response, ManagementError> {
-    let issued = state
-        .service
-        .create(
-            authentication.principal(),
-            UserTokenWriteCommand::playground(),
-        )
         .await
         .map_err(map_user_token_error)?;
     let mut response = no_store_json(IssuedUserTokenResponse::from_application(&issued));

@@ -3,6 +3,8 @@ import { createOpenAI } from '@ai-sdk/openai'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { streamText, type ModelMessage } from 'ai'
 
+import { getManagementSessionToken } from '@/lib/api/session-token'
+
 import type {
   PlaygroundGenerationSettings,
   PlaygroundMessage,
@@ -31,29 +33,35 @@ function getApiRoot() {
   return configured || window.location.origin
 }
 
-/** 使用普通 API Key 进入现有鉴权、计费与调度链，并逐段回传文本。 */
+/** 使用登录会话进入试炼场鉴权、计费与调度链，并逐段回传文本。 */
 export async function streamPlaygroundChat(
   request: PlaygroundStreamRequest,
 ): Promise<PlaygroundStreamResult> {
-  const fetchWithCredentials = (input: RequestInfo | URL, init?: RequestInit) => (
-    fetch(input, { ...init, credentials: 'same-origin' })
-  )
+  const fetchWithCredentials = (input: RequestInfo | URL, init?: RequestInit) => {
+    const headers = new Headers(init?.headers)
+    const sessionToken = getManagementSessionToken()
+    headers.delete('x-api-key')
+    headers.delete('x-goog-api-key')
+    if (sessionToken) headers.set('Authorization', `Bearer ${sessionToken}`)
+    return fetch(input, { ...init, headers, credentials: 'same-origin' })
+  }
+  const baseURL = `${getApiRoot()}/api/playground/v1`
   const provider = createOpenAICompatible({
     name: 'anyflows',
-    apiKey: request.apiKey,
-    baseURL: `${getApiRoot()}/v1`,
+    apiKey: 'session-auth',
+    baseURL,
     includeUsage: true,
     fetch: fetchWithCredentials,
   })
   const responsesProvider = createOpenAI({
     name: 'anyflows',
-    apiKey: request.apiKey,
-    baseURL: `${getApiRoot()}/v1`,
+    apiKey: 'session-auth',
+    baseURL,
     fetch: fetchWithCredentials,
   })
   const anthropicProvider = createAnthropic({
-    apiKey: request.apiKey,
-    baseURL: `${getApiRoot()}/v1`,
+    apiKey: 'session-auth',
+    baseURL,
     fetch: fetchWithCredentials,
   })
   const messages: ModelMessage[] = playgroundRequestContext(request.messages)

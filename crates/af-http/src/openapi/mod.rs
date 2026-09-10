@@ -518,7 +518,6 @@ mod tests {
             "markOrganizationApprovalNotificationsRead",
             "createPlaygroundShare",
             "createUserToken",
-            "createPlaygroundToken",
             "createUserTopupOrder",
             "deletePlaygroundConversation",
             "deleteAdminChannel",
