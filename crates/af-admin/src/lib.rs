@@ -608,8 +608,8 @@ pub use subscription::{
     SubscriptionService, SubscriptionServiceError, SubscriptionSubmitOrderFuture,
 };
 pub use token_auth::{
-    DatabaseTokenAuthenticator, TokenAuthentication, TokenAuthenticationError,
-    TokenAuthenticationFuture, TokenAuthenticator,
+    DatabaseTokenAuthenticator, PlaygroundAuthenticationFuture, TokenAuthentication,
+    TokenAuthenticationError, TokenAuthenticationFuture, TokenAuthenticator,
 };
 pub use token_read::{
     AdminToken, AdminTokenGetFuture, AdminTokenListFuture, AdminTokenListQuery, AdminTokenPage,
