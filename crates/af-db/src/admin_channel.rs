@@ -499,12 +499,16 @@ impl AdminChannelRepository {
     ) -> Result<Vec<QueryResult>, AdminChannelRepositoryError> {
         let connection = self.pool.connection();
         let statement = connection.get_database_backend().build(&query);
+        let statement_debug = format!("{statement:?}");
         let operation = connection
             .query_all(statement)
             .with_subscriber(NoSubscriber::default());
         match timeout(self.lookup_timeout, operation).await {
             Ok(Ok(results)) => Ok(results),
-            Ok(Err(_)) => Err(record_internal_error(AdminChannelRepositoryError::Query)),
+            Ok(Err(error)) => {
+                eprintln!("ADMIN_CHANNEL_QUERY_ERROR: {error:?}\nSQL: {statement_debug}");
+                Err(record_internal_error(AdminChannelRepositoryError::Query))
+            }
             Err(_) => Err(record_internal_error(AdminChannelRepositoryError::Timeout)),
         }
     }
