@@ -465,6 +465,7 @@ pub(crate) async fn exercise_newly_created_channels(
         } else {
             Vec::new()
         };
+        eprintln!("渠道回归阶段：创建 {} 渠道", protocol.as_str());
         let created = repository
             .create_channel(
                 AdminChannelWriteRecord::new(
@@ -490,6 +491,7 @@ pub(crate) async fn exercise_newly_created_channels(
             )
             .await?;
         let channel_id = created.channel_id();
+        eprintln!("渠道回归阶段：读取渠道详情");
         let AdminChannelLookupOutcome::Found(detail) = repository.get(channel_id).await? else {
             panic!("刚创建的渠道必须能读取详情");
         };
@@ -499,6 +501,7 @@ pub(crate) async fn exercise_newly_created_channels(
         assert_eq!(detail.param_override(), &serde_json::json!({}));
         assert_eq!(detail.pool_mode(), enabled);
         assert_eq!(detail.responses_websocket_enabled(), enabled);
+        eprintln!("渠道回归阶段：读取渠道列表");
         let (page, cursor) = repository
             .list(ChannelId::new(channel_id.get() - 1).ok(), 1)
             .await?
@@ -508,12 +511,14 @@ pub(crate) async fn exercise_newly_created_channels(
         assert_eq!(page[0].pool_mode(), enabled);
         assert_eq!(page[0].responses_websocket_enabled(), enabled);
         assert_eq!(cursor, None);
+        eprintln!("渠道回归阶段：读取空凭据列表");
         let AdminCredentialPageOutcome::Found(empty) =
             repository.list_credentials(channel_id, None, 20).await?
         else {
             panic!("无凭据的新渠道必须返回空凭据页");
         };
         assert!(empty.into_parts().0.is_empty());
+        eprintln!("渠道回归阶段：添加凭据并读取列表与详情");
         let credential = insert_credential(pool, channel_id.get(), "api_key", None).await?;
         let AdminCredentialPageOutcome::Found(page) =
             repository.list_credentials(channel_id, None, 20).await?
@@ -529,6 +534,7 @@ pub(crate) async fn exercise_newly_created_channels(
         ));
 
         // 类型修复不能把非法 JSON 状态静默当成关闭。
+        eprintln!("渠道回归阶段：拒绝非法 JSON 配置");
         let model = channels::Entity::find_by_id(channel_id.get())
             .one(pool.connection())
             .await?
