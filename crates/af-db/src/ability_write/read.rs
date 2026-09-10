@@ -37,10 +37,7 @@ where
         .all(connection)
         .with_subscriber(NoSubscriber::default())
         .await
-        .map_err(|error| {
-            eprintln!("ADMIN_CHANNEL_ROUTING_QUERY_ERROR: relation=channel_models error={error:?}");
-            AbilityWriteError::Query
-        })?;
+        .map_err(|_| AbilityWriteError::Query)?;
     let groups = channel_groups::Entity::find()
         .filter(channel_groups::Column::ChannelId.is_in(raw_ids))
         .order_by_asc(channel_groups::Column::ChannelId)
@@ -49,10 +46,7 @@ where
         .all(connection)
         .with_subscriber(NoSubscriber::default())
         .await
-        .map_err(|error| {
-            eprintln!("ADMIN_CHANNEL_ROUTING_QUERY_ERROR: relation=channel_groups error={error:?}");
-            AbilityWriteError::Query
-        })?;
+        .map_err(|_| AbilityWriteError::Query)?;
     if u64::try_from(models.len()).map_err(|_| AbilityWriteError::Invariant)? >= model_limit
         || u64::try_from(groups.len()).map_err(|_| AbilityWriteError::Invariant)? >= group_limit
     {
