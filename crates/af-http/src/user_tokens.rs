@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use af_admin::{
     SessionAuthentication, SessionAuthenticator, UserTokenError, UserTokenListQuery,
-    UserTokenService, UserTokenWriteCommand,
+    UserTokenService,
 };
 use axum::{
     Json, Router,
