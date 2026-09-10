@@ -1,4 +1,4 @@
-use af_domain::{GroupId, TokenId, UserId};
+use af_domain::{GroupId, PLAYGROUND_TOKEN_NAME, TokenId, UserId};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, QueryFilter,
     QuerySelect, Set, TransactionTrait, entity::prelude::TimeDateTimeWithTimeZone, sea_query::Expr,
@@ -116,6 +116,7 @@ pub(super) async fn update(
         .filter(tokens::Column::Id.eq(token_id.get()))
         .filter(tokens::Column::UserId.eq(owner_user_id.get()))
         .filter(tokens::Column::OrganizationId.is_null())
+        .filter(tokens::Column::Name.ne(PLAYGROUND_TOKEN_NAME))
         .filter(tokens::Column::DeletedAt.is_null())
         .col_expr(tokens::Column::Name, Expr::value(fields.name))
         .col_expr(tokens::Column::Status, Expr::value(fields.status))
@@ -177,6 +178,7 @@ pub(super) async fn delete(
         .filter(tokens::Column::Id.eq(token_id.get()))
         .filter(tokens::Column::UserId.eq(owner_user_id.get()))
         .filter(tokens::Column::OrganizationId.is_null())
+        .filter(tokens::Column::Name.ne(PLAYGROUND_TOKEN_NAME))
         .filter(tokens::Column::DeletedAt.is_null())
         .col_expr(tokens::Column::DeletedAt, Expr::value(now))
         .col_expr(tokens::Column::UpdatedAt, Expr::value(now))

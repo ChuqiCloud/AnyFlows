@@ -7,14 +7,12 @@ import {
   normalizePlaygroundModels,
 } from './playground-model-selection'
 import { playgroundProtocolForModel, type PlaygroundProtocol } from './playground-protocol'
-import { usePlaygroundApiKey } from './use-playground-api-key'
 
 const DEFAULT_TEMPERATURE = 0.7
 const DEFAULT_MAX_OUTPUT_TOKENS = 8192
 
 /** 收拢当前标签页凭据、模型目录与共享生成参数。 */
 export function usePlaygroundConfiguration() {
-  const managedApiKey = usePlaygroundApiKey()
   const [selectedModels, setSelectedModels] = useState<string[]>([])
   const [comparisonEnabled, setComparisonEnabled] = useState(
     DEFAULT_PLAYGROUND_COMPARISON_ENABLED,
@@ -99,17 +97,14 @@ export function usePlaygroundConfiguration() {
   }, [])
 
   const sharedSettings = useMemo(() => ({
-    apiKey: managedApiKey.apiKey,
     systemPrompt,
     temperature: temperatureEnabled ? temperature : undefined,
     maxOutputTokens: maxOutputTokensEnabled ? maxOutputTokens : undefined,
-  }), [managedApiKey.apiKey, maxOutputTokens, maxOutputTokensEnabled, systemPrompt, temperature, temperatureEnabled])
+  }), [maxOutputTokens, maxOutputTokensEnabled, systemPrompt, temperature, temperatureEnabled])
 
   const selectedProtocolsReady = selectedModels.every((model) => protocolByModel[model] !== undefined)
 
   return {
-    apiKey: managedApiKey.apiKey,
-    apiKeyProvisioning: managedApiKey.provisioning,
     catalogInvalid,
     catalogQuery,
     comparisonEnabled,
@@ -118,8 +113,6 @@ export function usePlaygroundConfiguration() {
     modelSearchDraft,
     models,
     protocolByModel,
-    provisionApiKey: managedApiKey.provision,
-    reloadApiKey: managedApiKey.reload,
     restoreConversationConfiguration,
     routableModels,
     selectedModels,

@@ -1,6 +1,6 @@
 use std::fmt;
 
-use af_domain::{GroupId, TokenId, UserId};
+use af_domain::{GroupId, PLAYGROUND_TOKEN_NAME, TokenId, UserId};
 use sea_orm::{
     ActiveModelTrait, ConnectionTrait, DatabaseTransaction, DbErr, EntityTrait, QueryFilter,
     QueryResult, Set, TransactionTrait,
@@ -298,6 +298,7 @@ impl AdminTokenRepository {
         let result = tokens::Entity::update_many()
             .filter(Expr::col((tokens::Entity, tokens::Column::Id)).eq(token_id.get()))
             .filter(Expr::col((tokens::Entity, tokens::Column::OrganizationId)).is_null())
+            .filter(Expr::col((tokens::Entity, tokens::Column::Name)).ne(PLAYGROUND_TOKEN_NAME))
             .filter(Expr::col((tokens::Entity, tokens::Column::DeletedAt)).is_null())
             .col_expr(tokens::Column::Name, Expr::value(fields.name))
             .col_expr(tokens::Column::Status, Expr::value(fields.status))
@@ -362,6 +363,7 @@ impl AdminTokenRepository {
         let result = tokens::Entity::update_many()
             .filter(Expr::col((tokens::Entity, tokens::Column::Id)).eq(token_id.get()))
             .filter(Expr::col((tokens::Entity, tokens::Column::OrganizationId)).is_null())
+            .filter(Expr::col((tokens::Entity, tokens::Column::Name)).ne(PLAYGROUND_TOKEN_NAME))
             .filter(Expr::col((tokens::Entity, tokens::Column::DeletedAt)).is_null())
             .col_expr(tokens::Column::DeletedAt, Expr::value(now))
             .col_expr(tokens::Column::UpdatedAt, Expr::value(now))
@@ -383,6 +385,7 @@ fn validate_storage_fields(
     record: AdminTokenWriteRecord,
 ) -> Result<StoredTokenWriteFields, AdminTokenWriteRepositoryError> {
     if !valid_text(&record.name, 128)
+        || record.name == PLAYGROUND_TOKEN_NAME
         || !matches!(record.status, 1 | 2)
         || record.remain_quota < 0
         || [
@@ -536,6 +539,7 @@ async fn active_token_owner(
         .from(tokens::Entity)
         .and_where(Expr::col((tokens::Entity, tokens::Column::Id)).eq(token_id.get()))
         .and_where(Expr::col((tokens::Entity, tokens::Column::OrganizationId)).is_null())
+        .and_where(Expr::col((tokens::Entity, tokens::Column::Name)).ne(PLAYGROUND_TOKEN_NAME))
         .and_where(Expr::col((tokens::Entity, tokens::Column::DeletedAt)).is_null())
         .limit(2)
         .to_owned();

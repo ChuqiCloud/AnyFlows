@@ -14965,63 +14965,6 @@
         ]
       }
     },
-    "/api/playground/token": {
-      "post": {
-        "tags": [
-          "试炼场"
-        ],
-        "summary": "签发试炼场托管 Key",
-        "description": "字段由服务端固定，完整明文仅在本次响应返回，用于当前登录用户的试炼场会话。",
-        "operationId": "createPlaygroundToken",
-        "responses": {
-          "201": {
-            "description": "试炼场托管 Key 已签发",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/IssuedUserToken"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "登录会话无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "当前用户的 Key 已达到容量上限",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "服务内部错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
     "/api/tokens/{id}": {
       "get": {
         "tags": [

@@ -1,13 +1,14 @@
 use std::{future::Future, pin::Pin, sync::Arc};
 
 use af_admin::{
-    ApiKeyDigest, TokenAuthenticationError, TokenAuthenticationFuture, TokenAuthenticator,
+    ApiKeyDigest, PlaygroundAuthenticationFuture, TokenAuthenticationError,
+    TokenAuthenticationFuture, TokenAuthenticator,
 };
 use af_db::{
     TokenRequestAdmissionOutcome, TokenRequestAdmissionRepository,
     TokenRequestAdmissionRepositoryError,
 };
-use af_domain::TrustedClientIp;
+use af_domain::{TrustedClientIp, UserId};
 
 type AdmissionFuture<'a> = Pin<
     Box<
@@ -73,6 +74,14 @@ impl TokenAuthenticator for TokenRequestAdmissionAuthenticator {
                 }
             }
         })
+    }
+
+    fn authenticate_playground<'a>(
+        &'a self,
+        user_id: UserId,
+    ) -> PlaygroundAuthenticationFuture<'a> {
+        // 内部试炼场主体固定没有累计请求数上限，避免把会话调用误记为外部 Key 准入。
+        self.inner.authenticate_playground(user_id)
     }
 }
 

@@ -114,7 +114,7 @@ export function usePlaygroundComparison(
   const send = useCallback(async () => {
     const content = draft.trim()
     const targets = resolvePlaygroundTargets(models, protocolByModel)
-    if (!content || !settings.apiKey || !targets || controllersRef.current.size > 0) {
+    if (!content || !targets || controllersRef.current.size > 0) {
       return false
     }
 
@@ -161,10 +161,10 @@ export function usePlaygroundComparison(
       sequence,
     })))
     return true
-  }, [draft, models, protocolByModel, runRequest, sessions, settings.apiKey])
+  }, [draft, models, protocolByModel, runRequest, sessions])
 
   const retry = useCallback(async (model: string) => {
-    if (!settings.apiKey || controllersRef.current.size > 0) return false
+    if (controllersRef.current.size > 0) return false
     const session = sessions.find((candidate) => candidate.model === model)
     const target = resolvePlaygroundTargets([model], protocolByModel)?.[0]
     if (!session || !target) return false
@@ -184,7 +184,7 @@ export function usePlaygroundComparison(
       sequence,
     })
     return true
-  }, [protocolByModel, runRequest, sessions, settings.apiKey])
+  }, [protocolByModel, runRequest, sessions])
 
   useEffect(() => () => {
     requestSequenceRef.current += 1

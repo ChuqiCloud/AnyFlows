@@ -9,8 +9,8 @@ use af_domain::{
     TrustedClientIp, UserId,
 };
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DbBackend, DbErr, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryResult,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DbBackend, DbErr, EntityTrait, PaginatorTrait,
+    QueryFilter, QueryOrder, QueryResult, QuerySelect, Set, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Alias, Expr, ExprTrait, Func, Query, SelectStatement, SimpleExpr},
 };
@@ -26,7 +26,10 @@ use crate::{
         organization_department_memberships, organization_departments, organization_entitlements,
         organization_memberships, organization_teams, organizations, tokens, users,
     },
+    token_owner_guard::{TokenOwnerGuardError, lock_non_deleted_owner},
 };
+
+const PLAYGROUND_INTERNAL_KEY_PREFIX: &str = "internal-playground";
 
 /// 只携带规范 SHA-256 摘要的令牌鉴权查询值。
 ///
@@ -133,6 +136,216 @@ impl TokenAuthRepository {
         }
     }
 
+    /// 按已认证会话解析不可外部使用的试炼场计费主体，并合并历史重复托管 Key。
+    pub async fn lookup_playground(
+        &self,
+        user_id: UserId,
+    ) -> Result<TokenAuthLookupOutcome, TokenAuthRepositoryError> {
+        match timeout(self.lookup_timeout, self.lookup_playground_inner(user_id)).await {
+            Ok(result) => result,
+            Err(_) => Err(record_internal_error(TokenAuthRepositoryError::Timeout)),
+        }
+    }
+
+    async fn lookup_playground_inner(
+        &self,
+        user_id: UserId,
+    ) -> Result<TokenAuthLookupOutcome, TokenAuthRepositoryError> {
+        let transaction = self
+            .pool
+            .connection()
+            .begin()
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| record_internal_error(TokenAuthRepositoryError::Query))?;
+        let Some(owner) = lock_non_deleted_owner(&transaction, user_id)
+            .await
+            .map_err(map_owner_guard_error)?
+        else {
+            return Ok(TokenAuthLookupOutcome::Rejected);
+        };
+        if owner.status() != 1 {
+            return Ok(TokenAuthLookupOutcome::Rejected);
+        }
+
+        let group_id = owner.default_group_id();
+        let Some((group_rpm_limit, group_deleted_at)) = groups::Entity::find()
+            .select_only()
+            .column(groups::Column::RpmLimit)
+            .column(groups::Column::DeletedAt)
+            .filter(groups::Column::Id.eq(group_id.get()))
+            .into_tuple::<(Option<i32>, Option<TimeDateTimeWithTimeZone>)>()
+            .one(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| record_internal_error(TokenAuthRepositoryError::Query))?
+        else {
+            return Err(record_internal_error(TokenAuthRepositoryError::Invariant));
+        };
+        if group_deleted_at.is_some() {
+            return Ok(TokenAuthLookupOutcome::Rejected);
+        }
+
+        let candidates = tokens::Entity::find()
+            .filter(tokens::Column::UserId.eq(user_id.get()))
+            .filter(tokens::Column::OrganizationId.is_null())
+            .filter(tokens::Column::Name.eq(PLAYGROUND_TOKEN_NAME))
+            .order_by_asc(tokens::Column::Id)
+            .all(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| record_internal_error(TokenAuthRepositoryError::Query))?;
+        let canonical = candidates
+            .iter()
+            .find(|token| {
+                token.deleted_at.is_none() && token.key_prefix == PLAYGROUND_INTERNAL_KEY_PREFIX
+            })
+            .or_else(|| {
+                candidates
+                    .iter()
+                    .find(|token| token.key_prefix == PLAYGROUND_INTERNAL_KEY_PREFIX)
+            })
+            .or_else(|| candidates.iter().find(|token| token.deleted_at.is_none()))
+            .or_else(|| candidates.first());
+        let now = TimeDateTimeWithTimeZone::now_utc();
+        let token_id = if let Some(canonical) = canonical {
+            let token_id = TokenId::new(canonical.id)
+                .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
+            let key_hash = if canonical.key_prefix == PLAYGROUND_INTERNAL_KEY_PREFIX {
+                canonical.key_hash.clone()
+            } else {
+                random_internal_token_hash()?
+            };
+            let updated = tokens::Entity::update_many()
+                .filter(tokens::Column::Id.eq(canonical.id))
+                .filter(tokens::Column::UserId.eq(user_id.get()))
+                .col_expr(tokens::Column::KeyHash, Expr::value(key_hash))
+                .col_expr(
+                    tokens::Column::KeyPrefix,
+                    Expr::value(PLAYGROUND_INTERNAL_KEY_PREFIX),
+                )
+                .col_expr(tokens::Column::Status, Expr::value(1_i16))
+                .col_expr(tokens::Column::GroupId, Expr::value(Option::<i64>::None))
+                .col_expr(
+                    tokens::Column::OrganizationId,
+                    Expr::value(Option::<i64>::None),
+                )
+                .col_expr(
+                    tokens::Column::OrganizationMembershipId,
+                    Expr::value(Option::<i64>::None),
+                )
+                .col_expr(
+                    tokens::Column::OrganizationTeamId,
+                    Expr::value(Option::<i64>::None),
+                )
+                .col_expr(
+                    tokens::Column::OrganizationDepartmentId,
+                    Expr::value(Option::<i64>::None),
+                )
+                .col_expr(tokens::Column::RemainQuota, Expr::value(0_i64))
+                .col_expr(tokens::Column::UnlimitedQuota, Expr::value(true))
+                .col_expr(
+                    tokens::Column::ExpiredAt,
+                    Expr::value(Option::<TimeDateTimeWithTimeZone>::None),
+                )
+                .col_expr(
+                    tokens::Column::ModelLimits,
+                    Expr::value(Option::<TokenModelAllowlist>::None),
+                )
+                .col_expr(
+                    tokens::Column::AllowIps,
+                    Expr::value(Option::<TokenIpAllowlist>::None),
+                )
+                .col_expr(tokens::Column::CrossGroupRetry, Expr::value(false))
+                .col_expr(
+                    tokens::Column::RateLimit5h,
+                    Expr::value(Option::<i64>::None),
+                )
+                .col_expr(
+                    tokens::Column::RateLimit1d,
+                    Expr::value(Option::<i64>::None),
+                )
+                .col_expr(
+                    tokens::Column::RateLimit7d,
+                    Expr::value(Option::<i64>::None),
+                )
+                .col_expr(
+                    tokens::Column::MaxRequests,
+                    Expr::value(Option::<i64>::None),
+                )
+                .col_expr(
+                    tokens::Column::DeletedAt,
+                    Expr::value(Option::<TimeDateTimeWithTimeZone>::None),
+                )
+                .col_expr(tokens::Column::UpdatedAt, Expr::value(now))
+                .exec(&transaction)
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(|_| record_internal_error(TokenAuthRepositoryError::Query))?;
+            if updated.rows_affected != 1 {
+                return Err(record_internal_error(TokenAuthRepositoryError::Invariant));
+            }
+            token_id
+        } else {
+            let inserted = tokens::ActiveModel {
+                user_id: Set(user_id.get()),
+                key_hash: Set(random_internal_token_hash()?),
+                key_prefix: Set(PLAYGROUND_INTERNAL_KEY_PREFIX.to_owned()),
+                name: Set(PLAYGROUND_TOKEN_NAME.to_owned()),
+                status: Set(1),
+                group_id: Set(None),
+                organization_id: Set(None),
+                organization_membership_id: Set(None),
+                organization_team_id: Set(None),
+                organization_department_id: Set(None),
+                remain_quota: Set(0),
+                unlimited_quota: Set(true),
+                expired_at: Set(None),
+                model_limits: Set(None),
+                allow_ips: Set(None),
+                cross_group_retry: Set(false),
+                window_5h_start: Set(now),
+                window_1d_start: Set(now),
+                window_7d_start: Set(now),
+                max_requests: Set(None),
+                deleted_at: Set(None),
+                ..Default::default()
+            }
+            .insert(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| record_internal_error(TokenAuthRepositoryError::Query))?;
+            TokenId::new(inserted.id)
+                .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?
+        };
+
+        tokens::Entity::update_many()
+            .filter(tokens::Column::UserId.eq(user_id.get()))
+            .filter(tokens::Column::OrganizationId.is_null())
+            .filter(tokens::Column::Name.eq(PLAYGROUND_TOKEN_NAME))
+            .filter(tokens::Column::Id.ne(token_id.get()))
+            .filter(tokens::Column::DeletedAt.is_null())
+            .col_expr(tokens::Column::DeletedAt, Expr::value(now))
+            .col_expr(tokens::Column::UpdatedAt, Expr::value(now))
+            .exec(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| record_internal_error(TokenAuthRepositoryError::Query))?;
+        transaction
+            .commit()
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| record_internal_error(TokenAuthRepositoryError::Query))?;
+
+        Ok(TokenAuthLookupOutcome::Authenticated {
+            principal: GatewayPrincipal::playground(token_id, user_id, group_id),
+            model_policy: TokenModelPolicy::unrestricted(),
+            user_concurrency: normalize_concurrency(owner.concurrency())?,
+            user_rpm_limit: normalize_rpm_limit(owner.rpm_limit())?,
+            group_rpm_limit: normalize_rpm_limit(group_rpm_limit)?,
+        })
+    }
+
     async fn lookup_inner(
         &self,
         lookup: &TokenAuthLookup,
@@ -182,10 +395,6 @@ fn lookup_query(database_backend: DbBackend, lookup: &TokenAuthLookup) -> Select
         .expr_as(
             Expr::col((tokens::Entity, tokens::Column::Id)),
             Alias::new("token_id"),
-        )
-        .expr_as(
-            Expr::col((tokens::Entity, tokens::Column::Name)),
-            Alias::new("token_name"),
         )
         .expr_as(
             Expr::col((tokens::Entity, tokens::Column::Status)),
@@ -448,6 +657,8 @@ fn lookup_query(database_backend: DbBackend, lookup: &TokenAuthLookup) -> Select
             )),
         )
         .and_where(Expr::col((tokens::Entity, tokens::Column::KeyHash)).eq(lookup.0.clone()))
+        // 保留名称只允许由会话试炼场入口解析，绝不接受外部 API Key 鉴权。
+        .and_where(Expr::col((tokens::Entity, tokens::Column::Name)).ne(PLAYGROUND_TOKEN_NAME))
         .limit(2)
         .to_owned()
 }
@@ -474,7 +685,6 @@ pub(crate) fn token_json_serialized_length(
 
 struct TokenAuthRow {
     token_id: i64,
-    token_name: String,
     token_status: i16,
     token_expired_at: Option<TimeDateTimeWithTimeZone>,
     token_deleted_at: Option<TimeDateTimeWithTimeZone>,
@@ -518,7 +728,6 @@ impl TokenAuthRow {
     fn try_from_query_result(result: &QueryResult) -> Result<Self, DbErr> {
         Ok(Self {
             token_id: result.try_get("", "token_id")?,
-            token_name: result.try_get("", "token_name")?,
             token_status: result.try_get("", "token_status")?,
             token_expired_at: result.try_get("", "token_expired_at")?,
             token_deleted_at: result.try_get("", "token_deleted_at")?,
@@ -603,11 +812,8 @@ impl TokenAuthRow {
             TokenModelPolicy::unrestricted,
             TokenModelAllowlist::into_policy,
         );
-        // 仅个人空间的内部托管 Key 允许试炼场路由策略。
         let principal = if let Some(organization) = organization {
             GatewayPrincipal::organization(token_id, user_id, group_id, organization)
-        } else if self.token_name == PLAYGROUND_TOKEN_NAME {
-            GatewayPrincipal::playground(token_id, user_id, group_id)
         } else {
             GatewayPrincipal::new(token_id, user_id, group_id)
         };
@@ -849,6 +1055,29 @@ fn record_internal_error(error: TokenAuthRepositoryError) -> TokenAuthRepository
         "令牌鉴权仓储发生内部错误"
     );
     error
+}
+
+fn map_owner_guard_error(error: TokenOwnerGuardError) -> TokenAuthRepositoryError {
+    match error {
+        TokenOwnerGuardError::Query => record_internal_error(TokenAuthRepositoryError::Query),
+        TokenOwnerGuardError::Invariant => {
+            record_internal_error(TokenAuthRepositoryError::Invariant)
+        }
+    }
+}
+
+fn random_internal_token_hash() -> Result<TokenHash, TokenAuthRepositoryError> {
+    let mut bytes = [0_u8; 32];
+    getrandom::fill(&mut bytes)
+        .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
+    let mut encoded = String::with_capacity(64);
+    for byte in bytes {
+        use std::fmt::Write as _;
+        write!(&mut encoded, "{byte:02x}")
+            .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
+    }
+    TokenHash::parse(&encoded)
+        .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))
 }
 
 #[cfg(test)]

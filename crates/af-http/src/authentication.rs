@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use af_admin::{TokenAuthenticationError, TokenAuthenticator};
+use af_admin::{SessionAuthentication, TokenAuthenticationError, TokenAuthenticator};
 use af_domain::{AfError, Protocol};
 use axum::{
-    extract::{Request, State},
+    extract::{Extension, Request, State},
     middleware::Next,
     response::Response,
 };
@@ -40,6 +40,41 @@ impl AuthenticationState {
     pub(crate) const fn with_error_protocol(mut self, protocol: Protocol) -> Self {
         self.error_protocol = protocol;
         self
+    }
+}
+
+/// 从已验证管理会话解析试炼场内部主体，并注入现有网关认证快照。
+pub(crate) async fn authenticate_playground_session(
+    State(state): State<AuthenticationState>,
+    Extension(session): Extension<SessionAuthentication>,
+    mut request: Request,
+    next: Next,
+) -> Response {
+    match state
+        .authenticator
+        .authenticate_playground(session.principal().user_id())
+        .await
+    {
+        Ok(authentication) => {
+            request.headers_mut().remove(http::header::AUTHORIZATION);
+            request.headers_mut().remove("x-api-key");
+            request.headers_mut().remove("x-goog-api-key");
+            request.extensions_mut().insert(authentication);
+            next.run(request).await
+        }
+        Err(TokenAuthenticationError::InvalidApiKey) => {
+            api_error_response(state.error_protocol, AfError::InvalidApiKey)
+        }
+        Err(TokenAuthenticationError::Internal)
+        | Err(TokenAuthenticationError::RateLimitUnavailable) => {
+            api_error_response(state.error_protocol, AfError::Internal)
+        }
+        Err(TokenAuthenticationError::RateLimited { retry_after }) => {
+            rate_limit_error_response(state.error_protocol, retry_after)
+        }
+        Err(TokenAuthenticationError::RequestLimitReached) => {
+            api_error_response(state.error_protocol, AfError::InsufficientQuota)
+        }
     }
 }
 

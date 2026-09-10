@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { usePlaygroundApiKey } from '@/features/playground/use-playground-api-key'
 import { pollVideoTask, submitVideoTask, videoTaskError } from './video-task-client'
 import type { VideoTaskApiError, VideoTaskPollResponse, VideoTaskRequest } from './video-task-types'
 
@@ -18,8 +17,6 @@ export type VideoTaskWorkspacePhase =
 
 /** 管理单个可安全重放的视频任务工作区，禁止自动重试付费提交。 */
 export function useVideoTaskWorkspace() {
-  const managedApiKey = usePlaygroundApiKey()
-  const apiKey = managedApiKey.apiKey
   const [idempotencyKey, setIdempotencyKey] = useState(generateIdempotencyKey)
   const [taskId, setTaskId] = useState<string>()
   const [phase, setPhase] = useState<VideoTaskWorkspacePhase>('idle')
@@ -39,7 +36,6 @@ export function useVideoTaskWorkspace() {
   }, [])
 
   const submit = useCallback(async (request: VideoTaskRequest) => {
-    if (!apiKey) return
     controllerRef.current?.abort()
     const controller = new AbortController()
     controllerRef.current = controller
@@ -48,7 +44,6 @@ export function useVideoTaskWorkspace() {
     setError(undefined)
     try {
       const nextTaskId = await submitVideoTask(
-        apiKey,
         idempotencyKey,
         request,
         controller.signal,
@@ -62,17 +57,17 @@ export function useVideoTaskWorkspace() {
       setError(detail)
       setPhase('error')
     }
-  }, [apiKey, idempotencyKey])
+  }, [idempotencyKey])
 
   const poll = useCallback(async () => {
-    if (!apiKey || !taskId) return
+    if (!taskId) return
     controllerRef.current?.abort()
     const controller = new AbortController()
     controllerRef.current = controller
     setPhase('polling')
     setError(undefined)
     try {
-      const nextResponse = await pollVideoTask(apiKey, taskId, controller.signal)
+      const nextResponse = await pollVideoTask(taskId, controller.signal)
       setResponse(nextResponse)
       setPhase(nextResponse.status)
     } catch (cause) {
@@ -81,10 +76,9 @@ export function useVideoTaskWorkspace() {
       setError(detail)
       setPhase('error')
     }
-  }, [apiKey, taskId])
+  }, [taskId])
 
   const openTask = useCallback(async (nextTaskId: string) => {
-    if (!apiKey) return
     controllerRef.current?.abort()
     const controller = new AbortController()
     controllerRef.current = controller
@@ -94,7 +88,7 @@ export function useVideoTaskWorkspace() {
     setPhase('polling')
     setError(undefined)
     try {
-      const nextResponse = await pollVideoTask(apiKey, nextTaskId, controller.signal)
+      const nextResponse = await pollVideoTask(nextTaskId, controller.signal)
       setResponse(nextResponse)
       setPhase(nextResponse.status)
     } catch (cause) {
@@ -103,13 +97,13 @@ export function useVideoTaskWorkspace() {
       setError(detail)
       setPhase('error')
     }
-  }, [apiKey])
+  }, [])
 
   useEffect(() => {
-    if (phase !== 'pending' || !taskId || !apiKey) return
+    if (phase !== 'pending' || !taskId) return
     const timer = window.setTimeout(() => void poll(), POLL_INTERVAL_MS)
     return () => window.clearTimeout(timer)
-  }, [apiKey, phase, poll, taskId])
+  }, [phase, poll, taskId])
 
   useEffect(() => () => controllerRef.current?.abort(), [])
 
@@ -121,11 +115,9 @@ export function useVideoTaskWorkspace() {
   const canRetrySubmission = phase === 'error'
     && error?.code === 'request_outcome_unknown'
     && taskId === undefined
-  const canPoll = Boolean(taskId && apiKey && !busy)
+  const canPoll = Boolean(taskId && !busy)
 
   return useMemo(() => ({
-    apiKey,
-    apiKeyProvisioning: managedApiKey.provisioning,
     busy,
     canPoll,
     canRetrySubmission,
@@ -134,16 +126,12 @@ export function useVideoTaskWorkspace() {
     phase,
     openTask,
     poll,
-    provisionApiKey: managedApiKey.provision,
     requestLocked,
     response,
     startNew,
     submit,
     taskId,
   }), [
-    apiKey,
-    managedApiKey.provision,
-    managedApiKey.provisioning,
     busy,
     canPoll,
     canRetrySubmission,
