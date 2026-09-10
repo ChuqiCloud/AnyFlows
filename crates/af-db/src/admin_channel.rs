@@ -590,42 +590,53 @@ struct AdminChannelRow {
 
 impl AdminChannelRow {
     fn try_from_query_result(result: &QueryResult) -> Result<Self, DbErr> {
+        macro_rules! try_get {
+            ($column:literal) => {{
+                match result.try_get("", $column) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        eprintln!(
+                            "ADMIN_CHANNEL_DECODE_ERROR: column={} error={error:?}",
+                            $column
+                        );
+                        return Err(error);
+                    }
+                }
+            }};
+        }
         Ok(Self {
-            channel_id: result.try_get("", "channel_id")?,
-            name: result.try_get("", "name")?,
-            channel_type: result.try_get("", "channel_type")?,
-            protocol: result.try_get("", "protocol")?,
-            base_url: result.try_get("", "base_url")?,
-            timeout_secs: result.try_get("", "timeout_secs")?,
-            status: result.try_get("", "status")?,
-            weight: result.try_get("", "weight")?,
-            priority: result.try_get("", "priority")?,
-            auto_ban: result.try_get("", "auto_ban")?,
-            auto_ban_rules: result.try_get("", "auto_ban_rules")?,
-            pool_mode_state: result.try_get("", "pool_mode")?,
-            client_simulation_profile: result.try_get("", "client_simulation_profile")?,
-            client_simulation_body_profile: result.try_get("", "client_simulation_body_profile")?,
+            channel_id: try_get!("channel_id"),
+            name: try_get!("name"),
+            channel_type: try_get!("channel_type"),
+            protocol: try_get!("protocol"),
+            base_url: try_get!("base_url"),
+            timeout_secs: try_get!("timeout_secs"),
+            status: try_get!("status"),
+            weight: try_get!("weight"),
+            priority: try_get!("priority"),
+            auto_ban: try_get!("auto_ban"),
+            auto_ban_rules: try_get!("auto_ban_rules"),
+            pool_mode_state: try_get!("pool_mode"),
+            client_simulation_profile: try_get!("client_simulation_profile"),
+            client_simulation_body_profile: try_get!("client_simulation_body_profile"),
             models: Vec::new(),
             group_ids: Vec::new(),
-            model_mapping: result.try_get("", "model_mapping")?,
-            model_mapping_oversized: result.try_get("", "model_mapping_oversized")?,
-            param_override: result.try_get("", "param_override")?,
-            param_override_oversized: result.try_get("", "param_override_oversized")?,
-            responses_websocket_state: result.try_get("", "responses_websocket_enabled")?,
-            responses_compact_mode: result.try_get("", "responses_compact_mode")?,
-            responses_compact_model_mapping: result
-                .try_get("", "responses_compact_model_mapping")?,
-            responses_compact_probe_result: result.try_get("", "responses_compact_probe_result")?,
-            responses_compact_probe_checked_at: result
-                .try_get("", "responses_compact_probe_checked_at")?,
-            responses_compact_probe_http_status: result
-                .try_get("", "responses_compact_probe_http_status")?,
-            settings_oversized: result.try_get("", "settings_oversized")?,
-            balance: result.try_get("", "balance")?,
-            used_quota: result.try_get("", "used_quota")?,
-            tag: result.try_get("", "tag")?,
-            created_at: result.try_get("", "created_at")?,
-            updated_at: result.try_get("", "updated_at")?,
+            model_mapping: try_get!("model_mapping"),
+            model_mapping_oversized: try_get!("model_mapping_oversized"),
+            param_override: try_get!("param_override"),
+            param_override_oversized: try_get!("param_override_oversized"),
+            responses_websocket_state: try_get!("responses_websocket_enabled"),
+            responses_compact_mode: try_get!("responses_compact_mode"),
+            responses_compact_model_mapping: try_get!("responses_compact_model_mapping"),
+            responses_compact_probe_result: try_get!("responses_compact_probe_result"),
+            responses_compact_probe_checked_at: try_get!("responses_compact_probe_checked_at"),
+            responses_compact_probe_http_status: try_get!("responses_compact_probe_http_status"),
+            settings_oversized: try_get!("settings_oversized"),
+            balance: try_get!("balance"),
+            used_quota: try_get!("used_quota"),
+            tag: try_get!("tag"),
+            created_at: try_get!("created_at"),
+            updated_at: try_get!("updated_at"),
         })
     }
 
