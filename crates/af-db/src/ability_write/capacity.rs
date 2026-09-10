@@ -27,7 +27,7 @@ pub(super) async fn lock_ability_catalog(
     })
     .on_conflict(
         OnConflict::column(options::Column::Key)
-            .do_nothing()
+            .do_nothing_on([options::Column::Key])
             .to_owned(),
     )
     .exec_without_returning(transaction)
