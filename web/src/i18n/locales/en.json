@@ -1287,7 +1287,8 @@
       "refresh": "Refresh",
       "retry": "Retry",
       "loadMore": "Load more",
-      "manageMembers": "Manage members"
+      "manageMembers": "Manage members",
+      "openSettings": "Open organization settings"
     }
   },
   "users": {
@@ -5839,6 +5840,19 @@
         "title": "Current role permissions",
         "subtitle": "Fixed roles map only to stable organization permission codes and cannot grant platform permissions."
       },
+      "permissionManagement": {
+        "title": "Permission and role management",
+        "subtitle": "Adjust member access from the members page. Fixed roles are always available; custom roles require the commercial entitlement.",
+        "fixedRole": "Fixed role",
+        "fixedRoleHint": "Owner, Administrator, Billing, Member, and Viewer use platform-defined permissions.",
+        "customRoles": "Custom roles",
+        "enabled": "Enabled",
+        "notIncluded": "Not included",
+        "customRolesHint": "Create roles from server-approved permissions, then assign them from the members page.",
+        "customRolesUnavailable": "The current commercial entitlement does not include custom roles; fixed roles remain available.",
+        "manageMembers": "Manage member access",
+        "manageRoles": "Manage custom roles"
+      },
       "ownership": {
         "title": "Transfer ownership",
         "subtitle": "The transaction promotes the new owner before demoting the current owner.",
@@ -6117,6 +6131,15 @@
     "purpose": {
       "title": "What this review does",
       "body": "Credential review currently supports material checks and compliance records only. It does not affect basic organization features or automatically add quota, seats, or SSO. You can skip it unless the platform requests a review."
+    },
+    "process": {
+      "title": "Review process",
+      "steps": {
+        "submit": { "title": "Submit materials", "body": "An organization Owner or administrator submits business materials and an organization summary." },
+        "review": { "title": "Platform review", "body": "A platform administrator checks the materials and approves, requests a supplement, or rejects the case." },
+        "record": { "title": "Record the result", "body": "The case status, review reason, and timestamps stay on the server for the organization to view." },
+        "boundary": { "title": "Know the boundary", "body": "Verification does not change member permissions, plans, quota, SSO, or other basic organization features." }
+      }
     },
     "status": {
       "submitted": "Submitted",

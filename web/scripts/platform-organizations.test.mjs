@@ -87,6 +87,7 @@ test('平台企业目录具备中英文完整文案', async () => {
     assert.equal(typeof messages.nav.platformOrganizations, 'string')
     assert.equal(typeof messages.platformOrganizations.title, 'string')
     assert.equal(typeof messages.platformOrganizations.actions.manageMembers, 'string')
+    assert.equal(typeof messages.platformOrganizations.actions.openSettings, 'string')
     assert.equal(typeof messages.platformOrganizations.members.editor.save, 'string')
     assert.equal(typeof messages.platformOrganizations.invitation.acceptHint, 'string')
     assert.equal(typeof messages.users.actions.organizations, 'string')

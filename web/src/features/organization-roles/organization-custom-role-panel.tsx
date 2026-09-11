@@ -18,11 +18,13 @@ const ROLES_MANAGE = 'organization.roles.manage'
 
 /** 在企业设置内管理角色目录，不创建额外路由或脱离当前企业上下文。 */
 export function OrganizationCustomRolePanel({
+  id,
   organizationId,
   organizationName,
   customRolesEnabled,
   permissions,
 }: {
+  id?: string
   organizationId: number
   organizationName: string
   customRolesEnabled: boolean
@@ -40,7 +42,7 @@ export function OrganizationCustomRolePanel({
   const openEdit = (role: OrganizationCustomRoleResponse) => setEditor(role)
 
   return (
-    <Card className="overflow-hidden">
+    <Card id={id} className="scroll-mt-4 overflow-hidden">
       <CardHeader className="border-b border-[var(--hairline)] bg-surface-1/45">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-start gap-3">
