@@ -9,10 +9,12 @@ import {
   listAccountOrganizations,
   listOrganizationMembers,
   listOrganizationTeams,
+  updateOrganizationProfile,
 } from '@/lib/api/generated/sdk.gen'
 import type {
   OrganizationBudgetPolicyCreateRequest,
   OrganizationMembershipResponse,
+  OrganizationProfileChangeRequest,
   OrganizationTeamResponse,
 } from '@/lib/api/generated/types.gen'
 
@@ -47,6 +49,25 @@ export function useOrganizationOverview(organizationId: number, enabled = true) 
       })
       return data
     },
+  })
+}
+
+/** 按企业资料版本更新名称和短标识，成功后刷新当前企业及目录投影。 */
+export function useUpdateOrganizationProfile(organizationId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (body: OrganizationProfileChangeRequest) => {
+      const { data } = await updateOrganizationProfile({
+        body,
+        client: apiClient,
+        path: { organization_id: organizationId },
+      })
+      return data
+    },
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: organizationQueryKey(organizationId, 'overview') }),
+      queryClient.invalidateQueries({ queryKey: organizationDirectoryQueryKey }),
+    ]),
   })
 }
 

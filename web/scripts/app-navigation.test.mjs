@@ -48,7 +48,7 @@ test('普通用户导航增加独立企业空间且保留原账户入口', () =>
   assert.deepEqual(userNavigationItems, [
     'models', 'playground', 'videoTasks',
     'organizationOverview', 'organizationOnboarding', 'organizationMembers', 'organizationDepartments', 'organizationApiKeys', 'organizationServiceAccounts', 'organizationBudgets', 'organizationContractPrices', 'organizationCredit', 'organizationApprovals',
-    'organizationWallet', 'organizationActivity', 'organizationVerification', 'organizationSettings',
+    'organizationWallet', 'organizationActivity', 'organizationSettings',
   'apiKeys', 'wallet', 'usage', 'subscriptions', 'invitations', 'organizationProvisioning', 'profile',
   ])
 })

@@ -47,8 +47,8 @@
     "organizationActivity": "Organization logs & audit",
     "organizationOverview": "Organization overview",
     "organizationOnboarding": "Organization setup",
-    "organizationProvisioning": "Organization provisioning",
-    "organizationVerification": "Organization verification",
+    "organizationProvisioning": "Apply for an organization",
+    "organizationVerification": "Credential review (optional)",
     "organizationPlans": "Organization plans",
     "platformOrganizations": "Organization directory",
     "organizationMembers": "Members and teams",
@@ -5812,14 +5812,19 @@
     },
     "settings": {
       "title": "Organization settings",
-      "subtitle": "Review organization identity, commercial entitlement, and fixed-role permissions, and transfer ownership where the server supports it.",
+      "subtitle": "Manage organization profile, security capabilities, role permissions, and ownership. The server validates and records every change.",
       "identity": {
         "title": "Organization identity",
-        "subtitle": "The current API exposes a read-only identity projection.",
+        "subtitle": "The organization name and slug appear in the workspace and organization directory.",
         "name": "Organization name",
         "slug": "Organization slug",
+        "slugHint": "Use lowercase letters, numbers, and single hyphens, for example acme-cloud.",
         "organizationId": "Organization ID",
-        "role": "My role"
+        "role": "My role",
+        "save": "Save profile",
+        "saved": "Profile updated",
+        "invalid": "Enter a valid organization name and slug.",
+        "error": "The profile could not be saved. Another administrator may have changed it, or the slug may already be in use. Refresh and try again."
       },
       "entitlement": {
         "title": "Commercial entitlement",
@@ -5846,8 +5851,13 @@
         "confirm": "Confirm transfer"
       },
       "unavailable": {
-        "title": "Profile editing and closure are not available yet",
-        "body": "The backend does not currently expose organization rename or closure APIs, so this page does not render forms that would always fail."
+        "title": "Organization closure is not available yet",
+        "body": "This version cannot close an organization. Profile editing, ownership transfer, and security settings are available on this page."
+      },
+      "verification": {
+        "title": "Optional credential review",
+        "body": "Submit business or registration materials to the platform and retain a review record. It currently does not unlock plans, quota, SSO, or basic organization features, and is not required for setup.",
+        "action": "View credential review"
       },
       "sso": {
         "title": "Organization single sign-on",
@@ -6102,8 +6112,12 @@
     }
   },
   "organizationVerification": {
-    "title": "Organization verification",
-    "subtitle": "Submit controlled business materials for platform review. Only metadata is shown here; the source object remains in managed storage.",
+    "title": "Organization credential review (optional)",
+    "subtitle": "Submit organization credentials and retain a platform review record. This process is separate from provisioning and setup.",
+    "purpose": {
+      "title": "What this review does",
+      "body": "Credential review currently supports material checks and compliance records only. It does not affect basic organization features or automatically add quota, seats, or SSO. You can skip it unless the platform requests a review."
+    },
     "status": {
       "submitted": "Submitted",
       "in_review": "In review",
@@ -6230,15 +6244,18 @@
   },
   "organizationOnboarding": {
     "title": "Organization owner onboarding",
-    "subtitle": "Review the approved organization facts, prepare the first members, and verify security settings. You can pause and resume this checklist at any time.",
+    "subtitle": "Complete the organization profile, first members, and security settings. Progress comes directly from the server and can be resumed at any time.",
     "stepsLabel": "Organization onboarding steps",
-    "completed": "Confirmed",
-    "localProgress": "{{completed}} of {{total}} confirmed",
-    "localProgressHint": "Confirmation progress is stored only in this browser for this organization. It does not change or represent the server-side provisioning state.",
+    "completed": "Complete",
+    "pending": "Needs action",
+    "serverProgress": "{{completed}} of {{total}} complete",
+    "serverProgressHint": "Progress is calculated from the server profile, invitations and members, and SSO configuration. It does not depend on browser checkboxes.",
+    "loading": "Loading server status",
+    "loadError": "Server status could not be loaded. Existing configuration is unchanged.",
     "steps": {
       "profile": {
         "title": "Organization profile",
-        "description": "Confirm the identity and role facts created by the approved provisioning request."
+        "description": "Review and maintain the organization name and unique slug."
       },
       "members": {
         "title": "First members",
@@ -6246,12 +6263,11 @@
       },
       "security": {
         "title": "Security review",
-        "description": "Review SSO status and continue to the server-managed security controls."
+        "description": "Check baseline security or complete SSO configuration for the current plan."
       }
     },
     "actions": {
-      "confirm": "Confirm step",
-      "confirmed": "Confirmed",
+      "inviteMember": "Invite first member",
       "openSettings": "Open organization settings",
       "openMembers": "Open members and invitations",
       "openOverview": "Open organization overview",
@@ -6266,7 +6282,7 @@
       "slug": "Organization slug",
       "organizationId": "Organization ID",
       "role": "My organization role",
-      "serverFact": "These identity and role values come from the approved server projection. Use organization settings for the remaining profile and ownership controls."
+      "serverFact": "After saving, the server profile and organization directory refresh together. Concurrent edits require the latest version before retrying."
     },
     "members": {
       "title": "First members and invitations",
@@ -6277,7 +6293,8 @@
       "pendingHint": "Invitations that still need a response",
       "accepted": "Accepted invitations",
       "acceptedHint": "Invitations recorded as accepted",
-      "serverFact": "Counts are read from the organization member and invitation services. Invitation tokens and other sensitive materials are never stored in this checklist.",
+      "completeHint": "Another active member or a pending invitation exists, so this step is complete from server facts.",
+      "incompleteHint": "Create the first invitation to complete preparation. The invitee becomes active after accepting it.",
       "loading": "Loading member facts from the server",
       "loadError": "Member or invitation facts could not be loaded. The existing server state is unchanged."
     },
@@ -6286,11 +6303,14 @@
       "description": "Review the current SSO capability and organization role, then open settings for domains, recovery, and policy controls.",
       "sso": "Enterprise SSO",
       "enabled": "Enabled",
-      "disabled": "Not enabled",
+      "notIncluded": "Not included in this plan",
       "ssoHint": "SSO providers and policy are managed in organization settings",
+      "basicReady": "This plan does not require SSO, so the baseline security check is complete",
       "role": "Current role",
       "roleHint": "The server controls which security actions are available",
-      "serverFact": "This step records only your local confirmation. SSO, recovery, and policy changes are completed and audited by the server in organization settings."
+      "configured": "An active SSO provider and policy were loaded from the server, so this step is complete.",
+      "needsConfiguration": "This plan includes SSO. Create and enable a provider in organization settings.",
+      "serverFact": "Security status comes from server entitlement. SSO, recovery, and policy changes are completed and audited in organization settings."
     }
   },
   "wallet": {

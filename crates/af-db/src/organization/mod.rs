@@ -27,12 +27,12 @@ pub use types::{
     OrganizationInvitationPreviewRow, OrganizationInvitationPreviewSnapshot,
     OrganizationInvitationRecord, OrganizationMembershipChange, OrganizationMembershipCreate,
     OrganizationMembershipPageRecord, OrganizationMembershipRecord, OrganizationOwnershipTransfer,
-    OrganizationOwnershipTransferRecord, OrganizationRecord, OrganizationRepositoryConfigError,
-    OrganizationRepositoryError, OrganizationTeamChange, OrganizationTeamCreate,
-    OrganizationTeamPageRecord, OrganizationTeamRecord, PlatformOrganizationDirectoryPageRecord,
-    PlatformOrganizationDirectoryRecord, PlatformOrganizationMemberPageRecord,
-    PlatformOrganizationMemberRecord, PlatformUserOrganizationPageRecord,
-    PlatformUserOrganizationRecord,
+    OrganizationOwnershipTransferRecord, OrganizationProfileChange, OrganizationRecord,
+    OrganizationRepositoryConfigError, OrganizationRepositoryError, OrganizationTeamChange,
+    OrganizationTeamCreate, OrganizationTeamPageRecord, OrganizationTeamRecord,
+    PlatformOrganizationDirectoryPageRecord, PlatformOrganizationDirectoryRecord,
+    PlatformOrganizationMemberPageRecord, PlatformOrganizationMemberRecord,
+    PlatformUserOrganizationPageRecord, PlatformUserOrganizationRecord,
 };
 
 /// 企业主体、真实成员和扁平团队的事务仓储。
@@ -63,6 +63,16 @@ impl OrganizationRepository {
         write: OrganizationCreate,
     ) -> Result<OrganizationCreatedRecord, OrganizationRepositoryError> {
         self.run(mutation::create(self, write)).await
+    }
+
+    /// 按企业版本 CAS 更新基础资料，并保持短标识全局唯一。
+    pub async fn update_profile(
+        &self,
+        organization_id: OrganizationId,
+        change: OrganizationProfileChange,
+    ) -> Result<OrganizationRecord, OrganizationRepositoryError> {
+        self.run(mutation::update_profile(self, organization_id, change))
+            .await
     }
 
     /// 由受信订单、合同或许可证流程按 CAS 替换当前商业授权。

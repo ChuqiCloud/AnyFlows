@@ -17,6 +17,7 @@ import {
   OrganizationPageHeader,
   useOrganizationPageState,
 } from './organization-page-shell'
+import { OrganizationProfileEditor } from './organization-profile-editor'
 
 const OWNERSHIP_TRANSFER = 'organization.ownership.transfer'
 
@@ -42,7 +43,7 @@ const permissionCodes = [
   'organization.sso.recovery',
 ] as const
 
-/** 企业设置只呈现真实资料、授权与权限；当前唯一写接口为所有权转移。 */
+/** 企业设置集中维护服务端企业资料、授权、安全能力与所有权。 */
 export function OrganizationSettingsPage() {
   const { t } = useTranslation()
   const state = useOrganizationPageState()
@@ -52,7 +53,6 @@ export function OrganizationSettingsPage() {
         icon={ShieldCheck}
         title={t('organizationConsole.settings.title')}
         subtitle={t('organizationConsole.settings.subtitle')}
-        actions={<Button asChild type="button" size="sm" variant="secondary"><a href="#/console/organization-verification"><ClipboardCheck aria-hidden="true" />{t('organizationVerification.title')}</a></Button>}
       />
       <OrganizationPageBoundary state={state}>
         {(organizationId, overview) => (
@@ -66,6 +66,7 @@ export function OrganizationSettingsPage() {
 function OrganizationSettingsWorkspace({ organizationId, overview }: { organizationId: number; overview: OrganizationOverviewResponse }) {
   const { t } = useTranslation()
   const canTransfer = overview.permissions.includes(OWNERSHIP_TRANSFER)
+  const canEditProfile = overview.permissions.includes('organization.profile.write')
   const membersQuery = useOrganizationMemberCatalog(organizationId, canTransfer)
   const mutation = useTransferOrganizationOwnership(organizationId)
   const [targetId, setTargetId] = useState<number>()
@@ -98,11 +99,15 @@ function OrganizationSettingsWorkspace({ organizationId, overview }: { organizat
           <CardTitle className="text-base">{t('organizationConsole.settings.identity.title')}</CardTitle>
           <p className="text-xs leading-5 text-muted-foreground">{t('organizationConsole.settings.identity.subtitle')}</p>
         </CardHeader>
-        <CardContent className="grid gap-0 p-0 sm:grid-cols-2">
-          <ReadOnlyField label={t('organizationConsole.settings.identity.name')} value={overview.name} />
-          <ReadOnlyField label={t('organizationConsole.settings.identity.slug')} value={overview.slug} mono />
-          <ReadOnlyField label={t('organizationConsole.settings.identity.organizationId')} value={`#${overview.id}`} mono />
-          <ReadOnlyField label={t('organizationConsole.settings.identity.role')} value={t(`organizationConsole.roles.${overview.role}`)} />
+        <CardContent className="p-4">
+          {canEditProfile ? <OrganizationProfileEditor organizationId={organizationId} overview={overview} /> : (
+            <div className="grid gap-0 rounded-lg border border-[var(--hairline)] sm:grid-cols-2">
+              <ReadOnlyField label={t('organizationConsole.settings.identity.name')} value={overview.name} />
+              <ReadOnlyField label={t('organizationConsole.settings.identity.slug')} value={overview.slug} mono />
+              <ReadOnlyField label={t('organizationConsole.settings.identity.organizationId')} value={`#${overview.id}`} mono />
+              <ReadOnlyField label={t('organizationConsole.settings.identity.role')} value={t(`organizationConsole.roles.${overview.role}`)} />
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -194,11 +199,14 @@ function OrganizationSettingsWorkspace({ organizationId, overview }: { organizat
         <div className="flex items-start gap-3">
           <Building2 className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <div>
-            <h3 className="text-sm font-semibold">{t('organizationConsole.settings.unavailable.title')}</h3>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('organizationConsole.settings.unavailable.body')}</p>
+            <h3 className="text-sm font-semibold">{t('organizationConsole.settings.verification.title')}</h3>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('organizationConsole.settings.verification.body')}</p>
+            <Button asChild type="button" size="sm" variant="secondary" className="mt-3"><a href="#/console/organization-verification"><ClipboardCheck aria-hidden="true" />{t('organizationConsole.settings.verification.action')}</a></Button>
           </div>
         </div>
       </div>
+
+      <p className="px-1 text-xs leading-5 text-muted-foreground">{t('organizationConsole.settings.unavailable.body')}</p>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>

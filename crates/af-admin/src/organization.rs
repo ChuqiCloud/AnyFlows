@@ -24,6 +24,7 @@ pub struct OrganizationContext {
     permissions: Vec<OrganizationPermission>,
     name: String,
     slug: String,
+    version: i64,
     entitlement: OrganizationEntitlementSummary,
 }
 
@@ -56,6 +57,7 @@ impl OrganizationContext {
             permissions: effective_permissions(role, access.custom_role_permissions()),
             name: access.organization().name().to_owned(),
             slug: access.organization().slug().to_owned(),
+            version: access.organization().version(),
             entitlement: OrganizationEntitlementSummary::from_access(access),
         }
     }
@@ -100,6 +102,12 @@ impl OrganizationContext {
     #[must_use]
     pub fn slug(&self) -> &str {
         &self.slug
+    }
+
+    /// 返回企业资料 CAS 版本。
+    #[must_use]
+    pub const fn version(&self) -> i64 {
+        self.version
     }
 
     /// 判断当前企业角色是否拥有指定权限。

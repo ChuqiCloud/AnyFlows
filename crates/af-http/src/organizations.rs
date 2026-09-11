@@ -19,18 +19,18 @@ use af_admin::{
     OrganizationInvitationRecord, OrganizationInvitationService, OrganizationManagementError,
     OrganizationManagementService, OrganizationMembershipChangeCommand,
     OrganizationMembershipListQuery, OrganizationMembershipRecord,
-    OrganizationOwnershipTransferCommand, OrganizationServiceAccountBudgetBindingCommand,
-    OrganizationServiceAccountCreateCommand, OrganizationServiceAccountIssued,
-    OrganizationServiceAccountListQuery, OrganizationServiceAccountRotateCommand,
-    OrganizationServiceAccountService, OrganizationServiceAccountServiceError,
-    OrganizationServiceAccountStatusCommand, OrganizationSsoDomain as AdminOrganizationSsoDomain,
-    OrganizationSsoDomainCreateCommand, OrganizationSsoDomainCreated, OrganizationSsoDomainService,
-    OrganizationSsoDomainServiceError, OrganizationSsoDomainVerifyCommand,
-    OrganizationSsoIdentityBindingService, OrganizationSsoIdentityBindingServiceError,
-    OrganizationSsoIdentityBindingStepUp, OrganizationSsoLoginTransactionService,
-    OrganizationSsoLoginTransactionServiceError, OrganizationSsoPolicyCommand,
-    OrganizationSsoPolicyService, OrganizationSsoPolicyServiceError, OrganizationSsoProvider,
-    OrganizationSsoProviderCommand, OrganizationSsoProviderService,
+    OrganizationOwnershipTransferCommand, OrganizationProfileChangeCommand,
+    OrganizationServiceAccountBudgetBindingCommand, OrganizationServiceAccountCreateCommand,
+    OrganizationServiceAccountIssued, OrganizationServiceAccountListQuery,
+    OrganizationServiceAccountRotateCommand, OrganizationServiceAccountService,
+    OrganizationServiceAccountServiceError, OrganizationServiceAccountStatusCommand,
+    OrganizationSsoDomain as AdminOrganizationSsoDomain, OrganizationSsoDomainCreateCommand,
+    OrganizationSsoDomainCreated, OrganizationSsoDomainService, OrganizationSsoDomainServiceError,
+    OrganizationSsoDomainVerifyCommand, OrganizationSsoIdentityBindingService,
+    OrganizationSsoIdentityBindingServiceError, OrganizationSsoIdentityBindingStepUp,
+    OrganizationSsoLoginTransactionService, OrganizationSsoLoginTransactionServiceError,
+    OrganizationSsoPolicyCommand, OrganizationSsoPolicyService, OrganizationSsoPolicyServiceError,
+    OrganizationSsoProvider, OrganizationSsoProviderCommand, OrganizationSsoProviderService,
     OrganizationSsoProviderServiceError, OrganizationSsoRecoveryCommand,
     OrganizationSsoRecoveryService, OrganizationSsoRecoveryServiceError,
     OrganizationTeamChangeCommand, OrganizationTeamCreateCommand, OrganizationTeamDisableCommand,
@@ -145,7 +145,7 @@ pub fn build_organization_router_with_domain(
         .route("/api/account/organizations", get(list_organizations))
         .route(
             "/api/organizations/{organization_id}",
-            get(get_organization),
+            get(get_organization).patch(update_organization_profile),
         );
     let router = if invitation_service.is_some() {
         router
@@ -389,10 +389,31 @@ pub struct OrganizationOverviewResponse {
     id: i64,
     name: String,
     slug: String,
+    version: i64,
     role: &'static str,
     membership_id: i64,
     permissions: Vec<&'static str>,
     entitlement: OrganizationEntitlementResponse,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationProfileResponse {
+    id: i64,
+    name: String,
+    slug: String,
+    version: i64,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationProfileChangeRequest {
+    #[schema(min_length = 1, max_length = 128)]
+    name: String,
+    #[schema(min_length = 1, max_length = 64, pattern = "^[a-z0-9]+(-[a-z0-9]+)*$")]
+    slug: String,
+    #[schema(minimum = 1)]
+    expected_version: i64,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -3848,6 +3869,7 @@ async fn get_organization(
         id: context.organization_id().get(),
         name: context.name().to_owned(),
         slug: context.slug().to_owned(),
+        version: context.version(),
         role: organization_role_code(context.role()),
         membership_id: context.membership_id().get(),
         permissions: context
@@ -3856,6 +3878,71 @@ async fn get_organization(
             .map(|permission| permission.code())
             .collect(),
         entitlement: OrganizationEntitlementResponse::from(context.entitlement()),
+    }))
+}
+
+async fn update_organization_profile(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Path(organization_id): Path<i64>,
+    headers: HeaderMap,
+    Json(request): Json<OrganizationProfileChangeRequest>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::ProfileWrite,
+        &request_id,
+        &headers,
+        "organization.profile.change",
+        "organization",
+        organization_id.get().to_string(),
+    )
+    .await?;
+    let command =
+        OrganizationProfileChangeCommand::new(request.name, request.slug, request.expected_version)
+            .map_err(map_management_lifecycle_error)?;
+    let service = state
+        .management_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let profile = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::ProfileWrite,
+        "organization.profile.change",
+        "organization",
+        organization_id.get().to_string(),
+        service
+            .update_profile(context.clone(), command)
+            .await
+            .map_err(map_management_lifecycle_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::ProfileWrite.code(),
+        "organization.profile.change",
+        "organization",
+        profile.id().get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({"version": profile.version()})),
+    )
+    .await?;
+    Ok(no_store_json(OrganizationProfileResponse {
+        id: profile.id().get(),
+        name: profile.name().to_owned(),
+        slug: profile.slug().to_owned(),
+        version: profile.version(),
     }))
 }
 
