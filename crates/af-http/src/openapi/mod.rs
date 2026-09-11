@@ -291,8 +291,8 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        // 删除试炼场托管 Key 接口后，保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 330);
+        // 新增企业资料更新接口后，保持操作总数与生成文档同步。
+        assert_eq!(operation_count, 331);
         assert!(
             document
                 .components
@@ -396,6 +396,7 @@ mod tests {
             "getUserProfile",
             "listAccountOrganizations",
             "getOrganizationOverview",
+            "updateOrganizationProfile",
             "listOrganizationApprovalTemplates",
             "createOrganizationApprovalTemplate",
             "listOrganizationApprovalRequests",
@@ -669,7 +670,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 543);
+        assert_eq!(schemas.len(), 545);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("OrganizationSsoDiscoveryErrorResponse"));
         assert!(schemas.contains_key("Announcement"));
@@ -768,6 +769,8 @@ mod tests {
         assert!(schemas.contains_key("PasskeyAuthenticationOptionsResponse"));
         assert!(schemas.contains_key("PasskeyAuthenticationVerifyRequest"));
         assert!(schemas.contains_key("OrganizationEntitlementResponse"));
+        assert!(schemas.contains_key("OrganizationProfileChangeRequest"));
+        assert!(schemas.contains_key("OrganizationProfileResponse"));
         assert!(schemas.contains_key("OrganizationDepartmentCreateRequest"));
         assert!(schemas.contains_key("OrganizationDepartmentDisableRequest"));
         assert!(schemas.contains_key("OrganizationDepartmentListResponse"));
