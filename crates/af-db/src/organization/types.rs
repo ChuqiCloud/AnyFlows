@@ -60,6 +60,26 @@ impl fmt::Debug for OrganizationCreate {
     }
 }
 
+/// 按企业版本更新显示名称和稳定短标识。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrganizationProfileChange {
+    pub(super) name: String,
+    pub(super) slug: String,
+    pub(super) expected_version: i64,
+}
+
+impl OrganizationProfileChange {
+    /// 组装企业资料的完整目标快照；字段边界由仓储统一校验。
+    #[must_use]
+    pub fn new(name: String, slug: String, expected_version: i64) -> Self {
+        Self {
+            name,
+            slug,
+            expected_version,
+        }
+    }
+}
+
 /// 仅供受信订单、合同或许可证流程提交的完整授权快照。
 #[derive(Clone)]
 pub struct OrganizationEntitlementWrite {

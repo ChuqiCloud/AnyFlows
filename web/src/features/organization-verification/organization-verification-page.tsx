@@ -62,12 +62,17 @@ function ApplicantVerificationCase({ organizationId, overview }: { organizationI
   if (query.isPending) return <VerificationLoading />
   if (query.isError) return <VerificationError onRetry={() => void query.refetch()} />
 
-  return <div className="grid gap-4"><VerificationIdentity overview={overview} />{verification ? <ApplicantStatus verification={verification} /> : <EmptyVerificationState />}{!canSubmit ? <VerificationNotice title={t('organizationVerification.errors.forbidden')} /> : null}{canSubmit && editable ? <VerificationForm summary={summary} setSummary={setSummary} materials={materials} setMaterials={setMaterials} onSubmit={submit} pending={mutation.isPending} hasExisting={verification !== null} /> : null}{mutation.isError ? <ErrorNotice code={organizationVerificationErrorCode(mutation.error)} /> : null}</div>
+  return <div className="grid gap-4"><VerificationIdentity overview={overview} /><VerificationPurpose />{verification ? <ApplicantStatus verification={verification} /> : <EmptyVerificationState />}{!canSubmit ? <VerificationNotice title={t('organizationVerification.errors.forbidden')} /> : null}{canSubmit && editable ? <VerificationForm summary={summary} setSummary={setSummary} materials={materials} setMaterials={setMaterials} onSubmit={submit} pending={mutation.isPending} hasExisting={verification !== null} /> : null}{mutation.isError ? <ErrorNotice code={organizationVerificationErrorCode(mutation.error)} /> : null}</div>
 }
 
 function VerificationIdentity({ overview }: { overview: OrganizationOverviewResponse }) {
   const { t } = useTranslation()
   return <section className="flex flex-wrap items-center justify-between gap-3 border-y border-[var(--hairline)] py-3"><div className="flex min-w-0 items-center gap-3"><span className="grid size-9 place-items-center rounded-lg bg-brand/10 text-brand"><Building2 className="size-4" aria-hidden="true" /></span><div className="min-w-0"><h3 className="truncate text-sm font-semibold">{overview.name}</h3><p className="mt-1 truncate font-mono text-[0.6875rem] text-muted-foreground">{overview.slug} · #{overview.id}</p></div></div><Badge>{t(`organizationConsole.roles.${overview.role}`)}</Badge></section>
+}
+
+function VerificationPurpose() {
+  const { t } = useTranslation()
+  return <section className="flex items-start gap-3 rounded-lg border border-[var(--hairline)] bg-surface-1/35 p-4"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-brand" aria-hidden="true" /><div><h3 className="text-sm font-semibold">{t('organizationVerification.purpose.title')}</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">{t('organizationVerification.purpose.body')}</p></div></section>
 }
 
 function ApplicantStatus({ verification }: { verification: OrganizationVerificationResponse }) {

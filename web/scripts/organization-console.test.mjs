@@ -16,9 +16,10 @@ test('企业控制台路由覆盖首版任务域', () => {
   assert.deepEqual(routeFromHash('#/console/organization-activity?tab=unknown'), { view: 'organization-activity' })
 })
 
-test('企业 Owner 初始化向导按企业恢复本地进度并只展示服务端事实', async () => {
-  const [pageSource, provisioningSource, en, zh] = await Promise.all([
+test('企业 Owner 初始化向导按服务端事实推进并提供资料与邀请操作', async () => {
+  const [pageSource, profileSource, provisioningSource, en, zh] = await Promise.all([
     readFile(new URL('../src/features/organization-onboarding/organization-onboarding-page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/features/organization-console/organization-profile-editor.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/features/organization-provisioning/organization-provisioning-page.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/i18n/locales/en.json', import.meta.url), 'utf8').then(JSON.parse),
     readFile(new URL('../src/i18n/locales/zh.json', import.meta.url), 'utf8').then(JSON.parse),
@@ -27,15 +28,20 @@ test('企业 Owner 初始化向导按企业恢复本地进度并只展示服务�
   assert.match(pageSource, /useOrganizationWorkspace/)
   assert.match(pageSource, /useOrganizationMembers/)
   assert.match(pageSource, /useOrganizationInvitations/)
-  assert.match(pageSource, /PROGRESS_PREFIX.*organizationId/)
-  assert.match(pageSource, /localProgressHint/)
+  assert.match(pageSource, /OrganizationInvitationEditorSheet/)
+  assert.match(pageSource, /OrganizationInvitationIssuedDialog/)
+  assert.match(pageSource, /useOrganizationSsoProviders/)
+  assert.match(pageSource, /serverProgressHint/)
+  assert.doesNotMatch(pageSource, /localStorage|PROGRESS_PREFIX|confirmStep/)
+  assert.match(profileSource, /useUpdateOrganizationProfile/)
+  assert.match(profileSource, /expected_version: overview\.version/)
   assert.match(pageSource, /organization-members/)
   assert.match(pageSource, /organization-settings/)
   assert.doesNotMatch(pageSource, /invitation\.invitation_key/)
   assert.match(provisioningSource, /organization-onboarding\?organization_id=\$\{request\.organization_id\}/)
   assert.equal(typeof en.organizationOnboarding.title, 'string')
   assert.equal(typeof zh.organizationOnboarding.title, 'string')
-  assert.equal(typeof en.organizationOnboarding.members.serverFact, 'string')
+  assert.equal(typeof en.organizationOnboarding.members.completeHint, 'string')
   assert.equal(typeof zh.organizationOnboarding.security.serverFact, 'string')
 })
 
@@ -60,6 +66,7 @@ test('切回个人空间时保留最后企业偏好并只清理企业缓存', as
 
 test('企业成员、团队、邀请和钱包使用现有服务端契约', () => {
   const operations = [
+    ['/api/organizations/{organization_id}', 'patch', 'updateOrganizationProfile'],
     ['/api/organizations/{organization_id}/members', 'get', 'listOrganizationMembers'],
     ['/api/organizations/{organization_id}/members/{membership_id}', 'patch', 'changeOrganizationMember'],
     ['/api/organizations/{organization_id}/members/{membership_id}/custom-role', 'patch', 'setOrganizationMemberCustomRole'],
@@ -211,6 +218,9 @@ test('企业控制台具备中英文入口和关键状态文案', async () => {
     assert.equal(typeof locale.organizationConsole.settings.sso.domains.verify, 'string')
     assert.equal(typeof locale.organizationConsole.settings.sso.closure.available, 'string')
     assert.equal(typeof locale.organizationConsole.settings.sso.closure.hint, 'string')
+    assert.equal(typeof locale.organizationConsole.settings.identity.slugHint, 'string')
+    assert.equal(typeof locale.organizationConsole.settings.verification.body, 'string')
+    assert.equal(typeof locale.organizationVerification.purpose.body, 'string')
     assert.equal(typeof locale.organizationConsole.invitations.batch.preview, 'string')
     assert.equal(typeof locale.organizationConsole.wallet.adjustment.title, 'string')
     assert.equal(typeof locale.invitations.organization.accept, 'string')

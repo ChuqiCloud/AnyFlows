@@ -16,7 +16,8 @@ use super::{
     DatabaseOptions, MigrationOptions, OrganizationCreate, OrganizationEntitlementPreflightOutcome,
     OrganizationEntitlementWrite, OrganizationInvitationCreate, OrganizationInvitationPreviewItem,
     OrganizationMembershipChange, OrganizationMembershipCreate, OrganizationOwnershipTransfer,
-    OrganizationRepository, OrganizationRepositoryError, OrganizationTeamCreate,
+    OrganizationProfileChange, OrganizationRepository, OrganizationRepositoryError,
+    OrganizationTeamCreate,
 };
 use crate::{
     EncryptedCredentialEnvelope,
@@ -71,6 +72,78 @@ async fn create_is_atomic_and_installs_one_active_owner() -> Result<(), Box<dyn 
             .exec(fixture.pool.connection())
             .await
             .is_err()
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn profile_update_uses_cas_and_preserves_slug_uniqueness() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let (organization, _) = fixture
+        .repository
+        .create(OrganizationCreate::new(
+            "Profile Lab".to_owned(),
+            "profile-lab".to_owned(),
+            fixture.users[0],
+            active_entitlement(10, 10, None)?,
+        ))
+        .await?
+        .into_parts();
+
+    let updated = fixture
+        .repository
+        .update_profile(
+            organization.id(),
+            OrganizationProfileChange::new(
+                "Profile Lab Updated".to_owned(),
+                "profile-lab-updated".to_owned(),
+                organization.version(),
+            ),
+        )
+        .await?;
+    assert_eq!(updated.name(), "Profile Lab Updated");
+    assert_eq!(updated.slug(), "profile-lab-updated");
+    assert_eq!(updated.version(), organization.version() + 1);
+
+    let (other, _) = fixture
+        .repository
+        .create(OrganizationCreate::new(
+            "Other Profile".to_owned(),
+            "other-profile".to_owned(),
+            fixture.users[1],
+            active_entitlement(10, 10, None)?,
+        ))
+        .await?
+        .into_parts();
+    assert_eq!(
+        fixture
+            .repository
+            .update_profile(
+                other.id(),
+                OrganizationProfileChange::new(
+                    "Other Profile".to_owned(),
+                    "profile-lab-updated".to_owned(),
+                    other.version(),
+                ),
+            )
+            .await,
+        Err(OrganizationRepositoryError::Conflict)
+    );
+
+    assert_eq!(
+        fixture
+            .repository
+            .update_profile(
+                organization.id(),
+                OrganizationProfileChange::new(
+                    "Stale".to_owned(),
+                    "stale".to_owned(),
+                    organization.version(),
+                ),
+            )
+            .await,
+        Err(OrganizationRepositoryError::Conflict)
     );
     fixture.pool.close().await?;
     Ok(())

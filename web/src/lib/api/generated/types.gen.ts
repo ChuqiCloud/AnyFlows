@@ -1978,6 +1978,7 @@ export type OrganizationOverviewResponse = {
     membership_id: number;
     permissions: Array<string>;
     entitlement: OrganizationEntitlementResponse;
+    version: number;
 };
 export type OrganizationOwnershipTransferRequest = {
     target_membership_id: number;
@@ -3320,6 +3321,17 @@ export type VideoTaskListResponse = {
     next_cursor: string | null;
 };
 export type VideoTaskStatus = 'pending' | 'done' | 'expired' | 'failed';
+export type OrganizationProfileChangeRequest = {
+    name: string;
+    slug: string;
+    expected_version: number;
+};
+export type OrganizationProfileResponse = {
+    id: number;
+    name: string;
+    slug: string;
+    version: number;
+};
 export type AdminChannelCreateRequestWritable = {
     name: string;
     type: 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
@@ -5189,6 +5201,27 @@ export type GetOrganizationOverviewResponses = {
     200: OrganizationOverviewResponse;
 };
 export type GetOrganizationOverviewResponse = GetOrganizationOverviewResponses[keyof GetOrganizationOverviewResponses];
+export type UpdateOrganizationProfileData = {
+    body: OrganizationProfileChangeRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}';
+};
+export type UpdateOrganizationProfileErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateOrganizationProfileError = UpdateOrganizationProfileErrors[keyof UpdateOrganizationProfileErrors];
+export type UpdateOrganizationProfileResponses = {
+    200: OrganizationProfileResponse;
+};
+export type UpdateOrganizationProfileResponse = UpdateOrganizationProfileResponses[keyof UpdateOrganizationProfileResponses];
 export type ListOrganizationDepartmentsData = {
     body?: never;
     path: {

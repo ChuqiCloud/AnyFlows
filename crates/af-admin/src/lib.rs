@@ -360,9 +360,9 @@ pub use organization_management::{
     OrganizationMembershipFuture, OrganizationMembershipListQuery, OrganizationMembershipPage,
     OrganizationMembershipPageFuture, OrganizationOwnershipTransferCommand,
     OrganizationOwnershipTransferFuture, OrganizationOwnershipTransferResult,
-    OrganizationTeamChangeCommand, OrganizationTeamCreateCommand, OrganizationTeamDisableCommand,
-    OrganizationTeamFuture, OrganizationTeamListQuery, OrganizationTeamPage,
-    OrganizationTeamPageFuture,
+    OrganizationProfileChangeCommand, OrganizationProfileFuture, OrganizationTeamChangeCommand,
+    OrganizationTeamCreateCommand, OrganizationTeamDisableCommand, OrganizationTeamFuture,
+    OrganizationTeamListQuery, OrganizationTeamPage, OrganizationTeamPageFuture,
 };
 pub use organization_plan::{
     DEFAULT_ORGANIZATION_PLAN_PAGE_SIZE, DatabaseOrganizationPlanService, OrganizationPlanCatalog,
