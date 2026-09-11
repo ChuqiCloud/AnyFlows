@@ -120,6 +120,39 @@ fn parses_minimal_official_response_without_fabricating_created_at() {
 }
 
 #[test]
+fn parses_deepseek_anthropic_response_shape() {
+    let parsed = parse_json(json!({
+        "id": "msg_deepseek_test",
+        "type": "message",
+        "role": "assistant",
+        "content": [{
+            "type": "thinking",
+            "thinking": "We",
+            "signature": "845129ed-bc00-4e0b-8d44-fcdd97797fb1"
+        }],
+        "model": "deepseek-v4-flash",
+        "stop_reason": "max_tokens",
+        "stop_sequence": null,
+        "usage": {
+            "input_tokens": 7,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 1,
+            "service_tier": "standard"
+        }
+    }))
+    .unwrap();
+
+    assert_eq!(parsed.id, "msg_deepseek_test");
+    assert_eq!(parsed.model, "deepseek-v4-flash");
+    assert_eq!(parsed.choices[0].finish_reason, FinishReason::Length);
+    assert_eq!(
+        parsed.usage.unwrap().checked_total_tokens().unwrap().get(),
+        8
+    );
+}
+
+#[test]
 fn round_trips_thinking_tools_cache_usage_and_same_protocol_metadata() {
     let mut value = response(
         vec![

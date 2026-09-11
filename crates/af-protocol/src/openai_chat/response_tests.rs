@@ -49,6 +49,38 @@ fn parses_minimal_non_streaming_response() {
 }
 
 #[test]
+fn parses_deepseek_cache_breakdown_fields() {
+    let mut value = response_with_choices(vec![json!({
+        "index": 0,
+        "message": {
+            "role": "assistant",
+            "content": "",
+            "reasoning_content": "We"
+        },
+        "logprobs": null,
+        "finish_reason": "length"
+    })]);
+    value["id"] = json!("b237448a-7b22-4622-880a-3cf0ea79275c");
+    value["model"] = json!("deepseek-flash");
+    value["system_fingerprint"] = json!("aeb56401ca74e127821c4f9126dcb669");
+    value["usage"] = json!({
+        "prompt_tokens": 31,
+        "completion_tokens": 1,
+        "total_tokens": 32,
+        "prompt_tokens_details": { "cached_tokens": 0 },
+        "completion_tokens_details": { "reasoning_tokens": 1 },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 31
+    });
+
+    let parsed = parse_json(value).unwrap();
+    let usage = parsed.usage.unwrap();
+    assert_eq!(usage.input_tokens().get(), 31);
+    assert_eq!(usage.details().cache_read().get(), 0);
+    assert_eq!(usage.details().reasoning().get(), 1);
+}
+
+#[test]
 fn parses_newapi_non_streaming_metadata_and_reasoning_fields() {
     let mut response = response_with_choices(vec![json!({
         "index": 0,

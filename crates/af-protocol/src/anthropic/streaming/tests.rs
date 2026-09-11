@@ -457,6 +457,104 @@ fn decoder_accepts_consistent_service_tier_in_final_usage() {
 }
 
 #[test]
+fn decoder_accepts_deepseek_anthropic_stream() {
+    let start = event(
+        "message_start",
+        json!({
+            "type": "message_start",
+            "message": {
+                "id": "85db1bb8-9369-4436-bcbe-810d4f86a43b",
+                "type": "message",
+                "role": "assistant",
+                "model": "deepseek-flash",
+                "content": [],
+                "stop_reason": null,
+                "stop_sequence": null,
+                "usage": {
+                    "input_tokens": 31,
+                    "cache_creation_input_tokens": 0,
+                    "cache_read_input_tokens": 0,
+                    "output_tokens": 0,
+                    "service_tier": "standard"
+                }
+            }
+        }),
+    );
+    let thinking_start = event(
+        "content_block_start",
+        json!({
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "thinking", "thinking": "", "signature": ""}
+        }),
+    );
+    let thinking = event(
+        "content_block_delta",
+        json!({
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "thinking_delta", "thinking": "We"}
+        }),
+    );
+    let signature = event(
+        "content_block_delta",
+        json!({
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "signature_delta", "signature": "85db1bb8-9369-4436-bcbe-810d4f86a43b"}
+        }),
+    );
+    let block_stop = event(
+        "content_block_stop",
+        json!({"type": "content_block_stop", "index": 0}),
+    );
+    let delta = event(
+        "message_delta",
+        json!({
+            "type": "message_delta",
+            "delta": {"stop_reason": "max_tokens", "stop_sequence": null},
+            "usage": {
+                "input_tokens": 31,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 1,
+                "service_tier": "standard"
+            }
+        }),
+    );
+    let stop = event("message_stop", json!({"type": "message_stop"}));
+
+    let mut decoder = AnthropicMessagesStreamDecoder::new();
+    let events = decoder
+        .push(
+            &[
+                start,
+                thinking_start,
+                thinking,
+                signature,
+                block_stop,
+                delta,
+                stop,
+            ]
+            .concat(),
+        )
+        .unwrap();
+    decoder.finish().unwrap();
+    assert!(events.iter().any(|event| matches!(
+        event,
+        CanonicalStreamEvent::ReasoningDelta { text, .. } if text == "We"
+    )));
+    assert!(events.iter().any(|event| matches!(
+        event,
+        CanonicalStreamEvent::Finish {
+            reason: FinishReason::Length,
+            ..
+        }
+    )));
+    assert_eq!(events.last(), Some(&CanonicalStreamEvent::StreamEnd));
+}
+
+#[test]
 fn decoder_rejects_conflicting_service_tiers() {
     let mut start = event_payload(&message_start(0, 0));
     start["message"]["usage"]["service_tier"] = json!("standard");
