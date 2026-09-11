@@ -1,4 +1,4 @@
-import { Building2, LoaderCircle, RefreshCw, ShieldCheck, UsersRound } from 'lucide-react'
+import { Building2, LoaderCircle, RefreshCw, Settings2, ShieldCheck, UsersRound } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -16,6 +16,7 @@ import {
   type PlatformOrganizationAccess,
 } from './platform-organization-api'
 import { PlatformOrganizationMembersSheet } from './platform-organization-members-sheet'
+import { useOrganizationWorkspace } from '@/features/organization-console/organization-workspace-context'
 
 const statusStyles: Readonly<Record<string, string>> = {
   active: 'border-transparent bg-success/10 text-success',
@@ -32,6 +33,7 @@ export function PlatformOrganizationPage() {
   const [access, setAccess] = useState<PlatformOrganizationAccess>()
   const [selectedOrganization, setSelectedOrganization] = useState<PlatformOrganizationSummaryResponse>()
   const query = usePlatformOrganizations(access)
+  const workspace = useOrganizationWorkspace()
   const organizations = query.data?.pages.flatMap((page) => page.organizations) ?? []
   const timeFormat = useMemo(
     () => new Intl.DateTimeFormat(i18n.resolvedLanguage === 'zh' ? 'zh-CN' : 'en-US', {
@@ -40,6 +42,12 @@ export function PlatformOrganizationPage() {
     [i18n.resolvedLanguage],
   )
   const validReason = isValidPlatformOrganizationReason(reason)
+  const canEnterOrganization = (organizationId: number) => workspace.organizations.some((organization) => organization.id === organizationId)
+  const enterOrganizationSettings = async (organizationId: number) => {
+    if (!canEnterOrganization(organizationId)) return
+    await workspace.selectOrganization(organizationId)
+    window.location.hash = '#/console/organization-settings'
+  }
 
   const load = (event: FormEvent) => {
     event.preventDefault()
@@ -142,7 +150,7 @@ export function PlatformOrganizationPage() {
               title={t('platformOrganizations.empty.title')}
               body={t('platformOrganizations.empty.body')}
             />
-          ) : <OrganizationDirectory organizations={organizations} timeFormat={timeFormat} onManage={setSelectedOrganization} />}
+          ) : <OrganizationDirectory organizations={organizations} timeFormat={timeFormat} canEnterOrganization={canEnterOrganization} onManage={setSelectedOrganization} onEnterSettings={(organization) => void enterOrganizationSettings(organization.id)} />}
           {query.isFetchNextPageError ? (
             <div role="alert" className="text-xs text-destructive">{t('platformOrganizations.error.more')}</div>
           ) : null}
@@ -174,11 +182,15 @@ export function PlatformOrganizationPage() {
 function OrganizationDirectory({
   organizations,
   timeFormat,
+  canEnterOrganization,
   onManage,
+  onEnterSettings,
 }: {
   organizations: PlatformOrganizationSummaryResponse[]
   timeFormat: Intl.DateTimeFormat
+  canEnterOrganization: (organizationId: number) => boolean
   onManage: (organization: PlatformOrganizationSummaryResponse) => void
+  onEnterSettings: (organization: PlatformOrganizationSummaryResponse) => void
 }) {
   const { t } = useTranslation()
   return (
@@ -203,7 +215,7 @@ function OrganizationDirectory({
                 <td className="px-3 py-3 tabular-nums">{t('platformOrganizations.values.seats', { active: organization.active_member_count, limit: organization.seat_limit })}</td>
                 <td className="px-3 py-3"><StatusPair organization={organization} /></td>
                 <td className="px-3 py-3">{timeFormat.format(organization.valid_until * 1_000)}</td>
-                <td className="px-3 py-3 text-right"><Button type="button" size="sm" variant="ghost" onClick={() => onManage(organization)}><UsersRound aria-hidden="true" />{t('platformOrganizations.actions.manageMembers')}</Button></td>
+                <td className="px-3 py-3 text-right"><div className="flex justify-end gap-1"><Button type="button" size="sm" variant="ghost" onClick={() => onManage(organization)}><UsersRound aria-hidden="true" />{t('platformOrganizations.actions.manageMembers')}</Button>{canEnterOrganization(organization.id) ? <Button type="button" size="icon-sm" variant="ghost" title={t('platformOrganizations.actions.openSettings')} onClick={() => onEnterSettings(organization)}><Settings2 aria-hidden="true" /><span className="sr-only">{t('platformOrganizations.actions.openSettings')}</span></Button> : null}</div></td>
               </tr>
             ))}
           </tbody>
@@ -221,7 +233,7 @@ function OrganizationDirectory({
               <div><dt className="text-muted-foreground">{t('platformOrganizations.columns.members')}</dt><dd className="mt-1 tabular-nums">{t('platformOrganizations.values.seats', { active: organization.active_member_count, limit: organization.seat_limit })}</dd></div>
               <div className="col-span-2"><dt className="text-muted-foreground">{t('platformOrganizations.columns.validUntil')}</dt><dd className="mt-1">{timeFormat.format(organization.valid_until * 1_000)}</dd></div>
             </dl>
-            <Button type="button" size="sm" variant="secondary" className="mt-3 w-full" onClick={() => onManage(organization)}><UsersRound aria-hidden="true" />{t('platformOrganizations.actions.manageMembers')}</Button>
+            <div className="mt-3 flex gap-2"><Button type="button" size="sm" variant="secondary" className="min-w-0 flex-1" onClick={() => onManage(organization)}><UsersRound aria-hidden="true" />{t('platformOrganizations.actions.manageMembers')}</Button>{canEnterOrganization(organization.id) ? <Button type="button" size="icon-sm" variant="secondary" title={t('platformOrganizations.actions.openSettings')} onClick={() => onEnterSettings(organization)}><Settings2 aria-hidden="true" /><span className="sr-only">{t('platformOrganizations.actions.openSettings')}</span></Button> : null}</div>
           </article>
         ))}
       </div>

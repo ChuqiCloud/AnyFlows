@@ -220,11 +220,30 @@ test('企业控制台具备中英文入口和关键状态文案', async () => {
     assert.equal(typeof locale.organizationConsole.settings.sso.closure.hint, 'string')
     assert.equal(typeof locale.organizationConsole.settings.identity.slugHint, 'string')
     assert.equal(typeof locale.organizationConsole.settings.verification.body, 'string')
+    assert.equal(typeof locale.organizationConsole.settings.permissionManagement.title, 'string')
+    assert.equal(typeof locale.organizationConsole.settings.permissionManagement.manageMembers, 'string')
+    assert.equal(typeof locale.organizationConsole.settings.permissionManagement.manageRoles, 'string')
     assert.equal(typeof locale.organizationVerification.purpose.body, 'string')
     assert.equal(typeof locale.organizationConsole.invitations.batch.preview, 'string')
     assert.equal(typeof locale.organizationConsole.wallet.adjustment.title, 'string')
     assert.equal(typeof locale.invitations.organization.accept, 'string')
   }
+})
+
+test('企业设置页提供成员权限和自定义角色管理入口', async () => {
+  const [settings, roles, platform] = await Promise.all([
+    readFile(new URL('../src/features/organization-console/organization-settings-page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/features/organization-roles/organization-custom-role-panel.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/features/platform-organizations/platform-organization-page.tsx', import.meta.url), 'utf8'),
+  ])
+  assert.match(settings, /permissionManagement/)
+  assert.match(settings, /organization-members/)
+  assert.match(settings, /organization-custom-roles/)
+  assert.match(settings, /scrollIntoView/)
+  assert.match(roles, /id\?: string/)
+  assert.match(roles, /id=\{id\}/)
+  assert.match(platform, /useOrganizationWorkspace/)
+  assert.match(platform, /openSettings/)
 })
 
 test('企业空状态引导已有邀请中心，概览只展示服务端授权与资金边界', async () => {

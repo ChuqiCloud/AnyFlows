@@ -129,6 +129,46 @@ function OrganizationSettingsWorkspace({ organizationId, overview }: { organizat
         </CardContent>
       </Card>
 
+      <Card className="overflow-hidden">
+        <CardHeader className="border-b border-[var(--hairline)] bg-surface-1/45">
+          <CardTitle className="text-base">{t('organizationConsole.settings.permissionManagement.title')}</CardTitle>
+          <p className="text-xs leading-5 text-muted-foreground">{t('organizationConsole.settings.permissionManagement.subtitle')}</p>
+        </CardHeader>
+        <CardContent className="grid gap-3 p-4">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <PermissionFact
+              label={t('organizationConsole.settings.permissionManagement.fixedRole')}
+              value={t(`organizationConsole.roles.${overview.role}`)}
+              body={t('organizationConsole.settings.permissionManagement.fixedRoleHint')}
+            />
+            <PermissionFact
+              label={t('organizationConsole.settings.permissionManagement.customRoles')}
+              value={overview.entitlement.custom_roles_enabled
+                ? t('organizationConsole.settings.permissionManagement.enabled')
+                : t('organizationConsole.settings.permissionManagement.notIncluded')}
+              body={overview.entitlement.custom_roles_enabled
+                ? t('organizationConsole.settings.permissionManagement.customRolesHint')
+                : t('organizationConsole.settings.permissionManagement.customRolesUnavailable')}
+            />
+          </div>
+          <div className="flex flex-wrap gap-2 border-t border-[var(--hairline)] pt-3">
+            <Button asChild type="button" size="sm" variant="secondary">
+              <a href="#/console/organization-members"><UsersRound aria-hidden="true" />{t('organizationConsole.settings.permissionManagement.manageMembers')}</a>
+            </Button>
+            {overview.entitlement.custom_roles_enabled && overview.permissions.includes('organization.roles.manage') ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => document.getElementById('organization-custom-roles')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              >
+                <ShieldCheck aria-hidden="true" />{t('organizationConsole.settings.permissionManagement.manageRoles')}
+              </Button>
+            ) : null}
+          </div>
+        </CardContent>
+      </Card>
+
       <OrganizationSsoPanel
         organizationId={organizationId}
         organizationName={overview.name}
@@ -137,6 +177,7 @@ function OrganizationSettingsWorkspace({ organizationId, overview }: { organizat
       />
 
       <OrganizationCustomRolePanel
+        id="organization-custom-roles"
         organizationId={organizationId}
         organizationName={overview.name}
         customRolesEnabled={overview.entitlement.custom_roles_enabled}
@@ -229,6 +270,18 @@ function ReadOnlyField({ label, value, mono = false }: { label: string; value: s
     <div className="min-w-0 border-b border-[var(--hairline)] px-4 py-3 last:border-b-0 sm:border-r sm:last:border-r-0">
       <div className="text-[0.6875rem] text-muted-foreground">{label}</div>
       <div className={`mt-1 truncate text-sm font-medium ${mono ? 'font-mono' : ''}`} title={value}>{value}</div>
+    </div>
+  )
+}
+
+function PermissionFact({ label, value, body }: { label: string; value: string; body: string }) {
+  return (
+    <div className="min-w-0 rounded-lg border border-[var(--hairline)] px-3 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs text-muted-foreground">{label}</span>
+        <Badge className="shrink-0">{value}</Badge>
+      </div>
+      <p className="mt-2 text-xs leading-5 text-muted-foreground">{body}</p>
     </div>
   )
 }
