@@ -41335,6 +41335,10 @@
           "slug": {
             "type": "string"
           },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          },
           "role": {
             "type": "string"
           },
@@ -41350,10 +41354,6 @@
           },
           "entitlement": {
             "$ref": "#/components/schemas/OrganizationEntitlementResponse"
-          },
-          "version": {
-            "type": "integer",
-            "format": "int64"
           }
         },
         "additionalProperties": false
