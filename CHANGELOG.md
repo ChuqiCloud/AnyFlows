@@ -1,5 +1,15 @@
 # 变更日志
 
+## 0.2.0-beta.5 - 2026-09-11
+
+这是基于 v0.2.0-beta.4 的测试修复版，重点修复 DeepSeek 官方 OpenAI 与 Anthropic 协议兼容问题。
+
+### 修复
+
+- 兼容 DeepSeek OpenAI Responses 中的 `prompt_cache_hit_tokens` 和 `prompt_cache_miss_tokens` 用量字段，避免成功响应被误判为协议错误。
+- 修复 DeepSeek Anthropic 渠道模型发现，改用官方 `/v1/models` 接口获取模型列表。
+- 补充 OpenAI/Anthropic 非流式与流式 DeepSeek 响应回归测试，覆盖缓存用量映射和模型发现路径。
+
 ## 0.2.0-beta.4 - 2026-09-10
 
 ### 修复
