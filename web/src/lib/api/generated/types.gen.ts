@@ -1974,11 +1974,11 @@ export type OrganizationOverviewResponse = {
     id: number;
     name: string;
     slug: string;
+    version: number;
     role: string;
     membership_id: number;
     permissions: Array<string>;
     entitlement: OrganizationEntitlementResponse;
-    version: number;
 };
 export type OrganizationOwnershipTransferRequest = {
     target_membership_id: number;
@@ -2083,6 +2083,17 @@ export type OrganizationPlanPayment = {
     redirect_url: string | null;
 };
 export type OrganizationPlanStatus = 'active' | 'disabled';
+export type OrganizationProfileChangeRequest = {
+    name: string;
+    slug: string;
+    expected_version: number;
+};
+export type OrganizationProfileResponse = {
+    id: number;
+    name: string;
+    slug: string;
+    version: number;
+};
 export type OrganizationProvisioningCreateRequest = {
     metadata: string;
     file_0: Blob | File;
@@ -3321,17 +3332,6 @@ export type VideoTaskListResponse = {
     next_cursor: string | null;
 };
 export type VideoTaskStatus = 'pending' | 'done' | 'expired' | 'failed';
-export type OrganizationProfileChangeRequest = {
-    name: string;
-    slug: string;
-    expected_version: number;
-};
-export type OrganizationProfileResponse = {
-    id: number;
-    name: string;
-    slug: string;
-    version: number;
-};
 export type AdminChannelCreateRequestWritable = {
     name: string;
     type: 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
