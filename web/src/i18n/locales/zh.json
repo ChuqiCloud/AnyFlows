@@ -1289,7 +1289,8 @@
       "refresh": "刷新",
       "retry": "重试",
       "loadMore": "加载更多",
-      "manageMembers": "管理成员"
+      "manageMembers": "管理成员",
+      "openSettings": "打开企业设置"
     }
   },
   "users": {
@@ -5839,6 +5840,19 @@
         "title": "当前角色权限",
         "subtitle": "固定角色只映射稳定权限码，不能授予平台权限。"
       },
+      "permissionManagement": {
+        "title": "权限与角色管理",
+        "subtitle": "成员权限在成员页面调整；固定角色可直接选择，自定义角色仅在商业授权开启时可用。",
+        "fixedRole": "固定角色",
+        "fixedRoleHint": "Owner、管理员、财务、成员和只读角色由平台预设权限组成。",
+        "customRoles": "自定义角色",
+        "enabled": "已启用",
+        "notIncluded": "未包含",
+        "customRolesHint": "可创建角色并选择服务端允许的权限，再到成员页面分配。",
+        "customRolesUnavailable": "当前商业授权未开启自定义角色，只能使用固定角色。",
+        "manageMembers": "管理成员权限",
+        "manageRoles": "管理自定义角色"
+      },
       "ownership": {
         "title": "转移所有权",
         "subtitle": "先提升新的 Owner，再在同一事务中降级当前 Owner。",
@@ -6117,6 +6131,15 @@
     "purpose": {
       "title": "认证用途",
       "body": "当前认证只用于资质材料复核和合规留档，不影响企业基础功能，也不会自动增加额度、席位或解锁 SSO。没有平台审核要求时可以不提交。"
+    },
+    "process": {
+      "title": "认证流程",
+      "steps": {
+        "submit": { "title": "提交材料", "body": "企业 Owner 或管理员提交工商、业务材料和企业说明。" },
+        "review": { "title": "平台审核", "body": "平台管理员核验材料，并给出通过、要求补充或拒绝的决定。" },
+        "record": { "title": "结果留档", "body": "案件状态、审核理由和提交时间保存在服务端，企业可随时查看。" },
+        "boundary": { "title": "功能边界", "body": "认证不会改变成员权限、套餐、额度、SSO 或其他基础企业功能。" }
+      }
     },
     "status": {
       "submitted": "已提交",

@@ -37,7 +37,13 @@ test('企业认证的 HTTP、OpenAPI、生成客户端和前端入口保持同�
   assert.match(page, /useAdminOrganizationVerifications/)
   assert.match(page, /type="file"/)
   assert.match(page, /downloadAdminOrganizationVerificationMaterial/)
+  assert.match(page, /VerificationProcess/)
   assert.match(settings, /organization-verification/)
   assert.equal(typeof en.organizationVerification.title, 'string')
   assert.equal(typeof zh.organizationVerification.title, 'string')
+  for (const locale of [en, zh]) {
+    assert.equal(typeof locale.organizationVerification.process.title, 'string')
+    assert.equal(typeof locale.organizationVerification.process.steps.submit.body, 'string')
+    assert.equal(typeof locale.organizationVerification.process.steps.boundary.body, 'string')
+  }
 })

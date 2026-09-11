@@ -62,7 +62,7 @@ function ApplicantVerificationCase({ organizationId, overview }: { organizationI
   if (query.isPending) return <VerificationLoading />
   if (query.isError) return <VerificationError onRetry={() => void query.refetch()} />
 
-  return <div className="grid gap-4"><VerificationIdentity overview={overview} /><VerificationPurpose />{verification ? <ApplicantStatus verification={verification} /> : <EmptyVerificationState />}{!canSubmit ? <VerificationNotice title={t('organizationVerification.errors.forbidden')} /> : null}{canSubmit && editable ? <VerificationForm summary={summary} setSummary={setSummary} materials={materials} setMaterials={setMaterials} onSubmit={submit} pending={mutation.isPending} hasExisting={verification !== null} /> : null}{mutation.isError ? <ErrorNotice code={organizationVerificationErrorCode(mutation.error)} /> : null}</div>
+  return <div className="grid gap-4"><VerificationIdentity overview={overview} /><VerificationPurpose /><VerificationProcess />{verification ? <ApplicantStatus verification={verification} /> : <EmptyVerificationState />}{!canSubmit ? <VerificationNotice title={t('organizationVerification.errors.forbidden')} /> : null}{canSubmit && editable ? <VerificationForm summary={summary} setSummary={setSummary} materials={materials} setMaterials={setMaterials} onSubmit={submit} pending={mutation.isPending} hasExisting={verification !== null} /> : null}{mutation.isError ? <ErrorNotice code={organizationVerificationErrorCode(mutation.error)} /> : null}</div>
 }
 
 function VerificationIdentity({ overview }: { overview: OrganizationOverviewResponse }) {
@@ -73,6 +73,27 @@ function VerificationIdentity({ overview }: { overview: OrganizationOverviewResp
 function VerificationPurpose() {
   const { t } = useTranslation()
   return <section className="flex items-start gap-3 rounded-lg border border-[var(--hairline)] bg-surface-1/35 p-4"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-brand" aria-hidden="true" /><div><h3 className="text-sm font-semibold">{t('organizationVerification.purpose.title')}</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">{t('organizationVerification.purpose.body')}</p></div></section>
+}
+
+function VerificationProcess() {
+  const { t } = useTranslation()
+  const steps = ['submit', 'review', 'record', 'boundary'] as const
+  return (
+    <section className="rounded-lg border border-[var(--hairline)] bg-surface-1/35 p-4">
+      <h3 className="text-sm font-semibold">{t('organizationVerification.process.title')}</h3>
+      <ol className="mt-3 grid gap-3 sm:grid-cols-2">
+        {steps.map((step, index) => (
+          <li key={step} className="flex min-w-0 items-start gap-3">
+            <span className="grid size-6 shrink-0 place-items-center rounded-full bg-brand/10 text-xs font-semibold text-brand">{index + 1}</span>
+            <div className="min-w-0">
+              <h4 className="text-xs font-semibold">{t(`organizationVerification.process.steps.${step}.title`)}</h4>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">{t(`organizationVerification.process.steps.${step}.body`)}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
+  )
 }
 
 function ApplicantStatus({ verification }: { verification: OrganizationVerificationResponse }) {
