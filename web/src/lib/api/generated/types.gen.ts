@@ -1974,11 +1974,11 @@ export type OrganizationOverviewResponse = {
     id: number;
     name: string;
     slug: string;
+    version: number;
     role: string;
     membership_id: number;
     permissions: Array<string>;
     entitlement: OrganizationEntitlementResponse;
-    version: number;
 };
 export type OrganizationOwnershipTransferRequest = {
     target_membership_id: number;
