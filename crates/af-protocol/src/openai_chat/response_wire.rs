@@ -159,6 +159,12 @@ pub(super) struct CompletionUsageWire {
     /// 可选的输出令牌明细。
     #[serde(default)]
     pub(super) completion_tokens_details: Option<CompletionTokensDetailsWire>,
+    /// DeepSeek 兼容接口返回的缓存命中输入令牌数。
+    #[serde(default)]
+    pub(super) prompt_cache_hit_tokens: Option<i64>,
+    /// DeepSeek 兼容接口返回的缓存未命中输入令牌数。
+    #[serde(default)]
+    pub(super) prompt_cache_miss_tokens: Option<i64>,
 }
 
 /// OpenAI 输入提示令牌明细。

@@ -150,7 +150,9 @@ fn decoder_handles_multi_choice_tools_usage_and_done_across_every_byte() {
                 "completion_tokens": 3,
                 "total_tokens": 8,
                 "prompt_tokens_details": {"cached_tokens": 2},
-                "completion_tokens_details": {"reasoning_tokens": 1}
+                "completion_tokens_details": {"reasoning_tokens": 1},
+                "prompt_cache_hit_tokens": 2,
+                "prompt_cache_miss_tokens": 3
             })),
         )),
         b"data: [DONE]\n\n".to_vec(),

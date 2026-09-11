@@ -187,6 +187,26 @@ async fn discover_anthropic(
     headers: &HeaderMap,
     reverse: &BTreeMap<String, String>,
 ) -> Result<Vec<DiscoveredModelRecord>, UpstreamModelDiscoveryError> {
+    // DeepSeek 的 Anthropic 兼容端点复用 OpenAI 风格的模型列表接口，
+    // 因此模型发现需要移除 `/anthropic` 前缀后访问 `/v1/models`。
+    if let Some(target) = deepseek_anthropic_models_url(context)? {
+        let body = send_page(adaptor, context, headers, target).await?;
+        let wire = serde_json::from_slice::<OpenAiModelsWire>(&body)
+            .map_err(|_| UpstreamModelDiscoveryError::InvalidResponse)?;
+        return collect_models(
+            wire.data.into_iter().map(|model| DiscoveredEvidence {
+                upstream_model: model.id,
+                display_name: None,
+                description: None,
+                context_window: None,
+                input_token_limit: None,
+                output_token_limit: None,
+                supported_methods: Vec::new(),
+            }),
+            reverse,
+        );
+    }
+
     let base = versioned_models_url(context, AnthropicAdaptor::DEFAULT_BASE_URL, "v1")?;
     let mut after_id = None;
     let mut evidence = Vec::new();
@@ -224,6 +244,33 @@ async fn discover_anthropic(
         after_id = Some(next);
     }
     Err(UpstreamModelDiscoveryError::InvalidResponse)
+}
+
+fn deepseek_anthropic_models_url(
+    context: &RelayContext,
+) -> Result<Option<Url>, UpstreamModelDiscoveryError> {
+    let mut base = context
+        .resolve_base_url(AnthropicAdaptor::DEFAULT_BASE_URL)
+        .map_err(|_| UpstreamModelDiscoveryError::ChannelUnavailable)?;
+    let is_deepseek = base.host_str() == Some("api.deepseek.com")
+        && base
+            .path_segments()
+            .and_then(|mut segments| segments.rfind(|segment| !segment.is_empty()))
+            == Some("anthropic");
+    if !is_deepseek {
+        return Ok(None);
+    }
+
+    {
+        let mut segments = base
+            .path_segments_mut()
+            .map_err(|_| UpstreamModelDiscoveryError::ChannelUnavailable)?;
+        segments.pop_if_empty();
+        segments.pop();
+        segments.push("v1");
+        segments.push("models");
+    }
+    Ok(Some(base))
 }
 
 async fn discover_gemini(
@@ -574,6 +621,22 @@ mod tests {
             .unwrap()
             .as_str(),
             "https://gateway.example/gemini/v1beta/models"
+        );
+    }
+
+    #[test]
+    fn deepseek_anthropic_model_discovery_uses_openai_model_endpoint() {
+        assert_eq!(
+            deepseek_anthropic_models_url(&context("https://api.deepseek.com/anthropic"))
+                .unwrap()
+                .unwrap()
+                .as_str(),
+            "https://api.deepseek.com/v1/models"
+        );
+        assert!(
+            deepseek_anthropic_models_url(&context("https://api.anthropic.com"))
+                .unwrap()
+                .is_none()
         );
     }
 
