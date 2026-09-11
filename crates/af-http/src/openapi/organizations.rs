@@ -23,7 +23,8 @@ use crate::{
         OrganizationMemberCustomRoleResponse, OrganizationMembershipChangeRequest,
         OrganizationMembershipListResponse, OrganizationMembershipResponse,
         OrganizationOverviewResponse, OrganizationOwnershipTransferRequest,
-        OrganizationOwnershipTransferResponse, OrganizationServiceAccountBudgetBindingRequest,
+        OrganizationOwnershipTransferResponse, OrganizationProfileChangeRequest,
+        OrganizationProfileResponse, OrganizationServiceAccountBudgetBindingRequest,
         OrganizationServiceAccountBudgetBindingResponse, OrganizationServiceAccountCreateRequest,
         OrganizationServiceAccountIssuedResponse, OrganizationServiceAccountListResponse,
         OrganizationServiceAccountResponse, OrganizationServiceAccountRotateRequest,
@@ -66,6 +67,27 @@ fn list_account_organizations() {}
     security(("bearerAuth" = []))
 )]
 fn get_organization_overview() {}
+
+#[utoipa::path(
+    patch,
+    path = "/api/organizations/{organization_id}",
+    operation_id = "updateOrganizationProfile",
+    tag = "企业空间",
+    summary = "按版本更新企业基础资料",
+    params(("organization_id" = i64, Path, minimum = 1, description = "企业内部标识")),
+    request_body = OrganizationProfileChangeRequest,
+    responses(
+        (status = 200, description = "更新后的企业基础资料", body = OrganizationProfileResponse),
+        (status = 400, body = ManagementErrorBody),
+        (status = 401, body = ManagementErrorBody),
+        (status = 403, body = ManagementErrorBody),
+        (status = 404, body = ManagementErrorBody),
+        (status = 409, body = ManagementErrorBody),
+        (status = 500, body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn update_organization_profile() {}
 
 #[utoipa::path(
     get,
@@ -811,6 +833,7 @@ fn set_organization_member_custom_role() {}
     paths(
         list_account_organizations,
         get_organization_overview,
+        update_organization_profile,
         list_organization_departments,
         get_organization_department,
         create_organization_department,
@@ -851,6 +874,8 @@ fn set_organization_member_custom_role() {}
     components(schemas(
         OrganizationListResponse,
         OrganizationOverviewResponse,
+        OrganizationProfileChangeRequest,
+        OrganizationProfileResponse,
         OrganizationEntitlementResponse,
         OrganizationDepartmentResponse,
         OrganizationDepartmentListResponse,

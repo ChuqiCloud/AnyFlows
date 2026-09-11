@@ -5,8 +5,9 @@ use af_db::{
     OrganizationDepartmentMembershipRepository, OrganizationDepartmentMembershipRepositoryError,
     OrganizationDepartmentRepository, OrganizationDepartmentRepositoryError,
     OrganizationMembershipChange, OrganizationMembershipRecord, OrganizationOwnershipTransfer,
-    OrganizationRepository, OrganizationRepositoryError, OrganizationTeamChange,
-    OrganizationTeamCreate, OrganizationTeamRecord,
+    OrganizationProfileChange, OrganizationRecord, OrganizationRepository,
+    OrganizationRepositoryError, OrganizationTeamChange, OrganizationTeamCreate,
+    OrganizationTeamRecord,
 };
 pub use af_db::{
     OrganizationDepartmentCursor, OrganizationDepartmentMembershipRecord,
@@ -270,6 +271,30 @@ pub struct OrganizationMembershipChangeCommand {
     expected_version: i64,
 }
 
+/// 更新企业名称和短标识所需的完整目标快照。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrganizationProfileChangeCommand {
+    name: String,
+    slug: String,
+    expected_version: i64,
+}
+
+impl OrganizationProfileChangeCommand {
+    /// 构造带 CAS 版本的企业资料变更。
+    pub fn new(
+        name: String,
+        slug: String,
+        expected_version: i64,
+    ) -> Result<Self, OrganizationManagementError> {
+        validate_version(expected_version)?;
+        Ok(Self {
+            name,
+            slug,
+            expected_version,
+        })
+    }
+}
+
 impl OrganizationMembershipChangeCommand {
     /// 构造带 CAS 版本的成员变更。
     pub fn new(
@@ -473,6 +498,9 @@ pub type OrganizationMembershipFuture<'a> = Pin<
             + 'a,
     >,
 >;
+pub type OrganizationProfileFuture<'a> = Pin<
+    Box<dyn Future<Output = Result<OrganizationRecord, OrganizationManagementError>> + Send + 'a>,
+>;
 pub type OrganizationOwnershipTransferFuture<'a> = Pin<
     Box<
         dyn Future<
@@ -527,6 +555,12 @@ pub type OrganizationDepartmentMembershipFuture<'a> = Pin<
 
 /// 企业成员与团队生命周期端口；调用方必须传入已校验的企业上下文。
 pub trait OrganizationManagementService: Send + Sync {
+    fn update_profile<'a>(
+        &'a self,
+        context: OrganizationContext,
+        command: OrganizationProfileChangeCommand,
+    ) -> OrganizationProfileFuture<'a>;
+
     fn list_members<'a>(
         &'a self,
         context: OrganizationContext,
@@ -677,6 +711,27 @@ impl DatabaseOrganizationManagementService {
 }
 
 impl OrganizationManagementService for DatabaseOrganizationManagementService {
+    fn update_profile<'a>(
+        &'a self,
+        context: OrganizationContext,
+        command: OrganizationProfileChangeCommand,
+    ) -> OrganizationProfileFuture<'a> {
+        Box::pin(async move {
+            require_permission(&context, OrganizationPermission::ProfileWrite)?;
+            self.repository
+                .update_profile(
+                    context.organization_id(),
+                    OrganizationProfileChange::new(
+                        command.name,
+                        command.slug,
+                        command.expected_version,
+                    ),
+                )
+                .await
+                .map_err(map_repository_error)
+        })
+    }
+
     fn list_members<'a>(
         &'a self,
         context: OrganizationContext,

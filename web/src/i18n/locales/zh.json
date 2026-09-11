@@ -48,8 +48,8 @@
     "organizationActivity": "企业日志与审计",
     "organizationOverview": "企业概览",
     "organizationOnboarding": "企业初始化",
-    "organizationProvisioning": "企业开通申请",
-    "organizationVerification": "企业认证",
+    "organizationProvisioning": "申请开通企业",
+    "organizationVerification": "资质认证（可选）",
     "organizationPlans": "企业套餐管理",
     "platformOrganizations": "企业目录",
     "organizationMembers": "成员与团队",
@@ -5812,14 +5812,19 @@
     },
     "settings": {
       "title": "企业设置",
-      "subtitle": "查看企业资料、商业授权和固定角色权限，并在服务端支持的范围内转移所有权。",
+      "subtitle": "维护企业资料、安全能力、角色权限和所有权。所有变更均由服务端校验并记录。",
       "identity": {
         "title": "企业资料",
-        "subtitle": "当前接口只提供只读资料投影。",
+        "subtitle": "企业名称和标识会显示在工作空间与企业目录中。",
         "name": "企业名称",
         "slug": "企业标识",
+        "slugHint": "仅支持小写字母、数字和单个连字符，例如 acme-cloud。",
         "organizationId": "企业 ID",
-        "role": "我的角色"
+        "role": "我的角色",
+        "save": "保存资料",
+        "saved": "资料已更新",
+        "invalid": "请填写有效的企业名称和企业标识。",
+        "error": "企业资料保存失败，可能已被其他管理员修改或标识已被占用，请刷新后重试。"
       },
       "entitlement": {
         "title": "商业授权",
@@ -5846,8 +5851,13 @@
         "confirm": "确认转移"
       },
       "unavailable": {
-        "title": "资料修改与关闭尚未开放",
-        "body": "后端当前没有企业改名或关闭接口，因此本页不渲染必然失败的提交表单。"
+        "title": "关闭企业尚未开放",
+        "body": "当前版本暂不支持关闭企业；企业资料修改、所有权转移和安全配置均可在本页完成。"
+      },
+      "verification": {
+        "title": "可选的企业资质认证",
+        "body": "用于向平台提交工商或业务材料并保留审核记录。当前不会解锁套餐、额度、SSO 或基础企业功能，也不是企业初始化的必需步骤。",
+        "action": "查看资质认证"
       },
       "sso": {
         "title": "企业单点登录",
@@ -6102,8 +6112,12 @@
     }
   },
   "organizationVerification": {
-    "title": "企业认证",
-    "subtitle": "提交受控的企业材料供平台审核。此处只展示元数据，原始对象仍保存在受控存储中。",
+    "title": "企业资质认证（可选）",
+    "subtitle": "提交企业资质材料并保留平台审核记录。此流程独立于企业开通和初始化。",
+    "purpose": {
+      "title": "认证用途",
+      "body": "当前认证只用于资质材料复核和合规留档，不影响企业基础功能，也不会自动增加额度、席位或解锁 SSO。没有平台审核要求时可以不提交。"
+    },
     "status": {
       "submitted": "已提交",
       "in_review": "审核中",
@@ -6230,15 +6244,18 @@
   },
   "organizationOnboarding": {
     "title": "企业 Owner 初始化向导",
-    "subtitle": "核对已批准的企业事实，准备首批成员并检查安全设置。清单可以随时中断并恢复。",
+    "subtitle": "完成企业资料、首批成员和安全设置。进度直接来自服务端，可以随时继续。",
     "stepsLabel": "企业初始化步骤",
-    "completed": "已确认",
-    "localProgress": "已确认 {{completed}} / {{total}} 项",
-    "localProgressHint": "确认进度只保存在此浏览器的当前企业范围内，不会改变或代表服务端企业开通状态。",
+    "completed": "已完成",
+    "pending": "待处理",
+    "serverProgress": "已完成 {{completed}} / {{total}} 项",
+    "serverProgressHint": "进度根据企业资料、邀请与成员、SSO 配置实时计算，不依赖当前浏览器的本地勾选。",
+    "loading": "正在加载服务端状态",
+    "loadError": "服务端状态加载失败，已有配置未改变。",
     "steps": {
       "profile": {
         "title": "企业资料",
-        "description": "确认批准开通申请后生成的企业身份和角色事实。"
+        "description": "检查并维护企业名称与唯一标识。"
       },
       "members": {
         "title": "首批成员",
@@ -6246,12 +6263,11 @@
       },
       "security": {
         "title": "安全检查",
-        "description": "检查 SSO 状态并进入服务端管理的安全控制。"
+        "description": "根据当前套餐检查基础安全或完成 SSO 配置。"
       }
     },
     "actions": {
-      "confirm": "确认此步骤",
-      "confirmed": "已确认",
+      "inviteMember": "邀请首位成员",
       "openSettings": "打开企业设置",
       "openMembers": "打开成员与邀请",
       "openOverview": "打开企业概览",
@@ -6266,7 +6282,7 @@
       "slug": "企业标识",
       "organizationId": "企业 ID",
       "role": "我的企业角色",
-      "serverFact": "身份和角色均来自服务端批准投影。其余资料和所有权控制请在企业设置中操作。"
+      "serverFact": "保存后，服务端企业资料和企业目录会一起刷新；并发修改会要求先读取最新版本。"
     },
     "members": {
       "title": "首批成员与邀请",
@@ -6277,7 +6293,8 @@
       "pendingHint": "仍等待回应的邀请",
       "accepted": "已接受邀请",
       "acceptedHint": "服务端记录为已接受的邀请",
-      "serverFact": "数量来自企业成员和邀请服务。邀请令牌及其他敏感材料不会存入此清单。",
+      "completeHint": "已有其他活动成员或待处理邀请，此步骤已根据服务端事实完成。",
+      "incompleteHint": "创建首份邀请即可完成准备；受邀人接受后会成为活动成员。",
       "loading": "正在加载服务端成员事实",
       "loadError": "成员或邀请事实加载失败，服务端现有状态未改变。"
     },
@@ -6286,11 +6303,14 @@
       "description": "检查当前 SSO 能力和企业角色，然后进入设置处理域名、恢复和策略控制。",
       "sso": "企业 SSO",
       "enabled": "已启用",
-      "disabled": "未启用",
+      "notIncluded": "当前套餐未包含",
       "ssoHint": "SSO Provider 和策略在企业设置中管理",
+      "basicReady": "当前套餐不要求 SSO，基础安全检查已完成",
       "role": "当前角色",
       "roleHint": "可用安全操作由服务端权限控制",
-      "serverFact": "此步骤只记录浏览器内的本地确认。SSO、恢复和策略变更须在企业设置中由服务端完成并写入审计。"
+      "configured": "已读取到活动 SSO Provider 和策略，此步骤已完成。",
+      "needsConfiguration": "当前套餐包含 SSO，请在企业设置中创建并启用 Provider。",
+      "serverFact": "安全状态来自服务端授权；SSO、恢复和策略变更均在企业设置中完成并写入审计。"
     }
   },
   "wallet": {

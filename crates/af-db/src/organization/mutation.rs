@@ -26,9 +26,10 @@ use super::{
     MAX_ORGANIZATION_TEAM_NAME_BYTES, OrganizationCreate, OrganizationCreatedRecord,
     OrganizationEntitlementRecord, OrganizationEntitlementWrite, OrganizationMembershipChange,
     OrganizationMembershipCreate, OrganizationMembershipRecord, OrganizationOwnershipTransfer,
-    OrganizationOwnershipTransferRecord, OrganizationRepository, OrganizationRepositoryError,
-    OrganizationTeamChange, OrganizationTeamCreate, OrganizationTeamRecord, record_internal_error,
-    validate_name, validate_slug,
+    OrganizationOwnershipTransferRecord, OrganizationProfileChange, OrganizationRecord,
+    OrganizationRepository, OrganizationRepositoryError, OrganizationTeamChange,
+    OrganizationTeamCreate, OrganizationTeamRecord, record_internal_error, validate_name,
+    validate_slug,
 };
 
 pub(super) async fn create(
@@ -47,6 +48,49 @@ pub(super) async fn create(
             Err(error)
         }
     }
+}
+
+pub(super) async fn update_profile(
+    repository: &OrganizationRepository,
+    organization_id: OrganizationId,
+    change: OrganizationProfileChange,
+) -> Result<OrganizationRecord, OrganizationRepositoryError> {
+    validate_name(&change.name, MAX_ORGANIZATION_NAME_BYTES)?;
+    validate_slug(&change.slug)?;
+    if change.expected_version <= 0 {
+        return Err(OrganizationRepositoryError::InvalidInput);
+    }
+
+    let transaction = begin(repository).await?;
+    let organization = lock_organization(&transaction, organization_id).await?;
+    require_active_organization(&organization)?;
+    if organization.version != change.expected_version {
+        rollback(transaction).await?;
+        return Err(OrganizationRepositoryError::Conflict);
+    }
+    if organization.name == change.name && organization.slug == change.slug {
+        let record = super::read::organization_record(organization)?;
+        commit(transaction).await?;
+        return Ok(record);
+    }
+
+    let next_version = organization.version.checked_add(1).ok_or_else(invariant)?;
+    let mut active = organization.into_active_model();
+    active.name = Set(change.name);
+    active.slug = Set(change.slug);
+    active.version = Set(next_version);
+    active.updated_at = Set(TimeDateTimeWithTimeZone::now_utc());
+    let updated = match active.update(&transaction).await {
+        Ok(model) => model,
+        Err(error) => {
+            let mapped = map_write_error(&error);
+            rollback(transaction).await?;
+            return Err(mapped);
+        }
+    };
+    let record = super::read::organization_record(updated)?;
+    commit(transaction).await?;
+    Ok(record)
 }
 
 /// 在调用方事务中创建企业、初始授权、钱包、SSO 策略和首个 Owner。
