@@ -366,7 +366,29 @@ pub(super) fn convert_usage(
         return Err(ParseResponseError::InvalidValue);
     }
 
-    let (cache_read, audio_input) = convert_prompt_details(usage.prompt_tokens_details)?;
+    let (mut cache_read, audio_input) = convert_prompt_details(usage.prompt_tokens_details)?;
+    match (
+        usage.prompt_cache_hit_tokens,
+        usage.prompt_cache_miss_tokens,
+    ) {
+        (None, None) => {}
+        (Some(hit), Some(miss)) => {
+            let hit = token_count(hit)?;
+            let miss = token_count(miss)?;
+            let prompt_breakdown = hit
+                .get()
+                .checked_add(miss.get())
+                .ok_or(ParseResponseError::InvalidValue)?;
+            if prompt_breakdown != prompt_tokens.get()
+                || (cache_read != TokenCount::ZERO && cache_read != hit)
+            {
+                return Err(ParseResponseError::InvalidValue);
+            }
+            // DeepSeek 的专用字段比兼容字段更精确，允许其覆盖缺省的零值。
+            cache_read = hit;
+        }
+        _ => return Err(ParseResponseError::InvalidValue),
+    }
     let (reasoning, audio_output) = convert_completion_details(usage.completion_tokens_details)?;
     let details = UsageDetails::new(
         cache_read,
