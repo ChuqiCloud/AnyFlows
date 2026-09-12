@@ -74,7 +74,7 @@ docker compose --env-file .env down
 
 ### Linux systemd 部署
 
-Linux amd64 Release 归档同时包含 `anyflows`、`anyflows.conf`、`install.sh` 和 `anyflows.service`。手工启动时使用归档内的 TOML 配置并注入两项密钥：
+Linux amd64 Release 归档同时包含 `anyflows`、`anyflows.conf`、`install.sh` 和 `anyflows.service`。手工启动时会自动读取当前工作目录的 `.env`（如存在），也可以使用归档内的 TOML 配置并注入两项密钥；进程环境变量优先于 `.env`：
 
 ```bash
 export AF_CONFIG_FILE="$PWD/anyflows.conf"

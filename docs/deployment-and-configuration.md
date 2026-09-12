@@ -1,6 +1,6 @@
 # 部署与配置参考
 
-本文说明 AnyFlows 当前支持的 Linux 部署方式和关键配置边界。手工启动使用仓库根目录或 Release 归档内的 `anyflows.conf`（TOML）；Docker/systemd 使用 `.env.example`（EnvironmentFile）。两类配置都只在部署机上填写密钥，不要把生产配置提交到 Git、写入镜像或粘贴到日志。
+本文说明 AnyFlows 当前支持的 Linux 部署方式和关键配置边界。手工启动使用仓库根目录或 Release 归档内的 `anyflows.conf`（TOML），同时会自动读取当前工作目录的 `.env`（如果存在）；Docker/systemd 使用 `.env.example`（EnvironmentFile）。两类配置都只在部署机上填写密钥，不要把生产配置提交到 Git、写入镜像或粘贴到日志。
 
 ## 手工启动
 
@@ -14,7 +14,7 @@ export AF_CREDENTIAL_ENCRYPTION__KEY="$(openssl rand -base64 32 | tr '+/' '-_' |
 ./anyflows
 ```
 
-`AF_CONFIG_FILE` 指向的文件必须是 TOML；`.env.example` 不是 TOML，不能直接改名后交给 `AF_CONFIG_FILE`。数据库 URL、计费 WAL 目录和 `server.bind` 应按部署机修改。填写后的 `anyflows.conf` 应限制为仅服务用户可读。
+`AF_CONFIG_FILE` 指向的文件必须是 TOML；`.env`/`.env.example` 是 `KEY=VALUE` 环境文件，不能直接改名后交给 `AF_CONFIG_FILE`。应用启动时会从当前工作目录读取 `.env`，文件不存在时忽略；同名的进程环境变量优先，适合用命令行、容器或 systemd 覆盖。`.env` 解析失败会阻止启动。数据库 URL、计费 WAL 目录和 `server.bind` 应按部署机修改。填写后的 `anyflows.conf` 和 `.env` 应限制为仅服务用户可读。
 
 ## 选择部署方式
 
@@ -72,7 +72,7 @@ curl --fail http://127.0.0.1:8080/readyz
 
 ## 环境变量
 
-所有变量使用 `AF_` 前缀和双下划线层级命名。完整示例与默认值以 `.env.example` 为准；下面只列出部署时最容易出错的项目。
+所有业务配置变量使用 `AF_` 前缀和双下划线层级命名。变量可以来自进程环境或当前工作目录的 `.env`；同名时进程环境优先。完整示例与默认值以 `.env.example` 为准；下面只列出部署时最容易出错的项目。
 
 | 变量 | 作用 | 注意事项 |
 | --- | --- | --- |
@@ -104,7 +104,7 @@ ClickHouse 查询超时、连接失败、响应超限或快照校验失败时，
 
 `AF_OPENAI_UPSTREAM__BASE_URL`、`AF_OPENAI_UPSTREAM__MODEL` 和 `AF_OPENAI_UPSTREAM__API_KEY` 仅用于旧版嵌入式配置的兼容解析，三项必须同时提供。M1 生产路径不会读取这些字段进行选路，也不会在数据库渠道不可用时回退到静态目标；新部署应优先配置数据库渠道与加密凭据。
 
-配置变更通常需要重启应用。不要在运行中的容器或服务内直接编辑配置，也不要把 `AF_AUTH__SESSION_SIGNING_KEY`、`AF_CREDENTIAL_ENCRYPTION__KEY`、支付密钥或 OAuth client secret 放入命令历史。
+配置变更通常需要重启应用；修改 `.env` 后也必须重启，运行中的进程不会动态重读。Docker 的 `docker compose --env-file .env` 会先由 Compose 读取变量并注入容器，systemd 则通过 `EnvironmentFile` 注入；手工启动时由 AnyFlows 自己读取 `.env`。不要在运行中的容器或服务内直接编辑配置，也不要把 `AF_AUTH__SESSION_SIGNING_KEY`、`AF_CREDENTIAL_ENCRYPTION__KEY`、支付密钥或 OAuth client secret 放入命令历史。
 
 ## 健康检查与排障
 

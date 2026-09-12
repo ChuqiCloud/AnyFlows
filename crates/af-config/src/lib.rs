@@ -11,7 +11,9 @@ pub use dynamic_options::{
     DynamicOptionSubscription,
 };
 pub use error::{ConfigError, CorsOriginError};
-pub use loader::{CONFIG_FILE_ENV, DEFAULT_CONFIG_FILE, ENV_PREFIX, load, load_from};
+pub use loader::{
+    CONFIG_FILE_ENV, DEFAULT_CONFIG_FILE, DEFAULT_ENV_FILE, ENV_PREFIX, load, load_from,
+};
 pub use model::{
     AUTH_SESSION_SIGNING_KEY_BYTES, AppConfig, AuthSettings, BillingSettings,
     CREDENTIAL_ENCRYPTION_KEY_BYTES, ChannelProbeSettings, ClickHouseAnalyticsSettings,

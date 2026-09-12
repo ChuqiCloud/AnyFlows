@@ -207,6 +207,7 @@ dependencies = [
  "af-domain",
  "async-trait",
  "base64 0.22.1",
+ "dotenvy",
  "figment",
  "serde",
  "thiserror 2.0.20",
