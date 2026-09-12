@@ -10,6 +10,7 @@ mod custom_oauth2;
 mod dashboard;
 mod debug_traces;
 mod email_settings;
+mod frontend_templates;
 mod groups;
 mod invitations;
 mod model_metadata;
@@ -104,6 +105,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(organizations::document());
     document.merge(balance_alert_settings::document());
     document.merge(site_settings::document());
+    document.merge(frontend_templates::document());
     document.merge(dashboard::document());
     document.merge(analytics_export::document());
     document.merge(users::document());
@@ -270,7 +272,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 252);
+        assert_eq!(document.paths.paths.len(), 255);
         let operation_count = document
             .paths
             .paths
@@ -292,7 +294,7 @@ mod tests {
             })
             .sum::<usize>();
         // 新增企业资料更新接口后，保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 331);
+        assert_eq!(operation_count, 334);
         assert!(
             document
                 .components
@@ -562,6 +564,7 @@ mod tests {
             "applyAdminModelPrices",
             "listAdminChannels",
             "listAdminCredentials",
+            "listAdminFrontendTemplates",
             "listAdminCredentialProxies",
             "listAdminDebugTraces",
             "listAdminGroups",
@@ -611,6 +614,7 @@ mod tests {
             "redeemUserRedemptionCode",
             "revokePlaygroundShare",
             "savePlaygroundConversation",
+            "scanAdminFrontendTemplates",
             "sendAdminEmailTest",
             "requestPasswordReset",
             "readAdminDebugTraceSnapshots",
@@ -628,6 +632,7 @@ mod tests {
             "updateAdminPaymentSettings",
             "updateAdminAuthenticationSettings",
             "updateAdminSiteSettings",
+            "activateAdminFrontendTemplate",
             "updateAdminToken",
             "updateAdminUser",
             "updateUserToken",
@@ -670,7 +675,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 545);
+        assert_eq!(schemas.len(), 548);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("OrganizationSsoDiscoveryErrorResponse"));
         assert!(schemas.contains_key("Announcement"));
@@ -1055,6 +1060,9 @@ mod tests {
         assert!(schemas.contains_key("PublicAuthenticationCapabilities"));
         assert!(schemas.contains_key("AdminSiteSettings"));
         assert!(schemas.contains_key("AdminSiteSettingsRequest"));
+        assert!(schemas.contains_key("FrontendTemplateCatalog"));
+        assert!(schemas.contains_key("FrontendTemplateSummary"));
+        assert!(schemas.contains_key("FrontendTemplateActivationRequest"));
         assert!(schemas.contains_key("AdminBrandSettingsRequest"));
         assert!(schemas.contains_key("BalanceDisplayMode"));
         assert!(schemas.contains_key("BalanceDisplaySettings"));

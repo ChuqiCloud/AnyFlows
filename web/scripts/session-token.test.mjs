@@ -65,6 +65,19 @@ test('管理令牌可在当前标签页存储、恢复并清除', () => {
   assert.equal(storage.length, 0)
 })
 
+test('存储读取为空时保留当前页面内存令牌', () => {
+  installStorage({
+    getItem() {
+      return null
+    },
+    removeItem() {},
+    setItem() {},
+  })
+
+  setManagementSessionToken('memory-fallback')
+  assert.equal(getManagementSessionToken(), 'memory-fallback')
+})
+
 test('sessionStorage 不可用时退化到页面内存', () => {
   installStorage({
     getItem() {

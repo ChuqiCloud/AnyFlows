@@ -20,9 +20,11 @@ test('跨企业理由遵守服务端 UTF-8 与空白边界', () => {
   assert.equal(isValidPlatformOrganizationReason('企'.repeat(86)), false)
 })
 
-test('企业目录与用户归属请求只通过审计 Header 传递理由', async () => {
+test('企业目录与用户归属请求使用固定审计 Header', async () => {
   const source = await read('../src/features/platform-organizations/platform-organization-api.ts')
-  assert.match(source, /'x-anyflows-platform-reason': access\.reason/)
+  assert.match(source, /platformAdministratorReason = 'platform administrator console operation'/)
+  assert.match(source, /'x-anyflows-platform-reason': platformAdministratorReason/)
+  assert.doesNotMatch(source, /access\.reason/)
   assert.match(source, /listPlatformOrganizationMembers/)
   assert.match(source, /changePlatformOrganizationMember/)
   assert.match(source, /invitePlatformOrganizationMember/)

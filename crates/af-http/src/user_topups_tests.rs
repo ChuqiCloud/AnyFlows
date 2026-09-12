@@ -220,19 +220,19 @@ async fn invalid_session_and_request_fail_before_the_topup_service() {
 }
 
 #[tokio::test]
-async fn unconfigured_stripe_returns_explicit_unavailable_error() {
+async fn unconfigured_payment_returns_empty_configuration_but_rejects_orders() {
     let app = router(None);
     let configuration = app
         .clone()
         .oneshot(configuration_request(USER_TOKEN))
         .await
         .unwrap();
-    assert_management_error(
-        configuration,
-        StatusCode::SERVICE_UNAVAILABLE,
-        "topup_unavailable",
-    )
-    .await;
+    assert_eq!(configuration.status(), StatusCode::OK);
+    assert_eq!(configuration.headers()[CACHE_CONTROL], "no-store");
+    assert_eq!(
+        response_json(configuration).await["methods"],
+        serde_json::json!([])
+    );
 
     let response = app
         .oneshot(topup_request(USER_TOKEN, valid_body()))

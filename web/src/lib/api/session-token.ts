@@ -3,12 +3,18 @@ const storageKey = 'anyflows.management.access-token'
 type SessionInvalidatedListener = () => void
 
 let memoryToken: string | undefined
+let storageAccessBlocked = false
 const invalidatedListeners = new Set<SessionInvalidatedListener>()
 
 function getSessionStorage() {
+  // 隐私防护可能让 storage getter 或其方法抛异常；失败后固定退化到页面内存，
+  // 避免每个 API 请求都再次触发浏览器的 Tracking Prevention 告警。
+  if (storageAccessBlocked) return undefined
+
   try {
     return globalThis.sessionStorage
   } catch {
+    storageAccessBlocked = true
     return undefined
   }
 }
@@ -19,10 +25,14 @@ export function getManagementSessionToken() {
 
   if (storage) {
     try {
-      memoryToken = storage.getItem(storageKey) || undefined
+      const storedToken = storage.getItem(storageKey)
+      // 某些隐私策略会让 storage 读取返回空值但仍允许页面继续运行；
+      // 已在本页签签发的令牌应继续使用内存副本，避免后续请求突然变成 401。
+      if (storedToken) memoryToken = storedToken
       return memoryToken
     } catch {
       // 隐私模式或浏览器策略可能阻止访问 sessionStorage。
+      storageAccessBlocked = true
     }
   }
 
@@ -42,6 +52,7 @@ export function setManagementSessionToken(token: string) {
     getSessionStorage()?.setItem(storageKey, normalizedToken)
   } catch {
     // 内存副本仍可支撑当前页面，会话不会扩散到其他标签页。
+    storageAccessBlocked = true
   }
 }
 
@@ -53,6 +64,7 @@ export function clearManagementSessionToken() {
     getSessionStorage()?.removeItem(storageKey)
   } catch {
     // 存储不可写时清理内存副本即可结束当前页面会话。
+    storageAccessBlocked = true
   }
 }
 

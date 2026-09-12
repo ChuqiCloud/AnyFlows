@@ -21,6 +21,8 @@ use crate::{
 /// 默认配置文件名；文件不存在时兼容读取旧版 `anyflows.toml`。
 pub const DEFAULT_CONFIG_FILE: &str = "anyflows.conf";
 const LEGACY_CONFIG_FILE: &str = "anyflows.toml";
+/// 默认环境文件名；服务启动时从当前工作目录加载（若存在）。
+pub const DEFAULT_ENV_FILE: &str = ".env";
 /// 配置文件选择环境变量。
 pub const CONFIG_FILE_ENV: &str = "AF_CONFIG_FILE";
 /// 业务配置环境变量前缀；该命名空间中的未知键会拒绝启动。
@@ -152,6 +154,7 @@ impl Default for OAuthDefaults {
 
 /// 加载默认文件与环境变量覆盖后的应用配置。
 pub fn load() -> Result<AppConfig, ConfigError> {
+    load_dotenv()?;
     match env::var_os(CONFIG_FILE_ENV) {
         Some(path) if path.is_empty() => Err(ConfigError::EmptyValue {
             field: CONFIG_FILE_ENV,
@@ -166,6 +169,19 @@ pub fn load() -> Result<AppConfig, ConfigError> {
                 load_file(PathBuf::from(LEGACY_CONFIG_FILE), false)
             }
         }
+    }
+}
+
+/// 将当前工作目录下的 `.env` 作为环境变量来源加载。
+///
+/// `.env` 是 `KEY=VALUE` 格式的环境文件，不是 TOML 配置文件。已经存在于
+/// 进程环境中的变量优先，因此命令行、容器和 systemd 注入的值不会被覆盖。
+fn load_dotenv() -> Result<(), ConfigError> {
+    match dotenvy::from_path(DEFAULT_ENV_FILE) {
+        Ok(()) => Ok(()),
+        Err(error) if error.not_found() => Ok(()),
+        Err(dotenvy::Error::Io(error)) => Err(ConfigError::FileRead { kind: error.kind() }),
+        Err(_) => Err(ConfigError::Invalid),
     }
 }
 
@@ -242,6 +258,7 @@ fn known_field(path: &str) -> Option<&'static str> {
         "server.bind" => "server.bind",
         "server.client_ip_source" => "server.client_ip_source",
         "server.shutdown_timeout_secs" => "server.shutdown_timeout_secs",
+        "server.frontend_template_directory" => "server.frontend_template_directory",
         path if path == "server.cors_allowed_origins"
             || path.starts_with("server.cors_allowed_origins.") =>
         {
@@ -400,6 +417,10 @@ mod tests {
             assert_eq!(config.server().bind().to_string(), "127.0.0.1:8080");
             assert!(config.server().cors_allowed_origins().is_empty());
             assert_eq!(config.server().shutdown_timeout_secs(), 30);
+            assert_eq!(
+                config.server().frontend_template_directory(),
+                Path::new("public/templates")
+            );
             assert_eq!(config.server().client_ip_source(), ClientIpSource::Peer);
             assert!(config.server().trusted_proxy_cidrs().is_empty());
             assert_eq!(config.telemetry().level(), LogLevel::Info);
@@ -1330,10 +1351,13 @@ mod tests {
             return;
         }
 
-        with_clean_env(|_| {
-            let path = temp_file(
+        with_clean_env(|jail| {
+            jail.create_file(
+                "environment-override.toml",
                 "[server]\nbind = '127.0.0.1:8080'\n[database]\nurl = 'sqlite::memory:'\n[auth]\nallow_query_api_key = false\nlookup_timeout_secs = 3\n[http_client]\nmax_cached_clients = 2\n",
-            );
+            )
+            .unwrap();
+            let path = jail.directory().join("environment-override.toml");
             let output = Command::new(env::current_exe().unwrap())
                 .arg("--exact")
                 .arg("loader::tests::environment_values_override_toml_in_an_isolated_process")
@@ -1399,7 +1423,6 @@ mod tests {
                 .env("AF_HTTP_CLIENT__PROXY_URL", "socks5://127.0.0.1:10808")
                 .output()
                 .expect("必须能启动隔离配置测试进程");
-            let _ = fs::remove_file(path);
             assert!(
                 output.status.success(),
                 "隔离测试失败: {}",
@@ -1646,6 +1669,36 @@ mod tests {
             jail.set_env("AF_OPENAI_UPSTREAM__API_KEY", "test-upstream-key");
             let config = load().unwrap();
             assert_eq!(config.database().url().expose(), "sqlite::memory:");
+        });
+    }
+
+    #[test]
+    fn dotenv_values_are_loaded_and_process_environment_wins() {
+        with_clean_env(|jail| {
+            jail.create_file(
+                DEFAULT_ENV_FILE,
+                "AF_DATABASE__URL=sqlite::memory:\nAF_SERVER__BIND=127.0.0.2:7070\n",
+            )
+            .unwrap();
+            jail.set_env("AF_SERVER__BIND", "127.0.0.3:7070");
+
+            let config = load().unwrap();
+            assert_eq!(config.database().url().expose(), "sqlite::memory:");
+            assert_eq!(config.server().bind().to_string(), "127.0.0.3:7070");
+        });
+    }
+
+    #[test]
+    fn malformed_dotenv_is_rejected_without_echoing_contents() {
+        with_clean_env(|jail| {
+            let secret = "dotenv-secret-value";
+            jail.create_file(DEFAULT_ENV_FILE, &format!("AF_DATABASE__URL=\"{secret}\n"))
+                .unwrap();
+
+            let error = load().unwrap_err();
+            let rendered = format!("{error:?}\n{error}");
+            assert_eq!(error, ConfigError::Invalid);
+            assert!(!rendered.contains(secret));
         });
     }
 

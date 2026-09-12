@@ -23,7 +23,7 @@ use crate::{
     management_error::ManagementError,
 };
 
-/// 当前用户充值订单路由状态；未配置 Stripe 时保留显式不可用语义。
+/// 当前用户充值订单路由状态；未配置在线支付时配置接口仍返回空目录。
 #[derive(Clone)]
 struct UserTopupHttpState {
     service: Option<Arc<dyn UserTopupService>>,
@@ -148,20 +148,19 @@ pub(crate) fn build_user_topup_router(
         .with_state(UserTopupHttpState { service })
 }
 
-/// 返回只包含 Stripe.js 客户端材料和固定金额边界的充值配置。
+/// 返回只包含客户端材料和固定金额边界的充值配置；未配置支付服务时返回空目录。
 async fn get_user_topup_configuration(
     State(state): State<UserTopupHttpState>,
 ) -> Result<Response, ManagementError> {
-    let service = state
-        .service
-        .as_ref()
-        .ok_or(ManagementError::TopupUnavailable)?;
-    Ok(status_json(
-        StatusCode::OK,
-        UserTopupConfigurationResponse::from_configuration(
+    let configuration = match state.service.as_ref() {
+        Some(service) => UserTopupConfigurationResponse::from_configuration(
             &service.configuration().map_err(map_topup_error)?,
         ),
-    ))
+        None => UserTopupConfigurationResponse {
+            methods: Vec::new(),
+        },
+    };
+    Ok(status_json(StatusCode::OK, configuration))
 }
 
 /// 为当前会话用户幂等创建本地 Stripe 充值订单。

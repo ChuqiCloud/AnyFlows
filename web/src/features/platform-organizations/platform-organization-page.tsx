@@ -1,22 +1,16 @@
-import { Building2, LoaderCircle, RefreshCw, Settings2, ShieldCheck, UsersRound } from 'lucide-react'
-import { useMemo, useState, type FormEvent } from 'react'
+import { Building2, LoaderCircle, RefreshCw, Settings2, UsersRound } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useOrganizationWorkspace } from '@/features/organization-console/organization-workspace-context'
 import type { PlatformOrganizationSummaryResponse } from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
 
-import {
-  isValidPlatformOrganizationReason,
-  usePlatformOrganizations,
-  type PlatformOrganizationAccess,
-} from './platform-organization-api'
+import { usePlatformOrganizations } from './platform-organization-api'
 import { PlatformOrganizationMembersSheet } from './platform-organization-members-sheet'
-import { useOrganizationWorkspace } from '@/features/organization-console/organization-workspace-context'
 
 const statusStyles: Readonly<Record<string, string>> = {
   active: 'border-transparent bg-success/10 text-success',
@@ -26,13 +20,11 @@ const statusStyles: Readonly<Record<string, string>> = {
   closed: 'bg-surface-2 text-muted-foreground',
 }
 
-/** 平台管理员以单次审计理由读取全站企业安全摘要。 */
+/** 平台管理员进入页面后直接读取全站企业安全摘要。 */
 export function PlatformOrganizationPage() {
   const { i18n, t } = useTranslation()
-  const [reason, setReason] = useState('')
-  const [access, setAccess] = useState<PlatformOrganizationAccess>()
   const [selectedOrganization, setSelectedOrganization] = useState<PlatformOrganizationSummaryResponse>()
-  const query = usePlatformOrganizations(access)
+  const query = usePlatformOrganizations()
   const workspace = useOrganizationWorkspace()
   const organizations = query.data?.pages.flatMap((page) => page.organizations) ?? []
   const timeFormat = useMemo(
@@ -41,22 +33,11 @@ export function PlatformOrganizationPage() {
     }),
     [i18n.resolvedLanguage],
   )
-  const validReason = isValidPlatformOrganizationReason(reason)
   const canEnterOrganization = (organizationId: number) => workspace.organizations.some((organization) => organization.id === organizationId)
   const enterOrganizationSettings = async (organizationId: number) => {
     if (!canEnterOrganization(organizationId)) return
     await workspace.selectOrganization(organizationId)
     window.location.hash = '#/console/organization-settings'
-  }
-
-  const load = (event: FormEvent) => {
-    event.preventDefault()
-    if (!validReason) return
-    if (access?.reason === reason) {
-      void query.refetch()
-      return
-    }
-    setAccess({ reason })
   }
 
   return (
@@ -72,59 +53,19 @@ export function PlatformOrganizationPage() {
             {t('platformOrganizations.subtitle')}
           </p>
         </div>
-        {access ? (
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            disabled={query.isFetching}
-            onClick={() => void query.refetch()}
-          >
-            <RefreshCw className={query.isFetching ? 'animate-spin' : undefined} aria-hidden="true" />
-            {t('platformOrganizations.actions.refresh')}
-          </Button>
-        ) : null}
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          disabled={query.isFetching}
+          onClick={() => void query.refetch()}
+        >
+          <RefreshCw className={query.isFetching ? 'animate-spin' : undefined} aria-hidden="true" />
+          {t('platformOrganizations.actions.refresh')}
+        </Button>
       </header>
 
-      <form className="border-y border-[var(--hairline)] py-4" onSubmit={load}>
-        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="size-4 text-brand" aria-hidden="true" />
-              <Label htmlFor="platform-organization-reason">
-                {t('platformOrganizations.reason.label')}
-              </Label>
-            </div>
-            <Input
-              id="platform-organization-reason"
-              className="mt-2"
-              value={reason}
-              maxLength={255}
-              autoComplete="off"
-              placeholder={t('platformOrganizations.reason.placeholder')}
-              aria-describedby="platform-organization-reason-hint"
-              aria-invalid={reason.length > 0 && !validReason}
-              onChange={(event) => setReason(event.target.value)}
-            />
-            <p id="platform-organization-reason-hint" className="mt-1.5 text-[0.6875rem] leading-4 text-muted-foreground">
-              {reason.length > 0 && !validReason
-                ? t('platformOrganizations.reason.invalid')
-                : t('platformOrganizations.reason.hint')}
-            </p>
-          </div>
-          <Button type="submit" size="sm" disabled={!validReason || query.isFetching}>
-            {query.isFetching && !query.data ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <Building2 aria-hidden="true" />}
-            {t('platformOrganizations.reason.submit')}
-          </Button>
-        </div>
-      </form>
-
-      {!access ? (
-        <DirectoryState
-          title={t('platformOrganizations.initial.title')}
-          body={t('platformOrganizations.initial.body')}
-        />
-      ) : query.isPending ? (
+      {query.isPending ? (
         <div className="grid gap-2" aria-label={t('platformOrganizations.loading')}>
           {[0, 1, 2].map((item) => <Skeleton key={item} className="h-20 rounded-lg" />)}
         </div>
@@ -172,7 +113,6 @@ export function PlatformOrganizationPage() {
       <PlatformOrganizationMembersSheet
         open={selectedOrganization !== undefined}
         organization={selectedOrganization}
-        reason={access?.reason ?? ''}
         onOpenChange={(open) => { if (!open) setSelectedOrganization(undefined) }}
       />
     </div>

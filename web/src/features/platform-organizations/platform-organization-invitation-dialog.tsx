@@ -28,7 +28,6 @@ export type PlatformOrganizationChoice = {
 /** 创建仍需目标用户接受的一次性企业邀请，绝不直接写入成员关系。 */
 export function PlatformOrganizationInvitationDialog({
   open,
-  reason,
   organizations,
   initialOrganizationId,
   initialEmail,
@@ -39,7 +38,6 @@ export function PlatformOrganizationInvitationDialog({
   onOpenChange,
 }: {
   open: boolean
-  reason: string
   organizations: PlatformOrganizationChoice[]
   initialOrganizationId?: number
   initialEmail?: string
@@ -54,7 +52,7 @@ export function PlatformOrganizationInvitationDialog({
   const [email, setEmail] = useState(initialEmail ?? '')
   const [role, setRole] = useState('member')
   const [copied, setCopied] = useState(false)
-  const mutation = useInvitePlatformOrganizationMember({ organizationId, reason })
+  const mutation = useInvitePlatformOrganizationMember(organizationId)
   const resetMutation = mutation.reset
   const defaultOrganizationId = initialOrganizationId ?? organizations[0]?.id ?? 0
 

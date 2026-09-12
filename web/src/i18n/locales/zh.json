@@ -3317,6 +3317,21 @@
       "load": "服务没有返回可靠的站点设置，请稍后重试。",
       "save": "站点设置保存失败，服务端状态未改变。",
       "conflict": "站点设置已被其他管理员更新，请刷新后重新核对。"
+    },
+    "templates": {
+      "title": "前端模板",
+      "description": "从运行目录扫描静态模板并动态切换。模板损坏时服务会继续使用内嵌前端。",
+      "selector": "当前模板",
+      "embedded": "内嵌前端",
+      "embeddedOption": "内嵌前端（默认）",
+      "active": "已启用 {{id}}",
+      "invalid": "校验失败",
+      "invalidHint": "列表中的无效模板不会被启用，请修复文件后重新扫描。",
+      "refresh": "刷新列表",
+      "scan": "重新扫描",
+      "apply": "应用模板",
+      "applying": "正在切换",
+      "error": "模板操作失败，请刷新后重试。"
     }
   },
   "authenticationSettings": {

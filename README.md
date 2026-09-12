@@ -56,6 +56,9 @@ corepack pnpm@10.33.0 --dir web api:check
 corepack pnpm@10.33.0 --dir web check
 ```
 
+运行目录外部前端模板的目录结构、独立构建、API 契约、扫描切换和发布检查见
+[`docs/frontend-template-development.md`](docs/frontend-template-development.md)。
+
 ### Linux Docker 部署
 
 当前 Docker 首切片使用 Linux host 网络，以保持服务现有的 loopback 监听安全边界。应用监听宿主机 `127.0.0.1:8080`，PostgreSQL 和 Redis 分别只监听 `127.0.0.1:5432` 与 `127.0.0.1:6379`；公网访问应由宿主机上的 Nginx/Caddy 等反向代理转发，Compose 不直接发布公网端口。
@@ -71,7 +74,7 @@ docker compose --env-file .env down
 
 ### Linux systemd 部署
 
-Linux amd64 Release 归档同时包含 `anyflows`、`anyflows.conf`、`install.sh` 和 `anyflows.service`。手工启动时使用归档内的 TOML 配置并注入两项密钥：
+Linux amd64 Release 归档同时包含 `anyflows`、`anyflows.conf`、`install.sh` 和 `anyflows.service`。手工启动时会自动读取当前工作目录的 `.env`（如存在），也可以使用归档内的 TOML 配置并注入两项密钥；进程环境变量优先于 `.env`：
 
 ```bash
 export AF_CONFIG_FILE="$PWD/anyflows.conf"

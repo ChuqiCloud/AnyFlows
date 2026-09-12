@@ -1,17 +1,13 @@
-import { Building2, LoaderCircle, MailPlus, Pencil, Search } from 'lucide-react'
-import { useEffect, useState, type FormEvent } from 'react'
+import { Building2, LoaderCircle, MailPlus, Pencil } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import {
-  isValidPlatformOrganizationReason,
   usePlatformOrganizations,
   usePlatformUserOrganizations,
-  type PlatformUserOrganizationAccess,
 } from '@/features/platform-organizations/platform-organization-api'
 import { PlatformOrganizationInvitationDialog } from '@/features/platform-organizations/platform-organization-invitation-dialog'
 import { PlatformOrganizationMemberDialog } from '@/features/platform-organizations/platform-organization-member-dialog'
@@ -23,39 +19,24 @@ type UserOrganizationsSheetProps = {
   onOpenChange: (open: boolean) => void
 }
 
-/** 按管理员明确选择的用户和临时理由读取企业归属，不预取其他用户。 */
+/** 管理员打开目标用户后直接读取企业归属。 */
 export function UserOrganizationsSheet({ open, user, onOpenChange }: UserOrganizationsSheetProps) {
   const { i18n, t } = useTranslation()
-  const [reason, setReason] = useState('')
-  const [access, setAccess] = useState<PlatformUserOrganizationAccess>()
   const [inviteOpen, setInviteOpen] = useState(false)
   const [editing, setEditing] = useState<PlatformOrganizationMemberResponse>()
-  const query = usePlatformUserOrganizations(open ? access : undefined)
-  const directoryQuery = usePlatformOrganizations(inviteOpen && access ? { reason: access.reason } : undefined, 100)
+  const query = usePlatformUserOrganizations(open ? user?.id : undefined)
+  const directoryQuery = usePlatformOrganizations(inviteOpen, 100)
   const organizations = query.data?.pages.flatMap((page) => page.organizations) ?? []
   const directory = directoryQuery.data?.pages.flatMap((page) => page.organizations) ?? []
-  const validReason = isValidPlatformOrganizationReason(reason)
   const timeFormat = new Intl.DateTimeFormat(i18n.resolvedLanguage === 'zh' ? 'zh-CN' : 'en-US', {
     dateStyle: 'medium',
     timeStyle: 'short',
   })
 
   useEffect(() => {
-    setReason('')
-    setAccess(undefined)
     setInviteOpen(false)
     setEditing(undefined)
   }, [open, user?.id])
-
-  const load = (event: FormEvent) => {
-    event.preventDefault()
-    if (!user || !validReason) return
-    if (access?.userId === user.id && access.reason === reason) {
-      void query.refetch()
-      return
-    }
-    setAccess({ userId: user.id, reason })
-  }
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -71,43 +52,15 @@ export function UserOrganizationsSheet({ open, user, onOpenChange }: UserOrganiz
         </SheetHeader>
         {user ? (
           <div className="p-4">
-            <form className="border-b border-[var(--hairline)] pb-4" onSubmit={load}>
-              <Label htmlFor="user-organizations-reason">{t('users.organizations.reasonLabel')}</Label>
-              <Input
-                id="user-organizations-reason"
-                className="mt-2"
-                value={reason}
-                maxLength={255}
-                autoComplete="off"
-                placeholder={t('users.organizations.reasonPlaceholder')}
-                aria-describedby="user-organizations-reason-hint"
-                aria-invalid={reason.length > 0 && !validReason}
-                onChange={(event) => setReason(event.target.value)}
-              />
-              <p id="user-organizations-reason-hint" className="mt-1.5 text-[0.6875rem] leading-4 text-muted-foreground">
-                {reason.length > 0 && !validReason
-                  ? t('users.organizations.reasonInvalid')
-                  : t('users.organizations.reasonHint')}
-              </p>
-              <Button type="submit" size="sm" className="mt-3" disabled={!validReason || query.isFetching}>
-                {query.isFetching && !query.data ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <Search aria-hidden="true" />}
-                {t('users.organizations.load')}
-              </Button>
-            </form>
-
-            {access ? (
-              <div className="flex items-start justify-between gap-3 border-b border-[var(--hairline)] py-4">
-                <div>
-                  <p className="text-xs font-medium">{t('users.organizations.assignTitle')}</p>
-                  <p className="mt-1 text-[0.6875rem] leading-4 text-muted-foreground">{t('users.organizations.assignHint')}</p>
-                </div>
-                <Button type="button" size="sm" disabled={!user.email} onClick={() => setInviteOpen(true)}><MailPlus aria-hidden="true" />{t('users.organizations.assign')}</Button>
+            <div className="flex items-start justify-between gap-3 border-b border-[var(--hairline)] py-4">
+              <div>
+                <p className="text-xs font-medium">{t('users.organizations.assignTitle')}</p>
+                <p className="mt-1 text-[0.6875rem] leading-4 text-muted-foreground">{t('users.organizations.assignHint')}</p>
               </div>
-            ) : null}
+              <Button type="button" size="sm" disabled={!user.email} onClick={() => setInviteOpen(true)}><MailPlus aria-hidden="true" />{t('users.organizations.assign')}</Button>
+            </div>
 
-            {!access ? (
-              <MembershipState title={t('users.organizations.initialTitle')} body={t('users.organizations.initialBody')} />
-            ) : query.isPending ? (
+            {query.isPending ? (
               <div className="py-8 text-center text-xs text-muted-foreground">{t('users.organizations.loading')}</div>
             ) : query.isError && query.data === undefined ? (
               <MembershipState
@@ -154,10 +107,9 @@ export function UserOrganizationsSheet({ open, user, onOpenChange }: UserOrganiz
             ) : null}
           </div>
         ) : null}
-        <PlatformOrganizationMemberDialog organizationName={organizations.find((organization) => organization.membership_id === editing?.membership_id)?.organization_name ?? ''} member={editing} reason={access?.reason ?? ''} onOpenChange={(next) => { if (!next) setEditing(undefined) }} />
+        <PlatformOrganizationMemberDialog organizationName={organizations.find((organization) => organization.membership_id === editing?.membership_id)?.organization_name ?? ''} member={editing} onOpenChange={(next) => { if (!next) setEditing(undefined) }} />
         <PlatformOrganizationInvitationDialog
           open={inviteOpen}
-          reason={access?.reason ?? ''}
           organizations={directory.map((organization) => ({ id: organization.id, name: organization.name }))}
           initialEmail={user?.email ?? undefined}
           lockEmail

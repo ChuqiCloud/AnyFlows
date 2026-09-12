@@ -19,9 +19,8 @@ use crate::{
     tag = "我的钱包",
     summary = "读取当前用户充值配置",
     responses(
-        (status = 200, description = "可用支付方式、客户端材料与金额边界", body = UserTopupConfigurationResponse),
-        (status = 401, description = "会话无效", body = ManagementErrorBody),
-        (status = 503, description = "没有可用的在线支付方式", body = ManagementErrorBody)
+        (status = 200, description = "可用支付方式、客户端材料与金额边界；未配置在线支付时 methods 为空", body = UserTopupConfigurationResponse),
+        (status = 401, description = "会话无效", body = ManagementErrorBody)
     ),
     security(("bearerAuth" = []))
 )]

@@ -26,8 +26,9 @@ export function organizationQueryKey(organizationId: number, ...resources: reado
 }
 
 /** 读取当前账号可进入的企业空间，不把平台管理员身份当作企业成员。 */
-export function useOrganizationDirectory() {
+export function useOrganizationDirectory(enabled = true) {
   return useQuery({
+    enabled,
     queryKey: organizationDirectoryQueryKey,
     queryFn: async ({ signal }) => {
       const { data } = await listAccountOrganizations({ client: apiClient, signal })

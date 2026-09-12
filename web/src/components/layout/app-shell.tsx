@@ -26,6 +26,7 @@ import { useOrganizationWorkspace } from '@/features/organization-console/organi
 import { useOrganizationWalletSummary } from '@/features/organization-wallet/organization-wallet-api'
 import { useOrganizationApprovalNotifications, useUserNotifications } from '@/features/profile/profile-api'
 import type { SessionUser } from '@/lib/api/generated/types.gen'
+import { getManagementSessionToken } from '@/lib/api/session-token'
 
 type AppShellProps = {
   title: string
@@ -48,15 +49,16 @@ function getDefaultOpen() {
 export function AppShell({ title, children, currentUser, onLogout }: AppShellProps) {
   const { t } = useTranslation()
   const workspace = useOrganizationWorkspace()
+  const sessionActive = Boolean(getManagementSessionToken())
   // 控制台与首页共用公开站点设置缓存，保存站点设置后可即时同步品牌展示。
   const siteQuery = usePublicSiteSettings()
-  const walletQuery = useUserWalletSummary(workspace.selectedId === undefined)
+  const walletQuery = useUserWalletSummary(sessionActive && workspace.selectedId === undefined)
   const organizationWalletQuery = useOrganizationWalletSummary(
     workspace.selectedId ?? 0,
-    workspace.selectedId !== undefined,
+    sessionActive && workspace.selectedId !== undefined,
   )
-  const notificationsQuery = useUserNotifications()
-  const organizationApprovalNotificationsQuery = useOrganizationApprovalNotifications()
+  const notificationsQuery = useUserNotifications(sessionActive)
+  const organizationApprovalNotificationsQuery = useOrganizationApprovalNotifications(sessionActive)
   const { formatQuota } = useBalanceDisplay()
   const site = siteQuery.data
   const siteName = site?.site_name ?? t('brand.name')

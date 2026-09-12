@@ -3316,6 +3316,21 @@
       "load": "The service did not return reliable site settings. Try again shortly.",
       "save": "Site settings could not be saved. Server state is unchanged.",
       "conflict": "Site settings changed in another administrator session. Refresh and review again."
+    },
+    "templates": {
+      "title": "Frontend templates",
+      "description": "Scan static templates from the runtime directory and switch them without restarting. Invalid templates fall back to the embedded frontend.",
+      "selector": "Active template",
+      "embedded": "Embedded frontend",
+      "embeddedOption": "Embedded frontend (default)",
+      "active": "Active: {{id}}",
+      "invalid": "validation failed",
+      "invalidHint": "Invalid templates cannot be activated. Fix the files and scan again.",
+      "refresh": "Refresh list",
+      "scan": "Scan again",
+      "apply": "Apply template",
+      "applying": "Switching",
+      "error": "Template operation failed. Refresh and try again."
     }
   },
   "authenticationSettings": {

@@ -1447,6 +1447,21 @@ export type CreditTermStatusRequest = {
     expected_version: number;
 };
 export type CreditTermStatusResponse = 'active' | 'paused' | 'closed';
+export type FrontendTemplateActivationRequest = {
+    template_id?: string | null;
+};
+export type FrontendTemplateCatalog = {
+    active_id?: string | null;
+    templates: Array<FrontendTemplateSummary>;
+};
+export type FrontendTemplateSummary = {
+    id: string;
+    name: string;
+    version: string;
+    api_contract: string;
+    valid: boolean;
+    error?: string | null;
+};
 export type IssuedAdminRedemptionBatch = {
     batch: AdminRedemptionBatch;
     codes: Array<string>;
@@ -4802,7 +4817,6 @@ export type GetUserTopupConfigurationData = {
 };
 export type GetUserTopupConfigurationErrors = {
     401: ManagementError;
-    503: ManagementError;
 };
 export type GetUserTopupConfigurationError = GetUserTopupConfigurationErrors[keyof GetUserTopupConfigurationErrors];
 export type GetUserTopupConfigurationResponses = {
@@ -6079,6 +6093,56 @@ export type UpdateAdminSiteSettingsResponses = {
     200: AdminSiteSettings;
 };
 export type UpdateAdminSiteSettingsResponse = UpdateAdminSiteSettingsResponses[keyof UpdateAdminSiteSettingsResponses];
+export type ListAdminFrontendTemplatesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/frontend-templates';
+};
+export type ListAdminFrontendTemplatesErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminFrontendTemplatesError = ListAdminFrontendTemplatesErrors[keyof ListAdminFrontendTemplatesErrors];
+export type ListAdminFrontendTemplatesResponses = {
+    200: FrontendTemplateCatalog;
+};
+export type ListAdminFrontendTemplatesResponse = ListAdminFrontendTemplatesResponses[keyof ListAdminFrontendTemplatesResponses];
+export type ScanAdminFrontendTemplatesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/frontend-templates/scan';
+};
+export type ScanAdminFrontendTemplatesErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ScanAdminFrontendTemplatesError = ScanAdminFrontendTemplatesErrors[keyof ScanAdminFrontendTemplatesErrors];
+export type ScanAdminFrontendTemplatesResponses = {
+    200: FrontendTemplateCatalog;
+};
+export type ScanAdminFrontendTemplatesResponse = ScanAdminFrontendTemplatesResponses[keyof ScanAdminFrontendTemplatesResponses];
+export type ActivateAdminFrontendTemplateData = {
+    body: FrontendTemplateActivationRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/frontend-templates/active';
+};
+export type ActivateAdminFrontendTemplateErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type ActivateAdminFrontendTemplateError = ActivateAdminFrontendTemplateErrors[keyof ActivateAdminFrontendTemplateErrors];
+export type ActivateAdminFrontendTemplateResponses = {
+    200: FrontendTemplateCatalog;
+};
+export type ActivateAdminFrontendTemplateResponse = ActivateAdminFrontendTemplateResponses[keyof ActivateAdminFrontendTemplateResponses];
 export type GetAdminDashboardData = {
     body?: never;
     path?: never;

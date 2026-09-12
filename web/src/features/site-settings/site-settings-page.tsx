@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAdminSiteSettings } from './site-settings-api'
 import { SiteSettingsWorkspace } from './site-settings-workspace'
+import { FrontendTemplatePanel } from './frontend-template-panel'
 
 /** 呈现管理员站点设置，并在固定记录不可用时保持失败关闭。 */
 export function SiteSettingsPage() {
@@ -65,7 +66,10 @@ export function SiteSettingsPage() {
           </Button>
         </div>
       ) : settingsQuery.data ? (
-        <SiteSettingsWorkspace settings={settingsQuery.data} />
+        <>
+          <SiteSettingsWorkspace settings={settingsQuery.data} />
+          <FrontendTemplatePanel />
+        </>
       ) : null}
     </div>
   )
