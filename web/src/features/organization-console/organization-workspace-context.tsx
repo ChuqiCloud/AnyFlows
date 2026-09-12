@@ -15,6 +15,7 @@ import {
   useOrganizationDirectory,
 } from '@/features/organization-budgets/organization-budget-api'
 import type { OrganizationSummaryResponse } from '@/lib/api/generated/types.gen'
+import { getManagementSessionToken } from '@/lib/api/session-token'
 
 const ORGANIZATION_WORKSPACE_KEY = 'anyflows.organization.workspace'
 
@@ -41,7 +42,7 @@ type OrganizationWorkspaceProviderProps = {
 /** 统一维护企业工作空间偏好；本地偏好只决定前端入口，服务端仍逐请求复验成员关系。 */
 export function OrganizationWorkspaceProvider({ children, enterpriseView }: OrganizationWorkspaceProviderProps) {
   const queryClient = useQueryClient()
-  const organizationsQuery = useOrganizationDirectory()
+  const organizationsQuery = useOrganizationDirectory(Boolean(getManagementSessionToken()))
   const organizations = useMemo(() => organizationsQuery.data ?? [], [organizationsQuery.data])
   const [preferredId, setPreferredId] = useState(readStoredOrganizationId)
   const [switching, setSwitching] = useState(false)

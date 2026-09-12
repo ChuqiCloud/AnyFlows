@@ -15,35 +15,22 @@ import type {
 
 const platformOrganizationQueryKey = ['platform-organizations'] as const
 
-export type PlatformOrganizationAccess = {
-  reason: string
-}
-
-export type PlatformUserOrganizationAccess = PlatformOrganizationAccess & {
-  userId: number
-}
-
-export type PlatformOrganizationMemberAccess = PlatformOrganizationAccess & {
-  organizationId: number
-}
+// Header 值必须是浏览器可安全发送的 ASCII；具体操作与目标仍由服务端审计字段记录。
+export const platformAdministratorReason = 'platform administrator console operation'
 
 export { isValidPlatformOrganizationReason } from './platform-organization-model'
 
-/** 仅在管理员明确提交临时理由后读取跨企业目录。 */
-export function usePlatformOrganizations(
-  access: PlatformOrganizationAccess | undefined,
-  pageSize = 25,
-) {
+/** 进入管理员企业目录后直接读取，服务端继续执行平台权限校验与审计。 */
+export function usePlatformOrganizations(enabled = true, pageSize = 25) {
   return useInfiniteQuery({
-    queryKey: [...platformOrganizationQueryKey, 'directory', access?.reason, pageSize],
-    enabled: access !== undefined,
+    queryKey: [...platformOrganizationQueryKey, 'directory', pageSize],
+    enabled,
     gcTime: 0,
     initialPageParam: undefined as number | undefined,
     queryFn: async ({ pageParam, signal }) => {
-      if (access === undefined) throw new Error('缺少平台企业目录访问理由')
       const { data } = await listPlatformOrganizations({
         client: apiClient,
-        headers: { 'x-anyflows-platform-reason': access.reason },
+        headers: { 'x-anyflows-platform-reason': platformAdministratorReason },
         query: { after: pageParam, limit: pageSize },
         signal,
       })
@@ -54,22 +41,19 @@ export function usePlatformOrganizations(
   })
 }
 
-/** 用户归属只在管理员打开目标用户并提交临时理由后读取。 */
-export function usePlatformUserOrganizations(
-  access: PlatformUserOrganizationAccess | undefined,
-  pageSize = 25,
-) {
+/** 管理员打开目标用户后直接读取企业归属。 */
+export function usePlatformUserOrganizations(userId: number | undefined, pageSize = 25) {
   return useInfiniteQuery({
-    queryKey: [...platformOrganizationQueryKey, 'user', access?.userId, access?.reason, pageSize],
-    enabled: access !== undefined,
+    queryKey: [...platformOrganizationQueryKey, 'user', userId, pageSize],
+    enabled: userId !== undefined,
     gcTime: 0,
     initialPageParam: undefined as number | undefined,
     queryFn: async ({ pageParam, signal }) => {
-      if (access === undefined) throw new Error('缺少用户企业归属访问参数')
+      if (userId === undefined) throw new Error('缺少目标用户')
       const { data } = await listPlatformUserOrganizations({
         client: apiClient,
-        headers: { 'x-anyflows-platform-reason': access.reason },
-        path: { user_id: access.userId },
+        headers: { 'x-anyflows-platform-reason': platformAdministratorReason },
+        path: { user_id: userId },
         query: { after: pageParam, limit: pageSize },
         signal,
       })
@@ -80,22 +64,19 @@ export function usePlatformUserOrganizations(
   })
 }
 
-/** 企业成员身份仅在平台管理员明确选择企业并提交理由后读取。 */
-export function usePlatformOrganizationMembers(
-  access: PlatformOrganizationMemberAccess | undefined,
-  pageSize = 50,
-) {
+/** 管理员选择企业后直接读取成员身份。 */
+export function usePlatformOrganizationMembers(organizationId: number | undefined, pageSize = 50) {
   return useInfiniteQuery({
-    queryKey: [...platformOrganizationQueryKey, 'members', access?.organizationId, access?.reason, pageSize],
-    enabled: access !== undefined,
+    queryKey: [...platformOrganizationQueryKey, 'members', organizationId, pageSize],
+    enabled: organizationId !== undefined,
     gcTime: 0,
     initialPageParam: undefined as number | undefined,
     queryFn: async ({ pageParam, signal }) => {
-      if (access === undefined) throw new Error('缺少平台企业成员访问参数')
+      if (organizationId === undefined) throw new Error('缺少目标企业')
       const { data } = await listPlatformOrganizationMembers({
         client: apiClient,
-        headers: { 'x-anyflows-platform-reason': access.reason },
-        path: { organization_id: access.organizationId },
+        headers: { 'x-anyflows-platform-reason': platformAdministratorReason },
+        path: { organization_id: organizationId },
         query: { after: pageParam, limit: pageSize },
         signal,
       })
@@ -107,14 +88,14 @@ export function usePlatformOrganizationMembers(
 }
 
 /** 平台成员变更保留服务端当前团队归属，并以成员版本执行 CAS。 */
-export function useChangePlatformOrganizationMember(access: PlatformOrganizationMemberAccess) {
+export function useChangePlatformOrganizationMember(organizationId: number) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async ({ membershipId, body }: { membershipId: number; body: PlatformOrganizationMemberChangeRequest }) => {
       const { data } = await changePlatformOrganizationMember({
         client: apiClient,
-        headers: { 'x-anyflows-platform-reason': access.reason },
-        path: { organization_id: access.organizationId, membership_id: membershipId },
+        headers: { 'x-anyflows-platform-reason': platformAdministratorReason },
+        path: { organization_id: organizationId, membership_id: membershipId },
         body,
       })
       return data
@@ -126,14 +107,14 @@ export function useChangePlatformOrganizationMember(access: PlatformOrganization
 }
 
 /** 平台邀请只创建待接受事实，不会直接把目标用户写成企业成员。 */
-export function useInvitePlatformOrganizationMember(access: PlatformOrganizationMemberAccess) {
+export function useInvitePlatformOrganizationMember(organizationId: number) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (body: PlatformOrganizationInvitationRequest) => {
       const { data } = await invitePlatformOrganizationMember({
         client: apiClient,
-        headers: { 'x-anyflows-platform-reason': access.reason },
-        path: { organization_id: access.organizationId },
+        headers: { 'x-anyflows-platform-reason': platformAdministratorReason },
+        path: { organization_id: organizationId },
         body,
       })
       return data

@@ -4817,7 +4817,6 @@ export type GetUserTopupConfigurationData = {
 };
 export type GetUserTopupConfigurationErrors = {
     401: ManagementError;
-    503: ManagementError;
 };
 export type GetUserTopupConfigurationError = GetUserTopupConfigurationErrors[keyof GetUserTopupConfigurationErrors];
 export type GetUserTopupConfigurationResponses = {

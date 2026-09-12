@@ -172,8 +172,9 @@ export function useUpdateUserNotificationPreferences() {
 }
 
 /** 按稳定复合游标读取当前用户的通知事实历史。 */
-export function useUserNotifications() {
+export function useUserNotifications(enabled = true) {
   return useInfiniteQuery({
+    enabled,
     queryKey: userNotificationsQueryKey,
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam, signal }) => {
@@ -204,8 +205,9 @@ export function useMarkUserNotificationsRead() {
 }
 
 /** 读取当前用户作为申请人的企业审批决定通知。 */
-export function useOrganizationApprovalNotifications() {
+export function useOrganizationApprovalNotifications(enabled = true) {
   return useInfiniteQuery({
+    enabled,
     queryKey: organizationApprovalNotificationsQueryKey,
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam, signal }) => {

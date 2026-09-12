@@ -24,18 +24,16 @@ const editableStatuses = ['active', 'suspended', 'removed'] as const
 export function PlatformOrganizationMemberDialog({
   organizationName,
   member,
-  reason,
   onOpenChange,
 }: {
   organizationName: string
   member?: PlatformOrganizationMemberResponse
-  reason: string
   onOpenChange: (open: boolean) => void
 }) {
   const { t } = useTranslation()
   const [role, setRole] = useState('member')
   const [status, setStatus] = useState('active')
-  const mutation = useChangePlatformOrganizationMember({ organizationId: member?.organization_id ?? 0, reason })
+  const mutation = useChangePlatformOrganizationMember(member?.organization_id ?? 0)
   const resetMutation = mutation.reset
 
   useEffect(() => {

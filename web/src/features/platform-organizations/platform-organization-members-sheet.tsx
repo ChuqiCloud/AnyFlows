@@ -16,18 +16,16 @@ import { PlatformOrganizationMemberDialog } from './platform-organization-member
 export function PlatformOrganizationMembersSheet({
   open,
   organization,
-  reason,
   initialMembershipId,
   onOpenChange,
 }: {
   open: boolean
   organization?: { id: number; name: string }
-  reason: string
   initialMembershipId?: number
   onOpenChange: (open: boolean) => void
 }) {
   const { t } = useTranslation()
-  const query = usePlatformOrganizationMembers(open && organization ? { organizationId: organization.id, reason } : undefined)
+  const query = usePlatformOrganizationMembers(open ? organization?.id : undefined)
   const members = useMemo(() => query.data?.pages.flatMap((page) => page.members) ?? [], [query.data])
   const [editing, setEditing] = useState<PlatformOrganizationMemberResponse>()
   const [inviting, setInviting] = useState(false)
@@ -90,8 +88,8 @@ export function PlatformOrganizationMembersSheet({
             ) : null}
           </div>
         ) : null}
-        <PlatformOrganizationMemberDialog organizationName={organization?.name ?? ''} member={editing} reason={reason} onOpenChange={(next) => { if (!next) setEditing(undefined) }} />
-        <PlatformOrganizationInvitationDialog open={inviting} reason={reason} organizations={organization ? [organization] : []} initialOrganizationId={organization?.id} onOpenChange={setInviting} />
+        <PlatformOrganizationMemberDialog organizationName={organization?.name ?? ''} member={editing} onOpenChange={(next) => { if (!next) setEditing(undefined) }} />
+        <PlatformOrganizationInvitationDialog open={inviting} organizations={organization ? [organization] : []} initialOrganizationId={organization?.id} onOpenChange={setInviting} />
       </SheetContent>
     </Sheet>
   )

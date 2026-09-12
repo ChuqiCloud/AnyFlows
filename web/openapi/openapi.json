@@ -5223,7 +5223,7 @@
         "operationId": "getUserTopupConfiguration",
         "responses": {
           "200": {
-            "description": "可用支付方式、客户端材料与金额边界",
+            "description": "可用支付方式、客户端材料与金额边界；未配置在线支付时 methods 为空",
             "content": {
               "application/json": {
                 "schema": {
@@ -5234,16 +5234,6 @@
           },
           "401": {
             "description": "会话无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagementError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "没有可用的在线支付方式",
             "content": {
               "application/json": {
                 "schema": {

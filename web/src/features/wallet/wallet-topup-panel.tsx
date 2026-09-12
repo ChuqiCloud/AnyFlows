@@ -202,7 +202,7 @@ export function WalletTopupPanel({
 
   if (configurationQuery.isPending) return <TopupLoading />
   if (configurationQuery.isError || methods.length === 0 || !selectedMethod) {
-    return <TopupUnavailable onRetry={() => void configurationQuery.refetch()} retryable={apiErrorCode(configurationQuery.error) !== 'topup_unavailable'} />
+    return <TopupUnavailable onRetry={() => void configurationQuery.refetch()} retryable={configurationQuery.isError && apiErrorCode(configurationQuery.error) !== 'topup_unavailable'} />
   }
 
   const amountLocked = attempt !== undefined
