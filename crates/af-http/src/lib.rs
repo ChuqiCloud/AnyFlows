@@ -17,6 +17,7 @@ mod email_settings;
 mod embedding_service;
 mod error_response;
 mod frontend_assets;
+mod frontend_templates;
 mod gemini_generate_content;
 mod image_service;
 mod invitations;
@@ -120,6 +121,10 @@ pub use credentials::{ApiKeyExtractionError, QueryApiKeyPolicy, extract_presente
 pub use embedding_service::{EmbeddingService, EmbeddingServiceFuture};
 pub use error_response::OpenAiHttpError;
 pub use frontend_assets::{FrontendAsset, FrontendAssetSource};
+pub use frontend_templates::{
+    FrontendTemplateCatalog, FrontendTemplateError, FrontendTemplateFuture,
+    FrontendTemplateService, FrontendTemplateSummary, build_frontend_template_router,
+};
 pub use image_service::{ImageService, ImageServiceFuture};
 pub use middleware::REQUEST_ID_HEADER_NAME;
 pub use oauth_connections::{

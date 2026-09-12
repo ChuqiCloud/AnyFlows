@@ -147,11 +147,12 @@ use af_db::{
 };
 use af_http::{
     AdminChannelProbe, AdminOAuthConnectionService, AudioService, ChatService, EmbeddingService,
-    HttpListener, HttpRouter, ImageService, PaymentWebhookProcessorRegistry, QueryApiKeyPolicy,
-    ReadinessHandle, RefundReceiptProcessorRegistry, RerankService, ResponsesCompactService,
-    ServeError, ServeOutcome, SpeechService, TurnstileVerifier, VideoTaskService,
-    build_organization_credit_terms_router, build_payment_webhook_router,
-    build_refund_receipt_webhook_router, build_router, serve_with_graceful_shutdown,
+    FrontendAssetSource, HttpListener, HttpRouter, ImageService, PaymentWebhookProcessorRegistry,
+    QueryApiKeyPolicy, ReadinessHandle, RefundReceiptProcessorRegistry, RerankService,
+    ResponsesCompactService, ServeError, ServeOutcome, SpeechService, TurnstileVerifier,
+    VideoTaskService, build_frontend_template_router, build_organization_credit_terms_router,
+    build_payment_webhook_router, build_refund_receipt_webhook_router, build_router,
+    serve_with_graceful_shutdown,
 };
 use af_httpclient::{
     DEFAULT_CONNECT_TIMEOUT, DEFAULT_MAX_CACHED_CLIENTS, DEFAULT_READ_TIMEOUT,
@@ -200,6 +201,7 @@ use crate::{
     },
     payment_runtime::PaymentRuntime,
     request_rate_limit::{RequestRateLimitStore, RuntimeTokenAuthenticator},
+    runtime_frontend::FrontendTemplateManager,
     scheduled_chat::ScheduledChatService,
     scheduler_invalidation::{
         PreparedSchedulerInvalidationRuntime, SchedulerInvalidationRuntimeError,
@@ -235,6 +237,7 @@ pub struct DatabaseReady {
     _telemetry: TelemetryReady,
     database: DatabasePool,
     passkey_public_base_url: Option<String>,
+    frontend_template_id: Option<String>,
     organization_scim_rate_limit_store: Option<Arc<dyn af_domain::OrganizationScimRateLimitStore>>,
     organization_sso_public_login_rate_limit_store:
         Option<Arc<dyn af_domain::OrganizationSsoPublicLoginRateLimitStore>>,
@@ -892,12 +895,12 @@ impl Bootstrap<TelemetryReady> {
             Duration::from_secs(self.config.auth().lookup_timeout_secs()),
         )
         .map_err(BootstrapError::SiteSettingsRepository)?;
-        let passkey_public_base_url = site_settings_repository
+        let site_settings = site_settings_repository
             .settings()
             .await
-            .map_err(BootstrapError::SiteSettingsRead)?
-            .public_base_url()
-            .map(str::to_owned);
+            .map_err(BootstrapError::SiteSettingsRead)?;
+        let passkey_public_base_url = site_settings.public_base_url().map(str::to_owned);
+        let frontend_template_id = site_settings.frontend_template_id().map(str::to_owned);
         let organization_scim_rate_limit_store = if let Some(redis_url) = self.config.redis().url()
         {
             let store = RedisOrganizationScimRateLimitStore::connect(
@@ -944,6 +947,7 @@ impl Bootstrap<TelemetryReady> {
                 _telemetry: stage,
                 database,
                 passkey_public_base_url,
+                frontend_template_id,
                 organization_scim_rate_limit_store,
                 organization_sso_public_login_rate_limit_store,
                 organization_sso_public_login_fingerprint_secret,
@@ -2949,6 +2953,20 @@ impl Bootstrap<Supervised> {
             self.stage.payment_runtime.clone();
         let payment_webhook_routes = build_payment_webhook_router(payment_webhook_registry)
             .merge(build_refund_receipt_webhook_router(refund_receipt_registry));
+        let embedded_frontend: Arc<dyn FrontendAssetSource> = Arc::new(EmbeddedFrontendAssets);
+        let frontend_template_manager = FrontendTemplateManager::new(
+            self.config
+                .server()
+                .frontend_template_directory()
+                .to_path_buf(),
+            Arc::clone(&embedded_frontend),
+            self.stage.infrastructure.site_settings_repository.clone(),
+            self.stage
+                .infrastructure
+                .infrastructure
+                .frontend_template_id
+                .clone(),
+        );
         let router = build_router(
             self.config.server(),
             self.stage.chat.clone(),
@@ -3062,7 +3080,7 @@ impl Bootstrap<Supervised> {
             Some(Arc::clone(&self.stage.infrastructure.admin_wallet_service)),
             Some(Arc::clone(&self.stage.admin_refund_service)),
             self.stage.infrastructure.query_api_key_policy,
-            Some(Arc::new(EmbeddedFrontendAssets)),
+            Some(Arc::clone(&frontend_template_manager) as Arc<dyn FrontendAssetSource>),
             Some(payment_webhook_routes),
             Some(Arc::clone(
                 &self.stage.infrastructure.organization_invitation_service,
@@ -3138,12 +3156,17 @@ impl Bootstrap<Supervised> {
                 &self.stage.infrastructure.organization_sso_recovery_service,
             )),
         );
-        let router = router.merge(build_organization_credit_terms_router(
-            Arc::clone(&self.stage.infrastructure.organization_authorization_service),
-            Arc::clone(&self.stage.infrastructure.organization_credit_terms_service),
-            Arc::clone(&self.stage.infrastructure.organization_activity_service),
-            Arc::clone(&self.stage.infrastructure.session_authenticator),
-        ));
+        let router = router
+            .merge(build_frontend_template_router(
+                frontend_template_manager.clone() as Arc<dyn af_http::FrontendTemplateService>,
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ))
+            .merge(build_organization_credit_terms_router(
+                Arc::clone(&self.stage.infrastructure.organization_authorization_service),
+                Arc::clone(&self.stage.infrastructure.organization_credit_terms_service),
+                Arc::clone(&self.stage.infrastructure.organization_activity_service),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ));
         let Bootstrap {
             config,
             shutdown_timeout,

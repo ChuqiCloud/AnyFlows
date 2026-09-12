@@ -269,6 +269,8 @@ pub struct ServerConfig {
     client_ip_source: ClientIpSource,
     trusted_proxy_cidrs: Vec<IpCidr>,
     shutdown_timeout_secs: u64,
+    /// 运行目录下可选的外部前端模板目录。
+    frontend_template_directory: PathBuf,
 }
 
 impl ServerConfig {
@@ -302,6 +304,12 @@ impl ServerConfig {
         self.shutdown_timeout_secs
     }
 
+    /// 返回外部前端模板目录。相对路径以进程运行目录为基准。
+    #[must_use]
+    pub fn frontend_template_directory(&self) -> &Path {
+        &self.frontend_template_directory
+    }
+
     /// 替换业务路由 CORS 白名单，供嵌入式启动与测试构造使用。
     #[must_use]
     pub fn with_cors_allowed_origins(
@@ -323,6 +331,13 @@ impl ServerConfig {
         self.trusted_proxy_cidrs = trusted_proxy_cidrs.into_iter().collect();
         self
     }
+
+    /// 替换外部前端模板目录，供嵌入式启动与测试构造使用。
+    #[must_use]
+    pub fn with_frontend_template_directory(mut self, directory: impl Into<PathBuf>) -> Self {
+        self.frontend_template_directory = directory.into();
+        self
+    }
 }
 
 impl Default for ServerConfig {
@@ -335,6 +350,7 @@ impl Default for ServerConfig {
             client_ip_source: ClientIpSource::Peer,
             trusted_proxy_cidrs: Vec::new(),
             shutdown_timeout_secs: DEFAULT_SHUTDOWN_TIMEOUT_SECS,
+            frontend_template_directory: PathBuf::from("public/templates"),
         }
     }
 }
@@ -1368,6 +1384,11 @@ impl AppConfig {
                 field: "server.shutdown_timeout_secs",
             });
         }
+        if !valid_frontend_template_directory(&self.server.frontend_template_directory) {
+            return Err(ConfigError::InvalidField {
+                field: "server.frontend_template_directory",
+            });
+        }
         if self.server.trusted_proxy_cidrs.len() > MAX_TRUSTED_PROXY_CIDRS {
             return Err(ConfigError::OutOfRange {
                 field: "server.trusted_proxy_cidrs",
@@ -2164,6 +2185,35 @@ fn validate_nonempty_text(
     Ok(())
 }
 
+/// 校验外部前端模板目录必须是运行目录下的相对路径。
+///
+/// 目录最终由服务端读取；拒绝绝对路径、父目录跳转和控制字符，避免配置
+/// 意外把模板加载边界扩展到运行目录之外。
+fn valid_frontend_template_directory(path: &Path) -> bool {
+    let Some(value) = path.to_str() else {
+        return false;
+    };
+    if value.is_empty()
+        || value.len() > 512
+        || value.trim() != value
+        || value.chars().any(char::is_control)
+        || path.is_absolute()
+    {
+        return false;
+    }
+    let mut has_normal = false;
+    for component in path.components() {
+        match component {
+            std::path::Component::Normal(_) => has_normal = true,
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir
+            | std::path::Component::RootDir
+            | std::path::Component::Prefix(_) => return false,
+        }
+    }
+    has_normal
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2184,6 +2234,26 @@ mod tests {
                 .as_str(),
             "http://127.0.0.1:5173"
         );
+    }
+
+    #[test]
+    fn frontend_template_directory_stays_below_runtime_directory() {
+        assert!(valid_frontend_template_directory(Path::new(
+            "public/templates"
+        )));
+        assert!(valid_frontend_template_directory(Path::new("./templates")));
+        for value in [
+            "",
+            "/tmp/templates",
+            "../templates",
+            "public/../templates",
+            " public/templates",
+        ] {
+            assert!(
+                !valid_frontend_template_directory(Path::new(value)),
+                "{value}"
+            );
+        }
     }
 
     #[test]

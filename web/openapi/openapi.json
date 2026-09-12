@@ -11168,6 +11168,204 @@
         ]
       }
     },
+    "/api/admin/frontend-templates": {
+      "get": {
+        "tags": [
+          "前端模板"
+        ],
+        "summary": "读取外部前端模板目录",
+        "operationId": "listAdminFrontendTemplates",
+        "responses": {
+          "200": {
+            "description": "模板扫描快照",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrontendTemplateCatalog"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/frontend-templates/scan": {
+      "post": {
+        "tags": [
+          "前端模板"
+        ],
+        "summary": "重新扫描外部前端模板目录",
+        "operationId": "scanAdminFrontendTemplates",
+        "responses": {
+          "200": {
+            "description": "更新后的模板扫描快照",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrontendTemplateCatalog"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/frontend-templates/active": {
+      "put": {
+        "tags": [
+          "前端模板"
+        ],
+        "summary": "切换当前前端模板",
+        "operationId": "activateAdminFrontendTemplate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FrontendTemplateActivationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "切换后的模板扫描快照",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrontendTemplateCatalog"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "模板标识无效或不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "模板选择持久化冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/dashboard": {
       "get": {
         "tags": [
@@ -38379,6 +38577,78 @@
           "paused",
           "closed"
         ]
+      },
+      "FrontendTemplateActivationRequest": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "None 或空字符串表示恢复内嵌前端。"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FrontendTemplateCatalog": {
+        "type": "object",
+        "description": "当前模板目录扫描结果。",
+        "required": [
+          "templates"
+        ],
+        "properties": {
+          "active_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "None 表示编译进二进制的内嵌前端。"
+          },
+          "templates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FrontendTemplateSummary"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "FrontendTemplateSummary": {
+        "type": "object",
+        "description": "可供管理员选择的外部前端模板摘要。",
+        "required": [
+          "id",
+          "name",
+          "version",
+          "api_contract",
+          "valid"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "与模板目录一致的稳定标识。"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "api_contract": {
+            "type": "string"
+          },
+          "valid": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
       },
       "IssuedAdminRedemptionBatch": {
         "type": "object",

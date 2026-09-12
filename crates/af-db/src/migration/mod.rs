@@ -144,6 +144,7 @@ mod m20260906_000135_add_announcement_audience_notifications;
 mod m20260907_000136_create_organization_verification;
 mod m20260907_000137_add_organization_verification_material_content;
 mod m20260907_000138_create_organization_provisioning_materials;
+mod m20260912_000139_add_frontend_template;
 mod schema;
 
 #[cfg(test)]
@@ -333,6 +334,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260907_000136_create_organization_verification::Migration),
             Box::new(m20260907_000137_add_organization_verification_material_content::Migration),
             Box::new(m20260907_000138_create_organization_provisioning_materials::Migration),
+            Box::new(m20260912_000139_add_frontend_template::Migration),
         ]
     }
 }

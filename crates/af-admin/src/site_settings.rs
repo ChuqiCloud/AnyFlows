@@ -420,8 +420,18 @@ impl SiteSettingsService for DatabaseSiteSettingsService {
     ) -> AdminSiteSettingsUpdateFuture<'_> {
         Box::pin(async move {
             require_admin(principal)?;
+            // 站点品牌表单不管理模板选择；读取并带回当前值，避免保存品牌时
+            // 意外清空管理员刚选择的外部模板。
+            let existing = self
+                .repository
+                .settings()
+                .await
+                .map_err(map_repository_error)?;
+            let record = command
+                .into_record()?
+                .with_frontend_template_id(existing.frontend_template_id().map(str::to_owned));
             self.repository
-                .update(command.into_record()?)
+                .update(record)
                 .await
                 .map(|record| AdminSiteSettings::from_record(&record))
                 .map_err(map_repository_error)
