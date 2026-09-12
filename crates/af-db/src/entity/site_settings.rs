@@ -17,6 +17,8 @@ pub struct Model {
     pub brand_tagline: Option<String>,
     #[sea_orm(column_type = "String(StringLen::N(500))", nullable)]
     pub brand_description: Option<String>,
+    #[sea_orm(column_type = "String(StringLen::N(128))", nullable)]
+    pub frontend_template_id: Option<String>,
     pub balance_display_mode: i16,
     #[sea_orm(column_type = "String(StringLen::N(64))")]
     pub balance_unit_name: String,

@@ -242,6 +242,7 @@ fn known_field(path: &str) -> Option<&'static str> {
         "server.bind" => "server.bind",
         "server.client_ip_source" => "server.client_ip_source",
         "server.shutdown_timeout_secs" => "server.shutdown_timeout_secs",
+        "server.frontend_template_directory" => "server.frontend_template_directory",
         path if path == "server.cors_allowed_origins"
             || path.starts_with("server.cors_allowed_origins.") =>
         {
@@ -400,6 +401,10 @@ mod tests {
             assert_eq!(config.server().bind().to_string(), "127.0.0.1:8080");
             assert!(config.server().cors_allowed_origins().is_empty());
             assert_eq!(config.server().shutdown_timeout_secs(), 30);
+            assert_eq!(
+                config.server().frontend_template_directory(),
+                Path::new("public/templates")
+            );
             assert_eq!(config.server().client_ip_source(), ClientIpSource::Peer);
             assert!(config.server().trusted_proxy_cidrs().is_empty());
             assert_eq!(config.telemetry().level(), LogLevel::Info);

@@ -17,6 +17,7 @@ const MAX_SITE_NAME_BYTES: usize = 80;
 const MAX_URL_BYTES: usize = 2_048;
 const MAX_BRAND_TAGLINE_BYTES: usize = 160;
 const MAX_BRAND_DESCRIPTION_BYTES: usize = 500;
+const MAX_FRONTEND_TEMPLATE_ID_BYTES: usize = 128;
 const MAX_BALANCE_UNIT_NAME_BYTES: usize = 64;
 const MAX_BALANCE_UNIT_SYMBOL_BYTES: usize = 24;
 const MAX_BALANCE_FRACTION_DIGITS: u8 = 4;
@@ -144,6 +145,7 @@ pub struct SiteSettingsRecord {
     brand_logo_url: Option<String>,
     brand_tagline: Option<String>,
     brand_description: Option<String>,
+    frontend_template_id: Option<String>,
     balance_display: BalanceDisplayPolicyRecord,
     version: i64,
 }
@@ -174,6 +176,12 @@ impl SiteSettingsRecord {
         self.brand_description.as_deref()
     }
 
+    /// 返回当前选中的外部前端模板目录 ID；None 表示使用内嵌前端。
+    #[must_use]
+    pub fn frontend_template_id(&self) -> Option<&str> {
+        self.frontend_template_id.as_deref()
+    }
+
     #[must_use]
     pub const fn balance_display(&self) -> &BalanceDisplayPolicyRecord {
         &self.balance_display
@@ -193,6 +201,7 @@ pub struct SiteSettingsWriteRecord {
     brand_logo_url: Option<String>,
     brand_tagline: Option<String>,
     brand_description: Option<String>,
+    frontend_template_id: Option<String>,
     balance_display: BalanceDisplayPolicyRecord,
     expected_version: i64,
 }
@@ -215,9 +224,17 @@ impl SiteSettingsWriteRecord {
             brand_logo_url,
             brand_tagline,
             brand_description,
+            frontend_template_id: None,
             balance_display,
             expected_version,
         }
+    }
+
+    /// 设置要使用的外部前端模板目录 ID；None 表示恢复内嵌前端。
+    #[must_use]
+    pub fn with_frontend_template_id(mut self, template_id: Option<String>) -> Self {
+        self.frontend_template_id = template_id;
+        self
     }
 
     fn validate(&self) -> Result<(), SiteSettingsRepositoryError> {
@@ -232,6 +249,7 @@ impl SiteSettingsWriteRecord {
                 .is_some_and(|value| !valid_brand_asset_url(value))
             || !valid_optional_single_line(self.brand_tagline.as_deref(), MAX_BRAND_TAGLINE_BYTES)
             || !valid_optional_description(self.brand_description.as_deref())
+            || !valid_frontend_template_id(self.frontend_template_id.as_deref())
             || self.expected_version < 1
         {
             return Err(SiteSettingsRepositoryError::InvalidSettings);
@@ -304,6 +322,25 @@ impl SiteSettingsRepository {
         }
     }
 
+    /// 原子切换当前前端模板，并单调递增站点设置版本。
+    ///
+    /// 该方法只修改模板选择，适合运行时扫描/切换接口，其他站点设置会在同一
+    /// 行锁内完整保留；传入 None 可恢复编译进二进制的内嵌前端。
+    pub async fn set_frontend_template_id(
+        &self,
+        template_id: Option<String>,
+    ) -> Result<SiteSettingsRecord, SiteSettingsRepositoryError> {
+        match timeout(
+            self.operation_timeout,
+            self.set_frontend_template_id_inner(template_id),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(internal_error(SiteSettingsRepositoryError::Timeout)),
+        }
+    }
+
     async fn settings_inner(&self) -> Result<SiteSettingsRecord, SiteSettingsRepositoryError> {
         let Some(model) = site_settings::Entity::find_by_id(SITE_SETTINGS_ID)
             .one(self.pool.connection())
@@ -343,6 +380,7 @@ impl SiteSettingsRepository {
             brand_logo_url: Set(record.brand_logo_url),
             brand_tagline: Set(record.brand_tagline),
             brand_description: Set(record.brand_description),
+            frontend_template_id: Set(record.frontend_template_id),
             balance_display_mode: Set(record.balance_display.mode() as i16),
             balance_unit_name: Set(record.balance_display.unit_name().to_owned()),
             balance_unit_symbol: Set(record.balance_display.unit_symbol().to_owned()),
@@ -351,6 +389,56 @@ impl SiteSettingsRepository {
                 .quota_units_per_display_unit()),
             balance_symbol_position: Set(record.balance_display.symbol_position() as i16),
             balance_fraction_digits: Set(i16::from(record.balance_display.fraction_digits())),
+            version: Set(version),
+            created_at: Set(existing.created_at),
+            updated_at: Set(sea_orm::entity::prelude::TimeDateTimeWithTimeZone::now_utc()),
+        }
+        .update(&transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(|_| query_error("site_settings_write"))?;
+        let saved = record_from_model(saved)?;
+        transaction
+            .commit()
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| query_error("site_settings_commit"))?;
+        Ok(saved)
+    }
+
+    async fn set_frontend_template_id_inner(
+        &self,
+        template_id: Option<String>,
+    ) -> Result<SiteSettingsRecord, SiteSettingsRepositoryError> {
+        if !valid_frontend_template_id(template_id.as_deref()) {
+            return Err(SiteSettingsRepositoryError::InvalidSettings);
+        }
+        let transaction = self
+            .pool
+            .connection()
+            .begin()
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| query_error("site_settings_begin"))?;
+        let existing = lock_settings(&transaction).await?;
+        let version = existing
+            .version
+            .checked_add(1)
+            .ok_or_else(|| internal_error(SiteSettingsRepositoryError::Invariant))?;
+        let saved = site_settings::ActiveModel {
+            id: Set(SITE_SETTINGS_ID),
+            site_name: Set(existing.site_name),
+            public_base_url: Set(existing.public_base_url),
+            brand_logo_url: Set(existing.brand_logo_url),
+            brand_tagline: Set(existing.brand_tagline),
+            brand_description: Set(existing.brand_description),
+            frontend_template_id: Set(template_id),
+            balance_display_mode: Set(existing.balance_display_mode),
+            balance_unit_name: Set(existing.balance_unit_name),
+            balance_unit_symbol: Set(existing.balance_unit_symbol),
+            quota_units_per_display_unit: Set(existing.quota_units_per_display_unit),
+            balance_symbol_position: Set(existing.balance_symbol_position),
+            balance_fraction_digits: Set(existing.balance_fraction_digits),
             version: Set(version),
             created_at: Set(existing.created_at),
             updated_at: Set(sea_orm::entity::prelude::TimeDateTimeWithTimeZone::now_utc()),
@@ -429,6 +517,7 @@ fn record_from_model(
             .is_some_and(|value| !valid_brand_asset_url(value))
         || !valid_optional_single_line(model.brand_tagline.as_deref(), MAX_BRAND_TAGLINE_BYTES)
         || !valid_optional_description(model.brand_description.as_deref())
+        || !valid_frontend_template_id(model.frontend_template_id.as_deref())
     {
         return Err(internal_error(SiteSettingsRepositoryError::Invariant));
     }
@@ -438,6 +527,7 @@ fn record_from_model(
         brand_logo_url: model.brand_logo_url,
         brand_tagline: model.brand_tagline,
         brand_description: model.brand_description,
+        frontend_template_id: model.frontend_template_id,
         balance_display,
         version: model.version,
     })
@@ -504,6 +594,17 @@ fn valid_optional_description(value: Option<&str>) -> bool {
             && !value
                 .chars()
                 .any(|character| character.is_control() && !matches!(character, '\n' | '\r' | '\t'))
+    })
+}
+
+fn valid_frontend_template_id(value: Option<&str>) -> bool {
+    value.is_none_or(|value| {
+        !value.is_empty()
+            && value.len() <= MAX_FRONTEND_TEMPLATE_ID_BYTES
+            && value.trim() == value
+            && value.bytes().all(|byte| {
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'_')
+            })
     })
 }
 

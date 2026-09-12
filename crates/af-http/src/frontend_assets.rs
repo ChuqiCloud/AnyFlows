@@ -38,6 +38,19 @@ impl FrontendAsset {
         }
     }
 
+    /// 从运行时字节创建资源，并预计算稳定的强 ETag。
+    ///
+    /// 运行时加载的模板资源使用这个构造器；传入的字节会被资源自身持有，
+    /// 因此调用方可以在返回后释放原始缓冲区。
+    #[must_use]
+    pub fn from_bytes(content: impl Into<Bytes>) -> Self {
+        let content = content.into();
+        let digest = Sha256::digest(&content);
+        let etag = HeaderValue::from_str(&format!("\"{digest:x}\""))
+            .expect("SHA-256 摘要必须始终满足 ETag 头约束");
+        Self { content, etag }
+    }
+
     fn content(&self) -> Bytes {
         self.content.clone()
     }
