@@ -491,6 +491,25 @@ export type AdminEmailTestRequest = {
     recipient: string;
 };
 export type AdminEmailTlsMode = 'start_tls' | 'tls';
+export type AdminFailedCallLog = {
+    id: number;
+    request_id: string;
+    model: string;
+    protocol: UsageLogProtocol;
+    operation: UsageLogOperation;
+    error_kind: string;
+    error_code: string;
+    error_message: string;
+    user_id: number | null;
+    username: string | null;
+    token_id: number | null;
+    group_id: number | null;
+    organization_id: number | null;
+    organization_team_id: number | null;
+    channel_id: number | null;
+    duration_ms: number;
+    created_at: number;
+};
 export type AdminGroup = {
     id: number;
     name: string;
@@ -1135,25 +1154,6 @@ export type AdminUsageLog = {
     usage_source: AdminUsageLogSource;
     usage_semantics: AdminUsageLogSemantics;
     quota: number;
-    created_at: number;
-};
-export type AdminFailedCallLog = {
-    id: number;
-    request_id: string;
-    model: string;
-    protocol: UsageLogProtocol;
-    operation: UsageLogOperation;
-    error_kind: string;
-    error_code: string;
-    error_message: string;
-    user_id: number | null;
-    username: string | null;
-    token_id: number | null;
-    group_id: number | null;
-    organization_id: number | null;
-    organization_team_id: number | null;
-    channel_id: number | null;
-    duration_ms: number;
     created_at: number;
 };
 export type AdminUsageLogBillingMode = 'per_token' | 'per_call' | 'free';
