@@ -11,31 +11,36 @@ const ORGANIZATION_CREATED_INDEX: &str = "idx_request_outcome_organization_creat
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(request_outcome_logs::Entity)
-                    .add_column(ColumnDef::new(request_outcome_logs::Column::UserId).big_integer())
-                    .add_column(ColumnDef::new(request_outcome_logs::Column::TokenId).big_integer())
-                    .add_column(ColumnDef::new(request_outcome_logs::Column::GroupId).big_integer())
-                    .add_column(
-                        ColumnDef::new(request_outcome_logs::Column::OrganizationId).big_integer(),
-                    )
-                    .add_column(
-                        ColumnDef::new(request_outcome_logs::Column::OrganizationTeamId)
-                            .big_integer(),
-                    )
-                    .add_column(
-                        ColumnDef::new(request_outcome_logs::Column::PublicErrorCode)
-                            .string_len(64),
-                    )
-                    .add_column(
-                        ColumnDef::new(request_outcome_logs::Column::PublicErrorMessage)
-                            .string_len(255),
-                    )
-                    .to_owned(),
-            )
-            .await?;
+        // SQLite accepts only one column change per ALTER TABLE statement.
+        for column in [
+            request_outcome_logs::Column::UserId,
+            request_outcome_logs::Column::TokenId,
+            request_outcome_logs::Column::GroupId,
+            request_outcome_logs::Column::OrganizationId,
+            request_outcome_logs::Column::OrganizationTeamId,
+        ] {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(request_outcome_logs::Entity)
+                        .add_column(ColumnDef::new(column).big_integer())
+                        .to_owned(),
+                )
+                .await?;
+        }
+        for (column, length) in [
+            (request_outcome_logs::Column::PublicErrorCode, 64),
+            (request_outcome_logs::Column::PublicErrorMessage, 255),
+        ] {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(request_outcome_logs::Entity)
+                        .add_column(ColumnDef::new(column).string_len(length))
+                        .to_owned(),
+                )
+                .await?;
+        }
         manager
             .create_index(
                 Index::create()
@@ -77,19 +82,24 @@ impl MigrationTrait for Migration {
                     .to_owned(),
             )
             .await?;
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(request_outcome_logs::Entity)
-                    .drop_column(request_outcome_logs::Column::PublicErrorMessage)
-                    .drop_column(request_outcome_logs::Column::PublicErrorCode)
-                    .drop_column(request_outcome_logs::Column::OrganizationTeamId)
-                    .drop_column(request_outcome_logs::Column::OrganizationId)
-                    .drop_column(request_outcome_logs::Column::GroupId)
-                    .drop_column(request_outcome_logs::Column::TokenId)
-                    .drop_column(request_outcome_logs::Column::UserId)
-                    .to_owned(),
-            )
-            .await
+        for column in [
+            request_outcome_logs::Column::PublicErrorMessage,
+            request_outcome_logs::Column::PublicErrorCode,
+            request_outcome_logs::Column::OrganizationTeamId,
+            request_outcome_logs::Column::OrganizationId,
+            request_outcome_logs::Column::GroupId,
+            request_outcome_logs::Column::TokenId,
+            request_outcome_logs::Column::UserId,
+        ] {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(request_outcome_logs::Entity)
+                        .drop_column(column)
+                        .to_owned(),
+                )
+                .await?;
+        }
+        Ok(())
     }
 }

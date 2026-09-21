@@ -1101,6 +1101,42 @@ mod tests {
     use super::*;
 
     #[test]
+    fn user_failed_calls_do_not_reuse_internal_error_text() {
+        let internal = AdminFailedCallLog {
+            id: 1,
+            request_id: "request-safe-view".to_owned(),
+            model: "test-model".to_owned(),
+            protocol: UsageLogProtocol::OpenAiChat,
+            operation: UsageLogOperation::Chat,
+            error_kind: RequestFailureKind::UpstreamAuthentication,
+            error_code: "upstream_authentication".to_owned(),
+            error_message: "private upstream credential detail".to_owned(),
+            user_id: Some(UserId::new(1).unwrap()),
+            username: Some("owner".to_owned()),
+            token_id: Some(TokenId::new(2).unwrap()),
+            group_id: Some(GroupId::new(3).unwrap()),
+            organization_id: Some(OrganizationId::new(4).unwrap()),
+            organization_team_id: Some(OrganizationTeamId::new(5).unwrap()),
+            channel_id: Some(ChannelId::new(6).unwrap()),
+            duration_ms: 17,
+            created_at: 1,
+        };
+        let public = UserFailedCallLog::from_admin(&internal);
+        assert_eq!(public.request_id(), internal.request_id());
+        assert_eq!(
+            public.error_code(),
+            RequestFailureKind::UpstreamAuthentication.public_error_code()
+        );
+        assert_eq!(
+            public.error_message(),
+            RequestFailureKind::UpstreamAuthentication.public_error_message()
+        );
+        assert!(!public.error_code().contains("upstream"));
+        assert!(!public.error_message().contains("upstream"));
+        assert!(!public.error_message().contains("credential"));
+    }
+
+    #[test]
     fn pagination_and_role_boundaries_are_closed() {
         assert_eq!(AdminUsageLogListQuery::default().limit(), 50);
         assert_eq!(

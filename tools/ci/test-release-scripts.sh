@@ -56,9 +56,7 @@ grep -q "anyflows-${tag}-linux-amd64.tar.gz" \
   "$temporary_directory/release/RELEASE_NOTES.md"
 grep -q '测试变更摘要。' "$temporary_directory/release/RELEASE_NOTES.md"
 
-# Keep tar from receiving SIGPIPE when grep finds a match early. With
-# pipefail enabled, the direct tar | grep -q pipelines below can otherwise
-# fail the regression test with exit code 141.
+# Read the full listing before matching to avoid SIGPIPE under pipefail.
 archive_listing="$temporary_directory/archive.list"
 tar -tzf "$temporary_directory/release/anyflows-${tag}-linux-amd64.tar.gz" \
   >"$archive_listing"
