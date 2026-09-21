@@ -55,15 +55,17 @@ grep -q "anyflows-${tag}-linux-amd64.tar.gz" \
 ! grep -q "anyflows-${tag}-linux-arm64.tar.gz" \
   "$temporary_directory/release/RELEASE_NOTES.md"
 grep -q '测试变更摘要。' "$temporary_directory/release/RELEASE_NOTES.md"
+
+# Keep tar from receiving SIGPIPE when grep finds a match early. With
+# pipefail enabled, the direct tar | grep -q pipelines below can otherwise
+# fail the regression test with exit code 141.
+archive_listing="$temporary_directory/archive.list"
 tar -tzf "$temporary_directory/release/anyflows-${tag}-linux-amd64.tar.gz" \
-  | grep -q "/anyflows$"
-tar -tzf "$temporary_directory/release/anyflows-${tag}-linux-amd64.tar.gz" \
-  | grep -q "/install.sh$"
-tar -tzf "$temporary_directory/release/anyflows-${tag}-linux-amd64.tar.gz" \
-  | grep -q "/anyflows.service$"
-tar -tzf "$temporary_directory/release/anyflows-${tag}-linux-amd64.tar.gz" \
-  | grep -q "/CHANGELOG.md$"
-tar -tzf "$temporary_directory/release/anyflows-${tag}-linux-amd64.tar.gz" \
-  | grep -q "/anyflows.conf$"
+  >"$archive_listing"
+grep -q "/anyflows$" "$archive_listing"
+grep -q "/install.sh$" "$archive_listing"
+grep -q "/anyflows.service$" "$archive_listing"
+grep -q "/CHANGELOG.md$" "$archive_listing"
+grep -q "/anyflows.conf$" "$archive_listing"
 
 printf '发布脚本回归通过。\n'
