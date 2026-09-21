@@ -16084,7 +16084,7 @@
         ],
         "responses": {
           "200": {
-            "description": "从新到旧排列的本人已结算调用",
+            "description": "从新到旧排列的本人成功和失败调用",
             "content": {
               "application/json": {
                 "schema": {
