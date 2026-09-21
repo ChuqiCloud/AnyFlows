@@ -4277,6 +4277,32 @@ impl ActiveModelBehavior for request_outcome_logs::ActiveModel {
         let model = self.model.try_as_ref().map(String::as_str);
         let outcome = self.outcome.try_as_ref().copied();
         let error_kind = self.error_kind.try_as_ref().and_then(Option::as_deref);
+        let user_id = self.user_id.try_as_ref().copied().flatten();
+        let token_id = self.token_id.try_as_ref().copied().flatten();
+        let group_id = self.group_id.try_as_ref().copied().flatten();
+        let organization_id = self.organization_id.try_as_ref().copied().flatten();
+        let organization_team_id = self.organization_team_id.try_as_ref().copied().flatten();
+        let public_error_code = self
+            .public_error_code
+            .try_as_ref()
+            .and_then(Option::as_deref);
+        let public_error_message = self
+            .public_error_message
+            .try_as_ref()
+            .and_then(Option::as_deref);
+        let subject_present = [
+            user_id,
+            token_id,
+            group_id,
+            organization_id,
+            organization_team_id,
+        ]
+        .into_iter()
+        .any(|value| value.is_some());
+        let subject_complete = user_id.is_some()
+            && token_id.is_some()
+            && group_id.is_some()
+            && (organization_team_id.is_none() || organization_id.is_some());
         if request_id.is_none_or(|value| !valid_request_outcome_text(value, 128))
             || protocol.is_none_or(|value| value.parse::<af_domain::Protocol>().is_err())
             || operation.is_none_or(|value| value.parse::<af_domain::Operation>().is_err())
@@ -4285,6 +4311,26 @@ impl ActiveModelBehavior for request_outcome_logs::ActiveModel {
             || self.created_at.try_as_ref().is_none()
             || !matches!((outcome, error_kind), (Some(1), None) | (Some(2), Some(_)))
             || error_kind.is_some_and(|value| value.parse::<crate::RequestFailureKind>().is_err())
+            || subject_present && !subject_complete
+            || [
+                user_id,
+                token_id,
+                group_id,
+                organization_id,
+                organization_team_id,
+            ]
+            .into_iter()
+            .flatten()
+            .any(|value| value <= 0)
+            || (organization_id.is_none() && organization_team_id.is_some())
+            || (outcome == Some(1)
+                && (public_error_code.is_some() || public_error_message.is_some()))
+            || (outcome == Some(2)
+                && (public_error_code.is_some() != public_error_message.is_some()
+                    || public_error_code
+                        .is_some_and(|value| !valid_request_outcome_text(value, 64))
+                    || public_error_message
+                        .is_some_and(|value| !valid_request_outcome_text(value, 255))))
         {
             return Err(DbErr::Custom("请求终态事实字段无效".to_owned()));
         }

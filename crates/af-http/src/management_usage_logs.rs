@@ -1,4 +1,7 @@
-use af_admin::{AdminUsageLog, AdminUsageLogListQuery, AdminUsageLogPage, AdminUsageLogReadError};
+use af_admin::{
+    AdminFailedCallLog, AdminFailedCallLogPage, AdminUsageLog, AdminUsageLogListQuery,
+    AdminUsageLogPage, AdminUsageLogReadError, UserFailedCallLog, UserFailedCallLogPage,
+};
 use axum::{
     Json,
     extract::{Extension, RawQuery, State},
@@ -96,8 +99,52 @@ pub(crate) struct AdminUsageLogResponse {
 pub(crate) struct AdminUsageLogListResponse {
     #[schema(max_items = 100)]
     logs: Vec<AdminUsageLogResponse>,
+    #[schema(max_items = 100)]
+    failed_logs: Vec<AdminFailedCallLogResponse>,
     #[schema(minimum = 1, required = true)]
     next_cursor: Option<i64>,
+    #[schema(minimum = 1, required = true)]
+    failed_next_cursor: Option<i64>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminFailedCallLog)]
+pub(crate) struct AdminFailedCallLogResponse {
+    #[schema(minimum = 1)]
+    id: i64,
+    #[schema(min_length = 1, max_length = 128)]
+    request_id: String,
+    #[schema(min_length = 1, max_length = 255)]
+    model: String,
+    #[schema(value_type = crate::openapi::schema::UsageLogProtocolSchema)]
+    protocol: af_admin::UsageLogProtocol,
+    #[schema(value_type = crate::openapi::schema::UsageLogOperationSchema)]
+    operation: af_admin::UsageLogOperation,
+    /// 对管理员返回的内部失败分类；普通用户响应不包含该字段。
+    error_kind: String,
+    #[schema(min_length = 1, max_length = 64)]
+    error_code: String,
+    #[schema(min_length = 1, max_length = 255)]
+    error_message: String,
+    #[schema(minimum = 1, required = true)]
+    user_id: Option<i64>,
+    #[schema(min_length = 1, max_length = 64, required = true)]
+    username: Option<String>,
+    #[schema(minimum = 1, required = true)]
+    token_id: Option<i64>,
+    #[schema(minimum = 1, required = true)]
+    group_id: Option<i64>,
+    #[schema(minimum = 1, required = true)]
+    organization_id: Option<i64>,
+    #[schema(minimum = 1, required = true)]
+    organization_team_id: Option<i64>,
+    #[schema(minimum = 1, required = true)]
+    channel_id: Option<i64>,
+    #[schema(minimum = 0)]
+    duration_ms: i64,
+    #[schema(minimum = 0)]
+    created_at: i64,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -151,11 +198,39 @@ pub(crate) struct UserUsageLogResponse {
 pub(crate) struct UserUsageLogListResponse {
     #[schema(max_items = 100)]
     logs: Vec<UserUsageLogResponse>,
+    #[schema(max_items = 100)]
+    failed_logs: Vec<UserFailedCallLogResponse>,
     #[schema(minimum = 1, required = true)]
     next_cursor: Option<i64>,
+    #[schema(minimum = 1, required = true)]
+    failed_next_cursor: Option<i64>,
 }
 
-/// 返回管理员可见的最新已确认用量日志。
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = UserFailedCallLog)]
+pub(crate) struct UserFailedCallLogResponse {
+    #[schema(minimum = 1)]
+    id: i64,
+    #[schema(min_length = 1, max_length = 128)]
+    request_id: String,
+    #[schema(min_length = 1, max_length = 255)]
+    model: String,
+    #[schema(value_type = crate::openapi::schema::UsageLogProtocolSchema)]
+    protocol: af_admin::UsageLogProtocol,
+    #[schema(value_type = crate::openapi::schema::UsageLogOperationSchema)]
+    operation: af_admin::UsageLogOperation,
+    #[schema(min_length = 1, max_length = 64)]
+    error_code: String,
+    #[schema(min_length = 1, max_length = 255)]
+    error_message: String,
+    #[schema(minimum = 0)]
+    duration_ms: i64,
+    #[schema(minimum = 0)]
+    created_at: i64,
+}
+
+/// 返回管理员可见的成功计费日志和失败调用事实。
 pub(crate) async fn list_admin_usage_logs(
     State(state): State<HttpState>,
     RawQuery(raw_query): RawQuery,
@@ -170,10 +245,17 @@ pub(crate) async fn list_admin_usage_logs(
         .list(authentication.principal(), query)
         .await
         .map_err(map_read_error)?;
-    Ok(no_store_json(AdminUsageLogListResponse::from_page(page)))
+    let failed_page = reader
+        .list_failed(authentication.principal(), query)
+        .await
+        .map_err(map_read_error)?;
+    Ok(no_store_json(AdminUsageLogListResponse::from_pages(
+        page,
+        failed_page,
+    )))
 }
 
-/// 返回当前会话用户自己的最新已结算调用日志。
+/// 返回当前会话用户自己的成功计费日志和失败调用事实。
 pub(crate) async fn list_user_usage_logs(
     State(state): State<HttpState>,
     RawQuery(raw_query): RawQuery,
@@ -188,18 +270,55 @@ pub(crate) async fn list_user_usage_logs(
         .list_own(authentication.principal(), query)
         .await
         .map_err(map_read_error)?;
-    Ok(no_store_json(UserUsageLogListResponse::from_page(page)))
+    let failed_page = reader
+        .list_own_failed(authentication.principal(), query)
+        .await
+        .map_err(map_read_error)?;
+    Ok(no_store_json(UserUsageLogListResponse::from_pages(
+        page,
+        failed_page,
+    )))
 }
 
 impl AdminUsageLogListResponse {
-    fn from_page(page: AdminUsageLogPage) -> Self {
+    fn from_pages(page: AdminUsageLogPage, failed_page: AdminFailedCallLogPage) -> Self {
+        let (failed_logs, failed_next_cursor) = failed_page.into_parts();
         Self {
             logs: page
                 .logs()
                 .iter()
                 .map(AdminUsageLogResponse::from_log)
                 .collect(),
+            failed_logs: failed_logs
+                .iter()
+                .map(AdminFailedCallLogResponse::from_log)
+                .collect(),
             next_cursor: page.next_cursor(),
+            failed_next_cursor,
+        }
+    }
+}
+
+impl AdminFailedCallLogResponse {
+    pub(crate) fn from_log(log: &AdminFailedCallLog) -> Self {
+        Self {
+            id: log.id(),
+            request_id: log.request_id().to_owned(),
+            model: log.model().to_owned(),
+            protocol: log.protocol(),
+            operation: log.operation(),
+            error_kind: log.error_kind().as_str().to_owned(),
+            error_code: log.error_code().to_owned(),
+            error_message: log.error_message().to_owned(),
+            user_id: log.user_id().map(|value| value.get()),
+            username: log.username().map(str::to_owned),
+            token_id: log.token_id().map(|value| value.get()),
+            group_id: log.group_id().map(|value| value.get()),
+            organization_id: log.organization_id().map(|value| value.get()),
+            organization_team_id: log.organization_team_id().map(|value| value.get()),
+            channel_id: log.channel_id().map(|value| value.get()),
+            duration_ms: log.duration_ms(),
+            created_at: log.created_at(),
         }
     }
 }
@@ -246,14 +365,37 @@ impl AdminUsageLogResponse {
 }
 
 impl UserUsageLogListResponse {
-    fn from_page(page: AdminUsageLogPage) -> Self {
+    fn from_pages(page: AdminUsageLogPage, failed_page: AdminFailedCallLogPage) -> Self {
+        let failed_page = UserFailedCallLogPage::from_admin_page(failed_page);
         Self {
             logs: page
                 .logs()
                 .iter()
                 .map(UserUsageLogResponse::from_log)
                 .collect(),
+            failed_logs: failed_page
+                .logs()
+                .iter()
+                .map(UserFailedCallLogResponse::from_log)
+                .collect(),
             next_cursor: page.next_cursor(),
+            failed_next_cursor: failed_page.next_cursor(),
+        }
+    }
+}
+
+impl UserFailedCallLogResponse {
+    fn from_log(log: &UserFailedCallLog) -> Self {
+        Self {
+            id: log.id(),
+            request_id: log.request_id().to_owned(),
+            model: log.model().to_owned(),
+            protocol: log.protocol(),
+            operation: log.operation(),
+            error_code: log.error_code().to_owned(),
+            error_message: log.error_message().to_owned(),
+            duration_ms: log.duration_ms(),
+            created_at: log.created_at(),
         }
     }
 }
@@ -295,8 +437,10 @@ fn parse_list_query(raw_query: Option<&str>) -> Result<AdminUsageLogListQuery, M
     }
     validate_percent_encoding(raw_query)?;
     let mut seen_before = false;
+    let mut seen_failed_before = false;
     let mut seen_limit = false;
     let mut before = None;
+    let mut failed_before = None;
     let mut limit = None;
     for (key, value) in url::form_urlencoded::parse(raw_query.as_bytes()) {
         if key.contains('\u{fffd}') || value.contains('\u{fffd}') {
@@ -310,6 +454,13 @@ fn parse_list_query(raw_query: Option<&str>) -> Result<AdminUsageLogListQuery, M
                 seen_before = true;
                 before = Some(parse_positive_i64(&value)?);
             }
+            "failed_before" => {
+                if seen_failed_before {
+                    return Err(ManagementError::InvalidRequest);
+                }
+                seen_failed_before = true;
+                failed_before = Some(parse_positive_i64(&value)?);
+            }
             "limit" => {
                 if seen_limit {
                     return Err(ManagementError::InvalidRequest);
@@ -320,8 +471,9 @@ fn parse_list_query(raw_query: Option<&str>) -> Result<AdminUsageLogListQuery, M
             _ => return Err(ManagementError::InvalidRequest),
         }
     }
-    AdminUsageLogListQuery::new(
+    AdminUsageLogListQuery::new_with_failed_before(
         before,
+        failed_before,
         limit.unwrap_or(af_admin::DEFAULT_ADMIN_USAGE_LOG_PAGE_SIZE),
     )
     .map_err(map_read_error)

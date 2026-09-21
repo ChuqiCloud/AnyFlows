@@ -5,7 +5,7 @@ use utoipa::OpenApi;
 
 use crate::{
     management_error::ManagementErrorBody,
-    management_usage_logs::AdminUsageLogResponse,
+    management_usage_logs::{AdminFailedCallLogResponse, AdminUsageLogResponse},
     organization_activity::{
         OrganizationAuditLogListResponse, OrganizationAuditLogResponse,
         OrganizationAuditOutcomeResponse, OrganizationUsageLogListResponse,
@@ -23,6 +23,7 @@ use crate::{
         ("organization_id" = i64, Path, minimum = 1, description = "企业内部标识"),
         ("scope" = Option<String>, Query, description = "读取范围：organization、self 或 summary；默认 self"),
         ("before" = Option<i64>, Query, minimum = 1, description = "上一页末尾日志标识"),
+        ("failed_before" = Option<i64>, Query, minimum = 1, description = "失败日志上一页末尾标识"),
         ("limit" = Option<usize>, Query, minimum = 1, maximum = 100, description = "返回数量")
     ),
     responses(
@@ -74,6 +75,7 @@ fn list_organization_audit_logs() {}
         ("organization_id" = i64, Path, minimum = 1, description = "目标企业内部标识"),
         ("x-anyflows-platform-reason" = String, Header, min_length = 1, max_length = 255, description = "跨企业访问理由"),
         ("before" = Option<i64>, Query, minimum = 1, description = "上一页末尾日志标识"),
+        ("failed_before" = Option<i64>, Query, minimum = 1, description = "失败日志上一页末尾标识"),
         ("limit" = Option<usize>, Query, minimum = 1, maximum = 100, description = "返回数量")
     ),
     responses(
@@ -126,6 +128,7 @@ fn list_platform_organization_audit_logs() {}
     ),
     components(schemas(
         AdminUsageLogResponse,
+        AdminFailedCallLogResponse,
         OrganizationUsageLogSummaryResponse,
         OrganizationUsageLogListResponse,
         OrganizationAuditOutcomeResponse,

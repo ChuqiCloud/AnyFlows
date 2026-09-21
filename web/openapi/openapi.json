@@ -15957,6 +15957,17 @@
             }
           },
           {
+            "name": "failed_before",
+            "in": "query",
+            "description": "失败日志上一页末尾的日志 ID",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "description": "每页数量，默认 50",
@@ -16040,6 +16051,17 @@
             "name": "before",
             "in": "query",
             "description": "上一页末尾的日志 ID",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "failed_before",
+            "in": "query",
+            "description": "失败日志上一页末尾的日志 ID",
             "required": false,
             "schema": {
               "type": "integer",
@@ -25206,6 +25228,17 @@
             }
           },
           {
+            "name": "failed_before",
+            "in": "query",
+            "description": "失败日志上一页末尾标识",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "description": "返回数量",
@@ -25471,6 +25504,17 @@
             "name": "before",
             "in": "query",
             "description": "上一页末尾日志标识",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "failed_before",
+            "in": "query",
+            "description": "失败日志上一页末尾标识",
             "required": false,
             "schema": {
               "type": "integer",
@@ -36734,6 +36778,131 @@
         },
         "additionalProperties": false
       },
+      "AdminFailedCallLog": {
+        "type": "object",
+        "required": [
+          "id",
+          "request_id",
+          "model",
+          "protocol",
+          "operation",
+          "error_kind",
+          "error_code",
+          "error_message",
+          "user_id",
+          "username",
+          "token_id",
+          "group_id",
+          "organization_id",
+          "organization_team_id",
+          "channel_id",
+          "duration_ms",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "request_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "protocol": {
+            "$ref": "#/components/schemas/UsageLogProtocol"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/UsageLogOperation"
+          },
+          "error_kind": {
+            "type": "string"
+          },
+          "error_code": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "error_message": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "user_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "token_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "group_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "organization_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "organization_team_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "channel_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "duration_ms": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
       "AdminUsageLogBillingMode": {
         "type": "string",
         "enum": [
@@ -36746,6 +36915,8 @@
         "type": "object",
         "required": [
           "logs",
+          "failed_logs",
+          "failed_next_cursor",
           "next_cursor"
         ],
         "properties": {
@@ -36756,7 +36927,22 @@
             },
             "maxItems": 100
           },
+          "failed_logs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminFailedCallLog"
+            },
+            "maxItems": 100
+          },
           "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "failed_next_cursor": {
             "type": [
               "integer",
               "null"
@@ -44195,6 +44381,8 @@
           "scope",
           "logs",
           "summaries",
+          "failed_logs",
+          "failed_next_cursor",
           "next_cursor"
         ],
         "properties": {
@@ -44215,7 +44403,22 @@
             },
             "maxItems": 100
           },
+          "failed_logs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminFailedCallLog"
+            },
+            "maxItems": 100
+          },
           "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "failed_next_cursor": {
             "type": [
               "integer",
               "null"
@@ -48566,10 +48769,70 @@
         },
         "additionalProperties": false
       },
+      "UserFailedCallLog": {
+        "type": "object",
+        "required": [
+          "id",
+          "request_id",
+          "model",
+          "protocol",
+          "operation",
+          "error_code",
+          "error_message",
+          "duration_ms",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "request_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "protocol": {
+            "$ref": "#/components/schemas/UsageLogProtocol"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/UsageLogOperation"
+          },
+          "error_code": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "error_message": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "duration_ms": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
       "UserUsageLogListResponse": {
         "type": "object",
         "required": [
           "logs",
+          "failed_logs",
+          "failed_next_cursor",
           "next_cursor"
         ],
         "properties": {
@@ -48580,7 +48843,22 @@
             },
             "maxItems": 100
           },
+          "failed_logs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserFailedCallLog"
+            },
+            "maxItems": 100
+          },
           "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "failed_next_cursor": {
             "type": [
               "integer",
               "null"

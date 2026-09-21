@@ -101,11 +101,12 @@ impl BillingResponsesCompactService {
         request: CanonicalResponsesCompactionRequest,
         request_id: &str,
     ) -> Result<ResponsesCompactionResponse, AfError> {
-        let outcome = crate::RequestOutcomeContext::new(
+        let outcome = crate::RequestOutcomeContext::for_principal(
             request_id,
             af_domain::Protocol::OpenAiResponses,
             af_domain::Operation::ResponsesCompact,
             request.model(),
+            *principal,
         );
         outcome
             .finish(

@@ -2283,7 +2283,27 @@
     "listLabel": "已结算调用列表",
     "status": {
       "settled": "已结算",
-      "settledOnly": "仅已结算"
+      "settledOnly": "仅已结算",
+      "settledAndFailed": "已结算 + 失败"
+    },
+    "failed": {
+      "title": "失败调用",
+      "badge": "失败",
+      "status": "失败",
+      "listLabel": "失败调用列表",
+      "emptyTitle": "还没有失败调用",
+      "emptyBody": "网关记录安全错误摘要后，失败调用会显示在这里。",
+      "emptyFilteredTitle": "没有符合筛选条件的失败调用",
+      "emptyFilteredBody": "调整模型或协议筛选后查看其他失败调用。",
+      "columns": {
+        "time": "时间 / 状态",
+        "call": "模型调用",
+        "error": "错误",
+        "duration": "耗时",
+        "internal": "内部信息",
+        "request": "请求 ID",
+        "channel": "渠道"
+      }
     },
     "summary": {
       "label": "当前筛选结果概览",

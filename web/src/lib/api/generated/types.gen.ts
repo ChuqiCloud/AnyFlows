@@ -1137,10 +1137,31 @@ export type AdminUsageLog = {
     quota: number;
     created_at: number;
 };
+export type AdminFailedCallLog = {
+    id: number;
+    request_id: string;
+    model: string;
+    protocol: UsageLogProtocol;
+    operation: UsageLogOperation;
+    error_kind: string;
+    error_code: string;
+    error_message: string;
+    user_id: number | null;
+    username: string | null;
+    token_id: number | null;
+    group_id: number | null;
+    organization_id: number | null;
+    organization_team_id: number | null;
+    channel_id: number | null;
+    duration_ms: number;
+    created_at: number;
+};
 export type AdminUsageLogBillingMode = 'per_token' | 'per_call' | 'free';
 export type AdminUsageLogListResponse = {
     logs: Array<AdminUsageLog>;
+    failed_logs: Array<AdminFailedCallLog>;
     next_cursor: number | null;
+    failed_next_cursor: number | null;
 };
 export type AdminUsageLogSemantics = 'inclusive' | 'cache_separated';
 export type AdminUsageLogSource = 'upstream' | 'estimated';
@@ -2486,7 +2507,9 @@ export type OrganizationUsageLogListResponse = {
     scope: string;
     logs: Array<AdminUsageLog>;
     summaries: Array<OrganizationUsageLogSummaryResponse>;
+    failed_logs: Array<AdminFailedCallLog>;
     next_cursor: number | null;
+    failed_next_cursor: number | null;
 };
 export type OrganizationUsageLogSummaryResponse = {
     model: string | null;
@@ -3274,9 +3297,22 @@ export type UserUsageLog = {
     quota: number;
     created_at: number;
 };
+export type UserFailedCallLog = {
+    id: number;
+    request_id: string;
+    model: string;
+    protocol: UsageLogProtocol;
+    operation: UsageLogOperation;
+    error_code: string;
+    error_message: string;
+    duration_ms: number;
+    created_at: number;
+};
 export type UserUsageLogListResponse = {
     logs: Array<UserUsageLog>;
+    failed_logs: Array<UserFailedCallLog>;
     next_cursor: number | null;
+    failed_next_cursor: number | null;
 };
 export type UserWalletEntry = {
     id: number;
@@ -7168,6 +7204,7 @@ export type ListAdminUsageLogsData = {
     path?: never;
     query?: {
         before?: number;
+        failed_before?: number;
         limit?: number;
     };
     url: '/api/admin/usage-logs';
@@ -7188,6 +7225,7 @@ export type ListUserUsageLogsData = {
     path?: never;
     query?: {
         before?: number;
+        failed_before?: number;
         limit?: number;
     };
     url: '/api/account/usage-logs';
@@ -9151,6 +9189,7 @@ export type ListOrganizationUsageLogsData = {
     query?: {
         scope?: string;
         before?: number;
+        failed_before?: number;
         limit?: number;
     };
     url: '/api/organizations/{organization_id}/usage-logs';
@@ -9204,6 +9243,7 @@ export type ListPlatformOrganizationUsageLogsData = {
     };
     query?: {
         before?: number;
+        failed_before?: number;
         limit?: number;
     };
     url: '/api/platform/organizations/{organization_id}/usage-logs';

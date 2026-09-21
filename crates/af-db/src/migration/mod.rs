@@ -145,6 +145,7 @@ mod m20260907_000136_create_organization_verification;
 mod m20260907_000137_add_organization_verification_material_content;
 mod m20260907_000138_create_organization_provisioning_materials;
 mod m20260912_000139_add_frontend_template;
+mod m20260921_000140_extend_request_outcomes_for_call_logs;
 mod schema;
 
 #[cfg(test)]
@@ -335,6 +336,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260907_000137_add_organization_verification_material_content::Migration),
             Box::new(m20260907_000138_create_organization_provisioning_materials::Migration),
             Box::new(m20260912_000139_add_frontend_template::Migration),
+            Box::new(m20260921_000140_extend_request_outcomes_for_call_logs::Migration),
         ]
     }
 }
