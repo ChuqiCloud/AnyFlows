@@ -32882,7 +32882,8 @@
             "$ref": "#/components/schemas/UsageLogOperation"
           },
           "error_kind": {
-            "type": "string"
+            "type": "string",
+            "description": "对管理员返回的内部失败分类；普通用户响应不包含该字段。"
           },
           "error_code": {
             "type": "string",
