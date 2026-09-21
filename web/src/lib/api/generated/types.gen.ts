@@ -491,6 +491,25 @@ export type AdminEmailTestRequest = {
     recipient: string;
 };
 export type AdminEmailTlsMode = 'start_tls' | 'tls';
+export type AdminFailedCallLog = {
+    id: number;
+    request_id: string;
+    model: string;
+    protocol: UsageLogProtocol;
+    operation: UsageLogOperation;
+    error_kind: string;
+    error_code: string;
+    error_message: string;
+    user_id: number | null;
+    username: string | null;
+    token_id: number | null;
+    group_id: number | null;
+    organization_id: number | null;
+    organization_team_id: number | null;
+    channel_id: number | null;
+    duration_ms: number;
+    created_at: number;
+};
 export type AdminGroup = {
     id: number;
     name: string;
@@ -1140,7 +1159,9 @@ export type AdminUsageLog = {
 export type AdminUsageLogBillingMode = 'per_token' | 'per_call' | 'free';
 export type AdminUsageLogListResponse = {
     logs: Array<AdminUsageLog>;
+    failed_logs: Array<AdminFailedCallLog>;
     next_cursor: number | null;
+    failed_next_cursor: number | null;
 };
 export type AdminUsageLogSemantics = 'inclusive' | 'cache_separated';
 export type AdminUsageLogSource = 'upstream' | 'estimated';
@@ -2486,7 +2507,9 @@ export type OrganizationUsageLogListResponse = {
     scope: string;
     logs: Array<AdminUsageLog>;
     summaries: Array<OrganizationUsageLogSummaryResponse>;
+    failed_logs: Array<AdminFailedCallLog>;
     next_cursor: number | null;
+    failed_next_cursor: number | null;
 };
 export type OrganizationUsageLogSummaryResponse = {
     model: string | null;
@@ -3039,6 +3062,17 @@ export type SubscriptionPlanStatus = 'active' | 'disabled';
 export type UsageLogOperation = 'chat' | 'responses' | 'responses_compact' | 'embedding' | 'image' | 'audio' | 'rerank' | 'video' | 'count_tokens';
 export type UsageLogProtocol = 'open_ai_chat' | 'open_ai_responses' | 'open_ai_embeddings' | 'open_ai_images' | 'open_ai_audio' | 'open_ai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
 export type UsageLogReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'extra_high' | 'max';
+export type UserFailedCallLog = {
+    id: number;
+    request_id: string;
+    model: string;
+    protocol: UsageLogProtocol;
+    operation: UsageLogOperation;
+    error_code: string;
+    error_message: string;
+    duration_ms: number;
+    created_at: number;
+};
 export type UserInvitationRebateResponse = {
     quota_amount: number;
     credited_at: number;
@@ -3276,7 +3310,9 @@ export type UserUsageLog = {
 };
 export type UserUsageLogListResponse = {
     logs: Array<UserUsageLog>;
+    failed_logs: Array<UserFailedCallLog>;
     next_cursor: number | null;
+    failed_next_cursor: number | null;
 };
 export type UserWalletEntry = {
     id: number;
@@ -7168,6 +7204,7 @@ export type ListAdminUsageLogsData = {
     path?: never;
     query?: {
         before?: number;
+        failed_before?: number;
         limit?: number;
     };
     url: '/api/admin/usage-logs';
@@ -7188,6 +7225,7 @@ export type ListUserUsageLogsData = {
     path?: never;
     query?: {
         before?: number;
+        failed_before?: number;
         limit?: number;
     };
     url: '/api/account/usage-logs';
@@ -9151,6 +9189,7 @@ export type ListOrganizationUsageLogsData = {
     query?: {
         scope?: string;
         before?: number;
+        failed_before?: number;
         limit?: number;
     };
     url: '/api/organizations/{organization_id}/usage-logs';
@@ -9204,6 +9243,7 @@ export type ListPlatformOrganizationUsageLogsData = {
     };
     query?: {
         before?: number;
+        failed_before?: number;
         limit?: number;
     };
     url: '/api/platform/organizations/{organization_id}/usage-logs';

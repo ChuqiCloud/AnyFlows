@@ -11,6 +11,7 @@ use af_db::{
     AdminUsageLogPageRecord, AdminUsageLogRepository, OrganizationAuditOutcome,
     OrganizationAuditPageRecord, OrganizationAuditQuery, OrganizationAuditRecord,
     OrganizationAuditRepository, OrganizationAuditRepositoryError, OrganizationAuditWrite,
+    RequestOutcomePageRecord, RequestOutcomeRepository,
 };
 use af_domain::{
     OrganizationId, OrganizationPermission, OrganizationRole, PlatformPermission, UserId,
@@ -19,9 +20,9 @@ use serde_json::Value;
 use thiserror::Error;
 
 use crate::{
-    AdminUsageLog, AdminUsageLogListQuery, AdminUsageLogReadError, OrganizationAuthorizationError,
-    OrganizationAuthorizationService, OrganizationContext, PlatformPolicy, SessionPrincipal,
-    UsageLogOperation, UsageLogProtocol,
+    AdminFailedCallLog, AdminFailedCallLogPage, AdminUsageLog, AdminUsageLogListQuery,
+    AdminUsageLogReadError, OrganizationAuthorizationError, OrganizationAuthorizationService,
+    OrganizationContext, PlatformPolicy, SessionPrincipal, UsageLogOperation, UsageLogProtocol,
     auth_challenge_security::{AuthChallengeSecurityKey, AuthChallengeSecurityKeyError},
 };
 
@@ -115,7 +116,9 @@ pub enum OrganizationUsageLogRows {
 pub struct OrganizationUsageLogPage {
     scope: OrganizationUsageLogScope,
     rows: OrganizationUsageLogRows,
+    failed_logs: Vec<AdminFailedCallLog>,
     next_cursor: Option<i64>,
+    failed_next_cursor: Option<i64>,
 }
 
 impl OrganizationUsageLogPage {
@@ -133,6 +136,18 @@ impl OrganizationUsageLogPage {
     #[must_use]
     pub const fn next_cursor(&self) -> Option<i64> {
         self.next_cursor
+    }
+
+    /// 返回角色范围内的失败调用明细；Viewer 聚合范围为空。
+    #[must_use]
+    pub fn failed_logs(&self) -> &[AdminFailedCallLog] {
+        &self.failed_logs
+    }
+
+    /// 返回失败事实的下一页游标。
+    #[must_use]
+    pub const fn failed_next_cursor(&self) -> Option<i64> {
+        self.failed_next_cursor
     }
 }
 
@@ -467,6 +482,7 @@ pub trait OrganizationActivityService: Send + Sync {
 pub struct DatabaseOrganizationActivityService {
     authorization_service: Arc<dyn OrganizationAuthorizationService>,
     usage_repository: AdminUsageLogRepository,
+    request_outcomes: Option<RequestOutcomeRepository>,
     audit_repository: OrganizationAuditRepository,
     security_key: AuthChallengeSecurityKey,
 }
@@ -482,10 +498,18 @@ impl DatabaseOrganizationActivityService {
         Ok(Self {
             authorization_service,
             usage_repository,
+            request_outcomes: None,
             audit_repository,
             security_key: AuthChallengeSecurityKey::new(security_key)
                 .map_err(map_security_key_error)?,
         })
+    }
+
+    /// 注入失败调用事实读取仓储；缺失时保持兼容并返回空失败页。
+    #[must_use]
+    pub fn with_request_outcomes(mut self, repository: RequestOutcomeRepository) -> Self {
+        self.request_outcomes = Some(repository);
+        self
     }
 
     async fn member_context(
@@ -529,9 +553,31 @@ impl DatabaseOrganizationActivityService {
         .map_err(|_| OrganizationActivityError::Internal)
     }
 
+    async fn read_failed_usage_page(
+        &self,
+        organization_id: OrganizationId,
+        user_id: Option<UserId>,
+        query: AdminUsageLogListQuery,
+    ) -> Result<AdminFailedCallLogPage, OrganizationActivityError> {
+        let Some(repository) = self.request_outcomes.as_ref() else {
+            return Ok(AdminFailedCallLogPage::from_parts(Vec::new(), None));
+        };
+        let page = repository
+            .list_failed_for_organization(
+                organization_id,
+                user_id,
+                query.failed_before(),
+                query.limit(),
+            )
+            .await
+            .map_err(|_| OrganizationActivityError::Internal)?;
+        map_failed_page(page)
+    }
+
     fn map_usage_page(
         scope: OrganizationUsageLogScope,
         page: AdminUsageLogPageRecord,
+        failed_page: AdminFailedCallLogPage,
     ) -> Result<OrganizationUsageLogPage, OrganizationActivityError> {
         let (records, next_cursor) = page.into_parts();
         let logs = records
@@ -544,10 +590,13 @@ impl DatabaseOrganizationActivityService {
         } else {
             OrganizationUsageLogRows::Detailed(logs)
         };
+        let (failed_logs, failed_next_cursor) = failed_page.into_parts();
         Ok(OrganizationUsageLogPage {
             scope,
             rows,
+            failed_logs,
             next_cursor,
+            failed_next_cursor,
         })
     }
 
@@ -615,6 +664,18 @@ impl DatabaseOrganizationActivityService {
     }
 }
 
+fn map_failed_page(
+    page: RequestOutcomePageRecord,
+) -> Result<AdminFailedCallLogPage, OrganizationActivityError> {
+    let (records, next_cursor) = page.into_parts();
+    let logs = records
+        .into_iter()
+        .map(AdminFailedCallLog::from_record)
+        .collect::<Result<Vec<_>, AdminUsageLogReadError>>()
+        .map_err(|_| OrganizationActivityError::Internal)?;
+    Ok(AdminFailedCallLogPage::from_parts(logs, next_cursor))
+}
+
 impl OrganizationActivityService for DatabaseOrganizationActivityService {
     fn list_usage<'a>(
         &'a self,
@@ -649,7 +710,13 @@ impl OrganizationActivityService for DatabaseOrganizationActivityService {
             let page = self
                 .read_usage_page(organization_id, user_id, query)
                 .await?;
-            Self::map_usage_page(scope, page)
+            let failed_page = if scope == OrganizationUsageLogScope::Summary {
+                AdminFailedCallLogPage::from_parts(Vec::new(), None)
+            } else {
+                self.read_failed_usage_page(organization_id, user_id, query)
+                    .await?
+            };
+            Self::map_usage_page(scope, page, failed_page)
         })
     }
 
@@ -672,7 +739,10 @@ impl OrganizationActivityService for DatabaseOrganizationActivityService {
                 .retention_days(organization_id)
                 .await
                 .map_err(map_audit_repository_error)?;
-            let page = self.read_usage_page(organization_id, None, query).await?;
+            let (page, failed_page) = tokio::try_join!(
+                self.read_usage_page(organization_id, None, query),
+                self.read_failed_usage_page(organization_id, None, query),
+            )?;
             self.record(
                 organization_id,
                 principal.user_id(),
@@ -688,7 +758,7 @@ impl OrganizationActivityService for DatabaseOrganizationActivityService {
                 None,
             )
             .await?;
-            Self::map_usage_page(OrganizationUsageLogScope::Organization, page)
+            Self::map_usage_page(OrganizationUsageLogScope::Organization, page, failed_page)
         })
     }
 

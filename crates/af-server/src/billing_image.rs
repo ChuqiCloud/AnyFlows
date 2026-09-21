@@ -102,11 +102,12 @@ impl BillingImageService {
         request: CanonicalImageGenerationRequest,
         request_id: &str,
     ) -> Result<ImageResponse, AfError> {
-        let outcome = crate::RequestOutcomeContext::new(
+        let outcome = crate::RequestOutcomeContext::for_principal(
             request_id,
             af_domain::Protocol::OpenAiImages,
             af_domain::Operation::Image,
             request.model(),
+            *principal,
         );
         outcome
             .finish(

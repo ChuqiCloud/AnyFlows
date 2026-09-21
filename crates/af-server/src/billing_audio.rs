@@ -106,11 +106,12 @@ impl BillingAudioService {
         request: CanonicalAudioTranscriptionRequest,
         request_id: &str,
     ) -> Result<AudioTranscriptionResponse, AfError> {
-        let outcome = crate::RequestOutcomeContext::new(
+        let outcome = crate::RequestOutcomeContext::for_principal(
             request_id,
             af_domain::Protocol::OpenAiAudio,
             af_domain::Operation::Audio,
             request.model(),
+            *principal,
         );
         outcome
             .finish(

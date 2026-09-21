@@ -146,6 +146,7 @@ async fn snapshot_uses_half_open_window_and_excludes_deleted_channels() -> Resul
             channel_id: Set(channel_id),
             duration_ms: Set(10),
             created_at: Set(created_at),
+            ..Default::default()
         }
         .insert(pool.connection())
         .await?;

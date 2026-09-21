@@ -675,8 +675,10 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 548);
+        assert_eq!(schemas.len(), 550);
         assert!(schemas.keys().is_sorted());
+        assert!(schemas.contains_key("AdminFailedCallLog"));
+        assert!(schemas.contains_key("UserFailedCallLog"));
         assert!(schemas.contains_key("OrganizationSsoDiscoveryErrorResponse"));
         assert!(schemas.contains_key("Announcement"));
         assert!(schemas.contains_key("AnnouncementListResponse"));

@@ -1,22 +1,83 @@
 use std::{fmt, str::FromStr, time::Duration};
 
-use af_domain::{ChannelId, Operation, Protocol};
+use af_domain::{
+    ChannelId, GroupId, Operation, OrganizationId, OrganizationTeamId, Protocol, TokenId, UserId,
+};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DbErr, EntityTrait, QueryFilter, Set, SqlErr, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, DbErr, EntityTrait, QueryFilter, QueryOrder, QuerySelect, Set,
+    SqlErr, TransactionTrait,
 };
 use thiserror::Error;
 use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
-    AnalyticsExportFactKind, AnalyticsExportRepository, DatabasePool, entity::request_outcome_logs,
+    AnalyticsExportFactKind, AnalyticsExportRepository, DatabasePool,
+    entity::{request_outcome_logs, users},
 };
 
 const DEFAULT_OPERATION_TIMEOUT: Duration = Duration::from_secs(2);
 const MAX_REQUEST_ID_BYTES: usize = 128;
 const MAX_MODEL_BYTES: usize = 255;
+const MAX_ERROR_CODE_BYTES: usize = 64;
+const MAX_ERROR_MESSAGE_BYTES: usize = 255;
 const SUCCEEDED_OUTCOME: i16 = 1;
 const FAILED_OUTCOME: i16 = 2;
+
+/// 一条请求终态事实关联的下游主体；只保存已经通过鉴权的稳定 ID。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RequestOutcomeSubject {
+    user_id: UserId,
+    token_id: TokenId,
+    group_id: GroupId,
+    organization_id: Option<OrganizationId>,
+    organization_team_id: Option<OrganizationTeamId>,
+}
+
+impl RequestOutcomeSubject {
+    /// 组合用户、令牌、分组和可选企业归属。
+    #[must_use]
+    pub const fn new(
+        user_id: UserId,
+        token_id: TokenId,
+        group_id: GroupId,
+        organization_id: Option<OrganizationId>,
+        organization_team_id: Option<OrganizationTeamId>,
+    ) -> Self {
+        Self {
+            user_id,
+            token_id,
+            group_id,
+            organization_id,
+            organization_team_id,
+        }
+    }
+
+    #[must_use]
+    pub const fn user_id(self) -> UserId {
+        self.user_id
+    }
+
+    #[must_use]
+    pub const fn token_id(self) -> TokenId {
+        self.token_id
+    }
+
+    #[must_use]
+    pub const fn group_id(self) -> GroupId {
+        self.group_id
+    }
+
+    #[must_use]
+    pub const fn organization_id(self) -> Option<OrganizationId> {
+        self.organization_id
+    }
+
+    #[must_use]
+    pub const fn organization_team_id(self) -> Option<OrganizationTeamId> {
+        self.organization_team_id
+    }
+}
 
 /// 同步模型请求失败的低基数、无原始文本分类。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -61,6 +122,54 @@ impl RequestFailureKind {
             Self::Internal => "internal",
         }
     }
+
+    /// 返回普通调用方可以看到的稳定错误码；内部上游分类统一折叠。
+    #[must_use]
+    pub const fn public_error_code(self) -> &'static str {
+        match self {
+            Self::InvalidRequest => "invalid_request",
+            Self::ModelNotAllowed | Self::UpstreamModel => "model_not_found",
+            Self::InsufficientQuota => "insufficient_quota",
+            Self::QuotaLimited | Self::ConcurrencyLimited | Self::UpstreamRateLimited => {
+                "rate_limited"
+            }
+            Self::OutcomeUnknown => "request_outcome_unknown",
+            Self::UpstreamOverloaded
+            | Self::UpstreamAuthentication
+            | Self::UpstreamQuota
+            | Self::UpstreamProtocol
+            | Self::UpstreamServer
+            | Self::UpstreamNetwork => "service_unavailable",
+            Self::Internal => "internal_error",
+        }
+    }
+
+    /// 返回普通调用方可以看到的固定文案；不包含渠道、供应商或上游字样。
+    #[must_use]
+    pub const fn public_error_message(self) -> &'static str {
+        match self {
+            Self::InvalidRequest => "Invalid request.",
+            Self::ModelNotAllowed | Self::UpstreamModel => {
+                "The requested model was not found or is unavailable."
+            }
+            Self::InsufficientQuota => "Insufficient quota.",
+            Self::QuotaLimited | Self::ConcurrencyLimited | Self::UpstreamRateLimited => {
+                "Rate limit exceeded. Please retry later."
+            }
+            Self::OutcomeUnknown => {
+                "The request outcome is unknown. Retry with the same idempotency key."
+            }
+            Self::UpstreamOverloaded
+            | Self::UpstreamAuthentication
+            | Self::UpstreamQuota
+            | Self::UpstreamProtocol
+            | Self::UpstreamServer
+            | Self::UpstreamNetwork => {
+                "The service is temporarily unavailable. Please retry later."
+            }
+            Self::Internal => "An internal server error occurred.",
+        }
+    }
 }
 
 impl FromStr for RequestFailureKind {
@@ -96,6 +205,9 @@ pub struct RequestOutcomeWrite {
     operation: Operation,
     model: String,
     error_kind: Option<RequestFailureKind>,
+    subject: Option<RequestOutcomeSubject>,
+    public_error_code: Option<String>,
+    public_error_message: Option<String>,
     channel_id: Option<ChannelId>,
     duration_ms: i64,
 }
@@ -111,7 +223,7 @@ impl RequestOutcomeWrite {
         duration: Duration,
     ) -> Result<Self, RequestOutcomeWriteError> {
         Self::new(
-            request_id, protocol, operation, model, None, channel_id, duration,
+            request_id, protocol, operation, model, None, None, None, None, channel_id, duration,
         )
     }
 
@@ -131,6 +243,58 @@ impl RequestOutcomeWrite {
             operation,
             model,
             Some(error_kind),
+            None,
+            None,
+            None,
+            channel_id,
+            duration,
+        )
+    }
+
+    /// 构造带下游主体归属的成功事实。
+    pub fn succeeded_for_subject(
+        request_id: &str,
+        protocol: Protocol,
+        operation: Operation,
+        model: &str,
+        subject: RequestOutcomeSubject,
+        channel_id: Option<ChannelId>,
+        duration: Duration,
+    ) -> Result<Self, RequestOutcomeWriteError> {
+        Self::new(
+            request_id,
+            protocol,
+            operation,
+            model,
+            None,
+            Some(subject),
+            None,
+            None,
+            channel_id,
+            duration,
+        )
+    }
+
+    /// 构造带下游主体和安全公开错误信息的失败事实。
+    pub fn failed_for_subject(
+        request_id: &str,
+        protocol: Protocol,
+        operation: Operation,
+        model: &str,
+        subject: RequestOutcomeSubject,
+        error_kind: RequestFailureKind,
+        channel_id: Option<ChannelId>,
+        duration: Duration,
+    ) -> Result<Self, RequestOutcomeWriteError> {
+        Self::new(
+            request_id,
+            protocol,
+            operation,
+            model,
+            Some(error_kind),
+            Some(subject),
+            Some(error_kind.public_error_code().to_owned()),
+            Some(error_kind.public_error_message().to_owned()),
             channel_id,
             duration,
         )
@@ -143,6 +307,9 @@ impl RequestOutcomeWrite {
         operation: Operation,
         model: &str,
         error_kind: Option<RequestFailureKind>,
+        subject: Option<RequestOutcomeSubject>,
+        public_error_code: Option<String>,
+        public_error_message: Option<String>,
         channel_id: Option<ChannelId>,
         duration: Duration,
     ) -> Result<Self, RequestOutcomeWriteError> {
@@ -154,12 +321,24 @@ impl RequestOutcomeWrite {
         }
         let duration_ms = i64::try_from(duration.as_millis())
             .map_err(|_| RequestOutcomeWriteError::InvalidDuration)?;
+        if public_error_code
+            .as_deref()
+            .is_some_and(|value| !valid_text(value, MAX_ERROR_CODE_BYTES))
+            || public_error_message
+                .as_deref()
+                .is_some_and(|value| !valid_text(value, MAX_ERROR_MESSAGE_BYTES))
+        {
+            return Err(RequestOutcomeWriteError::InvalidPublicError);
+        }
         Ok(Self {
             request_id: request_id.to_owned(),
             protocol,
             operation,
             model: model.to_owned(),
             error_kind,
+            subject,
+            public_error_code,
+            public_error_message,
             channel_id,
             duration_ms,
         })
@@ -179,6 +358,7 @@ impl fmt::Debug for RequestOutcomeWrite {
             .field("protocol", &self.protocol)
             .field("operation", &self.operation)
             .field("error_kind", &self.error_kind)
+            .field("has_subject", &self.subject.is_some())
             .field("has_channel", &self.channel_id.is_some())
             .field("duration_ms", &self.duration_ms)
             .finish_non_exhaustive()
@@ -196,6 +376,8 @@ pub enum RequestOutcomeWriteError {
     InvalidDuration,
     #[error("请求终态失败分类无效")]
     InvalidFailureKind,
+    #[error("请求终态公开错误信息无效")]
+    InvalidPublicError,
 }
 
 /// 幂等追加请求终态事实的结果。
@@ -203,6 +385,243 @@ pub enum RequestOutcomeWriteError {
 pub enum RequestOutcomeWriteOutcome {
     Applied,
     Existing,
+}
+
+/// 一条失败调用事实的已校验读取值。
+pub struct RequestOutcomeRecord {
+    id: i64,
+    request_id: String,
+    protocol: Protocol,
+    operation: Operation,
+    model: String,
+    failure_kind: RequestFailureKind,
+    public_error_code: String,
+    public_error_message: String,
+    user_id: Option<UserId>,
+    username: Option<String>,
+    token_id: Option<TokenId>,
+    group_id: Option<GroupId>,
+    organization_id: Option<OrganizationId>,
+    organization_team_id: Option<OrganizationTeamId>,
+    channel_id: Option<ChannelId>,
+    duration_ms: i64,
+    created_at: i64,
+}
+
+impl RequestOutcomeRecord {
+    fn try_from_model(
+        model: request_outcome_logs::Model,
+        user: Option<users::Model>,
+    ) -> Result<Self, RequestOutcomeRepositoryError> {
+        if model.id <= 0
+            || model.outcome != FAILED_OUTCOME
+            || !valid_text(&model.request_id, MAX_REQUEST_ID_BYTES)
+            || !valid_text(&model.model, MAX_MODEL_BYTES)
+            || model.duration_ms < 0
+            || model.channel_id.is_some_and(|value| value <= 0)
+            || model.user_id.is_some_and(|value| value <= 0)
+            || model.token_id.is_some_and(|value| value <= 0)
+            || model.group_id.is_some_and(|value| value <= 0)
+            || model.organization_id.is_some_and(|value| value <= 0)
+            || model.organization_team_id.is_some_and(|value| value <= 0)
+        {
+            return Err(internal_error(RequestOutcomeRepositoryError::Invariant));
+        }
+        let protocol = model
+            .protocol
+            .parse::<Protocol>()
+            .map_err(|_| internal_error(RequestOutcomeRepositoryError::Invariant))?;
+        let operation = model
+            .operation
+            .parse::<Operation>()
+            .map_err(|_| internal_error(RequestOutcomeRepositoryError::Invariant))?;
+        let failure_kind = model
+            .error_kind
+            .as_deref()
+            .ok_or_else(|| internal_error(RequestOutcomeRepositoryError::Invariant))?
+            .parse::<RequestFailureKind>()
+            .map_err(|_| internal_error(RequestOutcomeRepositoryError::Invariant))?;
+        let (public_error_code, public_error_message) = match (
+            model.public_error_code.as_deref(),
+            model.public_error_message.as_deref(),
+        ) {
+            // Rows written before the public error columns were introduced are
+            // reconstructed from their closed failure category.
+            (None, None) => (
+                failure_kind.public_error_code().to_owned(),
+                failure_kind.public_error_message().to_owned(),
+            ),
+            (Some(code), Some(message))
+                if valid_text(code, MAX_ERROR_CODE_BYTES)
+                    && valid_text(message, MAX_ERROR_MESSAGE_BYTES) =>
+            {
+                (code.to_owned(), message.to_owned())
+            }
+            _ => return Err(internal_error(RequestOutcomeRepositoryError::Invariant)),
+        };
+        let has_user = model.user_id.is_some();
+        let has_token = model.token_id.is_some();
+        let has_group = model.group_id.is_some();
+        let has_organization = model.organization_id.is_some();
+        let has_team = model.organization_team_id.is_some();
+        if has_user != has_token
+            || has_user != has_group
+            || (!has_user && (has_organization || has_team))
+            || (has_team && !has_organization)
+        {
+            return Err(internal_error(RequestOutcomeRepositoryError::Invariant));
+        }
+        let user_id = model
+            .user_id
+            .map(UserId::new)
+            .transpose()
+            .map_err(|_| internal_error(RequestOutcomeRepositoryError::Invariant))?;
+        if has_user != user.is_some() {
+            return Err(internal_error(RequestOutcomeRepositoryError::Invariant));
+        }
+        let username = user.map(|value| value.username);
+        if username.as_deref().is_some_and(|value| {
+            value.is_empty()
+                || value.len() > 64
+                || value.trim() != value
+                || value.chars().any(char::is_control)
+        }) {
+            return Err(internal_error(RequestOutcomeRepositoryError::Invariant));
+        }
+        Ok(Self {
+            id: model.id,
+            request_id: model.request_id,
+            protocol,
+            operation,
+            model: model.model,
+            failure_kind,
+            public_error_code,
+            public_error_message,
+            user_id,
+            username,
+            token_id: model
+                .token_id
+                .map(TokenId::new)
+                .transpose()
+                .map_err(|_| internal_error(RequestOutcomeRepositoryError::Invariant))?,
+            group_id: model
+                .group_id
+                .map(GroupId::new)
+                .transpose()
+                .map_err(|_| internal_error(RequestOutcomeRepositoryError::Invariant))?,
+            organization_id: model
+                .organization_id
+                .map(OrganizationId::new)
+                .transpose()
+                .map_err(|_| internal_error(RequestOutcomeRepositoryError::Invariant))?,
+            organization_team_id: model
+                .organization_team_id
+                .map(OrganizationTeamId::new)
+                .transpose()
+                .map_err(|_| internal_error(RequestOutcomeRepositoryError::Invariant))?,
+            channel_id: model
+                .channel_id
+                .map(ChannelId::new)
+                .transpose()
+                .map_err(|_| internal_error(RequestOutcomeRepositoryError::Invariant))?,
+            duration_ms: model.duration_ms,
+            created_at: model.created_at.unix_timestamp(),
+        })
+    }
+
+    #[must_use]
+    pub const fn id(&self) -> i64 {
+        self.id
+    }
+    #[must_use]
+    pub fn request_id(&self) -> &str {
+        &self.request_id
+    }
+    #[must_use]
+    pub const fn protocol(&self) -> Protocol {
+        self.protocol
+    }
+    #[must_use]
+    pub const fn operation(&self) -> Operation {
+        self.operation
+    }
+    #[must_use]
+    pub fn model(&self) -> &str {
+        &self.model
+    }
+    #[must_use]
+    pub const fn failure_kind(&self) -> RequestFailureKind {
+        self.failure_kind
+    }
+    #[must_use]
+    pub fn public_error_code(&self) -> &str {
+        &self.public_error_code
+    }
+    #[must_use]
+    pub fn public_error_message(&self) -> &str {
+        &self.public_error_message
+    }
+    #[must_use]
+    pub const fn user_id(&self) -> Option<UserId> {
+        self.user_id
+    }
+    #[must_use]
+    pub fn username(&self) -> Option<&str> {
+        self.username.as_deref()
+    }
+    #[must_use]
+    pub const fn token_id(&self) -> Option<TokenId> {
+        self.token_id
+    }
+    #[must_use]
+    pub const fn group_id(&self) -> Option<GroupId> {
+        self.group_id
+    }
+    #[must_use]
+    pub const fn organization_id(&self) -> Option<OrganizationId> {
+        self.organization_id
+    }
+    #[must_use]
+    pub const fn organization_team_id(&self) -> Option<OrganizationTeamId> {
+        self.organization_team_id
+    }
+    #[must_use]
+    pub const fn channel_id(&self) -> Option<ChannelId> {
+        self.channel_id
+    }
+    #[must_use]
+    pub const fn duration_ms(&self) -> i64 {
+        self.duration_ms
+    }
+    #[must_use]
+    pub const fn created_at(&self) -> i64 {
+        self.created_at
+    }
+}
+
+impl fmt::Debug for RequestOutcomeRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("RequestOutcomeRecord(<redacted>)")
+    }
+}
+
+/// 倒序排列的一页失败调用事实。
+pub struct RequestOutcomePageRecord {
+    logs: Vec<RequestOutcomeRecord>,
+    next_cursor: Option<i64>,
+}
+
+impl RequestOutcomePageRecord {
+    #[must_use]
+    pub fn into_parts(self) -> (Vec<RequestOutcomeRecord>, Option<i64>) {
+        (self.logs, self.next_cursor)
+    }
+}
+
+impl fmt::Debug for RequestOutcomePageRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("RequestOutcomePageRecord(<redacted>)")
+    }
 }
 
 /// 请求终态事实仓储错误，不携带请求或数据库细节。
@@ -258,6 +677,100 @@ impl RequestOutcomeRepository {
         }
     }
 
+    /// 按事实 ID 倒序读取一页失败调用；只读用途不会返回成功终态。
+    pub async fn list_failed(
+        &self,
+        before: Option<i64>,
+        limit: usize,
+    ) -> Result<RequestOutcomePageRecord, RequestOutcomeRepositoryError> {
+        self.list_failed_scoped(None, None, before, limit).await
+    }
+
+    /// 读取指定用户自己的失败调用。
+    pub async fn list_failed_for_user(
+        &self,
+        user_id: UserId,
+        before: Option<i64>,
+        limit: usize,
+    ) -> Result<RequestOutcomePageRecord, RequestOutcomeRepositoryError> {
+        self.list_failed_scoped(Some(user_id), None, before, limit)
+            .await
+    }
+
+    /// 按企业和可选成员读取失败调用；企业归属来自请求当时的固化主体。
+    pub async fn list_failed_for_organization(
+        &self,
+        organization_id: OrganizationId,
+        user_id: Option<UserId>,
+        before: Option<i64>,
+        limit: usize,
+    ) -> Result<RequestOutcomePageRecord, RequestOutcomeRepositoryError> {
+        self.list_failed_scoped(user_id, Some(organization_id), before, limit)
+            .await
+    }
+
+    async fn list_failed_scoped(
+        &self,
+        user_id: Option<UserId>,
+        organization_id: Option<OrganizationId>,
+        before: Option<i64>,
+        limit: usize,
+    ) -> Result<RequestOutcomePageRecord, RequestOutcomeRepositoryError> {
+        if before.is_some_and(|value| value <= 0) || !(1..=100).contains(&limit) {
+            return Err(internal_error(RequestOutcomeRepositoryError::Invariant));
+        }
+        let operation = self
+            .query_failed(user_id, organization_id, before, limit)
+            .with_subscriber(NoSubscriber::default());
+        let mut models = match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result?,
+            Err(_) => return Err(internal_error(RequestOutcomeRepositoryError::Timeout)),
+        };
+        let has_more = models.len() > limit;
+        if has_more {
+            models.truncate(limit);
+        }
+        let logs = models
+            .into_iter()
+            .map(|(model, user)| RequestOutcomeRecord::try_from_model(model, user))
+            .collect::<Result<Vec<_>, _>>()?;
+        let next_cursor = has_more
+            .then(|| logs.last().map(RequestOutcomeRecord::id))
+            .flatten();
+        Ok(RequestOutcomePageRecord { logs, next_cursor })
+    }
+
+    async fn query_failed(
+        &self,
+        user_id: Option<UserId>,
+        organization_id: Option<OrganizationId>,
+        before: Option<i64>,
+        limit: usize,
+    ) -> Result<
+        Vec<(request_outcome_logs::Model, Option<users::Model>)>,
+        RequestOutcomeRepositoryError,
+    > {
+        let mut query = request_outcome_logs::Entity::find()
+            .filter(request_outcome_logs::Column::Outcome.eq(FAILED_OUTCOME))
+            .order_by_desc(request_outcome_logs::Column::Id)
+            .find_also_related(users::Entity)
+            .limit((limit + 1) as u64);
+        if let Some(user_id) = user_id {
+            query = query.filter(request_outcome_logs::Column::UserId.eq(user_id.get()));
+        }
+        if let Some(organization_id) = organization_id {
+            query = query
+                .filter(request_outcome_logs::Column::OrganizationId.eq(organization_id.get()));
+        }
+        if let Some(before) = before {
+            query = query.filter(request_outcome_logs::Column::Id.lt(before));
+        }
+        query
+            .all(self.pool.connection())
+            .await
+            .map_err(|_| internal_error(RequestOutcomeRepositoryError::Query))
+    }
+
     async fn record_inner(
         &self,
         write: &RequestOutcomeWrite,
@@ -276,6 +789,17 @@ impl RequestOutcomeRepository {
                 .error_kind
                 .map(RequestFailureKind::as_str)
                 .map(str::to_owned)),
+            user_id: Set(write.subject.map(|subject| subject.user_id.get())),
+            token_id: Set(write.subject.map(|subject| subject.token_id.get())),
+            group_id: Set(write.subject.map(|subject| subject.group_id.get())),
+            organization_id: Set(write
+                .subject
+                .and_then(|subject| subject.organization_id.map(OrganizationId::get))),
+            organization_team_id: Set(write
+                .subject
+                .and_then(|subject| subject.organization_team_id.map(OrganizationTeamId::get))),
+            public_error_code: Set(write.public_error_code.clone()),
+            public_error_message: Set(write.public_error_message.clone()),
             channel_id: Set(write.channel_id.map(ChannelId::get)),
             duration_ms: Set(write.duration_ms),
             created_at: Set(sea_orm::entity::prelude::TimeDateTimeWithTimeZone::now_utc()),
@@ -372,6 +896,19 @@ fn matches_write(existing: &request_outcome_logs::Model, write: &RequestOutcomeW
                 FAILED_OUTCOME
             }
         && existing.error_kind.as_deref() == write.error_kind.map(RequestFailureKind::as_str)
+        && existing.user_id == write.subject.map(|subject| subject.user_id.get())
+        && existing.token_id == write.subject.map(|subject| subject.token_id.get())
+        && existing.group_id == write.subject.map(|subject| subject.group_id.get())
+        && existing.organization_id
+            == write
+                .subject
+                .and_then(|subject| subject.organization_id.map(OrganizationId::get))
+        && existing.organization_team_id
+            == write
+                .subject
+                .and_then(|subject| subject.organization_team_id.map(OrganizationTeamId::get))
+        && existing.public_error_code == write.public_error_code
+        && existing.public_error_message == write.public_error_message
         && existing.channel_id == write.channel_id.map(ChannelId::get)
         && existing.duration_ms == write.duration_ms
 }

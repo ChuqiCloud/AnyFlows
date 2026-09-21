@@ -2281,7 +2281,27 @@
     "listLabel": "Settled request list",
     "status": {
       "settled": "Settled",
-      "settledOnly": "Settled only"
+      "settledOnly": "Settled only",
+      "settledAndFailed": "Settled + failed"
+    },
+    "failed": {
+      "title": "Failed calls",
+      "badge": "Failed",
+      "status": "Failed",
+      "listLabel": "Failed call list",
+      "emptyTitle": "No failed calls yet",
+      "emptyBody": "Failed calls appear here after the gateway records a safe error summary.",
+      "emptyFilteredTitle": "No failed calls match these filters",
+      "emptyFilteredBody": "Adjust the model or protocol filter to inspect other failed calls.",
+      "columns": {
+        "time": "Time / status",
+        "call": "Model request",
+        "error": "Error",
+        "duration": "Duration",
+        "internal": "Internal details",
+        "request": "Request ID",
+        "channel": "Channel"
+      }
     },
     "summary": {
       "label": "Current filtered results",

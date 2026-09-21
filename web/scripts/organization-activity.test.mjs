@@ -32,7 +32,7 @@ test('企业日志查询绑定组织、范围、游标和服务端审计筛选',
   const apiSource = await readFile(new URL('../src/features/organization-activity/organization-activity-api.ts', import.meta.url), 'utf8')
   assert.match(apiSource, /\['organization', organizationId, 'activity'/)
   assert.match(apiSource, /listOrganizationUsageLogs/)
-  assert.match(apiSource, /query: \{ before, limit, scope \}/)
+  assert.match(apiSource, /query: \{ before, failed_before: failedBefore, limit, scope \}/)
   assert.match(apiSource, /listOrganizationAuditLogs/)
   assert.match(apiSource, /actor_user_id: filters\.actorUserId/)
   assert.match(apiSource, /operation: filters\.operation/)

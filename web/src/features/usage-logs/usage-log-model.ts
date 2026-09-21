@@ -1,10 +1,13 @@
 import type {
+  AdminFailedCallLog,
   AdminUsageLog,
   UsageLogProtocol,
+  UserFailedCallLog,
   UserUsageLog,
 } from '@/lib/api/generated/types.gen'
 
 export type UsageLogRow = AdminUsageLog | UserUsageLog
+export type FailedCallLogRow = AdminFailedCallLog | UserFailedCallLog
 
 export const usageLogProtocols = [
   'open_ai_chat',
@@ -41,6 +44,23 @@ export function usageLogCacheTokens(log: UsageLogRow) {
 
 export function usageLogTotalTokens(log: UsageLogRow) {
   return log.input_tokens + log.output_tokens
+}
+
+/** 管理员和企业明细返回内部字段，普通用户只返回安全错误码与文案。 */
+export function isAdminFailedCallLog(log: FailedCallLogRow): log is AdminFailedCallLog {
+  return 'error_kind' in log
+}
+
+export function filterFailedCallLogs(
+  logs: readonly FailedCallLogRow[],
+  modelFilter: string,
+  protocolFilter: string,
+) {
+  const normalizedModel = modelFilter.trim().toLocaleLowerCase()
+  return logs.filter((log) => (
+    (!normalizedModel || log.model.toLocaleLowerCase().includes(normalizedModel))
+    && (protocolFilter === 'all' || log.protocol === protocolFilter)
+  ))
 }
 
 export function summarizeUsageLogs(logs: readonly UsageLogRow[]): UsageLogSummary {

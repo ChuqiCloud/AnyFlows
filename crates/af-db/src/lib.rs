@@ -798,8 +798,9 @@ pub use registration::{
     RegistrationRepositoryConfigError, RegistrationRepositoryError, RegistrationStatusRecord,
 };
 pub use request_outcome::{
-    RequestFailureKind, RequestOutcomeRepository, RequestOutcomeRepositoryError,
-    RequestOutcomeWrite, RequestOutcomeWriteError, RequestOutcomeWriteOutcome,
+    RequestFailureKind, RequestOutcomePageRecord, RequestOutcomeRecord, RequestOutcomeRepository,
+    RequestOutcomeRepositoryError, RequestOutcomeSubject, RequestOutcomeWrite,
+    RequestOutcomeWriteError, RequestOutcomeWriteOutcome,
 };
 pub use scheduler_ability::{
     MAX_SCHEDULER_ABILITY_ENTRIES, MAX_SCHEDULER_ABILITY_SNAPSHOT_ENTRIES, SchedulerAbilityRecord,

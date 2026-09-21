@@ -98,11 +98,12 @@ impl BillingRerankService {
         request: CanonicalRerankRequest,
         request_id: &str,
     ) -> Result<RerankResponse, AfError> {
-        let outcome = crate::RequestOutcomeContext::new(
+        let outcome = crate::RequestOutcomeContext::for_principal(
             request_id,
             af_domain::Protocol::JinaRerank,
             af_domain::Operation::Rerank,
             request.model(),
+            *principal,
         );
         outcome
             .finish(
