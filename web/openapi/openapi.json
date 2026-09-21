@@ -36917,8 +36917,8 @@
         "required": [
           "logs",
           "failed_logs",
-          "failed_next_cursor",
-          "next_cursor"
+          "next_cursor",
+          "failed_next_cursor"
         ],
         "properties": {
           "logs": {
@@ -44383,8 +44383,8 @@
           "logs",
           "summaries",
           "failed_logs",
-          "failed_next_cursor",
-          "next_cursor"
+          "next_cursor",
+          "failed_next_cursor"
         ],
         "properties": {
           "scope": {
@@ -47367,6 +47367,64 @@
           "max"
         ]
       },
+      "UserFailedCallLog": {
+        "type": "object",
+        "required": [
+          "id",
+          "request_id",
+          "model",
+          "protocol",
+          "operation",
+          "error_code",
+          "error_message",
+          "duration_ms",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "request_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "protocol": {
+            "$ref": "#/components/schemas/UsageLogProtocol"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/UsageLogOperation"
+          },
+          "error_code": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "error_message": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "duration_ms": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
       "UserInvitationRebateResponse": {
         "type": "object",
         "required": [
@@ -48770,71 +48828,13 @@
         },
         "additionalProperties": false
       },
-      "UserFailedCallLog": {
-        "type": "object",
-        "required": [
-          "id",
-          "request_id",
-          "model",
-          "protocol",
-          "operation",
-          "error_code",
-          "error_message",
-          "duration_ms",
-          "created_at"
-        ],
-        "properties": {
-          "id": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          },
-          "request_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1
-          },
-          "model": {
-            "type": "string",
-            "maxLength": 255,
-            "minLength": 1
-          },
-          "protocol": {
-            "$ref": "#/components/schemas/UsageLogProtocol"
-          },
-          "operation": {
-            "$ref": "#/components/schemas/UsageLogOperation"
-          },
-          "error_code": {
-            "type": "string",
-            "maxLength": 64,
-            "minLength": 1
-          },
-          "error_message": {
-            "type": "string",
-            "maxLength": 255,
-            "minLength": 1
-          },
-          "duration_ms": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "created_at": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          }
-        },
-        "additionalProperties": false
-      },
       "UserUsageLogListResponse": {
         "type": "object",
         "required": [
           "logs",
           "failed_logs",
-          "failed_next_cursor",
-          "next_cursor"
+          "next_cursor",
+          "failed_next_cursor"
         ],
         "properties": {
           "logs": {

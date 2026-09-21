@@ -3062,6 +3062,17 @@ export type SubscriptionPlanStatus = 'active' | 'disabled';
 export type UsageLogOperation = 'chat' | 'responses' | 'responses_compact' | 'embedding' | 'image' | 'audio' | 'rerank' | 'video' | 'count_tokens';
 export type UsageLogProtocol = 'open_ai_chat' | 'open_ai_responses' | 'open_ai_embeddings' | 'open_ai_images' | 'open_ai_audio' | 'open_ai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
 export type UsageLogReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'extra_high' | 'max';
+export type UserFailedCallLog = {
+    id: number;
+    request_id: string;
+    model: string;
+    protocol: UsageLogProtocol;
+    operation: UsageLogOperation;
+    error_code: string;
+    error_message: string;
+    duration_ms: number;
+    created_at: number;
+};
 export type UserInvitationRebateResponse = {
     quota_amount: number;
     credited_at: number;
@@ -3295,17 +3306,6 @@ export type UserUsageLog = {
     cache_creation_1h: number;
     reasoning_tokens: number;
     quota: number;
-    created_at: number;
-};
-export type UserFailedCallLog = {
-    id: number;
-    request_id: string;
-    model: string;
-    protocol: UsageLogProtocol;
-    operation: UsageLogOperation;
-    error_code: string;
-    error_message: string;
-    duration_ms: number;
     created_at: number;
 };
 export type UserUsageLogListResponse = {
