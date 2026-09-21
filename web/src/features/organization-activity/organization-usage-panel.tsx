@@ -201,7 +201,7 @@ export function OrganizationUsagePanel({ organizationId, initialScope, scopes }:
               </div>
               <span className="text-[0.6875rem] text-muted-foreground">{t('organizationActivity.filters.visible', { visible: filteredFailedLogs.length, count: failedLogs.length })}</span>
             </header>
-            <FailedCallTable logs={filteredFailedLogs} showInternal={scope !== 'summary'} filtered={hasFailedFilters} />
+            <FailedCallTable logs={filteredFailedLogs} showInternal filtered={hasFailedFilters} />
             <DataTablePagination
               currentPage={failedPagination.currentPage}
               availablePageCount={failedPagination.availablePageCount}
