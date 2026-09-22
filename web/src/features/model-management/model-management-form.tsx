@@ -1,10 +1,11 @@
 import { useEffect } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { LoaderCircle } from 'lucide-react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import { ProviderPicker } from '@/components/brand/provider-picker'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
@@ -15,7 +16,6 @@ import { ModelManagementField } from './model-management-field'
 import {
   buildModelManagementSchema,
   defaultModelManagementValues,
-  MODEL_PROVIDER_SUGGESTIONS,
   toModelCreateRequest,
   toModelUpdateRequest,
   type ModelEditorMode,
@@ -87,10 +87,7 @@ export function ModelManagementForm({ mode, model, onCancel, onSaved }: ModelMan
               <Input id="model-display-name" autoComplete="off" aria-invalid={!!form.formState.errors.displayName} {...form.register('displayName')} />
             </ModelManagementField>
             <ModelManagementField id="model-provider" label={t('modelManagement.fields.provider')} hint={t('modelManagement.form.providerHint')} error={form.formState.errors.provider?.message}>
-              <Input id="model-provider" list="model-provider-suggestions" autoComplete="off" aria-invalid={!!form.formState.errors.provider} {...form.register('provider')} />
-              <datalist id="model-provider-suggestions">
-                {MODEL_PROVIDER_SUGGESTIONS.map((provider) => <option key={provider} value={provider} />)}
-              </datalist>
+              <Controller control={form.control} name="provider" render={({ field }) => <ProviderPicker id="model-provider" {...field} invalid={!!form.formState.errors.provider} disabled={pending} />} />
             </ModelManagementField>
           </div>
           <ModelManagementField id="model-description" label={t('modelManagement.fields.description')} hint={t('modelManagement.form.optionalHint')} error={form.formState.errors.description?.message}>

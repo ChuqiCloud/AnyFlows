@@ -39,6 +39,7 @@ pub const MAX_ADMIN_CHANNEL_JSON_BYTES: i64 = 64 * 1024;
 
 /// 管理端可读取的非敏感渠道快照。
 pub struct AdminChannelRecord {
+    provider: Option<String>,
     channel_id: ChannelId,
     name: String,
     channel_type: ChannelType,
@@ -98,6 +99,7 @@ impl AdminChannelRecord {
             })
         };
         AdminChannelRow {
+            provider: setting_value(&settings, "provider"),
             channel_id: model.id,
             name: model.name,
             channel_type: model.r#type,
@@ -157,6 +159,12 @@ impl AdminChannelRecord {
             updated_at: model.updated_at,
         }
         .validate()
+    }
+
+    /// 返回独立于通信适配器的厂商标识。
+    #[must_use]
+    pub fn provider(&self) -> Option<&str> {
+        self.provider.as_deref()
     }
 
     /// 返回渠道主键。
@@ -550,6 +558,7 @@ impl fmt::Debug for AdminChannelRepository {
 }
 
 struct AdminChannelRow {
+    provider: Option<JsonValue>,
     channel_id: i64,
     name: String,
     channel_type: String,
@@ -587,6 +596,7 @@ struct AdminChannelRow {
 impl AdminChannelRow {
     fn try_from_query_result(result: &QueryResult) -> Result<Self, DbErr> {
         Ok(Self {
+            provider: result.try_get("", "provider")?,
             channel_id: result.try_get("", "channel_id")?,
             name: result.try_get("", "name")?,
             channel_type: result.try_get("", "channel_type")?,
@@ -626,6 +636,13 @@ impl AdminChannelRow {
     }
 
     fn validate(self) -> Result<AdminChannelRecord, AdminChannelRepositoryError> {
+        let provider = match self.provider {
+            None => None,
+            Some(JsonValue::String(value)) if valid_text(&value, 64) && value.trim() == value => {
+                Some(value)
+            }
+            Some(_) => return Err(internal_invariant()),
+        };
         let channel_id = ChannelId::new(self.channel_id).map_err(|_| internal_invariant())?;
         let channel_type =
             ChannelType::from_str(&self.channel_type).map_err(|_| internal_invariant())?;
@@ -745,6 +762,7 @@ impl AdminChannelRow {
             return Err(internal_invariant());
         }
         Ok(AdminChannelRecord {
+            provider,
             channel_id,
             name: self.name,
             channel_type,
@@ -895,6 +913,7 @@ pub(crate) fn channel_base_query(database_backend: DbBackend) -> SelectStatement
             bounded_setting(CLIENT_SIMULATION_PROFILE_KEY),
             Alias::new("client_simulation_profile"),
         )
+        .expr_as(bounded_setting("provider"), Alias::new("provider"))
         .expr_as(
             bounded_setting(CLIENT_SIMULATION_BODY_PROFILE_KEY),
             Alias::new("client_simulation_body_profile"),

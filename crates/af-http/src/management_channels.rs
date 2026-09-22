@@ -61,6 +61,8 @@ pub(crate) struct AdminResponsesCompactProbeDto {
 #[serde(deny_unknown_fields)]
 #[schema(as = AdminChannel)]
 pub(crate) struct AdminChannelResponse {
+    #[schema(min_length = 1, max_length = 64)]
+    provider: Option<String>,
     #[schema(minimum = 1)]
     id: i64,
     #[serde(rename = "type")]
@@ -184,6 +186,7 @@ impl AdminChannelListResponse {
 impl AdminChannelResponse {
     pub(crate) fn from_channel(channel: &AdminChannel) -> Self {
         Self {
+            provider: channel.provider().map(str::to_owned),
             id: channel.channel_id().get(),
             channel_type: channel.channel_type(),
             name: channel.name().to_owned(),

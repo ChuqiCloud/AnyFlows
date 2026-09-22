@@ -286,6 +286,15 @@
       }
     }
   },
+  "providers": {
+    "adapterHint": "Choose the transport and upstream base URL specified by your provider.",
+    "label": "Provider",
+    "select": "Select provider",
+    "search": "Search providers",
+    "searchOrCreate": "Search or enter a custom provider",
+    "create": "Use custom provider “{{name}}”",
+    "empty": "No matching providers"
+  },
   "channels": {
     "title": "Channels",
     "subtitle": "Maintain routing, credentials, and request policies for chat, multimodal, rerank, and asynchronous video upstreams.",
@@ -419,7 +428,7 @@
       "name": "Name",
       "baseUrl": "Upstream base URL",
       "timeout": "Channel timeout (seconds)",
-      "type": "Channel type",
+      "type": "Transport adapter",
       "protocol": "Protocol",
       "status": "Status",
       "weight": "Weight",

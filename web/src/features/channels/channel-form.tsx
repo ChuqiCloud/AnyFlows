@@ -5,6 +5,8 @@ import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import { ProviderPicker } from '@/components/brand/provider-picker'
+import { findProvider } from '@/components/brand/provider-catalog'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -42,6 +44,9 @@ type ChannelFormProps = {
   onCancel: () => void
   onSaved: (channel: AdminChannel) => void
 }
+
+const adapterOptions = ['openai', 'anthropic', 'gemini', 'jina', 'cohere', 'xai']
+  .map((id) => ({ ...findProvider(id)!, id }))
 
 export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormProps) {
   const { t, i18n } = useTranslation()
@@ -159,16 +164,20 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
             </ChannelFormField>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <ChannelFormField id="channel-type" label={t('channels.fields.type')}>
+            <ChannelFormField id="channel-provider" label={t('providers.label')} error={form.formState.errors.provider?.message}>
+              <Controller control={form.control} name="provider" render={({ field }) => <ProviderPicker id="channel-provider" {...field} invalid={!!form.formState.errors.provider} disabled={pending} />} />
+            </ChannelFormField>
+            <ChannelFormField id="channel-type" label={t('channels.fields.type')} hint={t('providers.adapterHint')}>
               <Controller control={form.control} name="channelType" render={({ field }) => (
-                <Select
+                <ProviderPicker
                   id="channel-type"
                   value={field.value}
                   onBlur={field.onBlur}
-                  name={field.name}
                   ref={field.ref}
-                  onChange={(event) => {
-                    const nextType = event.target.value as ChannelType
+                  allowCustom={false}
+                  options={adapterOptions}
+                  onChange={(value) => {
+                    const nextType = value as ChannelType
                     const currentProtocol = form.getValues('protocol')
                     const nextProtocol = nextType === 'anthropic'
                       ? 'anthropic'
@@ -197,14 +206,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                     resetUnsupportedClientSimulation(nextType, nextProtocol)
                     removeUnsupportedParameters(nextProtocol)
                   }}
-                >
-                  <option value="openai">{t('channels.type.openai')}</option>
-                  <option value="anthropic">{t('channels.type.anthropic')}</option>
-                  <option value="gemini">{t('channels.type.gemini')}</option>
-                  <option value="jina">{t('channels.type.jina')}</option>
-                  <option value="cohere">{t('channels.type.cohere')}</option>
-                  <option value="xai">{t('channels.type.xai')}</option>
-                </Select>
+                />
               )} />
             </ChannelFormField>
             <ChannelFormField id="channel-protocol" label={t('channels.fields.protocol')}>

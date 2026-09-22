@@ -38,6 +38,7 @@ export type ParameterRow = {
 }
 
 export type ChannelFormValues = {
+  provider: string
   name: string
   baseUrl: string
   timeoutSeconds: string
@@ -101,6 +102,8 @@ export function buildChannelFormSchema(
   existingClientSimulationBodyProfile: ClientSimulationBodyProfile = '',
 ) {
   return z.object({
+    provider: z.string().refine((value) => isBoundedText(value, 64)
+      && ![...value].some((character) => /\p{Cc}/u.test(character)), messages.invalidField),
     name: z.string().trim().min(1, messages.invalidField).max(128, messages.invalidField),
     baseUrl: z.string().trim().max(2048, messages.invalidField),
     timeoutSeconds: z.string(),
@@ -223,6 +226,7 @@ export function buildChannelFormSchema(
 
 export function defaultChannelValues(channel?: AdminChannel): ChannelFormValues {
   return {
+    provider: channel?.provider ?? channel?.type ?? 'openai',
     name: channel?.name ?? '',
     baseUrl: channel?.base_url ?? '',
     timeoutSeconds: channel?.timeout_secs == null ? '' : String(channel.timeout_secs),
@@ -315,6 +319,7 @@ export function createParameterRow(key: ChannelParameterName | '' = ''): Paramet
 
 function commonRequest(values: ChannelFormValues) {
   return {
+    provider: values.provider.trim(),
     name: values.name.trim(),
     type: values.channelType,
     protocol: values.protocol,

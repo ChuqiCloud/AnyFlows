@@ -45,6 +45,7 @@ export type AdminBrandSettingsRequest = {
     description?: string | null;
 };
 export type AdminChannel = {
+    provider?: string | null;
     id: number;
     type: AdminChannelType;
     name: string;
@@ -87,6 +88,7 @@ export type AdminChannelAutoBanRules = {
     keywords: Array<string>;
 };
 export type AdminChannelCreateRequest = {
+    provider?: string | null;
     name: string;
     type: 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
     protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
@@ -132,6 +134,7 @@ export type AdminChannelProbeStatus = 'healthy' | 'unhealthy' | 'timeout';
 export type AdminChannelProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
 export type AdminChannelType = 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai' | 'bedrock' | 'vertex' | 'custom';
 export type AdminChannelUpdateRequest = {
+    provider?: string | null;
     name: string;
     type: 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
     protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
@@ -3403,6 +3406,7 @@ export type VideoTaskListResponse = {
 };
 export type VideoTaskStatus = 'pending' | 'done' | 'expired' | 'failed';
 export type AdminChannelCreateRequestWritable = {
+    provider?: string | null;
     name: string;
     type: 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
     protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
@@ -3443,6 +3447,7 @@ export type AdminChannelCreateRequestWritable = {
     tag: string | null;
 };
 export type AdminChannelUpdateRequestWritable = {
+    provider?: string | null;
     name: string;
     type: 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
     protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
