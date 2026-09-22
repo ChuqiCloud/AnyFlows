@@ -1576,6 +1576,25 @@ export type OAuthLoginExchangeRequest = {
 export type OAuthLoginStartResponse = {
     authorization_url: string;
 };
+export type OpenAiModel = {
+    id: string;
+    object: string;
+    created: number;
+    owned_by: string;
+};
+export type OpenAiModelList = {
+    object: string;
+    data: Array<OpenAiModel>;
+};
+export type OpenAiModelListError = {
+    error: OpenAiModelListErrorBody;
+};
+export type OpenAiModelListErrorBody = {
+    code: string;
+    message: string;
+    param: string | null;
+    type: string;
+};
 export type OrganizationApprovalCursorQuery = {
     after?: number | null;
     limit?: number | null;
@@ -6612,6 +6631,22 @@ export type ListModelProvidersResponses = {
     200: ModelCatalogProviderListResponse;
 };
 export type ListModelProvidersResponse = ListModelProvidersResponses[keyof ListModelProvidersResponses];
+export type ListGatewayModelsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/v1/models';
+};
+export type ListGatewayModelsErrors = {
+    401: OpenAiModelListError;
+    429: OpenAiModelListError;
+    500: OpenAiModelListError;
+};
+export type ListGatewayModelsError = ListGatewayModelsErrors[keyof ListGatewayModelsErrors];
+export type ListGatewayModelsResponses = {
+    200: OpenAiModelList;
+};
+export type ListGatewayModelsResponse = ListGatewayModelsResponses[keyof ListGatewayModelsResponses];
 export type ListAdminModelsData = {
     body?: never;
     path?: never;

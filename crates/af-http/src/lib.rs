@@ -57,6 +57,7 @@ mod oauth_login;
 mod openai_audio;
 mod openai_embeddings;
 mod openai_images;
+mod openai_models;
 mod openai_responses;
 mod openai_responses_compact;
 mod openai_speech;

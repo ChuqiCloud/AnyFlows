@@ -18,6 +18,7 @@ use af_db::{
 use af_domain::{GroupId, Protocol};
 use af_scheduler::{ChannelIndexSnapshot, InMemoryChannelIndex};
 
+mod gateway;
 mod providers;
 
 type CatalogClock = Arc<dyn Fn() -> Option<u32> + Send + Sync>;
@@ -366,6 +367,13 @@ impl RuntimeModelCatalogReader {
 }
 
 impl ModelCatalogReader for RuntimeModelCatalogReader {
+    fn list_for_token(
+        &self,
+        authentication: af_admin::TokenAuthentication,
+    ) -> af_admin::GatewayModelListFuture<'_> {
+        Box::pin(async move { self.list_gateway_models(authentication).await })
+    }
+
     fn list<'a>(
         &'a self,
         authentication: Option<SessionAuthentication>,

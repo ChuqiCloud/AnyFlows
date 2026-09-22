@@ -74,7 +74,11 @@ impl Drop for TestDatabase {
             let _ = fs::remove_file(candidate);
         }
         let _ = fs::remove_dir_all(self.billing_wal_directory());
-        for suffix in ["billing-wal-first", "billing-wal-second"] {
+        for suffix in [
+            "billing-wal-first",
+            "billing-wal-second",
+            "billing-wal-token-admission",
+        ] {
             let _ = fs::remove_dir_all(self.path.with_extension(suffix));
         }
     }
@@ -144,7 +148,7 @@ async fn start_token_admission_server(
 ) -> RpmServer {
     let config_path = std::env::temp_dir().join(format!(
         "anyflows-token-admission-http-{}.toml",
-        std::process::id()
+        database.path.file_stem().unwrap().to_string_lossy()
     ));
     let wal_directory = database.path.with_extension("billing-wal-token-admission");
     let credential_key = credential_encryption_key();
@@ -194,6 +198,183 @@ async fn stop_rpm_server(server: RpmServer) {
         .unwrap();
     assert_eq!(report.http, ServeOutcome::Drained);
     assert_eq!(report.background, SupervisorShutdown::Drained);
+}
+
+#[tokio::test]
+async fn models_endpoint_lists_all_authorized_models_without_calling_upstream() {
+    let database = TestDatabase::new();
+    seed_valid_token(&database.url).await;
+    let connection = Database::connect(&database.url).await.unwrap();
+    let mut expected = Vec::new();
+    for index in 0..105 {
+        let model = format!("list-model-{index:03}");
+        connection
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Sqlite,
+                "INSERT INTO channel_models (channel_id, model) VALUES (?, ?)",
+                [support::CHANNEL_ID.into(), model.clone().into()],
+            ))
+            .await
+            .unwrap();
+        connection.execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "INSERT INTO model_prices (model, billing_mode, input_price, output_price, cache_read_price, cache_creation_5m_price, cache_creation_1h_price, version) SELECT ?, billing_mode, input_price, output_price, cache_read_price, cache_creation_5m_price, cache_creation_1h_price, version FROM model_prices WHERE model = 'test-model'",
+            [model.clone().into()],
+        )).await.unwrap();
+        expected.push(model);
+    }
+    expected.push("test-model".to_owned());
+    for model in &expected {
+        connection.execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "INSERT INTO models (model, display_name, provider, tags, supports_text_input, supports_text_output, visibility, lifecycle) VALUES (?, ?, 'example', '[]', 1, 1, 2, 2)",
+            [model.clone().into(), model.clone().into()],
+        )).await.unwrap();
+    }
+    connection.execute_unprepared(
+        "INSERT INTO groups (id, name, display_name, flags) VALUES (9900001, 'other', 'Other', '{}')",
+    ).await.unwrap();
+    connection.close().await.unwrap();
+
+    let upstream = TcpListener::bind("127.0.0.1:0").unwrap();
+    upstream.set_nonblocking(true).unwrap();
+    let server = start_token_admission_server(&database, upstream.local_addr().unwrap()).await;
+    let address = server.0;
+    let authorization = format!("Bearer {CLIENT_KEY}");
+    let headers = [
+        ("Authorization", authorization.as_str()),
+        ("Origin", "https://console.example"),
+    ];
+    let missing = send_request(
+        address,
+        "GET",
+        "/v1/models",
+        b"",
+        &[("Origin", "https://console.example")],
+    )
+    .await;
+    assert_invalid_api_key(&missing);
+    let invalid = send_request(
+        address,
+        "GET",
+        "/v1/models",
+        b"",
+        &[
+            ("Authorization", "Bearer invalid"),
+            ("Origin", "https://console.example"),
+        ],
+    )
+    .await;
+    assert_invalid_api_key(&invalid);
+    let wrong_method = send_request(address, "POST", "/v1/models", b"", &headers).await;
+    assert_eq!(wrong_method.status, 405);
+
+    let response = send_request(address, "GET", "/v1/models", b"", &headers).await;
+    assert_eq!(response.status, 200);
+    assert_eq!(response.headers["cache-control"], "no-store");
+    assert!(response.headers["content-type"].starts_with("application/json"));
+    assert!(response.headers.contains_key(REQUEST_ID_HEADER_NAME));
+    let body: Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(body["object"], "list");
+    assert_eq!(body.as_object().unwrap().len(), 2);
+    let data = body["data"].as_array().unwrap();
+    assert_eq!(
+        data.iter()
+            .map(|model| model["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        expected
+    );
+    for model in data {
+        assert_eq!(model["object"], "model");
+        assert_eq!(model["owned_by"], "example");
+        assert!(model["created"].as_i64().unwrap() > 0);
+        assert_eq!(model.as_object().unwrap().len(), 4);
+    }
+    assert_no_auth_canaries(&response);
+
+    execute_database_statement(
+        &database.url,
+        "UPDATE tokens SET model_limits = ? WHERE id = ?",
+        vec![r#"["test-model"]"#.into(), TOKEN_ID.into()],
+    )
+    .await;
+    let filtered = send_request(
+        address,
+        "GET",
+        "/v1/models",
+        b"",
+        &[("x-api-key", CLIENT_KEY)],
+    )
+    .await;
+    assert_eq!(filtered.status, 200);
+    let filtered: Value = serde_json::from_slice(&filtered.body).unwrap();
+    assert_eq!(filtered["data"].as_array().unwrap().len(), 1);
+    assert_eq!(filtered["data"][0]["id"], "test-model");
+
+    execute_database_statement(
+        &database.url,
+        "UPDATE tokens SET group_id = ? WHERE id = ?",
+        vec![9_900_001_i64.into(), TOKEN_ID.into()],
+    )
+    .await;
+    let other_group = send_request(address, "GET", "/v1/models", b"", &headers).await;
+    assert_eq!(other_group.status, 200);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&other_group.body).unwrap(),
+        json!({"object": "list", "data": []})
+    );
+    execute_database_statement(
+        &database.url,
+        "UPDATE tokens SET group_id = NULL, model_limits = NULL WHERE id = ?",
+        vec![TOKEN_ID.into()],
+    )
+    .await;
+
+    for (column, value) in [("visibility", 3_i16), ("lifecycle", 1), ("lifecycle", 4)] {
+        execute_database_statement(
+            &database.url,
+            &format!("UPDATE models SET {column} = ? WHERE model = ?"),
+            vec![value.into(), "test-model".into()],
+        )
+        .await;
+        let hidden = send_request(address, "GET", "/v1/models", b"", &headers).await;
+        assert_eq!(hidden.status, 200);
+        let hidden: Value = serde_json::from_slice(&hidden.body).unwrap();
+        assert_eq!(hidden["data"].as_array().unwrap().len(), 105);
+        assert!(
+            !hidden["data"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|model| model["id"] == "test-model")
+        );
+        execute_database_statement(
+            &database.url,
+            "UPDATE models SET visibility = 2, lifecycle = 2 WHERE model = ?",
+            vec!["test-model".into()],
+        )
+        .await;
+    }
+    execute_database_statement(
+        &database.url,
+        "UPDATE tokens SET status = 2 WHERE id = ?",
+        vec![TOKEN_ID.into()],
+    )
+    .await;
+    assert_invalid_api_key(&send_request(address, "GET", "/v1/models", b"", &headers).await);
+    execute_database_statement(
+        &database.url,
+        "UPDATE tokens SET status = 1 WHERE id = ?",
+        vec![TOKEN_ID.into()],
+    )
+    .await;
+    execute_database_statement(&database.url, "DROP TABLE models", Vec::new()).await;
+    assert_internal_error(&send_request(address, "GET", "/v1/models", b"", &headers).await);
+    assert_eq!(
+        upstream.accept().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+    stop_rpm_server(server).await;
 }
 
 #[tokio::test]

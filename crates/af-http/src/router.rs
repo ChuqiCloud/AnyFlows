@@ -377,6 +377,11 @@ pub fn build_router(
     .with_organization_management_service(organization_management_service);
     let public_routes = Router::new()
         .route(
+            "/v1/models",
+            get(crate::openai_models::list_openai_models)
+                .route_layer(openai_authentication.clone()),
+        )
+        .route(
             "/v1/chat/completions",
             // 只包裹已注册的 POST endpoint，不把路径级 405 改写为 401。
             post(chat_completions).route_layer(openai_authentication.clone()),
