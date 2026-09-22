@@ -132,7 +132,7 @@
     "pageLoading": "正在加载页面"
   },
   "shell": {
-    "notificationsUnread": "{{count}} \u672a\u8bfb\u901a\u77e5",
+    "notificationsUnread": "{{count}} 未读通知",
     "search": "搜索",
     "notifications": "通知偏好",
     "version": "开发预览版",
@@ -510,7 +510,7 @@
       "name": "名称",
       "baseUrl": "上游基础地址",
       "timeout": "渠道超时（秒）",
-      "type": "渠道类型",
+      "type": "通信适配器",
       "protocol": "协议",
       "status": "状态",
       "weight": "权重",
@@ -1952,7 +1952,7 @@
         },
         "not_reported": {
           "title": "上游未报告",
-        "description": "渠道已配置，但本次查询未返回",
+          "description": "渠道已配置，但本次查询未返回",
           "badge": "未报告"
         }
       },
@@ -2160,7 +2160,7 @@
           "semantics": "上游计算方式",
           "inclusive": "输入已含缓存",
           "cache_separated": "缓存独立上报",
-      "ratiosTitle": "本次请求倍率",
+          "ratiosTitle": "本次请求倍率",
           "ratiosHint": "按目标分组、来源到目标分组和当前高峰顺序相乘；1 表示不调整。",
           "group": "目标分组倍率",
           "groupModel": "分组附加倍率",
@@ -2190,7 +2190,7 @@
         "createVersion": "创建新价格",
         "updateVersion": "基于 v{{version}} 更新",
         "expression": "表达式正文",
-      "boundary": "全部价格和确认采用的上下文长度会一次性保存；任一模型或版本冲突都会导致本次保存失败。成功后会影响后续新请求。",
+        "boundary": "全部价格和确认采用的上下文长度会一次性保存；任一模型或版本冲突都会导致本次保存失败。成功后会影响后续新请求。",
         "success_one": "已应用 {{count}} 个模型价格，模型广场已刷新。",
         "success_other": "已应用 {{count}} 个模型价格，模型广场已刷新。"
       },
@@ -2372,7 +2372,8 @@
     "listLabel": "已结算调用列表",
     "status": {
       "settled": "已结算",
-      "settledOnly": "仅已结算"
+      "settledOnly": "仅已结算",
+      "settledAndFailed": "已结算 + 失败"
     },
     "summary": {
       "label": "当前筛选结果概览",
@@ -2530,6 +2531,25 @@
       "traffic": "请求与限制",
       "requests": "累计请求",
       "openManagement": "打开用户管理"
+    },
+    "failed": {
+      "title": "失败调用",
+      "badge": "失败",
+      "status": "失败",
+      "listLabel": "失败调用列表",
+      "emptyTitle": "还没有失败调用",
+      "emptyBody": "网关记录安全错误摘要后，失败调用会显示在这里。",
+      "emptyFilteredTitle": "没有符合筛选条件的失败调用",
+      "emptyFilteredBody": "调整模型或协议筛选后查看其他失败调用。",
+      "columns": {
+        "time": "时间 / 状态",
+        "call": "模型调用",
+        "error": "错误",
+        "duration": "耗时",
+        "internal": "内部信息",
+        "request": "请求 ID",
+        "channel": "渠道"
+      }
     }
   },
   "debugTraces": {
@@ -3137,10 +3157,10 @@
       "snapshotErrors": {
         "no_complete_rounds": "至少需要一组完整的用户与助手往返。",
         "invalid_content": "当前结果包含无法分享的空内容、超长正文或异常消息顺序。",
-      "too_large": "当前结果超过可分享内容的消息数或 512 KiB 容量上限。"
+        "too_large": "当前结果超过可分享内容的消息数或 512 KiB 容量上限。"
       },
       "createErrors": {
-      "invalid": "当前内容不符合分享要求，请检查消息后重试。",
+        "invalid": "当前内容不符合分享要求，请检查消息后重试。",
         "limit": "你的有效分享已达到 32 个，请等待链接过期或撤销已有链接。",
         "unavailable": "暂时无法创建分享链接，请稍后重试。"
       },
@@ -3148,9 +3168,9 @@
         "pageTitle": "共享的 Playground 对话 | AnyFlows",
         "headerScope": "Playground 只读分享",
         "openPlayground": "打开 Playground",
-      "loading": "正在读取分享内容",
+        "loading": "正在读取分享内容",
         "title": "共享的 Playground 对话",
-      "description": "这是分享时保存的只读副本，不包含凭据、参数、用量和路由信息。",
+        "description": "这是分享时保存的只读副本，不包含凭据、参数、用量和路由信息。",
         "readOnly": "只读",
         "created": "创建时间",
         "expires": "失效时间",
@@ -3405,6 +3425,21 @@
       "load": "暂时无法加载站点设置，请稍后重试。",
       "save": "站点设置保存失败，服务端状态未改变。",
       "conflict": "站点设置已被其他管理员更新，请刷新后重新核对。"
+    },
+    "templates": {
+      "title": "前端模板",
+      "description": "从运行目录扫描静态模板并动态切换。模板损坏时服务会继续使用内嵌前端。",
+      "selector": "当前模板",
+      "embedded": "内嵌前端",
+      "embeddedOption": "内嵌前端（默认）",
+      "active": "已启用 {{id}}",
+      "invalid": "校验失败",
+      "invalidHint": "列表中的无效模板不会被启用，请修复文件后重新扫描。",
+      "refresh": "刷新列表",
+      "scan": "重新扫描",
+      "apply": "应用模板",
+      "applying": "正在切换",
+      "error": "模板操作失败，请刷新后重试。"
     }
   },
   "authenticationSettings": {
@@ -3459,7 +3494,7 @@
         "keep": "保留现有密钥",
         "replace": "轮换密钥",
         "clear": "清除密钥",
-      "configured": "密钥已加密保存，管理端不会显示原值。",
+        "configured": "密钥已加密保存，管理端不会显示原值。",
         "missing": "尚未配置密钥。"
       },
       "errors": {
@@ -3830,7 +3865,7 @@
       }
     },
     "security": {
-    "title": "隐私保护说明",
+      "title": "隐私保护说明",
       "description": "页面只能看到密码是否已配置。密码、收件人、正文和 SMTP 响应都不会出现在页面缓存、URL 或错误信息里。"
     }
   },
@@ -3974,8 +4009,8 @@
       "save": "网络设置保存失败，服务端状态未改变。"
     },
     "security": {
-    "title": "安全说明",
-    "description": "代理密码会加密保存。页面仅显示是否已配置，不会显示密码或完整代理地址。"
+      "title": "安全说明",
+      "description": "代理密码会加密保存。页面仅显示是否已配置，不会显示密码或完整代理地址。"
     },
     "behavior": {
       "title": "配置生效方式",
@@ -4152,7 +4187,8 @@
       "loadTitle": "无法加载邀请中心",
       "loadBody": "当前邀请数据暂时不可用，请稍后重试。",
       "copy": "浏览器未允许写入剪贴板，请手动选择内容复制。"
-    }
+    },
+    "organization": {}
   },
   "refunds": {
     "eyebrow": "支付运营",
@@ -4173,12 +4209,47 @@
       "approved": "已批准 {{count}}",
       "succeeded": "已成功 {{count}}"
     },
-    "views": { "label": "退款工作台视图", "approvals": "审批", "reconciliation": "对账" },
-    "orderKinds": { "topup": "充值", "subscription": "订阅" },
-    "statuses": { "requested": "待提交", "submitted": "已提交", "succeeded": "退款成功", "failed": "提交失败", "canceled": "已取消", "manually_succeeded": "人工退款成功", "manually_failed": "人工退款失败" },
-    "approval": { "pending": "待审批", "approved": "已批准", "rejected": "已拒绝" },
-    "table": { "request": "请求", "order": "订单", "amount": "退款 / 原金额", "status": "服务商状态", "approval": "审批", "actions": "操作" },
-    "actions": { "refresh": "刷新", "retry": "重试", "approve": "批准", "reject": "拒绝", "submit": "提交退款", "manualComplete": "登记人工结果", "manualConfirm": "确认登记", "cancel": "取消" },
+    "views": {
+      "label": "退款工作台视图",
+      "approvals": "审批",
+      "reconciliation": "对账"
+    },
+    "orderKinds": {
+      "topup": "充值",
+      "subscription": "订阅"
+    },
+    "statuses": {
+      "requested": "待提交",
+      "submitted": "已提交",
+      "succeeded": "退款成功",
+      "failed": "提交失败",
+      "canceled": "已取消",
+      "manually_succeeded": "人工退款成功",
+      "manually_failed": "人工退款失败"
+    },
+    "approval": {
+      "pending": "待审批",
+      "approved": "已批准",
+      "rejected": "已拒绝"
+    },
+    "table": {
+      "request": "请求",
+      "order": "订单",
+      "amount": "退款 / 原金额",
+      "status": "服务商状态",
+      "approval": "审批",
+      "actions": "操作"
+    },
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试",
+      "approve": "批准",
+      "reject": "拒绝",
+      "submit": "提交退款",
+      "manualComplete": "登记人工结果",
+      "manualConfirm": "确认登记",
+      "cancel": "取消"
+    },
     "confirm": {
       "approveTitle": "批准这笔退款？",
       "approveBody": "批准后保存审批记录。若已开启自动提交，将使用当前退款请求向支付服务商提交；即使提交被拒绝，审批记录仍会保留。",
@@ -4209,9 +4280,25 @@
       "approver": "审批人 #{{id}}",
       "minorUnit": "负向退款金额",
       "adminScope": "平台范围",
-      "columns": { "owner": "资金主体", "order": "订单", "amount": "退款金额", "status": "结果", "approver": "审批人", "time": "确认时间" },
-      "actions": { "refresh": "刷新退款对账", "retry": "重试", "loadMore": "加载更早记录", "loadingMore": "正在加载" },
-      "errors": { "title": "无法读取退款对账", "body": "暂时无法加载退款记录，请稍后重试。", "more": "更早的退款对账加载失败。" }
+      "columns": {
+        "owner": "资金主体",
+        "order": "订单",
+        "amount": "退款金额",
+        "status": "结果",
+        "approver": "审批人",
+        "time": "确认时间"
+      },
+      "actions": {
+        "refresh": "刷新退款对账",
+        "retry": "重试",
+        "loadMore": "加载更早记录",
+        "loadingMore": "正在加载"
+      },
+      "errors": {
+        "title": "无法读取退款对账",
+        "body": "暂时无法加载退款记录，请稍后重试。",
+        "more": "更早的退款对账加载失败。"
+      }
     },
     "errors": {
       "listTitle": "暂时无法读取退款请求",
@@ -4816,71 +4903,300 @@
     "eyebrow": "企业空间",
     "title": "合同价",
     "subtitle": "设置当前企业的模型合同价。每次修改生成新版本，进行中的请求仍按原价格结算。",
-    "summary": { "count": "共 {{count}} 个价格版本" },
-    "columns": { "model": "模型", "protocol": "协议", "prices": "输入 / 输出", "effective": "生效区间", "version": "版本", "actions": "操作" },
-    "protocol": { "openai_chat": "OpenAI Chat", "openai_responses": "OpenAI Responses", "openai_embeddings": "OpenAI Embeddings", "openai_images": "OpenAI Images", "openai_audio": "OpenAI Audio", "openai_speech": "OpenAI Speech", "jina_rerank": "Jina 重排", "cohere_rerank": "Cohere 重排", "xai_video": "xAI 视频", "anthropic": "Anthropic", "gemini": "Gemini" },
+    "summary": {
+      "count": "共 {{count}} 个价格版本"
+    },
+    "columns": {
+      "model": "模型",
+      "protocol": "协议",
+      "prices": "输入 / 输出",
+      "effective": "生效区间",
+      "version": "版本",
+      "actions": "操作"
+    },
+    "protocol": {
+      "openai_chat": "OpenAI Chat",
+      "openai_responses": "OpenAI Responses",
+      "openai_embeddings": "OpenAI Embeddings",
+      "openai_images": "OpenAI Images",
+      "openai_audio": "OpenAI Audio",
+      "openai_speech": "OpenAI Speech",
+      "jina_rerank": "Jina 重排",
+      "cohere_rerank": "Cohere 重排",
+      "xai_video": "xAI 视频",
+      "anthropic": "Anthropic",
+      "gemini": "Gemini"
+    },
     "current": "当前开放",
     "scheduled": "已排期",
     "pricePair": "输入 {{input}} · 输出 {{output}}",
-    "actions": { "refresh": "刷新", "retry": "重试", "verify": "刷新", "create": "创建合同价", "creating": "创建中…", "close": "关闭区间", "cancel": "取消" },
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试",
+      "verify": "刷新",
+      "create": "创建合同价",
+      "creating": "创建中…",
+      "close": "关闭区间",
+      "cancel": "取消"
+    },
     "readOnly": "你可以查看合同价，但没有创建或关闭版本的权限。",
-    "empty": { "title": "暂无合同价", "body": "还没有合同价。创建后，之后的请求会按企业价格结算。" },
-    "restricted": { "title": "合同价访问受限", "body": "当前企业角色不包含读取合同价的权限。" },
-    "form": { "title": "创建合同价", "subtitle": "保存后生成一个新版本，生效区间不能和已有版本重叠。", "model": "模型", "protocol": "协议", "input": "输入单价", "output": "输出单价", "cache_read": "缓存读取单价", "cache_creation_5m": "缓存创建（5 分钟）", "cache_creation_1h": "缓存创建（1 小时）", "effectiveFrom": "生效时间", "effectiveUntil": "失效时间（可选）", "effectiveUntilHint": "留空表示保持开放。", "expectedVersion": "服务端将按 v{{version}} 校验下一版本。" },
-    "close": { "title": "关闭合同价区间", "description": "现在关闭 {{model}}（{{protocol}}）吗？服务端会校验版本 {{version}}，关闭后不可重新开放。" },
-    "errors": { "listTitle": "合同价加载失败", "listBody": "暂时无法加载价格历史，请稍后重试。", "forbiddenTitle": "合同价访问被拒绝", "forbiddenBody": "成员关系或企业授权可能已不允许读取合同价。", "intervalConflict": "该模型和协议的生效区间与其他版本重叠，请选择更晚的生效时间。", "conflict": "合同价已在其他会话中变化，请刷新后按最新版本提交。", "mutation": "操作没有返回可靠结果，请刷新价格历史后重试。" }
+    "empty": {
+      "title": "暂无合同价",
+      "body": "还没有合同价。创建后，之后的请求会按企业价格结算。"
+    },
+    "restricted": {
+      "title": "合同价访问受限",
+      "body": "当前企业角色不包含读取合同价的权限。"
+    },
+    "form": {
+      "title": "创建合同价",
+      "subtitle": "保存后生成一个新版本，生效区间不能和已有版本重叠。",
+      "model": "模型",
+      "protocol": "协议",
+      "input": "输入单价",
+      "output": "输出单价",
+      "cache_read": "缓存读取单价",
+      "cache_creation_5m": "缓存创建（5 分钟）",
+      "cache_creation_1h": "缓存创建（1 小时）",
+      "effectiveFrom": "生效时间",
+      "effectiveUntil": "失效时间（可选）",
+      "effectiveUntilHint": "留空表示保持开放。",
+      "expectedVersion": "服务端将按 v{{version}} 校验下一版本。"
+    },
+    "close": {
+      "title": "关闭合同价区间",
+      "description": "现在关闭 {{model}}（{{protocol}}）吗？服务端会校验版本 {{version}}，关闭后不可重新开放。"
+    },
+    "errors": {
+      "listTitle": "合同价加载失败",
+      "listBody": "暂时无法加载价格历史，请稍后重试。",
+      "forbiddenTitle": "合同价访问被拒绝",
+      "forbiddenBody": "成员关系或企业授权可能已不允许读取合同价。",
+      "intervalConflict": "该模型和协议的生效区间与其他版本重叠，请选择更晚的生效时间。",
+      "conflict": "合同价已在其他会话中变化，请刷新后按最新版本提交。",
+      "mutation": "操作没有返回可靠结果，请刷新价格历史后重试。"
+    }
   },
   "organizationCredit": {
     "eyebrow": "企业工作区",
     "title": "企业授信",
     "subtitle": "查看账期账单、还款和核销记录，管理授信策略。",
-    "tabs": { "label": "授信分类", "terms": "授信策略", "invoices": "账期账单", "repayments": "还款记录", "allocations": "核销记录" },
-    "columns": { "limit": "授信额度", "period": "账期", "status": "状态", "effective": "生效时间", "version": "版本", "amount": "金额", "due": "到期时间", "source": "来源", "received": "到账时间", "created": "登记时间", "invoice": "账单", "repayment": "还款", "allocated": "核销时间", "settled": "已结清" },
-    "period": { "netDays": "{{days}} 天账期", "endOfMonth": "月末结算" },
-    "status": { "active": "生效", "paused": "已暂停", "closed": "已关闭" },
-    "invoiceStatus": { "due": "待还", "overdue": "逾期", "settled": "已结清", "voided": "已作废" },
-    "source": { "bank_transfer": "对公转账", "other_confirmed": "其他已确认" },
+    "tabs": {
+      "label": "授信分类",
+      "terms": "授信策略",
+      "invoices": "账期账单",
+      "repayments": "还款记录",
+      "allocations": "核销记录"
+    },
+    "columns": {
+      "limit": "授信额度",
+      "period": "账期",
+      "status": "状态",
+      "effective": "生效时间",
+      "version": "版本",
+      "amount": "金额",
+      "due": "到期时间",
+      "source": "来源",
+      "received": "到账时间",
+      "created": "登记时间",
+      "invoice": "账单",
+      "repayment": "还款",
+      "allocated": "核销时间",
+      "settled": "已结清"
+    },
+    "period": {
+      "netDays": "{{days}} 天账期",
+      "endOfMonth": "月末结算"
+    },
+    "status": {
+      "active": "生效",
+      "paused": "已暂停",
+      "closed": "已关闭"
+    },
+    "invoiceStatus": {
+      "due": "待还",
+      "overdue": "逾期",
+      "settled": "已结清",
+      "voided": "已作废"
+    },
+    "source": {
+      "bank_transfer": "对公转账",
+      "other_confirmed": "其他已确认"
+    },
     "yes": "是",
     "no": "否",
     "readOnly": "你可以查看授信和账期记录，但没有管理授信策略的权限。",
-    "actions": { "refresh": "刷新", "retry": "重试", "loadMore": "加载更早记录", "create": "新建策略", "save": "保存策略", "cancel": "取消", "pause": "暂停", "resume": "恢复", "close": "关闭" },
-    "form": { "currency": "币种", "limit": "额度（最小单位）", "period": "账期类型", "days": "天数", "effectiveFrom": "生效时间" },
-    "empty": { "termsTitle": "暂无授信策略", "termsBody": "创建策略后，企业账期边界会按版本保存。", "invoicesTitle": "暂无账期账单", "invoicesBody": "企业用量形成账单后会显示在这里。", "repaymentsTitle": "暂无还款记录", "repaymentsBody": "财务确认到账的还款会显示在这里。", "allocationsTitle": "暂无核销记录", "allocationsBody": "还款核销账单后会显示核销记录。" },
-    "restricted": { "title": "授信访问受限", "body": "当前企业角色没有读取授信和账期记录的权限。" },
-    "errors": { "loadTitle": "授信记录加载失败", "loadBody": "暂时无法加载授信数据，请稍后重试。", "forbiddenTitle": "授信访问被拒绝", "forbiddenBody": "成员关系或企业授权可能已不允许读取授信记录。", "mutation": "策略操作没有返回可靠结果，请刷新后重试。" }
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试",
+      "loadMore": "加载更早记录",
+      "create": "新建策略",
+      "save": "保存策略",
+      "cancel": "取消",
+      "pause": "暂停",
+      "resume": "恢复",
+      "close": "关闭"
+    },
+    "form": {
+      "currency": "币种",
+      "limit": "额度（最小单位）",
+      "period": "账期类型",
+      "days": "天数",
+      "effectiveFrom": "生效时间"
+    },
+    "empty": {
+      "termsTitle": "暂无授信策略",
+      "termsBody": "创建策略后，企业账期边界会按版本保存。",
+      "invoicesTitle": "暂无账期账单",
+      "invoicesBody": "企业用量形成账单后会显示在这里。",
+      "repaymentsTitle": "暂无还款记录",
+      "repaymentsBody": "财务确认到账的还款会显示在这里。",
+      "allocationsTitle": "暂无核销记录",
+      "allocationsBody": "还款核销账单后会显示核销记录。"
+    },
+    "restricted": {
+      "title": "授信访问受限",
+      "body": "当前企业角色没有读取授信和账期记录的权限。"
+    },
+    "errors": {
+      "loadTitle": "授信记录加载失败",
+      "loadBody": "暂时无法加载授信数据，请稍后重试。",
+      "forbiddenTitle": "授信访问被拒绝",
+      "forbiddenBody": "成员关系或企业授权可能已不允许读取授信记录。",
+      "mutation": "策略操作没有返回可靠结果，请刷新后重试。"
+    }
   },
   "organizationApprovals": {
     "eyebrow": "企业工作区",
     "title": "企业审批",
     "subtitle": "管理审批模板和申请。涉及成员、预算或资金的变更，审批通过后才会执行。",
     "summary": "{{templates}} 个模板版本 · {{requests}} 个申请",
-    "actions": { "refresh": "刷新", "retry": "重试", "createTemplate": "创建模板", "createRequest": "发起申请", "approve": "批准", "reject": "拒绝", "submit": "提交", "create": "创建", "cancel": "取消" },
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试",
+      "createTemplate": "创建模板",
+      "createRequest": "发起申请",
+      "approve": "批准",
+      "reject": "拒绝",
+      "submit": "提交",
+      "create": "创建",
+      "cancel": "取消"
+    },
     "readOnly": "当前可以查看申请，但没有管理模板或提交审批决定的权限。",
-    "restricted": { "title": "审批访问受限", "body": "当前企业角色没有审批读取或申请权限。" },
-    "empty": { "title": "暂无审批申请", "body": "还没有审批申请。从成员、预算等流程发起申请后会显示在这里。" },
-    "templates": { "title": "模板版本", "empty": "当前企业还没有可用的审批模板版本。" },
-    "resource": { "member": "成员", "budget": "预算", "service_account": "服务账号", "contract_price": "合同价", "funds": "资金" },
-    "status": { "pending": "待审批", "approved": "已批准", "rejected": "已拒绝", "timed_out": "已超时" },
-    "fields": { "requestedBy": "发起人", "created": "创建时间", "expires": "过期时间" },
-    "forms": { "templateTitle": "创建模板版本", "templateKey": "模板键", "resourceType": "资源类型", "digest": "定义摘要（64 位小写十六进制）", "requestTitle": "发起审批申请", "template": "模板版本", "templatePlaceholder": "选择模板", "summary": "资源摘要", "expires": "过期时间" },
-    "decision": { "approveTitle": "批准申请", "rejectTitle": "拒绝申请", "description": "提交申请 #{{id}} 的审批决定？决定提交后不可更改，相关资源需在后续执行步骤完成后才会变更。" },
-    "errors": { "listTitle": "无法加载审批记录", "listBody": "审批目录暂时不可用，请稍后重试。", "forbiddenTitle": "审批访问被拒绝", "forbiddenBody": "当前成员关系或企业权限已不允许查看此页面。", "conflict": "审批记录已被其他人更新，请刷新后重新确认最新状态。", "expired": "申请已过期，不能再提交人工决定。", "mutation": "操作没有返回可靠结果，请刷新后重试。" }
+    "restricted": {
+      "title": "审批访问受限",
+      "body": "当前企业角色没有审批读取或申请权限。"
+    },
+    "empty": {
+      "title": "暂无审批申请",
+      "body": "还没有审批申请。从成员、预算等流程发起申请后会显示在这里。"
+    },
+    "templates": {
+      "title": "模板版本",
+      "empty": "当前企业还没有可用的审批模板版本。"
+    },
+    "resource": {
+      "member": "成员",
+      "budget": "预算",
+      "service_account": "服务账号",
+      "contract_price": "合同价",
+      "funds": "资金"
+    },
+    "status": {
+      "pending": "待审批",
+      "approved": "已批准",
+      "rejected": "已拒绝",
+      "timed_out": "已超时"
+    },
+    "fields": {
+      "requestedBy": "发起人",
+      "created": "创建时间",
+      "expires": "过期时间"
+    },
+    "forms": {
+      "templateTitle": "创建模板版本",
+      "templateKey": "模板键",
+      "resourceType": "资源类型",
+      "digest": "定义摘要（64 位小写十六进制）",
+      "requestTitle": "发起审批申请",
+      "template": "模板版本",
+      "templatePlaceholder": "选择模板",
+      "summary": "资源摘要",
+      "expires": "过期时间"
+    },
+    "decision": {
+      "approveTitle": "批准申请",
+      "rejectTitle": "拒绝申请",
+      "description": "提交申请 #{{id}} 的审批决定？决定提交后不可更改，相关资源需在后续执行步骤完成后才会变更。"
+    },
+    "errors": {
+      "listTitle": "无法加载审批记录",
+      "listBody": "审批目录暂时不可用，请稍后重试。",
+      "forbiddenTitle": "审批访问被拒绝",
+      "forbiddenBody": "当前成员关系或企业权限已不允许查看此页面。",
+      "conflict": "审批记录已被其他人更新，请刷新后重新确认最新状态。",
+      "expired": "申请已过期，不能再提交人工决定。",
+      "mutation": "操作没有返回可靠结果，请刷新后重试。"
+    }
   },
   "organizationDepartments": {
     "eyebrow": "企业空间",
     "title": "部门目录",
     "subtitle": "管理企业的部门树，可以新建、移动和停用部门。",
-    "actions": {"refresh": "刷新", "retry": "重试", "create": "新建部门", "move": "移动", "disable": "停用", "cancel": "取消", "loading": "正在加载", "loadMore": "加载更多"},
-    "fields": {"name": "部门名称", "parent": "上级部门", "root": "企业根部门", "sortOrder": "排序值"},
-    "status": {"active": "活动", "disabled": "已停用"},
-    "row": {"depth": "深度 {{depth}}", "version": "版本 {{version}}"},
-    "list": {"title": "部门目录", "description": "已停用的部门会保留在这里供审计，不能恢复。"},
-    "create": {"title": "新增部门", "description": "新部门创建后立即可用。"},
-    "move": {"title": "移动 {{name}}", "description": "整个子树会一起移动。不能移到自己的下级，也不能超过最大深度。"},
-    "disable": {"title": "停用部门", "description": "确定停用 {{name}} 吗？此操作不可恢复。存在活动成员、子部门、预算或服务账号时，服务端会拒绝请求。"},
-    "empty": {"title": "还没有部门", "body": "还没有部门。创建后可以把成员和预算归到部门下。"},
-    "restricted": {"title": "无权访问部门目录", "body": "当前企业角色不包含读取部门的权限。"},
-    "errors": {"listTitle": "无法读取部门目录", "listBody": "部门目录暂时不可用，企业现有状态不受影响。", "conflict": "部门已被其他操作更新，请刷新目录后按最新版本重新提交。", "mutation": "操作没有返回可靠结果，请刷新目录后重试。"}
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试",
+      "create": "新建部门",
+      "move": "移动",
+      "disable": "停用",
+      "cancel": "取消",
+      "loading": "正在加载",
+      "loadMore": "加载更多"
+    },
+    "fields": {
+      "name": "部门名称",
+      "parent": "上级部门",
+      "root": "企业根部门",
+      "sortOrder": "排序值"
+    },
+    "status": {
+      "active": "活动",
+      "disabled": "已停用"
+    },
+    "row": {
+      "depth": "深度 {{depth}}",
+      "version": "版本 {{version}}"
+    },
+    "list": {
+      "title": "部门目录",
+      "description": "已停用的部门会保留在这里供审计，不能恢复。"
+    },
+    "create": {
+      "title": "新增部门",
+      "description": "新部门创建后立即可用。"
+    },
+    "move": {
+      "title": "移动 {{name}}",
+      "description": "整个子树会一起移动。不能移到自己的下级，也不能超过最大深度。"
+    },
+    "disable": {
+      "title": "停用部门",
+      "description": "确定停用 {{name}} 吗？此操作不可恢复。存在活动成员、子部门、预算或服务账号时，服务端会拒绝请求。"
+    },
+    "empty": {
+      "title": "还没有部门",
+      "body": "还没有部门。创建后可以把成员和预算归到部门下。"
+    },
+    "restricted": {
+      "title": "无权访问部门目录",
+      "body": "当前企业角色不包含读取部门的权限。"
+    },
+    "errors": {
+      "listTitle": "无法读取部门目录",
+      "listBody": "部门目录暂时不可用，企业现有状态不受影响。",
+      "conflict": "部门已被其他操作更新，请刷新目录后按最新版本重新提交。",
+      "mutation": "操作没有返回可靠结果，请刷新目录后重试。"
+    }
   },
   "organizationServiceAccounts": {
     "eyebrow": "企业空间",
@@ -5137,7 +5453,7 @@
       "mutation": {
         "budget_conflict": {
           "title": "策略状态已发生变化",
-        "body": "其他操作已为同一适用对象创建新版本。请刷新后选择更晚的生效时间再提交。"
+          "body": "其他操作已为同一适用对象创建新版本。请刷新后选择更晚的生效时间再提交。"
         },
         "budget_outcome_unknown": {
           "title": "暂时无法确认创建结果",
@@ -5148,12 +5464,12 @@
           "body": "当前企业角色已不再允许创建预算策略。"
         },
         "organization_not_found": {
-        "title": "预算适用对象不存在",
+          "title": "预算适用对象不存在",
           "body": "所选企业、团队或成员已失效，请刷新列表后重新选择。"
         },
         "invalid_request": {
           "title": "预算参数无效",
-        "body": "请检查适用对象、周期、额度和生效时间。"
+          "body": "请检查适用对象、周期、额度和生效时间。"
         },
         "unknown": {
           "title": "无法创建预算策略",
@@ -5506,7 +5822,7 @@
         "notApplicable": "当前不适用"
       },
       "funding": {
-      "title": "资金与套餐限制",
+        "title": "资金与套餐限制",
         "wallet": "企业钱包只用于企业调用。充值不会自动购买或续费套餐。",
         "upgrade": "有钱包管理权限的成员可以在下方购买套餐。续费、升级和降级功能还在开发中。"
       },
@@ -5588,8 +5904,8 @@
         }
       },
       "links": {
-      "members": "成员与团队",
-      "departments": "部门目录",
+        "members": "成员与团队",
+        "departments": "部门目录",
         "keys": "企业 API Key",
         "serviceAccounts": "服务账号",
         "wallet": "企业钱包与流水",
@@ -5638,7 +5954,10 @@
         "empty": "该成员尚未拥有部门归属。",
         "unknown": "部门 #{{id}}",
         "primary": "主部门",
-        "status": {"active": "活动", "removed": "已解除"},
+        "status": {
+          "active": "活动",
+          "removed": "已解除"
+        },
         "version": "版本 {{version}}",
         "select": "选择部门",
         "add": "添加",
@@ -5646,7 +5965,10 @@
         "setPrimary": "设为主部门",
         "remove": "解除部门归属",
         "primaryProtected": "不能直接解除主部门，请先将其他部门设为主部门。",
-        "errors": {"load": "无法加载部门归属。", "mutation": "部门归属已被并发更新或操作被拒绝，请刷新成员后重试。"}
+        "errors": {
+          "load": "无法加载部门归属。",
+          "mutation": "部门归属已被并发更新或操作被拒绝，请刷新成员后重试。"
+        }
       },
       "list": {
         "title": "成员目录",
@@ -5894,9 +6216,25 @@
         "approver": "审批人 #{{id}}",
         "minorUnit": "负向退款金额",
         "adminScope": "企业范围",
-        "columns": { "owner": "资金主体", "order": "订单", "amount": "退款金额", "status": "结果", "approver": "审批人", "time": "确认时间" },
-        "actions": { "refresh": "刷新退款对账", "retry": "重试", "loadMore": "加载更早记录", "loadingMore": "正在加载" },
-        "errors": { "title": "无法读取企业退款对账", "body": "企业暂时无法加载退款记录，请稍后重试。", "more": "更早的企业退款对账加载失败。" }
+        "columns": {
+          "owner": "资金主体",
+          "order": "订单",
+          "amount": "退款金额",
+          "status": "结果",
+          "approver": "审批人",
+          "time": "确认时间"
+        },
+        "actions": {
+          "refresh": "刷新退款对账",
+          "retry": "重试",
+          "loadMore": "加载更早记录",
+          "loadingMore": "正在加载"
+        },
+        "errors": {
+          "title": "无法读取企业退款对账",
+          "body": "企业暂时无法加载退款记录，请稍后重试。",
+          "more": "更早的企业退款对账加载失败。"
+        }
       }
     },
     "settings": {
@@ -5968,9 +6306,21 @@
         "disabled": "尚未授权使用",
         "configured": "已配置",
         "notConfigured": "未配置",
-        "protocol": { "oidc": "OpenID Connect", "saml": "SAML 2.0" },
-        "status": { "draft": "草稿", "active": "活动", "disabled": "已停用" },
-      "fields": { "protocol": "协议", "version": "版本", "secret": "密钥", "metadata": "配置信息" },
+        "protocol": {
+          "oidc": "OpenID Connect",
+          "saml": "SAML 2.0"
+        },
+        "status": {
+          "draft": "草稿",
+          "active": "活动",
+          "disabled": "已停用"
+        },
+        "fields": {
+          "protocol": "协议",
+          "version": "版本",
+          "secret": "密钥",
+          "metadata": "配置信息"
+        },
         "providers": {
           "add": "添加身份提供方",
           "edit": "编辑",
@@ -5979,9 +6329,16 @@
           "editorHint": "按协议填写配置，保存时由服务端校验并加密托管密钥；浏览器不保存密钥。",
           "displayName": "显示名称",
           "protocol": "协议",
-          "protocols": { "oidc": "OpenID Connect", "saml": "SAML 2.0" },
+          "protocols": {
+            "oidc": "OpenID Connect",
+            "saml": "SAML 2.0"
+          },
           "status": "状态",
-          "statuses": { "draft": "草稿", "active": "活动", "disabled": "已停用" },
+          "statuses": {
+            "draft": "草稿",
+            "active": "活动",
+            "disabled": "已停用"
+          },
           "clientSecret": "Client Secret",
           "clientSecretHint": "编辑时留空表示沿用已有密钥；需要替换时输入新值。",
           "clearClientSecret": "清除已托管密钥",
@@ -6011,7 +6368,10 @@
           "save": "保存配置",
           "create": "创建身份提供方",
           "cancel": "取消",
-          "errors": { "generic": "身份提供方保存失败，请检查字段和授权状态后重试。", "conflict": "身份提供方已被其他管理员更新，请刷新后重新编辑。" }
+          "errors": {
+            "generic": "身份提供方保存失败，请检查字段和授权状态后重试。",
+            "conflict": "身份提供方已被其他管理员更新，请刷新后重新编辑。"
+          }
         },
         "login": {
           "start": "发起 SAML 登录",
@@ -6022,8 +6382,17 @@
         "domains": {
           "title": "已验证域名",
           "subtitle": "添加 DNS TXT 记录，证明这个域名归你们企业所有。",
-          "status": { "pending": "等待 TXT", "verified": "已验证", "revoked": "已撤销" },
-          "fields": { "version": "版本", "expires": "证明过期", "verified": "验证时间", "recheck": "下次复验" },
+          "status": {
+            "pending": "等待 TXT",
+            "verified": "已验证",
+            "revoked": "已撤销"
+          },
+          "fields": {
+            "version": "版本",
+            "expires": "证明过期",
+            "verified": "验证时间",
+            "recheck": "下次复验"
+          },
           "notAvailable": "暂无",
           "empty": {
             "title": "尚未添加企业域名",
@@ -6056,8 +6425,15 @@
         "policy": {
           "title": "SSO 强制策略",
           "subtitle": "强制使用 SSO 前，企业所有者需先配置恢复入口，以便在 SSO 不可用时恢复访问。",
-          "mode": { "optional": "Optional（可选）", "required": "Required（强制）" },
-          "fields": { "mode": "策略模式", "version": "版本", "recovery": "恢复状态" },
+          "mode": {
+            "optional": "Optional（可选）",
+            "required": "Required（强制）"
+          },
+          "fields": {
+            "mode": "策略模式",
+            "version": "版本",
+            "recovery": "恢复状态"
+          },
           "modeLabel": "登录策略",
           "save": "保存策略",
           "ready": "已就绪",
@@ -6095,29 +6471,29 @@
           "manageBody": "当前角色拥有管理权限，可使用右上角“添加身份提供方”或每行的“编辑”完成配置。",
           "readBody": "当前企业还没有可读取的身份提供方配置。"
         },
-  "closure": {
-    "title": "流程状态",
-    "provider": "身份提供方",
-    "domains": "域名验证",
-    "policy": "强制策略",
-    "recovery": "恢复入口",
-    "audit": "审计状态",
-    "available": "已接入",
-    "pending": "待接入",
-    "viewAudit": "查看审计",
-    "status": {
-      "live": "已接入",
-      "empty": "未配置",
-      "pending": "等待验证",
-      "loading": "加载中",
-      "error": "暂时不可用",
-      "restricted": "受限",
-      "revoked": "已撤销",
-      "notReady": "未就绪"
-    },
-    "hint": "审计明细在单独的页面查看。"
-  }
-}
+        "closure": {
+          "title": "流程状态",
+          "provider": "身份提供方",
+          "domains": "域名验证",
+          "policy": "强制策略",
+          "recovery": "恢复入口",
+          "audit": "审计状态",
+          "available": "已接入",
+          "pending": "待接入",
+          "viewAudit": "查看审计",
+          "status": {
+            "live": "已接入",
+            "empty": "未配置",
+            "pending": "等待验证",
+            "loading": "加载中",
+            "error": "暂时不可用",
+            "restricted": "受限",
+            "revoked": "已撤销",
+            "notReady": "未就绪"
+          },
+          "hint": "审计明细在单独的页面查看。"
+        }
+      }
     }
   },
   "organizationProvisioning": {
@@ -6129,14 +6505,14 @@
       "name": "企业名称",
       "slug": "企业标识",
       "slugHint": "仅允许小写字母、数字和连字符，且必须以字母或数字开头和结尾。",
-    "reason": "业务用途",
-    "material": "申请材料",
-    "materialKind": "材料类型",
-    "materialFile": "上传文件",
-    "materialHint": "支持 PDF、PNG、JPG 或 WebP，单个文件不超过 50 MB，全部材料不超过 100 MB。",
-    "addMaterial": "添加材料",
-    "removeMaterial": "移除材料",
-    "idempotent": "使用同一请求键重复提交会返回同一笔申请。"
+      "reason": "业务用途",
+      "material": "申请材料",
+      "materialKind": "材料类型",
+      "materialFile": "上传文件",
+      "materialHint": "支持 PDF、PNG、JPG 或 WebP，单个文件不超过 50 MB，全部材料不超过 100 MB。",
+      "addMaterial": "添加材料",
+      "removeMaterial": "移除材料",
+      "idempotent": "使用同一请求键重复提交会返回同一笔申请。"
     },
     "retry": {
       "title": "提交新的申请",
@@ -6168,7 +6544,12 @@
         "review": "审批申请",
         "apply": "申请开通"
       },
-      "filters": { "all": "全部", "pending": "待审核", "approved": "已批准", "rejected": "已拒绝" },
+      "filters": {
+        "all": "全部",
+        "pending": "待审核",
+        "approved": "已批准",
+        "rejected": "已拒绝"
+      },
       "review": "审核",
       "approve": "批准并开通",
       "reject": "拒绝",
@@ -6177,14 +6558,14 @@
       "teams": "团队",
       "keys": "企业 Key",
       "retention": "审计天数",
-    "emptyTitle": "暂无企业开通申请",
-    "emptyBody": "用户提交申请后，会显示在这里。",
-    "materials": "申请材料",
-    "materialsLoading": "正在加载材料信息…",
-    "materialsError": "材料暂时无法加载或下载，请稍后重试。",
-    "materialsEmpty": "申请人未提交材料。",
-    "download": "下载材料",
-    "unavailable": "正文不可用"
+      "emptyTitle": "暂无企业开通申请",
+      "emptyBody": "用户提交申请后，会显示在这里。",
+      "materials": "申请材料",
+      "materialsLoading": "正在加载材料信息…",
+      "materialsError": "材料暂时无法加载或下载，请稍后重试。",
+      "materialsEmpty": "申请人未提交材料。",
+      "download": "下载材料",
+      "unavailable": "正文不可用"
     },
     "flow": {
       "apply": {
@@ -6207,9 +6588,9 @@
     "errors": {
       "loadTitle": "无法加载企业开通记录",
       "loadBody": "暂时无法访问，现有申请和授权不会改变。",
-    "mutation": "操作没有返回可靠结果，请保留当前内容后重试。",
-    "materials": "每份材料必须是 PDF、PNG、JPG 或 WebP，单个文件不超过 50 MB，全部材料不超过 100 MB。",
-    "conflict": "申请已被并发更新，请刷新后按最新服务端版本审核。",
+      "mutation": "操作没有返回可靠结果，请保留当前内容后重试。",
+      "materials": "每份材料必须是 PDF、PNG、JPG 或 WebP，单个文件不超过 50 MB，全部材料不超过 100 MB。",
+      "conflict": "申请已被并发更新，请刷新后按最新服务端版本审核。",
       "unavailable": "企业开通服务暂时不可用，请稍后重试。"
     }
   },
@@ -6223,10 +6604,22 @@
     "process": {
       "title": "认证流程",
       "steps": {
-        "submit": { "title": "提交材料", "body": "企业所有者或管理员提交工商、业务材料和企业说明。" },
-        "review": { "title": "平台审核", "body": "平台管理员核验材料，并给出通过、要求补充或拒绝的决定。" },
-        "record": { "title": "结果留档", "body": "审核状态、理由和时间都会保留，随时可以查看。" },
-      "boundary": { "title": "认证的影响范围", "body": "认证不会改变成员权限、套餐、额度、SSO 或其他基础企业功能。" }
+        "submit": {
+          "title": "提交材料",
+          "body": "企业所有者或管理员提交工商、业务材料和企业说明。"
+        },
+        "review": {
+          "title": "平台审核",
+          "body": "平台管理员核验材料，并给出通过、要求补充或拒绝的决定。"
+        },
+        "record": {
+          "title": "结果留档",
+          "body": "审核状态、理由和时间都会保留，随时可以查看。"
+        },
+        "boundary": {
+          "title": "认证的影响范围",
+          "body": "认证不会改变成员权限、套餐、额度、SSO 或其他基础企业功能。"
+        }
       }
     },
     "status": {
@@ -6272,7 +6665,14 @@
     "admin": {
       "title": "企业认证审核",
       "subtitle": "审核企业提交的认证材料。此处展示文件信息，需下载后查看内容。",
-      "filters": { "all": "全部", "submitted": "已提交", "in_review": "审核中", "needs_supplement": "需补充", "approved": "已通过", "rejected": "已拒绝" },
+      "filters": {
+        "all": "全部",
+        "submitted": "已提交",
+        "in_review": "审核中",
+        "needs_supplement": "需补充",
+        "approved": "已通过",
+        "rejected": "已拒绝"
+      },
       "review": "审核案件",
       "case": "案件 #{{id}}",
       "organization": "企业 #{{id}}",
@@ -6314,7 +6714,10 @@
     "eyebrow": "企业商业化",
     "title": "企业套餐管理",
     "subtitle": "创建企业套餐，设置容量、功能和价格。创建后不可修改价格，可停用套餐以停止销售。",
-    "summary": { "loaded": "已加载 {{count}} 个套餐", "active": "可售 {{count}} 个" },
+    "summary": {
+      "loaded": "已加载 {{count}} 个套餐",
+      "active": "可售 {{count}} 个"
+    },
     "entitlementLookup": {
       "title": "企业授权查询",
       "subtitle": "查询指定企业的授权状态。查询需填写理由，并记录在该企业的审计日志中。",
@@ -6339,19 +6742,68 @@
       "noAppliedOrder": "未关联已确认的套餐订单",
       "capacity": "容量：{{seats}} 席位 · {{teams}} 团队 · {{keys}} Key · 审计保留 {{days}} 天"
     },
-    "actions": { "refresh": "刷新", "retry": "重试", "create": "新建套餐", "save": "保存套餐", "creating": "保存中…", "loadMore": "加载更多", "disable": "停用套餐", "cancel": "取消" },
-    "create": { "title": "新建企业套餐", "subtitle": "价格按货币最小单位填写，例如人民币的“分”。创建后不可修改。" },
-    "fields": {
-      "name": "套餐名称", "description": "说明", "provider": "支付服务商", "currency": "币种", "amountMinor": "价格（最小单位）",
-      "seats": "成员席位", "teams": "团队数量", "keys": "企业 Key 上限", "auditRetention": "审计保留天数", "validity": "有效期天数", "capabilities": "高级能力",
-      "teamManagement": "团队管理", "sso": "企业 SSO", "customRolesUnavailable": "自定义角色（当前套餐暂不支持）"
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试",
+      "create": "新建套餐",
+      "save": "保存套餐",
+      "creating": "保存中…",
+      "loadMore": "加载更多",
+      "disable": "停用套餐",
+      "cancel": "取消"
     },
-      "columns": { "plan": "套餐", "capacity": "容量", "price": "固定价格", "validity": "有效期", "actions": "操作" },
-    "status": { "active": "可售", "disabled": "已停用" },
-    "values": { "capacity": "{{seats}} 席位 · {{teams}} 团队 · {{keys}} Key", "days": "{{count}} 天", "audit": "审计 {{count}} 天", "selected": "已选择" },
-    "empty": { "title": "暂无企业套餐", "body": "创建企业套餐后，企业可在套餐目录中查看和购买。" },
-    "errors": { "loadTitle": "无法加载企业套餐", "loadBody": "暂时无法加载平台套餐，请稍后重试。", "more": "下一页加载失败，请重试。", "create": "套餐参数无效或保存失败，请检查输入后重试。", "disable": "停用未完成，套餐版本可能已变化，请刷新后重试。" },
-      "disable": { "title": "停用企业套餐？", "body": "停用 {{name}} 后，它不会再出现在可售列表中；已有订单的价格与已关联订单均不会改变。" }
+    "create": {
+      "title": "新建企业套餐",
+      "subtitle": "价格按货币最小单位填写，例如人民币的“分”。创建后不可修改。"
+    },
+    "fields": {
+      "name": "套餐名称",
+      "description": "说明",
+      "provider": "支付服务商",
+      "currency": "币种",
+      "amountMinor": "价格（最小单位）",
+      "seats": "成员席位",
+      "teams": "团队数量",
+      "keys": "企业 Key 上限",
+      "auditRetention": "审计保留天数",
+      "validity": "有效期天数",
+      "capabilities": "高级能力",
+      "teamManagement": "团队管理",
+      "sso": "企业 SSO",
+      "customRolesUnavailable": "自定义角色（当前套餐暂不支持）"
+    },
+    "columns": {
+      "plan": "套餐",
+      "capacity": "容量",
+      "price": "固定价格",
+      "validity": "有效期",
+      "actions": "操作"
+    },
+    "status": {
+      "active": "可售",
+      "disabled": "已停用"
+    },
+    "values": {
+      "capacity": "{{seats}} 席位 · {{teams}} 团队 · {{keys}} Key",
+      "days": "{{count}} 天",
+      "audit": "审计 {{count}} 天",
+      "selected": "已选择"
+    },
+    "empty": {
+      "title": "暂无企业套餐",
+      "body": "创建企业套餐后，企业可在套餐目录中查看和购买。"
+    },
+    "errors": {
+      "loadTitle": "无法加载企业套餐",
+      "loadBody": "暂时无法加载平台套餐，请稍后重试。",
+      "more": "下一页加载失败，请重试。",
+      "create": "套餐参数无效或保存失败，请检查输入后重试。",
+      "disable": "停用未完成，套餐版本可能已变化，请刷新后重试。"
+    },
+    "disable": {
+      "title": "停用企业套餐？",
+      "body": "停用 {{name}} 后，它不会再出现在可售列表中；已有订单的价格与已关联订单均不会改变。"
+    }
   },
   "organizationOnboarding": {
     "title": "企业所有者初始化向导",
@@ -6579,9 +7031,25 @@
       "approver": "审批人 #{{id}}",
       "minorUnit": "负向退款金额",
       "adminScope": "平台范围",
-      "columns": { "owner": "资金主体", "order": "订单", "amount": "退款金额", "status": "结果", "approver": "审批人", "time": "确认时间" },
-      "actions": { "refresh": "刷新退款对账", "retry": "重试", "loadMore": "加载更早记录", "loadingMore": "正在加载" },
-      "errors": { "title": "无法读取退款对账", "body": "暂时无法加载退款记录，请稍后重试。", "more": "更早的退款对账加载失败。" }
+      "columns": {
+        "owner": "资金主体",
+        "order": "订单",
+        "amount": "退款金额",
+        "status": "结果",
+        "approver": "审批人",
+        "time": "确认时间"
+      },
+      "actions": {
+        "refresh": "刷新退款对账",
+        "retry": "重试",
+        "loadMore": "加载更早记录",
+        "loadingMore": "正在加载"
+      },
+      "errors": {
+        "title": "无法读取退款对账",
+        "body": "暂时无法加载退款记录，请稍后重试。",
+        "more": "更早的退款对账加载失败。"
+      }
     }
   },
   "setup": {
@@ -6744,13 +7212,13 @@
       "footer": "只影响之后的邮件。"
     },
     "notificationHistory": {
-      "unreadCount": "{{count}} \u6761\u672a\u8bfb",
-      "markRead": "\u6807\u8bb0\u4e3a\u5df2\u8bfb",
-      "markReadError": "\u8fd9\u6761\u901a\u77e5\u6682\u65f6\u65e0\u6cd5\u6807\u8bb0\u4e3a\u5df2\u8bfb\uff0c\u8bf7\u91cd\u8bd5\u3002",
-      "readAt": "\u5df2\u4e8e {{time}} \u8bfb\u53d6",
+      "unreadCount": "{{count}} 条未读",
+      "markRead": "标记为已读",
+      "markReadError": "这条通知暂时无法标记为已读，请重试。",
+      "readAt": "已于 {{time}} 读取",
       "readState": {
-        "read": "\u5df2\u8bfb",
-        "unread": "\u672a\u8bfb"
+        "read": "已读",
+        "unread": "未读"
       },
       "title": "通知历史",
       "subtitle": "查看余额预警、订阅预警和产品更新的发送记录。“已发送”不代表邮件已送达收件箱。",
@@ -6963,5 +7431,14 @@
   },
   "language": {
     "toggle": "切换语言"
+  },
+  "providers": {
+    "adapterHint": "请按服务商文档选择通信适配器，并填写对应的上游基础地址。",
+    "label": "厂商",
+    "select": "选择厂商",
+    "search": "搜索厂商",
+    "searchOrCreate": "搜索或输入自定义厂商",
+    "create": "使用自定义厂商“{{name}}”",
+    "empty": "没有匹配的厂商"
   }
 }

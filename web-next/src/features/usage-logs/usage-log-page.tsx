@@ -1,6 +1,7 @@
+import { FailedCallTable } from './failed-call-table'
 import { Button, Chip, Input, Select, SelectItem, Skeleton } from '@heroui/react'
 import { useMemo, useState } from 'react'
-import { Activity, RefreshCw, Search, SlidersHorizontal, X } from 'lucide-react'
+import { Activity, CircleAlert, RefreshCw, Search, SlidersHorizontal, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { DataTablePagination } from '@/components/data-table/data-table-pagination'
@@ -12,6 +13,8 @@ import { useAdminUsageLogs, useUserUsageLogs } from './usage-log-api'
 import { UsageLogDetailsSheet } from './usage-log-details-sheet'
 import {
   filterUsageLogs,
+  filterFailedCallLogs,
+  type FailedCallLogRow,
   summarizeUsageLogs,
   type UsageLogModeFilter,
   type UsageLogRow,
@@ -29,22 +32,35 @@ export function UsageLogPage({ admin }: UsageLogPageProps) {
   const { t } = useTranslation()
   const { formatQuota } = useBalanceDisplay()
   const pagination = useCursorPagination<number>()
+  const failedPagination = useCursorPagination<number>()
   const [modelFilter, setModelFilter] = useState('')
   const [protocolFilter, setProtocolFilter] = useState('all')
   const [modeFilter, setModeFilter] = useState<UsageLogModeFilter>('all')
   const [selectedLog, setSelectedLog] = useState<UsageLogRow>()
   const [selectedUserId, setSelectedUserId] = useState<number>()
-  const adminQuery = useAdminUsageLogs(pagination.cursor, pagination.pageSize, admin)
-  const userQuery = useUserUsageLogs(pagination.cursor, pagination.pageSize, !admin)
+  const adminQuery = useAdminUsageLogs(pagination.cursor, failedPagination.cursor, pagination.pageSize, admin)
+  const userQuery = useUserUsageLogs(pagination.cursor, failedPagination.cursor, pagination.pageSize, !admin)
   const logsQuery = admin ? adminQuery : userQuery
   const logs = useMemo(() => (logsQuery.data?.logs ?? []) as UsageLogRow[], [logsQuery.data?.logs])
+  const failedLogs = useMemo(() => (logsQuery.data?.failed_logs ?? []) as FailedCallLogRow[], [logsQuery.data?.failed_logs])
   const nextCursor = logsQuery.data?.next_cursor
+  const failedNextCursor = logsQuery.data?.failed_next_cursor
   const filteredLogs = useMemo(
     () => filterUsageLogs(logs, modelFilter, protocolFilter, modeFilter),
     [logs, modeFilter, modelFilter, protocolFilter],
   )
+  const filteredFailedLogs = useMemo(
+    () => filterFailedCallLogs(failedLogs, modelFilter, protocolFilter),
+    [failedLogs, modelFilter, protocolFilter],
+  )
   const summary = useMemo(() => summarizeUsageLogs(filteredLogs), [filteredLogs])
   const hasFilters = modelFilter.length > 0 || protocolFilter !== 'all' || modeFilter !== 'all'
+  const hasFailedFilters = modelFilter.length > 0 || protocolFilter !== 'all'
+
+  const setPageSize = (pageSize: number) => {
+    pagination.setPageSize(pageSize)
+    failedPagination.setPageSize(pageSize)
+  }
 
   const resetFilters = () => {
     setModelFilter('')
@@ -68,7 +84,7 @@ export function UsageLogPage({ admin }: UsageLogPageProps) {
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold">{t('usageLogs.title')}</h2>
-            <Chip className="bg-success/10 text-success" size="sm" variant="flat">{t('usageLogs.status.settledOnly')}</Chip>
+            <Chip className="bg-success/10 text-success" size="sm" variant="flat">{t('usageLogs.status.settledAndFailed')}</Chip>
           </div>
           <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
             {t(admin ? 'usageLogs.adminSubtitle' : 'usageLogs.subtitle')}
@@ -164,23 +180,50 @@ export function UsageLogPage({ admin }: UsageLogPageProps) {
             {t('usageLogs.actions.retry')}
           </Button>
         </div>
-      ) : <UsageLogTable logs={filteredLogs} admin={admin} filtered={hasFilters} formatQuota={formatQuota} onSelect={setSelectedLog} onUserSelect={openUser} />}
+      ) : (
+        <>
+          <UsageLogTable logs={filteredLogs} admin={admin} filtered={hasFilters} formatQuota={formatQuota} onSelect={setSelectedLog} onUserSelect={openUser} />
 
-      {!logsQuery.isPending && !logsQuery.isError ? (
-        <DataTablePagination
-          currentPage={pagination.currentPage}
-          availablePageCount={pagination.availablePageCount}
-          pageSize={pagination.pageSize}
-          itemCount={logs.length}
-          hasNextPage={nextCursor != null || pagination.hasLoadedNextPage}
-          fetching={logsQuery.isFetching}
-          onFirstPage={pagination.goToFirstPage}
-          onPreviousPage={pagination.goToPreviousPage}
-          onPageSelect={pagination.selectPage}
-          onNextPage={() => pagination.goToNextPage(nextCursor)}
-          onPageSizeChange={pagination.setPageSize}
-        />
-      ) : null}
+          <DataTablePagination
+            currentPage={pagination.currentPage}
+            availablePageCount={pagination.availablePageCount}
+            pageSize={pagination.pageSize}
+            itemCount={logs.length}
+            hasNextPage={nextCursor != null || pagination.hasLoadedNextPage}
+            fetching={logsQuery.isFetching}
+            onFirstPage={pagination.goToFirstPage}
+            onPreviousPage={pagination.goToPreviousPage}
+            onPageSelect={pagination.selectPage}
+            onNextPage={() => pagination.goToNextPage(nextCursor)}
+            onPageSizeChange={setPageSize}
+          />
+
+          <section className="grid gap-3 border-t border-[var(--hairline)] pt-4" aria-labelledby="failed-call-log-heading">
+            <header className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <CircleAlert className="size-4 text-destructive" aria-hidden="true" />
+                <h3 id="failed-call-log-heading" className="text-sm font-semibold">{t('usageLogs.failed.title')}</h3>
+                <Chip size="sm" variant="flat" className="border-transparent bg-destructive/10 text-destructive">{t('usageLogs.failed.badge')}</Chip>
+              </div>
+              <span className="text-[0.6875rem] text-muted-foreground">{t('usageLogs.filteredCount', { visible: filteredFailedLogs.length, count: failedLogs.length })}</span>
+            </header>
+            <FailedCallTable logs={filteredFailedLogs} showInternal={admin} filtered={hasFailedFilters} />
+            <DataTablePagination
+              currentPage={failedPagination.currentPage}
+              availablePageCount={failedPagination.availablePageCount}
+              pageSize={pagination.pageSize}
+              itemCount={failedLogs.length}
+              hasNextPage={failedNextCursor != null || failedPagination.hasLoadedNextPage}
+              fetching={logsQuery.isFetching}
+              onFirstPage={failedPagination.goToFirstPage}
+              onPreviousPage={failedPagination.goToPreviousPage}
+              onPageSelect={failedPagination.selectPage}
+              onNextPage={() => failedPagination.goToNextPage(failedNextCursor)}
+              onPageSizeChange={setPageSize}
+            />
+          </section>
+        </>
+      )}
 
       <UsageLogDetailsSheet log={selectedLog} admin={admin} formatQuota={formatQuota} onOpenChange={(open) => !open && setSelectedLog(undefined)} onTraceOpen={openTrace} onUserSelect={openUser} />
       {admin ? <UsageLogUserSheet userId={selectedUserId} formatQuota={formatQuota} onOpenChange={(open) => !open && setSelectedUserId(undefined)} /> : null}

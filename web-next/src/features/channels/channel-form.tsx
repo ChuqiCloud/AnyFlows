@@ -1,3 +1,5 @@
+import { ProviderPicker } from '@/components/brand/provider-picker'
+import { findProvider } from '@/components/brand/provider-catalog'
 import { useEffect } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Button, Checkbox, Chip, Input, Select, SelectItem, Switch } from '@heroui/react'
@@ -40,7 +42,7 @@ type ChannelFormProps = {
 
 /* HeroUI Select 不接受空字符串 key，用哨兵 key 表达各枚举里的"关闭/空"选项。 */
 const OFF_KEY = '__off__'
-const CHANNEL_TYPE_KEYS = ['openai', 'anthropic', 'gemini', 'jina', 'cohere', 'xai'] as const
+const adapterOptions = ['openai', 'anthropic', 'gemini', 'jina', 'cohere', 'xai'].map((id) => ({ ...findProvider(id)!, id }))
 const OPENAI_PROTOCOL_KEYS = ['openai_chat', 'openai_responses', 'openai_embeddings', 'openai_images', 'openai_audio', 'openai_speech'] as const
 const PROTOCOL_BY_TYPE = {
   anthropic: ['anthropic'],
@@ -166,16 +168,20 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
             </ChannelFormField>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <ChannelFormField id="channel-type" label={t('channels.fields.type')}>
+            <ChannelFormField id="channel-provider" label={t('providers.label')} error={form.formState.errors.provider?.message}>
+              <Controller control={form.control} name="provider" render={({ field }) => <ProviderPicker id="channel-provider" {...field} invalid={!!form.formState.errors.provider} disabled={pending} />} />
+            </ChannelFormField>
+            <ChannelFormField id="channel-type" label={t('channels.fields.type')} hint={t('providers.adapterHint')}>
               <Controller control={form.control} name="channelType" render={({ field }) => (
-                <Select
-                  aria-label={t('channels.fields.type')}
+                <ProviderPicker
                   id="channel-type"
-                  items={CHANNEL_TYPE_KEYS.map((key) => ({ key, label: t(`channels.type.${key}`) }))}
-                  selectedKeys={[field.value]}
-                  size="sm"
-                  onSelectionChange={(keys) => {
-                    const nextType = String(Array.from(keys)[0] ?? 'openai') as ChannelType
+                  value={field.value}
+                  onBlur={field.onBlur}
+                  ref={field.ref}
+                  allowCustom={false}
+                  options={adapterOptions}
+                  onChange={(value) => {
+                    const nextType = value as ChannelType
                     const currentProtocol = form.getValues('protocol')
                     const nextProtocol = nextType === 'anthropic'
                       ? 'anthropic'
@@ -204,9 +210,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                     resetUnsupportedClientSimulation(nextType, nextProtocol)
                     removeUnsupportedParameters(nextProtocol)
                   }}
-                >
-                  {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
-                </Select>
+                />
               )} />
             </ChannelFormField>
             <ChannelFormField id="channel-protocol" label={t('channels.fields.protocol')}>

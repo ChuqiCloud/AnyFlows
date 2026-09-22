@@ -1,3 +1,4 @@
+import { providerDisplayName } from '@/components/brand/provider-catalog'
 import { Chip } from '@heroui/react'
 import { Cpu } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -30,7 +31,7 @@ export function ModelCatalogIdentity({ item }: { item: ModelCatalogItem }) {
         <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1">
           <span className="max-w-48 truncate font-mono text-[0.6875rem] text-muted-foreground" title={item.model}>{item.model}</span>
           <ModelCopyButton model={item.model} size="icon-xs" />
-          <Chip className="max-w-24 truncate bg-info/8 text-info" size="sm" variant="flat">{item.provider}</Chip>
+          <Chip className="max-w-24 truncate bg-info/8 text-info" size="sm" variant="flat">{providerDisplayName(item.provider)}</Chip>
           {item.tags.slice(0, 2).map((tag) => <Chip key={tag} className="max-w-24 truncate" size="sm" variant="flat">{tag}</Chip>)}
           {item.tags.length > 2 ? <Chip size="sm" variant="flat">{t('models.values.moreTags', { count: item.tags.length - 2 })}</Chip> : null}
         </div>

@@ -1,6 +1,7 @@
+import { FailedCallTable } from '@/features/usage-logs/failed-call-table'
 import { Button, Chip, Input, Select, SelectItem, Skeleton } from '@heroui/react'
 import { useMemo, useState } from 'react'
-import { Coins, RefreshCw, Search, SlidersHorizontal, X, Zap } from 'lucide-react'
+import { CircleAlert, Coins, RefreshCw, Search, SlidersHorizontal, X, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { DataTablePagination } from '@/components/data-table/data-table-pagination'
@@ -11,6 +12,8 @@ import { UsageLogDetailsSheet } from '@/features/usage-logs/usage-log-details-sh
 import { formatUsageLatency, formatUsageNumber } from '@/features/usage-logs/usage-log-format'
 import {
   filterUsageLogs,
+  filterFailedCallLogs,
+  type FailedCallLogRow,
   summarizeUsageLogs,
   type UsageLogModeFilter,
   type UsageLogRow,
@@ -36,6 +39,7 @@ export function OrganizationUsagePanel({ organizationId, initialScope, scopes }:
   const { t } = useTranslation()
   const { formatQuota } = useBalanceDisplay()
   const pagination = useCursorPagination<number>()
+  const failedPagination = useCursorPagination<number>()
   const [scope, setScope] = useState(initialScope)
   const [modelFilter, setModelFilter] = useState('')
   const [protocolFilter, setProtocolFilter] = useState('all')
@@ -45,10 +49,12 @@ export function OrganizationUsagePanel({ organizationId, initialScope, scopes }:
     organizationId,
     scope,
     pagination.cursor,
+    failedPagination.cursor,
     pagination.pageSize,
     true,
   )
   const logs = useMemo(() => (query.data?.logs ?? []) as UsageLogRow[], [query.data?.logs])
+  const failedLogs = useMemo(() => (query.data?.failed_logs ?? []) as FailedCallLogRow[], [query.data?.failed_logs])
   const summaries = useMemo(() => query.data?.summaries ?? [], [query.data?.summaries])
   const filteredLogs = useMemo(
     () => filterUsageLogs(logs, modelFilter, protocolFilter, modeFilter),
@@ -59,18 +65,30 @@ export function OrganizationUsagePanel({ organizationId, initialScope, scopes }:
     [modelFilter, protocolFilter, summaries],
   )
   const pageSummary = useMemo(() => summarizeUsageLogs(filteredLogs), [filteredLogs])
+  const filteredFailedLogs = useMemo(
+    () => filterFailedCallLogs(failedLogs, modelFilter, protocolFilter),
+    [failedLogs, modelFilter, protocolFilter],
+  )
   const nextCursor = query.data?.next_cursor
+  const failedNextCursor = query.data?.failed_next_cursor
   const isSummary = scope === 'summary'
   const visibleCount = isSummary ? filteredSummaries.length : filteredLogs.length
   const itemCount = isSummary ? summaries.length : logs.length
   const hasFilters = modelFilter.length > 0
     || protocolFilter !== 'all'
     || (!isSummary && modeFilter !== 'all')
+  const hasFailedFilters = modelFilter.length > 0 || protocolFilter !== 'all'
+
+  const setPageSize = (pageSize: number) => {
+    pagination.setPageSize(pageSize)
+    failedPagination.setPageSize(pageSize)
+  }
 
   const changeScope = (nextScope: OrganizationUsageScope) => {
     if (nextScope === scope) return
     setScope(nextScope)
     pagination.reset()
+    failedPagination.reset()
     setSelectedLog(undefined)
   }
 
@@ -171,17 +189,56 @@ export function OrganizationUsagePanel({ organizationId, initialScope, scopes }:
       ) : isSummary ? (
         <OrganizationUsageSummaryTable summaries={filteredSummaries} filtered={hasFilters} formatQuota={formatQuota} />
       ) : (
-        <UsageLogTable
-          logs={filteredLogs}
-          admin={false}
-          showPrincipal={scope === 'organization'}
-          filtered={hasFilters}
-          formatQuota={formatQuota}
-          onSelect={setSelectedLog}
-        />
+        <>
+          <UsageLogTable
+            logs={filteredLogs}
+            admin={false}
+            showPrincipal={scope === 'organization'}
+            filtered={hasFilters}
+            formatQuota={formatQuota}
+            onSelect={setSelectedLog}
+          />
+          <DataTablePagination
+            currentPage={pagination.currentPage}
+            availablePageCount={pagination.availablePageCount}
+            pageSize={pagination.pageSize}
+            itemCount={logs.length}
+            hasNextPage={nextCursor != null || pagination.hasLoadedNextPage}
+            fetching={query.isFetching}
+            onFirstPage={pagination.goToFirstPage}
+            onPreviousPage={pagination.goToPreviousPage}
+            onPageSelect={pagination.selectPage}
+            onNextPage={() => pagination.goToNextPage(nextCursor)}
+            onPageSizeChange={setPageSize}
+          />
+          <section className="grid gap-3 border-t border-[var(--hairline)] pt-4" aria-labelledby="organization-failed-call-log-heading">
+            <header className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <CircleAlert className="size-4 text-destructive" aria-hidden="true" />
+                <h3 id="organization-failed-call-log-heading" className="text-sm font-semibold">{t('usageLogs.failed.title')}</h3>
+                <Chip size="sm" variant="flat" className="border-transparent bg-destructive/10 text-destructive">{t('usageLogs.failed.badge')}</Chip>
+              </div>
+              <span className="text-[0.6875rem] text-muted-foreground">{t('organizationActivity.filters.visible', { visible: filteredFailedLogs.length, count: failedLogs.length })}</span>
+            </header>
+            <FailedCallTable logs={filteredFailedLogs} showInternal filtered={hasFailedFilters} />
+            <DataTablePagination
+              currentPage={failedPagination.currentPage}
+              availablePageCount={failedPagination.availablePageCount}
+              pageSize={pagination.pageSize}
+              itemCount={failedLogs.length}
+              hasNextPage={failedNextCursor != null || failedPagination.hasLoadedNextPage}
+              fetching={query.isFetching}
+              onFirstPage={failedPagination.goToFirstPage}
+              onPreviousPage={failedPagination.goToPreviousPage}
+              onPageSelect={failedPagination.selectPage}
+              onNextPage={() => failedPagination.goToNextPage(failedNextCursor)}
+              onPageSizeChange={setPageSize}
+            />
+          </section>
+        </>
       )}
 
-      {!query.isPending && !query.isError ? (
+      {!query.isPending && !query.isError && isSummary ? (
         <DataTablePagination
           currentPage={pagination.currentPage}
           availablePageCount={pagination.availablePageCount}
@@ -193,7 +250,7 @@ export function OrganizationUsagePanel({ organizationId, initialScope, scopes }:
           onPreviousPage={pagination.goToPreviousPage}
           onPageSelect={pagination.selectPage}
           onNextPage={() => pagination.goToNextPage(nextCursor)}
-          onPageSizeChange={pagination.setPageSize}
+          onPageSizeChange={setPageSize}
         />
       ) : null}
 

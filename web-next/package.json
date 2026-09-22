@@ -31,7 +31,7 @@
     "@heroui/use-theme": "2.1.10",
     "@hookform/resolvers": "^5.5.7",
     "@iconify/react": "^6.0.2",
-    "@lobehub/icons": "^5.15.0",
+    "@lobehub/icons": "^5.19.3",
     "@react-aria/visually-hidden": "3.9.0",
     "@reduxjs/toolkit": "^2.11.2",
     "@stripe/react-stripe-js": "6.8.0",

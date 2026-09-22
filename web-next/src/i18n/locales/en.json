@@ -510,7 +510,7 @@
       "name": "Name",
       "baseUrl": "Upstream base URL",
       "timeout": "Channel timeout (seconds)",
-      "type": "Channel type",
+      "type": "Transport adapter",
       "protocol": "Protocol",
       "status": "Status",
       "weight": "Weight",
@@ -2372,7 +2372,8 @@
     "listLabel": "Settled request list",
     "status": {
       "settled": "Settled",
-      "settledOnly": "Settled only"
+      "settledOnly": "Settled only",
+      "settledAndFailed": "Settled + failed"
     },
     "summary": {
       "label": "Current filtered results",
@@ -2530,6 +2531,25 @@
       "traffic": "Requests and limits",
       "requests": "Total requests",
       "openManagement": "Open user management"
+    },
+    "failed": {
+      "title": "Failed calls",
+      "badge": "Failed",
+      "status": "Failed",
+      "listLabel": "Failed call list",
+      "emptyTitle": "No failed calls yet",
+      "emptyBody": "Failed calls appear here after the gateway records a safe error summary.",
+      "emptyFilteredTitle": "No failed calls match these filters",
+      "emptyFilteredBody": "Adjust the model or protocol filter to inspect other failed calls.",
+      "columns": {
+        "time": "Time / status",
+        "call": "Model request",
+        "error": "Error",
+        "duration": "Duration",
+        "internal": "Internal details",
+        "request": "Request ID",
+        "channel": "Channel"
+      }
     }
   },
   "debugTraces": {
@@ -3406,6 +3426,21 @@
       "load": "Couldn't load site settings. Try again shortly.",
       "save": "Site settings could not be saved. Server state is unchanged.",
       "conflict": "Site settings changed in another administrator session. Refresh and review again."
+    },
+    "templates": {
+      "title": "Frontend templates",
+      "description": "Scan static templates from the runtime directory and switch them without restarting. Invalid templates fall back to the embedded frontend.",
+      "selector": "Active template",
+      "embedded": "Embedded frontend",
+      "embeddedOption": "Embedded frontend (default)",
+      "active": "Active: {{id}}",
+      "invalid": "validation failed",
+      "invalidHint": "Invalid templates cannot be activated. Fix the files and scan again.",
+      "refresh": "Refresh list",
+      "scan": "Scan again",
+      "apply": "Apply template",
+      "applying": "Switching",
+      "error": "Template operation failed. Refresh and try again."
     }
   },
   "authenticationSettings": {
@@ -4153,7 +4188,8 @@
       "loadTitle": "Invitation center is unavailable",
       "loadBody": "Invitation data could not be loaded. Try again shortly.",
       "copy": "Clipboard access was denied. Select and copy the value manually."
-    }
+    },
+    "organization": {}
   },
   "refunds": {
     "eyebrow": "Payment operations",
@@ -4174,12 +4210,47 @@
       "approved": "{{count}} approved",
       "succeeded": "{{count}} succeeded"
     },
-    "views": { "label": "Refund workspace views", "approvals": "Approvals", "reconciliation": "Reconciliation" },
-    "orderKinds": { "topup": "Top-up", "subscription": "Subscription" },
-    "statuses": { "requested": "Requested", "submitted": "Submitted", "succeeded": "Succeeded", "failed": "Failed", "canceled": "Canceled", "manually_succeeded": "Manually succeeded", "manually_failed": "Manually failed" },
-    "approval": { "pending": "Pending", "approved": "Approved", "rejected": "Rejected" },
-    "table": { "request": "Request", "order": "Order", "amount": "Refund / original", "status": "Provider status", "approval": "Approval", "actions": "Actions" },
-    "actions": { "refresh": "Refresh", "retry": "Retry", "approve": "Approve", "reject": "Reject", "submit": "Submit refund", "manualComplete": "Record manual result", "manualConfirm": "Record result", "cancel": "Cancel" },
+    "views": {
+      "label": "Refund workspace views",
+      "approvals": "Approvals",
+      "reconciliation": "Reconciliation"
+    },
+    "orderKinds": {
+      "topup": "Top-up",
+      "subscription": "Subscription"
+    },
+    "statuses": {
+      "requested": "Requested",
+      "submitted": "Submitted",
+      "succeeded": "Succeeded",
+      "failed": "Failed",
+      "canceled": "Canceled",
+      "manually_succeeded": "Manually succeeded",
+      "manually_failed": "Manually failed"
+    },
+    "approval": {
+      "pending": "Pending",
+      "approved": "Approved",
+      "rejected": "Rejected"
+    },
+    "table": {
+      "request": "Request",
+      "order": "Order",
+      "amount": "Refund / original",
+      "status": "Provider status",
+      "approval": "Approval",
+      "actions": "Actions"
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Retry",
+      "approve": "Approve",
+      "reject": "Reject",
+      "submit": "Submit refund",
+      "manualComplete": "Record manual result",
+      "manualConfirm": "Record result",
+      "cancel": "Cancel"
+    },
     "confirm": {
       "approveTitle": "Approve this refund?",
       "approveBody": "The approval is recorded first. If automatic submission is enabled, the same request is submitted right away; if the provider rejects it, the approval record is kept.",
@@ -4210,9 +4281,25 @@
       "approver": "Approver #{{id}}",
       "minorUnit": "Negative refund amount",
       "adminScope": "Platform scope",
-      "columns": { "owner": "Funding owner", "order": "Order", "amount": "Refund amount", "status": "Result", "approver": "Approver", "time": "Confirmed" },
-      "actions": { "refresh": "Refresh refund reconciliation", "retry": "Try again", "loadMore": "Load earlier entries", "loadingMore": "Loading" },
-      "errors": { "title": "Refund reconciliation is unavailable", "body": "Couldn't load refunds right now. Try again shortly.", "more": "Couldn't load earlier refunds." }
+      "columns": {
+        "owner": "Funding owner",
+        "order": "Order",
+        "amount": "Refund amount",
+        "status": "Result",
+        "approver": "Approver",
+        "time": "Confirmed"
+      },
+      "actions": {
+        "refresh": "Refresh refund reconciliation",
+        "retry": "Try again",
+        "loadMore": "Load earlier entries",
+        "loadingMore": "Loading"
+      },
+      "errors": {
+        "title": "Refund reconciliation is unavailable",
+        "body": "Couldn't load refunds right now. Try again shortly.",
+        "more": "Couldn't load earlier refunds."
+      }
     },
     "errors": {
       "listTitle": "Refund requests are unavailable",
@@ -4817,71 +4904,300 @@
     "eyebrow": "Organization workspace",
     "title": "Contract prices",
     "subtitle": "Versioned model pricing for this organization. In-flight requests keep their server-side price snapshot.",
-    "summary": { "count": "{{count}} price version(s)" },
-    "columns": { "model": "Model", "protocol": "Protocol", "prices": "Input / output", "effective": "Effective interval", "version": "Version", "actions": "Actions" },
-    "protocol": { "openai_chat": "OpenAI Chat", "openai_responses": "OpenAI Responses", "openai_embeddings": "OpenAI embeddings", "openai_images": "OpenAI images", "openai_audio": "OpenAI audio", "openai_speech": "OpenAI speech", "jina_rerank": "Jina rerank", "cohere_rerank": "Cohere rerank", "xai_video": "xAI video", "anthropic": "Anthropic", "gemini": "Gemini" },
+    "summary": {
+      "count": "{{count}} price version(s)"
+    },
+    "columns": {
+      "model": "Model",
+      "protocol": "Protocol",
+      "prices": "Input / output",
+      "effective": "Effective interval",
+      "version": "Version",
+      "actions": "Actions"
+    },
+    "protocol": {
+      "openai_chat": "OpenAI Chat",
+      "openai_responses": "OpenAI Responses",
+      "openai_embeddings": "OpenAI embeddings",
+      "openai_images": "OpenAI images",
+      "openai_audio": "OpenAI audio",
+      "openai_speech": "OpenAI speech",
+      "jina_rerank": "Jina rerank",
+      "cohere_rerank": "Cohere rerank",
+      "xai_video": "xAI video",
+      "anthropic": "Anthropic",
+      "gemini": "Gemini"
+    },
     "current": "currently open",
     "scheduled": "scheduled",
     "pricePair": "Input {{input}} · output {{output}}",
-    "actions": { "refresh": "Refresh", "retry": "Try again", "verify": "Refresh", "create": "Create price", "creating": "Creating…", "close": "Close interval", "cancel": "Cancel" },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Try again",
+      "verify": "Refresh",
+      "create": "Create price",
+      "creating": "Creating…",
+      "close": "Close interval",
+      "cancel": "Cancel"
+    },
     "readOnly": "You can view contract prices but do not have permission to create or close versions.",
-    "empty": { "title": "No contract prices yet", "body": "Create a version to apply organization pricing to future requests." },
-    "restricted": { "title": "Contract price access is restricted", "body": "Your organization role does not include permission to read contract prices." },
-    "form": { "title": "Create contract price", "subtitle": "The server validates the model interval and creates an immutable version.", "model": "Model", "protocol": "Protocol", "input": "Input price", "output": "Output price", "cache_read": "Cache read price", "cache_creation_5m": "Cache creation (5m)", "cache_creation_1h": "Cache creation (1h)", "effectiveFrom": "Effective from", "effectiveUntil": "Effective until (optional)", "effectiveUntilHint": "Leave empty to keep this interval open.", "expectedVersion": "Next version will be checked against v{{version}}." },
-    "close": { "title": "Close contract price interval", "description": "Close {{model}} ({{protocol}}) at the current time? The server will verify version {{version}} and this cannot reopen the interval." },
-    "errors": { "listTitle": "Contract prices could not be loaded", "listBody": "Couldn't load price history. Try again shortly.", "forbiddenTitle": "Contract price access was denied", "forbiddenBody": "The membership or organization entitlement no longer allows this read.", "intervalConflict": "This model and protocol interval overlaps another version. Choose a later effective time.", "conflict": "The price changed in another session. Refresh and submit against the latest version.", "mutation": "The operation did not return a reliable result. Refresh the price history and try again." }
+    "empty": {
+      "title": "No contract prices yet",
+      "body": "Create a version to apply organization pricing to future requests."
+    },
+    "restricted": {
+      "title": "Contract price access is restricted",
+      "body": "Your organization role does not include permission to read contract prices."
+    },
+    "form": {
+      "title": "Create contract price",
+      "subtitle": "The server validates the model interval and creates an immutable version.",
+      "model": "Model",
+      "protocol": "Protocol",
+      "input": "Input price",
+      "output": "Output price",
+      "cache_read": "Cache read price",
+      "cache_creation_5m": "Cache creation (5m)",
+      "cache_creation_1h": "Cache creation (1h)",
+      "effectiveFrom": "Effective from",
+      "effectiveUntil": "Effective until (optional)",
+      "effectiveUntilHint": "Leave empty to keep this interval open.",
+      "expectedVersion": "Next version will be checked against v{{version}}."
+    },
+    "close": {
+      "title": "Close contract price interval",
+      "description": "Close {{model}} ({{protocol}}) at the current time? The server will verify version {{version}} and this cannot reopen the interval."
+    },
+    "errors": {
+      "listTitle": "Contract prices could not be loaded",
+      "listBody": "Couldn't load price history. Try again shortly.",
+      "forbiddenTitle": "Contract price access was denied",
+      "forbiddenBody": "The membership or organization entitlement no longer allows this read.",
+      "intervalConflict": "This model and protocol interval overlaps another version. Choose a later effective time.",
+      "conflict": "The price changed in another session. Refresh and submit against the latest version.",
+      "mutation": "The operation did not return a reliable result. Refresh the price history and try again."
+    }
   },
   "organizationCredit": {
     "eyebrow": "Organization workspace",
     "title": "Credit & terms",
     "subtitle": "Review invoices, confirmed repayments, and allocations. Policy changes use version checks.",
-    "tabs": { "label": "Credit categories", "terms": "Credit policies", "invoices": "Invoices", "repayments": "Repayments", "allocations": "Allocations" },
-    "columns": { "limit": "Credit limit", "period": "Terms", "status": "Status", "effective": "Effective", "version": "Version", "amount": "Amount", "due": "Due", "source": "Source", "received": "Received", "created": "Recorded", "invoice": "Invoice", "repayment": "Repayment", "allocated": "Allocated", "settled": "Settled" },
-    "period": { "netDays": "{{days}}-day terms", "endOfMonth": "End of month" },
-    "status": { "active": "Active", "paused": "Paused", "closed": "Closed" },
-    "invoiceStatus": { "due": "Due", "overdue": "Overdue", "settled": "Settled", "voided": "Voided" },
-    "source": { "bank_transfer": "Bank transfer", "other_confirmed": "Other confirmed" },
+    "tabs": {
+      "label": "Credit categories",
+      "terms": "Credit policies",
+      "invoices": "Invoices",
+      "repayments": "Repayments",
+      "allocations": "Allocations"
+    },
+    "columns": {
+      "limit": "Credit limit",
+      "period": "Terms",
+      "status": "Status",
+      "effective": "Effective",
+      "version": "Version",
+      "amount": "Amount",
+      "due": "Due",
+      "source": "Source",
+      "received": "Received",
+      "created": "Recorded",
+      "invoice": "Invoice",
+      "repayment": "Repayment",
+      "allocated": "Allocated",
+      "settled": "Settled"
+    },
+    "period": {
+      "netDays": "{{days}}-day terms",
+      "endOfMonth": "End of month"
+    },
+    "status": {
+      "active": "Active",
+      "paused": "Paused",
+      "closed": "Closed"
+    },
+    "invoiceStatus": {
+      "due": "Due",
+      "overdue": "Overdue",
+      "settled": "Settled",
+      "voided": "Voided"
+    },
+    "source": {
+      "bank_transfer": "Bank transfer",
+      "other_confirmed": "Other confirmed"
+    },
     "yes": "Yes",
     "no": "No",
     "readOnly": "You can review credit records, but your role cannot manage credit policies.",
-    "actions": { "refresh": "Refresh", "retry": "Try again", "loadMore": "Load older records", "create": "New policy", "save": "Save policy", "cancel": "Cancel", "pause": "Pause", "resume": "Resume", "close": "Close" },
-    "form": { "currency": "Currency", "limit": "Limit (minor units)", "period": "Terms type", "days": "Days", "effectiveFrom": "Effective from" },
-    "empty": { "termsTitle": "No credit policies", "termsBody": "Create a policy to set the organization's billing boundary as a versioned, server-side value.", "invoicesTitle": "No invoices", "invoicesBody": "Invoices appear here after organization usage is confirmed.", "repaymentsTitle": "No repayments", "repaymentsBody": "Confirmed finance receipts appear here.", "allocationsTitle": "No allocations", "allocationsBody": "Allocations appear here after repayments are applied." },
-    "restricted": { "title": "Credit access restricted", "body": "Your organization role does not include credit and terms read access." },
-    "errors": { "loadTitle": "Couldn't load credit records", "loadBody": "Couldn't load credit data. Try again shortly.", "forbiddenTitle": "Credit access denied", "forbiddenBody": "Your membership or organization entitlement may no longer allow credit reads.", "mutation": "The policy operation did not return a reliable result. Refresh and try again." }
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Try again",
+      "loadMore": "Load older records",
+      "create": "New policy",
+      "save": "Save policy",
+      "cancel": "Cancel",
+      "pause": "Pause",
+      "resume": "Resume",
+      "close": "Close"
+    },
+    "form": {
+      "currency": "Currency",
+      "limit": "Limit (minor units)",
+      "period": "Terms type",
+      "days": "Days",
+      "effectiveFrom": "Effective from"
+    },
+    "empty": {
+      "termsTitle": "No credit policies",
+      "termsBody": "Create a policy to set the organization's billing boundary as a versioned, server-side value.",
+      "invoicesTitle": "No invoices",
+      "invoicesBody": "Invoices appear here after organization usage is confirmed.",
+      "repaymentsTitle": "No repayments",
+      "repaymentsBody": "Confirmed finance receipts appear here.",
+      "allocationsTitle": "No allocations",
+      "allocationsBody": "Allocations appear here after repayments are applied."
+    },
+    "restricted": {
+      "title": "Credit access restricted",
+      "body": "Your organization role does not include credit and terms read access."
+    },
+    "errors": {
+      "loadTitle": "Couldn't load credit records",
+      "loadBody": "Couldn't load credit data. Try again shortly.",
+      "forbiddenTitle": "Credit access denied",
+      "forbiddenBody": "Your membership or organization entitlement may no longer allow credit reads.",
+      "mutation": "The policy operation did not return a reliable result. Refresh and try again."
+    }
   },
   "organizationApprovals": {
     "eyebrow": "Organization workspace",
     "title": "Approvals",
     "subtitle": "Versioned templates and auditable requests for organization changes. Approving a request is what changes the resource.",
     "summary": "{{templates}} template version(s) · {{requests}} request(s)",
-    "actions": { "refresh": "Refresh", "retry": "Try again", "createTemplate": "Create template", "createRequest": "New request", "approve": "Approve", "reject": "Reject", "submit": "Submit", "create": "Create", "cancel": "Cancel" },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Try again",
+      "createTemplate": "Create template",
+      "createRequest": "New request",
+      "approve": "Approve",
+      "reject": "Reject",
+      "submit": "Submit",
+      "create": "Create",
+      "cancel": "Cancel"
+    },
     "readOnly": "You can review requests but do not have permission to manage templates or submit decisions.",
-    "restricted": { "title": "Approval access is restricted", "body": "Your organization role does not include approval read or request permissions." },
-    "empty": { "title": "No approval requests yet", "body": "Create a request from an organization change workflow to start an auditable review." },
-    "templates": { "title": "Template versions", "empty": "No template versions are available for this organization." },
-    "resource": { "member": "Member", "budget": "Budget", "service_account": "Service account", "contract_price": "Contract price", "funds": "Funds" },
-    "status": { "pending": "Pending", "approved": "Approved", "rejected": "Rejected", "timed_out": "Timed out" },
-    "fields": { "requestedBy": "Requested by", "created": "Created", "expires": "Expires" },
-    "forms": { "templateTitle": "Create template version", "templateKey": "Template key", "resourceType": "Resource type", "digest": "Definition digest (64 lowercase hex)", "requestTitle": "Create approval request", "template": "Template version", "templatePlaceholder": "Select a template", "summary": "Resource summary", "expires": "Expires at" },
-    "decision": { "approveTitle": "Approve request", "rejectTitle": "Reject request", "description": "Submit a one-time decision for request #{{id}}? The target resource remains unchanged until a later execution step." },
-    "errors": { "listTitle": "Couldn't load approvals", "listBody": "The approval directory is temporarily unavailable. Try again shortly.", "forbiddenTitle": "Approval access was denied", "forbiddenBody": "The membership or organization permission no longer allows this view.", "conflict": "This approval was changed by someone else. Refresh to review the latest state.", "expired": "This request has expired and cannot receive a manual decision.", "mutation": "The operation did not return a reliable result. Refresh and try again." }
+    "restricted": {
+      "title": "Approval access is restricted",
+      "body": "Your organization role does not include approval read or request permissions."
+    },
+    "empty": {
+      "title": "No approval requests yet",
+      "body": "Create a request from an organization change workflow to start an auditable review."
+    },
+    "templates": {
+      "title": "Template versions",
+      "empty": "No template versions are available for this organization."
+    },
+    "resource": {
+      "member": "Member",
+      "budget": "Budget",
+      "service_account": "Service account",
+      "contract_price": "Contract price",
+      "funds": "Funds"
+    },
+    "status": {
+      "pending": "Pending",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "timed_out": "Timed out"
+    },
+    "fields": {
+      "requestedBy": "Requested by",
+      "created": "Created",
+      "expires": "Expires"
+    },
+    "forms": {
+      "templateTitle": "Create template version",
+      "templateKey": "Template key",
+      "resourceType": "Resource type",
+      "digest": "Definition digest (64 lowercase hex)",
+      "requestTitle": "Create approval request",
+      "template": "Template version",
+      "templatePlaceholder": "Select a template",
+      "summary": "Resource summary",
+      "expires": "Expires at"
+    },
+    "decision": {
+      "approveTitle": "Approve request",
+      "rejectTitle": "Reject request",
+      "description": "Submit a one-time decision for request #{{id}}? The target resource remains unchanged until a later execution step."
+    },
+    "errors": {
+      "listTitle": "Couldn't load approvals",
+      "listBody": "The approval directory is temporarily unavailable. Try again shortly.",
+      "forbiddenTitle": "Approval access was denied",
+      "forbiddenBody": "The membership or organization permission no longer allows this view.",
+      "conflict": "This approval was changed by someone else. Refresh to review the latest state.",
+      "expired": "This request has expired and cannot receive a manual decision.",
+      "mutation": "The operation did not return a reliable result. Refresh and try again."
+    }
   },
   "organizationDepartments": {
     "eyebrow": "Organization workspace",
     "title": "Departments",
     "subtitle": "Maintain the organization department tree with explicit parent, order, and version controls.",
-    "actions": {"refresh": "Refresh", "retry": "Try again", "create": "Create department", "move": "Move", "disable": "Disable", "cancel": "Cancel", "loading": "Loading", "loadMore": "Load more"},
-    "fields": {"name": "Department name", "parent": "Parent department", "root": "Organization root", "sortOrder": "Sort order"},
-    "status": {"active": "Active", "disabled": "Disabled"},
-    "row": {"depth": "Depth {{depth}}", "version": "Version {{version}}"},
-    "list": {"title": "Department directory", "description": "Stable cursors preserve ordering while the tree changes. Disabled departments remain visible for audit and cannot be restored."},
-    "create": {"title": "Add a department", "description": "New departments are active immediately and remain scoped to this organization."},
-    "move": {"title": "Move {{name}}", "description": "The server validates depth, cycles, active state, and the current version before moving the subtree."},
-    "disable": {"title": "Disable department", "description": "Disable {{name}}? This cannot be undone. Active members, child departments, budgets, or service accounts will cause the server to reject the request."},
-    "empty": {"title": "No departments yet", "body": "Create the first department to start organizing members and budget ownership."},
-    "restricted": {"title": "Department directory access is restricted", "body": "Your organization role does not include permission to read departments."},
-    "errors": {"listTitle": "Departments could not be loaded", "listBody": "The department directory is temporarily unavailable. Existing organization state is unchanged.", "conflict": "The department changed concurrently. Refresh the directory and submit against the latest version.", "mutation": "The operation did not return a reliable result. Refresh the directory and try again."}
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Try again",
+      "create": "Create department",
+      "move": "Move",
+      "disable": "Disable",
+      "cancel": "Cancel",
+      "loading": "Loading",
+      "loadMore": "Load more"
+    },
+    "fields": {
+      "name": "Department name",
+      "parent": "Parent department",
+      "root": "Organization root",
+      "sortOrder": "Sort order"
+    },
+    "status": {
+      "active": "Active",
+      "disabled": "Disabled"
+    },
+    "row": {
+      "depth": "Depth {{depth}}",
+      "version": "Version {{version}}"
+    },
+    "list": {
+      "title": "Department directory",
+      "description": "Stable cursors preserve ordering while the tree changes. Disabled departments remain visible for audit and cannot be restored."
+    },
+    "create": {
+      "title": "Add a department",
+      "description": "New departments are active immediately and remain scoped to this organization."
+    },
+    "move": {
+      "title": "Move {{name}}",
+      "description": "The server validates depth, cycles, active state, and the current version before moving the subtree."
+    },
+    "disable": {
+      "title": "Disable department",
+      "description": "Disable {{name}}? This cannot be undone. Active members, child departments, budgets, or service accounts will cause the server to reject the request."
+    },
+    "empty": {
+      "title": "No departments yet",
+      "body": "Create the first department to start organizing members and budget ownership."
+    },
+    "restricted": {
+      "title": "Department directory access is restricted",
+      "body": "Your organization role does not include permission to read departments."
+    },
+    "errors": {
+      "listTitle": "Departments could not be loaded",
+      "listBody": "The department directory is temporarily unavailable. Existing organization state is unchanged.",
+      "conflict": "The department changed concurrently. Refresh the directory and submit against the latest version.",
+      "mutation": "The operation did not return a reliable result. Refresh the directory and try again."
+    }
   },
   "organizationServiceAccounts": {
     "eyebrow": "Organization workspace",
@@ -5589,8 +5905,8 @@
         }
       },
       "links": {
-      "members": "Members and teams",
-      "departments": "Departments",
+        "members": "Members and teams",
+        "departments": "Departments",
         "keys": "Organization API keys",
         "serviceAccounts": "Service accounts",
         "wallet": "Organization wallet and ledger",
@@ -5639,7 +5955,10 @@
         "empty": "This member has no department memberships.",
         "unknown": "Department #{{id}}",
         "primary": "Primary",
-        "status": {"active": "Active", "removed": "Removed"},
+        "status": {
+          "active": "Active",
+          "removed": "Removed"
+        },
         "version": "Version {{version}}",
         "select": "Select a department",
         "add": "Add",
@@ -5647,7 +5966,10 @@
         "setPrimary": "Set as primary department",
         "remove": "Remove department membership",
         "primaryProtected": "Primary department cannot be removed directly. Set another department as primary first.",
-        "errors": {"load": "Department memberships could not be loaded.", "mutation": "The department membership changed concurrently or the operation was rejected. Refresh the member and try again."}
+        "errors": {
+          "load": "Department memberships could not be loaded.",
+          "mutation": "The department membership changed concurrently or the operation was rejected. Refresh the member and try again."
+        }
       },
       "list": {
         "title": "Member directory",
@@ -5896,9 +6218,25 @@
         "approver": "Approver #{{id}}",
         "minorUnit": "Negative refund amount",
         "adminScope": "Organization scope",
-        "columns": { "owner": "Funding owner", "order": "Order", "amount": "Refund amount", "status": "Result", "approver": "Approver", "time": "Confirmed" },
-        "actions": { "refresh": "Refresh refund reconciliation", "retry": "Try again", "loadMore": "Load earlier entries", "loadingMore": "Loading" },
-        "errors": { "title": "Organization refund reconciliation is unavailable", "body": "Couldn't load organization refunds right now. Try again shortly.", "more": "Couldn't load earlier organization refunds." }
+        "columns": {
+          "owner": "Funding owner",
+          "order": "Order",
+          "amount": "Refund amount",
+          "status": "Result",
+          "approver": "Approver",
+          "time": "Confirmed"
+        },
+        "actions": {
+          "refresh": "Refresh refund reconciliation",
+          "retry": "Try again",
+          "loadMore": "Load earlier entries",
+          "loadingMore": "Loading"
+        },
+        "errors": {
+          "title": "Organization refund reconciliation is unavailable",
+          "body": "Couldn't load organization refunds right now. Try again shortly.",
+          "more": "Couldn't load earlier organization refunds."
+        }
       }
     },
     "settings": {
@@ -5970,9 +6308,21 @@
         "disabled": "Not entitled",
         "configured": "Configured",
         "notConfigured": "Not configured",
-        "protocol": { "oidc": "OpenID Connect", "saml": "SAML 2.0" },
-        "status": { "draft": "Draft", "active": "Active", "disabled": "Disabled" },
-        "fields": { "protocol": "Protocol", "version": "Version", "secret": "Secret", "metadata": "Metadata" },
+        "protocol": {
+          "oidc": "OpenID Connect",
+          "saml": "SAML 2.0"
+        },
+        "status": {
+          "draft": "Draft",
+          "active": "Active",
+          "disabled": "Disabled"
+        },
+        "fields": {
+          "protocol": "Protocol",
+          "version": "Version",
+          "secret": "Secret",
+          "metadata": "Metadata"
+        },
         "providers": {
           "add": "Add Provider",
           "edit": "Edit",
@@ -5981,9 +6331,16 @@
           "editorHint": "Fill the protocol-specific fields. The server validates and encrypts secrets; the browser never stores them.",
           "displayName": "Display name",
           "protocol": "Protocol",
-          "protocols": { "oidc": "OpenID Connect", "saml": "SAML 2.0" },
+          "protocols": {
+            "oidc": "OpenID Connect",
+            "saml": "SAML 2.0"
+          },
           "status": "Status",
-          "statuses": { "draft": "Draft", "active": "Active", "disabled": "Disabled" },
+          "statuses": {
+            "draft": "Draft",
+            "active": "Active",
+            "disabled": "Disabled"
+          },
           "clientSecret": "Client Secret",
           "clientSecretHint": "Leave this blank while editing to keep the stored secret; enter a value to replace it.",
           "clearClientSecret": "Clear the stored secret",
@@ -6013,7 +6370,10 @@
           "save": "Save configuration",
           "create": "Create Provider",
           "cancel": "Cancel",
-          "errors": { "generic": "The Provider could not be saved. Check the fields and entitlement, then try again.", "conflict": "The Provider changed in another administrator session. Refresh and edit the latest version." }
+          "errors": {
+            "generic": "The Provider could not be saved. Check the fields and entitlement, then try again.",
+            "conflict": "The Provider changed in another administrator session. Refresh and edit the latest version."
+          }
         },
         "login": {
           "start": "Start SAML login",
@@ -6024,8 +6384,17 @@
         "domains": {
           "title": "Verified domains",
           "subtitle": "Prove control of an organization domain with a server-side DNS TXT check.",
-          "status": { "pending": "Pending TXT", "verified": "Verified", "revoked": "Revoked" },
-          "fields": { "version": "Version", "expires": "Proof expires", "verified": "Verified at", "recheck": "Next recheck" },
+          "status": {
+            "pending": "Pending TXT",
+            "verified": "Verified",
+            "revoked": "Revoked"
+          },
+          "fields": {
+            "version": "Version",
+            "expires": "Proof expires",
+            "verified": "Verified at",
+            "recheck": "Next recheck"
+          },
           "notAvailable": "Not available",
           "empty": {
             "title": "No organization domains",
@@ -6058,8 +6427,15 @@
         "policy": {
           "title": "Enforcement policy",
           "subtitle": "Required sign-in is enabled only after the Owner recovery path is ready.",
-          "mode": { "optional": "Optional", "required": "Required" },
-          "fields": { "mode": "Mode", "version": "Version", "recovery": "Recovery" },
+          "mode": {
+            "optional": "Optional",
+            "required": "Required"
+          },
+          "fields": {
+            "mode": "Mode",
+            "version": "Version",
+            "recovery": "Recovery"
+          },
           "modeLabel": "Sign-in policy",
           "save": "Save policy",
           "ready": "Ready",
@@ -6097,29 +6473,29 @@
           "manageBody": "The current role can manage SSO. Use Add Provider or Edit on an existing row to complete the configuration.",
           "readBody": "This organization has no Provider configuration visible to the current role."
         },
-  "closure": {
-    "title": "Closure status",
-    "provider": "Provider",
-    "domains": "Domain verification",
-    "policy": "Enforcement policy",
-    "recovery": "Recovery entry",
-    "audit": "Audit status",
-    "available": "Live",
-    "pending": "Pending",
-    "viewAudit": "View audit",
-    "status": {
-      "live": "Live",
-      "empty": "Not configured",
-      "pending": "Pending",
-      "loading": "Loading",
-      "error": "Unavailable",
-      "restricted": "Restricted",
-      "revoked": "Revoked",
-      "notReady": "Not ready"
-    },
-    "hint": "Every badge reflects the latest server response. Audit details remain a separate read-only surface."
-  }
-}
+        "closure": {
+          "title": "Closure status",
+          "provider": "Provider",
+          "domains": "Domain verification",
+          "policy": "Enforcement policy",
+          "recovery": "Recovery entry",
+          "audit": "Audit status",
+          "available": "Live",
+          "pending": "Pending",
+          "viewAudit": "View audit",
+          "status": {
+            "live": "Live",
+            "empty": "Not configured",
+            "pending": "Pending",
+            "loading": "Loading",
+            "error": "Unavailable",
+            "restricted": "Restricted",
+            "revoked": "Revoked",
+            "notReady": "Not ready"
+          },
+          "hint": "Every badge reflects the latest server response. Audit details remain a separate read-only surface."
+        }
+      }
     }
   },
   "organizationProvisioning": {
@@ -6131,14 +6507,14 @@
       "name": "Organization name",
       "slug": "Organization slug",
       "slugHint": "Lowercase letters, numbers, and hyphens; must start and end with a letter or number.",
-    "reason": "Business reason",
-    "material": "Supporting materials",
-    "materialKind": "Material type",
-    "materialFile": "Upload file",
-    "materialHint": "PDF, PNG, JPG, or WebP; 50 MB per file and 100 MB total.",
-    "addMaterial": "Add material",
-    "removeMaterial": "Remove material",
-    "idempotent": "Resubmitting with the same request key returns the same request."
+      "reason": "Business reason",
+      "material": "Supporting materials",
+      "materialKind": "Material type",
+      "materialFile": "Upload file",
+      "materialHint": "PDF, PNG, JPG, or WebP; 50 MB per file and 100 MB total.",
+      "addMaterial": "Add material",
+      "removeMaterial": "Remove material",
+      "idempotent": "Resubmitting with the same request key returns the same request."
     },
     "retry": {
       "title": "Submit a new request",
@@ -6170,7 +6546,12 @@
         "review": "Review requests",
         "apply": "Apply for access"
       },
-      "filters": { "all": "All", "pending": "Pending", "approved": "Approved", "rejected": "Rejected" },
+      "filters": {
+        "all": "All",
+        "pending": "Pending",
+        "approved": "Approved",
+        "rejected": "Rejected"
+      },
       "review": "Review",
       "approve": "Approve and provision",
       "reject": "Reject",
@@ -6179,14 +6560,14 @@
       "teams": "Teams",
       "keys": "Organization keys",
       "retention": "Audit days",
-    "emptyTitle": "No provisioning requests",
-    "emptyBody": "New organization requests will appear here after a user submits them.",
-    "materials": "Supporting materials",
-    "materialsLoading": "Loading material metadata...",
-    "materialsError": "Materials could not be loaded or downloaded. Try again later.",
-    "materialsEmpty": "The applicant did not submit materials.",
-    "download": "Download material",
-    "unavailable": "Content unavailable"
+      "emptyTitle": "No provisioning requests",
+      "emptyBody": "New organization requests will appear here after a user submits them.",
+      "materials": "Supporting materials",
+      "materialsLoading": "Loading material metadata...",
+      "materialsError": "Materials could not be loaded or downloaded. Try again later.",
+      "materialsEmpty": "The applicant did not submit materials.",
+      "download": "Download material",
+      "unavailable": "Content unavailable"
     },
     "flow": {
       "apply": {
@@ -6209,9 +6590,9 @@
     "errors": {
       "loadTitle": "Couldn't load provisioning records",
       "loadBody": "Temporarily unavailable. Existing requests and entitlements are unchanged.",
-    "mutation": "The operation did not return a reliable result. Keep the current input and retry.",
-    "materials": "Each material must be a PDF, PNG, JPG, or WebP file no larger than 50 MB; all materials together must be no larger than 100 MB.",
-    "conflict": "The request changed concurrently. Refresh and review the latest server version.",
+      "mutation": "The operation did not return a reliable result. Keep the current input and retry.",
+      "materials": "Each material must be a PDF, PNG, JPG, or WebP file no larger than 50 MB; all materials together must be no larger than 100 MB.",
+      "conflict": "The request changed concurrently. Refresh and review the latest server version.",
       "unavailable": "The provisioning service is temporarily unavailable. Try again shortly."
     }
   },
@@ -6225,10 +6606,22 @@
     "process": {
       "title": "Review process",
       "steps": {
-        "submit": { "title": "Submit materials", "body": "An organization Owner or administrator submits business materials and an organization summary." },
-        "review": { "title": "Platform review", "body": "A platform administrator checks the materials and approves, requests a supplement, or rejects the case." },
-        "record": { "title": "Record the result", "body": "The case status, review reason, and timestamps stay on the server for the organization to view." },
-        "boundary": { "title": "Know the boundary", "body": "Verification does not change member permissions, plans, quota, SSO, or other basic organization features." }
+        "submit": {
+          "title": "Submit materials",
+          "body": "An organization Owner or administrator submits business materials and an organization summary."
+        },
+        "review": {
+          "title": "Platform review",
+          "body": "A platform administrator checks the materials and approves, requests a supplement, or rejects the case."
+        },
+        "record": {
+          "title": "Record the result",
+          "body": "The case status, review reason, and timestamps stay on the server for the organization to view."
+        },
+        "boundary": {
+          "title": "Know the boundary",
+          "body": "Verification does not change member permissions, plans, quota, SSO, or other basic organization features."
+        }
       }
     },
     "status": {
@@ -6274,7 +6667,14 @@
     "admin": {
       "title": "Organization verification review",
       "subtitle": "Review submitted organization cases and record a server-side decision. Material bodies are never returned by this console.",
-      "filters": { "all": "All", "submitted": "Submitted", "in_review": "In review", "needs_supplement": "Needs supplement", "approved": "Approved", "rejected": "Rejected" },
+      "filters": {
+        "all": "All",
+        "submitted": "Submitted",
+        "in_review": "In review",
+        "needs_supplement": "Needs supplement",
+        "approved": "Approved",
+        "rejected": "Rejected"
+      },
       "review": "Review case",
       "case": "Case #{{id}}",
       "organization": "Organization #{{id}}",
@@ -6316,7 +6716,10 @@
     "eyebrow": "Enterprise commerce",
     "title": "Organization plans",
     "subtitle": "Create immutable organization capability and price snapshots. Historical plans can only be disabled, never repriced in place.",
-    "summary": { "loaded": "{{count}} plans loaded", "active": "{{count}} available" },
+    "summary": {
+      "loaded": "{{count}} plans loaded",
+      "active": "{{count}} available"
+    },
     "entitlementLookup": {
       "title": "Organization entitlement lookup",
       "subtitle": "Platform administrators must provide a cross-organization access reason. It is sent only with this request and recorded in organization audit.",
@@ -6341,19 +6744,68 @@
       "noAppliedOrder": "No confirmed plan order is linked",
       "capacity": "Capacity: {{seats}} seats · {{teams}} teams · {{keys}} keys · {{days}} audit retention days"
     },
-    "actions": { "refresh": "Refresh", "retry": "Try again", "create": "New plan", "save": "Save plan", "creating": "Saving…", "loadMore": "Load more", "disable": "Disable plan", "cancel": "Cancel" },
-    "create": { "title": "New organization plan", "subtitle": "Prices use currency minor units and cannot be edited after creation; future orders reference this snapshot." },
-    "fields": {
-      "name": "Plan name", "description": "Description", "provider": "Payment Provider", "currency": "Currency", "amountMinor": "Price (minor units)",
-      "seats": "Member seats", "teams": "Teams", "keys": "Organization key limit", "auditRetention": "Audit retention days", "validity": "Validity days", "capabilities": "Advanced capabilities",
-      "teamManagement": "Team management", "sso": "Organization SSO", "customRolesUnavailable": "Custom roles (not in the current sales boundary)"
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Try again",
+      "create": "New plan",
+      "save": "Save plan",
+      "creating": "Saving…",
+      "loadMore": "Load more",
+      "disable": "Disable plan",
+      "cancel": "Cancel"
     },
-    "columns": { "plan": "Plan", "capacity": "Capacity", "price": "Price snapshot", "validity": "Validity", "actions": "Actions" },
-    "status": { "active": "Available", "disabled": "Disabled" },
-    "values": { "capacity": "{{seats}} seats · {{teams}} teams · {{keys}} keys", "days": "{{count}} days", "audit": "{{count}} audit days", "selected": "Selected" },
-    "empty": { "title": "No organization plans", "body": "Create the first plan to make a server-confirmed price snapshot available in the catalog." },
-    "errors": { "loadTitle": "Organization plans could not be loaded", "loadBody": "Couldn't load plans right now. Try again later.", "more": "The next page failed to load. Try again.", "create": "The plan is invalid or could not be saved. Check the fields and retry.", "disable": "Disable did not complete. The plan version may have changed; refresh and retry." },
-    "disable": { "title": "Disable organization plan?", "body": "{{name}} will leave the sales catalog. Historical price snapshots and referenced orders remain unchanged." }
+    "create": {
+      "title": "New organization plan",
+      "subtitle": "Prices use currency minor units and cannot be edited after creation; future orders reference this snapshot."
+    },
+    "fields": {
+      "name": "Plan name",
+      "description": "Description",
+      "provider": "Payment Provider",
+      "currency": "Currency",
+      "amountMinor": "Price (minor units)",
+      "seats": "Member seats",
+      "teams": "Teams",
+      "keys": "Organization key limit",
+      "auditRetention": "Audit retention days",
+      "validity": "Validity days",
+      "capabilities": "Advanced capabilities",
+      "teamManagement": "Team management",
+      "sso": "Organization SSO",
+      "customRolesUnavailable": "Custom roles (not in the current sales boundary)"
+    },
+    "columns": {
+      "plan": "Plan",
+      "capacity": "Capacity",
+      "price": "Price snapshot",
+      "validity": "Validity",
+      "actions": "Actions"
+    },
+    "status": {
+      "active": "Available",
+      "disabled": "Disabled"
+    },
+    "values": {
+      "capacity": "{{seats}} seats · {{teams}} teams · {{keys}} keys",
+      "days": "{{count}} days",
+      "audit": "{{count}} audit days",
+      "selected": "Selected"
+    },
+    "empty": {
+      "title": "No organization plans",
+      "body": "Create the first plan to make a server-confirmed price snapshot available in the catalog."
+    },
+    "errors": {
+      "loadTitle": "Organization plans could not be loaded",
+      "loadBody": "Couldn't load plans right now. Try again later.",
+      "more": "The next page failed to load. Try again.",
+      "create": "The plan is invalid or could not be saved. Check the fields and retry.",
+      "disable": "Disable did not complete. The plan version may have changed; refresh and retry."
+    },
+    "disable": {
+      "title": "Disable organization plan?",
+      "body": "{{name}} will leave the sales catalog. Historical price snapshots and referenced orders remain unchanged."
+    }
   },
   "organizationOnboarding": {
     "title": "Organization owner onboarding",
@@ -6581,9 +7033,25 @@
       "approver": "Approver #{{id}}",
       "minorUnit": "Negative refund amount",
       "adminScope": "Platform scope",
-      "columns": { "owner": "Funding owner", "order": "Order", "amount": "Refund amount", "status": "Result", "approver": "Approver", "time": "Confirmed" },
-      "actions": { "refresh": "Refresh refund reconciliation", "retry": "Try again", "loadMore": "Load earlier entries", "loadingMore": "Loading" },
-      "errors": { "title": "Refund reconciliation is unavailable", "body": "Couldn't load refunds right now. Try again shortly.", "more": "Couldn't load earlier refunds." }
+      "columns": {
+        "owner": "Funding owner",
+        "order": "Order",
+        "amount": "Refund amount",
+        "status": "Result",
+        "approver": "Approver",
+        "time": "Confirmed"
+      },
+      "actions": {
+        "refresh": "Refresh refund reconciliation",
+        "retry": "Try again",
+        "loadMore": "Load earlier entries",
+        "loadingMore": "Loading"
+      },
+      "errors": {
+        "title": "Refund reconciliation is unavailable",
+        "body": "Couldn't load refunds right now. Try again shortly.",
+        "more": "Couldn't load earlier refunds."
+      }
     }
   },
   "setup": {
@@ -6965,5 +7433,14 @@
   },
   "language": {
     "toggle": "Switch language"
+  },
+  "providers": {
+    "adapterHint": "Choose the transport and upstream base URL specified by your provider.",
+    "label": "Provider",
+    "select": "Select provider",
+    "search": "Search providers",
+    "searchOrCreate": "Search or enter a custom provider",
+    "create": "Use custom provider “{{name}}”",
+    "empty": "No matching providers"
   }
 }

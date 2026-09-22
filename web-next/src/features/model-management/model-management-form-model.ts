@@ -40,25 +40,6 @@ export type ModelValidationMessages = {
 
 const modalitySchema = z.enum(['text', 'image', 'audio', 'video'])
 
-export const MODEL_PROVIDER_SUGGESTIONS = [
-  'openai',
-  'anthropic',
-  'google',
-  'deepseek',
-  'qwen',
-  'moonshot',
-  'zhipu',
-  'minimax',
-  'bytedance',
-  'tencent',
-  'xai',
-  'meta',
-  'mistral',
-  'cohere',
-  'amazon',
-  'microsoft',
-] as const
-
 /** 生成与当前界面语言一致的结构化模型元数据表单校验器。 */
 export function buildModelManagementSchema(messages: ModelValidationMessages) {
   return z.object({

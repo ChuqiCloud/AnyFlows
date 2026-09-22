@@ -1,14 +1,14 @@
+import { ProviderPicker } from '@/components/brand/provider-picker'
 import { Button, Drawer, DrawerBody, DrawerContent, DrawerHeader, Input } from '@heroui/react'
 import { useEffect } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
 import type { AdminMissingModel } from '@/lib/api/generated/types.gen'
 import { ModelCapabilityFields } from './model-capability-fields'
 import { ModelManagementField } from './model-management-field'
 import {
-  MODEL_PROVIDER_SUGGESTIONS,
   validModelText,
   type ModelValidationMessages,
 } from './model-management-form-model'
@@ -111,10 +111,7 @@ export function MissingModelImportSheet(props: MissingModelImportSheetProps) {
                 <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('modelManagement.missing.import.sharedHint')}</p>
               </div>
               <ModelManagementField id="missing-provider" label={t('modelManagement.fields.provider')} error={form.formState.errors.provider?.message}>
-                <Input id="missing-provider" size="sm" list="missing-provider-suggestions" autoComplete="off" isInvalid={!!form.formState.errors.provider} {...form.register('provider')} />
-                <datalist id="missing-provider-suggestions">
-                  {MODEL_PROVIDER_SUGGESTIONS.map((provider) => <option key={provider} value={provider} />)}
-                </datalist>
+                <Controller control={form.control} name="provider" render={({ field }) => <ProviderPicker id="missing-provider" {...field} invalid={!!form.formState.errors.provider} disabled={props.pending} />} />
               </ModelManagementField>
               <ModelCapabilityFields
                 input={inputModalities}

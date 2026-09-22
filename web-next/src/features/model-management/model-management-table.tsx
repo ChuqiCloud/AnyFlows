@@ -1,3 +1,4 @@
+import { providerDisplayName } from '@/components/brand/provider-catalog'
 import { Button, Chip } from '@heroui/react'
 import { Boxes, Pencil, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -96,7 +97,7 @@ function ModelIdentity({ model }: { model: AdminModel }) {
       <div className="min-w-0">
         <div className="truncate font-medium">{model.display_name}</div>
         <div className="mt-1 truncate font-mono text-[0.6875rem] text-muted-foreground">{model.model}</div>
-        <div className="mt-1 text-[0.6875rem] text-muted-foreground">{t('modelManagement.values.providerId', { provider: model.provider, id: model.id })}</div>
+        <div className="mt-1 text-[0.6875rem] text-muted-foreground">{t('modelManagement.values.providerId', { provider: providerDisplayName(model.provider), id: model.id })}</div>
         {model.tags.length > 0 ? (
           <div className="mt-2 flex flex-wrap gap-1">
             {model.tags.slice(0, 3).map((tag) => <Chip key={tag} size="sm" variant="flat">{tag}</Chip>)}

@@ -80,7 +80,7 @@ function OrganizationOverviewWorkspace({
   const canReadEntitlement = overview.role === 'owner'
   const walletQuery = useOrganizationWalletSummary(organizationId, canReadWallet)
   const budgetsQuery = useOrganizationBudgets(organizationId, canManageBudgets)
-  const usageQuery = useOrganizationUsageLogs(organizationId, 'summary', undefined, 50, canReadUsage)
+  const usageQuery = useOrganizationUsageLogs(organizationId, 'summary', undefined, undefined, 50, canReadUsage)
   const entitlementQuery = useOrganizationEntitlement(organizationId, canReadEntitlement)
   const requestCount = useMemo(
     () => usageQuery.data?.summaries.reduce((total, item) => total + item.request_count, 0),

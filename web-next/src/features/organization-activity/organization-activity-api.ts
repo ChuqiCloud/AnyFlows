@@ -37,12 +37,14 @@ export function useOrganizationUsageLogs(
   organizationId: number,
   scope: OrganizationUsageScope,
   before: number | undefined,
+  failedBefore: number | undefined,
   limit: number,
   enabled: boolean,
 ) {
   return useQuery({
     queryKey: organizationActivityQueryKey(organizationId, 'usage', {
       before: before ?? null,
+      failedBefore: failedBefore ?? null,
       limit,
       scope,
     }),
@@ -51,7 +53,7 @@ export function useOrganizationUsageLogs(
       const { data } = await listOrganizationUsageLogs({
         client: apiClient,
         path: { organization_id: organizationId },
-        query: { before, limit, scope },
+        query: { before, failed_before: failedBefore, limit, scope },
         signal,
       })
       return data
