@@ -23,7 +23,9 @@ let browser
 let serverOutput = ''
 
 try {
-  await writeFile(html, '<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Frontend gallery CI</title><div id="root"></div><script type="module" src="/.gallery-smoke.tsx"></script></html>')
+  // Match the real index.html bootstrap: the site defaults to dark before
+  // React or HeroUI mounts, so the two token systems start in the same mode.
+  await writeFile(html, '<!doctype html><html lang="zh" class="dark"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Frontend gallery CI</title><div id="root"></div><script type="module" src="/.gallery-smoke.tsx"></script></html>')
   await writeFile(entry, `
     import React from 'react';
     import { createRoot } from 'react-dom/client';
@@ -52,13 +54,6 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   await page.addInitScript(() => {
     localStorage.setItem('anyflows.locale', 'zh')
-    // The real Next entrypoint applies the persisted site theme before React
-    // mounts. The gallery harness has no index.html bootstrap script, so set
-    // the same default explicitly; otherwise HeroUI falls back to its light
-    // palette while the site tokens remain dark and the screenshot is invalid.
-    const stored = localStorage.getItem('anyflows.theme')
-    const mode = stored === 'light' || stored === 'dark' ? stored : 'dark'
-    document.documentElement.classList.add(mode)
   })
   let activeId = null
   let catalogRequests = 0
