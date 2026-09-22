@@ -274,7 +274,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 256);
+        assert_eq!(document.paths.paths.len(), 257);
         let operation_count = document
             .paths
             .paths
@@ -295,8 +295,8 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        // 新增企业资料更新接口后，保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 335);
+        // 新增前端模板预览接口后，保持操作总数与生成文档同步。
+        assert_eq!(operation_count, 336);
         assert!(
             document
                 .components
@@ -567,6 +567,7 @@ mod tests {
             "listAdminChannels",
             "listAdminCredentials",
             "listAdminFrontendTemplates",
+            "getAdminFrontendTemplatePreview",
             "listAdminCredentialProxies",
             "listAdminDebugTraces",
             "listAdminGroups",
@@ -678,7 +679,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 554);
+        assert_eq!(schemas.len(), 555);
         assert!(schemas.contains_key("OpenAiModel"));
         assert!(schemas.contains_key("OpenAiModelList"));
         assert_eq!(
