@@ -2,6 +2,7 @@
 
 mod announcements;
 mod anthropic_messages;
+mod api_explorer;
 mod audio_service;
 mod authentication;
 mod balance_alert_settings;
