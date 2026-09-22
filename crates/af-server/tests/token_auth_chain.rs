@@ -216,6 +216,21 @@ async fn models_endpoint_lists_all_authorized_models_without_calling_upstream() 
             ))
             .await
             .unwrap();
+        connection
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Sqlite,
+                "INSERT INTO abilities (group_id, model, channel_id, enabled, priority, weight) VALUES (?, ?, ?, ?, ?, ?)",
+                [
+                    GROUP_ID.into(),
+                    model.clone().into(),
+                    support::CHANNEL_ID.into(),
+                    true.into(),
+                    10_i32.into(),
+                    0_i32.into(),
+                ],
+            ))
+            .await
+            .unwrap();
         connection.execute(Statement::from_sql_and_values(
             DbBackend::Sqlite,
             "INSERT INTO model_prices (model, billing_mode, input_price, output_price, cache_read_price, cache_creation_5m_price, cache_creation_1h_price, version) SELECT ?, billing_mode, input_price, output_price, cache_read_price, cache_creation_5m_price, cache_creation_1h_price, version FROM model_prices WHERE model = 'test-model'",
