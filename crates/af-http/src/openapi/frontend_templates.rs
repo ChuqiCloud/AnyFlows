@@ -15,7 +15,7 @@ use crate::{
     path = "/api/admin/frontend-templates",
     operation_id = "listAdminFrontendTemplates",
     tag = "前端模板",
-    summary = "读取外部前端模板目录",
+    summary = "读取内置与外部前端模板目录",
     responses(
         (status = 200, description = "模板扫描快照", body = FrontendTemplateCatalog),
         (status = 401, description = "登录会话无效", body = ManagementErrorBody),
@@ -61,12 +61,31 @@ fn scan_admin_frontend_templates() {}
 )]
 fn activate_admin_frontend_template() {}
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/frontend-templates/{template_id}/preview",
+    operation_id = "getAdminFrontendTemplatePreview",
+    tag = "前端模板",
+    summary = "读取管理员模板预览图片",
+    params(("template_id" = String, Path, description = "模板稳定标识")),
+    responses(
+        (status = 200, description = "静态预览图片，不执行模板代码", body = Vec<u8>, content_type = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"]),
+        (status = 401, description = "登录会话无效", body = ManagementErrorBody),
+        (status = 403, description = "当前用户不是管理员", body = ManagementErrorBody),
+        (status = 404, description = "模板不存在或没有预览图片"),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn get_admin_frontend_template_preview() {}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
         list_admin_frontend_templates,
         scan_admin_frontend_templates,
-        activate_admin_frontend_template
+        activate_admin_frontend_template,
+        get_admin_frontend_template_preview
     ),
     components(schemas(
         FrontendTemplateSummary,

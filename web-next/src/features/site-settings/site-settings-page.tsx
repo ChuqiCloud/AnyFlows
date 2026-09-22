@@ -3,6 +3,7 @@ import { RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { useAdminSiteSettings } from './site-settings-api'
+import { FrontendTemplatePanel } from './frontend-template-panel'
 import { SiteSettingsWorkspace } from './site-settings-workspace'
 
 /** 呈现管理员站点设置，并在固定记录不可用时保持失败关闭。 */
@@ -64,7 +65,7 @@ export function SiteSettingsPage() {
           </Button>
         </div>
       ) : settingsQuery.data ? (
-        <SiteSettingsWorkspace settings={settingsQuery.data} />
+        <div className="grid gap-4"><FrontendTemplatePanel /><SiteSettingsWorkspace settings={settingsQuery.data} /></div>
       ) : null}
     </div>
   )

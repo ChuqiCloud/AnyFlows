@@ -140,7 +140,10 @@ fn check_dependencies() -> Result<(), Box<dyn Error>> {
 fn export_openapi() -> Result<(), Box<dyn Error>> {
     let output = render_openapi()?;
     let path = openapi_output_path();
-    fs::write(&path, output)?;
+    fs::write(&path, &output)?;
+    let next_path = workspace_root().join("web-next/openapi/openapi.json");
+    fs::create_dir_all(next_path.parent().expect("OpenAPI output has a parent"))?;
+    fs::write(&next_path, &output)?;
     println!("OpenAPI 已导出到 {}", display_workspace_path(&path));
     Ok(())
 }
@@ -149,12 +152,12 @@ fn check_openapi() -> Result<(), Box<dyn Error>> {
     let expected = render_openapi()?;
     let path = openapi_output_path();
     let committed = fs::read_to_string(&path)?;
-    if committed == expected {
+    if committed == expected && fs::read_to_string(workspace_root().join("web-next/openapi/openapi.json"))? == expected {
         println!("OpenAPI 契约与 Rust 定义一致");
         return Ok(());
     }
 
-    let difference = describe_first_openapi_difference(&committed, &expected);
+    let difference = if committed == expected { "web-next/openapi/openapi.json 已过期".to_owned() } else { describe_first_openapi_difference(&committed, &expected) };
 
     Err(io::Error::new(
         io::ErrorKind::InvalidData,

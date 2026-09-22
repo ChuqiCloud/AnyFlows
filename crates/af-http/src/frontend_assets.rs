@@ -51,7 +51,9 @@ impl FrontendAsset {
         Self { content, etag }
     }
 
-    fn content(&self) -> Bytes {
+    /// 返回共享的只读资源字节，不复制整个资源。
+    #[must_use]
+    pub fn content(&self) -> Bytes {
         self.content.clone()
     }
 

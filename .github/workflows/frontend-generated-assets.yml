@@ -68,7 +68,7 @@ jobs:
           set -euo pipefail
           if test -f web-next/pnpm-lock.yaml; then git add -N -- web-next/pnpm-lock.yaml; fi
           echo 'ANYFLOWS_GENERATED_PATCH_BEGIN'
-          git diff --binary -- crates web web-next | gzip -9 | base64 -w0
+          git diff --binary -- crates web web-next | gzip -9 | base64 -w120
           echo
           echo 'ANYFLOWS_GENERATED_PATCH_END'
           git diff --stat -- crates web web-next
