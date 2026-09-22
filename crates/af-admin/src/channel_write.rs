@@ -47,6 +47,15 @@ pub struct AdminChannelCreateCommand {
 }
 
 impl AdminChannelCreateCommand {
+    /// 设置独立于通信适配器的厂商标识。
+    pub fn with_provider(
+        mut self,
+        provider: Option<String>,
+    ) -> Result<Self, AdminChannelWriteError> {
+        self.fields = self.fields.with_provider(provider)?;
+        Ok(self)
+    }
+
     /// 校验当前生产运行时支持的渠道类型及全部配置边界。
     #[allow(
         clippy::too_many_arguments,
@@ -177,6 +186,15 @@ pub struct AdminChannelUpdateCommand {
 }
 
 impl AdminChannelUpdateCommand {
+    /// 更新厂商标识；省略或 null 时保留原值。
+    pub fn with_provider(
+        mut self,
+        provider: Option<String>,
+    ) -> Result<Self, AdminChannelWriteError> {
+        self.fields = self.fields.with_provider(provider)?;
+        Ok(self)
+    }
+
     /// 校验完整更新字段，禁止借管理接口写入未实现的适配器语义。
     #[allow(
         clippy::too_many_arguments,
@@ -296,6 +314,7 @@ impl fmt::Debug for AdminChannelUpdateCommand {
 }
 
 struct AdminChannelWriteFields {
+    provider: Option<String>,
     name: String,
     channel_type: ChannelType,
     protocol: Protocol,
@@ -398,6 +417,7 @@ impl AdminChannelWriteFields {
         Ok(Self {
             name,
             channel_type,
+            provider: None,
             protocol,
             base_url,
             timeout,
@@ -422,6 +442,17 @@ impl AdminChannelWriteFields {
             auto_ban_rules: require_sensitive_fields.then_some(ChannelAutoBanRules::default()),
             tag,
         })
+    }
+
+    fn with_provider(mut self, provider: Option<String>) -> Result<Self, AdminChannelWriteError> {
+        if provider
+            .as_deref()
+            .is_some_and(|value| !valid_text(value, 64) || value.trim() != value)
+        {
+            return Err(AdminChannelWriteError::InvalidInput);
+        }
+        self.provider = provider;
+        Ok(self)
     }
 
     fn with_responses_websocket_enabled(
@@ -513,7 +544,8 @@ impl AdminChannelWriteFields {
             self.header_override,
             self.settings,
             self.tag,
-        );
+        )
+        .with_provider(self.provider);
         let record = match pool_mode {
             Some(enabled) => record.with_pool_mode(enabled),
             None => record,

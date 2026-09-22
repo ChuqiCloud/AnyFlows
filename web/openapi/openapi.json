@@ -29965,6 +29965,14 @@
           "updated_at"
         ],
         "properties": {
+          "provider": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64,
+            "minLength": 1
+          },
           "id": {
             "type": "integer",
             "format": "int64",
@@ -30217,6 +30225,14 @@
           "tag"
         ],
         "properties": {
+          "provider": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64,
+            "minLength": 1
+          },
           "name": {
             "type": "string",
             "maxLength": 128,
@@ -30540,6 +30556,14 @@
           "tag"
         ],
         "properties": {
+          "provider": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64,
+            "minLength": 1
+          },
           "name": {
             "type": "string",
             "maxLength": 128,

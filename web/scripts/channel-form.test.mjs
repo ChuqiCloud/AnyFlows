@@ -5,6 +5,7 @@ import {
   buildChannelFormSchema,
   defaultChannelValues,
   toCreateRequest,
+  toUpdateRequest,
 } from '../src/features/channels/channel-form-model.ts'
 
 const messages = {
@@ -20,6 +21,19 @@ const messages = {
   invalidTimeout: 'timeout',
   invalidUrl: 'url',
 }
+
+test('custom provider persists independently from the transport and leaves settings untouched', () => {
+  const values = { ...defaultChannelValues(), name: 'Private channel', provider: 'Acme Private AI' }
+  assert.equal(buildChannelFormSchema('create', messages).safeParse(values).success, true)
+  assert.equal(toCreateRequest(values).provider, 'Acme Private AI')
+  assert.equal(toCreateRequest(values).type, 'openai')
+  assert.equal(toUpdateRequest(values).settings, undefined)
+  assert.equal(defaultChannelValues({ type: 'openai', provider: 'deepseek' }).provider, 'deepseek')
+  assert.equal(defaultChannelValues({ type: 'anthropic' }).provider, 'anthropic')
+  for (const provider of ['', 'x'.repeat(65), 'bad\nvalue', '厂'.repeat(22)]) {
+    assert.equal(buildChannelFormSchema('create', messages).safeParse({ ...values, provider }).success, false)
+  }
+})
 
 test('Anthropic 渠道默认值保留类型和 Messages 协议', () => {
   const values = defaultChannelValues({

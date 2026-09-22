@@ -55,6 +55,7 @@ const SOFT_DELETE_BATCH_SIZE: usize = 500;
 
 /// 管理端创建或完整更新渠道时写入的业务字段。
 pub struct AdminChannelWriteRecord {
+    provider: Option<String>,
     name: String,
     channel_type: ChannelType,
     protocol: Protocol,
@@ -123,6 +124,7 @@ impl AdminChannelWriteRecord {
             param_override,
             header_override: Some(header_override),
             settings: Some(settings),
+            provider: None,
             pool_mode: Some(false),
             client_simulation_profile: Some(None),
             client_simulation_risk_accepted: false,
@@ -177,6 +179,7 @@ impl AdminChannelWriteRecord {
             header_override,
             settings,
             pool_mode: None,
+            provider: None,
             client_simulation_profile: None,
             client_simulation_risk_accepted: false,
             client_simulation_body_profile: None,
@@ -187,6 +190,13 @@ impl AdminChannelWriteRecord {
             auto_ban_rules: None,
             tag,
         }
+    }
+
+    /// 设置非敏感厂商标识；更新时省略则保留。
+    #[must_use]
+    pub fn with_provider(mut self, provider: Option<String>) -> Self {
+        self.provider = provider;
+        self
     }
 
     /// 覆盖受控 Responses WebSocket 能力；调用方必须先完成渠道类型校验。
@@ -625,6 +635,7 @@ impl AdminChannelRepository {
         let mut settings = fields
             .settings
             .ok_or_else(|| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
+        set_provider(&mut settings, fields.provider)?;
         let pool_mode = fields
             .pool_mode
             .ok_or_else(|| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
@@ -810,7 +821,14 @@ impl AdminChannelRepository {
             None => auto_ban_rules(&current_settings)
                 .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))?,
         };
+        let provider = fields.provider.or_else(|| {
+            current_settings
+                .get("provider")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        });
         let mut settings = fields.settings.unwrap_or(current_settings);
+        set_provider(&mut settings, provider)?;
         set_pool_mode(&mut settings, effective_pool_mode)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         set_client_simulation_profile(&mut settings, effective_client_simulation_profile)
@@ -1259,7 +1277,28 @@ impl AdminChannelRepository {
     }
 }
 
+fn set_provider(
+    settings: &mut serde_json::Value,
+    provider: Option<String>,
+) -> Result<(), AdminChannelWriteRepositoryError> {
+    let object = settings
+        .as_object_mut()
+        .ok_or(AdminChannelWriteRepositoryError::InvalidInput)?;
+    if let Some(provider) = provider {
+        object.insert("provider".to_owned(), serde_json::Value::String(provider));
+    }
+    if object.get("provider").is_some_and(|value| {
+        value
+            .as_str()
+            .is_none_or(|value| !valid_trimmed_text(value, 64))
+    }) {
+        return Err(AdminChannelWriteRepositoryError::InvalidInput);
+    }
+    validate_json_object(settings, false)
+}
+
 struct ValidatedChannelFields {
+    provider: Option<String>,
     name: String,
     channel_type: ChannelType,
     protocol: Protocol,
@@ -1291,6 +1330,10 @@ fn validate_channel_fields(
     require_sensitive_fields: bool,
 ) -> Result<ValidatedChannelFields, AdminChannelWriteRepositoryError> {
     if !valid_trimmed_text(&record.name, 128)
+        || record
+            .provider
+            .as_deref()
+            .is_some_and(|value| !valid_trimmed_text(value, 64))
         || record.weight < 0
         || !matches!(record.status, Status::Enabled | Status::Disabled)
         || !matches!(
@@ -1410,6 +1453,7 @@ fn validate_channel_fields(
         param_override: record.param_override,
         header_override,
         settings: record.settings,
+        provider: record.provider,
         pool_mode: record.pool_mode,
         client_simulation_profile: record.client_simulation_profile,
         client_simulation_risk_accepted: record.client_simulation_risk_accepted,

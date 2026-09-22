@@ -74,6 +74,7 @@ impl AdminRoutingStatus {
 
 /// 管理 API 可读取的非敏感渠道快照。
 pub struct AdminChannel {
+    provider: Option<String>,
     channel_id: ChannelId,
     name: String,
     channel_type: ChannelType,
@@ -143,6 +144,7 @@ impl AdminChannel {
             auto_ban,
             auto_ban_rules: ChannelAutoBanRules::default(),
             pool_mode: false,
+            provider: None,
             client_simulation_profile: None,
             client_simulation_body_profile: None,
             responses_websocket_enabled: false,
@@ -224,6 +226,13 @@ impl AdminChannel {
     pub const fn pool_mode(&self) -> bool {
         self.pool_mode
     }
+
+    /// 返回独立于通信适配器的厂商标识。
+    #[must_use]
+    pub fn provider(&self) -> Option<&str> {
+        self.provider.as_deref()
+    }
+
     /// 返回显式选择的版本化客户端仿真档案。
     #[must_use]
     pub const fn client_simulation_profile(&self) -> Option<ClientSimulationProfile> {
@@ -335,6 +344,7 @@ impl AdminChannel {
         )
         .with_auto_ban_rules(record.auto_ban_rules().clone())
         .with_pool_mode(record.pool_mode())
+        .with_provider(record.provider().map(str::to_owned))
         .with_client_simulation_profile(record.client_simulation_profile())
         .with_client_simulation_body_profile(record.client_simulation_body_profile())
         .with_responses_websocket_enabled(record.responses_websocket_enabled())
@@ -375,6 +385,11 @@ impl AdminChannel {
 
     fn with_pool_mode(mut self, enabled: bool) -> Self {
         self.pool_mode = enabled;
+        self
+    }
+
+    fn with_provider(mut self, provider: Option<String>) -> Self {
+        self.provider = provider;
         self
     }
 

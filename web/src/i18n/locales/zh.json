@@ -288,6 +288,15 @@
       }
     }
   },
+  "providers": {
+    "adapterHint": "请按服务商文档选择通信适配器，并填写对应的上游基础地址。",
+    "label": "厂商",
+    "select": "选择厂商",
+    "search": "搜索厂商",
+    "searchOrCreate": "搜索或输入自定义厂商",
+    "create": "使用自定义厂商“{{name}}”",
+    "empty": "没有匹配的厂商"
+  },
   "channels": {
     "title": "渠道管理",
     "subtitle": "维护对话、多模态、重排序与异步视频上游的路由参数、凭据和请求策略。",
@@ -421,7 +430,7 @@
       "name": "名称",
       "baseUrl": "上游基础地址",
       "timeout": "渠道超时（秒）",
-      "type": "渠道类型",
+      "type": "通信适配器",
       "protocol": "协议",
       "status": "状态",
       "weight": "权重",

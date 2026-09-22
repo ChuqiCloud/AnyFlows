@@ -1,3 +1,5 @@
+import { providerDisplayName } from '@/components/brand/provider-catalog'
+
 import {
   Boxes,
   Check,
@@ -189,7 +191,7 @@ export function PlaygroundModelPicker(props: PlaygroundModelPickerProps) {
                     <ProviderIcon className="size-3.5 shrink-0" aria-hidden="true" />
                     <span className="max-w-24 truncate">{category.value === ALL_PLAYGROUND_MODEL_FILTER
                       ? t('playground.model.allModels')
-                      : category.value}</span>
+                      : providerDisplayName(category.value)}</span>
                     <span className="ml-auto tabular-nums text-[0.625rem] text-muted-foreground">{category.count}</span>
                   </button>
                 )
