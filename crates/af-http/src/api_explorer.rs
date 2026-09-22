@@ -12,11 +12,11 @@ use std::{
 use af_admin::SessionAuthenticator;
 use axum::{
     Router,
-    extract::{Extension, Path, Query},
+    extract::{Extension, Path, RawQuery},
     response::Response,
     routing::get,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::Value;
 
 use crate::{
@@ -98,7 +98,7 @@ struct ProjectedOperation {
     openapi: Value,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default)]
 struct CatalogQuery {
     q: Option<String>,
     tag: Option<String>,
@@ -122,9 +122,10 @@ pub(crate) fn build_api_explorer_router(
 }
 
 async fn list_catalog(
-    Query(query): Query<CatalogQuery>,
+    RawQuery(raw_query): RawQuery,
     authentication: Option<Extension<af_admin::SessionAuthentication>>,
 ) -> Result<Response, ManagementError> {
+    let query = parse_catalog_query(raw_query.as_deref())?;
     let viewer = viewer(authentication.as_ref());
     let page = query.page.unwrap_or(1);
     let page_size = query.page_size.unwrap_or(PAGE_SIZE_DEFAULT);
@@ -177,6 +178,66 @@ async fn list_catalog(
         has_more,
         viewer: viewer_label(viewer),
     }))
+}
+
+fn parse_catalog_query(raw_query: Option<&str>) -> Result<CatalogQuery, ManagementError> {
+    let Some(raw_query) = raw_query else {
+        return Ok(CatalogQuery::default());
+    };
+    if raw_query.is_empty() {
+        return Ok(CatalogQuery::default());
+    }
+    if raw_query.len() > 1_024 {
+        return Err(ManagementError::InvalidRequest);
+    }
+    validate_percent_encoding(raw_query)?;
+    let mut query = CatalogQuery::default();
+    for (key, value) in url::form_urlencoded::parse(raw_query.as_bytes()) {
+        if key.contains('\u{fffd}') || value.contains('\u{fffd}') {
+            return Err(ManagementError::InvalidRequest);
+        }
+        match key.as_ref() {
+            "q" if query.q.is_none() => query.q = Some(value.into_owned()),
+            "tag" if query.tag.is_none() => query.tag = Some(value.into_owned()),
+            "page" if query.page.is_none() => query.page = Some(parse_catalog_number(&value)?),
+            "page_size" if query.page_size.is_none() => {
+                query.page_size = Some(parse_catalog_number(&value)?)
+            }
+            _ => return Err(ManagementError::InvalidRequest),
+        }
+    }
+    Ok(query)
+}
+
+fn parse_catalog_number(value: &str) -> Result<usize, ManagementError> {
+    if value.is_empty()
+        || value.starts_with(['+', '-'])
+        || value.chars().any(|character| !character.is_ascii_digit())
+    {
+        return Err(ManagementError::InvalidRequest);
+    }
+    value
+        .parse::<usize>()
+        .map_err(|_| ManagementError::InvalidRequest)
+}
+
+fn validate_percent_encoding(raw_query: &str) -> Result<(), ManagementError> {
+    let bytes = raw_query.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            if index + 2 >= bytes.len()
+                || !bytes[index + 1].is_ascii_hexdigit()
+                || !bytes[index + 2].is_ascii_hexdigit()
+            {
+                return Err(ManagementError::InvalidRequest);
+            }
+            index += 3;
+        } else {
+            index += 1;
+        }
+    }
+    Ok(())
 }
 
 async fn get_operation(
@@ -248,7 +309,7 @@ fn projected_operations(viewer: Viewer) -> Vec<ProjectedOperation> {
             continue;
         };
         for method in ["get", "post", "put", "patch", "delete", "head", "options"] {
-            let Some(operation) = path_item.get(method).filter(Value::is_object) else {
+            let Some(operation) = path_item.get(method).filter(|value| value.is_object()) else {
                 continue;
             };
             let Some(operation_id) = operation.get("operationId").and_then(Value::as_str) else {
