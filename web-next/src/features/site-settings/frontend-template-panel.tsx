@@ -69,7 +69,7 @@ export function FrontendTemplatePanel() {
       {pagination.total > 0 ? <footer className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--hairline)] pt-3 text-xs text-muted-foreground">
         <span aria-live="polite">{t('siteSettings.templates.pageSummary', { page: pagination.page, pages: pagination.pages, count: pagination.total })}</span>
         <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1.5">{t('siteSettings.templates.pageSize')}<Select size="sm" aria-label={t('siteSettings.templates.pageSize')} className="w-20" selectedKeys={[String(pageSize)]} onSelectionChange={(keys) => { setPageSize(Number(Array.from(keys)[0] ?? 8)); setPage(1) }}>{[8, 12, 24].map((size) => <SelectItem key={String(size)}>{size}</SelectItem>)}</Select></label>
+          <label className="flex items-center gap-1.5">{t('siteSettings.templates.pageSize')}<Select size="sm" aria-label={t('siteSettings.templates.pageSize')} className="w-20" disallowEmptySelection selectedKeys={[String(pageSize)]} onSelectionChange={(keys) => { setPageSize(Number(Array.from(keys)[0] ?? 8)); setPage(1) }}>{[8, 12, 24].map((size) => <SelectItem key={String(size)} textValue={String(size)}>{String(size)}</SelectItem>)}</Select></label>
           <Button size="sm" variant="bordered" type="button" className={buttonClass} isDisabled={pagination.page === 1} onClick={() => setPage(pagination.page - 1)}>{t('siteSettings.templates.previousPage')}</Button>
           <Button size="sm" variant="bordered" type="button" className={buttonClass} isDisabled={pagination.page === pagination.pages} onClick={() => setPage(pagination.page + 1)}>{t('siteSettings.templates.nextPage')}</Button>
         </div>

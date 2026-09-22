@@ -89,6 +89,21 @@ try {
   await page.getByRole('heading', { name: 'Theme 6', exact: true }).waitFor()
   assert.equal(await page.locator('article').count(), 8)
   assert.equal(catalogRequests, 1, 'Pagination must reuse catalog metadata')
+  for (const size of [12, 8]) {
+    if (isNext) {
+      const pageSize = page.locator('footer button[aria-haspopup="listbox"]')
+      assert.equal((await pageSize.innerText()).trim(), size === 12 ? '8' : '12', 'The selected page size must be visible')
+      await pageSize.click()
+      await page.getByRole('option', { name: String(size), exact: true }).click()
+      await page.getByRole('listbox').waitFor({ state: 'hidden' })
+      assert.equal((await pageSize.innerText()).trim(), String(size))
+    } else {
+      await page.getByRole('combobox', { name: '每页', exact: true }).selectOption(String(size))
+    }
+    await page.waitForFunction((count) => document.querySelectorAll('article').length === count, size)
+    await page.getByRole('heading', { name: 'AnyFlows Classic', exact: true }).waitFor()
+  }
+  assert.equal(catalogRequests, 1, 'Page-size changes must reuse catalog metadata')
   await page.getByRole('button', { name: /内置前端/ }).click()
   await page.getByRole('heading', { name: 'AnyFlows Classic', exact: true }).waitFor()
   assert.equal(await page.locator('article').count(), 2)
@@ -102,14 +117,21 @@ try {
   await page.getByRole('dialog').waitFor({ state: 'hidden' })
   assert.equal(activations, 0, 'Cancel must not activate a template')
 
-  for (const [name, width, height] of [['desktop', 1280, 960], ['mobile', 390, 844]]) {
-    await page.setViewportSize({ width, height })
-    await page.evaluate(() => document.fonts.ready)
-    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `${frontend} overflowed at ${width}px`)
-    const screenshot = await page.screenshot({ fullPage: true })
-    console.log(`ANYFLOWS_SCREENSHOT_${frontend}_${name}_BEGIN`)
-    console.log(screenshot.toString('base64').match(/.{1,120}/g).join('\n'))
-    console.log(`ANYFLOWS_SCREENSHOT_${frontend}_${name}_END`)
+  for (const theme of ['dark', 'light']) {
+    await page.evaluate((mode) => {
+      document.documentElement.classList.remove('dark', 'light')
+      document.documentElement.classList.add(mode)
+    }, theme)
+    for (const [name, width, height] of [['desktop', 1280, 960], ['mobile', 390, 844]]) {
+      await page.setViewportSize({ width, height })
+      await page.evaluate(() => document.fonts.ready)
+      await page.waitForFunction(() => [...document.querySelectorAll('article img')].every((img) => img.complete && img.naturalWidth > 0))
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `${frontend} ${theme} overflowed at ${width}px`)
+      const screenshot = await page.screenshot({ fullPage: true, animations: 'disabled' })
+      console.log(`ANYFLOWS_SCREENSHOT_${frontend}_${theme}_${name}_BEGIN`)
+      console.log(screenshot.toString('base64').match(/.{1,120}/g).join('\n'))
+      console.log(`ANYFLOWS_SCREENSHOT_${frontend}_${theme}_${name}_END`)
+    }
   }
   await page.getByRole('button', { name: '启用', exact: true }).click()
   await page.getByRole('button', { name: '确认启用并刷新', exact: true }).click()
@@ -117,7 +139,7 @@ try {
   assert.equal(activations, 1)
   assert.equal(activeId, 'embedded-next')
   assert.deepEqual(errors, [], 'The gallery must not raise browser runtime errors')
-  console.log(`Gallery browser checks passed for ${frontend}: pagination, bounded previews, cancellation, activation, reload, desktop and mobile layout.`)
+  console.log(`Gallery browser checks passed for ${frontend}: pagination, page-size selection, bounded previews, cancellation, activation, reload, light/dark desktop and mobile layout.`)
 } catch (error) {
   console.error(serverOutput)
   console.error(JSON.stringify({ browserErrors: errors }))
