@@ -1,3 +1,5 @@
+import { providerDisplayName } from '@/components/brand/provider-catalog'
+
 import { CircleDollarSign, Pencil, SearchX } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -121,7 +123,7 @@ function ModelIdentity({ row, priceIndexComplete }: { row: ModelPriceRow; priceI
       <div className="truncate font-medium">{row.model.display_name}</div>
       <div className="mt-0.5 truncate font-mono text-[0.6875rem] text-muted-foreground">{row.model.model}</div>
       <div className="mt-1 flex flex-wrap items-center gap-1.5">
-        <Badge>{row.model.provider}</Badge>
+        <Badge>{providerDisplayName(row.model.provider)}</Badge>
         {row.candidate && row.source ? <Badge>{t(`modelManagement.prices.sources.${row.source}`)}</Badge> : null}
       </div>
       {missingPublicPrice ? <p className="mt-1.5 text-[0.6875rem] leading-4 text-warning">{t('modelManagement.prices.status.publicMissing')}</p> : null}

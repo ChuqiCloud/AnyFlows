@@ -5,6 +5,10 @@ WORKDIR /workspace
 RUN corepack enable
 COPY web/package.json web/pnpm-lock.yaml ./web/
 RUN corepack pnpm@10.33.0 --dir web install --frozen-lockfile
+COPY web-next/package.json web-next/pnpm-lock.yaml ./web-next/
+RUN corepack pnpm@10.33.0 --dir web-next install --frozen-lockfile
+COPY web-next ./web-next
+RUN corepack pnpm@10.33.0 --dir web-next build
 COPY web ./web
 RUN corepack pnpm@10.33.0 --dir web build
 
@@ -19,6 +23,7 @@ COPY .cargo ./.cargo
 COPY crates ./crates
 COPY tools ./tools
 COPY --from=frontend /workspace/web/dist ./web/dist
+COPY --from=frontend /workspace/web-next/dist ./web-next/dist
 RUN cargo build --release --locked --package af-server
 
 # 运行时保持非 root、只读根文件系统和最小依赖。

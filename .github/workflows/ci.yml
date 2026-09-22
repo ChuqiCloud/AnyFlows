@@ -113,7 +113,7 @@ jobs:
           }
 
           {
-            echo "frontend=$(matches '^(web/)')"
+            echo "frontend=$(matches '^(web/|web-next/|tools/ci/check-frontend-parity.mjs$)')"
             echo "rust=$(matches '^(crates/|tools/|\.cargo/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|rustfmt\.toml$|clippy\.toml$|deny\.toml$)')"
             echo "database=$(matches '^(crates/af-db/|tools/ci/run-db-migration-test\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
             echo "redis=$(matches '^(crates/af-cache/|tools/ci/run-cache-redis-test\.sh$|Cargo\.(toml|lock)$|rust-toolchain\.toml$)')"
@@ -277,9 +277,12 @@ jobs:
         run: |
           corepack enable
           corepack pnpm@10.33.0 --dir web install --frozen-lockfile
+          corepack pnpm@10.33.0 --dir web-next install --frozen-lockfile
 
       - name: Build frontend
-        run: corepack pnpm@10.33.0 --dir web build
+        run: |
+          corepack pnpm@10.33.0 --dir web build
+          corepack pnpm@10.33.0 --dir web-next build
 
       - name: Build release binary
         run: |
@@ -296,11 +299,15 @@ jobs:
           test -s "$archive.sha256"
 
   frontend-quality:
-    name: Frontend quality gates
+    name: Frontend quality gates (${{ matrix.frontend }})
     needs: changes
     if: ${{ needs.changes.outputs.frontend == 'true' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        frontend: [web, web-next]
     steps:
       - name: Configure external Gitea checkout endpoint
         if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
@@ -327,13 +334,25 @@ jobs:
         shell: bash
         run: |
           corepack enable
-          corepack pnpm@10.33.0 --dir web install --frozen-lockfile
+          corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} install --frozen-lockfile
+
+      - name: Check shared frontend parity
+        run: node tools/ci/check-frontend-parity.mjs
 
       - name: Lint frontend
-        run: corepack pnpm@10.33.0 --dir web lint
+        run: corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} lint
 
       - name: Build frontend
-        run: corepack pnpm@10.33.0 --dir web build
+        run: corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} build
+
+      - name: Browser smoke test template gallery
+        shell: bash
+        run: |
+          set -euo pipefail
+          browser_tools="$RUNNER_TEMP/anyflows-playwright"
+          npm install --prefix "$browser_tools" --no-save --ignore-scripts playwright@1.56.1
+          "$browser_tools/node_modules/.bin/playwright" install --with-deps chromium
+          PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-gallery-smoke.mjs '${{ matrix.frontend }}'
 
   rust-quality:
     name: Rust quality gates
@@ -409,7 +428,13 @@ jobs:
         run: bash tools/ci/test-container-test-runner.sh
 
       - name: Check OpenAPI contract
-        run: cargo run --locked --package xtask -- openapi check
+        run: |
+          if cargo run --locked --package xtask -- openapi check; then
+            exit 0
+          fi
+          cargo run --locked --package xtask -- openapi export
+          git diff -- web/openapi/openapi.json
+          exit 1
 
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings

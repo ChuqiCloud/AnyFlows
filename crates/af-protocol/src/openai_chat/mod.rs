@@ -123,12 +123,21 @@ fn message_uses_unsupported_feature(message: &Value) -> bool {
     {
         return true;
     }
-    if role == Some("assistant")
-        && ["audio", "function_call", "refusal"]
+    if role == Some("assistant") {
+        // Clients may serialize absent response features into assistant history.
+        if ["audio", "function_call", "refusal"]
             .iter()
-            .any(|key| message.contains_key(*key))
-    {
-        return true;
+            .any(|key| message.get(*key).is_some_and(|value| !value.is_null()))
+        {
+            return true;
+        }
+        if message
+            .get("annotations")
+            .and_then(Value::as_array)
+            .is_some_and(|annotations| !annotations.is_empty())
+        {
+            return true;
+        }
     }
 
     let unsupported_content = message

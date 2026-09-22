@@ -35,6 +35,8 @@ struct NullableClientSimulationBodyProfile(Option<af_domain::ClientSimulationBod
 #[schema(as = AdminChannelCreateRequest)]
 /// 管理端创建渠道时使用的完整配置正文。
 pub(crate) struct AdminChannelCreateRequest {
+    #[schema(min_length = 1, max_length = 64)]
+    provider: Option<String>,
     #[schema(min_length = 1, max_length = 128)]
     name: String,
     #[serde(rename = "type")]
@@ -119,6 +121,8 @@ pub(crate) struct AdminChannelCreateRequest {
 #[schema(as = AdminChannelUpdateRequest)]
 /// 管理端更新渠道时使用的配置正文；敏感对象省略或为 null 时保留原值。
 pub(crate) struct AdminChannelUpdateRequest {
+    #[schema(min_length = 1, max_length = 64)]
+    provider: Option<String>,
     #[schema(min_length = 1, max_length = 128)]
     name: String,
     #[serde(rename = "type")]
@@ -277,6 +281,8 @@ impl AdminChannelCreateRequest {
         .map_err(map_write_error)?
         .with_auto_ban_rules(auto_ban_rules)
         .map_err(map_write_error)?
+        .with_provider(self.provider)
+        .map_err(map_write_error)?
         .with_pool_mode(self.pool_mode)
         .with_client_simulation_profile(
             self.client_simulation_profile.0,
@@ -341,6 +347,9 @@ impl AdminChannelUpdateRequest {
             Some(enabled) => command.with_pool_mode(enabled),
             None => command,
         };
+        let command = command
+            .with_provider(self.provider)
+            .map_err(map_write_error)?;
         let command = match (
             self.responses_compact_mode,
             self.responses_compact_model_mapping,

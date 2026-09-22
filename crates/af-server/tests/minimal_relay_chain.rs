@@ -584,6 +584,13 @@ impl UserInvitationService for RejectUserInvitations {
 }
 
 impl ModelCatalogReader for RejectModelCatalog {
+    fn list_for_token(
+        &self,
+        _authentication: af_admin::TokenAuthentication,
+    ) -> af_admin::GatewayModelListFuture<'_> {
+        Box::pin(async { Err(ModelCatalogReadError::Internal) })
+    }
+
     fn list<'a>(
         &'a self,
         _authentication: Option<af_admin::SessionAuthentication>,

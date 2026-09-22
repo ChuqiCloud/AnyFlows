@@ -11,6 +11,7 @@ mod dashboard;
 mod debug_traces;
 mod email_settings;
 mod frontend_templates;
+mod gateway_models;
 mod groups;
 mod invitations;
 mod model_metadata;
@@ -113,6 +114,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(groups::document());
     document.merge(routes::document());
     document.merge(models::document());
+    document.merge(gateway_models::document());
     document.merge(model_metadata::document());
     document.merge(model_sync::document());
     document.merge(model_prices::document());
@@ -272,7 +274,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 255);
+        assert_eq!(document.paths.paths.len(), 257);
         let operation_count = document
             .paths
             .paths
@@ -293,8 +295,8 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        // 新增企业资料更新接口后，保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 334);
+        // 新增前端模板预览接口后，保持操作总数与生成文档同步。
+        assert_eq!(operation_count, 336);
         assert!(
             document
                 .components
@@ -565,6 +567,7 @@ mod tests {
             "listAdminChannels",
             "listAdminCredentials",
             "listAdminFrontendTemplates",
+            "getAdminFrontendTemplatePreview",
             "listAdminCredentialProxies",
             "listAdminDebugTraces",
             "listAdminGroups",
@@ -596,6 +599,7 @@ mod tests {
             "listSelfPlatformAuditLogs",
             "listAdminUsers",
             "listModels",
+            "listGatewayModels",
             "listModelProviders",
             "listPlaygroundConversations",
             "listUserTokens",
@@ -675,8 +679,16 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 548);
+        assert_eq!(schemas.len(), 555);
+        assert!(schemas.contains_key("OpenAiModel"));
+        assert!(schemas.contains_key("OpenAiModelList"));
+        assert_eq!(
+            document["paths"]["/v1/models"]["get"]["security"],
+            serde_json::json!([{"apiKeyAuth": []}])
+        );
         assert!(schemas.keys().is_sorted());
+        assert!(schemas.contains_key("AdminFailedCallLog"));
+        assert!(schemas.contains_key("UserFailedCallLog"));
         assert!(schemas.contains_key("OrganizationSsoDiscoveryErrorResponse"));
         assert!(schemas.contains_key("Announcement"));
         assert!(schemas.contains_key("AnnouncementListResponse"));

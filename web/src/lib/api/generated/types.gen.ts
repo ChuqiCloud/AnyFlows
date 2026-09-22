@@ -45,6 +45,7 @@ export type AdminBrandSettingsRequest = {
     description?: string | null;
 };
 export type AdminChannel = {
+    provider?: string | null;
     id: number;
     type: AdminChannelType;
     name: string;
@@ -87,6 +88,7 @@ export type AdminChannelAutoBanRules = {
     keywords: Array<string>;
 };
 export type AdminChannelCreateRequest = {
+    provider?: string | null;
     name: string;
     type: 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
     protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
@@ -132,6 +134,7 @@ export type AdminChannelProbeStatus = 'healthy' | 'unhealthy' | 'timeout';
 export type AdminChannelProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
 export type AdminChannelType = 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai' | 'bedrock' | 'vertex' | 'custom';
 export type AdminChannelUpdateRequest = {
+    provider?: string | null;
     name: string;
     type: 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
     protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
@@ -491,6 +494,25 @@ export type AdminEmailTestRequest = {
     recipient: string;
 };
 export type AdminEmailTlsMode = 'start_tls' | 'tls';
+export type AdminFailedCallLog = {
+    id: number;
+    request_id: string;
+    model: string;
+    protocol: UsageLogProtocol;
+    operation: UsageLogOperation;
+    error_kind: string;
+    error_code: string;
+    error_message: string;
+    user_id: number | null;
+    username: string | null;
+    token_id: number | null;
+    group_id: number | null;
+    organization_id: number | null;
+    organization_team_id: number | null;
+    channel_id: number | null;
+    duration_ms: number;
+    created_at: number;
+};
 export type AdminGroup = {
     id: number;
     name: string;
@@ -1140,7 +1162,9 @@ export type AdminUsageLog = {
 export type AdminUsageLogBillingMode = 'per_token' | 'per_call' | 'free';
 export type AdminUsageLogListResponse = {
     logs: Array<AdminUsageLog>;
+    failed_logs: Array<AdminFailedCallLog>;
     next_cursor: number | null;
+    failed_next_cursor: number | null;
 };
 export type AdminUsageLogSemantics = 'inclusive' | 'cache_separated';
 export type AdminUsageLogSource = 'upstream' | 'estimated';
@@ -1454,11 +1478,16 @@ export type FrontendTemplateCatalog = {
     active_id?: string | null;
     templates: Array<FrontendTemplateSummary>;
 };
+export type FrontendTemplateImage = Blob | File;
 export type FrontendTemplateSummary = {
     id: string;
     name: string;
     version: string;
     api_contract: string;
+    builtin: boolean;
+    description?: string | null;
+    author?: string | null;
+    preview_url?: string | null;
     valid: boolean;
     error?: string | null;
 };
@@ -1554,6 +1583,25 @@ export type OAuthLoginExchangeRequest = {
 };
 export type OAuthLoginStartResponse = {
     authorization_url: string;
+};
+export type OpenAiModel = {
+    id: string;
+    object: string;
+    created: number;
+    owned_by: string;
+};
+export type OpenAiModelList = {
+    object: string;
+    data: Array<OpenAiModel>;
+};
+export type OpenAiModelListError = {
+    error: OpenAiModelListErrorBody;
+};
+export type OpenAiModelListErrorBody = {
+    code: string;
+    message: string;
+    param: string | null;
+    type: string;
 };
 export type OrganizationApprovalCursorQuery = {
     after?: number | null;
@@ -2486,7 +2534,9 @@ export type OrganizationUsageLogListResponse = {
     scope: string;
     logs: Array<AdminUsageLog>;
     summaries: Array<OrganizationUsageLogSummaryResponse>;
+    failed_logs: Array<AdminFailedCallLog>;
     next_cursor: number | null;
+    failed_next_cursor: number | null;
 };
 export type OrganizationUsageLogSummaryResponse = {
     model: string | null;
@@ -3039,6 +3089,17 @@ export type SubscriptionPlanStatus = 'active' | 'disabled';
 export type UsageLogOperation = 'chat' | 'responses' | 'responses_compact' | 'embedding' | 'image' | 'audio' | 'rerank' | 'video' | 'count_tokens';
 export type UsageLogProtocol = 'open_ai_chat' | 'open_ai_responses' | 'open_ai_embeddings' | 'open_ai_images' | 'open_ai_audio' | 'open_ai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
 export type UsageLogReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'extra_high' | 'max';
+export type UserFailedCallLog = {
+    id: number;
+    request_id: string;
+    model: string;
+    protocol: UsageLogProtocol;
+    operation: UsageLogOperation;
+    error_code: string;
+    error_message: string;
+    duration_ms: number;
+    created_at: number;
+};
 export type UserInvitationRebateResponse = {
     quota_amount: number;
     credited_at: number;
@@ -3276,7 +3337,9 @@ export type UserUsageLog = {
 };
 export type UserUsageLogListResponse = {
     logs: Array<UserUsageLog>;
+    failed_logs: Array<UserFailedCallLog>;
     next_cursor: number | null;
+    failed_next_cursor: number | null;
 };
 export type UserWalletEntry = {
     id: number;
@@ -3348,6 +3411,7 @@ export type VideoTaskListResponse = {
 };
 export type VideoTaskStatus = 'pending' | 'done' | 'expired' | 'failed';
 export type AdminChannelCreateRequestWritable = {
+    provider?: string | null;
     name: string;
     type: 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
     protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
@@ -3388,6 +3452,7 @@ export type AdminChannelCreateRequestWritable = {
     tag: string | null;
 };
 export type AdminChannelUpdateRequestWritable = {
+    provider?: string | null;
     name: string;
     type: 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
     protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
@@ -6143,6 +6208,25 @@ export type ActivateAdminFrontendTemplateResponses = {
     200: FrontendTemplateCatalog;
 };
 export type ActivateAdminFrontendTemplateResponse = ActivateAdminFrontendTemplateResponses[keyof ActivateAdminFrontendTemplateResponses];
+export type GetAdminFrontendTemplatePreviewData = {
+    body?: never;
+    path: {
+        template_id: string;
+    };
+    query?: never;
+    url: '/api/admin/frontend-templates/{template_id}/preview';
+};
+export type GetAdminFrontendTemplatePreviewErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    404: unknown;
+    500: ManagementError;
+};
+export type GetAdminFrontendTemplatePreviewError = GetAdminFrontendTemplatePreviewErrors[keyof GetAdminFrontendTemplatePreviewErrors];
+export type GetAdminFrontendTemplatePreviewResponses = {
+    200: FrontendTemplateImage;
+};
+export type GetAdminFrontendTemplatePreviewResponse = GetAdminFrontendTemplatePreviewResponses[keyof GetAdminFrontendTemplatePreviewResponses];
 export type GetAdminDashboardData = {
     body?: never;
     path?: never;
@@ -6576,6 +6660,22 @@ export type ListModelProvidersResponses = {
     200: ModelCatalogProviderListResponse;
 };
 export type ListModelProvidersResponse = ListModelProvidersResponses[keyof ListModelProvidersResponses];
+export type ListGatewayModelsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/v1/models';
+};
+export type ListGatewayModelsErrors = {
+    401: OpenAiModelListError;
+    429: OpenAiModelListError;
+    500: OpenAiModelListError;
+};
+export type ListGatewayModelsError = ListGatewayModelsErrors[keyof ListGatewayModelsErrors];
+export type ListGatewayModelsResponses = {
+    200: OpenAiModelList;
+};
+export type ListGatewayModelsResponse = ListGatewayModelsResponses[keyof ListGatewayModelsResponses];
 export type ListAdminModelsData = {
     body?: never;
     path?: never;
@@ -7168,6 +7268,7 @@ export type ListAdminUsageLogsData = {
     path?: never;
     query?: {
         before?: number;
+        failed_before?: number;
         limit?: number;
     };
     url: '/api/admin/usage-logs';
@@ -7188,6 +7289,7 @@ export type ListUserUsageLogsData = {
     path?: never;
     query?: {
         before?: number;
+        failed_before?: number;
         limit?: number;
     };
     url: '/api/account/usage-logs';
@@ -9151,6 +9253,7 @@ export type ListOrganizationUsageLogsData = {
     query?: {
         scope?: string;
         before?: number;
+        failed_before?: number;
         limit?: number;
     };
     url: '/api/organizations/{organization_id}/usage-logs';
@@ -9204,6 +9307,7 @@ export type ListPlatformOrganizationUsageLogsData = {
     };
     query?: {
         before?: number;
+        failed_before?: number;
         limit?: number;
     };
     url: '/api/platform/organizations/{organization_id}/usage-logs';

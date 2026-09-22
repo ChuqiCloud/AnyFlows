@@ -94,7 +94,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 139;
+const EXPECTED_MIGRATION_COUNT: usize = 140;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -2219,7 +2219,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 80);
+    assert_eq!(pending_migrations.len(), 81);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -2539,6 +2539,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[79].name(),
         "m20260912_000139_add_frontend_template"
+    );
+    assert_eq!(
+        pending_migrations[80].name(),
+        "m20260921_000140_extend_request_outcomes_for_call_logs"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
@@ -4942,6 +4946,11 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
             "idx_request_outcome_channel_created",
         ),
         ("request_outcome_logs", "idx_request_outcome_flow_created"),
+        ("request_outcome_logs", "idx_request_outcome_user_created"),
+        (
+            "request_outcome_logs",
+            "idx_request_outcome_organization_created",
+        ),
         (
             "analytics_export_outbox_events",
             "uq_analytics_export_outbox_fact",

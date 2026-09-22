@@ -138,11 +138,12 @@ impl BillingChatService {
         request_id: &str,
         diagnostic: RelayDiagnosticInput,
     ) -> Result<ChatResponse, AfError> {
-        let outcome = crate::RequestOutcomeContext::new(
+        let outcome = crate::RequestOutcomeContext::for_principal(
             request_id,
             response_protocol,
             request.canonical().operation,
             request.requested_model(),
+            *principal,
         );
         match self
             .call_billed(

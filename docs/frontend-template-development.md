@@ -38,7 +38,10 @@ public/templates/
   "name": "Dark Console",
   "version": "1.0.0",
   "api_contract": "0.2",
-  "entry": "index.html"
+  "entry": "index.html",
+  "description": "为团队提供简洁的数据控制台",
+  "author": "Template Team",
+  "preview": "preview.png"
 }
 ```
 
@@ -46,6 +49,9 @@ public/templates/
 
 - `schema_version` 必须为 `1`，`id` 必须与目录名一致。
 - 目录名和 ID 只能包含 ASCII 小写字母、数字、`-`、`_`，长度不超过 64 个字符。
+- `embedded`（Classic）和 `embedded-next`（Next）是内置模板保留 ID，外部模板不得使用。
+- `description`、`author`、`preview` 为可选字段；旧的元数据文件仍然兼容。描述最多 1,000 字节，作者最多 160 字节，不允许控制字符。
+- `preview` 为模板目录内的相对图片路径，支持 PNG、JPEG、WebP，最大 2 MiB；拒绝路径穿越、远程地址、HTML/SVG 和不匹配的文件签名。图片不存在或无效时，模板标记无效并禁止启用。
 - `name`、`version`、`api_contract` 必须是非空且不包含控制字符的短文本；`entry` 必须为 `index.html`。
 - `index.html` 必须存在，所有文件必须位于当前模板目录内。服务会拒绝目录穿越、符号链接、特殊文件以及超出文件数量、单文件大小或总大小限制的模板。
 - 模板应包含完整的构建产物；启用外部模板后，缺失资源会按 404 处理，不会从内嵌前端拼接资源。
@@ -135,3 +141,19 @@ VITE_API_BASE_URL=https://api.example.com pnpm build
 8. 在 systemd/Docker 的实际运行用户和工作目录下重复扫描，确认挂载路径、文件权限和相对路径配置一致。
 
 模板发布应与后端 API 契约版本一起记录。升级 `api_contract` 前先完成向后兼容验证，再在模板元数据中更新版本。
+
+## 7. 双内置前端与模板目录
+
+服务二进制同时内嵌 `web/`（AnyFlows Classic）和 `web-next/`（AnyFlows Next）。两套前端共用后端 API、权限与站点设置，分别保留经典紧凑风格和 HeroUI 新版风格。发布前必须构建两套前端；Docker、Gitea 发布包和 CNB tag 发布均包含两套产物。
+
+管理员在站点设置的模板目录中查看内置/外部分类、搜索名称/ID/作者、选择每页 8/12/24 个模板。默认只显示 8 张卡片，缩略图接近视口时才请求；目录缓存 60 秒，分页复用目录，图片短期缓存并在重新扫描后刷新。普通用户和组织用户不能访问模板管理或预览接口。
+
+预览是静态图片，不会执行模板代码、读取业务数据或改变全站前端。内置模板附带明确标注的布局示意图；外部模板显示作者提供的图片。点击启用后必须确认，服务持久化选择并立即切换，当前页面随后刷新。`null` 或 `embedded` 保持原来的 Classic 回退语义，`embedded-next` 选择新版；重启后恢复选择，重新扫描不会丢失内置选择。外部模板损坏或消失时回退 Classic。
+
+模板包本身仍应来自可信来源：静态预览的隔离并不意味着启用后的第三方 JavaScript 经过安全审计。
+
+## 8. 双前端契约与远程质量验证
+
+`cargo xtask openapi export` 同时写入两套前端的 OpenAPI 文档。生成客户端与共享的分页、厂商、渠道和日志逻辑由 `tools/ci/check-frontend-parity.mjs` 校验，界面组件允许按风格分别实现。
+
+Gitea CI 对 `web` 和 `web-next` 分别执行锁定依赖安装、脚本测试、API 生成一致性检查、lint、TypeScript 和生产构建。`Frontend generated assets` 工作流在远程生成契约、依赖锁文件及 Rust 格式调整，以 gzip/base64 分行补丁输出供开发者审查；该工作流只有读取权限，不会推送或合并代码。源码补丁不含编译产物，应用后仍需完整 CI 验证。

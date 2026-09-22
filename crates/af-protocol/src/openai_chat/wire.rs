@@ -1,7 +1,7 @@
 use serde::{Deserialize, Deserializer, de::Error as _};
 use serde_json::{Map, Value};
 
-/// 区分字段缺失与字段已提供，显式 `null` 由反序列化入口拒绝。
+/// 区分字段缺失与字段已提供，显式 `null` 的语义由反序列化入口决定。
 #[derive(Default)]
 pub(super) enum Field<T> {
     /// 请求未提供该字段。
@@ -19,6 +19,18 @@ where
     Option::<T>::deserialize(deserializer)?
         .map(Field::Value)
         .ok_or_else(|| D::Error::custom("字段不得为 null"))
+}
+
+/// 历史消息的可选字段将显式 `null` 视为缺省；顶层参数仍使用严格解析器。
+fn deserialize_nullable_field<'de, D, T>(deserializer: D) -> Result<Field<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(|value| match value {
+        Some(value) => Field::Value(value),
+        None => Field::Missing,
+    })
 }
 
 /// OpenAI Chat Completions 入站请求。
@@ -128,8 +140,17 @@ pub(super) struct AssistantMessageWire {
     #[serde(default)]
     pub(super) content: Option<AssistantContentWire>,
     /// 助手发起的函数工具调用。
-    #[serde(default, deserialize_with = "deserialize_field")]
+    #[serde(default, deserialize_with = "deserialize_nullable_field")]
     pub(super) tool_calls: Field<Vec<ToolCallWire>>,
+    // Empty response metadata is safe to omit from the canonical history.
+    #[serde(default, rename = "refusal")]
+    _refusal: (),
+    #[serde(default, rename = "audio")]
+    _audio: (),
+    #[serde(default, rename = "function_call")]
+    _function_call: (),
+    #[serde(default, rename = "annotations")]
+    _annotations: Option<[(); 0]>,
 }
 
 /// 工具执行结果消息载荷。

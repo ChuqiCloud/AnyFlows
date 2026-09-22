@@ -2,9 +2,9 @@ use std::time::Instant;
 
 use af_db::{
     RequestFailureKind, RequestOutcomeRepository, RequestOutcomeRepositoryError,
-    RequestOutcomeWrite,
+    RequestOutcomeSubject, RequestOutcomeWrite,
 };
-use af_domain::{AfError, ChannelId, Operation, Protocol, UpstreamError};
+use af_domain::{AfError, ChannelId, GatewayPrincipal, Operation, Protocol, UpstreamError};
 
 /// 调度执行成功后返回的公开值与最终渠道归属。
 pub struct RoutedExecution<T> {
@@ -38,6 +38,7 @@ pub struct RequestOutcomeContext {
     protocol: Protocol,
     operation: Operation,
     model: String,
+    subject: Option<RequestOutcomeSubject>,
     started_at: Instant,
 }
 
@@ -50,6 +51,33 @@ impl RequestOutcomeContext {
             protocol,
             operation,
             model: model.to_owned(),
+            subject: None,
+            started_at: Instant::now(),
+        }
+    }
+
+    /// 构造带下游主体归属的请求终态上下文。
+    #[must_use]
+    pub fn for_principal(
+        request_id: &str,
+        protocol: Protocol,
+        operation: Operation,
+        model: &str,
+        principal: GatewayPrincipal,
+    ) -> Self {
+        let organization = principal.organization_principal();
+        Self {
+            request_id: request_id.to_owned(),
+            protocol,
+            operation,
+            model: model.to_owned(),
+            subject: Some(RequestOutcomeSubject::new(
+                principal.user_id(),
+                principal.token_id(),
+                principal.group_id(),
+                organization.map(|value| value.organization_id()),
+                organization.and_then(|value| value.team_id()),
+            )),
             started_at: Instant::now(),
         }
     }
@@ -83,16 +111,26 @@ impl RequestOutcomeContext {
         let Some(runtime) = runtime else {
             return;
         };
-        runtime
-            .record(RequestOutcomeWrite::succeeded(
+        let write = match self.subject {
+            Some(subject) => RequestOutcomeWrite::succeeded_for_subject(
+                &self.request_id,
+                self.protocol,
+                self.operation,
+                &self.model,
+                subject,
+                Some(channel_id),
+                self.started_at.elapsed(),
+            ),
+            None => RequestOutcomeWrite::succeeded(
                 &self.request_id,
                 self.protocol,
                 self.operation,
                 &self.model,
                 Some(channel_id),
                 self.started_at.elapsed(),
-            ))
-            .await;
+            ),
+        };
+        runtime.record(write).await;
     }
 
     /// 记录失败终态，原始错误只在内存中映射为闭合分类。
@@ -105,17 +143,29 @@ impl RequestOutcomeContext {
         let Some(runtime) = runtime else {
             return;
         };
-        runtime
-            .record(RequestOutcomeWrite::failed(
+        let failure_kind = classify_error(error);
+        let write = match self.subject {
+            Some(subject) => RequestOutcomeWrite::failed_for_subject(
                 &self.request_id,
                 self.protocol,
                 self.operation,
                 &self.model,
-                classify_error(error),
+                subject,
+                failure_kind,
                 channel_id,
                 self.started_at.elapsed(),
-            ))
-            .await;
+            ),
+            None => RequestOutcomeWrite::failed(
+                &self.request_id,
+                self.protocol,
+                self.operation,
+                &self.model,
+                failure_kind,
+                channel_id,
+                self.started_at.elapsed(),
+            ),
+        };
+        runtime.record(write).await;
     }
 }
 

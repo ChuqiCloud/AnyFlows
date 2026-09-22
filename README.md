@@ -59,6 +59,27 @@ corepack pnpm@10.33.0 --dir web check
 运行目录外部前端模板的目录结构、独立构建、API 契约、扫描切换和发布检查见
 [`docs/frontend-template-development.md`](docs/frontend-template-development.md)。
 
+### API 目录与在线调试
+
+服务启动后，访问 `https://<host>/api` 可打开 API 目录。页面从服务端读取当前身份可见的接口，并显示请求方法、路径、认证方式、参数以及 OpenAPI 请求和响应契约。
+
+- 游客可查看公开接口和统一模型网关入口。
+- 登录用户可查看个人管理接口，以及其所属企业中对当前会话开放的接口。
+- 平台管理员可查看完整管理接口目录。
+- `GET` 接口和统一网关的 `POST /v1/...` 接口支持在线调试；管理端写入、OAuth、SSO、Webhook 和其他特殊凭据接口仅提供文档。
+
+网关请求使用用户或企业 API Key，管理接口使用当前管理会话。调试页面只在当前浏览器会话中使用输入的 API Key，不会将其写入本地存储、服务端目录或日志。需要编程调用时，请从控制台签发 API Key，并按对应协议请求 `/v1/chat/completions`、`/v1/responses`、`/v1/messages`、`/v1beta/models/{model}:generateContent` 等入口。
+
+目录数据也可通过以下接口读取，响应会按照访问主体过滤：
+
+```text
+GET /api/explorer/catalog
+GET /api/explorer/catalog/{operation_id}
+```
+
+查询参数支持 `q`、`tag`、`page` 和 `page_size`。完整字段、权限投影和调试限制见
+[`docs/api-explorer.md`](docs/api-explorer.md)。
+
 ### Linux Docker 部署
 
 当前 Docker 首切片使用 Linux host 网络，以保持服务现有的 loopback 监听安全边界。应用监听宿主机 `127.0.0.1:8080`，PostgreSQL 和 Redis 分别只监听 `127.0.0.1:5432` 与 `127.0.0.1:6379`；公网访问应由宿主机上的 Nginx/Caddy 等反向代理转发，Compose 不直接发布公网端口。

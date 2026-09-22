@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="600" viewBox="0 0 960 600" role="img" aria-label="AnyFlows Next layout preview">
+<rect width="960" height="600" fill="#f5f7fb"/>
+<rect width="192" height="600" fill="#ffffff"/>
+<rect x="20" y="24" width="32" height="32" rx="10" fill="#5369f8"/>
+<text x="64" y="45" font-family="system-ui,sans-serif" font-size="21" font-weight="700" fill="#14243e">AnyFlows</text>
+<rect x="12" y="85" width="168" height="39" rx="10" fill="#5369f8" opacity=".16"/>
+<text x="28" y="110" font-family="system-ui,sans-serif" font-size="14" fill="#5369f8">Overview</text>
+<text x="28" y="160" font-family="system-ui,sans-serif" font-size="14" fill="#91a0b7">Playground</text>
+<text x="28" y="210" font-family="system-ui,sans-serif" font-size="14" fill="#91a0b7">Models</text>
+<text x="28" y="260" font-family="system-ui,sans-serif" font-size="14" fill="#91a0b7">API keys</text>
+<text x="28" y="310" font-family="system-ui,sans-serif" font-size="14" fill="#91a0b7">Usage logs</text>
+<text x="28" y="360" font-family="system-ui,sans-serif" font-size="14" fill="#91a0b7">Wallet</text>
+<text x="28" y="410" font-family="system-ui,sans-serif" font-size="14" fill="#91a0b7">Settings</text>
+<text x="224" y="50" font-family="system-ui,sans-serif" font-size="24" font-weight="700" fill="#14243e">Overview</text>
+<text x="224" y="77" font-family="system-ui,sans-serif" font-size="12" fill="#91a0b7">Your AI workspace at a glance</text>
+<rect x="816" y="27" width="112" height="33" rx="16" fill="#5369f8"/>
+<text x="841" y="49" font-family="system-ui,sans-serif" font-size="13" fill="#ffffff">Console</text>
+<rect x="224" y="105" width="164" height="94" rx="16" fill="#ffffff"/>
+<text x="240" y="134" font-family="system-ui,sans-serif" font-size="12" fill="#91a0b7">Requests</text>
+<rect x="240" y="151" width="68" height="8" rx="4" fill="#14243e" opacity=".65"/>
+<rect x="240" y="174" width="94" height="4" rx="2" fill="#91a0b7" opacity=".35"/>
+<rect x="403" y="105" width="164" height="94" rx="16" fill="#ffffff"/>
+<text x="419" y="134" font-family="system-ui,sans-serif" font-size="12" fill="#91a0b7">Tokens</text>
+<rect x="419" y="151" width="68" height="8" rx="4" fill="#14243e" opacity=".65"/>
+<rect x="419" y="174" width="94" height="4" rx="2" fill="#91a0b7" opacity=".35"/>
+<rect x="582" y="105" width="164" height="94" rx="16" fill="#ffffff"/>
+<text x="598" y="134" font-family="system-ui,sans-serif" font-size="12" fill="#91a0b7">Latency</text>
+<rect x="598" y="151" width="68" height="8" rx="4" fill="#14243e" opacity=".65"/>
+<rect x="598" y="174" width="94" height="4" rx="2" fill="#91a0b7" opacity=".35"/>
+<rect x="761" y="105" width="164" height="94" rx="16" fill="#ffffff"/>
+<text x="777" y="134" font-family="system-ui,sans-serif" font-size="12" fill="#91a0b7">Balance</text>
+<rect x="777" y="151" width="68" height="8" rx="4" fill="#14243e" opacity=".65"/>
+<rect x="777" y="174" width="94" height="4" rx="2" fill="#91a0b7" opacity=".35"/>
+<rect x="224" y="221" width="702" height="194" rx="18" fill="#ffffff"/>
+<text x="244" y="251" font-family="system-ui,sans-serif" font-size="14" font-weight="600" fill="#14243e">Usage activity</text>
+<path d="M244 282H904" stroke="#91a0b7" opacity=".16"/>
+<path d="M244 321H904" stroke="#91a0b7" opacity=".16"/>
+<path d="M244 360H904" stroke="#91a0b7" opacity=".16"/>
+<path d="M244 394H904" stroke="#91a0b7" opacity=".16"/>
+<path d="M244 370L284 355L324 366L365 329L405 340L446 301L486 317L527 290L568 304L608 267L649 302L690 275L730 291L771 260L812 285L855 269L904 254" fill="none" stroke="#5369f8" stroke-width="4" stroke-linejoin="round"/>
+<rect x="224" y="436" width="702" height="132" rx="18" fill="#ffffff"/>
+<text x="244" y="465" font-family="system-ui,sans-serif" font-size="14" font-weight="600" fill="#14243e">Recent activity</text>
+<rect x="245" y="483" width="178" height="5" rx="2" fill="#91a0b7" opacity=".3"/>
+<rect x="466" y="483" width="99" height="5" rx="2" fill="#91a0b7" opacity=".3"/>
+<rect x="626" y="483" width="68" height="5" rx="2" fill="#91a0b7" opacity=".3"/>
+<rect x="795" y="483" width="99" height="5" rx="2" fill="#91a0b7" opacity=".3"/>
+<rect x="245" y="506" width="178" height="5" rx="2" fill="#91a0b7" opacity=".3"/>
+<rect x="466" y="506" width="99" height="5" rx="2" fill="#91a0b7" opacity=".3"/>
+<rect x="626" y="506" width="68" height="5" rx="2" fill="#91a0b7" opacity=".3"/>
+<rect x="795" y="506" width="99" height="5" rx="2" fill="#91a0b7" opacity=".3"/>
+<rect x="245" y="529" width="178" height="5" rx="2" fill="#91a0b7" opacity=".3"/>
+<rect x="466" y="529" width="99" height="5" rx="2" fill="#91a0b7" opacity=".3"/>
+<rect x="626" y="529" width="68" height="5" rx="2" fill="#91a0b7" opacity=".3"/>
+<rect x="795" y="529" width="99" height="5" rx="2" fill="#91a0b7" opacity=".3"/>
+<text x="24" y="569" font-family="system-ui,sans-serif" font-size="11" fill="#91a0b7">HeroUI · Next</text>
+</svg>

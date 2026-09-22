@@ -29,7 +29,8 @@ use crate::{
     management_auth::{ManagementAuthenticationState, authenticate_management_session},
     management_error::ManagementError,
     management_usage_logs::{
-        AdminUsageLogResponse, parse_limit, parse_positive_i64, validate_percent_encoding,
+        AdminFailedCallLogResponse, AdminUsageLogResponse, parse_limit, parse_positive_i64,
+        validate_percent_encoding,
     },
     middleware::ensure_request_id,
 };
@@ -80,8 +81,12 @@ pub(crate) struct OrganizationUsageLogListResponse {
     logs: Vec<AdminUsageLogResponse>,
     #[schema(max_items = 100)]
     summaries: Vec<OrganizationUsageLogSummaryResponse>,
+    #[schema(max_items = 100)]
+    failed_logs: Vec<AdminFailedCallLogResponse>,
     #[schema(minimum = 1, required = true)]
     next_cursor: Option<i64>,
+    #[schema(minimum = 1, required = true)]
+    failed_next_cursor: Option<i64>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -277,6 +282,11 @@ impl OrganizationUsageLogListResponse {
                     .collect(),
             ),
         };
+        let failed_logs = page
+            .failed_logs()
+            .iter()
+            .map(AdminFailedCallLogResponse::from_log)
+            .collect();
         Self {
             scope: match page.scope() {
                 OrganizationUsageLogScope::Organization => "organization",
@@ -285,7 +295,9 @@ impl OrganizationUsageLogListResponse {
             },
             logs,
             summaries,
+            failed_logs,
             next_cursor: page.next_cursor(),
+            failed_next_cursor: page.failed_next_cursor(),
         }
     }
 }
@@ -348,7 +360,7 @@ fn parse_usage_query(
                 });
             }
             "scope" => return Err(ManagementError::InvalidRequest),
-            "before" | "limit" => pagination.push((key, value)),
+            "before" | "failed_before" | "limit" => pagination.push((key, value)),
             _ => return Err(ManagementError::InvalidRequest),
         }
     }
@@ -368,16 +380,21 @@ fn pagination_query(
     pairs: Vec<(String, String)>,
 ) -> Result<AdminUsageLogListQuery, ManagementError> {
     let mut before = None;
+    let mut failed_before = None;
     let mut limit = None;
     for (key, value) in pairs {
         match key.as_str() {
             "before" if before.is_none() => before = Some(parse_positive_i64(&value)?),
+            "failed_before" if failed_before.is_none() => {
+                failed_before = Some(parse_positive_i64(&value)?)
+            }
             "limit" if limit.is_none() => limit = Some(parse_limit(&value)?),
             _ => return Err(ManagementError::InvalidRequest),
         }
     }
-    AdminUsageLogListQuery::new(
+    AdminUsageLogListQuery::new_with_failed_before(
         before,
+        failed_before,
         limit.unwrap_or(af_admin::DEFAULT_ADMIN_USAGE_LOG_PAGE_SIZE),
     )
     .map_err(|_| ManagementError::InvalidRequest)

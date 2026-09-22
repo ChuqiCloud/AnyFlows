@@ -35,6 +35,7 @@ use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer, trace::TraceLaye
 
 use crate::announcements::build_announcement_router;
 use crate::anthropic_messages::anthropic_messages;
+use crate::api_explorer::build_api_explorer_router;
 use crate::authentication::{
     AuthenticationState, authenticate_api_key, authenticate_playground_session,
 };
@@ -375,7 +376,16 @@ pub fn build_router(
     .with_organization_authorization_service(organization_authorization_service)
     .with_organization_invitation_service(organization_invitation_service)
     .with_organization_management_service(organization_management_service);
+    let api_explorer_routes = build_api_explorer_router(
+        Arc::clone(&http_state.session_authenticator),
+        http_state.clone(),
+    );
     let public_routes = Router::new()
+        .route(
+            "/v1/models",
+            get(crate::openai_models::list_openai_models)
+                .route_layer(openai_authentication.clone()),
+        )
         .route(
             "/v1/chat/completions",
             // 只包裹已注册的 POST endpoint，不把路径级 405 改写为 401。
@@ -1134,6 +1144,7 @@ pub fn build_router(
     };
     HttpRouter::new(build_router_with_routes_and_frontend(
         public_routes
+            .merge(api_explorer_routes)
             .merge(playground_routes)
             .merge(management_routes)
             .merge(payment_webhook_routes.unwrap_or_else(Router::new)),

@@ -202,12 +202,12 @@ pub use invitation::{
     UserInvitationRebate, UserInvitationService, UserInvitationSummary,
 };
 pub use model_catalog::{
-    DEFAULT_MODEL_CATALOG_PAGE_SIZE, MAX_MODEL_CATALOG_PAGE_SIZE, ModelCatalogBillingMode,
-    ModelCatalogCapability, ModelCatalogItem, ModelCatalogLifecycle, ModelCatalogListFuture,
-    ModelCatalogMetadata, ModelCatalogModality, ModelCatalogPage, ModelCatalogPricingScope,
-    ModelCatalogProvider, ModelCatalogProviderSummary, ModelCatalogProvidersFuture,
-    ModelCatalogQuery, ModelCatalogRatios, ModelCatalogReadError, ModelCatalogReader,
-    ModelCatalogRuntimeStatus, ModelCatalogTokenPrices,
+    DEFAULT_MODEL_CATALOG_PAGE_SIZE, GatewayModel, GatewayModelListFuture,
+    MAX_MODEL_CATALOG_PAGE_SIZE, ModelCatalogBillingMode, ModelCatalogCapability, ModelCatalogItem,
+    ModelCatalogLifecycle, ModelCatalogListFuture, ModelCatalogMetadata, ModelCatalogModality,
+    ModelCatalogPage, ModelCatalogPricingScope, ModelCatalogProvider, ModelCatalogProviderSummary,
+    ModelCatalogProvidersFuture, ModelCatalogQuery, ModelCatalogRatios, ModelCatalogReadError,
+    ModelCatalogReader, ModelCatalogRuntimeStatus, ModelCatalogTokenPrices,
 };
 pub use model_metadata_read::{
     AdminModel, AdminModelGetFuture, AdminModelLifecycle, AdminModelListFuture,
@@ -624,11 +624,12 @@ pub use token_write::{
 };
 pub use two_factor::TwoFactorEnrollment;
 pub use usage_log_read::{
-    AdminUsageLog, AdminUsageLogBillingMode, AdminUsageLogListFuture, AdminUsageLogListQuery,
-    AdminUsageLogPage, AdminUsageLogReadError, AdminUsageLogReader, AdminUsageLogSemantics,
-    AdminUsageLogSource, AdminUsageLogUsage, AdminUsageLogVideoResolution,
-    DEFAULT_ADMIN_USAGE_LOG_PAGE_SIZE, DatabaseAdminUsageLogReader, UsageLogOperation,
-    UsageLogProtocol, UsageLogReasoningEffort,
+    AdminFailedCallLog, AdminFailedCallLogListFuture, AdminFailedCallLogPage, AdminUsageLog,
+    AdminUsageLogBillingMode, AdminUsageLogListFuture, AdminUsageLogListQuery, AdminUsageLogPage,
+    AdminUsageLogReadError, AdminUsageLogReader, AdminUsageLogSemantics, AdminUsageLogSource,
+    AdminUsageLogUsage, AdminUsageLogVideoResolution, DEFAULT_ADMIN_USAGE_LOG_PAGE_SIZE,
+    DatabaseAdminUsageLogReader, UsageLogOperation, UsageLogProtocol, UsageLogReasoningEffort,
+    UserFailedCallLog, UserFailedCallLogPage,
 };
 pub use user_notifications::{
     DEFAULT_USER_NOTIFICATION_PAGE_SIZE, DatabaseUserNotificationService, UserNotification,

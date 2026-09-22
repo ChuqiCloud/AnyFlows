@@ -2,6 +2,7 @@ import { Activity, KeyRound, Network, Pencil, Timer } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { AiActivity } from '@/components/ai/ai-activity'
+import { ProviderLabel } from '@/components/brand/provider-picker'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -173,7 +174,7 @@ export function ChannelTable({ channels, probeResults, probingId, onCredentials,
           <tbody className="divide-y divide-[var(--hairline)]">
             {channels.map((channel) => (
               <tr key={channel.id} className="hover:bg-surface-2/35">
-                <td className="px-3 py-2.5"><div className="flex items-center gap-2"><span className="truncate font-medium">{channel.name}</span><StatusBadge status={channel.status} /><ProtocolBadge protocol={channel.protocol} />{channel.tag ? <Badge className="max-w-28 truncate">{channel.tag}</Badge> : null}</div><div className="mt-1 truncate text-[0.6875rem] text-muted-foreground">#{channel.id} · {channel.base_url ?? t('channels.values.defaultUrl')}</div></td>
+                <td className="px-3 py-2.5"><div className="flex items-center gap-2"><span className="truncate font-medium">{channel.name}</span><StatusBadge status={channel.status} /><ProtocolBadge protocol={channel.protocol} />{channel.tag ? <Badge className="max-w-28 truncate">{channel.tag}</Badge> : null}</div><div className="mt-1 truncate text-[0.6875rem] text-muted-foreground">#{channel.id} · {channel.base_url ?? t('channels.values.defaultUrl')}</div><div className="mt-1 min-w-0 text-[0.6875rem] text-muted-foreground"><ProviderLabel provider={channel.provider ?? channel.type} /></div></td>
                 <td className="px-3 py-2.5"><RoutingBadges channel={channel} /></td>
                 <td className="px-3 py-2.5"><ScheduleBadges channel={channel} /></td>
                 <td className="px-3 py-2.5 text-[0.6875rem]"><ProbeState probing={probingId === channel.id} value={probeResults[channel.id]} /></td>
@@ -187,7 +188,7 @@ export function ChannelTable({ channels, probeResults, probingId, onCredentials,
       <div className="grid gap-2 md:hidden">
         {channels.map((channel) => (
           <article key={channel.id} className="min-w-0 rounded-xl border border-[var(--hairline)] bg-surface-1 p-3">
-            <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="truncate text-sm font-semibold">{channel.name}</h2><StatusBadge status={channel.status} /><ProtocolBadge protocol={channel.protocol} />{channel.tag ? <Badge className="max-w-32 truncate">{channel.tag}</Badge> : null}</div><p className="mt-1 truncate text-[0.6875rem] text-muted-foreground">#{channel.id} · {channel.base_url ?? t('channels.values.defaultUrl')}</p></div><RowActions channel={channel} probing={probingId === channel.id} onCredentials={onCredentials} onEdit={onEdit} onProbe={onProbe} /></div>
+            <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="truncate text-sm font-semibold">{channel.name}</h2><StatusBadge status={channel.status} /><ProtocolBadge protocol={channel.protocol} />{channel.tag ? <Badge className="max-w-32 truncate">{channel.tag}</Badge> : null}</div><p className="mt-1 truncate text-[0.6875rem] text-muted-foreground">#{channel.id} · {channel.base_url ?? t('channels.values.defaultUrl')}</p><div className="mt-1 min-w-0 text-xs text-muted-foreground"><ProviderLabel provider={channel.provider ?? channel.type} /></div></div><RowActions channel={channel} probing={probingId === channel.id} onCredentials={onCredentials} onEdit={onEdit} onProbe={onProbe} /></div>
             <div className="mt-3 grid gap-2 border-t border-[var(--hairline)] pt-3"><RoutingBadges channel={channel} /><ScheduleBadges channel={channel} /></div>
             <div className="mt-3 text-xs"><ProbeState probing={probingId === channel.id} value={probeResults[channel.id]} /></div>
           </article>

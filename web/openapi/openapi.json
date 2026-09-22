@@ -11163,7 +11163,7 @@
         "tags": [
           "前端模板"
         ],
-        "summary": "读取外部前端模板目录",
+        "summary": "读取内置与外部前端模板目录",
         "operationId": "listAdminFrontendTemplates",
         "responses": {
           "200": {
@@ -11337,6 +11337,91 @@
                 }
               }
             }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/frontend-templates/{template_id}/preview": {
+      "get": {
+        "tags": [
+          "前端模板"
+        ],
+        "summary": "读取管理员模板预览图片",
+        "operationId": "getAdminFrontendTemplatePreview",
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "description": "模板稳定标识",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "静态预览图片，不执行模板代码",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrontendTemplateImage"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrontendTemplateImage"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrontendTemplateImage"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrontendTemplateImage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "模板不存在或没有预览图片"
           },
           "500": {
             "description": "服务内部错误",
@@ -13347,6 +13432,63 @@
           {},
           {
             "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "tags": [
+          "模型目录"
+        ],
+        "summary": "读取 API Key 可用模型列表",
+        "description": "使用 API Key 鉴权，按令牌有效分组、模型白名单、目录可见性、价格配置及运行时候选筛选，返回完整 OpenAI 兼容列表；不需要网页登录会话，不调用上游。",
+        "operationId": "listGatewayModels",
+        "responses": {
+          "200": {
+            "description": "当前 API Key 可见的完整模型列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiModelList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "API Key 无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiModelListError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "请求次数或频率受限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiModelListError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "模型目录不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiModelListError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
           }
         ]
       }
@@ -15957,6 +16099,17 @@
             }
           },
           {
+            "name": "failed_before",
+            "in": "query",
+            "description": "失败日志上一页末尾的日志 ID",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "description": "每页数量，默认 50",
@@ -15971,7 +16124,7 @@
         ],
         "responses": {
           "200": {
-            "description": "从新到旧排列的用量日志",
+            "description": "从新到旧排列的成功和失败调用日志",
             "content": {
               "application/json": {
                 "schema": {
@@ -16048,6 +16201,17 @@
             }
           },
           {
+            "name": "failed_before",
+            "in": "query",
+            "description": "失败日志上一页末尾的日志 ID",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "description": "每页数量，默认 50",
@@ -16062,7 +16226,7 @@
         ],
         "responses": {
           "200": {
-            "description": "从新到旧排列的本人已结算调用",
+            "description": "从新到旧排列的本人成功和失败调用",
             "content": {
               "application/json": {
                 "schema": {
@@ -25206,6 +25370,17 @@
             }
           },
           {
+            "name": "failed_before",
+            "in": "query",
+            "description": "失败日志上一页末尾标识",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "description": "返回数量",
@@ -25471,6 +25646,17 @@
             "name": "before",
             "in": "query",
             "description": "上一页末尾日志标识",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "failed_before",
+            "in": "query",
+            "description": "失败日志上一页末尾标识",
             "required": false,
             "schema": {
               "type": "integer",
@@ -29864,6 +30050,14 @@
           "updated_at"
         ],
         "properties": {
+          "provider": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64,
+            "minLength": 1
+          },
           "id": {
             "type": "integer",
             "format": "int64",
@@ -30116,6 +30310,14 @@
           "tag"
         ],
         "properties": {
+          "provider": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64,
+            "minLength": 1
+          },
           "name": {
             "type": "string",
             "maxLength": 128,
@@ -30439,6 +30641,14 @@
           "tag"
         ],
         "properties": {
+          "provider": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64,
+            "minLength": 1
+          },
           "name": {
             "type": "string",
             "maxLength": 128,
@@ -32793,6 +33003,132 @@
           "start_tls",
           "tls"
         ]
+      },
+      "AdminFailedCallLog": {
+        "type": "object",
+        "required": [
+          "id",
+          "request_id",
+          "model",
+          "protocol",
+          "operation",
+          "error_kind",
+          "error_code",
+          "error_message",
+          "user_id",
+          "username",
+          "token_id",
+          "group_id",
+          "organization_id",
+          "organization_team_id",
+          "channel_id",
+          "duration_ms",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "request_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "protocol": {
+            "$ref": "#/components/schemas/UsageLogProtocol"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/UsageLogOperation"
+          },
+          "error_kind": {
+            "type": "string",
+            "description": "对管理员返回的内部失败分类；普通用户响应不包含该字段。"
+          },
+          "error_code": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "error_message": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "user_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "token_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "group_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "organization_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "organization_team_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "channel_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "duration_ms": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
       },
       "AdminGroup": {
         "type": "object",
@@ -36746,7 +37082,9 @@
         "type": "object",
         "required": [
           "logs",
-          "next_cursor"
+          "failed_logs",
+          "next_cursor",
+          "failed_next_cursor"
         ],
         "properties": {
           "logs": {
@@ -36756,7 +37094,22 @@
             },
             "maxItems": 100
           },
+          "failed_logs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminFailedCallLog"
+            },
+            "maxItems": 100
+          },
           "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "failed_next_cursor": {
             "type": [
               "integer",
               "null"
@@ -38593,7 +38946,7 @@
               "string",
               "null"
             ],
-            "description": "None 表示编译进二进制的内嵌前端。"
+            "description": "None 表示默认经典前端；embedded-next 表示新版内置前端。"
           },
           "templates": {
             "type": "array",
@@ -38604,14 +38957,19 @@
         },
         "additionalProperties": false
       },
+      "FrontendTemplateImage": {
+        "type": "string",
+        "format": "binary"
+      },
       "FrontendTemplateSummary": {
         "type": "object",
-        "description": "可供管理员选择的外部前端模板摘要。",
+        "description": "可供管理员选择的内置或外部前端模板摘要。",
         "required": [
           "id",
           "name",
           "version",
           "api_contract",
+          "builtin",
           "valid"
         ],
         "properties": {
@@ -38627,6 +38985,29 @@
           },
           "api_contract": {
             "type": "string"
+          },
+          "builtin": {
+            "type": "boolean",
+            "description": "编译进服务二进制的官方前端。"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "author": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "preview_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "需要管理员会话的静态预览图片地址，不执行模板脚本。"
           },
           "valid": {
             "type": "boolean"
@@ -39324,6 +39705,91 @@
             "type": "string",
             "format": "uri",
             "maxLength": 4096
+          }
+        },
+        "additionalProperties": false
+      },
+      "OpenAiModel": {
+        "type": "object",
+        "required": [
+          "id",
+          "object",
+          "created",
+          "owned_by"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string",
+            "example": "model"
+          },
+          "created": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "owned_by": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OpenAiModelList": {
+        "type": "object",
+        "required": [
+          "object",
+          "data"
+        ],
+        "properties": {
+          "object": {
+            "type": "string",
+            "example": "list"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OpenAiModel"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OpenAiModelListError": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/OpenAiModelListErrorBody"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OpenAiModelListErrorBody": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "param",
+          "type"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "param": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -44195,7 +44661,9 @@
           "scope",
           "logs",
           "summaries",
-          "next_cursor"
+          "failed_logs",
+          "next_cursor",
+          "failed_next_cursor"
         ],
         "properties": {
           "scope": {
@@ -44215,7 +44683,22 @@
             },
             "maxItems": 100
           },
+          "failed_logs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminFailedCallLog"
+            },
+            "maxItems": 100
+          },
           "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "failed_next_cursor": {
             "type": [
               "integer",
               "null"
@@ -47163,6 +47646,64 @@
           "max"
         ]
       },
+      "UserFailedCallLog": {
+        "type": "object",
+        "required": [
+          "id",
+          "request_id",
+          "model",
+          "protocol",
+          "operation",
+          "error_code",
+          "error_message",
+          "duration_ms",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "request_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "protocol": {
+            "$ref": "#/components/schemas/UsageLogProtocol"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/UsageLogOperation"
+          },
+          "error_code": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "error_message": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "duration_ms": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
       "UserInvitationRebateResponse": {
         "type": "object",
         "required": [
@@ -48570,7 +49111,9 @@
         "type": "object",
         "required": [
           "logs",
-          "next_cursor"
+          "failed_logs",
+          "next_cursor",
+          "failed_next_cursor"
         ],
         "properties": {
           "logs": {
@@ -48580,7 +49123,22 @@
             },
             "maxItems": 100
           },
+          "failed_logs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserFailedCallLog"
+            },
+            "maxItems": 100
+          },
           "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "failed_next_cursor": {
             "type": [
               "integer",
               "null"

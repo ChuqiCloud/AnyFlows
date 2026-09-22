@@ -190,7 +190,7 @@ use crate::{
     channel_probe::{BoundedAdminChannelProbe, DatabaseChannelProbe},
     concurrency_runtime::{ConcurrencyCleanupWorker, ConcurrencyReleaseWorker, ConcurrencyRuntime},
     debug_trace_runtime::{AdminDebugTraceRuntimeApplier, DebugTraceRuntime, DebugTraceWorker},
-    frontend::EmbeddedFrontendAssets,
+    frontend::{EmbeddedFrontendAssets, EmbeddedNextFrontendAssets},
     group_pricing_refresh::RuntimeGroupPricingRefresher,
     model_catalog::RuntimeModelCatalogReader,
     model_discovery::DatabaseUpstreamModelDiscoverer,
@@ -1394,6 +1394,8 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::AdminUsageLogRepository)?;
+        let request_outcome_read_repository =
+            RequestOutcomeRepository::new(self.stage.database.clone());
         let organization_authorization_service: Arc<
             dyn af_admin::OrganizationAuthorizationService,
         > = Arc::new(af_admin::DatabaseOrganizationAuthorizationService::new(
@@ -1410,7 +1412,8 @@ impl Bootstrap<DatabaseReady> {
                 OrganizationAuditRepository::new(self.stage.database.clone()),
                 auth.session_signing_key().map(|key| key.expose()),
             )
-            .map_err(BootstrapError::OrganizationActivityService)?,
+            .map_err(BootstrapError::OrganizationActivityService)?
+            .with_request_outcomes(request_outcome_read_repository.clone()),
         );
         let platform_audit_service: Arc<dyn PlatformAuditService> =
             Arc::new(DatabasePlatformAuditService::new(
@@ -1687,9 +1690,10 @@ impl Bootstrap<DatabaseReady> {
                     admin_token_repository.clone(),
                 )),
                 admin_token_writer: Arc::new(DatabaseAdminTokenWriter::new(admin_token_repository)),
-                admin_usage_log_reader: Arc::new(DatabaseAdminUsageLogReader::new(
-                    admin_usage_log_repository,
-                )),
+                admin_usage_log_reader: Arc::new(
+                    DatabaseAdminUsageLogReader::new(admin_usage_log_repository)
+                        .with_request_outcomes(request_outcome_read_repository),
+                ),
                 admin_user_reader: Arc::new(DatabaseAdminUserReader::new(
                     admin_user_repository.clone(),
                 )),
@@ -2960,6 +2964,7 @@ impl Bootstrap<Supervised> {
                 .frontend_template_directory()
                 .to_path_buf(),
             Arc::clone(&embedded_frontend),
+            Arc::new(EmbeddedNextFrontendAssets),
             self.stage.infrastructure.site_settings_repository.clone(),
             self.stage
                 .infrastructure

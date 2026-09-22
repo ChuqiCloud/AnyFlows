@@ -2,6 +2,7 @@
 
 mod announcements;
 mod anthropic_messages;
+mod api_explorer;
 mod audio_service;
 mod authentication;
 mod balance_alert_settings;
@@ -57,6 +58,7 @@ mod oauth_login;
 mod openai_audio;
 mod openai_embeddings;
 mod openai_images;
+mod openai_models;
 mod openai_responses;
 mod openai_responses_compact;
 mod openai_speech;
@@ -123,7 +125,8 @@ pub use error_response::OpenAiHttpError;
 pub use frontend_assets::{FrontendAsset, FrontendAssetSource};
 pub use frontend_templates::{
     FrontendTemplateCatalog, FrontendTemplateError, FrontendTemplateFuture,
-    FrontendTemplateService, FrontendTemplateSummary, build_frontend_template_router,
+    FrontendTemplatePreview, FrontendTemplateService, FrontendTemplateSummary,
+    build_frontend_template_router,
 };
 pub use image_service::{ImageService, ImageServiceFuture};
 pub use middleware::REQUEST_ID_HEADER_NAME;

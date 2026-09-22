@@ -15,6 +15,68 @@ use super::{
 };
 
 #[tokio::test]
+async fn channel_provider_round_trips_without_changing_transport_or_secrets()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let channel = fixture
+        .repository
+        .create_channel(
+            channel_record("provider", "https://api.example.com/v1")
+                .with_provider(Some("deepseek".to_owned())),
+        )
+        .await?;
+    assert_eq!(channel.provider(), Some("deepseek"));
+    assert_eq!(channel.channel_type(), ChannelType::OpenAi);
+    let (listed, _) = fixture.repository.list(None, 10).await?.into_parts();
+    assert_eq!(listed[0].provider(), Some("deepseek"));
+    for (replacement, expected) in [
+        (None, "deepseek"),
+        (Some("Acme Private AI".to_owned()), "Acme Private AI"),
+        (None, "Acme Private AI"),
+    ] {
+        let AdminChannelMutationOutcome::Mutated(updated) = fixture
+            .repository
+            .update_channel(
+                channel.channel_id(),
+                channel_update_record("provider", "https://api.example.com/v1")
+                    .with_provider(replacement),
+            )
+            .await?
+        else {
+            panic!("channel must exist");
+        };
+        assert_eq!(updated.provider(), Some(expected));
+        assert_eq!(updated.protocol(), Protocol::OpenAiChat);
+        let (headers, settings) = channel_sensitive_fields(&fixture, channel.channel_id()).await?;
+        assert_eq!(headers, r#"{"x-runtime":"private-header-value"}"#);
+        let settings: serde_json::Value = serde_json::from_str(&settings)?;
+        assert_eq!(settings["provider"], expected);
+        assert_eq!(settings["private_setting"], "private-setting-value");
+    }
+    for provider in [
+        String::new(),
+        "x".repeat(65),
+        "bad\nvalue".to_owned(),
+        " spaced ".to_owned(),
+        "厂".repeat(22),
+    ] {
+        assert_eq!(
+            fixture
+                .repository
+                .create_channel(
+                    channel_record("invalid", "https://api.example.com/v1")
+                        .with_provider(Some(provider)),
+                )
+                .await
+                .unwrap_err(),
+            AdminChannelWriteRepositoryError::InvalidInput
+        );
+    }
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn channel_create_and_update_preserve_runtime_totals() -> Result<(), Box<dyn Error>> {
     let fixture = fixture().await?;
     let created = fixture

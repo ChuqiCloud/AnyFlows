@@ -97,11 +97,12 @@ impl BillingEmbeddingService {
         request: CanonicalEmbeddingRequest,
         request_id: &str,
     ) -> Result<EmbeddingResponse, AfError> {
-        let outcome = crate::RequestOutcomeContext::new(
+        let outcome = crate::RequestOutcomeContext::for_principal(
             request_id,
             af_domain::Protocol::OpenAiEmbeddings,
             af_domain::Operation::Embedding,
             request.model(),
+            *principal,
         );
         outcome
             .finish(
