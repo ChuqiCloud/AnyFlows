@@ -202,12 +202,12 @@ pub use invitation::{
     UserInvitationRebate, UserInvitationService, UserInvitationSummary,
 };
 pub use model_catalog::{
-    DEFAULT_MODEL_CATALOG_PAGE_SIZE, MAX_MODEL_CATALOG_PAGE_SIZE, ModelCatalogBillingMode,
-    ModelCatalogCapability, ModelCatalogItem, ModelCatalogLifecycle, ModelCatalogListFuture,
-    ModelCatalogMetadata, ModelCatalogModality, ModelCatalogPage, ModelCatalogPricingScope,
-    ModelCatalogProvider, ModelCatalogProviderSummary, ModelCatalogProvidersFuture,
-    ModelCatalogQuery, ModelCatalogRatios, ModelCatalogReadError, ModelCatalogReader,
-    ModelCatalogRuntimeStatus, ModelCatalogTokenPrices,
+    DEFAULT_MODEL_CATALOG_PAGE_SIZE, GatewayModel, GatewayModelListFuture,
+    MAX_MODEL_CATALOG_PAGE_SIZE, ModelCatalogBillingMode, ModelCatalogCapability, ModelCatalogItem,
+    ModelCatalogLifecycle, ModelCatalogListFuture, ModelCatalogMetadata, ModelCatalogModality,
+    ModelCatalogPage, ModelCatalogPricingScope, ModelCatalogProvider, ModelCatalogProviderSummary,
+    ModelCatalogProvidersFuture, ModelCatalogQuery, ModelCatalogRatios, ModelCatalogReadError,
+    ModelCatalogReader, ModelCatalogRuntimeStatus, ModelCatalogTokenPrices,
 };
 pub use model_metadata_read::{
     AdminModel, AdminModelGetFuture, AdminModelLifecycle, AdminModelListFuture,

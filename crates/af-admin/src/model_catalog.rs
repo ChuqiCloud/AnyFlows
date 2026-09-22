@@ -751,6 +751,52 @@ pub enum ModelCatalogReadError {
 pub type ModelCatalogListFuture<'a> =
     Pin<Box<dyn Future<Output = Result<ModelCatalogPage, ModelCatalogReadError>> + Send + 'a>>;
 
+/// API Key 可见的模型标识与公开元数据，不携带渠道或定价信息。
+pub struct GatewayModel {
+    id: String,
+    created: i64,
+    owned_by: String,
+}
+
+impl GatewayModel {
+    /// 组合通过目录校验的公开标识、创建时间及供应商名称。
+    pub fn new(id: String, created: i64, owned_by: String) -> Result<Self, ModelCatalogReadError> {
+        if !is_valid_model_name(&id) || !is_valid_provider(&owned_by) {
+            return Err(ModelCatalogReadError::Internal);
+        }
+        Ok(Self {
+            id,
+            created,
+            owned_by,
+        })
+    }
+
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    #[must_use]
+    pub const fn created(&self) -> i64 {
+        self.created
+    }
+
+    #[must_use]
+    pub fn owned_by(&self) -> &str {
+        &self.owned_by
+    }
+}
+
+impl fmt::Debug for GatewayModel {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("GatewayModel(<redacted>)")
+    }
+}
+
+/// API Key 完整模型列表异步读取结果。
+pub type GatewayModelListFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Vec<GatewayModel>, ModelCatalogReadError>> + Send + 'a>>;
+
 /// 模型目录供应商聚合异步读取结果。
 pub type ModelCatalogProvidersFuture<'a> = Pin<
     Box<
@@ -758,8 +804,14 @@ pub type ModelCatalogProvidersFuture<'a> = Pin<
     >,
 >;
 
-/// 游客与登录用户共用的模型目录异步只读端口。
+/// 游客、登录用户与 API Key 共用的模型目录异步只读端口。
 pub trait ModelCatalogReader: Send + Sync {
+    /// 按令牌有效分组、模型白名单和目录可见性返回完整模型列表。
+    fn list_for_token(
+        &self,
+        authentication: crate::TokenAuthentication,
+    ) -> GatewayModelListFuture<'_>;
+
     /// 无会话时读取公开基础目录，有会话时按数据库回查分组读取可用模型。
     fn list<'a>(
         &'a self,

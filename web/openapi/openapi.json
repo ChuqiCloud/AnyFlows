@@ -13351,6 +13351,63 @@
         ]
       }
     },
+    "/v1/models": {
+      "get": {
+        "tags": [
+          "模型目录"
+        ],
+        "summary": "读取 API Key 可用模型列表",
+        "description": "使用 API Key 鉴权，按令牌有效分组、模型白名单、目录可见性、价格配置及运行时候选筛选，返回完整 OpenAI 兼容列表；不需要网页登录会话，不调用上游。",
+        "operationId": "listGatewayModels",
+        "responses": {
+          "200": {
+            "description": "当前 API Key 可见的完整模型列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiModelList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "API Key 无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiModelListError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "请求次数或频率受限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiModelListError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "模型目录不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiModelListError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/models": {
       "get": {
         "tags": [
@@ -39511,6 +39568,91 @@
             "type": "string",
             "format": "uri",
             "maxLength": 4096
+          }
+        },
+        "additionalProperties": false
+      },
+      "OpenAiModel": {
+        "type": "object",
+        "required": [
+          "id",
+          "object",
+          "created",
+          "owned_by"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string",
+            "example": "model"
+          },
+          "created": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "owned_by": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OpenAiModelList": {
+        "type": "object",
+        "required": [
+          "object",
+          "data"
+        ],
+        "properties": {
+          "object": {
+            "type": "string",
+            "example": "list"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OpenAiModel"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OpenAiModelListError": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/OpenAiModelListErrorBody"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OpenAiModelListErrorBody": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "param",
+          "type"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "param": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string"
           }
         },
         "additionalProperties": false
