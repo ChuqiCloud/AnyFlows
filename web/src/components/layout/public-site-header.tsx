@@ -1,4 +1,4 @@
-import { Boxes } from 'lucide-react'
+import { Boxes, Braces } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { LanguageToggle } from '@/components/language-toggle'
@@ -34,6 +34,13 @@ export function PublicSiteHeader({ logoUrl, siteName }: PublicSiteHeaderProps) {
               <Boxes className="size-4" aria-hidden="true" />
               <span className="hidden md:inline">{t('landing.nav.models')}</span>
               <span className="sr-only md:hidden">{t('landing.nav.models')}</span>
+            </a>
+          </Button>
+          <Button variant="ghost" size="sm" asChild>
+            <a href="#/api" title={t('apiExplorer.nav')}>
+              <Braces className="size-4" aria-hidden="true" />
+              <span className="hidden md:inline">API</span>
+              <span className="sr-only md:hidden">API</span>
             </a>
           </Button>
           <LanguageToggle />

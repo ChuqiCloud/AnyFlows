@@ -3,6 +3,26 @@
     "name": "AnyFlows",
     "scope": "Gateway"
   },
+  "apiExplorer": {
+    "nav": "API",
+    "title": "API reference and playground",
+    "subtitle": "See the APIs available to your current identity. Read-only endpoints and gateway protocols can be tried online; high-risk management actions remain documentation-only.",
+    "search": "Search APIs, paths, or descriptions",
+    "allTags": "All categories",
+    "count": "{{count}} APIs",
+    "loadMore": "Load more",
+    "loading": "Loading API catalog…",
+    "empty": "No matching APIs",
+    "required": "Required",
+    "optional": "Optional",
+    "apiKey": "API key",
+    "requestBody": "Request body (JSON)",
+    "contract": "OpenAPI request and response contract",
+    "parameters": "Request parameters",
+    "auth": { "none": "Public", "session": "Session", "apiKey": "API key", "special": "Special credential" },
+    "debug": { "title": "Try it online", "subtitle": "Requests use the current session or the API key you enter; sensitive credentials are not saved.", "send": "Send request", "running": "Sending…", "empty": "Select a debuggable API to see its response", "disabled": "This API is documentation-only and cannot be executed here" },
+    "errors": { "catalog": "Could not load the API catalog.", "detail": "Could not load API details.", "run": "The request could not be executed." }
+  },
   "tablePagination": {
     "label": "Table pagination",
     "pageSummary": "Page {{page}}, {{count}} records",

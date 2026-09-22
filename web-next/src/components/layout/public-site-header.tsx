@@ -1,5 +1,5 @@
 import { Button } from '@heroui/react'
-import { Boxes } from 'lucide-react'
+import { Boxes, Braces } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { LanguageToggle } from '@/components/language-toggle'
@@ -33,6 +33,11 @@ export function PublicSiteHeader({ logoUrl, siteName }: PublicSiteHeaderProps) {
             <Boxes className="size-4" aria-hidden="true" />
             <span className="hidden md:inline">{t('landing.nav.models')}</span>
             <span className="sr-only md:hidden">{t('landing.nav.models')}</span>
+          </Button>
+          <Button as="a" href="/api" size="sm" title={t('apiExplorer.nav')} variant="light">
+            <Braces className="size-4" aria-hidden="true" />
+            <span className="hidden md:inline">API</span>
+            <span className="sr-only md:hidden">API</span>
           </Button>
           <LanguageToggle />
           <MotionToggle />

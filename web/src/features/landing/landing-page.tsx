@@ -383,7 +383,7 @@ export function LandingPage() {
       <footer className="border-t border-[var(--hairline)] px-6 py-8">
         <div className="mx-auto flex max-w-[1120px] flex-wrap items-center justify-between gap-4 text-sm text-muted-foreground">
           <span>{t('landing.footer.copyright')}</span>
-          <span>{t('brand.scope')}</span>
+          <div className="flex items-center gap-4"><a className="transition-colors hover:text-foreground" href="#/api">API</a><span>{t('brand.scope')}</span></div>
         </div>
       </footer>
     </div>

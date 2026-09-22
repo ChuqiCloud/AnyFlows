@@ -13,6 +13,7 @@ import { endManagementSession } from '@/features/auth/session-query'
 import { ApiKeyPage } from '@/features/api-keys/api-key-page'
 import { BillingSettingsPage } from '@/features/billing-settings/billing-settings-page'
 import { AnnouncementPage } from '@/features/announcements/announcement-page'
+import { ApiExplorerPage } from '@/features/api-explorer/api-explorer-page'
 import { ChannelPage } from '@/features/channels/channel-page'
 import { CredentialPage } from '@/features/credentials/credential-page'
 import { CredentialProxyPage } from '@/features/credential-proxies/credential-proxy-page'
@@ -411,6 +412,9 @@ export default function App() {
 
   if (view === 'landing') {
     return <LandingPage />
+  }
+  if (view === 'api') {
+    return <ApiExplorerPage />
   }
   if (view === 'public-models') {
     return <PublicModelPage />

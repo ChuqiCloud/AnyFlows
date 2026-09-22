@@ -1,4 +1,5 @@
 export type AppView =
+  | 'api'
   | 'api-keys'
   | 'announcements'
   | 'authentication-settings'
@@ -176,6 +177,7 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash.startsWith('#/console/registration')) return { view: 'authentication-settings' }
   if (hash.startsWith('#/console')) return { view: 'overview' }
   if (hash.startsWith('#/models')) return { view: 'public-models' }
+  if (hash === '#/api' || hash.startsWith('#/api?')) return { view: 'api' }
   if (hash.startsWith('#/register')) {
     const queryStart = hash.indexOf('?')
     const query = queryStart >= 0 ? new URLSearchParams(hash.slice(queryStart + 1)) : undefined
