@@ -12,8 +12,8 @@ export function FrontendTemplatePreview({ template }: {
 }) {
   const { t } = useTranslation()
   const container = useRef<HTMLDivElement>(null)
-  const [visible, setVisible] = useState(false)
-  const [source, setSource] = useState<string>()
+  const image = useRef<HTMLImageElement>(null)
+  const [visible, setVisible] = useState(() => typeof IntersectionObserver === 'undefined')
   const preview = useQuery({
     queryKey: ['frontend-template-preview', template.id, template.version, template.preview_url],
     enabled: visible && Boolean(template.preview_url),
@@ -34,8 +34,7 @@ export function FrontendTemplatePreview({ template }: {
   })
 
   useEffect(() => {
-    if (!container.current) return
-    if (typeof IntersectionObserver === 'undefined') { setVisible(true); return }
+    if (!container.current || typeof IntersectionObserver === 'undefined') return
     const observer = new IntersectionObserver((entries) => {
       if (entries.some((entry) => entry.isIntersecting)) { setVisible(true); observer.disconnect() }
     }, { rootMargin: '120px' })
@@ -44,14 +43,14 @@ export function FrontendTemplatePreview({ template }: {
   }, [])
 
   useEffect(() => {
-    if (!preview.data) return
+    if (!preview.data || !image.current) return
     const url = URL.createObjectURL(preview.data)
-    setSource(url)
+    image.current.src = url
     return () => URL.revokeObjectURL(url)
   }, [preview.data])
 
-  if (source && preview.data) {
-    return <div ref={container} className="h-full w-full"><img loading="lazy" decoding="async" src={source} alt={t('siteSettings.templates.previewAlt', { name: template.name })} className="h-full w-full object-contain" /></div>
+  if (preview.data) {
+    return <div ref={container} className="h-full w-full"><img ref={image} loading="lazy" decoding="async" alt={t('siteSettings.templates.previewAlt', { name: template.name })} className="h-full w-full object-contain" /></div>
   }
   return (
     <div ref={container} className="flex h-full min-h-32 flex-col items-center justify-center gap-2 bg-surface-2/50 p-4 text-center text-muted-foreground">
