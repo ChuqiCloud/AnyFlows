@@ -276,6 +276,95 @@ fn rejects_incomplete_or_interleaved_tool_results() {
 }
 
 #[test]
+fn accepts_standard_assistant_history_for_continuation() {
+    let baseline = request_with_messages(vec![
+        json!({ "role": "user", "content": "first" }),
+        json!({ "role": "assistant", "content": "answer" }),
+        json!({ "role": "user", "content": "follow up" }),
+    ]);
+
+    for stream in [false, true] {
+        let mut baseline = baseline.clone();
+        baseline["stream"] = json!(stream);
+        let expected = parse_json(baseline.clone()).unwrap();
+        for metadata in [
+            json!({ "refusal": null }),
+            json!({ "annotations": [] }),
+            json!({ "annotations": null }),
+            json!({ "tool_calls": null }),
+            json!({ "tool_calls": [] }),
+            json!({ "audio": null }),
+            json!({ "function_call": null }),
+            json!({
+                "refusal": null,
+                "annotations": [],
+                "tool_calls": null,
+                "audio": null,
+                "function_call": null
+            }),
+        ] {
+            let mut request = baseline.clone();
+            request["messages"][1]
+                .as_object_mut()
+                .unwrap()
+                .extend(metadata.as_object().unwrap().clone());
+            assert_eq!(parse_json(request), Ok(expected.clone()), "{metadata}");
+        }
+    }
+}
+
+#[test]
+fn accepts_empty_response_metadata_in_tool_call_history() {
+    let baseline = assistant_arguments_request("{}".to_owned());
+    let expected = parse_json(baseline.clone()).unwrap();
+    let mut request = baseline;
+    request["messages"][0]["refusal"] = Value::Null;
+    request["messages"][0]["annotations"] = json!([]);
+    request["messages"][0]["audio"] = Value::Null;
+    request["messages"][0]["function_call"] = Value::Null;
+
+    assert_eq!(parse_json(request), Ok(expected));
+}
+
+#[test]
+fn rejects_non_empty_unsupported_assistant_response_metadata() {
+    for metadata in [
+        json!({ "refusal": "Request refused" }),
+        json!({ "audio": { "id": "audio-1" } }),
+        json!({ "function_call": { "name": "lookup", "arguments": "{}" } }),
+        json!({ "annotations": [{ "type": "url_citation" }] }),
+    ] {
+        let mut assistant = json!({ "role": "assistant", "content": "answer" });
+        assistant
+            .as_object_mut()
+            .unwrap()
+            .extend(metadata.as_object().unwrap().clone());
+        assert_eq!(
+            parse_json(request_with_messages(vec![assistant])),
+            Err(ParseRequestError::UnsupportedFeature),
+            "{metadata}"
+        );
+    }
+}
+
+#[test]
+fn rejects_invalid_assistant_metadata_and_empty_history() {
+    for assistant in [
+        json!({ "role": "assistant", "content": "answer", "annotations": {} }),
+        json!({ "role": "assistant", "content": "answer", "tool_calls": {} }),
+        json!({ "role": "assistant", "content": "answer", "unknown": null }),
+        json!({ "role": "assistant", "content": null, "tool_calls": null }),
+        json!({ "role": "assistant", "refusal": null, "annotations": [] }),
+    ] {
+        assert_eq!(
+            parse_json(request_with_messages(vec![assistant.clone()])),
+            Err(ParseRequestError::InvalidValue),
+            "{assistant}"
+        );
+    }
+}
+
+#[test]
 fn rejects_conflicting_max_token_fields() {
     let error = parse_json(json!({
         "model": "gpt-test",
