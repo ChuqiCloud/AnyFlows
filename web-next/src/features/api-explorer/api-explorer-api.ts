@@ -25,7 +25,7 @@ export type ApiExplorerCatalog = {
 export type ApiExplorerDetail = { operation: ApiExplorerOperation; openapi: Record<string, unknown> }
 export type ApiExplorerRunResult = { status: number; ok: boolean; duration_ms: number; request_id?: string; body: string }
 
-function headers() {
+function headers(): Record<string, string> {
   const token = getManagementSessionToken()
   return token ? { Authorization: `Bearer ${token}` } : {}
 }

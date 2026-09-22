@@ -38,7 +38,7 @@ export type ApiExplorerRunResult = {
   body: string
 }
 
-function sessionHeaders() {
+function sessionHeaders(): Record<string, string> {
   const token = getManagementSessionToken()
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
