@@ -69,7 +69,12 @@ fn activate_admin_frontend_template() {}
     summary = "读取管理员模板预览图片",
     params(("template_id" = String, Path, description = "模板稳定标识")),
     responses(
-        (status = 200, description = "静态预览图片，不执行模板代码", body = Vec<u8>, content_type = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"]),
+        (status = 200, description = "静态预览图片，不执行模板代码", content(
+            (Vec<u8> = "image/png"),
+            (Vec<u8> = "image/jpeg"),
+            (Vec<u8> = "image/webp"),
+            (Vec<u8> = "image/svg+xml")
+        )),
         (status = 401, description = "登录会话无效", body = ManagementErrorBody),
         (status = 403, description = "当前用户不是管理员", body = ManagementErrorBody),
         (status = 404, description = "模板不存在或没有预览图片"),

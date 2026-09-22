@@ -345,6 +345,15 @@ jobs:
       - name: Build frontend
         run: corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} build
 
+      - name: Browser smoke test template gallery
+        shell: bash
+        run: |
+          set -euo pipefail
+          browser_tools="$RUNNER_TEMP/anyflows-playwright"
+          npm install --prefix "$browser_tools" --no-save --ignore-scripts playwright@1.56.1
+          "$browser_tools/node_modules/.bin/playwright" install --with-deps chromium
+          PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-gallery-smoke.mjs '${{ matrix.frontend }}'
+
   rust-quality:
     name: Rust quality gates
     needs: changes

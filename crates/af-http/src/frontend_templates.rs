@@ -8,8 +8,8 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post, put},
 };
-use serde::{Deserialize, Serialize};
 use http::{StatusCode, header};
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::{
@@ -136,7 +136,10 @@ async fn preview_frontend_template(
         .header(header::CONTENT_TYPE, preview.content_type)
         .header(header::CACHE_CONTROL, "no-store")
         .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
-        .header(header::CONTENT_SECURITY_POLICY, "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+        .header(
+            header::CONTENT_SECURITY_POLICY,
+            "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+        )
         .header(header::REFERRER_POLICY, "no-referrer")
         .body(Body::from(preview.asset.content()))
         .expect("固定的模板预览响应头必须有效"))
@@ -189,15 +192,21 @@ fn map_template_error(error: FrontendTemplateError) -> ManagementError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use af_admin::{SessionAuthentication, SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, SessionPrincipal, SessionRole};
+    use af_admin::{
+        SessionAuthentication, SessionAuthenticationError, SessionAuthenticationFuture,
+        SessionAuthenticator, SessionLoginFuture, SessionPrincipal, SessionRole,
+    };
     use af_domain::{GroupId, UserId};
     use http::Request;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use tower::ServiceExt;
 
     struct Sessions;
     impl SessionAuthenticator for Sessions {
-        fn login<'a>(&'a self, _credentials: &'a af_admin::LoginCredentials) -> SessionLoginFuture<'a> {
+        fn login<'a>(
+            &'a self,
+            _credentials: &'a af_admin::LoginCredentials,
+        ) -> SessionLoginFuture<'a> {
             Box::pin(async { Err(SessionAuthenticationError::InvalidCredentials) })
         }
         fn authenticate<'a>(&'a self, token: &'a str) -> SessionAuthenticationFuture<'a> {
@@ -207,8 +216,15 @@ mod tests {
                     "user-token" => SessionRole::User,
                     _ => return Err(SessionAuthenticationError::InvalidSession),
                 };
-                let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-                Ok(SessionAuthentication::new(SessionPrincipal::new(UserId::new(1).unwrap(), role), GroupId::new(1).unwrap(), now + 60))
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                Ok(SessionAuthentication::new(
+                    SessionPrincipal::new(UserId::new(1).unwrap(), role),
+                    GroupId::new(1).unwrap(),
+                    now + 60,
+                ))
             })
         }
     }
@@ -220,15 +236,30 @@ mod tests {
     }
     impl FrontendTemplateService for Templates {
         fn list(&self) -> FrontendTemplateFuture<'_, FrontendTemplateCatalog> {
-            Box::pin(async { Ok(FrontendTemplateCatalog { active_id: None, templates: Vec::new() }) })
+            Box::pin(async {
+                Ok(FrontendTemplateCatalog {
+                    active_id: None,
+                    templates: Vec::new(),
+                })
+            })
         }
-        fn scan(&self) -> FrontendTemplateFuture<'_, FrontendTemplateCatalog> { self.list() }
+        fn scan(&self) -> FrontendTemplateFuture<'_, FrontendTemplateCatalog> {
+            self.list()
+        }
         fn preview(&self, id: &str) -> Result<FrontendTemplatePreview, FrontendTemplateError> {
             self.previews.fetch_add(1, Ordering::SeqCst);
-            if id != "embedded" { return Err(FrontendTemplateError::NotFound); }
-            Ok(FrontendTemplatePreview { asset: crate::FrontendAsset::from_bytes("preview-image"), content_type: "image/png" })
+            if id != "embedded" {
+                return Err(FrontendTemplateError::NotFound);
+            }
+            Ok(FrontendTemplatePreview {
+                asset: crate::FrontendAsset::from_bytes("preview-image"),
+                content_type: "image/png",
+            })
         }
-        fn activate(&self, _id: Option<String>) -> FrontendTemplateFuture<'_, FrontendTemplateCatalog> {
+        fn activate(
+            &self,
+            _id: Option<String>,
+        ) -> FrontendTemplateFuture<'_, FrontendTemplateCatalog> {
             self.activations.fetch_add(1, Ordering::SeqCst);
             self.list()
         }
@@ -238,24 +269,59 @@ mod tests {
     async fn previews_require_admin_and_do_not_activate_templates() {
         let service = Arc::new(Templates::default());
         let router = build_frontend_template_router(service.clone(), Arc::new(Sessions));
-        for (token, status) in [(None, StatusCode::UNAUTHORIZED), (Some("user-token"), StatusCode::FORBIDDEN)] {
-            let mut request = Request::builder().uri("/api/admin/frontend-templates/embedded/preview");
-            if let Some(token) = token { request = request.header(header::AUTHORIZATION, format!("Bearer {token}")); }
-            let response = router.clone().oneshot(request.body(Body::empty()).unwrap()).await.unwrap();
+        for (token, status) in [
+            (None, StatusCode::UNAUTHORIZED),
+            (Some("user-token"), StatusCode::FORBIDDEN),
+        ] {
+            let mut request =
+                Request::builder().uri("/api/admin/frontend-templates/embedded/preview");
+            if let Some(token) = token {
+                request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
+            }
+            let response = router
+                .clone()
+                .oneshot(request.body(Body::empty()).unwrap())
+                .await
+                .unwrap();
             assert_eq!(response.status(), status);
         }
         assert_eq!(service.previews.load(Ordering::SeqCst), 0);
-        let response = router.clone().oneshot(Request::builder()
-            .uri("/api/admin/frontend-templates/embedded/preview")
-            .header(header::AUTHORIZATION, "Bearer admin-token").body(Body::empty()).unwrap()).await.unwrap();
+        let response = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/admin/frontend-templates/embedded/preview")
+                    .header(header::AUTHORIZATION, "Bearer admin-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
         assert_eq!(response.headers()[header::CONTENT_TYPE], "image/png");
-        assert_eq!(response.headers()[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
-        assert_eq!(axum::body::to_bytes(response.into_body(), 1024).await.unwrap().as_ref(), b"preview-image");
+        assert_eq!(
+            response.headers()[header::X_CONTENT_TYPE_OPTIONS],
+            "nosniff"
+        );
+        assert_eq!(
+            axum::body::to_bytes(response.into_body(), 1024)
+                .await
+                .unwrap()
+                .as_ref(),
+            b"preview-image"
+        );
         assert_eq!(service.activations.load(Ordering::SeqCst), 0);
-        let missing = router.oneshot(Request::builder().uri("/api/admin/frontend-templates/unknown/preview")
-            .header(header::AUTHORIZATION, "Bearer admin-token").body(Body::empty()).unwrap()).await.unwrap();
+        let missing = router
+            .oneshot(
+                Request::builder()
+                    .uri("/api/admin/frontend-templates/unknown/preview")
+                    .header(header::AUTHORIZATION, "Bearer admin-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
         assert_eq!(missing.status(), StatusCode::NOT_FOUND);
     }
 }

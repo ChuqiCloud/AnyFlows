@@ -140,7 +140,10 @@ impl FrontendTemplateManager {
         for item in scanned {
             // Builtin IDs are reserved, so disk content cannot shadow trusted assets.
             if matches!(item.summary.id.as_str(), BUILTIN_CLASSIC | BUILTIN_NEXT) {
-                warn!(template_id = item.summary.id, "外部模板使用了保留的内置模板 ID");
+                warn!(
+                    template_id = item.summary.id,
+                    "外部模板使用了保留的内置模板 ID"
+                );
                 continue;
             }
             if let Some(preview) = item.preview {
@@ -151,7 +154,12 @@ impl FrontendTemplateManager {
                 templates.insert(item.summary.id.clone(), item.snapshot);
             }
         }
-        summaries.sort_by(|left, right| right.builtin.cmp(&left.builtin).then(left.id.cmp(&right.id)));
+        summaries.sort_by(|left, right| {
+            right
+                .builtin
+                .cmp(&left.builtin)
+                .then(left.id.cmp(&right.id))
+        });
         let previous_active_id = self
             .catalog
             .read()
@@ -251,8 +259,12 @@ impl FrontendTemplateService for FrontendTemplateManager {
     }
 
     fn preview(&self, template_id: &str) -> Result<FrontendTemplatePreview, FrontendTemplateError> {
-        self.previews.read().map_err(|_| FrontendTemplateError::Internal)?
-            .get(template_id).cloned().ok_or(FrontendTemplateError::NotFound)
+        self.previews
+            .read()
+            .map_err(|_| FrontendTemplateError::Internal)?
+            .get(template_id)
+            .cloned()
+            .ok_or(FrontendTemplateError::NotFound)
     }
 
     fn activate(
@@ -315,7 +327,12 @@ fn builtin_summary(next: bool) -> FrontendTemplateSummary {
     let id = if next { BUILTIN_NEXT } else { BUILTIN_CLASSIC };
     FrontendTemplateSummary {
         id: id.to_owned(),
-        name: if next { "AnyFlows Next" } else { "AnyFlows Classic" }.to_owned(),
+        name: if next {
+            "AnyFlows Next"
+        } else {
+            "AnyFlows Classic"
+        }
+        .to_owned(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
         api_contract: "0.2".to_owned(),
         builtin: true,
@@ -339,8 +356,16 @@ fn builtin_preview(next: bool) -> FrontendTemplatePreview {
     }
 }
 
-fn load_preview(path: &str, assets: &HashMap<String, FrontendAsset>) -> Result<FrontendTemplatePreview, String> {
-    if path.is_empty() || path.contains('\\') || path.split('/').any(|part| part.is_empty() || matches!(part, "." | "..")) {
+fn load_preview(
+    path: &str,
+    assets: &HashMap<String, FrontendAsset>,
+) -> Result<FrontendTemplatePreview, String> {
+    if path.is_empty()
+        || path.contains('\\')
+        || path
+            .split('/')
+            .any(|part| part.is_empty() || matches!(part, "." | ".."))
+    {
         return Err("预览图片必须是模板内的相对路径".to_owned());
     }
     let asset = assets.get(path).ok_or("预览图片不存在")?;
@@ -351,10 +376,15 @@ fn load_preview(path: &str, assets: &HashMap<String, FrontendAsset>) -> Result<F
     let content_type = match Path::new(path).extension().and_then(|ext| ext.to_str()) {
         Some("png") if bytes.starts_with(b"\x89PNG\r\n\x1a\n") => "image/png",
         Some("jpg" | "jpeg") if bytes.starts_with(&[0xff, 0xd8, 0xff]) => "image/jpeg",
-        Some("webp") if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") => "image/webp",
+        Some("webp") if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") => {
+            "image/webp"
+        }
         _ => return Err("预览图片必须是有效的 PNG、JPEG 或 WebP；不接受 HTML 或 SVG".to_owned()),
     };
-    Ok(FrontendTemplatePreview { asset: asset.clone(), content_type })
+    Ok(FrontendTemplatePreview {
+        asset: asset.clone(),
+        content_type,
+    })
 }
 
 fn scan_directory(root: &Path) -> Vec<ScannedTemplate> {
@@ -411,8 +441,14 @@ fn load_template(id: &str, directory: &Path) -> Result<ScannedTemplate, String> 
         || !valid_text(&metadata.name, MAX_TEMPLATE_NAME_BYTES)
         || !valid_text(&metadata.version, MAX_TEMPLATE_VERSION_BYTES)
         || !valid_text(&metadata.api_contract, MAX_API_CONTRACT_BYTES)
-        || metadata.description.as_deref().is_some_and(|value| !valid_text(value, 1_000))
-        || metadata.author.as_deref().is_some_and(|value| !valid_text(value, 160))
+        || metadata
+            .description
+            .as_deref()
+            .is_some_and(|value| !valid_text(value, 1_000))
+        || metadata
+            .author
+            .as_deref()
+            .is_some_and(|value| !valid_text(value, 160))
     {
         return Err("template.json 字段不符合规范".to_owned());
     }
@@ -429,7 +465,11 @@ fn load_template(id: &str, directory: &Path) -> Result<ScannedTemplate, String> 
     if !assets.contains_key("index.html") {
         return Err("缺少 index.html".to_owned());
     }
-    let preview = metadata.preview.as_deref().map(|path| load_preview(path, &assets)).transpose()?;
+    let preview = metadata
+        .preview
+        .as_deref()
+        .map(|path| load_preview(path, &assets))
+        .transpose()?;
     let preview_url = preview.as_ref().map(|_| preview_url(id));
     Ok(ScannedTemplate {
         preview,
@@ -547,13 +587,36 @@ mod tests {
     #[test]
     fn preview_rejects_active_content_traversal_and_oversized_images() {
         let assets = HashMap::from([
-            ("preview.png".to_owned(), FrontendAsset::from_bytes(b"\x89PNG\r\n\x1a\n".as_slice())),
-            ("fake.png".to_owned(), FrontendAsset::from_bytes("<script>alert(1)</script>")),
-            ("preview.svg".to_owned(), FrontendAsset::from_bytes("<svg/>")),
-            ("huge.png".to_owned(), FrontendAsset::from_bytes(vec![0; MAX_PREVIEW_BYTES + 1])),
+            (
+                "preview.png".to_owned(),
+                FrontendAsset::from_bytes(b"\x89PNG\r\n\x1a\n".as_slice()),
+            ),
+            (
+                "fake.png".to_owned(),
+                FrontendAsset::from_bytes("<script>alert(1)</script>"),
+            ),
+            (
+                "preview.svg".to_owned(),
+                FrontendAsset::from_bytes("<svg/>"),
+            ),
+            (
+                "huge.png".to_owned(),
+                FrontendAsset::from_bytes(vec![0; MAX_PREVIEW_BYTES + 1]),
+            ),
         ]);
-        assert_eq!(load_preview("preview.png", &assets).unwrap().content_type, "image/png");
-        for path in ["fake.png", "preview.svg", "huge.png", "../preview.png", "/preview.png", "assets/../preview.png", "missing.png"] {
+        assert_eq!(
+            load_preview("preview.png", &assets).unwrap().content_type,
+            "image/png"
+        );
+        for path in [
+            "fake.png",
+            "preview.svg",
+            "huge.png",
+            "../preview.png",
+            "/preview.png",
+            "assets/../preview.png",
+            "missing.png",
+        ] {
             assert!(load_preview(path, &assets).is_err(), "{path}");
         }
         assert!(load_template(BUILTIN_CLASSIC, Path::new("unused")).is_err());
@@ -564,46 +627,100 @@ mod tests {
     async fn builtin_selection_survives_scan_restart_and_external_fallback() {
         use std::time::Duration;
         let database = crate::test_database::SqliteTestDatabase::new("frontend-gallery").await;
-        let repository = SiteSettingsRepository::new(database.pool().clone(), Duration::from_secs(5)).unwrap();
-        let root = std::env::temp_dir().join(format!("anyflows-gallery-runtime-{}", std::process::id()));
+        let repository =
+            SiteSettingsRepository::new(database.pool().clone(), Duration::from_secs(5)).unwrap();
+        let root =
+            std::env::temp_dir().join(format!("anyflows-gallery-runtime-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(root.join("demo")).unwrap();
         fs::write(root.join("demo/template.json"), r#"{"schema_version":1,"id":"demo","name":"Demo","version":"1","api_contract":"0.2","entry":"index.html","author":"Team","description":"Demo layout"}"#).unwrap();
         fs::write(root.join("demo/index.html"), "external").unwrap();
         let classic: Arc<dyn FrontendAssetSource> = Arc::new(TemplateSnapshot {
-            assets: HashMap::from([("index.html".to_owned(), FrontendAsset::from_bytes("classic"))]),
+            assets: HashMap::from([(
+                "index.html".to_owned(),
+                FrontendAsset::from_bytes("classic"),
+            )]),
         });
         let next: Arc<dyn FrontendAssetSource> = Arc::new(TemplateSnapshot {
             assets: HashMap::from([("index.html".to_owned(), FrontendAsset::from_bytes("next"))]),
         });
-        let manager = FrontendTemplateManager::new(root.clone(), Arc::clone(&classic), Arc::clone(&next), repository.clone(), None);
+        let manager = FrontendTemplateManager::new(
+            root.clone(),
+            Arc::clone(&classic),
+            Arc::clone(&next),
+            repository.clone(),
+            None,
+        );
         let catalog = manager.list().await.unwrap();
-        assert_eq!(catalog.templates.iter().filter(|template| template.builtin).count(), 2);
+        assert_eq!(
+            catalog
+                .templates
+                .iter()
+                .filter(|template| template.builtin)
+                .count(),
+            2
+        );
         assert_eq!(catalog.templates.len(), 3);
         assert!(manager.preview(BUILTIN_CLASSIC).is_ok());
         assert!(manager.preview(BUILTIN_NEXT).is_ok());
-        assert_eq!(manager.asset("index.html").unwrap().content().as_ref(), b"classic");
+        assert_eq!(
+            manager.asset("index.html").unwrap().content().as_ref(),
+            b"classic"
+        );
         assert_eq!(manager.active_id(), None);
 
-        manager.activate(Some(BUILTIN_NEXT.to_owned())).await.unwrap();
-        assert_eq!(manager.asset("index.html").unwrap().content().as_ref(), b"next");
-        assert_eq!(repository.settings().await.unwrap().frontend_template_id(), Some(BUILTIN_NEXT));
+        manager
+            .activate(Some(BUILTIN_NEXT.to_owned()))
+            .await
+            .unwrap();
+        assert_eq!(
+            manager.asset("index.html").unwrap().content().as_ref(),
+            b"next"
+        );
+        assert_eq!(
+            repository.settings().await.unwrap().frontend_template_id(),
+            Some(BUILTIN_NEXT)
+        );
         manager.scan().await.unwrap();
         assert_eq!(manager.active_id().as_deref(), Some(BUILTIN_NEXT));
-        let restarted = FrontendTemplateManager::new(root.clone(), classic, next, repository.clone(), Some(BUILTIN_NEXT.to_owned()));
-        assert_eq!(restarted.asset("index.html").unwrap().content().as_ref(), b"next");
+        let restarted = FrontendTemplateManager::new(
+            root.clone(),
+            classic,
+            next,
+            repository.clone(),
+            Some(BUILTIN_NEXT.to_owned()),
+        );
+        assert_eq!(
+            restarted.asset("index.html").unwrap().content().as_ref(),
+            b"next"
+        );
 
         manager.activate(Some("demo".to_owned())).await.unwrap();
-        assert_eq!(manager.asset("index.html").unwrap().content().as_ref(), b"external");
+        assert_eq!(
+            manager.asset("index.html").unwrap().content().as_ref(),
+            b"external"
+        );
         fs::remove_file(root.join("demo/index.html")).unwrap();
         manager.scan().await.unwrap();
         assert_eq!(manager.active_id(), None);
-        assert_eq!(manager.asset("index.html").unwrap().content().as_ref(), b"classic");
+        assert_eq!(
+            manager.asset("index.html").unwrap().content().as_ref(),
+            b"classic"
+        );
         assert!(manager.activate(Some("demo".to_owned())).await.is_err());
         assert_eq!(manager.active_id(), None);
-        manager.activate(Some(BUILTIN_NEXT.to_owned())).await.unwrap();
-        manager.activate(Some(BUILTIN_CLASSIC.to_owned())).await.unwrap();
-        assert_eq!(repository.settings().await.unwrap().frontend_template_id(), None);
+        manager
+            .activate(Some(BUILTIN_NEXT.to_owned()))
+            .await
+            .unwrap();
+        manager
+            .activate(Some(BUILTIN_CLASSIC.to_owned()))
+            .await
+            .unwrap();
+        assert_eq!(
+            repository.settings().await.unwrap().frontend_template_id(),
+            None
+        );
         fs::remove_dir_all(root).unwrap();
         database.close().await;
     }
