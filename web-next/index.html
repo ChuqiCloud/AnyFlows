@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="referrer" content="no-referrer" />
+    <meta
+      name="description"
+      content="AnyFlows 大模型 API 中转与聚合网关控制台"
+    />
+    <title>AnyFlows 控制台</title>
+    <meta name="theme-color" content="#0e1520" />
+    <script>
+      // 首帧前落定主题类，避免深色站点闪白。深色是 AnyFlows 的正统形态，
+      // 仅当系统明确偏好浅色且用户未手动选择时才走浅色。
+      ;(function () {
+        try {
+          var stored = localStorage.getItem('anyflows.theme')
+          var mode =
+            stored === 'light' || stored === 'dark'
+              ? stored
+              : window.matchMedia('(prefers-color-scheme: light)').matches
+                ? 'light'
+                : 'dark'
+          document.documentElement.classList.add(mode)
+
+          // 动效开关同样要在首帧前落定，否则动画会先跑起来再被降级规则掐掉，出现一次闪动。
+          // 普通系统默认启用完整动效；系统要求减少动态效果时降级，用户显式选择始终优先。
+          var storedMotion = localStorage.getItem('anyflows.motion')
+          var motion =
+            storedMotion === 'full' || storedMotion === 'reduced'
+              ? storedMotion
+              : window.matchMedia('(prefers-reduced-motion: reduce)').matches
+                ? 'reduced'
+                : 'full'
+          document.documentElement.setAttribute('data-motion', motion)
+        } catch (error) {
+          document.documentElement.classList.add('dark')
+        }
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
