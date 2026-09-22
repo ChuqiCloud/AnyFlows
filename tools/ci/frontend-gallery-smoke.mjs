@@ -50,7 +50,16 @@ try {
   browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] })
   const page = await browser.newPage({ viewport: { width: 1280, height: 960 }, locale: 'zh-CN', reducedMotion: 'reduce' })
   page.on('pageerror', (error) => errors.push(error.message))
-  await page.addInitScript(() => localStorage.setItem('anyflows.locale', 'zh'))
+  await page.addInitScript(() => {
+    localStorage.setItem('anyflows.locale', 'zh')
+    // The real Next entrypoint applies the persisted site theme before React
+    // mounts. The gallery harness has no index.html bootstrap script, so set
+    // the same default explicitly; otherwise HeroUI falls back to its light
+    // palette while the site tokens remain dark and the screenshot is invalid.
+    const stored = localStorage.getItem('anyflows.theme')
+    const mode = stored === 'light' || stored === 'dark' ? stored : 'dark'
+    document.documentElement.classList.add(mode)
+  })
   let activeId = null
   let catalogRequests = 0
   let previewRequests = 0
@@ -95,6 +104,7 @@ try {
   await page.getByRole('dialog').waitFor({ state: 'hidden' })
   await page.getByRole('button', { name: '启用', exact: true }).click()
   await page.getByRole('button', { name: '取消', exact: true }).click()
+  await page.getByRole('dialog').waitFor({ state: 'hidden' })
   assert.equal(activations, 0, 'Cancel must not activate a template')
 
   for (const [name, width, height] of [['desktop', 1280, 960], ['mobile', 390, 844]]) {
