@@ -1478,6 +1478,7 @@ export type FrontendTemplateCatalog = {
     active_id?: string | null;
     templates: Array<FrontendTemplateSummary>;
 };
+export type FrontendTemplateImage = Blob | File;
 export type FrontendTemplateSummary = {
     id: string;
     name: string;
@@ -6223,7 +6224,7 @@ export type GetAdminFrontendTemplatePreviewErrors = {
 };
 export type GetAdminFrontendTemplatePreviewError = GetAdminFrontendTemplatePreviewErrors[keyof GetAdminFrontendTemplatePreviewErrors];
 export type GetAdminFrontendTemplatePreviewResponses = {
-    200: Array<number>;
+    200: FrontendTemplateImage;
 };
 export type GetAdminFrontendTemplatePreviewResponse = GetAdminFrontendTemplatePreviewResponses[keyof GetAdminFrontendTemplatePreviewResponses];
 export type GetAdminDashboardData = {

@@ -11380,42 +11380,22 @@
             "content": {
               "image/png": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  }
+                  "$ref": "#/components/schemas/FrontendTemplateImage"
                 }
               },
               "image/jpeg": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  }
+                  "$ref": "#/components/schemas/FrontendTemplateImage"
                 }
               },
               "image/webp": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  }
+                  "$ref": "#/components/schemas/FrontendTemplateImage"
                 }
               },
               "image/svg+xml": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  }
+                  "$ref": "#/components/schemas/FrontendTemplateImage"
                 }
               }
             }
@@ -38976,6 +38956,10 @@
           }
         },
         "additionalProperties": false
+      },
+      "FrontendTemplateImage": {
+        "type": "string",
+        "format": "binary"
       },
       "FrontendTemplateSummary": {
         "type": "object",

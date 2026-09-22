@@ -20,6 +20,7 @@ const isNext = frontend === 'web-next'
 const errors = []
 let server
 let browser
+let serverOutput = ''
 
 try {
   await writeFile(html, '<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Frontend gallery CI</title><div id="root"></div><script type="module" src="/.gallery-smoke.tsx"></script></html>')
@@ -38,7 +39,6 @@ try {
     );
   `)
   server = spawn(process.execPath, [resolve(directory, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { cwd: directory, stdio: ['ignore', 'pipe', 'pipe'] })
-  let serverOutput = ''
   server.stdout.on('data', (chunk) => { serverOutput = (serverOutput + chunk).slice(-8_000) })
   server.stderr.on('data', (chunk) => { serverOutput = (serverOutput + chunk).slice(-8_000) })
   let ready = false
@@ -62,7 +62,7 @@ try {
   ].map((template) => ({ ...template, version: '1.0', api_contract: '0.2', valid: true, error: null, author: 'CI fixture', description: null, preview_url: `/api/admin/frontend-templates/${template.id}/preview` }))
   const image = await readFile(resolve(root, 'crates/af-server/src/frontend_previews/classic.svg'))
   const nextImage = await readFile(resolve(root, 'crates/af-server/src/frontend_previews/next.svg'))
-  await page.route('**/api/**', async (route) => {
+  await page.route((url) => url.pathname.startsWith('/api/'), async (route) => {
     const request = route.request()
     const path = new URL(request.url()).pathname
     if (path.endsWith('/preview')) {
@@ -113,6 +113,10 @@ try {
   assert.equal(activeId, 'embedded-next')
   assert.deepEqual(errors, [], 'The gallery must not raise browser runtime errors')
   console.log(`Gallery browser checks passed for ${frontend}: pagination, bounded previews, cancellation, activation, reload, desktop and mobile layout.`)
+} catch (error) {
+  console.error(serverOutput)
+  console.error(JSON.stringify({ browserErrors: errors }))
+  throw error
 } finally {
   if (browser) await browser.close()
   if (server) server.kill('SIGTERM')
