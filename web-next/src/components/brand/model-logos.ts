@@ -23,6 +23,24 @@ import Wenxin from '@lobehub/icons/es/Wenxin/components/Mono'
 import XAI from '@lobehub/icons/es/XAI/components/Mono'
 import Zhipu from '@lobehub/icons/es/Zhipu/components/Mono'
 import type { ComponentType, SVGProps } from 'react'
+import Ai21 from '@lobehub/icons/es/Ai21/components/Mono'
+import Alibaba from '@lobehub/icons/es/Alibaba/components/Mono'
+import Aws from '@lobehub/icons/es/Aws/components/Mono'
+import Azure from '@lobehub/icons/es/Azure/components/Mono'
+import Baidu from '@lobehub/icons/es/Baidu/components/Mono'
+import ByteDance from '@lobehub/icons/es/ByteDance/components/Mono'
+import Cerebras from '@lobehub/icons/es/Cerebras/components/Mono'
+import Fireworks from '@lobehub/icons/es/Fireworks/components/Mono'
+import Google from '@lobehub/icons/es/Google/components/Mono'
+import HuggingFace from '@lobehub/icons/es/HuggingFace/components/Mono'
+import Jina from '@lobehub/icons/es/Jina/components/Mono'
+import Microsoft from '@lobehub/icons/es/Microsoft/components/Mono'
+import Nvidia from '@lobehub/icons/es/Nvidia/components/Mono'
+import SambaNova from '@lobehub/icons/es/SambaNova/components/Mono'
+import SiliconCloud from '@lobehub/icons/es/SiliconCloud/components/Mono'
+import Tencent from '@lobehub/icons/es/Tencent/components/Mono'
+
+import { findProvider } from './provider-catalog'
 
 export type LogoComponent = ComponentType<SVGProps<SVGSVGElement> & { size?: number }>
 
@@ -56,6 +74,22 @@ export const modelLogos: readonly { name: string; Icon: LogoComponent }[] = [
   { name: 'Together', Icon: Together as LogoComponent },
   { name: 'OpenRouter', Icon: OpenRouter as LogoComponent },
   { name: 'Ollama', Icon: Ollama as LogoComponent },
+  { name: 'AI21', Icon: Ai21 as LogoComponent },
+  { name: 'Alibaba', Icon: Alibaba as LogoComponent },
+  { name: 'AWS', Icon: Aws as LogoComponent },
+  { name: 'Azure', Icon: Azure as LogoComponent },
+  { name: 'Baidu', Icon: Baidu as LogoComponent },
+  { name: 'ByteDance', Icon: ByteDance as LogoComponent },
+  { name: 'Cerebras', Icon: Cerebras as LogoComponent },
+  { name: 'Fireworks', Icon: Fireworks as LogoComponent },
+  { name: 'Google', Icon: Google as LogoComponent },
+  { name: 'HuggingFace', Icon: HuggingFace as LogoComponent },
+  { name: 'Jina', Icon: Jina as LogoComponent },
+  { name: 'Microsoft', Icon: Microsoft as LogoComponent },
+  { name: 'NVIDIA', Icon: Nvidia as LogoComponent },
+  { name: 'SambaNova', Icon: SambaNova as LogoComponent },
+  { name: 'SiliconCloud', Icon: SiliconCloud as LogoComponent },
+  { name: 'Tencent', Icon: Tencent as LogoComponent },
 ]
 
 const logoByName = new Map(modelLogos.map((logo) => [logo.name, logo]))
@@ -106,38 +140,9 @@ export function findModelLogo(model: string) {
   return brand ? logoByName.get(brand) : undefined
 }
 
-const providerLogoNames: Readonly<Record<string, string>> = {
-  openai: 'OpenAI',
-  anthropic: 'Anthropic',
-  google: 'Gemini',
-  gemini: 'Gemini',
-  deepseek: 'DeepSeek',
-  qwen: 'Qwen',
-  alibaba: 'Qwen',
-  moonshot: 'Moonshot',
-  kimi: 'Kimi',
-  zhipu: 'Zhipu',
-  minimax: 'MiniMax',
-  doubao: 'Doubao',
-  bytedance: 'Doubao',
-  hunyuan: 'Hunyuan',
-  tencent: 'Hunyuan',
-  wenxin: 'Wenxin',
-  baidu: 'Wenxin',
-  xai: 'xAI',
-  meta: 'Meta',
-  mistral: 'Mistral',
-  cohere: 'Cohere',
-  perplexity: 'Perplexity',
-  groq: 'Groq',
-  together: 'Together',
-  openrouter: 'OpenRouter',
-  ollama: 'Ollama',
-}
-
 /** 根据权威厂商字段选择界面图标，不从模型名推断后端能力或归属。 */
 export function findProviderLogo(provider: string) {
-  const normalized = provider.toLowerCase().replace(/[^a-z0-9]/g, '')
-  const name = providerLogoNames[normalized]
-  return name ? logoByName.get(name) : undefined
+  const brand = findProvider(provider)
+  const logo = brand ? logoByName.get(brand.logo) : undefined
+  return logo && brand ? { ...logo, name: brand.name } : undefined
 }

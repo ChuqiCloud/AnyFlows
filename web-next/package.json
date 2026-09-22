@@ -9,9 +9,10 @@
     "api:generate": "cargo xtask openapi export && openapi-ts --no-log-file && node scripts/normalize-generated-api.mjs",
     "api:check": "node scripts/check-generated-api.mjs",
     "build": "tsc -b && vite build",
-    "check": "node scripts/check-generated-api.mjs && oxlint && tsc -b && vite build",
-    "lint": "node scripts/check-generated-api.mjs && oxlint",
-    "preview": "vite preview"
+    "check": "pnpm lint && pnpm build",
+    "lint": "node --test scripts/*.test.mjs && node scripts/check-generated-api.mjs && oxlint",
+    "preview": "vite preview",
+    "test:scripts": "node --test scripts/*.test.mjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "4.0.38",
@@ -31,7 +32,7 @@
     "@heroui/use-theme": "2.1.10",
     "@hookform/resolvers": "^5.5.7",
     "@iconify/react": "^6.0.2",
-    "@lobehub/icons": "^5.15.0",
+    "@lobehub/icons": "^5.19.3",
     "@react-aria/visually-hidden": "3.9.0",
     "@reduxjs/toolkit": "^2.11.2",
     "@stripe/react-stripe-js": "6.8.0",

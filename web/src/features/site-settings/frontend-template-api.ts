@@ -20,6 +20,8 @@ export const frontendTemplateCatalogQueryKey = ['admin-frontend-templates'] as c
 export function useFrontendTemplates() {
   return useQuery({
     queryKey: frontendTemplateCatalogQueryKey,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
     queryFn: async ({ signal }) => {
       const { data } = await listAdminFrontendTemplates({
         client: apiClient,
@@ -44,6 +46,7 @@ export function useScanFrontendTemplates() {
     },
     onSuccess: (catalog) => {
       queryClient.setQueryData(frontendTemplateCatalogQueryKey, catalog)
+      void queryClient.invalidateQueries({ queryKey: ['frontend-template-preview'] })
     },
   })
 }

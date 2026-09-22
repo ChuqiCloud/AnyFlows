@@ -19,7 +19,7 @@ export function UserOverviewPage() {
   const { formatQuota } = useBalanceDisplay()
   const walletQuery = useUserWalletSummary()
   const keysQuery = useApiKeys()
-  const logsQuery = useUserUsageLogs(undefined, RECENT_LOG_LIMIT)
+  const logsQuery = useUserUsageLogs(undefined, undefined, RECENT_LOG_LIMIT)
   const locale = i18n.resolvedLanguage === 'zh' ? 'zh-CN' : 'en-US'
   const formatNumber = useMemo(() => new Intl.NumberFormat(locale), [locale])
   const formatTime = useMemo(() => new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }), [locale])

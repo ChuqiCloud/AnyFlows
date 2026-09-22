@@ -11163,7 +11163,7 @@
         "tags": [
           "前端模板"
         ],
-        "summary": "读取外部前端模板目录",
+        "summary": "读取内置与外部前端模板目录",
         "operationId": "listAdminFrontendTemplates",
         "responses": {
           "200": {
@@ -11337,6 +11337,91 @@
                 }
               }
             }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/frontend-templates/{template_id}/preview": {
+      "get": {
+        "tags": [
+          "前端模板"
+        ],
+        "summary": "读取管理员模板预览图片",
+        "operationId": "getAdminFrontendTemplatePreview",
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "description": "模板稳定标识",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "静态预览图片，不执行模板代码",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrontendTemplateImage"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrontendTemplateImage"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrontendTemplateImage"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrontendTemplateImage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "模板不存在或没有预览图片"
           },
           "500": {
             "description": "服务内部错误",
@@ -38861,7 +38946,7 @@
               "string",
               "null"
             ],
-            "description": "None 表示编译进二进制的内嵌前端。"
+            "description": "None 表示默认经典前端；embedded-next 表示新版内置前端。"
           },
           "templates": {
             "type": "array",
@@ -38872,14 +38957,19 @@
         },
         "additionalProperties": false
       },
+      "FrontendTemplateImage": {
+        "type": "string",
+        "format": "binary"
+      },
       "FrontendTemplateSummary": {
         "type": "object",
-        "description": "可供管理员选择的外部前端模板摘要。",
+        "description": "可供管理员选择的内置或外部前端模板摘要。",
         "required": [
           "id",
           "name",
           "version",
           "api_contract",
+          "builtin",
           "valid"
         ],
         "properties": {
@@ -38895,6 +38985,29 @@
           },
           "api_contract": {
             "type": "string"
+          },
+          "builtin": {
+            "type": "boolean",
+            "description": "编译进服务二进制的官方前端。"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "author": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "preview_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "需要管理员会话的静态预览图片地址，不执行模板脚本。"
           },
           "valid": {
             "type": "boolean"

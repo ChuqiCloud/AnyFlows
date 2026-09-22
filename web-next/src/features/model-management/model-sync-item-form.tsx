@@ -1,13 +1,13 @@
+import { ProviderPicker } from '@/components/brand/provider-picker'
 import { Button, Input, Textarea } from '@heroui/react'
 import { useEffect } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
 import type { AdminModelSyncPreviewItem } from '@/lib/api/generated/types.gen'
 import { ModelCapabilityFields } from './model-capability-fields'
 import {
-  MODEL_PROVIDER_SUGGESTIONS,
   type ModelValidationMessages,
 } from './model-management-form-model'
 import { ModelManagementField } from './model-management-field'
@@ -68,10 +68,7 @@ export function ModelSyncItemForm({ draft, item, onCancel, onSave }: ModelSyncIt
               <Input id="sync-display-name" size="sm" autoComplete="off" isInvalid={!!form.formState.errors.displayName} {...form.register('displayName')} />
             </ModelManagementField>
             <ModelManagementField id="sync-provider" label={t('modelManagement.fields.provider')} error={form.formState.errors.provider?.message}>
-              <Input id="sync-provider" size="sm" list="model-sync-provider-suggestions" autoComplete="off" isInvalid={!!form.formState.errors.provider} {...form.register('provider')} />
-              <datalist id="model-sync-provider-suggestions">
-                {MODEL_PROVIDER_SUGGESTIONS.map((provider) => <option key={provider} value={provider} />)}
-              </datalist>
+              <Controller control={form.control} name="provider" render={({ field }) => <ProviderPicker id="sync-provider" {...field} invalid={!!form.formState.errors.provider} />} />
             </ModelManagementField>
           </div>
           <ModelManagementField id="sync-description" label={t('modelManagement.fields.description')} error={form.formState.errors.description?.message}>

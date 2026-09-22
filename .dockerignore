@@ -14,3 +14,7 @@ data
 web/node_modules
 web/dist
 *.log
+
+web-next/node_modules
+web-next/dist
+.codex

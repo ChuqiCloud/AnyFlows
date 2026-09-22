@@ -190,7 +190,7 @@ use crate::{
     channel_probe::{BoundedAdminChannelProbe, DatabaseChannelProbe},
     concurrency_runtime::{ConcurrencyCleanupWorker, ConcurrencyReleaseWorker, ConcurrencyRuntime},
     debug_trace_runtime::{AdminDebugTraceRuntimeApplier, DebugTraceRuntime, DebugTraceWorker},
-    frontend::EmbeddedFrontendAssets,
+    frontend::{EmbeddedFrontendAssets, EmbeddedNextFrontendAssets},
     group_pricing_refresh::RuntimeGroupPricingRefresher,
     model_catalog::RuntimeModelCatalogReader,
     model_discovery::DatabaseUpstreamModelDiscoverer,
@@ -2964,6 +2964,7 @@ impl Bootstrap<Supervised> {
                 .frontend_template_directory()
                 .to_path_buf(),
             Arc::clone(&embedded_frontend),
+            Arc::new(EmbeddedNextFrontendAssets),
             self.stage.infrastructure.site_settings_repository.clone(),
             self.stage
                 .infrastructure

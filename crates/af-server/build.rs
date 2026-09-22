@@ -14,23 +14,21 @@ fn main() {
         .parent()
         .and_then(Path::parent)
         .expect("af-server 必须位于工作区 crates 目录下");
-    let source = workspace_directory.join("web").join("dist");
-    let destination =
-        PathBuf::from(env::var_os("OUT_DIR").expect("Cargo 必须提供 OUT_DIR")).join("web-dist");
-
     println!("cargo:rerun-if-env-changed=PROFILE");
-    println!("cargo:rerun-if-changed={}", source.display());
-
-    prepare_destination(&destination).expect("无法准备前端内嵌目录");
-    if source.join("index.html").is_file() {
-        copy_directory(&source, &destination).expect("无法复制前端构建产物");
-        return;
+    for frontend in ["web", "web-next"] {
+        let source = workspace_directory.join(frontend).join("dist");
+        let destination = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo 必须提供 OUT_DIR"))
+            .join(format!("{frontend}-dist"));
+        println!("cargo:rerun-if-changed={}", source.display());
+        prepare_destination(&destination).expect("无法准备前端内嵌目录");
+        if source.join("index.html").is_file() {
+            copy_directory(&source, &destination).expect("无法复制前端构建产物");
+        } else if env::var("PROFILE").as_deref() == Ok("release") {
+            panic!("release 构建缺少 {frontend}/dist/index.html，请先构建两套内置前端");
+        } else {
+            fs::write(destination.join("index.html"), TEST_INDEX).expect("无法写入前端测试夹具");
+        }
     }
-
-    if env::var("PROFILE").as_deref() == Ok("release") {
-        panic!("release 构建缺少 web/dist/index.html，请先执行 pnpm --dir web build");
-    }
-    fs::write(destination.join("index.html"), TEST_INDEX).expect("无法写入前端测试夹具");
 }
 
 fn prepare_destination(destination: &Path) -> io::Result<()> {

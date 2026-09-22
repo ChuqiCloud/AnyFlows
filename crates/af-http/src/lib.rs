@@ -124,7 +124,8 @@ pub use error_response::OpenAiHttpError;
 pub use frontend_assets::{FrontendAsset, FrontendAssetSource};
 pub use frontend_templates::{
     FrontendTemplateCatalog, FrontendTemplateError, FrontendTemplateFuture,
-    FrontendTemplateService, FrontendTemplateSummary, build_frontend_template_router,
+    FrontendTemplatePreview, FrontendTemplateService, FrontendTemplateSummary,
+    build_frontend_template_router,
 };
 pub use image_service::{ImageService, ImageServiceFuture};
 pub use middleware::REQUEST_ID_HEADER_NAME;

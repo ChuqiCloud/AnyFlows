@@ -1478,11 +1478,16 @@ export type FrontendTemplateCatalog = {
     active_id?: string | null;
     templates: Array<FrontendTemplateSummary>;
 };
+export type FrontendTemplateImage = Blob | File;
 export type FrontendTemplateSummary = {
     id: string;
     name: string;
     version: string;
     api_contract: string;
+    builtin: boolean;
+    description?: string | null;
+    author?: string | null;
+    preview_url?: string | null;
     valid: boolean;
     error?: string | null;
 };
@@ -6203,6 +6208,25 @@ export type ActivateAdminFrontendTemplateResponses = {
     200: FrontendTemplateCatalog;
 };
 export type ActivateAdminFrontendTemplateResponse = ActivateAdminFrontendTemplateResponses[keyof ActivateAdminFrontendTemplateResponses];
+export type GetAdminFrontendTemplatePreviewData = {
+    body?: never;
+    path: {
+        template_id: string;
+    };
+    query?: never;
+    url: '/api/admin/frontend-templates/{template_id}/preview';
+};
+export type GetAdminFrontendTemplatePreviewErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    404: unknown;
+    500: ManagementError;
+};
+export type GetAdminFrontendTemplatePreviewError = GetAdminFrontendTemplatePreviewErrors[keyof GetAdminFrontendTemplatePreviewErrors];
+export type GetAdminFrontendTemplatePreviewResponses = {
+    200: FrontendTemplateImage;
+};
+export type GetAdminFrontendTemplatePreviewResponse = GetAdminFrontendTemplatePreviewResponses[keyof GetAdminFrontendTemplatePreviewResponses];
 export type GetAdminDashboardData = {
     body?: never;
     path?: never;

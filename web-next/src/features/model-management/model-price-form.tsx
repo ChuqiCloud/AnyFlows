@@ -1,4 +1,6 @@
 import { Button, Chip, Input } from '@heroui/react'
+import { providerDisplayName } from '@/components/brand/provider-catalog'
+
 import { useEffect, useRef, useState } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { ArrowDownToLine, CircleDollarSign, Gift, Info, Sparkles, TriangleAlert } from 'lucide-react'
@@ -129,7 +131,7 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
               <h3 id="model-price-identity" className="truncate font-mono text-sm font-semibold">{props.model.model}</h3>
-              <p className="mt-1 text-xs text-muted-foreground">{props.model.display_name} · {props.model.provider}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{props.model.display_name} · {providerDisplayName(props.model.provider)}</p>
             </div>
             <div className="flex flex-wrap gap-1.5">
               <Chip size="sm" variant="flat">{props.price ? t('modelManagement.prices.version', { version: props.price.version }) : t('modelManagement.prices.status.unpriced')}</Chip>
