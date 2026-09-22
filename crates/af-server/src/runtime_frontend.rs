@@ -128,7 +128,10 @@ impl FrontendTemplateManager {
     }
 
     fn scan_now(&self) {
-        let scanned = scan_directory(&self.root);
+        self.replace_scanned(scan_directory(&self.root));
+    }
+
+    fn replace_scanned(&self, scanned: Vec<ScannedTemplate>) {
         let mut templates: HashMap<String, Arc<dyn FrontendAssetSource>> = HashMap::new();
         templates.insert(BUILTIN_CLASSIC.to_owned(), Arc::clone(&self.embedded));
         templates.insert(BUILTIN_NEXT.to_owned(), Arc::clone(&self.embedded_next));
@@ -253,7 +256,23 @@ impl FrontendTemplateService for FrontendTemplateManager {
     fn scan(&self) -> af_http::FrontendTemplateFuture<'_, FrontendTemplateCatalog> {
         Box::pin(async {
             let _guard = self.mutation.lock().await;
-            self.scan_now();
+            let root = self.root.clone();
+            let scanned = tokio::task::spawn_blocking(move || scan_directory(&root))
+                .await
+                .map_err(|_| FrontendTemplateError::Internal)?;
+            self.replace_scanned(scanned);
+            let active_id = self.active_id();
+            let persisted = self
+                .repository
+                .settings()
+                .await
+                .map_err(|_| FrontendTemplateError::Internal)?;
+            if persisted.frontend_template_id() != active_id.as_deref() {
+                self.repository
+                    .set_frontend_template_id(active_id)
+                    .await
+                    .map_err(|_| FrontendTemplateError::Conflict)?;
+            }
             self.catalog()
         })
     }
@@ -276,7 +295,14 @@ impl FrontendTemplateService for FrontendTemplateManager {
             let template_id = template_id.filter(|id| id != "embedded");
             let current = self.active_id();
             if current == template_id {
-                return self.catalog();
+                let persisted = self
+                    .repository
+                    .settings()
+                    .await
+                    .map_err(|_| FrontendTemplateError::Internal)?;
+                if persisted.frontend_template_id() == template_id.as_deref() {
+                    return self.catalog();
+                }
             }
             match template_id.as_deref() {
                 Some(id) => {
@@ -706,6 +732,10 @@ mod tests {
         assert_eq!(
             manager.asset("index.html").unwrap().content().as_ref(),
             b"classic"
+        );
+        assert_eq!(
+            repository.settings().await.unwrap().frontend_template_id(),
+            None
         );
         assert!(manager.activate(Some("demo".to_owned())).await.is_err());
         assert_eq!(manager.active_id(), None);

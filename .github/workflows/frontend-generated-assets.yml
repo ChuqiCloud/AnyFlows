@@ -9,6 +9,10 @@ on:
       - 'crates/af-http/src/frontend_templates.rs'
       - 'crates/af-http/src/openapi/frontend_templates.rs'
       - 'web-next/package.json'
+      - 'crates/af-server/src/runtime_frontend.rs'
+      - 'crates/af-server/src/frontend.rs'
+      - 'crates/af-server/build.rs'
+      - 'tools/xtask/src/main.rs'
 
 permissions:
   contents: read

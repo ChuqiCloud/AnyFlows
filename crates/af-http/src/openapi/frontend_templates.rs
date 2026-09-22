@@ -1,7 +1,9 @@
 //! 运行目录外部前端模板管理 OpenAPI 契约。
 #![allow(dead_code, reason = "文档端点仅由 utoipa 过程宏读取")]
 
-use utoipa::OpenApi;
+use std::borrow::Cow;
+use utoipa::openapi::{KnownFormat, ObjectBuilder, RefOr, SchemaFormat, Type, schema::Schema};
+use utoipa::{OpenApi, PartialSchema, ToSchema};
 
 use crate::{
     frontend_templates::{
@@ -61,6 +63,23 @@ fn scan_admin_frontend_templates() {}
 )]
 fn activate_admin_frontend_template() {}
 
+struct FrontendTemplateImage;
+
+impl PartialSchema for FrontendTemplateImage {
+    fn schema() -> RefOr<Schema> {
+        ObjectBuilder::new()
+            .schema_type(Type::String)
+            .format(Some(SchemaFormat::KnownFormat(KnownFormat::Binary)))
+            .into()
+    }
+}
+
+impl ToSchema for FrontendTemplateImage {
+    fn name() -> Cow<'static, str> {
+        Cow::Borrowed("FrontendTemplateImage")
+    }
+}
+
 #[utoipa::path(
     get,
     path = "/api/admin/frontend-templates/{template_id}/preview",
@@ -70,10 +89,10 @@ fn activate_admin_frontend_template() {}
     params(("template_id" = String, Path, description = "模板稳定标识")),
     responses(
         (status = 200, description = "静态预览图片，不执行模板代码", content(
-            (Vec<u8> = "image/png"),
-            (Vec<u8> = "image/jpeg"),
-            (Vec<u8> = "image/webp"),
-            (Vec<u8> = "image/svg+xml")
+            (FrontendTemplateImage = "image/png"),
+            (FrontendTemplateImage = "image/jpeg"),
+            (FrontendTemplateImage = "image/webp"),
+            (FrontendTemplateImage = "image/svg+xml")
         )),
         (status = 401, description = "登录会话无效", body = ManagementErrorBody),
         (status = 403, description = "当前用户不是管理员", body = ManagementErrorBody),
@@ -94,6 +113,7 @@ fn get_admin_frontend_template_preview() {}
     ),
     components(schemas(
         FrontendTemplateSummary,
+        FrontendTemplateImage,
         FrontendTemplateCatalog,
         FrontendTemplateActivationRequest,
         ManagementErrorBody

@@ -176,7 +176,7 @@ impl SiteSettingsRecord {
         self.brand_description.as_deref()
     }
 
-    /// 返回当前选中的外部前端模板目录 ID；None 表示使用内嵌前端。
+    /// 返回当前前端模板 ID；None 表示 Classic，embedded-next 表示 Next。
     #[must_use]
     pub fn frontend_template_id(&self) -> Option<&str> {
         self.frontend_template_id.as_deref()
@@ -230,7 +230,7 @@ impl SiteSettingsWriteRecord {
         }
     }
 
-    /// 设置要使用的外部前端模板目录 ID；None 表示恢复内嵌前端。
+    /// 设置前端模板 ID；None 表示恢复 Classic，embedded-next 表示 Next。
     #[must_use]
     pub fn with_frontend_template_id(mut self, template_id: Option<String>) -> Self {
         self.frontend_template_id = template_id;

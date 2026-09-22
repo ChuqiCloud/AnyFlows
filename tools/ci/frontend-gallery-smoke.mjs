@@ -61,12 +61,13 @@ try {
     ...Array.from({ length: 24 }, (_, index) => ({ id: `theme-${index}`, name: `Theme ${index}`, builtin: false })),
   ].map((template) => ({ ...template, version: '1.0', api_contract: '0.2', valid: true, error: null, author: 'CI fixture', description: null, preview_url: `/api/admin/frontend-templates/${template.id}/preview` }))
   const image = await readFile(resolve(root, 'crates/af-server/src/frontend_previews/classic.svg'))
+  const nextImage = await readFile(resolve(root, 'crates/af-server/src/frontend_previews/next.svg'))
   await page.route('**/api/**', async (route) => {
     const request = route.request()
     const path = new URL(request.url()).pathname
     if (path.endsWith('/preview')) {
       previewRequests += 1
-      await route.fulfill({ contentType: 'image/svg+xml', body: image })
+      await route.fulfill({ contentType: 'image/svg+xml', body: path.includes('/embedded-next/') ? nextImage : image })
       return
     }
     if (path.endsWith('/active')) { activations += 1; activeId = request.postDataJSON().template_id }
