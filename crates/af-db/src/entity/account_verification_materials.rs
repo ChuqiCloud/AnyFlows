@@ -1,5 +1,5 @@
-use sea_orm::entity::prelude::*;
 use super::SensitiveString;
+use sea_orm::entity::prelude::*;
 
 // Material bytes deliberately do not participate in Debug output.
 #[derive(Clone, PartialEq, DeriveEntityModel)]
@@ -17,7 +17,9 @@ pub struct Model {
 }
 impl std::fmt::Debug for Model {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AccountVerificationMaterial").field("id", &self.id).finish_non_exhaustive()
+        f.debug_struct("AccountVerificationMaterial")
+            .field("id", &self.id)
+            .finish_non_exhaustive()
     }
 }
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

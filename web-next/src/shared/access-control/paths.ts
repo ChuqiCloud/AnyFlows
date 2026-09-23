@@ -9,6 +9,7 @@ const USER_ACCESSIBLE_SEGMENTS = new Set([
   "video-tasks",
   "usage-logs",
   "profile",
+  "account-verification",
 ]);
 
 /** 取 /console 之后的一级路径段，用于判定访问级别与企业视图。 */

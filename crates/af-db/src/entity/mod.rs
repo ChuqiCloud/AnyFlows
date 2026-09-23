@@ -4362,6 +4362,6 @@ impl ActiveModelBehavior for playground_shares::ActiveModel {}
 #[async_trait::async_trait]
 impl ActiveModelBehavior for playground_conversations::ActiveModel {}
 
-pub(crate) mod account_verifications;
 pub(crate) mod account_verification_materials;
+pub(crate) mod account_verifications;
 pub(crate) mod organization_verification_history;

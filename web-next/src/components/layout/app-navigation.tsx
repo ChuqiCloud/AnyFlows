@@ -37,6 +37,7 @@ const navItems = {
   organizationDepartments: { key: 'organizationDepartments', icon: 'solar:buildings-2-linear', href: '/console/organization-departments' },
   organizationOverview: { key: 'organizationOverview', icon: 'solar:chart-square-linear', href: '/console/organization' },
   organizationOnboarding: { key: 'organizationOnboarding', icon: 'solar:clipboard-list-linear', href: '/console/organization-onboarding' },
+  accountVerification: { key: 'accountVerification', icon: 'solar:verified-check-linear', href: '/console/account-verification' },
   organizationProvisioning: { key: 'organizationProvisioning', icon: 'solar:add-circle-linear', href: '/console/organization-provisioning' },
   organizationVerification: { key: 'organizationVerification', icon: 'solar:verified-check-linear', href: '/console/organization-verification' },
   organizationSettings: { key: 'organizationSettings', icon: 'solar:settings-linear', href: '/console/organization-settings' },

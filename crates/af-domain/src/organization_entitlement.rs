@@ -291,8 +291,15 @@ mod tests {
         for enabled in [false, true] {
             let snapshot = OrganizationEntitlementSnapshot::new(
                 OrganizationEntitlementCapacity::new(1, 1, 1).expect("容量有效"),
-                true, true, enabled, 90, 1, 2, None,
-            ).expect("已实现的自定义角色允许授权");
+                true,
+                true,
+                enabled,
+                90,
+                1,
+                2,
+                None,
+            )
+            .expect("已实现的自定义角色允许授权");
             assert_eq!(snapshot.custom_roles_enabled(), enabled);
         }
     }

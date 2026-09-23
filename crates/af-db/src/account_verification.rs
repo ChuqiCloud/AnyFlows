@@ -1,201 +1,437 @@
 //! Account identity reviews are independent of organization provisioning.
 //! Each submission remains immutable; a supplement creates another case.
-use std::{future::Future, time::Duration};
+use crate::{
+    DatabasePool, DatabaseTimestamp, OrganizationVerificationMaterialWrite,
+    entity::{
+        SensitiveString, account_verification_materials as materials,
+        account_verifications as cases, organization_verification_cases, platform_audit_logs,
+        users,
+    },
+};
 use af_domain::{PlatformPermission, UserId};
-use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult,
-    QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait, sea_query::LockType};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, QueryFilter,
+    QueryOrder, QuerySelect, Set, TransactionTrait, sea_query::LockType,
+};
 use serde::{Deserialize, Serialize};
+use std::{future::Future, time::Duration};
 use thiserror::Error;
-use crate::{DatabasePool, DatabaseTimestamp, OrganizationVerificationMaterialWrite,
-    entity::{SensitiveString, account_verifications as cases, account_verification_materials as materials,
-        organization_verification_cases, platform_audit_logs, users}};
 
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum AccountVerificationError {
-    #[error("认证请求无效")] Invalid,
-    #[error("认证记录不存在")] NotFound,
-    #[error("认证状态已变更，请刷新后重试")] Conflict,
-    #[error("认证访问权限不足")] Forbidden,
-    #[error("认证服务暂不可用")] Unavailable,
+    #[error("认证请求无效")]
+    Invalid,
+    #[error("认证记录不存在")]
+    NotFound,
+    #[error("认证状态已变更，请刷新后重试")]
+    Conflict,
+    #[error("认证访问权限不足")]
+    Forbidden,
+    #[error("认证服务暂不可用")]
+    Unavailable,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct AccountVerificationRecord {
-    pub id: i64, pub user_id: i64, pub kind: String, pub subject_name: String,
-    pub summary: String, pub status: i16, pub version: i64,
-    pub review_reason: Option<String>, pub reviewer_user_id: Option<i64>,
-    pub created_at: i64, pub updated_at: i64,
+    pub id: i64,
+    pub user_id: i64,
+    pub kind: String,
+    pub subject_name: String,
+    pub summary: String,
+    pub status: i16,
+    pub version: i64,
+    pub review_reason: Option<String>,
+    pub reviewer_user_id: Option<i64>,
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 #[derive(Clone, FromQueryResult, Serialize)]
 pub struct AccountVerificationMaterial {
-    pub id: i64, pub case_id: i64, pub kind: String, pub file_name: String,
-    pub content_type: String, pub size_bytes: i64,
+    pub id: i64,
+    pub case_id: i64,
+    pub kind: String,
+    pub file_name: String,
+    pub content_type: String,
+    pub size_bytes: i64,
 }
 
 pub struct AccountVerificationSubmit {
-    pub kind: String, pub subject_name: String, pub summary: String,
+    pub kind: String,
+    pub subject_name: String,
+    pub summary: String,
     pub materials: Vec<OrganizationVerificationMaterialWrite>,
 }
 
 #[derive(Clone)]
-pub struct AccountVerificationRepository { pool: DatabasePool }
+pub struct AccountVerificationRepository {
+    pool: DatabasePool,
+}
 
 impl AccountVerificationRepository {
     #[must_use]
-    pub fn new(pool: DatabasePool) -> Self { Self { pool } }
-
-    async fn run<T>(&self, task: impl Future<Output = Result<T, AccountVerificationError>>) -> Result<T, AccountVerificationError> {
-        tokio::time::timeout(Duration::from_secs(30), task).await.map_err(|_| AccountVerificationError::Unavailable)?
+    pub fn new(pool: DatabasePool) -> Self {
+        Self { pool }
     }
 
-    pub async fn enterprise_verified(&self, user: UserId) -> Result<bool, AccountVerificationError> {
-        self.run(has_enterprise_verification(self.pool.connection(), user)).await
+    async fn run<T>(
+        &self,
+        task: impl Future<Output = Result<T, AccountVerificationError>>,
+    ) -> Result<T, AccountVerificationError> {
+        tokio::time::timeout(Duration::from_secs(30), task)
+            .await
+            .map_err(|_| AccountVerificationError::Unavailable)?
     }
 
-    pub async fn list(&self, user: Option<UserId>, before: Option<i64>, status: Option<i16>, limit: u64) -> Result<Vec<AccountVerificationRecord>, AccountVerificationError> {
+    pub async fn enterprise_verified(
+        &self,
+        user: UserId,
+    ) -> Result<bool, AccountVerificationError> {
+        self.run(has_enterprise_verification(self.pool.connection(), user))
+            .await
+    }
+
+    pub async fn list(
+        &self,
+        user: Option<UserId>,
+        before: Option<i64>,
+        status: Option<i16>,
+        limit: u64,
+    ) -> Result<Vec<AccountVerificationRecord>, AccountVerificationError> {
         self.run(async {
-            if !(1..=50).contains(&limit) || before.is_some_and(|v| v <= 0) || status.is_some_and(|v| ![1,3,4,5].contains(&v)) { return Err(AccountVerificationError::Invalid); }
+            if !(1..=50).contains(&limit)
+                || before.is_some_and(|v| v <= 0)
+                || status.is_some_and(|v| ![1, 3, 4, 5].contains(&v))
+            {
+                return Err(AccountVerificationError::Invalid);
+            }
             let mut query = cases::Entity::find();
-            if let Some(user) = user { query = query.filter(cases::Column::UserId.eq(user.get())); }
-            if let Some(before) = before { query = query.filter(cases::Column::Id.lt(before)); }
-            if let Some(status) = status { query = query.filter(cases::Column::Status.eq(status)); }
-            Ok(query.order_by_desc(cases::Column::Id).limit(limit).all(self.pool.connection()).await.map_err(unavailable)?.into_iter().map(record).collect())
-        }).await
+            if let Some(user) = user {
+                query = query.filter(cases::Column::UserId.eq(user.get()));
+            }
+            if let Some(before) = before {
+                query = query.filter(cases::Column::Id.lt(before));
+            }
+            if let Some(status) = status {
+                query = query.filter(cases::Column::Status.eq(status));
+            }
+            Ok(query
+                .order_by_desc(cases::Column::Id)
+                .limit(limit)
+                .all(self.pool.connection())
+                .await
+                .map_err(unavailable)?
+                .into_iter()
+                .map(record)
+                .collect())
+        })
+        .await
     }
 
-    pub async fn get(&self, user: Option<UserId>, id: i64) -> Result<AccountVerificationRecord, AccountVerificationError> {
+    pub async fn get(
+        &self,
+        user: Option<UserId>,
+        id: i64,
+    ) -> Result<AccountVerificationRecord, AccountVerificationError> {
         self.run(load_case(self.pool.connection(), user, id)).await
     }
 
-    pub async fn materials(&self, user: Option<UserId>, id: i64) -> Result<Vec<AccountVerificationMaterial>, AccountVerificationError> {
+    pub async fn materials(
+        &self,
+        user: Option<UserId>,
+        id: i64,
+    ) -> Result<Vec<AccountVerificationMaterial>, AccountVerificationError> {
         self.run(async {
             load_case(self.pool.connection(), user, id).await?;
-            materials::Entity::find().select_only()
-                .columns([materials::Column::Id, materials::Column::CaseId, materials::Column::Kind,
-                    materials::Column::FileName, materials::Column::ContentType, materials::Column::SizeBytes])
-                .filter(materials::Column::CaseId.eq(id)).order_by_asc(materials::Column::Id)
-                .into_model::<AccountVerificationMaterial>().all(self.pool.connection()).await.map_err(unavailable)
-        }).await
+            materials::Entity::find()
+                .select_only()
+                .columns([
+                    materials::Column::Id,
+                    materials::Column::CaseId,
+                    materials::Column::Kind,
+                    materials::Column::FileName,
+                    materials::Column::ContentType,
+                    materials::Column::SizeBytes,
+                ])
+                .filter(materials::Column::CaseId.eq(id))
+                .order_by_asc(materials::Column::Id)
+                .into_model::<AccountVerificationMaterial>()
+                .all(self.pool.connection())
+                .await
+                .map_err(unavailable)
+        })
+        .await
     }
 
-    pub async fn download(&self, user: Option<UserId>, id: i64, material_id: i64) -> Result<(String, String, Vec<u8>), AccountVerificationError> {
+    pub async fn download(
+        &self,
+        user: Option<UserId>,
+        id: i64,
+        material_id: i64,
+    ) -> Result<(String, String, Vec<u8>), AccountVerificationError> {
         self.run(async {
             load_case(self.pool.connection(), user, id).await?;
-            let item = materials::Entity::find_by_id(material_id).filter(materials::Column::CaseId.eq(id))
-                .one(self.pool.connection()).await.map_err(unavailable)?.ok_or(AccountVerificationError::NotFound)?;
-            Ok((item.file_name.as_str().to_owned(), item.content_type, item.content_bytes))
-        }).await
+            let item = materials::Entity::find_by_id(material_id)
+                .filter(materials::Column::CaseId.eq(id))
+                .one(self.pool.connection())
+                .await
+                .map_err(unavailable)?
+                .ok_or(AccountVerificationError::NotFound)?;
+            Ok((
+                item.file_name.as_str().to_owned(),
+                item.content_type,
+                item.content_bytes,
+            ))
+        })
+        .await
     }
 
-    pub async fn submit(&self, user: UserId, write: AccountVerificationSubmit) -> Result<AccountVerificationRecord, AccountVerificationError> {
+    pub async fn submit(
+        &self,
+        user: UserId,
+        write: AccountVerificationSubmit,
+    ) -> Result<AccountVerificationRecord, AccountVerificationError> {
         validate_submit(&write)?;
         self.run(async {
             let tx = self.pool.connection().begin().await.map_err(unavailable)?;
-            let applicant = users::Entity::find_by_id(user.get()).lock(LockType::Update).one(&tx).await.map_err(unavailable)?
+            let applicant = users::Entity::find_by_id(user.get())
+                .lock(LockType::Update)
+                .one(&tx)
+                .await
+                .map_err(unavailable)?
                 .ok_or(AccountVerificationError::Forbidden)?;
-            if applicant.deleted_at.is_some() || applicant.status != 1 { return Err(AccountVerificationError::Forbidden); }
-            let current = cases::Entity::find().filter(cases::Column::UserId.eq(user.get()))
-                .filter(cases::Column::Kind.eq(&write.kind)).order_by_desc(cases::Column::Id).one(&tx).await.map_err(unavailable)?;
-            if current.is_some_and(|c| [1,4].contains(&c.status)) { return Err(AccountVerificationError::Conflict); }
+            if applicant.deleted_at.is_some() || applicant.status != 1 {
+                return Err(AccountVerificationError::Forbidden);
+            }
+            let current = cases::Entity::find()
+                .filter(cases::Column::UserId.eq(user.get()))
+                .filter(cases::Column::Kind.eq(&write.kind))
+                .order_by_desc(cases::Column::Id)
+                .one(&tx)
+                .await
+                .map_err(unavailable)?;
+            if current.is_some_and(|c| [1, 4].contains(&c.status)) {
+                return Err(AccountVerificationError::Conflict);
+            }
             let now = DatabaseTimestamp::now_utc();
-            let case = cases::ActiveModel { user_id: Set(user.get()), kind: Set(write.kind),
-                subject_name: Set(SensitiveString::from(write.subject_name)), summary: Set(SensitiveString::from(write.summary)),
-                status: Set(1), version: Set(1), reviewer_user_id: Set(None), review_reason: Set(None),
-                created_at: Set(now), updated_at: Set(now), ..Default::default()
-            }.insert(&tx).await.map_err(unavailable)?;
+            let case = cases::ActiveModel {
+                user_id: Set(user.get()),
+                kind: Set(write.kind),
+                subject_name: Set(SensitiveString::from(write.subject_name)),
+                summary: Set(SensitiveString::from(write.summary)),
+                status: Set(1),
+                version: Set(1),
+                reviewer_user_id: Set(None),
+                review_reason: Set(None),
+                created_at: Set(now),
+                updated_at: Set(now),
+                ..Default::default()
+            }
+            .insert(&tx)
+            .await
+            .map_err(unavailable)?;
             for item in write.materials {
-                materials::ActiveModel { case_id: Set(case.id), kind: Set(item.kind), file_name: Set(SensitiveString::from(item.file_name)),
-                    content_type: Set(item.content_type), size_bytes: Set(item.size_bytes), content_bytes: Set(item.content_bytes),
-                    ..Default::default() }.insert(&tx).await.map_err(unavailable)?;
+                materials::ActiveModel {
+                    case_id: Set(case.id),
+                    kind: Set(item.kind),
+                    file_name: Set(SensitiveString::from(item.file_name)),
+                    content_type: Set(item.content_type),
+                    size_bytes: Set(item.size_bytes),
+                    content_bytes: Set(item.content_bytes),
+                    ..Default::default()
+                }
+                .insert(&tx)
+                .await
+                .map_err(unavailable)?;
             }
             tx.commit().await.map_err(unavailable)?;
             Ok(record(case))
-        }).await
+        })
+        .await
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn decide(&self, id: i64, version: i64, reviewer: UserId, status: i16, reason: Option<String>, request_id: String) -> Result<AccountVerificationRecord, AccountVerificationError> {
-        if id <= 0 || version <= 0 || ![3,4,5].contains(&status)
-            || reason.as_deref().is_some_and(|v| !valid_text(v,512))
-            || (status != 4 && reason.is_none()) { return Err(AccountVerificationError::Invalid); }
+    pub async fn decide(
+        &self,
+        id: i64,
+        version: i64,
+        reviewer: UserId,
+        status: i16,
+        reason: Option<String>,
+        request_id: String,
+    ) -> Result<AccountVerificationRecord, AccountVerificationError> {
+        if id <= 0
+            || version <= 0
+            || ![3, 4, 5].contains(&status)
+            || reason.as_deref().is_some_and(|v| !valid_text(v, 512))
+            || (status != 4 && reason.is_none())
+        {
+            return Err(AccountVerificationError::Invalid);
+        }
         self.run(async {
             let tx = self.pool.connection().begin().await.map_err(unavailable)?;
-            let admin = users::Entity::find_by_id(reviewer.get()).lock(LockType::Update).one(&tx).await.map_err(unavailable)?
+            let admin = users::Entity::find_by_id(reviewer.get())
+                .lock(LockType::Update)
+                .one(&tx)
+                .await
+                .map_err(unavailable)?
                 .ok_or(AccountVerificationError::Forbidden)?;
-            if admin.deleted_at.is_some() || admin.status != 1 || admin.role != 1 { return Err(AccountVerificationError::Forbidden); }
-            let case = cases::Entity::find_by_id(id).lock(LockType::Update).one(&tx).await.map_err(unavailable)?
+            if admin.deleted_at.is_some() || admin.status != 1 || admin.role != 1 {
+                return Err(AccountVerificationError::Forbidden);
+            }
+            let case = cases::Entity::find_by_id(id)
+                .lock(LockType::Update)
+                .one(&tx)
+                .await
+                .map_err(unavailable)?
                 .ok_or(AccountVerificationError::NotFound)?;
-            if case.status != 1 || case.version != version { return Err(AccountVerificationError::Conflict); }
-            if case.user_id == reviewer.get() { return Err(AccountVerificationError::Forbidden); }
+            if case.status != 1 || case.version != version {
+                return Err(AccountVerificationError::Conflict);
+            }
+            if case.user_id == reviewer.get() {
+                return Err(AccountVerificationError::Forbidden);
+            }
             let now = DatabaseTimestamp::now_utc();
-            let updated = cases::ActiveModel { id: Set(id), status: Set(status), version: Set(version + 1),
-                reviewer_user_id: Set(Some(reviewer.get())), review_reason: Set(reason.map(SensitiveString::from)),
-                updated_at: Set(now), ..Default::default() }.update(&tx).await.map_err(unavailable)?;
-            platform_audit_logs::ActiveModel { operator_user_id: Set(reviewer.get()),
+            let updated = cases::ActiveModel {
+                id: Set(id),
+                status: Set(status),
+                version: Set(version + 1),
+                reviewer_user_id: Set(Some(reviewer.get())),
+                review_reason: Set(reason.map(SensitiveString::from)),
+                updated_at: Set(now),
+                ..Default::default()
+            }
+            .update(&tx)
+            .await
+            .map_err(unavailable)?;
+            platform_audit_logs::ActiveModel {
+                operator_user_id: Set(reviewer.get()),
                 permission_code: Set(PlatformPermission::OrganizationsManage.code().to_owned()),
                 route: Set("/api/admin/account-verifications/{case_id}/decision".to_owned()),
-                operation: Set("decide".to_owned()), resource: Set("account_verification".to_owned()),
-                resource_id: Set(Some(id.to_string())), outcome: Set(1),
-                before_value: Set(Some(serde_json::json!({"status":case.status,"version":version}).to_string())),
-                after_value: Set(Some(serde_json::json!({"status":status,"version":version+1}).to_string())),
-                audit_info: Set(None), request_id: Set(request_id), created_at: Set(now), ..Default::default()
-            }.insert(&tx).await.map_err(unavailable)?;
+                operation: Set("decide".to_owned()),
+                resource: Set("account_verification".to_owned()),
+                resource_id: Set(Some(id.to_string())),
+                outcome: Set(1),
+                before_value: Set(Some(
+                    serde_json::json!({"status":case.status,"version":version}).to_string(),
+                )),
+                after_value: Set(Some(
+                    serde_json::json!({"status":status,"version":version+1}).to_string(),
+                )),
+                audit_info: Set(None),
+                request_id: Set(request_id),
+                created_at: Set(now),
+                ..Default::default()
+            }
+            .insert(&tx)
+            .await
+            .map_err(unavailable)?;
             tx.commit().await.map_err(unavailable)?;
             Ok(record(updated))
-        }).await
+        })
+        .await
     }
 }
 
-pub(crate) async fn has_enterprise_verification<C: ConnectionTrait>(db: &C, user: UserId) -> Result<bool, AccountVerificationError> {
-    let verified = cases::Entity::find().filter(cases::Column::UserId.eq(user.get()))
-        .filter(cases::Column::Kind.eq("enterprise")).filter(cases::Column::Status.eq(4)).one(db).await.map_err(unavailable)?.is_some();
-    if verified { return Ok(true); }
+pub(crate) async fn has_enterprise_verification<C: ConnectionTrait>(
+    db: &C,
+    user: UserId,
+) -> Result<bool, AccountVerificationError> {
+    let verified = cases::Entity::find()
+        .filter(cases::Column::UserId.eq(user.get()))
+        .filter(cases::Column::Kind.eq("enterprise"))
+        .filter(cases::Column::Status.eq(4))
+        .one(db)
+        .await
+        .map_err(unavailable)?
+        .is_some();
+    if verified {
+        return Ok(true);
+    }
     // Preserve an existing approved organization applicant's qualification.
     Ok(organization_verification_cases::Entity::find()
         .filter(organization_verification_cases::Column::ApplicantUserId.eq(user.get()))
-        .filter(organization_verification_cases::Column::Status.eq(4)).one(db).await.map_err(unavailable)?.is_some())
+        .filter(organization_verification_cases::Column::Status.eq(4))
+        .one(db)
+        .await
+        .map_err(unavailable)?
+        .is_some())
 }
 
-async fn load_case<C: ConnectionTrait>(db: &C, user: Option<UserId>, id: i64) -> Result<AccountVerificationRecord, AccountVerificationError> {
+async fn load_case<C: ConnectionTrait>(
+    db: &C,
+    user: Option<UserId>,
+    id: i64,
+) -> Result<AccountVerificationRecord, AccountVerificationError> {
     let mut query = cases::Entity::find_by_id(id);
-    if let Some(user) = user { query = query.filter(cases::Column::UserId.eq(user.get())); }
-    query.one(db).await.map_err(unavailable)?.map(record).ok_or(AccountVerificationError::NotFound)
+    if let Some(user) = user {
+        query = query.filter(cases::Column::UserId.eq(user.get()));
+    }
+    query
+        .one(db)
+        .await
+        .map_err(unavailable)?
+        .map(record)
+        .ok_or(AccountVerificationError::NotFound)
 }
 
 fn record(c: cases::Model) -> AccountVerificationRecord {
-    AccountVerificationRecord { id:c.id, user_id:c.user_id, kind:c.kind, subject_name:c.subject_name.as_str().to_owned(),
-        summary:c.summary.as_str().to_owned(), status:c.status, version:c.version,
-        review_reason:c.review_reason.map(|r| r.as_str().to_owned()), reviewer_user_id:c.reviewer_user_id,
-        created_at:c.created_at.unix_timestamp(), updated_at:c.updated_at.unix_timestamp() }
-}
-
-fn valid_text(value: &str, max: usize) -> bool { !value.trim().is_empty() && value.len() <= max && !value.chars().any(char::is_control) }
-fn unavailable(_: sea_orm::DbErr) -> AccountVerificationError { AccountVerificationError::Unavailable }
-
-pub fn validate_verification_material(content_type: &str, content: &[u8]) -> bool {
-    !content.is_empty() && content.len() <= 10_000_000 && match content_type {
-        "image/png" => content.starts_with(b"\x89PNG\r\n\x1a\n"),
-        "image/jpeg" => content.starts_with(&[0xff,0xd8,0xff]),
-        "image/webp" => content.starts_with(b"RIFF") && content.get(8..12) == Some(b"WEBP"),
-        "application/pdf" => content.starts_with(b"%PDF-"),
-        _ => false,
+    AccountVerificationRecord {
+        id: c.id,
+        user_id: c.user_id,
+        kind: c.kind,
+        subject_name: c.subject_name.as_str().to_owned(),
+        summary: c.summary.as_str().to_owned(),
+        status: c.status,
+        version: c.version,
+        review_reason: c.review_reason.map(|r| r.as_str().to_owned()),
+        reviewer_user_id: c.reviewer_user_id,
+        created_at: c.created_at.unix_timestamp(),
+        updated_at: c.updated_at.unix_timestamp(),
     }
 }
 
+fn valid_text(value: &str, max: usize) -> bool {
+    !value.trim().is_empty() && value.len() <= max && !value.chars().any(char::is_control)
+}
+fn unavailable(_: sea_orm::DbErr) -> AccountVerificationError {
+    AccountVerificationError::Unavailable
+}
+
+pub fn validate_verification_material(content_type: &str, content: &[u8]) -> bool {
+    !content.is_empty()
+        && content.len() <= 10_000_000
+        && match content_type {
+            "image/png" => content.starts_with(b"\x89PNG\r\n\x1a\n"),
+            "image/jpeg" => content.starts_with(&[0xff, 0xd8, 0xff]),
+            "image/webp" => content.starts_with(b"RIFF") && content.get(8..12) == Some(b"WEBP"),
+            "application/pdf" => content.starts_with(b"%PDF-"),
+            _ => false,
+        }
+}
+
 fn validate_submit(write: &AccountVerificationSubmit) -> Result<(), AccountVerificationError> {
-    if !["individual", "enterprise"].contains(&write.kind.as_str()) || !valid_text(&write.subject_name,128)
-        || !valid_text(&write.summary,512) || !(1..=5).contains(&write.materials.len()) {
+    if !["individual", "enterprise"].contains(&write.kind.as_str())
+        || !valid_text(&write.subject_name, 128)
+        || !valid_text(&write.summary, 512)
+        || !(1..=5).contains(&write.materials.len())
+    {
         return Err(AccountVerificationError::Invalid);
     }
     let mut total = 0;
     for item in &write.materials {
-        if !valid_text(&item.kind,64) || !valid_text(&item.file_name,255) || item.file_name.contains(['/', '\\'])
-            || item.size_bytes != item.content_bytes.len() as i64 || !validate_verification_material(&item.content_type, &item.content_bytes) {
+        if !valid_text(&item.kind, 64)
+            || !valid_text(&item.file_name, 255)
+            || item.file_name.contains(['/', '\\'])
+            || item.size_bytes != item.content_bytes.len() as i64
+            || !validate_verification_material(&item.content_type, &item.content_bytes)
+        {
             return Err(AccountVerificationError::Invalid);
         }
         total += item.content_bytes.len();
     }
-    if total > 25_000_000 { return Err(AccountVerificationError::Invalid); }
+    if total > 25_000_000 {
+        return Err(AccountVerificationError::Invalid);
+    }
     Ok(())
 }

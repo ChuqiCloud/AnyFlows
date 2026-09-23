@@ -194,7 +194,9 @@ fn decide_organization_provisioning_request() {}
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        list_self_organization_provisioning, list_self_provisioning_materials, download_self_provisioning_material,
+        list_self_organization_provisioning,
+        list_self_provisioning_materials,
+        download_self_provisioning_material,
         create_organization_provisioning_request,
         get_active_organization_provisioning_request,
         get_organization_provisioning_request,

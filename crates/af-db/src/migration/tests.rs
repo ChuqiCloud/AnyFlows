@@ -2544,7 +2544,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
         pending_migrations[80].name(),
         "m20260921_000140_extend_request_outcomes_for_call_logs"
     );
-    assert_eq!(pending_migrations[81].name(), "m20260923_000141_account_verification");
+    assert_eq!(
+        pending_migrations[81].name(),
+        "m20260923_000141_account_verification"
+    );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
     assert_legacy_debug_trace_snapshot_cleared(&pool, legacy_debug_trace_id).await?;

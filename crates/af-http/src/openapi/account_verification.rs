@@ -1,8 +1,11 @@
 #![allow(dead_code, reason = "OpenAPI declarations")]
-use utoipa::{OpenApi, ToSchema};
-use crate::account_verification::{AccountVerificationResponse, AccountVerificationDetailResponse,
-    AccountVerificationListResponse, AccountVerificationEligibilityResponse, AccountVerificationDecisionRequest};
+use crate::account_verification::{
+    AccountVerificationDecisionRequest, AccountVerificationDetailResponse,
+    AccountVerificationEligibilityResponse, AccountVerificationListResponse,
+    AccountVerificationResponse,
+};
 use crate::management_error::ManagementErrorBody;
+use utoipa::{OpenApi, ToSchema};
 #[derive(ToSchema)]
 struct AccountVerificationMultipartRequest {
     /// JSON containing kind (individual/enterprise), subject_name, summary and materials [{kind,file_field}].
@@ -56,6 +59,18 @@ fn get_account_verification_eligibility() {}
     security(("bearerAuth"=[])))]
 fn decide_account_verification() {}
 #[derive(OpenApi)]
-#[openapi(paths(list_account_verifications,get_account_verification,download_account_verification_material,list_admin_account_verifications,get_admin_account_verification,download_admin_account_verification_material,submit_account_verification,get_account_verification_eligibility,decide_account_verification))]
+#[openapi(paths(
+    list_account_verifications,
+    get_account_verification,
+    download_account_verification_material,
+    list_admin_account_verifications,
+    get_admin_account_verification,
+    download_admin_account_verification_material,
+    submit_account_verification,
+    get_account_verification_eligibility,
+    decide_account_verification
+))]
 struct AccountVerificationApi;
-pub(super) fn document()->utoipa::openapi::OpenApi {AccountVerificationApi::openapi()}
+pub(super) fn document() -> utoipa::openapi::OpenApi {
+    AccountVerificationApi::openapi()
+}

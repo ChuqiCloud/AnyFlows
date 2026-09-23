@@ -695,7 +695,10 @@ mod playground_share_tests;
 mod token_auth_tests;
 
 mod account_verification;
-pub use account_verification::{AccountVerificationService, AccountVerificationRecord, AccountVerificationMaterial, AccountVerificationSubmit, AccountVerificationError, validate_verification_material};
+pub use account_verification::{
+    AccountVerificationError, AccountVerificationMaterial, AccountVerificationRecord,
+    AccountVerificationService, AccountVerificationSubmit, validate_verification_material,
+};
 
 mod platform_entitlement;
 pub use platform_entitlement::PlatformEntitlementService;

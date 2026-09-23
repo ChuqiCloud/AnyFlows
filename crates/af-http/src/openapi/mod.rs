@@ -1,5 +1,6 @@
 //! 从 Rust 路由契约生成管理 API 的 OpenAPI 文档。
 
+mod account_verification;
 mod analytics_export;
 mod announcements;
 mod balance_alert_settings;
@@ -34,7 +35,6 @@ mod organization_service_account_runtime;
 mod organization_sso;
 mod organization_tokens;
 mod organization_verification;
-mod account_verification;
 mod organization_wallet;
 mod organizations;
 mod passkey_auth;

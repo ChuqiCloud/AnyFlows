@@ -81,8 +81,14 @@ pub fn build_organization_provisioning_router(
             "/api/admin/organization-provisioning/{request_key}/materials/{material_id}",
             get(download_material),
         )
-        .route("/api/account/organization-provisioning/{request_key}/materials", get(list_self_materials))
-        .route("/api/account/organization-provisioning/{request_key}/materials/{material_id}", get(download_self_material))
+        .route(
+            "/api/account/organization-provisioning/{request_key}/materials",
+            get(list_self_materials),
+        )
+        .route(
+            "/api/account/organization-provisioning/{request_key}/materials/{material_id}",
+            get(download_self_material),
+        )
         .route_layer(authentication)
         .layer(middleware::from_fn(ensure_request_id))
         .layer(DefaultBodyLimit::max(MAX_SUBMIT_BODY_BYTES))
@@ -693,13 +699,44 @@ fn no_store_status_json(status: StatusCode, value: impl Serialize) -> Response {
     response
 }
 
-async fn list_self_materials(State(s):State<OrganizationProvisioningHttpState>,Extension(a):Extension<SessionAuthentication>,Path(key):Path<String>) -> Result<Response,ManagementError> {
-    let materials=service(&s)?.list_materials_self(a.principal().user_id(),parse_request_key(&key)?).await.map_err(map_error)?;
-    Ok(no_store_json(materials.iter().map(to_material_response).collect::<Vec<_>>()))
+async fn list_self_materials(
+    State(s): State<OrganizationProvisioningHttpState>,
+    Extension(a): Extension<SessionAuthentication>,
+    Path(key): Path<String>,
+) -> Result<Response, ManagementError> {
+    let materials = service(&s)?
+        .list_materials_self(a.principal().user_id(), parse_request_key(&key)?)
+        .await
+        .map_err(map_error)?;
+    Ok(no_store_json(
+        materials
+            .iter()
+            .map(to_material_response)
+            .collect::<Vec<_>>(),
+    ))
 }
-async fn download_self_material(State(s):State<OrganizationProvisioningHttpState>,Extension(a):Extension<SessionAuthentication>,Path((key,id)):Path<(String,i64)>) -> Result<Response,ManagementError> {
-    let (_name,kind,bytes)=service(&s)?.download_material_self(a.principal().user_id(),parse_request_key(&key)?,id).await.map_err(map_error)?;
-    Ok((StatusCode::OK,[(http::header::CONTENT_TYPE,kind),(http::header::CONTENT_DISPOSITION,"attachment".to_owned()),
-        (http::header::CACHE_CONTROL,"no-store".to_owned()),(http::header::X_CONTENT_TYPE_OPTIONS,"nosniff".to_owned()),
-        (http::header::CONTENT_SECURITY_POLICY,"sandbox; default-src 'none'".to_owned())],bytes).into_response())
+async fn download_self_material(
+    State(s): State<OrganizationProvisioningHttpState>,
+    Extension(a): Extension<SessionAuthentication>,
+    Path((key, id)): Path<(String, i64)>,
+) -> Result<Response, ManagementError> {
+    let (_name, kind, bytes) = service(&s)?
+        .download_material_self(a.principal().user_id(), parse_request_key(&key)?, id)
+        .await
+        .map_err(map_error)?;
+    Ok((
+        StatusCode::OK,
+        [
+            (http::header::CONTENT_TYPE, kind),
+            (http::header::CONTENT_DISPOSITION, "attachment".to_owned()),
+            (http::header::CACHE_CONTROL, "no-store".to_owned()),
+            (http::header::X_CONTENT_TYPE_OPTIONS, "nosniff".to_owned()),
+            (
+                http::header::CONTENT_SECURITY_POLICY,
+                "sandbox; default-src 'none'".to_owned(),
+            ),
+        ],
+        bytes,
+    )
+        .into_response())
 }

@@ -656,7 +656,9 @@ impl OrganizationProvisioningRepository {
                 return Err(OrganizationProvisioningRepositoryError::InvalidInput);
             }
             let mut query = organization_provisioning_requests::Entity::find()
-                .filter(organization_provisioning_requests::Column::ApplicantUserId.eq(user_id.get()))
+                .filter(
+                    organization_provisioning_requests::Column::ApplicantUserId.eq(user_id.get()),
+                )
                 .order_by_desc(organization_provisioning_requests::Column::Id)
                 .limit(limit);
             if let Some(before) = before {
@@ -778,8 +780,13 @@ async fn create_request_inner(
         return existing_outcome(existing, request);
     }
     ensure_active_applicant(connection, request.applicant_user_id()).await?;
-    if !crate::account_verification::has_enterprise_verification(connection, request.applicant_user_id())
-        .await.map_err(|_| OrganizationProvisioningRepositoryError::Query)? {
+    if !crate::account_verification::has_enterprise_verification(
+        connection,
+        request.applicant_user_id(),
+    )
+    .await
+    .map_err(|_| OrganizationProvisioningRepositoryError::Query)?
+    {
         return Err(OrganizationProvisioningRepositoryError::Forbidden);
     }
     if let Some(existing) =

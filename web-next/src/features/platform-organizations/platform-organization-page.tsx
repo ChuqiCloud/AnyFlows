@@ -1,3 +1,4 @@
+import { PlatformEntitlementEditor } from './platform-entitlement-editor'
 import { Button, Chip, Input, Skeleton } from '@heroui/react'
 import { Building2, LoaderCircle, RefreshCw, Settings2, ShieldCheck, UsersRound } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
@@ -28,6 +29,7 @@ export function PlatformOrganizationPage() {
   const { i18n, t } = useTranslation()
   const [reason, setReason] = useState('')
   const [access, setAccess] = useState<PlatformOrganizationAccess>()
+  const [entitlementOrganization, setEntitlementOrganization] = useState<PlatformOrganizationSummaryResponse>()
   const [selectedOrganization, setSelectedOrganization] = useState<PlatformOrganizationSummaryResponse>()
   const query = usePlatformOrganizations(access)
   const workspace = useOrganizationWorkspace()
@@ -148,7 +150,7 @@ export function PlatformOrganizationPage() {
               title={t('platformOrganizations.empty.title')}
               body={t('platformOrganizations.empty.body')}
             />
-          ) : <OrganizationDirectory organizations={organizations} timeFormat={timeFormat} canEnterOrganization={canEnterOrganization} onManage={setSelectedOrganization} onEnterSettings={(organization) => void enterOrganizationSettings(organization.id)} />}
+          ) : <OrganizationDirectory organizations={organizations} timeFormat={timeFormat} canEnterOrganization={canEnterOrganization} onManage={setSelectedOrganization} onEntitlement={setEntitlementOrganization} onEnterSettings={(organization) => void enterOrganizationSettings(organization.id)} />}
           {query.isFetchNextPageError ? (
             <div role="alert" className="text-xs text-destructive">{t('platformOrganizations.error.more')}</div>
           ) : null}
@@ -167,6 +169,7 @@ export function PlatformOrganizationPage() {
           ) : null}
         </>
       )}
+      {entitlementOrganization ? <PlatformEntitlementEditor key={entitlementOrganization.id} organizationId={entitlementOrganization.id} name={entitlementOrganization.name} onClose={() => setEntitlementOrganization(undefined)} /> : null}
       <PlatformOrganizationMembersSheet
         open={selectedOrganization !== undefined}
         organization={selectedOrganization}
@@ -182,11 +185,13 @@ function OrganizationDirectory({
   timeFormat,
   canEnterOrganization,
   onManage,
+  onEntitlement,
   onEnterSettings,
 }: {
   organizations: PlatformOrganizationSummaryResponse[]
   timeFormat: Intl.DateTimeFormat
   canEnterOrganization: (organizationId: number) => boolean
+  onEntitlement: (organization: PlatformOrganizationSummaryResponse) => void
   onManage: (organization: PlatformOrganizationSummaryResponse) => void
   onEnterSettings: (organization: PlatformOrganizationSummaryResponse) => void
 }) {
@@ -213,7 +218,7 @@ function OrganizationDirectory({
                 <td className="px-3 py-3 tabular-nums">{t('platformOrganizations.values.seats', { active: organization.active_member_count, limit: organization.seat_limit })}</td>
                 <td className="px-3 py-3"><StatusPair organization={organization} /></td>
                 <td className="px-3 py-3">{timeFormat.format(organization.valid_until * 1_000)}</td>
-                <td className="px-3 py-3 text-right"><div className="flex justify-end gap-1"><Button type="button" size="sm" variant="light" onClick={() => onManage(organization)}><UsersRound className="size-3.5" aria-hidden="true" />{t('platformOrganizations.actions.manageMembers')}</Button>{canEnterOrganization(organization.id) ? <Button isIconOnly type="button" size="sm" variant="light" title={t('platformOrganizations.actions.openSettings')} onClick={() => onEnterSettings(organization)}><Settings2 className="size-3.5" aria-hidden="true" /><span className="sr-only">{t('platformOrganizations.actions.openSettings')}</span></Button> : null}</div></td>
+                <td className="px-3 py-3 text-right"><div className="flex justify-end gap-1"><Button type="button" size="sm" variant="light" onClick={() => onManage(organization)}><UsersRound className="size-3.5" aria-hidden="true" />{t('platformOrganizations.actions.manageMembers')}</Button><Button type="button" size="sm" variant="light" onClick={() => onEntitlement(organization)}><Settings2 className="size-4" />{t('enterpriseEntitlement.action')}</Button>{canEnterOrganization(organization.id) ? <Button isIconOnly type="button" size="sm" variant="light" title={t('platformOrganizations.actions.openSettings')} onClick={() => onEnterSettings(organization)}><Settings2 className="size-3.5" aria-hidden="true" /><span className="sr-only">{t('platformOrganizations.actions.openSettings')}</span></Button> : null}</div></td>
               </tr>
             ))}
           </tbody>
@@ -231,7 +236,7 @@ function OrganizationDirectory({
               <div><dt className="text-muted-foreground">{t('platformOrganizations.columns.members')}</dt><dd className="mt-1 tabular-nums">{t('platformOrganizations.values.seats', { active: organization.active_member_count, limit: organization.seat_limit })}</dd></div>
               <div className="col-span-2"><dt className="text-muted-foreground">{t('platformOrganizations.columns.validUntil')}</dt><dd className="mt-1">{timeFormat.format(organization.valid_until * 1_000)}</dd></div>
             </dl>
-            <div className="mt-3 flex gap-2"><Button type="button" size="sm" variant="bordered" className="min-w-0 flex-1" onClick={() => onManage(organization)}><UsersRound className="size-3.5" aria-hidden="true" />{t('platformOrganizations.actions.manageMembers')}</Button>{canEnterOrganization(organization.id) ? <Button isIconOnly type="button" size="sm" variant="bordered" title={t('platformOrganizations.actions.openSettings')} onClick={() => onEnterSettings(organization)}><Settings2 className="size-3.5" aria-hidden="true" /><span className="sr-only">{t('platformOrganizations.actions.openSettings')}</span></Button> : null}</div>
+            <div className="mt-3 flex gap-2"><Button type="button" size="sm" variant="bordered" className="min-w-0 flex-1" onClick={() => onManage(organization)}><UsersRound className="size-3.5" aria-hidden="true" />{t('platformOrganizations.actions.manageMembers')}</Button><Button type="button" size="sm" variant="light" onClick={() => onEntitlement(organization)}><Settings2 className="size-4" />{t('enterpriseEntitlement.action')}</Button>{canEnterOrganization(organization.id) ? <Button isIconOnly type="button" size="sm" variant="bordered" title={t('platformOrganizations.actions.openSettings')} onClick={() => onEnterSettings(organization)}><Settings2 className="size-3.5" aria-hidden="true" /><span className="sr-only">{t('platformOrganizations.actions.openSettings')}</span></Button> : null}</div>
           </article>
         ))}
       </div>

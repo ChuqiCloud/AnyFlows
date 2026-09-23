@@ -47,8 +47,14 @@ pub fn build_organization_verification_router(
             get(get_self).post(submit),
         )
         .route("/api/admin/organization-verifications", get(list_admin))
-        .route("/api/organizations/{organization_id}/verification/history", get(history_self))
-        .route("/api/admin/organization-verifications/{case_id}/history", get(history_admin))
+        .route(
+            "/api/organizations/{organization_id}/verification/history",
+            get(history_self),
+        )
+        .route(
+            "/api/admin/organization-verifications/{case_id}/history",
+            get(history_admin),
+        )
         .route(
             "/api/organizations/{organization_id}/verification/materials/{material_id}",
             get(download_self_material),
@@ -321,8 +327,10 @@ async fn download_self_material(
         .map_err(|_| ManagementError::OrganizationVerificationInvalidRequest)?;
     let material_id = OrganizationVerificationMaterialId::new(material_id)
         .map_err(|_| ManagementError::OrganizationVerificationInvalidRequest)?;
-    let download = service(&state)?.download_self(authentication.principal(), organization_id, material_id)
-        .await.map_err(map_error)?;
+    let download = service(&state)?
+        .download_self(authentication.principal(), organization_id, material_id)
+        .await
+        .map_err(map_error)?;
     Ok(material_response(download))
 }
 
@@ -338,7 +346,10 @@ fn material_response(download: af_admin::OrganizationVerificationMaterialDownloa
             (http::header::CONTENT_DISPOSITION, disposition),
             (http::header::CACHE_CONTROL, "no-store".to_owned()),
             (http::header::X_CONTENT_TYPE_OPTIONS, "nosniff".to_owned()),
-            (http::header::CONTENT_SECURITY_POLICY, "sandbox; default-src 'none'".to_owned()),
+            (
+                http::header::CONTENT_SECURITY_POLICY,
+                "sandbox; default-src 'none'".to_owned(),
+            ),
         ],
         download.content,
     )
@@ -357,23 +368,62 @@ fn safe_download_name(value: &str) -> String {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct HistoryQuery { before: Option<i64> }
+struct HistoryQuery {
+    before: Option<i64>,
+}
 
-async fn history_self(State(s):State<OrganizationVerificationHttpState>,Path(id):Path<i64>,
-    Extension(a):Extension<af_admin::SessionAuthentication>,Extension(r):Extension<RequestId>,axum::extract::Query(q):axum::extract::Query<HistoryQuery>) -> Result<Response,ManagementError> {
-    let id=OrganizationId::new(id).map_err(|_| ManagementError::OrganizationVerificationInvalidRequest)?;
-    let entries=service(&s)?.history(a.principal(),Some(id),None,q.before,r.as_str().to_owned()).await.map_err(map_error)?;
+async fn history_self(
+    State(s): State<OrganizationVerificationHttpState>,
+    Path(id): Path<i64>,
+    Extension(a): Extension<af_admin::SessionAuthentication>,
+    Extension(r): Extension<RequestId>,
+    axum::extract::Query(q): axum::extract::Query<HistoryQuery>,
+) -> Result<Response, ManagementError> {
+    let id = OrganizationId::new(id)
+        .map_err(|_| ManagementError::OrganizationVerificationInvalidRequest)?;
+    let entries = service(&s)?
+        .history(
+            a.principal(),
+            Some(id),
+            None,
+            q.before,
+            r.as_str().to_owned(),
+        )
+        .await
+        .map_err(map_error)?;
     Ok(history_response(entries))
 }
-async fn history_admin(State(s):State<OrganizationVerificationHttpState>,Path(id):Path<i64>,
-    Extension(a):Extension<af_admin::SessionAuthentication>,Extension(r):Extension<RequestId>,axum::extract::Query(q):axum::extract::Query<HistoryQuery>) -> Result<Response,ManagementError> {
-    let id=OrganizationVerificationCaseId::new(id).map_err(|_| ManagementError::OrganizationVerificationInvalidRequest)?;
-    let entries=service(&s)?.history(a.principal(),None,Some(id),q.before,r.as_str().to_owned()).await.map_err(map_error)?;
+async fn history_admin(
+    State(s): State<OrganizationVerificationHttpState>,
+    Path(id): Path<i64>,
+    Extension(a): Extension<af_admin::SessionAuthentication>,
+    Extension(r): Extension<RequestId>,
+    axum::extract::Query(q): axum::extract::Query<HistoryQuery>,
+) -> Result<Response, ManagementError> {
+    let id = OrganizationVerificationCaseId::new(id)
+        .map_err(|_| ManagementError::OrganizationVerificationInvalidRequest)?;
+    let entries = service(&s)?
+        .history(
+            a.principal(),
+            None,
+            Some(id),
+            q.before,
+            r.as_str().to_owned(),
+        )
+        .await
+        .map_err(map_error)?;
     Ok(history_response(entries))
 }
-fn history_response(entries:Vec<serde_json::Value>) -> Response {
-    let next_cursor=if entries.len()==25 {entries.last().and_then(|v|v["version"].as_i64())} else {None};
-    no_store_status_json(StatusCode::OK,serde_json::json!({"entries":entries,"next_cursor":next_cursor}))
+fn history_response(entries: Vec<serde_json::Value>) -> Response {
+    let next_cursor = if entries.len() == 25 {
+        entries.last().and_then(|v| v["version"].as_i64())
+    } else {
+        None
+    };
+    no_store_status_json(
+        StatusCode::OK,
+        serde_json::json!({"entries":entries,"next_cursor":next_cursor}),
+    )
 }
 
 fn normalize_upload_name(value: &str) -> Option<String> {

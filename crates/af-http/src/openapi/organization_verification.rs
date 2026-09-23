@@ -179,7 +179,9 @@ fn decide_organization_verification() {}
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        get_self_verification_history, get_admin_verification_history, download_self_verification_material,
+        get_self_verification_history,
+        get_admin_verification_history,
+        download_self_verification_material,
         get_organization_verification,
         submit_organization_verification,
         list_admin_organization_verifications,
@@ -209,7 +211,10 @@ pub(super) fn document() -> utoipa::openapi::OpenApi {
 }
 
 #[derive(ToSchema)]
-struct OrganizationVerificationHistoryResponse {entries:Vec<serde_json::Value>,next_cursor:Option<i64>}
+struct OrganizationVerificationHistoryResponse {
+    entries: Vec<serde_json::Value>,
+    next_cursor: Option<i64>,
+}
 #[utoipa::path(get,path="/api/organizations/{organization_id}/verification/history",operation_id="getSelfVerificationHistory",tag="企业认证",
     params(("organization_id"=i64,Path),("before"=Option<i64>,Query)),responses((status=200,body=OrganizationVerificationHistoryResponse),(status=401,body=ManagementErrorBody),(status=403,body=ManagementErrorBody)),security(("bearerAuth"=[])))]
 fn get_self_verification_history() {}
