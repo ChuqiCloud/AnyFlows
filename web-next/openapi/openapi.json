@@ -25755,9 +25755,9 @@
     "/api/auth/organization-sso/oidc/callback": {
       "get": {
         "tags": [
-          "浼佷笟 SSO"
+          "企业 SSO"
         ],
-        "summary": "鎺ユ敹浼佷笟 OIDC 鍥炶皟",
+        "summary": "接收企业 OIDC 回调",
         "operationId": "completeOrganizationSsoOidcLogin",
         "parameters": [
           {
@@ -25826,9 +25826,9 @@
     "/api/auth/organization-sso/saml/callback": {
       "post": {
         "tags": [
-          "浼佷笟 SSO"
+          "企业 SSO"
         ],
-        "summary": "鎺ユ敹浼佷笟 SAML 鍥炶皟",
+        "summary": "接收企业 SAML 回调",
         "operationId": "completeOrganizationSsoSamlLogin",
         "requestBody": {
           "content": {
