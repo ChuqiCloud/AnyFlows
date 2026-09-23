@@ -3162,6 +3162,21 @@ impl Bootstrap<Supervised> {
             )),
         );
         let router = router
+            .merge(af_http::build_platform_entitlement_router(
+                Arc::new(af_admin::PlatformEntitlementService::new(Arc::clone(
+                    &self.stage.infrastructure.organization_repository,
+                ))),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ))
+            .merge(af_http::build_account_verification_router(
+                Arc::new(af_admin::AccountVerificationService::new(
+                    af_db::AccountVerificationRepository::new(
+                        self.stage.infrastructure.infrastructure.database.clone(),
+                    ),
+                    Arc::clone(&self.stage.infrastructure.platform_audit_service),
+                )),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ))
             .merge(build_frontend_template_router(
                 frontend_template_manager.clone() as Arc<dyn af_http::FrontendTemplateService>,
                 Arc::clone(&self.stage.infrastructure.session_authenticator),

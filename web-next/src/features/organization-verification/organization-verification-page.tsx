@@ -1,3 +1,6 @@
+import { AccountVerificationPage } from '@/features/account-verification/account-verification-page'
+import { VerificationAttachment } from '@/features/account-verification/verification-attachment'
+import { VerificationMaterials, OrganizationVerificationHistory } from '@/features/account-verification/verification-records'
 import { Button, Card, CardBody, CardHeader, Chip, Input, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, Textarea } from '@heroui/react'
 import { Building2, CheckCircle2, ClipboardCheck, Download, FileText, LoaderCircle, Plus, RefreshCw, ShieldCheck, X, XCircle } from 'lucide-react'
 import type { FormEvent } from 'react'
@@ -25,7 +28,10 @@ type MaterialDraft = OrganizationVerificationMaterialDraft
 const emptyMaterial = (): MaterialDraft => ({ kind: '' })
 
 export function OrganizationVerificationPage({ admin = false }: { admin?: boolean }) {
-  return admin ? <AdminVerificationWorkspace /> : <ApplicantVerificationWorkspace />
+  const { t } = useTranslation()
+  const [view, setView] = useState<'accounts' | 'organizations'>('accounts')
+  if (!admin) return <ApplicantVerificationWorkspace />
+  return <div className="grid gap-5"><div className="flex gap-2" role="tablist" aria-label={t('verificationCenter.adminTitle')}><Button type="button" role="tab" aria-selected={view === 'accounts'} onClick={() => setView('accounts')}>{t('verificationCenter.accounts')}</Button><Button type="button" role="tab" aria-selected={view === 'organizations'} onClick={() => setView('organizations')}>{t('verificationCenter.organizations')}</Button></div>{view === 'accounts' ? <AccountVerificationPage admin /> : <AdminVerificationWorkspace />}</div>
 }
 
 function ApplicantVerificationWorkspace() {
@@ -57,7 +63,7 @@ function ApplicantVerificationCase({ organizationId, overview }: { organizationI
   if (query.isPending) return <VerificationLoading />
   if (query.isError) return <VerificationError onRetry={() => void query.refetch()} />
 
-  return <div className="grid gap-4"><VerificationIdentity overview={overview} /><VerificationPurpose /><VerificationProcess />{verification ? <ApplicantStatus verification={verification} /> : <EmptyVerificationState />}{!canSubmit ? <VerificationNotice title={t('organizationVerification.errors.forbidden')} /> : null}{canSubmit && editable ? <VerificationForm summary={summary} setSummary={setSummary} materials={materials} setMaterials={setMaterials} onSubmit={submit} pending={mutation.isPending} hasExisting={verification !== null} /> : null}{mutation.isError ? <ErrorNotice code={organizationVerificationErrorCode(mutation.error)} /> : null}</div>
+  return <div className="grid gap-4"><VerificationIdentity overview={overview} /><VerificationPurpose /><VerificationProcess />{verification ? <><ApplicantStatus verification={verification} />{canSubmit ? <><VerificationMaterials endpoint={`/api/organizations/${organizationId}/verification/materials`} materials={verification.materials} /><OrganizationVerificationHistory endpoint={`/api/organizations/${organizationId}/verification/history`} /></> : null}</> : <EmptyVerificationState />}{!canSubmit ? <VerificationNotice title={t('organizationVerification.errors.forbidden')} /> : null}{canSubmit && editable ? <VerificationForm summary={summary} setSummary={setSummary} materials={materials} setMaterials={setMaterials} onSubmit={submit} pending={mutation.isPending} hasExisting={verification !== null} /> : null}{mutation.isError ? <ErrorNotice code={organizationVerificationErrorCode(mutation.error)} /> : null}</div>
 }
 
 function VerificationIdentity({ overview }: { overview: OrganizationOverviewResponse }) {
@@ -108,7 +114,7 @@ function VerificationForm({ summary, setSummary, materials, setMaterials, onSubm
 function MaterialFields({ index, material, canRemove, onChange, onRemove }: { index: number; material: MaterialDraft; canRemove: boolean; onChange: (index: number, field: keyof MaterialDraft, value: string | File | undefined) => void; onRemove: () => void }) {
   const { t } = useTranslation()
   const prefix = `organization-verification-material-${index}`
-  return <fieldset className="grid gap-3 rounded-lg border border-[var(--hairline)] p-3"><legend className="px-1 text-xs font-medium">{t('organizationVerification.form.material', { index: index + 1 })}</legend><div className="grid gap-3 sm:grid-cols-2"><Field id={`${prefix}-kind`} label={t('organizationVerification.form.kind')} value={material.kind} required onChange={(value) => onChange(index, 'kind', value)} /><label className="grid gap-1.5 text-xs"><span className="font-medium">{t('organizationVerification.form.file')}</span><Input accept=".pdf,.png,.jpg,.jpeg,.webp" className="h-auto py-1.5" id={`${prefix}-file`} isRequired={!material.file} size="sm" type="file" onChange={(event) => onChange(index, 'file', event.target.files?.[0])} /><span className="text-[0.6875rem] text-muted-foreground">{material.file ? `${material.file.name} · ${Math.ceil(material.file.size / 1024)} KB` : t('organizationVerification.form.fileHint')}</span></label></div>{canRemove ? <Button type="button" size="sm" variant="light" className="justify-self-start text-destructive" onClick={onRemove}>{t('organizationVerification.form.removeMaterial')}</Button> : null}</fieldset>
+  return <fieldset className="grid gap-3 rounded-lg border border-[var(--hairline)] p-3"><legend className="px-1 text-xs font-medium">{t('organizationVerification.form.material', { index: index + 1 })}</legend><div className="grid gap-3 sm:grid-cols-2"><Field id={`${prefix}-kind`} label={t('organizationVerification.form.kind')} value={material.kind} required onChange={(value) => onChange(index, 'kind', value)} /><label className="grid gap-1.5 text-xs"><span className="font-medium">{t('organizationVerification.form.file')}</span><Input accept=".pdf,.png,.jpg,.jpeg,.webp" className="h-auto py-1.5" id={`${prefix}-file`} isRequired={!material.file} size="sm" type="file" onChange={(event) => onChange(index, 'file', event.target.files?.[0])} /><span className="text-[0.6875rem] text-muted-foreground">{material.file ? `${material.file.name} · ${Math.ceil(material.file.size / 1024)} KB` : t('organizationVerification.form.fileHint')}</span></label></div>{material.file ? <VerificationAttachment key={`${material.file.name}-${material.file.lastModified}`} name={material.file.name} size={material.file.size} contentType={material.file.type} file={material.file} /> : null}{canRemove ? <Button type="button" size="sm" variant="light" className="justify-self-start text-destructive" onClick={onRemove}>{t('organizationVerification.form.removeMaterial')}</Button> : null}</fieldset>
 }
 
 function Field({ id, label, value, onChange, required = false, type = 'text', min }: { id: string; label: string; value: string; onChange: (value: string) => void; required?: boolean; type?: string; min?: number }) { return <label className="grid gap-1.5 text-xs"><span className="font-medium">{label}</span><Input id={id} isRequired={required} min={min} size="sm" type={type} value={value} onChange={(event) => onChange(event.target.value)} /></label> }
@@ -173,7 +179,7 @@ function AdminDecisionPanel({ item, onClose }: { item: OrganizationVerificationR
                 <p className="mt-1 text-[0.6875rem] leading-4 text-muted-foreground">{t('organizationVerification.admin.materialAccessHint')}</p>
                 <div className="mt-2 divide-y divide-[var(--hairline)] rounded-lg border border-[var(--hairline)]">{item.materials.map((material) => <div key={material.id} className="grid gap-1 px-3 py-2 text-xs sm:grid-cols-[minmax(0,1fr)_auto_auto]"><span className="truncate font-medium">{material.file_name}</span><span className="text-muted-foreground">{material.kind} · {material.content_type} · {material.size_bytes} B</span>{material.content_available ? <Button isIconOnly aria-label={t('organizationVerification.admin.download')} size="sm" title={t('organizationVerification.admin.download')} type="button" variant="light" onClick={() => void download(material)}><Download className="size-3.5" aria-hidden="true" /></Button> : <span className="text-muted-foreground">{t('organizationVerification.admin.unavailable')}</span>}</div>)}</div>
               </div>
-              <div className="grid gap-1.5">
+              <VerificationMaterials endpoint={`/api/admin/organization-verifications/${item.case.id}/materials`} materials={item.materials} /><OrganizationVerificationHistory endpoint={`/api/admin/organization-verifications/${item.case.id}/history`} /><div className="grid gap-1.5">
                 <label className="text-xs font-medium leading-none text-foreground" htmlFor="organization-verification-decision-reason">{t('organizationVerification.admin.reason')}</label>
                 <Textarea id="organization-verification-decision-reason" maxLength={512} minRows={3} placeholder={t('organizationVerification.admin.reasonPlaceholder')} size="sm" value={reason} onChange={(event) => setReason(event.target.value)} />
               </div>
@@ -182,9 +188,9 @@ function AdminDecisionPanel({ item, onClose }: { item: OrganizationVerificationR
             </ModalBody>
             <ModalFooter className="flex flex-wrap items-center justify-end gap-2">
               <Button type="button" variant="light" isDisabled={mutation.isPending} onPress={onClose}>{t('organizationVerification.admin.close')}</Button>
-              <Button type="button" variant="bordered" isDisabled={mutation.isPending || !reason.trim()} onPress={() => void decide('request_supplement')}><ClipboardCheck className="size-3.5" aria-hidden="true" />{t('organizationVerification.admin.requestSupplement')}</Button>
-              <Button type="button" variant="bordered" isDisabled={mutation.isPending} onPress={() => void decide('reject')}><XCircle className="size-3.5" aria-hidden="true" />{t('organizationVerification.admin.reject')}</Button>
-              <Button type="button" color="primary" isDisabled={mutation.isPending} onPress={() => void decide('approve')}><CheckCircle2 className="size-3.5" aria-hidden="true" />{t('organizationVerification.admin.approve')}</Button>
+              <Button type="button" variant="bordered" isDisabled={mutation.isPending || !reason.trim() || item.case.status === 'approved'} onPress={() => void decide('request_supplement')}><ClipboardCheck className="size-3.5" aria-hidden="true" />{t('organizationVerification.admin.requestSupplement')}</Button>
+              <Button type="button" variant="bordered" isDisabled={mutation.isPending || item.case.status === 'approved' || !reason.trim()} onPress={() => void decide('reject')}><XCircle className="size-3.5" aria-hidden="true" />{t('organizationVerification.admin.reject')}</Button>
+              <Button type="button" color="primary" isDisabled={mutation.isPending || item.case.status === 'approved'} onPress={() => void decide('approve')}><CheckCircle2 className="size-3.5" aria-hidden="true" />{t('organizationVerification.admin.approve')}</Button>
             </ModalFooter>
           </>
         )}

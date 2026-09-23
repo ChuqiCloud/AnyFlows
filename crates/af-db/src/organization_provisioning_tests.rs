@@ -496,6 +496,21 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
         }
         .insert(pool.connection())
         .await?;
+        crate::entity::account_verifications::ActiveModel {
+            user_id: Set(user.id),
+            kind: Set("enterprise".to_owned()),
+            subject_name: Set(SensitiveString::from("Verified fixture".to_owned())),
+            summary: Set(SensitiveString::from("reviewed fixture".to_owned())),
+            status: Set(4),
+            version: Set(2),
+            reviewer_user_id: Set(None),
+            review_reason: Set(None),
+            created_at: Set(TimeDateTimeWithTimeZone::now_utc()),
+            updated_at: Set(TimeDateTimeWithTimeZone::now_utc()),
+            ..Default::default()
+        }
+        .insert(pool.connection())
+        .await?;
         user_ids.push(UserId::new(user.id)?);
     }
     Ok(Fixture {
@@ -503,4 +518,38 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
         pool,
         users: user_ids.try_into().expect("测试用户数量固定为三"),
     })
+}
+
+#[tokio::test]
+async fn enterprise_verification_is_required_only_for_new_provisioning_requests()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let original = request(
+        92,
+        fixture.users[0],
+        "Verified company",
+        "verified-company",
+        "Workspace request",
+    )?;
+    fixture.repository.create_request(original.clone()).await?;
+    crate::entity::account_verifications::Entity::delete_many()
+        .exec(fixture.pool.connection())
+        .await?;
+    assert!(matches!(
+        fixture.repository.create_request(original).await?,
+        OrganizationProvisioningCreateOutcome::Existing(_)
+    ));
+    let unverified = request(
+        93,
+        fixture.users[2],
+        "Unverified company",
+        "unverified-company",
+        "Workspace request",
+    )?;
+    assert_eq!(
+        fixture.repository.create_request(unverified).await,
+        Err(OrganizationProvisioningRepositoryError::Forbidden)
+    );
+    fixture.pool.close().await?;
+    Ok(())
 }

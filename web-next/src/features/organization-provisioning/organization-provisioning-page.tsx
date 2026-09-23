@@ -1,3 +1,5 @@
+import { ProvisioningEligibility } from '@/features/account-verification/verification-records'
+import { VerificationAttachment } from '@/features/account-verification/verification-attachment'
 import { Button, Checkbox, Chip, Input, Textarea } from '@heroui/react'
 import { ArrowRight, Building2, CheckCircle2, ClipboardCheck, Download, LoaderCircle, Plus, RefreshCw, XCircle } from 'lucide-react'
 import type { FormEvent, ReactNode } from 'react'
@@ -36,7 +38,7 @@ export function OrganizationProvisioningPage({ admin = false }: OrganizationProv
   const { t } = useTranslation()
   const [adminView, setAdminView] = useState<AdminProvisioningView>('review')
 
-  if (!admin) return <ApplicantProvisioningWorkspace />
+  if (!admin) return <ProvisioningEligibility><ApplicantProvisioningWorkspace /></ProvisioningEligibility>
 
   return (
     <div className="grid gap-4">
@@ -60,7 +62,7 @@ export function OrganizationProvisioningPage({ admin = false }: OrganizationProv
           </Button>
         ))}
       </div>
-      {adminView === 'review' ? <AdminProvisioningWorkspace /> : <ApplicantProvisioningWorkspace />}
+      {adminView === 'review' ? <AdminProvisioningWorkspace /> : <ProvisioningEligibility><ApplicantProvisioningWorkspace /></ProvisioningEligibility>}
     </div>
   )
 }
@@ -166,7 +168,7 @@ function ApplicantProvisioningWorkspace() {
 function ProvisioningMaterialFields({ index, material, canRemove, onChange, onRemove }: { index: number; material: OrganizationProvisioningMaterialDraft; canRemove: boolean; onChange: (value: OrganizationProvisioningMaterialDraft) => void; onRemove: () => void }) {
   const { t } = useTranslation()
   const prefix = `organization-provisioning-material-${index}`
-  return <fieldset className="grid gap-3 rounded-lg border border-[var(--hairline)] p-3"><legend className="px-1 text-xs font-medium">{t('organizationProvisioning.form.material', { index: index + 1 })}</legend><div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1.5 text-xs"><span className="font-medium">{t('organizationProvisioning.form.materialKind')}</span><Input id={`${prefix}-kind`} isRequired size="sm" value={material.kind} onChange={(event) => onChange({ ...material, kind: event.target.value })} /></label><label className="grid gap-1.5 text-xs"><span className="font-medium">{t('organizationProvisioning.form.materialFile')}</span><Input id={`${prefix}-file`} accept=".pdf,.png,.jpg,.jpeg,.webp" className="h-auto py-1.5" isRequired={!material.file} size="sm" type="file" onChange={(event) => onChange({ ...material, file: event.target.files?.[0] })} /><span className="text-[0.6875rem] text-muted-foreground">{material.file ? `${material.file.name} · ${Math.ceil(material.file.size / 1024)} KB` : t('organizationProvisioning.form.materialHint')}</span></label></div>{canRemove ? <Button type="button" size="sm" variant="light" className="justify-self-start text-destructive" onClick={onRemove}>{t('organizationProvisioning.form.removeMaterial')}</Button> : null}</fieldset>
+  return <fieldset className="grid gap-3 rounded-lg border border-[var(--hairline)] p-3"><legend className="px-1 text-xs font-medium">{t('organizationProvisioning.form.material', { index: index + 1 })}</legend><div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1.5 text-xs"><span className="font-medium">{t('organizationProvisioning.form.materialKind')}</span><Input id={`${prefix}-kind`} isRequired size="sm" value={material.kind} onChange={(event) => onChange({ ...material, kind: event.target.value })} /></label><label className="grid gap-1.5 text-xs"><span className="font-medium">{t('organizationProvisioning.form.materialFile')}</span><Input id={`${prefix}-file`} accept=".pdf,.png,.jpg,.jpeg,.webp" className="h-auto py-1.5" isRequired={!material.file} size="sm" type="file" onChange={(event) => onChange({ ...material, file: event.target.files?.[0] })} /><span className="text-[0.6875rem] text-muted-foreground">{material.file ? `${material.file.name} · ${Math.ceil(material.file.size / 1024)} KB` : t('organizationProvisioning.form.materialHint')}</span></label></div>{material.file ? <VerificationAttachment key={`${material.file.name}-${material.file.lastModified}`} name={material.file.name} size={material.file.size} contentType={material.file.type} file={material.file} /> : null}{canRemove ? <Button type="button" size="sm" variant="light" className="justify-self-start text-destructive" onClick={onRemove}>{t('organizationProvisioning.form.removeMaterial')}</Button> : null}</fieldset>
 }
 
 function AdminProvisioningWorkspace() {
@@ -404,7 +406,7 @@ function ProvisioningMaterialRow({ requestKey, material }: { requestKey: string;
       setPending(false)
     }
   }
-  return <div className="grid gap-1 px-3 py-2 text-xs sm:grid-cols-[minmax(0,1fr)_auto_auto]"><span className="truncate font-medium">{material.file_name}</span><span className="text-muted-foreground">{material.kind} · {material.content_type} · {material.size_bytes} B</span>{material.content_available ? <Button isIconOnly type="button" size="sm" variant="light" aria-label={t('organizationProvisioning.admin.download')} title={t('organizationProvisioning.admin.download')} isDisabled={pending} onClick={() => void download()}>{pending ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : <Download className="size-3.5" aria-hidden="true" />}</Button> : <span className="text-muted-foreground">{t('organizationProvisioning.admin.unavailable')}</span>}{error ? <span role="alert" className="text-destructive">{t('organizationProvisioning.admin.materialsError')}</span> : null}</div>
+  return <><VerificationAttachment name={material.file_name} size={material.size_bytes} contentType={material.content_type} load={async () => (await downloadAdminOrganizationProvisioningMaterial(requestKey, material.id)).blob} /><div className="grid gap-1 px-3 py-2 text-xs sm:grid-cols-[minmax(0,1fr)_auto_auto]"><span className="truncate font-medium">{material.file_name}</span><span className="text-muted-foreground">{material.kind} · {material.content_type} · {material.size_bytes} B</span>{material.content_available ? <Button isIconOnly type="button" size="sm" variant="light" aria-label={t('organizationProvisioning.admin.download')} title={t('organizationProvisioning.admin.download')} isDisabled={pending} onClick={() => void download()}>{pending ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : <Download className="size-3.5" aria-hidden="true" />}</Button> : <span className="text-muted-foreground">{t('organizationProvisioning.admin.unavailable')}</span>}{error ? <span role="alert" className="text-destructive">{t('organizationProvisioning.admin.materialsError')}</span> : null}</div></>
 }
 
 function NumberField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {

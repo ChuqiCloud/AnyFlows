@@ -1,3 +1,4 @@
+import { useAccountEligibility } from '@/features/account-verification/account-verification-api'
 import {
   Activity,
   Boxes,
@@ -9,7 +10,6 @@ import {
   CircleDollarSign,
   ClipboardCheck,
   CircleCheckBig,
-  CircleUserRound,
   Fingerprint,
   Gauge,
   GitBranch,
@@ -97,6 +97,7 @@ const navItems = {
   organizationDepartments: { key: 'organizationDepartments', icon: Building2, href: '#/console/organization-departments' },
   organizationOverview: { key: 'organizationOverview', icon: Gauge, href: '#/console/organization' },
   organizationOnboarding: { key: 'organizationOnboarding', icon: ClipboardCheck, href: '#/console/organization-onboarding' },
+  accountVerification: { key: 'accountVerification', icon: ShieldCheck, href: '#/console/account-verification' },
   organizationProvisioning: { key: 'organizationProvisioning', icon: ClipboardCheck, href: '#/console/organization-provisioning' },
   organizationVerification: { key: 'organizationVerification', icon: ShieldCheck, href: '#/console/organization-verification' },
   organizationSettings: { key: 'organizationSettings', icon: Settings2, href: '#/console/organization-settings' },
@@ -131,7 +132,6 @@ const navItems = {
 } as const satisfies Record<NavKey, NavItem>
 
 const sectionIcons = {
-  personal: CircleUserRound,
   organization: Building2,
   enterprise: Building2,
   operations: BriefcaseBusiness,
@@ -151,7 +151,12 @@ function NavigationItem({ itemKey, activeKey }: { itemKey: NavKey; activeKey: Na
   const active = item.key === activeKey
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton asChild isActive={active} tooltip={t(`nav.${item.key}`)} className={active ? 'text-brand' : undefined}>
+      <SidebarMenuButton
+        asChild
+        isActive={active}
+        tooltip={t(`nav.${item.key}`)}
+        className={cn('h-9 rounded-lg px-3', active && 'bg-sidebar-accent/80 text-brand')}
+      >
         <a href={item.href} aria-current={active ? 'page' : undefined}>
           <Icon className={cn('shrink-0', active ? 'text-brand' : 'text-sidebar-foreground/70')} aria-hidden="true" />
           <span>{t(`nav.${item.key}`)}</span>
@@ -163,10 +168,10 @@ function NavigationItem({ itemKey, activeKey }: { itemKey: NavKey; activeKey: Na
 
 function NavigationGroup({ label, items, activeKey }: { label: string; items: readonly NavKey[]; activeKey: NavKey }) {
   return (
-    <SidebarGroup className="p-0">
-      <SidebarGroupLabel className="h-7 px-2 text-[0.6875rem]">{label}</SidebarGroupLabel>
+    <SidebarGroup className="p-0 py-1.5">
+      <SidebarGroupLabel className="h-6 px-3 text-[0.6875rem] font-semibold text-sidebar-foreground/60">{label}</SidebarGroupLabel>
       <SidebarGroupContent>
-        <SidebarMenu>{items.map((item) => <NavigationItem key={item} itemKey={item} activeKey={activeKey} />)}</SidebarMenu>
+        <SidebarMenu className="gap-0.5">{items.map((item) => <NavigationItem key={item} itemKey={item} activeKey={activeKey} />)}</SidebarMenu>
       </SidebarGroupContent>
     </SidebarGroup>
   )
@@ -198,7 +203,7 @@ function CollapsibleNavigationSection({
           type="button"
           isActive={active}
           tooltip={t(`nav.sections.${sectionKey}`)}
-          className={active ? 'text-brand' : undefined}
+          className={cn('h-9 rounded-lg px-3', active && 'bg-sidebar-accent/80 text-brand')}
           aria-controls={contentId}
           aria-expanded={open}
           onClick={() => {
@@ -221,14 +226,14 @@ function CollapsibleNavigationSection({
           )}
         >
           <div className="min-h-0 overflow-hidden">
-            <SidebarMenuSub className="gap-0 py-1">
+            <SidebarMenuSub className="gap-0.5 py-1.5 pl-3">
               {items.map((itemKey) => {
                 const item = navItems[itemKey]
                 const ItemIcon = item.icon
                 const itemActive = item.key === activeKey
                 return (
                   <SidebarMenuSubItem key={item.key}>
-                    <SidebarMenuSubButton asChild size="sm" isActive={itemActive} className={itemActive ? 'text-brand' : undefined}>
+                    <SidebarMenuSubButton asChild size="sm" isActive={itemActive} className={cn('h-8 gap-2.5 rounded-lg px-2.5', itemActive && 'text-brand')}>
                       <a href={item.href} aria-current={itemActive ? 'page' : undefined}>
                         <ItemIcon aria-hidden="true" />
                         <span>{t(`nav.${item.key}`)}</span>
@@ -265,37 +270,28 @@ function AdminNavigation({ activeKey }: { activeKey: NavKey }) {
     )
   }
 
-  const personalSection = adminNavigationSections.find((section) => section.key === 'personal')
   const organizationSection = adminNavigationSections.find((section) => section.key === 'organization')
   const enterpriseSection = adminNavigationSections.find((section) => section.key === 'enterprise')
   const systemSections = adminNavigationSections.filter((section) => (
-    section.key !== 'personal' && section.key !== 'organization' && section.key !== 'enterprise'
+    section.key !== 'organization' && section.key !== 'enterprise'
   ))
   const renderSectionGroup = (label: string, section: typeof adminNavigationSections[number] | undefined) => section ? (
-    <SidebarGroup className="p-0">
-      <SidebarGroupLabel className="h-7 px-2 text-[0.6875rem]">{label}</SidebarGroupLabel>
-      <SidebarGroupContent><SidebarMenu>{renderSection(section)}</SidebarMenu></SidebarGroupContent>
+    <SidebarGroup className="p-0 py-1.5">
+      <SidebarGroupLabel className="h-6 px-3 text-[0.6875rem] font-semibold text-sidebar-foreground/60">{label}</SidebarGroupLabel>
+      <SidebarGroupContent><SidebarMenu className="gap-0.5">{renderSection(section)}</SidebarMenu></SidebarGroupContent>
     </SidebarGroup>
   ) : null
   return (
     <>
       <NavigationGroup label={t('nav.groups.workspace')} items={adminWorkspaceItems} activeKey={activeKey} />
-      {personalSection ? (
-        <SidebarGroup className="p-0">
-          <SidebarGroupLabel className="h-7 px-2 text-[0.6875rem]">{t('nav.groups.personal')}</SidebarGroupLabel>
-          <SidebarGroupContent><SidebarMenu>{renderSection(personalSection)}</SidebarMenu></SidebarGroupContent>
-        </SidebarGroup>
-      ) : null}
-      {renderSectionGroup(t('nav.groups.organization'), organizationSection)}
+      {renderSectionGroup(t('nav.sections.organization'), organizationSection)}
       {renderSectionGroup(t('nav.sections.enterprise'), enterpriseSection)}
-      <SidebarGroup className="p-0">
-        <SidebarGroupLabel className="h-7 px-2 text-[0.6875rem]">{t('nav.groups.system')}</SidebarGroupLabel>
-        <SidebarGroupContent>
-          <SidebarMenu>
+      <SidebarGroup className="p-0 py-1.5">
+        <SidebarGroupLabel className="h-6 px-3 text-[0.6875rem] font-semibold text-sidebar-foreground/60">{t('nav.sections.system')}</SidebarGroupLabel>
+        <SidebarGroupContent><SidebarMenu className="gap-0.5">
             {systemSections.map(renderSection)}
             {adminSystemItems.map((item) => <NavigationItem key={item} itemKey={item} activeKey={activeKey} />)}
-          </SidebarMenu>
-        </SidebarGroupContent>
+        </SidebarMenu></SidebarGroupContent>
       </SidebarGroup>
     </>
   )
@@ -305,14 +301,17 @@ export function AppNavigation({ className, compact = false, role }: AppNavigatio
   const { t } = useTranslation()
   const activeKey = useActiveKey()
   const workspace = useOrganizationWorkspace()
-  const organizationItems = filterOrganizationNavigationItems(
+  const eligibility = useAccountEligibility()
+  const organizationItems: readonly NavKey[] = workspace.selectedId === undefined && eligibility.data?.enterprise_verified
+    ? ['organizationProvisioning']
+    : filterOrganizationNavigationItems(
     userNavigationGroups.find((group) => group.key === 'organization')?.items ?? [],
     workspace.organizationPermissions,
     workspace.selectedId !== undefined,
     workspace.organizationPermissionsLoading,
   )
   const visibleUserGroups = userNavigationGroups
-    .map((group) => group.key === 'organization' ? { ...group, items: organizationItems } : group)
+    .map((group) => group.key === 'organization' ? { ...group, items: organizationItems } : { ...group, items: group.items.filter((item) => item !== 'organizationProvisioning' || !organizationItems.includes('organizationProvisioning')) })
     .filter((group) => group.key !== 'organization' || group.items.length > 0)
   const visibleItems = role === 'admin'
     ? adminNavigationItems

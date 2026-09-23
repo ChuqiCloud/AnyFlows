@@ -230,3 +230,9 @@ mod user_tokens_tests;
 mod user_topups_tests;
 #[cfg(test)]
 mod user_wallet_tests;
+
+mod account_verification;
+pub use account_verification::build_account_verification_router;
+
+mod platform_entitlement;
+pub use platform_entitlement::build_platform_entitlement_router;

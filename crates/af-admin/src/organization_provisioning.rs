@@ -263,6 +263,28 @@ pub type OrganizationProvisioningMaterialDownloadFuture<'a> = Pin<
 
 /// 企业开通申请服务；普通用户与平台管理员入口共享仓储但不共享读取边界。
 pub trait OrganizationProvisioningService: Send + Sync {
+    fn list_self<'a>(
+        &'a self,
+        _user: UserId,
+        _query: OrganizationProvisioningListQuery,
+    ) -> OrganizationProvisioningPageFuture<'a> {
+        Box::pin(async { Err(OrganizationProvisioningServiceError::Forbidden) })
+    }
+    fn list_materials_self<'a>(
+        &'a self,
+        _user: UserId,
+        _key: OrganizationProvisioningRequestKey,
+    ) -> OrganizationProvisioningMaterialPageFuture<'a> {
+        Box::pin(async { Err(OrganizationProvisioningServiceError::Forbidden) })
+    }
+    fn download_material_self<'a>(
+        &'a self,
+        _user: UserId,
+        _key: OrganizationProvisioningRequestKey,
+        _id: i64,
+    ) -> OrganizationProvisioningMaterialDownloadFuture<'a> {
+        Box::pin(async { Err(OrganizationProvisioningServiceError::Forbidden) })
+    }
     fn create<'a>(
         &'a self,
         user_id: UserId,
@@ -322,6 +344,65 @@ impl DatabaseOrganizationProvisioningService {
 }
 
 impl OrganizationProvisioningService for DatabaseOrganizationProvisioningService {
+    fn list_self<'a>(
+        &'a self,
+        user: UserId,
+        query: OrganizationProvisioningListQuery,
+    ) -> OrganizationProvisioningPageFuture<'a> {
+        Box::pin(async move {
+            let records = self
+                .repository
+                .list_requests_self(user, query.status(), query.before(), query.limit())
+                .await
+                .map_err(map_error)?;
+            let next_cursor = (records.len() == query.limit() as usize)
+                .then(|| records.last().map(|r| r.id().get()))
+                .flatten();
+            Ok(OrganizationProvisioningPage {
+                records,
+                next_cursor,
+            })
+        })
+    }
+    fn list_materials_self<'a>(
+        &'a self,
+        user: UserId,
+        key: OrganizationProvisioningRequestKey,
+    ) -> OrganizationProvisioningMaterialPageFuture<'a> {
+        Box::pin(async move {
+            self.repository
+                .get_request(user, key)
+                .await
+                .map_err(map_error)?
+                .ok_or(OrganizationProvisioningServiceError::NotFound)?;
+            self.repository.list_materials(key).await.map_err(map_error)
+        })
+    }
+    fn download_material_self<'a>(
+        &'a self,
+        user: UserId,
+        key: OrganizationProvisioningRequestKey,
+        id: i64,
+    ) -> OrganizationProvisioningMaterialDownloadFuture<'a> {
+        Box::pin(async move {
+            let material = self
+                .list_materials_self(user, key)
+                .await?
+                .into_iter()
+                .find(|m| m.id() == id)
+                .ok_or(OrganizationProvisioningServiceError::NotFound)?;
+            let bytes = self
+                .repository
+                .read_material_content(key, id)
+                .await
+                .map_err(map_error)?;
+            Ok((
+                material.file_name().to_owned(),
+                material.content_type().to_owned(),
+                bytes,
+            ))
+        })
+    }
     fn create<'a>(
         &'a self,
         user_id: UserId,

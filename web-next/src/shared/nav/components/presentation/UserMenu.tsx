@@ -19,7 +19,7 @@ import { useUserMenu } from "../../hooks/use-user-menu";
 /** 账号菜单沿用 acmeidc 原件的结构与外观，只把跳转换成 AnyFlows 的真实入口。 */
 const menuRoutes: Record<string, string> = {
   account: "/console/profile",
-  realname: "/console/organization-verification",
+  realname: "/console/account-verification",
   security: "/console/profile",
   permission: "/console/api-keys",
 };

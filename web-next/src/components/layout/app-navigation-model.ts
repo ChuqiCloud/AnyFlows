@@ -25,6 +25,7 @@ export type NavKey =
   | 'wallet'
   | 'subscriptions'
   | 'invitations'
+  | 'accountVerification'
   | 'profile'
   | 'users'
   | 'subscriptionManagement'
@@ -60,6 +61,7 @@ export const userWorkspaceItems = [
   'subscriptions',
   'invitations',
   'organizationProvisioning',
+  'accountVerification',
   'profile',
 ] as const satisfies readonly NavKey[]
 
@@ -74,6 +76,7 @@ export const adminWorkspaceItems = [
   'wallet',
   'subscriptions',
   'invitations',
+  'accountVerification',
   'profile',
 ] as const satisfies readonly NavKey[]
 
