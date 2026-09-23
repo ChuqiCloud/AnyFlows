@@ -14,6 +14,7 @@ export function useAdminUsageLogs(
   return useQuery({
     queryKey: ['admin-usage-logs', { before, failedBefore, pageSize }],
     enabled,
+    refetchInterval: 10_000,
     queryFn: async ({ signal }) => {
       const { data } = await listAdminUsageLogs({
         client: apiClient,
@@ -35,6 +36,7 @@ export function useUserUsageLogs(
   return useQuery({
     queryKey: ['user-usage-logs', { before, failedBefore, pageSize }],
     enabled,
+    refetchInterval: 10_000,
     queryFn: async ({ signal }) => {
       const { data } = await listUserUsageLogs({
         client: apiClient,

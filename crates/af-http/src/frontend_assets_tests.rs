@@ -116,6 +116,12 @@ async fn static_assets_use_mime_cache_and_conditional_requests() {
 
 #[tokio::test]
 async fn api_operations_and_missing_files_never_fall_back_to_html() {
+    for path in ["/api", "/api/"] {
+        let explorer = get_response(path).await;
+        assert_eq!(explorer.status(), StatusCode::OK);
+        assert_eq!(body(explorer).await, INDEX);
+    }
+
     for path in [
         "/api/missing",
         "/v1/missing",
