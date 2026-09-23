@@ -1,13 +1,15 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use af_admin::{
-    AccountVerificationService, DatabasePlatformAuditService, LoginCredentials,
-    SessionAuthentication, SessionAuthenticationError, SessionAuthenticationFuture,
-    SessionAuthenticator, SessionLoginFuture, SessionPrincipal, SessionRole,
+    AccountVerificationService, AdminGroupCreateCommand, AdminGroupWriter, AdminUserCreateCommand,
+    AdminUserStatus, AdminUserWriter, DatabaseAdminGroupWriter, DatabaseAdminUserWriter,
+    DatabasePlatformAuditService, LoginCredentials, SessionAuthentication,
+    SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
+    SessionLoginFuture, SessionPrincipal, SessionRole,
 };
 use af_db::{
-    AccountVerificationRepository, DatabaseOptions, MigrationOptions, PlatformAuditRepository,
-    entity::{groups, users},
+    AccountVerificationRepository, AdminGroupRepository, AdminUserRepository, DatabaseOptions,
+    MigrationOptions, PlatformAuditRepository,
 };
 use af_domain::{GroupId, UserId};
 use af_http::{
@@ -15,7 +17,6 @@ use af_http::{
     http::{Method, Request, StatusCode},
     to_bytes,
 };
-use sea_orm::{ActiveModelTrait, Set};
 use serde_json::{Value, json};
 use tower::ServiceExt as _;
 
@@ -51,31 +52,59 @@ async fn fixture() -> Result<(Router, af_db::DatabasePool), Box<dyn std::error::
         MigrationOptions::default(),
     )
     .await?;
-    let group = groups::ActiveModel {
-        name: Set("verification-http".to_owned()),
-        display_name: Set("Verification HTTP".to_owned()),
-        flags: Set(json!({})),
-        ..Default::default()
-    }
-    .insert(pool.connection())
-    .await?;
+    let setup = SessionPrincipal::new(UserId::new(900)?, SessionRole::Admin);
+    let groups = DatabaseAdminGroupWriter::new(AdminGroupRepository::new(
+        pool.clone(),
+        Duration::from_secs(5),
+    )?);
+    let group = groups
+        .create(
+            setup,
+            AdminGroupCreateCommand::new(
+                "verification-http".to_owned(),
+                "Verification HTTP".to_owned(),
+                1_000_000,
+                None,
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                json!({}),
+            )?,
+        )
+        .await?;
+    let users = DatabaseAdminUserWriter::new(AdminUserRepository::new(
+        pool.clone(),
+        Duration::from_secs(5),
+    )?);
     let mut ids = Vec::new();
     for index in 0..3 {
-        let user = users::ActiveModel {
-            username: Set(format!("verification-http-{index}")),
-            role: Set(if index == 2 { 1 } else { 0 }),
-            status: Set(1),
-            default_group_id: Set(group.id),
-            aff_code: Set(format!("verification-http-aff-{index}")),
-            settings: Set(json!({})),
-            ..Default::default()
-        }
-        .insert(pool.connection())
-        .await?;
-        ids.push(UserId::new(user.id)?);
+        let user = users
+            .create(
+                setup,
+                AdminUserCreateCommand::new(
+                    format!("verification-http-{index}"),
+                    None,
+                    None,
+                    if index == 2 {
+                        SessionRole::Admin
+                    } else {
+                        SessionRole::User
+                    },
+                    AdminUserStatus::Enabled,
+                    group.group_id(),
+                    0,
+                    None,
+                    None,
+                )?,
+            )
+            .await?;
+        ids.push(user.user_id());
     }
     let sessions = Arc::new(Sessions {
-        group: GroupId::new(group.id)?,
+        group: group.group_id(),
         users: ids.try_into().expect("three users"),
     });
     let audit = Arc::new(DatabasePlatformAuditService::new(
@@ -278,6 +307,20 @@ async fn invalid_materials_and_ambiguous_pagination_are_rejected_at_http_boundar
             .await?;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{query}");
     }
+    // OpenAPI clients send the named binary property file_0; the UI uses file:0.
+    let alias_upload = upload("application/pdf", "%PDF-1.7\nfixture")
+        .replace("name=\"file:0\"", "name=\"file_0\"");
+    let response = app
+        .clone()
+        .oneshot(request(
+            Method::POST,
+            "/api/account/verifications",
+            "applicant",
+            "multipart/form-data; boundary=verification-boundary",
+            alias_upload,
+        ))
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
     pool.close().await?;
     Ok(())
 }

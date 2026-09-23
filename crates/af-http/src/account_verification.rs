@@ -319,7 +319,10 @@ async fn submit(
                 return Err(invalid());
             }
             metadata = Some(serde_json::from_str::<SubmitMetadata>(&text).map_err(|_| invalid())?);
-        } else if let Some(key) = name.strip_prefix("file:") {
+        } else if let Some(key) = name
+            .strip_prefix("file:")
+            .or_else(|| name.strip_prefix("file_"))
+        {
             if key.len() > 16 || files.len() >= 5 {
                 return Err(invalid());
             }

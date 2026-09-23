@@ -135,7 +135,7 @@ try {
   await page.goto(`${home}?mode=admin`)
   await page.getByRole('button', { name: '查看详情', exact: true }).first().click()
   await page.getByRole('button', { name: '通过认证', exact: true }).click()
-  await page.getByText('已通过', { exact: true }).waitFor()
+  await page.locator('article').first().getByText('已通过', { exact: true }).waitFor()
   assert.equal(reviewed, 1)
   await page.goto(home)
   await page.getByRole('link', { name: '申请企业空间', exact: true }).waitFor()
@@ -152,7 +152,7 @@ try {
   await sso.check()
   await page.getByLabel('变更原因（必填，将记录审计）', { exact: true }).fill('Reenable SSO after maintenance')
   await page.getByRole('button', { name: '保存授权', exact: true }).click()
-  await page.getByText('企业授权已更新。', { exact: true }).waitFor()
+  await page.getByRole('status').filter({ hasText: '企业授权已更新。' }).waitFor()
   assert.equal(entitlementWrites, 2)
   for (const theme of ['dark', 'light']) {
     await page.evaluate((mode) => { document.documentElement.classList.remove('dark', 'light'); document.documentElement.classList.add(mode) }, theme)
