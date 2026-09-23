@@ -3171,7 +3171,7 @@ impl Bootstrap<Supervised> {
             .merge(af_http::build_account_verification_router(
                 Arc::new(af_admin::AccountVerificationService::new(
                     af_db::AccountVerificationRepository::new(
-                        self.stage.infrastructure.database.clone(),
+                        self.stage.infrastructure.infrastructure.database.clone(),
                     ),
                     Arc::clone(&self.stage.infrastructure.platform_audit_service),
                 )),
