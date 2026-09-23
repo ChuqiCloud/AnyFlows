@@ -12,6 +12,7 @@ import { formatUsageLatency, formatUsageNumber } from '@/features/usage-logs/usa
 import {
   filterUsageLogs,
   filterFailedCallLogs,
+  type FailedCallLogRow,
   type RequestLogRow,
   summarizeUsageLogs,
   type UsageLogModeFilter,

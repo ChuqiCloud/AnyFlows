@@ -16,6 +16,7 @@ import {
   filterFailedCallLogs,
   filterUsageLogs,
   summarizeUsageLogs,
+  type FailedCallLogRow,
   type RequestLogRow,
   type UsageLogModeFilter,
   type UsageLogRow,
