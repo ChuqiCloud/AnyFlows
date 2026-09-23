@@ -36,6 +36,10 @@ export type AccountVerificationResponse = {
     id: number;
     user_id: number;
     kind: string;
+    provider: string;
+    document_country: string;
+    document_type: string;
+    document_number_masked?: string | null;
     subject_name: string;
     summary: string;
     status: number;
