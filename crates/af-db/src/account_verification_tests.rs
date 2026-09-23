@@ -46,7 +46,11 @@ fn submission(kind: &str) -> AccountVerificationSubmit {
         kind: kind.to_owned(),
         provider: "manual".to_owned(),
         document_country: "US".to_owned(),
-        document_type: "passport".to_owned(),
+        document_type: if kind == "enterprise" {
+            "business_registration".to_owned()
+        } else {
+            "passport".to_owned()
+        },
         document_number: Some("A12345678".to_owned()),
         subject_name: "Verified applicant".to_owned(),
         summary: "Identity supporting document".to_owned(),
