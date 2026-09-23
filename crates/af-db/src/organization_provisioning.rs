@@ -1074,10 +1074,11 @@ async fn list_materials_inner(
     let request = find_by_request_key(connection, request_key)
         .await?
         .ok_or(OrganizationProvisioningRepositoryError::NotFound)?;
-    organization_provisioning_materials::Entity::find()
+    organization_provisioning_materials::Entity::find().select_only().columns([organization_provisioning_materials::Column::Id, organization_provisioning_materials::Column::RequestId, organization_provisioning_materials::Column::Kind, organization_provisioning_materials::Column::ObjectReference, organization_provisioning_materials::Column::FileName, organization_provisioning_materials::Column::ContentType, organization_provisioning_materials::Column::SizeBytes, organization_provisioning_materials::Column::CreatedAt])
+        .column_as(sea_orm::sea_query::Expr::col(organization_provisioning_materials::Column::ContentBytes).is_not_null(), "content_available")
         .filter(organization_provisioning_materials::Column::RequestId.eq(request.id))
         .order_by_asc(organization_provisioning_materials::Column::Id)
-        .all(connection)
+        .into_model::<MaterialMetadataRow>().all(connection)
         .await
         .map_err(query_error)?
         .into_iter()
@@ -1105,7 +1106,7 @@ async fn read_material_content_inner(
 }
 
 fn to_material(
-    model: organization_provisioning_materials::Model,
+    model: MaterialMetadataRow,
     request_key: OrganizationProvisioningRequestKey,
 ) -> Result<OrganizationProvisioningMaterial, OrganizationProvisioningRepositoryError> {
     OrganizationProvisioningMaterial::from_persistence(
@@ -1116,7 +1117,7 @@ fn to_material(
         model.file_name.as_str().to_owned(),
         model.content_type,
         model.size_bytes,
-        model.content_bytes.is_some(),
+        model.content_available,
         unix_seconds(model.created_at)?,
     )
     .map_err(|_| OrganizationProvisioningRepositoryError::Invariant)
@@ -1233,4 +1234,16 @@ pub enum OrganizationProvisioningRepositoryError {
     MaterialNotFound,
     #[error("企业开通材料正文不可用")]
     MaterialContentUnavailable,
+}
+
+#[derive(sea_orm::FromQueryResult)]
+struct MaterialMetadataRow {
+    id: i64,
+    kind: String,
+    object_reference: String,
+    file_name: String,
+    content_type: String,
+    size_bytes: i64,
+    content_available: bool,
+    created_at: TimeDateTimeWithTimeZone,
 }

@@ -366,18 +366,13 @@ fn safe_download_name(value: &str) -> String {
         .collect()
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct HistoryQuery {
-    before: Option<i64>,
-}
 
 async fn history_self(
     State(s): State<OrganizationVerificationHttpState>,
     Path(id): Path<i64>,
     Extension(a): Extension<af_admin::SessionAuthentication>,
     Extension(r): Extension<RequestId>,
-    axum::extract::Query(q): axum::extract::Query<HistoryQuery>,
+    RawQuery(raw): RawQuery,
 ) -> Result<Response, ManagementError> {
     let id = OrganizationId::new(id)
         .map_err(|_| ManagementError::OrganizationVerificationInvalidRequest)?;
@@ -386,7 +381,7 @@ async fn history_self(
             a.principal(),
             Some(id),
             None,
-            q.before,
+            parse_history_before(raw.as_deref())?,
             r.as_str().to_owned(),
         )
         .await
@@ -398,7 +393,7 @@ async fn history_admin(
     Path(id): Path<i64>,
     Extension(a): Extension<af_admin::SessionAuthentication>,
     Extension(r): Extension<RequestId>,
-    axum::extract::Query(q): axum::extract::Query<HistoryQuery>,
+    RawQuery(raw): RawQuery,
 ) -> Result<Response, ManagementError> {
     let id = OrganizationVerificationCaseId::new(id)
         .map_err(|_| ManagementError::OrganizationVerificationInvalidRequest)?;
@@ -407,7 +402,7 @@ async fn history_admin(
             a.principal(),
             None,
             Some(id),
-            q.before,
+            parse_history_before(raw.as_deref())?,
             r.as_str().to_owned(),
         )
         .await
@@ -642,4 +637,15 @@ fn no_store_status_json(status: StatusCode, value: impl Serialize) -> Response {
         .headers_mut()
         .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
     response
+}
+
+fn parse_history_before(raw:Option<&str>) -> Result<Option<i64>,ManagementError> {
+    let mut before=None;
+    for (key,value) in url::form_urlencoded::parse(raw.unwrap_or_default().as_bytes()) {
+        if key != "before" || before.is_some() {return Err(ManagementError::OrganizationVerificationInvalidRequest);}
+        let parsed=value.parse::<i64>().map_err(|_|ManagementError::OrganizationVerificationInvalidRequest)?;
+        if parsed<=0 {return Err(ManagementError::OrganizationVerificationInvalidRequest);}
+        before=Some(parsed);
+    }
+    Ok(before)
 }

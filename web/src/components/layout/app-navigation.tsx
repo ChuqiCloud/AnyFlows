@@ -1,3 +1,4 @@
+import { useAccountEligibility } from '@/features/account-verification/account-verification-api'
 import {
   Activity,
   Boxes,
@@ -306,14 +307,17 @@ export function AppNavigation({ className, compact = false, role }: AppNavigatio
   const { t } = useTranslation()
   const activeKey = useActiveKey()
   const workspace = useOrganizationWorkspace()
-  const organizationItems = filterOrganizationNavigationItems(
+  const eligibility = useAccountEligibility()
+  const organizationItems: readonly NavKey[] = workspace.selectedId === undefined && eligibility.data?.enterprise_verified
+    ? ['organizationProvisioning']
+    : filterOrganizationNavigationItems(
     userNavigationGroups.find((group) => group.key === 'organization')?.items ?? [],
     workspace.organizationPermissions,
     workspace.selectedId !== undefined,
     workspace.organizationPermissionsLoading,
   )
   const visibleUserGroups = userNavigationGroups
-    .map((group) => group.key === 'organization' ? { ...group, items: organizationItems } : group)
+    .map((group) => group.key === 'organization' ? { ...group, items: organizationItems } : { ...group, items: group.items.filter((item) => item !== 'organizationProvisioning' || !organizationItems.includes('organizationProvisioning')) })
     .filter((group) => group.key !== 'organization' || group.items.length > 0)
   const visibleItems = role === 'admin'
     ? adminNavigationItems

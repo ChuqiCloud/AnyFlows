@@ -17,6 +17,10 @@ use serde::{Deserialize, Serialize};
 use std::{future::Future, time::Duration};
 use thiserror::Error;
 
+#[cfg(test)]
+#[path = "account_verification_tests.rs"]
+mod tests;
+
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum AccountVerificationError {
     #[error("认证请求无效")]

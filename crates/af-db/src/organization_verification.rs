@@ -495,10 +495,11 @@ async fn to_bundle<C: ConnectionTrait>(
         model.decided_at.map(unix_seconds).transpose()?,
     )
     .map_err(|_| OrganizationVerificationRepositoryError::Invariant)?;
-    let materials = organization_verification_materials::Entity::find()
+    let materials = organization_verification_materials::Entity::find().select_only().columns([organization_verification_materials::Column::Id, organization_verification_materials::Column::CaseId, organization_verification_materials::Column::Kind, organization_verification_materials::Column::ObjectReference, organization_verification_materials::Column::FileName, organization_verification_materials::Column::ContentType, organization_verification_materials::Column::SizeBytes, organization_verification_materials::Column::CreatedAt])
+        .column_as(sea_orm::sea_query::Expr::col(organization_verification_materials::Column::ContentBytes).is_not_null(), "content_available")
         .filter(organization_verification_materials::Column::CaseId.eq(model.id))
         .order_by_asc(organization_verification_materials::Column::Id)
-        .all(connection)
+        .into_model::<MaterialMetadataRow>().all(connection)
         .await
         .map_err(query_error)?
         .into_iter()
@@ -508,7 +509,7 @@ async fn to_bundle<C: ConnectionTrait>(
 }
 
 fn to_material(
-    model: organization_verification_materials::Model,
+    model: MaterialMetadataRow,
 ) -> Result<OrganizationVerificationMaterial, OrganizationVerificationRepositoryError> {
     OrganizationVerificationMaterial::new(
         OrganizationVerificationMaterialId::new(model.id)
@@ -520,7 +521,7 @@ fn to_material(
         model.file_name.as_str().to_owned(),
         model.content_type,
         model.size_bytes,
-        model.content_bytes.is_some(),
+        model.content_available,
         unix_seconds(model.created_at)?,
     )
     .map_err(|_| OrganizationVerificationRepositoryError::Invariant)
@@ -604,4 +605,17 @@ pub enum OrganizationVerificationRepositoryError {
     MaterialNotFound,
     #[error("企业认证材料正文不可用")]
     MaterialContentUnavailable,
+}
+
+#[derive(sea_orm::FromQueryResult)]
+struct MaterialMetadataRow {
+    id: i64,
+    case_id: i64,
+    kind: String,
+    object_reference: String,
+    file_name: String,
+    content_type: String,
+    size_bytes: i64,
+    content_available: bool,
+    created_at: TimeDateTimeWithTimeZone,
 }

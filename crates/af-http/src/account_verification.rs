@@ -11,7 +11,7 @@ use af_admin::{
 use af_telemetry::RequestId;
 use axum::{
     Extension, Json, Router,
-    extract::{DefaultBodyLimit, Multipart, Path, Query, State},
+    extract::{DefaultBodyLimit, Multipart, Path, RawQuery, State},
     middleware,
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -167,17 +167,17 @@ async fn list_self(
     State(s): State<Arc<AccountVerificationService>>,
     Extension(a): Extension<SessionAuthentication>,
     Extension(r): Extension<RequestId>,
-    Query(q): Query<ListQuery>,
+    RawQuery(raw): RawQuery,
 ) -> Result<Response, ManagementError> {
-    list_cases(s, a, r, q, false).await
+    list_cases(s, a, r, parse_list_query(raw.as_deref())?, false).await
 }
 async fn list_admin(
     State(s): State<Arc<AccountVerificationService>>,
     Extension(a): Extension<SessionAuthentication>,
     Extension(r): Extension<RequestId>,
-    Query(q): Query<ListQuery>,
+    RawQuery(raw): RawQuery,
 ) -> Result<Response, ManagementError> {
-    list_cases(s, a, r, q, true).await
+    list_cases(s, a, r, parse_list_query(raw.as_deref())?, true).await
 }
 
 async fn detail(
@@ -395,4 +395,17 @@ pub(crate) fn map_error(e: AccountVerificationError) -> ManagementError {
             ManagementError::OrganizationVerificationUnavailable
         }
     }
+}
+
+fn parse_list_query(raw:Option<&str>) -> Result<ListQuery,ManagementError> {
+    let mut q=ListQuery::default();
+    for (key,value) in url::form_urlencoded::parse(raw.unwrap_or_default().as_bytes()) {
+        match key.as_ref() {
+            "before" if q.before.is_none()=>q.before=Some(value.parse().map_err(|_| invalid())?),
+            "status" if q.status.is_none()=>q.status=Some(value.parse().map_err(|_| invalid())?),
+            "limit" if q.limit.is_none()=>q.limit=Some(value.parse().map_err(|_| invalid())?),
+            _=>return Err(invalid()),
+        }
+    }
+    Ok(q)
 }
