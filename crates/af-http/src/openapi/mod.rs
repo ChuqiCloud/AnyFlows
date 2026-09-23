@@ -276,7 +276,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 270);
+        assert_eq!(document.paths.paths.len(), 271);
         let operation_count = document
             .paths
             .paths
@@ -297,8 +297,8 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        // 新增前端模板预览接口后，保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 352);
+        // 保持操作总数与生成文档同步。
+        assert_eq!(operation_count, 353);
         assert!(
             document
                 .components
@@ -353,6 +353,7 @@ mod tests {
             "listSelfOrganizationProvisioning",
             "listSelfProvisioningMaterials",
             "submitAccountVerification",
+            "syncAccountVerificationProvider",
             "updatePlatformOrganizationEntitlement",
             "listPublicAnnouncements",
             "listAdminAnnouncements",
