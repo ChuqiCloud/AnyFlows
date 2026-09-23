@@ -7,7 +7,7 @@ publish.workspace = true
 
 [dependencies]
 async-trait.workspace = true
-af-domain = { path = "../af-domain", version = "0.2.0-beta.9" }
+af-domain = { path = "../af-domain", version = "0.2.0-beta.10" }
 futures-util.workspace = true
 getrandom.workspace = true
 lru.workspace = true
