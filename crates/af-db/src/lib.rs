@@ -3,8 +3,10 @@
 /// 数据库存储使用的 UTC 时间类型，供应用任务传递一致的扫描时刻。
 mod account_verification;
 pub use account_verification::{
-    AccountVerificationError, AccountVerificationMaterial, AccountVerificationRecord,
-    AccountVerificationRepository, AccountVerificationSubmit, validate_verification_material,
+    AccountVerificationError, AccountVerificationMaterial, AccountVerificationProviderRequest,
+    AccountVerificationProviderResult, AccountVerificationProviderStart, AccountVerificationRecord,
+    AccountVerificationRepository, AccountVerificationSubmit, validate_account_verification_submit,
+    validate_verification_material,
 };
 
 pub type DatabaseTimestamp = sea_orm::entity::prelude::TimeDateTimeWithTimeZone;

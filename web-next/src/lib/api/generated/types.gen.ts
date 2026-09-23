@@ -30,13 +30,15 @@ export type AccountVerificationMaterialResponse = {
 };
 export type AccountVerificationMultipartRequest = {
     metadata: string;
-    file_0: Blob | File;
+    file_0?: Blob | File;
 };
 export type AccountVerificationResponse = {
     id: number;
     user_id: number;
     kind: string;
     provider: string;
+    provider_action_url?: string | null;
+    provider_status?: string | null;
     document_country: string;
     document_type: string;
     document_number_masked?: string | null;
@@ -8795,6 +8797,27 @@ export type GetAccountVerificationResponses = {
     200: AccountVerificationDetailResponse;
 };
 export type GetAccountVerificationResponse = GetAccountVerificationResponses[keyof GetAccountVerificationResponses];
+export type SyncAccountVerificationProviderData = {
+    body?: never;
+    path: {
+        case_id: number;
+    };
+    query?: never;
+    url: '/api/account/verifications/{case_id}/provider-sync';
+};
+export type SyncAccountVerificationProviderErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type SyncAccountVerificationProviderError = SyncAccountVerificationProviderErrors[keyof SyncAccountVerificationProviderErrors];
+export type SyncAccountVerificationProviderResponses = {
+    200: AccountVerificationResponse;
+};
+export type SyncAccountVerificationProviderResponse = SyncAccountVerificationProviderResponses[keyof SyncAccountVerificationProviderResponses];
 export type DownloadAccountVerificationMaterialData = {
     body?: never;
     path: {

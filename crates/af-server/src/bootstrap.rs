@@ -255,6 +255,7 @@ pub struct AuthenticationReady {
     password_reset_service: Arc<dyn PasswordResetService>,
     user_profile_service: Arc<dyn UserProfileService>,
     user_wallet_service: Arc<dyn UserWalletService>,
+    account_verification_provider: Arc<dyn af_admin::AccountVerificationProvider>,
     user_notification_service: Arc<dyn af_admin::UserNotificationService>,
     organization_approval_notification_service: Arc<dyn OrganizationApprovalNotificationService>,
     organization_wallet_service: Arc<dyn OrganizationWalletService>,
@@ -727,6 +728,9 @@ pub enum BootstrapError {
     /// 受控上游 HTTP Client 配置或构造失败。
     #[error("初始化上游 HTTP Client 失败")]
     HttpClient(#[source] HttpClientError),
+    /// 支付宝实名认证 provider 的启动配置无效。
+    #[error("初始化支付宝实名认证 provider 失败")]
+    AlipayVerificationProvider(#[source] af_admin::AlipayProviderConfigError),
     /// 数据库网络设置无法应用到当前 HTTP Client。
     #[error("应用运行时网络设置失败")]
     NetworkSettingsRuntime(#[source] AdminNetworkSettingsError),
@@ -1529,6 +1533,9 @@ impl Bootstrap<DatabaseReady> {
                 user_wallet_service: Arc::new(DatabaseUserWalletService::new(
                     wallet_ledger_repository.clone(),
                 )),
+                account_verification_provider: Arc::new(
+                    af_admin::ManualAccountVerificationProvider,
+                ),
                 user_notification_service: Arc::new(DatabaseUserNotificationService::new(
                     user_notification_repository,
                 )),
@@ -1720,6 +1727,12 @@ impl Bootstrap<AuthenticationReady> {
         let (startup_config, max_cached_clients) = build_http_client_parts(&config)?;
         let upstream_clients = HttpClientProvider::new(startup_config.clone(), max_cached_clients)
             .map_err(BootstrapError::HttpClient)?;
+        let alipay_provider = af_admin::AlipayAccountVerificationProvider::from_config(
+            config.account_verification().alipay(),
+            upstream_clients.clone(),
+        )
+        .map_err(BootstrapError::AlipayVerificationProvider)?;
+        authentication.account_verification_provider = Arc::new(alipay_provider);
         // 回调编排只复用已完成 SSRF、代理和超时基线的共享 Client。
         authentication
             .organization_sso_login_service
@@ -3169,12 +3182,17 @@ impl Bootstrap<Supervised> {
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
             ))
             .merge(af_http::build_account_verification_router(
-                Arc::new(af_admin::AccountVerificationService::new(
-                    af_db::AccountVerificationRepository::new(
-                        self.stage.infrastructure.infrastructure.database.clone(),
-                    ),
-                    Arc::clone(&self.stage.infrastructure.platform_audit_service),
-                )),
+                Arc::new(
+                    af_admin::AccountVerificationService::new(
+                        af_db::AccountVerificationRepository::new(
+                            self.stage.infrastructure.infrastructure.database.clone(),
+                        ),
+                        Arc::clone(&self.stage.infrastructure.platform_audit_service),
+                    )
+                    .with_provider(Arc::clone(
+                        &self.stage.infrastructure.account_verification_provider,
+                    )),
+                ),
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
             ))
             .merge(build_frontend_template_router(

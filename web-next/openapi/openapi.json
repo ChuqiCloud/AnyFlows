@@ -22729,6 +22729,102 @@
         ]
       }
     },
+    "/api/account/verifications/{case_id}/provider-sync": {
+      "post": {
+        "tags": [
+          "账号认证"
+        ],
+        "operationId": "syncAccountVerificationProvider",
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountVerificationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/account/verifications/{case_id}/materials/{material_id}": {
       "get": {
         "tags": [
@@ -31300,13 +31396,12 @@
       "AccountVerificationMultipartRequest": {
         "type": "object",
         "required": [
-          "metadata",
-          "file_0"
+          "metadata"
         ],
         "properties": {
           "metadata": {
             "type": "string",
-            "description": "JSON containing kind, provider, document_country, document_type, optional document_number, subject_name, summary and materials [{kind,file_field}]."
+            "description": "JSON containing kind, provider, document_country, document_type, optional document_number, subject_name, summary and materials [{kind,file_field}]. 支付宝实名认证时 materials 可以为空。"
           },
           "file_0": {
             "type": "string",
@@ -31344,6 +31439,18 @@
           },
           "provider": {
             "type": "string"
+          },
+          "provider_action_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider_status": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "document_country": {
             "type": "string"

@@ -30,6 +30,10 @@ pub fn build_account_verification_router(
         .route("/api/account/verifications/eligibility", get(eligibility))
         .route("/api/account/verifications/{case_id}", get(get_self))
         .route(
+            "/api/account/verifications/{case_id}/provider-sync",
+            post(sync_provider),
+        )
+        .route(
             "/api/account/verifications/{case_id}/materials/{material_id}",
             get(download_self),
         )
@@ -58,6 +62,8 @@ pub(crate) struct AccountVerificationResponse {
     pub(crate) user_id: i64,
     pub(crate) kind: String,
     pub(crate) provider: String,
+    pub(crate) provider_action_url: Option<String>,
+    pub(crate) provider_status: Option<String>,
     pub(crate) document_country: String,
     pub(crate) document_type: String,
     pub(crate) document_number_masked: Option<String>,
@@ -77,6 +83,8 @@ impl From<AccountVerificationRecord> for AccountVerificationResponse {
             user_id: c.user_id,
             kind: c.kind,
             provider: c.provider,
+            provider_action_url: c.provider_action_url,
+            provider_status: c.provider_status,
             document_country: c.document_country,
             document_type: c.document_type,
             document_number_masked: c.document_number_masked,
@@ -142,6 +150,7 @@ struct SubmitMetadata {
     document_number: Option<String>,
     subject_name: String,
     summary: String,
+    #[serde(default)]
     materials: Vec<MaterialMetadata>,
 }
 
@@ -238,6 +247,18 @@ async fn get_self(
     Path(id): Path<i64>,
 ) -> Result<Response, ManagementError> {
     detail(s, a, r, id, false).await
+}
+
+async fn sync_provider(
+    State(s): State<Arc<AccountVerificationService>>,
+    Extension(a): Extension<SessionAuthentication>,
+    Path(id): Path<i64>,
+) -> Result<Response, ManagementError> {
+    let case = s
+        .sync_provider(a.principal(), id)
+        .await
+        .map_err(map_error)?;
+    Ok(no_store_json(AccountVerificationResponse::from(case)))
 }
 async fn get_admin(
     State(s): State<Arc<AccountVerificationService>>,
@@ -377,7 +398,10 @@ async fn submit(
         }
     }
     let metadata = metadata.ok_or_else(invalid)?;
-    if !(1..=5).contains(&metadata.materials.len()) {
+    if metadata.provider != "alipay" && !(1..=5).contains(&metadata.materials.len()) {
+        return Err(invalid());
+    }
+    if metadata.provider == "alipay" && !metadata.materials.is_empty() {
         return Err(invalid());
     }
     let mut materials = Vec::new();
@@ -402,6 +426,9 @@ async fn submit(
             AccountVerificationSubmit {
                 kind: metadata.kind,
                 provider: metadata.provider,
+                provider_reference: None,
+                provider_action_url: None,
+                provider_status: None,
                 document_country: metadata.document_country,
                 document_type: metadata.document_type,
                 document_number: metadata.document_number,
