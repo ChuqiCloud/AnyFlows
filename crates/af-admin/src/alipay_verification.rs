@@ -24,15 +24,9 @@ use uuid::Uuid;
 const MAX_RESPONSE_BYTES: usize = 256 * 1024;
 const API_VERSION: &str = "1.0";
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct AlipayAccountVerificationProvider {
     client: Option<Arc<AlipayClient>>,
-}
-
-impl Default for AlipayAccountVerificationProvider {
-    fn default() -> Self {
-        Self { client: None }
-    }
 }
 
 impl fmt::Debug for AlipayAccountVerificationProvider {
