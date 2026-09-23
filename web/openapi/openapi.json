@@ -31306,7 +31306,7 @@
         "properties": {
           "metadata": {
             "type": "string",
-            "description": "JSON containing kind (individual/enterprise), subject_name, summary and materials [{kind,file_field}]."
+            "description": "JSON containing kind, provider, document_country, document_type, optional document_number, subject_name, summary and materials [{kind,file_field}]."
           },
           "file_0": {
             "type": "string",
@@ -31320,6 +31320,9 @@
           "id",
           "user_id",
           "kind",
+          "provider",
+          "document_country",
+          "document_type",
           "subject_name",
           "summary",
           "status",
@@ -31338,6 +31341,21 @@
           },
           "kind": {
             "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "document_country": {
+            "type": "string"
+          },
+          "document_type": {
+            "type": "string"
+          },
+          "document_number_masked": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "subject_name": {
             "type": "string"
