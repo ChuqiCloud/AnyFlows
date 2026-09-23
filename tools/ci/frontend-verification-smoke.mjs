@@ -123,7 +123,7 @@ try {
   await page.waitForFunction(() => [...document.images].every((img) => img.complete && img.naturalWidth > 0))
   assert.equal(downloads, 1)
   await page.getByRole('button', { name: '加载更多', exact: true }).click()
-  await page.getByText('Enterprise 1 ', { exact: false }).last().waitFor()
+  await page.waitForFunction(() => [...document.querySelectorAll('button')].filter((button) => button.textContent.trim() === '查看详情').length === 27)
   assert.equal(await page.getByRole('button', { name: '查看详情', exact: true }).count(), 27)
   await page.getByRole('tab', { name: '企业认证', exact: true }).click()
   await page.getByLabel('认证主体名称', { exact: true }).fill('New Enterprise')

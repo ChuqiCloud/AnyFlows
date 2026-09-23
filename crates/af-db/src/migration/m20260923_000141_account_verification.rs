@@ -169,10 +169,37 @@ impl MigrationTrait for Migration {
                     .unique()
                     .to_owned(),
             )
-            .await
+            .await?;
+        // MySQL BLOB cannot hold the file sizes accepted by the upload APIs.
+        // Widen existing material storage as well as the new account storage.
+        if manager.get_database_backend() == sea_orm::DbBackend::MySql {
+            for name in [
+                "account_verification_materials",
+                "organization_verification_materials",
+                "organization_provisioning_materials",
+            ] {
+                let mut content = ColumnDef::new(Alias::new("content_bytes"));
+                content.custom(Alias::new("LONGBLOB"));
+                if name == "account_verification_materials" {
+                    content.not_null();
+                } else {
+                    content.null();
+                }
+                manager
+                    .alter_table(
+                        Table::alter()
+                            .table(Alias::new(name))
+                            .modify_column(content)
+                            .to_owned(),
+                    )
+                    .await?;
+            }
+        }
+        Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        // Keep the widened legacy columns on rollback; shrinking them could lose files.
         for name in [
             "organization_verification_history",
             "account_verification_materials",

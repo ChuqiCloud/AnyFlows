@@ -4068,6 +4068,27 @@ async fn assert_database_session(connection: &DatabaseConnection) -> Result<(), 
 
 async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr> {
     let manager = SchemaManager::new(connection);
+    for name in [
+        "account_verifications",
+        "account_verification_materials",
+        "organization_verification_history",
+    ] {
+        assert!(manager.has_table(name).await?, "缺少认证数据表 {name}");
+    }
+    if connection.get_database_backend() == DbBackend::MySql {
+        let rows = connection.query_all(Statement::from_string(DbBackend::MySql,
+            "SELECT TABLE_NAME AS table_name, DATA_TYPE AS data_type FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND COLUMN_NAME = 'content_bytes' AND TABLE_NAME IN ('account_verification_materials', 'organization_verification_materials', 'organization_provisioning_materials')"
+        )).await?;
+        assert_eq!(rows.len(), 3);
+        for row in rows {
+            let name: String = row.try_get("", "table_name")?;
+            let data_type: String = row.try_get("", "data_type")?;
+            assert_eq!(
+                data_type, "longblob",
+                "{name} 必须支持上传接口声明的材料大小"
+            );
+        }
+    }
     for table in CORE_TABLES {
         assert!(manager.has_table(table).await?, "缺少数据表 {table}");
     }
