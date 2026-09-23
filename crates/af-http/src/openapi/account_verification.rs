@@ -10,7 +10,7 @@ use utoipa::{OpenApi, ToSchema};
 struct AccountVerificationMultipartRequest {
     /// JSON containing kind, provider, document_country, document_type, optional document_number, subject_name, summary and materials [{kind,file_field}]. 支付宝实名认证时 materials 可以为空。
     metadata: String,
-    #[schema(value_type=String, format=Binary)]
+    #[schema(value_type = Option<String>, format = Binary)]
     file_0: Option<String>,
 }
 #[utoipa::path(get, path="/api/account/verifications", operation_id="listAccountVerifications", tag="账号认证",
