@@ -30,7 +30,7 @@ export type AccountVerificationMaterialResponse = {
 };
 export type AccountVerificationMultipartRequest = {
     metadata: string;
-    file_0?: Blob | File;
+    file_0?: Blob | File | null;
 };
 export type AccountVerificationResponse = {
     id: number;

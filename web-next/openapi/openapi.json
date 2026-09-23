@@ -31404,7 +31404,10 @@
             "description": "JSON containing kind, provider, document_country, document_type, optional document_number, subject_name, summary and materials [{kind,file_field}]. 支付宝实名认证时 materials 可以为空。"
           },
           "file_0": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "binary"
           }
         }
