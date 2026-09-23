@@ -5,7 +5,7 @@
   },
   "apiExplorer": {
     "nav": "API",
-    "title": "API reference and playground",
+    "title": "API reference and model experience",
     "subtitle": "See the APIs available to your current identity. Read-only endpoints and gateway protocols can be tried online; high-risk management actions remain documentation-only.",
     "search": "Search APIs, paths, or descriptions",
     "allTags": "All categories",
@@ -55,9 +55,9 @@
   "nav": {
     "label": "Primary navigation",
     "groups": {
-      "use": "Use",
-      "organization": "Organization",
-      "account": "Account",
+      "use": "Workspace",
+      "organization": "Organization workspace",
+      "account": "Personal account",
       "workspace": "Workspace",
       "personal": "Personal",
       "system": "Platform administration"
@@ -66,13 +66,14 @@
       "personal": "Personal account",
       "organization": "Organization",
       "enterprise": "Organizations & users",
+      "system": "System administration",
       "operations": "Users & commerce",
       "gateway": "Models & gateway",
       "platform": "Platform settings"
     },
     "overview": "Operations overview",
     "models": "Models",
-    "playground": "Multimodal playground",
+    "playground": "Model experience",
     "videoTasks": "Video tasks",
     "apiKeys": "My API keys",
     "organizationApiKeys": "Organization API keys",
@@ -1205,7 +1206,7 @@
       "copied": "Copied",
       "copyFailed": "Clipboard access failed. Select and copy the key manually.",
       "warning": "The full key is shown only once. Save it securely before closing this window.",
-      "playground": "Open Playground",
+      "playground": "Open model experience",
       "done": "I have saved it"
     },
     "delete": {
@@ -2298,7 +2299,7 @@
       "copied": "Copied",
       "copyFailed": "Clipboard access failed. Select and copy the key manually.",
       "warning": "The full key is shown only once. Save it securely before closing this window.",
-      "playground": "Open Playground",
+      "playground": "Open model experience",
       "done": "I have saved it"
     },
     "delete": {
@@ -2948,9 +2949,9 @@
     }
   },
   "playground": {
-    "title": "Multimodal playground",
+    "title": "Model experience",
     "modes": {
-      "label": "Playground mode",
+      "label": "Experience mode",
       "chat": "Chat",
       "video": "Video"
     },
@@ -3021,7 +3022,7 @@
         "xai_video": "xAI Video",
         "anthropic": "Anthropic Messages",
         "gemini": "Gemini",
-        "unavailable": "Unsupported in Playground"
+        "unavailable": "Unsupported in model experience"
       },
       "done": "Done"
     },
@@ -3123,11 +3124,11 @@
         "unavailable": "A share link could not be created. Try again later."
       },
       "public": {
-        "pageTitle": "Shared Playground conversation | AnyFlows",
-        "headerScope": "Read-only Playground share",
-        "openPlayground": "Open Playground",
+        "pageTitle": "Shared model experience | AnyFlows",
+        "headerScope": "Read-only model experience share",
+        "openPlayground": "Open model experience",
         "loading": "Loading the shared snapshot",
-        "title": "Shared Playground conversation",
+        "title": "Shared model experience",
         "description": "This read-only snapshot was saved when the link was created. It excludes credentials, settings, usage, and routing data.",
         "readOnly": "Read only",
         "created": "Created",
