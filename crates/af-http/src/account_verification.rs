@@ -57,6 +57,10 @@ pub(crate) struct AccountVerificationResponse {
     pub(crate) id: i64,
     pub(crate) user_id: i64,
     pub(crate) kind: String,
+    pub(crate) provider: String,
+    pub(crate) document_country: String,
+    pub(crate) document_type: String,
+    pub(crate) document_number_masked: Option<String>,
     pub(crate) subject_name: String,
     pub(crate) summary: String,
     pub(crate) status: i16,
@@ -72,6 +76,10 @@ impl From<AccountVerificationRecord> for AccountVerificationResponse {
             id: c.id,
             user_id: c.user_id,
             kind: c.kind,
+            provider: c.provider,
+            document_country: c.document_country,
+            document_type: c.document_type,
+            document_number_masked: c.document_number_masked,
             subject_name: c.subject_name,
             summary: c.summary,
             status: c.status,
@@ -125,9 +133,26 @@ struct ListQuery {
 #[serde(deny_unknown_fields)]
 struct SubmitMetadata {
     kind: String,
+    #[serde(default = "default_provider")]
+    provider: String,
+    #[serde(default = "default_document_country")]
+    document_country: String,
+    #[serde(default = "default_document_type")]
+    document_type: String,
+    document_number: Option<String>,
     subject_name: String,
     summary: String,
     materials: Vec<MaterialMetadata>,
+}
+
+fn default_provider() -> String {
+    "manual".to_owned()
+}
+fn default_document_country() -> String {
+    "CN".to_owned()
+}
+fn default_document_type() -> String {
+    "identity".to_owned()
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -376,6 +401,10 @@ async fn submit(
             a.principal(),
             AccountVerificationSubmit {
                 kind: metadata.kind,
+                provider: metadata.provider,
+                document_country: metadata.document_country,
+                document_type: metadata.document_type,
+                document_number: metadata.document_number,
                 subject_name: metadata.subject_name,
                 summary: metadata.summary,
                 materials,
@@ -393,6 +422,7 @@ pub(crate) fn map_error(e: AccountVerificationError) -> ManagementError {
         AccountVerificationError::Invalid => invalid(),
         AccountVerificationError::NotFound => ManagementError::OrganizationVerificationNotFound,
         AccountVerificationError::Forbidden => ManagementError::OrganizationVerificationForbidden,
+        AccountVerificationError::SelfReview => ManagementError::AccountVerificationSelfReview,
         AccountVerificationError::Conflict => ManagementError::OrganizationVerificationConflict,
         AccountVerificationError::Unavailable => {
             ManagementError::OrganizationVerificationUnavailable

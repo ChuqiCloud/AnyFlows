@@ -696,8 +696,10 @@ mod token_auth_tests;
 
 mod account_verification;
 pub use account_verification::{
-    AccountVerificationError, AccountVerificationMaterial, AccountVerificationRecord,
-    AccountVerificationService, AccountVerificationSubmit, validate_verification_material,
+    AccountVerificationError, AccountVerificationMaterial, AccountVerificationProvider,
+    AccountVerificationRecord, AccountVerificationService, AccountVerificationSubmit,
+    AlipayAccountVerificationProvider, ManualAccountVerificationProvider,
+    validate_verification_material,
 };
 
 mod platform_entitlement;

@@ -8,7 +8,8 @@ use crate::management_error::ManagementErrorBody;
 use utoipa::{OpenApi, ToSchema};
 #[derive(ToSchema)]
 struct AccountVerificationMultipartRequest {
-    /// JSON containing kind (individual/enterprise), subject_name, summary and materials [{kind,file_field}].
+    /// JSON containing kind, provider (manual), document_country, document_type,
+    /// optional document_number, subject_name, summary and materials [{kind,file_field}].
     metadata: String,
     #[schema(value_type=String, format=Binary)]
     file_0: String,

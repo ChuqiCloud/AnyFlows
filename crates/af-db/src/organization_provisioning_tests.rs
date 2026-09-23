@@ -499,6 +499,10 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
         crate::entity::account_verifications::ActiveModel {
             user_id: Set(user.id),
             kind: Set("enterprise".to_owned()),
+            provider: Set("manual".to_owned()),
+            document_country: Set("CN".to_owned()),
+            document_type: Set("business_registration".to_owned()),
+            document_number_masked: Set(None),
             subject_name: Set(SensitiveString::from("Verified fixture".to_owned())),
             summary: Set(SensitiveString::from("reviewed fixture".to_owned())),
             status: Set(4),

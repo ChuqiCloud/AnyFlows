@@ -44,6 +44,10 @@ fn submission(kind: &str) -> AccountVerificationSubmit {
     let bytes = b"%PDF-1.7\nverification fixture".to_vec();
     AccountVerificationSubmit {
         kind: kind.to_owned(),
+        provider: "manual".to_owned(),
+        document_country: "US".to_owned(),
+        document_type: "passport".to_owned(),
+        document_number: Some("A12345678".to_owned()),
         subject_name: "Verified applicant".to_owned(),
         summary: "Identity supporting document".to_owned(),
         materials: vec![OrganizationVerificationMaterialWrite {
@@ -55,6 +59,23 @@ fn submission(kind: &str) -> AccountVerificationSubmit {
             content_bytes: bytes,
         }],
     }
+}
+
+#[test]
+fn document_numbers_are_validated_and_only_masked_values_are_exposed() {
+    assert!(valid_document_number(
+        "CN",
+        "national_id",
+        "11010519491231002X"
+    ));
+    assert!(!valid_document_number(
+        "CN",
+        "national_id",
+        "110105194912310021"
+    ));
+    assert!(valid_document_number("US", "passport", "A12345678"));
+    assert!(!valid_document_number("US", "passport", "A123/45678"));
+    assert_eq!(mask_document_number("11010519491231002X"), "11****2X");
 }
 
 #[tokio::test]
@@ -142,7 +163,7 @@ async fn records_and_materials_are_user_scoped_and_reviews_require_another_admin
     assert!(matches!(
         repo.decide(own.id, 1, users[2], 4, None, "self-review".to_owned())
             .await,
-        Err(AccountVerificationError::Forbidden)
+        Err(AccountVerificationError::SelfReview)
     ));
     assert!(matches!(
         repo.download(Some(users[2]), own.id, material[0].id).await,

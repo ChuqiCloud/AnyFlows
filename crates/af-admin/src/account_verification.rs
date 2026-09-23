@@ -10,6 +10,36 @@ pub use af_db::{
 use af_domain::{PlatformPermission, UserId};
 use std::sync::Arc;
 
+/// Stable extension boundary for identity providers. Provider credentials and
+/// network clients stay outside the review repository so future plugins can be
+/// registered without changing case storage or the manual review workflow.
+pub trait AccountVerificationProvider: Send + Sync {
+    fn key(&self) -> &'static str;
+    fn configured(&self) -> bool;
+}
+
+#[derive(Debug, Default)]
+pub struct ManualAccountVerificationProvider;
+impl AccountVerificationProvider for ManualAccountVerificationProvider {
+    fn key(&self) -> &'static str {
+        "manual"
+    }
+    fn configured(&self) -> bool {
+        true
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct AlipayAccountVerificationProvider;
+impl AccountVerificationProvider for AlipayAccountVerificationProvider {
+    fn key(&self) -> &'static str {
+        "alipay"
+    }
+    fn configured(&self) -> bool {
+        false
+    }
+}
+
 pub struct AccountVerificationService {
     repository: AccountVerificationRepository,
     audit: Arc<dyn PlatformAuditService>,

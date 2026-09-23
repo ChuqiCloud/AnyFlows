@@ -87,6 +87,7 @@ pub(crate) enum ManagementError {
     OrganizationVerificationInvalidRequest,
     /// 当前用户没有企业认证操作权限。
     OrganizationVerificationForbidden,
+    AccountVerificationSelfReview,
     /// 企业认证服务暂不可用。
     OrganizationVerificationUnavailable,
     /// 企业成员或团队 CAS 版本冲突。
@@ -621,6 +622,13 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "organization_verification_forbidden",
                     message: "Organization verification access is forbidden",
+                },
+            ),
+            Self::AccountVerificationSelfReview => (
+                StatusCode::FORBIDDEN,
+                ManagementErrorBody {
+                    code: "account_verification_self_review",
+                    message: "Administrators cannot review their own verification",
                 },
             ),
             Self::OrganizationVerificationUnavailable => (
