@@ -11,7 +11,21 @@ impl MigrationTrait for Migration {
                 Table::alter()
                     .table(Alias::new("account_verifications"))
                     .add_column(ColumnDef::new(Alias::new("provider_reference")).string_len(128))
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(Alias::new("account_verifications"))
                     .add_column(ColumnDef::new(Alias::new("provider_action_url")).string_len(2_048))
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(Alias::new("account_verifications"))
                     .add_column(ColumnDef::new(Alias::new("provider_status")).string_len(32))
                     .to_owned(),
             )
@@ -24,7 +38,21 @@ impl MigrationTrait for Migration {
                 Table::alter()
                     .table(Alias::new("account_verifications"))
                     .drop_column(Alias::new("provider_status"))
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(Alias::new("account_verifications"))
                     .drop_column(Alias::new("provider_action_url"))
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(Alias::new("account_verifications"))
                     .drop_column(Alias::new("provider_reference"))
                     .to_owned(),
             )
