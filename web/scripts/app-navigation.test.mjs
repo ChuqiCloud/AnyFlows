@@ -30,26 +30,28 @@ test('管理员导航覆盖全部入口且没有重复项', () => {
 })
 
 test('管理员工作台和任务域保持规划顺序', () => {
-  assert.deepEqual(adminWorkspaceItems, ['overview', 'usage', 'models', 'playground', 'videoTasks'])
+  assert.deepEqual(adminWorkspaceItems, [
+    'overview', 'models', 'playground', 'videoTasks', 'usage',
+    'apiKeys', 'wallet', 'subscriptions', 'invitations', 'accountVerification', 'profile',
+  ])
   assert.deepEqual(adminNavigationSections.map((section) => section.key), [
-    'personal', 'organization', 'enterprise', 'operations', 'gateway', 'platform',
+    'organization', 'enterprise', 'operations', 'gateway', 'platform',
   ])
   assert.deepEqual(adminSystemItems, ['debugTraces'])
 })
 
 test('调用日志是角色感知的共享入口而不是管理员任务域', () => {
   assert.ok(adminWorkspaceItems.includes('usage'))
-  assert.ok(userNavigationGroups.find((group) => group.key === 'account')?.items.includes('usage'))
+  assert.ok(userNavigationGroups.find((group) => group.key === 'workspace')?.items.includes('usage'))
   assert.ok(adminNavigationSections.every((section) => !section.items.includes('usage')))
 })
 
-test('普通用户导航增加独立企业空间且保留原账户入口', () => {
-  assert.deepEqual(userNavigationGroups.map((group) => group.key), ['use', 'organization', 'account'])
+test('普通用户导航将常用入口集中到工作台并保留企业空间', () => {
+  assert.deepEqual(userNavigationGroups.map((group) => group.key), ['workspace', 'organization'])
   assert.deepEqual(userNavigationItems, [
-    'models', 'playground', 'videoTasks',
+    'models', 'playground', 'videoTasks', 'usage', 'apiKeys', 'wallet', 'subscriptions', 'invitations', 'organizationProvisioning', 'accountVerification', 'profile',
     'organizationOverview', 'organizationOnboarding', 'organizationMembers', 'organizationDepartments', 'organizationApiKeys', 'organizationServiceAccounts', 'organizationBudgets', 'organizationContractPrices', 'organizationCredit', 'organizationApprovals',
     'organizationWallet', 'organizationActivity', 'organizationSettings',
-  'apiKeys', 'wallet', 'usage', 'subscriptions', 'invitations', 'organizationProvisioning', 'accountVerification', 'profile',
   ])
 })
 
@@ -80,6 +82,7 @@ test('管理员导航分组具备完整中英文文案', async () => {
     assert.equal(typeof locale.nav.groups.workspace, 'string')
     assert.equal(typeof locale.nav.groups.personal, 'string')
     assert.equal(typeof locale.nav.groups.organization, 'string')
+    assert.equal(typeof locale.nav.sections.system, 'string')
     assert.equal(typeof locale.nav.sections.enterprise, 'string')
     for (const section of adminNavigationSections) {
       assert.equal(typeof locale.nav.sections[section.key], 'string')
