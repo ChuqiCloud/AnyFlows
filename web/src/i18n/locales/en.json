@@ -3218,9 +3218,11 @@
       "orAccount": "or use account sign-in",
       "passkey": "Sign in with Passkey",
       "passkeyVerifying": "Verifying Passkey",
+      "moreOptions": "Other sign-in methods",
       "organizationSso": {
+        "back": "Back to account sign-in",
         "title": "Enterprise SSO",
-        "description": "Members of an organization use a work email or public organization identifier to enter the identity provider. SSO never takes over an existing personal account by email.",
+        "description": "Enter your work email or organization ID to sign in with your identity provider. SSO does not automatically link or replace personal accounts.",
         "identifier": "Work email or organization ID",
         "placeholder": "name@company.com or organization ID",
         "check": "Check enterprise sign-in",

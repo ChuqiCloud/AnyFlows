@@ -4,7 +4,7 @@ import test from 'node:test'
 
 test('公开企业 SSO 发现契约只返回通用可用性', () => {
   const openapi = JSON.parse(readFileSync(new URL('../openapi/openapi.json', import.meta.url), 'utf8'))
-  const source = readFileSync(new URL('../src/features/auth/login-page.tsx', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('../src/features/auth/organization-sso-login-form.tsx', import.meta.url), 'utf8')
   const apiSource = readFileSync(new URL('../src/features/auth/organization-sso-discovery-api.ts', import.meta.url), 'utf8')
   const zh = JSON.parse(readFileSync(new URL('../src/i18n/locales/zh.json', import.meta.url), 'utf8'))
   const en = JSON.parse(readFileSync(new URL('../src/i18n/locales/en.json', import.meta.url), 'utf8'))

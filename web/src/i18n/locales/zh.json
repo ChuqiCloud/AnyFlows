@@ -3219,9 +3219,11 @@
       "orAccount": "或使用账户认证",
       "passkey": "使用 Passkey 登录",
       "passkeyVerifying": "正在验证 Passkey",
+      "moreOptions": "其他登录方式",
       "organizationSso": {
+        "back": "返回账号登录",
         "title": "企业 SSO",
-        "description": "已加入企业的成员使用工作邮箱或企业公开标识进入身份平台；SSO 不会按邮箱自动接管个人账户。",
+        "description": "输入工作邮箱或企业标识，前往企业身份平台登录。SSO 不会自动关联或替换个人账户。",
         "identifier": "企业邮箱或企业标识",
         "placeholder": "name@company.com 或企业公开标识",
         "check": "检查企业登录",
