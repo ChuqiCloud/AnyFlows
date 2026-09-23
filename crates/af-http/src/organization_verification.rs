@@ -366,7 +366,6 @@ fn safe_download_name(value: &str) -> String {
         .collect()
 }
 
-
 async fn history_self(
     State(s): State<OrganizationVerificationHttpState>,
     Path(id): Path<i64>,
@@ -639,13 +638,19 @@ fn no_store_status_json(status: StatusCode, value: impl Serialize) -> Response {
     response
 }
 
-fn parse_history_before(raw:Option<&str>) -> Result<Option<i64>,ManagementError> {
-    let mut before=None;
-    for (key,value) in url::form_urlencoded::parse(raw.unwrap_or_default().as_bytes()) {
-        if key != "before" || before.is_some() {return Err(ManagementError::OrganizationVerificationInvalidRequest);}
-        let parsed=value.parse::<i64>().map_err(|_|ManagementError::OrganizationVerificationInvalidRequest)?;
-        if parsed<=0 {return Err(ManagementError::OrganizationVerificationInvalidRequest);}
-        before=Some(parsed);
+fn parse_history_before(raw: Option<&str>) -> Result<Option<i64>, ManagementError> {
+    let mut before = None;
+    for (key, value) in url::form_urlencoded::parse(raw.unwrap_or_default().as_bytes()) {
+        if key != "before" || before.is_some() {
+            return Err(ManagementError::OrganizationVerificationInvalidRequest);
+        }
+        let parsed = value
+            .parse::<i64>()
+            .map_err(|_| ManagementError::OrganizationVerificationInvalidRequest)?;
+        if parsed <= 0 {
+            return Err(ManagementError::OrganizationVerificationInvalidRequest);
+        }
+        before = Some(parsed);
     }
     Ok(before)
 }

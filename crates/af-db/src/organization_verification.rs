@@ -319,7 +319,7 @@ async fn decide_inner(
         .await
         .map_err(query_error)?
         .ok_or(OrganizationVerificationRepositoryError::NotFound)?;
-    if model.version != expected_version || matches!(model.status, 4) {
+    if model.version != expected_version || !matches!(model.status, 1 | 2) {
         return Err(OrganizationVerificationRepositoryError::Conflict);
     }
     let next_version = expected_version
@@ -495,11 +495,29 @@ async fn to_bundle<C: ConnectionTrait>(
         model.decided_at.map(unix_seconds).transpose()?,
     )
     .map_err(|_| OrganizationVerificationRepositoryError::Invariant)?;
-    let materials = organization_verification_materials::Entity::find().select_only().columns([organization_verification_materials::Column::Id, organization_verification_materials::Column::CaseId, organization_verification_materials::Column::Kind, organization_verification_materials::Column::ObjectReference, organization_verification_materials::Column::FileName, organization_verification_materials::Column::ContentType, organization_verification_materials::Column::SizeBytes, organization_verification_materials::Column::CreatedAt])
-        .column_as(sea_orm::sea_query::Expr::col(organization_verification_materials::Column::ContentBytes).is_not_null(), "content_available")
+    let materials = organization_verification_materials::Entity::find()
+        .select_only()
+        .columns([
+            organization_verification_materials::Column::Id,
+            organization_verification_materials::Column::CaseId,
+            organization_verification_materials::Column::Kind,
+            organization_verification_materials::Column::ObjectReference,
+            organization_verification_materials::Column::FileName,
+            organization_verification_materials::Column::ContentType,
+            organization_verification_materials::Column::SizeBytes,
+            organization_verification_materials::Column::CreatedAt,
+        ])
+        .column_as(
+            sea_orm::sea_query::Expr::col(
+                organization_verification_materials::Column::ContentBytes,
+            )
+            .is_not_null(),
+            "content_available",
+        )
         .filter(organization_verification_materials::Column::CaseId.eq(model.id))
         .order_by_asc(organization_verification_materials::Column::Id)
-        .into_model::<MaterialMetadataRow>().all(connection)
+        .into_model::<MaterialMetadataRow>()
+        .all(connection)
         .await
         .map_err(query_error)?
         .into_iter()

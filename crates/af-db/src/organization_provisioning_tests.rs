@@ -521,14 +521,35 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
 }
 
 #[tokio::test]
-async fn enterprise_verification_is_required_only_for_new_provisioning_requests() -> Result<(), Box<dyn Error>> {
+async fn enterprise_verification_is_required_only_for_new_provisioning_requests()
+-> Result<(), Box<dyn Error>> {
     let fixture = fixture().await?;
-    let original = request(92, fixture.users[0], "Verified company", "verified-company", "Workspace request")?;
+    let original = request(
+        92,
+        fixture.users[0],
+        "Verified company",
+        "verified-company",
+        "Workspace request",
+    )?;
     fixture.repository.create_request(original.clone()).await?;
-    crate::entity::account_verifications::Entity::delete_many().exec(fixture.pool.connection()).await?;
-    assert!(matches!(fixture.repository.create_request(original).await?, OrganizationProvisioningCreateOutcome::Existing(_)));
-    let unverified = request(93, fixture.users[2], "Unverified company", "unverified-company", "Workspace request")?;
-    assert_eq!(fixture.repository.create_request(unverified).await, Err(OrganizationProvisioningRepositoryError::Forbidden));
+    crate::entity::account_verifications::Entity::delete_many()
+        .exec(fixture.pool.connection())
+        .await?;
+    assert!(matches!(
+        fixture.repository.create_request(original).await?,
+        OrganizationProvisioningCreateOutcome::Existing(_)
+    ));
+    let unverified = request(
+        93,
+        fixture.users[2],
+        "Unverified company",
+        "unverified-company",
+        "Workspace request",
+    )?;
+    assert_eq!(
+        fixture.repository.create_request(unverified).await,
+        Err(OrganizationProvisioningRepositoryError::Forbidden)
+    );
     fixture.pool.close().await?;
     Ok(())
 }

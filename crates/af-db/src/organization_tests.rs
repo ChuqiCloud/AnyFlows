@@ -1072,94 +1072,317 @@ fn active_entitlement(
 }
 
 #[tokio::test]
-async fn platform_can_repeatedly_change_entitlements_without_membership() -> Result<(), Box<dyn Error>> {
-    use crate::entity::{organization_sso_policies, organization_sso_providers, platform_audit_logs};
+async fn platform_can_repeatedly_change_entitlements_without_membership()
+-> Result<(), Box<dyn Error>> {
+    use crate::entity::{
+        organization_sso_policies, organization_sso_providers, platform_audit_logs,
+    };
     let fixture = fixture().await?;
-    users::ActiveModel { id: Set(fixture.users[2].get()), role: Set(1), ..Default::default() }
-        .update(fixture.pool.connection()).await?;
-    let (organization, _) = fixture.repository.create(OrganizationCreate::new(
-        "Enterprise".to_owned(), "entitlement-toggle".to_owned(), fixture.users[0], active_entitlement(10, 10, None)?
-    )).await?.into_parts();
+    users::ActiveModel {
+        id: Set(fixture.users[2].get()),
+        role: Set(1),
+        ..Default::default()
+    }
+    .update(fixture.pool.connection())
+    .await?;
+    let (organization, _) = fixture
+        .repository
+        .create(OrganizationCreate::new(
+            "Enterprise".to_owned(),
+            "entitlement-toggle".to_owned(),
+            fixture.users[0],
+            active_entitlement(10, 10, None)?,
+        ))
+        .await?
+        .into_parts();
     let id = organization.id();
     let enabled = |version| -> Result<OrganizationEntitlementWrite, Box<dyn Error>> {
-        Ok(OrganizationEntitlementWrite::new(OrganizationEntitlementSnapshot::new(
-            OrganizationEntitlementCapacity::new(10, 10, 2)?, true, true, true, 90,
-            946_684_800, 4_102_444_800, None,
-        )?, "platform_override".to_owned(), None, Some(version))?)
+        Ok(OrganizationEntitlementWrite::new(
+            OrganizationEntitlementSnapshot::new(
+                OrganizationEntitlementCapacity::new(10, 10, 2)?,
+                true,
+                true,
+                true,
+                90,
+                946_684_800,
+                4_102_444_800,
+                None,
+            )?,
+            "platform_override".to_owned(),
+            None,
+            Some(version),
+        )?)
     };
-    assert!(matches!(fixture.repository.replace_entitlement_as_platform(id, enabled(1)?, fixture.users[0], "Enable features".to_owned(), "denied".to_owned()).await, Err(OrganizationRepositoryError::UserUnavailable)));
-    let updated = fixture.repository.replace_entitlement_as_platform(id, enabled(1)?, fixture.users[2], "Enable enterprise features".to_owned(), "enable".to_owned()).await?;
+    assert!(matches!(
+        fixture
+            .repository
+            .replace_entitlement_as_platform(
+                id,
+                enabled(1)?,
+                fixture.users[0],
+                "Enable features".to_owned(),
+                "denied".to_owned()
+            )
+            .await,
+        Err(OrganizationRepositoryError::UserUnavailable)
+    ));
+    let updated = fixture
+        .repository
+        .replace_entitlement_as_platform(
+            id,
+            enabled(1)?,
+            fixture.users[2],
+            "Enable enterprise features".to_owned(),
+            "enable".to_owned(),
+        )
+        .await?;
     assert_eq!(updated.version(), 2);
     assert!(updated.snapshot().sso_enabled());
     assert!(updated.snapshot().custom_roles_enabled());
     let provider = organization_sso_providers::ActiveModel {
-        organization_id: Set(id.get()), provider_key: Set("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned()),
-        protocol: Set(1), status: Set(1), display_name: Set("Enterprise identity".to_owned()),
-        metadata_projection: Set(Some(serde_json::json!({"issuer":"https://identity.example.com"}))),
-        version: Set(1), created_at: Set(TimeDateTimeWithTimeZone::now_utc()), updated_at: Set(TimeDateTimeWithTimeZone::now_utc()),
+        organization_id: Set(id.get()),
+        provider_key: Set("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned()),
+        protocol: Set(1),
+        status: Set(1),
+        display_name: Set("Enterprise identity".to_owned()),
+        metadata_projection: Set(Some(
+            serde_json::json!({"issuer":"https://identity.example.com"}),
+        )),
+        version: Set(1),
+        created_at: Set(TimeDateTimeWithTimeZone::now_utc()),
+        updated_at: Set(TimeDateTimeWithTimeZone::now_utc()),
         ..Default::default()
-    }.insert(fixture.pool.connection()).await?;
-    organization_sso_policies::ActiveModel { organization_id: Set(id.get()), enforcement_policy: Set(2), version: Set(2), ..Default::default() }.update(fixture.pool.connection()).await?;
+    }
+    .insert(fixture.pool.connection())
+    .await?;
+    organization_sso_policies::ActiveModel {
+        organization_id: Set(id.get()),
+        enforcement_policy: Set(2),
+        version: Set(2),
+        ..Default::default()
+    }
+    .update(fixture.pool.connection())
+    .await?;
     // A stale update must roll back the policy reset as well as the entitlement.
-    assert!(matches!(fixture.repository.replace_entitlement_as_platform(id, active_entitlement(10, 10, Some(1))?, fixture.users[2], "Stale disable".to_owned(), "stale".to_owned()).await, Err(OrganizationRepositoryError::Conflict)));
-    assert_eq!(organization_sso_policies::Entity::find_by_id(id.get()).one(fixture.pool.connection()).await?.expect("policy").enforcement_policy, 2);
-    let disabled = fixture.repository.replace_entitlement_as_platform(id, active_entitlement(10, 10, Some(2))?, fixture.users[2], "Disable SSO".to_owned(), "disable".to_owned()).await?;
+    assert!(matches!(
+        fixture
+            .repository
+            .replace_entitlement_as_platform(
+                id,
+                active_entitlement(10, 10, Some(1))?,
+                fixture.users[2],
+                "Stale disable".to_owned(),
+                "stale".to_owned()
+            )
+            .await,
+        Err(OrganizationRepositoryError::Conflict)
+    ));
+    assert_eq!(
+        organization_sso_policies::Entity::find_by_id(id.get())
+            .one(fixture.pool.connection())
+            .await?
+            .expect("policy")
+            .enforcement_policy,
+        2
+    );
+    let disabled = fixture
+        .repository
+        .replace_entitlement_as_platform(
+            id,
+            active_entitlement(10, 10, Some(2))?,
+            fixture.users[2],
+            "Disable SSO".to_owned(),
+            "disable".to_owned(),
+        )
+        .await?;
     assert_eq!(disabled.version(), 3);
     assert!(!disabled.snapshot().sso_enabled());
-    let policy = organization_sso_policies::Entity::find_by_id(id.get()).one(fixture.pool.connection()).await?.expect("policy");
+    let policy = organization_sso_policies::Entity::find_by_id(id.get())
+        .one(fixture.pool.connection())
+        .await?
+        .expect("policy");
     assert_eq!((policy.enforcement_policy, policy.version), (1, 3));
-    let restored = fixture.repository.replace_entitlement_as_platform(id, enabled(3)?, fixture.users[2], "Restore SSO".to_owned(), "restore".to_owned()).await?;
+    let restored = fixture
+        .repository
+        .replace_entitlement_as_platform(
+            id,
+            enabled(3)?,
+            fixture.users[2],
+            "Restore SSO".to_owned(),
+            "restore".to_owned(),
+        )
+        .await?;
     assert_eq!(restored.version(), 4);
     assert!(restored.snapshot().sso_enabled());
-    assert_eq!(organization_sso_providers::Entity::find_by_id(provider.id).one(fixture.pool.connection()).await?.expect("provider retained"), provider);
-    assert_eq!(organization_sso_policies::Entity::find_by_id(id.get()).one(fixture.pool.connection()).await?.expect("policy").enforcement_policy, 1);
-    assert_eq!(platform_audit_logs::Entity::find().count(fixture.pool.connection()).await?, 3);
-    assert_eq!(organization_memberships::Entity::find().filter(organization_memberships::Column::UserId.eq(fixture.users[2].get())).count(fixture.pool.connection()).await?, 0);
+    assert_eq!(
+        organization_sso_providers::Entity::find_by_id(provider.id)
+            .one(fixture.pool.connection())
+            .await?
+            .expect("provider retained"),
+        provider
+    );
+    assert_eq!(
+        organization_sso_policies::Entity::find_by_id(id.get())
+            .one(fixture.pool.connection())
+            .await?
+            .expect("policy")
+            .enforcement_policy,
+        1
+    );
+    assert_eq!(
+        platform_audit_logs::Entity::find()
+            .count(fixture.pool.connection())
+            .await?,
+        3
+    );
+    assert_eq!(
+        organization_memberships::Entity::find()
+            .filter(organization_memberships::Column::UserId.eq(fixture.users[2].get()))
+            .count(fixture.pool.connection())
+            .await?,
+        0
+    );
     fixture.pool.close().await?;
     Ok(())
 }
 
 #[tokio::test]
-async fn platform_entitlement_rejects_capacity_below_existing_members() -> Result<(), Box<dyn Error>> {
+async fn platform_entitlement_rejects_capacity_below_existing_members() -> Result<(), Box<dyn Error>>
+{
     let fixture = fixture().await?;
-    users::ActiveModel { id: Set(fixture.users[2].get()), role: Set(1), ..Default::default() }.update(fixture.pool.connection()).await?;
-    let (organization, _) = fixture.repository.create(OrganizationCreate::new("Enterprise".to_owned(), "capacity-check".to_owned(), fixture.users[0], active_entitlement(10, 10, None)?)).await?.into_parts();
-    organization_memberships::ActiveModel {
-        organization_id: Set(organization.id().get()), user_id: Set(fixture.users[1].get()),
-        role: Set(OrganizationRole::Member.code()), status: Set(OrganizationMembershipStatus::Active.code()),
-        version: Set(1), created_at: Set(TimeDateTimeWithTimeZone::now_utc()), updated_at: Set(TimeDateTimeWithTimeZone::now_utc()),
+    users::ActiveModel {
+        id: Set(fixture.users[2].get()),
+        role: Set(1),
         ..Default::default()
-    }.insert(fixture.pool.connection()).await?;
-    assert!(matches!(fixture.repository.replace_entitlement_as_platform(organization.id(), active_entitlement(1, 10, Some(1))?, fixture.users[2], "Reduce seats".to_owned(), "capacity".to_owned()).await, Err(OrganizationRepositoryError::EntitlementRestricted)));
-    assert_eq!(crate::entity::organization_entitlements::Entity::find_by_id(organization.id().get()).one(fixture.pool.connection()).await?.expect("entitlement").version, 1);
+    }
+    .update(fixture.pool.connection())
+    .await?;
+    let (organization, _) = fixture
+        .repository
+        .create(OrganizationCreate::new(
+            "Enterprise".to_owned(),
+            "capacity-check".to_owned(),
+            fixture.users[0],
+            active_entitlement(10, 10, None)?,
+        ))
+        .await?
+        .into_parts();
+    organization_memberships::ActiveModel {
+        organization_id: Set(organization.id().get()),
+        user_id: Set(fixture.users[1].get()),
+        role: Set(OrganizationRole::Member.code()),
+        status: Set(OrganizationMembershipStatus::Active.code()),
+        version: Set(1),
+        joined_at: Set(TimeDateTimeWithTimeZone::now_utc()),
+        ..Default::default()
+    }
+    .insert(fixture.pool.connection())
+    .await?;
+    assert!(matches!(
+        fixture
+            .repository
+            .replace_entitlement_as_platform(
+                organization.id(),
+                active_entitlement(1, 10, Some(1))?,
+                fixture.users[2],
+                "Reduce seats".to_owned(),
+                "capacity".to_owned()
+            )
+            .await,
+        Err(OrganizationRepositoryError::EntitlementRestricted)
+    ));
+    assert_eq!(
+        crate::entity::organization_entitlements::Entity::find_by_id(organization.id().get())
+            .one(fixture.pool.connection())
+            .await?
+            .expect("entitlement")
+            .version,
+        1
+    );
     fixture.pool.close().await?;
     Ok(())
 }
 
 #[tokio::test]
-async fn verification_resubmissions_keep_version_history_and_original_materials() -> Result<(), Box<dyn Error>> {
-    use crate::{OrganizationVerificationRepository, OrganizationVerificationWrite, OrganizationVerificationMaterialWrite};
+async fn verification_resubmissions_keep_version_history_and_original_materials()
+-> Result<(), Box<dyn Error>> {
+    use crate::{
+        OrganizationVerificationMaterialWrite, OrganizationVerificationRepository,
+        OrganizationVerificationWrite,
+    };
     use af_domain::OrganizationVerificationStatus;
     let fixture = fixture().await?;
-    let (organization, _) = fixture.repository.create(OrganizationCreate::new("Enterprise".to_owned(), "verification-history".to_owned(), fixture.users[0], active_entitlement(10, 10, None)?)).await?.into_parts();
-    let repo = OrganizationVerificationRepository::new(fixture.pool.clone(), Duration::from_secs(5))?;
+    let (organization, _) = fixture
+        .repository
+        .create(OrganizationCreate::new(
+            "Enterprise".to_owned(),
+            "verification-history".to_owned(),
+            fixture.users[0],
+            active_entitlement(10, 10, None)?,
+        ))
+        .await?
+        .into_parts();
+    let repo =
+        OrganizationVerificationRepository::new(fixture.pool.clone(), Duration::from_secs(5))?;
     let write = |summary: &str, created_at| OrganizationVerificationWrite {
-        organization_id: organization.id(), applicant_user_id: fixture.users[0], summary: summary.to_owned(), created_at,
-        materials: vec![OrganizationVerificationMaterialWrite { kind: "license".to_owned(), object_reference: format!("verification/{created_at}"), file_name: "license.pdf".to_owned(), content_type: "application/pdf".to_owned(), size_bytes: 6, content_bytes: b"%PDF-1".to_vec() }],
+        organization_id: organization.id(),
+        applicant_user_id: fixture.users[0],
+        summary: summary.to_owned(),
+        created_at,
+        materials: vec![OrganizationVerificationMaterialWrite {
+            kind: "license".to_owned(),
+            object_reference: format!("verification/{created_at}"),
+            file_name: "license.pdf".to_owned(),
+            content_type: "application/pdf".to_owned(),
+            size_bytes: 6,
+            content_bytes: b"%PDF-1".to_vec(),
+        }],
     };
-    repo.create_or_resubmit(write("First submission", 1_700_000_000)).await?;
-    let first = repo.get_by_organization(organization.id()).await?.expect("case");
+    repo.create_or_resubmit(write("First submission", 1_700_000_000))
+        .await?;
+    let first = repo
+        .get_by_organization(organization.id())
+        .await?
+        .expect("case");
     let id = first.case().id();
-    repo.decide(id, 1, fixture.users[2], OrganizationVerificationStatus::NeedsSupplement, Some("Clearer copy required".to_owned()), 1_700_000_001).await?;
-    repo.create_or_resubmit(write("Revised submission", 1_700_000_002)).await?;
-    let approved = repo.decide(id, 3, fixture.users[2], OrganizationVerificationStatus::Approved, None, 1_700_000_003).await?;
+    repo.decide(
+        id,
+        1,
+        fixture.users[2],
+        OrganizationVerificationStatus::NeedsSupplement,
+        Some("Clearer copy required".to_owned()),
+        1_700_000_001,
+    )
+    .await?;
+    repo.create_or_resubmit(write("Revised submission", 1_700_000_002))
+        .await?;
+    let approved = repo
+        .decide(
+            id,
+            3,
+            fixture.users[2],
+            OrganizationVerificationStatus::Approved,
+            None,
+            1_700_000_003,
+        )
+        .await?;
     assert_eq!(approved.materials().len(), 2);
     let history = repo.history(id, None).await?;
-    assert_eq!(history.iter().map(|v| v["version"].as_i64().expect("version")).collect::<Vec<_>>(), vec![3, 2, 1]);
+    assert_eq!(
+        history
+            .iter()
+            .map(|v| v["version"].as_i64().expect("version"))
+            .collect::<Vec<_>>(),
+        vec![3, 2, 1]
+    );
     assert_eq!(history[1]["review_reason"], "Clearer copy required");
     assert_eq!(history[2]["summary"], "First submission");
     assert_eq!(repo.history(id, Some(2)).await?.len(), 1);
-    assert_eq!(repo.read_material_content(id, first.materials()[0].id()).await?, b"%PDF-1");
+    assert_eq!(
+        repo.read_material_content(id, first.materials()[0].id())
+            .await?,
+        b"%PDF-1"
+    );
     fixture.pool.close().await?;
     Ok(())
 }

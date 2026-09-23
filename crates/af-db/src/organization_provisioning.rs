@@ -1074,11 +1074,29 @@ async fn list_materials_inner(
     let request = find_by_request_key(connection, request_key)
         .await?
         .ok_or(OrganizationProvisioningRepositoryError::NotFound)?;
-    organization_provisioning_materials::Entity::find().select_only().columns([organization_provisioning_materials::Column::Id, organization_provisioning_materials::Column::RequestId, organization_provisioning_materials::Column::Kind, organization_provisioning_materials::Column::ObjectReference, organization_provisioning_materials::Column::FileName, organization_provisioning_materials::Column::ContentType, organization_provisioning_materials::Column::SizeBytes, organization_provisioning_materials::Column::CreatedAt])
-        .column_as(sea_orm::sea_query::Expr::col(organization_provisioning_materials::Column::ContentBytes).is_not_null(), "content_available")
+    organization_provisioning_materials::Entity::find()
+        .select_only()
+        .columns([
+            organization_provisioning_materials::Column::Id,
+            organization_provisioning_materials::Column::RequestId,
+            organization_provisioning_materials::Column::Kind,
+            organization_provisioning_materials::Column::ObjectReference,
+            organization_provisioning_materials::Column::FileName,
+            organization_provisioning_materials::Column::ContentType,
+            organization_provisioning_materials::Column::SizeBytes,
+            organization_provisioning_materials::Column::CreatedAt,
+        ])
+        .column_as(
+            sea_orm::sea_query::Expr::col(
+                organization_provisioning_materials::Column::ContentBytes,
+            )
+            .is_not_null(),
+            "content_available",
+        )
         .filter(organization_provisioning_materials::Column::RequestId.eq(request.id))
         .order_by_asc(organization_provisioning_materials::Column::Id)
-        .into_model::<MaterialMetadataRow>().all(connection)
+        .into_model::<MaterialMetadataRow>()
+        .all(connection)
         .await
         .map_err(query_error)?
         .into_iter()

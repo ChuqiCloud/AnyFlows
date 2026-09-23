@@ -43,7 +43,7 @@ export function useSubmitAccountVerification() {
     const data = new FormData()
     data.append('metadata', JSON.stringify({ kind, subject_name, summary, materials: files.map((_, index) => ({ kind: kind === 'enterprise' ? 'business_document' : 'identity_document', file_field: String(index) })) }))
     files.forEach((file, index) => data.append(`file:${index}`, file, file.name))
-    const result = await apiClient.post<VerificationRecord>({ url: '/api/account/verifications', body: data, security: [...sessionSecurity] }) as unknown as { data: VerificationRecord }
+    const result = await apiClient.post<VerificationRecord>({ url: '/api/account/verifications', body: data, bodySerializer: null, headers: { 'Content-Type': null }, security: [...sessionSecurity] }) as unknown as { data: VerificationRecord }
     return result.data
   }, onSuccess: () => client.invalidateQueries({ queryKey: verificationKey }) })
 }

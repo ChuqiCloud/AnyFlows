@@ -397,14 +397,18 @@ pub(crate) fn map_error(e: AccountVerificationError) -> ManagementError {
     }
 }
 
-fn parse_list_query(raw:Option<&str>) -> Result<ListQuery,ManagementError> {
-    let mut q=ListQuery::default();
-    for (key,value) in url::form_urlencoded::parse(raw.unwrap_or_default().as_bytes()) {
+fn parse_list_query(raw: Option<&str>) -> Result<ListQuery, ManagementError> {
+    let mut q = ListQuery::default();
+    for (key, value) in url::form_urlencoded::parse(raw.unwrap_or_default().as_bytes()) {
         match key.as_ref() {
-            "before" if q.before.is_none()=>q.before=Some(value.parse().map_err(|_| invalid())?),
-            "status" if q.status.is_none()=>q.status=Some(value.parse().map_err(|_| invalid())?),
-            "limit" if q.limit.is_none()=>q.limit=Some(value.parse().map_err(|_| invalid())?),
-            _=>return Err(invalid()),
+            "before" if q.before.is_none() => {
+                q.before = Some(value.parse().map_err(|_| invalid())?)
+            }
+            "status" if q.status.is_none() => {
+                q.status = Some(value.parse().map_err(|_| invalid())?)
+            }
+            "limit" if q.limit.is_none() => q.limit = Some(value.parse().map_err(|_| invalid())?),
+            _ => return Err(invalid()),
         }
     }
     Ok(q)

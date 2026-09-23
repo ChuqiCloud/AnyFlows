@@ -44,7 +44,7 @@ fn get_admin_account_verification() {}
     security(("bearerAuth"=[])))]
 fn download_admin_account_verification_material() {}
 #[utoipa::path(post, path="/api/account/verifications", operation_id="submitAccountVerification", tag="账号认证",
-    request_body = (content=AccountVerificationMultipartRequest,content_type="multipart/form-data"),
+    request_body(content = AccountVerificationMultipartRequest, content_type = "multipart/form-data"),
     responses((status=200, body=AccountVerificationResponse), (status=400,body=ManagementErrorBody),(status=401,body=ManagementErrorBody),(status=403,body=ManagementErrorBody),(status=404,body=ManagementErrorBody),(status=409,body=ManagementErrorBody),(status=503,body=ManagementErrorBody)),
     security(("bearerAuth"=[])))]
 fn submit_account_verification() {}
