@@ -54,7 +54,7 @@ struct PaymentDefaults {
     stripe_signature_tolerance_secs: u64,
 }
 
-#[derive(Serialize)]
+#[derive(Default, Serialize)]
 struct AccountVerificationDefaults {
     alipay: AlipayVerificationDefaults,
 }
@@ -68,14 +68,6 @@ struct AlipayVerificationDefaults {
     gateway_url: String,
     biz_code: String,
     timeout_secs: u64,
-}
-
-impl Default for AccountVerificationDefaults {
-    fn default() -> Self {
-        Self {
-            alipay: AlipayVerificationDefaults::default(),
-        }
-    }
 }
 
 impl Default for AlipayVerificationDefaults {

@@ -1749,10 +1749,10 @@ impl AppConfig {
                 MAX_ALIPAY_VERIFICATION_KEY_BYTES,
             ),
         ] {
-            if let Some(value) = value {
-                if value.is_empty() || value.len() > max || value.trim() != value {
-                    return Err(ConfigError::InvalidField { field });
-                }
+            if let Some(value) = value
+                && (value.is_empty() || value.len() > max || value.trim() != value)
+            {
+                return Err(ConfigError::InvalidField { field });
             }
         }
         if alipay.enabled() {
