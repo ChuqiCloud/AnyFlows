@@ -104,6 +104,18 @@ pub type OrganizationVerificationMaterialDownloadFuture<'a> = Pin<
 
 /// 企业认证服务；企业成员权限和平台管理员权限保持独立。
 pub trait OrganizationVerificationService: Send + Sync {
+    fn history<'a>(&'a self, _principal: SessionPrincipal, _organization_id: Option<OrganizationId>, _case_id: Option<OrganizationVerificationCaseId>, _before: Option<i64>, _request_id: String)
+        -> Pin<Box<dyn Future<Output=Result<Vec<serde_json::Value>,OrganizationVerificationServiceError>> + Send + 'a>> {
+        Box::pin(async { Err(OrganizationVerificationServiceError::Forbidden) })
+    }
+    fn download_self<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _organization_id: OrganizationId,
+        _material_id: OrganizationVerificationMaterialId,
+    ) -> OrganizationVerificationMaterialDownloadFuture<'a> {
+        Box::pin(async { Err(OrganizationVerificationServiceError::Forbidden) })
+    }
     fn submit<'a>(
         &'a self,
         principal: SessionPrincipal,
@@ -166,6 +178,42 @@ impl DatabaseOrganizationVerificationService {
 }
 
 impl OrganizationVerificationService for DatabaseOrganizationVerificationService {
+    fn history<'a>(&'a self, principal: SessionPrincipal, organization_id: Option<OrganizationId>, case_id: Option<OrganizationVerificationCaseId>, before: Option<i64>, request_id: String)
+        -> Pin<Box<dyn Future<Output=Result<Vec<serde_json::Value>,OrganizationVerificationServiceError>> + Send + 'a>> {
+        Box::pin(async move {
+            let bundle = if let Some(organization_id) = organization_id {
+                self.authorization.context(principal,organization_id,OrganizationPermission::ProfileWrite).await.map_err(map_authorization)?;
+                self.repository.get_by_organization(organization_id).await.map_err(map_repository)?
+            } else {
+                PlatformPolicy::authorize(principal,PlatformPermission::OrganizationsReadAll).map_err(|_| OrganizationVerificationServiceError::Forbidden)?;
+                let id = case_id.ok_or(OrganizationVerificationServiceError::InvalidRequest)?;
+                self.audit_material_access(principal,id,"history",&request_id).await?;
+                self.repository.get_by_id(id).await.map_err(map_repository)?
+            }.ok_or(OrganizationVerificationServiceError::NotFound)?;
+            self.repository.history(bundle.case().id(),before).await.map_err(map_repository)
+        })
+    }
+    fn download_self<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        organization_id: OrganizationId,
+        material_id: OrganizationVerificationMaterialId,
+    ) -> OrganizationVerificationMaterialDownloadFuture<'a> {
+        Box::pin(async move {
+            self.authorization.context(principal, organization_id, OrganizationPermission::ProfileWrite)
+                .await.map_err(map_authorization)?;
+            let bundle = self.repository.get_by_organization(organization_id).await
+                .map_err(map_repository)?.ok_or(OrganizationVerificationServiceError::NotFound)?;
+            let material = bundle.materials().iter().find(|item| item.id() == material_id)
+                .ok_or(OrganizationVerificationServiceError::NotFound)?;
+            let content = self.repository.read_material_content(bundle.case().id(), material_id)
+                .await.map_err(map_repository)?;
+            Ok(OrganizationVerificationMaterialDownload {
+                file_name: material.file_name().to_owned(),
+                content_type: material.content_type().to_owned(), content,
+            })
+        })
+    }
     fn submit<'a>(
         &'a self,
         principal: SessionPrincipal,

@@ -34,6 +34,7 @@ mod organization_service_account_runtime;
 mod organization_sso;
 mod organization_tokens;
 mod organization_verification;
+mod account_verification;
 mod organization_wallet;
 mod organizations;
 mod passkey_auth;
@@ -136,6 +137,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(organization_credit_terms::document());
     document.merge(organization_provisioning::document());
     document.merge(organization_verification::document());
+    document.merge(account_verification::document());
     document.merge(organization_plan::document());
     document.merge(organization_sso::document());
     document.merge(organization_tokens::document());

@@ -133,10 +133,6 @@ impl OrganizationEntitlementSnapshot {
         valid_until: i64,
         grace_until: Option<i64>,
     ) -> Result<Self, OrganizationEntitlementStateError> {
-        // SSO 已进入企业身份绑定交付链路；自定义角色仍须等后续能力切片开放。
-        if custom_roles_enabled {
-            return Err(OrganizationEntitlementStateError::UnsupportedFeature);
-        }
         if !(1..=MAX_ORGANIZATION_AUDIT_RETENTION_DAYS).contains(&audit_retention_days) {
             return Err(OrganizationEntitlementStateError::InvalidAuditRetention);
         }
@@ -291,19 +287,13 @@ mod tests {
     }
 
     #[test]
-    fn 自定义角色能力仍固定关闭() {
-        assert_eq!(
-            OrganizationEntitlementSnapshot::new(
+    fn 自定义角色能力可由授权启停() {
+        for enabled in [false, true] {
+            let snapshot = OrganizationEntitlementSnapshot::new(
                 OrganizationEntitlementCapacity::new(1, 1, 1).expect("容量有效"),
-                true,
-                true,
-                true,
-                90,
-                1,
-                2,
-                None,
-            ),
-            Err(OrganizationEntitlementStateError::UnsupportedFeature)
-        );
+                true, true, enabled, 90, 1, 2, None,
+            ).expect("已实现的自定义角色允许授权");
+            assert_eq!(snapshot.custom_roles_enabled(), enabled);
+        }
     }
 }

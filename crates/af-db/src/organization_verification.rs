@@ -74,6 +74,16 @@ pub struct OrganizationVerificationRepository {
 }
 
 impl OrganizationVerificationRepository {
+    pub async fn history(&self, case_id: OrganizationVerificationCaseId, before: Option<i64>) -> Result<Vec<serde_json::Value>, OrganizationVerificationRepositoryError> {
+        use crate::entity::organization_verification_history as history;
+        if before.is_some_and(|v| v <= 0) { return Err(OrganizationVerificationRepositoryError::InvalidInput); }
+        timeout(self.operation_timeout, async {
+            let mut query = history::Entity::find().filter(history::Column::CaseId.eq(case_id.get()));
+            if let Some(before) = before { query = query.filter(history::Column::Version.lt(before)); }
+            query.order_by_desc(history::Column::Version).limit(25).all(self.pool.connection()).await.map_err(query_error)?
+                .into_iter().map(|row| serde_json::from_str(row.snapshot.as_str()).map_err(|_| OrganizationVerificationRepositoryError::Invariant)).collect()
+        }).await.map_err(|_| OrganizationVerificationRepositoryError::Query)?
+    }
     pub fn new(
         pool: DatabasePool,
         operation_timeout: Duration,
@@ -207,6 +217,7 @@ async fn create_or_resubmit_inner(
             }
             OrganizationVerificationStatus::NeedsSupplement
             | OrganizationVerificationStatus::Rejected => {
+                save_history(&transaction, &model).await?;
                 let next_version = model
                     .version
                     .checked_add(1)
@@ -293,6 +304,7 @@ async fn decide_inner(
     let next_version = expected_version
         .checked_add(1)
         .ok_or(OrganizationVerificationRepositoryError::InvalidInput)?;
+    save_history(&transaction, &model).await?;
     let active = organization_verification_cases::ActiveModel {
         id: Set(model.id),
         status: Set(status.code()),
@@ -300,6 +312,7 @@ async fn decide_inner(
         reviewer_user_id: Set(Some(reviewer_user_id.get())),
         review_reason: Set(reason.map(SensitiveString::from)),
         decided_at: Set(Some(to_database_time(decided_at)?)),
+        updated_at: Set(to_database_time(decided_at)?),
         ..Default::default()
     };
     active.update(&transaction).await.map_err(query_error)?;
@@ -317,6 +330,23 @@ async fn decide_inner(
         .await
         .map_err(|_| OrganizationVerificationRepositoryError::OutcomeUnknown)?;
     Ok(bundle)
+}
+
+async fn save_history<C: ConnectionTrait>(connection: &C, model: &organization_verification_cases::Model) -> Result<(), OrganizationVerificationRepositoryError> {
+    let material_ids = organization_verification_materials::Entity::find().select_only()
+        .column(organization_verification_materials::Column::Id)
+        .filter(organization_verification_materials::Column::CaseId.eq(model.id))
+        .into_tuple::<i64>().all(connection).await.map_err(query_error)?;
+    let snapshot = serde_json::json!({
+        "case_id":model.id,"version":model.version,"status":model.status,
+        "summary":model.summary.as_str(),"review_reason":model.review_reason.as_ref().map(|r|r.as_str()),
+        "reviewer_user_id":model.reviewer_user_id,"created_at":model.created_at.unix_timestamp(),
+        "updated_at":model.updated_at.unix_timestamp(),"material_ids":material_ids,
+    });
+    crate::entity::organization_verification_history::ActiveModel { case_id:Set(model.id), version:Set(model.version),
+        snapshot:Set(SensitiveString::from(snapshot.to_string())), ..Default::default()
+    }.insert(connection).await.map_err(query_error)?;
+    Ok(())
 }
 
 async fn load_by_organization(

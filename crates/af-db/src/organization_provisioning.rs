@@ -644,6 +644,39 @@ impl OrganizationProvisioningRepository {
     }
 
     /// 按平台范围读取开通申请，使用自增主键倒序游标避免泄漏跨用户筛选条件。
+    pub async fn list_requests_self(
+        &self,
+        user_id: UserId,
+        status: Option<OrganizationProvisioningStatus>,
+        before: Option<i64>,
+        limit: u64,
+    ) -> Result<Vec<OrganizationProvisioningRecord>, OrganizationProvisioningRepositoryError> {
+        self.run_read(async move {
+            if !(1..=100).contains(&limit) || before.is_some_and(|value| value <= 0) {
+                return Err(OrganizationProvisioningRepositoryError::InvalidInput);
+            }
+            let mut query = organization_provisioning_requests::Entity::find()
+                .filter(organization_provisioning_requests::Column::ApplicantUserId.eq(user_id.get()))
+                .order_by_desc(organization_provisioning_requests::Column::Id)
+                .limit(limit);
+            if let Some(before) = before {
+                query = query.filter(organization_provisioning_requests::Column::Id.lt(before));
+            }
+            if let Some(status) = status {
+                query = query
+                    .filter(organization_provisioning_requests::Column::Status.eq(status.code()));
+            }
+            query
+                .all(self.pool.connection())
+                .await
+                .map_err(query_error)?
+                .into_iter()
+                .map(to_record)
+                .collect()
+        })
+        .await
+    }
+
     pub async fn list_requests(
         &self,
         status: Option<OrganizationProvisioningStatus>,
@@ -745,6 +778,10 @@ async fn create_request_inner(
         return existing_outcome(existing, request);
     }
     ensure_active_applicant(connection, request.applicant_user_id()).await?;
+    if !crate::account_verification::has_enterprise_verification(connection, request.applicant_user_id())
+        .await.map_err(|_| OrganizationProvisioningRepositoryError::Query)? {
+        return Err(OrganizationProvisioningRepositoryError::Forbidden);
+    }
     if let Some(existing) =
         find_active_by_applicant(connection, request.applicant_user_id()).await?
     {

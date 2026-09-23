@@ -43,6 +43,17 @@ pub struct OrganizationRepository {
 }
 
 impl OrganizationRepository {
+    /// Platform overrides and their audit evidence commit together.
+    pub async fn replace_entitlement_as_platform(
+        &self,
+        organization_id: OrganizationId,
+        write: OrganizationEntitlementWrite,
+        actor: UserId,
+        reason: String,
+        request_id: String,
+    ) -> Result<OrganizationEntitlementRecord, OrganizationRepositoryError> {
+        self.run(mutation::replace_entitlement_as_platform(self, organization_id, write, actor, reason, request_id)).await
+    }
     /// 使用共享连接池和非零硬截止时间构造仓储。
     pub fn new(
         pool: DatabasePool,

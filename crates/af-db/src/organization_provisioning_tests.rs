@@ -496,6 +496,12 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
         }
         .insert(pool.connection())
         .await?;
+        crate::entity::account_verifications::ActiveModel {
+            user_id: Set(user.id), kind: Set("enterprise".to_owned()), subject_name: Set(SensitiveString::from("Verified fixture".to_owned())),
+            summary: Set(SensitiveString::from("reviewed fixture".to_owned())), status: Set(4), version: Set(2),
+            reviewer_user_id: Set(None), review_reason: Set(None), created_at: Set(TimeDateTimeWithTimeZone::now_utc()),
+            updated_at: Set(TimeDateTimeWithTimeZone::now_utc()), ..Default::default()
+        }.insert(pool.connection()).await?;
         user_ids.push(UserId::new(user.id)?);
     }
     Ok(Fixture {
