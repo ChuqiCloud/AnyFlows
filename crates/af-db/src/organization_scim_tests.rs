@@ -86,7 +86,7 @@ async fn scim_token_is_digest_only_and_organization_scoped() -> Result<(), Box<d
     let organization_model = organizations::Entity::find_by_id(organization.id().get())
         .one(pool.connection())
         .await?
-        .expect("浼佷笟瀹炰綋蹇呴』瀛樺湪")
+        .expect("企业实体必须存在")
         .into_active_model();
     let mut suspended_organization = organization_model;
     suspended_organization.status = Set(2);

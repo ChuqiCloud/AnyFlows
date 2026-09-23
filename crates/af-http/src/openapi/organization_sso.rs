@@ -343,8 +343,8 @@ fn suspend_organization_sso_required() {}
     get,
     path = "/api/auth/organization-sso/oidc/callback",
     operation_id = "completeOrganizationSsoOidcLogin",
-    tag = "浼佷笟 SSO",
-    summary = "鎺ユ敹浼佷笟 OIDC 鍥炶皟",
+    tag = "企业 SSO",
+    summary = "接收企业 OIDC 回调",
     params(
         ("code" = String, Query, description = "OIDC 授权码"),
         ("state" = String, Query, description = "一次性登录 state")
@@ -362,8 +362,8 @@ fn complete_organization_sso_oidc_login() {}
     post,
     path = "/api/auth/organization-sso/saml/callback",
     operation_id = "completeOrganizationSsoSamlLogin",
-    tag = "浼佷笟 SSO",
-    summary = "鎺ユ敹浼佷笟 SAML 鍥炶皟",
+    tag = "企业 SSO",
+    summary = "接收企业 SAML 回调",
     request_body = String,
     responses(
         (status = 400, description = "回调表单无效", body = OrganizationSsoLoginCallbackErrorResponse),

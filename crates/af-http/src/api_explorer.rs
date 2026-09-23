@@ -614,4 +614,36 @@ mod verification_visibility_tests {
             ApiExplorerAuthMode::Session
         ));
     }
+
+    #[test]
+    fn organization_sso_callback_catalog_entries_use_readable_chinese() {
+        let public_viewer = Viewer {
+            authenticated: false,
+            admin: false,
+        };
+        let operations = projected_operations(public_viewer);
+        let entry = |operation_id: &str| {
+            operations
+                .iter()
+                .find(|operation| operation.metadata.operation_id == operation_id)
+                .unwrap_or_else(|| panic!("缺少 {operation_id}"))
+        };
+
+        assert_eq!(
+            entry("completeOrganizationSsoOidcLogin").metadata.tag,
+            "企业 SSO"
+        );
+        assert_eq!(
+            entry("completeOrganizationSsoOidcLogin").metadata.summary,
+            "接收企业 OIDC 回调"
+        );
+        assert_eq!(
+            entry("completeOrganizationSsoSamlLogin").metadata.tag,
+            "企业 SSO"
+        );
+        assert_eq!(
+            entry("completeOrganizationSsoSamlLogin").metadata.summary,
+            "接收企业 SAML 回调"
+        );
+    }
 }
