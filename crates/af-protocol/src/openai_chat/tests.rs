@@ -349,7 +349,11 @@ fn accepts_reasoning_metadata_in_assistant_history() {
             .as_object_mut()
             .unwrap()
             .extend(metadata.as_object().unwrap().clone());
-        assert_eq!(parse_json(request), parse_json(baseline.clone()), "{metadata}");
+        assert_eq!(
+            parse_json(request),
+            parse_json(baseline.clone()),
+            "{metadata}"
+        );
     }
 }
 
