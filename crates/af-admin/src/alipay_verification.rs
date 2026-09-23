@@ -267,11 +267,13 @@ impl AlipayClient {
         let signer = SigningKey::<Sha256>::new(self.private_key.clone());
         let signature = rsa::signature::Signer::sign(&signer, sign_content.as_bytes());
         params.insert("sign".to_owned(), BASE64.encode(signature.to_bytes()));
-        let mut form = url::form_urlencoded::Serializer::new(String::new());
-        for (key, value) in params {
-            form.append_pair(&key, &value);
-        }
-        let body = form.finish();
+        let body = {
+            let mut form = url::form_urlencoded::Serializer::new(String::new());
+            for (key, value) in params {
+                form.append_pair(&key, &value);
+            }
+            form.finish()
+        };
         let mut headers = HeaderMap::new();
         headers.insert(
             HeaderName::from_static("accept"),
