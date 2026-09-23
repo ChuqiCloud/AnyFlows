@@ -262,7 +262,9 @@ async fn multipart_review_and_material_download_remain_accessible_only_to_author
     assert!(
         response.headers()["content-disposition"]
             .to_str()?
-            .starts_with("attachment;")
+            .split(';')
+            .next()
+            .is_some_and(|value| value == "attachment")
     );
     assert_eq!(
         to_bytes(response.into_body(), 65_536).await?.as_ref(),

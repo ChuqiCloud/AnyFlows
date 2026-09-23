@@ -159,6 +159,10 @@ try {
     for (const [name, width, height] of [['desktop', 1280, 960], ['mobile', 390, 844]]) {
       await page.setViewportSize({ width, height })
       await page.evaluate(() => document.fonts.ready)
+      const continueButton = page.getByRole('button', { name: '继续编辑', exact: true })
+      await continueButton.scrollIntoViewIfNeeded()
+      const buttonBox = await continueButton.boundingBox()
+      assert.ok(buttonBox && buttonBox.width >= 48 && buttonBox.height >= 24, 'Continue editing must remain usable at every viewport size')
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `${frontend} overflowed at ${width}px`)
       const screenshot = await page.screenshot({ fullPage: true, animations: 'disabled' })
       console.log(`ANYFLOWS_VERIFICATION_SCREENSHOT_${frontend}_${theme}_${name}_BEGIN`)
