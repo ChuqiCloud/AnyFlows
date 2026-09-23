@@ -12,6 +12,7 @@ use rsa::{
     pkcs1::{DecodeRsaPrivateKey, DecodeRsaPublicKey},
     pkcs1v15::{Signature, SigningKey, VerifyingKey},
     pkcs8::{DecodePrivateKey, DecodePublicKey},
+    signature::SignatureEncoding,
 };
 use serde_json::{Map, Value, json};
 use sha2::Sha256;
