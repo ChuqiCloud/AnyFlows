@@ -143,7 +143,7 @@ pub(super) struct AssistantMessageWire {
     #[serde(default, rename = "reasoning_content")]
     _reasoning_content: Option<String>,
     /// 部分 OpenAI 兼容服务使用的推理文本别名。
-    #[serde(default)]
+    #[serde(default, rename = "reasoning")]
     _reasoning: Option<String>,
     /// 助手发起的函数工具调用。
     #[serde(default, deserialize_with = "deserialize_nullable_field")]
