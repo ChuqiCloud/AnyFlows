@@ -22,8 +22,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { AuthCapabilityCard, AuthCapabilitySkeleton } from '@/features/auth/auth-capability-card'
 import { AuthPageShell } from '@/features/auth/auth-page-shell'
 import { beginOAuthLogin, type OAuthLoginProvider } from '@/features/auth/oauth-login-api'
-import { OrganizationSsoLoginForm } from '@/features/auth/organization-sso-login-form'
 import { OAuthProviderIcon } from '@/features/auth/oauth-provider-icon'
+import { OrganizationSsoLoginForm } from '@/features/auth/organization-sso-login-form'
 import {
   authenticateWithPasskey,
   PasskeyClientError,
@@ -283,25 +283,25 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                         />
                       ) : null}
                       <div className="grid gap-2">
-                            <label htmlFor="management-username" className="text-sm font-medium">{t('auth.login.username')}</label>
-                            <Input
-                              id="management-username"
-                              name="username"
-                              autoComplete="username"
-                              autoFocus
-                              required
-                              className="h-11 px-3"
-                              placeholder={t('auth.login.usernamePlaceholder')}
-                              value={username}
-                              aria-invalid={hasFieldError ? true : undefined}
-                              aria-describedby={visibleError ? 'login-error' : undefined}
-                              onChange={(event) => {
-                                setUsername(event.target.value)
-                                setLoginError(undefined)
-                                setNoticeDismissed(true)
-                              }}
-                            />
-                          </div>
+                        <label htmlFor="management-username" className="text-sm font-medium">{t('auth.login.username')}</label>
+                        <Input
+                          id="management-username"
+                          name="username"
+                          autoComplete="username"
+                          autoFocus
+                          required
+                          className="h-11 px-3"
+                          placeholder={t('auth.login.usernamePlaceholder')}
+                          value={username}
+                          aria-invalid={hasFieldError ? true : undefined}
+                          aria-describedby={visibleError ? 'login-error' : undefined}
+                          onChange={(event) => {
+                            setUsername(event.target.value)
+                            setLoginError(undefined)
+                            setNoticeDismissed(true)
+                          }}
+                        />
+                      </div>
 
                       <div className="grid gap-2">
                         <label htmlFor="management-password" className="text-sm font-medium">{t('auth.login.password')}</label>
