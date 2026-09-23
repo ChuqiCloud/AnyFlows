@@ -566,3 +566,26 @@ fn is_debuggable(
     // 网关协议的 POST 是 API 页面最核心的调试场景；管理端写入保持文档-only。
     scope == ApiExplorerAccessScope::Gateway && method == "POST" && path.starts_with("/v1/")
 }
+
+#[cfg(test)]
+mod verification_visibility_tests {
+    use super::*;
+
+    #[test]
+    fn identity_records_and_entitlement_changes_follow_viewer_permissions() {
+        let guest = Viewer { authenticated: false, admin: false };
+        let user = Viewer { authenticated: true, admin: false };
+        let admin = Viewer { authenticated: true, admin: true };
+        let contains = |viewer, id: &str| projected_operations(viewer).iter().any(|entry| entry.metadata.operation_id == id);
+        for id in ["listAccountVerifications", "getAccountVerification", "downloadAccountVerificationMaterial"] {
+            assert!(!contains(guest, id), "{id}");
+            assert!(contains(user, id), "{id}");
+        }
+        for id in ["listAdminAccountVerifications", "decideAccountVerification", "updatePlatformOrganizationEntitlement"] {
+            assert!(!contains(guest, id), "{id}");
+            assert!(!contains(user, id), "{id}");
+            assert!(contains(admin, id), "{id}");
+        }
+        assert!(!is_debuggable("/api/platform/organizations/{organization_id}/entitlement", "PATCH", ApiExplorerAccessScope::Admin, ApiExplorerAuthMode::Session));
+    }
+}

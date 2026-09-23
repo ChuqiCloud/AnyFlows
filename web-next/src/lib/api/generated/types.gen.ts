@@ -3,6 +3,48 @@
 export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
+export type AccountVerificationDecisionRequest = {
+    expected_version: number;
+    status: number;
+    reason?: string | null;
+};
+export type AccountVerificationDetailResponse = {
+    case: AccountVerificationResponse;
+    materials: Array<AccountVerificationMaterialResponse>;
+};
+export type AccountVerificationEligibilityResponse = {
+    enterprise_verified: boolean;
+    can_apply_for_organization: boolean;
+};
+export type AccountVerificationListResponse = {
+    cases: Array<AccountVerificationResponse>;
+    next_cursor?: number | null;
+};
+export type AccountVerificationMaterialResponse = {
+    id: number;
+    case_id: number;
+    kind: string;
+    file_name: string;
+    content_type: string;
+    size_bytes: number;
+};
+export type AccountVerificationMultipartRequest = {
+    metadata: string;
+    file_0: Blob | File;
+};
+export type AccountVerificationResponse = {
+    id: number;
+    user_id: number;
+    kind: string;
+    subject_name: string;
+    summary: string;
+    status: number;
+    version: number;
+    review_reason?: string | null;
+    reviewer_user_id?: number | null;
+    created_at: number;
+    updated_at: number;
+};
 export type AdminAuthenticationSettings = {
     password_login_enabled: boolean;
     registration_enabled: boolean;
@@ -2568,6 +2610,10 @@ export type OrganizationVerificationDecisionRequest = {
     decision: OrganizationVerificationDecisionKind;
     reason?: string | null;
 };
+export type OrganizationVerificationHistoryResponse = {
+    entries: Array<unknown>;
+    next_cursor?: number | null;
+};
 export type OrganizationVerificationListQuerySchema = {
     before?: number | null;
     limit?: number | null;
@@ -2684,6 +2730,23 @@ export type PlatformAuditLogListResponse = {
     next_cursor: number | null;
 };
 export type PlatformAuditOutcome = 'succeeded' | 'denied' | 'failed';
+export type PlatformEntitlementUpdateRequest = {
+    expected_version: number;
+    reason: string;
+    team_management_enabled: boolean;
+    sso_enabled: boolean;
+    custom_roles_enabled: boolean;
+    seat_limit: number;
+    team_limit: number;
+    organization_key_limit: number;
+    audit_retention_days: number;
+    valid_from: number;
+    valid_until: number;
+    grace_until?: number | null;
+};
+export type PlatformEntitlementUpdateResponse = {
+    version: number;
+};
 export type PlatformOrganizationDirectoryResponse = {
     organizations: Array<PlatformOrganizationSummaryResponse>;
     next_cursor: number | null;
@@ -8275,6 +8338,24 @@ export type GetOrganizationCreditAllocationResponses = {
     200: CreditAllocationResponse;
 };
 export type GetOrganizationCreditAllocationResponse = GetOrganizationCreditAllocationResponses[keyof GetOrganizationCreditAllocationResponses];
+export type ListSelfOrganizationProvisioningData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before?: number;
+        limit?: number;
+        status?: OrganizationProvisioningStatus;
+    };
+    url: '/api/account/organization-provisioning';
+};
+export type ListSelfOrganizationProvisioningErrors = {
+    401: ManagementError;
+};
+export type ListSelfOrganizationProvisioningError = ListSelfOrganizationProvisioningErrors[keyof ListSelfOrganizationProvisioningErrors];
+export type ListSelfOrganizationProvisioningResponses = {
+    200: OrganizationProvisioningRequestListResponse;
+};
+export type ListSelfOrganizationProvisioningResponse = ListSelfOrganizationProvisioningResponses[keyof ListSelfOrganizationProvisioningResponses];
 export type CreateOrganizationProvisioningRequestData = {
     body: OrganizationProvisioningCreateRequest;
     path?: never;
@@ -8293,6 +8374,41 @@ export type CreateOrganizationProvisioningRequestResponses = {
     201: OrganizationProvisioningRequest;
 };
 export type CreateOrganizationProvisioningRequestResponse = CreateOrganizationProvisioningRequestResponses[keyof CreateOrganizationProvisioningRequestResponses];
+export type ListSelfProvisioningMaterialsData = {
+    body?: never;
+    path: {
+        request_key: string;
+    };
+    query?: never;
+    url: '/api/account/organization-provisioning/{request_key}/materials';
+};
+export type ListSelfProvisioningMaterialsErrors = {
+    401: ManagementError;
+    404: ManagementError;
+};
+export type ListSelfProvisioningMaterialsError = ListSelfProvisioningMaterialsErrors[keyof ListSelfProvisioningMaterialsErrors];
+export type ListSelfProvisioningMaterialsResponses = {
+    200: Array<OrganizationProvisioningMaterial>;
+};
+export type ListSelfProvisioningMaterialsResponse = ListSelfProvisioningMaterialsResponses[keyof ListSelfProvisioningMaterialsResponses];
+export type DownloadSelfProvisioningMaterialData = {
+    body?: never;
+    path: {
+        request_key: string;
+        material_id: number;
+    };
+    query?: never;
+    url: '/api/account/organization-provisioning/{request_key}/materials/{material_id}';
+};
+export type DownloadSelfProvisioningMaterialErrors = {
+    401: ManagementError;
+    404: ManagementError;
+};
+export type DownloadSelfProvisioningMaterialError = DownloadSelfProvisioningMaterialErrors[keyof DownloadSelfProvisioningMaterialErrors];
+export type DownloadSelfProvisioningMaterialResponses = {
+    200: Blob | File;
+};
+export type DownloadSelfProvisioningMaterialResponse = DownloadSelfProvisioningMaterialResponses[keyof DownloadSelfProvisioningMaterialResponses];
 export type GetActiveOrganizationProvisioningRequestData = {
     body?: never;
     path?: never;
@@ -8432,6 +8548,62 @@ export type DownloadAdminOrganizationProvisioningMaterialResponses = {
     200: Blob | File;
 };
 export type DownloadAdminOrganizationProvisioningMaterialResponse = DownloadAdminOrganizationProvisioningMaterialResponses[keyof DownloadAdminOrganizationProvisioningMaterialResponses];
+export type GetSelfVerificationHistoryData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        before?: number;
+    };
+    url: '/api/organizations/{organization_id}/verification/history';
+};
+export type GetSelfVerificationHistoryErrors = {
+    401: ManagementError;
+    403: ManagementError;
+};
+export type GetSelfVerificationHistoryError = GetSelfVerificationHistoryErrors[keyof GetSelfVerificationHistoryErrors];
+export type GetSelfVerificationHistoryResponses = {
+    200: OrganizationVerificationHistoryResponse;
+};
+export type GetSelfVerificationHistoryResponse = GetSelfVerificationHistoryResponses[keyof GetSelfVerificationHistoryResponses];
+export type GetAdminVerificationHistoryData = {
+    body?: never;
+    path: {
+        case_id: number;
+    };
+    query?: {
+        before?: number;
+    };
+    url: '/api/admin/organization-verifications/{case_id}/history';
+};
+export type GetAdminVerificationHistoryErrors = {
+    401: ManagementError;
+    403: ManagementError;
+};
+export type GetAdminVerificationHistoryError = GetAdminVerificationHistoryErrors[keyof GetAdminVerificationHistoryErrors];
+export type GetAdminVerificationHistoryResponses = {
+    200: OrganizationVerificationHistoryResponse;
+};
+export type GetAdminVerificationHistoryResponse = GetAdminVerificationHistoryResponses[keyof GetAdminVerificationHistoryResponses];
+export type DownloadSelfVerificationMaterialData = {
+    body?: never;
+    path: {
+        organization_id: number;
+        material_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/verification/materials/{material_id}';
+};
+export type DownloadSelfVerificationMaterialErrors = {
+    401: ManagementError;
+    404: ManagementError;
+};
+export type DownloadSelfVerificationMaterialError = DownloadSelfVerificationMaterialErrors[keyof DownloadSelfVerificationMaterialErrors];
+export type DownloadSelfVerificationMaterialResponses = {
+    200: Blob | File;
+};
+export type DownloadSelfVerificationMaterialResponse = DownloadSelfVerificationMaterialResponses[keyof DownloadSelfVerificationMaterialResponses];
 export type GetOrganizationVerificationData = {
     body?: never;
     path: {
@@ -8556,6 +8728,239 @@ export type DownloadAdminOrganizationVerificationMaterialResponses = {
     200: Blob | File;
 };
 export type DownloadAdminOrganizationVerificationMaterialResponse = DownloadAdminOrganizationVerificationMaterialResponses[keyof DownloadAdminOrganizationVerificationMaterialResponses];
+export type ListAccountVerificationsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before?: number;
+        status?: number;
+        limit?: number;
+    };
+    url: '/api/account/verifications';
+};
+export type ListAccountVerificationsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type ListAccountVerificationsError = ListAccountVerificationsErrors[keyof ListAccountVerificationsErrors];
+export type ListAccountVerificationsResponses = {
+    200: AccountVerificationListResponse;
+};
+export type ListAccountVerificationsResponse = ListAccountVerificationsResponses[keyof ListAccountVerificationsResponses];
+export type SubmitAccountVerificationData = {
+    body: AccountVerificationMultipartRequest;
+    path?: never;
+    query?: never;
+    url: '/api/account/verifications';
+};
+export type SubmitAccountVerificationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type SubmitAccountVerificationError = SubmitAccountVerificationErrors[keyof SubmitAccountVerificationErrors];
+export type SubmitAccountVerificationResponses = {
+    200: AccountVerificationResponse;
+};
+export type SubmitAccountVerificationResponse = SubmitAccountVerificationResponses[keyof SubmitAccountVerificationResponses];
+export type GetAccountVerificationData = {
+    body?: never;
+    path: {
+        case_id: number;
+    };
+    query?: never;
+    url: '/api/account/verifications/{case_id}';
+};
+export type GetAccountVerificationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type GetAccountVerificationError = GetAccountVerificationErrors[keyof GetAccountVerificationErrors];
+export type GetAccountVerificationResponses = {
+    200: AccountVerificationDetailResponse;
+};
+export type GetAccountVerificationResponse = GetAccountVerificationResponses[keyof GetAccountVerificationResponses];
+export type DownloadAccountVerificationMaterialData = {
+    body?: never;
+    path: {
+        case_id: number;
+        material_id: number;
+    };
+    query?: never;
+    url: '/api/account/verifications/{case_id}/materials/{material_id}';
+};
+export type DownloadAccountVerificationMaterialErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type DownloadAccountVerificationMaterialError = DownloadAccountVerificationMaterialErrors[keyof DownloadAccountVerificationMaterialErrors];
+export type DownloadAccountVerificationMaterialResponses = {
+    200: Blob | File;
+};
+export type DownloadAccountVerificationMaterialResponse = DownloadAccountVerificationMaterialResponses[keyof DownloadAccountVerificationMaterialResponses];
+export type ListAdminAccountVerificationsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before?: number;
+        status?: number;
+        limit?: number;
+    };
+    url: '/api/admin/account-verifications';
+};
+export type ListAdminAccountVerificationsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type ListAdminAccountVerificationsError = ListAdminAccountVerificationsErrors[keyof ListAdminAccountVerificationsErrors];
+export type ListAdminAccountVerificationsResponses = {
+    200: AccountVerificationListResponse;
+};
+export type ListAdminAccountVerificationsResponse = ListAdminAccountVerificationsResponses[keyof ListAdminAccountVerificationsResponses];
+export type GetAdminAccountVerificationData = {
+    body?: never;
+    path: {
+        case_id: number;
+    };
+    query?: never;
+    url: '/api/admin/account-verifications/{case_id}';
+};
+export type GetAdminAccountVerificationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type GetAdminAccountVerificationError = GetAdminAccountVerificationErrors[keyof GetAdminAccountVerificationErrors];
+export type GetAdminAccountVerificationResponses = {
+    200: AccountVerificationDetailResponse;
+};
+export type GetAdminAccountVerificationResponse = GetAdminAccountVerificationResponses[keyof GetAdminAccountVerificationResponses];
+export type DownloadAdminAccountVerificationMaterialData = {
+    body?: never;
+    path: {
+        case_id: number;
+        material_id: number;
+    };
+    query?: never;
+    url: '/api/admin/account-verifications/{case_id}/materials/{material_id}';
+};
+export type DownloadAdminAccountVerificationMaterialErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type DownloadAdminAccountVerificationMaterialError = DownloadAdminAccountVerificationMaterialErrors[keyof DownloadAdminAccountVerificationMaterialErrors];
+export type DownloadAdminAccountVerificationMaterialResponses = {
+    200: Blob | File;
+};
+export type DownloadAdminAccountVerificationMaterialResponse = DownloadAdminAccountVerificationMaterialResponses[keyof DownloadAdminAccountVerificationMaterialResponses];
+export type GetAccountVerificationEligibilityData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/account/verifications/eligibility';
+};
+export type GetAccountVerificationEligibilityErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type GetAccountVerificationEligibilityError = GetAccountVerificationEligibilityErrors[keyof GetAccountVerificationEligibilityErrors];
+export type GetAccountVerificationEligibilityResponses = {
+    200: AccountVerificationEligibilityResponse;
+};
+export type GetAccountVerificationEligibilityResponse = GetAccountVerificationEligibilityResponses[keyof GetAccountVerificationEligibilityResponses];
+export type DecideAccountVerificationData = {
+    body: AccountVerificationDecisionRequest;
+    path: {
+        case_id: number;
+    };
+    query?: never;
+    url: '/api/admin/account-verifications/{case_id}/decision';
+};
+export type DecideAccountVerificationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type DecideAccountVerificationError = DecideAccountVerificationErrors[keyof DecideAccountVerificationErrors];
+export type DecideAccountVerificationResponses = {
+    200: AccountVerificationResponse;
+};
+export type DecideAccountVerificationResponse = DecideAccountVerificationResponses[keyof DecideAccountVerificationResponses];
+export type GetPlatformOrganizationEntitlementData = {
+    body?: never;
+    headers: {
+        'x-anyflows-platform-reason': string;
+    };
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/platform/organizations/{organization_id}/entitlement';
+};
+export type GetPlatformOrganizationEntitlementErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    503: ManagementError;
+};
+export type GetPlatformOrganizationEntitlementError = GetPlatformOrganizationEntitlementErrors[keyof GetPlatformOrganizationEntitlementErrors];
+export type GetPlatformOrganizationEntitlementResponses = {
+    200: OrganizationEntitlementProjection;
+};
+export type GetPlatformOrganizationEntitlementResponse = GetPlatformOrganizationEntitlementResponses[keyof GetPlatformOrganizationEntitlementResponses];
+export type UpdatePlatformOrganizationEntitlementData = {
+    body: PlatformEntitlementUpdateRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/platform/organizations/{organization_id}/entitlement';
+};
+export type UpdatePlatformOrganizationEntitlementErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+};
+export type UpdatePlatformOrganizationEntitlementError = UpdatePlatformOrganizationEntitlementErrors[keyof UpdatePlatformOrganizationEntitlementErrors];
+export type UpdatePlatformOrganizationEntitlementResponses = {
+    200: PlatformEntitlementUpdateResponse;
+};
+export type UpdatePlatformOrganizationEntitlementResponse = UpdatePlatformOrganizationEntitlementResponses[keyof UpdatePlatformOrganizationEntitlementResponses];
 export type ListAdminOrganizationPlansData = {
     body?: never;
     path?: never;
@@ -8714,29 +9119,6 @@ export type GetOrganizationEntitlementResponses = {
     200: OrganizationEntitlementProjection;
 };
 export type GetOrganizationEntitlementResponse = GetOrganizationEntitlementResponses[keyof GetOrganizationEntitlementResponses];
-export type GetPlatformOrganizationEntitlementData = {
-    body?: never;
-    headers: {
-        'x-anyflows-platform-reason': string;
-    };
-    path: {
-        organization_id: number;
-    };
-    query?: never;
-    url: '/api/platform/organizations/{organization_id}/entitlement';
-};
-export type GetPlatformOrganizationEntitlementErrors = {
-    400: ManagementError;
-    401: ManagementError;
-    403: ManagementError;
-    404: ManagementError;
-    503: ManagementError;
-};
-export type GetPlatformOrganizationEntitlementError = GetPlatformOrganizationEntitlementErrors[keyof GetPlatformOrganizationEntitlementErrors];
-export type GetPlatformOrganizationEntitlementResponses = {
-    200: OrganizationEntitlementProjection;
-};
-export type GetPlatformOrganizationEntitlementResponse = GetPlatformOrganizationEntitlementResponses[keyof GetPlatformOrganizationEntitlementResponses];
 export type DiscoverOrganizationSsoData = {
     body: OrganizationSsoDiscoveryRequest;
     path?: never;

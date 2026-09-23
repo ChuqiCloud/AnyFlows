@@ -38,7 +38,7 @@ function EntitlementForm({ initial, organizationId, onRefresh }: { initial: Enti
     } })
   }, onSuccess: async () => {
     setSaved(true)
-    await Promise.all([client.invalidateQueries({ queryKey: ['platform-organizations'] }), client.invalidateQueries({ queryKey: ['organizations'] }), client.invalidateQueries({ queryKey: ['organization'] })])
+    await Promise.all([client.invalidateQueries({ queryKey: ['platform-organizations'] }), client.invalidateQueries({ queryKey: ['organization-directory'] }), client.invalidateQueries({ queryKey: ['platform-organization-entitlement'] }), client.invalidateQueries({ queryKey: ['organization'] })])
   } })
   const valid = capacities.every((key) => Number.isSafeInteger(value[key]) && value[key] >= 1)
     && value.audit_retention_days <= 3650 && value.valid_until > value.valid_from
