@@ -31,6 +31,9 @@ function AccountVerificationForm({ onSubmitted }: { onSubmitted: (id: number) =>
   const mutation = useSubmitAccountVerification()
   const [kind, setKind] = useState<VerificationKind>('individual')
   const [name, setName] = useState('')
+  const [country, setCountry] = useState('CN')
+  const [documentType, setDocumentType] = useState('national_id')
+  const [documentNumber, setDocumentNumber] = useState('')
   const [summary, setSummary] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const [fileError, setFileError] = useState(false)
@@ -39,13 +42,18 @@ function AccountVerificationForm({ onSubmitted }: { onSubmitted: (id: number) =>
     const valid = files.length > 0 && files.length <= 5 && files.every((f) => f.size > 0 && f.size <= 10_000_000 && ['application/pdf', 'image/png', 'image/jpeg', 'image/webp'].includes(f.type)) && files.reduce((sum, f) => sum + f.size, 0) <= 25_000_000
     setFileError(!valid)
     if (!valid) return
-    try { const record = await mutation.mutateAsync({ kind, subject_name: name.trim(), summary: summary.trim(), files }); setFiles([]); setName(''); setSummary(''); onSubmitted(record.id) } catch { /* Keep the form for correction. */ }
+    try { const record = await mutation.mutateAsync({ kind, document_country: country, document_type: kind === 'enterprise' ? 'business_registration' : documentType, document_number: documentNumber.trim() || undefined, subject_name: name.trim(), summary: summary.trim(), files }); setFiles([]); setName(''); setDocumentNumber(''); setSummary(''); onSubmitted(record.id) } catch { /* Keep the form for correction. */ }
   }
   return <section className="rounded-xl border border-[var(--hairline)] bg-surface-1 p-5">
     {eligibility.data?.enterprise_verified ? <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-success/10 p-3"><p className="flex items-center gap-2 text-sm text-success"><CheckCircle2 className="size-4" />{t('verificationCenter.enterpriseGranted')}</p><a href="#/console/organization-provisioning" className="text-sm font-medium text-brand">{t('verificationCenter.applyWorkspace')}</a></div> : null}
     <div className="mb-4 flex gap-2" role="tablist" aria-label={t('verificationCenter.kind')}>{(['individual', 'enterprise'] as const).map((value) => <Button key={value} type="button" role="tab" aria-selected={kind === value} variant={kind === value ? 'default' : 'secondary'} onClick={() => { setKind(value); mutation.reset() }}>{value === 'individual' ? <UserRound className="size-4" /> : <Building2 className="size-4" />}{t(`verificationCenter.${value}`)}</Button>)}</div>
     <form onSubmit={(event) => void submit(event)} className="grid gap-4">
       <label className="grid gap-2 text-sm"><span>{t(kind === 'enterprise' ? 'verificationCenter.companyName' : 'verificationCenter.personName')}</span><Input aria-label={t('verificationCenter.subjectName')} required maxLength={128} value={name} onChange={(e) => setName(e.target.value)} /></label>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="grid gap-2 text-sm"><span>{t('verificationCenter.documentCountry')}</span><Input required maxLength={2} pattern="[A-Z]{2}" value={country} onChange={(e) => setCountry(e.target.value.toUpperCase())} /></label>
+        <label className="grid gap-2 text-sm"><span>{t('verificationCenter.documentType')}</span><select className="rounded-lg border border-[var(--hairline)] bg-surface-1 p-2 text-sm" value={kind === 'enterprise' ? 'business_registration' : documentType} disabled={kind === 'enterprise'} onChange={(e) => setDocumentType(e.target.value)}>{(kind === 'enterprise' ? ['business_registration'] : ['national_id', 'passport', 'residence_permit', 'other']).map((value) => <option key={value} value={value}>{t(`verificationCenter.documentTypes.${value}`)}</option>)}</select></label>
+      </div>
+      <label className="grid gap-2 text-sm"><span>{t('verificationCenter.documentNumber')}</span><Input aria-label={t('verificationCenter.documentNumber')} required minLength={5} maxLength={64} autoComplete="off" value={documentNumber} onChange={(e) => setDocumentNumber(e.target.value)} /><span className="text-xs text-muted-foreground">{t('verificationCenter.documentNumberHint')}</span></label>
       <label className="grid gap-2 text-sm"><span>{t('verificationCenter.summary')}</span><Textarea aria-label={t('verificationCenter.summary')} required maxLength={512} value={summary} onChange={(e) => setSummary(e.target.value)} /></label>
       <label className="grid gap-2 text-sm"><span>{t('verificationCenter.materials')}</span><Input key={files.length === 0 ? 'empty' : 'files'} type="file" aria-label={t('verificationCenter.materials')} accept=".pdf,.png,.jpg,.jpeg,.webp" multiple onChange={(e) => { setFiles(Array.from(e.target.files ?? [])); setFileError(false) }} /><span className="text-xs text-muted-foreground">{t('verificationCenter.fileHint')}</span></label>
       <div className="grid gap-3 md:grid-cols-2">{files.map((file, index) => <VerificationAttachment key={`${index}-${file.name}-${file.lastModified}`} name={file.name} size={file.size} contentType={file.type} file={file} />)}</div>
@@ -68,6 +76,7 @@ function VerificationDetailPanel({ id, admin }: { id: number; admin: boolean }) 
   if (query.isPending) return <p role="status" className="pt-4">{t('verificationCenter.loading')}</p>
   if (!query.data || query.isError) return <p role="alert" className="pt-4 text-destructive">{t('verificationCenter.loadError')}</p>
   return <div className="mt-4 grid gap-4 border-t border-[var(--hairline)] pt-4"><p className="whitespace-pre-wrap text-sm">{query.data.case.summary}</p>
+    <p className="text-xs text-muted-foreground">{query.data.case.document_country} · {t(`verificationCenter.documentTypes.${query.data.case.document_type}`, { defaultValue: query.data.case.document_type })}{query.data.case.document_number_masked ? ` · ${query.data.case.document_number_masked}` : ''}</p>
     {query.data.case.review_reason ? <p className="rounded-lg bg-surface-2 p-3 text-sm">{t('verificationCenter.reviewReason')}: {query.data.case.review_reason}</p> : null}
     <p className="text-xs text-muted-foreground">{t('verificationCenter.updated')}: {new Date(query.data.case.updated_at * 1000).toLocaleString()}</p>
     <div className="grid gap-3 md:grid-cols-2">{query.data.materials.map((m) => <VerificationAttachment key={m.id} name={m.file_name} contentType={m.content_type} size={m.size_bytes} load={(signal) => materialBlob(`${verificationBase(admin)}/${id}/materials/${m.id}`, signal)} />)}</div>
@@ -76,5 +85,19 @@ function VerificationDetailPanel({ id, admin }: { id: number; admin: boolean }) 
 }
 function MutationError({ error }: { error: unknown }) {
   const { t } = useTranslation()
-  return <p role="alert" className="text-sm text-destructive">{t(error instanceof ApiError && error.status === 409 ? 'verificationCenter.conflict' : 'verificationCenter.saveError')}</p>
+  const code = errorCode(error)
+  const key = code === 'account_verification_self_review' ? 'verificationCenter.selfReview'
+    : code === 'organization_verification_forbidden' ? 'verificationCenter.forbidden'
+    : code === 'organization_verification_invalid_request' ? 'verificationCenter.invalid'
+      : code === 'organization_verification_not_found' ? 'verificationCenter.notFound'
+        : code === 'organization_verification_unavailable' ? 'verificationCenter.unavailable'
+          : error instanceof ApiError && error.status === 409 ? 'verificationCenter.conflict' : 'verificationCenter.saveError'
+  return <p role="alert" className="text-sm text-destructive">{t(key)}</p>
+}
+
+function errorCode(error: unknown) {
+  if (!(error instanceof ApiError) || typeof error.details !== 'object' || error.details === null) return undefined
+  const details = error.details as { code?: unknown; error?: { code?: unknown } }
+  if (typeof details.code === 'string') return details.code
+  return typeof details.error?.code === 'string' ? details.error.code : undefined
 }

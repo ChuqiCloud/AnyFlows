@@ -244,6 +244,7 @@ function AdminProvisioningWorkspace() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2"><h3 className="text-sm font-semibold">{request.organization_name}</h3><StatusBadge status={request.status} /></div>
                   <p className="mt-1 font-mono text-[0.6875rem] text-muted-foreground">{request.organization_slug} · #{request.id}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{t('organizationProvisioning.admin.applicant', { id: request.applicant_user_id })}</p>
                   <p className="mt-2 max-w-3xl text-xs leading-5 text-muted-foreground">{request.business_reason}</p>
                 </div>
                 {request.status === 'pending' ? <Button type="button" size="sm" variant="secondary" onClick={() => setSelected(request)}>{t('organizationProvisioning.admin.review')}</Button> : null}
