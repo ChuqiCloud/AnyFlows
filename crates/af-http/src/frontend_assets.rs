@@ -125,6 +125,11 @@ fn resolve_asset(
 }
 
 fn is_reserved_path(path: &str) -> bool {
+    // /api is the public API explorer page. Keep nested API endpoints reserved
+    // so an unknown API request is never answered with the SPA shell.
+    if matches!(path, "api" | "api/") {
+        return false;
+    }
     matches!(
         path.split('/').next(),
         Some("api" | "v1" | "healthz" | "readyz" | "metrics")

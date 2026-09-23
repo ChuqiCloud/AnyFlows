@@ -1,6 +1,7 @@
 import { Button } from '@heroui/react'
 import { Boxes, Braces } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Link as RouterLink } from 'react-router-dom'
 
 import { LanguageToggle } from '@/components/language-toggle'
 import { MotionToggle } from '@/components/motion-toggle'
@@ -19,22 +20,22 @@ export function PublicSiteHeader({ logoUrl, siteName }: PublicSiteHeaderProps) {
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-[var(--hairline)] bg-background/80 backdrop-blur-xl">
       <div className="mx-auto flex h-14 max-w-[1120px] items-center justify-between px-3 sm:px-6">
-        <a
-          href="/"
+        <RouterLink
+          to="/"
           className="flex min-w-0 items-center gap-2.5 rounded-lg focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none"
         >
           <SiteBrandMark siteName={siteName} logoUrl={logoUrl} />
           <span className="hidden truncate text-[0.9375rem] font-semibold sm:inline">
             {siteName}
           </span>
-        </a>
+        </RouterLink>
         <div className="flex shrink-0 items-center gap-1.5">
-          <Button as="a" href="/models" size="sm" title={t('landing.nav.models')} variant="light">
+          <Button as={RouterLink} to="/models" size="sm" title={t('landing.nav.models')} variant="light">
             <Boxes className="size-4" aria-hidden="true" />
             <span className="hidden md:inline">{t('landing.nav.models')}</span>
             <span className="sr-only md:hidden">{t('landing.nav.models')}</span>
           </Button>
-          <Button as="a" href="/api" size="sm" title={t('apiExplorer.nav')} variant="light">
+          <Button as={RouterLink} to="/api" size="sm" title={t('apiExplorer.nav')} variant="light">
             <Braces className="size-4" aria-hidden="true" />
             <span className="hidden md:inline">API</span>
             <span className="sr-only md:hidden">API</span>
@@ -42,7 +43,7 @@ export function PublicSiteHeader({ logoUrl, siteName }: PublicSiteHeaderProps) {
           <LanguageToggle />
           <MotionToggle />
           <ThemeToggle />
-          <Button as="a" color="primary" href="/console" size="sm">{t('landing.nav.console')}</Button>
+          <Button as={RouterLink} color="primary" to="/console" size="sm">{t('landing.nav.console')}</Button>
         </div>
       </div>
     </header>

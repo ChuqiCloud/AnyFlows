@@ -8,6 +8,7 @@ import type {
 
 export type UsageLogRow = AdminUsageLog | UserUsageLog
 export type FailedCallLogRow = AdminFailedCallLog | UserFailedCallLog
+export type RequestLogRow = UsageLogRow | FailedCallLogRow
 
 export const usageLogProtocols = [
   'open_ai_chat',
@@ -49,6 +50,10 @@ export function usageLogTotalTokens(log: UsageLogRow) {
 /** 管理员和企业明细返回内部字段，普通用户只返回安全错误码与文案。 */
 export function isAdminFailedCallLog(log: FailedCallLogRow): log is AdminFailedCallLog {
   return 'error_kind' in log
+}
+
+export function isFailedCallLog(log: RequestLogRow): log is FailedCallLogRow {
+  return 'error_code' in log
 }
 
 export function filterFailedCallLogs(
