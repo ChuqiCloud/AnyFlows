@@ -42,7 +42,7 @@ test('企业开通申请的 HTTP、OpenAPI、生成客户端和前端入口保�
   assert.match(page, /ProvisioningFlow current="review"/)
   assert.match(page, /type AdminProvisioningView = 'review' \| 'apply'/)
   assert.match(page, /role="tablist"/)
-  assert.match(page, /adminView === 'review' \? <AdminProvisioningWorkspace \/> : <ApplicantProvisioningWorkspace \/>/)
+  assert.match(page, /adminView === 'review' \? <AdminProvisioningWorkspace \/> : <ProvisioningEligibility><ApplicantProvisioningWorkspace \/><\/ProvisioningEligibility>/)
   assert.match(page, /const shouldLoadRequest = requestKey !== undefined && !activeQuery\.isPending && activeQuery\.data === null/)
   assert.match(page, /shouldLoadRequest && requestQuery\.isPending/)
   assert.match(page, /const \[submittedRequest, setSubmittedRequest\]/)

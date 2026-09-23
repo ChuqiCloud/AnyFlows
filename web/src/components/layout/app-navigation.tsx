@@ -1,3 +1,4 @@
+import { useAccountEligibility } from '@/features/account-verification/account-verification-api'
 import {
   Activity,
   Boxes,
@@ -97,6 +98,7 @@ const navItems = {
   organizationDepartments: { key: 'organizationDepartments', icon: Building2, href: '#/console/organization-departments' },
   organizationOverview: { key: 'organizationOverview', icon: Gauge, href: '#/console/organization' },
   organizationOnboarding: { key: 'organizationOnboarding', icon: ClipboardCheck, href: '#/console/organization-onboarding' },
+  accountVerification: { key: 'accountVerification', icon: ShieldCheck, href: '#/console/account-verification' },
   organizationProvisioning: { key: 'organizationProvisioning', icon: ClipboardCheck, href: '#/console/organization-provisioning' },
   organizationVerification: { key: 'organizationVerification', icon: ShieldCheck, href: '#/console/organization-verification' },
   organizationSettings: { key: 'organizationSettings', icon: Settings2, href: '#/console/organization-settings' },
@@ -305,14 +307,17 @@ export function AppNavigation({ className, compact = false, role }: AppNavigatio
   const { t } = useTranslation()
   const activeKey = useActiveKey()
   const workspace = useOrganizationWorkspace()
-  const organizationItems = filterOrganizationNavigationItems(
+  const eligibility = useAccountEligibility()
+  const organizationItems: readonly NavKey[] = workspace.selectedId === undefined && eligibility.data?.enterprise_verified
+    ? ['organizationProvisioning']
+    : filterOrganizationNavigationItems(
     userNavigationGroups.find((group) => group.key === 'organization')?.items ?? [],
     workspace.organizationPermissions,
     workspace.selectedId !== undefined,
     workspace.organizationPermissionsLoading,
   )
   const visibleUserGroups = userNavigationGroups
-    .map((group) => group.key === 'organization' ? { ...group, items: organizationItems } : group)
+    .map((group) => group.key === 'organization' ? { ...group, items: organizationItems } : { ...group, items: group.items.filter((item) => item !== 'organizationProvisioning' || !organizationItems.includes('organizationProvisioning')) })
     .filter((group) => group.key !== 'organization' || group.items.length > 0)
   const visibleItems = role === 'admin'
     ? adminNavigationItems

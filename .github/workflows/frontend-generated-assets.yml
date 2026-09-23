@@ -6,6 +6,7 @@ on:
     branches: [develop, master]
     paths:
       - '.github/workflows/frontend-generated-assets.yml'
+      - 'crates/af-http/src/account_verification.rs'
       - 'crates/af-http/src/frontend_templates.rs'
       - 'crates/af-http/src/openapi/frontend_templates.rs'
       - 'web-next/package.json'

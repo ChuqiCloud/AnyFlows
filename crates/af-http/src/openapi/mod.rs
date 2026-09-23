@@ -1,5 +1,6 @@
 //! 从 Rust 路由契约生成管理 API 的 OpenAPI 文档。
 
+mod account_verification;
 mod analytics_export;
 mod announcements;
 mod balance_alert_settings;
@@ -136,6 +137,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(organization_credit_terms::document());
     document.merge(organization_provisioning::document());
     document.merge(organization_verification::document());
+    document.merge(account_verification::document());
     document.merge(organization_plan::document());
     document.merge(organization_sso::document());
     document.merge(organization_tokens::document());
@@ -274,7 +276,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 257);
+        assert_eq!(document.paths.paths.len(), 270);
         let operation_count = document
             .paths
             .paths
@@ -296,7 +298,7 @@ mod tests {
             })
             .sum::<usize>();
         // 新增前端模板预览接口后，保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 336);
+        assert_eq!(operation_count, 352);
         assert!(
             document
                 .components
@@ -336,6 +338,22 @@ mod tests {
             .map(|operation_id| operation_id.as_str().unwrap().to_owned())
             .collect::<BTreeSet<_>>();
         let expected = [
+            "decideAccountVerification",
+            "downloadAccountVerificationMaterial",
+            "downloadAdminAccountVerificationMaterial",
+            "downloadSelfProvisioningMaterial",
+            "downloadSelfVerificationMaterial",
+            "getAccountVerification",
+            "getAccountVerificationEligibility",
+            "getAdminAccountVerification",
+            "getAdminVerificationHistory",
+            "getSelfVerificationHistory",
+            "listAccountVerifications",
+            "listAdminAccountVerifications",
+            "listSelfOrganizationProvisioning",
+            "listSelfProvisioningMaterials",
+            "submitAccountVerification",
+            "updatePlatformOrganizationEntitlement",
             "listPublicAnnouncements",
             "listAdminAnnouncements",
             "createAdminAnnouncement",
@@ -679,7 +697,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 555);
+        assert_eq!(schemas.len(), 565);
         assert!(schemas.contains_key("OpenAiModel"));
         assert!(schemas.contains_key("OpenAiModelList"));
         assert_eq!(

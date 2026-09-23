@@ -1,3 +1,4 @@
+import { useAccountEligibility } from '@/features/account-verification/account-verification-api'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -37,6 +38,7 @@ const navItems = {
   organizationDepartments: { key: 'organizationDepartments', icon: 'solar:buildings-2-linear', href: '/console/organization-departments' },
   organizationOverview: { key: 'organizationOverview', icon: 'solar:chart-square-linear', href: '/console/organization' },
   organizationOnboarding: { key: 'organizationOnboarding', icon: 'solar:clipboard-list-linear', href: '/console/organization-onboarding' },
+  accountVerification: { key: 'accountVerification', icon: 'solar:verified-check-linear', href: '/console/account-verification' },
   organizationProvisioning: { key: 'organizationProvisioning', icon: 'solar:add-circle-linear', href: '/console/organization-provisioning' },
   organizationVerification: { key: 'organizationVerification', icon: 'solar:verified-check-linear', href: '/console/organization-verification' },
   organizationSettings: { key: 'organizationSettings', icon: 'solar:settings-linear', href: '/console/organization-settings' },
@@ -91,6 +93,7 @@ function groupNode(
 
 /** 构建控制台侧栏导航节点树，交给 acmeidc 的 ModuleSidebarLayoutContainer 渲染。 */
 export function useAppNavigationItems(role: 'admin' | 'user'): SidebarNode[] {
+  const eligibility = useAccountEligibility()
   const { t } = useTranslation()
   const {
     organizationPermissions,
@@ -106,6 +109,8 @@ export function useAppNavigationItems(role: 'admin' | 'user'): SidebarNode[] {
      */
     const enterpriseItems: readonly NavKey[] = role === 'admin'
       ? [...organizationSectionItems, ...enterpriseAdminItems]
+      : selectedId === undefined && eligibility.data?.enterprise_verified
+      ? ['organizationProvisioning']
       : filterOrganizationNavigationItems(
         organizationSectionItems,
         organizationPermissions,
@@ -114,7 +119,7 @@ export function useAppNavigationItems(role: 'admin' | 'user'): SidebarNode[] {
       )
 
     const sections: Array<{ key: NavigationSectionKey; items: readonly NavKey[] }> = [
-      { key: 'workspace', items: role === 'admin' ? adminWorkspaceItems : userWorkspaceItems },
+      { key: 'workspace', items: role === 'admin' ? adminWorkspaceItems : userWorkspaceItems.filter((item) => item !== 'organizationProvisioning' || !enterpriseItems.includes('organizationProvisioning')) },
       { key: 'enterprise', items: enterpriseItems },
     ]
     if (role === 'admin') {
@@ -128,5 +133,5 @@ export function useAppNavigationItems(role: 'admin' | 'user'): SidebarNode[] {
         t(`nav.sections.${section.key}`),
         section.items.map((itemKey) => navNode(itemKey, t)),
       ))
-  }, [organizationPermissions, organizationPermissionsLoading, role, selectedId, t])
+  }, [eligibility.data?.enterprise_verified, organizationPermissions, organizationPermissionsLoading, role, selectedId, t])
 }

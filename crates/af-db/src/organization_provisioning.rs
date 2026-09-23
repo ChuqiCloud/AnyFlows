@@ -644,6 +644,41 @@ impl OrganizationProvisioningRepository {
     }
 
     /// 按平台范围读取开通申请，使用自增主键倒序游标避免泄漏跨用户筛选条件。
+    pub async fn list_requests_self(
+        &self,
+        user_id: UserId,
+        status: Option<OrganizationProvisioningStatus>,
+        before: Option<i64>,
+        limit: u64,
+    ) -> Result<Vec<OrganizationProvisioningRecord>, OrganizationProvisioningRepositoryError> {
+        self.run_read(async move {
+            if !(1..=100).contains(&limit) || before.is_some_and(|value| value <= 0) {
+                return Err(OrganizationProvisioningRepositoryError::InvalidInput);
+            }
+            let mut query = organization_provisioning_requests::Entity::find()
+                .filter(
+                    organization_provisioning_requests::Column::ApplicantUserId.eq(user_id.get()),
+                )
+                .order_by_desc(organization_provisioning_requests::Column::Id)
+                .limit(limit);
+            if let Some(before) = before {
+                query = query.filter(organization_provisioning_requests::Column::Id.lt(before));
+            }
+            if let Some(status) = status {
+                query = query
+                    .filter(organization_provisioning_requests::Column::Status.eq(status.code()));
+            }
+            query
+                .all(self.pool.connection())
+                .await
+                .map_err(query_error)?
+                .into_iter()
+                .map(to_record)
+                .collect()
+        })
+        .await
+    }
+
     pub async fn list_requests(
         &self,
         status: Option<OrganizationProvisioningStatus>,
@@ -745,6 +780,15 @@ async fn create_request_inner(
         return existing_outcome(existing, request);
     }
     ensure_active_applicant(connection, request.applicant_user_id()).await?;
+    if !crate::account_verification::has_enterprise_verification(
+        connection,
+        request.applicant_user_id(),
+    )
+    .await
+    .map_err(|_| OrganizationProvisioningRepositoryError::Query)?
+    {
+        return Err(OrganizationProvisioningRepositoryError::Forbidden);
+    }
     if let Some(existing) =
         find_active_by_applicant(connection, request.applicant_user_id()).await?
     {
@@ -1031,8 +1075,27 @@ async fn list_materials_inner(
         .await?
         .ok_or(OrganizationProvisioningRepositoryError::NotFound)?;
     organization_provisioning_materials::Entity::find()
+        .select_only()
+        .columns([
+            organization_provisioning_materials::Column::Id,
+            organization_provisioning_materials::Column::RequestId,
+            organization_provisioning_materials::Column::Kind,
+            organization_provisioning_materials::Column::ObjectReference,
+            organization_provisioning_materials::Column::FileName,
+            organization_provisioning_materials::Column::ContentType,
+            organization_provisioning_materials::Column::SizeBytes,
+            organization_provisioning_materials::Column::CreatedAt,
+        ])
+        .column_as(
+            sea_orm::sea_query::Expr::col(
+                organization_provisioning_materials::Column::ContentBytes,
+            )
+            .is_not_null(),
+            "content_available",
+        )
         .filter(organization_provisioning_materials::Column::RequestId.eq(request.id))
         .order_by_asc(organization_provisioning_materials::Column::Id)
+        .into_model::<MaterialMetadataRow>()
         .all(connection)
         .await
         .map_err(query_error)?
@@ -1061,7 +1124,7 @@ async fn read_material_content_inner(
 }
 
 fn to_material(
-    model: organization_provisioning_materials::Model,
+    model: MaterialMetadataRow,
     request_key: OrganizationProvisioningRequestKey,
 ) -> Result<OrganizationProvisioningMaterial, OrganizationProvisioningRepositoryError> {
     OrganizationProvisioningMaterial::from_persistence(
@@ -1072,7 +1135,7 @@ fn to_material(
         model.file_name.as_str().to_owned(),
         model.content_type,
         model.size_bytes,
-        model.content_bytes.is_some(),
+        model.content_available,
         unix_seconds(model.created_at)?,
     )
     .map_err(|_| OrganizationProvisioningRepositoryError::Invariant)
@@ -1189,4 +1252,16 @@ pub enum OrganizationProvisioningRepositoryError {
     MaterialNotFound,
     #[error("企业开通材料正文不可用")]
     MaterialContentUnavailable,
+}
+
+#[derive(sea_orm::FromQueryResult)]
+struct MaterialMetadataRow {
+    id: i64,
+    kind: String,
+    object_reference: String,
+    file_name: String,
+    content_type: String,
+    size_bytes: i64,
+    content_available: bool,
+    created_at: TimeDateTimeWithTimeZone,
 }

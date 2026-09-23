@@ -15,7 +15,7 @@ import {
 
 const expectedAdminItems = [
   'overview', 'models', 'playground', 'videoTasks',
-  'apiKeys', 'wallet', 'subscriptions', 'invitations', 'profile',
+  'apiKeys', 'wallet', 'subscriptions', 'invitations', 'accountVerification', 'profile',
   'organizationOverview', 'organizationOnboarding', 'organizationMembers', 'organizationDepartments', 'organizationApiKeys', 'organizationServiceAccounts', 'organizationBudgets', 'organizationContractPrices', 'organizationApprovals',
   'organizationWallet', 'organizationActivity', 'organizationVerification', 'organizationSettings', 'organizationCredit', 'organizationProvisioning',
   'platformOrganizations', 'users', 'subscriptionManagement', 'organizationPlans', 'redemptionCodes', 'refunds', 'paymentSettings', 'billingSettings',
@@ -49,7 +49,7 @@ test('普通用户导航增加独立企业空间且保留原账户入口', () =>
     'models', 'playground', 'videoTasks',
     'organizationOverview', 'organizationOnboarding', 'organizationMembers', 'organizationDepartments', 'organizationApiKeys', 'organizationServiceAccounts', 'organizationBudgets', 'organizationContractPrices', 'organizationCredit', 'organizationApprovals',
     'organizationWallet', 'organizationActivity', 'organizationSettings',
-  'apiKeys', 'wallet', 'usage', 'subscriptions', 'invitations', 'organizationProvisioning', 'profile',
+  'apiKeys', 'wallet', 'usage', 'subscriptions', 'invitations', 'organizationProvisioning', 'accountVerification', 'profile',
   ])
 })
 

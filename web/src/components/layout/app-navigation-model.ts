@@ -25,6 +25,7 @@ export type NavKey =
   | 'wallet'
   | 'subscriptions'
   | 'invitations'
+  | 'accountVerification'
   | 'profile'
   | 'users'
   | 'subscriptionManagement'
@@ -51,13 +52,13 @@ export type AdminSectionKey = 'personal' | 'organization' | 'enterprise' | 'oper
 export const userNavigationGroups = [
   { key: 'use', items: ['models', 'playground', 'videoTasks'] },
   { key: 'organization', items: ['organizationOverview', 'organizationOnboarding', 'organizationMembers', 'organizationDepartments', 'organizationApiKeys', 'organizationServiceAccounts', 'organizationBudgets', 'organizationContractPrices', 'organizationCredit', 'organizationApprovals', 'organizationWallet', 'organizationActivity', 'organizationSettings'] },
-  { key: 'account', items: ['apiKeys', 'wallet', 'usage', 'subscriptions', 'invitations', 'organizationProvisioning', 'profile'] },
+  { key: 'account', items: ['apiKeys', 'wallet', 'usage', 'subscriptions', 'invitations', 'organizationProvisioning', 'accountVerification', 'profile'] },
 ] as const satisfies ReadonlyArray<{ key: 'use' | 'organization' | 'account'; items: readonly NavKey[] }>
 
 export const adminWorkspaceItems = ['overview', 'usage', 'models', 'playground', 'videoTasks'] as const satisfies readonly NavKey[]
 
 export const adminNavigationSections = [
-  { key: 'personal', items: ['apiKeys', 'wallet', 'subscriptions', 'invitations', 'profile'] },
+  { key: 'personal', items: ['apiKeys', 'wallet', 'subscriptions', 'invitations', 'accountVerification', 'profile'] },
   { key: 'organization', items: ['organizationOverview', 'organizationOnboarding', 'organizationMembers', 'organizationDepartments', 'organizationApiKeys', 'organizationServiceAccounts', 'organizationBudgets', 'organizationContractPrices', 'organizationCredit', 'organizationApprovals', 'organizationWallet', 'organizationActivity', 'organizationSettings'] },
   // 企业申请、认证、目录和用户归属必须在同一个管理员分组内，避免跨页面寻找关键入口。
   { key: 'enterprise', items: ['platformOrganizations', 'organizationProvisioning', 'organizationVerification', 'users', 'organizationPlans'] },
@@ -132,6 +133,7 @@ export const activeKeyByView: Readonly<Record<string, NavKey>> = {
   'organization-departments': 'organizationDepartments',
   'organization-overview': 'organizationOverview',
   'organization-onboarding': 'organizationOnboarding',
+  'account-verification': 'accountVerification',
   'organization-provisioning': 'organizationProvisioning',
   'organization-verification': 'organizationVerification',
   'organization-plans': 'organizationPlans',

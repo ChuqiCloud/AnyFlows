@@ -345,7 +345,7 @@ jobs:
       - name: Build frontend
         run: corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} build
 
-      - name: Browser smoke test template gallery
+      - name: Browser smoke test gallery and verification workflows
         shell: bash
         run: |
           set -euo pipefail
@@ -353,6 +353,7 @@ jobs:
           npm install --prefix "$browser_tools" --no-save --ignore-scripts playwright@1.56.1
           "$browser_tools/node_modules/.bin/playwright" install --with-deps chromium
           PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-gallery-smoke.mjs '${{ matrix.frontend }}'
+          PLAYWRIGHT_PACKAGE_ROOT="$browser_tools" node tools/ci/frontend-verification-smoke.mjs '${{ matrix.frontend }}'
 
   rust-quality:
     name: Rust quality gates

@@ -194,6 +194,9 @@ fn decide_organization_provisioning_request() {}
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        list_self_organization_provisioning,
+        list_self_provisioning_materials,
+        download_self_provisioning_material,
         create_organization_provisioning_request,
         get_active_organization_provisioning_request,
         get_organization_provisioning_request,
@@ -221,3 +224,13 @@ struct OrganizationProvisioningApi;
 pub(super) fn document() -> utoipa::openapi::OpenApi {
     OrganizationProvisioningApi::openapi()
 }
+
+#[utoipa::path(get,path="/api/account/organization-provisioning",operation_id="listSelfOrganizationProvisioning",tag="企业开通",
+    params(OrganizationProvisioningListQuerySchema),responses((status=200,body=OrganizationProvisioningRequestListResponseSchema),(status=401,body=ManagementErrorBody)),security(("bearerAuth"=[])))]
+fn list_self_organization_provisioning() {}
+#[utoipa::path(get,path="/api/account/organization-provisioning/{request_key}/materials",operation_id="listSelfProvisioningMaterials",tag="企业开通",
+    params(("request_key"=String,Path)),responses((status=200,body=Vec<OrganizationProvisioningMaterialSchema>),(status=401,body=ManagementErrorBody),(status=404,body=ManagementErrorBody)),security(("bearerAuth"=[])))]
+fn list_self_provisioning_materials() {}
+#[utoipa::path(get,path="/api/account/organization-provisioning/{request_key}/materials/{material_id}",operation_id="downloadSelfProvisioningMaterial",tag="企业开通",
+    params(("request_key"=String,Path),("material_id"=i64,Path)),responses((status=200,content_type="application/octet-stream",body=String),(status=401,body=ManagementErrorBody),(status=404,body=ManagementErrorBody)),security(("bearerAuth"=[])))]
+fn download_self_provisioning_material() {}

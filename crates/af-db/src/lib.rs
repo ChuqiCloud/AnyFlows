@@ -1,6 +1,12 @@
 //! 数据库连接池、迁移、实体与仓储边界。
 
 /// 数据库存储使用的 UTC 时间类型，供应用任务传递一致的扫描时刻。
+mod account_verification;
+pub use account_verification::{
+    AccountVerificationError, AccountVerificationMaterial, AccountVerificationRecord,
+    AccountVerificationRepository, AccountVerificationSubmit, validate_verification_material,
+};
+
 pub type DatabaseTimestamp = sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
 
 mod ability_write;

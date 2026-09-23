@@ -1,3 +1,4 @@
+import { AccountVerificationPage } from '@/features/account-verification/account-verification-page'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -228,6 +229,8 @@ function ManagementEntry({
                   ? 'playground.title'
                   : view === 'video-tasks'
                     ? 'videoTasks.title'
+                  : view === 'account-verification'
+                    ? 'verificationCenter.title'
                   : view === 'profile'
                     ? 'profile.title'
                     : view === 'tokens'
@@ -319,6 +322,8 @@ function ManagementEntry({
                   ? <PlaygroundPage />
                   : view === 'video-tasks'
                     ? <VideoTaskPage />
+                  : view === 'account-verification'
+                    ? <AccountVerificationPage />
                   : view === 'profile'
                     ? <ProfilePage section={profileSection} onPasswordChanged={onPasswordChanged} />
                     : view === 'tokens'
@@ -353,6 +358,7 @@ function ManagementEntry({
     && view !== 'playground'
     && view !== 'video-tasks'
     && view !== 'usage-logs'
+    && view !== 'account-verification'
     && view !== 'profile'
 
   return (

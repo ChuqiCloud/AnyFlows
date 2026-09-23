@@ -1,4 +1,5 @@
 export type AppView =
+  | 'account-verification'
   | 'api'
   | 'api-keys'
   | 'announcements'
@@ -175,6 +176,7 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash.startsWith('#/console/usage-logs')) return { view: 'usage-logs' }
   if (hash.startsWith('#/console/users')) return { view: 'users' }
   if (hash.startsWith('#/console/registration')) return { view: 'authentication-settings' }
+  if (hash.startsWith('#/console/account-verification')) return { view: 'account-verification' }
   if (hash.startsWith('#/console')) return { view: 'overview' }
   if (hash.startsWith('#/models')) return { view: 'public-models' }
   if (hash === '#/api' || hash.startsWith('#/api?')) return { view: 'api' }

@@ -693,3 +693,12 @@ mod playground_conversation_tests;
 mod playground_share_tests;
 #[cfg(test)]
 mod token_auth_tests;
+
+mod account_verification;
+pub use account_verification::{
+    AccountVerificationError, AccountVerificationMaterial, AccountVerificationRecord,
+    AccountVerificationService, AccountVerificationSubmit, validate_verification_material,
+};
+
+mod platform_entitlement;
+pub use platform_entitlement::PlatformEntitlementService;

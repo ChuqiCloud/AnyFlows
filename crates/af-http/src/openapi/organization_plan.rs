@@ -312,6 +312,7 @@ fn get_platform_organization_entitlement() {}
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        update_platform_organization_entitlement,
         list_admin_organization_plans,
         create_admin_organization_plan,
         disable_admin_organization_plan,
@@ -347,3 +348,8 @@ struct OrganizationPlanApi;
 pub(super) fn document() -> utoipa::openapi::OpenApi {
     OrganizationPlanApi::openapi()
 }
+
+#[utoipa::path(patch, path="/api/platform/organizations/{organization_id}/entitlement",operation_id="updatePlatformOrganizationEntitlement",tag="企业授权",
+    params(("organization_id"=i64,Path)),request_body=crate::platform_entitlement::PlatformEntitlementUpdateRequest,
+    responses((status=200,body=crate::platform_entitlement::PlatformEntitlementUpdateResponse),(status=400,body=ManagementErrorBody),(status=401,body=ManagementErrorBody),(status=403,body=ManagementErrorBody),(status=409,body=ManagementErrorBody)),security(("bearerAuth"=[])))]
+fn update_platform_organization_entitlement() {}

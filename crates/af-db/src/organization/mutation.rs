@@ -230,6 +230,100 @@ pub(super) async fn replace_entitlement(
     }
 }
 
+pub(super) async fn replace_entitlement_as_platform(
+    repository: &OrganizationRepository,
+    organization_id: OrganizationId,
+    write: OrganizationEntitlementWrite,
+    actor: UserId,
+    reason: String,
+    request_id: String,
+) -> Result<OrganizationEntitlementRecord, OrganizationRepositoryError> {
+    if reason.trim().is_empty() || reason.len() > 512 || reason.chars().any(char::is_control) {
+        return Err(OrganizationRepositoryError::InvalidInput);
+    }
+    let tx = begin(repository).await?;
+    let admin = lock_active_user_model(&tx, actor).await?;
+    if admin.role != 1 {
+        return Err(OrganizationRepositoryError::UserUnavailable);
+    }
+    let organization = lock_organization(&tx, organization_id).await?;
+    if OrganizationStatus::try_from(organization.status).map_err(|_| invariant())?
+        == OrganizationStatus::Closed
+    {
+        return Err(OrganizationRepositoryError::InvalidTransition);
+    }
+    let previous = lock_entitlement(&tx, organization_id).await?;
+    let capacity = write.snapshot.capacity();
+    let seats = organization_memberships::Entity::find()
+        .filter(organization_memberships::Column::OrganizationId.eq(organization_id.get()))
+        .filter(
+            organization_memberships::Column::Status
+                .eq(OrganizationMembershipStatus::Active.code()),
+        )
+        .count(&tx)
+        .await
+        .map_err(query_error)?;
+    let teams = organization_teams::Entity::find()
+        .filter(organization_teams::Column::OrganizationId.eq(organization_id.get()))
+        .filter(organization_teams::Column::Status.eq(OrganizationTeamStatus::Active.code()))
+        .count(&tx)
+        .await
+        .map_err(query_error)?;
+    let keys = tokens::Entity::find()
+        .filter(tokens::Column::OrganizationId.eq(organization_id.get()))
+        .filter(tokens::Column::DeletedAt.is_null())
+        .count(&tx)
+        .await
+        .map_err(query_error)?;
+    if seats > capacity.seat_limit() as u64
+        || teams > capacity.team_limit() as u64
+        || keys > capacity.organization_key_limit() as u64
+    {
+        return Err(OrganizationRepositoryError::EntitlementRestricted);
+    }
+    // Turning off SSO also removes the mandatory-login policy. Existing provider/domain
+    // configuration is retained so that access can be enabled again without data loss.
+    if !write.snapshot.sso_enabled() {
+        let policy = organization_sso_policies::Entity::find_by_id(organization_id.get())
+            .lock(LockType::Update)
+            .one(&tx)
+            .await
+            .map_err(query_error)?
+            .ok_or_else(invariant)?;
+        if policy.enforcement_policy != 1 {
+            organization_sso_policies::ActiveModel {
+                organization_id: Set(organization_id.get()),
+                enforcement_policy: Set(1),
+                version: Set(policy.version.checked_add(1).ok_or_else(invariant)?),
+                updated_at: Set(TimeDateTimeWithTimeZone::now_utc()),
+                ..Default::default()
+            }
+            .update(&tx)
+            .await
+            .map_err(query_error)?;
+        }
+    }
+    let updated = replace_entitlement_in_transaction(&tx, organization_id, write).await?;
+    let snapshot = updated.snapshot();
+    crate::entity::platform_audit_logs::ActiveModel {
+        operator_user_id:Set(actor.get()), permission_code:Set(af_domain::PlatformPermission::OrganizationsManage.code().to_owned()),
+        route:Set("/api/platform/organizations/{organization_id}/entitlement".to_owned()), operation:Set("replace_entitlement".to_owned()),
+        resource:Set("organization_entitlement".to_owned()), resource_id:Set(Some(organization_id.get().to_string())), outcome:Set(1),
+        before_value:Set(Some(serde_json::json!({"version":previous.version,"sso_enabled":previous.sso_enabled,
+            "team_management_enabled":previous.team_management_enabled,"custom_roles_enabled":previous.custom_roles_enabled,
+            "seat_limit":previous.seat_limit,"team_limit":previous.team_limit,"organization_key_limit":previous.organization_key_limit,
+            "valid_until":previous.valid_until.unix_timestamp()}).to_string())),
+        after_value:Set(Some(serde_json::json!({"version":updated.version(),"sso_enabled":snapshot.sso_enabled(),
+            "team_management_enabled":snapshot.team_management_enabled(),"custom_roles_enabled":snapshot.custom_roles_enabled(),
+            "seat_limit":capacity.seat_limit(),"team_limit":capacity.team_limit(),"organization_key_limit":capacity.organization_key_limit(),
+            "valid_from":snapshot.valid_from(),"valid_until":snapshot.valid_until(),"grace_until":snapshot.grace_until()}).to_string())),
+        audit_info:Set(Some(serde_json::json!({"reason":reason,"sso_required_reset":!snapshot.sso_enabled()}).to_string())),
+        request_id:Set(request_id), created_at:Set(TimeDateTimeWithTimeZone::now_utc()), ..Default::default()
+    }.insert(&tx).await.map_err(query_error)?;
+    commit(tx).await?;
+    Ok(updated)
+}
+
 /// 在同一企业事务锁内统计占用并执行授权计划预检。
 pub(super) async fn preflight_entitlement_change(
     repository: &OrganizationRepository,
