@@ -1,7 +1,6 @@
-import { FailedCallTable } from '@/features/usage-logs/failed-call-table'
 import { Button, Chip, Input, Select, SelectItem, Skeleton } from '@heroui/react'
 import { useMemo, useState } from 'react'
-import { CircleAlert, Coins, RefreshCw, Search, SlidersHorizontal, X, Zap } from 'lucide-react'
+import { Coins, RefreshCw, Search, SlidersHorizontal, X, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { DataTablePagination } from '@/components/data-table/data-table-pagination'
@@ -13,7 +12,7 @@ import { formatUsageLatency, formatUsageNumber } from '@/features/usage-logs/usa
 import {
   filterUsageLogs,
   filterFailedCallLogs,
-  type FailedCallLogRow,
+  type RequestLogRow,
   summarizeUsageLogs,
   type UsageLogModeFilter,
   type UsageLogRow,
@@ -69,15 +68,15 @@ export function OrganizationUsagePanel({ organizationId, initialScope, scopes }:
     () => filterFailedCallLogs(failedLogs, modelFilter, protocolFilter),
     [failedLogs, modelFilter, protocolFilter],
   )
+  const requestLogs = useMemo(() => [...filteredLogs, ...filteredFailedLogs].sort((left, right) => right.created_at - left.created_at) as RequestLogRow[], [filteredFailedLogs, filteredLogs])
   const nextCursor = query.data?.next_cursor
   const failedNextCursor = query.data?.failed_next_cursor
   const isSummary = scope === 'summary'
-  const visibleCount = isSummary ? filteredSummaries.length : filteredLogs.length
-  const itemCount = isSummary ? summaries.length : logs.length
+  const visibleCount = isSummary ? filteredSummaries.length : requestLogs.length
+  const itemCount = isSummary ? summaries.length : logs.length + failedLogs.length
   const hasFilters = modelFilter.length > 0
     || protocolFilter !== 'all'
     || (!isSummary && modeFilter !== 'all')
-  const hasFailedFilters = modelFilter.length > 0 || protocolFilter !== 'all'
 
   const setPageSize = (pageSize: number) => {
     pagination.setPageSize(pageSize)
@@ -191,7 +190,7 @@ export function OrganizationUsagePanel({ organizationId, initialScope, scopes }:
       ) : (
         <>
           <UsageLogTable
-            logs={filteredLogs}
+            logs={requestLogs}
             admin={false}
             showPrincipal={scope === 'organization'}
             filtered={hasFilters}
@@ -202,39 +201,15 @@ export function OrganizationUsagePanel({ organizationId, initialScope, scopes }:
             currentPage={pagination.currentPage}
             availablePageCount={pagination.availablePageCount}
             pageSize={pagination.pageSize}
-            itemCount={logs.length}
-            hasNextPage={nextCursor != null || pagination.hasLoadedNextPage}
+            itemCount={requestLogs.length}
+            hasNextPage={nextCursor != null || failedNextCursor != null || pagination.hasLoadedNextPage || failedPagination.hasLoadedNextPage}
             fetching={query.isFetching}
-            onFirstPage={pagination.goToFirstPage}
-            onPreviousPage={pagination.goToPreviousPage}
-            onPageSelect={pagination.selectPage}
-            onNextPage={() => pagination.goToNextPage(nextCursor)}
+            onFirstPage={() => { pagination.goToFirstPage(); failedPagination.goToFirstPage() }}
+            onPreviousPage={() => { pagination.goToPreviousPage(); failedPagination.goToPreviousPage() }}
+            onPageSelect={(page) => { pagination.selectPage(page); failedPagination.selectPage(page) }}
+            onNextPage={() => { pagination.goToNextPage(nextCursor ?? logs.at(-1)?.id); failedPagination.goToNextPage(failedNextCursor ?? failedLogs.at(-1)?.id) }}
             onPageSizeChange={setPageSize}
           />
-          <section className="grid gap-3 border-t border-[var(--hairline)] pt-4" aria-labelledby="organization-failed-call-log-heading">
-            <header className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <CircleAlert className="size-4 text-destructive" aria-hidden="true" />
-                <h3 id="organization-failed-call-log-heading" className="text-sm font-semibold">{t('usageLogs.failed.title')}</h3>
-                <Chip size="sm" variant="flat" className="border-transparent bg-destructive/10 text-destructive">{t('usageLogs.failed.badge')}</Chip>
-              </div>
-              <span className="text-[0.6875rem] text-muted-foreground">{t('organizationActivity.filters.visible', { visible: filteredFailedLogs.length, count: failedLogs.length })}</span>
-            </header>
-            <FailedCallTable logs={filteredFailedLogs} showInternal filtered={hasFailedFilters} />
-            <DataTablePagination
-              currentPage={failedPagination.currentPage}
-              availablePageCount={failedPagination.availablePageCount}
-              pageSize={pagination.pageSize}
-              itemCount={failedLogs.length}
-              hasNextPage={failedNextCursor != null || failedPagination.hasLoadedNextPage}
-              fetching={query.isFetching}
-              onFirstPage={failedPagination.goToFirstPage}
-              onPreviousPage={failedPagination.goToPreviousPage}
-              onPageSelect={failedPagination.selectPage}
-              onNextPage={() => failedPagination.goToNextPage(failedNextCursor)}
-              onPageSizeChange={setPageSize}
-            />
-          </section>
         </>
       )}
 
