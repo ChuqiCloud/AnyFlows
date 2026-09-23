@@ -327,6 +327,37 @@ fn accepts_empty_response_metadata_in_tool_call_history() {
 }
 
 #[test]
+fn accepts_reasoning_metadata_in_assistant_history() {
+    let baseline = request_with_messages(vec![
+        json!({ "role": "user", "content": "first" }),
+        json!({ "role": "assistant", "content": "answer" }),
+        json!({ "role": "user", "content": "follow up" }),
+    ]);
+
+    for metadata in [
+        json!({ "reasoning_content": "internal reasoning" }),
+        json!({ "reasoning_content": null }),
+        json!({ "reasoning": "internal reasoning" }),
+        json!({ "reasoning": null }),
+        json!({
+            "reasoning_content": "internal reasoning",
+            "reasoning": null
+        }),
+    ] {
+        let mut request = baseline.clone();
+        request["messages"][1]
+            .as_object_mut()
+            .unwrap()
+            .extend(metadata.as_object().unwrap().clone());
+        assert_eq!(
+            parse_json(request),
+            parse_json(baseline.clone()),
+            "{metadata}"
+        );
+    }
+}
+
+#[test]
 fn rejects_non_empty_unsupported_assistant_response_metadata() {
     for metadata in [
         json!({ "refusal": "Request refused" }),
