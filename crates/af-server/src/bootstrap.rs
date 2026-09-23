@@ -673,7 +673,7 @@ pub enum BootstrapError {
     /// 企业 SCIM 组同步仓储的启动参数无效。
     #[error("企业 SCIM 组同步仓储启动参数无效")]
     OrganizationScimGroupRepository(#[source] OrganizationScimGroupRepositoryError),
-    #[error("浼佷笟 SSO Provider 浠撳偍鍚姩鍙傛暟鏃犳晥")]
+    #[error("企业 SSO Provider 存储启动参数无效")]
     OrganizationSsoProviderRepository(#[source] OrganizationSsoProviderRepositoryConfigError),
     #[error("企业 SSO DNS 解析器启动参数无效")]
     OrganizationSsoDnsResolver(#[source] OrganizationSsoDnsResolverConfigError),
