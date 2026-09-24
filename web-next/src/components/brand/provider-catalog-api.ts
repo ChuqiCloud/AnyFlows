@@ -26,8 +26,8 @@ export function useModelProviderOptions() {
     queryKey: ['model-provider-catalog'],
     staleTime: 60_000,
     queryFn: async ({ signal }) => {
-      const { data } = await apiClient.get<ModelProviderCatalogResponse>({ url: '/api/model-provider-catalog', signal, throwOnError: true })
-      return data.providers
+      const result = await apiClient.get({ url: '/api/model-provider-catalog', signal }) as unknown as { data: ModelProviderCatalogResponse }
+      return result.data.providers
     },
   })
   const configured = new Map((query.data ?? []).filter((provider) => provider.provider_key.trim()).map((provider): [string, ModelProviderCatalogEntry] => [provider.provider_key, provider]))
