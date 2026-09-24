@@ -276,7 +276,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 271);
+        assert_eq!(document.paths.paths.len(), 273);
         let operation_count = document
             .paths
             .paths
@@ -298,7 +298,7 @@ mod tests {
             })
             .sum::<usize>();
         // 保持操作总数与生成文档同步。
-        assert_eq!(operation_count, 353);
+        assert_eq!(operation_count, 355);
         assert!(
             document
                 .components
@@ -417,6 +417,8 @@ mod tests {
             "confirmPasswordReset",
             "completeAdminOAuthManualCallback",
             "getUserProfile",
+            "sendUserEmailBindingVerification",
+            "confirmUserEmailBinding",
             "listAccountOrganizations",
             "getOrganizationOverview",
             "updateOrganizationProfile",
@@ -698,7 +700,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 565);
+        assert_eq!(schemas.len(), 568);
         assert!(schemas.contains_key("OpenAiModel"));
         assert!(schemas.contains_key("OpenAiModelList"));
         assert_eq!(
