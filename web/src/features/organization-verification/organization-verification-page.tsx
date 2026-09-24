@@ -1,4 +1,5 @@
 import { AccountVerificationPage } from '@/features/account-verification/account-verification-page'
+import { VerificationSettingsPanel } from '@/features/account-verification/verification-settings-panel'
 import { VerificationAttachment } from '@/features/account-verification/verification-attachment'
 import { VerificationMaterials, OrganizationVerificationHistory } from '@/features/account-verification/verification-records'
 import { Building2, CheckCircle2, ClipboardCheck, Download, FileText, LoaderCircle, Plus, RefreshCw, ShieldCheck, XCircle } from 'lucide-react'
@@ -34,9 +35,9 @@ const emptyMaterial = (): MaterialDraft => ({ kind: '' })
 
 export function OrganizationVerificationPage({ admin = false }: { admin?: boolean }) {
   const { t } = useTranslation()
-  const [view, setView] = useState<'accounts' | 'organizations'>('accounts')
+  const [view, setView] = useState<'accounts' | 'organizations' | 'settings'>('accounts')
   if (!admin) return <ApplicantVerificationWorkspace />
-  return <div className="grid gap-5"><div className="flex gap-2" role="tablist" aria-label={t('verificationCenter.adminTitle')}><Button type="button" role="tab" aria-selected={view === 'accounts'} onClick={() => setView('accounts')}>{t('verificationCenter.accounts')}</Button><Button type="button" role="tab" aria-selected={view === 'organizations'} onClick={() => setView('organizations')}>{t('verificationCenter.organizations')}</Button></div>{view === 'accounts' ? <AccountVerificationPage admin /> : <AdminVerificationWorkspace />}</div>
+  return <div className="grid gap-5"><div className="flex gap-2" role="tablist" aria-label={t('verificationCenter.adminTitle')}><Button type="button" role="tab" aria-selected={view === 'accounts'} onClick={() => setView('accounts')}>{t('verificationCenter.accounts')}</Button><Button type="button" role="tab" aria-selected={view === 'organizations'} onClick={() => setView('organizations')}>{t('verificationCenter.organizations')}</Button><Button type="button" role="tab" aria-selected={view === 'settings'} onClick={() => setView('settings')}>认证配置</Button></div>{view === 'accounts' ? <AccountVerificationPage admin /> : view === 'organizations' ? <AdminVerificationWorkspace /> : <VerificationSettingsPanel />}</div>
 }
 
 function ApplicantVerificationWorkspace() {

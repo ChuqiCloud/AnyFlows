@@ -83,6 +83,8 @@ mod organizations;
 mod passkey_auth;
 mod password_reset;
 mod payment_settings;
+mod verification_settings;
+pub use verification_settings::build_verification_settings_router;
 mod payment_webhook;
 mod platform_audit;
 mod platform_organizations;

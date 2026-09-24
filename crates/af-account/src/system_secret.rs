@@ -14,7 +14,8 @@ use zeroize::{Zeroize as _, Zeroizing};
 use crate::credential_decryption::{CredentialKey, is_valid_key_id};
 use crate::oauth::CustomOAuth2ProviderKey;
 
-const MAX_SYSTEM_SECRET_BYTES: usize = 4 * 1_024;
+// A serialized 4096-bit RSA key pair can exceed 4 KiB after PEM escaping.
+const MAX_SYSTEM_SECRET_BYTES: usize = 8 * 1_024;
 const ORGANIZATION_SSO_PUBLIC_LOGIN_RATE_LIMIT_KEY_CONTEXT: &[u8] =
     b"anyflows:organization-sso:public-login-rate-limit:v1";
 
@@ -31,6 +32,8 @@ pub enum SystemSecretKind {
     StripeWebhookSecret,
     /// 易支付商户密钥。
     EpayMerchantKey,
+    /// 支付宝实名认证密钥材料。
+    AlipayVerificationCredentials,
     /// GitHub 用户登录 OAuth App 的 Client Secret。
     OAuthLoginGithubClientSecret,
     /// Discord 用户登录 OAuth App 的 Client Secret。
@@ -72,6 +75,7 @@ impl SystemSecretKind {
             Self::StripeSecretKey => "stripe_secret_key",
             Self::StripeWebhookSecret => "stripe_webhook_secret",
             Self::EpayMerchantKey => "epay_merchant_key",
+            Self::AlipayVerificationCredentials => "alipay_verification_credentials",
             Self::OAuthLoginGithubClientSecret => "oauth_login_github_client_secret",
             Self::OAuthLoginDiscordClientSecret => "oauth_login_discord_client_secret",
             Self::OAuthLoginOidcClientSecret => "oauth_login_oidc_client_secret",
@@ -435,6 +439,9 @@ fn system_secret_aad(kind: SystemSecretKind) -> Vec<u8> {
         SystemSecretKind::StripeSecretKey
         | SystemSecretKind::StripeWebhookSecret
         | SystemSecretKind::EpayMerchantKey => "payment_settings:1".to_owned(),
+        SystemSecretKind::AlipayVerificationCredentials => {
+            "account_verification_settings:1".to_owned()
+        }
         SystemSecretKind::OAuthLoginGithubClientSecret => "oauth_login_providers:github".to_owned(),
         SystemSecretKind::OAuthLoginDiscordClientSecret => {
             "oauth_login_providers:discord".to_owned()

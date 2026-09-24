@@ -67,6 +67,7 @@ mod user_tokens;
 mod user_topups;
 mod user_wallet;
 mod users;
+mod verification_settings;
 mod videos;
 mod wallet;
 
@@ -138,6 +139,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(organization_provisioning::document());
     document.merge(organization_verification::document());
     document.merge(account_verification::document());
+    document.merge(verification_settings::document());
     document.merge(organization_plan::document());
     document.merge(organization_sso::document());
     document.merge(organization_tokens::document());
@@ -347,6 +349,7 @@ mod tests {
             "getAccountVerificationEligibility",
             "getAdminAccountVerification",
             "getAdminVerificationHistory",
+            "getAdminVerificationSettings",
             "getSelfVerificationHistory",
             "listAccountVerifications",
             "listAdminAccountVerifications",
@@ -355,6 +358,7 @@ mod tests {
             "submitAccountVerification",
             "syncAccountVerificationProvider",
             "updatePlatformOrganizationEntitlement",
+            "updateAdminVerificationSettings",
             "listPublicAnnouncements",
             "listAdminAnnouncements",
             "createAdminAnnouncement",
@@ -700,7 +704,21 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 568);
+        assert_eq!(schemas.len(), 570);
+        assert!(schemas.contains_key("AdminVerificationSettings"));
+        assert!(schemas.contains_key("AdminVerificationSettingsRequest"));
+        assert_eq!(
+            document["paths"]["/api/admin/account-verification-settings"]["get"]["operationId"],
+            "getAdminVerificationSettings"
+        );
+        assert_eq!(
+            document["paths"]["/api/admin/account-verification-settings"]["put"]["operationId"],
+            "updateAdminVerificationSettings"
+        );
+        assert_eq!(
+            schemas["AdminVerificationSettingsRequest"]["properties"]["private_key"]["writeOnly"],
+            true
+        );
         assert!(schemas.contains_key("OpenAiModel"));
         assert!(schemas.contains_key("OpenAiModelList"));
         assert_eq!(
