@@ -10,39 +10,39 @@ use af_account::{
 use af_admin::{
     AdminBalanceAlertSettingsService, AdminChannelReader, AdminChannelWriter,
     AdminCredentialProxyService, AdminCustomOAuth2ProviderService, AdminEmailSettingsService,
-    AdminGroupReader, AdminGroupWriter, AdminModelPriceService, AdminModelReader,
-    AdminModelSyncService, AdminModelWriter, AdminNetworkSettingsError, AdminRefundService,
-    AdminRouteReader, AdminRouteWriter, AdminTokenReader, AdminTokenWriter, AdminUsageLogReader,
-    AdminUserReader, AdminUserWriter, AdminWalletService, BalanceAlertTask,
+    AdminGroupReader, AdminGroupWriter, AdminModelPriceService, AdminModelProviderCatalogService,
+    AdminModelReader, AdminModelSyncService, AdminModelWriter, AdminNetworkSettingsError,
+    AdminRefundService, AdminRouteReader, AdminRouteWriter, AdminTokenReader, AdminTokenWriter,
+    AdminUsageLogReader, AdminUserReader, AdminUserWriter, AdminWalletService, BalanceAlertTask,
     DatabaseAdminBalanceAlertSettingsService, DatabaseAdminChannelReader,
     DatabaseAdminChannelWriter, DatabaseAdminCredentialProxyService,
     DatabaseAdminCustomOAuth2ProviderService, DatabaseAdminEmailSettingsService,
     DatabaseAdminGroupReader, DatabaseAdminGroupWriter, DatabaseAdminModelPriceService,
-    DatabaseAdminModelReader, DatabaseAdminModelSyncService, DatabaseAdminModelWriter,
-    DatabaseAdminNetworkSettingsService, DatabaseAdminPaymentSettingsService,
-    DatabaseAdminRefundService, DatabaseAdminRouteReader, DatabaseAdminRouteWriter,
-    DatabaseAdminTokenReader, DatabaseAdminTokenWriter, DatabaseAdminUsageLogReader,
-    DatabaseAdminUserReader, DatabaseAdminUserWriter, DatabaseAdminWalletService,
-    DatabaseAnnouncementService, DatabaseInitialSetup, DatabaseOAuthLoginService,
-    DatabaseOrganizationActivityService, DatabaseOrganizationApprovalNotificationService,
-    DatabaseOrganizationApprovalService, DatabaseOrganizationBudgetService,
-    DatabaseOrganizationContractPriceService, DatabaseOrganizationCreditTermsService,
-    DatabaseOrganizationCustomRoleBindingService, DatabaseOrganizationCustomRoleService,
-    DatabaseOrganizationScimService, DatabaseOrganizationSsoDomainService,
-    DatabaseOrganizationSsoIdentityBindingService, DatabaseOrganizationSsoLoginTransactionService,
-    DatabaseOrganizationSsoPolicyService, DatabaseOrganizationSsoProviderService,
-    DatabaseOrganizationSsoRecoveryService, DatabaseOrganizationTokenService,
-    DatabaseOrganizationVerificationService, DatabaseOrganizationWalletService,
-    DatabasePasskeyAuthenticationService, DatabasePasswordResetService,
-    DatabasePlatformAuditService, DatabasePlatformOrganizationDirectoryService,
-    DatabasePlatformOrganizationManagementService, DatabasePlaygroundConversationService,
-    DatabasePlaygroundShareService, DatabaseRedemptionService, DatabaseRegistrationService,
-    DatabaseSessionAuthenticator, DatabaseSiteSettingsService, DatabaseSubscriptionService,
-    DatabaseTokenAuthenticator, DatabaseUserInvitationService, DatabaseUserNotificationService,
-    DatabaseUserProfileService, DatabaseUserTokenService, DatabaseUserWalletService,
-    EmailBindingService, EmailDelivery, InitialSetup, ModelCatalogReader,
-    NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError, OAuthLoginService,
-    OrganizationActivityService, OrganizationActivityServiceConfigError,
+    DatabaseAdminModelProviderCatalogService, DatabaseAdminModelReader,
+    DatabaseAdminModelSyncService, DatabaseAdminModelWriter, DatabaseAdminNetworkSettingsService,
+    DatabaseAdminPaymentSettingsService, DatabaseAdminRefundService, DatabaseAdminRouteReader,
+    DatabaseAdminRouteWriter, DatabaseAdminTokenReader, DatabaseAdminTokenWriter,
+    DatabaseAdminUsageLogReader, DatabaseAdminUserReader, DatabaseAdminUserWriter,
+    DatabaseAdminWalletService, DatabaseAnnouncementService, DatabaseInitialSetup,
+    DatabaseOAuthLoginService, DatabaseOrganizationActivityService,
+    DatabaseOrganizationApprovalNotificationService, DatabaseOrganizationApprovalService,
+    DatabaseOrganizationBudgetService, DatabaseOrganizationContractPriceService,
+    DatabaseOrganizationCreditTermsService, DatabaseOrganizationCustomRoleBindingService,
+    DatabaseOrganizationCustomRoleService, DatabaseOrganizationScimService,
+    DatabaseOrganizationSsoDomainService, DatabaseOrganizationSsoIdentityBindingService,
+    DatabaseOrganizationSsoLoginTransactionService, DatabaseOrganizationSsoPolicyService,
+    DatabaseOrganizationSsoProviderService, DatabaseOrganizationSsoRecoveryService,
+    DatabaseOrganizationTokenService, DatabaseOrganizationVerificationService,
+    DatabaseOrganizationWalletService, DatabasePasskeyAuthenticationService,
+    DatabasePasswordResetService, DatabasePlatformAuditService,
+    DatabasePlatformOrganizationDirectoryService, DatabasePlatformOrganizationManagementService,
+    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
+    DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
+    DatabaseSiteSettingsService, DatabaseSubscriptionService, DatabaseTokenAuthenticator,
+    DatabaseUserInvitationService, DatabaseUserNotificationService, DatabaseUserProfileService,
+    DatabaseUserTokenService, DatabaseUserWalletService, EmailBindingService, EmailDelivery,
+    InitialSetup, ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
+    OAuthLoginService, OrganizationActivityService, OrganizationActivityServiceConfigError,
     OrganizationApprovalNotificationService, OrganizationApprovalService,
     OrganizationBudgetService, OrganizationContractPriceService, OrganizationCreditTermsService,
     OrganizationCustomRoleBindingService, OrganizationCustomRoleService, OrganizationScimService,
@@ -95,7 +95,8 @@ use af_db::{
     DatabaseOptions, DatabaseOptionsError, DatabasePool, DebugTraceRepository,
     DebugTraceRepositoryConfigError, DebugTraceRepositoryError, DebugTraceSnapshotCipherError,
     EmailSettingsRepository, EmailSettingsRepositoryConfigError, InitialSetupRepository,
-    InitialSetupRepositoryConfigError, MigrationOptions, ModelPriceRepository, ModelSyncRepository,
+    InitialSetupRepositoryConfigError, MigrationOptions, ModelPriceRepository,
+    ModelProviderCatalogRepository, ModelProviderCatalogRepositoryError, ModelSyncRepository,
     NetworkSettingsMode, NetworkSettingsRecord, NetworkSettingsRepository,
     NetworkSettingsRepositoryConfigError, OAuthLoginRepository, OAuthLoginRepositoryError,
     OrganizationApprovalNotificationRepository,
@@ -299,6 +300,7 @@ pub struct AuthenticationReady {
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
     admin_credential_proxy_service: Arc<dyn AdminCredentialProxyService>,
     custom_oauth2_provider_repository: CustomOAuth2ProviderRepository,
+    model_provider_catalog_repository: ModelProviderCatalogRepository,
     network_settings_repository: NetworkSettingsRepository,
     payment_settings_repository: PaymentSettingsRepository,
     system_secret_cipher: SystemSecretCipher,
@@ -587,6 +589,9 @@ pub enum BootstrapError {
     /// 自定义 OAuth2 Provider 仓储无法从数据库连接池装配。
     #[error("自定义 OAuth2 Provider 仓储启动参数无效")]
     CustomOAuth2ProviderRepository(#[source] CustomOAuth2ProviderRepositoryError),
+    /// 模型厂商目录仓储无法从数据库连接池装配。
+    #[error("模型厂商目录仓储启动参数无效")]
+    ModelProviderCatalogRepository(#[source] ModelProviderCatalogRepositoryError),
     /// 余额预警全局设置仓储的启动参数无效。
     #[error("余额预警设置仓储启动参数无效")]
     BalanceAlertSettingsRepository(#[source] BalanceAlertSettingsRepositoryConfigError),
@@ -1047,6 +1052,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::CustomOAuth2ProviderRepository)?;
+        let model_provider_catalog_repository = ModelProviderCatalogRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::ModelProviderCatalogRepository)?;
         let balance_alert_settings_repository = BalanceAlertSettingsRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -1674,6 +1684,7 @@ impl Bootstrap<DatabaseReady> {
                 admin_email_settings_service: Arc::new(admin_email_settings_service),
                 admin_credential_proxy_service,
                 custom_oauth2_provider_repository,
+                model_provider_catalog_repository,
                 network_settings_repository,
                 payment_settings_repository,
                 system_secret_cipher,
@@ -2971,6 +2982,13 @@ impl Bootstrap<Supervised> {
                     .clone(),
                 self.stage.infrastructure.system_secret_cipher.clone(),
             ));
+        let model_provider_catalog_service: Arc<dyn AdminModelProviderCatalogService> =
+            Arc::new(DatabaseAdminModelProviderCatalogService::new(
+                self.stage
+                    .infrastructure
+                    .model_provider_catalog_repository
+                    .clone(),
+            ));
         let platform_organization_directory_service: Arc<
             dyn af_admin::PlatformOrganizationDirectoryService,
         > = Arc::new(DatabasePlatformOrganizationDirectoryService::new(
@@ -3082,6 +3100,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.site_settings_service),
             Arc::clone(&self.stage.infrastructure.announcement_service),
             Some(custom_oauth2_provider_service),
+            Some(model_provider_catalog_service),
             Some(Arc::clone(&self.stage.oauth_login_service)),
             self.stage.infrastructure.turnstile_verifier.clone(),
             self.config.turnstile().site_key(),

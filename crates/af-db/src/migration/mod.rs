@@ -149,6 +149,7 @@ mod m20260921_000140_extend_request_outcomes_for_call_logs;
 mod m20260923_000141_account_verification;
 mod m20260923_000142_account_verification_document;
 mod m20260924_000143_account_verification_provider;
+mod m20260924_000144_create_model_provider_catalog;
 mod schema;
 
 #[cfg(test)]
@@ -343,6 +344,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260923_000141_account_verification::Migration),
             Box::new(m20260923_000142_account_verification_document::Migration),
             Box::new(m20260924_000143_account_verification_provider::Migration),
+            Box::new(m20260924_000144_create_model_provider_catalog::Migration),
         ]
     }
 }
