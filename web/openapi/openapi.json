@@ -49639,6 +49639,39 @@
         },
         "additionalProperties": false
       },
+      "UserEmailBindingVerificationRequest": {
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 320,
+            "minLength": 3
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserEmailBindingVerificationResponse": {
+        "type": "object",
+        "required": [
+          "expires_at",
+          "next_send_at"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "next_send_at": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
       "UserFailedCallLog": {
         "type": "object",
         "required": [
@@ -50249,39 +50282,6 @@
             "type": "string",
             "maxLength": 64,
             "minLength": 1
-          }
-        },
-        "additionalProperties": false
-      },
-      "UserEmailBindingVerificationRequest": {
-        "type": "object",
-        "required": [
-          "email"
-        ],
-        "properties": {
-          "email": {
-            "type": "string",
-            "format": "email",
-            "maxLength": 320,
-            "minLength": 3
-          }
-        },
-        "additionalProperties": false
-      },
-      "UserEmailBindingVerificationResponse": {
-        "type": "object",
-        "required": [
-          "expires_at",
-          "next_send_at"
-        ],
-        "properties": {
-          "expires_at": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "next_send_at": {
-            "type": "integer",
-            "format": "int64"
           }
         },
         "additionalProperties": false
