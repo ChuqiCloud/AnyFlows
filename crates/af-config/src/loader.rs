@@ -12,7 +12,7 @@ use figment::{
 use serde::Serialize;
 
 use crate::{
-    AppConfig, BillingSettings, ChannelProbeSettings, ConfigError,
+    AlipayVerificationSettings, AppConfig, BillingSettings, ChannelProbeSettings, ConfigError,
     DEFAULT_AUTH_LOOKUP_TIMEOUT_SECS, DEFAULT_AUTH_SESSION_TTL_SECS,
     DEFAULT_PAYMENT_SIGNATURE_TOLERANCE_SECS, ServerConfig, SubscriptionSettings,
     TelemetrySettings,
@@ -36,6 +36,7 @@ struct ConfigDefaults {
     billing: BillingSettings,
     subscription: SubscriptionSettings,
     payment: PaymentDefaults,
+    account_verification: AccountVerificationDefaults,
     channel_probe: ChannelProbeSettings,
     credential_encryption: CredentialEncryptionDefaults,
     redis: RedisDefaults,
@@ -51,6 +52,37 @@ struct PaymentDefaults {
     stripe_publishable_key: Option<String>,
     stripe_webhook_secret: Option<String>,
     stripe_signature_tolerance_secs: u64,
+}
+
+#[derive(Default, Serialize)]
+struct AccountVerificationDefaults {
+    alipay: AlipayVerificationDefaults,
+}
+
+#[derive(Serialize)]
+struct AlipayVerificationDefaults {
+    enabled: bool,
+    app_id: Option<String>,
+    private_key: Option<String>,
+    public_key: Option<String>,
+    gateway_url: String,
+    biz_code: String,
+    timeout_secs: u64,
+}
+
+impl Default for AlipayVerificationDefaults {
+    fn default() -> Self {
+        let settings = AlipayVerificationSettings::default();
+        Self {
+            enabled: settings.enabled(),
+            app_id: None,
+            private_key: None,
+            public_key: None,
+            gateway_url: settings.gateway_url().to_owned(),
+            biz_code: settings.biz_code().to_owned(),
+            timeout_secs: settings.timeout_secs(),
+        }
+    }
 }
 
 impl Default for PaymentDefaults {
@@ -292,6 +324,15 @@ fn known_field(path: &str) -> Option<&'static str> {
         "payment.stripe_publishable_key" => "payment.stripe_publishable_key",
         "payment.stripe_webhook_secret" => "payment.stripe_webhook_secret",
         "payment.stripe_signature_tolerance_secs" => "payment.stripe_signature_tolerance_secs",
+        "account_verification" => "account_verification",
+        "account_verification.alipay" => "account_verification.alipay",
+        "account_verification.alipay.enabled" => "account_verification.alipay.enabled",
+        "account_verification.alipay.app_id" => "account_verification.alipay.app_id",
+        "account_verification.alipay.private_key" => "account_verification.alipay.private_key",
+        "account_verification.alipay.public_key" => "account_verification.alipay.public_key",
+        "account_verification.alipay.gateway_url" => "account_verification.alipay.gateway_url",
+        "account_verification.alipay.biz_code" => "account_verification.alipay.biz_code",
+        "account_verification.alipay.timeout_secs" => "account_verification.alipay.timeout_secs",
         "channel_probe" => "channel_probe",
         "channel_probe.enabled" => "channel_probe.enabled",
         "channel_probe.batch_size" => "channel_probe.batch_size",

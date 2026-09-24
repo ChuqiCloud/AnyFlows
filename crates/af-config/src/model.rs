@@ -55,6 +55,18 @@ pub const MAX_PAYMENT_SECRET_KEY_BYTES: usize = 4 * 1_024;
 const MAX_PAYMENT_PUBLISHABLE_KEY_BYTES: usize = 512;
 /// 支付 Provider webhook 密钥允许的最大字节数。
 pub const MAX_PAYMENT_WEBHOOK_SECRET_BYTES: usize = 4 * 1_024;
+/// 支付宝实名认证应用标识允许的最大字节数。
+pub const MAX_ALIPAY_VERIFICATION_APP_ID_BYTES: usize = 128;
+/// 支付宝实名认证密钥材料允许的最大字节数。
+pub const MAX_ALIPAY_VERIFICATION_KEY_BYTES: usize = 16 * 1_024;
+/// 支付宝实名认证网关地址允许的最大字节数。
+pub const MAX_ALIPAY_VERIFICATION_GATEWAY_BYTES: usize = 2_048;
+/// 支付宝实名认证业务码允许的最大字节数。
+pub const MAX_ALIPAY_VERIFICATION_BIZ_CODE_BYTES: usize = 64;
+/// 支付宝实名认证请求超时默认值。
+pub const DEFAULT_ALIPAY_VERIFICATION_TIMEOUT_SECS: u64 = 8;
+/// 支付宝实名认证请求超时允许的最大值。
+pub const MAX_ALIPAY_VERIFICATION_TIMEOUT_SECS: u64 = 30;
 /// 用量记录内存接收队列的默认容量。
 pub const DEFAULT_USAGE_RECORD_QUEUE_CAPACITY: usize = 4_096;
 /// 单实例用量记录队列允许配置的硬容量上限。
@@ -542,6 +554,84 @@ pub struct PaymentSettings {
     stripe_publishable_key: Option<String>,
     stripe_webhook_secret: Option<SecretString>,
     stripe_signature_tolerance_secs: u64,
+}
+
+/// 支付宝实名认证的启动期安全配置。
+#[derive(Clone, Debug, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct AlipayVerificationSettings {
+    enabled: bool,
+    app_id: Option<SecretString>,
+    private_key: Option<SecretString>,
+    public_key: Option<SecretString>,
+    gateway_url: String,
+    biz_code: String,
+    timeout_secs: u64,
+}
+
+impl AlipayVerificationSettings {
+    #[must_use]
+    pub const fn enabled(&self) -> bool {
+        self.enabled
+    }
+
+    #[must_use]
+    pub const fn app_id(&self) -> Option<&SecretString> {
+        self.app_id.as_ref()
+    }
+
+    #[must_use]
+    pub const fn private_key(&self) -> Option<&SecretString> {
+        self.private_key.as_ref()
+    }
+
+    #[must_use]
+    pub const fn public_key(&self) -> Option<&SecretString> {
+        self.public_key.as_ref()
+    }
+
+    #[must_use]
+    pub fn gateway_url(&self) -> &str {
+        &self.gateway_url
+    }
+
+    #[must_use]
+    pub fn biz_code(&self) -> &str {
+        &self.biz_code
+    }
+
+    #[must_use]
+    pub const fn timeout_secs(&self) -> u64 {
+        self.timeout_secs
+    }
+}
+
+impl Default for AlipayVerificationSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            app_id: None,
+            private_key: None,
+            public_key: None,
+            gateway_url: "https://openapi.alipay.com/gateway.do".to_owned(),
+            biz_code: "FACE".to_owned(),
+            timeout_secs: DEFAULT_ALIPAY_VERIFICATION_TIMEOUT_SECS,
+        }
+    }
+}
+
+/// 账号实名认证 provider 的启动期配置。
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct AccountVerificationSettings {
+    alipay: AlipayVerificationSettings,
+}
+
+impl AccountVerificationSettings {
+    #[must_use]
+    pub const fn alipay(&self) -> &AlipayVerificationSettings {
+        &self.alipay
+    }
 }
 
 impl PaymentSettings {
@@ -1248,6 +1338,8 @@ pub struct AppConfig {
     #[serde(default)]
     payment: PaymentSettings,
     #[serde(default)]
+    account_verification: AccountVerificationSettings,
+    #[serde(default)]
     channel_probe: ChannelProbeSettings,
     #[serde(default)]
     credential_encryption: CredentialEncryptionSettings,
@@ -1304,6 +1396,12 @@ impl AppConfig {
     #[must_use]
     pub const fn payment(&self) -> &PaymentSettings {
         &self.payment
+    }
+
+    /// 返回账号实名认证 provider 的启动期配置。
+    #[must_use]
+    pub const fn account_verification(&self) -> &AccountVerificationSettings {
+        &self.account_verification
     }
 
     /// 返回自动禁用渠道的周期探活设置。
@@ -1587,6 +1685,90 @@ impl AppConfig {
             {
                 return Err(ConfigError::InvalidField {
                     field: "payment.stripe_webhook_secret",
+                });
+            }
+        }
+        let alipay = self.account_verification.alipay();
+        if alipay.timeout_secs() == 0 {
+            return Err(ConfigError::NonPositive {
+                field: "account_verification.alipay.timeout_secs",
+            });
+        }
+        if alipay.timeout_secs() > MAX_ALIPAY_VERIFICATION_TIMEOUT_SECS {
+            return Err(ConfigError::OutOfRange {
+                field: "account_verification.alipay.timeout_secs",
+            });
+        }
+        let gateway = Url::parse(alipay.gateway_url()).map_err(|_| ConfigError::InvalidField {
+            field: "account_verification.alipay.gateway_url",
+        })?;
+        if gateway.scheme() != "https"
+            || gateway.host_str().is_none()
+            || gateway.username() != ""
+            || gateway.password().is_some()
+            || gateway.query().is_some()
+            || gateway.fragment().is_some()
+        {
+            return Err(ConfigError::InvalidField {
+                field: "account_verification.alipay.gateway_url",
+            });
+        }
+        validate_nonempty_text(
+            alipay.gateway_url(),
+            "account_verification.alipay.gateway_url",
+            MAX_ALIPAY_VERIFICATION_GATEWAY_BYTES,
+        )?;
+        validate_nonempty_text(
+            alipay.biz_code(),
+            "account_verification.alipay.biz_code",
+            MAX_ALIPAY_VERIFICATION_BIZ_CODE_BYTES,
+        )?;
+        if !alipay
+            .biz_code()
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+        {
+            return Err(ConfigError::InvalidField {
+                field: "account_verification.alipay.biz_code",
+            });
+        }
+        for (value, field, max) in [
+            (
+                alipay.app_id().map(SecretString::expose),
+                "account_verification.alipay.app_id",
+                MAX_ALIPAY_VERIFICATION_APP_ID_BYTES,
+            ),
+            (
+                alipay.private_key().map(SecretString::expose),
+                "account_verification.alipay.private_key",
+                MAX_ALIPAY_VERIFICATION_KEY_BYTES,
+            ),
+            (
+                alipay.public_key().map(SecretString::expose),
+                "account_verification.alipay.public_key",
+                MAX_ALIPAY_VERIFICATION_KEY_BYTES,
+            ),
+        ] {
+            if let Some(value) = value
+                && (value.is_empty() || value.len() > max || value.trim() != value)
+            {
+                return Err(ConfigError::InvalidField { field });
+            }
+        }
+        if alipay.enabled() {
+            if alipay.app_id().is_none() {
+                return Err(ConfigError::EmptyValue {
+                    field: "account_verification.alipay.app_id",
+                });
+            }
+            if alipay.private_key().is_none() {
+                return Err(ConfigError::EmptyValue {
+                    field: "account_verification.alipay.private_key",
+                });
+            }
+            if alipay.public_key().is_none() {
+                return Err(ConfigError::EmptyValue {
+                    field: "account_verification.alipay.public_key",
                 });
             }
         }

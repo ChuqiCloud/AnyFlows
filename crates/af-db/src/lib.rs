@@ -3,8 +3,10 @@
 /// 数据库存储使用的 UTC 时间类型，供应用任务传递一致的扫描时刻。
 mod account_verification;
 pub use account_verification::{
-    AccountVerificationError, AccountVerificationMaterial, AccountVerificationRecord,
-    AccountVerificationRepository, AccountVerificationSubmit, validate_verification_material,
+    AccountVerificationError, AccountVerificationMaterial, AccountVerificationProviderRequest,
+    AccountVerificationProviderResult, AccountVerificationProviderStart, AccountVerificationRecord,
+    AccountVerificationRepository, AccountVerificationSubmit, validate_account_verification_submit,
+    validate_verification_material,
 };
 
 pub type DatabaseTimestamp = sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
@@ -114,6 +116,7 @@ mod model_price_admin;
 mod model_price_admin_tests;
 #[cfg(test)]
 mod model_price_tests;
+mod model_provider_catalog;
 mod model_sync;
 #[cfg(test)]
 mod model_sync_tests;
@@ -483,6 +486,12 @@ pub use model_price::{
 pub use model_price_admin::{
     MAX_MODEL_PRICE_PAGE_SIZE, MAX_MODEL_PRICE_WRITE_BATCH, ModelPricePageRecord,
     ModelPriceWriteError, ModelPriceWriteRecord,
+};
+pub use model_provider_catalog::{
+    MAX_MODEL_PROVIDER_ALIAS_BYTES, MAX_MODEL_PROVIDER_ALIASES,
+    MAX_MODEL_PROVIDER_DISPLAY_NAME_BYTES, MAX_MODEL_PROVIDER_KEY_BYTES,
+    MAX_MODEL_PROVIDER_LOGO_BYTES, ModelProviderCatalogRecord, ModelProviderCatalogRepository,
+    ModelProviderCatalogRepositoryError, ModelProviderCatalogWriteRecord,
 };
 pub use model_sync::{
     DiscoveredModelRecord, MAX_MISSING_MODEL_CHANNELS, MAX_MISSING_MODEL_PAGE_SIZE,

@@ -2,17 +2,63 @@ use crate::{
     PlatformAuditEntry, PlatformAuditOutcome, PlatformAuditService, PlatformPolicy,
     SessionPrincipal,
 };
-use af_db::AccountVerificationRepository;
 pub use af_db::{
     AccountVerificationError, AccountVerificationMaterial, AccountVerificationRecord,
     AccountVerificationSubmit, validate_verification_material,
 };
+use af_db::{
+    AccountVerificationProviderRequest, AccountVerificationProviderResult,
+    AccountVerificationProviderStart, AccountVerificationRepository,
+    validate_account_verification_submit,
+};
 use af_domain::{PlatformPermission, UserId};
-use std::sync::Arc;
+use async_trait::async_trait;
+use std::{collections::HashMap, sync::Arc};
+
+/// Stable extension boundary for identity providers. Provider credentials and
+/// network clients stay outside the review repository so future plugins can be
+/// registered without changing case storage or the manual review workflow.
+#[async_trait]
+pub trait AccountVerificationProvider: Send + Sync {
+    fn key(&self) -> &'static str;
+    fn configured(&self) -> bool;
+
+    async fn initialize(
+        &self,
+        _request: &AccountVerificationProviderRequest,
+    ) -> Result<AccountVerificationProviderStart, AccountVerificationProviderError> {
+        Err(AccountVerificationProviderError::Unavailable)
+    }
+
+    async fn query(
+        &self,
+        _reference: &str,
+    ) -> Result<AccountVerificationProviderResult, AccountVerificationProviderError> {
+        Err(AccountVerificationProviderError::Unavailable)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, thiserror::Error, PartialEq)]
+pub enum AccountVerificationProviderError {
+    #[error("认证服务暂不可用")]
+    Unavailable,
+}
+
+#[derive(Debug, Default)]
+pub struct ManualAccountVerificationProvider;
+impl AccountVerificationProvider for ManualAccountVerificationProvider {
+    fn key(&self) -> &'static str {
+        "manual"
+    }
+    fn configured(&self) -> bool {
+        true
+    }
+}
 
 pub struct AccountVerificationService {
     repository: AccountVerificationRepository,
     audit: Arc<dyn PlatformAuditService>,
+    providers: HashMap<&'static str, Arc<dyn AccountVerificationProvider>>,
 }
 
 impl AccountVerificationService {
@@ -21,7 +67,19 @@ impl AccountVerificationService {
         repository: AccountVerificationRepository,
         audit: Arc<dyn PlatformAuditService>,
     ) -> Self {
-        Self { repository, audit }
+        let manual: Arc<dyn AccountVerificationProvider> =
+            Arc::new(ManualAccountVerificationProvider);
+        Self {
+            repository,
+            audit,
+            providers: HashMap::from([("manual", manual)]),
+        }
+    }
+
+    #[must_use]
+    pub fn with_provider(mut self, provider: Arc<dyn AccountVerificationProvider>) -> Self {
+        self.providers.insert(provider.key(), provider);
+        self
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -81,9 +139,63 @@ impl AccountVerificationService {
     pub async fn submit(
         &self,
         principal: SessionPrincipal,
-        write: AccountVerificationSubmit,
+        mut write: AccountVerificationSubmit,
     ) -> Result<AccountVerificationRecord, AccountVerificationError> {
+        validate_account_verification_submit(&write)?;
+        if write.provider != "manual" {
+            let provider = self
+                .providers
+                .get(write.provider.as_str())
+                .filter(|provider| provider.configured())
+                .ok_or(AccountVerificationError::Unavailable)?;
+            let document_number = write
+                .document_number
+                .clone()
+                .ok_or(AccountVerificationError::Invalid)?;
+            let start = provider
+                .initialize(&AccountVerificationProviderRequest {
+                    kind: write.kind.clone(),
+                    document_country: write.document_country.clone(),
+                    document_type: write.document_type.clone(),
+                    document_number,
+                    subject_name: write.subject_name.clone(),
+                })
+                .await
+                .map_err(|_| AccountVerificationError::Unavailable)?;
+            write.provider_reference = Some(start.reference);
+            write.provider_action_url = Some(start.action_url);
+            write.provider_status = Some(start.status);
+        }
         self.repository.submit(principal.user_id(), write).await
+    }
+
+    pub async fn sync_provider(
+        &self,
+        principal: SessionPrincipal,
+        id: i64,
+    ) -> Result<AccountVerificationRecord, AccountVerificationError> {
+        let (provider_key, reference) = self
+            .repository
+            .provider_reference(principal.user_id(), id)
+            .await?;
+        let provider = self
+            .providers
+            .get(provider_key.as_str())
+            .filter(|provider| provider.configured())
+            .ok_or(AccountVerificationError::Unavailable)?;
+        let result: AccountVerificationProviderResult = provider
+            .query(&reference)
+            .await
+            .map_err(|_| AccountVerificationError::Unavailable)?;
+        self.repository
+            .apply_provider_result(
+                principal.user_id(),
+                id,
+                result.status,
+                result.terminal_status,
+                result.reason,
+            )
+            .await
     }
 
     pub async fn enterprise_verified(

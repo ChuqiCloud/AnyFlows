@@ -30,6 +30,10 @@ pub fn build_account_verification_router(
         .route("/api/account/verifications/eligibility", get(eligibility))
         .route("/api/account/verifications/{case_id}", get(get_self))
         .route(
+            "/api/account/verifications/{case_id}/provider-sync",
+            post(sync_provider),
+        )
+        .route(
             "/api/account/verifications/{case_id}/materials/{material_id}",
             get(download_self),
         )
@@ -57,6 +61,12 @@ pub(crate) struct AccountVerificationResponse {
     pub(crate) id: i64,
     pub(crate) user_id: i64,
     pub(crate) kind: String,
+    pub(crate) provider: String,
+    pub(crate) provider_action_url: Option<String>,
+    pub(crate) provider_status: Option<String>,
+    pub(crate) document_country: String,
+    pub(crate) document_type: String,
+    pub(crate) document_number_masked: Option<String>,
     pub(crate) subject_name: String,
     pub(crate) summary: String,
     pub(crate) status: i16,
@@ -72,6 +82,12 @@ impl From<AccountVerificationRecord> for AccountVerificationResponse {
             id: c.id,
             user_id: c.user_id,
             kind: c.kind,
+            provider: c.provider,
+            provider_action_url: c.provider_action_url,
+            provider_status: c.provider_status,
+            document_country: c.document_country,
+            document_type: c.document_type,
+            document_number_masked: c.document_number_masked,
             subject_name: c.subject_name,
             summary: c.summary,
             status: c.status,
@@ -125,9 +141,27 @@ struct ListQuery {
 #[serde(deny_unknown_fields)]
 struct SubmitMetadata {
     kind: String,
+    #[serde(default = "default_provider")]
+    provider: String,
+    #[serde(default = "default_document_country")]
+    document_country: String,
+    #[serde(default = "default_document_type")]
+    document_type: String,
+    document_number: Option<String>,
     subject_name: String,
     summary: String,
+    #[serde(default)]
     materials: Vec<MaterialMetadata>,
+}
+
+fn default_provider() -> String {
+    "manual".to_owned()
+}
+fn default_document_country() -> String {
+    "CN".to_owned()
+}
+fn default_document_type() -> String {
+    "identity".to_owned()
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -213,6 +247,18 @@ async fn get_self(
     Path(id): Path<i64>,
 ) -> Result<Response, ManagementError> {
     detail(s, a, r, id, false).await
+}
+
+async fn sync_provider(
+    State(s): State<Arc<AccountVerificationService>>,
+    Extension(a): Extension<SessionAuthentication>,
+    Path(id): Path<i64>,
+) -> Result<Response, ManagementError> {
+    let case = s
+        .sync_provider(a.principal(), id)
+        .await
+        .map_err(map_error)?;
+    Ok(no_store_json(AccountVerificationResponse::from(case)))
 }
 async fn get_admin(
     State(s): State<Arc<AccountVerificationService>>,
@@ -352,7 +398,10 @@ async fn submit(
         }
     }
     let metadata = metadata.ok_or_else(invalid)?;
-    if !(1..=5).contains(&metadata.materials.len()) {
+    if metadata.provider != "alipay" && !(1..=5).contains(&metadata.materials.len()) {
+        return Err(invalid());
+    }
+    if metadata.provider == "alipay" && !metadata.materials.is_empty() {
         return Err(invalid());
     }
     let mut materials = Vec::new();
@@ -376,6 +425,13 @@ async fn submit(
             a.principal(),
             AccountVerificationSubmit {
                 kind: metadata.kind,
+                provider: metadata.provider,
+                provider_reference: None,
+                provider_action_url: None,
+                provider_status: None,
+                document_country: metadata.document_country,
+                document_type: metadata.document_type,
+                document_number: metadata.document_number,
                 subject_name: metadata.subject_name,
                 summary: metadata.summary,
                 materials,
@@ -393,6 +449,7 @@ pub(crate) fn map_error(e: AccountVerificationError) -> ManagementError {
         AccountVerificationError::Invalid => invalid(),
         AccountVerificationError::NotFound => ManagementError::OrganizationVerificationNotFound,
         AccountVerificationError::Forbidden => ManagementError::OrganizationVerificationForbidden,
+        AccountVerificationError::SelfReview => ManagementError::AccountVerificationSelfReview,
         AccountVerificationError::Conflict => ManagementError::OrganizationVerificationConflict,
         AccountVerificationError::Unavailable => {
             ManagementError::OrganizationVerificationUnavailable

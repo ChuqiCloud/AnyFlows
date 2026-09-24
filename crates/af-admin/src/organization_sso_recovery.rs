@@ -270,6 +270,10 @@ fn map_user_profile_error(error: UserProfileError) -> OrganizationSsoRecoverySer
         | UserProfileError::PasskeyRegistrationRejected
         | UserProfileError::PasskeyNotFound
         | UserProfileError::Conflict
+        | UserProfileError::EmailVerificationRejected
+        | UserProfileError::EmailNotConfigured
+        | UserProfileError::EmailDeliveryFailed
+        | UserProfileError::EmailVerificationRateLimited { .. }
         | UserProfileError::Internal => OrganizationSsoRecoveryServiceError::Internal,
     }
 }

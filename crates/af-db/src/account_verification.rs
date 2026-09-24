@@ -31,6 +31,8 @@ pub enum AccountVerificationError {
     Conflict,
     #[error("认证访问权限不足")]
     Forbidden,
+    #[error("不能审核自己的认证记录")]
+    SelfReview,
     #[error("认证服务暂不可用")]
     Unavailable,
 }
@@ -40,6 +42,13 @@ pub struct AccountVerificationRecord {
     pub id: i64,
     pub user_id: i64,
     pub kind: String,
+    pub provider: String,
+    pub(crate) provider_reference: Option<String>,
+    pub provider_action_url: Option<String>,
+    pub provider_status: Option<String>,
+    pub document_country: String,
+    pub document_type: String,
+    pub document_number_masked: Option<String>,
     pub subject_name: String,
     pub summary: String,
     pub status: i16,
@@ -48,6 +57,32 @@ pub struct AccountVerificationRecord {
     pub reviewer_user_id: Option<i64>,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+/// 外部实名认证 provider 初始化时接收的最小业务数据。
+///
+/// 该类型只在应用服务与 provider 边界之间传递，不直接暴露给 HTTP 层。
+#[derive(Clone)]
+pub struct AccountVerificationProviderRequest {
+    pub kind: String,
+    pub document_country: String,
+    pub document_type: String,
+    pub document_number: String,
+    pub subject_name: String,
+}
+
+#[derive(Clone)]
+pub struct AccountVerificationProviderStart {
+    pub reference: String,
+    pub action_url: String,
+    pub status: String,
+}
+
+#[derive(Clone)]
+pub struct AccountVerificationProviderResult {
+    pub status: String,
+    pub terminal_status: Option<i16>,
+    pub reason: Option<String>,
 }
 
 #[derive(Clone, FromQueryResult, Serialize)]
@@ -62,6 +97,13 @@ pub struct AccountVerificationMaterial {
 
 pub struct AccountVerificationSubmit {
     pub kind: String,
+    pub provider: String,
+    pub provider_reference: Option<String>,
+    pub provider_action_url: Option<String>,
+    pub provider_status: Option<String>,
+    pub document_country: String,
+    pub document_type: String,
+    pub document_number: Option<String>,
     pub subject_name: String,
     pub summary: String,
     pub materials: Vec<OrganizationVerificationMaterialWrite>,
@@ -70,6 +112,12 @@ pub struct AccountVerificationSubmit {
 #[derive(Clone)]
 pub struct AccountVerificationRepository {
     pool: DatabasePool,
+}
+
+pub fn validate_account_verification_submit(
+    write: &AccountVerificationSubmit,
+) -> Result<(), AccountVerificationError> {
+    validate_submit(write)
 }
 
 impl AccountVerificationRepository {
@@ -138,6 +186,27 @@ impl AccountVerificationRepository {
         id: i64,
     ) -> Result<AccountVerificationRecord, AccountVerificationError> {
         self.run(load_case(self.pool.connection(), user, id)).await
+    }
+
+    pub async fn provider_reference(
+        &self,
+        user: UserId,
+        id: i64,
+    ) -> Result<(String, String), AccountVerificationError> {
+        self.run(async {
+            let case = cases::Entity::find_by_id(id)
+                .filter(cases::Column::UserId.eq(user.get()))
+                .one(self.pool.connection())
+                .await
+                .map_err(unavailable)?
+                .ok_or(AccountVerificationError::NotFound)?;
+            let reference = case
+                .provider_reference
+                .filter(|value| !value.is_empty())
+                .ok_or(AccountVerificationError::Invalid)?;
+            Ok((case.provider, reference))
+        })
+        .await
     }
 
     pub async fn materials(
@@ -221,6 +290,16 @@ impl AccountVerificationRepository {
             let case = cases::ActiveModel {
                 user_id: Set(user.get()),
                 kind: Set(write.kind),
+                provider: Set(write.provider),
+                provider_reference: Set(write.provider_reference),
+                provider_action_url: Set(write.provider_action_url),
+                provider_status: Set(write.provider_status),
+                document_country: Set(write.document_country),
+                document_type: Set(write.document_type),
+                document_number_masked: Set(write
+                    .document_number
+                    .as_deref()
+                    .map(mask_document_number)),
                 subject_name: Set(SensitiveString::from(write.subject_name)),
                 summary: Set(SensitiveString::from(write.summary)),
                 status: Set(1),
@@ -250,6 +329,59 @@ impl AccountVerificationRepository {
             }
             tx.commit().await.map_err(unavailable)?;
             Ok(record(case))
+        })
+        .await
+    }
+
+    /// 保存外部实名认证 provider 的查询结果，并在 provider 已给出终态时收敛认证状态。
+    pub async fn apply_provider_result(
+        &self,
+        user: UserId,
+        id: i64,
+        provider_status: String,
+        terminal_status: Option<i16>,
+        reason: Option<String>,
+    ) -> Result<AccountVerificationRecord, AccountVerificationError> {
+        if id <= 0
+            || !valid_text(&provider_status, 32)
+            || terminal_status.is_some_and(|status| ![4, 5].contains(&status))
+            || reason
+                .as_deref()
+                .is_some_and(|value| !valid_text(value, 512))
+        {
+            return Err(AccountVerificationError::Invalid);
+        }
+        self.run(async {
+            let tx = self.pool.connection().begin().await.map_err(unavailable)?;
+            let case = cases::Entity::find_by_id(id)
+                .filter(cases::Column::UserId.eq(user.get()))
+                .lock(LockType::Update)
+                .one(&tx)
+                .await
+                .map_err(unavailable)?
+                .ok_or(AccountVerificationError::NotFound)?;
+            if case.provider == "manual" || ![1, 3].contains(&case.status) {
+                return Err(AccountVerificationError::Conflict);
+            }
+            let now = DatabaseTimestamp::now_utc();
+            let updated = cases::ActiveModel {
+                id: Set(id),
+                provider_status: Set(Some(provider_status)),
+                status: Set(terminal_status.unwrap_or(case.status)),
+                version: Set(if terminal_status.is_some() {
+                    case.version + 1
+                } else {
+                    case.version
+                }),
+                review_reason: Set(reason.map(SensitiveString::from)),
+                updated_at: Set(now),
+                ..Default::default()
+            }
+            .update(&tx)
+            .await
+            .map_err(unavailable)?;
+            tx.commit().await.map_err(unavailable)?;
+            Ok(record(updated))
         })
         .await
     }
@@ -289,11 +421,11 @@ impl AccountVerificationRepository {
                 .await
                 .map_err(unavailable)?
                 .ok_or(AccountVerificationError::NotFound)?;
-            if case.status != 1 || case.version != version {
+            if case.status != 1 || case.version != version || case.provider != "manual" {
                 return Err(AccountVerificationError::Conflict);
             }
             if case.user_id == reviewer.get() {
-                return Err(AccountVerificationError::Forbidden);
+                return Err(AccountVerificationError::SelfReview);
             }
             let now = DatabaseTimestamp::now_utc();
             let updated = cases::ActiveModel {
@@ -384,6 +516,13 @@ fn record(c: cases::Model) -> AccountVerificationRecord {
         id: c.id,
         user_id: c.user_id,
         kind: c.kind,
+        provider: c.provider,
+        provider_reference: c.provider_reference,
+        provider_action_url: c.provider_action_url,
+        provider_status: c.provider_status,
+        document_country: c.document_country,
+        document_type: c.document_type,
+        document_number_masked: c.document_number_masked,
         subject_name: c.subject_name.as_str().to_owned(),
         summary: c.summary.as_str().to_owned(),
         status: c.status,
@@ -416,9 +555,50 @@ pub fn validate_verification_material(content_type: &str, content: &[u8]) -> boo
 
 fn validate_submit(write: &AccountVerificationSubmit) -> Result<(), AccountVerificationError> {
     if !["individual", "enterprise"].contains(&write.kind.as_str())
+        || !["manual", "alipay"].contains(&write.provider.as_str())
+        || write.document_country.len() != 2
+        || !write
+            .document_country
+            .bytes()
+            .all(|b| b.is_ascii_uppercase())
+        || ![
+            "identity",
+            "national_id",
+            "passport",
+            "residence_permit",
+            "business_registration",
+            "other",
+        ]
+        .contains(&write.document_type.as_str())
+        || (write.kind == "enterprise"
+            && !["identity", "business_registration"].contains(&write.document_type.as_str()))
+        || (write.provider == "alipay"
+            && (write.kind != "individual"
+                || write.document_country != "CN"
+                || write.document_type != "national_id"
+                || write.document_number.is_none()))
+        || write.document_number.as_deref().is_some_and(|v| {
+            !valid_document_number(&write.document_country, &write.document_type, v)
+        })
         || !valid_text(&write.subject_name, 128)
         || !valid_text(&write.summary, 512)
-        || !(1..=5).contains(&write.materials.len())
+        || write
+            .provider_reference
+            .as_deref()
+            .is_some_and(|value| !valid_text(value, 128))
+        || write
+            .provider_action_url
+            .as_deref()
+            .is_some_and(|value| !valid_text(value, 2_048))
+        || write
+            .provider_status
+            .as_deref()
+            .is_some_and(|value| !valid_text(value, 32))
+        || if write.provider == "alipay" {
+            !write.materials.is_empty()
+        } else {
+            !(1..=5).contains(&write.materials.len())
+        }
     {
         return Err(AccountVerificationError::Invalid);
     }
@@ -438,4 +618,43 @@ fn validate_submit(write: &AccountVerificationSubmit) -> Result<(), AccountVerif
         return Err(AccountVerificationError::Invalid);
     }
     Ok(())
+}
+
+fn valid_document_number(country: &str, document_type: &str, value: &str) -> bool {
+    let value = value.trim();
+    if country == "CN" && document_type == "national_id" {
+        let bytes = value.as_bytes();
+        if bytes.len() != 18 || !bytes[..17].iter().all(u8::is_ascii_digit) {
+            return false;
+        }
+        const WEIGHTS: [u32; 17] = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2];
+        const CHECK: &[u8; 11] = b"10X98765432";
+        let sum: u32 = bytes[..17]
+            .iter()
+            .zip(WEIGHTS)
+            .map(|(digit, weight)| u32::from(*digit - b'0') * weight)
+            .sum();
+        return bytes[17].to_ascii_uppercase() == CHECK[(sum % 11) as usize];
+    }
+    (5..=64).contains(&value.chars().count())
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | ' '))
+}
+
+fn mask_document_number(value: &str) -> String {
+    let compact: Vec<char> = value.chars().filter(|c| !c.is_whitespace()).collect();
+    if compact.len() <= 4 {
+        return "****".to_owned();
+    }
+    let prefix: String = compact.iter().take(2).collect();
+    let suffix: String = compact
+        .iter()
+        .rev()
+        .take(2)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    format!("{prefix}****{suffix}")
 }

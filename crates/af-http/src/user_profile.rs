@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use af_admin::{
     PasskeyRegistrationCommand, PasskeyRenameCommand, PasskeyRevokeCommand, SessionAuthentication,
-    SessionAuthenticator, UserNotificationPreferences, UserNotificationPreferencesCommand,
-    UserPasskey, UserPasswordChangeCommand, UserProfile, UserProfileError, UserProfileService,
+    SessionAuthenticator, UserEmailBindingConfirmCommand, UserEmailBindingStartCommand,
+    UserNotificationPreferences, UserNotificationPreferencesCommand, UserPasskey,
+    UserPasswordChangeCommand, UserProfile, UserProfileError, UserProfileService,
     UserProfileUpdateCommand, UserTwoFactorDisableCommand, UserTwoFactorEnableCommand,
 };
 use af_domain::Quota;
@@ -49,6 +50,11 @@ pub(crate) fn build_user_profile_router(
     );
     Router::new()
         .route("/api/account/profile", get(get_profile).put(update_profile))
+        .route(
+            "/api/account/profile/email-verification",
+            post(send_email_binding_verification),
+        )
+        .route("/api/account/profile/email", put(confirm_email_binding))
         .route("/api/account/password", put(change_password))
         .route(
             "/api/account/two-factor",
@@ -113,6 +119,32 @@ pub(crate) struct UserNotificationPreferencesResponse {
 pub(crate) struct UserProfileUpdateRequest {
     #[schema(min_length = 1, max_length = 64)]
     username: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = UserEmailBindingVerificationRequest)]
+pub(crate) struct UserEmailBindingVerificationRequest {
+    #[schema(min_length = 3, max_length = 320, format = Email)]
+    email: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = UserEmailBindingConfirmRequest)]
+pub(crate) struct UserEmailBindingConfirmRequest {
+    #[schema(min_length = 3, max_length = 320, format = Email)]
+    email: String,
+    #[schema(min_length = 6, max_length = 6, pattern = "^[0-9]{6}$", write_only)]
+    verification_code: String,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = UserEmailBindingVerificationResponse)]
+pub(crate) struct UserEmailBindingVerificationResponse {
+    expires_at: u64,
+    next_send_at: u64,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -338,6 +370,40 @@ pub(crate) async fn update_profile(
     Ok(no_store_json(UserProfileResponse::from_profile(&profile)))
 }
 
+pub(crate) async fn send_email_binding_verification(
+    State(state): State<UserProfileHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    request: Result<Json<UserEmailBindingVerificationRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let command = UserEmailBindingStartCommand::new(request.email).map_err(map_profile_error)?;
+    let issued = state
+        .service
+        .send_email_binding_verification(authentication.principal(), command)
+        .await
+        .map_err(map_profile_error)?;
+    Ok(no_store_json(UserEmailBindingVerificationResponse {
+        expires_at: issued.expires_at(),
+        next_send_at: issued.next_send_at(),
+    }))
+}
+
+pub(crate) async fn confirm_email_binding(
+    State(state): State<UserProfileHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    request: Result<Json<UserEmailBindingConfirmRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let command = UserEmailBindingConfirmCommand::new(request.email, request.verification_code)
+        .map_err(map_profile_error)?;
+    let profile = state
+        .service
+        .confirm_email_binding(authentication.principal(), command)
+        .await
+        .map_err(map_profile_error)?;
+    Ok(no_store_json(UserProfileResponse::from_profile(&profile)))
+}
+
 /// 校验当前密码并更新新密码；成功后客户端必须重新登录。
 pub(crate) async fn change_password(
     State(state): State<UserProfileHttpState>,
@@ -490,6 +556,14 @@ fn map_profile_error(error: UserProfileError) -> ManagementError {
         UserProfileError::PasskeyNotFound => ManagementError::InvalidRequest,
         UserProfileError::Conflict => ManagementError::UserConflict,
         UserProfileError::Internal => ManagementError::Internal,
+        UserProfileError::EmailVerificationRejected => ManagementError::RegistrationRejected,
+        UserProfileError::EmailNotConfigured => ManagementError::EmailNotConfigured,
+        UserProfileError::EmailDeliveryFailed => ManagementError::EmailDeliveryFailed,
+        UserProfileError::EmailVerificationRateLimited {
+            retry_after_seconds,
+        } => ManagementError::RegistrationRateLimited {
+            retry_after_seconds,
+        },
     }
 }
 

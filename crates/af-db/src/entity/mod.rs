@@ -62,6 +62,7 @@ pub(crate) mod group_model_ratios;
 pub(crate) mod groups;
 pub(crate) mod invite_rebate_events;
 pub(crate) mod model_prices;
+pub(crate) mod model_provider_catalog;
 pub(crate) mod model_sync_items;
 pub(crate) mod model_sync_runs;
 pub(crate) mod models;
@@ -4189,6 +4190,9 @@ impl ActiveModelBehavior for model_sync_runs::ActiveModel {}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for model_sync_items::ActiveModel {}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for model_provider_catalog::ActiveModel {}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for custom_oauth2_providers::ActiveModel {}

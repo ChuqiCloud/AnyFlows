@@ -10,36 +10,37 @@ use af_account::{
 use af_admin::{
     AdminBalanceAlertSettingsService, AdminChannelReader, AdminChannelWriter,
     AdminCredentialProxyService, AdminCustomOAuth2ProviderService, AdminEmailSettingsService,
-    AdminGroupReader, AdminGroupWriter, AdminModelPriceService, AdminModelReader,
-    AdminModelSyncService, AdminModelWriter, AdminNetworkSettingsError, AdminRefundService,
-    AdminRouteReader, AdminRouteWriter, AdminTokenReader, AdminTokenWriter, AdminUsageLogReader,
-    AdminUserReader, AdminUserWriter, AdminWalletService, BalanceAlertTask,
+    AdminGroupReader, AdminGroupWriter, AdminModelPriceService, AdminModelProviderCatalogService,
+    AdminModelReader, AdminModelSyncService, AdminModelWriter, AdminNetworkSettingsError,
+    AdminRefundService, AdminRouteReader, AdminRouteWriter, AdminTokenReader, AdminTokenWriter,
+    AdminUsageLogReader, AdminUserReader, AdminUserWriter, AdminWalletService, BalanceAlertTask,
     DatabaseAdminBalanceAlertSettingsService, DatabaseAdminChannelReader,
     DatabaseAdminChannelWriter, DatabaseAdminCredentialProxyService,
     DatabaseAdminCustomOAuth2ProviderService, DatabaseAdminEmailSettingsService,
     DatabaseAdminGroupReader, DatabaseAdminGroupWriter, DatabaseAdminModelPriceService,
-    DatabaseAdminModelReader, DatabaseAdminModelSyncService, DatabaseAdminModelWriter,
-    DatabaseAdminNetworkSettingsService, DatabaseAdminPaymentSettingsService,
-    DatabaseAdminRefundService, DatabaseAdminRouteReader, DatabaseAdminRouteWriter,
-    DatabaseAdminTokenReader, DatabaseAdminTokenWriter, DatabaseAdminUsageLogReader,
-    DatabaseAdminUserReader, DatabaseAdminUserWriter, DatabaseAdminWalletService,
-    DatabaseAnnouncementService, DatabaseInitialSetup, DatabaseOAuthLoginService,
-    DatabaseOrganizationActivityService, DatabaseOrganizationApprovalNotificationService,
-    DatabaseOrganizationApprovalService, DatabaseOrganizationBudgetService,
-    DatabaseOrganizationContractPriceService, DatabaseOrganizationCreditTermsService,
-    DatabaseOrganizationCustomRoleBindingService, DatabaseOrganizationCustomRoleService,
-    DatabaseOrganizationScimService, DatabaseOrganizationSsoDomainService,
-    DatabaseOrganizationSsoIdentityBindingService, DatabaseOrganizationSsoLoginTransactionService,
-    DatabaseOrganizationSsoPolicyService, DatabaseOrganizationSsoProviderService,
-    DatabaseOrganizationSsoRecoveryService, DatabaseOrganizationTokenService,
-    DatabaseOrganizationVerificationService, DatabaseOrganizationWalletService,
-    DatabasePasskeyAuthenticationService, DatabasePasswordResetService,
-    DatabasePlatformAuditService, DatabasePlatformOrganizationDirectoryService,
-    DatabasePlatformOrganizationManagementService, DatabasePlaygroundConversationService,
-    DatabasePlaygroundShareService, DatabaseRedemptionService, DatabaseRegistrationService,
-    DatabaseSessionAuthenticator, DatabaseSiteSettingsService, DatabaseSubscriptionService,
-    DatabaseTokenAuthenticator, DatabaseUserInvitationService, DatabaseUserNotificationService,
-    DatabaseUserProfileService, DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery,
+    DatabaseAdminModelProviderCatalogService, DatabaseAdminModelReader,
+    DatabaseAdminModelSyncService, DatabaseAdminModelWriter, DatabaseAdminNetworkSettingsService,
+    DatabaseAdminPaymentSettingsService, DatabaseAdminRefundService, DatabaseAdminRouteReader,
+    DatabaseAdminRouteWriter, DatabaseAdminTokenReader, DatabaseAdminTokenWriter,
+    DatabaseAdminUsageLogReader, DatabaseAdminUserReader, DatabaseAdminUserWriter,
+    DatabaseAdminWalletService, DatabaseAnnouncementService, DatabaseInitialSetup,
+    DatabaseOAuthLoginService, DatabaseOrganizationActivityService,
+    DatabaseOrganizationApprovalNotificationService, DatabaseOrganizationApprovalService,
+    DatabaseOrganizationBudgetService, DatabaseOrganizationContractPriceService,
+    DatabaseOrganizationCreditTermsService, DatabaseOrganizationCustomRoleBindingService,
+    DatabaseOrganizationCustomRoleService, DatabaseOrganizationScimService,
+    DatabaseOrganizationSsoDomainService, DatabaseOrganizationSsoIdentityBindingService,
+    DatabaseOrganizationSsoLoginTransactionService, DatabaseOrganizationSsoPolicyService,
+    DatabaseOrganizationSsoProviderService, DatabaseOrganizationSsoRecoveryService,
+    DatabaseOrganizationTokenService, DatabaseOrganizationVerificationService,
+    DatabaseOrganizationWalletService, DatabasePasskeyAuthenticationService,
+    DatabasePasswordResetService, DatabasePlatformAuditService,
+    DatabasePlatformOrganizationDirectoryService, DatabasePlatformOrganizationManagementService,
+    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
+    DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
+    DatabaseSiteSettingsService, DatabaseSubscriptionService, DatabaseTokenAuthenticator,
+    DatabaseUserInvitationService, DatabaseUserNotificationService, DatabaseUserProfileService,
+    DatabaseUserTokenService, DatabaseUserWalletService, EmailBindingService, EmailDelivery,
     InitialSetup, ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
     OAuthLoginService, OrganizationActivityService, OrganizationActivityServiceConfigError,
     OrganizationApprovalNotificationService, OrganizationApprovalService,
@@ -94,7 +95,8 @@ use af_db::{
     DatabaseOptions, DatabaseOptionsError, DatabasePool, DebugTraceRepository,
     DebugTraceRepositoryConfigError, DebugTraceRepositoryError, DebugTraceSnapshotCipherError,
     EmailSettingsRepository, EmailSettingsRepositoryConfigError, InitialSetupRepository,
-    InitialSetupRepositoryConfigError, MigrationOptions, ModelPriceRepository, ModelSyncRepository,
+    InitialSetupRepositoryConfigError, MigrationOptions, ModelPriceRepository,
+    ModelProviderCatalogRepository, ModelProviderCatalogRepositoryError, ModelSyncRepository,
     NetworkSettingsMode, NetworkSettingsRecord, NetworkSettingsRepository,
     NetworkSettingsRepositoryConfigError, OAuthLoginRepository, OAuthLoginRepositoryError,
     OrganizationApprovalNotificationRepository,
@@ -255,6 +257,7 @@ pub struct AuthenticationReady {
     password_reset_service: Arc<dyn PasswordResetService>,
     user_profile_service: Arc<dyn UserProfileService>,
     user_wallet_service: Arc<dyn UserWalletService>,
+    account_verification_provider: Arc<dyn af_admin::AccountVerificationProvider>,
     user_notification_service: Arc<dyn af_admin::UserNotificationService>,
     organization_approval_notification_service: Arc<dyn OrganizationApprovalNotificationService>,
     organization_wallet_service: Arc<dyn OrganizationWalletService>,
@@ -297,6 +300,7 @@ pub struct AuthenticationReady {
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
     admin_credential_proxy_service: Arc<dyn AdminCredentialProxyService>,
     custom_oauth2_provider_repository: CustomOAuth2ProviderRepository,
+    model_provider_catalog_repository: ModelProviderCatalogRepository,
     network_settings_repository: NetworkSettingsRepository,
     payment_settings_repository: PaymentSettingsRepository,
     system_secret_cipher: SystemSecretCipher,
@@ -585,6 +589,9 @@ pub enum BootstrapError {
     /// 自定义 OAuth2 Provider 仓储无法从数据库连接池装配。
     #[error("自定义 OAuth2 Provider 仓储启动参数无效")]
     CustomOAuth2ProviderRepository(#[source] CustomOAuth2ProviderRepositoryError),
+    /// 模型厂商目录仓储无法从数据库连接池装配。
+    #[error("模型厂商目录仓储启动参数无效")]
+    ModelProviderCatalogRepository(#[source] ModelProviderCatalogRepositoryError),
     /// 余额预警全局设置仓储的启动参数无效。
     #[error("余额预警设置仓储启动参数无效")]
     BalanceAlertSettingsRepository(#[source] BalanceAlertSettingsRepositoryConfigError),
@@ -673,7 +680,7 @@ pub enum BootstrapError {
     /// 企业 SCIM 组同步仓储的启动参数无效。
     #[error("企业 SCIM 组同步仓储启动参数无效")]
     OrganizationScimGroupRepository(#[source] OrganizationScimGroupRepositoryError),
-    #[error("浼佷笟 SSO Provider 浠撳偍鍚姩鍙傛暟鏃犳晥")]
+    #[error("企业 SSO Provider 存储启动参数无效")]
     OrganizationSsoProviderRepository(#[source] OrganizationSsoProviderRepositoryConfigError),
     #[error("企业 SSO DNS 解析器启动参数无效")]
     OrganizationSsoDnsResolver(#[source] OrganizationSsoDnsResolverConfigError),
@@ -727,6 +734,9 @@ pub enum BootstrapError {
     /// 受控上游 HTTP Client 配置或构造失败。
     #[error("初始化上游 HTTP Client 失败")]
     HttpClient(#[source] HttpClientError),
+    /// 支付宝实名认证 provider 的启动配置无效。
+    #[error("初始化支付宝实名认证 provider 失败")]
+    AlipayVerificationProvider(#[source] af_admin::AlipayProviderConfigError),
     /// 数据库网络设置无法应用到当前 HTTP Client。
     #[error("应用运行时网络设置失败")]
     NetworkSettingsRuntime(#[source] AdminNetworkSettingsError),
@@ -819,13 +829,17 @@ fn build_user_profile_service(
     passkey_repository: PasskeyRepository,
     system_secret_cipher: SystemSecretCipher,
     public_base_url: Option<&str>,
+    email_binding: Option<EmailBindingService>,
 ) -> DatabaseUserProfileService {
     let service = DatabaseUserProfileService::new(repository, balance_alert_settings)
-        .with_system_secret_cipher(system_secret_cipher);
-    let Some(webauthn) = build_passkey_runtime(public_base_url) else {
-        return service;
-    };
-    service.with_passkey_runtime(passkey_repository, webauthn)
+        .with_system_secret_cipher(system_secret_cipher)
+        .with_passkey_repository(passkey_repository.clone())
+        .with_email_binding_option(email_binding);
+    if let Some(webauthn) = build_passkey_runtime(public_base_url) {
+        service.with_passkey_runtime(passkey_repository, webauthn)
+    } else {
+        service
+    }
 }
 
 /// 仅从数据库中的站点公开地址派生唯一 WebAuthn RP/Origin。
@@ -1038,6 +1052,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::CustomOAuth2ProviderRepository)?;
+        let model_provider_catalog_repository = ModelProviderCatalogRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::ModelProviderCatalogRepository)?;
         let balance_alert_settings_repository = BalanceAlertSettingsRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -1301,6 +1320,20 @@ impl Bootstrap<DatabaseReady> {
             system_secret_cipher.clone(),
         ));
         let smtp_delivery: Arc<dyn EmailDelivery> = Arc::new(SmtpEmailDelivery);
+        let email_binding_service = match EmailBindingService::new(
+            auth_challenge_repository.clone(),
+            auth_challenge_rate_limit_repository.clone(),
+            email_settings_repository.clone(),
+            system_secret_cipher.clone(),
+            Arc::clone(&smtp_delivery),
+            auth.session_signing_key().map(|key| key.expose()),
+        ) {
+            Ok(service) => Some(service),
+            Err(error) => {
+                tracing::warn!(error = %error, "邮箱绑定服务未启用");
+                None
+            }
+        };
         let user_notification_repository = Arc::new(
             UserNotificationRepository::new(
                 self.stage.database.clone(),
@@ -1456,6 +1489,7 @@ impl Bootstrap<DatabaseReady> {
                 passkey_repository,
                 system_secret_cipher.clone(),
                 stage.passkey_public_base_url.as_deref(),
+                email_binding_service,
             ));
         // 角色目录与成员绑定共用同一服务实例，保证授权边界和配置一致。
         let organization_custom_role_service: Arc<dyn OrganizationCustomRoleService> =
@@ -1529,6 +1563,9 @@ impl Bootstrap<DatabaseReady> {
                 user_wallet_service: Arc::new(DatabaseUserWalletService::new(
                     wallet_ledger_repository.clone(),
                 )),
+                account_verification_provider: Arc::new(
+                    af_admin::ManualAccountVerificationProvider,
+                ),
                 user_notification_service: Arc::new(DatabaseUserNotificationService::new(
                     user_notification_repository,
                 )),
@@ -1647,6 +1684,7 @@ impl Bootstrap<DatabaseReady> {
                 admin_email_settings_service: Arc::new(admin_email_settings_service),
                 admin_credential_proxy_service,
                 custom_oauth2_provider_repository,
+                model_provider_catalog_repository,
                 network_settings_repository,
                 payment_settings_repository,
                 system_secret_cipher,
@@ -1720,6 +1758,12 @@ impl Bootstrap<AuthenticationReady> {
         let (startup_config, max_cached_clients) = build_http_client_parts(&config)?;
         let upstream_clients = HttpClientProvider::new(startup_config.clone(), max_cached_clients)
             .map_err(BootstrapError::HttpClient)?;
+        let alipay_provider = af_admin::AlipayAccountVerificationProvider::from_config(
+            config.account_verification().alipay(),
+            upstream_clients.clone(),
+        )
+        .map_err(BootstrapError::AlipayVerificationProvider)?;
+        authentication.account_verification_provider = Arc::new(alipay_provider);
         // 回调编排只复用已完成 SSRF、代理和超时基线的共享 Client。
         authentication
             .organization_sso_login_service
@@ -2938,6 +2982,13 @@ impl Bootstrap<Supervised> {
                     .clone(),
                 self.stage.infrastructure.system_secret_cipher.clone(),
             ));
+        let model_provider_catalog_service: Arc<dyn AdminModelProviderCatalogService> =
+            Arc::new(DatabaseAdminModelProviderCatalogService::new(
+                self.stage
+                    .infrastructure
+                    .model_provider_catalog_repository
+                    .clone(),
+            ));
         let platform_organization_directory_service: Arc<
             dyn af_admin::PlatformOrganizationDirectoryService,
         > = Arc::new(DatabasePlatformOrganizationDirectoryService::new(
@@ -3049,6 +3100,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.site_settings_service),
             Arc::clone(&self.stage.infrastructure.announcement_service),
             Some(custom_oauth2_provider_service),
+            Some(model_provider_catalog_service),
             Some(Arc::clone(&self.stage.oauth_login_service)),
             self.stage.infrastructure.turnstile_verifier.clone(),
             self.config.turnstile().site_key(),
@@ -3169,12 +3221,17 @@ impl Bootstrap<Supervised> {
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
             ))
             .merge(af_http::build_account_verification_router(
-                Arc::new(af_admin::AccountVerificationService::new(
-                    af_db::AccountVerificationRepository::new(
-                        self.stage.infrastructure.infrastructure.database.clone(),
-                    ),
-                    Arc::clone(&self.stage.infrastructure.platform_audit_service),
-                )),
+                Arc::new(
+                    af_admin::AccountVerificationService::new(
+                        af_db::AccountVerificationRepository::new(
+                            self.stage.infrastructure.infrastructure.database.clone(),
+                        ),
+                        Arc::clone(&self.stage.infrastructure.platform_audit_service),
+                    )
+                    .with_provider(Arc::clone(
+                        &self.stage.infrastructure.account_verification_provider,
+                    )),
+                ),
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
             ))
             .merge(build_frontend_template_router(

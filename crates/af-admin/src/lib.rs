@@ -1,5 +1,6 @@
 //! 登录用户与管理域应用服务。
 
+mod alipay_verification;
 mod announcement;
 mod api_key;
 mod auth_challenge_security;
@@ -13,6 +14,7 @@ mod credential_proxy;
 mod credential_read;
 mod custom_oauth2;
 mod debug_trace;
+mod email_binding;
 mod email_settings;
 #[cfg(test)]
 mod email_settings_tests;
@@ -24,6 +26,7 @@ mod model_catalog;
 mod model_metadata_read;
 mod model_metadata_write;
 mod model_price;
+mod model_provider_catalog;
 mod model_sync;
 mod network_settings;
 mod oauth_login;
@@ -174,6 +177,9 @@ pub use debug_trace::{
     AdminDebugTraceSnapshotsFuture, AdminDebugTraceUpdateFuture,
     DEFAULT_ADMIN_DEBUG_TRACE_PAGE_SIZE, DatabaseAdminDebugTraceService,
 };
+pub use email_binding::{
+    EmailBindingConfigError, EmailBindingError, EmailBindingIssued, EmailBindingService,
+};
 pub use email_settings::{
     AdminEmailSettings, AdminEmailSettingsCommand, AdminEmailSettingsError,
     AdminEmailSettingsReadFuture, AdminEmailSettingsService, AdminEmailSettingsUpdateFuture,
@@ -233,6 +239,12 @@ pub use model_price::{
     ModelPriceSourceCandidate, ModelPriceSourceDiscoverer, ModelPriceSourceDiscoveryError,
     ModelPriceSourceDiscoveryFuture, ModelPriceSourceKind, ModelPriceSourcePreview,
     ModelPriceSourceTarget,
+};
+pub use model_provider_catalog::{
+    AdminModelProvider, AdminModelProviderCatalogService, AdminModelProviderCommand,
+    AdminModelProviderDeleteFuture, AdminModelProviderError, AdminModelProviderGetFuture,
+    AdminModelProviderListFuture, AdminModelProviderWriteFuture,
+    DatabaseAdminModelProviderCatalogService,
 };
 pub use model_sync::{
     AdminMissingModelImportCommand, AdminMissingModelImportItemCommand, AdminModelSyncApplyCommand,
@@ -640,7 +652,8 @@ pub use user_notifications::{
 };
 pub use user_profile::{
     DatabaseUserProfileService, MAX_USER_PROFILE_PASSWORD_BYTES, MAX_USER_PROFILE_USERNAME_BYTES,
-    MIN_USER_PROFILE_PASSWORD_BYTES, UserNotificationPreferences,
+    MIN_USER_PROFILE_PASSWORD_BYTES, UserEmailBindingConfirmCommand, UserEmailBindingConfirmFuture,
+    UserEmailBindingStartCommand, UserEmailBindingStartFuture, UserNotificationPreferences,
     UserNotificationPreferencesCommand, UserNotificationUpdateFuture, UserPasskeyListFuture,
     UserPasskeyRegistrationFuture, UserPasskeyRegistrationOptionsFuture, UserPasskeyRenameFuture,
     UserPasskeyRevokeFuture, UserPasswordChangeCommand, UserPasswordChangeFuture, UserProfile,
@@ -696,9 +709,11 @@ mod token_auth_tests;
 
 mod account_verification;
 pub use account_verification::{
-    AccountVerificationError, AccountVerificationMaterial, AccountVerificationRecord,
-    AccountVerificationService, AccountVerificationSubmit, validate_verification_material,
+    AccountVerificationError, AccountVerificationMaterial, AccountVerificationProvider,
+    AccountVerificationProviderError, AccountVerificationRecord, AccountVerificationService,
+    AccountVerificationSubmit, ManualAccountVerificationProvider, validate_verification_material,
 };
+pub use alipay_verification::{AlipayAccountVerificationProvider, AlipayProviderConfigError};
 
 mod platform_entitlement;
 pub use platform_entitlement::PlatformEntitlementService;

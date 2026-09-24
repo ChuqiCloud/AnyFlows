@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { PublicSiteHeader } from '@/components/layout/public-site-header'
+import { AnnouncementStrip } from '@/features/announcements/announcement-strip'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
 import {
   getManagementSessionToken,
@@ -34,8 +35,11 @@ export function PublicModelPage() {
   return (
     <div className="min-h-dvh bg-background text-foreground">
       <PublicSiteHeader siteName={siteName} logoUrl={site?.brand.logo_url} />
+      <div className="pt-14">
+        <AnnouncementStrip />
+      </div>
 
-      <main className="px-4 pt-19 pb-5 md:px-5 md:pt-21 md:pb-7">
+      <main className="px-4 pt-4 pb-5 md:px-5 md:pt-5 md:pb-7">
         <div className="mx-auto w-full max-w-[1280px]">
           <ModelPage authenticated={hasSession} standalone />
         </div>

@@ -7,12 +7,13 @@ use utoipa::OpenApi;
 use crate::{
     management_error::ManagementErrorBody,
     user_profile::{
-        UserNotificationPreferencesRequest, UserNotificationPreferencesResponse,
-        UserPasskeyListResponse, UserPasskeyRegistrationOptionsResponse,
-        UserPasskeyRegistrationVerifyRequest, UserPasskeyRenameRequest, UserPasskeyResponse,
-        UserPasskeyRevokeRequest, UserPasswordChangeRequest, UserProfileResponse,
-        UserProfileUpdateRequest, UserTwoFactorEnrollmentResponse, UserTwoFactorPasswordRequest,
-        UserTwoFactorStatusResponse,
+        UserEmailBindingConfirmRequest, UserEmailBindingVerificationRequest,
+        UserEmailBindingVerificationResponse, UserNotificationPreferencesRequest,
+        UserNotificationPreferencesResponse, UserPasskeyListResponse,
+        UserPasskeyRegistrationOptionsResponse, UserPasskeyRegistrationVerifyRequest,
+        UserPasskeyRenameRequest, UserPasskeyResponse, UserPasskeyRevokeRequest,
+        UserPasswordChangeRequest, UserProfileResponse, UserProfileUpdateRequest,
+        UserTwoFactorEnrollmentResponse, UserTwoFactorPasswordRequest, UserTwoFactorStatusResponse,
     },
 };
 
@@ -48,6 +49,44 @@ fn get_user_profile() {}
     security(("bearerAuth" = []))
 )]
 fn update_user_profile() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/account/profile/email-verification",
+    operation_id = "sendUserEmailBindingVerification",
+    tag = "个人资料与安全",
+    summary = "向待绑定邮箱发送验证码",
+    request_body = UserEmailBindingVerificationRequest,
+    responses(
+        (status = 200, description = "验证码已发送", body = UserEmailBindingVerificationResponse),
+        (status = 400, description = "请求正文无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 409, description = "邮件服务未配置", body = ManagementErrorBody),
+        (status = 429, description = "发送过于频繁", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody),
+        (status = 502, description = "验证码投递失败", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn send_user_email_binding_verification() {}
+
+#[utoipa::path(
+    put,
+    path = "/api/account/profile/email",
+    operation_id = "confirmUserEmailBinding",
+    tag = "个人资料与安全",
+    summary = "确认并绑定邮箱",
+    request_body = UserEmailBindingConfirmRequest,
+    responses(
+        (status = 200, description = "邮箱已绑定", body = UserProfileResponse),
+        (status = 400, description = "请求正文或验证码无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 409, description = "邮箱已被其他用户使用", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn confirm_user_email_binding() {}
 
 #[utoipa::path(
     put,
@@ -223,6 +262,8 @@ fn revoke_user_passkey() {}
     paths(
         get_user_profile,
         update_user_profile,
+        send_user_email_binding_verification,
+        confirm_user_email_binding,
         change_user_password,
         get_user_two_factor,
         enable_user_two_factor,
@@ -238,6 +279,9 @@ fn revoke_user_passkey() {}
         UserProfileResponse,
         UserNotificationPreferencesResponse,
         UserProfileUpdateRequest,
+        UserEmailBindingVerificationRequest,
+        UserEmailBindingVerificationResponse,
+        UserEmailBindingConfirmRequest,
         UserPasswordChangeRequest,
         UserTwoFactorStatusResponse,
         UserTwoFactorPasswordRequest,

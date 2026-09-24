@@ -488,6 +488,8 @@ pub enum PlatformPermission {
     OrganizationsManage,
     /// 管理自定义 OAuth2 Provider 配置。
     CustomOAuth2ProvidersManage,
+    /// 管理模型厂商目录。
+    ModelProvidersManage,
 }
 
 impl PlatformPermission {
@@ -503,6 +505,7 @@ impl PlatformPermission {
             Self::OrganizationAuditReadAll => "platform.organization_audit.read_all",
             Self::OrganizationsManage => "platform.organizations.manage",
             Self::CustomOAuth2ProvidersManage => "platform.custom_oauth2_providers.manage",
+            Self::ModelProvidersManage => "platform.model_providers.manage",
         }
     }
 }

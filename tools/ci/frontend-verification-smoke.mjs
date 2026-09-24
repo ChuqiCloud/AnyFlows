@@ -61,7 +61,7 @@ try {
   let reviewed = 0
   let downloads = 0
   let entitlementWrites = 0
-  const cases = Array.from({ length: 27 }, (_, index) => ({ id: 27 - index, user_id: 1, kind: 'enterprise', subject_name: `Enterprise ${27 - index}`, summary: 'Historical application', status: 5, version: 2, review_reason: 'Supplement required', reviewer_user_id: 2, created_at: 1_780_000_000, updated_at: 1_780_000_010 }))
+  const cases = Array.from({ length: 27 }, (_, index) => ({ id: 27 - index, user_id: 1, kind: 'enterprise', provider: 'manual', document_country: 'CN', document_type: 'business_registration', document_number_masked: '91****43', subject_name: `Enterprise ${27 - index}`, summary: 'Historical application', status: 5, version: 2, review_reason: 'Supplement required', reviewer_user_id: 2, created_at: 1_780_000_000, updated_at: 1_780_000_010 }))
   let entitlement = { version: 2, sso_enabled: true, team_management_enabled: true, custom_roles_enabled: true, seat_limit: 10, team_limit: 5, organization_key_limit: 5, audit_retention_days: 90, valid_from: 1_700_000_000, valid_until: 2_000_000_000, grace_until: null }
   await page.route((url) => url.pathname.startsWith('/api/'), async (route) => {
     const request = route.request()
@@ -94,6 +94,8 @@ try {
       assert.match(request.headers()['content-type'], /^multipart\/form-data; boundary=/)
       assert.ok(request.postDataBuffer().includes(Buffer.from('name="file:0"')))
       assert.ok(request.postDataBuffer().includes(Buffer.from('"kind":"enterprise"')))
+      assert.ok(request.postDataBuffer().includes(Buffer.from('"document_country":"CN"')))
+      assert.ok(request.postDataBuffer().includes(Buffer.from('"document_type":"business_registration"')))
       cases.unshift({ ...cases[0], id: 28, subject_name: 'New Enterprise', status: 1, version: 1, review_reason: null, reviewer_user_id: null })
       submitted += 1
       body = cases[0]
@@ -127,6 +129,7 @@ try {
   assert.equal(await page.getByRole('button', { name: '查看详情', exact: true }).count(), 27)
   await page.getByRole('tab', { name: '企业认证', exact: true }).click()
   await page.getByLabel('认证主体名称', { exact: true }).fill('New Enterprise')
+  await page.getByLabel('证件号码', { exact: true }).fill('91350211M000100Y43')
   await page.getByLabel('认证说明', { exact: true }).fill('Enterprise identity review')
   await page.locator('input[type="file"]').setInputFiles({ name: 'license.png', mimeType: 'image/png', buffer: png })
   await page.getByRole('button', { name: '提交认证', exact: true }).click()

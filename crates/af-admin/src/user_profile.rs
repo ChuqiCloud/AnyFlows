@@ -18,9 +18,9 @@ use webauthn_rs::prelude::{
 use zeroize::Zeroizing;
 
 use crate::{
-    PasskeyRegistrationCommand, PasskeyRegistrationOptions, PasskeyRenameCommand,
-    PasskeyRevokeCommand, SessionPrincipal, SessionRole, TwoFactorEnrollment, UserPasskey,
-    two_factor,
+    EmailBindingError, EmailBindingIssued, EmailBindingService, PasskeyRegistrationCommand,
+    PasskeyRegistrationOptions, PasskeyRenameCommand, PasskeyRevokeCommand, SessionPrincipal,
+    SessionRole, TwoFactorEnrollment, UserPasskey, two_factor,
 };
 
 /// 个人资料用户名最大字节数。
@@ -164,7 +164,7 @@ pub struct UserProfileUpdateCommand {
 }
 
 impl UserProfileUpdateCommand {
-    /// 校验用户名边界；邮箱变更需等待独立验证切片。
+    /// 校验用户名边界。
     pub fn new(username: String) -> Result<Self, UserProfileError> {
         if !valid_username(&username) {
             return Err(UserProfileError::InvalidInput);
@@ -174,6 +174,61 @@ impl UserProfileUpdateCommand {
 
     fn into_username(self) -> String {
         self.username
+    }
+}
+
+/// 请求向新邮箱发送绑定或换绑验证码。
+pub struct UserEmailBindingStartCommand {
+    email: String,
+}
+
+impl UserEmailBindingStartCommand {
+    pub fn new(email: String) -> Result<Self, UserProfileError> {
+        let email = crate::email_binding::normalize_binding_email(email)
+            .map_err(|_| UserProfileError::InvalidInput)?;
+        Ok(Self { email })
+    }
+
+    fn email(&self) -> &str {
+        &self.email
+    }
+}
+
+impl fmt::Debug for UserEmailBindingStartCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("UserEmailBindingStartCommand(<redacted>)")
+    }
+}
+
+/// 使用新邮箱验证码完成绑定或换绑。
+pub struct UserEmailBindingConfirmCommand {
+    email: String,
+    verification_code: Zeroizing<String>,
+}
+
+impl UserEmailBindingConfirmCommand {
+    pub fn new(email: String, verification_code: String) -> Result<Self, UserProfileError> {
+        let email = crate::email_binding::normalize_binding_email(email)
+            .map_err(|_| UserProfileError::InvalidInput)?;
+        if verification_code.len() != 6
+            || !verification_code.bytes().all(|byte| byte.is_ascii_digit())
+        {
+            return Err(UserProfileError::InvalidInput);
+        }
+        Ok(Self {
+            email,
+            verification_code: Zeroizing::new(verification_code),
+        })
+    }
+
+    fn into_parts(self) -> (String, Zeroizing<String>) {
+        (self.email, self.verification_code)
+    }
+}
+
+impl fmt::Debug for UserEmailBindingConfirmCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("UserEmailBindingConfirmCommand(<redacted>)")
     }
 }
 
@@ -377,6 +432,18 @@ pub enum UserProfileError {
     /// 数据库或持久化状态失败。
     #[error("个人资料内部失败")]
     Internal,
+    /// 新邮箱验证码无效或已过期。
+    #[error("邮箱绑定验证码无效")]
+    EmailVerificationRejected,
+    /// 当前实例尚未配置可用邮件投递。
+    #[error("邮箱服务尚未配置")]
+    EmailNotConfigured,
+    /// 新邮箱验证码投递失败。
+    #[error("邮箱验证码投递失败")]
+    EmailDeliveryFailed,
+    /// 邮箱验证码发送过于频繁。
+    #[error("邮箱验证码发送过于频繁")]
+    EmailVerificationRateLimited { retry_after_seconds: u64 },
 }
 
 /// 读取当前用户资料的对象安全 Future。
@@ -385,6 +452,11 @@ pub type UserProfileReadFuture<'a> =
 
 /// 更新当前用户资料的对象安全 Future。
 pub type UserProfileUpdateFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<UserProfile, UserProfileError>> + Send + 'a>>;
+
+pub type UserEmailBindingStartFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<EmailBindingIssued, UserProfileError>> + Send + 'a>>;
+pub type UserEmailBindingConfirmFuture<'a> =
     Pin<Box<dyn Future<Output = Result<UserProfile, UserProfileError>> + Send + 'a>>;
 
 /// 修改当前用户密码的对象安全 Future。
@@ -442,6 +514,24 @@ pub trait UserProfileService: Send + Sync {
         principal: SessionPrincipal,
         command: UserProfileUpdateCommand,
     ) -> UserProfileUpdateFuture<'a>;
+
+    /// 向待绑定邮箱发送一次性验证码。
+    fn send_email_binding_verification<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _command: UserEmailBindingStartCommand,
+    ) -> UserEmailBindingStartFuture<'a> {
+        Box::pin(async { Err(UserProfileError::Internal) })
+    }
+
+    /// 消费验证码并写入新邮箱。
+    fn confirm_email_binding<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _command: UserEmailBindingConfirmCommand,
+    ) -> UserEmailBindingConfirmFuture<'a> {
+        Box::pin(async { Err(UserProfileError::Internal) })
+    }
 
     /// 校验旧密码并更新新密码；成功后旧 JWT 全部失效。
     fn change_password<'a>(
@@ -539,6 +629,7 @@ pub struct DatabaseUserProfileService {
     system_secret_cipher: Option<SystemSecretCipher>,
     passkey_repository: Option<PasskeyRepository>,
     webauthn: Option<Webauthn>,
+    email_binding: Option<EmailBindingService>,
 }
 
 impl DatabaseUserProfileService {
@@ -554,6 +645,7 @@ impl DatabaseUserProfileService {
             system_secret_cipher: None,
             passkey_repository: None,
             webauthn: None,
+            email_binding: None,
         }
     }
 
@@ -561,6 +653,27 @@ impl DatabaseUserProfileService {
     #[must_use]
     pub fn with_system_secret_cipher(mut self, cipher: SystemSecretCipher) -> Self {
         self.system_secret_cipher = Some(cipher);
+        self
+    }
+
+    /// 注入 Passkey 数据仓储；即使 WebAuthn 运行时暂未启用，也应允许读取和管理已有凭证。
+    #[must_use]
+    pub fn with_passkey_repository(mut self, repository: PasskeyRepository) -> Self {
+        self.passkey_repository = Some(repository);
+        self
+    }
+
+    /// 注入邮箱绑定验证码服务；未配置邮件或安全密钥时保持失败关闭。
+    #[must_use]
+    pub fn with_email_binding(mut self, service: EmailBindingService) -> Self {
+        self.email_binding = Some(service);
+        self
+    }
+
+    /// 注入可选邮箱绑定服务；邮件服务未完成配置时保持功能关闭。
+    #[must_use]
+    pub fn with_email_binding_option(mut self, service: Option<EmailBindingService>) -> Self {
+        self.email_binding = service;
         self
     }
 
@@ -589,6 +702,54 @@ impl UserProfileService for DatabaseUserProfileService {
             {
                 UserProfileLookupOutcome::Found(record) => profile_from_record(record, settings),
                 UserProfileLookupOutcome::NotFound => Err(UserProfileError::InvalidSession),
+            }
+        })
+    }
+
+    fn send_email_binding_verification<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        command: UserEmailBindingStartCommand,
+    ) -> UserEmailBindingStartFuture<'a> {
+        Box::pin(async move {
+            let service = self
+                .email_binding
+                .as_ref()
+                .ok_or(UserProfileError::Internal)?;
+            service
+                .issue(principal.user_id(), command.email())
+                .await
+                .map_err(map_email_binding_error)
+        })
+    }
+
+    fn confirm_email_binding<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        command: UserEmailBindingConfirmCommand,
+    ) -> UserEmailBindingConfirmFuture<'a> {
+        Box::pin(async move {
+            let service = self
+                .email_binding
+                .as_ref()
+                .ok_or(UserProfileError::Internal)?;
+            let (email, verification_code) = command.into_parts();
+            service
+                .consume(principal.user_id(), &email, verification_code.as_str())
+                .await
+                .map_err(map_email_binding_error)?;
+            let settings = self.balance_alert_settings().await?;
+            match self
+                .repository
+                .update_email(principal.user_id(), email)
+                .await
+                .map_err(map_repository_error)?
+            {
+                UserProfileMutationOutcome::Updated(record) => {
+                    profile_from_record(record, settings)
+                }
+                UserProfileMutationOutcome::NotFound => Err(UserProfileError::InvalidSession),
+                UserProfileMutationOutcome::Conflict => Err(UserProfileError::Conflict),
             }
         })
     }
@@ -1035,6 +1196,21 @@ fn map_passkey_repository_error(error: PasskeyRepositoryError) -> UserProfileErr
         | PasskeyRepositoryError::Query
         | PasskeyRepositoryError::Timeout
         | PasskeyRepositoryError::Invariant => UserProfileError::Internal,
+    }
+}
+
+fn map_email_binding_error(error: EmailBindingError) -> UserProfileError {
+    match error {
+        EmailBindingError::InvalidInput => UserProfileError::InvalidInput,
+        EmailBindingError::Rejected => UserProfileError::EmailVerificationRejected,
+        EmailBindingError::EmailNotConfigured => UserProfileError::EmailNotConfigured,
+        EmailBindingError::DeliveryFailed => UserProfileError::EmailDeliveryFailed,
+        EmailBindingError::RateLimited {
+            retry_after_seconds,
+        } => UserProfileError::EmailVerificationRateLimited {
+            retry_after_seconds,
+        },
+        EmailBindingError::Internal => UserProfileError::Internal,
     }
 }
 

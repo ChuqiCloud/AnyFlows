@@ -4318,6 +4318,178 @@
         ]
       }
     },
+    "/api/account/profile/email-verification": {
+      "post": {
+        "tags": [
+          "个人资料与安全"
+        ],
+        "summary": "向待绑定邮箱发送验证码",
+        "operationId": "sendUserEmailBindingVerification",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserEmailBindingVerificationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "验证码已发送",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserEmailBindingVerificationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求正文无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "邮件服务未配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "发送过于频繁",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "验证码投递失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/account/profile/email": {
+      "put": {
+        "tags": [
+          "个人资料与安全"
+        ],
+        "summary": "确认并绑定邮箱",
+        "operationId": "confirmUserEmailBinding",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserEmailBindingConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "邮箱已绑定",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfileResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求正文或验证码无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "邮箱已被其他用户使用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/account/password": {
       "put": {
         "tags": [
@@ -22729,6 +22901,102 @@
         ]
       }
     },
+    "/api/account/verifications/{case_id}/provider-sync": {
+      "post": {
+        "tags": [
+          "账号认证"
+        ],
+        "operationId": "syncAccountVerificationProvider",
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountVerificationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/account/verifications/{case_id}/materials/{material_id}": {
       "get": {
         "tags": [
@@ -31300,16 +31568,18 @@
       "AccountVerificationMultipartRequest": {
         "type": "object",
         "required": [
-          "metadata",
-          "file_0"
+          "metadata"
         ],
         "properties": {
           "metadata": {
             "type": "string",
-            "description": "JSON containing kind (individual/enterprise), subject_name, summary and materials [{kind,file_field}]."
+            "description": "JSON containing kind, provider, document_country, document_type, optional document_number, subject_name, summary and materials [{kind,file_field}]. 支付宝实名认证时 materials 可以为空。"
           },
           "file_0": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "binary"
           }
         }
@@ -31320,6 +31590,9 @@
           "id",
           "user_id",
           "kind",
+          "provider",
+          "document_country",
+          "document_type",
           "subject_name",
           "summary",
           "status",
@@ -31338,6 +31611,33 @@
           },
           "kind": {
             "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "provider_action_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "document_country": {
+            "type": "string"
+          },
+          "document_type": {
+            "type": "string"
+          },
+          "document_number_masked": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "subject_name": {
             "type": "string"
@@ -49315,6 +49615,64 @@
           "extra_high",
           "max"
         ]
+      },
+      "UserEmailBindingConfirmRequest": {
+        "type": "object",
+        "required": [
+          "email",
+          "verification_code"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 320,
+            "minLength": 3
+          },
+          "verification_code": {
+            "type": "string",
+            "writeOnly": true,
+            "maxLength": 6,
+            "minLength": 6,
+            "pattern": "^[0-9]{6}$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserEmailBindingVerificationRequest": {
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 320,
+            "minLength": 3
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserEmailBindingVerificationResponse": {
+        "type": "object",
+        "required": [
+          "expires_at",
+          "next_send_at"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "next_send_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
       },
       "UserFailedCallLog": {
         "type": "object",
