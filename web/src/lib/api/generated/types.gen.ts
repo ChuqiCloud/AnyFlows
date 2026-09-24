@@ -1269,6 +1269,25 @@ export type AdminUserUpdateRequest = {
     rpm_limit?: number | null;
     concurrency?: number | null;
 };
+export type AdminVerificationSettings = {
+    source: string;
+    enabled: boolean;
+    app_id?: string | null;
+    private_key_configured: boolean;
+    public_key_configured: boolean;
+    gateway_url: string;
+    biz_code: string;
+    timeout_secs: number;
+    version: number;
+};
+export type AdminVerificationSettingsRequest = {
+    expected_version: number;
+    enabled: boolean;
+    app_id?: string | null;
+    gateway_url: string;
+    biz_code: string;
+    timeout_secs: number;
+};
 export type AdminWalletAdjustmentRequest = {
     event_id: string;
     quota_delta: number;
@@ -3690,6 +3709,16 @@ export type AdminPaymentSettingsRequestWritable = {
     epay_refund_enabled: boolean;
     refund_auto_submit_enabled: boolean;
     epay_quota_per_cny: number;
+};
+export type AdminVerificationSettingsRequestWritable = {
+    expected_version: number;
+    enabled: boolean;
+    app_id?: string | null;
+    private_key?: string | null;
+    public_key?: string | null;
+    gateway_url: string;
+    biz_code: string;
+    timeout_secs: number;
 };
 export type LoginRequestWritable = {
     username: string;
@@ -8996,6 +9025,40 @@ export type DecideAccountVerificationResponses = {
     200: AccountVerificationResponse;
 };
 export type DecideAccountVerificationResponse = DecideAccountVerificationResponses[keyof DecideAccountVerificationResponses];
+export type GetAdminVerificationSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/account-verification-settings';
+};
+export type GetAdminVerificationSettingsErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminVerificationSettingsError = GetAdminVerificationSettingsErrors[keyof GetAdminVerificationSettingsErrors];
+export type GetAdminVerificationSettingsResponses = {
+    200: AdminVerificationSettings;
+};
+export type GetAdminVerificationSettingsResponse = GetAdminVerificationSettingsResponses[keyof GetAdminVerificationSettingsResponses];
+export type UpdateAdminVerificationSettingsData = {
+    body: AdminVerificationSettingsRequestWritable;
+    path?: never;
+    query?: never;
+    url: '/api/admin/account-verification-settings';
+};
+export type UpdateAdminVerificationSettingsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminVerificationSettingsError = UpdateAdminVerificationSettingsErrors[keyof UpdateAdminVerificationSettingsErrors];
+export type UpdateAdminVerificationSettingsResponses = {
+    200: AdminVerificationSettings;
+};
+export type UpdateAdminVerificationSettingsResponse = UpdateAdminVerificationSettingsResponses[keyof UpdateAdminVerificationSettingsResponses];
 export type GetPlatformOrganizationEntitlementData = {
     body?: never;
     headers: {
