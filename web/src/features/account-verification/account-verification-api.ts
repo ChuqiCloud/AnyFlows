@@ -2,7 +2,8 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { apiClient } from '@/lib/api'
 
 export type VerificationKind = 'individual' | 'enterprise'
-export type VerificationRecord = { id: number; user_id: number; kind: VerificationKind; provider: string; document_country: string; document_type: string; document_number_masked?: string | null; subject_name: string; summary: string; status: number; version: number; review_reason?: string | null; reviewer_user_id?: number | null; created_at: number; updated_at: number }
+export type VerificationProvider = 'manual' | 'alipay'
+export type VerificationRecord = { id: number; user_id: number; kind: VerificationKind; provider: VerificationProvider; provider_action_url?: string | null; provider_status?: string | null; document_country: string; document_type: string; document_number_masked?: string | null; subject_name: string; summary: string; status: number; version: number; review_reason?: string | null; reviewer_user_id?: number | null; created_at: number; updated_at: number }
 export type VerificationMaterial = { id: number; kind: string; file_name: string; content_type: string; size_bytes: number; content_available?: boolean }
 export type VerificationDetail = { case: VerificationRecord; materials: VerificationMaterial[] }
 export const verificationKey = ['account-verification'] as const
@@ -39,11 +40,18 @@ export function useVerificationDetail(id: number | undefined, admin: boolean) {
 }
 export function useSubmitAccountVerification() {
   const client = useQueryClient()
-  return useMutation({ mutationFn: async ({ kind, document_country, document_type, document_number, subject_name, summary, files }: { kind: VerificationKind; document_country: string; document_type: string; document_number?: string; subject_name: string; summary: string; files: File[] }) => {
+  return useMutation({ mutationFn: async ({ kind, provider, document_country, document_type, document_number, subject_name, summary, files }: { kind: VerificationKind; provider: VerificationProvider; document_country: string; document_type: string; document_number?: string; subject_name: string; summary: string; files: File[] }) => {
     const data = new FormData()
-    data.append('metadata', JSON.stringify({ kind, provider: 'manual', document_country, document_type, document_number, subject_name, summary, materials: files.map((_, index) => ({ kind: kind === 'enterprise' ? 'business_document' : 'identity_document', file_field: String(index) })) }))
+    data.append('metadata', JSON.stringify({ kind, provider, document_country, document_type, document_number, subject_name, summary, materials: files.map((_, index) => ({ kind: kind === 'enterprise' ? 'business_document' : 'identity_document', file_field: String(index) })) }))
     files.forEach((file, index) => data.append(`file:${index}`, file, file.name))
     const result = await apiClient.post<VerificationRecord>({ url: '/api/account/verifications', body: data, bodySerializer: null, headers: { 'Content-Type': null }, security: [...sessionSecurity] }) as unknown as { data: VerificationRecord }
+    return result.data
+  }, onSuccess: () => client.invalidateQueries({ queryKey: verificationKey }) })
+}
+export function useSyncAccountVerificationProvider() {
+  const client = useQueryClient()
+  return useMutation({ mutationFn: async (id: number) => {
+    const result = await apiClient.post<VerificationRecord>({ url: `/api/account/verifications/${id}/provider-sync`, security: [...sessionSecurity] }) as unknown as { data: VerificationRecord }
     return result.data
   }, onSuccess: () => client.invalidateQueries({ queryKey: verificationKey }) })
 }

@@ -45,6 +45,9 @@ fn submission(kind: &str) -> AccountVerificationSubmit {
     AccountVerificationSubmit {
         kind: kind.to_owned(),
         provider: "manual".to_owned(),
+        provider_reference: None,
+        provider_action_url: None,
+        provider_status: None,
         document_country: "US".to_owned(),
         document_type: if kind == "enterprise" {
             "business_registration".to_owned()

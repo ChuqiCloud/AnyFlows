@@ -88,6 +88,7 @@ curl --fail http://127.0.0.1:8080/readyz
 | `AF_HTTP_CLIENT__PROXY_URL` | 上游代理 | 只填写受控 HTTP(S)、SOCKS5 或 SOCKS5H 代理；运行时不读取系统代理环境变量 |
 | `AF_OAUTH__*` | 上游订阅账号 OAuth 客户端材料 | 仅从启动配置读取；未配置的 Provider 不注册，密钥不得写入数据库或前端 |
 | `AF_PAYMENT__*` | Stripe 支付与回执 | 服务端密钥和 webhook 密钥只通过部署密钥管理注入；Epay 人工退款不使用自动退款密钥 |
+| `AF_ACCOUNT_VERIFICATION__ALIPAY__*` | 可选支付宝实名认证 | 启用后必须配置应用 ID、应用私钥和支付宝公钥；密钥只通过部署密钥管理注入，不写入仓库或日志 |
 | `AF_OPENAI_UPSTREAM__*` | 旧版静态 OpenAI-compatible 配置 | 可选且三项必须同时存在，仅保留兼容解析；M1 生产 Chat 只使用数据库渠道，不把它作为回退目标 |
 
 ### ClickHouse 可选配置

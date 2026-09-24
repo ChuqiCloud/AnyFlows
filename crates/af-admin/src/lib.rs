@@ -1,5 +1,6 @@
 //! 登录用户与管理域应用服务。
 
+mod alipay_verification;
 mod announcement;
 mod api_key;
 mod auth_challenge_security;
@@ -697,10 +698,10 @@ mod token_auth_tests;
 mod account_verification;
 pub use account_verification::{
     AccountVerificationError, AccountVerificationMaterial, AccountVerificationProvider,
-    AccountVerificationRecord, AccountVerificationService, AccountVerificationSubmit,
-    AlipayAccountVerificationProvider, ManualAccountVerificationProvider,
-    validate_verification_material,
+    AccountVerificationProviderError, AccountVerificationRecord, AccountVerificationService,
+    AccountVerificationSubmit, ManualAccountVerificationProvider, validate_verification_material,
 };
+pub use alipay_verification::{AlipayAccountVerificationProvider, AlipayProviderConfigError};
 
 mod platform_entitlement;
 pub use platform_entitlement::PlatformEntitlementService;
