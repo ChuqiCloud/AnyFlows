@@ -49663,11 +49663,13 @@
         "properties": {
           "expires_at": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "minimum": 0
           },
           "next_send_at": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "minimum": 0
           }
         },
         "additionalProperties": false
