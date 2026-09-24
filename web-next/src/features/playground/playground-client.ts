@@ -4,7 +4,7 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { streamText, type ModelMessage } from 'ai'
 
 import { apiBaseUrl } from '@/lib/api/endpoint'
-import { getManagementSessionToken } from '@/lib/api/session-token'
+import { getManagementSessionToken, invalidateManagementSession } from '@/lib/api/session-token'
 
 import type {
   PlaygroundGenerationSettings,
@@ -43,7 +43,10 @@ export async function streamPlaygroundChat(
     headers.delete('x-api-key')
     headers.delete('x-goog-api-key')
     if (sessionToken) headers.set('Authorization', `Bearer ${sessionToken}`)
-    return fetch(input, { ...init, headers, credentials: 'same-origin' })
+    return fetch(input, { ...init, headers, credentials: 'same-origin' }).then((response) => {
+      if (response.status === 401) invalidateManagementSession()
+      return response
+    })
   }
   const baseURL = `${getApiRoot()}/api/playground/v1`
   const provider = createOpenAICompatible({

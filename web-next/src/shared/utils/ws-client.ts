@@ -56,8 +56,9 @@ class WebSocketClient {
   private readonly wsUrl: string;
 
   constructor() {
-    // 与平台 HTTP 客户端共用同一寻址规则：开发为空串（同源代理），生产同源。
-    this.apiUrl = resolveApiBaseUrl();
+    // 与平台 HTTP 客户端共用同一寻址规则；WebSocket 构造器必须拿到绝对地址。
+    const configuredApiUrl = resolveApiBaseUrl();
+    this.apiUrl = configuredApiUrl || (typeof window !== "undefined" ? window.location.origin : "");
     this.wsUrl = this.apiUrl.replace(/^http/, "ws");
   }
 
