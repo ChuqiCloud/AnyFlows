@@ -685,7 +685,7 @@ pub fn build_router(
         .merge(
             post(create_admin_user)
                 .route_layer(middleware::from_fn(authorize_management_admin))
-                .route_layer(user_collection_authentication),
+                .route_layer(user_collection_authentication.clone()),
         );
     let management_routes = Router::new()
         .route("/api/setup/status", get(setup_status))

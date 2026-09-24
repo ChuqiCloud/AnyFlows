@@ -1,7 +1,4 @@
-use af_admin::{
-    AdminModelProvider, AdminModelProviderCatalogService, AdminModelProviderCommand,
-    AdminModelProviderError,
-};
+use af_admin::{AdminModelProvider, AdminModelProviderCommand, AdminModelProviderError};
 use axum::{
     Json,
     extract::{Extension, Path, State, rejection::JsonRejection},
