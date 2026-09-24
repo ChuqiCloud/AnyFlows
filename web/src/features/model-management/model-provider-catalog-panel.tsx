@@ -13,25 +13,26 @@ type Provider = { provider_key: string; display_name: string; logo: string | nul
 type ProviderList = { providers: Provider[] }
 
 const queryKey = ['admin-model-provider-catalog'] as const
+const managementSessionSecurity = [{ key: 'bearerAuth', scheme: 'bearer', type: 'http' }] as const
 
 export function ModelProviderCatalogPanel() {
   const queryClient = useQueryClient()
   const [editing, setEditing] = useState<Provider | null>(null)
   const [formOpen, setFormOpen] = useState(false)
   const [form, setForm] = useState({ provider_key: '', display_name: '', logo: '', aliases: '', enabled: true, sort_order: '100' })
-  const query = useQuery({ queryKey, queryFn: async ({ signal }) => ((await apiClient.get({ url: '/api/admin/model-provider-catalog', signal })) as unknown as { data: ProviderList }).data.providers })
+  const query = useQuery({ queryKey, queryFn: async ({ signal }) => ((await apiClient.get({ security: managementSessionSecurity, url: '/api/admin/model-provider-catalog', signal })) as unknown as { data: ProviderList }).data.providers })
   const reset = () => { setEditing(null); setFormOpen(false); setForm({ provider_key: '', display_name: '', logo: '', aliases: '', enabled: true, sort_order: '100' }) }
   const create = () => { reset(); setFormOpen(true) }
   const edit = (provider: Provider) => { setEditing(provider); setFormOpen(true); setForm({ provider_key: provider.provider_key, display_name: provider.display_name, logo: provider.logo ?? '', aliases: provider.aliases.join(', '), enabled: provider.enabled, sort_order: String(provider.sort_order) }) }
   const save = async () => {
     const key = form.provider_key.trim().toLowerCase()
     if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(key) || !form.display_name.trim()) return
-    await apiClient.put({ url: `/api/admin/model-provider-catalog/${encodeURIComponent(key)}`, body: { expected_version: editing?.version ?? 0, display_name: form.display_name.trim(), logo: form.logo.trim() || null, aliases: form.aliases.split(',').map((value) => value.trim()).filter(Boolean), enabled: form.enabled, sort_order: Math.max(0, Number(form.sort_order) || 0) }, bodySerializer: jsonBodySerializer.bodySerializer })
+    await apiClient.put({ security: managementSessionSecurity, url: `/api/admin/model-provider-catalog/${encodeURIComponent(key)}`, body: { expected_version: editing?.version ?? 0, display_name: form.display_name.trim(), logo: form.logo.trim() || null, aliases: form.aliases.split(',').map((value) => value.trim()).filter(Boolean), enabled: form.enabled, sort_order: Math.max(0, Number(form.sort_order) || 0) }, bodySerializer: jsonBodySerializer.bodySerializer })
     await queryClient.invalidateQueries({ queryKey })
     await queryClient.invalidateQueries({ queryKey: ['model-provider-catalog'] })
     reset()
   }
-  const remove = async (provider: Provider) => { if (!window.confirm(`删除 ${provider.display_name}？`)) return; await apiClient.delete({ url: `/api/admin/model-provider-catalog/${encodeURIComponent(provider.provider_key)}`, body: { expected_version: provider.version }, bodySerializer: jsonBodySerializer.bodySerializer }); await queryClient.invalidateQueries({ queryKey }); await queryClient.invalidateQueries({ queryKey: ['model-provider-catalog'] }) }
+  const remove = async (provider: Provider) => { if (!window.confirm(`删除 ${provider.display_name}？`)) return; await apiClient.delete({ security: managementSessionSecurity, url: `/api/admin/model-provider-catalog/${encodeURIComponent(provider.provider_key)}`, body: { expected_version: provider.version }, bodySerializer: jsonBodySerializer.bodySerializer }); await queryClient.invalidateQueries({ queryKey }); await queryClient.invalidateQueries({ queryKey: ['model-provider-catalog'] }) }
   const configured = new Map((query.data ?? []).map((provider) => [provider.provider_key, provider] as const))
   const providers = [...providerCatalog.map((provider, index) => configured.get(provider.id) ?? ({ provider_key: provider.id, display_name: provider.name, logo: provider.logo, aliases: [...(provider.aliases ?? [])], enabled: true, sort_order: index, version: 0 } satisfies Provider)), ...(query.data ?? []).filter((provider) => !providerCatalog.some((item) => item.id === provider.provider_key))]
     .sort((left, right) => left.sort_order - right.sort_order || left.display_name.localeCompare(right.display_name))
