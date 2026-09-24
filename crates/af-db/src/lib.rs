@@ -116,6 +116,7 @@ mod model_price_admin;
 mod model_price_admin_tests;
 #[cfg(test)]
 mod model_price_tests;
+mod model_provider_catalog;
 mod model_sync;
 #[cfg(test)]
 mod model_sync_tests;
@@ -485,6 +486,12 @@ pub use model_price::{
 pub use model_price_admin::{
     MAX_MODEL_PRICE_PAGE_SIZE, MAX_MODEL_PRICE_WRITE_BATCH, ModelPricePageRecord,
     ModelPriceWriteError, ModelPriceWriteRecord,
+};
+pub use model_provider_catalog::{
+    MAX_MODEL_PROVIDER_ALIAS_BYTES, MAX_MODEL_PROVIDER_ALIASES,
+    MAX_MODEL_PROVIDER_DISPLAY_NAME_BYTES, MAX_MODEL_PROVIDER_KEY_BYTES,
+    MAX_MODEL_PROVIDER_LOGO_BYTES, ModelProviderCatalogRecord, ModelProviderCatalogRepository,
+    ModelProviderCatalogRepositoryError, ModelProviderCatalogWriteRecord,
 };
 pub use model_sync::{
     DiscoveredModelRecord, MAX_MISSING_MODEL_CHANNELS, MAX_MISSING_MODEL_PAGE_SIZE,

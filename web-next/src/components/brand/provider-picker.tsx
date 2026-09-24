@@ -6,10 +6,13 @@ import { Button, Popover, PopoverContent, PopoverTrigger } from '@heroui/react'
 import { cn } from '@/lib/utils'
 import { findProviderLogo } from './model-logos'
 import { filterProviders, providerCatalog, providerDisplayName, type ProviderOption } from './provider-catalog'
+import { findProviderOption, useModelProviderOptions } from './provider-catalog-api'
 
 export function ProviderLabel({ provider }: { provider: string }) {
+  const catalogQuery = useModelProviderOptions()
+  const option = findProviderOption(provider, catalogQuery.options)
   const Icon = findProviderLogo(provider)?.Icon ?? Network
-  return <span className="inline-flex min-w-0 items-center gap-2"><Icon className="size-4 shrink-0" aria-hidden="true" /><span className="truncate">{providerDisplayName(provider)}</span></span>
+  return <span className="inline-flex min-w-0 items-center gap-2">{findProviderLogo(provider) ? <Icon className="size-4 shrink-0" aria-hidden="true" /> : <span className="grid size-4 shrink-0 place-items-center rounded bg-default-100 text-[0.55rem] font-semibold" aria-hidden="true">{(option?.logo ?? option?.name ?? provider).slice(0, 2).toUpperCase()}</span>}<span className="truncate">{option?.name ?? providerDisplayName(provider)}</span></span>
 }
 
 type ProviderPickerProps = {
@@ -31,7 +34,9 @@ export function ProviderPicker({ id, value, onChange, onBlur, ref, disabled, inv
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
-  const matches = filterProviders(query, options)
+  const catalogQuery = useModelProviderOptions()
+  const availableOptions = options === providerCatalog ? catalogQuery.options : options
+  const matches = filterProviders(query, availableOptions)
   const custom = query.trim()
   const hasExactMatch = matches.some((item) => [item.id, item.name, ...(item.aliases ?? [])]
     .some((name) => name.toLowerCase() === custom.toLowerCase()))
@@ -72,6 +77,7 @@ export function ProviderPicker({ id, value, onChange, onBlur, ref, disabled, inv
             </button>
           ))}
           {!choices.length ? <p className="p-3 text-sm text-muted-foreground">{t('providers.empty')}</p> : null}
+          {allowCustom && !custom ? <p className="border-t px-2 py-2 text-xs text-muted-foreground">{t('providers.searchOrCreate')}</p> : null}
         </div>
       </PopoverContent>
     </Popover>

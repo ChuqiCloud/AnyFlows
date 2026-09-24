@@ -98,6 +98,10 @@ use crate::middleware::{
     ensure_request_id, request_id_header,
 };
 use crate::model_catalog::{list_model_providers, list_models};
+use crate::model_provider_catalog::{
+    delete_admin_model_provider, get_admin_model_provider, list_admin_model_provider_catalog,
+    list_public_model_provider_catalog, update_admin_model_provider,
+};
 use crate::network_settings::build_network_settings_router;
 use crate::oauth_connections::{AdminOAuthConnectionService, build_admin_oauth_connection_router};
 use crate::oauth_login::build_oauth_login_router;
@@ -225,6 +229,9 @@ pub fn build_router(
     site_settings_service: Arc<dyn SiteSettingsService>,
     announcement_service: Arc<dyn af_admin::AnnouncementService>,
     admin_custom_oauth2_provider_service: Option<Arc<dyn AdminCustomOAuth2ProviderService>>,
+    admin_model_provider_catalog_service: Option<
+        Arc<dyn af_admin::AdminModelProviderCatalogService>,
+    >,
     oauth_login_service: Option<Arc<dyn OAuthLoginService>>,
     turnstile_verifier: Option<Arc<dyn crate::TurnstileVerifier>>,
     turnstile_site_key: Option<&str>,
@@ -358,6 +365,7 @@ pub fn build_router(
     .with_responses_compact_service(responses_compact)
     .with_initial_setup(initial_setup)
     .with_model_catalog_reader(model_catalog_reader)
+    .with_model_provider_catalog_service(admin_model_provider_catalog_service)
     .with_admin_model_reader(admin_model_reader)
     .with_admin_model_writer(admin_model_writer)
     .with_admin_model_sync_service(admin_model_sync_service)
@@ -693,6 +701,24 @@ pub fn build_router(
         .route(
             "/api/model-providers",
             get(list_model_providers).route_layer(model_catalog_authentication),
+        )
+        .route(
+            "/api/model-provider-catalog",
+            get(list_public_model_provider_catalog),
+        )
+        .route(
+            "/api/admin/model-provider-catalog",
+            get(list_admin_model_provider_catalog)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(user_collection_authentication.clone()),
+        )
+        .route(
+            "/api/admin/model-provider-catalog/{provider_key}",
+            get(get_admin_model_provider)
+                .put(update_admin_model_provider)
+                .delete(delete_admin_model_provider)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(user_item_authentication.clone()),
         )
         .route("/api/admin/users", admin_user_collection_routes)
         .route(

@@ -26,6 +26,7 @@ mod model_catalog;
 mod model_metadata_read;
 mod model_metadata_write;
 mod model_price;
+mod model_provider_catalog;
 mod model_sync;
 mod network_settings;
 mod oauth_login;
@@ -238,6 +239,12 @@ pub use model_price::{
     ModelPriceSourceCandidate, ModelPriceSourceDiscoverer, ModelPriceSourceDiscoveryError,
     ModelPriceSourceDiscoveryFuture, ModelPriceSourceKind, ModelPriceSourcePreview,
     ModelPriceSourceTarget,
+};
+pub use model_provider_catalog::{
+    AdminModelProvider, AdminModelProviderCatalogService, AdminModelProviderCommand,
+    AdminModelProviderDeleteFuture, AdminModelProviderError, AdminModelProviderGetFuture,
+    AdminModelProviderListFuture, AdminModelProviderWriteFuture,
+    DatabaseAdminModelProviderCatalogService,
 };
 pub use model_sync::{
     AdminMissingModelImportCommand, AdminMissingModelImportItemCommand, AdminModelSyncApplyCommand,

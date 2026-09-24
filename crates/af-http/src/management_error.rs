@@ -298,6 +298,10 @@ pub(crate) enum ManagementError {
     CustomOAuth2ProviderNotFound,
     /// 自定义 OAuth2 Provider 版本已被其他管理员推进。
     CustomOAuth2ProviderConflict,
+    /// 模型厂商目录条目不存在。
+    ModelProviderNotFound,
+    /// 模型厂商目录版本已被其他管理员推进。
+    ModelProviderConflict,
     /// 目标 OAuth 凭据已经绑定其他 provider。
     OauthCredentialProviderMismatch,
     /// 单实例待完成 OAuth 授权已达到容量上限。
@@ -1399,6 +1403,20 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "custom_oauth2_provider_conflict",
                     message: "Custom OAuth2 provider changed",
+                },
+            ),
+            Self::ModelProviderNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "model_provider_not_found",
+                    message: "Model provider not found",
+                },
+            ),
+            Self::ModelProviderConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "model_provider_conflict",
+                    message: "Model provider changed",
                 },
             ),
             Self::OauthCredentialProviderMismatch => (

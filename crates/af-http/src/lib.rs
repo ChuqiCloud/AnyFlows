@@ -52,6 +52,7 @@ mod management_users;
 mod management_wallet;
 mod middleware;
 mod model_catalog;
+mod model_provider_catalog;
 mod network_settings;
 mod oauth_connections;
 mod oauth_login;

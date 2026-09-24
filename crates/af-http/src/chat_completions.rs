@@ -44,6 +44,8 @@ pub(crate) struct HttpState {
     pub(crate) session_authenticator: Arc<dyn SessionAuthenticator>,
     pub(crate) initial_setup: Option<Arc<dyn InitialSetup>>,
     pub(crate) model_catalog_reader: Option<Arc<dyn af_admin::ModelCatalogReader>>,
+    pub(crate) model_provider_catalog_service:
+        Option<Arc<dyn af_admin::AdminModelProviderCatalogService>>,
     pub(crate) admin_channel_reader: Option<Arc<dyn AdminChannelReader>>,
     pub(crate) admin_channel_writer: Option<Arc<dyn AdminChannelWriter>>,
     pub(crate) admin_channel_probe: Option<Arc<dyn crate::AdminChannelProbe>>,
@@ -97,6 +99,7 @@ impl HttpState {
             session_authenticator,
             initial_setup: None,
             model_catalog_reader: None,
+            model_provider_catalog_service: None,
             admin_channel_reader: None,
             admin_channel_writer: None,
             admin_channel_probe: None,
@@ -185,6 +188,14 @@ impl HttpState {
         reader: Arc<dyn af_admin::ModelCatalogReader>,
     ) -> Self {
         self.model_catalog_reader = Some(reader);
+        self
+    }
+
+    pub(crate) fn with_model_provider_catalog_service(
+        mut self,
+        service: Option<Arc<dyn af_admin::AdminModelProviderCatalogService>>,
+    ) -> Self {
+        self.model_provider_catalog_service = service;
         self
     }
 

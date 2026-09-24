@@ -949,6 +949,31 @@ pub(in crate::migration) mod models {
     }
 }
 
+pub(in crate::migration) mod model_provider_catalog {
+    use super::DeriveIden;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "model_provider_catalog")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        ProviderKey,
+        DisplayName,
+        Logo,
+        Aliases,
+        Enabled,
+        SortOrder,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
 pub(in crate::migration) mod model_sync_runs {
     use super::DeriveIden;
 
