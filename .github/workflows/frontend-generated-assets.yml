@@ -7,6 +7,8 @@ on:
     paths:
       - '.github/workflows/frontend-generated-assets.yml'
       - 'crates/af-http/src/account_verification.rs'
+      - 'crates/af-http/src/verification_settings.rs'
+      - 'crates/af-http/src/openapi/verification_settings.rs'
       - 'crates/af-http/src/frontend_templates.rs'
       - 'crates/af-http/src/openapi/frontend_templates.rs'
       - 'web-next/package.json'

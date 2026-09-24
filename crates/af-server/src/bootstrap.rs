@@ -258,6 +258,7 @@ pub struct AuthenticationReady {
     user_profile_service: Arc<dyn UserProfileService>,
     user_wallet_service: Arc<dyn UserWalletService>,
     account_verification_provider: Arc<dyn af_admin::AccountVerificationProvider>,
+    verification_settings_service: Option<Arc<af_admin::DatabaseVerificationSettingsService>>,
     user_notification_service: Arc<dyn af_admin::UserNotificationService>,
     organization_approval_notification_service: Arc<dyn OrganizationApprovalNotificationService>,
     organization_wallet_service: Arc<dyn OrganizationWalletService>,
@@ -1566,6 +1567,7 @@ impl Bootstrap<DatabaseReady> {
                 account_verification_provider: Arc::new(
                     af_admin::ManualAccountVerificationProvider,
                 ),
+                verification_settings_service: None,
                 user_notification_service: Arc::new(DatabaseUserNotificationService::new(
                     user_notification_repository,
                 )),
@@ -1763,7 +1765,19 @@ impl Bootstrap<AuthenticationReady> {
             upstream_clients.clone(),
         )
         .map_err(BootstrapError::AlipayVerificationProvider)?;
-        authentication.account_verification_provider = Arc::new(alipay_provider);
+        drop(alipay_provider);
+        let verification_settings_service =
+            Arc::new(af_admin::DatabaseVerificationSettingsService::new(
+                af_db::AccountVerificationSettingsRepository::new(
+                    authentication.infrastructure.database.clone(),
+                    Duration::from_secs(config.auth().lookup_timeout_secs()),
+                ),
+                authentication.system_secret_cipher.clone(),
+                config.account_verification().alipay().clone(),
+                upstream_clients.clone(),
+            ));
+        authentication.account_verification_provider = verification_settings_service.clone();
+        authentication.verification_settings_service = Some(verification_settings_service);
         // 回调编排只复用已完成 SSRF、代理和超时基线的共享 Client。
         authentication
             .organization_sso_login_service
@@ -3231,6 +3245,16 @@ impl Bootstrap<Supervised> {
                     .with_provider(Arc::clone(
                         &self.stage.infrastructure.account_verification_provider,
                     )),
+                ),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ))
+            .merge(af_http::build_verification_settings_router(
+                Arc::clone(
+                    self.stage
+                        .infrastructure
+                        .verification_settings_service
+                        .as_ref()
+                        .expect("实名认证设置已在 init_relay 阶段装配"),
                 ),
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
             ))

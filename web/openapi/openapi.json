@@ -23609,6 +23609,146 @@
         ]
       }
     },
+    "/api/admin/account-verification-settings": {
+      "get": {
+        "tags": [
+          "账号认证"
+        ],
+        "summary": "读取实名认证配置",
+        "operationId": "getAdminVerificationSettings",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminVerificationSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "账号认证"
+        ],
+        "summary": "更新实名认证配置",
+        "operationId": "updateAdminVerificationSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminVerificationSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminVerificationSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/platform/organizations/{organization_id}/entitlement": {
       "get": {
         "tags": [
@@ -39331,6 +39471,107 @@
               "null"
             ],
             "format": "int32",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminVerificationSettings": {
+        "type": "object",
+        "required": [
+          "source",
+          "enabled",
+          "private_key_configured",
+          "public_key_configured",
+          "gateway_url",
+          "biz_code",
+          "timeout_secs",
+          "version"
+        ],
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "app_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "private_key_configured": {
+            "type": "boolean"
+          },
+          "public_key_configured": {
+            "type": "boolean"
+          },
+          "gateway_url": {
+            "type": "string"
+          },
+          "biz_code": {
+            "type": "string"
+          },
+          "timeout_secs": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "AdminVerificationSettingsRequest": {
+        "type": "object",
+        "required": [
+          "expected_version",
+          "enabled",
+          "gateway_url",
+          "biz_code",
+          "timeout_secs"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "app_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "private_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "password",
+            "writeOnly": true
+          },
+          "public_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "password",
+            "writeOnly": true
+          },
+          "gateway_url": {
+            "type": "string"
+          },
+          "biz_code": {
+            "type": "string"
+          },
+          "timeout_secs": {
+            "type": "integer",
+            "format": "int64",
             "minimum": 0
           }
         },

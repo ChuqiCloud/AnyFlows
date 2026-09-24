@@ -43,41 +43,69 @@ impl AlipayAccountVerificationProvider {
         settings: &AlipayVerificationSettings,
         http_clients: HttpClientProvider,
     ) -> Result<Self, AlipayProviderConfigError> {
-        if !settings.enabled() {
+        Self::from_parts(
+            settings.enabled(),
+            settings.app_id().map(|value| value.expose()),
+            settings.private_key().map(|value| value.expose()),
+            settings.public_key().map(|value| value.expose()),
+            settings.gateway_url(),
+            settings.biz_code(),
+            settings.timeout_secs(),
+            http_clients,
+        )
+    }
+
+    pub fn from_parts(
+        enabled: bool,
+        app_id: Option<&str>,
+        private_key: Option<&str>,
+        public_key: Option<&str>,
+        gateway_url: &str,
+        biz_code: &str,
+        timeout_secs: u64,
+        http_clients: HttpClientProvider,
+    ) -> Result<Self, AlipayProviderConfigError> {
+        if !enabled {
             return Ok(Self::default());
         }
-        let app_id = settings
-            .app_id()
+        let app_id = app_id
             .ok_or(AlipayProviderConfigError::MissingField("app_id"))?
-            .expose()
             .to_owned();
-        let private_key = settings
-            .private_key()
-            .ok_or(AlipayProviderConfigError::MissingField("private_key"))?
-            .expose();
-        let public_key = settings
-            .public_key()
-            .ok_or(AlipayProviderConfigError::MissingField("public_key"))?
-            .expose();
+        let private_key =
+            private_key.ok_or(AlipayProviderConfigError::MissingField("private_key"))?;
+        let public_key = public_key.ok_or(AlipayProviderConfigError::MissingField("public_key"))?;
         let private_key = RsaPrivateKey::from_pkcs8_pem(private_key)
             .or_else(|_| RsaPrivateKey::from_pkcs1_pem(private_key))
             .map_err(|_| AlipayProviderConfigError::InvalidKey)?;
         let public_key = RsaPublicKey::from_public_key_pem(public_key)
             .or_else(|_| RsaPublicKey::from_pkcs1_pem(public_key))
             .map_err(|_| AlipayProviderConfigError::InvalidKey)?;
-        let gateway_url = url::Url::parse(settings.gateway_url())
-            .map_err(|_| AlipayProviderConfigError::InvalidGateway)?;
+        let gateway_url =
+            url::Url::parse(gateway_url).map_err(|_| AlipayProviderConfigError::InvalidGateway)?;
         Ok(Self {
             client: Some(Arc::new(AlipayClient {
                 app_id,
                 private_key,
                 public_key,
                 gateway_url,
-                biz_code: settings.biz_code().to_owned(),
-                timeout: Duration::from_secs(settings.timeout_secs()),
+                biz_code: biz_code.to_owned(),
+                timeout: Duration::from_secs(timeout_secs),
                 http_clients,
             })),
         })
+    }
+
+    pub fn validate_keys(
+        private_key: &str,
+        public_key: &str,
+    ) -> Result<(), AlipayProviderConfigError> {
+        RsaPrivateKey::from_pkcs8_pem(private_key)
+            .or_else(|_| RsaPrivateKey::from_pkcs1_pem(private_key))
+            .map_err(|_| AlipayProviderConfigError::InvalidKey)?;
+        RsaPublicKey::from_public_key_pem(public_key)
+            .or_else(|_| RsaPublicKey::from_pkcs1_pem(public_key))
+            .map_err(|_| AlipayProviderConfigError::InvalidKey)?;
+        Ok(())
     }
 }
 

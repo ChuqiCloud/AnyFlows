@@ -2,6 +2,30 @@
 
 use sea_orm_migration::prelude::DeriveIden;
 
+pub(in crate::migration) mod account_verification_settings {
+    use super::DeriveIden;
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "account_verification_settings")]
+        Name,
+    }
+    pub(in crate::migration) use Table::Name as Entity;
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        Initialized,
+        AlipayEnabled,
+        AlipayAppId,
+        AlipayCredentials,
+        AlipayGatewayUrl,
+        AlipayBizCode,
+        AlipayTimeoutSecs,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
 pub(in crate::migration) mod announcements {
     use super::DeriveIden;
 
