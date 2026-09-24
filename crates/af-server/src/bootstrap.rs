@@ -39,9 +39,10 @@ use af_admin::{
     DatabasePlaygroundShareService, DatabaseRedemptionService, DatabaseRegistrationService,
     DatabaseSessionAuthenticator, DatabaseSiteSettingsService, DatabaseSubscriptionService,
     DatabaseTokenAuthenticator, DatabaseUserInvitationService, DatabaseUserNotificationService,
-    DatabaseUserProfileService, DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery,
-    InitialSetup, ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
-    OAuthLoginService, OrganizationActivityService, OrganizationActivityServiceConfigError,
+    DatabaseUserProfileService, DatabaseUserTokenService, DatabaseUserWalletService,
+    EmailBindingService, EmailDelivery, InitialSetup, ModelCatalogReader,
+    NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError, OAuthLoginService,
+    OrganizationActivityService, OrganizationActivityServiceConfigError,
     OrganizationApprovalNotificationService, OrganizationApprovalService,
     OrganizationBudgetService, OrganizationContractPriceService, OrganizationCreditTermsService,
     OrganizationCustomRoleBindingService, OrganizationCustomRoleService, OrganizationScimService,
@@ -823,13 +824,17 @@ fn build_user_profile_service(
     passkey_repository: PasskeyRepository,
     system_secret_cipher: SystemSecretCipher,
     public_base_url: Option<&str>,
+    email_binding: Option<EmailBindingService>,
 ) -> DatabaseUserProfileService {
     let service = DatabaseUserProfileService::new(repository, balance_alert_settings)
-        .with_system_secret_cipher(system_secret_cipher);
-    let Some(webauthn) = build_passkey_runtime(public_base_url) else {
-        return service;
-    };
-    service.with_passkey_runtime(passkey_repository, webauthn)
+        .with_system_secret_cipher(system_secret_cipher)
+        .with_passkey_repository(passkey_repository.clone())
+        .with_email_binding_option(email_binding);
+    if let Some(webauthn) = build_passkey_runtime(public_base_url) {
+        service.with_passkey_runtime(passkey_repository, webauthn)
+    } else {
+        service
+    }
 }
 
 /// 仅从数据库中的站点公开地址派生唯一 WebAuthn RP/Origin。
@@ -1305,6 +1310,20 @@ impl Bootstrap<DatabaseReady> {
             system_secret_cipher.clone(),
         ));
         let smtp_delivery: Arc<dyn EmailDelivery> = Arc::new(SmtpEmailDelivery);
+        let email_binding_service = match EmailBindingService::new(
+            auth_challenge_repository.clone(),
+            auth_challenge_rate_limit_repository.clone(),
+            email_settings_repository.clone(),
+            system_secret_cipher.clone(),
+            Arc::clone(&smtp_delivery),
+            auth.session_signing_key().map(|key| key.expose()),
+        ) {
+            Ok(service) => Some(service),
+            Err(error) => {
+                tracing::warn!(error = %error, "邮箱绑定服务未启用");
+                None
+            }
+        };
         let user_notification_repository = Arc::new(
             UserNotificationRepository::new(
                 self.stage.database.clone(),
@@ -1460,6 +1479,7 @@ impl Bootstrap<DatabaseReady> {
                 passkey_repository,
                 system_secret_cipher.clone(),
                 stage.passkey_public_base_url.as_deref(),
+                email_binding_service,
             ));
         // 角色目录与成员绑定共用同一服务实例，保证授权边界和配置一致。
         let organization_custom_role_service: Arc<dyn OrganizationCustomRoleService> =

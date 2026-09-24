@@ -7086,7 +7086,23 @@
       "usernameHint": "Usernames cannot have surrounding spaces or control characters and are limited to 64 bytes.",
       "email": "Email",
       "emailEmpty": "No email linked",
-      "emailHint": "Email is read-only for now; changing it requires a separate verification flow.",
+      "emailHint": "Link an email for notifications and password recovery. A new address must be verified.",
+      "emailBinding": {
+        "codePlaceholder": "Enter the 6-digit code",
+        "sendCode": "Send code",
+        "resendIn": "Resend in {{seconds}}s",
+        "confirm": "Confirm email",
+        "hint": "The code expires in 10 minutes.",
+        "success": "Email linked.",
+        "errors": {
+          "notConfigured": "Email delivery is not configured.",
+          "deliveryFailed": "The verification code could not be sent. Try again shortly.",
+          "rateLimited": "Too many attempts. Try again shortly.",
+          "rejected": "The verification code is invalid or expired.",
+          "conflict": "That email is already linked to another account.",
+          "generic": "The email could not be linked. Try again shortly."
+        }
+      },
       "saved": "Profile saved."
     },
     "password": {

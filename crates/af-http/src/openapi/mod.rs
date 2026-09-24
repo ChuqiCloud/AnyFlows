@@ -1064,6 +1064,9 @@ mod tests {
         assert!(schemas.contains_key("UserTopupOrder"));
         assert!(schemas.contains_key("UserNotificationPreferencesResponse"));
         assert!(schemas.contains_key("UserProfileUpdateRequest"));
+        assert!(schemas.contains_key("UserEmailBindingVerificationRequest"));
+        assert!(schemas.contains_key("UserEmailBindingVerificationResponse"));
+        assert!(schemas.contains_key("UserEmailBindingConfirmRequest"));
         assert!(schemas.contains_key("UserPasswordChangeRequest"));
         assert!(schemas.contains_key("UserNotificationPreferencesRequest"));
         assert!(schemas.contains_key("NotificationKind"));

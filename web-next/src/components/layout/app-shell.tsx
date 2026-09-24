@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 
 import { useAppNavigationItems } from '@/components/layout/app-navigation'
 import { NavigationSectionSwitcher } from '@/components/layout/navigation-section-switcher'
+import { AnnouncementStrip } from '@/features/announcements/announcement-strip'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
 import type { SessionUser } from '@/lib/api/generated/types.gen'
 import { findSidebarSectionKeyByPath, ModuleShell, ModuleSidebarLayoutContainer } from '@/shared/app-shell'
@@ -82,6 +83,7 @@ export function AppShell({ children, currentUser, onLogout }: AppShellProps) {
         />
       }
     >
+      <AnnouncementStrip />
       <div className="mx-auto w-full max-w-[960px]">{children}</div>
     </ModuleShell>
   )

@@ -551,6 +551,9 @@ impl RegistrationService for DatabaseRegistrationService {
                 .policy()
                 .await
                 .map_err(map_registration_repository_error)?;
+            if !policy.email_required() {
+                return Err(RegistrationError::InvalidInput);
+            }
             let issued = self
                 .email_verification
                 .issue(client_ip, &command.email, policy, issued_at)

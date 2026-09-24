@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 
 import { RibbonBeam } from '@/components/brand/ribbon-beam'
 import { PublicSiteHeader } from '@/components/layout/public-site-header'
+import { AnnouncementStrip } from '@/features/announcements/announcement-strip'
 import type { PublicSiteSettings } from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
 
@@ -22,10 +23,13 @@ export function AuthPageShell({ children, className, site }: AuthPageShellProps)
       <RibbonBeam className="-z-10 opacity-35" count={12} />
 
       <PublicSiteHeader siteName={siteName} logoUrl={site?.brand.logo_url} />
+      <div className="pt-14">
+        <AnnouncementStrip />
+      </div>
 
       <main
         className={cn(
-          'mx-auto flex min-h-dvh w-full max-w-[1120px] items-center px-4 pt-20 pb-8 sm:px-6',
+          'mx-auto flex min-h-dvh w-full max-w-[1120px] items-center px-4 pt-4 pb-8 sm:px-6',
           className,
         )}
       >

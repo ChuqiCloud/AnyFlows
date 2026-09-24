@@ -20,6 +20,7 @@ const TEST_EMAIL_SUBJECT: &str = "AnyFlows SMTP 配置测试";
 const TEST_EMAIL_BODY: &str =
     "这是一封由 AnyFlows 发送的 SMTP 配置测试邮件。收到此邮件表示当前邮件服务器配置可用。";
 const REGISTRATION_EMAIL_SUBJECT: &str = "AnyFlows 注册验证码";
+const EMAIL_BINDING_SUBJECT: &str = "AnyFlows 邮箱绑定验证码";
 const PASSWORD_RESET_EMAIL_SUBJECT: &str = "AnyFlows 密码重置";
 
 /// 管理 API 使用的 SMTP TLS 模式。
@@ -417,6 +418,29 @@ impl EmailDeliveryRequest {
             cipher,
             recipient,
             REGISTRATION_EMAIL_SUBJECT.to_owned(),
+            body,
+        )
+    }
+
+    pub(crate) fn email_binding_verification(
+        record: &EmailSettingsRecord,
+        cipher: &SystemSecretCipher,
+        recipient: String,
+        code: &str,
+        ttl_seconds: u64,
+    ) -> Result<Self, AdminEmailSettingsError> {
+        if code.len() != 6 || !code.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err(AdminEmailSettingsError::Internal);
+        }
+        let ttl_minutes = ttl_seconds.div_ceil(60);
+        let body = format!(
+            "您的 AnyFlows 邮箱绑定验证码是：{code}\n\n验证码将在 {ttl_minutes} 分钟后失效。若非本人操作，请忽略此邮件。"
+        );
+        Self::from_record(
+            record,
+            cipher,
+            recipient,
+            EMAIL_BINDING_SUBJECT.to_owned(),
             body,
         )
     }

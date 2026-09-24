@@ -57,7 +57,7 @@ export function buildRegistrationFormSchema(
         path: ['email'],
       })
     }
-    if (values.email.length > 0 && values.verificationCode.length === 0) {
+    if (emailRequired && values.email.length > 0 && values.verificationCode.length === 0) {
       context.addIssue({
         code: 'custom',
         message: messages.verificationCodeRequired,
@@ -70,11 +70,11 @@ export function buildRegistrationFormSchema(
   )
 }
 
-export function toRegistrationRequest(values: RegistrationFormValues, turnstileToken?: string): RegistrationRequestWritable {
+export function toRegistrationRequest(values: RegistrationFormValues, emailRequired: boolean, turnstileToken?: string): RegistrationRequestWritable {
   return {
     username: values.username,
-    email: values.email || null,
-    verification_code: values.verificationCode || null,
+    email: emailRequired ? (values.email || null) : null,
+    verification_code: emailRequired ? (values.verificationCode || null) : null,
     invite_code: values.inviteCode || null,
     password: values.password,
     ...(turnstileToken ? { turnstile_token: turnstileToken } : {}),

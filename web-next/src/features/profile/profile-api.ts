@@ -2,6 +2,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 
 import { apiClient } from '@/lib/api'
 import {
+  confirmUserEmailBinding,
   changeUserPassword,
   disableUserTwoFactor,
   enableUserTwoFactor,
@@ -15,11 +16,14 @@ import {
   markOrganizationApprovalNotificationsRead,
   renameUserPasskey,
   revokeUserPasskey,
+  sendUserEmailBindingVerification,
   startUserPasskeyRegistration,
   updateUserNotificationPreferences,
   updateUserProfile,
 } from '@/lib/api/generated/sdk.gen'
 import type {
+  UserEmailBindingConfirmRequest,
+  UserEmailBindingVerificationRequest,
   UserNotificationPreferencesRequest,
   OrganizationApprovalNotificationListResponse,
   UserPasswordChangeRequest,
@@ -54,6 +58,28 @@ export function useUpdateUserProfile() {
   return useMutation({
     mutationFn: async (body: UserProfileUpdateRequest) => {
       const { data } = await updateUserProfile({ body, client: apiClient })
+      return data
+    },
+    onSuccess: (profile) => queryClient.setQueryData(userProfileQueryKey, profile),
+  })
+}
+
+/** 向待绑定邮箱发送验证码。 */
+export function useSendUserEmailBindingVerification() {
+  return useMutation({
+    mutationFn: async (body: UserEmailBindingVerificationRequest) => {
+      const { data } = await sendUserEmailBindingVerification({ body, client: apiClient })
+      return data
+    },
+  })
+}
+
+/** 使用验证码绑定或更换当前用户邮箱，并刷新资料缓存。 */
+export function useConfirmUserEmailBinding() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (body: UserEmailBindingConfirmRequest) => {
+      const { data } = await confirmUserEmailBinding({ body, client: apiClient })
       return data
     },
     onSuccess: (profile) => queryClient.setQueryData(userProfileQueryKey, profile),
