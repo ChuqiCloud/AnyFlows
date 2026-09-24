@@ -22,7 +22,7 @@ import {
   updateUserProfile,
 } from '@/lib/api/generated/sdk.gen'
 import type {
-  UserEmailBindingConfirmRequest,
+  UserEmailBindingConfirmRequestWritable,
   UserEmailBindingVerificationRequest,
   UserNotificationPreferencesRequest,
   OrganizationApprovalNotificationListResponse,
@@ -78,7 +78,7 @@ export function useSendUserEmailBindingVerification() {
 export function useConfirmUserEmailBinding() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (body: UserEmailBindingConfirmRequest) => {
+    mutationFn: async (body: UserEmailBindingConfirmRequestWritable) => {
       const { data } = await confirmUserEmailBinding({ body, client: apiClient })
       return data
     },
