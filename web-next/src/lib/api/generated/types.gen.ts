@@ -3161,6 +3161,13 @@ export type UsageLogReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'h
 export type UserEmailBindingConfirmRequest = {
     email: string;
 };
+export type UserEmailBindingVerificationRequest = {
+    email: string;
+};
+export type UserEmailBindingVerificationResponse = {
+    expires_at: number;
+    next_send_at: number;
+};
 export type UserFailedCallLog = {
     id: number;
     request_id: string;
@@ -3273,13 +3280,6 @@ export type UserProfileResponse = {
 };
 export type UserProfileUpdateRequest = {
     username: string;
-};
-export type UserEmailBindingVerificationRequest = {
-    email: string;
-};
-export type UserEmailBindingVerificationResponse = {
-    expires_at: number;
-    next_send_at: number;
 };
 export type UserRedemptionRequest = {
     code: string;
