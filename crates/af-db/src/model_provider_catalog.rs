@@ -1,7 +1,7 @@
 use std::{fmt, time::Duration};
 
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, QueryOrder, Set,
+    ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set,
     entity::prelude::TimeDateTimeWithTimeZone, sea_query::Expr,
 };
 use thiserror::Error;
