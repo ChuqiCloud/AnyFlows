@@ -120,6 +120,7 @@ export function RegistrationForm({
   const onSendVerification = async () => {
     setVerificationError(undefined)
     setVerificationNotice(false)
+    if (!emailRequired) return
     if (cooldownSeconds > 0 || !(await form.trigger('email'))) return
     if (turnstileSiteKey && !turnstileToken) {
       setVerificationError('turnstileRequired')
@@ -159,7 +160,7 @@ export function RegistrationForm({
       return
     }
     try {
-      const response = await mutation.mutateAsync(toRegistrationRequest(values, turnstileToken))
+      const response = await mutation.mutateAsync(toRegistrationRequest(values, emailRequired, turnstileToken))
       if (response.user.role !== 'user') {
         setSubmitError('unavailable')
         return
@@ -212,17 +213,8 @@ export function RegistrationForm({
             ) : null}
           </div>
 
-          <div className="grid gap-1.5">
-            <div className="flex items-center justify-between gap-3">
-              <label htmlFor="registration-email" className="text-sm font-medium">
-                {t('registration.form.email')}
-              </label>
-              {!emailRequired ? (
-                <span className="text-[0.6875rem] text-muted-foreground">
-                  {t('registration.form.optional')}
-                </span>
-              ) : null}
-            </div>
+          {emailRequired ? <div className="grid gap-1.5">
+            <label htmlFor="registration-email" className="text-sm font-medium">{t('registration.form.email')}</label>
             <Input
               className="h-11 px-3"
               id="registration-email"
@@ -248,7 +240,7 @@ export function RegistrationForm({
                 {t('registration.form.emailHelp')}
               </p>
             )}
-          </div>
+          </div> : null}
 
           {turnstileSiteKey ? (
             <TurnstileWidget
@@ -258,7 +250,7 @@ export function RegistrationForm({
             />
           ) : null}
 
-          {hasEmail ? (
+          {emailRequired && hasEmail ? (
             <div className="grid gap-1.5">
               <div className="flex items-center justify-between gap-3">
                 <label htmlFor="registration-verification-code" className="text-sm font-medium">

@@ -30,6 +30,7 @@ pub const MAX_AUTH_CHALLENGE_ATTEMPTS: u32 = 10;
 const REGISTRATION_EMAIL_PURPOSE: i16 = 1;
 const PASSWORD_RESET_PURPOSE: i16 = 2;
 const PASSKEY_AUTHENTICATION_PURPOSE: i16 = 3;
+const EMAIL_BINDING_PURPOSE: i16 = 4;
 
 /// 认证挑战的闭合用途；不同用途必须使用独立摘要域。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -40,6 +41,8 @@ pub enum AuthChallengePurpose {
     PasswordReset,
     /// Passkey 公开登录的主体与客户端限流。
     PasskeyAuthentication,
+    /// 已登录用户绑定或更换邮箱前验证新邮箱控制权。
+    EmailBinding,
 }
 
 impl AuthChallengePurpose {
@@ -48,6 +51,7 @@ impl AuthChallengePurpose {
             Self::RegistrationEmail => REGISTRATION_EMAIL_PURPOSE,
             Self::PasswordReset => PASSWORD_RESET_PURPOSE,
             Self::PasskeyAuthentication => PASSKEY_AUTHENTICATION_PURPOSE,
+            Self::EmailBinding => EMAIL_BINDING_PURPOSE,
         }
     }
 
@@ -55,6 +59,7 @@ impl AuthChallengePurpose {
         match value {
             REGISTRATION_EMAIL_PURPOSE => Ok(Self::RegistrationEmail),
             PASSWORD_RESET_PURPOSE => Ok(Self::PasswordReset),
+            EMAIL_BINDING_PURPOSE => Ok(Self::EmailBinding),
             _ => Err(record_internal_error(
                 AuthChallengeRepositoryError::Invariant,
             )),
@@ -91,6 +96,7 @@ impl AuthChallengeIssue {
             (purpose, target_user_id),
             (AuthChallengePurpose::RegistrationEmail, None)
                 | (AuthChallengePurpose::PasswordReset, Some(_))
+                | (AuthChallengePurpose::EmailBinding, Some(_))
         ) {
             return Err(AuthChallengeInputError::InvalidTarget);
         }
@@ -544,6 +550,7 @@ fn validate_persisted(
         (purpose, model.target_user_id),
         (AuthChallengePurpose::RegistrationEmail, None)
             | (AuthChallengePurpose::PasswordReset, Some(_))
+            | (AuthChallengePurpose::EmailBinding, Some(_))
     );
     if !target_is_valid
         || !(0..=model.max_attempts).contains(&model.attempts)

@@ -279,6 +279,10 @@ fn map_user_profile_error(error: UserProfileError) -> OrganizationSsoIdentityBin
         | UserProfileError::PasskeyRegistrationRejected
         | UserProfileError::PasskeyNotFound
         | UserProfileError::Conflict
+        | UserProfileError::EmailVerificationRejected
+        | UserProfileError::EmailNotConfigured
+        | UserProfileError::EmailDeliveryFailed
+        | UserProfileError::EmailVerificationRateLimited { .. }
         | UserProfileError::Internal => OrganizationSsoIdentityBindingServiceError::Internal,
     }
 }

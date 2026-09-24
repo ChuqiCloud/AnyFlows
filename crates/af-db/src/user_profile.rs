@@ -86,7 +86,7 @@ impl UserProfileRecord {
         &self.username
     }
 
-    /// 返回已保存邮箱；邮箱不会在本切片中直接修改。
+    /// 返回已保存邮箱。
     #[must_use]
     pub fn email(&self) -> Option<&str> {
         self.email.as_deref()
@@ -134,7 +134,7 @@ pub enum UserProfileMutationOutcome {
     Updated(UserProfileRecord),
     /// 用户不存在、被禁用或已软删除。
     NotFound,
-    /// 用户名与其他有效用户冲突。
+    /// 用户名或邮箱与其他有效用户冲突。
     Conflict,
 }
 
@@ -237,7 +237,7 @@ impl UserProfileRepository {
         }
     }
 
-    /// 在用户边界内更新登录用户名，邮箱保持只读以等待邮箱变更验证切片。
+    /// 在用户边界内更新登录用户名。
     pub async fn update_username(
         &self,
         user_id: UserId,
@@ -246,6 +246,23 @@ impl UserProfileRepository {
         match timeout(
             self.operation_timeout,
             self.update_username_inner(user_id, username),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(record_internal_error(UserProfileRepositoryError::Timeout)),
+        }
+    }
+
+    /// 在邮箱验证码已经由应用层消费后更新当前用户邮箱。
+    pub async fn update_email(
+        &self,
+        user_id: UserId,
+        email: String,
+    ) -> Result<UserProfileMutationOutcome, UserProfileRepositoryError> {
+        match timeout(
+            self.operation_timeout,
+            self.update_email_inner(user_id, email),
         )
         .await
         {
@@ -401,6 +418,49 @@ impl UserProfileRepository {
         }
         let mut active = existing.into_active_model();
         active.username = Set(username);
+        let saved = active
+            .update(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_write_error)?;
+        let record = record_from_model(saved)?;
+        commit_transaction(transaction).await?;
+        Ok(UserProfileMutationOutcome::Updated(record))
+    }
+
+    async fn update_email_inner(
+        &self,
+        user_id: UserId,
+        email: String,
+    ) -> Result<UserProfileMutationOutcome, UserProfileRepositoryError> {
+        if !valid_email(&email) {
+            return Err(record_internal_error(UserProfileRepositoryError::Invariant));
+        }
+        let transaction = self.begin_transaction().await?;
+        let Some(existing) = lock_user(&transaction, user_id).await? else {
+            commit_transaction(transaction).await?;
+            return Ok(UserProfileMutationOutcome::NotFound);
+        };
+        if users::Entity::find()
+            .filter(users::Column::Email.eq(&email))
+            .filter(users::Column::Id.ne(user_id.get()))
+            .filter(users::Column::DeletedAt.is_null())
+            .one(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| record_internal_error(UserProfileRepositoryError::Query))?
+            .is_some()
+        {
+            commit_transaction(transaction).await?;
+            return Ok(UserProfileMutationOutcome::Conflict);
+        }
+        if existing.email.as_deref() == Some(email.as_str()) {
+            let record = record_from_model(existing)?;
+            commit_transaction(transaction).await?;
+            return Ok(UserProfileMutationOutcome::Updated(record));
+        }
+        let mut active = existing.into_active_model();
+        active.email = Set(Some(email));
         let saved = active
             .update(&transaction)
             .with_subscriber(NoSubscriber::default())

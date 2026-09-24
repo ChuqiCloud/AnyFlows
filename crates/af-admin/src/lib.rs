@@ -14,6 +14,7 @@ mod credential_proxy;
 mod credential_read;
 mod custom_oauth2;
 mod debug_trace;
+mod email_binding;
 mod email_settings;
 #[cfg(test)]
 mod email_settings_tests;
@@ -174,6 +175,9 @@ pub use debug_trace::{
     AdminDebugTraceSettingsRuntimeApplier, AdminDebugTraceSnapshotScope, AdminDebugTraceSnapshots,
     AdminDebugTraceSnapshotsFuture, AdminDebugTraceUpdateFuture,
     DEFAULT_ADMIN_DEBUG_TRACE_PAGE_SIZE, DatabaseAdminDebugTraceService,
+};
+pub use email_binding::{
+    EmailBindingConfigError, EmailBindingError, EmailBindingIssued, EmailBindingService,
 };
 pub use email_settings::{
     AdminEmailSettings, AdminEmailSettingsCommand, AdminEmailSettingsError,
@@ -641,7 +645,8 @@ pub use user_notifications::{
 };
 pub use user_profile::{
     DatabaseUserProfileService, MAX_USER_PROFILE_PASSWORD_BYTES, MAX_USER_PROFILE_USERNAME_BYTES,
-    MIN_USER_PROFILE_PASSWORD_BYTES, UserNotificationPreferences,
+    MIN_USER_PROFILE_PASSWORD_BYTES, UserEmailBindingConfirmCommand, UserEmailBindingConfirmFuture,
+    UserEmailBindingStartCommand, UserEmailBindingStartFuture, UserNotificationPreferences,
     UserNotificationPreferencesCommand, UserNotificationUpdateFuture, UserPasskeyListFuture,
     UserPasskeyRegistrationFuture, UserPasskeyRegistrationOptionsFuture, UserPasskeyRenameFuture,
     UserPasskeyRevokeFuture, UserPasswordChangeCommand, UserPasswordChangeFuture, UserProfile,

@@ -33,6 +33,7 @@ import type {
 import { isValidProfilePassword, isValidProfileUsername } from './profile-form-model'
 import {
   useChangeUserPassword,
+  useConfirmUserEmailBinding,
   useDisableUserTwoFactor,
   useEnableUserTwoFactor,
   useFinishUserPasskeyRegistration,
@@ -41,6 +42,7 @@ import {
   useRenameUserPasskey,
   useRevokeUserPasskey,
   useStartUserPasskeyRegistration,
+  useSendUserEmailBindingVerification,
   useUpdateUserNotificationPreferences,
   useUpdateUserProfile,
   useUserPasskeys,
@@ -158,9 +160,21 @@ function ErrorPanel({ onRetry }: { onRetry: () => void }) {
 function ProfileCard({ profile }: { profile: UserProfileResponse }) {
   const { t } = useTranslation()
   const updateMutation = useUpdateUserProfile()
+  const sendEmailMutation = useSendUserEmailBindingVerification()
+  const confirmEmailMutation = useConfirmUserEmailBinding()
   const [username, setUsername] = useState(profile.username)
+  const [email, setEmail] = useState(profile.email ?? '')
+  const [verificationCode, setVerificationCode] = useState('')
+  const [nextSendAt, setNextSendAt] = useState(0)
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
 
   useEffect(() => setUsername(profile.username), [profile.username])
+  useEffect(() => setEmail(profile.email ?? ''), [profile.email])
+  useEffect(() => {
+    if (nextSendAt <= now) return undefined
+    const timer = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000)
+    return () => window.clearInterval(timer)
+  }, [nextSendAt, now])
 
   const usernameValid = isValidProfileUsername(username)
   const changed = username !== profile.username
@@ -175,6 +189,29 @@ function ProfileCard({ profile }: { profile: UserProfileResponse }) {
   }
 
   const error = errorCode(updateMutation.error)
+  const emailError = errorCode(confirmEmailMutation.error ?? sendEmailMutation.error)
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email)
+  const cooldownSeconds = Math.max(0, nextSendAt - now)
+  const sendEmail = async () => {
+    if (!emailValid || cooldownSeconds > 0 || sendEmailMutation.isPending) return
+    try {
+      const response = await sendEmailMutation.mutateAsync({ email })
+      setNextSendAt(response.next_send_at)
+      setNow(Math.floor(Date.now() / 1000))
+    } catch {
+      // 错误在邮箱绑定区域展示。
+    }
+  }
+  const confirmEmail = async () => {
+    if (!emailValid || !/^\d{6}$/u.test(verificationCode) || confirmEmailMutation.isPending) return
+    try {
+      await confirmEmailMutation.mutateAsync({ email, verification_code: verificationCode })
+      setVerificationCode('')
+      setNextSendAt(0)
+    } catch {
+      // 错误在邮箱绑定区域展示。
+    }
+  }
   return (
     <Card shadow="none" className="overflow-hidden border border-[var(--hairline)]">
       <CardHeader className="border-b border-[var(--hairline)] bg-surface-1/45 p-5">
@@ -199,9 +236,23 @@ function ProfileCard({ profile }: { profile: UserProfileResponse }) {
             <label className="text-xs font-medium leading-none text-foreground" htmlFor="profile-email">{t('profile.profile.email')}</label>
             <div className="relative">
               <Mail className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-              <Input classNames={{ input: 'pl-9' }} id="profile-email" isDisabled isReadOnly placeholder={t('profile.profile.emailEmpty')} size="sm" value={profile.email ?? ''} />
+              <Input classNames={{ input: 'pl-9' }} id="profile-email" type="email" placeholder={t('profile.profile.emailEmpty')} size="sm" value={email} onChange={(event) => { setEmail(event.target.value); confirmEmailMutation.reset(); sendEmailMutation.reset() }} />
             </div>
             <p className="text-[0.6875rem] leading-4 text-muted-foreground">{t('profile.profile.emailHint')}</p>
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+              <Input id="profile-email-code" inputMode="numeric" maxLength={6} placeholder={t('profile.profile.emailBinding.codePlaceholder')} size="sm" value={verificationCode} onChange={(event) => setVerificationCode(event.target.value.replace(/\D/gu, '').slice(0, 6))} />
+              <Button type="button" size="sm" variant="bordered" isDisabled={!emailValid || cooldownSeconds > 0 || sendEmailMutation.isPending} onPress={() => void sendEmail()}>
+                {sendEmailMutation.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}{cooldownSeconds > 0 ? t('profile.profile.emailBinding.resendIn', { seconds: cooldownSeconds }) : t('profile.profile.emailBinding.sendCode')}
+              </Button>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[0.6875rem] leading-4 text-muted-foreground">{t('profile.profile.emailBinding.hint')}</p>
+              <Button type="button" size="sm" color="primary" isDisabled={!emailValid || !/^\d{6}$/u.test(verificationCode) || confirmEmailMutation.isPending} onPress={() => void confirmEmail()}>
+                {confirmEmailMutation.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}{t('profile.profile.emailBinding.confirm')}
+              </Button>
+            </div>
+            {confirmEmailMutation.isSuccess ? <p role="status" className="text-xs text-success">{t('profile.profile.emailBinding.success')}</p> : null}
+            {emailError ? <p role="alert" className="text-xs text-destructive">{t(`profile.profile.emailBinding.errors.${emailError === 'email_not_configured' ? 'notConfigured' : emailError === 'email_delivery_failed' ? 'deliveryFailed' : emailError === 'registration_rate_limited' ? 'rateLimited' : emailError === 'registration_rejected' ? 'rejected' : emailError === 'user_conflict' ? 'conflict' : 'generic'}`)}</p> : null}
           </div>
           {updateMutation.isSuccess ? <p role="status" className="flex items-center gap-1.5 text-xs text-success"><Check className="size-3.5" aria-hidden="true" />{t('profile.profile.saved')}</p> : null}
           {updateMutation.isError ? <p role="alert" className="text-xs text-destructive">{t(error === 'user_conflict' ? 'profile.errors.conflict' : 'profile.errors.save')}</p> : null}

@@ -7168,7 +7168,23 @@
       "usernameHint": "用户名不能包含首尾空格或控制字符，最长 64 字节。",
       "email": "邮箱",
       "emailEmpty": "未绑定邮箱",
-      "emailHint": "暂不支持在此修改邮箱。",
+      "emailHint": "绑定邮箱后可用于通知和找回密码，换绑需要验证新邮箱。",
+      "emailBinding": {
+        "codePlaceholder": "输入 6 位验证码",
+        "sendCode": "发送验证码",
+        "resendIn": "{{seconds}} 秒后重发",
+        "confirm": "确认绑定",
+        "hint": "验证码 10 分钟内有效。",
+        "success": "邮箱已绑定。",
+        "errors": {
+          "notConfigured": "站点尚未配置邮件服务。",
+          "deliveryFailed": "验证码发送失败，请稍后重试。",
+          "rateLimited": "发送过于频繁，请稍后重试。",
+          "rejected": "验证码无效或已过期。",
+          "conflict": "该邮箱已被其他用户使用。",
+          "generic": "邮箱绑定失败，请稍后重试。"
+        }
+      },
       "saved": "个人资料已保存。"
     },
     "password": {

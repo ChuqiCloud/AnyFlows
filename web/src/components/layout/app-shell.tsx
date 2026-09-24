@@ -17,6 +17,7 @@ import {
 import { Kbd } from '@/components/ui/kbd'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { AnnouncementStrip } from '@/features/announcements/announcement-strip'
 import { SiteBrandMark } from '@/features/site-settings/site-brand-mark'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
 import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
@@ -191,6 +192,7 @@ export function AppShell({ title, children, currentUser, onLogout }: AppShellPro
         </header>
 
         <main className="flex-1 px-4 py-4 md:px-5">
+          <AnnouncementStrip />
           <div className="mx-auto w-full max-w-[960px]">{children}</div>
         </main>
       </SidebarInset>

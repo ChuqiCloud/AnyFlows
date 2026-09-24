@@ -3158,6 +3158,16 @@ export type SubscriptionPlanStatus = 'active' | 'disabled';
 export type UsageLogOperation = 'chat' | 'responses' | 'responses_compact' | 'embedding' | 'image' | 'audio' | 'rerank' | 'video' | 'count_tokens';
 export type UsageLogProtocol = 'open_ai_chat' | 'open_ai_responses' | 'open_ai_embeddings' | 'open_ai_images' | 'open_ai_audio' | 'open_ai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
 export type UsageLogReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'extra_high' | 'max';
+export type UserEmailBindingConfirmRequest = {
+    email: string;
+};
+export type UserEmailBindingVerificationRequest = {
+    email: string;
+};
+export type UserEmailBindingVerificationResponse = {
+    expires_at: number;
+    next_send_at: number;
+};
 export type UserFailedCallLog = {
     id: number;
     request_id: string;
@@ -3753,6 +3763,10 @@ export type ResponsesCompactItemWritable = unknown;
 export type SetupRequestWritable = {
     username: string;
     password: string;
+};
+export type UserEmailBindingConfirmRequestWritable = {
+    email: string;
+    verification_code: string;
 };
 export type UserTopupOrderWritable = {
     order_id: string;
@@ -4710,6 +4724,42 @@ export type UpdateUserProfileResponses = {
     200: UserProfileResponse;
 };
 export type UpdateUserProfileResponse = UpdateUserProfileResponses[keyof UpdateUserProfileResponses];
+export type SendUserEmailBindingVerificationData = {
+    body: UserEmailBindingVerificationRequest;
+    path?: never;
+    query?: never;
+    url: '/api/account/profile/email-verification';
+};
+export type SendUserEmailBindingVerificationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    409: ManagementError;
+    429: ManagementError;
+    500: ManagementError;
+    502: ManagementError;
+};
+export type SendUserEmailBindingVerificationError = SendUserEmailBindingVerificationErrors[keyof SendUserEmailBindingVerificationErrors];
+export type SendUserEmailBindingVerificationResponses = {
+    200: UserEmailBindingVerificationResponse;
+};
+export type SendUserEmailBindingVerificationResponse = SendUserEmailBindingVerificationResponses[keyof SendUserEmailBindingVerificationResponses];
+export type ConfirmUserEmailBindingData = {
+    body: UserEmailBindingConfirmRequestWritable;
+    path?: never;
+    query?: never;
+    url: '/api/account/profile/email';
+};
+export type ConfirmUserEmailBindingErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type ConfirmUserEmailBindingError = ConfirmUserEmailBindingErrors[keyof ConfirmUserEmailBindingErrors];
+export type ConfirmUserEmailBindingResponses = {
+    200: UserProfileResponse;
+};
+export type ConfirmUserEmailBindingResponse = ConfirmUserEmailBindingResponses[keyof ConfirmUserEmailBindingResponses];
 export type ChangeUserPasswordData = {
     body: UserPasswordChangeRequest;
     path?: never;
