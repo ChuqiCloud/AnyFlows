@@ -49616,6 +49616,29 @@
           "max"
         ]
       },
+      "UserEmailBindingConfirmRequest": {
+        "type": "object",
+        "required": [
+          "email",
+          "verification_code"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 320,
+            "minLength": 3
+          },
+          "verification_code": {
+            "type": "string",
+            "writeOnly": true,
+            "maxLength": 6,
+            "minLength": 6,
+            "pattern": "^[0-9]{6}$"
+          }
+        },
+        "additionalProperties": false
+      },
       "UserFailedCallLog": {
         "type": "object",
         "required": [
@@ -50259,29 +50282,6 @@
           "next_send_at": {
             "type": "integer",
             "format": "int64"
-          }
-        },
-        "additionalProperties": false
-      },
-      "UserEmailBindingConfirmRequest": {
-        "type": "object",
-        "required": [
-          "email",
-          "verification_code"
-        ],
-        "properties": {
-          "email": {
-            "type": "string",
-            "format": "email",
-            "maxLength": 320,
-            "minLength": 3
-          },
-          "verification_code": {
-            "type": "string",
-            "writeOnly": true,
-            "maxLength": 6,
-            "minLength": 6,
-            "pattern": "^[0-9]{6}$"
           }
         },
         "additionalProperties": false
