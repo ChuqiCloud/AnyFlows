@@ -3280,7 +3280,6 @@ export type UserEmailBindingVerificationResponse = {
 };
 export type UserEmailBindingConfirmRequest = {
     email: string;
-    verification_code: string;
 };
 export type UserRedemptionRequest = {
     code: string;
@@ -3764,6 +3763,10 @@ export type ResponsesCompactItemWritable = unknown;
 export type SetupRequestWritable = {
     username: string;
     password: string;
+};
+export type UserEmailBindingConfirmRequestWritable = {
+    email: string;
+    verification_code: string;
 };
 export type UserTopupOrderWritable = {
     order_id: string;
@@ -4741,7 +4744,7 @@ export type SendUserEmailBindingVerificationResponses = {
 };
 export type SendUserEmailBindingVerificationResponse = SendUserEmailBindingVerificationResponses[keyof SendUserEmailBindingVerificationResponses];
 export type ConfirmUserEmailBindingData = {
-    body: UserEmailBindingConfirmRequest;
+    body: UserEmailBindingConfirmRequestWritable;
     path?: never;
     query?: never;
     url: '/api/account/profile/email';
