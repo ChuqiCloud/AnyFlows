@@ -59,6 +59,9 @@ export function useSubmitOrganizationVerification(organizationId: number) {
         url: '/api/organizations/{organization_id}/verification',
         path: { organization_id: organizationId },
         body: form,
+        // FormData 包含动态 file:<index> 部件，必须保留 multipart 边界，不能走默认 JSON 序列化。
+        bodySerializer: null,
+        headers: { 'Content-Type': null },
         security: [{ key: 'bearerAuth', scheme: 'bearer', type: 'http' }],
       }) as unknown as { data: OrganizationVerificationResponse }
       return result.data

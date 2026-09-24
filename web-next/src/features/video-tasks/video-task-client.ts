@@ -8,7 +8,7 @@ import type {
   VideoTaskStatus,
 } from './video-task-types'
 import { apiUrl } from '@/lib/api/endpoint'
-import { getManagementSessionToken } from '@/lib/api/session-token'
+import { getManagementSessionToken, invalidateManagementSession } from '@/lib/api/session-token'
 
 const MAX_RESPONSE_BYTES = 1024 * 1024
 const taskIdPattern = /^[0-9a-f]{32}$/
@@ -30,13 +30,15 @@ export async function submitVideoTask(
   request: VideoTaskRequest,
   signal?: AbortSignal,
 ) {
+  const authorization = sessionAuthorization()
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Idempotency-Key': idempotencyKey,
+  }
+  if (authorization) headers.Authorization = authorization
   const response = await fetch(apiUrl('/api/playground/v1/videos/generations'), {
     method: 'POST',
-    headers: {
-      Authorization: sessionAuthorization(),
-      'Content-Type': 'application/json',
-      'Idempotency-Key': idempotencyKey,
-    },
+    headers,
     body: JSON.stringify(request),
     cache: 'no-store',
     signal,
@@ -57,8 +59,9 @@ export async function pollVideoTask(
   signal?: AbortSignal,
 ): Promise<VideoTaskPollResponse> {
   if (!taskIdPattern.test(taskId)) throw requestError(404, undefined)
+  const authorization = sessionAuthorization()
   const response = await fetch(apiUrl(`/api/playground/v1/videos/${encodeURIComponent(taskId)}`), {
-    headers: { Authorization: sessionAuthorization() },
+    headers: authorization ? { Authorization: authorization } : {},
     cache: 'no-store',
     signal,
   })
@@ -77,8 +80,9 @@ export async function listVideoTasks(
   }
   const query = new URLSearchParams({ limit: '20' })
   if (before) query.set('before', before)
+  const authorization = sessionAuthorization()
   const response = await fetch(apiUrl(`/api/playground/v1/videos?${query.toString()}`), {
-    headers: { Authorization: sessionAuthorization() },
+    headers: authorization ? { Authorization: authorization } : {},
     cache: 'no-store',
     signal,
   })
@@ -101,6 +105,7 @@ export function videoTaskError(error: unknown): VideoTaskApiError {
 }
 
 async function readJson(response: Response): Promise<unknown> {
+  if (response.status === 401) invalidateManagementSession()
   const text = await response.text()
   if (new TextEncoder().encode(text).byteLength > MAX_RESPONSE_BYTES) {
     throw requestError(503, undefined)
