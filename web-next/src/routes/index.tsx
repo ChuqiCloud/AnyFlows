@@ -6,6 +6,7 @@ import type { RouteObject } from 'react-router-dom'
 
 import { PublicModelPage } from '@/features/models/public-model-page'
 import { ApiExplorerPage } from '@/features/api-explorer/api-explorer-page'
+import { LandingPage } from '@/features/landing/landing-page'
 import { OrganizationActivityPage } from '@/features/organization-activity/organization-activity-page'
 import { OrganizationApiKeyPage } from '@/features/organization-api-keys/organization-api-key-page'
 import { OrganizationApprovalPage } from '@/features/organization-approvals/organization-approval-page'
@@ -237,8 +238,7 @@ const gateModuleRoutes = moduleRoutes.filter(
 )
 
 export const routes: RouteObject[] = [
-  // 首页（landing）暂缓迁移，先落到控制台避免空路由。
-  { index: true, element: <Navigate to="/console" replace /> },
+  { index: true, element: <LandingPage /> },
   { path: 'models', element: <PublicModelPage /> },
   { path: 'api', element: <ApiExplorerPage /> },
   { path: 'register', element: <RegistrationRoute /> },
