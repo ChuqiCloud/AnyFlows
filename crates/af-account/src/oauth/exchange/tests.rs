@@ -3,14 +3,17 @@ use std::{
     io::{Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use af_domain::{ChannelId, CredentialId, UserId};
 use af_httpclient::{
     HttpClientConfig, HttpClientPool, HttpTimeouts, PooledClient, ProxyConfig, RemoteDnsPolicy,
 };
-use base64::{Engine as _, engine::general_purpose::STANDARD};
+use base64::{
+    Engine as _,
+    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
+};
 use url::{Url, form_urlencoded};
 
 use super::*;
@@ -411,6 +414,71 @@ async fn codex_exchange_requires_and_extracts_the_account_claim() {
     assert_eq!(result.oauth_project_id(), None);
 }
 
+#[test]
+fn codex_response_accepts_current_token_shape_and_derives_expiration() {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let access_token = test_jwt(serde_json::json!({ "exp": now + 3_600 }));
+    let id_token = test_jwt(serde_json::json!({
+        "https://api.openai.com/auth": { "chatgpt_account_id": "org-codex-test" }
+    }));
+    let wire: TokenResponseWire = serde_json::from_value(serde_json::json!({
+        "access_token": access_token,
+        "refresh_token": "refresh-token-marker",
+        "id_token": id_token,
+    }))
+    .unwrap();
+    let initial = OAuthTokenSet::from_wire(UpstreamOAuthProvider::Codex, context(), wire).unwrap();
+    assert_eq!(initial.oauth_account_key(), Some("org-codex-test"));
+    assert!((3_599..=3_600).contains(&initial.expires_in().unwrap().as_secs()));
+
+    let wire: TokenResponseWire = serde_json::from_value(serde_json::json!({
+        "access_token": access_token,
+    }))
+    .unwrap();
+    let refreshed = OAuthRefreshedTokenSet::from_wire(
+        UpstreamOAuthProvider::Codex,
+        refresh_request(UpstreamOAuthProvider::Codex),
+        wire,
+    )
+    .unwrap();
+    assert_eq!(refreshed.refresh_token(), REFRESH_TOKEN);
+    assert!((3_599..=3_600).contains(&refreshed.expires_in().unwrap().as_secs()));
+
+    let wire: TokenResponseWire = serde_json::from_value(serde_json::json!({
+        "access_token": "opaque-access-token",
+        "refresh_token": "refresh-token-marker",
+        "id_token": id_token,
+    }))
+    .unwrap();
+    assert!(matches!(
+        OAuthTokenSet::from_wire(UpstreamOAuthProvider::Codex, context(), wire),
+        Err(OAuthTokenExchangeError::InvalidTokenResponse)
+    ));
+    let wire: TokenResponseWire = serde_json::from_value(serde_json::json!({
+        "access_token": access_token,
+        "token_type": "mac",
+        "refresh_token": "refresh-token-marker",
+        "id_token": id_token,
+    }))
+    .unwrap();
+    assert!(matches!(
+        OAuthTokenSet::from_wire(UpstreamOAuthProvider::Codex, context(), wire),
+        Err(OAuthTokenExchangeError::InvalidTokenResponse)
+    ));
+}
+
+fn test_jwt(payload: serde_json::Value) -> String {
+    format!(
+        "{}.{}.{}",
+        URL_SAFE_NO_PAD.encode(br#"{"alg":"RS256","typ":"JWT"}"#),
+        URL_SAFE_NO_PAD.encode(payload.to_string()),
+        URL_SAFE_NO_PAD.encode("signature")
+    )
+}
+
 #[tokio::test]
 async fn public_client_refresh_sends_closed_form_and_rotates_tokens() {
     let (address, server) = spawn_json_server(
@@ -763,7 +831,7 @@ async fn successful_response_rejects_malformed_or_unsafe_token_semantics() {
         (b"not-json", OAuthTokenExchangeError::MalformedResponse),
         (
             br#"{"access_token":"access-token"}"#,
-            OAuthTokenExchangeError::MalformedResponse,
+            OAuthTokenExchangeError::InvalidTokenResponse,
         ),
         (
             br#"{"access_token":"access-token","token_type":"mac"}"#,

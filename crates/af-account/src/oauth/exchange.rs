@@ -11,7 +11,7 @@ use super::authorization::{
     OAuthAuthorizationContext, OAuthAuthorizationGrant, UpstreamOAuthProvider, validate_client_id,
     validate_scope,
 };
-use super::identity::{ClaudeAccountKey, OAuthIdentityMetadata};
+use super::identity::{ClaudeAccountKey, OAuthIdentityMetadata, codex_access_token_expires_in};
 use crate::credential_decryption::MAX_DECRYPTED_CREDENTIAL_SECRET_BYTES;
 
 /// OAuth token endpoint 响应体硬上限。
@@ -522,7 +522,7 @@ impl OAuthRefreshedTokenSet {
         request: OAuthTokenRefreshRequest,
         wire: TokenResponseWire,
     ) -> Result<Self, OAuthTokenExchangeError> {
-        if !is_valid_token_response(&wire) {
+        if !is_valid_token_response(provider, &wire) {
             return Err(OAuthTokenExchangeError::InvalidTokenResponse);
         }
         let identity = OAuthIdentityMetadata::parse_refresh(
@@ -531,6 +531,7 @@ impl OAuthRefreshedTokenSet {
             wire.account.as_ref().and_then(ClaudeAccountKey::uuid),
         )
         .map_err(|_| OAuthTokenExchangeError::InvalidTokenResponse)?;
+        let expires_in = token_expires_in(provider, &wire)?;
         let OAuthTokenRefreshRequest {
             provider: _,
             refresh_token: previous_refresh_token,
@@ -539,7 +540,7 @@ impl OAuthRefreshedTokenSet {
         let TokenResponseWire {
             access_token,
             refresh_token,
-            expires_in,
+            expires_in: _,
             scope,
             token_type: _,
             id_token: _,
@@ -549,7 +550,7 @@ impl OAuthRefreshedTokenSet {
             provider,
             access_token,
             refresh_token: refresh_token.unwrap_or(previous_refresh_token),
-            expires_in: expires_in.map(Duration::from_secs),
+            expires_in,
             scope: scope.or(previous_scope),
             identity,
         })
@@ -695,7 +696,7 @@ impl OAuthTokenSet {
         context: OAuthAuthorizationContext,
         wire: TokenResponseWire,
     ) -> Result<Self, OAuthTokenExchangeError> {
-        if !is_valid_token_response(&wire) {
+        if !is_valid_token_response(provider, &wire) {
             return Err(OAuthTokenExchangeError::InvalidTokenResponse);
         }
         let identity = OAuthIdentityMetadata::parse_initial(
@@ -704,10 +705,11 @@ impl OAuthTokenSet {
             wire.account.as_ref().and_then(ClaudeAccountKey::uuid),
         )
         .map_err(|_| OAuthTokenExchangeError::InvalidTokenResponse)?;
+        let expires_in = token_expires_in(provider, &wire)?;
         let TokenResponseWire {
             access_token,
             refresh_token,
-            expires_in,
+            expires_in: _,
             scope,
             token_type: _,
             id_token: _,
@@ -718,7 +720,7 @@ impl OAuthTokenSet {
             context,
             access_token,
             refresh_token,
-            expires_in: expires_in.map(Duration::from_secs),
+            expires_in,
             scope,
             identity,
         })
@@ -938,7 +940,8 @@ impl OAuthTokenRequestBody {
 #[derive(Deserialize)]
 struct TokenResponseWire {
     access_token: TokenSecret,
-    token_type: String,
+    #[serde(default)]
+    token_type: Option<String>,
     #[serde(default)]
     expires_in: Option<u64>,
     #[serde(default)]
@@ -1057,8 +1060,12 @@ fn is_valid_bearer_secret(value: &str) -> bool {
             .any(|byte| byte.is_ascii_whitespace() || byte.is_ascii_control())
 }
 
-fn is_valid_token_response(wire: &TokenResponseWire) -> bool {
-    wire.token_type.eq_ignore_ascii_case("bearer")
+fn is_valid_token_response(provider: UpstreamOAuthProvider, wire: &TokenResponseWire) -> bool {
+    (wire
+        .token_type
+        .as_deref()
+        .is_some_and(|value| value.eq_ignore_ascii_case("bearer"))
+        || (provider == UpstreamOAuthProvider::Codex && wire.token_type.is_none()))
         && !wire.expires_in.is_some_and(|seconds| seconds == 0)
         && is_valid_bearer_secret(wire.access_token.expose())
         && !wire
@@ -1069,6 +1076,22 @@ fn is_valid_token_response(wire: &TokenResponseWire) -> bool {
             .scope
             .as_ref()
             .is_some_and(|scope| validate_scope(scope.expose()).is_err())
+}
+
+fn token_expires_in(
+    provider: UpstreamOAuthProvider,
+    wire: &TokenResponseWire,
+) -> Result<Option<Duration>, OAuthTokenExchangeError> {
+    match wire.expires_in {
+        Some(seconds) => Ok(Some(Duration::from_secs(seconds))),
+        None if provider == UpstreamOAuthProvider::Codex => {
+            // Codex may omit expires_in; its access JWT still carries the refresh deadline.
+            codex_access_token_expires_in(wire.access_token.expose())
+                .map(Some)
+                .ok_or(OAuthTokenExchangeError::InvalidTokenResponse)
+        }
+        None => Ok(None),
+    }
 }
 
 fn encode_form_component(value: &str) -> Zeroizing<String> {
