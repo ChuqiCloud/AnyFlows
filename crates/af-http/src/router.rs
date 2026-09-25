@@ -41,6 +41,7 @@ use crate::authentication::{
 };
 use crate::balance_alert_settings::build_balance_alert_settings_router;
 use crate::credential_proxies::build_credential_proxy_router;
+use crate::credential_usage::get_admin_credential_usage;
 use crate::custom_oauth2::build_custom_oauth2_router;
 use crate::debug_traces::build_debug_trace_router;
 use crate::email_settings::build_email_settings_router;
@@ -246,6 +247,7 @@ pub fn build_router(
     admin_channel_reader: Arc<dyn AdminChannelReader>,
     admin_channel_writer: Arc<dyn AdminChannelWriter>,
     admin_channel_probe: Option<Arc<dyn crate::AdminChannelProbe>>,
+    admin_credential_usage_probe: Option<Arc<dyn crate::AdminCredentialUsageProbe>>,
     admin_group_reader: Arc<dyn AdminGroupReader>,
     admin_group_writer: Arc<dyn AdminGroupWriter>,
     admin_model_reader: Option<Arc<dyn AdminModelReader>>,
@@ -376,6 +378,7 @@ pub fn build_router(
     .with_admin_channel_reader(admin_channel_reader)
     .with_admin_channel_writer(admin_channel_writer)
     .with_admin_channel_probe(admin_channel_probe)
+    .with_admin_credential_usage_probe(admin_credential_usage_probe)
     .with_admin_dashboard_reader(admin_dashboard_reader)
     .with_analytics_export_control(analytics_export_control)
     .with_admin_usage_log_reader(admin_usage_log_reader)
@@ -972,6 +975,12 @@ pub fn build_router(
                 .delete(delete_admin_credential)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(credential_item_authentication),
+        )
+        .route(
+            "/api/admin/channels/{channel_id}/credentials/{credential_id}/usage",
+            get(get_admin_credential_usage)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(credential_collection_authentication.clone()),
         )
         .with_state(http_state.clone())
         .merge(playground_share_routes)

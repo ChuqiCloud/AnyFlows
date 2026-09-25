@@ -900,6 +900,16 @@
   },
   "credentials": {
     "title": "凭据与账号池",
+    "usage": {
+      "action": "查看上游额度",
+      "loading": "正在读取上游用量",
+      "window": "{{hours}} 小时已用 {{percent}}%",
+      "reset": "重置于 {{value}}",
+      "credits": "余额 {{value}}",
+      "fetched": "查询于 {{value}}",
+      "unsupported": "该账号不支持查询上游额度",
+      "unavailable": "暂时无法读取上游额度，请稍后重试"
+    },
     "subtitle": "按渠道管理上游凭据、账号关系和调度状态。密钥保存后不再显示。",
     "fileTransfer": {
       "import": "导入",

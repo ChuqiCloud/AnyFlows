@@ -49,6 +49,7 @@ pub(crate) struct HttpState {
     pub(crate) admin_channel_reader: Option<Arc<dyn AdminChannelReader>>,
     pub(crate) admin_channel_writer: Option<Arc<dyn AdminChannelWriter>>,
     pub(crate) admin_channel_probe: Option<Arc<dyn crate::AdminChannelProbe>>,
+    pub(crate) admin_credential_usage_probe: Option<Arc<dyn crate::AdminCredentialUsageProbe>>,
     pub(crate) admin_dashboard_reader: Option<Arc<dyn AdminDashboardReader>>,
     pub(crate) analytics_export_control: Option<Arc<dyn AnalyticsExportControl>>,
     pub(crate) admin_group_reader: Arc<dyn AdminGroupReader>,
@@ -103,6 +104,7 @@ impl HttpState {
             admin_channel_reader: None,
             admin_channel_writer: None,
             admin_channel_probe: None,
+            admin_credential_usage_probe: None,
             admin_dashboard_reader: None,
             analytics_export_control: None,
             admin_group_reader,
@@ -352,6 +354,14 @@ impl HttpState {
         probe: Option<Arc<dyn crate::AdminChannelProbe>>,
     ) -> Self {
         self.admin_channel_probe = probe;
+        self
+    }
+
+    pub(crate) fn with_admin_credential_usage_probe(
+        mut self,
+        probe: Option<Arc<dyn crate::AdminCredentialUsageProbe>>,
+    ) -> Self {
+        self.admin_credential_usage_probe = probe;
         self
     }
 

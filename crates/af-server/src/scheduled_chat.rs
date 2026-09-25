@@ -16,7 +16,8 @@ use crate::{
     credential_feedback::{CredentialAttemptTarget, persist_credential_feedback},
     credential_order::{
         CredentialLoad, order_credentials, order_credentials_by_load,
-        order_credentials_by_load_and_health, order_credentials_with_health,
+        order_credentials_by_load_and_health, order_credentials_by_load_with_session_affinity,
+        order_credentials_with_health,
     },
     debug_trace_runtime::{DebugTraceCapture, DebugTraceRuntime},
     health_runtime::{
@@ -310,6 +311,15 @@ impl ScheduledChatService {
                 .as_ref()
                 .map_or(request_id, StableSessionScope::as_str);
             let ordered_credentials = match (wait_plan.kind(), account_loads, credential_health) {
+                (RouteWaitKind::Fallback, Some(loads), health) if session_scope.is_some() => {
+                    order_credentials_by_load_with_session_affinity(
+                        order_scope,
+                        target.channel_id(),
+                        &eligible_credentials,
+                        loads,
+                        health,
+                    )
+                }
                 (RouteWaitKind::Fallback, Some(loads), Some(health)) => {
                     order_credentials_by_load_and_health(
                         order_scope,

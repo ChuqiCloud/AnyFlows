@@ -46,6 +46,7 @@ use crate::{
     AdminChannelProbe, AdminChannelProbeFuture, AdminChannelProbeOutcome, ChatService,
     ChatServiceFuture,
     chat_completions::HttpState,
+    credential_usage::get_admin_credential_usage,
     management_auth::{ManagementAuthenticationState, authenticate_management_session},
     management_authorization::authorize_management_admin,
     management_channel_probe::probe_admin_channel,
@@ -517,6 +518,15 @@ fn router_with_probe(
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(credential_item_authentication),
         )
+        .route(
+            "/api/admin/channels/{channel_id}/credentials/{credential_id}/usage",
+            get(get_admin_credential_usage)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(middleware::from_fn_with_state(
+                    ManagementAuthenticationState::new(Arc::clone(&session_authenticator)),
+                    authenticate_management_session,
+                )),
+        )
         .with_state(
             HttpState::new(
                 Arc::new(UnusedChatService),
@@ -532,6 +542,25 @@ fn router_with_probe(
             .with_admin_channel_writer(channel_writer)
             .with_admin_channel_probe(probe),
         )
+}
+
+#[tokio::test]
+async fn credential_usage_denies_users_and_reports_unsupported_kind() {
+    let app = router(Arc::new(FakeAdminChannelReader::new()));
+    let path = "/api/admin/channels/10/credentials/20/usage";
+    let forbidden = app
+        .clone()
+        .oneshot(authorized_request(path, USER_TOKEN))
+        .await
+        .unwrap();
+    assert_error(forbidden, StatusCode::FORBIDDEN, "forbidden").await;
+
+    let response = app
+        .oneshot(authorized_request(path, ADMIN_TOKEN))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response_json(response).await["status"], "unsupported");
 }
 
 #[tokio::test]

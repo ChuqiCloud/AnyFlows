@@ -21,6 +21,7 @@ mod channel_probe_tests;
 mod concurrency_runtime;
 mod credential_feedback;
 mod credential_order;
+mod credential_usage;
 mod debug_trace_runtime;
 mod frontend;
 mod group_pricing_refresh;

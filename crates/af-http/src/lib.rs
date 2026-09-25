@@ -11,6 +11,7 @@ mod chat_completions;
 mod chat_service;
 mod client_ip;
 mod credential_proxies;
+mod credential_usage;
 mod credentials;
 mod custom_oauth2;
 mod debug_traces;
@@ -122,6 +123,10 @@ pub use axum::{
 };
 pub use channel_probe::{AdminChannelProbe, AdminChannelProbeFuture, AdminChannelProbeOutcome};
 pub use chat_service::{ChatService, ChatServiceFuture};
+pub use credential_usage::{
+    AdminCredentialUsageFuture, AdminCredentialUsageProbe, CredentialUsageSnapshot,
+    CredentialUsageStatus, CredentialUsageWindow,
+};
 pub use credentials::{ApiKeyExtractionError, QueryApiKeyPolicy, extract_presented_api_key};
 pub use embedding_service::{EmbeddingService, EmbeddingServiceFuture};
 pub use error_response::OpenAiHttpError;
