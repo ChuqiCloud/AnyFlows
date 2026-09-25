@@ -98,6 +98,7 @@ impl RelayContext {
     #[must_use]
     pub fn is_codex_oauth(&self) -> bool {
         self.oauth_provider
+            .as_deref()
             .is_some_and(|provider| provider.eq_ignore_ascii_case("codex"))
     }
 
