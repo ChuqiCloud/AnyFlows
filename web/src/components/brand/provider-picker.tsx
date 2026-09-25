@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
-import { findLogoByName, findProviderLogo } from './model-logos'
+import { resolveProviderLogo } from './model-logos'
 import { filterProviders, providerCatalog, providerDisplayName, type ProviderOption } from './provider-catalog'
 import { findProviderOption, useModelProviderOptions } from './provider-catalog-api'
 
@@ -14,7 +14,7 @@ export function ProviderLabel({ provider }: { provider: string }) {
   const catalogQuery = useModelProviderOptions()
   const option = findProviderOption(provider, catalogQuery.options)
   const configuredLogo = option?.logo?.trim()
-  const logo = findProviderLogo(provider) ?? (configuredLogo && !/^https?:\/\//i.test(configuredLogo) ? findLogoByName(configuredLogo) : undefined)
+  const logo = resolveProviderLogo(configuredLogo, provider, option?.name, ...(option?.aliases ?? []))
   const Icon = logo?.Icon ?? Network
   return <span className="inline-flex min-w-0 items-center gap-2">{configuredLogo && /^https?:\/\//i.test(configuredLogo) ? <img className="size-4 shrink-0 object-contain" src={configuredLogo} alt="" loading="lazy" /> : <Icon className="size-4 shrink-0" aria-hidden="true" />}<span className="truncate">{option?.name ?? providerDisplayName(provider)}</span></span>
 }

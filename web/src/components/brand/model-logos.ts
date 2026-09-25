@@ -97,11 +97,7 @@ const logoByName = new Map(modelLogos.map((logo) => [logo.name, logo]))
 export function findLogoByName(value: string) {
   const normalized = normalizeProvider(value)
   if (!normalized) return undefined
-  const exact = modelLogos.find((logo) => normalizeProvider(logo.name) === normalized)
-  return exact ?? modelLogos.find((logo) => {
-    const candidate = normalizeProvider(logo.name)
-    return candidate.length >= 3 && normalized.startsWith(candidate)
-  })
+  return modelLogos.find((logo) => normalizeProvider(logo.name) === normalized)
 }
 
 /**
@@ -156,5 +152,15 @@ export function findProviderLogo(provider: string) {
   const logo = brand
     ? findLogoByName(brand.logo) ?? findLogoByName(brand.id) ?? findLogoByName(brand.name)
     : findLogoByName(provider)
-  return logo && brand ? { ...logo, name: brand.name } : undefined
+  return logo ? { ...logo, name: brand?.name ?? logo.name } : undefined
+}
+
+/** Configured identity takes precedence, followed by the key, name and aliases. */
+export function resolveProviderLogo(...values: (string | null | undefined)[]) {
+  for (const value of values) {
+    if (!value) continue
+    const logo = findLogoByName(value) ?? findProviderLogo(value)
+    if (logo) return logo
+  }
+  return undefined
 }

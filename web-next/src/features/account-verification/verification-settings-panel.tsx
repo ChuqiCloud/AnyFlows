@@ -31,7 +31,7 @@ export function VerificationSettingsPanel() {
     const result = await apiClient.put<Settings>({ url: '/api/admin/account-verification-settings',
       security: [...sessionSecurity], body, bodySerializer: jsonBodySerializer.bodySerializer }) as unknown as { data: Settings }
     return result.data
-  }, onSuccess: (settings) => { client.setQueryData(settingsKey, settings); setSaved(true) } })
+  }, onSuccess: (settings) => { client.setQueryData(settingsKey, settings); setSaved(true); void client.invalidateQueries({ queryKey: ['account-verification', 'eligibility'] }) } })
   const submit = (event: FormEvent) => {
     event.preventDefault()
     if (!query.data || !draft) return
@@ -46,7 +46,7 @@ export function VerificationSettingsPanel() {
     <header><h2 className="text-lg font-semibold">实名认证配置</h2><p className="mt-1 text-sm text-default-500">在这里控制用户可选择的认证方式。关闭某项后，用户提交页面不会再显示该方式。</p></header>
     {environment ? <p className="border-l-2 border-warning px-3 text-sm text-default-500">当前使用启动配置。首次在线保存后以后台设置为准；若启用支付宝，请重新填写两把密钥。</p> : null}
     <form onSubmit={submit} className="grid max-w-3xl gap-4">
-      <div className="grid gap-3 rounded-lg border border-default-200 p-3"><Switch isSelected={draft.manual_enabled} onValueChange={(manual_enabled) => setDraft({ ...draft, manual_enabled })}>启用人工审核</Switch><Switch isSelected={draft.enabled} onValueChange={(enabled) => setDraft({ ...draft, enabled })}>启用支付宝实名认证</Switch></div>
+      <div className="grid gap-3 rounded-lg border border-default-200 p-3"><Switch aria-label="启用人工审核" isSelected={draft.manual_enabled} onValueChange={(manual_enabled) => setDraft({ ...draft, manual_enabled })}>启用人工审核</Switch><Switch aria-label="启用支付宝实名认证" isSelected={draft.enabled} onValueChange={(enabled) => setDraft({ ...draft, enabled })}>启用支付宝实名认证</Switch></div>
       <Input label="应用 ID" value={draft.app_id} maxLength={128} onValueChange={(app_id) => setDraft({ ...draft, app_id })} />
       <div className="grid gap-4 md:grid-cols-2">
         <Textarea label="应用私钥" description={!environment && query.data.private_key_configured ? '已配置，留空保持不变' : '未保存到后台'} value={draft.private_key} minRows={6} autoComplete="off" onValueChange={(private_key) => setDraft({ ...draft, private_key })} />

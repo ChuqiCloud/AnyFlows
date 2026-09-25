@@ -35,7 +35,7 @@ export function VerificationSettingsPanel() {
     const result = await apiClient.put<Settings>({ url: '/api/admin/account-verification-settings',
       security: [...sessionSecurity], body, bodySerializer: jsonBodySerializer.bodySerializer }) as unknown as { data: Settings }
     return result.data
-  }, onSuccess: (settings) => { client.setQueryData(settingsKey, settings); setSaved(true) } })
+  }, onSuccess: (settings) => { client.setQueryData(settingsKey, settings); setSaved(true); void client.invalidateQueries({ queryKey: ['account-verification', 'eligibility'] }) } })
   const submit = (event: FormEvent) => {
     event.preventDefault()
     if (!query.data || !draft) return
@@ -50,7 +50,7 @@ export function VerificationSettingsPanel() {
     <header><h2 className="text-lg font-semibold">实名认证配置</h2><p className="mt-1 text-sm text-muted-foreground">在这里控制用户可选择的认证方式。关闭某项后，用户提交页面不会再显示该方式。</p></header>
     {environment ? <p className="border-l-2 border-warning px-3 text-sm text-muted-foreground">当前使用启动配置。首次在线保存后以后台设置为准；若启用支付宝，请重新填写两把密钥。</p> : null}
     <form onSubmit={submit} className="grid max-w-3xl gap-4">
-      <div className="grid gap-3 rounded-lg border border-[var(--hairline)] p-3"><label className="flex items-center gap-3 text-sm"><Switch checked={draft.manual_enabled} onCheckedChange={(manual_enabled) => setDraft({ ...draft, manual_enabled })} />启用人工审核</label><label className="flex items-center gap-3 text-sm"><Switch checked={draft.enabled} onCheckedChange={(enabled) => setDraft({ ...draft, enabled })} />启用支付宝实名认证</label></div>
+      <div className="grid gap-3 rounded-lg border border-[var(--hairline)] p-3"><label className="flex items-center gap-3 text-sm"><Switch aria-label="启用人工审核" checked={draft.manual_enabled} onCheckedChange={(manual_enabled) => setDraft({ ...draft, manual_enabled })} />启用人工审核</label><label className="flex items-center gap-3 text-sm"><Switch aria-label="启用支付宝实名认证" checked={draft.enabled} onCheckedChange={(enabled) => setDraft({ ...draft, enabled })} />启用支付宝实名认证</label></div>
       <label className="grid gap-1.5 text-sm">应用 ID<Input value={draft.app_id} maxLength={128} onChange={(event) => setDraft({ ...draft, app_id: event.target.value })} /></label>
       <div className="grid gap-4 md:grid-cols-2">
         <label className="grid gap-1.5 text-sm">应用私钥 <span className="text-xs text-muted-foreground">{!environment && query.data.private_key_configured ? '已配置，留空保持不变' : '未保存到后台'}</span><Textarea value={draft.private_key} rows={6} autoComplete="off" onChange={(event) => setDraft({ ...draft, private_key: event.target.value })} /></label>

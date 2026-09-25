@@ -38,8 +38,8 @@ export const providerCatalog: readonly ProviderOption[] = [
   { id: 'openrouter', name: 'OpenRouter', logo: 'OpenRouter' },
   { id: 'ollama', name: 'Ollama', logo: 'Ollama' },
   { id: 'amazon', name: 'Amazon', logo: 'AWS', aliases: ['aws'] },
-  { id: 'bedrock', name: 'Amazon Bedrock', logo: 'AWS' },
-  { id: 'vertex', name: 'Google Vertex AI', logo: 'Google', aliases: ['vertexai'] },
+  { id: 'bedrock', name: 'Amazon Bedrock', logo: 'AWS', aliases: ['amazon-bedrock', 'aws-bedrock'] },
+  { id: 'vertex', name: 'Google Vertex AI', logo: 'Google', aliases: ['vertexai', 'google-vertex'] },
   { id: 'microsoft', name: 'Microsoft', logo: 'Microsoft' },
   { id: 'azure', name: 'Microsoft Azure', logo: 'Azure', aliases: ['azureopenai'] },
   { id: 'siliconflow', name: 'SiliconFlow', logo: 'SiliconCloud', aliases: ['siliconcloud', '硅基流动'] },
@@ -55,16 +55,24 @@ export function normalizeProvider(value: string) {
   return value.trim().toLowerCase().replace(/[\s._-]/g, '')
 }
 
-export function findProvider(provider: string) {
+export function findProviderOption(provider: string, options: readonly ProviderOption[]) {
   const normalized = normalizeProvider(provider)
-  return providerCatalog
+  if (!normalized) return undefined
+  const separated = provider.trim().toLowerCase().replace(/[\s._-]+/g, '-')
+  return options
     .map((item) => ({ item, score: [item.id, item.name, ...(item.aliases ?? [])].reduce((best, value) => {
       const candidate = normalizeProvider(value)
+      if (!candidate) return best
       if (candidate === normalized) return Math.max(best, candidate.length + 1000)
-      return candidate.length >= 3 && normalized.startsWith(candidate) ? Math.max(best, candidate.length) : best
+      const prefix = value.trim().toLowerCase().replace(/[\s._-]+/g, '-')
+      return candidate.length >= 3 && separated.startsWith(`${prefix}-`) ? Math.max(best, candidate.length) : best
     }, 0) }))
     .filter(({ score }) => score > 0)
     .sort((left, right) => right.score - left.score)[0]?.item
+}
+
+export function findProvider(provider: string) {
+  return findProviderOption(provider, providerCatalog)
 }
 
 export function providerDisplayName(provider: string) {
