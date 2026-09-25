@@ -1,4 +1,7 @@
-use std::fmt;
+use std::{
+    fmt,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::Deserialize;
@@ -109,8 +112,21 @@ pub(super) enum OAuthIdentityError {
 
 #[derive(Deserialize)]
 struct CodexIdTokenClaims {
+    #[serde(rename = "https://api.openai.com/auth")]
+    auth: Option<CodexAuthClaims>,
     #[serde(rename = "https://api.openai.com/auth.chatgpt_account_id")]
-    account_key: String,
+    legacy_account_key: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct CodexAuthClaims {
+    #[serde(default)]
+    chatgpt_account_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct CodexAccessTokenClaims {
+    exp: u64,
 }
 
 #[derive(Deserialize)]
@@ -126,7 +142,30 @@ impl ClaudeAccountKey {
 }
 
 fn parse_codex_account_key(id_token: &str) -> Result<String, OAuthIdentityError> {
-    let mut segments = id_token.split('.');
+    let payload = decode_codex_jwt_payload(id_token)?;
+    let claims = serde_json::from_slice::<CodexIdTokenClaims>(&payload)
+        .map_err(|_| OAuthIdentityError::InvalidCodexIdToken)?;
+    let account_key = claims
+        .auth
+        .and_then(|auth| auth.chatgpt_account_id)
+        .or(claims.legacy_account_key)
+        .ok_or(OAuthIdentityError::MissingCodexAccountKey)?;
+    if !valid_identity_component(&account_key) {
+        return Err(OAuthIdentityError::InvalidCodexIdToken);
+    }
+    Ok(account_key)
+}
+
+pub(super) fn codex_access_token_expires_in(access_token: &str) -> Option<Duration> {
+    let payload = decode_codex_jwt_payload(access_token).ok()?;
+    let claims = serde_json::from_slice::<CodexAccessTokenClaims>(&payload).ok()?;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
+    let seconds = claims.exp.checked_sub(now)?;
+    (seconds > 0).then(|| Duration::from_secs(seconds))
+}
+
+fn decode_codex_jwt_payload(token: &str) -> Result<Zeroizing<Vec<u8>>, OAuthIdentityError> {
+    let mut segments = token.split('.');
     let header = segments.next();
     let payload = segments.next();
     let signature = segments.next();
@@ -139,12 +178,7 @@ fn parse_codex_account_key(id_token: &str) -> Result<String, OAuthIdentityError>
     if serde_json::from_slice::<serde_json::Map<String, serde_json::Value>>(&header).is_err() {
         return Err(OAuthIdentityError::InvalidCodexIdToken);
     }
-    let claims = serde_json::from_slice::<CodexIdTokenClaims>(&payload)
-        .map_err(|_| OAuthIdentityError::InvalidCodexIdToken)?;
-    if !valid_identity_component(&claims.account_key) {
-        return Err(OAuthIdentityError::InvalidCodexIdToken);
-    }
-    Ok(claims.account_key)
+    Ok(payload)
 }
 
 fn decode_jwt_segment(
@@ -185,7 +219,7 @@ fn valid_identity_component(value: &str) -> bool {
 mod tests {
     use super::*;
 
-    const CODEX_ACCOUNT_CLAIM: &str = "https://api.openai.com/auth.chatgpt_account_id";
+    const CODEX_ACCOUNT_CLAIM: &str = "https://api.openai.com/auth";
     const CODEX_ACCOUNT: &str = "org-codex-account";
     const CLAUDE_ACCOUNT: &str = "550E8400-E29B-41D4-A716-446655440000";
 
@@ -204,26 +238,34 @@ mod tests {
 
     #[test]
     fn codex_claim_is_extracted_only_from_a_valid_jwt() {
-        let token = codex_id_token(&format!(r#"{{"{CODEX_ACCOUNT_CLAIM}":"{CODEX_ACCOUNT}"}}"#));
+        let token = codex_id_token(&format!(
+            r#"{{"{CODEX_ACCOUNT_CLAIM}":{{"chatgpt_account_id":"{CODEX_ACCOUNT}"}}}}"#
+        ));
         let identity =
             OAuthIdentityMetadata::parse_initial(UpstreamOAuthProvider::Codex, Some(&token), None)
                 .unwrap();
         assert_eq!(identity.account_key(), Some(CODEX_ACCOUNT));
         assert_eq!(identity.project_id(), None);
 
+        let legacy = codex_id_token(&format!(
+            r#"{{"https://api.openai.com/auth.chatgpt_account_id":"{CODEX_ACCOUNT}"}}"#
+        ));
+        assert_eq!(parse_codex_account_key(&legacy).unwrap(), CODEX_ACCOUNT);
+
         let duplicate = codex_id_token(&format!(
-            r#"{{"{CODEX_ACCOUNT_CLAIM}":"first","{CODEX_ACCOUNT_CLAIM}":"second"}}"#
+            r#"{{"{CODEX_ACCOUNT_CLAIM}":{{"chatgpt_account_id":"first","chatgpt_account_id":"second"}}}}"#
         ));
         let oversized = codex_id_token(&format!(
-            r#"{{"{CODEX_ACCOUNT_CLAIM}":"{}"}}"#,
+            r#"{{"{CODEX_ACCOUNT_CLAIM}":{{"chatgpt_account_id":"{}"}}}}"#,
             "x".repeat(MAX_OAUTH_IDENTITY_BYTES + 1)
         ));
         for invalid in [
             "not-a-jwt".to_owned(),
-            codex_id_token("{}"),
             duplicate,
             oversized,
-            codex_id_token(&format!(r#"{{"{CODEX_ACCOUNT_CLAIM}":"bad id"}}"#)),
+            codex_id_token(&format!(
+                r#"{{"{CODEX_ACCOUNT_CLAIM}":{{"chatgpt_account_id":"bad id"}}}}"#
+            )),
         ] {
             assert_eq!(
                 OAuthIdentityMetadata::parse_initial(
@@ -240,6 +282,29 @@ mod tests {
                 .unwrap_err(),
             OAuthIdentityError::MissingCodexAccountKey
         );
+        assert_eq!(
+            parse_codex_account_key(&codex_id_token("{}")).unwrap_err(),
+            OAuthIdentityError::MissingCodexAccountKey
+        );
+    }
+
+    #[test]
+    fn codex_access_token_expiration_uses_bounded_jwt_claims() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let valid = codex_id_token(&format!(r#"{{"exp":{}}}"#, now + 3_600));
+        let lifetime = codex_access_token_expires_in(&valid).unwrap().as_secs();
+        assert!((3_599..=3_600).contains(&lifetime));
+        for invalid in [
+            codex_id_token("{}"),
+            codex_id_token(&format!(r#"{{"exp":{now}}}"#)),
+            codex_id_token(&format!(r#"{{"exp":{}}}"#, now.saturating_sub(1))),
+            "opaque-access-token".to_owned(),
+        ] {
+            assert!(codex_access_token_expires_in(&invalid).is_none());
+        }
     }
 
     #[test]
@@ -288,7 +353,9 @@ mod tests {
 
     #[test]
     fn debug_does_not_expose_identity_values() {
-        let token = codex_id_token(&format!(r#"{{"{CODEX_ACCOUNT_CLAIM}":"{CODEX_ACCOUNT}"}}"#));
+        let token = codex_id_token(&format!(
+            r#"{{"{CODEX_ACCOUNT_CLAIM}":{{"chatgpt_account_id":"{CODEX_ACCOUNT}"}}}}"#
+        ));
         let identity =
             OAuthIdentityMetadata::parse_initial(UpstreamOAuthProvider::Codex, Some(&token), None)
                 .unwrap();
