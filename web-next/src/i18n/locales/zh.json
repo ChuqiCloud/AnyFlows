@@ -7410,6 +7410,7 @@
     },
     "hero": {
       "eyebrow": "大模型 API 聚合网关",
+      "heading": "让每一次调用都更顺畅",
       "subtitle": "一个接口接入所有模型渠道。自动选路、按请求计费，每一次调用都查得到。",
       "cta": {
         "register": "创建账户",
@@ -7419,6 +7420,22 @@
       "secondary": "查看常见问题"
     },
     "providers": "已接入的模型厂商",
+    "journey": {
+      "healthy": { "label": "健康路由", "route": "OpenAI · 优先渠道" },
+      "failover": { "label": "故障切换", "route": "AnyFlows · 候选渠道" },
+      "streaming": { "label": "流式响应", "route": "Gemini · 流式通道" }
+    },
+    "home": {
+      "heroChecks": { "compatible": "OpenAI 兼容接口", "health": "渠道健康检查", "logs": "请求级调用记录" },
+      "preview": {
+        "eyebrow": "REQUEST FLOW", "statusHealthy": "HEALTHY", "statusRecovering": "RECOVERING", "entry": "统一入口", "title": "一条请求，自动找到路径",
+        "healthy": "优先渠道响应中", "failover": "候选渠道 2 / 3", "streaming": "流式响应已建立",
+        "stats": { "latency": "首字延迟", "availability": "可用性", "channels": "候选渠道", "channelUnit": "条" }
+      },
+      "journey": { "heading": "从请求进入，到结果返回", "weight": "权重", "health": "健康度", "failover": "自动降级" },
+      "status": { "eyebrow": "实时状态示意", "heading": "把异常切换变成可见的过程", "description": "选择一个场景，看同一条请求如何在健康、故障切换和流式响应之间保持清晰。", "tablist": "请求场景", "ok": "200 OK", "route": "路由结果", "stable": "稳定" },
+      "cta": { "heading": "一个端点，连接所有模型渠道" }
+    },
     "feature": {
       "eyebrow": "核心能力",
       "heading": "麻烦事交给网关",

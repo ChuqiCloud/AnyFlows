@@ -855,3 +855,278 @@
     transform: none !important;
   }
 }
+
+/* 新前端公开首页：用主题语义色做出彩色信息层次，动画只使用合成友好的属性。 */
+.next-landing-hero {
+  min-height: min(720px, calc(100dvh - 3.5rem));
+  background: var(--background);
+}
+
+.next-landing-grid {
+  background-image: linear-gradient(to right, color-mix(in srgb, var(--hairline) 40%, transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in srgb, var(--hairline) 40%, transparent) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 68% 74% at 50% 40%, black, transparent 92%);
+  opacity: 0.38;
+}
+
+.next-landing-aurora {
+  width: min(42rem, 78vw);
+  height: 30rem;
+  border-radius: 999px;
+  filter: blur(70px);
+  opacity: 0.28;
+  animation: next-landing-aurora 18s ease-in-out infinite;
+}
+
+.next-landing-aurora-one {
+  top: -10rem;
+  left: -9rem;
+  background: color-mix(in srgb, var(--brand) 65%, transparent);
+}
+
+.next-landing-aurora-two {
+  right: -12rem;
+  bottom: -15rem;
+  background: color-mix(in srgb, var(--info) 55%, transparent);
+  animation-delay: -7s;
+}
+
+@keyframes next-landing-aurora {
+  0%, 100% { transform: translate3d(-2%, 0, 0) scale(1); }
+  50% { transform: translate3d(5%, 3%, 0) scale(1.08); }
+}
+
+.next-landing-rise {
+  animation: next-landing-rise 680ms var(--ease-ai-out) both;
+}
+
+.next-landing-rise-delay {
+  animation-delay: 90ms;
+}
+
+@keyframes next-landing-rise {
+  from { opacity: 0; transform: translate3d(0, 14px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+.next-landing-preview {
+  transform: translate3d(0, 0, 0) rotate(1deg);
+  transition: transform 360ms var(--ease-ai-out), box-shadow 360ms var(--ease-ai-out);
+}
+
+.next-landing-preview:hover {
+  transform: translate3d(0, -4px, 0) rotate(0deg);
+  box-shadow: var(--shadow-lg), 0 0 0 1px color-mix(in srgb, var(--brand) 18%, transparent);
+}
+
+.next-landing-flow {
+  min-height: 16rem;
+}
+
+.next-landing-flow-motion {
+  will-change: offset-distance, opacity;
+}
+
+.next-landing-node {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid var(--hairline);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-sm);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  font-size: 0.625rem;
+  font-weight: 600;
+  transition: border-color 260ms ease, color 260ms ease, transform 260ms var(--ease-ai-out);
+}
+
+.next-landing-node-entry {
+  flex-direction: column;
+  justify-content: center;
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 1rem;
+  color: var(--brand);
+}
+
+.next-landing-node-upstream {
+  min-width: 5.3rem;
+  justify-content: center;
+  padding: 0.55rem 0.65rem;
+  border-radius: 0.75rem;
+}
+
+.next-landing-node-active {
+  border-color: color-mix(in srgb, var(--brand) 42%, var(--hairline));
+  color: var(--brand);
+  transform: translate3d(-3px, 0, 0);
+}
+
+.next-landing-card {
+  overflow: hidden;
+  position: relative;
+  border: 1px solid var(--hairline);
+  border-radius: 1rem;
+  padding: 1.25rem;
+  background: var(--surface-1);
+  transition: transform 300ms var(--ease-ai-out), border-color 300ms ease, box-shadow 300ms ease;
+}
+
+.next-landing-card:hover,
+.next-landing-route-card:hover {
+  transform: translate3d(0, -3px, 0);
+  border-color: color-mix(in srgb, var(--brand) 28%, var(--hairline));
+  box-shadow: var(--shadow-md);
+}
+
+.next-landing-card-billing { background: color-mix(in srgb, var(--warning) 9%, var(--surface-1)); }
+.next-landing-card-health { background: color-mix(in srgb, var(--destructive) 7%, var(--surface-1)); }
+.next-landing-card-observability { background: color-mix(in srgb, var(--success) 8%, var(--surface-1)); }
+.next-landing-card-streaming { background: color-mix(in srgb, var(--info) 8%, var(--surface-1)); }
+
+.next-landing-card-icon {
+  display: grid;
+  width: 2.15rem;
+  height: 2.15rem;
+  place-items: center;
+  border-radius: 0.7rem;
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+}
+
+.next-landing-card-icon-primary {
+  background: color-mix(in srgb, var(--brand) 14%, var(--surface-1));
+  color: var(--brand);
+}
+
+.next-landing-route-card {
+  transition: transform 300ms var(--ease-ai-out), border-color 300ms ease, box-shadow 300ms ease;
+}
+
+.next-landing-route-lines {
+  position: absolute;
+  right: -3rem;
+  bottom: -2rem;
+  width: 70%;
+  height: 75%;
+  opacity: 0.62;
+  transform: rotate(-14deg);
+}
+
+.next-landing-route-lines span {
+  position: absolute;
+  right: 0;
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--brand) 52%, transparent));
+  transform-origin: right center;
+  animation: next-landing-route-line 3.6s ease-in-out infinite;
+}
+
+.next-landing-route-lines span:nth-child(1) { top: 18%; transform: rotate(-12deg); }
+.next-landing-route-lines span:nth-child(2) { top: 44%; animation-delay: -1.2s; }
+.next-landing-route-lines span:nth-child(3) { top: 70%; transform: rotate(12deg); animation-delay: -2.4s; }
+
+@keyframes next-landing-route-line {
+  0%, 100% { opacity: 0.2; transform: translate3d(-10px, 0, 0) scaleX(0.82); }
+  50% { opacity: 0.9; transform: translate3d(0, 0, 0) scaleX(1); }
+}
+
+.next-landing-demo {
+  transition: transform 360ms var(--ease-ai-out), box-shadow 360ms var(--ease-ai-out);
+}
+
+.next-landing-demo:hover {
+  transform: translate3d(0, -3px, 0);
+  box-shadow: var(--shadow-lg);
+}
+
+.next-landing-cta {
+  isolation: isolate;
+}
+
+.next-landing-cta-orbit {
+  position: absolute;
+  right: 8%;
+  top: 50%;
+  width: 14rem;
+  height: 14rem;
+  border: 1px solid color-mix(in srgb, var(--brand) 24%, transparent);
+  border-radius: 50%;
+  transform: translateY(-50%);
+  opacity: 0.7;
+}
+
+.next-landing-cta-orbit::before,
+.next-landing-cta-orbit::after {
+  content: '';
+  position: absolute;
+  inset: 1.8rem;
+  border: 1px solid color-mix(in srgb, var(--info) 20%, transparent);
+  border-radius: inherit;
+}
+
+.next-landing-cta-orbit::after { inset: 3.8rem; border-color: color-mix(in srgb, var(--success) 22%, transparent); }
+
+.next-landing-cta-orbit span {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--brand);
+  transform: rotate(calc(var(--orbit-angle) * 1deg)) translateX(7rem) rotate(calc(var(--orbit-angle) * -1deg));
+  animation: next-landing-orbit 8s linear infinite;
+}
+
+.next-landing-cta-orbit span:nth-child(1) { --orbit-angle: 22; }
+.next-landing-cta-orbit span:nth-child(2) { --orbit-angle: 142; background: var(--info); animation-delay: -2.6s; }
+.next-landing-cta-orbit span:nth-child(3) { --orbit-angle: 262; background: var(--success); animation-delay: -5.2s; }
+
+@keyframes next-landing-orbit {
+  from { transform: rotate(calc(var(--orbit-angle) * 1deg)) translateX(7rem) rotate(calc(var(--orbit-angle) * -1deg)); }
+  to { transform: rotate(calc(var(--orbit-angle) * 1deg + 360deg)) translateX(7rem) rotate(calc((var(--orbit-angle) * -1deg) - 360deg)); }
+}
+
+@media (max-width: 640px) {
+  .next-landing-hero { min-height: auto; }
+  .next-landing-preview { transform: none; }
+  .next-landing-preview:hover { transform: translate3d(0, -2px, 0); }
+  .next-landing-cta-orbit { right: -5rem; opacity: 0.4; }
+}
+
+:root[data-motion='reduced'] .next-landing-aurora,
+:root[data-motion='reduced'] .next-landing-rise,
+:root[data-motion='reduced'] .next-landing-route-lines span,
+:root[data-motion='reduced'] .next-landing-cta-orbit span {
+  animation: none !important;
+}
+
+:root[data-motion='reduced'] .next-landing-rise {
+  opacity: 1;
+  transform: none;
+}
+
+:root[data-motion='reduced'] .next-landing-flow-motion {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion='full']) .next-landing-aurora,
+  :root:not([data-motion='full']) .next-landing-rise,
+  :root:not([data-motion='full']) .next-landing-route-lines span,
+  :root:not([data-motion='full']) .next-landing-cta-orbit span {
+    animation: none !important;
+  }
+
+  :root:not([data-motion='full']) .next-landing-rise {
+    opacity: 1;
+    transform: none;
+  }
+
+  :root:not([data-motion='full']) .next-landing-flow-motion {
+    display: none;
+  }
+}

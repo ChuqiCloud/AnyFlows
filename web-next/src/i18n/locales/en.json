@@ -7412,6 +7412,7 @@
     },
     "hero": {
       "eyebrow": "LLM API aggregation gateway",
+      "heading": "Make every call flow smoothly",
       "subtitle": "Unified access, intelligent routing, precise billing. Collapse scattered model channels into a single observable flow.",
       "cta": {
         "register": "Create account",
@@ -7421,6 +7422,22 @@
       "secondary": "View FAQ"
     },
     "providers": "Providers already supported",
+    "journey": {
+      "healthy": { "label": "Healthy route", "route": "OpenAI · preferred channel" },
+      "failover": { "label": "Failover", "route": "AnyFlows · fallback channel" },
+      "streaming": { "label": "Streaming", "route": "Gemini · streaming path" }
+    },
+    "home": {
+      "heroChecks": { "compatible": "OpenAI compatible", "health": "Channel health checks", "logs": "Request level logs" },
+      "preview": {
+        "eyebrow": "REQUEST FLOW", "statusHealthy": "HEALTHY", "statusRecovering": "RECOVERING", "entry": "Single entry point", "title": "Every request finds its path",
+        "healthy": "Preferred channel responding", "failover": "Fallback channel 2 / 3", "streaming": "Streaming response ready",
+        "stats": { "latency": "Time to first token", "availability": "Availability", "channels": "Candidate channels", "channelUnit": "" }
+      },
+      "journey": { "heading": "From request in to response out", "weight": "Weight", "health": "Health", "failover": "Automatic failover" },
+      "status": { "eyebrow": "LIVE STATUS DEMO", "heading": "Make failover easy to see", "description": "Choose a scenario and see how the same request stays clear through healthy routing, failover, and streaming.", "tablist": "Request scenarios", "ok": "200 OK", "route": "Route result", "stable": "stable" },
+      "cta": { "heading": "One endpoint for every model channel" }
+    },
     "feature": {
       "eyebrow": "Core capabilities",
       "heading": "Complexity stays inside the gateway",
