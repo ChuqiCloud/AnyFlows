@@ -6,11 +6,12 @@ use sea_orm::{
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Alias, Expr, Order, Query, SelectStatement},
 };
+use tokio::time::timeout;
 
 use crate::{
     AdminChannelRepository, AdminChannelRepositoryError, EncryptedCredentialEnvelope,
     MAX_ADMIN_CHANNEL_PAGE_SIZE,
-    admin_channel::{internal_invariant, valid_text},
+    admin_channel::{internal_invariant, record_internal_error, valid_text},
     entity::{channels, credentials},
 };
 
@@ -373,7 +374,7 @@ impl AdminChannelRepository {
         let operation = query.all(self.pool.connection());
         let models = match timeout(self.lookup_timeout, operation).await {
             Ok(Ok(models)) => models,
-            Ok(Err(_)) => return Err(internal_invariant()),
+            Ok(Err(_)) => return Err(record_internal_error(AdminChannelRepositoryError::Query)),
             Err(_) => return Err(record_internal_error(AdminChannelRepositoryError::Timeout)),
         };
         models
