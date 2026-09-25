@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 
 import { apiClient } from '@/lib/api'
-import { providerCatalog, type ProviderOption } from './provider-catalog'
+import { normalizeProvider, providerCatalog, type ProviderOption } from './provider-catalog'
 
 export type ModelProviderCatalogEntry = {
   provider_key: string
@@ -16,9 +16,15 @@ export type ModelProviderCatalogEntry = {
 type ModelProviderCatalogResponse = { providers: ModelProviderCatalogEntry[] }
 
 export function findProviderOption(provider: string, options: readonly ProviderOption[]) {
-  const normalized = provider.trim().toLowerCase()
-  return options.find((item) => [item.id, item.name, ...(item.aliases ?? [])]
-    .some((value) => value.toLowerCase() === normalized))
+  const normalized = normalizeProvider(provider)
+  return options
+    .map((item) => ({ item, score: [item.id, item.name, ...(item.aliases ?? [])].reduce((best, value) => {
+      const candidate = normalizeProvider(value)
+      if (candidate === normalized) return Math.max(best, candidate.length + 1000)
+      return candidate.length >= 3 && normalized.startsWith(candidate) ? Math.max(best, candidate.length) : best
+    }, 0) }))
+    .filter(({ score }) => score > 0)
+    .sort((left, right) => right.score - left.score)[0]?.item
 }
 
 export function useModelProviderOptions() {

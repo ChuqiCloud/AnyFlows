@@ -25,6 +25,7 @@ struct AlipayCredentials {
 #[derive(Clone)]
 pub struct AdminVerificationSettings {
     pub source: &'static str,
+    pub manual_enabled: bool,
     pub enabled: bool,
     pub app_id: Option<String>,
     pub private_key_configured: bool,
@@ -37,6 +38,7 @@ pub struct AdminVerificationSettings {
 
 pub struct VerificationSettingsCommand {
     pub expected_version: i64,
+    pub manual_enabled: bool,
     pub enabled: bool,
     pub app_id: Option<String>,
     pub private_key: Option<String>,
@@ -94,6 +96,7 @@ impl DatabaseVerificationSettingsService {
         if !record.initialized {
             return Ok(AdminVerificationSettings {
                 source: "environment",
+                manual_enabled: true,
                 enabled: self.fallback.enabled(),
                 app_id: self
                     .fallback
@@ -201,6 +204,7 @@ impl DatabaseVerificationSettingsService {
             .update(
                 AccountVerificationSettingsRecord {
                     initialized: true,
+                    manual_enabled: command.manual_enabled,
                     enabled: command.enabled,
                     app_id,
                     credentials,
@@ -219,6 +223,7 @@ impl DatabaseVerificationSettingsService {
     fn sanitized(&self, record: &AccountVerificationSettingsRecord) -> AdminVerificationSettings {
         AdminVerificationSettings {
             source: "database",
+            manual_enabled: record.manual_enabled,
             enabled: record.enabled,
             app_id: record.app_id.clone(),
             private_key_configured: record.credentials.is_some(),
@@ -246,6 +251,19 @@ impl DatabaseVerificationSettingsService {
                     .map_err(|_| VerificationSettingsError::Internal)
             })
             .transpose()
+    }
+
+    pub async fn manual_enabled(&self) -> Result<bool, VerificationSettingsError> {
+        let record = self
+            .repository
+            .settings()
+            .await
+            .map_err(map_repository_error)?;
+        Ok(if record.initialized {
+            record.manual_enabled
+        } else {
+            true
+        })
     }
 
     async fn provider(
@@ -278,6 +296,32 @@ impl DatabaseVerificationSettingsService {
     }
 }
 
+pub struct DatabaseManualAccountVerificationProvider {
+    settings: std::sync::Arc<DatabaseVerificationSettingsService>,
+}
+
+impl DatabaseManualAccountVerificationProvider {
+    #[must_use]
+    pub fn new(settings: std::sync::Arc<DatabaseVerificationSettingsService>) -> Self {
+        Self { settings }
+    }
+}
+
+#[async_trait]
+impl AccountVerificationProvider for DatabaseManualAccountVerificationProvider {
+    fn key(&self) -> &'static str {
+        "manual"
+    }
+
+    fn configured(&self) -> bool {
+        true
+    }
+
+    async fn available(&self) -> bool {
+        self.settings.manual_enabled().await.unwrap_or(false)
+    }
+}
+
 #[async_trait]
 impl AccountVerificationProvider for DatabaseVerificationSettingsService {
     fn key(&self) -> &'static str {
@@ -285,6 +329,13 @@ impl AccountVerificationProvider for DatabaseVerificationSettingsService {
     }
     fn configured(&self) -> bool {
         true
+    }
+
+    async fn available(&self) -> bool {
+        self.provider()
+            .await
+            .map(|provider| provider.configured())
+            .unwrap_or(false)
     }
 
     async fn initialize(

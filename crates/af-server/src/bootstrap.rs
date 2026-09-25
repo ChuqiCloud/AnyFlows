@@ -3242,6 +3242,15 @@ impl Bootstrap<Supervised> {
                         ),
                         Arc::clone(&self.stage.infrastructure.platform_audit_service),
                     )
+                    .with_provider(Arc::new(
+                        af_admin::DatabaseManualAccountVerificationProvider::new(Arc::clone(
+                            self.stage
+                                .infrastructure
+                                .verification_settings_service
+                                .as_ref()
+                                .expect("实名认证设置已在 init_relay 阶段装配"),
+                        )),
+                    ))
                     .with_provider(Arc::clone(
                         &self.stage.infrastructure.account_verification_provider,
                     )),

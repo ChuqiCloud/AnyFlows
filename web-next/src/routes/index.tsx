@@ -1,4 +1,5 @@
 import { AccountVerificationPage } from '@/features/account-verification/account-verification-page'
+import { VerificationSettingsPanel } from '@/features/account-verification/verification-settings-panel'
 import type { ReactNode } from 'react'
 import { Navigate, useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom'
 import type { RouteObject } from 'react-router-dom'
@@ -208,6 +209,7 @@ const consoleRoutes: ConsoleRouteDefinition[] = [
   { path: 'playground', element: <PlaygroundPage /> },
   { path: 'video-tasks', element: <VideoTaskPage /> },
   { path: 'account-verification', element: <AccountVerificationPage /> },
+  { path: 'system-settings/account-verification', element: <VerificationSettingsPanel /> },
   { path: 'profile', element: <ProfileRoute /> },
   { path: 'tokens', element: <TokenPage /> },
   { path: 'usage-logs', element: <UsageLogRoute /> },

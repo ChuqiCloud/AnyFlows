@@ -25,6 +25,7 @@ use crate::{
 #[schema(as = AdminVerificationSettings)]
 pub(crate) struct AdminVerificationSettingsResponse {
     source: &'static str,
+    manual_enabled: bool,
     enabled: bool,
     app_id: Option<String>,
     private_key_configured: bool,
@@ -39,6 +40,7 @@ impl From<AdminVerificationSettings> for AdminVerificationSettingsResponse {
     fn from(value: AdminVerificationSettings) -> Self {
         Self {
             source: value.source,
+            manual_enabled: value.manual_enabled,
             enabled: value.enabled,
             app_id: value.app_id,
             private_key_configured: value.private_key_configured,
@@ -56,6 +58,7 @@ impl From<AdminVerificationSettings> for AdminVerificationSettingsResponse {
 #[schema(as = AdminVerificationSettingsRequest)]
 pub(crate) struct AdminVerificationSettingsRequest {
     expected_version: i64,
+    manual_enabled: bool,
     enabled: bool,
     app_id: Option<String>,
     #[schema(format = Password, write_only)]
@@ -109,6 +112,7 @@ async fn update(
             auth.principal(),
             VerificationSettingsCommand {
                 expected_version: request.expected_version,
+                manual_enabled: request.manual_enabled,
                 enabled: request.enabled,
                 app_id: request.app_id,
                 private_key: request.private_key,

@@ -40,7 +40,7 @@ import SambaNova from '@lobehub/icons/es/SambaNova/components/Mono'
 import SiliconCloud from '@lobehub/icons/es/SiliconCloud/components/Mono'
 import Tencent from '@lobehub/icons/es/Tencent/components/Mono'
 
-import { findProvider } from './provider-catalog'
+import { findProvider, normalizeProvider } from './provider-catalog'
 
 export type LogoComponent = ComponentType<SVGProps<SVGSVGElement> & { size?: number }>
 
@@ -94,6 +94,16 @@ export const modelLogos: readonly { name: string; Icon: LogoComponent }[] = [
 
 const logoByName = new Map(modelLogos.map((logo) => [logo.name, logo]))
 
+export function findLogoByName(value: string) {
+  const normalized = normalizeProvider(value)
+  if (!normalized) return undefined
+  const exact = modelLogos.find((logo) => normalizeProvider(logo.name) === normalized)
+  return exact ?? modelLogos.find((logo) => {
+    const candidate = normalizeProvider(logo.name)
+    return candidate.length >= 3 && normalized.startsWith(candidate)
+  })
+}
+
 /**
  * 仅根据模型名提供界面识别标识，不把结果当作后端供应商或能力声明。
  * 未命中稳定命名约定时返回 undefined，由调用方展示通用模型图标。
@@ -143,6 +153,8 @@ export function findModelLogo(model: string) {
 /** 根据权威厂商字段选择界面图标，不从模型名推断后端能力或归属。 */
 export function findProviderLogo(provider: string) {
   const brand = findProvider(provider)
-  const logo = brand ? logoByName.get(brand.logo) : undefined
+  const logo = brand
+    ? findLogoByName(brand.logo) ?? findLogoByName(brand.id) ?? findLogoByName(brand.name)
+    : findLogoByName(provider)
   return logo && brand ? { ...logo, name: brand.name } : undefined
 }

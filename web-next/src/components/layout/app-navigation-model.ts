@@ -26,6 +26,7 @@ export type NavKey =
   | 'subscriptions'
   | 'invitations'
   | 'accountVerification'
+  | 'accountVerificationSettings'
   | 'profile'
   | 'users'
   | 'subscriptionManagement'
@@ -39,6 +40,7 @@ export type NavKey =
   | 'billingSettings'
   | 'groupSettings'
   | 'modelSettings'
+  | 'modelProviders'
   | 'channels'
   | 'credentials'
   | 'credentialProxies'
@@ -117,6 +119,7 @@ export const systemSectionItems = [
   'paymentSettings',
   'billingSettings',
   'modelSettings',
+  'modelProviders',
   'groupSettings',
   'channels',
   'credentials',
@@ -127,6 +130,7 @@ export const systemSectionItems = [
   'announcements',
   'emailSettings',
   'networkSettings',
+  'accountVerificationSettings',
   'keys',
   'debugTraces',
 ] as const satisfies readonly NavKey[]

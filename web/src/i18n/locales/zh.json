@@ -110,6 +110,7 @@
     "billingSettings": "计费设置",
     "groupSettings": "分组管理",
     "modelSettings": "模型管理",
+    "modelProviders": "模型厂商",
     "channels": "渠道管理",
     "credentials": "凭据与账号池",
     "credentialProxies": "专属代理",
@@ -119,7 +120,8 @@
     "debugTraces": "调试追踪",
     "billing": "计费",
     "settings": "设置",
-    "accountVerification": "账号认证"
+    "accountVerification": "账号认证",
+    "accountVerificationSettings": "实名认证配置"
   },
   "shell": {
     "notificationsUnread": "{{count}} 未读通知",
@@ -7435,6 +7437,7 @@
   },
   "verificationCenter": {
     "title": "账号认证",
+    "settingsTitle": "实名认证配置",
     "adminTitle": "个人与企业认证审核",
     "description": "提交个人或企业身份材料，查看审核进度与完整申请记录。企业认证通过后可申请开通企业空间。",
     "adminDescription": "审核个人与企业身份材料。审核结论和原始材料保留在对应申请中，企业空间需单独审批。",
@@ -7443,7 +7446,9 @@
     "kind": "认证类型",
     "provider": "认证方式",
     "providers": { "manual": "人工审核", "alipay": "支付宝实名认证" },
+    "noProvider": "当前没有可用的认证方式，请联系管理员。",
     "alipayHint": "支付宝认证不需要上传材料。提交后请打开支付宝认证页面完成身份核验，再查询认证结果。",
+    "alipayDocumentTypeHint": "支付宝当前实名接口仅接受中国大陆身份证。",
     "personName": "姓名",
     "companyName": "企业法定名称",
     "subjectName": "认证主体名称",
@@ -7451,7 +7456,8 @@
     "documentType": "证件类型",
     "documentNumber": "证件号码",
     "documentNumberHint": "仅保存脱敏号码；中国居民身份证会校验校验位。",
-    "documentTypes": { "national_id": "身份证", "passport": "护照", "residence_permit": "居留证", "business_registration": "企业登记号", "other": "其他证件" },
+    "documentTypes": { "national_id": "身份证", "passport": "护照", "residence_permit": "居留证", "foreign_passport": "外国护照", "hkm_macao_pass": "港澳居民来往内地通行证", "taiwan_pass": "台湾居民来往大陆通行证", "business_registration": "企业登记号", "other": "其他证件" },
+    "countries": { "CN": "中国大陆", "HK": "中国香港", "MO": "中国澳门", "TW": "中国台湾", "US": "美国", "CA": "加拿大", "GB": "英国", "JP": "日本", "KR": "韩国", "SG": "新加坡", "AU": "澳大利亚", "DE": "德国", "FR": "法国" },
     "summary": "认证说明",
     "materials": "认证材料",
     "fileHint": "支持 PNG、JPEG、WebP 和 PDF；最多 5 份，每份不超过 10 MB，总计不超过 25 MB。",

@@ -51,14 +51,20 @@ export const providerCatalog: readonly ProviderOption[] = [
   { id: 'ai21', name: 'AI21 Labs', logo: 'AI21' },
 ]
 
-function normalizeProvider(value: string) {
+export function normalizeProvider(value: string) {
   return value.trim().toLowerCase().replace(/[\s._-]/g, '')
 }
 
 export function findProvider(provider: string) {
   const normalized = normalizeProvider(provider)
-  return providerCatalog.find((item) => [item.id, item.name, ...(item.aliases ?? [])]
-    .some((value) => normalizeProvider(value) === normalized))
+  return providerCatalog
+    .map((item) => ({ item, score: [item.id, item.name, ...(item.aliases ?? [])].reduce((best, value) => {
+      const candidate = normalizeProvider(value)
+      if (candidate === normalized) return Math.max(best, candidate.length + 1000)
+      return candidate.length >= 3 && normalized.startsWith(candidate) ? Math.max(best, candidate.length) : best
+    }, 0) }))
+    .filter(({ score }) => score > 0)
+    .sort((left, right) => right.score - left.score)[0]?.item
 }
 
 export function providerDisplayName(provider: string) {

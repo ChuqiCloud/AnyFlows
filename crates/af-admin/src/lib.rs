@@ -3,8 +3,8 @@
 mod alipay_verification;
 mod verification_settings;
 pub use verification_settings::{
-    AdminVerificationSettings, DatabaseVerificationSettingsService, VerificationSettingsCommand,
-    VerificationSettingsError,
+    AdminVerificationSettings, DatabaseManualAccountVerificationProvider,
+    DatabaseVerificationSettingsService, VerificationSettingsCommand, VerificationSettingsError,
 };
 mod announcement;
 mod api_key;

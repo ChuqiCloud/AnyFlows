@@ -15,6 +15,7 @@ export type AccountVerificationDetailResponse = {
 export type AccountVerificationEligibilityResponse = {
     enterprise_verified: boolean;
     can_apply_for_organization: boolean;
+    providers: Array<string>;
 };
 export type AccountVerificationListResponse = {
     cases: Array<AccountVerificationResponse>;
@@ -1271,6 +1272,7 @@ export type AdminUserUpdateRequest = {
 };
 export type AdminVerificationSettings = {
     source: string;
+    manual_enabled: boolean;
     enabled: boolean;
     app_id?: string | null;
     private_key_configured: boolean;
@@ -1282,6 +1284,7 @@ export type AdminVerificationSettings = {
 };
 export type AdminVerificationSettingsRequest = {
     expected_version: number;
+    manual_enabled: boolean;
     enabled: boolean;
     app_id?: string | null;
     gateway_url: string;
@@ -3712,6 +3715,7 @@ export type AdminPaymentSettingsRequestWritable = {
 };
 export type AdminVerificationSettingsRequestWritable = {
     expected_version: number;
+    manual_enabled: boolean;
     enabled: boolean;
     app_id?: string | null;
     private_key?: string | null;

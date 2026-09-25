@@ -31639,7 +31639,8 @@
         "type": "object",
         "required": [
           "enterprise_verified",
-          "can_apply_for_organization"
+          "can_apply_for_organization",
+          "providers"
         ],
         "properties": {
           "enterprise_verified": {
@@ -31647,6 +31648,12 @@
           },
           "can_apply_for_organization": {
             "type": "boolean"
+          },
+          "providers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -39480,6 +39487,7 @@
         "type": "object",
         "required": [
           "source",
+          "manual_enabled",
           "enabled",
           "private_key_configured",
           "public_key_configured",
@@ -39491,6 +39499,9 @@
         "properties": {
           "source": {
             "type": "string"
+          },
+          "manual_enabled": {
+            "type": "boolean"
           },
           "enabled": {
             "type": "boolean"
@@ -39528,6 +39539,7 @@
         "type": "object",
         "required": [
           "expected_version",
+          "manual_enabled",
           "enabled",
           "gateway_url",
           "biz_code",
@@ -39537,6 +39549,9 @@
           "expected_version": {
             "type": "integer",
             "format": "int64"
+          },
+          "manual_enabled": {
+            "type": "boolean"
           },
           "enabled": {
             "type": "boolean"

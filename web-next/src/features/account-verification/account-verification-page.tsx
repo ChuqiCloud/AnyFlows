@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Building2, CheckCircle2, FileCheck2, LoaderCircle, RefreshCw, UserRound } from 'lucide-react'
 import { Button } from '@heroui/react'
@@ -8,6 +8,15 @@ import { ApiError } from '@/lib/api'
 import { useAccountEligibility, useAccountVerifications, useVerificationDetail, useSubmitAccountVerification,
   useReviewAccountVerification, useSyncAccountVerificationProvider, materialBlob, verificationBase, type VerificationKind, type VerificationProvider } from './account-verification-api'
 import { VerificationAttachment } from './verification-attachment'
+
+const countryOptions = ['CN', 'HK', 'MO', 'TW', 'US', 'CA', 'GB', 'JP', 'KR', 'SG', 'AU', 'DE', 'FR'] as const
+const manualDocumentTypes = ['national_id', 'passport', 'residence_permit', 'foreign_passport', 'hkm_macao_pass', 'taiwan_pass', 'other'] as const
+
+function documentTypes(kind: VerificationKind, provider: VerificationProvider) {
+  if (kind === 'enterprise') return ['business_registration'] as const
+  // Alipay's current certdoc.certverify.preconsult contract also supports IDENTITY_CARD only.
+  return provider === 'alipay' ? ['national_id'] as const : manualDocumentTypes
+}
 
 export function AccountVerificationPage({ admin = false }: { admin?: boolean }) {
   const { t } = useTranslation()
@@ -38,22 +47,31 @@ function AccountVerificationForm({ onSubmitted }: { onSubmitted: (id: number) =>
   const [summary, setSummary] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const [fileError, setFileError] = useState(false)
+  const availableProviders = (eligibility.data?.providers ?? []).filter((value): value is VerificationProvider => value === 'manual' || value === 'alipay')
+  const providerOptions = kind === 'enterprise' ? availableProviders.filter((value) => value === 'manual') : availableProviders
+  const availableDocumentTypes = documentTypes(kind, provider)
+  useEffect(() => {
+    if (eligibility.data && providerOptions.length > 0 && !providerOptions.includes(provider)) setProvider(providerOptions[0])
+  }, [eligibility.data, kind, providerOptions, provider])
+  useEffect(() => {
+    if (!availableDocumentTypes.includes(documentType as never)) setDocumentType(availableDocumentTypes[0])
+  }, [availableDocumentTypes, documentType])
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     const valid = provider === 'alipay' ? files.length === 0 : files.length > 0 && files.length <= 5 && files.every((f) => f.size > 0 && f.size <= 10_000_000 && ['application/pdf', 'image/png', 'image/jpeg', 'image/webp'].includes(f.type)) && files.reduce((sum, f) => sum + f.size, 0) <= 25_000_000
     setFileError(!valid)
     if (!valid) return
-    try { const record = await mutation.mutateAsync({ kind, provider, document_country: provider === 'alipay' ? 'CN' : country, document_type: provider === 'alipay' ? 'national_id' : kind === 'enterprise' ? 'business_registration' : documentType, document_number: documentNumber.trim() || undefined, subject_name: name.trim(), summary: summary.trim(), files }); setFiles([]); setName(''); setDocumentNumber(''); setSummary(''); onSubmitted(record.id) } catch { /* Keep the form for correction. */ }
+    try { const record = await mutation.mutateAsync({ kind, provider, document_country: country, document_type: kind === 'enterprise' ? 'business_registration' : documentType, document_number: documentNumber.trim() || undefined, subject_name: name.trim(), summary: summary.trim(), files }); setFiles([]); setName(''); setDocumentNumber(''); setSummary(''); onSubmitted(record.id) } catch { /* Keep the form for correction. */ }
   }
   return <section className="rounded-2xl border border-default-200 bg-content1 p-6">
     {eligibility.data?.enterprise_verified ? <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-success/10 p-3"><p className="flex items-center gap-2 text-sm text-success"><CheckCircle2 className="size-4" />{t('verificationCenter.enterpriseGranted')}</p><a href="/console/organization-provisioning" className="text-sm font-medium text-brand">{t('verificationCenter.applyWorkspace')}</a></div> : null}
     <div className="mb-4 flex gap-2" role="tablist" aria-label={t('verificationCenter.kind')}>{(['individual', 'enterprise'] as const).map((value) => <Button key={value} type="button" role="tab" aria-selected={kind === value} variant={kind === value ? 'solid' : 'bordered'} color={kind === value ? 'primary' : 'default'} onClick={() => { setKind(value); if (value === 'enterprise') setProvider('manual'); mutation.reset() }}>{value === 'individual' ? <UserRound className="size-4" /> : <Building2 className="size-4" />}{t(`verificationCenter.${value}`)}</Button>)}</div>
     <form onSubmit={(event) => void submit(event)} className="grid gap-4">
-      <label className="grid gap-2 text-sm"><span>{t('verificationCenter.provider')}</span><select className="rounded-lg border border-[var(--hairline)] bg-surface-1 p-2 text-sm" value={provider} onChange={(e) => { const value = e.target.value as VerificationProvider; setProvider(value); if (value === 'alipay') { setCountry('CN'); setDocumentType('national_id'); setFiles([]) } }}><option value="manual">{t('verificationCenter.providers.manual')}</option><option value="alipay" disabled={kind === 'enterprise'}>{t('verificationCenter.providers.alipay')}</option></select></label>
+      <label className="grid gap-2 text-sm"><span>{t('verificationCenter.provider')}</span><select className="rounded-lg border border-[var(--hairline)] bg-surface-1 p-2 text-sm" value={provider} disabled={providerOptions.length === 0} onChange={(e) => { const value = e.target.value as VerificationProvider; setProvider(value); if (value === 'alipay') { setCountry('CN'); setDocumentType('national_id'); setFiles([]) } }}>{providerOptions.map((value) => <option key={value} value={value}>{t(`verificationCenter.providers.${value}`)}</option>)}</select>{eligibility.data && providerOptions.length === 0 ? <span className="text-xs text-destructive">{t('verificationCenter.noProvider')}</span> : null}</label>
       <label className="grid gap-2 text-sm"><span>{t(kind === 'enterprise' ? 'verificationCenter.companyName' : 'verificationCenter.personName')}</span><Input aria-label={t('verificationCenter.subjectName')} isRequired maxLength={128} value={name} onChange={(e) => setName(e.target.value)} /></label>
       <div className="grid gap-4 sm:grid-cols-2">
-        <label className="grid gap-2 text-sm"><span>{t('verificationCenter.documentCountry')}</span><Input isRequired maxLength={2} pattern="[A-Z]{2}" value={provider === 'alipay' ? 'CN' : country} disabled={provider === 'alipay'} onChange={(e) => setCountry(e.target.value.toUpperCase())} /></label>
-        <label className="grid gap-2 text-sm"><span>{t('verificationCenter.documentType')}</span><select className="rounded-lg border border-[var(--hairline)] bg-surface-1 p-2 text-sm" value={provider === 'alipay' ? 'national_id' : kind === 'enterprise' ? 'business_registration' : documentType} disabled={provider === 'alipay' || kind === 'enterprise'} onChange={(e) => setDocumentType(e.target.value)}>{(provider === 'alipay' ? ['national_id'] : kind === 'enterprise' ? ['business_registration'] : ['national_id', 'passport', 'residence_permit', 'other']).map((value) => <option key={value} value={value}>{t(`verificationCenter.documentTypes.${value}`)}</option>)}</select></label>
+        <label className="grid gap-2 text-sm"><span>{t('verificationCenter.documentCountry')}</span><select className="rounded-lg border border-[var(--hairline)] bg-surface-1 p-2 text-sm" value={country} disabled={provider === 'alipay'} onChange={(e) => setCountry(e.target.value)}>{countryOptions.map((value) => <option key={value} value={value}>{value} · {t(`verificationCenter.countries.${value}`)}</option>)}</select></label>
+        <label className="grid gap-2 text-sm"><span>{t('verificationCenter.documentType')}</span><select className="rounded-lg border border-[var(--hairline)] bg-surface-1 p-2 text-sm" value={kind === 'enterprise' ? 'business_registration' : documentType} disabled={kind === 'enterprise' || provider === 'alipay'} onChange={(e) => setDocumentType(e.target.value)}>{availableDocumentTypes.map((value) => <option key={value} value={value}>{t(`verificationCenter.documentTypes.${value}`)}</option>)}</select>{provider === 'alipay' ? <span className="text-xs text-muted-foreground">{t('verificationCenter.alipayDocumentTypeHint')}</span> : null}</label>
       </div>
       <label className="grid gap-2 text-sm"><span>{t('verificationCenter.documentNumber')}</span><Input aria-label={t('verificationCenter.documentNumber')} isRequired minLength={5} maxLength={64} autoComplete="off" value={documentNumber} onChange={(e) => setDocumentNumber(e.target.value)} /><span className="text-xs text-muted-foreground">{t('verificationCenter.documentNumberHint')}</span></label>
       <label className="grid gap-2 text-sm"><span>{t('verificationCenter.summary')}</span><Textarea aria-label={t('verificationCenter.summary')} isRequired maxLength={512} value={summary} onChange={(e) => setSummary(e.target.value)} /></label>
@@ -61,7 +79,7 @@ function AccountVerificationForm({ onSubmitted }: { onSubmitted: (id: number) =>
       <div className="grid gap-3 md:grid-cols-2">{files.map((file, index) => <VerificationAttachment key={`${index}-${file.name}-${file.lastModified}`} name={file.name} size={file.size} contentType={file.type} file={file} />)}</div>
       {fileError ? <p role="alert" className="text-sm text-destructive">{t('verificationCenter.fileError')}</p> : null}
       {mutation.isError ? <MutationError error={mutation.error} /> : null}
-      <Button type="submit" className="justify-self-start" isDisabled={mutation.isPending}>{mutation.isPending ? <LoaderCircle className="size-4 animate-spin" /> : <FileCheck2 className="size-4" />}{t('verificationCenter.submit')}</Button>
+      <Button type="submit" className="justify-self-start" isDisabled={mutation.isPending || providerOptions.length === 0}>{mutation.isPending ? <LoaderCircle className="size-4 animate-spin" /> : <FileCheck2 className="size-4" />}{t('verificationCenter.submit')}</Button>
     </form>
   </section>
 }

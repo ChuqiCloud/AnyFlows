@@ -14,6 +14,7 @@ pub(in crate::migration) mod account_verification_settings {
     pub(in crate::migration) enum Column {
         Id,
         Initialized,
+        ManualEnabled,
         AlipayEnabled,
         AlipayAppId,
         AlipayCredentials,

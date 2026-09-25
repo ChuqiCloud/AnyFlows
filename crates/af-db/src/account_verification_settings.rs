@@ -31,6 +31,7 @@ pub enum AccountVerificationSettingsError {
 #[derive(Clone)]
 pub struct AccountVerificationSettingsRecord {
     pub initialized: bool,
+    pub manual_enabled: bool,
     pub enabled: bool,
     pub app_id: Option<String>,
     pub credentials: Option<EncryptedCredentialEnvelope>,
@@ -86,6 +87,10 @@ impl AccountVerificationSettingsRepository {
             let credentials = record.credentials.map(encrypted_json).transpose()?;
             let result = settings::Entity::update_many()
                 .col_expr(settings::Column::Initialized, Expr::value(true))
+                .col_expr(
+                    settings::Column::ManualEnabled,
+                    Expr::value(record.manual_enabled),
+                )
                 .col_expr(settings::Column::AlipayEnabled, Expr::value(record.enabled))
                 .col_expr(settings::Column::AlipayAppId, Expr::value(record.app_id))
                 .col_expr(
@@ -130,6 +135,7 @@ fn record_from_model(
 ) -> Result<AccountVerificationSettingsRecord, AccountVerificationSettingsError> {
     Ok(AccountVerificationSettingsRecord {
         initialized: model.initialized,
+        manual_enabled: model.manual_enabled,
         enabled: model.alipay_enabled,
         app_id: model.alipay_app_id.map(|value| value.as_str().to_owned()),
         credentials: model

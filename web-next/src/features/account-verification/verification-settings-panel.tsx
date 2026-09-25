@@ -7,15 +7,15 @@ import { apiClient, ApiError } from '@/lib/api'
 import { jsonBodySerializer } from '@/lib/api/generated/client'
 import { sessionSecurity, verificationGet } from './account-verification-api'
 
-type Settings = { source: 'environment' | 'database'; enabled: boolean; app_id: string | null;
+type Settings = { source: 'environment' | 'database'; manual_enabled: boolean; enabled: boolean; app_id: string | null;
   private_key_configured: boolean; public_key_configured: boolean; gateway_url: string;
   biz_code: string; timeout_secs: number; version: number }
-type Draft = { enabled: boolean; app_id: string; private_key: string; public_key: string;
+type Draft = { manual_enabled: boolean; enabled: boolean; app_id: string; private_key: string; public_key: string;
   gateway_url: string; biz_code: string; timeout_secs: number }
 type SettingsRequest = Omit<Draft, 'private_key' | 'public_key'> & {
   private_key?: string; public_key?: string; expected_version: number }
 const settingsKey = ['admin-account-verification-settings'] as const
-const toDraft = (settings: Settings): Draft => ({ enabled: settings.enabled,
+const toDraft = (settings: Settings): Draft => ({ manual_enabled: settings.manual_enabled, enabled: settings.enabled,
   app_id: settings.app_id ?? '', private_key: '', public_key: '', gateway_url: settings.gateway_url,
   biz_code: settings.biz_code, timeout_secs: settings.timeout_secs })
 
@@ -43,10 +43,10 @@ export function VerificationSettingsPanel() {
   if (query.isError || !query.data || !draft) return <div role="alert" className="flex items-center gap-3 text-sm text-danger">无法读取认证配置。<Button size="sm" variant="flat" onPress={() => void query.refetch()}><RefreshCw className="size-4" />重试</Button></div>
   const environment = query.data.source === 'environment'
   return <section className="grid gap-5">
-    <header><h2 className="text-lg font-semibold">实名认证配置</h2><p className="mt-1 text-sm text-default-500">人工审核始终可用；支付宝认证可在这里启用并更新接入参数。</p></header>
+    <header><h2 className="text-lg font-semibold">实名认证配置</h2><p className="mt-1 text-sm text-default-500">在这里控制用户可选择的认证方式。关闭某项后，用户提交页面不会再显示该方式。</p></header>
     {environment ? <p className="border-l-2 border-warning px-3 text-sm text-default-500">当前使用启动配置。首次在线保存后以后台设置为准；若启用支付宝，请重新填写两把密钥。</p> : null}
     <form onSubmit={submit} className="grid max-w-3xl gap-4">
-      <Switch isSelected={draft.enabled} onValueChange={(enabled) => setDraft({ ...draft, enabled })}>启用支付宝实名认证</Switch>
+      <div className="grid gap-3 rounded-lg border border-default-200 p-3"><Switch isSelected={draft.manual_enabled} onValueChange={(manual_enabled) => setDraft({ ...draft, manual_enabled })}>启用人工审核</Switch><Switch isSelected={draft.enabled} onValueChange={(enabled) => setDraft({ ...draft, enabled })}>启用支付宝实名认证</Switch></div>
       <Input label="应用 ID" value={draft.app_id} maxLength={128} onValueChange={(app_id) => setDraft({ ...draft, app_id })} />
       <div className="grid gap-4 md:grid-cols-2">
         <Textarea label="应用私钥" description={!environment && query.data.private_key_configured ? '已配置，留空保持不变' : '未保存到后台'} value={draft.private_key} minRows={6} autoComplete="off" onValueChange={(private_key) => setDraft({ ...draft, private_key })} />

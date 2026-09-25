@@ -23,6 +23,13 @@ pub trait AccountVerificationProvider: Send + Sync {
     fn key(&self) -> &'static str;
     fn configured(&self) -> bool;
 
+    /// Returns the current user-visible availability. Providers backed by
+    /// mutable database settings can override this without rebuilding the
+    /// service or changing the case storage contract.
+    async fn available(&self) -> bool {
+        self.configured()
+    }
+
     async fn initialize(
         &self,
         _request: &AccountVerificationProviderRequest,
@@ -142,12 +149,14 @@ impl AccountVerificationService {
         mut write: AccountVerificationSubmit,
     ) -> Result<AccountVerificationRecord, AccountVerificationError> {
         validate_account_verification_submit(&write)?;
+        let provider = self
+            .providers
+            .get(write.provider.as_str())
+            .ok_or(AccountVerificationError::Unavailable)?;
+        if !provider.available().await {
+            return Err(AccountVerificationError::Unavailable);
+        }
         if write.provider != "manual" {
-            let provider = self
-                .providers
-                .get(write.provider.as_str())
-                .filter(|provider| provider.configured())
-                .ok_or(AccountVerificationError::Unavailable)?;
             let document_number = write
                 .document_number
                 .clone()
@@ -169,6 +178,17 @@ impl AccountVerificationService {
         self.repository.submit(principal.user_id(), write).await
     }
 
+    pub async fn available_providers(&self) -> Vec<String> {
+        let mut providers = Vec::new();
+        for provider in self.providers.values() {
+            if provider.available().await {
+                providers.push(provider.key().to_owned());
+            }
+        }
+        providers.sort();
+        providers
+    }
+
     pub async fn sync_provider(
         &self,
         principal: SessionPrincipal,
@@ -181,8 +201,10 @@ impl AccountVerificationService {
         let provider = self
             .providers
             .get(provider_key.as_str())
-            .filter(|provider| provider.configured())
             .ok_or(AccountVerificationError::Unavailable)?;
+        if !provider.available().await {
+            return Err(AccountVerificationError::Unavailable);
+        }
         let result: AccountVerificationProviderResult = provider
             .query(&reference)
             .await
