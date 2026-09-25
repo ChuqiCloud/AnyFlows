@@ -294,6 +294,7 @@ impl fmt::Debug for ModelDiscoveryTargetRecord {
 }
 
 /// 渠道发现目标的有界读取结果。
+#[allow(clippy::large_enum_variant)]
 pub enum ModelDiscoveryTargetLookup {
     /// 渠道不存在或已经软删除。
     NotFound,

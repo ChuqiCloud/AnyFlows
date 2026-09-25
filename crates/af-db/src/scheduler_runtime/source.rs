@@ -413,6 +413,7 @@ impl SchedulerRuntimeCredentialSource {
     }
 
     /// 消费来源对象，返回构造运行时凭据记录所需的安全字段。
+    #[allow(clippy::type_complexity)]
     pub(super) fn into_runtime_parts(
         self,
     ) -> (

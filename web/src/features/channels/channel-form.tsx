@@ -47,6 +47,10 @@ type ChannelFormProps = {
 
 const adapterOptions = ['openai', 'anthropic', 'gemini', 'jina', 'cohere', 'xai']
   .map((id) => ({ ...findProvider(id)!, id }))
+const channelTypeOptions = [
+  findProvider('codex_oauth')!,
+  ...adapterOptions,
+]
 
 export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormProps) {
   const { t, i18n } = useTranslation()
@@ -80,6 +84,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
   const submitError = createMutation.isError || updateMutation.isError
   const channelType = form.watch('channelType')
   const protocol = form.watch('protocol')
+  const codexOAuth = channelType === 'codex_oauth'
   const autoBan = form.watch('autoBan')
   const poolMode = form.watch('poolMode')
   const clientSimulationProfile = form.watch('clientSimulationProfile')
@@ -104,7 +109,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
     nextType: ChannelType,
     nextProtocol: ChannelProtocol,
   ) => {
-    if (nextType === 'openai' && nextProtocol === 'openai_responses') return
+    if ((nextType === 'openai' || nextType === 'codex_oauth') && nextProtocol === 'openai_responses') return
     form.setValue('responsesWebsocketEnabled', false, { shouldDirty: true })
     form.setValue('responsesCompactMode', 'auto', { shouldDirty: true })
     form.setValue('responsesCompactModelMapping', [], { shouldDirty: true })
@@ -147,9 +152,15 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
             <Input id="channel-name" aria-invalid={!!form.formState.errors.name} {...form.register('name')} />
           </ChannelFormField>
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(11rem,0.36fr)]">
-            <ChannelFormField id="channel-url" label={t('channels.fields.baseUrl')} error={form.formState.errors.baseUrl?.message}>
-              <Input id="channel-url" placeholder="https://api.example.com/v1" aria-invalid={!!form.formState.errors.baseUrl} {...form.register('baseUrl')} />
-            </ChannelFormField>
+            {codexOAuth ? (
+              <ChannelFormField id="channel-url" label={t('channels.fields.baseUrl')} hint={t('channels.form.codexOAuthBaseUrlHint')}>
+                <div className="flex h-9 items-center rounded-lg border border-[var(--hairline)] bg-surface-2 px-3 text-sm text-muted-foreground">{t('channels.form.codexOAuthFixedEndpoint')}</div>
+              </ChannelFormField>
+            ) : (
+              <ChannelFormField id="channel-url" label={t('channels.fields.baseUrl')} error={form.formState.errors.baseUrl?.message}>
+                <Input id="channel-url" placeholder="https://api.example.com/v1" aria-invalid={!!form.formState.errors.baseUrl} {...form.register('baseUrl')} />
+              </ChannelFormField>
+            )}
             <ChannelFormField id="channel-timeout" label={t('channels.fields.timeout')} error={form.formState.errors.timeoutSeconds?.message} hint={t('channels.form.timeoutHint')}>
               <Input
                 id="channel-timeout"
@@ -165,7 +176,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <ChannelFormField id="channel-provider" label={t('providers.label')} error={form.formState.errors.provider?.message}>
-              <Controller control={form.control} name="provider" render={({ field }) => <ProviderPicker id="channel-provider" {...field} invalid={!!form.formState.errors.provider} disabled={pending} />} />
+              <Controller control={form.control} name="provider" render={({ field }) => <ProviderPicker id="channel-provider" {...field} invalid={!!form.formState.errors.provider} disabled={pending || codexOAuth} />} />
             </ChannelFormField>
             <ChannelFormField id="channel-type" label={t('channels.fields.type')} hint={t('providers.adapterHint')}>
               <Controller control={form.control} name="channelType" render={({ field }) => (
@@ -175,11 +186,13 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                   onBlur={field.onBlur}
                   ref={field.ref}
                   allowCustom={false}
-                  options={adapterOptions}
+                  options={channelTypeOptions}
                   onChange={(value) => {
                     const nextType = value as ChannelType
                     const currentProtocol = form.getValues('protocol')
-                    const nextProtocol = nextType === 'anthropic'
+                    const nextProtocol = nextType === 'codex_oauth'
+                      ? 'openai_responses'
+                      : nextType === 'anthropic'
                       ? 'anthropic'
                       : nextType === 'gemini'
                         ? 'gemini'
@@ -198,6 +211,13 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                           ? currentProtocol
                           : 'openai_chat'
                     field.onChange(nextType)
+                    if (nextType === 'codex_oauth') {
+                      form.setValue('provider', 'codex', { shouldDirty: true, shouldValidate: true })
+                      form.setValue('baseUrl', '', { shouldDirty: true, shouldValidate: true })
+                      form.setValue('responsesWebsocketEnabled', false, { shouldDirty: true, shouldValidate: true })
+                    } else if (form.getValues('provider') === 'codex') {
+                      form.setValue('provider', nextType, { shouldDirty: true, shouldValidate: true })
+                    }
                     form.setValue('protocol', nextProtocol, {
                       shouldDirty: true,
                       shouldValidate: true,
@@ -214,6 +234,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                 <Select
                   id="channel-protocol"
                   value={field.value}
+                  disabled={codexOAuth}
                   onBlur={field.onBlur}
                   name={field.name}
                   ref={field.ref}
@@ -225,7 +246,9 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                     resetUnsupportedClientSimulation(channelType, nextProtocol)
                   }}
                 >
-                  {channelType === 'anthropic' ? (
+                  {codexOAuth ? (
+                    <option value="openai_responses">{t('channels.protocol.openai_responses')}</option>
+                  ) : channelType === 'anthropic' ? (
                     <option value="anthropic">{t('channels.protocol.anthropic')}</option>
                   ) : channelType === 'gemini' ? (
                     <option value="gemini">{t('channels.protocol.gemini')}</option>
@@ -414,9 +437,9 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
               ) : null}
             </div>
           ) : null}
-          {channelType === 'openai' && protocol === 'openai_responses' ? (
+          {(channelType === 'openai' || codexOAuth) && protocol === 'openai_responses' ? (
             <div className="grid gap-4 border-l-2 border-primary/20 pl-3">
-              <div className="flex items-center justify-between gap-4">
+              {!codexOAuth ? <div className="flex items-center justify-between gap-4">
                 <div>
                   <Label htmlFor="channel-responses-websocket">{t('channels.fields.responsesWebsocket')}</Label>
                   <p className="mt-1 text-[0.6875rem] text-muted-foreground">{t('channels.form.responsesWebsocketHint')}</p>
@@ -424,7 +447,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                 <Controller control={form.control} name="responsesWebsocketEnabled" render={({ field }) => (
                   <Switch id="channel-responses-websocket" checked={field.value} onCheckedChange={field.onChange} />
                 )} />
-              </div>
+              </div> : null}
               <div className="grid gap-3 sm:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]">
                 <ChannelFormField
                   id="channel-responses-compact-mode"
