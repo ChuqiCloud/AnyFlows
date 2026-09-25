@@ -30,7 +30,7 @@ use crate::{
     management_error::ManagementError,
 };
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 /// 管理端创建或完整更新凭据时使用的配置正文。
 pub(crate) struct AdminCredentialWriteRequest {
@@ -151,6 +151,13 @@ fn collect_import_value(value: &serde_json::Value, output: &mut Vec<ImportedOAut
             output.push(item);
         }
         serde_json::Value::Object(object) => {
+            if object
+                .get("platform")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|platform| !platform.eq_ignore_ascii_case("openai"))
+            {
+                return;
+            }
             if let Some(accounts) = object.get("accounts").and_then(serde_json::Value::as_array) {
                 accounts
                     .iter()
@@ -176,41 +183,39 @@ fn collect_import_value(value: &serde_json::Value, output: &mut Vec<ImportedOAut
                 return;
             };
             let account = object.get("account").and_then(serde_json::Value::as_object);
-            let account_key = first_string(
-                object,
-                &[
-                    "chatgpt_account_id",
-                    "chatgptAccountId",
-                    "account_id",
-                    "accountId",
-                ],
-            )
-            .or_else(|| {
-                account.and_then(|value| {
-                    first_string(
-                        value,
-                        &[
-                            "id",
-                            "account_id",
-                            "accountId",
-                            "chatgpt_account_id",
-                            "chatgptAccountId",
-                        ],
-                    )
-                })
-            });
-            let project_id = first_string(
-                object,
-                &["organization_id", "organizationId", "org_id", "orgId"],
-            )
-            .or_else(|| {
-                account.and_then(|value| {
-                    first_string(
-                        value,
-                        &["organization_id", "organizationId", "org_id", "orgId"],
-                    )
-                })
-            });
+            let account_keys = [
+                "chatgpt_account_id",
+                "chatgptAccountId",
+                "account_id",
+                "accountId",
+            ];
+            let account_key = first_string(source, &account_keys)
+                .or_else(|| first_string(object, &account_keys))
+                .or_else(|| {
+                    account.and_then(|value| {
+                        first_string(
+                            value,
+                            &[
+                                "id",
+                                "account_id",
+                                "accountId",
+                                "chatgpt_account_id",
+                                "chatgptAccountId",
+                            ],
+                        )
+                    })
+                });
+            let organization_keys = ["organization_id", "organizationId", "org_id", "orgId"];
+            let project_id = first_string(source, &organization_keys)
+                .or_else(|| first_string(object, &organization_keys))
+                .or_else(|| {
+                    account.and_then(|value| {
+                        first_string(
+                            value,
+                            &["organization_id", "organizationId", "org_id", "orgId"],
+                        )
+                    })
+                });
             let mut item = ImportedOAuthToken {
                 access_token,
                 refresh_token: first_string(source, &["refresh_token", "refreshToken"])
@@ -1008,6 +1013,24 @@ mod tests {
         .unwrap();
         assert_eq!(tokens[0].account_key.as_deref(), Some("account-from-jwt"));
         assert_eq!(tokens[0].expires_at_epoch_seconds, Some(1_800_000_000));
+    }
+
+    #[test]
+    fn import_reads_sub2api_credentials_and_skips_other_platforms() {
+        let tokens = parse_import_file(
+            &json!({"accounts": [
+                {"platform": "openai", "credentials": {
+                    "access_token": "codex-access", "refresh_token": "codex-refresh",
+                    "chatgpt_account_id": "codex-account"
+                }},
+                {"platform": "claude", "credentials": {"access_token": "other-access"}}
+            ]})
+            .to_string(),
+        )
+        .unwrap();
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].account_key.as_deref(), Some("codex-account"));
+        assert_eq!(tokens[0].refresh_token.as_deref(), Some("codex-refresh"));
     }
 
     fn request(kind: &str, secret: Value) -> Value {
