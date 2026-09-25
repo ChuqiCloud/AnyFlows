@@ -61,6 +61,17 @@ try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 960 }, locale: 'zh-CN', reducedMotion: 'reduce' })
   page.setDefaultTimeout(15_000)
   page.on('pageerror', (error) => errors.push(error.message))
+  const capturePage = async (name) => {
+    for (const [viewport, width, height] of [['desktop', 1280, 960], ['mobile', 390, 844]]) {
+      await page.setViewportSize({ width, height })
+      await page.evaluate(() => document.fonts.ready)
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `${name} overflowed at ${width}px`)
+      console.log(`ANYFLOWS_SETTINGS_SCREENSHOT_${frontend}_${name}_${viewport}_BEGIN`)
+      console.log((await page.screenshot({ fullPage: true, animations: 'disabled' })).toString('base64').match(/.{1,120}/g).join('\n'))
+      console.log(`ANYFLOWS_SETTINGS_SCREENSHOT_${frontend}_${name}_${viewport}_END`)
+    }
+    await page.setViewportSize({ width: 1280, height: 960 })
+  }
   await page.addInitScript(() => localStorage.setItem('anyflows.locale', 'zh'))
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9mQAAAAASUVORK5CYII=', 'base64')
   let submitted = 0
@@ -188,6 +199,7 @@ try {
   assert.equal(downloads, 2, 'Approved materials must remain accessible')
   await page.goto(`${home}?mode=settings`)
   await page.getByText('实名认证配置', { exact: true }).waitFor()
+  await capturePage('verification-settings')
   const manualToggle = page.locator('label').filter({ hasText: '启用人工审核' }).locator('input')
   const alipayToggle = page.locator('label').filter({ hasText: '启用支付宝实名认证' }).locator('input')
   // Classic switches use buttons; HeroUI switches use native checkbox inputs.
@@ -230,8 +242,9 @@ try {
   assert.equal(await page.locator('input[type="file"]').evaluate((input) => input.files.length), 0)
 
   await page.goto(`${home}?mode=catalog`)
-  await page.getByText('OpenAI', { exact: true }).waitFor()
+  await page.locator('article p').getByText('OpenAI', { exact: true }).waitFor()
   assert.equal(await page.locator('article').count(), 12)
+  await capturePage('provider-catalog')
   const firstKeys = await page.locator('article p.font-mono').allTextContents()
   await page.getByRole('button', { name: '下一页', exact: true }).click()
   assert.notDeepEqual(await page.locator('article p.font-mono').allTextContents(), firstKeys)
