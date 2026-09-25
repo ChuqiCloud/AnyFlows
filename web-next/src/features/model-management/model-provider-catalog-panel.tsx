@@ -1,4 +1,4 @@
-import { Button, Input, Switch } from '@heroui/react'
+import { Button, Drawer, DrawerBody, DrawerContent, DrawerFooter, DrawerHeader, Input, Switch } from '@heroui/react'
 import { ChevronLeft, ChevronRight, Network, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -64,7 +64,7 @@ export function ModelProviderCatalogPanel() {
     setNotice('')
     deleteMutation.mutate(provider)
   }
-  const writeError = saveMutation.error ?? deleteMutation.error
+  const writeError = deleteMutation.error
   const providers = useMemo(() => {
     const configured = new Map((query.data ?? []).map((provider) => [provider.provider_key, provider] as const))
     return [...providerCatalog.map((provider, index) => configured.get(provider.id) ?? { provider_key: provider.id, display_name: provider.name, logo: provider.logo, aliases: [...(provider.aliases ?? [])], enabled: true, sort_order: index, version: 0 }), ...(query.data ?? []).filter((provider) => !providerCatalog.some((item) => item.id === provider.provider_key))]
@@ -83,5 +83,45 @@ export function ModelProviderCatalogPanel() {
     {writeError ? <p role="alert" className="text-sm text-danger">{writeError instanceof ApiError && writeError.status === 409 ? '厂商配置已更新，请刷新后重试。' : '操作失败，请检查输入内容后重试。'}</p> : null}
     {notice ? <p role="status" className="text-sm text-default-500">{notice}</p> : null}
     {query.isSuccess && filtered.length === 0 ? <p className="text-sm text-default-500">没有匹配的厂商。</p> : null}
-    <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{pageProviders.map((provider) => <article key={provider.provider_key} className="flex min-w-0 items-center gap-3 rounded-lg border border-default-200 bg-content1 p-3"><span className="grid size-9 shrink-0 place-items-center rounded-lg bg-default-100"><ProviderLogo provider={provider} /></span><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{provider.display_name}</p><p className="truncate font-mono text-[0.6875rem] text-default-500">{provider.provider_key}</p><p className="truncate text-[0.6875rem] text-default-500">{provider.enabled ? '已启用' : '已停用'} · 排序 {provider.sort_order}</p></div><Button isIconOnly size="sm" variant="light" aria-label="编辑" isDisabled={!canManage} onPress={() => edit(provider)}><Pencil aria-hidden="true" /></Button>{provider.version > 0 ? <Button isIconOnly size="sm" variant="light" className="text-danger" aria-label="删除" isDisabled={!canManage} onPress={() => remove(provider)}><Trash2 aria-hidden="true" /></Button> : null}</article>)}</section><div className="flex flex-wrap items-center justify-between gap-3"><span className="text-xs text-default-500">第 {page} / {pageCount} 页，共 {filtered.length} 个厂商</span><div className="flex gap-2"><Button size="sm" variant="flat" isDisabled={page <= 1} onPress={() => setPage((current) => current - 1)}><ChevronLeft aria-hidden="true" />上一页</Button><Button size="sm" variant="flat" isDisabled={page >= pageCount} onPress={() => setPage((current) => current + 1)}>下一页<ChevronRight aria-hidden="true" /></Button></div></div>{formOpen ? <div className="grid gap-3 rounded-lg border border-dashed border-default-200 bg-content1 p-3"><div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1 text-xs"><span>标识（小写）</span><Input value={form.provider_key} isDisabled={Boolean(editing)} placeholder="my-provider" onValueChange={(value) => setForm((current) => ({ ...current, provider_key: value }))} /></label><label className="grid gap-1 text-xs"><span>显示名称</span><Input value={form.display_name} placeholder="My Provider" onValueChange={(value) => setForm((current) => ({ ...current, display_name: value }))} /></label><label className="grid gap-1 text-xs"><span>Logo 标识或 URL</span><Input value={form.logo} placeholder="OpenAI 或 https://..." onValueChange={(value) => setForm((current) => ({ ...current, logo: value }))} /></label><label className="grid gap-1 text-xs"><span>别名（逗号分隔）</span><Input value={form.aliases} placeholder="alias, legacy-name" onValueChange={(value) => setForm((current) => ({ ...current, aliases: value }))} /></label><label className="grid gap-1 text-xs"><span>排序</span><Input type="number" min="0" value={form.sort_order} onValueChange={(value) => setForm((current) => ({ ...current, sort_order: value }))} /></label><label className="flex items-center gap-2 self-end text-xs"><Switch isSelected={form.enabled} onValueChange={(enabled) => setForm((current) => ({ ...current, enabled }))} />启用厂商</label></div><div className="flex justify-end gap-2"><Button size="sm" variant="flat" isDisabled={busy} onPress={reset}>取消</Button><Button size="sm" color="primary" isDisabled={!canManage || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(form.provider_key.trim().toLowerCase()) || !form.display_name.trim()} onPress={() => { setNotice(''); saveMutation.mutate() }}>保存</Button></div></div> : null}</div>
+    <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{pageProviders.map((provider) => <article key={provider.provider_key} className="flex min-w-0 items-center gap-3 rounded-lg border border-default-200 bg-content1 p-3"><span className="grid size-9 shrink-0 place-items-center rounded-lg bg-default-100"><ProviderLogo provider={provider} /></span><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{provider.display_name}</p><p className="truncate font-mono text-[0.6875rem] text-default-500">{provider.provider_key}</p><p className="truncate text-[0.6875rem] text-default-500">{provider.enabled ? '已启用' : '已停用'} · 排序 {provider.sort_order}</p></div><Button isIconOnly size="sm" variant="light" aria-label="编辑" isDisabled={!canManage} onPress={() => edit(provider)}><Pencil aria-hidden="true" /></Button>{provider.version > 0 ? <Button isIconOnly size="sm" variant="light" className="text-danger" aria-label="删除" isDisabled={!canManage} onPress={() => remove(provider)}><Trash2 aria-hidden="true" /></Button> : null}</article>)}</section><div className="flex flex-wrap items-center justify-between gap-3"><span className="text-xs text-default-500">第 {page} / {pageCount} 页，共 {filtered.length} 个厂商</span><div className="flex gap-2"><Button size="sm" variant="flat" isDisabled={page <= 1} onPress={() => setPage((current) => current - 1)}><ChevronLeft aria-hidden="true" />上一页</Button><Button size="sm" variant="flat" isDisabled={page >= pageCount} onPress={() => setPage((current) => current + 1)}>下一页<ChevronRight aria-hidden="true" /></Button></div></div>
+    <Drawer
+      aria-describedby="model-provider-editor-description"
+      backdrop="blur"
+      classNames={{ base: 'w-full max-h-none sm:max-w-lg' }}
+      isOpen={formOpen}
+      placement="right"
+      scrollBehavior="inside"
+      onOpenChange={(open) => { if (!open && !busy) reset() }}
+    >
+      <DrawerContent>
+        {() => <>
+          <DrawerHeader className="flex flex-col gap-0.5 border-b border-[var(--hairline)] p-4 pr-12">
+            <h2 className="text-base font-medium text-foreground">{editing ? '编辑厂商' : '新增厂商'}</h2>
+            <p className="text-sm text-muted-foreground" id="model-provider-editor-description">
+              {editing ? editing.display_name : '配置模型和渠道使用的厂商信息。'}
+            </p>
+          </DrawerHeader>
+          <DrawerBody className="min-h-0 flex-1 gap-0 overflow-hidden p-0">
+            <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => { event.preventDefault(); setNotice(''); saveMutation.mutate() }}>
+              <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                <div className="grid gap-4">
+                  <Input label="标识（小写）" value={form.provider_key} isDisabled={Boolean(editing)} placeholder="my-provider" isRequired onValueChange={(value) => setForm((current) => ({ ...current, provider_key: value }))} />
+                  <Input label="显示名称" value={form.display_name} placeholder="My Provider" isRequired onValueChange={(value) => setForm((current) => ({ ...current, display_name: value }))} />
+                  <Input label="Logo 标识或 URL" value={form.logo} placeholder="OpenAI 或 https://..." onValueChange={(value) => setForm((current) => ({ ...current, logo: value }))} />
+                  <Input label="别名（逗号分隔）" value={form.aliases} placeholder="alias, legacy-name" onValueChange={(value) => setForm((current) => ({ ...current, aliases: value }))} />
+                  <Input label="排序" type="number" min="0" value={form.sort_order} onValueChange={(value) => setForm((current) => ({ ...current, sort_order: value }))} />
+                  <label className="flex items-center gap-2 text-sm"><Switch isSelected={form.enabled} onValueChange={(enabled) => setForm((current) => ({ ...current, enabled }))} />启用厂商</label>
+                  {saveMutation.error ? <p role="alert" className="text-sm text-danger">{saveMutation.error instanceof ApiError && saveMutation.error.status === 409 ? '厂商配置已更新，请刷新后重试。' : '保存失败，请检查输入内容后重试。'}</p> : null}
+                </div>
+              </div>
+              <DrawerFooter className="border-t border-[var(--hairline)]">
+                <Button type="button" size="sm" variant="flat" isDisabled={busy} onPress={reset}>取消</Button>
+                <Button type="submit" size="sm" color="primary" isDisabled={!canManage || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(form.provider_key.trim().toLowerCase()) || !form.display_name.trim()}>保存</Button>
+              </DrawerFooter>
+            </form>
+          </DrawerBody>
+        </>}
+      </DrawerContent>
+    </Drawer>
+  </div>
 }
