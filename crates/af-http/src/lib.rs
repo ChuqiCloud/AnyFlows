@@ -122,11 +122,11 @@ pub use axum::{
     response::Response,
 };
 pub use channel_probe::{AdminChannelProbe, AdminChannelProbeFuture, AdminChannelProbeOutcome};
+pub use chat_service::{ChatService, ChatServiceFuture};
 pub use credential_usage::{
     AdminCredentialUsageFuture, AdminCredentialUsageProbe, CredentialUsageSnapshot,
     CredentialUsageStatus, CredentialUsageWindow,
 };
-pub use chat_service::{ChatService, ChatServiceFuture};
 pub use credentials::{ApiKeyExtractionError, QueryApiKeyPolicy, extract_presented_api_key};
 pub use embedding_service::{EmbeddingService, EmbeddingServiceFuture};
 pub use error_response::OpenAiHttpError;

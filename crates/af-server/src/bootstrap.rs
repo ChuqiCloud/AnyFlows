@@ -3135,10 +3135,12 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.admin_channel_reader),
             Arc::clone(&self.stage.infrastructure.admin_channel_writer),
             Some(Arc::clone(&self.stage.admin_channel_probe)),
-            Some(Arc::new(crate::credential_usage::CodexCredentialUsageProbe::new(
-                Arc::clone(&self.stage.infrastructure.admin_channel_writer),
-                self.stage.upstream_clients.clone(),
-            ))),
+            Some(Arc::new(
+                crate::credential_usage::CodexCredentialUsageProbe::new(
+                    Arc::clone(&self.stage.infrastructure.admin_channel_writer),
+                    self.stage.upstream_clients.clone(),
+                ),
+            )),
             Arc::clone(&self.stage.infrastructure.admin_group_reader),
             Arc::clone(&self.stage.infrastructure.admin_group_writer),
             Some(Arc::clone(&self.stage.infrastructure.admin_model_reader)),

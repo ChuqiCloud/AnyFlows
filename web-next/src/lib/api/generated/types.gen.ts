@@ -1469,6 +1469,18 @@ export type ContractPriceValues = {
     cache_creation_5m: string;
     cache_creation_1h: string;
 };
+export type CredentialUsageSnapshot = {
+    status: CredentialUsageStatus;
+    windows: Array<CredentialUsageWindow>;
+    credits_balance?: string | null;
+    fetched_at?: number | null;
+};
+export type CredentialUsageStatus = 'available' | 'unsupported' | 'unavailable';
+export type CredentialUsageWindow = {
+    window_seconds: number;
+    used_percent: number;
+    reset_at?: number | null;
+};
 export type CreditAllocationListResponse = {
     allocations: Array<CreditAllocationResponse>;
     next_cursor: number | null;
@@ -7738,6 +7750,25 @@ export type UpdateAdminCredentialResponses = {
     200: AdminCredential;
 };
 export type UpdateAdminCredentialResponse = UpdateAdminCredentialResponses[keyof UpdateAdminCredentialResponses];
+export type GetAdminCredentialUsageData = {
+    body?: never;
+    path: {
+        channel_id: number;
+        credential_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/credentials/{credential_id}/usage';
+};
+export type GetAdminCredentialUsageErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+};
+export type GetAdminCredentialUsageError = GetAdminCredentialUsageErrors[keyof GetAdminCredentialUsageErrors];
+export type GetAdminCredentialUsageResponses = {
+    200: CredentialUsageSnapshot;
+};
+export type GetAdminCredentialUsageResponse = GetAdminCredentialUsageResponses[keyof GetAdminCredentialUsageResponses];
 export type ListAdminCredentialProxiesData = {
     body?: never;
     path?: never;

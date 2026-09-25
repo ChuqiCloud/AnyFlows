@@ -17645,6 +17645,86 @@
         ]
       }
     },
+    "/api/admin/channels/{channel_id}/credentials/{credential_id}/usage": {
+      "get": {
+        "tags": [
+          "凭据管理"
+        ],
+        "summary": "查询 Codex OAuth 账号上游用量窗口",
+        "operationId": "getAdminCredentialUsage",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "description": "渠道 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "credential_id",
+            "in": "path",
+            "description": "凭据 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "用量快照或不可用状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialUsageSnapshot"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "渠道或凭据不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/proxies": {
       "get": {
         "tags": [
@@ -40791,6 +40871,69 @@
           }
         },
         "additionalProperties": false
+      },
+      "CredentialUsageSnapshot": {
+        "type": "object",
+        "required": [
+          "status",
+          "windows"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/CredentialUsageStatus"
+          },
+          "windows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CredentialUsageWindow"
+            }
+          },
+          "credits_balance": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fetched_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "CredentialUsageStatus": {
+        "type": "string",
+        "enum": [
+          "available",
+          "unsupported",
+          "unavailable"
+        ]
+      },
+      "CredentialUsageWindow": {
+        "type": "object",
+        "required": [
+          "window_seconds",
+          "used_percent"
+        ],
+        "properties": {
+          "window_seconds": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "used_percent": {
+            "type": "number",
+            "format": "double"
+          },
+          "reset_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
       },
       "CreditAllocationListResponse": {
         "type": "object",

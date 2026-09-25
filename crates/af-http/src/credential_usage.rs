@@ -11,7 +11,9 @@ use utoipa::ToSchema;
 
 use crate::{
     chat_completions::HttpState,
-    management_channels::{map_channel_read_error, no_store_json, parse_channel_id, parse_credential_id},
+    management_channels::{
+        map_channel_read_error, no_store_json, parse_channel_id, parse_credential_id,
+    },
     management_error::ManagementError,
 };
 
@@ -80,7 +82,10 @@ pub(crate) async fn get_admin_credential_usage(
     let channel_id = parse_channel_id(&channel_id)?;
     let credential_id = parse_credential_id(&credential_id)?;
     let principal = authentication.principal();
-    let reader = state.admin_channel_reader.as_ref().ok_or(ManagementError::Internal)?;
+    let reader = state
+        .admin_channel_reader
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
     let credential = reader
         .get_credential(principal, channel_id, credential_id)
         .await

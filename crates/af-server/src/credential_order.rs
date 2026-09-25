@@ -54,9 +54,8 @@ impl CredentialLoad {
         if self.waiting != 0 {
             return false;
         }
-        self.limit.is_none_or(|limit| {
-            u64::from(self.active) * 4 < u64::from(limit.get()) * 3
-        })
+        self.limit
+            .is_none_or(|limit| u64::from(self.active) * 4 < u64::from(limit.get()) * 3)
     }
 }
 
@@ -115,7 +114,12 @@ pub(crate) fn order_credentials_by_load<'a>(
     loads: &BTreeMap<i64, CredentialLoad>,
 ) -> Vec<&'a SchedulerRuntimeCredentialRecord> {
     order_credentials_by_load_with_optional_health(
-        request_id, channel_id, credentials, loads, None, false,
+        request_id,
+        channel_id,
+        credentials,
+        loads,
+        None,
+        false,
     )
 }
 
@@ -146,7 +150,12 @@ pub(crate) fn order_credentials_by_load_with_session_affinity<'a>(
     health: Option<&BTreeMap<i64, RuntimeHealthState>>,
 ) -> Vec<&'a SchedulerRuntimeCredentialRecord> {
     order_credentials_by_load_with_optional_health(
-        session_scope, channel_id, credentials, loads, health, true,
+        session_scope,
+        channel_id,
+        credentials,
+        loads,
+        health,
+        true,
     )
 }
 
@@ -459,23 +468,25 @@ mod tests {
                 order_credentials(scope, channel_id(), &credentials)[0].credential_id() == 61
             })
             .unwrap();
-        let light_load = BTreeMap::from([
-            (61, load(3, 0, Some(8))),
-            (62, load(0, 0, Some(8))),
-        ]);
+        let light_load = BTreeMap::from([(61, load(3, 0, Some(8))), (62, load(0, 0, Some(8)))]);
         assert_eq!(
             credential_ids(order_credentials_by_load_with_session_affinity(
-                &scope, channel_id(), &credentials, &light_load, None,
+                &scope,
+                channel_id(),
+                &credentials,
+                &light_load,
+                None,
             )),
             vec![61, 62]
         );
-        let congested = BTreeMap::from([
-            (61, load(6, 0, Some(8))),
-            (62, load(0, 0, Some(8))),
-        ]);
+        let congested = BTreeMap::from([(61, load(6, 0, Some(8))), (62, load(0, 0, Some(8)))]);
         assert_eq!(
             credential_ids(order_credentials_by_load_with_session_affinity(
-                &scope, channel_id(), &credentials, &congested, None,
+                &scope,
+                channel_id(),
+                &credentials,
+                &congested,
+                None,
             )),
             vec![62, 61]
         );
@@ -498,7 +509,11 @@ mod tests {
         let loads = BTreeMap::new();
         assert_eq!(
             credential_ids(order_credentials_by_load_with_session_affinity(
-                "cooling-session", channel_id(), &credentials, &loads, Some(&health),
+                "cooling-session",
+                channel_id(),
+                &credentials,
+                &loads,
+                Some(&health),
             )),
             vec![72]
         );
@@ -526,13 +541,14 @@ mod tests {
                     == 81
             })
             .unwrap();
-        let loads = BTreeMap::from([
-            (81, load(3, 0, Some(8))),
-            (82, load(0, 0, Some(8))),
-        ]);
+        let loads = BTreeMap::from([(81, load(3, 0, Some(8))), (82, load(0, 0, Some(8)))]);
         assert_eq!(
             credential_ids(order_credentials_by_load_with_session_affinity(
-                &scope, channel_id(), &credentials, &loads, Some(&health),
+                &scope,
+                channel_id(),
+                &credentials,
+                &loads,
+                Some(&health),
             )),
             vec![82, 81]
         );

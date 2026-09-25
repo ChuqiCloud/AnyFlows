@@ -46,6 +46,7 @@ use crate::{
     AdminChannelProbe, AdminChannelProbeFuture, AdminChannelProbeOutcome, ChatService,
     ChatServiceFuture,
     chat_completions::HttpState,
+    credential_usage::get_admin_credential_usage,
     management_auth::{ManagementAuthenticationState, authenticate_management_session},
     management_authorization::authorize_management_admin,
     management_channel_probe::probe_admin_channel,
@@ -55,7 +56,6 @@ use crate::{
         create_admin_credential, delete_admin_credential, update_admin_credential,
     },
     management_credentials::{get_admin_credential, list_admin_credentials},
-    credential_usage::get_admin_credential_usage,
 };
 
 const ADMIN_TOKEN: &str = "admin-token";
@@ -548,10 +548,17 @@ fn router_with_probe(
 async fn credential_usage_denies_users_and_reports_unsupported_kind() {
     let app = router(Arc::new(FakeAdminChannelReader::new()));
     let path = "/api/admin/channels/10/credentials/20/usage";
-    let forbidden = app.clone().oneshot(authorized_request(path, USER_TOKEN)).await.unwrap();
+    let forbidden = app
+        .clone()
+        .oneshot(authorized_request(path, USER_TOKEN))
+        .await
+        .unwrap();
     assert_error(forbidden, StatusCode::FORBIDDEN, "forbidden").await;
 
-    let response = app.oneshot(authorized_request(path, ADMIN_TOKEN)).await.unwrap();
+    let response = app
+        .oneshot(authorized_request(path, ADMIN_TOKEN))
+        .await
+        .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response_json(response).await["status"], "unsupported");
 }
