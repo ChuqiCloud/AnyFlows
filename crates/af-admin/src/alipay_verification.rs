@@ -454,19 +454,21 @@ mod tests {
             &format!("  {public_base64}  "),
         )
         .unwrap();
-        assert!(AlipayAccountVerificationProvider::from_parts(
-            true,
-            Some("test-app"),
-            Some(&private_base64),
-            Some(&public_base64),
-            "https://openapi.alipay.com/gateway.do",
-            "FACE",
-            10,
-            HttpClientProvider::new(af_httpclient::HttpClientConfig::default(), 1).unwrap(),
-        )
-        .unwrap()
-        .client
-        .is_some());
+        assert!(
+            AlipayAccountVerificationProvider::from_parts(
+                true,
+                Some("test-app"),
+                Some(&private_base64),
+                Some(&public_base64),
+                "https://openapi.alipay.com/gateway.do",
+                "FACE",
+                10,
+                HttpClientProvider::new(af_httpclient::HttpClientConfig::default(), 1).unwrap(),
+            )
+            .unwrap()
+            .client
+            .is_some()
+        );
     }
 
     #[test]
