@@ -288,7 +288,7 @@ pub use admin_channel_write::{
 };
 pub use admin_credential::{
     AdminCredentialLookupOutcome, AdminCredentialPageOutcome, AdminCredentialPageRecord,
-    AdminCredentialRecord,
+    AdminCredentialRecord, AdminCredentialSecretRecord,
 };
 pub use admin_dashboard::{
     AdminDashboardChannelRecord, AdminDashboardRecord, AdminDashboardRepository,

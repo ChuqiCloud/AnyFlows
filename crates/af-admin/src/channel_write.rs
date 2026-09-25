@@ -1,13 +1,16 @@
 use std::{fmt, future::Future, pin::Pin};
 
-use af_account::{CredentialEncryptor, PlainCredentialSecret};
+use af_account::{
+    CredentialDecryptor, CredentialEncryptor, DecryptedOAuthCredential, PlainCredentialSecret,
+};
 use af_db::{
     AdminChannelDeleteOutcome, AdminChannelMutationOutcome, AdminChannelRepository,
-    AdminChannelWriteRecord, AdminChannelWriteRepositoryError, AdminCredentialCreateOutcome,
-    AdminCredentialDeleteOutcome, AdminCredentialMutationOutcome, AdminCredentialWriteRecord,
-    ChannelModelMappings, ChannelParameterOverrides, MAX_ADMIN_CHANNEL_ABILITIES,
-    MAX_ADMIN_CHANNEL_GROUPS, MAX_ADMIN_CHANNEL_JSON_BYTES, MAX_ADMIN_CHANNEL_MODEL_BYTES,
-    MAX_ADMIN_CHANNEL_MODELS, validate_channel_header_overrides,
+    AdminChannelRepositoryError, AdminChannelWriteRecord, AdminChannelWriteRepositoryError,
+    AdminCredentialCreateOutcome, AdminCredentialDeleteOutcome, AdminCredentialMutationOutcome,
+    AdminCredentialSecretRecord, AdminCredentialWriteRecord, ChannelModelMappings,
+    ChannelParameterOverrides, MAX_ADMIN_CHANNEL_ABILITIES, MAX_ADMIN_CHANNEL_GROUPS,
+    MAX_ADMIN_CHANNEL_JSON_BYTES, MAX_ADMIN_CHANNEL_MODEL_BYTES, MAX_ADMIN_CHANNEL_MODELS,
+    validate_channel_header_overrides,
 };
 use af_domain::{
     ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ClientSimulationBodyProfile,
@@ -967,6 +970,41 @@ pub type AdminCredentialUpdateFuture<'a> =
     Pin<Box<dyn Future<Output = Result<AdminCredential, AdminChannelWriteError>> + Send + 'a>>;
 pub type AdminCredentialDeleteFuture<'a> =
     Pin<Box<dyn Future<Output = Result<(), AdminChannelWriteError>> + Send + 'a>>;
+pub type AdminCredentialExportFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<Vec<AdminCredentialExport>, AdminChannelWriteError>> + Send + 'a,
+    >,
+>;
+
+/// 管理员 OAuth 导出项；令牌仅在调用链中以受保护类型传递。
+pub struct AdminCredentialExport {
+    credential_id: CredentialId,
+    oauth_account_key: Option<String>,
+    oauth_project_id: Option<String>,
+    secret: DecryptedOAuthCredential,
+}
+
+impl AdminCredentialExport {
+    #[must_use]
+    pub const fn credential_id(&self) -> CredentialId {
+        self.credential_id
+    }
+
+    #[must_use]
+    pub fn oauth_account_key(&self) -> Option<&str> {
+        self.oauth_account_key.as_deref()
+    }
+
+    #[must_use]
+    pub fn oauth_project_id(&self) -> Option<&str> {
+        self.oauth_project_id.as_deref()
+    }
+
+    #[must_use]
+    pub const fn secret(&self) -> &DecryptedOAuthCredential {
+        &self.secret
+    }
+}
 
 /// 管理渠道与凭据写入应用端口；角色校验必须先于加密和仓储访问。
 pub trait AdminChannelWriter: Send + Sync {
@@ -1016,12 +1054,26 @@ pub trait AdminChannelWriter: Send + Sync {
         channel_id: ChannelId,
         credential_id: CredentialId,
     ) -> AdminCredentialDeleteFuture<'a>;
+
+    /// 导出指定渠道的 OAuth 凭据明文，仅允许管理员调用。
+    fn export_oauth_credentials<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        channel_id: ChannelId,
+    ) -> AdminCredentialExportFuture<'a> {
+        Box::pin(async move {
+            require_admin(principal)?;
+            let _ = channel_id;
+            Err(AdminChannelWriteError::Internal)
+        })
+    }
 }
 
 /// 使用数据库仓储和启动密钥实现管理员渠道写入。
 pub struct DatabaseAdminChannelWriter {
     repository: AdminChannelRepository,
     encryptor: CredentialEncryptor,
+    decryptor: Option<CredentialDecryptor>,
 }
 
 impl DatabaseAdminChannelWriter {
@@ -1031,7 +1083,15 @@ impl DatabaseAdminChannelWriter {
         Self {
             repository,
             encryptor,
+            decryptor: None,
         }
+    }
+
+    /// 注入与加密器共享密钥的解密器，供管理员安全导出账号池令牌。
+    #[must_use]
+    pub fn with_decryptor(mut self, decryptor: CredentialDecryptor) -> Self {
+        self.decryptor = Some(decryptor);
+        self
     }
 }
 
@@ -1197,6 +1257,45 @@ impl AdminChannelWriter for DatabaseAdminChannelWriter {
             }
         })
     }
+
+    fn export_oauth_credentials<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        channel_id: ChannelId,
+    ) -> AdminCredentialExportFuture<'a> {
+        Box::pin(async move {
+            require_admin(principal)?;
+            let decryptor = self
+                .decryptor
+                .as_ref()
+                .ok_or(AdminChannelWriteError::Internal)?;
+            let records = self
+                .repository
+                .list_oauth_credential_secrets(channel_id)
+                .await
+                .map_err(map_repository_read_error)?
+                .ok_or(AdminChannelWriteError::ChannelNotFound)?;
+            records
+                .into_iter()
+                .map(|record: AdminCredentialSecretRecord| {
+                    let credential = record.credential();
+                    let secret = decryptor
+                        .decrypt_oauth_envelope(
+                            channel_id,
+                            credential.credential_id().get(),
+                            record.envelope(),
+                        )
+                        .map_err(|_| AdminChannelWriteError::Internal)?;
+                    Ok(AdminCredentialExport {
+                        credential_id: credential.credential_id(),
+                        oauth_account_key: credential.oauth_account_key().map(str::to_owned),
+                        oauth_project_id: credential.oauth_project_id().map(str::to_owned),
+                        secret,
+                    })
+                })
+                .collect()
+        })
+    }
 }
 
 impl fmt::Debug for DatabaseAdminChannelWriter {
@@ -1245,6 +1344,14 @@ fn map_repository_error(error: AdminChannelWriteRepositoryError) -> AdminChannel
         | AdminChannelWriteRepositoryError::Query
         | AdminChannelWriteRepositoryError::Timeout
         | AdminChannelWriteRepositoryError::Invariant => AdminChannelWriteError::Internal,
+    }
+}
+
+fn map_repository_read_error(error: AdminChannelRepositoryError) -> AdminChannelWriteError {
+    match error {
+        AdminChannelRepositoryError::Query
+        | AdminChannelRepositoryError::Timeout
+        | AdminChannelRepositoryError::Invariant => AdminChannelWriteError::Internal,
     }
 }
 

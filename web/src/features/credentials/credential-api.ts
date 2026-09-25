@@ -6,6 +6,7 @@ import {
   completeAdminOAuthManualCallback,
   createAdminCredential,
   deleteAdminCredential,
+  importAdminCredentials,
   listAdminCredentials,
   listAdminOAuthProviders,
   updateAdminCredential,
@@ -13,6 +14,7 @@ import {
 import type {
   AdminCredential,
   AdminCredentialCreateRequestWritable,
+  AdminCredentialImportResponse,
   AdminCredentialUpdateRequestWritable,
   AdminOAuthProvider,
 } from '@/lib/api/generated/types.gen'
@@ -22,6 +24,24 @@ export const adminChannelCredentialsQueryKey = (channelId: number) => [
   'admin-channel-credentials',
   channelId,
 ] as const
+
+export type AdminCredentialImportResult = AdminCredentialImportResponse
+
+export async function importAdminCredentialFiles(channelId: number, files: Array<{ name: string; content: string }>, signal?: AbortSignal) {
+  const result = await importAdminCredentials({
+    client: apiClient, path: { channel_id: channelId }, body: { files }, signal,
+  })
+  return result.data
+}
+
+export async function exportAdminCredentialFiles(channelId: number, signal?: AbortSignal) {
+  const result = await apiClient.get<Blob, unknown, true>({
+    security: [{ key: 'bearerAuth', scheme: 'bearer', type: 'http' }],
+    url: '/api/admin/channels/{channel_id}/credentials/export',
+    path: { channel_id: channelId }, parseAs: 'blob', signal,
+  })
+  return result.data
+}
 const adminChannelCredentialCatalogQueryKey = (channelId: number) => [
   'admin-channel-credentials',
   channelId,

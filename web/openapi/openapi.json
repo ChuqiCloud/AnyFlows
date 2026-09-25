@@ -17162,6 +17162,190 @@
         ]
       }
     },
+    "/api/admin/channels/{channel_id}/credentials/import": {
+      "post": {
+        "tags": [
+          "凭据管理"
+        ],
+        "summary": "批量导入 Codex 令牌文件",
+        "operationId": "importAdminCredentials",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "description": "OpenAI 渠道 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminCredentialImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "逐项导入结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCredentialImportResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "渠道 ID、文件或请求正文无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "渠道不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/channels/{channel_id}/credentials/export": {
+      "get": {
+        "tags": [
+          "凭据管理"
+        ],
+        "summary": "导出兼容 sub2api 的 Codex 令牌",
+        "operationId": "exportAdminCredentials",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "description": "OpenAI 渠道 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "令牌 JSON 文件",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "400": {
+            "description": "渠道 ID 无效或不是 OpenAI 渠道",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "渠道不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/channels/{channel_id}/credentials/{credential_id}": {
       "get": {
         "tags": [
@@ -33283,6 +33467,102 @@
           }
         },
         "additionalProperties": false
+      },
+      "AdminCredentialImportFile": {
+        "type": "object",
+        "required": [
+          "name",
+          "content"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminCredentialImportItem": {
+        "type": "object",
+        "required": [
+          "file",
+          "index",
+          "action",
+          "message"
+        ],
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "action": {
+            "type": "string"
+          },
+          "credential_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "AdminCredentialImportRequest": {
+        "type": "object",
+        "required": [
+          "files"
+        ],
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminCredentialImportFile"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminCredentialImportResponse": {
+        "type": "object",
+        "required": [
+          "total",
+          "created",
+          "skipped",
+          "failed",
+          "items"
+        ],
+        "properties": {
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "created": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "skipped": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "failed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminCredentialImportItem"
+            }
+          }
+        }
       },
       "AdminCredentialKind": {
         "type": "string",

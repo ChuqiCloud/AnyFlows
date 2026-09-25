@@ -97,6 +97,30 @@ impl PlainOAuthCredential {
             scope,
         })
     }
+
+    /// 返回 access token；调用方不得记录或持久化该明文。
+    #[must_use]
+    pub fn access_token(&self) -> &str {
+        self.access_token.as_str()
+    }
+
+    /// 返回可选 refresh token；调用方不得记录或持久化该明文。
+    #[must_use]
+    pub fn refresh_token(&self) -> Option<&str> {
+        self.refresh_token.as_ref().map(|value| value.as_str())
+    }
+
+    /// 返回绝对到期时间。
+    #[must_use]
+    pub const fn expires_at_epoch_seconds(&self) -> Option<i64> {
+        self.expires_at_epoch_seconds
+    }
+
+    /// 返回 OAuth scope；调用方不得记录该明文。
+    #[must_use]
+    pub fn scope(&self) -> Option<&str> {
+        self.scope.as_ref().map(|value| value.as_str())
+    }
 }
 
 impl fmt::Debug for PlainOAuthCredential {
@@ -156,6 +180,12 @@ impl CredentialEncryptor {
                 refresh_token: None,
                 expires_at_epoch_seconds: None,
                 scope: None,
+            },
+            PlainCredentialSecretRef::OauthBundle(bundle) => PlainCredentialWire::Oauth {
+                access_token: bundle.access_token(),
+                refresh_token: bundle.refresh_token(),
+                expires_at_epoch_seconds: bundle.expires_at_epoch_seconds(),
+                scope: bundle.scope(),
             },
             PlainCredentialSecretRef::Bedrock {
                 access_key_id,
@@ -390,6 +420,31 @@ mod tests {
         ] {
             assert!(!rendered.contains(private));
         }
+    }
+
+    #[test]
+    fn credential_writer_preserves_imported_oauth_refresh_material() {
+        let settings = settings();
+        let encryptor = CredentialEncryptor::new(&settings).unwrap();
+        let decryptor = CredentialDecryptor::new(&settings).unwrap();
+        let bundle = PlainOAuthCredential::new(
+            "access-imported".to_owned(),
+            Some("refresh-imported".to_owned()),
+            Some(1_800_000_000),
+            Some("openid profile".to_owned()),
+        )
+        .unwrap();
+        let secret = PlainCredentialSecret::oauth_bundle(bundle);
+        let envelope = encryptor
+            .encrypt(channel_id(), CREDENTIAL_ID, &secret)
+            .unwrap();
+        let decrypted = decryptor
+            .decrypt_oauth_envelope(channel_id(), CREDENTIAL_ID, &envelope)
+            .unwrap();
+        assert_eq!(decrypted.access_token(), "access-imported");
+        assert_eq!(decrypted.refresh_token(), Some("refresh-imported"));
+        assert_eq!(decrypted.expires_at_epoch_seconds(), Some(1_800_000_000));
+        assert_eq!(decrypted.scope(), Some("openid profile"));
     }
 
     #[test]

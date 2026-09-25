@@ -266,6 +266,27 @@ export type AdminCredentialCreateRequest = {
     oauth_account_key: string | null;
     oauth_project_id: string | null;
 };
+export type AdminCredentialImportFile = {
+    name: string;
+    content: string;
+};
+export type AdminCredentialImportItem = {
+    file: string;
+    index: number;
+    action: string;
+    credential_id?: number | null;
+    message: string;
+};
+export type AdminCredentialImportRequest = {
+    files: Array<AdminCredentialImportFile>;
+};
+export type AdminCredentialImportResponse = {
+    total: number;
+    created: number;
+    skipped: number;
+    failed: number;
+    items: Array<AdminCredentialImportItem>;
+};
 export type AdminCredentialKind = 'api_key' | 'oauth' | 'setup_token' | 'bedrock' | 'service_account' | 'upstream';
 export type AdminCredentialListResponse = {
     credentials: Array<AdminCredential>;
@@ -7615,6 +7636,45 @@ export type CreateAdminCredentialResponses = {
     201: AdminCredential;
 };
 export type CreateAdminCredentialResponse = CreateAdminCredentialResponses[keyof CreateAdminCredentialResponses];
+export type ImportAdminCredentialsData = {
+    body: AdminCredentialImportRequest;
+    path: {
+        channel_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/credentials/import';
+};
+export type ImportAdminCredentialsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ImportAdminCredentialsError = ImportAdminCredentialsErrors[keyof ImportAdminCredentialsErrors];
+export type ImportAdminCredentialsResponses = {
+    200: AdminCredentialImportResponse;
+};
+export type ImportAdminCredentialsResponse = ImportAdminCredentialsResponses[keyof ImportAdminCredentialsResponses];
+export type ExportAdminCredentialsData = {
+    body?: never;
+    path: {
+        channel_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/credentials/export';
+};
+export type ExportAdminCredentialsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ExportAdminCredentialsError = ExportAdminCredentialsErrors[keyof ExportAdminCredentialsErrors];
+export type ExportAdminCredentialsResponses = {
+    200: unknown;
+};
 export type DeleteAdminCredentialData = {
     body?: never;
     path: {

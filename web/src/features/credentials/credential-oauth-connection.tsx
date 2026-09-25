@@ -9,6 +9,7 @@ import { CredentialOAuthProviderField } from './credential-oauth-provider-field'
 import { CredentialOAuthStatusView } from './credential-oauth-status'
 
 type CredentialOAuthConnectionProps = {
+  channelType: string
   active: boolean
   channelId: number
   credential: AdminCredential
@@ -17,10 +18,11 @@ type CredentialOAuthConnectionProps = {
 }
 
 /** 组合 OAuth Provider 状态、授权控制器与操作视图。 */
-export function CredentialOAuthConnection({ active, channelId, credential, onDelete, onRefresh }: CredentialOAuthConnectionProps) {
+export function CredentialOAuthConnection({ active, channelType, channelId, credential, onDelete, onRefresh }: CredentialOAuthConnectionProps) {
   const { t } = useTranslation()
   const controller = useCredentialOAuthController({
     active,
+    channelType,
     channelId,
     credential,
     onRefresh,

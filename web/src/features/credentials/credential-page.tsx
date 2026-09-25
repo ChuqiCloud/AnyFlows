@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { KeyRound, Plus, RefreshCw } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
+import { Download, FileUp, KeyRound, Plus, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { AdminCredential } from '@/lib/api/generated/types.gen'
 import { useAdminChannel, useAdminChannels } from '@/features/channels/channel-api'
-import { useAdminChannelCredentials } from './credential-api'
+import { exportAdminCredentialFiles, importAdminCredentialFiles, useAdminChannelCredentials, type AdminCredentialImportResult } from './credential-api'
 import { CredentialChannelToolbar } from './credential-channel-toolbar'
 import { CredentialEditorSheet } from './credential-editor-sheet'
 import { CredentialList } from './credential-list'
@@ -30,6 +30,10 @@ export function CredentialPage({ initialChannelId }: { initialChannelId?: number
   const { fetchNextPage: fetchNextCredentialsPage, refetch: refetchCredentials } = credentialsQuery
   const credentials = useMemo(() => credentialsQuery.data?.pages.flatMap((page) => page.credentials) ?? [], [credentialsQuery.data])
   const [editor, setEditor] = useState<EditorState>()
+  const [importing, setImporting] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [importResult, setImportResult] = useState<AdminCredentialImportResult>()
+  const [fileError, setFileError] = useState<string>()
 
   const selectChannel = useCallback((channelId: number) => {
     setSelectedId(channelId)
@@ -45,15 +49,49 @@ export function CredentialPage({ initialChannelId }: { initialChannelId?: number
     if (!detailQuery.isError || channels.length === 0) return
     selectChannel(channels[0].id)
   }, [channels, detailQuery.isError, selectChannel])
-  useEffect(() => setEditor(undefined), [selectedChannel?.id])
+  useEffect(() => {
+    setEditor(undefined)
+    setImportResult(undefined)
+    setFileError(undefined)
+  }, [selectedChannel?.id])
   const refreshCredentials = useCallback(async () => { await refetchCredentials() }, [refetchCredentials])
   const loadMoreCredentials = useCallback(async () => { await fetchNextCredentialsPage() }, [fetchNextCredentialsPage])
   const refreshAll = async () => {
     await Promise.all([channelsQuery.refetch(), selectedChannel ? credentialsQuery.refetch() : Promise.resolve()])
   }
+  const importFiles = async (event: ChangeEvent<HTMLInputElement>) => {
+    if (!selectedChannel || selectedChannel.type !== 'openai' || !event.target.files?.length) return
+    const selectedFiles = Array.from(event.target.files)
+    event.target.value = ''
+    setImportResult(undefined)
+    setFileError(undefined)
+    if (selectedFiles.length > 64 || selectedFiles.some((file) => file.size > 2 * 1024 * 1024) || selectedFiles.reduce((size, file) => size + file.size, 0) > 24 * 1024 * 1024) {
+      setFileError(t('credentials.fileTransfer.sizeLimit'))
+      return
+    }
+    setImporting(true)
+    try {
+      const files = await Promise.all(selectedFiles.map(async (file) => ({ name: file.name, content: await file.text() })))
+      const result = await importAdminCredentialFiles(selectedChannel.id, files)
+      setImportResult(result)
+      await refetchCredentials()
+    } catch { setFileError(t('credentials.fileTransfer.importFailed')) } finally { setImporting(false) }
+  }
+  const exportFiles = async () => {
+    if (!selectedChannel || selectedChannel.type !== 'openai') return
+    setFileError(undefined)
+    setExporting(true)
+    try {
+      const blob = await exportAdminCredentialFiles(selectedChannel.id)
+      const url = URL.createObjectURL(blob); const anchor = document.createElement('a')
+      anchor.href = url; anchor.download = 'anyflows-codex-credentials.json'; anchor.click()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch { setFileError(t('credentials.fileTransfer.exportFailed')) } finally { setExporting(false) }
+  }
 
   const channelPending = channelsQuery.isPending || (selectedId !== undefined && !listedChannel && detailQuery.isPending)
   const channelError = channelsQuery.isError || (selectedId !== undefined && !listedChannel && detailQuery.isError && channels.length === 0)
+  const canImportCodex = selectedChannel?.type === 'openai'
 
   return (
     <div className="flex flex-col gap-4">
@@ -62,8 +100,16 @@ export function CredentialPage({ initialChannelId }: { initialChannelId?: number
         <div className="flex items-center gap-2">
           <Button type="button" size="sm" variant="secondary" disabled={channelsQuery.isFetching || credentialsQuery.isFetching} onClick={refreshAll}><RefreshCw className={channelsQuery.isFetching || credentialsQuery.isFetching ? 'animate-spin' : undefined} aria-hidden="true" />{t('credentials.actions.refresh')}</Button>
           <Button type="button" size="sm" disabled={!selectedChannel} onClick={() => setEditor('create')}><Plus aria-hidden="true" />{t('credentials.actions.add')}</Button>
+          {canImportCodex ? <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-[var(--hairline)] px-3 py-1.5 text-sm focus-within:ring-2 focus-within:ring-ring"><FileUp className="size-3.5" aria-hidden="true" />{t(importing ? 'credentials.fileTransfer.importing' : 'credentials.fileTransfer.import')}<input type="file" className="sr-only" multiple accept=".json,.txt" disabled={importing} onChange={importFiles} /></label> : null}
+          {canImportCodex ? <Button type="button" size="sm" variant="secondary" disabled={exporting} onClick={() => void exportFiles()}><Download aria-hidden="true" />{t(exporting ? 'credentials.fileTransfer.exporting' : 'credentials.fileTransfer.export')}</Button> : null}
         </div>
       </header>
+
+      {fileError ? <p role="alert" className="text-sm text-destructive">{fileError}</p> : null}
+      {importResult ? <div role="status" className="border-l-2 border-primary pl-3 text-sm">
+        <p>{t('credentials.fileTransfer.result', importResult)}</p>
+        {importResult.failed > 0 ? <details className="mt-1 text-muted-foreground"><summary className="cursor-pointer">{t('credentials.fileTransfer.failedItems')}</summary><ul className="mt-2 max-h-40 overflow-auto text-xs">{importResult.items.filter((item) => item.action === 'failed').map((item, index) => <li key={`${item.file}-${item.index}-${index}`}>{t('credentials.fileTransfer.failedItem', { file: item.file, index: item.index + 1, message: item.message })}</li>)}</ul></details> : null}
+      </div> : null}
 
       {channelPending ? (
         <div className="grid gap-3"><Skeleton className="h-16 rounded-xl" /><Skeleton className="h-56 rounded-xl" /></div>

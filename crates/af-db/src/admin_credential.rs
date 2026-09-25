@@ -2,16 +2,36 @@ use std::{fmt, str::FromStr as _};
 
 use af_domain::{ChannelId, CredentialId, CredentialKind, CredentialQuotaDimension, Status};
 use sea_orm::{
-    DbErr, QueryResult,
+    ColumnTrait, Condition, DbErr, EntityTrait, QueryFilter, QueryOrder, QueryResult,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Alias, Expr, Order, Query, SelectStatement},
 };
+use tokio::time::timeout;
 
 use crate::{
-    AdminChannelRepository, AdminChannelRepositoryError, MAX_ADMIN_CHANNEL_PAGE_SIZE,
-    admin_channel::{internal_invariant, valid_text},
+    AdminChannelRepository, AdminChannelRepositoryError, EncryptedCredentialEnvelope,
+    MAX_ADMIN_CHANNEL_PAGE_SIZE,
+    admin_channel::{internal_invariant, record_internal_error, valid_text},
     entity::{channels, credentials},
 };
+
+/// 管理员导出 OAuth 账号池时使用的密文视图；明文只在上层解密后短暂存在。
+pub struct AdminCredentialSecretRecord {
+    credential: AdminCredentialRecord,
+    envelope: EncryptedCredentialEnvelope,
+}
+
+impl AdminCredentialSecretRecord {
+    #[must_use]
+    pub fn credential(&self) -> &AdminCredentialRecord {
+        &self.credential
+    }
+
+    #[must_use]
+    pub fn envelope(&self) -> &EncryptedCredentialEnvelope {
+        &self.envelope
+    }
+}
 
 /// 管理端可读取的非敏感凭据元数据。
 pub struct AdminCredentialRecord {
@@ -331,6 +351,51 @@ impl fmt::Debug for AdminCredentialLookupOutcome {
 }
 
 impl AdminChannelRepository {
+    /// 读取指定渠道的全部有效 OAuth 密文，供管理员导出使用。
+    pub async fn list_oauth_credential_secrets(
+        &self,
+        channel_id: ChannelId,
+    ) -> Result<Option<Vec<AdminCredentialSecretRecord>>, AdminChannelRepositoryError> {
+        if !self.channel_exists(channel_id).await? {
+            return Ok(None);
+        }
+        let query = credentials::Entity::find()
+            .filter(credentials::Column::ChannelId.eq(channel_id.get()))
+            .filter(credentials::Column::Kind.eq(CredentialKind::Oauth.as_str()))
+            .filter(
+                Condition::any()
+                    .add(credentials::Column::OauthProvider.eq("codex"))
+                    .add(credentials::Column::OauthProvider.is_null()),
+            )
+            .filter(credentials::Column::QuotaDimension.eq("global"))
+            .filter(credentials::Column::OauthTokenPending.eq(false))
+            .filter(credentials::Column::DeletedAt.is_null())
+            .order_by_asc(credentials::Column::Id);
+        let operation = query.all(self.pool.connection());
+        let models = match timeout(self.lookup_timeout, operation).await {
+            Ok(Ok(models)) => models,
+            Ok(Err(_)) => return Err(record_internal_error(AdminChannelRepositoryError::Query)),
+            Err(_) => return Err(record_internal_error(AdminChannelRepositoryError::Timeout)),
+        };
+        models
+            .into_iter()
+            .map(|model| {
+                let credential = AdminCredentialRecord::try_from_model(model.clone())?;
+                let (key_id, nonce, ciphertext) = model
+                    .secret
+                    .envelope_parts()
+                    .map_err(|_| internal_invariant())?;
+                let envelope = EncryptedCredentialEnvelope::new(key_id, nonce, ciphertext)
+                    .map_err(|_| internal_invariant())?;
+                Ok(AdminCredentialSecretRecord {
+                    credential,
+                    envelope,
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(Some)
+    }
+
     /// 按凭据 ID 游标读取指定渠道下的一页非敏感凭据元数据。
     pub async fn list_credentials(
         &self,

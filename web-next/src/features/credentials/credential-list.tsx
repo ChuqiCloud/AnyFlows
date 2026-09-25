@@ -87,6 +87,7 @@ export function CredentialList(props: CredentialListProps) {
             {props.credentials.map((credential) => (
               <CredentialItem
                 key={credential.id}
+                channelType={props.channel.type}
                 credential={credential}
                 parent={credential.parent_id ? props.credentials.find((item) => item.id === credential.parent_id) : undefined}
                 language={i18n.language}
