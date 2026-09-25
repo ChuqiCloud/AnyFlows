@@ -2,7 +2,7 @@ use std::{fmt, str::FromStr as _};
 
 use af_domain::{ChannelId, CredentialId, CredentialKind, CredentialQuotaDimension, Status};
 use sea_orm::{
-    ColumnTrait, DbErr, EntityTrait, QueryFilter, QueryOrder, QueryResult,
+    ColumnTrait, Condition, DbErr, EntityTrait, QueryFilter, QueryOrder, QueryResult,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Alias, Expr, Order, Query, SelectStatement},
 };
@@ -361,6 +361,11 @@ impl AdminChannelRepository {
         let query = credentials::Entity::find()
             .filter(credentials::Column::ChannelId.eq(channel_id.get()))
             .filter(credentials::Column::Kind.eq(CredentialKind::Oauth.as_str()))
+            .filter(
+                Condition::any()
+                    .add(credentials::Column::OauthProvider.eq("codex"))
+                    .add(credentials::Column::OauthProvider.is_null()),
+            )
             .filter(credentials::Column::QuotaDimension.eq("global"))
             .filter(credentials::Column::OauthTokenPending.eq(false))
             .filter(credentials::Column::DeletedAt.is_null())

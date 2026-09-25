@@ -64,7 +64,7 @@ pub(crate) struct AdminCredentialImportRequest {
     files: Vec<AdminCredentialImportFile>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 struct AdminCredentialImportFile {
     name: String,
@@ -116,11 +116,15 @@ fn parse_import_file(content: &str) -> Result<Vec<ImportedOAuthToken>, &'static 
         {
             if let Ok(value) = serde_json::from_str::<serde_json::Value>(line) {
                 collect_import_value(&value, &mut values);
+            } else if line.starts_with('{') || line.starts_with('[') {
+                return Err("JSON 文件格式无效");
             } else {
-                values.push(ImportedOAuthToken {
+                let mut item = ImportedOAuthToken {
                     access_token: line.to_owned(),
                     ..ImportedOAuthToken::default()
-                });
+                };
+                merge_access_token_claims(&mut item);
+                values.push(item);
             }
         }
     }
@@ -138,10 +142,14 @@ fn collect_import_value(value: &serde_json::Value, output: &mut Vec<ImportedOAut
         serde_json::Value::Array(items) => items
             .iter()
             .for_each(|item| collect_import_value(item, output)),
-        serde_json::Value::String(token) => output.push(ImportedOAuthToken {
-            access_token: token.clone(),
-            ..ImportedOAuthToken::default()
-        }),
+        serde_json::Value::String(token) => {
+            let mut item = ImportedOAuthToken {
+                access_token: token.clone(),
+                ..ImportedOAuthToken::default()
+            };
+            merge_access_token_claims(&mut item);
+            output.push(item);
+        }
         serde_json::Value::Object(object) => {
             if let Some(accounts) = object.get("accounts").and_then(serde_json::Value::as_array) {
                 accounts
@@ -167,7 +175,6 @@ fn collect_import_value(value: &serde_json::Value, output: &mut Vec<ImportedOAut
             let Some(access_token) = access_token else {
                 return;
             };
-            let user = object.get("user").and_then(serde_json::Value::as_object);
             let account = object.get("account").and_then(serde_json::Value::as_object);
             let account_key = first_string(
                 object,
@@ -176,13 +183,8 @@ fn collect_import_value(value: &serde_json::Value, output: &mut Vec<ImportedOAut
                     "chatgptAccountId",
                     "account_id",
                     "accountId",
-                    "chatgpt_user_id",
-                    "chatgptUserId",
-                    "user_id",
-                    "userId",
                 ],
             )
-            .or_else(|| user.and_then(|value| first_string(value, &["id", "user_id", "userId"])))
             .or_else(|| {
                 account.and_then(|value| {
                     first_string(
@@ -196,11 +198,6 @@ fn collect_import_value(value: &serde_json::Value, output: &mut Vec<ImportedOAut
                         ],
                     )
                 })
-            })
-            .or_else(|| {
-                first_string(object, &["email"])
-                    .or_else(|| user.and_then(|value| first_string(value, &["email"])))
-                    .or_else(|| account.and_then(|value| first_string(value, &["email"])))
             });
             let project_id = first_string(
                 object,
@@ -235,10 +232,7 @@ fn collect_import_value(value: &serde_json::Value, output: &mut Vec<ImportedOAut
                 account_key,
                 project_id,
             };
-            if item.account_key.is_none() {
-                let access_token = item.access_token.clone();
-                merge_id_token_claims(&mut item, &access_token);
-            }
+            merge_access_token_claims(&mut item);
             if item.account_key.is_none() {
                 if let Some(id_token) = first_string(source, &["id_token", "idToken"])
                     .or_else(|| first_string(object, &["id_token", "idToken"]))
@@ -266,48 +260,48 @@ fn first_string(
 
 fn parse_expiration(value: Option<&serde_json::Value>) -> Option<i64> {
     match value {
-        Some(serde_json::Value::Number(number)) => number.as_i64(),
-        Some(serde_json::Value::String(value)) => value.parse::<i64>().ok().or_else(|| {
-            OffsetDateTime::parse(value, &Rfc3339)
-                .ok()
-                .map(|date| date.unix_timestamp())
-        }),
+        Some(serde_json::Value::Number(number)) => number.as_i64().map(normalize_epoch),
+        Some(serde_json::Value::String(value)) => {
+            value.parse::<i64>().ok().map(normalize_epoch).or_else(|| {
+                OffsetDateTime::parse(value, &Rfc3339)
+                    .ok()
+                    .map(|date| date.unix_timestamp())
+            })
+        }
         _ => None,
     }
 }
 
+fn normalize_epoch(value: i64) -> i64 {
+    if value > 1_000_000_000_000 {
+        value / 1_000
+    } else {
+        value
+    }
+}
+
+fn merge_access_token_claims(item: &mut ImportedOAuthToken) {
+    let access_token = item.access_token.clone();
+    merge_id_token_claims(item, &access_token);
+    if item.expires_at_epoch_seconds.is_none() {
+        item.expires_at_epoch_seconds = decode_jwt_claims(&access_token)
+            .and_then(|claims| claims.get("exp").and_then(serde_json::Value::as_i64));
+    }
+}
+
 fn merge_id_token_claims(item: &mut ImportedOAuthToken, id_token: &str) {
-    let mut parts = id_token.split('.');
-    let (Some(_header), Some(payload), Some(_signature)) =
-        (parts.next(), parts.next(), parts.next())
-    else {
-        return;
-    };
-    let Ok(bytes) = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(payload) else {
-        return;
-    };
-    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+    let Some(value) = decode_jwt_claims(id_token) else {
         return;
     };
     if item.account_key.is_none() {
         item.account_key = value
             .get("https://api.openai.com/auth")
             .and_then(serde_json::Value::as_object)
-            .and_then(|auth| {
-                first_string(
-                    auth,
-                    &[
-                        "chatgpt_account_id",
-                        "chatgptAccountId",
-                        "user_id",
-                        "userId",
-                    ],
-                )
-            })
+            .and_then(|auth| first_string(auth, &["chatgpt_account_id", "chatgptAccountId"]))
             .or_else(|| {
-                value
-                    .as_object()
-                    .and_then(|object| first_string(object, &["sub", "email"]))
+                value.as_object().and_then(|claims| {
+                    first_string(claims, &["https://api.openai.com/auth.chatgpt_account_id"])
+                })
             });
     }
     if item.project_id.is_none() {
@@ -321,6 +315,22 @@ fn merge_id_token_claims(item: &mut ImportedOAuthToken, id_token: &str) {
                 )
             });
     }
+}
+
+fn decode_jwt_claims(token: &str) -> Option<serde_json::Value> {
+    let mut parts = token.split('.');
+    let (Some(_header), Some(payload), Some(_signature)) =
+        (parts.next(), parts.next(), parts.next())
+    else {
+        return None;
+    };
+    if parts.next().is_some() || payload.len() > 12 * 1_024 {
+        return None;
+    }
+    let Ok(bytes) = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(payload) else {
+        return None;
+    };
+    serde_json::from_slice(&bytes).ok()
 }
 
 /// 区分字段缺失、显式 null 与有效明文，避免 Serde 将缺失字段折叠为 None。
@@ -975,6 +985,29 @@ mod tests {
         assert_eq!(tokens[0].access_token, "access-one");
         assert_eq!(tokens[1].access_token, "access-two");
         assert!(parse_import_file("[]").is_err());
+        assert!(parse_import_file("{broken-json").is_err());
+    }
+
+    #[test]
+    fn import_uses_chatgpt_account_id_and_normalizes_millisecond_expiry() {
+        let payload = json!({
+            "https://api.openai.com/auth": {"chatgpt_account_id": "account-from-jwt"},
+            "exp": 1_800_000_000
+        });
+        let token = format!(
+            "header.{}.signature",
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string())
+        );
+        let tokens = parse_import_file(
+            &json!({
+                "tokens": {"access_token": token, "expires_at": 1_800_000_000_000_i64},
+                "user_id": "different-user"
+            })
+            .to_string(),
+        )
+        .unwrap();
+        assert_eq!(tokens[0].account_key.as_deref(), Some("account-from-jwt"));
+        assert_eq!(tokens[0].expires_at_epoch_seconds, Some(1_800_000_000));
     }
 
     fn request(kind: &str, secret: Value) -> Value {
