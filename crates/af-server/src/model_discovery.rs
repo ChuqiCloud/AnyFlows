@@ -185,8 +185,9 @@ async fn discover_openai(
 fn openai_models_url(context: &RelayContext) -> Result<Url, UpstreamModelDiscoveryError> {
     if context.is_codex_oauth() {
         let target = context
-            .append_path(
-                OpenAiAdaptor::CODEX_OAUTH_BASE_URL,
+            .append_path_from(
+                url::Url::parse(OpenAiAdaptor::CODEX_OAUTH_BASE_URL)
+                    .map_err(|_| UpstreamModelDiscoveryError::ChannelUnavailable)?,
                 "backend-api/codex/models",
             )
             .map_err(|_| UpstreamModelDiscoveryError::ChannelUnavailable)?;

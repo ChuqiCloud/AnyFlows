@@ -109,10 +109,16 @@ impl RelayContext {
 
     /// 在基础地址后追加相对路径，并完整保留已有反向代理路径前缀。
     pub fn append_path(&self, default: &str, relative_path: &str) -> AdaptorResult<String> {
+        self.append_path_from(self.resolve_base_url(default)?, relative_path)
+    }
+
+    /// 在指定的固定基础地址后追加相对路径，忽略渠道提供的地址覆盖。
+    ///
+    /// 用于协议自身定义了固定上游端点的特殊渠道，例如 Codex OAuth。
+    pub fn append_path_from(&self, mut target: Url, relative_path: &str) -> AdaptorResult<String> {
         if !is_valid_relative_path(relative_path) {
             return Err(AdaptorError::InvalidRequestTarget);
         }
-        let mut target = self.resolve_base_url(default)?;
         {
             let mut segments = target
                 .path_segments_mut()

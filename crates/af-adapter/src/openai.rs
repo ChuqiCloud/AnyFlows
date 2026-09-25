@@ -152,8 +152,9 @@ impl Adaptor for OpenAiAdaptor {
         target: AdaptorTarget<'_>,
     ) -> AdaptorResult<String> {
         if self.protocol == Protocol::OpenAiResponses && context.is_codex_oauth() {
-            return context.append_path(
-                Self::CODEX_OAUTH_BASE_URL,
+            return context.append_path_from(
+                url::Url::parse(Self::CODEX_OAUTH_BASE_URL)
+                    .map_err(|_| AdaptorError::InvalidBaseUrl)?,
                 Self::codex_oauth_endpoint_path(target.operation())?,
             );
         }
