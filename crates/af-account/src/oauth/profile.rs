@@ -23,6 +23,9 @@ const CLAUDE_CODE_LOOPBACK_REDIRECT_URI: &str = "http://localhost:54545/callback
 
 const CODEX_AUTHORIZATION_ENDPOINT: &str = "https://auth.openai.com/oauth/authorize";
 const CODEX_TOKEN_ENDPOINT: &str = "https://auth.openai.com/oauth/token";
+/// OpenAI Codex CLI 使用的公开 OAuth 客户端标识。该值属于协议固定项，
+/// 不应要求部署者在运行时重复配置。
+pub const CODEX_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 const CODEX_SCOPE: &str = "openid email profile offline_access";
 const CODEX_AUTHORIZATION_PARAMETERS: &[(&str, &str)] = &[
     ("prompt", "login"),

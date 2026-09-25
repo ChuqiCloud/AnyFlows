@@ -154,7 +154,7 @@ export function CredentialForm({ channel, credential, credentials, credentialCat
 
         {mode === 'standard' && kind === 'oauth' ? (
           <CredentialSection title={t('credentials.oauth.title')} description={t('credentials.oauth.description')}>
-            <CredentialOAuthFields form={form} active={active} disabled={busy} />
+            <CredentialOAuthFields form={form} channelType={channel.type} active={active} disabled={busy} />
           </CredentialSection>
         ) : null}
 

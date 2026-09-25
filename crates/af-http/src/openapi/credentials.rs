@@ -6,6 +6,7 @@ use serde::Serialize;
 use utoipa::{OpenApi, ToSchema};
 
 use crate::{
+    management_credential_writes::{AdminCredentialImportRequest, AdminCredentialImportResponse},
     management_credentials::{AdminCredentialListResponse, AdminCredentialResponse},
     management_error::ManagementErrorBody,
     openapi::schema::{
@@ -224,6 +225,45 @@ fn list_admin_credentials() {}
 fn create_admin_credential() {}
 
 #[utoipa::path(
+    post,
+    path = "/api/admin/channels/{channel_id}/credentials/import",
+    operation_id = "importAdminCredentials",
+    tag = "凭据管理",
+    summary = "批量导入 Codex 令牌文件",
+    params(("channel_id" = i64, Path, minimum = 1, description = "OpenAI 渠道 ID")),
+    request_body = AdminCredentialImportRequest,
+    responses(
+        (status = 200, description = "逐项导入结果", body = AdminCredentialImportResponse),
+        (status = 400, description = "渠道 ID、文件或请求正文无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "需要管理员权限", body = ManagementErrorBody),
+        (status = 404, description = "渠道不存在", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn import_admin_credentials() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/admin/channels/{channel_id}/credentials/export",
+    operation_id = "exportAdminCredentials",
+    tag = "凭据管理",
+    summary = "导出兼容 sub2api 的 Codex 令牌",
+    params(("channel_id" = i64, Path, minimum = 1, description = "OpenAI 渠道 ID")),
+    responses(
+        (status = 200, description = "令牌 JSON 文件", content_type = "application/json"),
+        (status = 400, description = "渠道 ID 无效或不是 OpenAI 渠道", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "需要管理员权限", body = ManagementErrorBody),
+        (status = 404, description = "渠道不存在", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn export_admin_credentials() {}
+
+#[utoipa::path(
     get,
     path = "/api/admin/channels/{channel_id}/credentials/{credential_id}",
     operation_id = "getAdminCredential",
@@ -295,6 +335,8 @@ fn delete_admin_credential() {}
     paths(
         list_admin_credentials,
         create_admin_credential,
+        import_admin_credentials,
+        export_admin_credentials,
         get_admin_credential,
         update_admin_credential,
         delete_admin_credential
@@ -309,6 +351,8 @@ fn delete_admin_credential() {}
         AdminCredentialSecretSchema,
         AdminCredentialCreateRequestSchema,
         AdminCredentialUpdateRequestSchema,
+        AdminCredentialImportRequest,
+        AdminCredentialImportResponse,
         AdminCredentialResponse,
         AdminCredentialListResponse,
         ManagementErrorBody

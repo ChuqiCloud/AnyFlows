@@ -14,22 +14,28 @@ import { CredentialField } from './credential-form-field'
 import type { CredentialFormValues } from './credential-form-model'
 
 /** 只从启动配置目录选择 OAuth Provider，并结构化维护账号身份投影。 */
-export function CredentialOAuthFields({ form, active, disabled }: {
+export function CredentialOAuthFields({ form, channelType, active, disabled }: {
   form: UseFormReturn<CredentialFormValues>
+  channelType: string
   active: boolean
   disabled?: boolean
 }) {
   const { t } = useTranslation()
   const provider = form.watch('oauthProvider')
+  const fixedCodex = channelType === 'openai'
   const query = useAdminOAuthProviders(active)
   const providers = useMemo(() => query.data?.providers ?? [], [query.data])
   const selected = providers.find((item) => item.provider === provider)
   const unknownProvider = provider !== '' && selected === undefined
 
   useEffect(() => {
+    if (fixedCodex) {
+      if (provider !== 'codex') form.setValue('oauthProvider', 'codex', { shouldDirty: false, shouldValidate: true })
+      return
+    }
     if (!active || provider !== '' || providers.length === 0) return
     form.setValue('oauthProvider', providers[0].provider, { shouldDirty: true, shouldValidate: true })
-  }, [active, form, provider, providers])
+  }, [active, fixedCodex, form, provider, providers])
 
   if (!active) return null
   return (
@@ -39,7 +45,9 @@ export function CredentialOAuthFields({ form, active, disabled }: {
         label={t('credentials.oauth.provider')}
         error={form.formState.errors.oauthProvider?.message}
       >
-        {query.isPending ? (
+        {fixedCodex ? (
+          <div className="flex h-9 items-center rounded-lg border border-[var(--hairline)] bg-surface-2 px-3 text-sm">OpenAI / Codex</div>
+        ) : query.isPending ? (
           <Skeleton className="h-9 rounded-lg" aria-label={t('credentials.oauth.loading')} />
         ) : query.isError ? (
           <div role="alert" className="flex min-h-9 items-center justify-between gap-3 rounded-lg border border-destructive/25 bg-destructive/8 px-3 py-1.5">

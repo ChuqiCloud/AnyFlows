@@ -371,21 +371,27 @@ pub(crate) async fn initialize_oauth_refresh_supervisor(
 fn build_profiles(
     config: &AppConfig,
 ) -> Result<Vec<Arc<OAuthProviderProfile>>, OAuthRuntimeConfigError> {
-    let mut profiles = Vec::with_capacity(config.oauth().configured_provider_count());
-    for (provider, client) in [
-        (
-            UpstreamOAuthProvider::ClaudeCode,
-            config.oauth().claude_code(),
-        ),
-        (UpstreamOAuthProvider::Codex, config.oauth().codex()),
-    ] {
-        if let Some(client) = client {
-            profiles.push(Arc::new(
-                OAuthProviderProfile::new(provider, client.client_id().expose().to_owned(), None)
-                    .map_err(OAuthRuntimeConfigError::Profile)?,
-            ));
-        }
+    let mut profiles = Vec::with_capacity(config.oauth().configured_provider_count() + 1);
+    if let Some(client) = config.oauth().claude_code() {
+        profiles.push(Arc::new(
+            OAuthProviderProfile::new(
+                UpstreamOAuthProvider::ClaudeCode,
+                client.client_id().expose().to_owned(),
+                None,
+            )
+            .map_err(OAuthRuntimeConfigError::Profile)?,
+        ));
     }
+    // Codex 的端点、客户端和回调均属于 OpenAI 固定协议，始终可用；旧配置字段
+    // 仅为兼容保留，不再决定 provider 是否注册。
+    profiles.push(Arc::new(
+        OAuthProviderProfile::new(
+            UpstreamOAuthProvider::Codex,
+            af_account::CODEX_CLIENT_ID.to_owned(),
+            None,
+        )
+        .map_err(OAuthRuntimeConfigError::Profile)?,
+    ));
     for (provider, client) in [
         (UpstreamOAuthProvider::Gemini, config.oauth().gemini()),
         (

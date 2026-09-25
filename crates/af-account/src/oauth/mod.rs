@@ -31,7 +31,9 @@ pub use exchange::{
 pub use persistence::{
     OAuthTokenPersistenceError, OAuthTokenPersistenceOutcome, OAuthTokenPersistenceService,
 };
-pub use profile::{OAuthLoopbackRedirect, OAuthProviderProfile, OAuthProviderProfileError};
+pub use profile::{
+    CODEX_CLIENT_ID, OAuthLoopbackRedirect, OAuthProviderProfile, OAuthProviderProfileError,
+};
 pub use refresh_coordinator::{
     DEFAULT_MAX_OAUTH_REFRESH_FLIGHTS, DEFAULT_OAUTH_REFRESH_RESULT_RETENTION,
     OAUTH_REFRESH_LEASE_NAMESPACE, OAUTH_REFRESH_LEASE_WRITE_BUFFER, OAuthRefreshCoordinator,

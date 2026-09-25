@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { KeyRound, Plus, RefreshCw } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
+import { Download, FileUp, KeyRound, Plus, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { AdminCredential } from '@/lib/api/generated/types.gen'
 import { useAdminChannel, useAdminChannels } from '@/features/channels/channel-api'
-import { useAdminChannelCredentials } from './credential-api'
+import { exportAdminCredentialFiles, importAdminCredentialFiles, useAdminChannelCredentials } from './credential-api'
 import { CredentialChannelToolbar } from './credential-channel-toolbar'
 import { CredentialEditorSheet } from './credential-editor-sheet'
 import { CredentialList } from './credential-list'
@@ -30,6 +30,7 @@ export function CredentialPage({ initialChannelId }: { initialChannelId?: number
   const { fetchNextPage: fetchNextCredentialsPage, refetch: refetchCredentials } = credentialsQuery
   const credentials = useMemo(() => credentialsQuery.data?.pages.flatMap((page) => page.credentials) ?? [], [credentialsQuery.data])
   const [editor, setEditor] = useState<EditorState>()
+  const [importing, setImporting] = useState(false)
 
   const selectChannel = useCallback((channelId: number) => {
     setSelectedId(channelId)
@@ -51,9 +52,28 @@ export function CredentialPage({ initialChannelId }: { initialChannelId?: number
   const refreshAll = async () => {
     await Promise.all([channelsQuery.refetch(), selectedChannel ? credentialsQuery.refetch() : Promise.resolve()])
   }
+  const importFiles = async (event: ChangeEvent<HTMLInputElement>) => {
+    if (!selectedChannel || selectedChannel.type !== 'openai' || !event.target.files?.length) return
+    setImporting(true)
+    try {
+      const files = await Promise.all(Array.from(event.target.files).map(async (file) => ({ name: file.name, content: await file.text() })))
+      const result = await importAdminCredentialFiles(selectedChannel.id, files)
+      window.alert(`导入完成：成功 ${result.created}，跳过 ${result.skipped}，失败 ${result.failed}`)
+      await refetchCredentials()
+    } catch { window.alert('导入失败，请检查文件格式后重试') } finally { setImporting(false); event.target.value = '' }
+  }
+  const exportFiles = async () => {
+    if (!selectedChannel || selectedChannel.type !== 'openai') return
+    try {
+      const blob = await exportAdminCredentialFiles(selectedChannel.id)
+      const url = URL.createObjectURL(blob); const anchor = document.createElement('a')
+      anchor.href = url; anchor.download = 'anyflows-codex-credentials.json'; anchor.click(); URL.revokeObjectURL(url)
+    } catch { window.alert('导出失败，请稍后重试') }
+  }
 
   const channelPending = channelsQuery.isPending || (selectedId !== undefined && !listedChannel && detailQuery.isPending)
   const channelError = channelsQuery.isError || (selectedId !== undefined && !listedChannel && detailQuery.isError && channels.length === 0)
+  const canImportCodex = selectedChannel?.type === 'openai'
 
   return (
     <div className="flex flex-col gap-4">
@@ -62,6 +82,8 @@ export function CredentialPage({ initialChannelId }: { initialChannelId?: number
         <div className="flex items-center gap-2">
           <Button type="button" size="sm" variant="secondary" disabled={channelsQuery.isFetching || credentialsQuery.isFetching} onClick={refreshAll}><RefreshCw className={channelsQuery.isFetching || credentialsQuery.isFetching ? 'animate-spin' : undefined} aria-hidden="true" />{t('credentials.actions.refresh')}</Button>
           <Button type="button" size="sm" disabled={!selectedChannel} onClick={() => setEditor('create')}><Plus aria-hidden="true" />{t('credentials.actions.add')}</Button>
+          {canImportCodex ? <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-[var(--hairline)] px-3 py-1.5 text-sm"><FileUp className="size-3.5" aria-hidden="true" />导入<input type="file" className="sr-only" multiple accept=".json,.txt" disabled={importing} onChange={importFiles} /></label> : null}
+          {canImportCodex ? <Button type="button" size="sm" variant="secondary" onClick={() => void exportFiles()}><Download aria-hidden="true" />导出</Button> : null}
         </div>
       </header>
 

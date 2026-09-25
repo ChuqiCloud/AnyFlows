@@ -30,6 +30,7 @@ const stateStyles = {
 } as const
 
 type CredentialItemProps = {
+  channelType: string
   credential: AdminCredential
   parent?: AdminCredential
   language: string
@@ -42,7 +43,7 @@ type CredentialItemProps = {
 }
 
 /** 以真实持久化与冷却事实呈现账号状态，不接触任何密文明文。 */
-export function CredentialItem({ credential, parent, language, pending, active, onToggle, onEdit, onDelete, onRefresh }: CredentialItemProps) {
+export function CredentialItem({ channelType, credential, parent, language, pending, active, onToggle, onEdit, onDelete, onRefresh }: CredentialItemProps) {
   const { t } = useTranslation()
   const [oauthOpen, setOAuthOpen] = useState(false)
   const writableKind = asWritableCredentialKind(credential.kind)
@@ -99,7 +100,7 @@ export function CredentialItem({ credential, parent, language, pending, active, 
           <IconAction label={t('credentials.actions.delete')} className="hover:text-destructive" disabled={oauthOpen} onClick={() => onDelete(credential)}><Trash2 aria-hidden="true" /></IconAction>
         </div>
       </div>
-      {isOAuth && oauthOpen ? <CredentialOAuthConnection active={active && oauthOpen} channelId={credential.channel_id} credential={credential} onDelete={onDelete} onRefresh={onRefresh} /> : null}
+      {isOAuth && oauthOpen ? <CredentialOAuthConnection active={active && oauthOpen} channelType={channelType} channelId={credential.channel_id} credential={credential} onDelete={onDelete} onRefresh={onRefresh} /> : null}
     </article>
   )
 }

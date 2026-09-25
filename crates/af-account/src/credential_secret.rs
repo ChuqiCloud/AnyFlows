@@ -4,6 +4,7 @@ use af_domain::CredentialKind;
 use jsonwebtoken::EncodingKey;
 use zeroize::Zeroizing;
 
+use crate::credential_encryption::PlainOAuthCredential;
 use crate::{CredentialEncryptionError, MAX_DECRYPTED_CREDENTIAL_SECRET_BYTES};
 
 /// AWS access key ID 的最大明文字节数。
@@ -27,6 +28,7 @@ pub struct PlainCredentialSecret {
 enum PlainCredentialValue {
     ApiKey(Zeroizing<String>),
     Oauth(Zeroizing<String>),
+    OauthBundle(PlainOAuthCredential),
     Bedrock {
         access_key_id: Zeroizing<String>,
         secret_access_key: Zeroizing<String>,
@@ -43,6 +45,7 @@ enum PlainCredentialValue {
 pub(crate) enum PlainCredentialSecretRef<'a> {
     ApiKey(&'a str),
     Oauth(&'a str),
+    OauthBundle(&'a PlainOAuthCredential),
     Bedrock {
         access_key_id: &'a str,
         secret_access_key: &'a str,
@@ -80,6 +83,13 @@ impl PlainCredentialSecret {
         Ok(Self {
             value: PlainCredentialValue::Oauth(validate_oauth_token(value)?),
         })
+    }
+
+    /// 构造包含 access token、refresh token 和到期时间的完整 OAuth 凭据。
+    pub fn oauth_bundle(value: PlainOAuthCredential) -> Self {
+        Self {
+            value: PlainCredentialValue::OauthBundle(value),
+        }
     }
 
     /// 构造 AWS Bedrock SigV4 凭据。
@@ -127,7 +137,9 @@ impl PlainCredentialSecret {
     pub const fn kind(&self) -> CredentialKind {
         match &self.value {
             PlainCredentialValue::ApiKey(_) => CredentialKind::ApiKey,
-            PlainCredentialValue::Oauth(_) => CredentialKind::Oauth,
+            PlainCredentialValue::Oauth(_) | PlainCredentialValue::OauthBundle(_) => {
+                CredentialKind::Oauth
+            }
             PlainCredentialValue::Bedrock { .. } => CredentialKind::Bedrock,
             PlainCredentialValue::ServiceAccount { .. } => CredentialKind::ServiceAccount,
         }
@@ -137,6 +149,9 @@ impl PlainCredentialSecret {
         match &self.value {
             PlainCredentialValue::ApiKey(value) => PlainCredentialSecretRef::ApiKey(value),
             PlainCredentialValue::Oauth(value) => PlainCredentialSecretRef::Oauth(value),
+            PlainCredentialValue::OauthBundle(value) => {
+                PlainCredentialSecretRef::OauthBundle(value)
+            }
             PlainCredentialValue::Bedrock {
                 access_key_id,
                 secret_access_key,

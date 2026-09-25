@@ -106,11 +106,11 @@ mod user_wallet;
 mod user_write;
 mod wallet;
 
-pub use af_account::PlainCredentialSecret as AdminCredentialSecret;
 pub use af_account::{
     ORGANIZATION_SSO_OIDC_CALLBACK_PATH, ORGANIZATION_SSO_SAML_CALLBACK_PATH,
     OrganizationSsoOidcCallback, OrganizationSsoSamlCallback,
 };
+pub use af_account::{PlainCredentialSecret as AdminCredentialSecret, PlainOAuthCredential};
 pub use af_db::OrganizationContractPriceRecord;
 pub use af_db::OrganizationScimTokenRecord;
 pub use af_db::{
@@ -151,8 +151,9 @@ pub use channel_write::{
     AdminChannelCreateCommand, AdminChannelCreateFuture, AdminChannelDeleteFuture,
     AdminChannelUpdateCommand, AdminChannelUpdateFuture, AdminChannelWriteError,
     AdminChannelWriter, AdminCredentialCreateCommand, AdminCredentialCreateFuture,
-    AdminCredentialDeleteFuture, AdminCredentialUpdateCommand, AdminCredentialUpdateFuture,
-    AdminRoutingWriteStatus, DatabaseAdminChannelWriter,
+    AdminCredentialDeleteFuture, AdminCredentialExport, AdminCredentialExportFuture,
+    AdminCredentialUpdateCommand, AdminCredentialUpdateFuture, AdminRoutingWriteStatus,
+    DatabaseAdminChannelWriter,
 };
 pub use credential_proxy::{
     AdminCredentialProxy, AdminCredentialProxyCreateCommand, AdminCredentialProxyDeleteFuture,

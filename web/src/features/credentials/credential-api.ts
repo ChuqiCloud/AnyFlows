@@ -22,6 +22,33 @@ export const adminChannelCredentialsQueryKey = (channelId: number) => [
   'admin-channel-credentials',
   channelId,
 ] as const
+
+export type AdminCredentialImportResult = {
+  total: number
+  created: number
+  skipped: number
+  failed: number
+  items: Array<{ file: string; index: number; action: string; credential_id?: number | null; message: string }>
+}
+
+export async function importAdminCredentialFiles(channelId: number, files: Array<{ name: string; content: string }>, signal?: AbortSignal) {
+  const result = await apiClient.post<AdminCredentialImportResult, unknown, true>({
+    security: [{ key: 'bearerAuth', scheme: 'bearer', type: 'http' }],
+    url: '/api/admin/channels/{channel_id}/credentials/import',
+    path: { channel_id: channelId }, body: { files }, signal,
+    headers: { 'Content-Type': 'application/json' },
+  })
+  return result.data
+}
+
+export async function exportAdminCredentialFiles(channelId: number, signal?: AbortSignal) {
+  const result = await apiClient.get<Blob, unknown, true>({
+    security: [{ key: 'bearerAuth', scheme: 'bearer', type: 'http' }],
+    url: '/api/admin/channels/{channel_id}/credentials/export',
+    path: { channel_id: channelId }, parseAs: 'blob', signal,
+  })
+  return result.data
+}
 const adminChannelCredentialCatalogQueryKey = (channelId: number) => [
   'admin-channel-credentials',
   channelId,

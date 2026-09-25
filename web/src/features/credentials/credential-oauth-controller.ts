@@ -20,7 +20,6 @@ import {
   clearOAuthWizardState,
   isValidOAuthCallbackUrl,
   oauthAuthorizationRemainingSeconds,
-  oauthProviderStatus,
   readOAuthWizardState,
   writeOAuthWizardState,
 } from './credential-oauth-model'
@@ -29,6 +28,7 @@ import type { ActiveOAuthAuthorization, CredentialOAuthStatus } from './credenti
 
 type CredentialOAuthControllerOptions = {
   active: boolean
+  channelType: string
   channelId: number
   credential: AdminCredential
   onRefresh: () => Promise<unknown>
@@ -44,8 +44,8 @@ export function useCredentialOAuthController(options: CredentialOAuthControllerO
   const { reset: resetManualMutation } = manualMutation
   const beginAbortRef = useRef<AbortController | undefined>(undefined)
   const manualAbortRef = useRef<AbortController | undefined>(undefined)
-  const boundProvider = asAdminOAuthProvider(options.credential.oauth_provider)
-  const unsupportedBoundProvider = options.credential.oauth_provider !== null && boundProvider === undefined
+  const boundProvider = asAdminOAuthProvider(options.credential.oauth_provider) ?? (options.channelType === 'openai' ? 'codex' : undefined)
+  const unsupportedBoundProvider = options.channelType !== 'openai' && options.credential.oauth_provider !== null && boundProvider === undefined
   const providers = useMemo(() => providersQuery.data?.providers ?? [], [providersQuery.data])
   const [restoredState] = useState(() => readOAuthWizardState(options.channelId, options.credential.id))
   const restoredProvider = restoredState !== undefined
@@ -71,7 +71,7 @@ export function useCredentialOAuthController(options: CredentialOAuthControllerO
     preparingLabel: options.preparingLabel,
   })
   const selectedStatus = boundProvider !== undefined
-    ? oauthProviderStatus(providers, options.credential)
+    ? providers.find((item) => item.provider === boundProvider)
     : providers.find((item) => item.provider === provider)
 
   useEffect(() => {
