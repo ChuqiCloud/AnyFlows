@@ -3938,7 +3938,7 @@ mod tests {
             .await
             .unwrap()
             .start_supervisor();
-        assert_eq!(supervised.stage.supervisor.task_count(), 11);
+        assert_eq!(supervised.stage.supervisor.task_count(), 13);
         let report = supervised
             .build_router()
             .bind()
@@ -4088,15 +4088,17 @@ mod tests {
                 SessionRole::Admin,
             ))
             .unwrap();
-        assert_eq!(statuses.len(), 1);
-        assert_eq!(
-            statuses[0].provider(),
-            af_http::AdminOAuthProvider::ClaudeCode
-        );
-        assert!(statuses[0].loopback_listener_ready());
-        assert_eq!(
-            statuses[0].redirect_uri(),
-            "http://localhost:54545/callback"
+        assert_eq!(statuses.len(), 2);
+        let claude = statuses
+            .iter()
+            .find(|status| status.provider() == af_http::AdminOAuthProvider::ClaudeCode)
+            .unwrap();
+        assert!(claude.loopback_listener_ready());
+        assert_eq!(claude.redirect_uri(), "http://localhost:54545/callback");
+        assert!(
+            statuses
+                .iter()
+                .any(|status| status.provider() == af_http::AdminOAuthProvider::Codex)
         );
         let _ = fs::remove_dir_all(wal_directory);
     }
