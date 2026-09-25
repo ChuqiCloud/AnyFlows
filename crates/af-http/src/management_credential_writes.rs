@@ -164,13 +164,13 @@ fn collect_import_value(value: &serde_json::Value, output: &mut Vec<ImportedOAut
                     .for_each(|item| collect_import_value(item, output));
                 return;
             }
-            if let Some(tokens) = object.get("tokens") {
-                if let Some(items) = tokens.as_array() {
-                    items
-                        .iter()
-                        .for_each(|item| collect_import_value(item, output));
-                    return;
-                }
+            if let Some(tokens) = object.get("tokens")
+                && let Some(items) = tokens.as_array()
+            {
+                items
+                    .iter()
+                    .for_each(|item| collect_import_value(item, output));
+                return;
             }
             let credentials = object
                 .get("credentials")
@@ -238,12 +238,11 @@ fn collect_import_value(value: &serde_json::Value, output: &mut Vec<ImportedOAut
                 project_id,
             };
             merge_access_token_claims(&mut item);
-            if item.account_key.is_none() {
-                if let Some(id_token) = first_string(source, &["id_token", "idToken"])
+            if item.account_key.is_none()
+                && let Some(id_token) = first_string(source, &["id_token", "idToken"])
                     .or_else(|| first_string(object, &["id_token", "idToken"]))
-                {
-                    merge_id_token_claims(&mut item, &id_token);
-                }
+            {
+                merge_id_token_claims(&mut item, &id_token);
             }
             output.push(item);
         }
