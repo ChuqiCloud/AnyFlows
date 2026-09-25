@@ -139,6 +139,8 @@ pub struct ChannelProbeTargetRecord {
     timeout: Option<ChannelTimeout>,
     model: String,
     credential_kind: CredentialKind,
+    oauth_provider: Option<String>,
+    oauth_account_key: Option<String>,
     envelope: EncryptedCredentialEnvelope,
     headers: Vec<ChannelProbeHeader>,
     proxy_required: bool,
@@ -213,6 +215,18 @@ impl ChannelProbeTargetRecord {
         self.credential_kind
     }
 
+    /// 返回 OAuth 厂商标识；非 OAuth 凭据通常为空。
+    #[must_use]
+    pub fn oauth_provider(&self) -> Option<&str> {
+        self.oauth_provider.as_deref()
+    }
+
+    /// 返回 OAuth 账号标识；调用方不得记录或回传给客户端。
+    #[must_use]
+    pub fn oauth_account_key(&self) -> Option<&str> {
+        self.oauth_account_key.as_deref()
+    }
+
     /// 返回版本化密文封套。
     #[must_use]
     pub const fn envelope(&self) -> &EncryptedCredentialEnvelope {
@@ -262,6 +276,11 @@ impl fmt::Debug for ChannelProbeTargetRecord {
             .field("timeout", &self.timeout)
             .field("model", &"<已脱敏>")
             .field("credential_kind", &self.credential_kind)
+            .field("oauth_provider", &self.oauth_provider)
+            .field(
+                "oauth_account_key",
+                &self.oauth_account_key.as_ref().map(|_| "<已脱敏>"),
+            )
             .field("envelope", &self.envelope)
             .field("header_count", &self.headers.len())
             .field("proxy_required", &self.proxy_required)
@@ -448,6 +467,8 @@ impl ChannelProbeTargetRepository {
                 timeout: channel_timeout,
                 model: probe_model,
                 credential_kind,
+                oauth_provider: credential.oauth_provider,
+                oauth_account_key: credential.oauth_account_key,
                 envelope,
                 headers,
                 proxy_required: credential.proxy_id.is_some(),

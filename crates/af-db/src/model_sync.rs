@@ -193,6 +193,8 @@ pub struct ModelDiscoveryTargetRecord {
     timeout: Option<ChannelTimeout>,
     credential_id: i64,
     credential_kind: CredentialKind,
+    oauth_provider: Option<String>,
+    oauth_account_key: Option<String>,
     envelope: EncryptedCredentialEnvelope,
     headers: Vec<ModelDiscoveryHeaderRecord>,
     mappings: Vec<ModelDiscoveryMappingRecord>,
@@ -235,6 +237,18 @@ impl ModelDiscoveryTargetRecord {
         self.credential_kind
     }
 
+    /// 返回 OAuth 厂商标识；非 OAuth 凭据通常为空。
+    #[must_use]
+    pub fn oauth_provider(&self) -> Option<&str> {
+        self.oauth_provider.as_deref()
+    }
+
+    /// 返回 OAuth 账号标识；调用方不得记录或回传给客户端。
+    #[must_use]
+    pub fn oauth_account_key(&self) -> Option<&str> {
+        self.oauth_account_key.as_deref()
+    }
+
     #[must_use]
     pub const fn envelope(&self) -> &EncryptedCredentialEnvelope {
         &self.envelope
@@ -267,6 +281,11 @@ impl fmt::Debug for ModelDiscoveryTargetRecord {
             .field("timeout", &self.timeout)
             .field("credential_id", &self.credential_id)
             .field("credential_kind", &self.credential_kind)
+            .field("oauth_provider", &self.oauth_provider)
+            .field(
+                "oauth_account_key",
+                &self.oauth_account_key.as_ref().map(|_| "<已脱敏>"),
+            )
             .field("header_count", &self.headers.len())
             .field("mapping_count", &self.mappings.len())
             .field("proxy_required", &self.proxy_required)

@@ -11,7 +11,8 @@ use crate::{Adaptor, AdaptorError, AdaptorResult, AdaptorTarget, Credential, Rel
 /// 渠道基础地址由 `RelayContext` 覆盖，可传服务根或反向代理前缀；末尾非空段精确为
 /// `v1`（可带尾斜杠）时不会重复追加版本路径，其他路径会追加目标原生端点。
 /// 空模型清单表示无内建模型限制，具体模型由渠道配置提供。当前实现 Bearer-compatible
-/// OpenAI 原生端点的 URL 与认证 Header 构造，Azure deployment 等专用参数留待后续适配器切片。
+/// OpenAI 原生端点的 URL 与认证 Header 构造；Codex OAuth 的 Responses 请求固定走
+/// ChatGPT 内部端点，Azure deployment 等其他专用参数留待后续适配器切片。
 #[derive(Clone, Eq, PartialEq)]
 pub struct OpenAiAdaptor {
     protocol: Protocol,
@@ -27,6 +28,8 @@ impl Default for OpenAiAdaptor {
 impl OpenAiAdaptor {
     /// OpenAI 官方 API 的默认根地址。
     pub const DEFAULT_BASE_URL: &'static str = "https://api.openai.com";
+    /// ChatGPT/Codex OAuth 使用的内部 Responses 根地址。
+    pub const CODEX_OAUTH_BASE_URL: &'static str = "https://chatgpt.com";
     /// Audio multipart 使用的固定高熵边界；编码器会拒绝正文中的碰撞。
     pub const AUDIO_MULTIPART_BOUNDARY: &'static str =
         "anyflows-audio-6f4d2e1c9b8a7350d4e6f1a2c3b5d798";
@@ -116,6 +119,14 @@ impl OpenAiAdaptor {
             }
         })
     }
+
+    fn codex_oauth_endpoint_path(operation: Operation) -> AdaptorResult<&'static str> {
+        match operation {
+            Operation::Responses => Ok("backend-api/codex/responses"),
+            Operation::ResponsesCompact => Ok("backend-api/codex/responses/compact"),
+            _ => Err(AdaptorError::UnsupportedOperation { operation }),
+        }
+    }
 }
 
 impl Adaptor for OpenAiAdaptor {
@@ -140,6 +151,12 @@ impl Adaptor for OpenAiAdaptor {
         context: &RelayContext,
         target: AdaptorTarget<'_>,
     ) -> AdaptorResult<String> {
+        if self.protocol == Protocol::OpenAiResponses && context.is_codex_oauth() {
+            return context.append_path(
+                Self::CODEX_OAUTH_BASE_URL,
+                Self::codex_oauth_endpoint_path(target.operation())?,
+            );
+        }
         context.append_path(
             Self::DEFAULT_BASE_URL,
             self.endpoint_path(context, target.operation())?,
@@ -168,6 +185,24 @@ impl Adaptor for OpenAiAdaptor {
                 .map_err(|_| AdaptorError::InvalidHeader)?;
         authorization.set_sensitive(true);
         headers.insert(HeaderName::from_static("authorization"), authorization);
+        if self.protocol == Protocol::OpenAiResponses && context.is_codex_oauth() {
+            let account_key = context
+                .oauth_account_key()
+                .filter(|value| !value.is_empty())
+                .ok_or(AdaptorError::InvalidHeader)?;
+            headers.insert(
+                HeaderName::from_static("chatgpt-account-id"),
+                HeaderValue::from_str(account_key).map_err(|_| AdaptorError::InvalidHeader)?,
+            );
+            headers.insert(
+                HeaderName::from_static("openai-beta"),
+                HeaderValue::from_static("codex-1"),
+            );
+            headers.insert(
+                HeaderName::from_static("originator"),
+                HeaderValue::from_static("Codex Desktop"),
+            );
+        }
         let content_type = if self.protocol == Protocol::OpenAiAudio {
             HeaderValue::from_str(&format!(
                 "multipart/form-data; boundary={}",
@@ -317,6 +352,43 @@ mod tests {
                 operation: Operation::Chat
             }
         );
+    }
+
+    #[test]
+    fn codex_oauth_responses_use_chatgpt_backend_endpoint() {
+        let adaptor = OpenAiAdaptor::with_protocol_and_supported_models(
+            Protocol::OpenAiResponses,
+            ["gpt-test"],
+        )
+        .unwrap();
+        let context = context()
+            .with_base_url("https://gateway.example/incorrect/v1")
+            .unwrap()
+            .with_oauth_identity(Some("codex"), Some("org-codex-test"));
+        assert_eq!(
+            adaptor
+                .build_url(&context, target(Operation::Responses))
+                .unwrap(),
+            "https://chatgpt.com/backend-api/codex/responses"
+        );
+        assert_eq!(
+            adaptor
+                .build_url(&context, target(Operation::ResponsesCompact))
+                .unwrap(),
+            "https://chatgpt.com/backend-api/codex/responses/compact"
+        );
+
+        let mut headers = HeaderMap::new();
+        adaptor
+            .setup_headers(
+                &mut headers,
+                &Credential::oauth("oauth-access").unwrap(),
+                &context,
+            )
+            .unwrap();
+        assert_eq!(headers["chatgpt-account-id"], "org-codex-test");
+        assert_eq!(headers["openai-beta"], "codex-1");
+        assert_eq!(headers["originator"], "Codex Desktop");
     }
 
     #[test]

@@ -19,6 +19,8 @@ pub struct RelayContext {
     http_client: PooledClient,
     base_url: Option<String>,
     request_id: Option<String>,
+    oauth_provider: Option<String>,
+    oauth_account_key: Option<String>,
 }
 
 impl RelayContext {
@@ -29,6 +31,8 @@ impl RelayContext {
             http_client,
             base_url: None,
             request_id: None,
+            oauth_provider: None,
+            oauth_account_key: None,
         }
     }
 
@@ -48,6 +52,18 @@ impl RelayContext {
         Ok(self)
     }
 
+    /// 设置 OAuth 账号身份元数据；令牌本体仍只保留在 `Credential` 中。
+    #[must_use]
+    pub fn with_oauth_identity(
+        mut self,
+        provider: Option<&str>,
+        account_key: Option<&str>,
+    ) -> Self {
+        self.oauth_provider = provider.map(str::to_owned);
+        self.oauth_account_key = account_key.map(str::to_owned);
+        self
+    }
+
     /// 返回受连接池管理的 HTTP Client。
     #[must_use]
     pub const fn http_client(&self) -> &PooledClient {
@@ -64,6 +80,25 @@ impl RelayContext {
     #[must_use]
     pub fn request_id(&self) -> Option<&str> {
         self.request_id.as_deref()
+    }
+
+    /// 返回 OAuth 厂商标识。
+    #[must_use]
+    pub fn oauth_provider(&self) -> Option<&str> {
+        self.oauth_provider.as_deref()
+    }
+
+    /// 返回 OAuth 账号标识；不得记录或回传给客户端。
+    #[must_use]
+    pub fn oauth_account_key(&self) -> Option<&str> {
+        self.oauth_account_key.as_deref()
+    }
+
+    /// 判断当前上下文是否声明为 Codex OAuth 请求。
+    #[must_use]
+    pub fn is_codex_oauth(&self) -> bool {
+        self.oauth_provider
+            .is_some_and(|provider| provider.eq_ignore_ascii_case("codex"))
     }
 
     /// 解析实际使用的基础地址；渠道覆盖优先于适配器默认值。
@@ -101,6 +136,11 @@ impl fmt::Debug for RelayContext {
             .field("http_client", &"<受控>")
             .field("base_url", &self.base_url.as_ref().map(|_| "<已脱敏>"))
             .field("request_id", &self.request_id.as_ref().map(|_| "<已脱敏>"))
+            .field("oauth_provider", &self.oauth_provider)
+            .field(
+                "oauth_account_key",
+                &self.oauth_account_key.as_ref().map(|_| "<已脱敏>"),
+            )
             .finish()
     }
 }

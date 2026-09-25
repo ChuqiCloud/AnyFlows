@@ -108,6 +108,8 @@ impl ModelSyncRepository {
                     timeout: channel_timeout,
                     credential_id: credential.id,
                     credential_kind,
+                    oauth_provider: credential.oauth_provider,
+                    oauth_account_key: credential.oauth_account_key,
                     envelope,
                     headers,
                     mappings,
