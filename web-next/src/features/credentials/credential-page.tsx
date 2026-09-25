@@ -66,7 +66,7 @@ export function CredentialPage({ initialChannelId }: { initialChannelId?: number
     setImportResult(undefined)
     setFileError(undefined)
     if (selectedFiles.length > 64 || selectedFiles.some((file) => file.size > 2 * 1024 * 1024) || selectedFiles.reduce((size, file) => size + file.size, 0) > 24 * 1024 * 1024) {
-      setFileError('最多选择 64 个文件，单个不超过 2 MB，总大小不超过 24 MB')
+      setFileError(t('credentials.fileTransfer.sizeLimit'))
       return
     }
     setImporting(true)
@@ -75,7 +75,7 @@ export function CredentialPage({ initialChannelId }: { initialChannelId?: number
       const result = await importAdminCredentialFiles(selectedChannel.id, files)
       setImportResult(result)
       await refetchCredentials()
-    } catch { setFileError('导入失败，请检查文件格式后重试') } finally { setImporting(false) }
+    } catch { setFileError(t('credentials.fileTransfer.importFailed')) } finally { setImporting(false) }
   }
   const exportFiles = async () => {
     if (!selectedChannel || selectedChannel.type !== 'openai') return
@@ -86,7 +86,7 @@ export function CredentialPage({ initialChannelId }: { initialChannelId?: number
       const url = URL.createObjectURL(blob); const anchor = document.createElement('a')
       anchor.href = url; anchor.download = 'anyflows-codex-credentials.json'; anchor.click()
       window.setTimeout(() => URL.revokeObjectURL(url), 1000)
-    } catch { setFileError('导出失败，请稍后重试') } finally { setExporting(false) }
+    } catch { setFileError(t('credentials.fileTransfer.exportFailed')) } finally { setExporting(false) }
   }
 
   const channelPending = channelsQuery.isPending || (selectedId !== undefined && !listedChannel && detailQuery.isPending)
@@ -100,15 +100,15 @@ export function CredentialPage({ initialChannelId }: { initialChannelId?: number
         <div className="flex items-center gap-2">
           <Button type="button" size="sm" variant="bordered" isDisabled={channelsQuery.isFetching || credentialsQuery.isFetching} onClick={refreshAll}><RefreshCw className={`size-3.5 ${channelsQuery.isFetching || credentialsQuery.isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />{t('credentials.actions.refresh')}</Button>
           <Button type="button" color="primary" size="sm" isDisabled={!selectedChannel} onClick={() => setEditor('create')}><Plus className="size-3.5" aria-hidden="true" />{t('credentials.actions.add')}</Button>
-          {canImportCodex ? <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-default-200 px-3 py-1.5 text-sm focus-within:ring-2 focus-within:ring-primary"><FileUp className="size-3.5" aria-hidden="true" />{importing ? '导入中' : '导入'}<input type="file" className="sr-only" multiple accept=".json,.txt" disabled={importing} onChange={importFiles} /></label> : null}
-          {canImportCodex ? <Button type="button" size="sm" variant="flat" isDisabled={exporting} onClick={() => void exportFiles()}><Download className="size-3.5" aria-hidden="true" />{exporting ? '导出中' : '导出'}</Button> : null}
+          {canImportCodex ? <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-default-200 px-3 py-1.5 text-sm focus-within:ring-2 focus-within:ring-primary"><FileUp className="size-3.5" aria-hidden="true" />{t(importing ? 'credentials.fileTransfer.importing' : 'credentials.fileTransfer.import')}<input type="file" className="sr-only" multiple accept=".json,.txt" disabled={importing} onChange={importFiles} /></label> : null}
+          {canImportCodex ? <Button type="button" size="sm" variant="flat" isDisabled={exporting} onClick={() => void exportFiles()}><Download className="size-3.5" aria-hidden="true" />{t(exporting ? 'credentials.fileTransfer.exporting' : 'credentials.fileTransfer.export')}</Button> : null}
         </div>
       </header>
 
       {fileError ? <p role="alert" className="text-sm text-danger">{fileError}</p> : null}
       {importResult ? <div role="status" className="border-l-2 border-primary pl-3 text-sm">
-        <p>导入完成：成功 {importResult.created}，跳过 {importResult.skipped}，失败 {importResult.failed}</p>
-        {importResult.failed > 0 ? <details className="mt-1 text-default-500"><summary className="cursor-pointer">查看失败条目</summary><ul className="mt-2 max-h-40 overflow-auto text-xs">{importResult.items.filter((item) => item.action === 'failed').map((item, index) => <li key={`${item.file}-${item.index}-${index}`}>{item.file} · {item.index + 1}：{item.message}</li>)}</ul></details> : null}
+        <p>{t('credentials.fileTransfer.result', importResult)}</p>
+        {importResult.failed > 0 ? <details className="mt-1 text-default-500"><summary className="cursor-pointer">{t('credentials.fileTransfer.failedItems')}</summary><ul className="mt-2 max-h-40 overflow-auto text-xs">{importResult.items.filter((item) => item.action === 'failed').map((item, index) => <li key={`${item.file}-${item.index}-${index}`}>{t('credentials.fileTransfer.failedItem', { file: item.file, index: item.index + 1, message: item.message })}</li>)}</ul></details> : null}
       </div> : null}
 
       {channelPending ? (

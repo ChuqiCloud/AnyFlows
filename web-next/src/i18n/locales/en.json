@@ -901,6 +901,18 @@
   "credentials": {
     "title": "Credentials and account pool",
     "subtitle": "Manage upstream credentials, account relationships, and scheduling state within each channel. Secret reads remain redacted.",
+    "fileTransfer": {
+      "import": "Import",
+      "importing": "Importing",
+      "export": "Export",
+      "exporting": "Exporting",
+      "sizeLimit": "Select up to 64 files, 2 MB each and 24 MB in total",
+      "importFailed": "Import failed. Check the file format and try again.",
+      "exportFailed": "Export failed. Try again later.",
+      "result": "Import complete: {{created}} created, {{skipped}} skipped, {{failed}} failed",
+      "failedItems": "View failed items",
+      "failedItem": "{{file}} · item {{index}}: {{message}}"
+    },
     "channel": {
       "label": "Channel",
       "loadMore": "Load more channels",
