@@ -3390,6 +3390,7 @@ impl Bootstrap<ListenerReady> {
             admin_oauth_connection_service: _,
             oauth_login_service: _,
             admin_channel_probe: _,
+            upstream_clients: _,
             debug_trace_repository: _,
             debug_trace_runtime: _,
             analytics_export_control: _,
