@@ -6,6 +6,7 @@ use serde::Serialize;
 use utoipa::{OpenApi, ToSchema};
 
 use crate::{
+    credential_usage::{CredentialUsageSnapshot, CredentialUsageStatus, CredentialUsageWindow},
     management_credential_writes::{AdminCredentialImportRequest, AdminCredentialImportResponse},
     management_credentials::{AdminCredentialListResponse, AdminCredentialResponse},
     management_error::ManagementErrorBody,
@@ -286,6 +287,26 @@ fn export_admin_credentials() {}
 fn get_admin_credential() {}
 
 #[utoipa::path(
+    get,
+    path = "/api/admin/channels/{channel_id}/credentials/{credential_id}/usage",
+    operation_id = "getAdminCredentialUsage",
+    tag = "凭据管理",
+    summary = "查询 Codex OAuth 账号上游用量窗口",
+    params(
+        ("channel_id" = i64, Path, minimum = 1, description = "渠道 ID"),
+        ("credential_id" = i64, Path, minimum = 1, description = "凭据 ID")
+    ),
+    responses(
+        (status = 200, description = "用量快照或不可用状态", body = CredentialUsageSnapshot),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "需要管理员权限", body = ManagementErrorBody),
+        (status = 404, description = "渠道或凭据不存在", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn get_admin_credential_usage() {}
+
+#[utoipa::path(
     put,
     path = "/api/admin/channels/{channel_id}/credentials/{credential_id}",
     operation_id = "updateAdminCredential",
@@ -338,6 +359,7 @@ fn delete_admin_credential() {}
         import_admin_credentials,
         export_admin_credentials,
         get_admin_credential,
+        get_admin_credential_usage,
         update_admin_credential,
         delete_admin_credential
     ),
@@ -354,6 +376,9 @@ fn delete_admin_credential() {}
         AdminCredentialImportRequest,
         AdminCredentialImportResponse,
         AdminCredentialResponse,
+        CredentialUsageSnapshot,
+        CredentialUsageStatus,
+        CredentialUsageWindow,
         AdminCredentialListResponse,
         ManagementErrorBody
     ))

@@ -27,6 +27,23 @@ export const adminChannelCredentialsQueryKey = (channelId: number) => [
 
 export type AdminCredentialImportResult = AdminCredentialImportResponse
 
+export type CredentialUsageSnapshot = {
+  status: 'available' | 'unsupported' | 'unavailable'
+  windows: Array<{ window_seconds: number; used_percent: number; reset_at: number | null }>
+  credits_balance: string | null
+  fetched_at: number | null
+}
+
+export async function getAdminCredentialUsage(channelId: number, credentialId: number, signal?: AbortSignal) {
+  const result = await apiClient.get<CredentialUsageSnapshot, unknown, true>({
+    security: [{ key: 'bearerAuth', scheme: 'bearer', type: 'http' }],
+    url: '/api/admin/channels/{channel_id}/credentials/{credential_id}/usage',
+    path: { channel_id: channelId, credential_id: credentialId },
+    signal,
+  })
+  return result.data
+}
+
 export async function importAdminCredentialFiles(channelId: number, files: Array<{ name: string; content: string }>, signal?: AbortSignal) {
   const result = await importAdminCredentials({
     client: apiClient, path: { channel_id: channelId }, body: { files }, signal,

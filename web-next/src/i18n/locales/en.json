@@ -900,6 +900,16 @@
   },
   "credentials": {
     "title": "Credentials and account pool",
+    "usage": {
+      "action": "View upstream usage",
+      "loading": "Loading upstream usage",
+      "window": "{{hours}}h used {{percent}}%",
+      "reset": "Resets {{value}}",
+      "credits": "Balance {{value}}",
+      "fetched": "Checked {{value}}",
+      "unsupported": "Upstream usage is not available for this account",
+      "unavailable": "Upstream usage is temporarily unavailable"
+    },
     "subtitle": "Manage upstream credentials, account relationships, and scheduling state within each channel. Secret reads remain redacted.",
     "fileTransfer": {
       "import": "Import",

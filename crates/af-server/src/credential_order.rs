@@ -49,6 +49,15 @@ impl CredentialLoad {
             .then_with(|| self.waiting.cmp(&other.waiting))
             .then_with(|| self.active.cmp(&other.active))
     }
+
+    fn has_session_headroom(self) -> bool {
+        if self.waiting != 0 {
+            return false;
+        }
+        self.limit.is_none_or(|limit| {
+            u64::from(self.active) * 4 < u64::from(limit.get()) * 3
+        })
+    }
 }
 
 /// 按优先级和权重生成请求内稳定、无放回的凭据顺序。
@@ -105,7 +114,9 @@ pub(crate) fn order_credentials_by_load<'a>(
     credentials: &'a [SchedulerRuntimeCredentialRecord],
     loads: &BTreeMap<i64, CredentialLoad>,
 ) -> Vec<&'a SchedulerRuntimeCredentialRecord> {
-    order_credentials_by_load_with_optional_health(request_id, channel_id, credentials, loads, None)
+    order_credentials_by_load_with_optional_health(
+        request_id, channel_id, credentials, loads, None, false,
+    )
 }
 
 /// 在普通回退负载排序中应用凭据冷却与健康调权；同负载继续保持健康加权顺序。
@@ -122,6 +133,20 @@ pub(crate) fn order_credentials_by_load_and_health<'a>(
         credentials,
         loads,
         Some(health),
+        false,
+    )
+}
+
+/// 有稳定会话标识时保留健康账号的首选位置，减少连续对话的上游缓存失效。
+pub(crate) fn order_credentials_by_load_with_session_affinity<'a>(
+    session_scope: &str,
+    channel_id: ChannelId,
+    credentials: &'a [SchedulerRuntimeCredentialRecord],
+    loads: &BTreeMap<i64, CredentialLoad>,
+    health: Option<&BTreeMap<i64, RuntimeHealthState>>,
+) -> Vec<&'a SchedulerRuntimeCredentialRecord> {
+    order_credentials_by_load_with_optional_health(
+        session_scope, channel_id, credentials, loads, health, true,
     )
 }
 
@@ -131,14 +156,32 @@ fn order_credentials_by_load_with_optional_health<'a>(
     credentials: &'a [SchedulerRuntimeCredentialRecord],
     loads: &BTreeMap<i64, CredentialLoad>,
     health: Option<&BTreeMap<i64, RuntimeHealthState>>,
+    session_affinity: bool,
 ) -> Vec<&'a SchedulerRuntimeCredentialRecord> {
     let mut ordered =
         order_credentials_with_optional_health(request_id, channel_id, credentials, health);
+    let preferred = session_affinity
+        .then(|| ordered.first().copied())
+        .flatten()
+        .filter(|credential| {
+            credential_load(credential, loads).has_session_headroom()
+                && health
+                    .and_then(|states| states.get(&credential.credential_id()))
+                    .is_none_or(|state| state.penalty_micros() <= HEALTH_PENALTY_SCALE)
+        });
     ordered.sort_by(|left, right| {
         right.priority().cmp(&left.priority()).then_with(|| {
             credential_load(left, loads).compare_utilization(credential_load(right, loads))
         })
     });
+    if let Some(preferred) = preferred
+        && let Some(index) = ordered
+            .iter()
+            .position(|credential| credential.credential_id() == preferred.credential_id())
+    {
+        ordered.remove(index);
+        ordered.insert(0, preferred);
+    }
     ordered
 }
 
@@ -402,6 +445,97 @@ mod tests {
 
         assert_eq!(load_aware[0], 43);
         assert_eq!(&load_aware[1..], &weighted[1..]);
+    }
+
+    #[test]
+    fn session_affinity_keeps_healthy_account_but_yields_to_congestion() {
+        let credentials = vec![
+            credential_with_limit(61, 0, 1, Some(8)),
+            credential_with_limit(62, 0, 1, Some(8)),
+        ];
+        let scope = (0..100)
+            .map(|index| format!("session-{index}"))
+            .find(|scope| {
+                order_credentials(scope, channel_id(), &credentials)[0].credential_id() == 61
+            })
+            .unwrap();
+        let light_load = BTreeMap::from([
+            (61, load(3, 0, Some(8))),
+            (62, load(0, 0, Some(8))),
+        ]);
+        assert_eq!(
+            credential_ids(order_credentials_by_load_with_session_affinity(
+                &scope, channel_id(), &credentials, &light_load, None,
+            )),
+            vec![61, 62]
+        );
+        let congested = BTreeMap::from([
+            (61, load(6, 0, Some(8))),
+            (62, load(0, 0, Some(8))),
+        ]);
+        assert_eq!(
+            credential_ids(order_credentials_by_load_with_session_affinity(
+                &scope, channel_id(), &credentials, &congested, None,
+            )),
+            vec![62, 61]
+        );
+    }
+
+    #[test]
+    fn session_affinity_does_not_revive_cooling_account() {
+        let credentials = vec![
+            credential_with_limit(71, 0, 1, Some(8)),
+            credential_with_limit(72, 0, 1, Some(8)),
+        ];
+        let health = BTreeMap::from([(
+            71,
+            RuntimeHealthState::new(
+                RedisHealthTarget::Credential(CredentialId::new(71).unwrap()),
+                0,
+                true,
+            ),
+        )]);
+        let loads = BTreeMap::new();
+        assert_eq!(
+            credential_ids(order_credentials_by_load_with_session_affinity(
+                "cooling-session", channel_id(), &credentials, &loads, Some(&health),
+            )),
+            vec![72]
+        );
+    }
+
+    #[test]
+    fn session_affinity_yields_when_preferred_account_is_degraded() {
+        let credentials = vec![
+            credential_with_limit(81, 0, 1, Some(8)),
+            credential_with_limit(82, 0, 1, Some(8)),
+        ];
+        let health = BTreeMap::from([(
+            81,
+            RuntimeHealthState::new(
+                RedisHealthTarget::Credential(CredentialId::new(81).unwrap()),
+                HEALTH_PENALTY_SCALE * 2,
+                false,
+            ),
+        )]);
+        let scope = (0..100)
+            .map(|index| format!("degraded-session-{index}"))
+            .find(|scope| {
+                order_credentials_with_health(scope, channel_id(), &credentials, &health)[0]
+                    .credential_id()
+                    == 81
+            })
+            .unwrap();
+        let loads = BTreeMap::from([
+            (81, load(3, 0, Some(8))),
+            (82, load(0, 0, Some(8))),
+        ]);
+        assert_eq!(
+            credential_ids(order_credentials_by_load_with_session_affinity(
+                &scope, channel_id(), &credentials, &loads, Some(&health),
+            )),
+            vec![82, 81]
+        );
     }
 
     #[test]
