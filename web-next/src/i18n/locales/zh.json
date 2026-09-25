@@ -7405,6 +7405,7 @@
   },
   "landing": {
     "nav": {
+      "label": "主导航",
       "models": "模型广场",
       "console": "进入控制台"
     },

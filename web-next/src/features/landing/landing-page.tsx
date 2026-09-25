@@ -24,6 +24,7 @@ import { usePublicSiteSettings } from '@/features/site-settings/site-settings-ap
 import { getManagementSessionToken } from '@/lib/api/session-token'
 
 type JourneyMode = 'healthy' | 'failover' | 'streaming'
+type JourneyTone = 'billing' | 'health' | 'observability' | 'streaming'
 
 const journeyModes: Array<{
   key: JourneyMode
@@ -46,8 +47,8 @@ function RequestFlow({ mode }: { mode: JourneyMode }) {
   const activeTarget = mode === 'failover' ? 2 : mode === 'streaming' ? 0 : 1
 
   return (
-    <div className="next-landing-flow relative mt-5 overflow-hidden rounded-2xl border border-[var(--hairline)] bg-[var(--surface-sunken)] p-4">
-      <div className="relative h-52 sm:h-60">
+    <div className="next-landing-flow relative mt-5 overflow-hidden rounded-lg p-4">
+      <div className="relative h-40 sm:h-60">
         <svg
           className="absolute inset-0 size-full"
           viewBox="0 0 320 176"
@@ -124,15 +125,26 @@ function JourneyCard({
   children,
 }: {
   icon: typeof Activity
-  tone: string
+  tone: JourneyTone
   title: string
   children: string
 }) {
   return (
     <article className={`next-landing-card next-landing-card-${tone} h-full`}>
-      <div className="next-landing-card-icon"><Icon className="size-4" aria-hidden="true" /></div>
-      <h3 className="mt-4 text-base font-semibold tracking-normal">{title}</h3>
-      <p className="mt-2 text-sm leading-6 text-muted-foreground">{children}</p>
+      <div className="next-landing-card-content">
+        <div className="next-landing-card-icon"><Icon className="size-4" aria-hidden="true" /></div>
+        <h3 className="mt-4 text-base font-semibold tracking-normal">{title}</h3>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">{children}</p>
+      </div>
+      <div className={`next-landing-card-visual next-landing-card-visual-${tone}`} aria-hidden="true">
+        {tone === 'health' ? (
+          <svg viewBox="0 0 160 42" preserveAspectRatio="none"><path d="M0 25 H34 L44 25 L53 10 L62 35 L73 18 L80 25 H160" /></svg>
+        ) : tone === 'observability' ? (
+          <><span /><span /><span /></>
+        ) : (
+          Array.from({ length: tone === 'billing' ? 10 : 16 }, (_, index) => <span key={index} />)
+        )}
+      </div>
     </article>
   )
 }
@@ -177,22 +189,21 @@ export function LandingPage() {
       <main>
         <section className="next-landing-hero relative isolate overflow-hidden">
           <div className="next-landing-grid pointer-events-none absolute inset-0 -z-20" aria-hidden="true" />
-          <div className="next-landing-aurora next-landing-aurora-one pointer-events-none absolute -z-10" aria-hidden="true" />
-          <div className="next-landing-aurora next-landing-aurora-two pointer-events-none absolute -z-10" aria-hidden="true" />
+          <div className="next-landing-hero-light pointer-events-none absolute inset-0 -z-10" aria-hidden="true" />
 
-          <div className="mx-auto grid w-full max-w-[1240px] items-center gap-12 px-4 py-16 sm:px-6 sm:py-20 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.82fr)] lg:gap-16 lg:px-8 lg:py-24">
+          <div className="mx-auto grid w-full max-w-[1240px] items-center gap-7 px-4 py-8 sm:gap-12 sm:px-6 sm:py-20 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.82fr)] lg:gap-16 lg:px-8 lg:py-24">
             <div className="next-landing-rise">
               <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/8 px-3 py-1.5 text-xs font-medium text-primary">
                 <Sparkles className="size-3.5" aria-hidden="true" />
                 {t('landing.hero.eyebrow')}
               </div>
-              <h1 className="mt-6 max-w-2xl text-5xl font-semibold leading-[1.02] tracking-[-0.055em] sm:text-6xl lg:text-7xl">
+              <h1 className="mt-4 max-w-2xl text-[2.5rem] font-semibold leading-[1.08] tracking-normal sm:mt-6 sm:text-6xl lg:text-7xl">
                 {t('landing.hero.heading')}
               </h1>
-              <p className="mt-6 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg">
+              <p className="mt-4 max-w-xl text-sm leading-6 text-muted-foreground sm:mt-6 sm:text-lg sm:leading-7">
                 {t('landing.hero.subtitle')}
               </p>
-              <div className="mt-8 flex flex-wrap gap-2.5">
+              <div className="mt-6 flex flex-wrap gap-2.5 sm:mt-8">
                 <Button as={RouterLink} color="primary" size="lg" to={accountPath} endContent={<ArrowRight className="size-4" aria-hidden="true" />}>
                   {accountCtaLabel}
                 </Button>
@@ -200,7 +211,7 @@ export function LandingPage() {
                   {t('landing.nav.models')}
                 </Button>
               </div>
-              <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
+              <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground sm:mt-5">
                 <span className="inline-flex items-center gap-1.5"><Check className="size-3.5 text-success" aria-hidden="true" />{t('landing.home.heroChecks.compatible')}</span>
                 <span className="inline-flex items-center gap-1.5"><Check className="size-3.5 text-success" aria-hidden="true" />{t('landing.home.heroChecks.health')}</span>
                 <span className="inline-flex items-center gap-1.5"><Check className="size-3.5 text-success" aria-hidden="true" />{t('landing.home.heroChecks.logs')}</span>
@@ -208,7 +219,7 @@ export function LandingPage() {
             </div>
 
             <div className="next-landing-rise next-landing-rise-delay">
-              <div className="next-landing-preview rounded-3xl border border-[var(--hairline)] bg-surface-1 p-4 shadow-[var(--shadow-lg)] sm:p-5">
+              <div className="next-landing-preview p-1 sm:p-5">
                 <div className="flex items-center justify-between gap-3 text-[0.6875rem] text-muted-foreground">
                   <span className="font-mono tracking-[0.12em]">{t('landing.home.preview.eyebrow')}</span>
                   <span className="inline-flex items-center gap-1.5 text-success"><span className="size-1.5 rounded-full bg-success" />{t(`landing.home.preview.${mode === 'failover' ? 'statusRecovering' : 'statusHealthy'}`)}</span>
@@ -218,10 +229,10 @@ export function LandingPage() {
                   <ModeIcon className="size-6 text-primary" aria-hidden="true" />
                 </div>
                 <RequestFlow mode={mode} />
-                <div className="mt-4 grid grid-cols-3 gap-2">
-                  <div className="rounded-xl bg-primary/8 p-3"><p className="text-lg font-semibold text-primary">82ms</p><p className="mt-1 text-[0.6875rem] text-muted-foreground">{t('landing.home.preview.stats.latency')}</p></div>
-                  <div className="rounded-xl bg-success/8 p-3"><p className="text-lg font-semibold text-success">99.98%</p><p className="mt-1 text-[0.6875rem] text-muted-foreground">{t('landing.home.preview.stats.availability')}</p></div>
-                  <div className="rounded-xl bg-warning/10 p-3"><p className="text-lg font-semibold text-warning">4 {t('landing.home.preview.stats.channelUnit')}</p><p className="mt-1 text-[0.6875rem] text-muted-foreground">{t('landing.home.preview.stats.channels')}</p></div>
+                <div className="next-landing-stats mt-4 grid grid-cols-3 gap-2">
+                  <div><p className="text-lg font-semibold text-primary">82ms</p><p className="mt-1 text-[0.6875rem] text-muted-foreground">{t('landing.home.preview.stats.latency')}</p></div>
+                  <div><p className="text-lg font-semibold text-success">99.98%</p><p className="mt-1 text-[0.6875rem] text-muted-foreground">{t('landing.home.preview.stats.availability')}</p></div>
+                  <div><p className="text-lg font-semibold text-warning">4 {t('landing.home.preview.stats.channelUnit')}</p><p className="mt-1 text-[0.6875rem] text-muted-foreground">{t('landing.home.preview.stats.channels')}</p></div>
                 </div>
               </div>
             </div>
@@ -240,11 +251,15 @@ export function LandingPage() {
             <p className="mt-4 text-base leading-7 text-muted-foreground">{t('landing.feature.subheading')}</p>
           </div>
 
-          <div className="mt-10 grid gap-3 lg:grid-cols-[1.65fr_1fr_1fr] lg:grid-rows-[1fr_1fr]">
-            <article className="next-landing-route-card relative overflow-hidden rounded-2xl border border-primary/20 bg-primary/6 p-5 sm:p-6 lg:row-span-2">
-              <div className="relative z-10 max-w-md"><div className="next-landing-card-icon next-landing-card-icon-primary"><Route className="size-4" aria-hidden="true" /></div><h3 className="mt-5 text-xl font-semibold tracking-[-0.025em]">{t('landing.feature.routing.title')}</h3><p className="mt-3 text-sm leading-6 text-muted-foreground">{t('landing.feature.routing.body')}</p></div>
-              <div className="relative z-10 mt-2 flex flex-wrap gap-2 text-[0.6875rem] text-muted-foreground"><span className="rounded-full bg-surface-1/80 px-2.5 py-1">{t('landing.home.journey.weight')}</span><span className="rounded-full bg-surface-1/80 px-2.5 py-1">{t('landing.home.journey.health')}</span><span className="rounded-full bg-surface-1/80 px-2.5 py-1">{t('landing.home.journey.failover')}</span></div>
-              <div className="next-landing-route-lines" aria-hidden="true"><span /><span /><span /></div>
+          <div className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-[1.45fr_1fr_1fr] lg:grid-rows-[1fr_1fr]">
+            <article className="next-landing-route-card relative overflow-hidden rounded-lg border border-[var(--hairline)] p-5 sm:col-span-2 sm:p-6 lg:row-span-2 lg:col-span-1">
+              <div className="relative z-10 max-w-md"><div className="next-landing-card-icon next-landing-card-icon-primary"><Route className="size-4" aria-hidden="true" /></div><h3 className="mt-5 text-xl font-semibold tracking-normal">{t('landing.feature.routing.title')}</h3><p className="mt-3 text-sm leading-6 text-muted-foreground">{t('landing.feature.routing.body')}</p></div>
+              <div className="next-landing-route-map" aria-hidden="true">
+                <div className="next-landing-route-origin"><Braces className="size-4" /></div>
+                <div className="next-landing-route-tracks"><span /><span /><span /></div>
+                <div className="next-landing-route-destinations"><span /><span /><span /></div>
+              </div>
+              <div className="relative z-10 mt-5 flex flex-wrap gap-2 text-[0.6875rem] text-muted-foreground"><span>{t('landing.home.journey.weight')}</span><span>{t('landing.home.journey.health')}</span><span>{t('landing.home.journey.failover')}</span></div>
             </article>
             <JourneyCard icon={CircleDollarSign} tone="billing" title={t('landing.feature.billing.title')}>{t('landing.feature.billing.body')}</JourneyCard>
             <JourneyCard icon={HeartPulse} tone="health" title={t('landing.feature.health.title')}>{t('landing.feature.health.body')}</JourneyCard>
@@ -260,7 +275,7 @@ export function LandingPage() {
           </div>
         </section>
 
-        <section className="mx-auto w-full max-w-[1240px] px-4 py-20 sm:px-6 sm:py-24 lg:px-8"><div className="next-landing-cta relative overflow-hidden rounded-3xl border border-primary/20 bg-primary/8 px-6 py-12 sm:px-10"><div className="relative z-10 max-w-2xl"><p className="text-xs font-medium tracking-[0.16em] text-primary uppercase">{t('landing.console.eyebrow')}</p><h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">{t('landing.home.cta.heading')}</h2><p className="mt-4 text-base leading-7 text-muted-foreground">{t('landing.console.subheading')}</p><div className="mt-7 flex flex-wrap gap-2.5"><Button as={RouterLink} color="primary" to={accountPath} endContent={<ArrowRight className="size-4" aria-hidden="true" />}>{t('landing.closing.cta')}</Button><Button as={RouterLink} to="/api" variant="flat" startContent={<Braces className="size-4" aria-hidden="true" />}>API</Button></div></div><div className="next-landing-cta-orbit" aria-hidden="true"><span /><span /><span /></div></div></section>
+        <section className="next-landing-cta relative overflow-hidden border-t border-[var(--hairline)] py-16 sm:py-20"><div className="mx-auto w-full max-w-[1240px] px-4 sm:px-6 lg:px-8"><div className="relative z-10 max-w-2xl"><p className="text-xs font-medium tracking-[0.16em] text-primary uppercase">{t('landing.console.eyebrow')}</p><h2 className="mt-4 text-3xl font-semibold tracking-normal sm:text-4xl">{t('landing.home.cta.heading')}</h2><p className="mt-4 text-base leading-7 text-muted-foreground">{t('landing.console.subheading')}</p><div className="mt-7 flex flex-wrap gap-2.5"><Button as={RouterLink} color="primary" to={accountPath} endContent={<ArrowRight className="size-4" aria-hidden="true" />}>{t('landing.closing.cta')}</Button><Button as={RouterLink} to="/api" variant="flat" startContent={<Braces className="size-4" aria-hidden="true" />}>API</Button></div></div></div></section>
       </main>
 
       <footer className="border-t border-[var(--hairline)] px-4 py-7 sm:px-6 lg:px-8"><div className="mx-auto flex w-full max-w-[1240px] flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground"><span>{t('landing.footer.copyright')}</span><span className="inline-flex items-center gap-1.5"><Zap className="size-3.5 text-primary" aria-hidden="true" />{siteName}</span></div></footer>

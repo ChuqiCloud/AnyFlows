@@ -7407,6 +7407,7 @@
   },
   "landing": {
     "nav": {
+      "label": "Main navigation",
       "models": "Models",
       "console": "Open console"
     },
