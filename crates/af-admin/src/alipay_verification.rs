@@ -74,12 +74,8 @@ impl AlipayAccountVerificationProvider {
         let private_key =
             private_key.ok_or(AlipayProviderConfigError::MissingField("private_key"))?;
         let public_key = public_key.ok_or(AlipayProviderConfigError::MissingField("public_key"))?;
-        let private_key = RsaPrivateKey::from_pkcs8_pem(private_key)
-            .or_else(|_| RsaPrivateKey::from_pkcs1_pem(private_key))
-            .map_err(|_| AlipayProviderConfigError::InvalidKey)?;
-        let public_key = RsaPublicKey::from_public_key_pem(public_key)
-            .or_else(|_| RsaPublicKey::from_pkcs1_pem(public_key))
-            .map_err(|_| AlipayProviderConfigError::InvalidKey)?;
+        let private_key = parse_private_key(private_key)?;
+        let public_key = parse_public_key(public_key)?;
         let gateway_url =
             url::Url::parse(gateway_url).map_err(|_| AlipayProviderConfigError::InvalidGateway)?;
         Ok(Self {
@@ -99,14 +95,58 @@ impl AlipayAccountVerificationProvider {
         private_key: &str,
         public_key: &str,
     ) -> Result<(), AlipayProviderConfigError> {
-        RsaPrivateKey::from_pkcs8_pem(private_key)
-            .or_else(|_| RsaPrivateKey::from_pkcs1_pem(private_key))
-            .map_err(|_| AlipayProviderConfigError::InvalidKey)?;
-        RsaPublicKey::from_public_key_pem(public_key)
-            .or_else(|_| RsaPublicKey::from_pkcs1_pem(public_key))
-            .map_err(|_| AlipayProviderConfigError::InvalidKey)?;
+        parse_private_key(private_key)?;
+        parse_public_key(public_key)?;
         Ok(())
     }
+}
+
+fn parse_private_key(value: &str) -> Result<RsaPrivateKey, AlipayProviderConfigError> {
+    let value = value.trim();
+    if value.len() > 16 * 1024 {
+        return Err(AlipayProviderConfigError::InvalidKey);
+    }
+    if value.starts_with("-----BEGIN") {
+        RsaPrivateKey::from_pkcs8_pem(value)
+            .or_else(|_| RsaPrivateKey::from_pkcs1_pem(value))
+            .map_err(|_| AlipayProviderConfigError::InvalidKey)
+    } else {
+        let der = decode_base64_key(value)?;
+        RsaPrivateKey::from_pkcs8_der(&der)
+            .or_else(|_| RsaPrivateKey::from_pkcs1_der(&der))
+            .map_err(|_| AlipayProviderConfigError::InvalidKey)
+    }
+}
+
+fn parse_public_key(value: &str) -> Result<RsaPublicKey, AlipayProviderConfigError> {
+    let value = value.trim();
+    if value.len() > 16 * 1024 {
+        return Err(AlipayProviderConfigError::InvalidKey);
+    }
+    if value.starts_with("-----BEGIN") {
+        RsaPublicKey::from_public_key_pem(value)
+            .or_else(|_| RsaPublicKey::from_pkcs1_pem(value))
+            .map_err(|_| AlipayProviderConfigError::InvalidKey)
+    } else {
+        let der = decode_base64_key(value)?;
+        RsaPublicKey::from_public_key_der(&der)
+            .or_else(|_| RsaPublicKey::from_pkcs1_der(&der))
+            .map_err(|_| AlipayProviderConfigError::InvalidKey)
+    }
+}
+
+fn decode_base64_key(value: &str) -> Result<Vec<u8>, AlipayProviderConfigError> {
+    let compact = value
+        .bytes()
+        .filter(|byte| !byte.is_ascii_whitespace())
+        .collect::<Vec<_>>();
+    let der = BASE64
+        .decode(compact)
+        .map_err(|_| AlipayProviderConfigError::InvalidKey)?;
+    if der.is_empty() || der.len() > 8 * 1024 {
+        return Err(AlipayProviderConfigError::InvalidKey);
+    }
+    Ok(der)
 }
 
 #[async_trait]
@@ -387,4 +427,53 @@ fn timestamp() -> String {
         now.minute(),
         now.second()
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rsa::pkcs8::{EncodePublicKey, LineEnding};
+
+    const TEST_PRIVATE_KEY: &str =
+        include_str!("../../af-account/src/fixtures/organization_sso_oidc_private.pem");
+
+    #[test]
+    fn accepts_pem_and_alipay_base64_der_keys() {
+        let private = RsaPrivateKey::from_pkcs8_pem(TEST_PRIVATE_KEY).unwrap();
+        let public = RsaPublicKey::from(&private);
+        let public_pem = public.to_public_key_pem(LineEnding::LF).unwrap();
+        let private_base64 = TEST_PRIVATE_KEY
+            .lines()
+            .filter(|line| !line.starts_with("-----"))
+            .collect::<String>();
+        let public_base64 = BASE64.encode(public.to_public_key_der().unwrap().as_bytes());
+
+        AlipayAccountVerificationProvider::validate_keys(TEST_PRIVATE_KEY, &public_pem).unwrap();
+        AlipayAccountVerificationProvider::validate_keys(
+            &format!("\n{private_base64}\n"),
+            &format!("  {public_base64}  "),
+        )
+        .unwrap();
+        assert!(AlipayAccountVerificationProvider::from_parts(
+            true,
+            Some("test-app"),
+            Some(&private_base64),
+            Some(&public_base64),
+            "https://openapi.alipay.com/gateway.do",
+            "FACE",
+            10,
+            HttpClientProvider::new(af_httpclient::HttpClientConfig::default(), 1).unwrap(),
+        )
+        .unwrap()
+        .client
+        .is_some());
+    }
+
+    #[test]
+    fn rejects_invalid_or_oversized_keys() {
+        assert!(parse_private_key("not a key").is_err());
+        assert!(parse_public_key("not a key").is_err());
+        assert!(parse_private_key(&"A".repeat(16 * 1024 + 1)).is_err());
+        assert!(parse_public_key(&"A".repeat(16 * 1024 + 1)).is_err());
+    }
 }
