@@ -35,7 +35,7 @@ export type CredentialUsageSnapshot = {
 }
 
 export async function getAdminCredentialUsage(channelId: number, credentialId: number, signal?: AbortSignal) {
-  const result = await apiClient.get<CredentialUsageSnapshot, unknown, true>({
+  const result = await apiClient.get<{ 200: CredentialUsageSnapshot }, unknown, true>({
     security: [{ key: 'bearerAuth', scheme: 'bearer', type: 'http' }],
     url: '/api/admin/channels/{channel_id}/credentials/{credential_id}/usage',
     path: { channel_id: channelId, credential_id: credentialId },
