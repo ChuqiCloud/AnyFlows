@@ -328,13 +328,12 @@ export function createParameterRow(key: ChannelParameterName | '' = ''): Paramet
 }
 
 function commonRequest(values: ChannelFormValues) {
-  const codexOAuth = values.channelType === 'codex_oauth'
   return {
-    provider: codexOAuth ? 'codex' : values.provider.trim(),
+    provider: values.channelType === 'codex_oauth' ? 'codex' : values.provider.trim(),
     name: values.name.trim(),
-    type: codexOAuth ? 'openai' : values.channelType,
-    protocol: codexOAuth ? 'openai_responses' : values.protocol,
-    base_url: codexOAuth ? null : values.baseUrl.trim() || null,
+    type: values.channelType === 'codex_oauth' ? 'openai' : values.channelType,
+    protocol: values.channelType === 'codex_oauth' ? 'openai_responses' : values.protocol,
+    base_url: values.channelType === 'codex_oauth' ? null : values.baseUrl.trim() || null,
     timeout_secs: values.timeoutSeconds.trim() === '' ? null : Number(values.timeoutSeconds),
     status: values.status,
     weight: values.weight,
