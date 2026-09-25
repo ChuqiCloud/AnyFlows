@@ -33,11 +33,17 @@ try {
     import './src/i18n';
     import { AccountVerificationPage } from './src/features/account-verification/account-verification-page';
     import { PlatformEntitlementEditor } from './src/features/platform-organizations/platform-entitlement-editor';
+    import { VerificationSettingsPanel } from './src/features/account-verification/verification-settings-panel';
+    import { ModelProviderCatalogPanel } from './src/features/model-management/model-provider-catalog-panel';
+    import { resolveProviderLogo, findProviderLogo } from './src/components/brand/model-logos';
+    if (resolveProviderLogo('Jina', 'deepseek')?.name !== 'Jina') throw new Error('Configured logo must take priority');
+    if (resolveProviderLogo(null, 'private-provider', 'DeepSeek')?.name !== 'DeepSeek') throw new Error('Display name must identify logo');
+    if (findProviderLogo('google-vertex')?.name !== 'Google Vertex AI') throw new Error('Compound aliases must identify logo');
     const mode = new URLSearchParams(location.search).get('mode');
     createRoot(document.getElementById('root')!).render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         ${isNext ? '<HeroUIProvider>' : ''}<main style={{ padding: '16px', maxWidth: '1100px', margin: 'auto' }}>
-          {mode === 'entitlement' ? <PlatformEntitlementEditor organizationId={1} name="Example Enterprise" onClose={() => {}} /> : <AccountVerificationPage admin={mode === 'admin'} />}
+          {mode === 'entitlement' ? <PlatformEntitlementEditor organizationId={1} name="Example Enterprise" onClose={() => {}} /> : mode === 'settings' ? <VerificationSettingsPanel /> : mode === 'catalog' ? <ModelProviderCatalogPanel /> : <AccountVerificationPage admin={mode === 'admin'} />}
         </main>${isNext ? '</HeroUIProvider>' : ''}
       </QueryClientProvider>
     );
@@ -55,12 +61,28 @@ try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 960 }, locale: 'zh-CN', reducedMotion: 'reduce' })
   page.setDefaultTimeout(15_000)
   page.on('pageerror', (error) => errors.push(error.message))
+  const capturePage = async (name) => {
+    for (const [viewport, width, height] of [['desktop', 1280, 960], ['mobile', 390, 844]]) {
+      await page.setViewportSize({ width, height })
+      await page.evaluate(() => document.fonts.ready)
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `${name} overflowed at ${width}px`)
+      console.log(`ANYFLOWS_SETTINGS_SCREENSHOT_${frontend}_${name}_${viewport}_BEGIN`)
+      console.log((await page.screenshot({ fullPage: true, animations: 'disabled' })).toString('base64').match(/.{1,120}/g).join('\n'))
+      console.log(`ANYFLOWS_SETTINGS_SCREENSHOT_${frontend}_${name}_${viewport}_END`)
+    }
+    await page.setViewportSize({ width: 1280, height: 960 })
+  }
   await page.addInitScript(() => localStorage.setItem('anyflows.locale', 'zh'))
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9mQAAAAASUVORK5CYII=', 'base64')
   let submitted = 0
   let reviewed = 0
   let downloads = 0
   let entitlementWrites = 0
+  let providers = ['manual']
+  let settings = { source: 'database', manual_enabled: true, enabled: false, app_id: 'test-app', private_key_configured: true, public_key_configured: true, gateway_url: 'https://openapi.alipay.com/gateway.do', biz_code: 'FACE', timeout_secs: 10, version: 1 }
+  let settingsWrites = 0
+  const catalog = [{ provider_key: 'custom-ai', display_name: 'Custom AI', logo: 'OpenAI', aliases: [], enabled: true, sort_order: 0, version: 1 }]
+  let catalogWrites = 0
   const cases = Array.from({ length: 27 }, (_, index) => ({ id: 27 - index, user_id: 1, kind: 'enterprise', provider: 'manual', document_country: 'CN', document_type: 'business_registration', document_number_masked: '91****43', subject_name: `Enterprise ${27 - index}`, summary: 'Historical application', status: 5, version: 2, review_reason: 'Supplement required', reviewer_user_id: 2, created_at: 1_780_000_000, updated_at: 1_780_000_010 }))
   let entitlement = { version: 2, sso_enabled: true, team_management_enabled: true, custom_roles_enabled: true, seat_limit: 10, team_limit: 5, organization_key_limit: 5, audit_retention_days: 90, valid_from: 1_700_000_000, valid_until: 2_000_000_000, grace_until: null }
   await page.route((url) => url.pathname.startsWith('/api/'), async (route) => {
@@ -68,7 +90,28 @@ try {
     const url = new URL(request.url())
     const path = url.pathname
     let body
-    if (path.endsWith('/eligibility')) body = { enterprise_verified: reviewed > 0, can_apply_for_organization: reviewed > 0 }
+    if (path.endsWith('/eligibility')) body = { enterprise_verified: reviewed > 0, can_apply_for_organization: reviewed > 0, providers }
+    else if (path === '/api/admin/account-verification-settings') {
+      if (request.method() === 'PUT') {
+        const update = request.postDataJSON()
+        assert.equal(update.expected_version, settings.version)
+        assert.equal(update.private_key, undefined)
+        assert.equal(update.public_key, undefined)
+        settings = { ...settings, ...update, version: settings.version + 1 }
+        providers = [...(settings.manual_enabled ? ['manual'] : []), ...(settings.enabled ? ['alipay'] : [])]
+        settingsWrites += 1
+      }
+      body = settings
+    } else if (path.includes('/model-provider-catalog')) {
+      if (request.method() === 'PUT') {
+        const update = request.postDataJSON()
+        assert.equal(update.expected_version, 0)
+        assert.equal(update.display_name, 'Example Provider')
+        catalog.push({ ...update, provider_key: path.split('/').at(-1), version: 1 })
+        catalogWrites += 1
+      }
+      body = { providers: catalog }
+    }
     else if (path.includes('/entitlement')) {
       if (request.method() === 'PATCH') {
         const update = request.postDataJSON()
@@ -115,6 +158,14 @@ try {
   const home = `http://127.0.0.1:${port}/.verification-smoke.html`
   await page.goto(home)
   await page.getByText('Enterprise 27', { exact: false }).first().waitFor()
+  const providerSelect = page.getByRole('combobox', { name: '认证方式', exact: true })
+  const documentSelect = page.getByRole('combobox', { name: '证件类型', exact: true })
+  assert.deepEqual(await providerSelect.locator('option').evaluateAll((options) => options.map((option) => option.value)), ['manual'])
+  await documentSelect.selectOption('passport')
+  assert.equal(await documentSelect.inputValue(), 'passport')
+  await page.getByLabel('证件签发国家或地区代码', { exact: true }).fill('BR')
+  assert.equal(await page.getByLabel('证件签发国家或地区代码', { exact: true }).inputValue(), 'BR')
+  await page.getByLabel('证件签发国家或地区代码', { exact: true }).fill('CN')
   assert.equal(await page.getByRole('button', { name: '查看详情', exact: true }).count(), 25)
   assert.equal(downloads, 0)
   await page.getByRole('button', { name: '查看详情', exact: true }).first().click()
@@ -146,6 +197,68 @@ try {
   await page.getByRole('button', { name: '预览', exact: true }).click()
   await page.locator('img[alt="license.png"]').waitFor()
   assert.equal(downloads, 2, 'Approved materials must remain accessible')
+  await page.goto(`${home}?mode=settings`)
+  await page.getByText('实名认证配置', { exact: true }).waitFor()
+  await capturePage('verification-settings')
+  const manualToggle = page.locator('label').filter({ hasText: '启用人工审核' }).locator('input')
+  const alipayToggle = page.locator('label').filter({ hasText: '启用支付宝实名认证' }).locator('input')
+  // Classic switches use buttons; HeroUI switches use native checkbox inputs.
+  const toggle = async (label, checked) => {
+    const control = page.getByRole('switch', { name: label, exact: true })
+    if (await control.count()) {
+      if ((await control.evaluate((element) => element instanceof HTMLInputElement ? element.checked : element.getAttribute('aria-checked') === 'true')) !== checked) await control.click()
+    } else {
+      await (label === '启用人工审核' ? manualToggle : alipayToggle).setChecked(checked)
+    }
+  }
+  await toggle('启用人工审核', false)
+  await toggle('启用支付宝实名认证', true)
+  await page.getByRole('button', { name: '保存配置', exact: true }).click()
+  await page.getByText('配置已保存并生效。', { exact: true }).waitFor()
+  assert.equal(settingsWrites, 1)
+  await page.goto(home)
+  await page.waitForFunction(() => document.querySelector('select[aria-label="认证方式"]')?.value === 'alipay')
+  assert.deepEqual(await providerSelect.locator('option').evaluateAll((options) => options.map((option) => option.value)), ['alipay'])
+  assert.equal(await documentSelect.inputValue(), 'national_id')
+  assert.equal(await documentSelect.isDisabled(), true)
+  assert.equal(await page.getByLabel('证件签发国家或地区代码', { exact: true }).inputValue(), 'CN')
+  assert.equal(await page.locator('input[type="file"]').count(), 0)
+  await page.getByRole('tab', { name: '企业认证', exact: true }).click()
+  assert.equal(await page.getByRole('button', { name: '提交认证', exact: true }).isDisabled(), true)
+  providers = []
+  await page.reload()
+  await page.getByText('当前没有可用的认证方式，请联系管理员。', { exact: true }).waitFor()
+  assert.equal(await page.getByRole('button', { name: '提交认证', exact: true }).isDisabled(), true)
+  providers = ['manual', 'alipay']
+  await page.reload()
+  await providerSelect.selectOption('manual')
+  await documentSelect.selectOption('passport')
+  await page.getByLabel('证件签发国家或地区代码', { exact: true }).fill('US')
+  await page.locator('input[type="file"]').setInputFiles({ name: 'identity.png', mimeType: 'image/png', buffer: png })
+  await providerSelect.selectOption('alipay')
+  assert.equal(await page.locator('input[type="file"]').count(), 0)
+  assert.equal(await page.getByLabel('证件签发国家或地区代码', { exact: true }).inputValue(), 'CN')
+  await providerSelect.selectOption('manual')
+  assert.equal(await page.locator('input[type="file"]').evaluate((input) => input.files.length), 0)
+
+  await page.goto(`${home}?mode=catalog`)
+  await page.locator('article p').getByText('OpenAI', { exact: true }).waitFor()
+  assert.equal(await page.locator('article').count(), 12)
+  await capturePage('provider-catalog')
+  const firstKeys = await page.locator('article p.font-mono').allTextContents()
+  await page.getByRole('button', { name: '下一页', exact: true }).click()
+  assert.notDeepEqual(await page.locator('article p.font-mono').allTextContents(), firstKeys)
+  await page.getByRole('textbox', { name: '搜索厂商', exact: true }).fill('deepseek')
+  assert.equal(await page.locator('article').count(), 1)
+  assert.equal(await page.locator('article > span svg').count(), 1, 'Provider cards must render the SVG brand mark')
+  await page.getByRole('button', { name: '新增厂商', exact: true }).click()
+  await page.getByPlaceholder('my-provider', { exact: true }).fill('example-provider')
+  await page.getByPlaceholder('My Provider', { exact: true }).fill('Example Provider')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await page.getByText('厂商已保存。', { exact: true }).waitFor()
+  assert.equal(catalogWrites, 1)
+  await page.getByRole('textbox', { name: '搜索厂商', exact: true }).fill('example-provider')
+  await page.getByText('Example Provider', { exact: true }).waitFor()
   await page.goto(`${home}?mode=entitlement`)
   const sso = page.getByRole('checkbox', { name: 'SSO 与域名验证', exact: true })
   await sso.uncheck()

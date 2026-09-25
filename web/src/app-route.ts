@@ -1,5 +1,6 @@
 export type AppView =
   | 'account-verification'
+  | 'account-verification-settings'
   | 'api'
   | 'api-keys'
   | 'announcements'
@@ -15,6 +16,7 @@ export type AppView =
   | 'invitations'
   | 'models'
   | 'model-settings'
+  | 'model-providers'
   | 'network-settings'
   | 'oauth-callback'
   | 'organization-api-keys'
@@ -140,6 +142,8 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash.startsWith('#/console/system-settings/billing')) return { view: 'billing-settings' }
   if (hash.startsWith('#/console/system-settings/groups')) return { view: 'group-settings' }
   if (hash.startsWith('#/console/system-settings/models')) return { view: 'model-settings' }
+  if (hash.startsWith('#/console/system-settings/model-providers')) return { view: 'model-providers' }
+  if (hash.startsWith('#/console/system-settings/account-verification')) return { view: 'account-verification-settings' }
   if (hash.startsWith('#/console/api-keys')) return { view: 'api-keys' }
   if (hash.startsWith('#/console/organization-api-keys')) return { view: 'organization-api-keys' }
   if (hash.startsWith('#/console/organization-activity')) {

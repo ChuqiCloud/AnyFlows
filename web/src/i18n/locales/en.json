@@ -108,6 +108,7 @@
     "billingSettings": "Billing settings",
     "groupSettings": "Group management",
     "modelSettings": "Model management",
+    "modelProviders": "Model providers",
     "channels": "Channels",
     "credentials": "Credentials & accounts",
     "credentialProxies": "Dedicated proxies",
@@ -117,7 +118,8 @@
     "debugTraces": "Debug traces",
     "billing": "Billing",
     "settings": "Settings",
-    "accountVerification": "Account verification"
+    "accountVerification": "Account verification",
+    "accountVerificationSettings": "Verification settings"
   },
   "shell": {
     "search": "Search",
@@ -7435,6 +7437,7 @@
   },
   "verificationCenter": {
     "title": "Account verification",
+    "settingsTitle": "Verification settings",
     "adminTitle": "Identity verification reviews",
     "description": "Verify your personal or business identity and review submitted documents and decisions. Approved business accounts can apply for an organization workspace.",
     "adminDescription": "Review personal and business identity submissions. Documents and decisions remain with each application; workspace provisioning is approved separately.",
@@ -7443,7 +7446,9 @@
     "kind": "Verification type",
     "provider": "Verification method",
     "providers": { "manual": "Manual review", "alipay": "Alipay verification" },
+    "noProvider": "No verification method is currently available. Contact an administrator.",
     "alipayHint": "Alipay verification does not require document uploads. Open the Alipay page after submitting, complete the identity check, then query the result.",
+    "alipayDocumentTypeHint": "The current Alipay identity verification API accepts mainland China ID cards only.",
     "personName": "Full name",
     "companyName": "Legal business name",
     "subjectName": "Legal name",
@@ -7451,7 +7456,8 @@
     "documentType": "Document type",
     "documentNumber": "Document number",
     "documentNumberHint": "Only a masked number is stored. Chinese resident IDs are checksum validated.",
-    "documentTypes": { "national_id": "National ID", "passport": "Passport", "residence_permit": "Residence permit", "business_registration": "Business registration", "other": "Other document" },
+    "documentTypes": { "national_id": "National ID", "passport": "Passport", "residence_permit": "Residence permit", "foreign_passport": "Foreign passport", "hkm_macao_pass": "Mainland travel permit for Hong Kong or Macao residents", "taiwan_pass": "Mainland travel permit for Taiwan residents", "business_registration": "Business registration", "other": "Other document" },
+    "countries": { "CN": "Mainland China", "HK": "Hong Kong", "MO": "Macao", "TW": "Taiwan", "US": "United States", "CA": "Canada", "GB": "United Kingdom", "JP": "Japan", "KR": "South Korea", "SG": "Singapore", "AU": "Australia", "DE": "Germany", "FR": "France" },
     "summary": "Verification details",
     "materials": "Supporting documents",
     "fileHint": "PNG, JPEG, WebP or PDF. Up to 5 files, 10 MB per file and 25 MB total.",

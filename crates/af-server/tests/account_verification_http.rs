@@ -1,5 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
+use af_account::SystemSecretCipher;
 use af_admin::{
     AccountVerificationService, AdminGroupCreateCommand, AdminGroupWriter, AdminUserCreateCommand,
     AdminUserStatus, AdminUserWriter, DatabaseAdminGroupWriter, DatabaseAdminUserWriter,
@@ -13,10 +14,11 @@ use af_db::{
 };
 use af_domain::{GroupId, UserId};
 use af_http::{
-    Body, Router, build_account_verification_router,
+    Body, Router, build_account_verification_router, build_verification_settings_router,
     http::{Method, Request, StatusCode},
     to_bytes,
 };
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::{Value, json};
 use tower::ServiceExt as _;
 
@@ -110,11 +112,28 @@ async fn fixture() -> Result<(Router, af_db::DatabasePool), Box<dyn std::error::
     let audit = Arc::new(DatabasePlatformAuditService::new(
         PlatformAuditRepository::new(pool.clone()),
     ));
-    let service = Arc::new(AccountVerificationService::new(
-        AccountVerificationRepository::new(pool.clone()),
-        audit,
+    let encryption = serde_json::from_value(json!({
+        "key_id": "verification-http-test-key",
+        "key": URL_SAFE_NO_PAD.encode([0x42; 32])
+    }))?;
+    let settings = Arc::new(af_admin::DatabaseVerificationSettingsService::new(
+        af_db::AccountVerificationSettingsRepository::new(pool.clone(), Duration::from_secs(5)),
+        SystemSecretCipher::new(&encryption)?,
+        af_config::AlipayVerificationSettings::default(),
+        af_httpclient::HttpClientProvider::new(af_httpclient::HttpClientConfig::default(), 1)?,
     ));
-    Ok((build_account_verification_router(service, sessions), pool))
+    let service = Arc::new(
+        AccountVerificationService::new(AccountVerificationRepository::new(pool.clone()), audit)
+            .with_provider(Arc::new(
+                af_admin::DatabaseManualAccountVerificationProvider::new(settings.clone()),
+            ))
+            .with_provider(settings.clone()),
+    );
+    Ok((
+        build_account_verification_router(service, sessions.clone())
+            .merge(build_verification_settings_router(settings, sessions)),
+        pool,
+    ))
 }
 
 fn request(
@@ -246,6 +265,7 @@ async fn multipart_review_and_material_download_remain_accessible_only_to_author
     let eligibility: Value =
         serde_json::from_slice(&to_bytes(response.into_body(), 65_536).await?)?;
     assert_eq!(eligibility["can_apply_for_organization"], true);
+    assert_eq!(eligibility["providers"], json!(["manual"]));
     let response = app
         .clone()
         .oneshot(request(
@@ -323,6 +343,133 @@ async fn invalid_materials_and_ambiguous_pagination_are_rejected_at_http_boundar
         ))
         .await?;
     assert_eq!(response.status(), StatusCode::OK);
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn disabled_verification_is_hidden_and_rejected_until_admin_reenables_it()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (app, pool) = fixture().await?;
+    let path = "/api/admin/account-verification-settings";
+    for (token, expected) in [
+        ("", StatusCode::UNAUTHORIZED),
+        ("applicant", StatusCode::FORBIDDEN),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(request(
+                Method::GET,
+                path,
+                token,
+                "application/json",
+                String::new(),
+            ))
+            .await?;
+        assert_eq!(response.status(), expected);
+    }
+    let response = app
+        .clone()
+        .oneshot(request(
+            Method::GET,
+            path,
+            "admin",
+            "application/json",
+            String::new(),
+        ))
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let initial: Value = serde_json::from_slice(&to_bytes(response.into_body(), 65_536).await?)?;
+    assert_eq!(initial["manual_enabled"], true);
+    let mut version = initial["version"].as_i64().expect("settings version");
+    for enabled in [false, true] {
+        let body = json!({
+            "expected_version": version,
+            "manual_enabled": enabled,
+            "enabled": false,
+            "app_id": null,
+            "gateway_url": "https://openapi.alipay.com/gateway.do",
+            "biz_code": "FACE",
+            "timeout_secs": 10
+        })
+        .to_string();
+        let response = app
+            .clone()
+            .oneshot(request(
+                Method::PUT,
+                path,
+                "applicant",
+                "application/json",
+                body.clone(),
+            ))
+            .await?;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let response = app
+            .clone()
+            .oneshot(request(
+                Method::PUT,
+                path,
+                "admin",
+                "application/json",
+                body.clone(),
+            ))
+            .await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        let saved: Value = serde_json::from_slice(&to_bytes(response.into_body(), 65_536).await?)?;
+        assert_eq!(saved["manual_enabled"], enabled);
+        assert!(saved.get("private_key").is_none());
+        version = saved["version"].as_i64().expect("saved version");
+        let conflict = app
+            .clone()
+            .oneshot(request(
+                Method::PUT,
+                path,
+                "admin",
+                "application/json",
+                body,
+            ))
+            .await?;
+        assert_eq!(conflict.status(), StatusCode::CONFLICT);
+        let response = app
+            .clone()
+            .oneshot(request(
+                Method::GET,
+                "/api/account/verifications/eligibility",
+                "applicant",
+                "application/json",
+                String::new(),
+            ))
+            .await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        let eligibility: Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), 65_536).await?)?;
+        assert_eq!(
+            eligibility["providers"],
+            if enabled {
+                json!(["manual"])
+            } else {
+                json!([])
+            }
+        );
+        let response = app
+            .clone()
+            .oneshot(request(
+                Method::POST,
+                "/api/account/verifications",
+                "applicant",
+                "multipart/form-data; boundary=verification-boundary",
+                upload("application/pdf", "%PDF-1.7\nfixture"),
+            ))
+            .await?;
+        assert_eq!(
+            response.status(),
+            if enabled {
+                StatusCode::OK
+            } else {
+                StatusCode::SERVICE_UNAVAILABLE
+            }
+        );
+    }
     pool.close().await?;
     Ok(())
 }

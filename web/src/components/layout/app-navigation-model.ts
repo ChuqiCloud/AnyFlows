@@ -26,6 +26,7 @@ export type NavKey =
   | 'subscriptions'
   | 'invitations'
   | 'accountVerification'
+  | 'accountVerificationSettings'
   | 'profile'
   | 'users'
   | 'subscriptionManagement'
@@ -39,6 +40,7 @@ export type NavKey =
   | 'billingSettings'
   | 'groupSettings'
   | 'modelSettings'
+  | 'modelProviders'
   | 'channels'
   | 'credentials'
   | 'credentialProxies'
@@ -61,8 +63,8 @@ export const adminNavigationSections = [
   // 企业申请、认证、目录和用户归属必须在同一个管理员分组内，避免跨页面寻找关键入口。
   { key: 'enterprise', items: ['platformOrganizations', 'organizationProvisioning', 'organizationVerification', 'users', 'organizationPlans'] },
   { key: 'operations', items: ['subscriptionManagement', 'redemptionCodes', 'refunds', 'paymentSettings', 'billingSettings'] },
-  { key: 'gateway', items: ['modelSettings', 'groupSettings', 'channels', 'credentials', 'credentialProxies', 'routes'] },
-  { key: 'platform', items: ['siteSettings', 'authenticationSettings', 'announcements', 'emailSettings', 'networkSettings', 'keys'] },
+  { key: 'gateway', items: ['modelSettings', 'modelProviders', 'groupSettings', 'channels', 'credentials', 'credentialProxies', 'routes'] },
+  { key: 'platform', items: ['siteSettings', 'authenticationSettings', 'announcements', 'emailSettings', 'networkSettings', 'accountVerificationSettings', 'keys'] },
 ] as const satisfies ReadonlyArray<{ key: AdminSectionKey; items: readonly NavKey[] }>
 
 export const adminSystemItems = ['debugTraces'] as const satisfies readonly NavKey[]
@@ -132,6 +134,7 @@ export const activeKeyByView: Readonly<Record<string, NavKey>> = {
   'organization-overview': 'organizationOverview',
   'organization-onboarding': 'organizationOnboarding',
   'account-verification': 'accountVerification',
+  'account-verification-settings': 'accountVerificationSettings',
   'organization-provisioning': 'organizationProvisioning',
   'organization-verification': 'organizationVerification',
   'organization-plans': 'organizationPlans',
@@ -156,6 +159,7 @@ export const activeKeyByView: Readonly<Record<string, NavKey>> = {
   'billing-settings': 'billingSettings',
   'group-settings': 'groupSettings',
   'model-settings': 'modelSettings',
+  'model-providers': 'modelProviders',
   channels: 'channels',
   credentials: 'credentials',
   'credential-proxies': 'credentialProxies',

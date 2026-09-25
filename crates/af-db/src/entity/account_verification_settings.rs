@@ -8,6 +8,7 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: i16,
     pub initialized: bool,
+    pub manual_enabled: bool,
     pub alipay_enabled: bool,
     #[sea_orm(column_type = "String(StringLen::N(128))", nullable)]
     pub alipay_app_id: Option<SensitiveString>,

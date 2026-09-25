@@ -181,6 +181,10 @@ impl AlipayClient {
         request: &AccountVerificationProviderRequest,
     ) -> Result<AccountVerificationProviderStart, AlipayRequestError> {
         let outer_order_no = format!("anyflows-{}", Uuid::new_v4().simple());
+        // Alipay's certdoc flow currently accepts only a mainland Chinese ID card.
+        if request.document_country != "CN" || request.document_type != "national_id" {
+            return Err(AlipayRequestError::Response);
+        }
         let identity_param = json!({
             "identity_type": "CERT_INFO",
             "cert_type": "IDENTITY_CARD",

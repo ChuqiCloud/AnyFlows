@@ -16,4 +16,12 @@ export const modelManagementRoutes: AppRouteObject[] = [
     ),
     meta: routeMeta("/console/system-settings/models"),
   },
+  {
+    path: "/console/system-settings/model-providers",
+    element: lazyRoute(
+      () => import("@/features/model-management/model-provider-catalog-page"),
+      "ModelProviderCatalogPage",
+    ),
+    meta: routeMeta("/console/system-settings/model-providers"),
+  },
 ];

@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api'
 import { providerCatalog, type ProviderOption } from './provider-catalog'
 
+export { findProviderOption } from './provider-catalog'
+
 export type ModelProviderCatalogEntry = {
   provider_key: string
   display_name: string
@@ -14,12 +16,6 @@ export type ModelProviderCatalogEntry = {
 }
 
 type ModelProviderCatalogResponse = { providers: ModelProviderCatalogEntry[] }
-
-export function findProviderOption(provider: string, options: readonly ProviderOption[]) {
-  const normalized = provider.trim().toLowerCase()
-  return options.find((item) => [item.id, item.name, ...(item.aliases ?? [])]
-    .some((value) => value.toLowerCase() === normalized))
-}
 
 export function useModelProviderOptions() {
   const query = useQuery({

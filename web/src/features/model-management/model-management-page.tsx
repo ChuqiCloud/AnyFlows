@@ -8,7 +8,6 @@ import { ModelManagementCatalogWorkspace } from './model-management-catalog-work
 import { ModelPriceWorkspace } from './model-price-workspace'
 import { ModelSyncWorkspace } from './model-sync-workspace'
 import { MissingModelWorkspace } from './missing-model-workspace'
-import { ModelProviderCatalogPanel } from './model-provider-catalog-panel'
 
 type ModelManagementView = 'catalog' | 'missing' | 'sync' | 'prices'
 
@@ -53,7 +52,7 @@ export function ModelManagementPage() {
       </div>
 
       {view === 'catalog'
-        ? <><ModelProviderCatalogPanel /><ModelManagementCatalogWorkspace /></>
+        ? <ModelManagementCatalogWorkspace />
         : view === 'missing'
           ? <MissingModelWorkspace />
         : view === 'sync'

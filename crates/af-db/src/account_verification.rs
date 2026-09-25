@@ -566,6 +566,9 @@ fn validate_submit(write: &AccountVerificationSubmit) -> Result<(), AccountVerif
             "national_id",
             "passport",
             "residence_permit",
+            "foreign_passport",
+            "hkm_macao_pass",
+            "taiwan_pass",
             "business_registration",
             "other",
         ]

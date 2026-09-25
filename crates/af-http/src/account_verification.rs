@@ -122,6 +122,7 @@ pub(crate) struct AccountVerificationListResponse {
 pub(crate) struct AccountVerificationEligibilityResponse {
     enterprise_verified: bool,
     can_apply_for_organization: bool,
+    providers: Vec<String>,
 }
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -321,9 +322,11 @@ async fn eligibility(
         .enterprise_verified(a.principal())
         .await
         .map_err(map_error)?;
+    let providers = s.available_providers().await;
     Ok(no_store_json(AccountVerificationEligibilityResponse {
         enterprise_verified: verified,
         can_apply_for_organization: verified,
+        providers,
     }))
 }
 async fn decide(

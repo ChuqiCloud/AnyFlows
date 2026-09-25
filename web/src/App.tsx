@@ -1,4 +1,5 @@
 import { AccountVerificationPage } from '@/features/account-verification/account-verification-page'
+import { VerificationSettingsPanel } from '@/features/account-verification/verification-settings-panel'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -26,6 +27,7 @@ import { InvitationPage } from '@/features/invitations/invitation-page'
 import { LandingPage } from '@/features/landing/landing-page'
 import { ModelPage } from '@/features/models/model-page'
 import { ModelManagementPage } from '@/features/model-management/model-management-page'
+import { ModelProviderCatalogPanel } from '@/features/model-management/model-provider-catalog-panel'
 import { NetworkSettingsPage } from '@/features/network-settings/network-settings-page'
 import { OrganizationActivityPage } from '@/features/organization-activity/organization-activity-page'
 import { OrganizationApiKeyPage } from '@/features/organization-api-keys/organization-api-key-page'
@@ -179,7 +181,11 @@ function ManagementEntry({
             ? 'billingSettings.title'
           : view === 'group-settings'
             ? 'groups.title'
-            : view === 'model-settings'
+              : view === 'model-providers'
+                ? 'modelManagement.title'
+              : view === 'account-verification-settings'
+                ? 'verificationCenter.settingsTitle'
+              : view === 'model-settings'
               ? 'modelManagement.title'
               : view === 'users'
                 ? 'users.title'
@@ -272,6 +278,10 @@ function ManagementEntry({
             ? <BillingSettingsPage />
           : view === 'group-settings'
             ? <GroupPage />
+            : view === 'model-providers'
+              ? <ModelProviderCatalogPanel />
+            : view === 'account-verification-settings'
+              ? <VerificationSettingsPanel />
             : view === 'model-settings'
               ? <ModelManagementPage />
               : view === 'users'
