@@ -104,6 +104,7 @@ impl DatabaseChannelProbe {
                 .with_base_url(base_url)
                 .map_err(|_| ProbeFailure::ContextBuild)?;
         }
+        context = context.with_oauth_identity(target.oauth_provider(), target.oauth_account_key());
         let mut headers = HeaderMap::new();
         adaptor
             .setup_headers(&mut headers, &credential, &context)

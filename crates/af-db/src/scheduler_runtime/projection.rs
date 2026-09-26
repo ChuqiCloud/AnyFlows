@@ -210,6 +210,11 @@ struct ProjectionCredentialWire {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     quota_dimension: Option<String>,
     credential_kind: String,
+    /// 旧投影缺少 OAuth 身份字段时按普通凭据兼容。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    oauth_provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    oauth_account_key: Option<String>,
     key_id: String,
     nonce_base64: String,
     ciphertext_base64: String,
@@ -514,6 +519,8 @@ impl ProjectionCredentialWire {
             shared_health_id: Some(credential.shared_health_id().get()),
             quota_dimension: Some(credential.quota_dimension().to_string()),
             credential_kind: credential.credential_kind().to_string(),
+            oauth_provider: credential.oauth_provider().map(str::to_owned),
+            oauth_account_key: credential.oauth_account_key().map(str::to_owned),
             key_id: credential.envelope().key_id().to_owned(),
             nonce_base64: BASE64_STANDARD.encode(credential.envelope().nonce()),
             ciphertext_base64: BASE64_STANDARD.encode(credential.envelope().ciphertext()),
@@ -581,6 +588,7 @@ impl ProjectionCredentialWire {
             concurrency,
         )
         .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
+        credential = credential.with_oauth_identity(self.oauth_provider, self.oauth_account_key);
         if let Some(proxy) = self.proxy {
             credential = credential
                 .with_proxy(proxy.try_into_proxy()?)

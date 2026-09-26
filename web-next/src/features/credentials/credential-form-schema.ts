@@ -16,6 +16,7 @@ import type { CredentialValidationMessages } from './credential-form-types'
 
 type CredentialSchemaOptions = {
   channelType: AdminChannelType
+  channelProvider?: string | null
   allowSparkShadow: boolean
   creating: boolean
   currentId?: number
@@ -57,7 +58,7 @@ export function buildCredentialFormSchema(options: CredentialSchemaOptions) {
       validateScheduling(values, context, message)
       return
     }
-    if (options.creating && !credentialKindsForChannel(options.channelType).includes(values.kind)) {
+    if (options.creating && !credentialKindsForChannel(options.channelType, options.channelProvider).includes(values.kind)) {
       issue(context, 'kind', message.incompatibleKind)
     }
     validateScheduling(values, context, message)

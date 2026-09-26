@@ -451,6 +451,7 @@
     },
     "type": {
       "openai": "OpenAI",
+      "codex_oauth": "OpenAI Codex OAuth",
       "anthropic": "Anthropic",
       "gemini": "Gemini",
       "jina": "Jina",
@@ -531,6 +532,8 @@
       "responsesWebsocketHint": "Reuses a connection only when the request has a stable session identifier. Failures before the first event fall back to HTTP once.",
       "responsesCompactModeHint": "Auto mode routes only after a real probe confirms support. Force-on is still limited to native Responses channels.",
       "responsesCompactModelMappingHint": "Optional. Applies a Compact-only upstream model mapping after the normal model mapping.",
+      "codexOAuthBaseUrlHint": "Codex OAuth uses the built-in ChatGPT endpoint. No upstream URL is required.",
+      "codexOAuthFixedEndpoint": "Built-in ChatGPT Codex endpoint",
       "tagHint": "Optional label for filtering and recognition.",
       "timeoutHint": "Controls read stalls and the full request deadline for forwarding and probes. Connection timeout remains global; blank uses each service default.",
       "timeoutPlaceholder": "Use service default",

@@ -68,6 +68,8 @@ fn try_runtime_target(
             priority,
             weight,
             concurrency,
+            oauth_provider,
+            oauth_account_key,
         ) = credential.into_runtime_parts();
         if !matches!(
             credential_kind,
@@ -96,6 +98,7 @@ fn try_runtime_target(
             concurrency,
         )
         .map_err(|_| SchedulerRuntimeSelectionError::Invariant)?;
+        record = record.with_oauth_identity(oauth_provider, oauth_account_key);
         if let Some(proxy) = proxy {
             record = record
                 .with_proxy(proxy)

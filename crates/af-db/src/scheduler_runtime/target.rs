@@ -199,6 +199,8 @@ pub struct SchedulerRuntimeCredentialRecord {
     priority: i32,
     weight: u32,
     concurrency: Option<ConcurrencyLimit>,
+    oauth_provider: Option<String>,
+    oauth_account_key: Option<String>,
 }
 
 impl SchedulerRuntimeCredentialRecord {
@@ -306,7 +308,7 @@ impl SchedulerRuntimeCredentialRecord {
         {
             return Err(SchedulerRuntimeTargetRecordError);
         }
-        let credential_revision = derive_credential_revision(&envelope);
+        let credential_revision = derive_credential_revision(&envelope, None, None);
         Ok(Self {
             routing_credential_id,
             secret_owner_id,
@@ -321,6 +323,8 @@ impl SchedulerRuntimeCredentialRecord {
             priority,
             weight,
             concurrency,
+            oauth_provider: None,
+            oauth_account_key: None,
         })
     }
 
@@ -364,6 +368,32 @@ impl SchedulerRuntimeCredentialRecord {
     #[must_use]
     pub fn credential_kind(&self) -> CredentialKind {
         self.credential_kind
+    }
+
+    /// 返回 OAuth 厂商标识；非 OAuth 凭据通常为空。
+    #[must_use]
+    pub fn oauth_provider(&self) -> Option<&str> {
+        self.oauth_provider.as_deref()
+    }
+
+    /// 返回 OAuth 账号标识；调用方不得记录或回传给客户端。
+    #[must_use]
+    pub fn oauth_account_key(&self) -> Option<&str> {
+        self.oauth_account_key.as_deref()
+    }
+
+    /// 绑定 OAuth 运行时身份元数据，不改变密文或调度身份。
+    #[must_use]
+    pub fn with_oauth_identity(
+        mut self,
+        provider: Option<String>,
+        account_key: Option<String>,
+    ) -> Self {
+        self.credential_revision =
+            derive_credential_revision(&self.envelope, provider.as_deref(), account_key.as_deref());
+        self.oauth_provider = provider;
+        self.oauth_account_key = account_key;
+        self
     }
 
     /// 返回版本化密文封套。
@@ -445,6 +475,11 @@ impl fmt::Debug for SchedulerRuntimeCredentialRecord {
             .field("shared_health_id", &self.shared_health_id)
             .field("quota_dimension", &self.quota_dimension)
             .field("credential_kind", &self.credential_kind)
+            .field("oauth_provider", &self.oauth_provider)
+            .field(
+                "oauth_account_key",
+                &self.oauth_account_key.as_ref().map(|_| "<已脱敏>"),
+            )
             .field("envelope", &self.envelope)
             .field("credential_revision", &"<已脱敏>")
             .field("proxy_required", &self.proxy_required)
@@ -962,9 +997,13 @@ impl fmt::Debug for SchedulerRuntimeTargetRecord {
     }
 }
 
-fn derive_credential_revision(envelope: &EncryptedCredentialEnvelope) -> u64 {
+fn derive_credential_revision(
+    envelope: &EncryptedCredentialEnvelope,
+    oauth_provider: Option<&str>,
+    oauth_account_key: Option<&str>,
+) -> u64 {
     let mut digest = Sha256::new();
-    digest.update(b"AnyFlows:credential-revision:v1\0");
+    digest.update(b"AnyFlows:credential-revision:v2\0");
     digest.update(
         u32::try_from(envelope.key_id().len())
             .unwrap_or(u32::MAX)
@@ -978,6 +1017,14 @@ fn derive_credential_revision(envelope: &EncryptedCredentialEnvelope) -> u64 {
             .to_be_bytes(),
     );
     digest.update(envelope.ciphertext());
+    for value in [oauth_provider, oauth_account_key] {
+        if let Some(value) = value {
+            digest.update(u64::try_from(value.len()).unwrap_or(u64::MAX).to_be_bytes());
+            digest.update(value.as_bytes());
+        } else {
+            digest.update(0_u64.to_be_bytes());
+        }
+    }
     let output = digest.finalize();
     u64::from_be_bytes(
         output[..8]

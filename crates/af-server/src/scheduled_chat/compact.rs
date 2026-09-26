@@ -167,6 +167,10 @@ impl ScheduledChatService {
                         .with_base_url(base_url)
                         .map_err(|_| AfError::Internal)?;
                 }
+                context = context.with_oauth_identity(
+                    runtime_credential.oauth_provider(),
+                    runtime_credential.oauth_account_key(),
+                );
                 context = context
                     .with_request_id(request_id.to_owned())
                     .map_err(|_| AfError::Internal)?;

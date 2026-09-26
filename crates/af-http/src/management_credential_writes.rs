@@ -3,7 +3,7 @@ use af_admin::{
     AdminCredentialQuotaDimension, AdminCredentialSecret, AdminCredentialUpdateCommand,
     AdminRoutingWriteStatus, PlainOAuthCredential,
 };
-use af_domain::{ChannelType, CredentialId, CredentialKind};
+use af_domain::{ChannelType, CredentialId, CredentialKind, Protocol};
 use axum::{
     Json,
     extract::{Extension, Path, State, rejection::JsonRejection},
@@ -476,7 +476,9 @@ pub(crate) async fn import_admin_credentials(
         .get_channel(authentication.principal(), channel_id)
         .await
         .map_err(map_channel_read_error)?;
-    if channel.channel_type() != ChannelType::OpenAi {
+    if channel.channel_type() != ChannelType::OpenAi
+        || channel.protocol() != Protocol::OpenAiResponses
+    {
         return Err(ManagementError::InvalidRequest);
     }
     let writer = state
@@ -630,6 +632,9 @@ async fn normalize_openai_oauth_provider(
         .await
         .map_err(map_channel_read_error)?;
     if channel.channel_type() == ChannelType::OpenAi {
+        if channel.protocol() != Protocol::OpenAiResponses {
+            return Err(ManagementError::InvalidRequest);
+        }
         // OpenAI OAuth 使用固定 Codex 协议；忽略旧客户端传入的可配置 provider，
         // 这样新旧管理端都不会再要求部署者维护 OAuth Provider 配置。
         request.oauth_provider = Some("codex".to_owned());

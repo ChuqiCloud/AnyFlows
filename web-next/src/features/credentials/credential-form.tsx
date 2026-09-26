@@ -36,7 +36,7 @@ type CredentialFormProps = {
 export function CredentialForm({ channel, credential, credentials, credentialCatalogStatus, active, onSaved }: CredentialFormProps) {
   const { t } = useTranslation()
   const creating = credential === undefined
-  const allowedKinds = credentialKindsForChannel(channel.type)
+  const allowedKinds = credentialKindsForChannel(channel.type, channel.provider)
   const initialKind = allowedKinds[0] ?? 'api_key'
   const allowSparkShadow = supportsSparkShadow(channel)
   const controllerRef = useRef<AbortController | undefined>(undefined)
@@ -46,6 +46,7 @@ export function CredentialForm({ channel, credential, credentials, credentialCat
   const { reset: resetUpdateMutation } = updateMutation
   const schema = useMemo(() => buildCredentialFormSchema({
     channelType: channel.type,
+    channelProvider: channel.provider,
     allowSparkShadow,
     creating,
     currentId: credential?.id,
@@ -62,7 +63,7 @@ export function CredentialForm({ channel, credential, credentials, credentialCat
       parent: t('credentials.validation.parent'),
       optionalText: t('credentials.validation.optionalText'),
     },
-  }), [allowSparkShadow, channel.type, creating, credential?.id, t])
+  }), [allowSparkShadow, channel.provider, channel.type, creating, credential?.id, t])
   const form = useForm<CredentialFormValues>({
     defaultValues: credentialFormValues(credential, initialKind),
     resolver: zodResolver(schema),
