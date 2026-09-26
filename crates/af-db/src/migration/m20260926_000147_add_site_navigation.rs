@@ -14,8 +14,10 @@ impl MigrationTrait for Migration {
                 Table::alter()
                     .table(site_settings::Entity)
                     .add_column(
+                        // MySQL 不允许 TEXT 列使用默认值；有界字符串仍能容纳
+                        // 16 KiB 的 UTF-8 配置，同时让三方言共享默认 JSON。
                         ColumnDef::new(site_settings::Column::NavigationJson)
-                            .text()
+                            .string_len(16_000)
                             .not_null()
                             .default(
                                 r#"{"header_links":[],"footer_groups":[],"sidebar_links":[]}"#,
