@@ -127,7 +127,8 @@ async fn fixture() -> Result<(Router, af_db::DatabasePool), Box<dyn std::error::
             .with_provider(Arc::new(
                 af_admin::DatabaseManualAccountVerificationProvider::new(settings.clone()),
             ))
-            .with_provider(settings.clone()),
+            .with_provider(settings.clone())
+            .with_settings(settings.clone()),
     );
     Ok((
         build_account_verification_router(service, sessions.clone())
@@ -290,6 +291,79 @@ async fn multipart_review_and_material_download_remain_accessible_only_to_author
         to_bytes(response.into_body(), 65_536).await?.as_ref(),
         b"%PDF-1.7\nfixture"
     );
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn enterprise_manual_review_and_optional_reason_follow_admin_policy()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (app, pool) = fixture().await?;
+    let settings = "/api/admin/account-verification-settings";
+    let initial = app
+        .clone()
+        .oneshot(request(
+            Method::GET,
+            settings,
+            "admin",
+            "application/json",
+            String::new(),
+        ))
+        .await?;
+    let initial: Value = serde_json::from_slice(&to_bytes(initial.into_body(), 65_536).await?)?;
+    let body = json!({
+        "expected_version": initial["version"],
+        "manual_enabled": true,
+        "individual_manual_enabled": false,
+        "enterprise_manual_enabled": true,
+        "individual_reason_required": true,
+        "enterprise_reason_required": false,
+        "enabled": false,
+        "app_id": null,
+        "gateway_url": "https://openapi.alipay.com/gateway.do",
+        "biz_code": "FACE",
+        "timeout_secs": 10
+    })
+    .to_string();
+    let saved = app
+        .clone()
+        .oneshot(request(
+            Method::PUT,
+            settings,
+            "admin",
+            "application/json",
+            body,
+        ))
+        .await?;
+    assert_eq!(saved.status(), StatusCode::OK);
+    let eligibility = app
+        .clone()
+        .oneshot(request(
+            Method::GET,
+            "/api/account/verifications/eligibility",
+            "applicant",
+            "application/json",
+            String::new(),
+        ))
+        .await?;
+    let eligibility: Value =
+        serde_json::from_slice(&to_bytes(eligibility.into_body(), 65_536).await?)?;
+    assert_eq!(eligibility["individual_providers"], json!([]));
+    assert_eq!(eligibility["enterprise_providers"], json!(["manual"]));
+    assert_eq!(eligibility["enterprise_reason_required"], false);
+
+    let multipart =
+        upload("application/pdf", "%PDF-1.7\nfixture").replace("Enterprise identity review", "");
+    let submitted = app
+        .oneshot(request(
+            Method::POST,
+            "/api/account/verifications",
+            "applicant",
+            "multipart/form-data; boundary=verification-boundary",
+            multipart,
+        ))
+        .await?;
+    assert_eq!(submitted.status(), StatusCode::OK);
     pool.close().await?;
     Ok(())
 }

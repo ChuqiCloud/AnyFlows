@@ -122,6 +122,7 @@ const navItems = {
   redemptionCodes: { key: 'redemptionCodes', icon: Ticket, href: '#/console/redemption-codes' },
   refunds: { key: 'refunds', icon: CircleCheckBig, href: '#/console/refunds' },
   siteSettings: { key: 'siteSettings', icon: PanelsTopLeft, href: '#/console/system-settings/site' },
+  siteNavigation: { key: 'siteNavigation', icon: PanelsTopLeft, href: '#/console/system-settings/navigation' },
   announcements: { key: 'announcements', icon: Megaphone, href: '#/console/system-settings/announcements' },
   authenticationSettings: { key: 'authenticationSettings', icon: Fingerprint, href: '#/console/system-settings/authentication' },
   emailSettings: { key: 'emailSettings', icon: Mail, href: '#/console/system-settings/email' },

@@ -79,7 +79,7 @@ try {
   let downloads = 0
   let entitlementWrites = 0
   let providers = ['manual']
-  let settings = { source: 'database', manual_enabled: true, enabled: false, app_id: 'test-app', private_key_configured: true, public_key_configured: true, gateway_url: 'https://openapi.alipay.com/gateway.do', biz_code: 'FACE', timeout_secs: 10, version: 1 }
+  let settings = { source: 'database', manual_enabled: true, individual_manual_enabled: true, enterprise_manual_enabled: true, individual_reason_required: true, enterprise_reason_required: true, enabled: false, app_id: 'test-app', private_key_configured: true, public_key_configured: true, gateway_url: 'https://openapi.alipay.com/gateway.do', biz_code: 'FACE', timeout_secs: 10, version: 1 }
   let settingsWrites = 0
   const catalog = [{ provider_key: 'custom-ai', display_name: 'Custom AI', logo: 'OpenAI', aliases: [], enabled: true, sort_order: 0, version: 1 }]
   let catalogWrites = 0
@@ -90,7 +90,7 @@ try {
     const url = new URL(request.url())
     const path = url.pathname
     let body
-    if (path.endsWith('/eligibility')) body = { enterprise_verified: reviewed > 0, can_apply_for_organization: reviewed > 0, providers }
+    if (path.endsWith('/eligibility')) body = { enterprise_verified: reviewed > 0, can_apply_for_organization: reviewed > 0, providers, individual_providers: [...(settings.individual_manual_enabled ? ['manual'] : []), ...(settings.enabled ? ['alipay'] : [])], enterprise_providers: settings.enterprise_manual_enabled ? ['manual'] : [], individual_reason_required: settings.individual_reason_required, enterprise_reason_required: settings.enterprise_reason_required }
     else if (path === '/api/admin/account-verification-settings') {
       if (request.method() === 'PUT') {
         const update = request.postDataJSON()
@@ -98,7 +98,7 @@ try {
         assert.equal(update.private_key, undefined)
         assert.equal(update.public_key, undefined)
         settings = { ...settings, ...update, version: settings.version + 1 }
-        providers = [...(settings.manual_enabled ? ['manual'] : []), ...(settings.enabled ? ['alipay'] : [])]
+        providers = [...(settings.individual_manual_enabled || settings.enterprise_manual_enabled ? ['manual'] : []), ...(settings.enabled ? ['alipay'] : [])]
         settingsWrites += 1
       }
       body = settings
@@ -200,19 +200,17 @@ try {
   await page.goto(`${home}?mode=settings`)
   await page.getByText('实名认证配置', { exact: true }).waitFor()
   await capturePage('verification-settings')
-  const manualToggle = page.locator('label').filter({ hasText: '启用人工审核' }).locator('input')
-  const alipayToggle = page.locator('label').filter({ hasText: '启用支付宝实名认证' }).locator('input')
-  // Classic switches use buttons; HeroUI switches use native checkbox inputs.
+  // Classic exposes explicit accessible names; HeroUI derives the switch names from labels.
   const toggle = async (label, checked) => {
-    const control = page.getByRole('switch', { name: label, exact: true })
-    if (await control.count()) {
-      if ((await control.evaluate((element) => element instanceof HTMLInputElement ? element.checked : element.getAttribute('aria-checked') === 'true')) !== checked) await control.click()
-    } else {
-      await (label === '启用人工审核' ? manualToggle : alipayToggle).setChecked(checked)
-    }
+    const named = page.getByRole('switch', { name: label, exact: true })
+    const control = await named.count() ? named : label === '个人认证支付宝'
+      ? page.getByRole('switch', { name: '启用支付宝实名认证', exact: true })
+      : page.getByRole('switch', { name: '启用人工审核', exact: true }).nth(label === '个人认证人工审核' ? 0 : 1)
+    if ((await control.evaluate((element) => element instanceof HTMLInputElement ? element.checked : element.getAttribute('aria-checked') === 'true')) !== checked) await control.click()
   }
-  await toggle('启用人工审核', false)
-  await toggle('启用支付宝实名认证', true)
+  await toggle('个人认证人工审核', false)
+  await toggle('企业认证人工审核', false)
+  await toggle('个人认证支付宝', true)
   await page.getByRole('button', { name: '保存配置', exact: true }).click()
   await page.getByText('配置已保存并生效。', { exact: true }).waitFor()
   assert.equal(settingsWrites, 1)
@@ -226,10 +224,12 @@ try {
   await page.getByRole('tab', { name: '企业认证', exact: true }).click()
   assert.equal(await page.getByRole('button', { name: '提交认证', exact: true }).isDisabled(), true)
   providers = []
+  settings = { ...settings, enabled: false }
   await page.reload()
   await page.getByText('当前没有可用的认证方式，请联系管理员。', { exact: true }).waitFor()
   assert.equal(await page.getByRole('button', { name: '提交认证', exact: true }).isDisabled(), true)
   providers = ['manual', 'alipay']
+  settings = { ...settings, individual_manual_enabled: true, enterprise_manual_enabled: true, enabled: true }
   await page.reload()
   await providerSelect.selectOption('manual')
   await documentSelect.selectOption('passport')

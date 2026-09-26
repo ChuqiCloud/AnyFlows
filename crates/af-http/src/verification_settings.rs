@@ -26,6 +26,10 @@ use crate::{
 pub(crate) struct AdminVerificationSettingsResponse {
     source: &'static str,
     manual_enabled: bool,
+    individual_manual_enabled: bool,
+    enterprise_manual_enabled: bool,
+    individual_reason_required: bool,
+    enterprise_reason_required: bool,
     enabled: bool,
     app_id: Option<String>,
     private_key_configured: bool,
@@ -41,6 +45,10 @@ impl From<AdminVerificationSettings> for AdminVerificationSettingsResponse {
         Self {
             source: value.source,
             manual_enabled: value.manual_enabled,
+            individual_manual_enabled: value.individual_manual_enabled,
+            enterprise_manual_enabled: value.enterprise_manual_enabled,
+            individual_reason_required: value.individual_reason_required,
+            enterprise_reason_required: value.enterprise_reason_required,
             enabled: value.enabled,
             app_id: value.app_id,
             private_key_configured: value.private_key_configured,
@@ -59,6 +67,10 @@ impl From<AdminVerificationSettings> for AdminVerificationSettingsResponse {
 pub(crate) struct AdminVerificationSettingsRequest {
     expected_version: i64,
     manual_enabled: bool,
+    individual_manual_enabled: Option<bool>,
+    enterprise_manual_enabled: Option<bool>,
+    individual_reason_required: Option<bool>,
+    enterprise_reason_required: Option<bool>,
     enabled: bool,
     app_id: Option<String>,
     #[schema(format = Password, write_only)]
@@ -113,6 +125,10 @@ async fn update(
             VerificationSettingsCommand {
                 expected_version: request.expected_version,
                 manual_enabled: request.manual_enabled,
+                individual_manual_enabled: request.individual_manual_enabled,
+                enterprise_manual_enabled: request.enterprise_manual_enabled,
+                individual_reason_required: request.individual_reason_required,
+                enterprise_reason_required: request.enterprise_reason_required,
                 enabled: request.enabled,
                 app_id: request.app_id,
                 private_key: request.private_key,

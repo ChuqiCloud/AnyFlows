@@ -3263,6 +3263,13 @@ impl Bootstrap<Supervised> {
                     ))
                     .with_provider(Arc::clone(
                         &self.stage.infrastructure.account_verification_provider,
+                    ))
+                    .with_settings(Arc::clone(
+                        self.stage
+                            .infrastructure
+                            .verification_settings_service
+                            .as_ref()
+                            .expect("实名认证设置已在 init_relay 阶段装配"),
                     )),
                 ),
                 Arc::clone(&self.stage.infrastructure.session_authenticator),

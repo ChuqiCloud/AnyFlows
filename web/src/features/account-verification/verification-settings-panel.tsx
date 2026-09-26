@@ -11,15 +11,20 @@ import { jsonBodySerializer } from '@/lib/api/generated/client'
 import { sessionSecurity, verificationGet } from './account-verification-api'
 
 type Settings = { source: 'environment' | 'database'; manual_enabled: boolean; enabled: boolean; app_id: string | null;
+  individual_manual_enabled: boolean; enterprise_manual_enabled: boolean; individual_reason_required: boolean; enterprise_reason_required: boolean;
   private_key_configured: boolean; public_key_configured: boolean; gateway_url: string;
   biz_code: string; timeout_secs: number; version: number }
-type Draft = { manual_enabled: boolean; enabled: boolean; app_id: string; private_key: string; public_key: string;
+type Draft = { manual_enabled: boolean; individual_manual_enabled: boolean; enterprise_manual_enabled: boolean; individual_reason_required: boolean; enterprise_reason_required: boolean; enabled: boolean; app_id: string; private_key: string; public_key: string;
   gateway_url: string; biz_code: string; timeout_secs: number }
 type SettingsRequest = Omit<Draft, 'private_key' | 'public_key'> & {
   private_key?: string; public_key?: string; expected_version: number }
 
 const settingsKey = ['admin-account-verification-settings'] as const
-const toDraft = (settings: Settings): Draft => ({ manual_enabled: settings.manual_enabled, enabled: settings.enabled,
+const toDraft = (settings: Settings): Draft => ({ manual_enabled: settings.manual_enabled,
+  individual_manual_enabled: settings.individual_manual_enabled ?? settings.manual_enabled,
+  enterprise_manual_enabled: settings.enterprise_manual_enabled ?? settings.manual_enabled,
+  individual_reason_required: settings.individual_reason_required ?? true,
+  enterprise_reason_required: settings.enterprise_reason_required ?? true, enabled: settings.enabled,
   app_id: settings.app_id ?? '', private_key: '', public_key: '', gateway_url: settings.gateway_url,
   biz_code: settings.biz_code, timeout_secs: settings.timeout_secs })
 
@@ -50,7 +55,8 @@ export function VerificationSettingsPanel() {
     <header><h2 className="text-lg font-semibold">实名认证配置</h2><p className="mt-1 text-sm text-muted-foreground">在这里控制用户可选择的认证方式。关闭某项后，用户提交页面不会再显示该方式。</p></header>
     {environment ? <p className="border-l-2 border-warning px-3 text-sm text-muted-foreground">当前使用启动配置。首次在线保存后以后台设置为准；若启用支付宝，请重新填写两把密钥。</p> : null}
     <form onSubmit={submit} className="grid max-w-3xl gap-4">
-      <div className="grid gap-3 rounded-lg border border-[var(--hairline)] p-3"><label className="flex items-center gap-3 text-sm"><Switch aria-label="启用人工审核" checked={draft.manual_enabled} onCheckedChange={(manual_enabled) => setDraft({ ...draft, manual_enabled })} />启用人工审核</label><label className="flex items-center gap-3 text-sm"><Switch aria-label="启用支付宝实名认证" checked={draft.enabled} onCheckedChange={(enabled) => setDraft({ ...draft, enabled })} />启用支付宝实名认证</label></div>
+      <section className="grid gap-3 rounded-lg border border-[var(--hairline)] p-4"><h3 className="font-medium">个人认证</h3><label className="flex items-center gap-3 text-sm"><Switch aria-label="个人认证人工审核" checked={draft.individual_manual_enabled} onCheckedChange={(individual_manual_enabled) => setDraft({ ...draft, individual_manual_enabled })} />启用人工审核</label><label className="flex items-center gap-3 text-sm"><Switch aria-label="个人认证支付宝" checked={draft.enabled} onCheckedChange={(enabled) => setDraft({ ...draft, enabled })} />启用支付宝实名认证</label><label className="flex items-center gap-3 text-sm"><Switch aria-label="个人认证理由必填" checked={draft.individual_reason_required} onCheckedChange={(individual_reason_required) => setDraft({ ...draft, individual_reason_required })} />要求填写认证理由</label></section>
+      <section className="grid gap-3 rounded-lg border border-[var(--hairline)] p-4"><h3 className="font-medium">企业认证</h3><label className="flex items-center gap-3 text-sm"><Switch aria-label="企业认证人工审核" checked={draft.enterprise_manual_enabled} onCheckedChange={(enterprise_manual_enabled) => setDraft({ ...draft, enterprise_manual_enabled })} />启用人工审核</label><label className="flex items-center gap-3 text-sm"><Switch aria-label="企业认证理由必填" checked={draft.enterprise_reason_required} onCheckedChange={(enterprise_reason_required) => setDraft({ ...draft, enterprise_reason_required })} />要求填写认证理由</label></section>
       <label className="grid gap-1.5 text-sm">应用 ID<Input value={draft.app_id} maxLength={128} onChange={(event) => setDraft({ ...draft, app_id: event.target.value })} /></label>
       <div className="grid gap-4 md:grid-cols-2">
         <label className="grid gap-1.5 text-sm">应用私钥 <span className="text-xs text-muted-foreground">{!environment && query.data.private_key_configured ? '已配置，留空保持不变；' : ''}支持支付宝 Base64 原文或完整 PEM</span><Textarea value={draft.private_key} rows={6} autoComplete="off" onChange={(event) => setDraft({ ...draft, private_key: event.target.value })} /></label>

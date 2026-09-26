@@ -32,6 +32,10 @@ pub enum AccountVerificationSettingsError {
 pub struct AccountVerificationSettingsRecord {
     pub initialized: bool,
     pub manual_enabled: bool,
+    pub individual_manual_enabled: bool,
+    pub enterprise_manual_enabled: bool,
+    pub individual_reason_required: bool,
+    pub enterprise_reason_required: bool,
     pub enabled: bool,
     pub app_id: Option<String>,
     pub credentials: Option<EncryptedCredentialEnvelope>,
@@ -91,6 +95,22 @@ impl AccountVerificationSettingsRepository {
                     settings::Column::ManualEnabled,
                     Expr::value(record.manual_enabled),
                 )
+                .col_expr(
+                    settings::Column::IndividualManualEnabled,
+                    Expr::value(record.individual_manual_enabled),
+                )
+                .col_expr(
+                    settings::Column::EnterpriseManualEnabled,
+                    Expr::value(record.enterprise_manual_enabled),
+                )
+                .col_expr(
+                    settings::Column::IndividualReasonRequired,
+                    Expr::value(record.individual_reason_required),
+                )
+                .col_expr(
+                    settings::Column::EnterpriseReasonRequired,
+                    Expr::value(record.enterprise_reason_required),
+                )
                 .col_expr(settings::Column::AlipayEnabled, Expr::value(record.enabled))
                 .col_expr(settings::Column::AlipayAppId, Expr::value(record.app_id))
                 .col_expr(
@@ -136,6 +156,10 @@ fn record_from_model(
     Ok(AccountVerificationSettingsRecord {
         initialized: model.initialized,
         manual_enabled: model.manual_enabled,
+        individual_manual_enabled: model.individual_manual_enabled,
+        enterprise_manual_enabled: model.enterprise_manual_enabled,
+        individual_reason_required: model.individual_reason_required,
+        enterprise_reason_required: model.enterprise_reason_required,
         enabled: model.alipay_enabled,
         app_id: model.alipay_app_id.map(|value| value.as_str().to_owned()),
         credentials: model

@@ -1,6 +1,7 @@
 import { Button, Skeleton } from '@heroui/react'
 import { RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 
 import { useAdminSiteSettings } from './site-settings-api'
 import { FrontendTemplatePanel } from './frontend-template-panel'
@@ -21,6 +22,7 @@ export function SiteSettingsPage() {
             {t('siteSettings.subtitle')}
           </p>
         </div>
+        <Button as={Link} to="/console/system-settings/navigation" size="sm" variant="flat">自定义导航</Button>
         <Button
           type="button"
           size="sm"
@@ -66,8 +68,15 @@ export function SiteSettingsPage() {
           </Button>
         </div>
       ) : settingsQuery.data ? (
-        <div className="grid gap-4"><FrontendTemplatePanel /><SiteSettingsWorkspace settings={settingsQuery.data} /><SiteNavigationPanel settings={settingsQuery.data} /></div>
+        <div className="grid gap-4"><FrontendTemplatePanel /><SiteSettingsWorkspace settings={settingsQuery.data} /></div>
       ) : null}
     </div>
   )
+}
+
+export function SiteNavigationPage() {
+  const query = useAdminSiteSettings()
+  return <div className="grid gap-4"><header><h2 className="text-lg font-semibold">自定义导航</h2><p className="mt-1 text-sm text-default-500">管理顶栏、页脚和控制中心侧栏链接。</p></header>
+    {query.isPending ? <p role="status">正在读取站点设置…</p> : query.isError ? <div role="alert" className="flex items-center gap-2">无法读取导航配置。<Button size="sm" onPress={() => void query.refetch()}>重试</Button></div> : query.data?.navigation ? <SiteNavigationPanel settings={query.data} /> : <p role="alert" className="text-danger">当前服务接口未提供导航配置，请检查 API 服务版本和路由。</p>}
+  </div>
 }

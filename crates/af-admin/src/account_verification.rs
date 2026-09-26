@@ -1,3 +1,4 @@
+use crate::{DatabaseVerificationSettingsService, VerificationPolicy};
 use crate::{
     PlatformAuditEntry, PlatformAuditOutcome, PlatformAuditService, PlatformPolicy,
     SessionPrincipal,
@@ -66,6 +67,7 @@ pub struct AccountVerificationService {
     repository: AccountVerificationRepository,
     audit: Arc<dyn PlatformAuditService>,
     providers: HashMap<&'static str, Arc<dyn AccountVerificationProvider>>,
+    settings: Option<Arc<DatabaseVerificationSettingsService>>,
 }
 
 impl AccountVerificationService {
@@ -80,6 +82,7 @@ impl AccountVerificationService {
             repository,
             audit,
             providers: HashMap::from([("manual", manual)]),
+            settings: None,
         }
     }
 
@@ -87,6 +90,27 @@ impl AccountVerificationService {
     pub fn with_provider(mut self, provider: Arc<dyn AccountVerificationProvider>) -> Self {
         self.providers.insert(provider.key(), provider);
         self
+    }
+
+    #[must_use]
+    pub fn with_settings(mut self, settings: Arc<DatabaseVerificationSettingsService>) -> Self {
+        self.settings = Some(settings);
+        self
+    }
+
+    pub async fn policy(&self) -> Result<VerificationPolicy, AccountVerificationError> {
+        match &self.settings {
+            Some(settings) => settings
+                .policy()
+                .await
+                .map_err(|_| AccountVerificationError::Unavailable),
+            None => Ok(VerificationPolicy {
+                individual_manual_enabled: true,
+                enterprise_manual_enabled: true,
+                individual_reason_required: true,
+                enterprise_reason_required: true,
+            }),
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -149,6 +173,13 @@ impl AccountVerificationService {
         mut write: AccountVerificationSubmit,
     ) -> Result<AccountVerificationRecord, AccountVerificationError> {
         validate_account_verification_submit(&write)?;
+        let policy = self.policy().await?;
+        if write.summary.trim().is_empty() && policy.reason_required_for(&write.kind) {
+            return Err(AccountVerificationError::Invalid);
+        }
+        if write.provider == "manual" && !policy.manual_enabled_for(&write.kind) {
+            return Err(AccountVerificationError::Unavailable);
+        }
         let provider = self
             .providers
             .get(write.provider.as_str())
@@ -182,6 +213,23 @@ impl AccountVerificationService {
         let mut providers = Vec::new();
         for provider in self.providers.values() {
             if provider.available().await {
+                providers.push(provider.key().to_owned());
+            }
+        }
+        providers.sort();
+        providers
+    }
+
+    pub async fn available_providers_for(&self, kind: &str) -> Vec<String> {
+        let Ok(policy) = self.policy().await else {
+            return Vec::new();
+        };
+        let mut providers = Vec::new();
+        for provider in self.providers.values() {
+            if (provider.key() != "manual" || policy.manual_enabled_for(kind))
+                && (provider.key() != "alipay" || kind == "individual")
+                && provider.available().await
+            {
                 providers.push(provider.key().to_owned());
             }
         }

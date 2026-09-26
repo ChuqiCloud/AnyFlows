@@ -1,5 +1,5 @@
 import { Button, Popover, PopoverContent, PopoverTrigger } from '@heroui/react'
-import { Boxes, Braces, LayoutDashboard, Menu, SlidersHorizontal } from 'lucide-react'
+import { Boxes, Braces, LayoutDashboard, Menu } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Link as RouterLink } from 'react-router-dom'
 
@@ -28,21 +28,21 @@ export function PublicSiteHeader({ logoUrl, siteName, navigation }: PublicSiteHe
       <div className="mx-auto flex h-14 max-w-[1120px] items-center justify-between gap-2 px-3 sm:px-6">
         <RouterLink
           to="/"
-          className="flex min-w-0 shrink items-center gap-2.5 rounded-lg focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none"
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none md:flex-none"
         >
           <SiteBrandMark siteName={siteName} logoUrl={logoUrl} />
-          <span className="hidden truncate text-[0.9375rem] font-semibold lg:inline">
+          <span className="truncate text-[0.875rem] font-semibold sm:text-[0.9375rem]">
             {siteName}
           </span>
         </RouterLink>
-        <nav className="flex shrink-0 items-center gap-0.5 sm:gap-1.5" aria-label={t('landing.nav.label')}>
-          <Button as={RouterLink} to="/models" isIconOnly className="md:!w-auto md:!min-w-0 md:!gap-2 md:!px-2" size="sm" title={t('landing.nav.models')} aria-label={t('landing.nav.models')} variant="light">
+        <nav className="hidden min-w-0 items-center gap-1 md:flex" aria-label={t('landing.nav.label')}>
+          <Button as={RouterLink} to="/models" className="!min-w-0 !gap-2 !px-2" size="sm" title={t('landing.nav.models')} variant="light">
             <Boxes className="size-4" aria-hidden="true" />
-            <span className="hidden md:inline">{t('landing.nav.models')}</span>
+            <span>{t('landing.nav.models')}</span>
           </Button>
-          <Button as={RouterLink} to="/api" isIconOnly className="md:!w-auto md:!min-w-0 md:!gap-2 md:!px-2" size="sm" title={t('apiExplorer.nav')} aria-label={t('apiExplorer.nav')} variant="light">
+          <Button as={RouterLink} to="/api" className="!min-w-0 !gap-2 !px-2" size="sm" title={t('apiExplorer.nav')} variant="light">
             <Braces className="size-4" aria-hidden="true" />
-            <span className="hidden md:inline">API</span>
+            <span>API</span>
           </Button>
           {links.slice(0, 2).map((link) => link.url.startsWith('/') ? <Button key={`${link.url}:${link.label}`} as={RouterLink} to={link.url} className="hidden max-w-28 truncate xl:inline-flex" size="sm" variant="light">{label(link)}</Button> : <Button key={`${link.url}:${link.label}`} as="a" href={link.url} target="_blank" rel="noopener noreferrer" className="hidden max-w-28 truncate xl:inline-flex" size="sm" variant="light">{label(link)}</Button>)}
           {links.length > 0 && <Popover placement="bottom-end"><PopoverTrigger><Button isIconOnly size="sm" title={t('nav.customLinks')} aria-label={t('nav.customLinks')} variant="light"><Menu className="size-4" /></Button></PopoverTrigger><PopoverContent className="max-w-[calc(100vw-1rem)] rounded-lg border border-[var(--hairline)] bg-surface-1 p-2"><nav aria-label={t('nav.customLinks')} className="grid min-w-40 gap-1">{links.map((link) => link.url.startsWith('/') ? <RouterLink key={`${link.url}:${link.label}`} to={link.url} className="truncate rounded-md px-3 py-2 text-sm hover:bg-primary/10">{label(link)}</RouterLink> : <a key={`${link.url}:${link.label}`} href={link.url} target="_blank" rel="noopener noreferrer" className="truncate rounded-md px-3 py-2 text-sm hover:bg-primary/10">{label(link)}</a>)}</nav></PopoverContent></Popover>}
@@ -52,25 +52,22 @@ export function PublicSiteHeader({ logoUrl, siteName, navigation }: PublicSiteHe
             <MotionToggle />
             <ThemeToggle />
           </div>
-          <Button as={RouterLink} to="/console" isIconOnly className="md:!w-auto md:!min-w-0 md:!px-3" color="primary" size="sm" title={t('landing.nav.console')} aria-label={t('landing.nav.console')}>
-            <LayoutDashboard className="size-4 md:hidden" aria-hidden="true" />
-            <span className="hidden md:inline">{t('landing.nav.console')}</span>
+          <Button as={RouterLink} to="/console" className="!min-w-0 !px-3" color="primary" size="sm" title={t('landing.nav.console')}>
+            <span>{t('landing.nav.console')}</span>
           </Button>
-          <Popover placement="bottom-end">
-            <PopoverTrigger>
-              <Button isIconOnly className="md:hidden" size="sm" title={t('nav.settings')} aria-label={t('nav.settings')} variant="light">
-                <SlidersHorizontal className="size-4" aria-hidden="true" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="max-w-[calc(100vw-1.5rem)] rounded-lg border border-[var(--hairline)] bg-surface-1 p-3">
-              <div className="flex items-center gap-2">
-                <LanguageToggle />
-                <MotionToggle />
-                <ThemeToggle />
-              </div>
-            </PopoverContent>
-          </Popover>
         </nav>
+        <Popover placement="bottom-end">
+          <PopoverTrigger><Button isIconOnly className="shrink-0 md:hidden" size="sm" title={t('landing.nav.label')} aria-label={t('landing.nav.label')} variant="light"><Menu className="size-5" /></Button></PopoverTrigger>
+          <PopoverContent className="w-[min(19rem,calc(100vw-1.5rem))] rounded-lg border border-[var(--hairline)] bg-surface-1 p-2">
+            <nav aria-label={t('landing.nav.label')} className="grid gap-1 text-sm">
+              <RouterLink to="/models" className="flex items-center gap-3 rounded-md px-3 py-2 hover:bg-primary/10"><Boxes className="size-4" />{t('landing.nav.models')}</RouterLink>
+              <RouterLink to="/api" className="flex items-center gap-3 rounded-md px-3 py-2 hover:bg-primary/10"><Braces className="size-4" />API</RouterLink>
+              {links.map((link) => link.url.startsWith('/') ? <RouterLink key={`${link.url}:${link.label}`} to={link.url} className="truncate rounded-md px-3 py-2 hover:bg-primary/10">{label(link)}</RouterLink> : <a key={`${link.url}:${link.label}`} href={link.url} target="_blank" rel="noopener noreferrer" className="truncate rounded-md px-3 py-2 hover:bg-primary/10">{label(link)}</a>)}
+              <RouterLink to="/console" className="flex items-center gap-3 rounded-md border-t border-[var(--hairline)] px-3 py-2 font-medium hover:bg-primary/10"><LayoutDashboard className="size-4" />{t('landing.nav.console')}</RouterLink>
+            </nav>
+            <div className="mt-2 flex items-center gap-2 border-t border-[var(--hairline)] px-2 pt-2"><LanguageToggle /><MotionToggle /><ThemeToggle /></div>
+          </PopoverContent>
+        </Popover>
       </div>
     </header>
   )

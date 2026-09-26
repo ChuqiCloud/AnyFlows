@@ -584,7 +584,8 @@ fn validate_submit(write: &AccountVerificationSubmit) -> Result<(), AccountVerif
             !valid_document_number(&write.document_country, &write.document_type, v)
         })
         || !valid_text(&write.subject_name, 128)
-        || !valid_text(&write.summary, 512)
+        || write.summary.len() > 512
+        || (!write.summary.is_empty() && !valid_text(&write.summary, 512))
         || write
             .provider_reference
             .as_deref()

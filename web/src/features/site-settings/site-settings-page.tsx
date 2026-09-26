@@ -22,6 +22,7 @@ export function SiteSettingsPage() {
             {t('siteSettings.subtitle')}
           </p>
         </div>
+        <Button asChild size="sm" variant="secondary"><a href="#/console/system-settings/navigation">自定义导航</a></Button>
         <Button
           type="button"
           size="sm"
@@ -69,10 +70,16 @@ export function SiteSettingsPage() {
       ) : settingsQuery.data ? (
         <>
           <SiteSettingsWorkspace settings={settingsQuery.data} />
-          <SiteNavigationPanel settings={settingsQuery.data} />
           <FrontendTemplatePanel />
         </>
       ) : null}
     </div>
   )
+}
+
+export function SiteNavigationPage() {
+  const query = useAdminSiteSettings()
+  return <div className="grid gap-4"><header><h2 className="text-lg font-semibold">自定义导航</h2><p className="mt-1 text-sm text-muted-foreground">管理顶栏、页脚和控制中心侧栏链接。</p></header>
+    {query.isPending ? <p role="status">正在读取站点设置…</p> : query.isError ? <div role="alert">无法读取导航配置。<Button type="button" size="sm" variant="secondary" onClick={() => void query.refetch()}>重试</Button></div> : query.data?.navigation ? <SiteNavigationPanel settings={query.data} /> : <p role="alert" className="text-destructive">当前服务接口未提供导航配置，请检查 API 服务版本和路由。</p>}
+  </div>
 }

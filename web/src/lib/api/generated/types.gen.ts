@@ -16,6 +16,10 @@ export type AccountVerificationEligibilityResponse = {
     enterprise_verified: boolean;
     can_apply_for_organization: boolean;
     providers: Array<string>;
+    individual_providers: Array<string>;
+    enterprise_providers: Array<string>;
+    individual_reason_required: boolean;
+    enterprise_reason_required: boolean;
 };
 export type AccountVerificationListResponse = {
     cases: Array<AccountVerificationResponse>;
@@ -1299,6 +1303,10 @@ export type AdminUserUpdateRequest = {
 export type AdminVerificationSettings = {
     source: string;
     manual_enabled: boolean;
+    individual_manual_enabled: boolean;
+    enterprise_manual_enabled: boolean;
+    individual_reason_required: boolean;
+    enterprise_reason_required: boolean;
     enabled: boolean;
     app_id?: string | null;
     private_key_configured: boolean;
@@ -1311,6 +1319,10 @@ export type AdminVerificationSettings = {
 export type AdminVerificationSettingsRequest = {
     expected_version: number;
     manual_enabled: boolean;
+    individual_manual_enabled?: boolean | null;
+    enterprise_manual_enabled?: boolean | null;
+    individual_reason_required?: boolean | null;
+    enterprise_reason_required?: boolean | null;
     enabled: boolean;
     app_id?: string | null;
     gateway_url: string;
@@ -3778,6 +3790,10 @@ export type AdminPaymentSettingsRequestWritable = {
 export type AdminVerificationSettingsRequestWritable = {
     expected_version: number;
     manual_enabled: boolean;
+    individual_manual_enabled?: boolean | null;
+    enterprise_manual_enabled?: boolean | null;
+    individual_reason_required?: boolean | null;
+    enterprise_reason_required?: boolean | null;
     enabled: boolean;
     app_id?: string | null;
     private_key?: string | null;
