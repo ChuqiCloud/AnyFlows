@@ -54,6 +54,7 @@
   },
   "nav": {
     "label": "主导航",
+    "customLinks": "自定义入口",
     "groups": {
       "use": "工作台",
       "organization": "企业空间",

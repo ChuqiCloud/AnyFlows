@@ -3,8 +3,9 @@ use std::sync::Arc;
 use af_admin::{
     AdminSiteSettings, BalanceDisplayMode, BalanceDisplayPolicy, BalanceSymbolPosition,
     OAuthLoginError, OAuthLoginService, PublicOAuthLoginProvider, PublicSiteSettings,
-    RegistrationError, RegistrationService, SessionAuthenticator, SiteSettingsCommand,
-    SiteSettingsError, SiteSettingsService,
+    RegistrationError, RegistrationService, SessionAuthenticator, SiteNavigationGroupRecord,
+    SiteNavigationLinkRecord, SiteNavigationRecord, SiteSettingsCommand, SiteSettingsError,
+    SiteSettingsService, SiteSidebarLinkRecord,
 };
 use axum::{
     Extension, Json, Router,
@@ -148,6 +149,137 @@ impl BalanceDisplaySettingsDto {
     }
 }
 
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = SiteNavigationLink)]
+pub(crate) struct SiteNavigationLinkDto {
+    #[schema(min_length = 1, max_length = 64)]
+    label: String,
+    #[schema(max_length = 64)]
+    label_en: Option<String>,
+    #[schema(min_length = 1, max_length = 2048)]
+    url: String,
+}
+
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = SiteNavigationGroup)]
+pub(crate) struct SiteNavigationGroupDto {
+    #[schema(min_length = 1, max_length = 64)]
+    title: String,
+    #[schema(max_length = 64)]
+    title_en: Option<String>,
+    #[schema(min_items = 1, max_items = 6)]
+    links: Vec<SiteNavigationLinkDto>,
+}
+
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = SiteSidebarLink)]
+pub(crate) struct SiteSidebarLinkDto {
+    #[schema(min_length = 1, max_length = 64)]
+    label: String,
+    #[schema(max_length = 64)]
+    label_en: Option<String>,
+    #[schema(min_length = 1, max_length = 2048)]
+    url: String,
+    #[schema(pattern = "^(link|globe|book|sparkles|building|message|headphones|shield|chart)$")]
+    icon: String,
+    #[schema(pattern = "^(default|accent)$")]
+    style: String,
+    #[schema(pattern = "^(all|admin)$")]
+    audience: String,
+}
+
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = SiteNavigation)]
+pub(crate) struct SiteNavigationDto {
+    #[schema(max_items = 8)]
+    header_links: Vec<SiteNavigationLinkDto>,
+    #[schema(max_items = 4)]
+    footer_groups: Vec<SiteNavigationGroupDto>,
+    #[schema(max_items = 8)]
+    sidebar_links: Vec<SiteSidebarLinkDto>,
+}
+
+impl From<&SiteNavigationRecord> for SiteNavigationDto {
+    fn from(navigation: &SiteNavigationRecord) -> Self {
+        let link = |item: &SiteNavigationLinkRecord| SiteNavigationLinkDto {
+            label: item.label.clone(),
+            label_en: item.label_en.clone(),
+            url: item.url.clone(),
+        };
+        Self {
+            header_links: navigation.header_links.iter().map(link).collect(),
+            footer_groups: navigation
+                .footer_groups
+                .iter()
+                .map(|group| SiteNavigationGroupDto {
+                    title: group.title.clone(),
+                    title_en: group.title_en.clone(),
+                    links: group.links.iter().map(link).collect(),
+                })
+                .collect(),
+            sidebar_links: navigation
+                .sidebar_links
+                .iter()
+                .map(|item| SiteSidebarLinkDto {
+                    label: item.label.clone(),
+                    label_en: item.label_en.clone(),
+                    url: item.url.clone(),
+                    icon: item.icon.clone(),
+                    style: item.style.clone(),
+                    audience: item.audience.clone(),
+                })
+                .collect(),
+        }
+    }
+}
+
+impl From<SiteNavigationDto> for SiteNavigationRecord {
+    fn from(navigation: SiteNavigationDto) -> Self {
+        let link = |item: SiteNavigationLinkDto| SiteNavigationLinkRecord {
+            label: item.label,
+            label_en: item.label_en,
+            url: item.url,
+        };
+        Self {
+            header_links: navigation.header_links.into_iter().map(link).collect(),
+            footer_groups: navigation
+                .footer_groups
+                .into_iter()
+                .map(|group| SiteNavigationGroupRecord {
+                    title: group.title,
+                    title_en: group.title_en,
+                    links: group.links.into_iter().map(link).collect(),
+                })
+                .collect(),
+            sidebar_links: navigation
+                .sidebar_links
+                .into_iter()
+                .map(|item| SiteSidebarLinkRecord {
+                    label: item.label,
+                    label_en: item.label_en,
+                    url: item.url,
+                    icon: item.icon,
+                    style: item.style,
+                    audience: item.audience,
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminSiteNavigationRequest)]
+pub(crate) struct AdminSiteNavigationRequest {
+    navigation: SiteNavigationDto,
+    #[schema(minimum = 1)]
+    expected_version: i64,
+}
+
 #[derive(Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 #[schema(as = PublicSiteSettings)]
@@ -157,6 +289,7 @@ pub(crate) struct PublicSiteSettingsResponse {
     #[schema(max_length = 2048, format = "uri")]
     public_base_url: Option<String>,
     brand: PublicBrandSettingsResponse,
+    navigation: SiteNavigationDto,
     balance_display: BalanceDisplaySettingsDto,
     authentication: PublicAuthenticationCapabilitiesResponse,
 }
@@ -170,6 +303,7 @@ pub(crate) struct AdminSiteSettingsResponse {
     #[schema(max_length = 2048, format = "uri")]
     public_base_url: Option<String>,
     brand: PublicBrandSettingsResponse,
+    navigation: SiteNavigationDto,
     balance_display: BalanceDisplaySettingsDto,
     #[schema(minimum = 1)]
     version: i64,
@@ -185,6 +319,7 @@ impl From<AdminSiteSettings> for AdminSiteSettingsResponse {
                 tagline: settings.brand_tagline().map(str::to_owned),
                 description: settings.brand_description().map(str::to_owned),
             },
+            navigation: SiteNavigationDto::from(settings.navigation()),
             balance_display: BalanceDisplaySettingsDto::from(settings.balance_display()),
             version: settings.version(),
         }
@@ -235,6 +370,12 @@ pub(crate) fn build_site_settings_router(
             "/api/admin/site-settings",
             get(get_admin_site_settings)
                 .put(update_admin_site_settings)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(authentication.clone()),
+        )
+        .route(
+            "/api/admin/site-settings/navigation",
+            axum::routing::put(update_admin_site_navigation)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(authentication),
         )
@@ -311,6 +452,24 @@ async fn update_admin_site_settings(
     Ok(no_store_json(AdminSiteSettingsResponse::from(settings)))
 }
 
+async fn update_admin_site_navigation(
+    State(state): State<SiteSettingsHttpState>,
+    Extension(authentication): Extension<af_admin::SessionAuthentication>,
+    request: Result<Json<AdminSiteNavigationRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let settings = state
+        .site_service
+        .update_navigation(
+            authentication.principal(),
+            request.navigation.into(),
+            request.expected_version,
+        )
+        .await
+        .map_err(map_site_settings_error)?;
+    Ok(no_store_json(AdminSiteSettingsResponse::from(settings)))
+}
+
 fn public_response(
     site: PublicSiteSettings,
     authentication: af_admin::RegistrationStatus,
@@ -325,6 +484,7 @@ fn public_response(
             tagline: site.brand_tagline().map(str::to_owned),
             description: site.brand_description().map(str::to_owned),
         },
+        navigation: SiteNavigationDto::from(site.navigation()),
         balance_display: BalanceDisplaySettingsDto::from(site.balance_display()),
         authentication: PublicAuthenticationCapabilitiesResponse {
             password_login_enabled: authentication.password_login_enabled(),

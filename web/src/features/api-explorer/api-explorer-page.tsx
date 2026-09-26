@@ -5,6 +5,7 @@ import { Braces, ChevronRight, CircleHelp, LoaderCircle, Play, Search, ShieldChe
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { PublicSiteHeader } from '@/components/layout/public-site-header'
+import { SiteFooter } from '@/components/layout/site-footer'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
 import {
   fetchApiExplorerCatalog,
@@ -178,6 +179,7 @@ export function ApiExplorerPage() {
           </div>
         </div>
       </main>
+      <SiteFooter siteName={siteName} logoUrl={site?.brand.logo_url} navigation={site?.navigation} />
     </div>
   )
 }

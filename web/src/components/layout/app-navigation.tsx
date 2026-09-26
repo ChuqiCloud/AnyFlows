@@ -4,6 +4,7 @@ import {
   Boxes,
   Bot,
   BriefcaseBusiness,
+  BookOpen,
   Building2,
   CalendarRange,
   ChevronRight,
@@ -13,10 +14,13 @@ import {
   Fingerprint,
   Gauge,
   GitBranch,
+  Globe2,
+  Headphones,
   History,
   KeyRound,
   Landmark,
   Layers3,
+  Link2,
   ListChecks,
   Mail,
   Megaphone,
@@ -28,6 +32,7 @@ import {
   ServerCog,
   Settings2,
   ShieldCheck,
+  Sparkles,
   Ticket,
   TicketCheck,
   UserRound,
@@ -67,6 +72,8 @@ import {
 } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
 import { useOrganizationWorkspace } from '@/features/organization-console/organization-workspace-context'
+import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
+import type { SiteSidebarLink } from '@/lib/api/generated/types.gen'
 
 type AppNavigationProps = {
   className?: string
@@ -140,6 +147,25 @@ const sectionIcons = {
   gateway: Waypoints,
   platform: Settings2,
 } as const satisfies Record<AdminSectionKey, LucideIcon>
+
+const customIcons: Record<SiteSidebarLink['icon'], LucideIcon> = {
+  link: Link2, globe: Globe2, book: BookOpen, sparkles: Sparkles,
+  building: Building2, message: MessageSquareText, headphones: Headphones,
+  shield: ShieldCheck, chart: Gauge,
+}
+
+function CustomNavigation({ links }: { links: SiteSidebarLink[] }) {
+  const { i18n, t } = useTranslation()
+  if (links.length === 0) return null
+  return <SidebarGroup className="p-0 py-1.5">
+    <SidebarGroupLabel className="h-6 px-3 text-[0.6875rem] font-semibold text-sidebar-foreground/60">{t('nav.customLinks')}</SidebarGroupLabel>
+    <SidebarGroupContent><SidebarMenu className="gap-0.5">{links.map((link, index) => {
+      const Icon = customIcons[link.icon] ?? Link2
+      const external = !link.url.startsWith('/')
+      return <SidebarMenuItem key={`${index}:${link.url}`}><SidebarMenuButton asChild tooltip={i18n.resolvedLanguage?.startsWith('en') && link.label_en ? link.label_en : link.label} className={cn('h-9 rounded-lg px-3', link.style === 'accent' && 'bg-primary/8 text-primary')}><a href={external ? link.url : `#${link.url}`} target={external ? '_blank' : undefined} rel={external ? 'noopener noreferrer' : undefined}><Icon aria-hidden="true" /><span className="truncate">{i18n.resolvedLanguage?.startsWith('en') && link.label_en ? link.label_en : link.label}</span></a></SidebarMenuButton></SidebarMenuItem>
+    })}</SidebarMenu></SidebarGroupContent>
+  </SidebarGroup>
+}
 
 function useActiveKey() {
   if (typeof window === 'undefined') return 'overview'
@@ -301,6 +327,8 @@ function AdminNavigation({ activeKey }: { activeKey: NavKey }) {
 
 export function AppNavigation({ className, compact = false, role }: AppNavigationProps) {
   const { t } = useTranslation()
+  const siteQuery = usePublicSiteSettings()
+  const customLinks = (siteQuery.data?.navigation.sidebar_links ?? []).filter((link) => link.audience === 'all' || role === 'admin')
   const activeKey = useActiveKey()
   const workspace = useOrganizationWorkspace()
   const eligibility = useAccountEligibility()
@@ -341,6 +369,11 @@ export function AppNavigation({ className, compact = false, role }: AppNavigatio
             </a>
           )
         })}
+        {customLinks.map((link, index) => {
+          const Icon = customIcons[link.icon] ?? Link2
+          const external = !link.url.startsWith('/')
+          return <a key={`${index}:${link.url}`} href={external ? link.url : `#${link.url}`} target={external ? '_blank' : undefined} rel={external ? 'noopener noreferrer' : undefined} className={cn('flex h-8 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium', link.style === 'accent' ? 'bg-primary/8 text-primary' : 'text-muted-foreground')}><Icon className="size-4" aria-hidden="true" />{link.label}</a>
+        })}
       </nav>
     )
   }
@@ -352,6 +385,7 @@ export function AppNavigation({ className, compact = false, role }: AppNavigatio
         : visibleUserGroups.map((group) => (
           <NavigationGroup key={group.key} label={t(`nav.groups.${group.key}`)} items={group.items} activeKey={activeKey} />
         ))}
+      <CustomNavigation links={customLinks} />
     </div>
   )
 }

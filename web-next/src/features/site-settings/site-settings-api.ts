@@ -5,9 +5,11 @@ import {
   getAdminSiteSettings,
   getPublicSiteSettings,
   updateAdminSiteSettings,
+  updateAdminSiteNavigation,
 } from '@/lib/api/generated/sdk.gen'
 import type {
   AdminSiteSettingsRequest,
+  AdminSiteNavigationRequest,
   ManagementError,
   PublicSiteSettings,
 } from '@/lib/api/generated/types.gen'
@@ -62,6 +64,22 @@ export function useUpdateAdminSiteSettings() {
           : current
       ))
       void queryClient.invalidateQueries({ queryKey: publicSiteSettingsQueryKey })
+    },
+  })
+}
+
+export function useUpdateSiteNavigation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (body: AdminSiteNavigationRequest) => {
+      const { data } = await updateAdminSiteNavigation({ body, client: apiClient })
+      return data
+    },
+    onSuccess: (settings) => {
+      queryClient.setQueryData(adminSiteSettingsQueryKey, settings)
+      queryClient.setQueryData<PublicSiteSettings>(publicSiteSettingsQueryKey, (current) => current ? {
+        ...current, navigation: settings.navigation,
+      } : current)
     },
   })
 }

@@ -844,8 +844,9 @@ pub use scheduler_runtime::{
 };
 pub use site_settings::{
     BalanceDisplayModeRecord, BalanceDisplayPolicyRecord, BalanceSymbolPositionRecord,
-    SiteSettingsRecord, SiteSettingsRepository, SiteSettingsRepositoryConfigError,
-    SiteSettingsRepositoryError, SiteSettingsWriteRecord,
+    SiteNavigationGroupRecord, SiteNavigationLinkRecord, SiteNavigationRecord, SiteSettingsRecord,
+    SiteSettingsRepository, SiteSettingsRepositoryConfigError, SiteSettingsRepositoryError,
+    SiteSettingsWriteRecord, SiteSidebarLinkRecord,
 };
 pub use smart_route_runtime::{
     MAX_SMART_ROUTE_RUNTIME_RULES, SmartRouteAttemptFeedback, SmartRouteRuntimeCandidate,

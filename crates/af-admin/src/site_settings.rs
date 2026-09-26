@@ -5,6 +5,10 @@ use af_db::{
     SiteSettingsRecord, SiteSettingsRepository, SiteSettingsRepositoryError,
     SiteSettingsWriteRecord,
 };
+pub use af_db::{
+    SiteNavigationGroupRecord, SiteNavigationLinkRecord, SiteNavigationRecord,
+    SiteSidebarLinkRecord,
+};
 use thiserror::Error;
 use url::Url;
 
@@ -157,6 +161,7 @@ pub struct PublicSiteSettings {
     brand_logo_url: Option<String>,
     brand_tagline: Option<String>,
     brand_description: Option<String>,
+    navigation: SiteNavigationRecord,
     balance_display: BalanceDisplayPolicy,
 }
 
@@ -184,6 +189,7 @@ impl PublicSiteSettings {
             brand_logo_url: command.brand_logo_url,
             brand_tagline: command.brand_tagline,
             brand_description: command.brand_description,
+            navigation: SiteNavigationRecord::default(),
             balance_display: command.balance_display,
         })
     }
@@ -214,6 +220,11 @@ impl PublicSiteSettings {
     }
 
     #[must_use]
+    pub const fn navigation(&self) -> &SiteNavigationRecord {
+        &self.navigation
+    }
+
+    #[must_use]
     pub const fn balance_display(&self) -> &BalanceDisplayPolicy {
         &self.balance_display
     }
@@ -225,6 +236,7 @@ impl PublicSiteSettings {
             brand_logo_url: record.brand_logo_url().map(str::to_owned),
             brand_tagline: record.brand_tagline().map(str::to_owned),
             brand_description: record.brand_description().map(str::to_owned),
+            navigation: record.navigation().clone(),
             balance_display: BalanceDisplayPolicy::from_record(record.balance_display()),
         }
     }
@@ -269,6 +281,11 @@ impl AdminSiteSettings {
     #[must_use]
     pub fn brand_description(&self) -> Option<&str> {
         self.public.brand_description()
+    }
+
+    #[must_use]
+    pub const fn navigation(&self) -> &SiteNavigationRecord {
+        self.public.navigation()
     }
 
     #[must_use]
@@ -377,6 +394,14 @@ pub trait SiteSettingsService: Send + Sync {
         principal: SessionPrincipal,
         command: SiteSettingsCommand,
     ) -> AdminSiteSettingsUpdateFuture<'_>;
+
+    /// 独立更新站点公开导航，避免品牌设置表单覆盖菜单。
+    fn update_navigation(
+        &self,
+        principal: SessionPrincipal,
+        navigation: SiteNavigationRecord,
+        expected_version: i64,
+    ) -> AdminSiteSettingsUpdateFuture<'_>;
 }
 
 /// 使用强类型固定记录仓储实现站点设置用例。
@@ -432,6 +457,22 @@ impl SiteSettingsService for DatabaseSiteSettingsService {
                 .with_frontend_template_id(existing.frontend_template_id().map(str::to_owned));
             self.repository
                 .update(record)
+                .await
+                .map(|record| AdminSiteSettings::from_record(&record))
+                .map_err(map_repository_error)
+        })
+    }
+
+    fn update_navigation(
+        &self,
+        principal: SessionPrincipal,
+        navigation: SiteNavigationRecord,
+        expected_version: i64,
+    ) -> AdminSiteSettingsUpdateFuture<'_> {
+        Box::pin(async move {
+            require_admin(principal)?;
+            self.repository
+                .update_navigation(navigation, expected_version)
                 .await
                 .map(|record| AdminSiteSettings::from_record(&record))
                 .map_err(map_repository_error)

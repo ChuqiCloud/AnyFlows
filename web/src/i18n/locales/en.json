@@ -54,6 +54,7 @@
   },
   "nav": {
     "label": "Primary navigation",
+    "customLinks": "Custom links",
     "groups": {
       "use": "Workspace",
       "organization": "Organization workspace",

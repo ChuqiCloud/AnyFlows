@@ -19,6 +19,7 @@ import { Link as RouterLink } from 'react-router-dom'
 
 import { LogoMarquee } from '@/components/brand/logo-marquee'
 import { PublicSiteHeader } from '@/components/layout/public-site-header'
+import { SiteFooter } from '@/components/layout/site-footer'
 import { AnnouncementStrip } from '@/features/announcements/announcement-strip'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
 import { getManagementSessionToken } from '@/lib/api/session-token'
@@ -278,7 +279,7 @@ export function LandingPage() {
         <section className="next-landing-cta relative overflow-hidden border-t border-[var(--hairline)] py-16 sm:py-20"><div className="mx-auto w-full max-w-[1240px] px-4 sm:px-6 lg:px-8"><div className="relative z-10 max-w-2xl"><p className="text-xs font-medium tracking-[0.16em] text-primary uppercase">{t('landing.console.eyebrow')}</p><h2 className="mt-4 text-3xl font-semibold tracking-normal sm:text-4xl">{t('landing.home.cta.heading')}</h2><p className="mt-4 text-base leading-7 text-muted-foreground">{t('landing.console.subheading')}</p><div className="mt-7 flex flex-wrap gap-2.5"><Button as={RouterLink} color="primary" to={accountPath} endContent={<ArrowRight className="size-4" aria-hidden="true" />}>{t('landing.closing.cta')}</Button><Button as={RouterLink} to="/api" variant="flat" startContent={<Braces className="size-4" aria-hidden="true" />}>API</Button></div></div></div></section>
       </main>
 
-      <footer className="border-t border-[var(--hairline)] px-4 py-7 sm:px-6 lg:px-8"><div className="mx-auto flex w-full max-w-[1240px] flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground"><span>{t('landing.footer.copyright')}</span><span className="inline-flex items-center gap-1.5"><Zap className="size-3.5 text-primary" aria-hidden="true" />{siteName}</span></div></footer>
+      <SiteFooter siteName={siteName} logoUrl={site?.brand.logo_url} navigation={site?.navigation} />
     </div>
   )
 }

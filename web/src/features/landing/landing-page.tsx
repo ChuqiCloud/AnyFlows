@@ -19,6 +19,7 @@ import { ParticleField } from '@/components/brand/particle-field'
 import { RibbonBeam } from '@/components/brand/ribbon-beam'
 import { KineticText } from '@/components/kinetic/kinetic-text'
 import { PublicSiteHeader } from '@/components/layout/public-site-header'
+import { SiteFooter } from '@/components/layout/site-footer'
 import { Button } from '@/components/ui/button'
 import { InView } from '@/components/ui/in-view'
 import { SpotlightCard } from '@/components/ui/spotlight-card'
@@ -380,12 +381,7 @@ export function LandingPage() {
         </section>
       </main>
 
-      <footer className="border-t border-[var(--hairline)] px-6 py-8">
-        <div className="mx-auto flex max-w-[1120px] flex-wrap items-center justify-between gap-4 text-sm text-muted-foreground">
-          <span>{t('landing.footer.copyright')}</span>
-          <div className="flex items-center gap-4"><a className="transition-colors hover:text-foreground" href="#/api">API</a><span>{t('brand.scope')}</span></div>
-        </div>
-      </footer>
+      <SiteFooter siteName={siteName} logoUrl={site?.brand.logo_url} navigation={site?.navigation} />
     </div>
   )
 }

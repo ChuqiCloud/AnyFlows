@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { PublicSiteHeader } from '@/components/layout/public-site-header'
+import { SiteFooter } from '@/components/layout/site-footer'
 import { AnnouncementStrip } from '@/features/announcements/announcement-strip'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
 import {
@@ -44,6 +45,7 @@ export function PublicModelPage() {
           <ModelPage authenticated={hasSession} standalone />
         </div>
       </main>
+      <SiteFooter siteName={siteName} logoUrl={site?.brand.logo_url} navigation={site?.navigation} />
     </div>
   )
 }

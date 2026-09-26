@@ -11,7 +11,7 @@ use af_admin::{
     RegistrationPolicyUpdateFuture, RegistrationService, RegistrationStatus,
     RegistrationStatusFuture, SessionAuthentication, SessionAuthenticationError,
     SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, SessionPrincipal,
-    SessionRole, SiteSettingsCommand, SiteSettingsService,
+    SessionRole, SiteNavigationRecord, SiteSettingsCommand, SiteSettingsService,
 };
 use af_domain::{GroupId, TrustedClientIp, UserId};
 use axum::body::{Body, to_bytes};
@@ -63,6 +63,16 @@ impl SiteSettingsService for FakeSiteSettingsService {
         &self,
         _principal: SessionPrincipal,
         _command: SiteSettingsCommand,
+    ) -> AdminSiteSettingsUpdateFuture<'_> {
+        self.update_calls.fetch_add(1, Ordering::Relaxed);
+        Box::pin(async { Ok(Self::admin()) })
+    }
+
+    fn update_navigation(
+        &self,
+        _principal: SessionPrincipal,
+        _navigation: SiteNavigationRecord,
+        _expected_version: i64,
     ) -> AdminSiteSettingsUpdateFuture<'_> {
         self.update_calls.fetch_add(1, Ordering::Relaxed);
         Box::pin(async { Ok(Self::admin()) })
@@ -166,6 +176,10 @@ async fn public_projection_exposes_only_brand_and_authentication_capabilities() 
     let body = response_json(response).await;
     assert_eq!(body["site_name"], "AnyFlows Cloud");
     assert_eq!(body["brand"]["logo_url"], "/brand.svg");
+    assert_eq!(
+        body["navigation"],
+        json!({"header_links": [], "footer_groups": [], "sidebar_links": []})
+    );
     assert_eq!(body["balance_display"]["mode"], "quota");
     assert_eq!(
         body["balance_display"]["quota_units_per_display_unit"],
@@ -229,6 +243,29 @@ async fn admin_projection_rejects_normal_users_before_service_access() {
     assert_eq!(updated.status(), StatusCode::OK);
     assert_eq!(response_json(updated).await["version"], 3);
     assert_eq!(service.update_calls.load(Ordering::Relaxed), 1);
+
+    let forbidden_navigation = router(Arc::clone(&service))
+        .oneshot(json_request(
+            "PUT",
+            "/api/admin/site-settings/navigation",
+            json!({
+                "navigation": {"header_links": [], "footer_groups": [], "sidebar_links": []},
+                "expected_version": 3
+            }),
+            USER_TOKEN,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(forbidden_navigation.status(), StatusCode::FORBIDDEN);
+    assert_eq!(service.update_calls.load(Ordering::Relaxed), 1);
+
+    let navigation = router(Arc::clone(&service))
+        .oneshot(json_request("PUT", "/api/admin/site-settings/navigation", json!({
+            "navigation": {"header_links": [{"label": "Docs", "label_en": null, "url": "/api"}], "footer_groups": [], "sidebar_links": []},
+            "expected_version": 3
+        }), ADMIN_TOKEN)).await.unwrap();
+    assert_eq!(navigation.status(), StatusCode::OK);
+    assert_eq!(service.update_calls.load(Ordering::Relaxed), 2);
 }
 
 fn json_request(method: &str, uri: &str, body: Value, token: &str) -> Request<Body> {
