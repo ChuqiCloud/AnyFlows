@@ -1,5 +1,5 @@
 import { Button, Popover, PopoverContent, PopoverTrigger } from '@heroui/react'
-import { Boxes, Braces, LayoutDashboard, SlidersHorizontal } from 'lucide-react'
+import { Boxes, Braces, LayoutDashboard, Menu, SlidersHorizontal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Link as RouterLink } from 'react-router-dom'
 
@@ -7,15 +7,21 @@ import { LanguageToggle } from '@/components/language-toggle'
 import { MotionToggle } from '@/components/motion-toggle'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { SiteBrandMark } from '@/features/site-settings/site-brand-mark'
+import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
+import type { SiteNavigation } from '@/lib/api/generated/types.gen'
 
 type PublicSiteHeaderProps = {
   logoUrl?: string | null
   siteName: string
+  navigation?: SiteNavigation
 }
 
 /** 公开页面共用同一站点身份与导航，避免跨页面时顶栏结构和操作入口跳变。 */
-export function PublicSiteHeader({ logoUrl, siteName }: PublicSiteHeaderProps) {
-  const { t } = useTranslation()
+export function PublicSiteHeader({ logoUrl, siteName, navigation }: PublicSiteHeaderProps) {
+  const { i18n, t } = useTranslation()
+  const siteQuery = usePublicSiteSettings()
+  const links = (navigation ?? siteQuery.data?.navigation)?.header_links ?? []
+  const label = (link: typeof links[number]) => i18n.resolvedLanguage?.startsWith('en') && link.label_en ? link.label_en : link.label
 
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-[var(--hairline)] bg-background/80 backdrop-blur-xl">
@@ -38,6 +44,8 @@ export function PublicSiteHeader({ logoUrl, siteName }: PublicSiteHeaderProps) {
             <Braces className="size-4" aria-hidden="true" />
             <span className="hidden md:inline">API</span>
           </Button>
+          {links.slice(0, 2).map((link) => link.url.startsWith('/') ? <Button key={`${link.url}:${link.label}`} as={RouterLink} to={link.url} className="hidden max-w-28 truncate xl:inline-flex" size="sm" variant="light">{label(link)}</Button> : <Button key={`${link.url}:${link.label}`} as="a" href={link.url} target="_blank" rel="noopener noreferrer" className="hidden max-w-28 truncate xl:inline-flex" size="sm" variant="light">{label(link)}</Button>)}
+          {links.length > 0 && <Popover placement="bottom-end"><PopoverTrigger><Button isIconOnly size="sm" title={t('nav.customLinks')} aria-label={t('nav.customLinks')} variant="light"><Menu className="size-4" /></Button></PopoverTrigger><PopoverContent className="max-w-[calc(100vw-1rem)] rounded-lg border border-[var(--hairline)] bg-surface-1 p-2"><nav aria-label={t('nav.customLinks')} className="grid min-w-40 gap-1">{links.map((link) => link.url.startsWith('/') ? <RouterLink key={`${link.url}:${link.label}`} to={link.url} className="truncate rounded-md px-3 py-2 text-sm hover:bg-primary/10">{label(link)}</RouterLink> : <a key={`${link.url}:${link.label}`} href={link.url} target="_blank" rel="noopener noreferrer" className="truncate rounded-md px-3 py-2 text-sm hover:bg-primary/10">{label(link)}</a>)}</nav></PopoverContent></Popover>}
           <span className="mx-1 hidden h-5 w-px bg-[var(--hairline)] md:block" aria-hidden="true" />
           <div className="hidden items-center gap-1.5 md:flex">
             <LanguageToggle />

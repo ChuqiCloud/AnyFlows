@@ -54,6 +54,7 @@
   },
   "nav": {
     "label": "Primary navigation",
+    "customLinks": "Custom links",
     "sectionSwitcher": "Switch section",
     "groups": {
       "personal": "Personal"

@@ -6,6 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useAdminSiteSettings } from './site-settings-api'
 import { SiteSettingsWorkspace } from './site-settings-workspace'
 import { FrontendTemplatePanel } from './frontend-template-panel'
+import { SiteNavigationPanel } from './site-navigation-panel'
 
 /** 呈现管理员站点设置，并在固定记录不可用时保持失败关闭。 */
 export function SiteSettingsPage() {
@@ -68,6 +69,7 @@ export function SiteSettingsPage() {
       ) : settingsQuery.data ? (
         <>
           <SiteSettingsWorkspace settings={settingsQuery.data} />
+          <SiteNavigationPanel settings={settingsQuery.data} />
           <FrontendTemplatePanel />
         </>
       ) : null}

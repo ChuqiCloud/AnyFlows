@@ -2,8 +2,9 @@ use std::{error::Error, time::Duration};
 
 use super::{
     BalanceDisplayModeRecord, BalanceDisplayPolicyRecord, BalanceSymbolPositionRecord,
-    DatabaseOptions, MigrationOptions, SiteSettingsRepository, SiteSettingsRepositoryError,
-    SiteSettingsWriteRecord,
+    DatabaseOptions, MigrationOptions, SiteNavigationGroupRecord, SiteNavigationLinkRecord,
+    SiteNavigationRecord, SiteSettingsRepository, SiteSettingsRepositoryError,
+    SiteSettingsWriteRecord, SiteSidebarLinkRecord,
 };
 
 fn custom_balance_display() -> BalanceDisplayPolicyRecord {
@@ -16,6 +17,102 @@ fn custom_balance_display() -> BalanceDisplayPolicyRecord {
         2,
     )
     .unwrap()
+}
+
+#[tokio::test]
+async fn navigation_updates_preserve_brand_and_survive_template_changes()
+-> Result<(), Box<dyn Error>> {
+    let pool = crate::connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
+    let repository = SiteSettingsRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let original = repository.settings().await?;
+    assert_eq!(original.navigation(), &SiteNavigationRecord::default());
+
+    let navigation = SiteNavigationRecord {
+        header_links: vec![SiteNavigationLinkRecord {
+            label: "文档".to_owned(),
+            label_en: Some("Docs".to_owned()),
+            url: "/api".to_owned(),
+        }],
+        footer_groups: vec![SiteNavigationGroupRecord {
+            title: "资源".to_owned(),
+            title_en: None,
+            links: vec![SiteNavigationLinkRecord {
+                label: "状态页".to_owned(),
+                label_en: None,
+                url: "https://status.example.com".to_owned(),
+            }],
+        }],
+        sidebar_links: vec![SiteSidebarLinkRecord {
+            label: "支持".to_owned(),
+            label_en: Some("Support".to_owned()),
+            url: "https://support.example.com".to_owned(),
+            icon: "headphones".to_owned(),
+            style: "accent".to_owned(),
+            audience: "all".to_owned(),
+        }],
+    };
+    let saved = repository
+        .update_navigation(navigation.clone(), original.version())
+        .await?;
+    assert_eq!(saved.navigation(), &navigation);
+    assert_eq!(saved.version(), original.version() + 1);
+    assert_eq!(
+        repository
+            .update_navigation(navigation.clone(), original.version())
+            .await,
+        Err(SiteSettingsRepositoryError::Conflict)
+    );
+
+    let updated = repository
+        .update(SiteSettingsWriteRecord::new(
+            "AnyFlows Cloud".to_owned(),
+            None,
+            None,
+            None,
+            None,
+            custom_balance_display(),
+            saved.version(),
+        ))
+        .await?;
+    assert_eq!(updated.navigation(), &navigation);
+    let switched = repository
+        .set_frontend_template_id(Some("classic".to_owned()))
+        .await?;
+    assert_eq!(switched.navigation(), &navigation);
+    assert_eq!(switched.site_name(), "AnyFlows Cloud");
+
+    for invalid_url in [
+        "javascript:alert(1)",
+        "http://example.com",
+        "//example.com",
+        "https://user@example.com",
+        "/path?token=secret",
+    ] {
+        let mut invalid = navigation.clone();
+        invalid.header_links[0].url = invalid_url.to_owned();
+        assert_eq!(
+            repository
+                .update_navigation(invalid, switched.version())
+                .await,
+            Err(SiteSettingsRepositoryError::InvalidSettings)
+        );
+    }
+    for invalid_icon in ["javascript", "../../shield", ""] {
+        let mut invalid = navigation.clone();
+        invalid.sidebar_links[0].icon = invalid_icon.to_owned();
+        assert_eq!(
+            repository
+                .update_navigation(invalid, switched.version())
+                .await,
+            Err(SiteSettingsRepositoryError::InvalidSettings)
+        );
+    }
+    pool.close().await?;
+    Ok(())
 }
 
 #[tokio::test]

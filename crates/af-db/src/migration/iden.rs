@@ -1386,6 +1386,7 @@ pub(in crate::migration) mod site_settings {
         BrandTagline,
         BrandDescription,
         FrontendTemplateId,
+        NavigationJson,
         BalanceDisplayMode,
         BalanceUnitName,
         BalanceUnitSymbol,

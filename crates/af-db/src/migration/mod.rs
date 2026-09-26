@@ -152,6 +152,7 @@ mod m20260924_000143_account_verification_provider;
 mod m20260924_000144_create_model_provider_catalog;
 mod m20260924_000145_account_verification_settings;
 mod m20260925_000146_add_manual_verification_setting;
+mod m20260926_000147_add_site_navigation;
 mod schema;
 
 #[cfg(test)]
@@ -349,6 +350,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260924_000144_create_model_provider_catalog::Migration),
             Box::new(m20260924_000145_account_verification_settings::Migration),
             Box::new(m20260925_000146_add_manual_verification_setting::Migration),
+            Box::new(m20260926_000147_add_site_navigation::Migration),
         ]
     }
 }

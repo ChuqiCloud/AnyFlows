@@ -56,7 +56,11 @@ export const ModuleSidebarLayoutContainer = ({
       const href = findSidebarHrefByKey(items, String(key));
 
       if (href) {
-        navigate(href);
+        if (href.startsWith('https://')) {
+          window.open(href, '_blank', 'noopener,noreferrer');
+        } else {
+          navigate(href);
+        }
       }
     },
     [items, navigate],

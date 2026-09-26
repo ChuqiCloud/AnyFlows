@@ -1106,10 +1106,15 @@ export type AdminRouteWriteRequest = {
 };
 export type AdminRoutingStatus = 'enabled' | 'disabled' | 'auto_disabled';
 export type AdminRoutingWriteStatus = 'enabled' | 'disabled';
+export type AdminSiteNavigationRequest = {
+    navigation: SiteNavigation;
+    expected_version: number;
+};
 export type AdminSiteSettings = {
     site_name: string;
     public_base_url?: string | null;
     brand: PublicBrandSettings;
+    navigation: SiteNavigation;
     balance_display: BalanceDisplaySettings;
     version: number;
 };
@@ -2946,6 +2951,7 @@ export type PublicSiteSettings = {
     site_name: string;
     public_base_url?: string | null;
     brand: PublicBrandSettings;
+    navigation: SiteNavigation;
     balance_display: BalanceDisplaySettings;
     authentication: PublicAuthenticationCapabilities;
 };
@@ -3157,6 +3163,29 @@ export type SetupRequest = {
 };
 export type SetupStatusResponse = {
     setup_required: boolean;
+};
+export type SiteNavigation = {
+    header_links: Array<SiteNavigationLink>;
+    footer_groups: Array<SiteNavigationGroup>;
+    sidebar_links: Array<SiteSidebarLink>;
+};
+export type SiteNavigationGroup = {
+    title: string;
+    title_en?: string | null;
+    links: Array<SiteNavigationLink>;
+};
+export type SiteNavigationLink = {
+    label: string;
+    label_en?: string | null;
+    url: string;
+};
+export type SiteSidebarLink = {
+    label: string;
+    label_en?: string | null;
+    url: string;
+    icon: string;
+    style: string;
+    audience: string;
 };
 export type SubscriptionCatalogPlan = {
     plan_id: string;
@@ -6343,6 +6372,24 @@ export type UpdateAdminSiteSettingsResponses = {
     200: AdminSiteSettings;
 };
 export type UpdateAdminSiteSettingsResponse = UpdateAdminSiteSettingsResponses[keyof UpdateAdminSiteSettingsResponses];
+export type UpdateAdminSiteNavigationData = {
+    body: AdminSiteNavigationRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/site-settings/navigation';
+};
+export type UpdateAdminSiteNavigationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminSiteNavigationError = UpdateAdminSiteNavigationErrors[keyof UpdateAdminSiteNavigationErrors];
+export type UpdateAdminSiteNavigationResponses = {
+    200: AdminSiteSettings;
+};
+export type UpdateAdminSiteNavigationResponse = UpdateAdminSiteNavigationResponses[keyof UpdateAdminSiteNavigationResponses];
 export type ListAdminFrontendTemplatesData = {
     body?: never;
     path?: never;

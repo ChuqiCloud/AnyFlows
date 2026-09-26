@@ -54,6 +54,7 @@
   },
   "nav": {
     "label": "主导航",
+    "customLinks": "自定义入口",
     "sectionSwitcher": "切换板块",
     "groups": {
       "personal": "个人空间"

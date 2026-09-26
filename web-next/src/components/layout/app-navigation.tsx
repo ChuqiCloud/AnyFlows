@@ -14,6 +14,15 @@ import {
 } from '@/components/layout/app-navigation-model'
 import type { SidebarNode } from '@/shared/app-shell'
 import { useOrganizationWorkspace } from '@/features/organization-console/organization-workspace-context'
+import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
+import type { SiteSidebarLink } from '@/lib/api/generated/types.gen'
+
+const customIcons: Record<SiteSidebarLink['icon'], string> = {
+  link: 'solar:link-linear', globe: 'solar:global-linear', book: 'solar:book-linear',
+  sparkles: 'solar:stars-linear', building: 'solar:buildings-2-linear',
+  message: 'solar:chat-round-dots-linear', headphones: 'solar:headphones-round-linear',
+  shield: 'solar:shield-check-linear', chart: 'solar:chart-square-linear',
+}
 
 type NavItem = {
   key: NavKey
@@ -96,7 +105,9 @@ function groupNode(
 /** 构建控制台侧栏导航节点树，交给 acmeidc 的 ModuleSidebarLayoutContainer 渲染。 */
 export function useAppNavigationItems(role: 'admin' | 'user'): SidebarNode[] {
   const eligibility = useAccountEligibility()
-  const { t } = useTranslation()
+  const { i18n, t } = useTranslation()
+  const siteQuery = usePublicSiteSettings()
+  const customLinks = siteQuery.data?.navigation.sidebar_links
   const {
     organizationPermissions,
     organizationPermissionsLoading,
@@ -133,7 +144,18 @@ export function useAppNavigationItems(role: 'admin' | 'user'): SidebarNode[] {
       .map((section) => groupNode(
         section.key,
         t(`nav.sections.${section.key}`),
-        section.items.map((itemKey) => navNode(itemKey, t)),
+        [
+          ...section.items.map((itemKey) => navNode(itemKey, t)),
+          ...(section.key === 'workspace' ? (customLinks ?? [])
+            .filter((link) => link.audience === 'all' || role === 'admin')
+            .map((link, index) => ({
+              key: `custom:${index}`,
+              title: i18n.resolvedLanguage?.startsWith('en') && link.label_en ? link.label_en : link.label,
+              href: link.url,
+              icon: customIcons[link.icon] ?? customIcons.link,
+              className: link.style === 'accent' ? 'text-primary bg-primary/8' : undefined,
+            })) : []),
+        ],
       ))
-  }, [eligibility.data?.enterprise_verified, organizationPermissions, organizationPermissionsLoading, role, selectedId, t])
+  }, [customLinks, eligibility.data?.enterprise_verified, i18n.resolvedLanguage, organizationPermissions, organizationPermissionsLoading, role, selectedId, t])
 }

@@ -2,9 +2,10 @@ use std::{fmt, time::Duration};
 
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
-    QueryFilter, QuerySelect, Set, TransactionTrait,
+    IntoActiveModel, QueryFilter, QuerySelect, Set, TransactionTrait,
     sea_query::{Expr, LockType},
 };
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
@@ -21,6 +22,128 @@ const MAX_FRONTEND_TEMPLATE_ID_BYTES: usize = 128;
 const MAX_BALANCE_UNIT_NAME_BYTES: usize = 64;
 const MAX_BALANCE_UNIT_SYMBOL_BYTES: usize = 24;
 const MAX_BALANCE_FRACTION_DIGITS: u8 = 4;
+const MAX_NAVIGATION_JSON_BYTES: usize = 16_384;
+
+/// 公开站点顶栏与页脚自定义链接。核心导航入口由前端保持，不受此配置覆盖。
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SiteNavigationRecord {
+    pub header_links: Vec<SiteNavigationLinkRecord>,
+    pub footer_groups: Vec<SiteNavigationGroupRecord>,
+    pub sidebar_links: Vec<SiteSidebarLinkRecord>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SiteNavigationLinkRecord {
+    pub label: String,
+    pub label_en: Option<String>,
+    pub url: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SiteNavigationGroupRecord {
+    pub title: String,
+    pub title_en: Option<String>,
+    pub links: Vec<SiteNavigationLinkRecord>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SiteSidebarLinkRecord {
+    pub label: String,
+    pub label_en: Option<String>,
+    pub url: String,
+    pub icon: String,
+    pub style: String,
+    pub audience: String,
+}
+
+impl SiteNavigationRecord {
+    pub fn validate(&self) -> Result<(), SiteSettingsRepositoryError> {
+        if self.header_links.len() > 8
+            || self.footer_groups.len() > 4
+            || self.sidebar_links.len() > 8
+            || self.sidebar_links.iter().any(|link| {
+                !valid_navigation_label(&link.label)
+                    || !valid_optional_navigation_label(link.label_en.as_deref())
+                    || !valid_navigation_url(&link.url)
+                    || !matches!(
+                        link.icon.as_str(),
+                        "link"
+                            | "globe"
+                            | "book"
+                            | "sparkles"
+                            | "building"
+                            | "message"
+                            | "headphones"
+                            | "shield"
+                            | "chart"
+                    )
+                    || !matches!(link.style.as_str(), "default" | "accent")
+                    || !matches!(link.audience.as_str(), "all" | "admin")
+            })
+            || self.footer_groups.iter().any(|group| {
+                group.links.is_empty()
+                    || group.links.len() > 6
+                    || !valid_navigation_label(&group.title)
+                    || !valid_optional_navigation_label(group.title_en.as_deref())
+                    || group.links.iter().any(|link| !valid_navigation_link(link))
+            })
+            || self
+                .header_links
+                .iter()
+                .any(|link| !valid_navigation_link(link))
+        {
+            return Err(SiteSettingsRepositoryError::InvalidSettings);
+        }
+        let encoded =
+            serde_json::to_vec(self).map_err(|_| SiteSettingsRepositoryError::InvalidSettings)?;
+        if encoded.len() > MAX_NAVIGATION_JSON_BYTES {
+            return Err(SiteSettingsRepositoryError::InvalidSettings);
+        }
+        Ok(())
+    }
+}
+
+fn valid_navigation_link(link: &SiteNavigationLinkRecord) -> bool {
+    valid_navigation_label(&link.label)
+        && valid_optional_navigation_label(link.label_en.as_deref())
+        && valid_navigation_url(&link.url)
+}
+
+fn valid_navigation_label(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && value.trim() == value
+        && !value.chars().any(char::is_control)
+}
+
+fn valid_optional_navigation_label(value: Option<&str>) -> bool {
+    value.is_none_or(valid_navigation_label)
+}
+
+fn valid_navigation_url(value: &str) -> bool {
+    if value.is_empty()
+        || value.len() > 2_048
+        || value.trim() != value
+        || value.chars().any(char::is_control)
+        || value.contains('\\')
+    {
+        return false;
+    }
+    if value.starts_with('/') {
+        return !value.starts_with("//") && !value.contains(['?', '#']);
+    }
+    let Ok(url) = Url::parse(value) else {
+        return false;
+    };
+    url.scheme() == "https"
+        && url.host_str().is_some()
+        && url.username().is_empty()
+        && url.password().is_none()
+}
 
 /// 余额数值采用原始额度或自定义面额展示。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -146,6 +269,7 @@ pub struct SiteSettingsRecord {
     brand_tagline: Option<String>,
     brand_description: Option<String>,
     frontend_template_id: Option<String>,
+    navigation: SiteNavigationRecord,
     balance_display: BalanceDisplayPolicyRecord,
     version: i64,
 }
@@ -180,6 +304,11 @@ impl SiteSettingsRecord {
     #[must_use]
     pub fn frontend_template_id(&self) -> Option<&str> {
         self.frontend_template_id.as_deref()
+    }
+
+    #[must_use]
+    pub const fn navigation(&self) -> &SiteNavigationRecord {
+        &self.navigation
     }
 
     #[must_use]
@@ -341,6 +470,23 @@ impl SiteSettingsRepository {
         }
     }
 
+    /// 独立保存公开导航，使用站点设置版本避免并发编辑覆盖。
+    pub async fn update_navigation(
+        &self,
+        navigation: SiteNavigationRecord,
+        expected_version: i64,
+    ) -> Result<SiteSettingsRecord, SiteSettingsRepositoryError> {
+        match timeout(
+            self.operation_timeout,
+            self.update_navigation_inner(navigation, expected_version),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(internal_error(SiteSettingsRepositoryError::Timeout)),
+        }
+    }
+
     async fn settings_inner(&self) -> Result<SiteSettingsRecord, SiteSettingsRepositoryError> {
         let Some(model) = site_settings::Entity::find_by_id(SITE_SETTINGS_ID)
             .one(self.pool.connection())
@@ -381,6 +527,7 @@ impl SiteSettingsRepository {
             brand_tagline: Set(record.brand_tagline),
             brand_description: Set(record.brand_description),
             frontend_template_id: Set(record.frontend_template_id),
+            navigation_json: Set(existing.navigation_json),
             balance_display_mode: Set(record.balance_display.mode() as i16),
             balance_unit_name: Set(record.balance_display.unit_name().to_owned()),
             balance_unit_symbol: Set(record.balance_display.unit_symbol().to_owned()),
@@ -433,6 +580,7 @@ impl SiteSettingsRepository {
             brand_tagline: Set(existing.brand_tagline),
             brand_description: Set(existing.brand_description),
             frontend_template_id: Set(template_id),
+            navigation_json: Set(existing.navigation_json),
             balance_display_mode: Set(existing.balance_display_mode),
             balance_unit_name: Set(existing.balance_unit_name),
             balance_unit_symbol: Set(existing.balance_unit_symbol),
@@ -447,6 +595,50 @@ impl SiteSettingsRepository {
         .with_subscriber(NoSubscriber::default())
         .await
         .map_err(|_| query_error("site_settings_write"))?;
+        let saved = record_from_model(saved)?;
+        transaction
+            .commit()
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| query_error("site_settings_commit"))?;
+        Ok(saved)
+    }
+
+    async fn update_navigation_inner(
+        &self,
+        navigation: SiteNavigationRecord,
+        expected_version: i64,
+    ) -> Result<SiteSettingsRecord, SiteSettingsRepositoryError> {
+        navigation.validate()?;
+        if expected_version < 1 {
+            return Err(SiteSettingsRepositoryError::InvalidSettings);
+        }
+        let encoded = serde_json::to_string(&navigation)
+            .map_err(|_| SiteSettingsRepositoryError::InvalidSettings)?;
+        let transaction = self
+            .pool
+            .connection()
+            .begin()
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| query_error("site_settings_begin"))?;
+        let existing = lock_settings(&transaction).await?;
+        if existing.version != expected_version {
+            return Err(SiteSettingsRepositoryError::Conflict);
+        }
+        let version = existing
+            .version
+            .checked_add(1)
+            .ok_or_else(|| internal_error(SiteSettingsRepositoryError::Invariant))?;
+        let mut active = existing.into_active_model();
+        active.navigation_json = Set(encoded);
+        active.version = Set(version);
+        active.updated_at = Set(sea_orm::entity::prelude::TimeDateTimeWithTimeZone::now_utc());
+        let saved = active
+            .update(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| query_error("site_navigation_write"))?;
         let saved = record_from_model(saved)?;
         transaction
             .commit()
@@ -493,6 +685,12 @@ async fn lock_settings(
 fn record_from_model(
     model: site_settings::Model,
 ) -> Result<SiteSettingsRecord, SiteSettingsRepositoryError> {
+    if model.navigation_json.len() > MAX_NAVIGATION_JSON_BYTES {
+        return Err(internal_error(SiteSettingsRepositoryError::Invariant));
+    }
+    let navigation: SiteNavigationRecord = serde_json::from_str(&model.navigation_json)
+        .map_err(|_| internal_error(SiteSettingsRepositoryError::Invariant))?;
+    navigation.validate().map_err(invariant_error)?;
     let balance_display = BalanceDisplayPolicyRecord::new(
         BalanceDisplayModeRecord::try_from(model.balance_display_mode).map_err(invariant_error)?,
         model.balance_unit_name.clone(),
@@ -528,6 +726,7 @@ fn record_from_model(
         brand_tagline: model.brand_tagline,
         brand_description: model.brand_description,
         frontend_template_id: model.frontend_template_id,
+        navigation,
         balance_display,
         version: model.version,
     })

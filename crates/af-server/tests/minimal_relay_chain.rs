@@ -762,6 +762,15 @@ impl SiteSettingsService for RejectSiteSettings {
     ) -> AdminSiteSettingsUpdateFuture<'_> {
         Box::pin(async { Err(SiteSettingsError::Internal) })
     }
+
+    fn update_navigation(
+        &self,
+        _principal: SessionPrincipal,
+        _navigation: af_admin::SiteNavigationRecord,
+        _expected_version: i64,
+    ) -> AdminSiteSettingsUpdateFuture<'_> {
+        Box::pin(async { Err(SiteSettingsError::Internal) })
+    }
 }
 
 impl AnnouncementService for RejectAnnouncements {

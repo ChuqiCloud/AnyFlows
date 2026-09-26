@@ -609,8 +609,9 @@ pub use session::{
 pub use site_settings::{
     AdminSiteSettings, AdminSiteSettingsReadFuture, AdminSiteSettingsUpdateFuture,
     BalanceDisplayMode, BalanceDisplayPolicy, BalanceSymbolPosition, DatabaseSiteSettingsService,
-    PublicSiteSettings, PublicSiteSettingsFuture, SiteSettingsCommand, SiteSettingsError,
-    SiteSettingsService,
+    PublicSiteSettings, PublicSiteSettingsFuture, SiteNavigationGroupRecord,
+    SiteNavigationLinkRecord, SiteNavigationRecord, SiteSettingsCommand, SiteSettingsError,
+    SiteSettingsService, SiteSidebarLinkRecord,
 };
 pub use subscription::{
     AdminSubscriptionPageQuery, AdminSubscriptionPlan, AdminSubscriptionPlanCreateCommand,
