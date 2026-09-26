@@ -200,17 +200,13 @@ try {
   await page.goto(`${home}?mode=settings`)
   await page.getByText('实名认证配置', { exact: true }).waitFor()
   await capturePage('verification-settings')
-  const manualToggle = page.locator('input[aria-label="个人认证人工审核"]')
-  const enterpriseToggle = page.locator('input[aria-label="企业认证人工审核"]')
-  const alipayToggle = page.locator('input[aria-label="个人认证支付宝"]')
-  // Classic switches use buttons; HeroUI switches use native checkbox inputs.
+  // Classic exposes explicit accessible names; HeroUI derives the switch names from labels.
   const toggle = async (label, checked) => {
-    const control = page.getByRole('switch', { name: label, exact: true })
-    if (await control.count()) {
-      if ((await control.evaluate((element) => element instanceof HTMLInputElement ? element.checked : element.getAttribute('aria-checked') === 'true')) !== checked) await control.click()
-    } else {
-      await (label === '个人认证人工审核' ? manualToggle : label === '企业认证人工审核' ? enterpriseToggle : alipayToggle).setChecked(checked)
-    }
+    const named = page.getByRole('switch', { name: label, exact: true })
+    const control = await named.count() ? named : label === '个人认证支付宝'
+      ? page.getByRole('switch', { name: '启用支付宝实名认证', exact: true })
+      : page.getByRole('switch', { name: '启用人工审核', exact: true }).nth(label === '个人认证人工审核' ? 0 : 1)
+    if ((await control.evaluate((element) => element instanceof HTMLInputElement ? element.checked : element.getAttribute('aria-checked') === 'true')) !== checked) await control.click()
   }
   await toggle('个人认证人工审核', false)
   await toggle('企业认证人工审核', false)
@@ -228,10 +224,12 @@ try {
   await page.getByRole('tab', { name: '企业认证', exact: true }).click()
   assert.equal(await page.getByRole('button', { name: '提交认证', exact: true }).isDisabled(), true)
   providers = []
+  settings = { ...settings, enabled: false }
   await page.reload()
   await page.getByText('当前没有可用的认证方式，请联系管理员。', { exact: true }).waitFor()
   assert.equal(await page.getByRole('button', { name: '提交认证', exact: true }).isDisabled(), true)
   providers = ['manual', 'alipay']
+  settings = { ...settings, individual_manual_enabled: true, enterprise_manual_enabled: true, enabled: true }
   await page.reload()
   await providerSelect.selectOption('manual')
   await documentSelect.selectOption('passport')
