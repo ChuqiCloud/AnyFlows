@@ -19,7 +19,7 @@ pub struct Model {
     pub brand_description: Option<String>,
     #[sea_orm(column_type = "String(StringLen::N(128))", nullable)]
     pub frontend_template_id: Option<String>,
-    #[sea_orm(column_type = "String(StringLen::N(16000))")]
+    #[sea_orm(column_type = "Text")]
     pub navigation_json: String,
     pub balance_display_mode: i16,
     #[sea_orm(column_type = "String(StringLen::N(64))")]
