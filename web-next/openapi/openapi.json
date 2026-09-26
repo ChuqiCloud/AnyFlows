@@ -11330,6 +11330,92 @@
         ]
       }
     },
+    "/api/admin/site-settings/navigation": {
+      "put": {
+        "tags": [
+          "站点设置"
+        ],
+        "summary": "更新公开顶栏与页脚导航",
+        "operationId": "updateAdminSiteNavigation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminSiteNavigationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "更新后的完整站点设置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSiteSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "导航文本或链接无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "站点设置版本已变化",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/frontend-templates": {
       "get": {
         "tags": [
@@ -38624,11 +38710,30 @@
           "disabled"
         ]
       },
+      "AdminSiteNavigationRequest": {
+        "type": "object",
+        "required": [
+          "navigation",
+          "expected_version"
+        ],
+        "properties": {
+          "navigation": {
+            "$ref": "#/components/schemas/SiteNavigation"
+          },
+          "expected_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
       "AdminSiteSettings": {
         "type": "object",
         "required": [
           "site_name",
           "brand",
+          "navigation",
           "balance_display",
           "version"
         ],
@@ -38648,6 +38753,9 @@
           },
           "brand": {
             "$ref": "#/components/schemas/PublicBrandSettings"
+          },
+          "navigation": {
+            "$ref": "#/components/schemas/SiteNavigation"
           },
           "balance_display": {
             "$ref": "#/components/schemas/BalanceDisplaySettings"
@@ -48844,6 +48952,7 @@
         "required": [
           "site_name",
           "brand",
+          "navigation",
           "balance_display",
           "authentication"
         ],
@@ -48863,6 +48972,9 @@
           },
           "brand": {
             "$ref": "#/components/schemas/PublicBrandSettings"
+          },
+          "navigation": {
+            "$ref": "#/components/schemas/SiteNavigation"
           },
           "balance_display": {
             "$ref": "#/components/schemas/BalanceDisplaySettings"
@@ -49938,6 +50050,137 @@
         "properties": {
           "setup_required": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SiteNavigation": {
+        "type": "object",
+        "required": [
+          "header_links",
+          "footer_groups",
+          "sidebar_links"
+        ],
+        "properties": {
+          "header_links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SiteNavigationLink"
+            },
+            "maxItems": 8
+          },
+          "footer_groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SiteNavigationGroup"
+            },
+            "maxItems": 4
+          },
+          "sidebar_links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SiteSidebarLink"
+            },
+            "maxItems": 8
+          }
+        },
+        "additionalProperties": false
+      },
+      "SiteNavigationGroup": {
+        "type": "object",
+        "required": [
+          "title",
+          "links"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "title_en": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SiteNavigationLink"
+            },
+            "maxItems": 6,
+            "minItems": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "SiteNavigationLink": {
+        "type": "object",
+        "required": [
+          "label",
+          "url"
+        ],
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "label_en": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "SiteSidebarLink": {
+        "type": "object",
+        "required": [
+          "label",
+          "url",
+          "icon",
+          "style",
+          "audience"
+        ],
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "label_en": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1
+          },
+          "icon": {
+            "type": "string",
+            "pattern": "^(link|globe|book|sparkles|building|message|headphones|shield|chart)$"
+          },
+          "style": {
+            "type": "string",
+            "pattern": "^(default|accent)$"
+          },
+          "audience": {
+            "type": "string",
+            "pattern": "^(all|admin)$"
           }
         },
         "additionalProperties": false
