@@ -405,10 +405,11 @@ fn parse_gateway_response(
         serde_json::from_str(raw_response.get()).map_err(|_| AlipayRequestError::Response)?;
     let code = object.get("code").and_then(Value::as_str);
     if code != Some("10000") {
+        let sub_code = object.get("sub_code").and_then(Value::as_str).unwrap_or("");
         tracing::warn!(
             method,
             code = code.unwrap_or(""),
-            sub_code = object.get("sub_code").and_then(Value::as_str).unwrap_or(""),
+            sub_code,
             "Alipay gateway rejected verification request"
         );
         return Err(AlipayRequestError::Rejected);
