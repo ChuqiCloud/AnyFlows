@@ -14,11 +14,11 @@ use rsa::{
     pkcs8::{DecodePrivateKey, DecodePublicKey},
     signature::SignatureEncoding,
 };
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value, json, value::RawValue};
 use sha2::Sha256;
 use std::{collections::BTreeMap, fmt, sync::Arc, time::Duration};
 use thiserror::Error;
-use time::OffsetDateTime;
+use time::{OffsetDateTime, UtcOffset};
 use uuid::Uuid;
 
 const MAX_RESPONSE_BYTES: usize = 256 * 1024;
@@ -248,18 +248,7 @@ impl AlipayClient {
             .filter(|value| !value.is_empty() && value.len() <= 128)
             .ok_or(AlipayRequestError::Response)?
             .to_owned();
-        let certify = self
-            .call(
-                "alipay.user.certify.open.certify",
-                json!({ "certify_id": certify_id }),
-            )
-            .await?;
-        let action_url = certify
-            .get("certify_url")
-            .and_then(Value::as_str)
-            .filter(|value| value.starts_with("https://") && value.len() <= 2_048)
-            .ok_or(AlipayRequestError::Response)?
-            .to_owned();
+        let action_url = self.certify_url(&certify_id)?;
         Ok(AccountVerificationProviderStart {
             reference: certify_id,
             action_url,
@@ -313,26 +302,7 @@ impl AlipayClient {
         method: &str,
         biz_content: Value,
     ) -> Result<Map<String, Value>, AlipayRequestError> {
-        let mut params = BTreeMap::new();
-        params.insert("app_id".to_owned(), self.app_id.clone());
-        params.insert("charset".to_owned(), "utf-8".to_owned());
-        params.insert("format".to_owned(), "json".to_owned());
-        params.insert("method".to_owned(), method.to_owned());
-        params.insert("sign_type".to_owned(), "RSA2".to_owned());
-        params.insert("timestamp".to_owned(), timestamp());
-        params.insert("version".to_owned(), API_VERSION.to_owned());
-        params.insert(
-            "biz_content".to_owned(),
-            serde_json::to_string(&biz_content).map_err(|_| AlipayRequestError::Response)?,
-        );
-        let sign_content = params
-            .iter()
-            .map(|(key, value)| format!("{key}={value}"))
-            .collect::<Vec<_>>()
-            .join("&");
-        let signer = SigningKey::<Sha256>::new(self.private_key.clone());
-        let signature = rsa::signature::Signer::sign(&signer, sign_content.as_bytes());
-        params.insert("sign".to_owned(), BASE64.encode(signature.to_bytes()));
+        let params = self.signed_params(method, biz_content)?;
         let body = {
             let mut form = url::form_urlencoded::Serializer::new(String::new());
             for (key, value) in params {
@@ -365,34 +335,101 @@ impl AlipayClient {
         let status = response.status();
         let body = collect_response(response).await?;
         if !status.is_success() {
+            tracing::warn!(
+                method,
+                http_status = status.as_u16(),
+                "Alipay gateway request failed"
+            );
             return Err(AlipayRequestError::Rejected);
         }
-        let value: Value =
-            serde_json::from_slice(&body).map_err(|_| AlipayRequestError::Response)?;
-        let response_key = format!("{method}_response");
-        let object = value
-            .get(response_key)
-            .and_then(Value::as_object)
-            .ok_or(AlipayRequestError::Response)?;
-        if object.get("code").and_then(Value::as_str) != Some("10000") {
-            return Err(AlipayRequestError::Rejected);
-        }
-        let encoded_signature = value
-            .get("sign")
-            .and_then(Value::as_str)
-            .ok_or(AlipayRequestError::Response)?;
-        let signature = BASE64
-            .decode(encoded_signature)
-            .map_err(|_| AlipayRequestError::Response)?;
-        let signature =
-            Signature::try_from(signature.as_slice()).map_err(|_| AlipayRequestError::Response)?;
-        let signed_response =
-            serde_json::to_string(object).map_err(|_| AlipayRequestError::Response)?;
-        let verifier = VerifyingKey::<Sha256>::new(self.public_key.clone());
-        rsa::signature::Verifier::verify(&verifier, signed_response.as_bytes(), &signature)
-            .map_err(|_| AlipayRequestError::Response)?;
-        Ok(object.clone())
+        parse_gateway_response(&body, method, &self.public_key).inspect_err(|error| {
+            tracing::warn!(method, error = %error, "Alipay gateway response failed validation");
+        })
     }
+
+    fn certify_url(&self, certify_id: &str) -> Result<String, AlipayRequestError> {
+        let params = self.signed_params(
+            "alipay.user.certify.open.certify",
+            json!({ "certify_id": certify_id }),
+        )?;
+        let mut url = self.gateway_url.clone();
+        url.query_pairs_mut().extend_pairs(params);
+        let action_url = url.to_string();
+        if action_url.len() > 2_048 || url.scheme() != "https" {
+            return Err(AlipayRequestError::Response);
+        }
+        Ok(action_url)
+    }
+
+    fn signed_params(
+        &self,
+        method: &str,
+        biz_content: Value,
+    ) -> Result<BTreeMap<String, String>, AlipayRequestError> {
+        let mut params = BTreeMap::new();
+        params.insert("app_id".to_owned(), self.app_id.clone());
+        params.insert("charset".to_owned(), "utf-8".to_owned());
+        params.insert("format".to_owned(), "json".to_owned());
+        params.insert("method".to_owned(), method.to_owned());
+        params.insert("sign_type".to_owned(), "RSA2".to_owned());
+        params.insert("timestamp".to_owned(), timestamp());
+        params.insert("version".to_owned(), API_VERSION.to_owned());
+        params.insert(
+            "biz_content".to_owned(),
+            serde_json::to_string(&biz_content).map_err(|_| AlipayRequestError::Response)?,
+        );
+        let sign_content = params
+            .iter()
+            .map(|(key, value)| format!("{key}={value}"))
+            .collect::<Vec<_>>()
+            .join("&");
+        let signer = SigningKey::<Sha256>::new(self.private_key.clone());
+        let signature = rsa::signature::Signer::sign(&signer, sign_content.as_bytes());
+        params.insert("sign".to_owned(), BASE64.encode(signature.to_bytes()));
+        Ok(params)
+    }
+}
+
+fn parse_gateway_response(
+    body: &[u8],
+    method: &str,
+    public_key: &RsaPublicKey,
+) -> Result<Map<String, Value>, AlipayRequestError> {
+    let envelope: BTreeMap<String, Box<RawValue>> =
+        serde_json::from_slice(body).map_err(|_| AlipayRequestError::Response)?;
+    let response_key = format!("{}_response", method.replace('.', "_"));
+    let raw_response = envelope
+        .get(&response_key)
+        .ok_or(AlipayRequestError::Response)?;
+    let object: Map<String, Value> =
+        serde_json::from_str(raw_response.get()).map_err(|_| AlipayRequestError::Response)?;
+    let code = object.get("code").and_then(Value::as_str);
+    if code != Some("10000") {
+        let sub_code = object.get("sub_code").and_then(Value::as_str).unwrap_or("");
+        tracing::warn!(
+            method,
+            code = code.unwrap_or(""),
+            sub_code,
+            "Alipay gateway rejected verification request"
+        );
+        return Err(AlipayRequestError::Rejected);
+    }
+    let encoded_signature: String = serde_json::from_str(
+        envelope
+            .get("sign")
+            .ok_or(AlipayRequestError::Response)?
+            .get(),
+    )
+    .map_err(|_| AlipayRequestError::Response)?;
+    let signature = BASE64
+        .decode(encoded_signature)
+        .map_err(|_| AlipayRequestError::Response)?;
+    let signature =
+        Signature::try_from(signature.as_slice()).map_err(|_| AlipayRequestError::Response)?;
+    let verifier = VerifyingKey::<Sha256>::new(public_key.clone());
+    rsa::signature::Verifier::verify(&verifier, raw_response.get().as_bytes(), &signature)
+        .map_err(|_| AlipayRequestError::Response)?;
+    Ok(object)
 }
 
 async fn collect_response(
@@ -417,7 +454,11 @@ async fn collect_response(
 }
 
 fn timestamp() -> String {
-    let now = OffsetDateTime::now_utc();
+    format_timestamp(OffsetDateTime::now_utc())
+}
+
+fn format_timestamp(now: OffsetDateTime) -> String {
+    let now = now.to_offset(UtcOffset::from_hms(8, 0, 0).expect("valid Beijing offset"));
     format!(
         "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
         now.year(),
@@ -477,5 +518,92 @@ mod tests {
         assert!(parse_public_key("not a key").is_err());
         assert!(parse_private_key(&"A".repeat(16 * 1024 + 1)).is_err());
         assert!(parse_public_key(&"A".repeat(16 * 1024 + 1)).is_err());
+    }
+
+    #[test]
+    fn verifies_original_alipay_response_bytes_and_method_key() {
+        let private_key = RsaPrivateKey::from_pkcs8_pem(TEST_PRIVATE_KEY).unwrap();
+        let public_key = RsaPublicKey::from(&private_key);
+        let response = r#"{"msg":"Success", "certify_id":"test-certify-id", "code":"10000"}"#;
+        let signature = rsa::signature::Signer::sign(
+            &SigningKey::<Sha256>::new(private_key),
+            response.as_bytes(),
+        );
+        let body = format!(
+            r#"{{"alipay_user_certify_open_initialize_response":{response},"sign":"{}"}}"#,
+            BASE64.encode(signature.to_bytes())
+        );
+        let parsed = parse_gateway_response(
+            body.as_bytes(),
+            "alipay.user.certify.open.initialize",
+            &public_key,
+        )
+        .unwrap();
+        assert_eq!(
+            parsed.get("certify_id").and_then(Value::as_str),
+            Some("test-certify-id")
+        );
+
+        let tampered = body.replace("test-certify-id", "other-certify-id");
+        assert!(matches!(
+            parse_gateway_response(
+                tampered.as_bytes(),
+                "alipay.user.certify.open.initialize",
+                &public_key
+            ),
+            Err(AlipayRequestError::Response)
+        ));
+    }
+
+    #[test]
+    fn certify_link_contains_only_the_reference_and_has_a_valid_signature() {
+        let private_key = RsaPrivateKey::from_pkcs8_pem(TEST_PRIVATE_KEY).unwrap();
+        let public_key = RsaPublicKey::from(&private_key);
+        let public_pem = public_key.to_public_key_pem(LineEnding::LF).unwrap();
+        let provider = AlipayAccountVerificationProvider::from_parts(
+            true,
+            Some("test-app"),
+            Some(TEST_PRIVATE_KEY),
+            Some(&public_pem),
+            "https://openapi.alipay.com/gateway.do",
+            "FACE",
+            10,
+            HttpClientProvider::new(af_httpclient::HttpClientConfig::default(), 1).unwrap(),
+        )
+        .unwrap();
+        let link = provider
+            .client
+            .unwrap()
+            .certify_url("test-certify-id")
+            .unwrap();
+        let url = url::Url::parse(&link).unwrap();
+        let mut params: BTreeMap<String, String> = url.query_pairs().into_owned().collect();
+        let signature = BASE64.decode(params.remove("sign").unwrap()).unwrap();
+        let signature = Signature::try_from(signature.as_slice()).unwrap();
+        let signed = params
+            .iter()
+            .map(|(key, value)| format!("{key}={value}"))
+            .collect::<Vec<_>>()
+            .join("&");
+        rsa::signature::Verifier::verify(
+            &VerifyingKey::<Sha256>::new(public_key),
+            signed.as_bytes(),
+            &signature,
+        )
+        .unwrap();
+        assert_eq!(
+            params.get("method").map(String::as_str),
+            Some("alipay.user.certify.open.certify")
+        );
+        assert_eq!(
+            serde_json::from_str::<Value>(&params["biz_content"]).unwrap(),
+            json!({ "certify_id": "test-certify-id" })
+        );
+    }
+
+    #[test]
+    fn alipay_timestamp_uses_beijing_time() {
+        let instant = OffsetDateTime::from_unix_timestamp(0).unwrap();
+        assert_eq!(format_timestamp(instant), "1970-01-01 08:00:00");
     }
 }
