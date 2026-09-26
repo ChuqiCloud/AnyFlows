@@ -101,6 +101,7 @@ impl DatabaseUpstreamModelDiscoverer {
                 .with_base_url(base_url)
                 .map_err(|_| UpstreamModelDiscoveryError::ChannelUnavailable)?;
         }
+        context = context.with_oauth_identity(target.oauth_provider(), target.oauth_account_key());
         let mut headers = HeaderMap::new();
         adaptor
             .setup_headers(&mut headers, &credential, &context)
@@ -163,7 +164,7 @@ async fn discover_openai(
     headers: &HeaderMap,
     reverse: &BTreeMap<String, String>,
 ) -> Result<Vec<DiscoveredModelRecord>, UpstreamModelDiscoveryError> {
-    let target = versioned_models_url(context, OpenAiAdaptor::DEFAULT_BASE_URL, "v1")?;
+    let target = openai_models_url(context)?;
     let body = send_page(adaptor, context, headers, target).await?;
     let wire = serde_json::from_slice::<OpenAiModelsWire>(&body)
         .map_err(|_| UpstreamModelDiscoveryError::InvalidResponse)?;
@@ -179,6 +180,20 @@ async fn discover_openai(
         }),
         reverse,
     )
+}
+
+fn openai_models_url(context: &RelayContext) -> Result<Url, UpstreamModelDiscoveryError> {
+    if context.is_codex_oauth() {
+        let target = context
+            .append_path_from(
+                url::Url::parse(OpenAiAdaptor::CODEX_OAUTH_BASE_URL)
+                    .map_err(|_| UpstreamModelDiscoveryError::ChannelUnavailable)?,
+                "backend-api/codex/models",
+            )
+            .map_err(|_| UpstreamModelDiscoveryError::ChannelUnavailable)?;
+        return Url::parse(&target).map_err(|_| UpstreamModelDiscoveryError::ChannelUnavailable);
+    }
+    versioned_models_url(context, OpenAiAdaptor::DEFAULT_BASE_URL, "v1")
 }
 
 async fn discover_anthropic(
@@ -621,6 +636,16 @@ mod tests {
             .unwrap()
             .as_str(),
             "https://gateway.example/gemini/v1beta/models"
+        );
+    }
+
+    #[test]
+    fn codex_oauth_model_url_uses_chatgpt_manifest_endpoint() {
+        let context = context("https://gateway.example/incorrect/v1")
+            .with_oauth_identity(Some("codex"), Some("org-codex-test"));
+        assert_eq!(
+            openai_models_url(&context).unwrap().as_str(),
+            "https://chatgpt.com/backend-api/codex/models"
         );
     }
 

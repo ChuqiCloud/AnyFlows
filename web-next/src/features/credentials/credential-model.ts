@@ -39,7 +39,11 @@ export function asWritableCredentialKind(value: AdminCredential['kind']) {
 }
 
 /** 依据适配器认证契约限制新建类型，避免保存必然无法运行的组合。 */
-export function credentialKindsForChannel(channelType: AdminChannelType): readonly WritableCredentialKind[] {
+export function credentialKindsForChannel(
+  channelType: AdminChannelType,
+  provider?: string | null,
+): readonly WritableCredentialKind[] {
+  if (channelType === 'openai' && provider?.trim().toLowerCase() === 'codex') return ['oauth']
   switch (channelType) {
     case 'bedrock':
       return ['bedrock']

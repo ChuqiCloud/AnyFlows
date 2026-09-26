@@ -255,6 +255,8 @@ pub(super) struct SchedulerRuntimeCredentialSource {
     priority: i32,
     weight: u32,
     concurrency: Option<ConcurrencyLimit>,
+    oauth_provider: Option<String>,
+    oauth_account_key: Option<String>,
     rate_limit_reset_at: Option<TimeDateTimeWithTimeZone>,
     overload_until: Option<TimeDateTimeWithTimeZone>,
     temp_unschedulable_until: Option<TimeDateTimeWithTimeZone>,
@@ -361,6 +363,8 @@ impl SchedulerRuntimeCredentialSource {
         }
         let envelope = EncryptedCredentialEnvelope::new(key_id, nonce, ciphertext)
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        let oauth_provider = secret_owner.oauth_provider.clone();
+        let oauth_account_key = secret_owner.oauth_account_key.clone();
         let weight =
             u32::try_from(credential.weight).map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         if secret_owner.proxy_id.is_some() != proxy.is_some()
@@ -381,6 +385,8 @@ impl SchedulerRuntimeCredentialSource {
             priority: credential.priority,
             weight,
             concurrency,
+            oauth_provider,
+            oauth_account_key,
             rate_limit_reset_at: credential.rate_limit_reset_at,
             overload_until: credential.overload_until,
             temp_unschedulable_until: credential.temp_unschedulable_until,
@@ -407,6 +413,7 @@ impl SchedulerRuntimeCredentialSource {
     }
 
     /// 消费来源对象，返回构造运行时凭据记录所需的安全字段。
+    #[allow(clippy::type_complexity)]
     pub(super) fn into_runtime_parts(
         self,
     ) -> (
@@ -421,6 +428,8 @@ impl SchedulerRuntimeCredentialSource {
         i32,
         u32,
         Option<ConcurrencyLimit>,
+        Option<String>,
+        Option<String>,
     ) {
         (
             self.routing_credential_id,
@@ -434,6 +443,8 @@ impl SchedulerRuntimeCredentialSource {
             self.priority,
             self.weight,
             self.concurrency,
+            self.oauth_provider,
+            self.oauth_account_key,
         )
     }
 }

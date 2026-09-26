@@ -8,7 +8,7 @@ import type {
 
 export type ChannelEditorMode = 'create' | 'update'
 export type SensitiveEditMode = 'preserve' | 'replace' | 'clear'
-export type ChannelType = 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai'
+export type ChannelType = 'openai' | 'codex_oauth' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai'
 export type ChannelProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'anthropic' | 'gemini' | 'jina_rerank' | 'cohere_rerank' | 'xai_video'
 export type ResponsesCompactMode = 'auto' | 'force_on' | 'force_off'
 export type ClientSimulationProfile = '' | 'anthropic_cli_headers_v1'
@@ -107,7 +107,7 @@ export function buildChannelFormSchema(
     name: z.string().trim().min(1, messages.invalidField).max(128, messages.invalidField),
     baseUrl: z.string().trim().max(2048, messages.invalidField),
     timeoutSeconds: z.string(),
-    channelType: z.enum(['openai', 'anthropic', 'gemini', 'jina', 'cohere', 'xai']),
+    channelType: z.enum(['openai', 'codex_oauth', 'anthropic', 'gemini', 'jina', 'cohere', 'xai']),
     protocol: z.enum(['openai_chat', 'openai_responses', 'openai_embeddings', 'openai_images', 'openai_audio', 'openai_speech', 'anthropic', 'gemini', 'jina_rerank', 'cohere_rerank', 'xai_video']),
     tag: z.string().trim().max(64, messages.invalidField),
     status: z.enum(['enabled', 'disabled']),
@@ -131,7 +131,9 @@ export function buildChannelFormSchema(
     headerOverrideMode: z.enum(['preserve', 'replace', 'clear']),
     headerOverride: z.array(keyValueRowSchema),
   }).superRefine((values, context) => {
-    const protocolMatchesType = values.channelType === 'anthropic'
+    const protocolMatchesType = values.channelType === 'codex_oauth'
+      ? values.protocol === 'openai_responses'
+      : values.channelType === 'anthropic'
       ? values.protocol === 'anthropic'
       : values.channelType === 'gemini'
         ? values.protocol === 'gemini'
@@ -179,7 +181,10 @@ export function buildChannelFormSchema(
       && (values.channelType !== 'openai' || values.protocol !== 'openai_responses')) {
       addIssue(context, 'responsesWebsocketEnabled', messages.invalidField)
     }
-    const nativeResponses = values.channelType === 'openai'
+    if (values.channelType === 'codex_oauth' && values.responsesWebsocketEnabled) {
+      addIssue(context, 'responsesWebsocketEnabled', messages.invalidField)
+    }
+    const nativeResponses = (values.channelType === 'openai' || values.channelType === 'codex_oauth')
       && values.protocol === 'openai_responses'
     if (!nativeResponses && (
       values.responsesCompactMode !== 'auto'
@@ -191,7 +196,7 @@ export function buildChannelFormSchema(
       addIssue(context, 'autoBanKeywords', messages.invalidAutoBanRules)
     }
 
-    if (values.baseUrl && !isSafeBaseUrl(values.baseUrl)) {
+    if (values.channelType !== 'codex_oauth' && values.baseUrl && !isSafeBaseUrl(values.baseUrl)) {
       addIssue(context, 'baseUrl', messages.invalidUrl)
     }
     if (!isValidOptionalTimeout(values.timeoutSeconds)) {
@@ -225,12 +230,17 @@ export function buildChannelFormSchema(
 }
 
 export function defaultChannelValues(channel?: AdminChannel): ChannelFormValues {
+  const codexOAuth = channel?.type === 'openai'
+    && channel.protocol === 'openai_responses'
+    && channel.provider?.trim().toLowerCase() === 'codex'
   return {
-    provider: channel?.provider ?? channel?.type ?? 'openai',
+    provider: codexOAuth ? 'codex' : channel?.provider ?? channel?.type ?? 'openai',
     name: channel?.name ?? '',
-    baseUrl: channel?.base_url ?? '',
+    baseUrl: codexOAuth ? '' : channel?.base_url ?? '',
     timeoutSeconds: channel?.timeout_secs == null ? '' : String(channel.timeout_secs),
-    channelType: channel?.type === 'anthropic'
+    channelType: codexOAuth
+      ? 'codex_oauth'
+      : channel?.type === 'anthropic'
       ? 'anthropic'
       : channel?.type === 'gemini'
         ? 'gemini'
@@ -319,11 +329,11 @@ export function createParameterRow(key: ChannelParameterName | '' = ''): Paramet
 
 function commonRequest(values: ChannelFormValues) {
   return {
-    provider: values.provider.trim(),
+    provider: values.channelType === 'codex_oauth' ? 'codex' : values.provider.trim(),
     name: values.name.trim(),
-    type: values.channelType,
-    protocol: values.protocol,
-    base_url: values.baseUrl.trim() || null,
+    type: values.channelType === 'codex_oauth' ? 'openai' : values.channelType,
+    protocol: values.channelType === 'codex_oauth' ? 'openai_responses' : values.protocol,
+    base_url: values.channelType === 'codex_oauth' ? null : values.baseUrl.trim() || null,
     timeout_secs: values.timeoutSeconds.trim() === '' ? null : Number(values.timeoutSeconds),
     status: values.status,
     weight: values.weight,

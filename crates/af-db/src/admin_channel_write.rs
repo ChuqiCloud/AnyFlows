@@ -1329,6 +1329,10 @@ fn validate_channel_fields(
     record: AdminChannelWriteRecord,
     require_sensitive_fields: bool,
 ) -> Result<ValidatedChannelFields, AdminChannelWriteRepositoryError> {
+    let codex_oauth = record
+        .provider
+        .as_deref()
+        .is_some_and(|provider| provider.eq_ignore_ascii_case("codex"));
     if !valid_trimmed_text(&record.name, 128)
         || record
             .provider
@@ -1352,6 +1356,11 @@ fn validate_channel_fields(
                 | (ChannelType::Cohere, Protocol::CohereRerank)
                 | (ChannelType::Xai, Protocol::XaiVideo)
         )
+        || (codex_oauth
+            && (record.channel_type != ChannelType::OpenAi
+                || record.protocol != Protocol::OpenAiResponses
+                || record.base_url.is_some()
+                || record.responses_websocket_enabled == Some(true)))
         || record
             .tag
             .as_deref()
@@ -1567,6 +1576,20 @@ fn validate_credential_channel_compatibility(
         channel_type,
         ChannelType::Jina | ChannelType::Cohere | ChannelType::Xai
     ) && kind != CredentialKind::ApiKey
+    {
+        return Err(AdminChannelWriteRepositoryError::InvalidInput);
+    }
+    let is_codex_oauth = channel
+        .settings
+        .clone()
+        .into_inner()
+        .get("provider")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|provider| provider.eq_ignore_ascii_case("codex"));
+    if is_codex_oauth
+        && (channel_type != ChannelType::OpenAi
+            || channel.protocol.parse::<Protocol>().ok() != Some(Protocol::OpenAiResponses)
+            || kind != CredentialKind::Oauth)
     {
         return Err(AdminChannelWriteRepositoryError::InvalidInput);
     }
