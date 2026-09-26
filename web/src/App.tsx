@@ -56,7 +56,7 @@ import { RegistrationPage } from '@/features/registration/registration-page'
 import { RedemptionPage } from '@/features/redemptions/redemption-page'
 import { RefundPage } from '@/features/refunds/refund-page'
 import { RoutePage } from '@/features/routes/route-page'
-import { SiteSettingsPage } from '@/features/site-settings/site-settings-page'
+import { SiteNavigationPage, SiteSettingsPage } from '@/features/site-settings/site-settings-page'
 import { MySubscriptionsPage } from '@/features/subscriptions/my-subscriptions-page'
 import { SubscriptionManagementPage } from '@/features/subscriptions/subscription-management-page'
 import { TokenPage } from '@/features/tokens/token-page'
@@ -159,6 +159,8 @@ function ManagementEntry({
       ? 'credentialProxies.title'
     : view === 'site-settings'
       ? 'siteSettings.title'
+    : view === 'site-navigation'
+      ? 'nav.siteNavigation'
       : view === 'authentication-settings'
         ? 'authenticationSettings.title'
           : view === 'redemption-codes'
@@ -256,6 +258,8 @@ function ManagementEntry({
       ? <CredentialProxyPage />
     : view === 'site-settings'
       ? <SiteSettingsPage />
+    : view === 'site-navigation'
+      ? <SiteNavigationPage />
       : view === 'authentication-settings'
         ? <AuthenticationSettingsPage />
         : view === 'redemption-codes'

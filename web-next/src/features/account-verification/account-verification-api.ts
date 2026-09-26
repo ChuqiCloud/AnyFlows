@@ -22,7 +22,7 @@ export function verificationBase(admin: boolean) { return admin ? '/api/admin/ac
 export function useAccountEligibility() {
   return useQuery({ queryKey: [...verificationKey, 'eligibility'], gcTime: 0, retry: false,
     refetchInterval: 30_000, refetchIntervalInBackground: false,
-    queryFn: ({ signal }) => verificationGet<{ enterprise_verified: boolean; can_apply_for_organization: boolean; providers?: VerificationProvider[] }>('/api/account/verifications/eligibility', signal) })
+    queryFn: ({ signal }) => verificationGet<{ enterprise_verified: boolean; can_apply_for_organization: boolean; providers?: VerificationProvider[]; individual_providers?: VerificationProvider[]; enterprise_providers?: VerificationProvider[]; individual_reason_required?: boolean; enterprise_reason_required?: boolean }>('/api/account/verifications/eligibility', signal) })
 }
 export function useAccountVerifications(admin: boolean, status?: number) {
   return useInfiniteQuery({ queryKey: [...verificationKey, admin ? 'admin' : 'self', status], gcTime: 0, retry: false,

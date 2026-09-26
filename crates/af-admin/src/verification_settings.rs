@@ -26,6 +26,10 @@ struct AlipayCredentials {
 pub struct AdminVerificationSettings {
     pub source: &'static str,
     pub manual_enabled: bool,
+    pub individual_manual_enabled: bool,
+    pub enterprise_manual_enabled: bool,
+    pub individual_reason_required: bool,
+    pub enterprise_reason_required: bool,
     pub enabled: bool,
     pub app_id: Option<String>,
     pub private_key_configured: bool,
@@ -39,6 +43,10 @@ pub struct AdminVerificationSettings {
 pub struct VerificationSettingsCommand {
     pub expected_version: i64,
     pub manual_enabled: bool,
+    pub individual_manual_enabled: Option<bool>,
+    pub enterprise_manual_enabled: Option<bool>,
+    pub individual_reason_required: Option<bool>,
+    pub enterprise_reason_required: Option<bool>,
     pub enabled: bool,
     pub app_id: Option<String>,
     pub private_key: Option<String>,
@@ -58,6 +66,32 @@ pub enum VerificationSettingsError {
     Forbidden,
     #[error("实名认证配置服务暂不可用")]
     Internal,
+}
+
+#[derive(Clone, Copy)]
+pub struct VerificationPolicy {
+    pub individual_manual_enabled: bool,
+    pub enterprise_manual_enabled: bool,
+    pub individual_reason_required: bool,
+    pub enterprise_reason_required: bool,
+}
+
+impl VerificationPolicy {
+    pub fn manual_enabled_for(self, kind: &str) -> bool {
+        match kind {
+            "individual" => self.individual_manual_enabled,
+            "enterprise" => self.enterprise_manual_enabled,
+            _ => false,
+        }
+    }
+
+    pub fn reason_required_for(self, kind: &str) -> bool {
+        match kind {
+            "individual" => self.individual_reason_required,
+            "enterprise" => self.enterprise_reason_required,
+            _ => true,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -97,6 +131,10 @@ impl DatabaseVerificationSettingsService {
             return Ok(AdminVerificationSettings {
                 source: "environment",
                 manual_enabled: true,
+                individual_manual_enabled: true,
+                enterprise_manual_enabled: true,
+                individual_reason_required: true,
+                enterprise_reason_required: true,
                 enabled: self.fallback.enabled(),
                 app_id: self
                     .fallback
@@ -204,7 +242,20 @@ impl DatabaseVerificationSettingsService {
             .update(
                 AccountVerificationSettingsRecord {
                     initialized: true,
-                    manual_enabled: command.manual_enabled,
+                    manual_enabled: command
+                        .individual_manual_enabled
+                        .unwrap_or(command.manual_enabled)
+                        || command
+                            .enterprise_manual_enabled
+                            .unwrap_or(command.manual_enabled),
+                    individual_manual_enabled: command
+                        .individual_manual_enabled
+                        .unwrap_or(command.manual_enabled),
+                    enterprise_manual_enabled: command
+                        .enterprise_manual_enabled
+                        .unwrap_or(command.manual_enabled),
+                    individual_reason_required: command.individual_reason_required.unwrap_or(true),
+                    enterprise_reason_required: command.enterprise_reason_required.unwrap_or(true),
                     enabled: command.enabled,
                     app_id,
                     credentials,
@@ -224,6 +275,10 @@ impl DatabaseVerificationSettingsService {
         AdminVerificationSettings {
             source: "database",
             manual_enabled: record.manual_enabled,
+            individual_manual_enabled: record.individual_manual_enabled,
+            enterprise_manual_enabled: record.enterprise_manual_enabled,
+            individual_reason_required: record.individual_reason_required,
+            enterprise_reason_required: record.enterprise_reason_required,
             enabled: record.enabled,
             app_id: record.app_id.clone(),
             private_key_configured: record.credentials.is_some(),
@@ -254,15 +309,30 @@ impl DatabaseVerificationSettingsService {
     }
 
     pub async fn manual_enabled(&self) -> Result<bool, VerificationSettingsError> {
+        let policy = self.policy().await?;
+        Ok(policy.individual_manual_enabled || policy.enterprise_manual_enabled)
+    }
+
+    pub async fn policy(&self) -> Result<VerificationPolicy, VerificationSettingsError> {
         let record = self
             .repository
             .settings()
             .await
             .map_err(map_repository_error)?;
         Ok(if record.initialized {
-            record.manual_enabled
+            VerificationPolicy {
+                individual_manual_enabled: record.individual_manual_enabled,
+                enterprise_manual_enabled: record.enterprise_manual_enabled,
+                individual_reason_required: record.individual_reason_required,
+                enterprise_reason_required: record.enterprise_reason_required,
+            }
         } else {
-            true
+            VerificationPolicy {
+                individual_manual_enabled: true,
+                enterprise_manual_enabled: true,
+                individual_reason_required: true,
+                enterprise_reason_required: true,
+            }
         })
     }
 

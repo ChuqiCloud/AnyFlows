@@ -123,6 +123,10 @@ pub(crate) struct AccountVerificationEligibilityResponse {
     enterprise_verified: bool,
     can_apply_for_organization: bool,
     providers: Vec<String>,
+    individual_providers: Vec<String>,
+    enterprise_providers: Vec<String>,
+    individual_reason_required: bool,
+    enterprise_reason_required: bool,
 }
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -322,11 +326,24 @@ async fn eligibility(
         .enterprise_verified(a.principal())
         .await
         .map_err(map_error)?;
-    let providers = s.available_providers().await;
+    let policy = s.policy().await.map_err(map_error)?;
+    let individual_providers = s.available_providers_for("individual").await;
+    let enterprise_providers = s.available_providers_for("enterprise").await;
+    let mut providers = individual_providers.clone();
+    for provider in &enterprise_providers {
+        if !providers.contains(provider) {
+            providers.push(provider.clone());
+        }
+    }
+    providers.sort();
     Ok(no_store_json(AccountVerificationEligibilityResponse {
         enterprise_verified: verified,
         can_apply_for_organization: verified,
         providers,
+        individual_providers,
+        enterprise_providers,
+        individual_reason_required: policy.individual_reason_required,
+        enterprise_reason_required: policy.enterprise_reason_required,
     }))
 }
 async fn decide(

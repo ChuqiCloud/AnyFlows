@@ -33,7 +33,7 @@ import { RefundPage } from '@/features/refunds/refund-page'
 import { RegistrationPage } from '@/features/registration/registration-page'
 import { RoutePage } from '@/features/routes/route-page'
 import { SetupPage } from '@/features/setup/setup-page'
-import { SiteSettingsPage } from '@/features/site-settings/site-settings-page'
+import { SiteNavigationPage, SiteSettingsPage } from '@/features/site-settings/site-settings-page'
 import { MySubscriptionsPage } from '@/features/subscriptions/my-subscriptions-page'
 import { SubscriptionManagementPage } from '@/features/subscriptions/subscription-management-page'
 import { TokenPage } from '@/features/tokens/token-page'
@@ -160,6 +160,7 @@ const consoleRoutes: ConsoleRouteDefinition[] = [
     element: <SubscriptionManagementPage />,
   },
   { path: 'system-settings/site', element: <SiteSettingsPage /> },
+  { path: 'system-settings/navigation', element: <SiteNavigationPage /> },
   { path: 'system-settings/payment', element: <PaymentSettingsPage /> },
   { path: 'users', element: <UserPage /> },
   { path: 'organization', element: <OrganizationOverviewPage /> },

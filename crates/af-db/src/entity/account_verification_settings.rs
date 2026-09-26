@@ -9,6 +9,10 @@ pub struct Model {
     pub id: i16,
     pub initialized: bool,
     pub manual_enabled: bool,
+    pub individual_manual_enabled: bool,
+    pub enterprise_manual_enabled: bool,
+    pub individual_reason_required: bool,
+    pub enterprise_reason_required: bool,
     pub alipay_enabled: bool,
     #[sea_orm(column_type = "String(StringLen::N(128))", nullable)]
     pub alipay_app_id: Option<SensitiveString>,

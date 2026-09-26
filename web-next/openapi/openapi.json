@@ -31990,7 +31990,11 @@
         "required": [
           "enterprise_verified",
           "can_apply_for_organization",
-          "providers"
+          "providers",
+          "individual_providers",
+          "enterprise_providers",
+          "individual_reason_required",
+          "enterprise_reason_required"
         ],
         "properties": {
           "enterprise_verified": {
@@ -32004,6 +32008,24 @@
             "items": {
               "type": "string"
             }
+          },
+          "individual_providers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "enterprise_providers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "individual_reason_required": {
+            "type": "boolean"
+          },
+          "enterprise_reason_required": {
+            "type": "boolean"
           }
         }
       },
@@ -39956,6 +39978,10 @@
         "required": [
           "source",
           "manual_enabled",
+          "individual_manual_enabled",
+          "enterprise_manual_enabled",
+          "individual_reason_required",
+          "enterprise_reason_required",
           "enabled",
           "private_key_configured",
           "public_key_configured",
@@ -39969,6 +39995,18 @@
             "type": "string"
           },
           "manual_enabled": {
+            "type": "boolean"
+          },
+          "individual_manual_enabled": {
+            "type": "boolean"
+          },
+          "enterprise_manual_enabled": {
+            "type": "boolean"
+          },
+          "individual_reason_required": {
+            "type": "boolean"
+          },
+          "enterprise_reason_required": {
             "type": "boolean"
           },
           "enabled": {
@@ -40020,6 +40058,30 @@
           },
           "manual_enabled": {
             "type": "boolean"
+          },
+          "individual_manual_enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "enterprise_manual_enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "individual_reason_required": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "enterprise_reason_required": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "enabled": {
             "type": "boolean"

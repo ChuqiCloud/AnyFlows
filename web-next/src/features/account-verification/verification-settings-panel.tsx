@@ -8,14 +8,19 @@ import { jsonBodySerializer } from '@/lib/api/generated/client'
 import { sessionSecurity, verificationGet } from './account-verification-api'
 
 type Settings = { source: 'environment' | 'database'; manual_enabled: boolean; enabled: boolean; app_id: string | null;
+  individual_manual_enabled: boolean; enterprise_manual_enabled: boolean; individual_reason_required: boolean; enterprise_reason_required: boolean;
   private_key_configured: boolean; public_key_configured: boolean; gateway_url: string;
   biz_code: string; timeout_secs: number; version: number }
-type Draft = { manual_enabled: boolean; enabled: boolean; app_id: string; private_key: string; public_key: string;
+type Draft = { manual_enabled: boolean; individual_manual_enabled: boolean; enterprise_manual_enabled: boolean; individual_reason_required: boolean; enterprise_reason_required: boolean; enabled: boolean; app_id: string; private_key: string; public_key: string;
   gateway_url: string; biz_code: string; timeout_secs: number }
 type SettingsRequest = Omit<Draft, 'private_key' | 'public_key'> & {
   private_key?: string; public_key?: string; expected_version: number }
 const settingsKey = ['admin-account-verification-settings'] as const
-const toDraft = (settings: Settings): Draft => ({ manual_enabled: settings.manual_enabled, enabled: settings.enabled,
+const toDraft = (settings: Settings): Draft => ({ manual_enabled: settings.manual_enabled,
+  individual_manual_enabled: settings.individual_manual_enabled ?? settings.manual_enabled,
+  enterprise_manual_enabled: settings.enterprise_manual_enabled ?? settings.manual_enabled,
+  individual_reason_required: settings.individual_reason_required ?? true,
+  enterprise_reason_required: settings.enterprise_reason_required ?? true, enabled: settings.enabled,
   app_id: settings.app_id ?? '', private_key: '', public_key: '', gateway_url: settings.gateway_url,
   biz_code: settings.biz_code, timeout_secs: settings.timeout_secs })
 
@@ -46,7 +51,8 @@ export function VerificationSettingsPanel() {
     <header><h2 className="text-lg font-semibold">实名认证配置</h2><p className="mt-1 text-sm text-default-500">在这里控制用户可选择的认证方式。关闭某项后，用户提交页面不会再显示该方式。</p></header>
     {environment ? <p className="border-l-2 border-warning px-3 text-sm text-default-500">当前使用启动配置。首次在线保存后以后台设置为准；若启用支付宝，请重新填写两把密钥。</p> : null}
     <form onSubmit={submit} className="grid max-w-3xl gap-4">
-      <div className="grid gap-3 rounded-lg border border-default-200 p-3"><Switch aria-label="启用人工审核" isSelected={draft.manual_enabled} onValueChange={(manual_enabled) => setDraft({ ...draft, manual_enabled })}>启用人工审核</Switch><Switch aria-label="启用支付宝实名认证" isSelected={draft.enabled} onValueChange={(enabled) => setDraft({ ...draft, enabled })}>启用支付宝实名认证</Switch></div>
+      <section className="grid gap-3 rounded-xl border border-default-200 bg-content1 p-4"><h3 className="font-medium">个人认证</h3><Switch aria-label="个人认证人工审核" isSelected={draft.individual_manual_enabled} onValueChange={(individual_manual_enabled) => setDraft({ ...draft, individual_manual_enabled })}>启用人工审核</Switch><Switch aria-label="个人认证支付宝" isSelected={draft.enabled} onValueChange={(enabled) => setDraft({ ...draft, enabled })}>启用支付宝实名认证</Switch><Switch aria-label="个人认证理由必填" isSelected={draft.individual_reason_required} onValueChange={(individual_reason_required) => setDraft({ ...draft, individual_reason_required })}>要求填写认证理由</Switch></section>
+      <section className="grid gap-3 rounded-xl border border-default-200 bg-content1 p-4"><h3 className="font-medium">企业认证</h3><Switch aria-label="企业认证人工审核" isSelected={draft.enterprise_manual_enabled} onValueChange={(enterprise_manual_enabled) => setDraft({ ...draft, enterprise_manual_enabled })}>启用人工审核</Switch><Switch aria-label="企业认证理由必填" isSelected={draft.enterprise_reason_required} onValueChange={(enterprise_reason_required) => setDraft({ ...draft, enterprise_reason_required })}>要求填写认证理由</Switch></section>
       <Input label="应用 ID" value={draft.app_id} maxLength={128} onValueChange={(app_id) => setDraft({ ...draft, app_id })} />
       <div className="grid gap-4 md:grid-cols-2">
         <Textarea label="应用私钥" description={`${!environment && query.data.private_key_configured ? '已配置，留空保持不变；' : ''}支持支付宝 Base64 原文或完整 PEM`} value={draft.private_key} minRows={6} autoComplete="off" onValueChange={(private_key) => setDraft({ ...draft, private_key })} />
