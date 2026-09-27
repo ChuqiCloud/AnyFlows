@@ -44,6 +44,17 @@ pub trait AccountVerificationProvider: Send + Sync {
     ) -> Result<AccountVerificationProviderResult, AccountVerificationProviderError> {
         Err(AccountVerificationProviderError::Unavailable)
     }
+
+    /// Complete a provider flow after the provider redirects back with an
+    /// authorization code. Providers that do not use browser authorization
+    /// keep the default unavailable result.
+    async fn complete(
+        &self,
+        _reference: &str,
+        _authorization_code: &str,
+    ) -> Result<AccountVerificationProviderResult, AccountVerificationProviderError> {
+        Err(AccountVerificationProviderError::Unavailable)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, thiserror::Error, PartialEq)]
@@ -260,6 +271,38 @@ impl AccountVerificationService {
         self.repository
             .apply_provider_result(
                 principal.user_id(),
+                id,
+                result.status,
+                result.terminal_status,
+                result.reason,
+            )
+            .await
+    }
+
+    pub async fn complete_provider_callback(
+        &self,
+        state: &str,
+        authorization_code: &str,
+    ) -> Result<AccountVerificationRecord, AccountVerificationError> {
+        if authorization_code.trim().is_empty() || authorization_code.len() > 4_096 {
+            return Err(AccountVerificationError::Invalid);
+        }
+        let (user, id, provider_key, reference) =
+            self.repository.provider_reference_by_state(state).await?;
+        let provider = self
+            .providers
+            .get(provider_key.as_str())
+            .ok_or(AccountVerificationError::Unavailable)?;
+        if !provider.available().await {
+            return Err(AccountVerificationError::Unavailable);
+        }
+        let result = provider
+            .complete(&reference, authorization_code)
+            .await
+            .map_err(|_| AccountVerificationError::Unavailable)?;
+        self.repository
+            .apply_provider_result(
+                user,
                 id,
                 result.status,
                 result.terminal_status,

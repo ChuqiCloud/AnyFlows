@@ -1769,8 +1769,8 @@ impl Bootstrap<AuthenticationReady> {
         )
         .map_err(BootstrapError::AlipayVerificationProvider)?;
         drop(alipay_provider);
-        let verification_settings_service =
-            Arc::new(af_admin::DatabaseVerificationSettingsService::new(
+        let verification_settings_service = Arc::new(
+            af_admin::DatabaseVerificationSettingsService::new_with_site_settings(
                 af_db::AccountVerificationSettingsRepository::new(
                     authentication.infrastructure.database.clone(),
                     Duration::from_secs(config.auth().lookup_timeout_secs()),
@@ -1778,7 +1778,14 @@ impl Bootstrap<AuthenticationReady> {
                 authentication.system_secret_cipher.clone(),
                 config.account_verification().alipay().clone(),
                 upstream_clients.clone(),
-            ));
+                Some(
+                    authentication
+                        .infrastructure
+                        .site_settings_repository
+                        .clone(),
+                ),
+            ),
+        );
         authentication.account_verification_provider = verification_settings_service.clone();
         authentication.verification_settings_service = Some(verification_settings_service);
         // 回调编排只复用已完成 SSRF、代理和超时基线的共享 Client。

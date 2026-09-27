@@ -4,6 +4,7 @@ use af_db::{
     AccountVerificationProviderRequest, AccountVerificationProviderResult,
     AccountVerificationProviderStart, AccountVerificationSettingsError,
     AccountVerificationSettingsRecord, AccountVerificationSettingsRepository,
+    SiteSettingsRepository,
 };
 use af_httpclient::HttpClientProvider;
 use async_trait::async_trait;
@@ -100,6 +101,7 @@ pub struct DatabaseVerificationSettingsService {
     cipher: SystemSecretCipher,
     fallback: AlipayVerificationSettings,
     http_clients: HttpClientProvider,
+    site_settings: Option<std::sync::Arc<SiteSettingsRepository>>,
 }
 
 impl DatabaseVerificationSettingsService {
@@ -109,11 +111,22 @@ impl DatabaseVerificationSettingsService {
         fallback: AlipayVerificationSettings,
         http_clients: HttpClientProvider,
     ) -> Self {
+        Self::new_with_site_settings(repository, cipher, fallback, http_clients, None)
+    }
+
+    pub fn new_with_site_settings(
+        repository: AccountVerificationSettingsRepository,
+        cipher: SystemSecretCipher,
+        fallback: AlipayVerificationSettings,
+        http_clients: HttpClientProvider,
+        site_settings: Option<std::sync::Arc<SiteSettingsRepository>>,
+    ) -> Self {
         Self {
             repository,
             cipher,
             fallback,
             http_clients,
+            site_settings,
         }
     }
 
@@ -209,7 +222,7 @@ impl DatabaseVerificationSettingsService {
             AlipayAccountVerificationProvider::validate_keys(private_key, public_key)
                 .map_err(|_| VerificationSettingsError::Invalid)?;
         }
-        AlipayAccountVerificationProvider::from_parts(
+        AlipayAccountVerificationProvider::from_parts_with_site_settings(
             command.enabled,
             app_id.as_deref(),
             private_key.as_deref(),
@@ -218,6 +231,7 @@ impl DatabaseVerificationSettingsService {
             &command.biz_code,
             command.timeout_secs,
             self.http_clients.clone(),
+            self.site_settings.clone(),
         )
         .map_err(|_| VerificationSettingsError::Invalid)?;
         let credentials = match (private_key, public_key) {
@@ -345,14 +359,15 @@ impl DatabaseVerificationSettingsService {
             .await
             .map_err(map_repository_error)?;
         if !record.initialized {
-            return AlipayAccountVerificationProvider::from_config(
+            return AlipayAccountVerificationProvider::from_config_with_site_settings(
                 &self.fallback,
                 self.http_clients.clone(),
+                self.site_settings.clone(),
             )
             .map_err(|_| VerificationSettingsError::Internal);
         }
         let credentials = self.decrypt_credentials(&record)?;
-        AlipayAccountVerificationProvider::from_parts(
+        AlipayAccountVerificationProvider::from_parts_with_site_settings(
             record.enabled,
             record.app_id.as_deref(),
             credentials.as_ref().map(|value| value.private_key.as_str()),
@@ -361,6 +376,7 @@ impl DatabaseVerificationSettingsService {
             &record.biz_code,
             record.timeout_secs,
             self.http_clients.clone(),
+            self.site_settings.clone(),
         )
         .map_err(|_| VerificationSettingsError::Internal)
     }
