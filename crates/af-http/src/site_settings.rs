@@ -183,12 +183,26 @@ pub(crate) struct SiteSidebarLinkDto {
     label_en: Option<String>,
     #[schema(min_length = 1, max_length = 2048)]
     url: String,
-    #[schema(pattern = "^(link|globe|book|sparkles|building|message|headphones|shield|chart)$")]
+    #[schema(
+        pattern = "^(link|globe|book|sparkles|building|message|headphones|shield|chart|home|dashboard|settings|users|user|briefcase|calendar|card|key|lock|file|folder|help|info|bell|mail|phone|map|database|server|code|terminal|bot|cpu|workflow|gauge|rocket|megaphone|shopping|monitor|cloud|bookmark|graduation|newspaper|clipboard|list|wrench|search|star|heart|zap|command|panels)$"
+    )]
     icon: String,
+    #[serde(default = "default_sidebar_level")]
+    #[schema(minimum = 1, maximum = 3)]
+    level: u8,
+    #[serde(default = "default_sidebar_style")]
     #[schema(pattern = "^(default|accent)$")]
     style: String,
     #[schema(pattern = "^(all|admin)$")]
     audience: String,
+}
+
+fn default_sidebar_level() -> u8 {
+    1
+}
+
+fn default_sidebar_style() -> String {
+    "default".to_owned()
 }
 
 #[derive(Clone, Deserialize, Serialize, ToSchema)]
@@ -199,7 +213,7 @@ pub(crate) struct SiteNavigationDto {
     header_links: Vec<SiteNavigationLinkDto>,
     #[schema(max_items = 4)]
     footer_groups: Vec<SiteNavigationGroupDto>,
-    #[schema(max_items = 8)]
+    #[schema(max_items = 24)]
     sidebar_links: Vec<SiteSidebarLinkDto>,
 }
 
@@ -229,6 +243,7 @@ impl From<&SiteNavigationRecord> for SiteNavigationDto {
                     label_en: item.label_en.clone(),
                     url: item.url.clone(),
                     icon: item.icon.clone(),
+                    level: item.level,
                     style: item.style.clone(),
                     audience: item.audience.clone(),
                 })
@@ -263,6 +278,7 @@ impl From<SiteNavigationDto> for SiteNavigationRecord {
                     label_en: item.label_en,
                     url: item.url,
                     icon: item.icon,
+                    level: item.level,
                     style: item.style,
                     audience: item.audience,
                 })

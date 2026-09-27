@@ -3196,7 +3196,8 @@ export type SiteSidebarLink = {
     label_en?: string | null;
     url: string;
     icon: string;
-    style: string;
+    level?: number;
+    style?: string;
     audience: string;
 };
 export type SubscriptionCatalogPlan = {

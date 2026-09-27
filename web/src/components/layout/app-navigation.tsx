@@ -42,7 +42,7 @@ import {
   Waypoints,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Collapsible } from 'radix-ui'
 
@@ -152,19 +152,48 @@ const sectionIcons = {
 const customIcons: Record<SiteSidebarLink['icon'], LucideIcon> = {
   link: Link2, globe: Globe2, book: BookOpen, sparkles: Sparkles,
   building: Building2, message: MessageSquareText, headphones: Headphones,
-  shield: ShieldCheck, chart: Gauge,
+  shield: ShieldCheck, chart: Gauge, home: Boxes, dashboard: PanelsTopLeft, settings: Settings2,
+  users: UsersRound, user: UserRound, briefcase: BriefcaseBusiness, calendar: CalendarRange,
+  card: WalletCards, key: KeyRound, lock: ShieldCheck, file: ScrollText, folder: Layers3,
+  help: CircleCheckBig, info: MessageSquareText, bell: Megaphone, mail: Mail, phone: Headphones,
+  map: Globe2, database: ServerCog, server: Network, code: Waypoints, terminal: Bot,
+  bot: Bot, cpu: Bot, workflow: Waypoints, gauge: Gauge, rocket: Sparkles, megaphone: Megaphone,
+  shopping: WalletCards, monitor: PanelsTopLeft, cloud: Globe2, bookmark: BookOpen,
+  graduation: BookOpen, newspaper: ScrollText, clipboard: ClipboardCheck, list: ListChecks,
+  wrench: Settings2, search: Globe2, star: Sparkles, heart: CircleCheckBig, zap: Sparkles,
+  command: PanelsTopLeft, panels: PanelsTopLeft,
+}
+
+type CustomNavigationNode = { link: SiteSidebarLink; children: CustomNavigationNode[] }
+
+function customNavigationTree(links: SiteSidebarLink[]): CustomNavigationNode[] {
+  const roots: CustomNavigationNode[] = []
+  const stack: Array<{ level: number; node: CustomNavigationNode }> = []
+  for (const link of links) {
+    const level = Math.max(1, Math.min(3, link.level ?? 1))
+    while (stack.length >= level) stack.pop()
+    const node: CustomNavigationNode = { link, children: [] }
+    const parent = stack.at(-1)?.node
+    if (parent) parent.children.push(node)
+    else roots.push(node)
+    stack.push({ level, node })
+  }
+  return roots
 }
 
 function CustomNavigation({ links }: { links: SiteSidebarLink[] }) {
   const { i18n, t } = useTranslation()
   if (links.length === 0) return null
+  const label = (link: SiteSidebarLink) => i18n.resolvedLanguage?.startsWith('en') && link.label_en ? link.label_en : link.label
+  const renderNodes = (nodes: CustomNavigationNode[], nested = false): ReactNode => nodes.map(({ link, children }, index) => {
+    const Icon = customIcons[link.icon] ?? Link2
+    const external = !link.url.startsWith('/')
+    const content = <SidebarMenuButton asChild tooltip={label(link)} className={cn('h-9 rounded-lg px-3', nested && 'ml-2')}><a href={external ? link.url : `#${link.url}`} target={external ? '_blank' : undefined} rel={external ? 'noopener noreferrer' : undefined}><Icon aria-hidden="true" /><span className="truncate">{label(link)}</span></a></SidebarMenuButton>
+    return <SidebarMenuItem key={`${index}:${link.url}`}>{content}{children.length > 0 ? <SidebarMenuSub className="gap-0.5 py-1.5 pl-3">{renderNodes(children, true)}</SidebarMenuSub> : null}</SidebarMenuItem>
+  })
   return <SidebarGroup className="p-0 py-1.5">
     <SidebarGroupLabel className="h-6 px-3 text-[0.6875rem] font-semibold text-sidebar-foreground/60">{t('nav.customLinks')}</SidebarGroupLabel>
-    <SidebarGroupContent><SidebarMenu className="gap-0.5">{links.map((link, index) => {
-      const Icon = customIcons[link.icon] ?? Link2
-      const external = !link.url.startsWith('/')
-      return <SidebarMenuItem key={`${index}:${link.url}`}><SidebarMenuButton asChild tooltip={i18n.resolvedLanguage?.startsWith('en') && link.label_en ? link.label_en : link.label} className={cn('h-9 rounded-lg px-3', link.style === 'accent' && 'bg-primary/8 text-primary')}><a href={external ? link.url : `#${link.url}`} target={external ? '_blank' : undefined} rel={external ? 'noopener noreferrer' : undefined}><Icon aria-hidden="true" /><span className="truncate">{i18n.resolvedLanguage?.startsWith('en') && link.label_en ? link.label_en : link.label}</span></a></SidebarMenuButton></SidebarMenuItem>
-    })}</SidebarMenu></SidebarGroupContent>
+    <SidebarGroupContent><SidebarMenu className="gap-0.5">{renderNodes(customNavigationTree(links))}</SidebarMenu></SidebarGroupContent>
   </SidebarGroup>
 }
 
@@ -373,7 +402,7 @@ export function AppNavigation({ className, compact = false, role }: AppNavigatio
         {customLinks.map((link, index) => {
           const Icon = customIcons[link.icon] ?? Link2
           const external = !link.url.startsWith('/')
-          return <a key={`${index}:${link.url}`} href={external ? link.url : `#${link.url}`} target={external ? '_blank' : undefined} rel={external ? 'noopener noreferrer' : undefined} className={cn('flex h-8 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium', link.style === 'accent' ? 'bg-primary/8 text-primary' : 'text-muted-foreground')}><Icon className="size-4" aria-hidden="true" />{link.label}</a>
+          return <a key={`${index}:${link.url}`} href={external ? link.url : `#${link.url}`} target={external ? '_blank' : undefined} rel={external ? 'noopener noreferrer' : undefined} className="flex h-8 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium text-muted-foreground"><Icon className="size-4" aria-hidden="true" />{link.label}</a>
         })}
       </nav>
     )

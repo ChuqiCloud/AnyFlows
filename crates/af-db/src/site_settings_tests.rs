@@ -51,6 +51,7 @@ async fn navigation_updates_preserve_brand_and_survive_template_changes()
             label_en: Some("Support".to_owned()),
             url: "https://support.example.com".to_owned(),
             icon: "headphones".to_owned(),
+            level: 1,
             style: "accent".to_owned(),
             audience: "all".to_owned(),
         }],
