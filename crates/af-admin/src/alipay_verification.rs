@@ -242,6 +242,7 @@ struct AlipayClient {
     private_key: RsaPrivateKey,
     public_key: RsaPublicKey,
     gateway_url: url::Url,
+    auth_url: url::Url,
     timeout: Duration,
     http_clients: HttpClientProvider,
     site_settings: Option<Arc<SiteSettingsRepository>>,
