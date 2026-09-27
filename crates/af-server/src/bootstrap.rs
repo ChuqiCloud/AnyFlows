@@ -1778,12 +1778,7 @@ impl Bootstrap<AuthenticationReady> {
                 authentication.system_secret_cipher.clone(),
                 config.account_verification().alipay().clone(),
                 upstream_clients.clone(),
-                Some(
-                    authentication
-                        .infrastructure
-                        .site_settings_repository
-                        .clone(),
-                ),
+                Some(authentication.site_settings_repository.clone()),
             ),
         );
         authentication.account_verification_provider = verification_settings_service.clone();
