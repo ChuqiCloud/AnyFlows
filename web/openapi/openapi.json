@@ -50211,8 +50211,6 @@
           "label",
           "url",
           "icon",
-          "level",
-          "style",
           "audience"
         ],
         "properties": {
