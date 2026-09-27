@@ -590,10 +590,12 @@ fn parse_gateway_response(
 
 fn log_gateway_rejection(method: &str, object: &Map<String, Value>) {
     // Descriptions and complete bodies can contain identity or token data.
+    let code = object.get("code").and_then(Value::as_str).unwrap_or("");
+    let sub_code = object.get("sub_code").and_then(Value::as_str).unwrap_or("");
     tracing::warn!(
         method,
-        code = object.get("code").and_then(Value::as_str).unwrap_or(""),
-        sub_code = object.get("sub_code").and_then(Value::as_str).unwrap_or(""),
+        code,
+        sub_code,
         "Alipay gateway rejected verification request"
     );
 }
