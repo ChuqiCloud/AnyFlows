@@ -445,6 +445,18 @@ impl AccountVerificationProvider for DatabaseVerificationSettingsService {
             .query(reference)
             .await
     }
+
+    async fn complete(
+        &self,
+        reference: &str,
+        authorization_code: &str,
+    ) -> Result<AccountVerificationProviderResult, AccountVerificationProviderError> {
+        self.provider()
+            .await
+            .map_err(|_| AccountVerificationProviderError::Unavailable)?
+            .complete(reference, authorization_code)
+            .await
+    }
 }
 
 fn require_admin(principal: SessionPrincipal) -> Result<(), VerificationSettingsError> {
