@@ -90,6 +90,7 @@ impl AlipayAccountVerificationProvider {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn from_parts_with_site_settings(
         enabled: bool,
         app_id: Option<&str>,
