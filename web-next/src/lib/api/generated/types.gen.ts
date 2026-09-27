@@ -3196,6 +3196,7 @@ export type SiteSidebarLink = {
     label_en?: string | null;
     url: string;
     icon: string;
+    level: number;
     style: string;
     audience: string;
 };

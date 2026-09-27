@@ -7328,7 +7328,8 @@
   },
   "landing": {
     "nav": {
-      "models": "模型广场",
+      "label": "主导航",
+      "models": "模型",
       "console": "进入控制台"
     },
     "hero": {

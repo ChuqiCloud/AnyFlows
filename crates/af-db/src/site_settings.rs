@@ -22,7 +22,62 @@ const MAX_FRONTEND_TEMPLATE_ID_BYTES: usize = 128;
 const MAX_BALANCE_UNIT_NAME_BYTES: usize = 64;
 const MAX_BALANCE_UNIT_SYMBOL_BYTES: usize = 24;
 const MAX_BALANCE_FRACTION_DIGITS: u8 = 4;
-const MAX_NAVIGATION_JSON_BYTES: usize = 16_384;
+const MAX_NAVIGATION_JSON_BYTES: usize = 65_536;
+const MAX_SIDEBAR_LINKS: usize = 24;
+const SIDEBAR_ICONS: &[&str] = &[
+    "link",
+    "globe",
+    "book",
+    "sparkles",
+    "building",
+    "message",
+    "headphones",
+    "shield",
+    "chart",
+    "home",
+    "dashboard",
+    "settings",
+    "users",
+    "user",
+    "briefcase",
+    "calendar",
+    "card",
+    "key",
+    "lock",
+    "file",
+    "folder",
+    "help",
+    "info",
+    "bell",
+    "mail",
+    "phone",
+    "map",
+    "database",
+    "server",
+    "code",
+    "terminal",
+    "bot",
+    "cpu",
+    "workflow",
+    "gauge",
+    "rocket",
+    "megaphone",
+    "shopping",
+    "monitor",
+    "cloud",
+    "bookmark",
+    "graduation",
+    "newspaper",
+    "clipboard",
+    "list",
+    "wrench",
+    "search",
+    "star",
+    "heart",
+    "zap",
+    "command",
+    "panels",
+];
 
 /// 公开站点顶栏与页脚自定义链接。核心导航入口由前端保持，不受此配置覆盖。
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -56,30 +111,41 @@ pub struct SiteSidebarLinkRecord {
     pub label_en: Option<String>,
     pub url: String,
     pub icon: String,
+    /// 侧栏目录层级。历史配置缺少该字段时按一级目录处理。
+    #[serde(default = "default_sidebar_level")]
+    pub level: u8,
+    /// 保留用于读取 beta.16 及更早配置；前端不再将其作为视觉样式使用。
+    #[serde(default = "default_sidebar_style")]
     pub style: String,
     pub audience: String,
+}
+
+fn default_sidebar_level() -> u8 {
+    1
+}
+
+fn default_sidebar_style() -> String {
+    "default".to_owned()
 }
 
 impl SiteNavigationRecord {
     pub fn validate(&self) -> Result<(), SiteSettingsRepositoryError> {
         if self.header_links.len() > 8
             || self.footer_groups.len() > 4
-            || self.sidebar_links.len() > 8
+            || self.sidebar_links.len() > MAX_SIDEBAR_LINKS
+            || self.sidebar_links.iter().enumerate().any(|(index, link)| {
+                !(1..=3).contains(&link.level)
+                    || (index == 0 && link.level != 1)
+                    || (index > 0
+                        && link.level > self.sidebar_links[index - 1].level.saturating_add(1))
+            })
             || self.sidebar_links.iter().any(|link| {
                 !valid_navigation_label(&link.label)
                     || !valid_optional_navigation_label(link.label_en.as_deref())
                     || !valid_navigation_url(&link.url)
                     || !matches!(
                         link.icon.as_str(),
-                        "link"
-                            | "globe"
-                            | "book"
-                            | "sparkles"
-                            | "building"
-                            | "message"
-                            | "headphones"
-                            | "shield"
-                            | "chart"
+                        icon if SIDEBAR_ICONS.contains(&icon)
                     )
                     || !matches!(link.style.as_str(), "default" | "accent")
                     || !matches!(link.audience.as_str(), "all" | "admin")

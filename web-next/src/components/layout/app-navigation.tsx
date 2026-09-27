@@ -21,7 +21,21 @@ const customIcons: Record<SiteSidebarLink['icon'], string> = {
   link: 'solar:link-linear', globe: 'solar:global-linear', book: 'solar:book-linear',
   sparkles: 'solar:stars-linear', building: 'solar:buildings-2-linear',
   message: 'solar:chat-round-dots-linear', headphones: 'solar:headphones-round-linear',
-  shield: 'solar:shield-check-linear', chart: 'solar:chart-square-linear',
+  shield: 'solar:shield-check-linear', chart: 'solar:chart-square-linear', home: 'solar:home-2-linear',
+  dashboard: 'solar:widget-4-linear', settings: 'solar:settings-linear', users: 'solar:users-group-rounded-linear',
+  user: 'solar:user-linear', briefcase: 'solar:case-linear', calendar: 'solar:calendar-mark-linear',
+  card: 'solar:card-linear', key: 'solar:key-linear', lock: 'solar:lock-keyhole-linear',
+  file: 'solar:document-text-linear', folder: 'solar:folder-linear', help: 'solar:question-circle-linear',
+  info: 'solar:info-circle-linear', bell: 'solar:bell-linear', mail: 'solar:letter-linear',
+  phone: 'solar:phone-linear', map: 'solar:map-point-linear', database: 'solar:database-linear',
+  server: 'solar:server-minimalistic-linear', code: 'solar:code-linear', terminal: 'solar:terminal-linear',
+  bot: 'solar:cpu-linear', cpu: 'solar:cpu-linear', workflow: 'solar:routing-2-linear', gauge: 'solar:gauge-linear',
+  rocket: 'solar:rocket-2-linear', megaphone: 'solar:megaphone-linear', shopping: 'solar:bag-3-linear',
+  monitor: 'solar:monitor-linear', cloud: 'solar:cloud-linear', bookmark: 'solar:bookmark-linear',
+  graduation: 'solar:square-academic-cap-linear', newspaper: 'solar:document-text-linear',
+  clipboard: 'solar:clipboard-check-linear', list: 'solar:list-check-linear', wrench: 'solar:wad-of-money-linear',
+  search: 'solar:magnifer-linear', star: 'solar:star-linear', heart: 'solar:heart-linear',
+  zap: 'solar:bolt-linear', command: 'solar:command-linear', panels: 'solar:sidebar-minimalistic-linear',
 }
 
 type NavItem = {
@@ -103,6 +117,27 @@ function groupNode(
   return { key: `group:${key}`, title, children }
 }
 
+function customNavigationTree(links: SiteSidebarLink[], english: boolean): SidebarNode[] {
+  const roots: SidebarNode[] = []
+  const stack: Array<{ level: number; node: SidebarNode }> = []
+  for (const [index, link] of links.entries()) {
+    const level = Math.max(1, Math.min(3, link.level ?? 1))
+    while (stack.length >= level) stack.pop()
+    const node: SidebarNode = {
+      key: `custom:${index}:${link.url}`,
+      title: english && link.label_en ? link.label_en : link.label,
+      href: link.url,
+      icon: customIcons[link.icon] ?? customIcons.link,
+      children: [],
+    }
+    const parent = stack.at(-1)?.node
+    if (parent) parent.children?.push(node)
+    else roots.push(node)
+    stack.push({ level, node })
+  }
+  return roots
+}
+
 /** 构建控制台侧栏导航节点树，交给 acmeidc 的 ModuleSidebarLayoutContainer 渲染。 */
 export function useAppNavigationItems(role: 'admin' | 'user'): SidebarNode[] {
   const eligibility = useAccountEligibility()
@@ -147,15 +182,10 @@ export function useAppNavigationItems(role: 'admin' | 'user'): SidebarNode[] {
         t(`nav.sections.${section.key}`),
         [
           ...section.items.map((itemKey) => navNode(itemKey, t)),
-          ...(section.key === 'workspace' ? (customLinks ?? [])
-            .filter((link) => link.audience === 'all' || role === 'admin')
-            .map((link, index) => ({
-              key: `custom:${index}`,
-              title: i18n.resolvedLanguage?.startsWith('en') && link.label_en ? link.label_en : link.label,
-              href: link.url,
-              icon: customIcons[link.icon] ?? customIcons.link,
-              className: link.style === 'accent' ? 'text-primary bg-primary/8' : undefined,
-            })) : []),
+          ...(section.key === 'workspace' ? customNavigationTree(
+            (customLinks ?? []).filter((link) => link.audience === 'all' || role === 'admin'),
+            i18n.resolvedLanguage?.startsWith('en') ?? false,
+          ) : []),
         ],
       ))
   }, [customLinks, eligibility.data?.enterprise_verified, i18n.resolvedLanguage, organizationPermissions, organizationPermissionsLoading, role, selectedId, t])

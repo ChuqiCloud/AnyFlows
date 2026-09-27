@@ -50143,7 +50143,7 @@
             "items": {
               "$ref": "#/components/schemas/SiteSidebarLink"
             },
-            "maxItems": 8
+            "maxItems": 24
           }
         },
         "additionalProperties": false
@@ -50211,6 +50211,7 @@
           "label",
           "url",
           "icon",
+          "level",
           "style",
           "audience"
         ],
@@ -50234,7 +50235,13 @@
           },
           "icon": {
             "type": "string",
-            "pattern": "^(link|globe|book|sparkles|building|message|headphones|shield|chart)$"
+            "pattern": "^(link|globe|book|sparkles|building|message|headphones|shield|chart|home|dashboard|settings|users|user|briefcase|calendar|card|key|lock|file|folder|help|info|bell|mail|phone|map|database|server|code|terminal|bot|cpu|workflow|gauge|rocket|megaphone|shopping|monitor|cloud|bookmark|graduation|newspaper|clipboard|list|wrench|search|star|heart|zap|command|panels)$"
+          },
+          "level": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 3,
+            "minimum": 1
           },
           "style": {
             "type": "string",
