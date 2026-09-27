@@ -12,6 +12,10 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use url::Url;
 
+#[cfg(test)]
+#[path = "verification_settings_tests.rs"]
+mod tests;
+
 use crate::{
     AccountVerificationProvider, AccountVerificationProviderError,
     AlipayAccountVerificationProvider, SessionPrincipal, SessionRole,

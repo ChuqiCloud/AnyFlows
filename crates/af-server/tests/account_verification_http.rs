@@ -49,6 +49,12 @@ impl SessionAuthenticator for Sessions {
 }
 
 async fn fixture() -> Result<(Router, af_db::DatabasePool), Box<dyn std::error::Error>> {
+    fixture_with_provider(None).await
+}
+
+async fn fixture_with_provider(
+    provider: Option<Arc<dyn af_admin::AccountVerificationProvider>>,
+) -> Result<(Router, af_db::DatabasePool), Box<dyn std::error::Error>> {
     let pool = af_db::connect_and_migrate(
         &DatabaseOptions::new("sqlite::memory:")?,
         MigrationOptions::default(),
@@ -122,19 +128,122 @@ async fn fixture() -> Result<(Router, af_db::DatabasePool), Box<dyn std::error::
         af_config::AlipayVerificationSettings::default(),
         af_httpclient::HttpClientProvider::new(af_httpclient::HttpClientConfig::default(), 1)?,
     ));
-    let service = Arc::new(
+    let mut service =
         AccountVerificationService::new(AccountVerificationRepository::new(pool.clone()), audit)
             .with_provider(Arc::new(
                 af_admin::DatabaseManualAccountVerificationProvider::new(settings.clone()),
             ))
             .with_provider(settings.clone())
-            .with_settings(settings.clone()),
-    );
+            .with_settings(settings.clone());
+    if let Some(provider) = provider {
+        service = service.with_provider(provider);
+    }
+    let service = Arc::new(service);
     Ok((
         build_account_verification_router(service, sessions.clone())
             .merge(build_verification_settings_router(settings, sessions)),
         pool,
     ))
+}
+
+struct CertDocCallbackProvider;
+
+#[async_trait::async_trait]
+impl af_admin::AccountVerificationProvider for CertDocCallbackProvider {
+    fn key(&self) -> &'static str {
+        "alipay"
+    }
+    fn configured(&self) -> bool {
+        true
+    }
+
+    async fn initialize(
+        &self,
+        _: &af_db::AccountVerificationProviderRequest,
+    ) -> Result<af_db::AccountVerificationProviderStart, af_admin::AccountVerificationProviderError>
+    {
+        Ok(af_db::AccountVerificationProviderStart {
+            reference: "verify-test.0123456789abcdef0123456789abcdef".to_owned(),
+            action_url: "https://openauth.alipay.com/oauth2/publicAppAuthorize.htm".to_owned(),
+            status: "pending".to_owned(),
+        })
+    }
+
+    async fn complete(
+        &self,
+        reference: &str,
+        authorization_code: &str,
+    ) -> Result<af_db::AccountVerificationProviderResult, af_admin::AccountVerificationProviderError>
+    {
+        assert_eq!(reference, "verify-test.0123456789abcdef0123456789abcdef");
+        assert_eq!(authorization_code, "test-auth-code");
+        Ok(af_db::AccountVerificationProviderResult {
+            status: "approved".to_owned(),
+            terminal_status: Some(4),
+            reason: None,
+        })
+    }
+}
+
+#[tokio::test]
+async fn alipay_auth_code_callback_saves_result_without_browser_session()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (app, pool) = fixture_with_provider(Some(Arc::new(CertDocCallbackProvider))).await?;
+    let metadata = json!({"kind":"individual","provider":"alipay","document_country":"CN","document_type":"national_id","document_number":"11010519491231002X","subject_name":"Test Person","summary":"Identity verification","materials":[]});
+    let body = format!(
+        "--verification-boundary\r\nContent-Disposition: form-data; name=\"metadata\"\r\n\r\n{metadata}\r\n--verification-boundary--\r\n"
+    );
+    let submitted = app
+        .clone()
+        .oneshot(request(
+            Method::POST,
+            "/api/account/verifications",
+            "applicant",
+            "multipart/form-data; boundary=verification-boundary",
+            body,
+        ))
+        .await?;
+    assert_eq!(submitted.status(), StatusCode::OK);
+    let record: Value = serde_json::from_slice(&to_bytes(submitted.into_body(), 65_536).await?)?;
+    let id = record["id"].as_i64().unwrap();
+    let callback = "/api/account/verifications/alipay/callback";
+    for query in [
+        "state=0123456789abcdef0123456789abcdef",
+        "state=ffffffffffffffffffffffffffffffff&auth_code=test-auth-code",
+        "state=0123456789abcdef0123456789abcdef&auth_code=test-auth-code&error=access_denied",
+    ] {
+        let response = app
+            .clone()
+            .oneshot(request(
+                Method::GET,
+                &format!("{callback}?{query}"),
+                "",
+                "text/html",
+                String::new(),
+            ))
+            .await?;
+        let html = String::from_utf8(to_bytes(response.into_body(), 65_536).await?.to_vec())?;
+        assert!(html.contains("支付宝实名认证未完成"));
+    }
+    let response = app.clone().oneshot(request(Method::GET, &format!("{callback}?state=0123456789abcdef0123456789abcdef&auth_code=test-auth-code&app_id=test-app&source=alipay_wallet"), "", "text/html", String::new())).await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let html = String::from_utf8(to_bytes(response.into_body(), 65_536).await?.to_vec())?;
+    assert!(html.contains("支付宝实名认证已完成"));
+    assert!(!html.contains("test-auth-code"));
+    let detail = app
+        .oneshot(request(
+            Method::GET,
+            &format!("/api/account/verifications/{id}"),
+            "applicant",
+            "application/json",
+            String::new(),
+        ))
+        .await?;
+    let detail: Value = serde_json::from_slice(&to_bytes(detail.into_body(), 65_536).await?)?;
+    assert_eq!(detail["case"]["status"], 4);
+    assert_eq!(detail["case"]["provider_status"], "approved");
+    pool.close().await?;
+    Ok(())
 }
 
 fn request(

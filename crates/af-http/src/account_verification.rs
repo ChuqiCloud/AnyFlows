@@ -88,6 +88,7 @@ async fn alipay_callback(
 }
 
 fn parse_alipay_callback_query(raw: Option<&str>) -> AlipayCallbackQuery {
+    let mut auth_code = None;
     let mut query = AlipayCallbackQuery {
         code: None,
         state: None,
@@ -95,12 +96,15 @@ fn parse_alipay_callback_query(raw: Option<&str>) -> AlipayCallbackQuery {
     };
     for (key, value) in url::form_urlencoded::parse(raw.unwrap_or_default().as_bytes()) {
         match key.as_ref() {
+            "auth_code" if auth_code.is_none() => auth_code = Some(value.into_owned()),
             "code" if query.code.is_none() => query.code = Some(value.into_owned()),
             "state" if query.state.is_none() => query.state = Some(value.into_owned()),
             "error" if query.error.is_none() => query.error = Some(value.into_owned()),
             _ => {}
         }
     }
+    // Alipay's browser callback uses auth_code; code is retained for existing clients.
+    query.code = auth_code.or(query.code);
     query
 }
 
