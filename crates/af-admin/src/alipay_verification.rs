@@ -1,7 +1,7 @@
 use af_config::AlipayVerificationSettings;
 use af_db::{
     AccountVerificationProviderRequest, AccountVerificationProviderResult,
-    AccountVerificationProviderStart,
+    AccountVerificationProviderStart, SiteSettingsRepository,
 };
 use af_httpclient::{Body, HeaderMap, HeaderName, HeaderValue, HttpClientProvider, Method};
 use async_trait::async_trait;
@@ -23,6 +23,9 @@ use uuid::Uuid;
 
 const MAX_RESPONSE_BYTES: usize = 256 * 1024;
 const API_VERSION: &str = "1.0";
+const DEFAULT_AUTH_URL: &str = "https://openauth.alipay.com/oauth2/publicAppAuthorize.htm";
+const DEFAULT_SCOPE: &str = "id_verify";
+const CALLBACK_PATH: &str = "/api/account/verifications/alipay/callback";
 
 #[derive(Clone, Default)]
 pub struct AlipayAccountVerificationProvider {
@@ -43,7 +46,15 @@ impl AlipayAccountVerificationProvider {
         settings: &AlipayVerificationSettings,
         http_clients: HttpClientProvider,
     ) -> Result<Self, AlipayProviderConfigError> {
-        Self::from_parts(
+        Self::from_config_with_site_settings(settings, http_clients, None)
+    }
+
+    pub fn from_config_with_site_settings(
+        settings: &AlipayVerificationSettings,
+        http_clients: HttpClientProvider,
+        site_settings: Option<Arc<SiteSettingsRepository>>,
+    ) -> Result<Self, AlipayProviderConfigError> {
+        Self::from_parts_with_site_settings(
             settings.enabled(),
             settings.app_id().map(|value| value.expose()),
             settings.private_key().map(|value| value.expose()),
@@ -52,6 +63,7 @@ impl AlipayAccountVerificationProvider {
             settings.biz_code(),
             settings.timeout_secs(),
             http_clients,
+            site_settings,
         )
     }
 
@@ -61,9 +73,34 @@ impl AlipayAccountVerificationProvider {
         private_key: Option<&str>,
         public_key: Option<&str>,
         gateway_url: &str,
-        biz_code: &str,
+        _biz_code: &str,
         timeout_secs: u64,
         http_clients: HttpClientProvider,
+    ) -> Result<Self, AlipayProviderConfigError> {
+        Self::from_parts_with_site_settings(
+            enabled,
+            app_id,
+            private_key,
+            public_key,
+            gateway_url,
+            _biz_code,
+            timeout_secs,
+            http_clients,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_parts_with_site_settings(
+        enabled: bool,
+        app_id: Option<&str>,
+        private_key: Option<&str>,
+        public_key: Option<&str>,
+        gateway_url: &str,
+        _biz_code: &str,
+        timeout_secs: u64,
+        http_clients: HttpClientProvider,
+        site_settings: Option<Arc<SiteSettingsRepository>>,
     ) -> Result<Self, AlipayProviderConfigError> {
         if !enabled {
             return Ok(Self::default());
@@ -78,15 +115,18 @@ impl AlipayAccountVerificationProvider {
         let public_key = parse_public_key(public_key)?;
         let gateway_url =
             url::Url::parse(gateway_url).map_err(|_| AlipayProviderConfigError::InvalidGateway)?;
+        let auth_url = url::Url::parse(DEFAULT_AUTH_URL)
+            .map_err(|_| AlipayProviderConfigError::InvalidAuthUrl)?;
         Ok(Self {
             client: Some(Arc::new(AlipayClient {
                 app_id,
                 private_key,
                 public_key,
                 gateway_url,
-                biz_code: biz_code.to_owned(),
+                auth_url,
                 timeout: Duration::from_secs(timeout_secs),
                 http_clients,
+                site_settings,
             })),
         })
     }
@@ -182,6 +222,19 @@ impl super::AccountVerificationProvider for AlipayAccountVerificationProvider {
             .await
             .map_err(|_| super::AccountVerificationProviderError::Unavailable)
     }
+
+    async fn complete(
+        &self,
+        reference: &str,
+        authorization_code: &str,
+    ) -> Result<AccountVerificationProviderResult, super::AccountVerificationProviderError> {
+        self.client
+            .as_ref()
+            .ok_or(super::AccountVerificationProviderError::Unavailable)?
+            .complete(reference, authorization_code)
+            .await
+            .map_err(|_| super::AccountVerificationProviderError::Unavailable)
+    }
 }
 
 #[derive(Clone)]
@@ -190,9 +243,10 @@ struct AlipayClient {
     private_key: RsaPrivateKey,
     public_key: RsaPublicKey,
     gateway_url: url::Url,
-    biz_code: String,
+    auth_url: url::Url,
     timeout: Duration,
     http_clients: HttpClientProvider,
+    site_settings: Option<Arc<SiteSettingsRepository>>,
 }
 
 #[derive(Debug, Error)]
@@ -203,6 +257,8 @@ pub enum AlipayProviderConfigError {
     InvalidKey,
     #[error("支付宝实名认证网关地址无效")]
     InvalidGateway,
+    #[error("支付宝实名认证 OAuth 地址无效")]
+    InvalidAuthUrl,
 }
 
 #[derive(Debug, Error)]
@@ -220,37 +276,41 @@ impl AlipayClient {
         &self,
         request: &AccountVerificationProviderRequest,
     ) -> Result<AccountVerificationProviderStart, AlipayRequestError> {
-        let outer_order_no = format!("anyflows-{}", Uuid::new_v4().simple());
-        // Alipay's certdoc flow currently accepts only a mainland Chinese ID card.
         if request.document_country != "CN" || request.document_type != "national_id" {
             return Err(AlipayRequestError::Response);
         }
-        let identity_param = json!({
-            "identity_type": "CERT_INFO",
-            "cert_type": "IDENTITY_CARD",
-            "cert_name": request.subject_name,
-            "cert_no": request.document_number,
-        });
-        let init = self
+        let redirect_uri = self.redirect_uri().await?;
+        let preconsult = self
             .call(
-                "alipay.user.certify.open.initialize",
+                "alipay.user.certdoc.certverify.preconsult",
                 json!({
-                    "outer_order_no": outer_order_no,
-                    "biz_code": self.biz_code,
-                    "identity_param": serde_json::to_string(&identity_param).map_err(|_| AlipayRequestError::Response)?,
-                    "merchant_config": "{}",
+                    "user_name": request.subject_name,
+                    "cert_no": request.document_number,
+                    "cert_type": "IDENTITY_CARD",
                 }),
+                None,
+                &[],
             )
             .await?;
-        let certify_id = init
-            .get("certify_id")
+        let verify_id = preconsult
+            .get("verify_id")
             .and_then(Value::as_str)
-            .filter(|value| !value.is_empty() && value.len() <= 128)
+            .filter(|value| {
+                !value.is_empty()
+                    && value.len() <= 96
+                    && !value.contains('.')
+                    && !value.chars().any(char::is_control)
+            })
             .ok_or(AlipayRequestError::Response)?
             .to_owned();
-        let action_url = self.certify_url(&certify_id)?;
+        let state = Uuid::new_v4().simple().to_string();
+        let reference = format!("{verify_id}.{state}");
+        if reference.len() > 128 {
+            return Err(AlipayRequestError::Response);
+        }
+        let action_url = self.authorize_url(&redirect_uri, &state)?;
         Ok(AccountVerificationProviderStart {
-            reference: certify_id,
+            reference,
             action_url,
             status: "pending".to_owned(),
         })
@@ -258,15 +318,38 @@ impl AlipayClient {
 
     async fn query(
         &self,
-        reference: &str,
+        _reference: &str,
     ) -> Result<AccountVerificationProviderResult, AlipayRequestError> {
-        if reference.is_empty() || reference.len() > 128 {
+        // CertDoc consult requires the OAuth access token returned by the
+        // browser authorization flow. A manual provider-sync request cannot
+        // safely query it without that token.
+        Err(AlipayRequestError::Response)
+    }
+
+    async fn complete(
+        &self,
+        reference: &str,
+        authorization_code: &str,
+    ) -> Result<AccountVerificationProviderResult, AlipayRequestError> {
+        let (verify_id, state) = reference
+            .rsplit_once('.')
+            .ok_or(AlipayRequestError::Response)?;
+        if verify_id.is_empty()
+            || verify_id.len() > 96
+            || state.len() != 32
+            || !state.bytes().all(|byte| byte.is_ascii_hexdigit())
+            || authorization_code.trim().is_empty()
+            || authorization_code.len() > 4_096
+        {
             return Err(AlipayRequestError::Response);
         }
+        let access_token = self.exchange_access_token(authorization_code).await?;
         let response = self
             .call(
-                "alipay.user.certify.open.query",
-                json!({ "certify_id": reference }),
+                "alipay.user.certdoc.certverify.consult",
+                json!({ "verify_id": verify_id }),
+                Some(&access_token),
+                &[],
             )
             .await?;
         let passed = response.get("passed").and_then(|value| match value {
@@ -297,12 +380,37 @@ impl AlipayClient {
         }
     }
 
+    async fn exchange_access_token(
+        &self,
+        authorization_code: &str,
+    ) -> Result<String, AlipayRequestError> {
+        let response = self
+            .call(
+                "alipay.system.oauth.token",
+                Value::Null,
+                None,
+                &[
+                    ("grant_type", "authorization_code"),
+                    ("code", authorization_code),
+                ],
+            )
+            .await?;
+        response
+            .get("access_token")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty() && value.len() <= 4_096)
+            .map(str::to_owned)
+            .ok_or(AlipayRequestError::Response)
+    }
+
     async fn call(
         &self,
         method: &str,
         biz_content: Value,
+        auth_token: Option<&str>,
+        extra: &[(&str, &str)],
     ) -> Result<Map<String, Value>, AlipayRequestError> {
-        let params = self.signed_params(method, biz_content)?;
+        let params = self.signed_params(method, biz_content, auth_token, extra)?;
         let body = {
             let mut form = url::form_urlencoded::Serializer::new(String::new());
             for (key, value) in params {
@@ -347,24 +455,50 @@ impl AlipayClient {
         })
     }
 
-    fn certify_url(&self, certify_id: &str) -> Result<String, AlipayRequestError> {
-        let params = self.signed_params(
-            "alipay.user.certify.open.certify",
-            json!({ "certify_id": certify_id }),
-        )?;
-        let mut url = self.gateway_url.clone();
-        url.query_pairs_mut().extend_pairs(params);
-        let action_url = url.to_string();
-        if action_url.len() > 2_048 || url.scheme() != "https" {
+    async fn redirect_uri(&self) -> Result<String, AlipayRequestError> {
+        let repository = self
+            .site_settings
+            .as_ref()
+            .ok_or(AlipayRequestError::Response)?;
+        let settings = repository
+            .settings()
+            .await
+            .map_err(|_| AlipayRequestError::Transport)?;
+        let base = settings
+            .public_base_url()
+            .ok_or(AlipayRequestError::Response)?
+            .trim_end_matches('/');
+        let redirect_uri = format!("{base}{CALLBACK_PATH}");
+        let parsed = url::Url::parse(&redirect_uri).map_err(|_| AlipayRequestError::Response)?;
+        if redirect_uri.len() > 2_048
+            || !matches!(parsed.scheme(), "http" | "https")
+            || parsed.host_str().is_none()
+        {
             return Err(AlipayRequestError::Response);
         }
-        Ok(action_url)
+        Ok(redirect_uri)
+    }
+
+    fn authorize_url(&self, redirect_uri: &str, state: &str) -> Result<String, AlipayRequestError> {
+        let mut url = self.auth_url.clone();
+        url.query_pairs_mut()
+            .append_pair("app_id", &self.app_id)
+            .append_pair("scope", DEFAULT_SCOPE)
+            .append_pair("redirect_uri", redirect_uri)
+            .append_pair("state", state);
+        let value = url.to_string();
+        if value.len() > 2_048 || url.scheme() != "https" {
+            return Err(AlipayRequestError::Response);
+        }
+        Ok(value)
     }
 
     fn signed_params(
         &self,
         method: &str,
         biz_content: Value,
+        auth_token: Option<&str>,
+        extra: &[(&str, &str)],
     ) -> Result<BTreeMap<String, String>, AlipayRequestError> {
         let mut params = BTreeMap::new();
         params.insert("app_id".to_owned(), self.app_id.clone());
@@ -374,10 +508,20 @@ impl AlipayClient {
         params.insert("sign_type".to_owned(), "RSA2".to_owned());
         params.insert("timestamp".to_owned(), timestamp());
         params.insert("version".to_owned(), API_VERSION.to_owned());
-        params.insert(
-            "biz_content".to_owned(),
-            serde_json::to_string(&biz_content).map_err(|_| AlipayRequestError::Response)?,
-        );
+        if !biz_content.is_null() {
+            params.insert(
+                "biz_content".to_owned(),
+                serde_json::to_string(&biz_content).map_err(|_| AlipayRequestError::Response)?,
+            );
+        }
+        if let Some(auth_token) = auth_token.filter(|value| !value.is_empty()) {
+            params.insert("auth_token".to_owned(), auth_token.to_owned());
+        }
+        for (key, value) in extra {
+            if !key.is_empty() && !value.is_empty() {
+                params.insert((*key).to_owned(), (*value).to_owned());
+            }
+        }
         let sign_content = params
             .iter()
             .map(|(key, value)| format!("{key}={value}"))
@@ -524,31 +668,31 @@ mod tests {
     fn verifies_original_alipay_response_bytes_and_method_key() {
         let private_key = RsaPrivateKey::from_pkcs8_pem(TEST_PRIVATE_KEY).unwrap();
         let public_key = RsaPublicKey::from(&private_key);
-        let response = r#"{"msg":"Success", "certify_id":"test-certify-id", "code":"10000"}"#;
+        let response = r#"{"msg":"Success", "verify_id":"test-verify-id", "code":"10000"}"#;
         let signature = rsa::signature::Signer::sign(
             &SigningKey::<Sha256>::new(private_key),
             response.as_bytes(),
         );
         let body = format!(
-            r#"{{"alipay_user_certify_open_initialize_response":{response},"sign":"{}"}}"#,
+            r#"{{"alipay_user_certdoc_certverify_preconsult_response":{response},"sign":"{}"}}"#,
             BASE64.encode(signature.to_bytes())
         );
         let parsed = parse_gateway_response(
             body.as_bytes(),
-            "alipay.user.certify.open.initialize",
+            "alipay.user.certdoc.certverify.preconsult",
             &public_key,
         )
         .unwrap();
         assert_eq!(
-            parsed.get("certify_id").and_then(Value::as_str),
-            Some("test-certify-id")
+            parsed.get("verify_id").and_then(Value::as_str),
+            Some("test-verify-id")
         );
 
-        let tampered = body.replace("test-certify-id", "other-certify-id");
+        let tampered = body.replace("test-verify-id", "other-verify-id");
         assert!(matches!(
             parse_gateway_response(
                 tampered.as_bytes(),
-                "alipay.user.certify.open.initialize",
+                "alipay.user.certdoc.certverify.preconsult",
                 &public_key
             ),
             Err(AlipayRequestError::Response)
@@ -556,7 +700,7 @@ mod tests {
     }
 
     #[test]
-    fn certify_link_contains_only_the_reference_and_has_a_valid_signature() {
+    fn authorize_link_contains_oauth_scope_and_callback_state() {
         let private_key = RsaPrivateKey::from_pkcs8_pem(TEST_PRIVATE_KEY).unwrap();
         let public_key = RsaPublicKey::from(&private_key);
         let public_pem = public_key.to_public_key_pem(LineEnding::LF).unwrap();
@@ -574,30 +718,86 @@ mod tests {
         let link = provider
             .client
             .unwrap()
-            .certify_url("test-certify-id")
+            .authorize_url(
+                "https://example.com/api/account/verifications/alipay/callback",
+                "0123456789abcdef0123456789abcdef",
+            )
             .unwrap();
         let url = url::Url::parse(&link).unwrap();
-        let mut params: BTreeMap<String, String> = url.query_pairs().into_owned().collect();
-        let signature = BASE64.decode(params.remove("sign").unwrap()).unwrap();
-        let signature = Signature::try_from(signature.as_slice()).unwrap();
-        let signed = params
-            .iter()
-            .map(|(key, value)| format!("{key}={value}"))
-            .collect::<Vec<_>>()
-            .join("&");
-        rsa::signature::Verifier::verify(
-            &VerifyingKey::<Sha256>::new(public_key),
-            signed.as_bytes(),
-            &signature,
-        )
-        .unwrap();
+        assert_eq!(url.host_str(), Some("openauth.alipay.com"));
         assert_eq!(
-            params.get("method").map(String::as_str),
-            Some("alipay.user.certify.open.certify")
+            url.query_pairs()
+                .find(|(key, _)| key == "app_id")
+                .map(|(_, value)| value.into_owned()),
+            Some("test-app".to_owned())
         );
         assert_eq!(
-            serde_json::from_str::<Value>(&params["biz_content"]).unwrap(),
-            json!({ "certify_id": "test-certify-id" })
+            url.query_pairs()
+                .find(|(key, _)| key == "scope")
+                .map(|(_, value)| value.into_owned()),
+            Some("id_verify".to_owned())
+        );
+        assert_eq!(
+            url.query_pairs()
+                .find(|(key, _)| key == "state")
+                .map(|(_, value)| value.into_owned()),
+            Some("0123456789abcdef0123456789abcdef".to_owned())
+        );
+        assert_eq!(
+            url.query_pairs()
+                .find(|(key, _)| key == "redirect_uri")
+                .map(|(_, value)| value.into_owned()),
+            Some("https://example.com/api/account/verifications/alipay/callback".to_owned())
+        );
+    }
+
+    #[test]
+    fn oauth_token_and_consult_parameters_are_signed_as_gateway_fields() {
+        let private_key = RsaPrivateKey::from_pkcs8_pem(TEST_PRIVATE_KEY).unwrap();
+        let public_key = RsaPublicKey::from(&private_key);
+        let public_pem = public_key.to_public_key_pem(LineEnding::LF).unwrap();
+        let provider = AlipayAccountVerificationProvider::from_parts(
+            true,
+            Some("test-app"),
+            Some(TEST_PRIVATE_KEY),
+            Some(&public_pem),
+            "https://openapi.alipay.com/gateway.do",
+            "FACE",
+            10,
+            HttpClientProvider::new(af_httpclient::HttpClientConfig::default(), 1).unwrap(),
+        )
+        .unwrap();
+        let client = provider.client.unwrap();
+        let token_params = client
+            .signed_params(
+                "alipay.system.oauth.token",
+                Value::Null,
+                None,
+                &[("grant_type", "authorization_code"), ("code", "oauth-code")],
+            )
+            .unwrap();
+        assert_eq!(
+            token_params.get("grant_type"),
+            Some(&"authorization_code".to_owned())
+        );
+        assert_eq!(token_params.get("code"), Some(&"oauth-code".to_owned()));
+        assert!(!token_params.contains_key("biz_content"));
+
+        let consult_params = client
+            .signed_params(
+                "alipay.user.certdoc.certverify.consult",
+                json!({ "verify_id": "verify-1" }),
+                Some("access-token"),
+                &[],
+            )
+            .unwrap();
+        assert_eq!(
+            consult_params.get("auth_token"),
+            Some(&"access-token".to_owned())
+        );
+        assert_eq!(
+            serde_json::from_str::<Value>(consult_params.get("biz_content").unwrap()).unwrap(),
+            json!({ "verify_id": "verify-1" })
         );
     }
 

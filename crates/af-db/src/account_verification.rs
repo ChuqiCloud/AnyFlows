@@ -209,6 +209,43 @@ impl AccountVerificationRepository {
         .await
     }
 
+    /// Locate an Alipay CertDoc case by its OAuth state without exposing the
+    /// provider reference to the HTTP layer. The state is a high-entropy,
+    /// single-flow capability, so the callback does not need a browser bearer
+    /// token after the provider redirects back.
+    pub async fn provider_reference_by_state(
+        &self,
+        state: &str,
+    ) -> Result<(UserId, i64, String, String), AccountVerificationError> {
+        if !valid_text(state, 64) || !state.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err(AccountVerificationError::Invalid);
+        }
+        self.run(async {
+            let cases = cases::Entity::find()
+                .filter(cases::Column::Provider.eq("alipay"))
+                .order_by_desc(cases::Column::Id)
+                .limit(32)
+                .all(self.pool.connection())
+                .await
+                .map_err(unavailable)?;
+            for case in cases {
+                let Some(reference) = case.provider_reference else {
+                    continue;
+                };
+                let Some((_, reference_state)) = reference.rsplit_once('.') else {
+                    continue;
+                };
+                if reference_state == state {
+                    let user =
+                        UserId::new(case.user_id).map_err(|_| AccountVerificationError::Invalid)?;
+                    return Ok((user, case.id, case.provider, reference));
+                }
+            }
+            Err(AccountVerificationError::NotFound)
+        })
+        .await
+    }
+
     pub async fn materials(
         &self,
         user: Option<UserId>,

@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { ApiError } from '@/lib/api'
 import { useAccountEligibility, useAccountVerifications, useVerificationDetail, useSubmitAccountVerification,
-  useReviewAccountVerification, useSyncAccountVerificationProvider, materialBlob, verificationBase, type VerificationKind, type VerificationProvider } from './account-verification-api'
+  useReviewAccountVerification, materialBlob, verificationBase, type VerificationKind, type VerificationProvider } from './account-verification-api'
 import { VerificationAttachment } from './verification-attachment'
 
 const countryOptions = ['CN', 'HK', 'MO', 'TW', 'US', 'CA', 'GB', 'JP', 'KR', 'SG', 'AU', 'DE', 'FR'] as const
@@ -96,7 +96,6 @@ function VerificationDetailPanel({ id, admin }: { id: number; admin: boolean }) 
   const { t } = useTranslation()
   const query = useVerificationDetail(id, admin)
   const mutation = useReviewAccountVerification()
-  const providerMutation = useSyncAccountVerificationProvider()
   const [reason, setReason] = useState('')
   const review = async (status: number) => {
     if (!query.data) return
@@ -105,7 +104,7 @@ function VerificationDetailPanel({ id, admin }: { id: number; admin: boolean }) 
   if (query.isPending) return <p role="status" className="pt-4">{t('verificationCenter.loading')}</p>
   if (!query.data || query.isError) return <p role="alert" className="pt-4 text-destructive">{t('verificationCenter.loadError')}</p>
   return <div className="mt-4 grid gap-4 border-t border-[var(--hairline)] pt-4"><p className="whitespace-pre-wrap text-sm">{query.data.case.summary}</p>
-    {query.data.case.provider_action_url && !admin ? <div className="flex flex-wrap items-center gap-3 text-sm"><a className="text-brand underline" href={query.data.case.provider_action_url} target="_blank" rel="noreferrer">{t('verificationCenter.openProvider')}</a>{query.data.case.status !== 4 && query.data.case.status !== 5 ? <Button type="button" size="sm" variant="secondary" disabled={providerMutation.isPending} onClick={() => void providerMutation.mutateAsync(id)}>{t('verificationCenter.syncProvider')}</Button> : null}</div> : null}
+    {query.data.case.provider_action_url && !admin ? <div className="flex flex-wrap items-center gap-3 text-sm"><a className="text-brand underline" href={query.data.case.provider_action_url} target="_blank" rel="noreferrer">{t('verificationCenter.openProvider')}</a>{query.data.case.provider === 'alipay' ? <span className="text-xs text-muted-foreground">{t('verificationCenter.alipayCallbackHint')}</span> : null}</div> : null}
     <p className="text-xs text-muted-foreground">{query.data.case.document_country} · {t(`verificationCenter.documentTypes.${query.data.case.document_type}`, { defaultValue: query.data.case.document_type })}{query.data.case.document_number_masked ? ` · ${query.data.case.document_number_masked}` : ''}</p>
     {query.data.case.review_reason ? <p className="rounded-lg bg-surface-2 p-3 text-sm">{t('verificationCenter.reviewReason')}: {query.data.case.review_reason}</p> : null}
     <p className="text-xs text-muted-foreground">{t('verificationCenter.updated')}: {new Date(query.data.case.updated_at * 1000).toLocaleString()}</p>

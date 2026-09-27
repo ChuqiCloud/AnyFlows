@@ -13,7 +13,7 @@ use axum::{
     Extension, Json, Router,
     extract::{DefaultBodyLimit, Multipart, Path, RawQuery, State},
     middleware,
-    response::{IntoResponse, Response},
+    response::{Html, IntoResponse, Response},
     routing::{get, post},
 };
 use http::{StatusCode, header};
@@ -25,7 +25,7 @@ pub fn build_account_verification_router(
     service: Arc<AccountVerificationService>,
     auth: Arc<dyn SessionAuthenticator>,
 ) -> Router {
-    Router::new()
+    let protected = Router::new()
         .route("/api/account/verifications", get(list_self).post(submit))
         .route("/api/account/verifications/eligibility", get(eligibility))
         .route("/api/account/verifications/{case_id}", get(get_self))
@@ -47,13 +47,90 @@ pub fn build_account_verification_router(
             "/api/admin/account-verifications/{case_id}/decision",
             post(decide),
         )
+        .with_state(service.clone())
         .route_layer(middleware::from_fn_with_state(
             ManagementAuthenticationState::new(auth),
             authenticate_management_session,
         ))
+        .layer(DefaultBodyLimit::max(26_000_000));
+    Router::new()
+        .merge(protected)
+        .route(
+            "/api/account/verifications/alipay/callback",
+            get(alipay_callback),
+        )
         .layer(middleware::from_fn(ensure_request_id))
-        .layer(DefaultBodyLimit::max(26_000_000))
         .with_state(service)
+}
+
+struct AlipayCallbackQuery {
+    code: Option<String>,
+    state: Option<String>,
+    error: Option<String>,
+}
+
+async fn alipay_callback(
+    State(service): State<Arc<AccountVerificationService>>,
+    RawQuery(raw): RawQuery,
+) -> Response {
+    let query = parse_alipay_callback_query(raw.as_deref());
+    let completed = if query.error.is_some() {
+        false
+    } else if let (Some(state), Some(code)) = (query.state.as_deref(), query.code.as_deref()) {
+        service
+            .complete_provider_callback(state, code)
+            .await
+            .is_ok()
+    } else {
+        false
+    };
+    callback_page(completed)
+}
+
+fn parse_alipay_callback_query(raw: Option<&str>) -> AlipayCallbackQuery {
+    let mut query = AlipayCallbackQuery {
+        code: None,
+        state: None,
+        error: None,
+    };
+    for (key, value) in url::form_urlencoded::parse(raw.unwrap_or_default().as_bytes()) {
+        match key.as_ref() {
+            "code" if query.code.is_none() => query.code = Some(value.into_owned()),
+            "state" if query.state.is_none() => query.state = Some(value.into_owned()),
+            "error" if query.error.is_none() => query.error = Some(value.into_owned()),
+            _ => {}
+        }
+    }
+    query
+}
+
+fn callback_page(completed: bool) -> Response {
+    let (title, message) = if completed {
+        (
+            "支付宝实名认证已完成",
+            "认证结果已保存，请返回控制台查看状态。",
+        )
+    } else {
+        (
+            "支付宝实名认证未完成",
+            "认证未完成或授权已失效，请返回控制台重新发起认证。",
+        )
+    };
+    let body = format!(
+        "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{title}</title></head><body style=\"font-family:system-ui,sans-serif;max-width:36rem;margin:15vh auto;padding:2rem;line-height:1.7\"><h1>{title}</h1><p>{message}</p><p><a href=\"/\">返回控制台</a></p></body></html>"
+    );
+    let mut response = Html(body).into_response();
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        "no-store".parse().expect("static header value"),
+    );
+    response.headers_mut().insert(
+        header::CONTENT_SECURITY_POLICY,
+        "default-src 'none'; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'"
+            .parse()
+            .expect("static header value"),
+    );
+    response
 }
 
 #[derive(Serialize, ToSchema)]
