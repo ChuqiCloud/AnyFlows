@@ -11,7 +11,7 @@ use af_admin::{
 use af_telemetry::RequestId;
 use axum::{
     Extension, Json, Router,
-    extract::{DefaultBodyLimit, Multipart, Path, Query, RawQuery, State},
+    extract::{DefaultBodyLimit, Multipart, Path, RawQuery, State},
     middleware,
     response::{Html, IntoResponse, Response},
     routing::{get, post},
@@ -63,7 +63,6 @@ pub fn build_account_verification_router(
         .with_state(service)
 }
 
-#[derive(Deserialize)]
 struct AlipayCallbackQuery {
     code: Option<String>,
     state: Option<String>,
@@ -72,8 +71,9 @@ struct AlipayCallbackQuery {
 
 async fn alipay_callback(
     State(service): State<Arc<AccountVerificationService>>,
-    Query(query): Query<AlipayCallbackQuery>,
+    RawQuery(raw): RawQuery,
 ) -> Response {
+    let query = parse_alipay_callback_query(raw.as_deref());
     let completed = if query.error.is_some() {
         false
     } else if let (Some(state), Some(code)) = (query.state.as_deref(), query.code.as_deref()) {
@@ -85,6 +85,23 @@ async fn alipay_callback(
         false
     };
     callback_page(completed)
+}
+
+fn parse_alipay_callback_query(raw: Option<&str>) -> AlipayCallbackQuery {
+    let mut query = AlipayCallbackQuery {
+        code: None,
+        state: None,
+        error: None,
+    };
+    for (key, value) in url::form_urlencoded::parse(raw.unwrap_or_default().as_bytes()) {
+        match key.as_ref() {
+            "code" if query.code.is_none() => query.code = Some(value.into_owned()),
+            "state" if query.state.is_none() => query.state = Some(value.into_owned()),
+            "error" if query.error.is_none() => query.error = Some(value.into_owned()),
+            _ => {}
+        }
+    }
+    query
 }
 
 fn callback_page(completed: bool) -> Response {
