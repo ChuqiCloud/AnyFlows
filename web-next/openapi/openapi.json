@@ -50229,11 +50229,15 @@
           "url": {
             "type": "string",
             "maxLength": 2048,
-            "minLength": 1
+            "minLength": 0
           },
           "icon": {
             "type": "string",
             "pattern": "^(link|globe|book|sparkles|building|message|headphones|shield|chart|home|dashboard|settings|users|user|briefcase|calendar|card|key|lock|file|folder|help|info|bell|mail|phone|map|database|server|code|terminal|bot|cpu|workflow|gauge|rocket|megaphone|shopping|monitor|cloud|bookmark|graduation|newspaper|clipboard|list|wrench|search|star|heart|zap|command|panels)$"
+          },
+          "kind": {
+            "type": "string",
+            "pattern": "^(link|group)$"
           },
           "level": {
             "type": "integer",

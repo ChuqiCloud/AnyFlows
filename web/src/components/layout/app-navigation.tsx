@@ -42,7 +42,7 @@ import {
   Waypoints,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Collapsible } from 'radix-ui'
 
@@ -164,36 +164,59 @@ const customIcons: Record<SiteSidebarLink['icon'], LucideIcon> = {
   command: PanelsTopLeft, panels: PanelsTopLeft,
 }
 
-type CustomNavigationNode = { link: SiteSidebarLink; children: CustomNavigationNode[] }
+type CustomNavigationNode = { link: SiteSidebarLink; children: SiteSidebarLink[] }
 
-function customNavigationTree(links: SiteSidebarLink[]): CustomNavigationNode[] {
+function customNavigationTree(links: SiteSidebarLink[], role: 'admin' | 'user'): CustomNavigationNode[] {
   const roots: CustomNavigationNode[] = []
-  const stack: Array<{ level: number; node: CustomNavigationNode }> = []
   for (const link of links) {
-    const level = Math.max(1, Math.min(3, link.level ?? 1))
-    while (stack.length >= level) stack.pop()
-    const node: CustomNavigationNode = { link, children: [] }
-    const parent = stack.at(-1)?.node
-    if (parent) parent.children.push(node)
-    else roots.push(node)
-    stack.push({ level, node })
+    if ((link.level ?? 1) > 1 && roots.length > 0) {
+      const parent = roots.at(-1)!
+      if (parent.link.audience === 'all' || role === 'admin') {
+        if (parent.link.kind !== 'group' && parent.children.length === 0 && parent.link.url) parent.children.push(parent.link)
+        if (link.audience === 'all' || role === 'admin') parent.children.push(link)
+      }
+    } else roots.push({ link, children: [] })
   }
-  return roots
+  return roots.filter(({ link, children }) => (link.audience === 'all' || role === 'admin') && (link.kind !== 'group' || children.length > 0))
 }
 
-function CustomNavigation({ links }: { links: SiteSidebarLink[] }) {
-  const { i18n, t } = useTranslation()
-  if (links.length === 0) return null
+function CustomMenuGroup({ node, label }: { node: CustomNavigationNode; label: (link: SiteSidebarLink) => string }) {
+  const [open, setOpen] = useState(() => node.children.some((child) => child.url.startsWith('/') && window.location.hash.slice(1) === child.url))
+  const { setOpen: setSidebarOpen, state: sidebarState } = useSidebar()
+  const Icon = customIcons[node.link.icon] ?? Link2
+  const name = label(node.link)
+  return <Collapsible.Root asChild open={open} onOpenChange={setOpen}>
+    <SidebarMenuItem>
+      <SidebarMenuButton type="button" tooltip={name} className="h-9 rounded-lg px-3" aria-expanded={open} onClick={() => { if (sidebarState === 'collapsed') setSidebarOpen(true); setOpen(!open) }}>
+        <Icon aria-hidden="true" /><span className="truncate">{name}</span><ChevronRight className={cn('ml-auto transition-transform duration-200 group-data-[collapsible=icon]:hidden', open && 'rotate-90')} aria-hidden="true" />
+      </SidebarMenuButton>
+      <Collapsible.Content className={cn('grid transition-[grid-template-rows,opacity] duration-200', open ? 'grid-rows-[1fr] opacity-100' : 'pointer-events-none grid-rows-[0fr] opacity-0')} inert={open ? undefined : true}>
+        <div className="min-h-0 overflow-hidden"><SidebarMenuSub className="gap-0.5 py-1.5 pl-3">
+          {node.children.map((child, index) => {
+            const ChildIcon = customIcons[child.icon] ?? Link2
+            const external = !child.url.startsWith('/')
+            return <SidebarMenuSubItem key={`${index}:${child.url}`}><SidebarMenuSubButton asChild size="sm" isActive={!external && window.location.hash.slice(1) === child.url} className="h-8 gap-2.5 rounded-lg px-2.5"><a href={external ? child.url : `#${child.url}`} target={external ? '_blank' : undefined} rel={external ? 'noopener noreferrer' : undefined}><ChildIcon aria-hidden="true" /><span className="truncate">{label(child)}</span></a></SidebarMenuSubButton></SidebarMenuSubItem>
+          })}
+        </SidebarMenuSub></div>
+      </Collapsible.Content>
+    </SidebarMenuItem>
+  </Collapsible.Root>
+}
+
+function CustomNavigation({ links, role }: { links: SiteSidebarLink[]; role: 'admin' | 'user' }) {
+  const { i18n } = useTranslation()
+  const nodes = customNavigationTree(links, role)
+  if (nodes.length === 0) return null
   const label = (link: SiteSidebarLink) => i18n.resolvedLanguage?.startsWith('en') && link.label_en ? link.label_en : link.label
-  const renderNodes = (nodes: CustomNavigationNode[], nested = false): ReactNode => nodes.map(({ link, children }, index) => {
-    const Icon = customIcons[link.icon] ?? Link2
-    const external = !link.url.startsWith('/')
-    const content = <SidebarMenuButton asChild tooltip={label(link)} className={cn('h-9 rounded-lg px-3', nested && 'ml-2')}><a href={external ? link.url : `#${link.url}`} target={external ? '_blank' : undefined} rel={external ? 'noopener noreferrer' : undefined}><Icon aria-hidden="true" /><span className="truncate">{label(link)}</span></a></SidebarMenuButton>
-    return <SidebarMenuItem key={`${index}:${link.url}`}>{content}{children.length > 0 ? <SidebarMenuSub className="gap-0.5 py-1.5 pl-3">{renderNodes(children, true)}</SidebarMenuSub> : null}</SidebarMenuItem>
-  })
   return <SidebarGroup className="p-0 py-1.5">
-    <SidebarGroupLabel className="h-6 px-3 text-[0.6875rem] font-semibold text-sidebar-foreground/60">{t('nav.customLinks')}</SidebarGroupLabel>
-    <SidebarGroupContent><SidebarMenu className="gap-0.5">{renderNodes(customNavigationTree(links))}</SidebarMenu></SidebarGroupContent>
+    <SidebarGroupContent><SidebarMenu className="gap-0.5">
+      {nodes.map((node, index) => {
+        if (node.link.kind === 'group' || node.children.length > 0) return <CustomMenuGroup key={index} node={node} label={label} />
+        const Icon = customIcons[node.link.icon] ?? Link2
+        const external = !node.link.url.startsWith('/')
+        return <SidebarMenuItem key={index}><SidebarMenuButton asChild tooltip={label(node.link)} isActive={!external && window.location.hash.slice(1) === node.link.url} className="h-9 rounded-lg px-3"><a href={external ? node.link.url : `#${node.link.url}`} target={external ? '_blank' : undefined} rel={external ? 'noopener noreferrer' : undefined}><Icon aria-hidden="true" /><span className="truncate">{label(node.link)}</span></a></SidebarMenuButton></SidebarMenuItem>
+      })}
+    </SidebarMenu></SidebarGroupContent>
   </SidebarGroup>
 }
 
@@ -358,7 +381,7 @@ function AdminNavigation({ activeKey }: { activeKey: NavKey }) {
 export function AppNavigation({ className, compact = false, role }: AppNavigationProps) {
   const { t } = useTranslation()
   const siteQuery = usePublicSiteSettings()
-  const customLinks = (siteQuery.data?.navigation.sidebar_links ?? []).filter((link) => link.audience === 'all' || role === 'admin')
+  const customLinks = siteQuery.data?.navigation.sidebar_links ?? []
   const activeKey = useActiveKey()
   const workspace = useOrganizationWorkspace()
   const eligibility = useAccountEligibility()
@@ -399,7 +422,7 @@ export function AppNavigation({ className, compact = false, role }: AppNavigatio
             </a>
           )
         })}
-        {customLinks.map((link, index) => {
+        {customNavigationTree(customLinks, role).flatMap((node) => node.link.kind === 'group' || node.children.length > 0 ? node.children : [node.link]).map((link, index) => {
           const Icon = customIcons[link.icon] ?? Link2
           const external = !link.url.startsWith('/')
           return <a key={`${index}:${link.url}`} href={external ? link.url : `#${link.url}`} target={external ? '_blank' : undefined} rel={external ? 'noopener noreferrer' : undefined} className="flex h-8 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium text-muted-foreground"><Icon className="size-4" aria-hidden="true" />{link.label}</a>
@@ -415,7 +438,7 @@ export function AppNavigation({ className, compact = false, role }: AppNavigatio
         : visibleUserGroups.map((group) => (
           <NavigationGroup key={group.key} label={t(`nav.groups.${group.key}`)} items={group.items} activeKey={activeKey} />
         ))}
-      <CustomNavigation links={customLinks} />
+      <CustomNavigation links={customLinks} role={role} />
     </div>
   )
 }

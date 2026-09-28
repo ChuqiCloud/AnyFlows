@@ -23,7 +23,7 @@ const MAX_BALANCE_UNIT_NAME_BYTES: usize = 64;
 const MAX_BALANCE_UNIT_SYMBOL_BYTES: usize = 24;
 const MAX_BALANCE_FRACTION_DIGITS: u8 = 4;
 const MAX_NAVIGATION_JSON_BYTES: usize = 65_536;
-const MAX_SIDEBAR_LINKS: usize = 24;
+const MAX_SIDEBAR_LINKS: usize = 48;
 const SIDEBAR_ICONS: &[&str] = &[
     "link",
     "globe",
@@ -111,6 +111,8 @@ pub struct SiteSidebarLinkRecord {
     pub label_en: Option<String>,
     pub url: String,
     pub icon: String,
+    #[serde(default = "default_sidebar_kind")]
+    pub kind: String,
     /// 侧栏目录层级。历史配置缺少该字段时按一级目录处理。
     #[serde(default = "default_sidebar_level")]
     pub level: u8,
@@ -122,6 +124,10 @@ pub struct SiteSidebarLinkRecord {
 
 fn default_sidebar_level() -> u8 {
     1
+}
+
+fn default_sidebar_kind() -> String {
+    "link".to_owned()
 }
 
 fn default_sidebar_style() -> String {
@@ -138,11 +144,19 @@ impl SiteNavigationRecord {
                     || (index == 0 && link.level != 1)
                     || (index > 0
                         && link.level > self.sidebar_links[index - 1].level.saturating_add(1))
+                    || !matches!(link.kind.as_str(), "link" | "group")
+                    || (link.kind == "group" && link.level != 1)
+                    || (link.kind == "group"
+                        && self
+                            .sidebar_links
+                            .get(index + 1)
+                            .is_none_or(|child| child.level != 2))
             })
             || self.sidebar_links.iter().any(|link| {
                 !valid_navigation_label(&link.label)
                     || !valid_optional_navigation_label(link.label_en.as_deref())
-                    || !valid_navigation_url(&link.url)
+                    || (link.kind == "group" && !link.url.is_empty())
+                    || (link.kind != "group" && !valid_navigation_url(&link.url))
                     || !matches!(
                         link.icon.as_str(),
                         icon if SIDEBAR_ICONS.contains(&icon)

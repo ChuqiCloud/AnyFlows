@@ -51,6 +51,7 @@ async fn navigation_updates_preserve_brand_and_survive_template_changes()
             label_en: Some("Support".to_owned()),
             url: "https://support.example.com".to_owned(),
             icon: "headphones".to_owned(),
+            kind: "link".to_owned(),
             level: 1,
             style: "accent".to_owned(),
             audience: "all".to_owned(),
@@ -112,6 +113,30 @@ async fn navigation_updates_preserve_brand_and_survive_template_changes()
             Err(SiteSettingsRepositoryError::InvalidSettings)
         );
     }
+    let mut grouped = navigation.clone();
+    grouped.sidebar_links[0].kind = "group".to_owned();
+    grouped.sidebar_links[0].url.clear();
+    assert_eq!(
+        grouped.validate(),
+        Err(SiteSettingsRepositoryError::InvalidSettings)
+    );
+    let mut child = navigation.sidebar_links[0].clone();
+    child.level = 2;
+    grouped.sidebar_links.push(child);
+    assert!(grouped.validate().is_ok());
+    grouped.sidebar_links[1].url = "javascript:alert(1)".to_owned();
+    assert_eq!(
+        grouped.validate(),
+        Err(SiteSettingsRepositoryError::InvalidSettings)
+    );
+    let mut full = navigation.clone();
+    full.sidebar_links = vec![navigation.sidebar_links[0].clone(); 48];
+    assert!(full.validate().is_ok());
+    full.sidebar_links.push(navigation.sidebar_links[0].clone());
+    assert_eq!(
+        full.validate(),
+        Err(SiteSettingsRepositoryError::InvalidSettings)
+    );
     pool.close().await?;
     Ok(())
 }
