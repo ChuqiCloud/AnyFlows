@@ -62,15 +62,15 @@ importers:
       '@lobehub/icons':
         specifier: ^5.19.3
         version: 5.19.3(@lobehub/ui@5.48.2)(@types/react@19.3.0)(antd@6.6.5(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@rc-component/qrcode':
+        specifier: 2.0.0
+        version: 2.0.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@react-aria/visually-hidden':
         specifier: 3.9.0
         version: 3.9.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@reduxjs/toolkit':
         specifier: ^2.11.2
         version: 2.12.0(react-redux@9.3.0(@types/react@19.3.0)(react@19.3.0)(redux@5.0.1))(react@19.3.0)
-      '@rc-component/qrcode':
-        specifier: 2.0.0
-        version: 2.0.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@stripe/react-stripe-js':
         specifier: 6.8.0
         version: 6.8.0(@stripe/stripe-js@9.13.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)

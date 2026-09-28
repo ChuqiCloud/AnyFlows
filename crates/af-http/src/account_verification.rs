@@ -168,7 +168,7 @@ impl From<AccountVerificationRecord> for AccountVerificationResponse {
             provider: c.provider,
             provider_action_url: c.provider_action_url,
             provider_expires_at: c.provider_expires_at,
-            server_time: af_db::DatabaseTimestamp::now_utc().unix_timestamp(),
+            server_time: time::OffsetDateTime::now_utc().unix_timestamp(),
             provider_status: c.provider_status,
             document_country: c.document_country,
             document_type: c.document_type,

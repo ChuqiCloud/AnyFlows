@@ -38,7 +38,7 @@ export function useAccountVerifications(admin: boolean, status?: number) {
 }
 export function useVerificationDetail(id: number | undefined, admin: boolean) {
   const client = useQueryClient()
-  const query = useQuery({ queryKey: [...verificationKey, 'detail', admin, id], enabled: id !== undefined, gcTime: 0, staleTime: 0, retry: false,
+  const query = useQuery<VerificationDetail>({ queryKey: [...verificationKey, 'detail', admin, id], enabled: id !== undefined, gcTime: 0, staleTime: 0, retry: false,
     refetchIntervalInBackground: false,
     refetchInterval: (query) => {
       const record = query.state.data?.case
