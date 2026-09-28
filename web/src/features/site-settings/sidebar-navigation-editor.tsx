@@ -84,11 +84,13 @@ export function SidebarNavigationEditor({ links, onChange, icons, en }: {
     commit(next)
   }
   const changeKind = (position: Position, kind: 'link' | 'group') => {
+    if (kind === 'group' && links.length >= 48) return
     const next = clone()
     const node = next[position.index]
     if (kind === 'group') {
+      const previous = node.link
       node.link = { ...node.link, kind, url: '' }
-      node.children = [{ link: emptyLink(), children: [] }]
+      node.children = [{ link: { ...previous, kind: 'link', level: 2 }, children: [] }]
     } else {
       node.link = { ...node.link, kind, url: '' }
       next.splice(position.index + 1, 0, ...node.children)
@@ -119,7 +121,7 @@ export function SidebarNavigationEditor({ links, onChange, icons, en }: {
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-semibold text-foreground">{group ? words.group : words.link}</span>
-            {position.parent === null && <select className="rounded border border-[var(--hairline)] bg-background px-2 py-1 text-xs" aria-label={words.placement} value={group ? 'group' : 'link'} onChange={(event) => changeKind(position, event.target.value as 'link' | 'group')}><option value="link">{words.link}</option><option value="group">{words.group}</option></select>}
+            {position.parent === null && <select className="rounded border border-[var(--hairline)] bg-background px-2 py-1 text-xs" aria-label={words.placement} value={group ? 'group' : 'link'} onChange={(event) => changeKind(position, event.target.value as 'link' | 'group')}><option value="link">{words.link}</option><option value="group" disabled={!group && links.length >= 48}>{words.group}</option></select>}
             {!group && <select className="max-w-full rounded border border-[var(--hairline)] bg-background px-2 py-1 text-xs" aria-label={words.placement} value={position.parent ?? 'top'} onChange={(event) => relocate(position, { parent: event.target.value === 'top' ? null : Number(event.target.value), index: event.target.value === 'top' ? nodes.length : nodes[Number(event.target.value)].children.length })}><option value="top">{words.top}</option>{nodes.map((root, index) => root.link.kind === 'group' && (position.parent !== null || position.index !== index) ? <option key={index} value={index}>{root.link.label || words.group}</option> : null)}</select>}
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
