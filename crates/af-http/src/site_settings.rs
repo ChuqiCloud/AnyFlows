@@ -181,12 +181,15 @@ pub(crate) struct SiteSidebarLinkDto {
     label: String,
     #[schema(max_length = 64)]
     label_en: Option<String>,
-    #[schema(min_length = 1, max_length = 2048)]
+    #[schema(min_length = 0, max_length = 2048)]
     url: String,
     #[schema(
         pattern = "^(link|globe|book|sparkles|building|message|headphones|shield|chart|home|dashboard|settings|users|user|briefcase|calendar|card|key|lock|file|folder|help|info|bell|mail|phone|map|database|server|code|terminal|bot|cpu|workflow|gauge|rocket|megaphone|shopping|monitor|cloud|bookmark|graduation|newspaper|clipboard|list|wrench|search|star|heart|zap|command|panels)$"
     )]
     icon: String,
+    #[serde(default = "default_sidebar_kind")]
+    #[schema(pattern = "^(link|group)$")]
+    kind: String,
     #[serde(default = "default_sidebar_level")]
     #[schema(minimum = 1, maximum = 3)]
     level: u8,
@@ -199,6 +202,10 @@ pub(crate) struct SiteSidebarLinkDto {
 
 fn default_sidebar_level() -> u8 {
     1
+}
+
+fn default_sidebar_kind() -> String {
+    "link".to_owned()
 }
 
 fn default_sidebar_style() -> String {
@@ -243,6 +250,7 @@ impl From<&SiteNavigationRecord> for SiteNavigationDto {
                     label_en: item.label_en.clone(),
                     url: item.url.clone(),
                     icon: item.icon.clone(),
+                    kind: item.kind.clone(),
                     level: item.level,
                     style: item.style.clone(),
                     audience: item.audience.clone(),
@@ -278,6 +286,7 @@ impl From<SiteNavigationDto> for SiteNavigationRecord {
                     label_en: item.label_en,
                     url: item.url,
                     icon: item.icon,
+                    kind: item.kind,
                     level: item.level,
                     style: item.style,
                     audience: item.audience,

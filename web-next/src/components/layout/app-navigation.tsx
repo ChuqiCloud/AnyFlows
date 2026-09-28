@@ -117,25 +117,37 @@ function groupNode(
   return { key: `group:${key}`, title, children }
 }
 
-function customNavigationTree(links: SiteSidebarLink[], english: boolean): SidebarNode[] {
+function customNavigationTree(links: SiteSidebarLink[], english: boolean, role: 'admin' | 'user'): SidebarNode[] {
   const roots: SidebarNode[] = []
-  const stack: Array<{ level: number; node: SidebarNode }> = []
+  let parent: SidebarNode | undefined
+  let parentVisible = false
   for (const [index, link] of links.entries()) {
-    const level = Math.max(1, Math.min(3, link.level ?? 1))
-    while (stack.length >= level) stack.pop()
-    const node: SidebarNode = {
+    if ((link.level ?? 1) > 1) {
+      if (!parent || !parentVisible) continue
+      if (parent.href && parent.children?.length === 0) {
+        parent.children?.push({ ...parent, key: `${parent.key}:overview`, children: undefined })
+        delete parent.href
+      }
+      if (link.audience !== 'all' && role !== 'admin') continue
+      parent.children?.push({
+        key: `custom:${index}:${link.url}`,
+        title: english && link.label_en ? link.label_en : link.label,
+        href: link.url,
+        icon: customIcons[link.icon] ?? customIcons.link,
+      })
+      continue
+    }
+    parentVisible = link.audience === 'all' || role === 'admin'
+    parent = {
       key: `custom:${index}:${link.url}`,
       title: english && link.label_en ? link.label_en : link.label,
-      href: link.url,
+      href: link.kind === 'group' ? undefined : link.url,
       icon: customIcons[link.icon] ?? customIcons.link,
       children: [],
     }
-    const parent = stack.at(-1)?.node
-    if (parent) parent.children?.push(node)
-    else roots.push(node)
-    stack.push({ level, node })
+    if (parentVisible) roots.push(parent)
   }
-  return roots
+  return roots.filter((node) => node.href || (node.children?.length ?? 0) > 0)
 }
 
 /** 构建控制台侧栏导航节点树，交给 acmeidc 的 ModuleSidebarLayoutContainer 渲染。 */
@@ -183,8 +195,9 @@ export function useAppNavigationItems(role: 'admin' | 'user'): SidebarNode[] {
         [
           ...section.items.map((itemKey) => navNode(itemKey, t)),
           ...(section.key === 'workspace' ? customNavigationTree(
-            (customLinks ?? []).filter((link) => link.audience === 'all' || role === 'admin'),
+            customLinks ?? [],
             i18n.resolvedLanguage?.startsWith('en') ?? false,
+            role,
           ) : []),
         ],
       ))
