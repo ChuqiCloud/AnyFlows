@@ -208,7 +208,10 @@ impl super::AccountVerificationProvider for AlipayAccountVerificationProvider {
             .ok_or(super::AccountVerificationProviderError::Unavailable)?
             .initialize(request)
             .await
-            .map_err(|_| super::AccountVerificationProviderError::Unavailable)
+            .map_err(|error| {
+                tracing::warn!(stage = "initialize", error = %error, "Alipay verification failed");
+                super::AccountVerificationProviderError::Unavailable
+            })
     }
 
     async fn query(
@@ -233,7 +236,10 @@ impl super::AccountVerificationProvider for AlipayAccountVerificationProvider {
             .ok_or(super::AccountVerificationProviderError::Unavailable)?
             .complete(reference, authorization_code)
             .await
-            .map_err(|_| super::AccountVerificationProviderError::Unavailable)
+            .map_err(|error| {
+                tracing::warn!(stage = "complete", error = %error, "Alipay verification failed");
+                super::AccountVerificationProviderError::Unavailable
+            })
     }
 }
 
@@ -263,6 +269,8 @@ pub enum AlipayProviderConfigError {
 
 #[derive(Debug, Error)]
 enum AlipayRequestError {
+    #[error("支付宝实名认证需要在站点设置中配置公开访问地址 public_base_url")]
+    MissingPublicBaseUrl,
     #[error("支付宝实名认证网络请求失败")]
     Transport,
     #[error("支付宝实名认证响应无效")]
@@ -425,7 +433,7 @@ impl AlipayClient {
         );
         headers.insert(
             HeaderName::from_static("content-type"),
-            HeaderValue::from_static("application/x-www-form-urlencoded"),
+            HeaderValue::from_static("application/x-www-form-urlencoded;charset=UTF-8"),
         );
         let client = self
             .http_clients
@@ -459,14 +467,14 @@ impl AlipayClient {
         let repository = self
             .site_settings
             .as_ref()
-            .ok_or(AlipayRequestError::Response)?;
+            .ok_or(AlipayRequestError::MissingPublicBaseUrl)?;
         let settings = repository
             .settings()
             .await
             .map_err(|_| AlipayRequestError::Transport)?;
         let base = settings
             .public_base_url()
-            .ok_or(AlipayRequestError::Response)?
+            .ok_or(AlipayRequestError::MissingPublicBaseUrl)?
             .trim_end_matches('/');
         let redirect_uri = format!("{base}{CALLBACK_PATH}");
         let parsed = url::Url::parse(&redirect_uri).map_err(|_| AlipayRequestError::Response)?;
@@ -502,8 +510,8 @@ impl AlipayClient {
     ) -> Result<BTreeMap<String, String>, AlipayRequestError> {
         let mut params = BTreeMap::new();
         params.insert("app_id".to_owned(), self.app_id.clone());
-        params.insert("charset".to_owned(), "utf-8".to_owned());
-        params.insert("format".to_owned(), "json".to_owned());
+        params.insert("charset".to_owned(), "UTF-8".to_owned());
+        params.insert("format".to_owned(), "JSON".to_owned());
         params.insert("method".to_owned(), method.to_owned());
         params.insert("sign_type".to_owned(), "RSA2".to_owned());
         params.insert("timestamp".to_owned(), timestamp());
@@ -541,6 +549,12 @@ fn parse_gateway_response(
 ) -> Result<Map<String, Value>, AlipayRequestError> {
     let envelope: BTreeMap<String, Box<RawValue>> =
         serde_json::from_slice(body).map_err(|_| AlipayRequestError::Response)?;
+    if let Some(error) = envelope.get("error_response") {
+        let error: Map<String, Value> =
+            serde_json::from_str(error.get()).map_err(|_| AlipayRequestError::Response)?;
+        log_gateway_rejection(method, &error);
+        return Err(AlipayRequestError::Rejected);
+    }
     let response_key = format!("{}_response", method.replace('.', "_"));
     let raw_response = envelope
         .get(&response_key)
@@ -548,14 +562,12 @@ fn parse_gateway_response(
     let object: Map<String, Value> =
         serde_json::from_str(raw_response.get()).map_err(|_| AlipayRequestError::Response)?;
     let code = object.get("code").and_then(Value::as_str);
-    if code != Some("10000") {
-        let sub_code = object.get("sub_code").and_then(Value::as_str).unwrap_or("");
-        tracing::warn!(
-            method,
-            code = code.unwrap_or(""),
-            sub_code,
-            "Alipay gateway rejected verification request"
-        );
+    // OAuth token success responses may omit code/msg. CertDoc methods still
+    // require an explicit success code; token fields and signatures are checked below.
+    if code != Some("10000")
+        && !(method == "alipay.system.oauth.token" && !object.contains_key("code"))
+    {
+        log_gateway_rejection(method, &object);
         return Err(AlipayRequestError::Rejected);
     }
     let encoded_signature: String = serde_json::from_str(
@@ -574,6 +586,18 @@ fn parse_gateway_response(
     rsa::signature::Verifier::verify(&verifier, raw_response.get().as_bytes(), &signature)
         .map_err(|_| AlipayRequestError::Response)?;
     Ok(object)
+}
+
+fn log_gateway_rejection(method: &str, object: &Map<String, Value>) {
+    // Descriptions and complete bodies can contain identity or token data.
+    let code = object.get("code").and_then(Value::as_str).unwrap_or("");
+    let sub_code = object.get("sub_code").and_then(Value::as_str).unwrap_or("");
+    tracing::warn!(
+        method,
+        code,
+        sub_code,
+        "Alipay gateway rejected verification request"
+    );
 }
 
 async fn collect_response(
@@ -799,6 +823,60 @@ mod tests {
             serde_json::from_str::<Value>(consult_params.get("biz_content").unwrap()).unwrap(),
             json!({ "verify_id": "verify-1" })
         );
+    }
+
+    #[test]
+    fn token_responses_allow_missing_code_but_still_require_valid_signatures() {
+        let private = RsaPrivateKey::from_pkcs8_pem(TEST_PRIVATE_KEY).unwrap();
+        let public = RsaPublicKey::from(&private);
+        let response = r#"{"access_token":"test-token","expires_in":3600}"#;
+        let signature =
+            rsa::signature::Signer::sign(&SigningKey::<Sha256>::new(private), response.as_bytes());
+        let body = format!(
+            r#"{{"alipay_system_oauth_token_response":{response},"sign":"{}"}}"#,
+            BASE64.encode(signature.to_bytes())
+        );
+        assert!(
+            parse_gateway_response(body.as_bytes(), "alipay.system.oauth.token", &public).is_ok()
+        );
+        assert!(
+            parse_gateway_response(
+                body.replace("test-token", "other-token").as_bytes(),
+                "alipay.system.oauth.token",
+                &public
+            )
+            .is_err()
+        );
+        assert!(
+            parse_gateway_response(
+                format!(r#"{{"alipay_system_oauth_token_response":{response}}}"#).as_bytes(),
+                "alipay.system.oauth.token",
+                &public
+            )
+            .is_err()
+        );
+        for body in [
+            r#"{"error_response":{"code":"40002","sub_code":"isv.code-invalid"}}"#,
+            r#"{"alipay_system_oauth_token_response":{"code":"40004","access_token":"test-token"}}"#,
+            r#"{"alipay_system_oauth_token_response":{"code":null,"access_token":"test-token"}}"#,
+        ] {
+            assert!(matches!(
+                parse_gateway_response(body.as_bytes(), "alipay.system.oauth.token", &public),
+                Err(AlipayRequestError::Rejected)
+            ));
+        }
+        let certdoc = body.replace(
+            "alipay_system_oauth_token_response",
+            "alipay_user_certdoc_certverify_consult_response",
+        );
+        assert!(matches!(
+            parse_gateway_response(
+                certdoc.as_bytes(),
+                "alipay.user.certdoc.certverify.consult",
+                &public
+            ),
+            Err(AlipayRequestError::Rejected)
+        ));
     }
 
     #[test]

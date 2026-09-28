@@ -12,6 +12,10 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use url::Url;
 
+#[cfg(test)]
+#[path = "verification_settings_tests.rs"]
+mod tests;
+
 use crate::{
     AccountVerificationProvider, AccountVerificationProviderError,
     AlipayAccountVerificationProvider, SessionPrincipal, SessionRole,
@@ -443,6 +447,18 @@ impl AccountVerificationProvider for DatabaseVerificationSettingsService {
             .await
             .map_err(|_| AccountVerificationProviderError::Unavailable)?
             .query(reference)
+            .await
+    }
+
+    async fn complete(
+        &self,
+        reference: &str,
+        authorization_code: &str,
+    ) -> Result<AccountVerificationProviderResult, AccountVerificationProviderError> {
+        self.provider()
+            .await
+            .map_err(|_| AccountVerificationProviderError::Unavailable)?
+            .complete(reference, authorization_code)
             .await
     }
 }
