@@ -147,7 +147,10 @@ impl SiteNavigationRecord {
                     || !matches!(link.kind.as_str(), "link" | "group")
                     || (link.kind == "group" && link.level != 1)
                     || (link.kind == "group"
-                        && self.sidebar_links.get(index + 1).is_none_or(|child| child.level != 2))
+                        && self
+                            .sidebar_links
+                            .get(index + 1)
+                            .is_none_or(|child| child.level != 2))
             })
             || self.sidebar_links.iter().any(|link| {
                 !valid_navigation_label(&link.label)
