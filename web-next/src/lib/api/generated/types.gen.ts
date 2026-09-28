@@ -43,6 +43,8 @@ export type AccountVerificationResponse = {
     kind: string;
     provider: string;
     provider_action_url?: string | null;
+    provider_expires_at?: number | null;
+    server_time: number;
     provider_status?: string | null;
     document_country: string;
     document_type: string;

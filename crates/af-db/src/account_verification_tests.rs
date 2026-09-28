@@ -68,6 +68,154 @@ fn submission(kind: &str) -> AccountVerificationSubmit {
     }
 }
 
+fn alipay_submission(state: &str) -> AccountVerificationSubmit {
+    let mut write = submission("individual");
+    write.provider = "alipay".to_owned();
+    write.provider_reference = Some(format!("test-request.{state}"));
+    write.provider_action_url = Some(format!(
+        "https://openauth.alipay.com/oauth2/publicAppAuthorize.htm?scope=id_verify&state={state}"
+    ));
+    write.provider_status = Some("pending".to_owned());
+    write.document_country = "CN".to_owned();
+    write.document_type = "national_id".to_owned();
+    write.document_number = Some("11010519491231002X".to_owned());
+    write.materials.clear();
+    write
+}
+
+#[tokio::test]
+async fn expired_alipay_cases_hide_links_reject_callbacks_and_allow_resubmission()
+-> Result<(), Box<dyn Error>> {
+    let (pool, repo, users) = fixture().await?;
+    let state = "0123456789abcdef0123456789abcdef";
+    let case = repo.submit(users[0], alipay_submission(state)).await?;
+    assert_eq!(case.provider_expires_at, Some(case.created_at + 600));
+    assert!(matches!(
+        repo.ensure_can_submit(users[0], "individual").await,
+        Err(AccountVerificationError::Conflict)
+    ));
+    assert_eq!(repo.provider_reference_by_state(state).await?.1, case.id);
+
+    let created_at = DatabaseTimestamp::from_unix_timestamp(
+        DatabaseTimestamp::now_utc().unix_timestamp() - 601,
+    )?;
+    cases::ActiveModel {
+        id: Set(case.id),
+        created_at: Set(created_at),
+        ..Default::default()
+    }
+    .update(pool.connection())
+    .await?;
+    let expired = repo.get(Some(users[0]), case.id).await?;
+    assert_eq!(expired.status, 5);
+    assert_eq!(expired.provider_status.as_deref(), Some("expired"));
+    assert!(expired.provider_action_url.is_none());
+    assert!(
+        repo.list(Some(users[0]), None, Some(1), 25)
+            .await?
+            .is_empty()
+    );
+    assert_eq!(
+        repo.list(Some(users[0]), None, Some(5), 25).await?[0].id,
+        case.id
+    );
+    assert!(matches!(
+        repo.provider_reference_by_state(state).await,
+        Err(AccountVerificationError::Conflict)
+    ));
+    assert!(matches!(
+        repo.apply_provider_result(users[0], case.id, "approved".to_owned(), Some(4), None)
+            .await,
+        Err(AccountVerificationError::Conflict)
+    ));
+
+    repo.ensure_can_submit(users[0], "individual").await?;
+    let replacement = repo
+        .submit(
+            users[0],
+            alipay_submission("abcdef0123456789abcdef0123456789"),
+        )
+        .await?;
+    assert_ne!(replacement.id, case.id);
+    assert_eq!(replacement.status, 1);
+    assert!(replacement.provider_action_url.is_some());
+    assert_eq!(repo.get(Some(users[0]), case.id).await?.version, 2);
+    assert_eq!(
+        repo.list(Some(users[0]), None, Some(1), 25).await?[0].id,
+        replacement.id
+    );
+
+    let manual = repo.submit(users[1], submission("individual")).await?;
+    cases::ActiveModel {
+        id: Set(manual.id),
+        created_at: Set(created_at),
+        ..Default::default()
+    }
+    .update(pool.connection())
+    .await?;
+    assert_eq!(repo.get(Some(users[1]), manual.id).await?.status, 1);
+    assert!(matches!(
+        repo.ensure_can_submit(users[1], "individual").await,
+        Err(AccountVerificationError::Conflict)
+    ));
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn completed_alipay_cases_cannot_be_replayed_or_submitted_again() -> Result<(), Box<dyn Error>>
+{
+    let (pool, repo, users) = fixture().await?;
+    let state = "0123456789abcdef0123456789abcdef";
+    let case = repo.submit(users[0], alipay_submission(state)).await?;
+    let approved = repo
+        .apply_provider_result(users[0], case.id, "approved".to_owned(), Some(4), None)
+        .await?;
+    assert!(approved.provider_action_url.is_none());
+    assert!(matches!(
+        repo.provider_reference_by_state(state).await,
+        Err(AccountVerificationError::Conflict)
+    ));
+    assert!(matches!(
+        repo.apply_provider_result(users[0], case.id, "rejected".to_owned(), Some(5), None)
+            .await,
+        Err(AccountVerificationError::Conflict)
+    ));
+    assert!(matches!(
+        repo.ensure_can_submit(users[0], "individual").await,
+        Err(AccountVerificationError::Conflict)
+    ));
+    assert_eq!(repo.get(Some(users[0]), case.id).await?.status, 4);
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn alipay_callback_finds_older_pending_cases_beyond_the_latest_32_records()
+-> Result<(), Box<dyn Error>> {
+    let (pool, repo, users) = fixture().await?;
+    let state = "0123456789abcdef0123456789abcdef";
+    let first = repo.submit(users[0], alipay_submission(state)).await?;
+    for index in 0..33 {
+        let newer = repo
+            .submit(users[1], alipay_submission(&format!("{index:032x}")))
+            .await?;
+        repo.apply_provider_result(users[1], newer.id, "rejected".to_owned(), Some(5), None)
+            .await?;
+    }
+    let (user, id, _, _) = repo.provider_reference_by_state(state).await?;
+    assert_eq!(user, users[0]);
+    assert_eq!(id, first.id);
+    for invalid in ["", "abcd", "%123456789abcdef0123456789abcdef"] {
+        assert!(matches!(
+            repo.provider_reference_by_state(invalid).await,
+            Err(AccountVerificationError::Invalid)
+        ));
+    }
+    pool.close().await?;
+    Ok(())
+}
+
 #[test]
 fn document_numbers_are_validated_and_only_masked_values_are_exposed() {
     assert!(valid_document_number(

@@ -7475,7 +7475,7 @@
     "provider": "认证方式",
     "providers": { "manual": "人工审核", "alipay": "支付宝实名认证" },
     "noProvider": "当前没有可用的认证方式，请联系管理员。",
-    "alipayHint": "支付宝认证不需要上传材料。提交后打开支付宝完成身份核验，返回本站后系统会自动更新认证结果。",
+    "alipayHint": "提交后请在有效期内使用本人支付宝扫码认证；手机访问会尝试打开支付宝。",
     "alipayCallbackHint": "完成支付宝授权后，认证结果会自动更新。",
     "alipayDocumentTypeHint": "支付宝当前实名接口仅接受中国大陆身份证。",
     "personName": "姓名",
@@ -7507,7 +7507,12 @@
     "openProvider": "去支付宝完成认证",
     "syncProvider": "查询认证结果",
     "providerStatus": "第三方认证状态",
-    "providerStatuses": { "pending": "待完成", "approved": "已通过", "rejected": "未通过" },
+    "providerStatuses": {
+      "pending": "待完成",
+      "approved": "已通过",
+      "rejected": "未通过",
+      "expired": "已过期"
+    },
     "preview": "预览",
     "hidePreview": "收起预览",
     "download": "下载",
@@ -7541,7 +7546,27 @@
     "organizations": "企业空间认证记录",
     "pdfHint": "若浏览器无法内嵌显示 PDF，可下载后查看。",
     "legacyMissing": "旧记录未保存文件正文，无法预览或下载。",
-    "legacyHistoryHint": "本次升级起保留每次提交与审核版本；更早的历史仅展示系统实际留存的记录。"
+    "legacyHistoryHint": "本次升级起保留每次提交与审核版本；更早的历史仅展示系统实际留存的记录。",
+    "alipayScan": {
+      "title": "支付宝扫码认证",
+      "instructions": "请使用本人支付宝扫一扫，在支付宝中完成授权。",
+      "qrLabel": "支付宝实名认证二维码",
+      "privateHint": "仅限本人使用，请勿转发二维码。",
+      "opening": "正在尝试打开支付宝…",
+      "openApp": "打开支付宝",
+      "fallbackHint": "若未打开，请点击重试。也可截图后在支付宝“扫一扫”中从相册识别；微信等内置浏览器可先选择“在浏览器打开”。",
+      "showQr": "显示二维码",
+      "expiresIn": "剩余有效时间 {{time}}",
+      "expiredHint": "二维码已过期。请重新填写并提交认证信息，获取新的二维码。",
+      "unavailable": "此认证链接已不可用，请查看结果或重新发起认证。",
+      "restart": "重新填写认证",
+      "checkResult": "查看认证结果",
+      "autoRefresh": "完成授权后，本页会自动更新认证结果。",
+      "checkError": "暂时无法获取认证结果，请点击“查看认证结果”重试。",
+      "qrError": "二维码加载失败，请重试。",
+      "completed": "实名认证已通过",
+      "completedHint": "认证结果已保存，无需再次扫码。"
+    }
   },
   "enterpriseEntitlement": {
     "title": "企业授权管理",

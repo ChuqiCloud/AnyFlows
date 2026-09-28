@@ -32110,6 +32110,7 @@
           "user_id",
           "kind",
           "provider",
+          "server_time",
           "document_country",
           "document_type",
           "subject_name",
@@ -32139,6 +32140,17 @@
               "string",
               "null"
             ]
+          },
+          "provider_expires_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "server_time": {
+            "type": "integer",
+            "format": "int64"
           },
           "provider_status": {
             "type": [
