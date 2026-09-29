@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use crate::credential::clear_authentication_headers;
 use crate::{
     Adaptor, AdaptorError, AdaptorResult, AdaptorTarget, Bytes, Credential, RelayContext,
-    UpstreamRequest,
+    ResponseMode, UpstreamRequest,
 };
 
 /// OpenAI Chat Completions、Responses、Responses Compact、Embeddings、Images 与 Audio 兼容渠道适配器。
