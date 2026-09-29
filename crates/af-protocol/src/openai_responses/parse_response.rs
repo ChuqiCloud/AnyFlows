@@ -86,6 +86,7 @@ fn convert_response(wire: ResponsesResponseWire) -> Result<CanonicalResponse, Pa
         output_text,
         moderation,
         usage,
+        _access_programs,
         extra,
     } = wire;
     if !matches!(object, ResponseObjectWire::Response) {

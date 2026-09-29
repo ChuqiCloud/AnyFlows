@@ -31,6 +31,9 @@ pub(super) struct ResponsesResponseWire {
     /// 可选的令牌用量。
     #[serde(default)]
     pub(super) usage: Option<ResponseUsageWire>,
+    /// Codex 内部访问能力元数据，不属于公开 Responses 语义。
+    #[serde(default, rename = "access_programs")]
+    pub(super) _access_programs: Option<Value>,
     /// 等待响应 raw 白名单校验的官方回显字段。
     #[serde(flatten)]
     pub(super) extra: Map<String, Value>,
@@ -314,6 +317,9 @@ pub(super) struct ResponseUsageWire {
     pub(super) output_tokens_details: Option<OutputTokensDetailsWire>,
     /// 输入与输出令牌冗余总量。
     pub(super) total_tokens: i64,
+    /// Codex 内部归因信息，不参与 AnyFlows 计费语义。
+    #[serde(default, rename = "attribution")]
+    pub(super) _attribution: Option<Value>,
 }
 
 /// Responses 输入令牌细分。

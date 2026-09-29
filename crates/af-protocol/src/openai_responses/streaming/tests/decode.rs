@@ -15,14 +15,17 @@ fn decodes_text_stream_across_transport_chunks() {
     terminal_item["phase"] = json!("final_answer");
     let mut lifecycle = initial_response();
     lifecycle["service_tier"] = json!("auto");
+    lifecycle["access_programs"] = json!({"cyber": "daybreak_blue"});
     let mut terminal = response(
         "completed",
-        vec![terminal_item.clone()],
+        Vec::new(),
         Some(usage_value(8, 3, 2, 1)),
         None,
         None,
     );
     terminal["service_tier"] = json!("default");
+    terminal["access_programs"] = json!({"cyber": "daybreak_blue"});
+    terminal["usage"]["attribution"] = json!({"items": {}, "request_fields": {}});
     let bytes = join([
         frame(
             "response.created",
