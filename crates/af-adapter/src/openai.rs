@@ -2,9 +2,13 @@ use std::fmt;
 
 use af_domain::{ChannelType, CredentialKind, Operation, Protocol};
 use af_httpclient::{HeaderMap, HeaderName, HeaderValue};
+use async_trait::async_trait;
 
 use crate::credential::clear_authentication_headers;
-use crate::{Adaptor, AdaptorError, AdaptorResult, AdaptorTarget, Credential, RelayContext};
+use crate::{
+    Adaptor, AdaptorError, AdaptorResult, AdaptorTarget, Bytes, Credential, RelayContext,
+    UpstreamRequest,
+};
 
 /// OpenAI Chat Completions、Responses、Responses Compact、Embeddings、Images 与 Audio 兼容渠道适配器。
 ///
@@ -129,6 +133,7 @@ impl OpenAiAdaptor {
     }
 }
 
+#[async_trait]
 impl Adaptor for OpenAiAdaptor {
     fn channel_type(&self) -> ChannelType {
         ChannelType::OpenAi
@@ -226,6 +231,45 @@ impl Adaptor for OpenAiAdaptor {
             headers.insert(HeaderName::from_static("x-request-id"), value);
         }
         Ok(())
+    }
+
+    async fn finalize_request(
+        &self,
+        request: UpstreamRequest,
+        _credential: &Credential,
+        context: &RelayContext,
+    ) -> AdaptorResult<UpstreamRequest> {
+        if self.protocol != Protocol::OpenAiResponses || !context.is_codex_oauth() {
+            return Ok(request);
+        }
+
+        let (method, target, mut headers, body, response_mode, response_body_limit) =
+            request.into_parts();
+        let body = body.ok_or(AdaptorError::InvalidTaskRequest)?;
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&body).map_err(|_| AdaptorError::InvalidTaskRequest)?;
+        let object = value
+            .as_object_mut()
+            .ok_or(AdaptorError::InvalidTaskRequest)?;
+        // Codex OAuth 不接受普通 OpenAI API 的采样参数。必须在渠道覆盖与客户端仿真
+        // 之后处理，防止计费默认值或渠道设置重新加入 max_output_tokens。
+        // Canonical 中的预算估算保持不变；该端点无法按此参数限制实际输出长度。
+        for key in [
+            "max_output_tokens",
+            "max_completion_tokens",
+            "temperature",
+            "top_p",
+            "frequency_penalty",
+            "presence_penalty",
+        ] {
+            object.remove(key);
+        }
+        let body = serde_json::to_vec(&value).map_err(|_| AdaptorError::InvalidTaskRequest)?;
+        // 正文重编码后由 HTTP Client 重新计算长度。
+        headers.remove("content-length");
+        UpstreamRequest::new(method, target, headers, Some(Bytes::from(body)))
+            .and_then(|request| request.with_response_body_limit(response_body_limit))
+            .map(|request| request.with_response_mode(response_mode))
     }
 }
 
@@ -390,6 +434,142 @@ mod tests {
         assert_eq!(headers["chatgpt-account-id"], "org-codex-test");
         assert_eq!(headers["openai-beta"], "codex-1");
         assert_eq!(headers["originator"], "Codex Desktop");
+    }
+
+    #[tokio::test]
+    async fn codex_sampling_filter_preserves_agent_payload_and_transport_limits() {
+        let adaptor = OpenAiAdaptor::with_protocol_and_supported_models(
+            Protocol::OpenAiResponses,
+            ["gpt-test"],
+        )
+        .unwrap();
+        let context = context().with_oauth_identity(Some("CoDeX"), Some("account-test"));
+        let supported = serde_json::json!({
+            "model": "gpt-test",
+            "instructions": "Keep the answer short.",
+            "input": [
+                {"type": "reasoning", "encrypted_content": "reasoning-test", "summary": []},
+                {"type": "function_call_output", "call_id": "call_test", "output": "42"}
+            ],
+            "tools": [{"type": "function", "name": "lookup", "parameters": {"type": "object"}}],
+            "tool_choice": "auto",
+            "parallel_tool_calls": true,
+            "reasoning": {"effort": "low"},
+            "include": ["reasoning.encrypted_content"],
+            "prompt_cache_key": "cache-test",
+            "stream": true,
+            "store": false
+        });
+        let mut body = supported.clone();
+        body["max_output_tokens"] = 8192.into();
+        body["max_completion_tokens"] = 1024.into();
+        body["temperature"] = 0.7.into();
+        body["top_p"] = 0.9.into();
+        body["frequency_penalty"] = 0.1.into();
+        body["presence_penalty"] = 0.2.into();
+
+        for operation in [Operation::Responses, Operation::ResponsesCompact] {
+            let url = adaptor.build_url(&context, target(operation)).unwrap();
+            let mut headers = HeaderMap::new();
+            let credential = Credential::oauth("oauth-test").unwrap();
+            adaptor
+                .setup_headers(&mut headers, &credential, &context)
+                .unwrap();
+            headers.insert("content-length", HeaderValue::from_static("999"));
+            let request = UpstreamRequest::new(
+                crate::Method::POST,
+                &url,
+                headers,
+                Some(Bytes::from(body.to_string())),
+            )
+            .unwrap()
+            .with_response_mode(crate::ResponseMode::Stream)
+            .with_response_body_limit(4096)
+            .unwrap();
+            let request = adaptor
+                .finalize_request(request, &credential, &context)
+                .await
+                .unwrap();
+            let value: serde_json::Value = serde_json::from_slice(request.body().unwrap()).unwrap();
+            assert_eq!(value, supported);
+            assert_eq!(request.target(), url);
+            assert_eq!(request.method(), crate::Method::POST);
+            assert_eq!(request.response_mode(), crate::ResponseMode::Stream);
+            assert_eq!(request.response_body_limit(), 4096);
+            assert_eq!(request.headers()["authorization"], "Bearer oauth-test");
+            assert_eq!(request.headers()["chatgpt-account-id"], "account-test");
+            assert!(!request.headers().contains_key("content-length"));
+        }
+    }
+
+    #[tokio::test]
+    async fn sampling_filter_does_not_change_other_openai_channels() {
+        let body = Bytes::from_static(
+            br#"{ "model":"gpt-test", "max_output_tokens":128, "temperature":0.5, "top_p":0.9 }"#,
+        );
+        for (protocol, provider, credential) in [
+            (
+                Protocol::OpenAiResponses,
+                None,
+                Credential::api_key("api-test").unwrap(),
+            ),
+            (
+                Protocol::OpenAiResponses,
+                Some("other"),
+                Credential::oauth("oauth-test").unwrap(),
+            ),
+            (
+                Protocol::OpenAiChat,
+                Some("codex"),
+                Credential::oauth("oauth-test").unwrap(),
+            ),
+        ] {
+            let adaptor =
+                OpenAiAdaptor::with_protocol_and_supported_models(protocol, ["gpt-test"]).unwrap();
+            let context = context().with_oauth_identity(provider, Some("account-test"));
+            let request = UpstreamRequest::new(
+                crate::Method::POST,
+                "https://api.openai.com/v1/responses",
+                HeaderMap::new(),
+                Some(body.clone()),
+            )
+            .unwrap();
+            let request = adaptor
+                .finalize_request(request, &credential, &context)
+                .await
+                .unwrap();
+            assert_eq!(request.body(), Some(&body));
+        }
+    }
+
+    #[tokio::test]
+    async fn codex_sampling_filter_rejects_invalid_bodies_without_echoing_them() {
+        let adaptor = OpenAiAdaptor::with_protocol_and_supported_models(
+            Protocol::OpenAiResponses,
+            ["gpt-test"],
+        )
+        .unwrap();
+        let context = context().with_oauth_identity(Some("codex"), Some("account-test"));
+        for body in [
+            None,
+            Some(Bytes::from_static(b"private-invalid-json")),
+            Some(Bytes::from_static(b"[]")),
+        ] {
+            let request = UpstreamRequest::new(
+                crate::Method::POST,
+                "https://chatgpt.com/backend-api/codex/responses",
+                HeaderMap::new(),
+                body,
+            )
+            .unwrap();
+            assert_eq!(
+                adaptor
+                    .finalize_request(request, &Credential::oauth("oauth-test").unwrap(), &context)
+                    .await
+                    .unwrap_err(),
+                AdaptorError::InvalidTaskRequest
+            );
+        }
     }
 
     #[test]
