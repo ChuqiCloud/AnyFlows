@@ -935,6 +935,7 @@ export type AdminPaymentSettings = {
     epay_merchant_key_configured: boolean;
     epay_alipay_enabled: boolean;
     epay_wxpay_enabled: boolean;
+    epay_qr_enabled: boolean;
     epay_refund_enabled: boolean;
     refund_auto_submit_enabled: boolean;
     epay_quota_per_cny: number;
@@ -953,6 +954,7 @@ export type AdminPaymentSettingsRequest = {
     clear_epay_merchant_key: boolean;
     epay_alipay_enabled: boolean;
     epay_wxpay_enabled: boolean;
+    epay_qr_enabled: boolean;
     epay_refund_enabled: boolean;
     refund_auto_submit_enabled: boolean;
     epay_quota_per_cny: number;
@@ -3451,6 +3453,7 @@ export type UserTopupMethod = {
     min_amount_minor: number;
     max_amount_minor: number;
     publishable_key?: string | null;
+    qr_enabled: boolean;
 };
 export type UserTopupOrder = {
     order_id: string;
@@ -3787,6 +3790,7 @@ export type AdminPaymentSettingsRequestWritable = {
     clear_epay_merchant_key: boolean;
     epay_alipay_enabled: boolean;
     epay_wxpay_enabled: boolean;
+    epay_qr_enabled: boolean;
     epay_refund_enabled: boolean;
     refund_auto_submit_enabled: boolean;
     epay_quota_per_cny: number;

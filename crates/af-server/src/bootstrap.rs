@@ -2935,6 +2935,7 @@ async fn import_legacy_stripe_payment_settings(
             true,
             false,
             false,
+            false,
             500_000,
         ))
         .await;

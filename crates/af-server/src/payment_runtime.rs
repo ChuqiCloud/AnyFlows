@@ -255,8 +255,9 @@ impl PaymentRuntime {
         // 易支付不提供原路退款接口，退款由管理员审批后登记线下完成事实。
         if record.epay_alipay_enabled() {
             routes.push(
-                UserTopupProviderRoute::epay(
+                UserTopupProviderRoute::epay_with_qr(
                     EPAY_ALIPAY_PAYMENT_METHOD,
+                    record.epay_qr_enabled(),
                     record.epay_quota_per_cny(),
                     provider.clone(),
                 )
@@ -265,8 +266,9 @@ impl PaymentRuntime {
         }
         if record.epay_wxpay_enabled() {
             routes.push(
-                UserTopupProviderRoute::epay(
+                UserTopupProviderRoute::epay_with_qr(
                     EPAY_WXPAY_PAYMENT_METHOD,
+                    record.epay_qr_enabled(),
                     record.epay_quota_per_cny(),
                     provider.clone(),
                 )

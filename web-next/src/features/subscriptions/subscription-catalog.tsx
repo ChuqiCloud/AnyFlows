@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next'
 import type { PaymentMethod, UserTopupMethod } from '@/features/payment-settings/payment-settings-types'
 import { useUserTopupConfiguration } from '@/features/wallet/wallet-api'
 import { WalletStripePaymentForm } from '@/features/wallet/wallet-stripe-payment-form'
+import { EpayQrPayment } from '@/features/wallet/epay-qr-payment'
 import { stripeTopupAppearance } from '@/features/wallet/wallet-topup-runtime'
 import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import type { SubscriptionCatalogPlan, SubscriptionOrder } from '@/lib/api/generated/types.gen'
@@ -392,6 +393,8 @@ function CatalogPlanRow({
             <Elements stripe={stripe} options={{ clientSecret: payment.client_secret, appearance: stripeTopupAppearance('light'), locale: locale === 'zh-CN' ? 'zh' : 'en' }}>
               <WalletStripePaymentForm amountLabel={amountLabel} returnUrl={`${window.location.origin}/console/subscriptions`} onConfirmed={paymentConfirmed} />
             </Elements>
+          ) : redirectUrl && method?.qr_enabled && method.provider === 'epay' && method.payment_method !== 'card' ? (
+            <EpayQrPayment url={redirectUrl} paymentMethod={method.payment_method} refreshing={orderQuery.isFetching} onRefresh={() => void refreshOrder()} />
           ) : redirectUrl ? (
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <ExternalLink className="size-3.5 text-brand" aria-hidden="true" />

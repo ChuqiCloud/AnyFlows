@@ -4737,6 +4737,16 @@
       "outcomeUnknown": "The service cannot confirm the result yet. Keep this page open and retry the same action."
     }
   },
+  "epayQr": {
+    "title": "Scan to pay",
+    "hint": "Scan with the selected payment app. Refresh the order after paying; the server confirms the final status.",
+    "loading": "Preparing QR code",
+    "retryQr": "Retry QR code",
+    "opening": "Opening Alipay",
+    "openAlipay": "Open Alipay",
+    "openPayment": "Open payment page",
+    "refreshStatus": "Refresh order status"
+  },
   "paymentSettings": {
     "title": "Payment settings",
     "subtitle": "Configure Stripe and Epay collection methods, wallet credit conversion, and fixed callback endpoints.",
@@ -4765,6 +4775,7 @@
       "epayQuotaPerCny": "Quota per CNY",
       "alipay": "Alipay",
       "wxpay": "WeChat Pay",
+      "epayQrEnabled": "Show payment QR code",
       "epayRefundEnabled": "Allow Epay manual refunds",
       "refundAutoSubmitEnabled": "Automatically submit supported Provider refunds after approval"
     },

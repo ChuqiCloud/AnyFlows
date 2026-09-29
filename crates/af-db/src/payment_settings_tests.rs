@@ -44,6 +44,7 @@ fn complete_write(
         epay_merchant_key,
         true,
         true,
+        true,
         false,
         false,
         500_000,
@@ -58,6 +59,7 @@ async fn migration_seeds_one_uninitialized_fixed_record() -> Result<(), Box<dyn 
     assert!(!settings.initialized());
     assert!(!settings.stripe_enabled());
     assert!(!settings.epay_enabled());
+    assert!(!settings.epay_qr_enabled());
     assert!(!settings.epay_refund_enabled());
     assert!(!settings.refund_auto_submit_enabled());
     assert_eq!(settings.stripe_signature_tolerance_seconds(), 300);
@@ -94,6 +96,7 @@ async fn complete_update_keeps_secrets_and_redacts_debug() -> Result<(), Box<dyn
     assert_eq!(replaced.stripe_secret_key(), Some(&stripe_key));
     assert_eq!(replaced.stripe_webhook_secret(), Some(&stripe_webhook));
     assert_eq!(replaced.epay_merchant_key(), Some(&epay_key));
+    assert!(replaced.epay_qr_enabled());
 
     let kept = repository
         .update(complete_write(
@@ -107,6 +110,7 @@ async fn complete_update_keeps_secrets_and_redacts_debug() -> Result<(), Box<dyn
     assert_eq!(kept.stripe_secret_key(), Some(&stripe_key));
     assert_eq!(kept.stripe_webhook_secret(), Some(&stripe_webhook));
     assert_eq!(kept.epay_merchant_key(), Some(&epay_key));
+    assert!(kept.epay_qr_enabled());
 
     let rendered = format!("{kept:?}");
     for private in [
@@ -141,6 +145,7 @@ async fn invalid_enabled_shapes_and_stale_versions_roll_back() -> Result<(), Box
         true,
         false,
         false,
+        false,
         500_000,
     );
     assert_eq!(
@@ -160,6 +165,7 @@ async fn invalid_enabled_shapes_and_stale_versions_roll_back() -> Result<(), Box
         Some("merchant_1001".to_owned()),
         PaymentSecretUpdate::Replace(envelope(0x41)),
         true,
+        false,
         false,
         false,
         false,
@@ -184,6 +190,7 @@ async fn invalid_enabled_shapes_and_stale_versions_roll_back() -> Result<(), Box
         PaymentSecretUpdate::Keep,
         true,
         true,
+        false,
         true,
         false,
         500_000,
@@ -206,6 +213,7 @@ async fn invalid_enabled_shapes_and_stale_versions_roll_back() -> Result<(), Box
         PaymentSecretUpdate::Replace(envelope(0x40)),
         true,
         true,
+        false,
         false,
         true,
         500_000,

@@ -70,6 +70,7 @@ pub(crate) struct UserTopupMethodResponse {
     #[schema(min_length = 9, max_length = 512)]
     #[serde(skip_serializing_if = "Option::is_none")]
     publishable_key: Option<String>,
+    qr_enabled: bool,
 }
 
 /// 当前用户可见的闭合充值订单状态。
@@ -246,6 +247,7 @@ impl UserTopupMethodResponse {
             min_amount_minor: method.min_amount_minor(),
             max_amount_minor: method.max_amount_minor(),
             publishable_key: method.publishable_key().map(str::to_owned),
+            qr_enabled: method.qr_enabled(),
         }
     }
 }

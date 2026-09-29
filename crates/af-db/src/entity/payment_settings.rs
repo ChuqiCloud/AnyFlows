@@ -27,6 +27,7 @@ pub struct Model {
     pub epay_merchant_key: Option<EncryptedJson>,
     pub epay_alipay_enabled: bool,
     pub epay_wxpay_enabled: bool,
+    pub epay_qr_enabled: bool,
     pub epay_refund_enabled: bool,
     pub refund_auto_submit_enabled: bool,
     pub epay_quota_per_cny: i64,
