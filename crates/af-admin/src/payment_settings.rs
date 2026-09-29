@@ -81,6 +81,11 @@ impl AdminPaymentSettings {
     }
 
     #[must_use]
+    pub const fn epay_qr_enabled(&self) -> bool {
+        self.record.epay_qr_enabled()
+    }
+
+    #[must_use]
     pub const fn epay_refund_enabled(&self) -> bool {
         self.record.epay_refund_enabled()
     }
@@ -124,6 +129,7 @@ pub struct AdminPaymentSettingsCommand {
     clear_epay_merchant_key: bool,
     epay_alipay_enabled: bool,
     epay_wxpay_enabled: bool,
+    epay_qr_enabled: bool,
     epay_refund_enabled: bool,
     refund_auto_submit_enabled: bool,
     epay_quota_per_cny: i64,
@@ -150,6 +156,7 @@ impl AdminPaymentSettingsCommand {
         clear_epay_merchant_key: bool,
         epay_alipay_enabled: bool,
         epay_wxpay_enabled: bool,
+        epay_qr_enabled: bool,
         epay_refund_enabled: bool,
         refund_auto_submit_enabled: bool,
         epay_quota_per_cny: i64,
@@ -189,6 +196,7 @@ impl AdminPaymentSettingsCommand {
             clear_epay_merchant_key,
             epay_alipay_enabled,
             epay_wxpay_enabled,
+            epay_qr_enabled,
             epay_refund_enabled,
             refund_auto_submit_enabled,
             epay_quota_per_cny,
@@ -227,6 +235,7 @@ impl AdminPaymentSettingsCommand {
             )?,
             self.epay_alipay_enabled,
             self.epay_wxpay_enabled,
+            self.epay_qr_enabled,
             self.epay_refund_enabled,
             self.refund_auto_submit_enabled,
             self.epay_quota_per_cny,

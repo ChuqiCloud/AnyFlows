@@ -1359,6 +1359,7 @@ pub(in crate::migration) mod payment_settings {
         EpayMerchantKey,
         EpayAlipayEnabled,
         EpayWxpayEnabled,
+        EpayQrEnabled,
         EpayRefundEnabled,
         RefundAutoSubmitEnabled,
         EpayQuotaPerCny,

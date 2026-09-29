@@ -107,6 +107,7 @@ export function PaymentSettingsWorkspace({ publicBaseUrl, settings }: PaymentSet
           <div className="grid gap-2 sm:grid-cols-2">
             <ToggleField form={form} name="epayAlipayEnabled" id="payment-epay-alipay" label={t('paymentSettings.fields.alipay')} />
             <ToggleField form={form} name="epayWxpayEnabled" id="payment-epay-wxpay" label={t('paymentSettings.fields.wxpay')} />
+            <ToggleField form={form} name="epayQrEnabled" id="payment-epay-qr" label={t('paymentSettings.fields.epayQrEnabled')} disabled={!form.watch('epayEnabled')} />
             <ToggleField
               form={form}
               name="epayRefundEnabled"
@@ -214,7 +215,7 @@ function NumberField({ form, id, label, name, suffix }: { form: UseFormReturn<Pa
   return <div className="grid gap-1.5"><label className="text-xs font-medium leading-none text-foreground" htmlFor={id}>{label}</label><div className="relative"><Input className="tabular-nums" id={id} isInvalid={!!error} min={1} size="sm" type="number" {...form.register(name, { valueAsNumber: true })} /><span data-input-suffix className="pointer-events-none absolute right-3 top-0 grid h-8 place-items-center pr-16 text-xs leading-none text-muted-foreground">{suffix}</span></div>{error ? <p className="text-xs text-destructive">{error.message}</p> : null}</div>
 }
 
-type ToggleName = 'epayAlipayEnabled' | 'epayRefundEnabled' | 'epayWxpayEnabled' | 'refundAutoSubmitEnabled'
+type ToggleName = 'epayAlipayEnabled' | 'epayQrEnabled' | 'epayRefundEnabled' | 'epayWxpayEnabled' | 'refundAutoSubmitEnabled'
 function ToggleField({ disabled, form, id, label, name, onCheckedChange }: { disabled?: boolean; form: UseFormReturn<PaymentSettingsValues>; id: string; label: string; name: ToggleName; onCheckedChange?: (checked: boolean) => void }) {
   return <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--hairline)] px-3 py-2.5"><label className="text-xs font-medium leading-none text-foreground" htmlFor={id}>{label}</label><Controller control={form.control} name={name} render={({ field }) => <Switch id={id} isDisabled={disabled} isSelected={field.value} size="sm" onValueChange={(checked) => { field.onChange(checked); onCheckedChange?.(checked) }} />} /></div>
 }

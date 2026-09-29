@@ -9,6 +9,7 @@ export type AdminPaymentSettings = {
   epay_gateway_url: string | null
   epay_merchant_id: string | null
   epay_merchant_key_configured: boolean
+  epay_qr_enabled: boolean
   epay_refund_enabled: boolean
   epay_quota_per_cny: number
   epay_wxpay_enabled: boolean
@@ -31,6 +32,7 @@ export type AdminPaymentSettingsRequest = {
   epay_gateway_url: string | null
   epay_merchant_id: string | null
   epay_merchant_key: string | null
+  epay_qr_enabled: boolean
   epay_refund_enabled: boolean
   epay_quota_per_cny: number
   epay_wxpay_enabled: boolean
@@ -50,6 +52,7 @@ export type UserTopupMethod = {
   payment_method: PaymentMethod
   provider: PaymentProvider
   publishable_key?: string | null
+  qr_enabled: boolean
 }
 
 export type UserTopupConfiguration = {

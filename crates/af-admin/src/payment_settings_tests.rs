@@ -253,6 +253,7 @@ fn disabled_command(expected_version: i64, quota_per_cny: i64) -> AdminPaymentSe
         true,
         false,
         false,
+        false,
         quota_per_cny,
     )
     .unwrap()
@@ -272,6 +273,7 @@ fn disabled_record(expected_version: i64, quota_per_cny: i64) -> PaymentSettings
         PaymentSecretUpdate::Keep,
         true,
         true,
+        false,
         false,
         false,
         quota_per_cny,

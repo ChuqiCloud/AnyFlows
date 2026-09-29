@@ -4738,6 +4738,16 @@
       "outcomeUnknown": "服务暂时无法确认提交结果，请保留当前页面并重试同一操作。"
     }
   },
+  "epayQr": {
+    "title": "扫码支付",
+    "hint": "使用所选支付应用扫描二维码。支付完成后刷新订单状态；到账以服务端通知为准。",
+    "loading": "正在生成二维码",
+    "retryQr": "重试二维码",
+    "opening": "正在打开支付宝",
+    "openAlipay": "打开支付宝",
+    "openPayment": "打开支付页面",
+    "refreshStatus": "刷新订单状态"
+  },
   "paymentSettings": {
     "title": "支付设置",
     "subtitle": "配置 Stripe 与易支付收款渠道、钱包到账倍率和固定回调入口。",
@@ -4766,6 +4776,7 @@
       "epayQuotaPerCny": "每人民币到账额度",
       "alipay": "支付宝",
       "wxpay": "微信支付",
+      "epayQrEnabled": "展示支付二维码",
       "epayRefundEnabled": "允许易支付人工退款",
       "refundAutoSubmitEnabled": "审批通过后自动提交可用 Provider 退款"
     },

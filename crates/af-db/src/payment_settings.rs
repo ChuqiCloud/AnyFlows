@@ -54,6 +54,7 @@ pub struct PaymentSettingsRecord {
     epay_merchant_key: Option<EncryptedCredentialEnvelope>,
     epay_alipay_enabled: bool,
     epay_wxpay_enabled: bool,
+    epay_qr_enabled: bool,
     epay_refund_enabled: bool,
     refund_auto_submit_enabled: bool,
     epay_quota_per_cny: i64,
@@ -137,6 +138,11 @@ impl PaymentSettingsRecord {
     }
 
     #[must_use]
+    pub const fn epay_qr_enabled(&self) -> bool {
+        self.epay_qr_enabled
+    }
+
+    #[must_use]
     pub const fn epay_refund_enabled(&self) -> bool {
         self.epay_refund_enabled
     }
@@ -194,6 +200,7 @@ impl fmt::Debug for PaymentSettingsRecord {
             )
             .field("epay_alipay_enabled", &self.epay_alipay_enabled)
             .field("epay_wxpay_enabled", &self.epay_wxpay_enabled)
+            .field("epay_qr_enabled", &self.epay_qr_enabled)
             .field("epay_refund_enabled", &self.epay_refund_enabled)
             .field(
                 "refund_auto_submit_enabled",
@@ -219,6 +226,7 @@ pub struct PaymentSettingsWriteRecord {
     epay_merchant_key: PaymentSecretUpdate,
     epay_alipay_enabled: bool,
     epay_wxpay_enabled: bool,
+    epay_qr_enabled: bool,
     epay_refund_enabled: bool,
     refund_auto_submit_enabled: bool,
     epay_quota_per_cny: i64,
@@ -240,6 +248,7 @@ impl PaymentSettingsWriteRecord {
         epay_merchant_key: PaymentSecretUpdate,
         epay_alipay_enabled: bool,
         epay_wxpay_enabled: bool,
+        epay_qr_enabled: bool,
         epay_refund_enabled: bool,
         refund_auto_submit_enabled: bool,
         epay_quota_per_cny: i64,
@@ -257,6 +266,7 @@ impl PaymentSettingsWriteRecord {
             epay_merchant_key,
             epay_alipay_enabled,
             epay_wxpay_enabled,
+            epay_qr_enabled,
             epay_refund_enabled,
             refund_auto_submit_enabled,
             epay_quota_per_cny,
@@ -451,6 +461,7 @@ impl PaymentSettingsRepository {
             epay_merchant_key: Set(epay_merchant_key),
             epay_alipay_enabled: Set(record.epay_alipay_enabled),
             epay_wxpay_enabled: Set(record.epay_wxpay_enabled),
+            epay_qr_enabled: Set(record.epay_qr_enabled),
             epay_refund_enabled: Set(record.epay_refund_enabled),
             refund_auto_submit_enabled: Set(record.refund_auto_submit_enabled),
             epay_quota_per_cny: Set(record.epay_quota_per_cny),
@@ -525,6 +536,7 @@ impl PaymentSettingsRepository {
                 .transpose()?),
             epay_alipay_enabled: Set(record.epay_alipay_enabled),
             epay_wxpay_enabled: Set(record.epay_wxpay_enabled),
+            epay_qr_enabled: Set(record.epay_qr_enabled),
             epay_refund_enabled: Set(record.epay_refund_enabled),
             refund_auto_submit_enabled: Set(record.refund_auto_submit_enabled),
             epay_quota_per_cny: Set(record.epay_quota_per_cny),
@@ -640,6 +652,7 @@ fn record_from_model(
         epay_merchant_key,
         epay_alipay_enabled: model.epay_alipay_enabled,
         epay_wxpay_enabled: model.epay_wxpay_enabled,
+        epay_qr_enabled: model.epay_qr_enabled,
         epay_refund_enabled: model.epay_refund_enabled,
         refund_auto_submit_enabled: model.refund_auto_submit_enabled,
         epay_quota_per_cny: model.epay_quota_per_cny,

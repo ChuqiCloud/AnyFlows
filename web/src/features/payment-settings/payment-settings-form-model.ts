@@ -14,6 +14,7 @@ export type PaymentSettingsValues = {
   epayGatewayUrl: string
   epayMerchantId: string
   epayMerchantKey: string
+  epayQrEnabled: boolean
   epayRefundEnabled: boolean
   epayQuotaPerCny: number
   epayWxpayEnabled: boolean
@@ -50,6 +51,7 @@ export function paymentSettingsValues(settings: AdminPaymentSettings): PaymentSe
     epayGatewayUrl: settings.epay_gateway_url ?? '',
     epayMerchantId: settings.epay_merchant_id ?? '',
     epayMerchantKey: '',
+    epayQrEnabled: settings.epay_qr_enabled,
     epayRefundEnabled: settings.epay_refund_enabled,
     epayQuotaPerCny: settings.epay_quota_per_cny,
     epayWxpayEnabled: settings.epay_wxpay_enabled,
@@ -77,6 +79,7 @@ export function buildPaymentSettingsSchema(
     epayGatewayUrl: z.string(),
     epayMerchantId: z.string(),
     epayMerchantKey: z.string(),
+    epayQrEnabled: z.boolean(),
     epayRefundEnabled: z.boolean(),
     epayQuotaPerCny: z.number().int(messages.epayQuota).min(1, messages.epayQuota),
     epayWxpayEnabled: z.boolean(),
@@ -189,6 +192,7 @@ export function toPaymentSettingsRequest(
     epay_gateway_url: values.epayGatewayUrl || null,
     epay_merchant_id: values.epayMerchantId || null,
     epay_merchant_key: optionalSecret(values.epayMerchantKey),
+    epay_qr_enabled: values.epayQrEnabled,
     epay_refund_enabled: values.epayRefundEnabled,
     epay_quota_per_cny: values.epayQuotaPerCny,
     epay_wxpay_enabled: values.epayWxpayEnabled,

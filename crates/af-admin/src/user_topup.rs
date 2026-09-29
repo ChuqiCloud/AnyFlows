@@ -210,6 +210,7 @@ pub struct UserTopupMethod {
     min_amount_minor: i64,
     max_amount_minor: i64,
     publishable_key: Option<String>,
+    qr_enabled: bool,
 }
 
 impl UserTopupMethod {
@@ -231,11 +232,17 @@ impl UserTopupMethod {
             min_amount_minor: MIN_STRIPE_TOPUP_AMOUNT_MINOR,
             max_amount_minor: MAX_STRIPE_TOPUP_AMOUNT_MINOR,
             publishable_key: Some(publishable_key),
+            qr_enabled: false,
         })
     }
 
     /// 构造易支付人民币方式。
     pub fn epay(payment_method: &str) -> Result<Self, UserTopupError> {
+        Self::epay_with_qr(payment_method, false)
+    }
+
+    /// 构造易支付人民币方式，并声明是否由前端展示支付二维码。
+    pub fn epay_with_qr(payment_method: &str, qr_enabled: bool) -> Result<Self, UserTopupError> {
         if !matches!(
             payment_method,
             EPAY_ALIPAY_PAYMENT_METHOD | EPAY_WXPAY_PAYMENT_METHOD
@@ -249,6 +256,7 @@ impl UserTopupMethod {
             min_amount_minor: MIN_EPAY_TOPUP_AMOUNT_MINOR,
             max_amount_minor: MAX_EPAY_TOPUP_AMOUNT_MINOR,
             publishable_key: None,
+            qr_enabled,
         })
     }
 
@@ -280,6 +288,11 @@ impl UserTopupMethod {
     #[must_use]
     pub fn publishable_key(&self) -> Option<&str> {
         self.publishable_key.as_deref()
+    }
+
+    #[must_use]
+    pub const fn qr_enabled(&self) -> bool {
+        self.qr_enabled
     }
 }
 
@@ -547,11 +560,21 @@ impl UserTopupProviderRoute {
         quota_per_cny: i64,
         provider: Arc<dyn PaymentOrderProvider>,
     ) -> Result<Self, UserTopupError> {
+        Self::epay_with_qr(payment_method, false, quota_per_cny, provider)
+    }
+
+    /// 绑定易支付方式、二维码展示策略和每人民币额度换算基数。
+    pub fn epay_with_qr(
+        payment_method: &str,
+        qr_enabled: bool,
+        quota_per_cny: i64,
+        provider: Arc<dyn PaymentOrderProvider>,
+    ) -> Result<Self, UserTopupError> {
         if quota_per_cny <= 0 {
             return Err(UserTopupError::InvalidInput);
         }
         Ok(Self {
-            method: UserTopupMethod::epay(payment_method)?,
+            method: UserTopupMethod::epay_with_qr(payment_method, qr_enabled)?,
             provider,
             quota_per_cny: Some(quota_per_cny),
         })

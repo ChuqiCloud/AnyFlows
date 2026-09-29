@@ -17,6 +17,7 @@ import { useTranslation } from 'react-i18next'
 
 import type { PaymentMethod, UserTopupMethod } from '@/features/payment-settings/payment-settings-types'
 import { WalletStripePaymentForm } from '@/features/wallet/wallet-stripe-payment-form'
+import { EpayQrPayment } from '@/features/wallet/epay-qr-payment'
 import { stripeTopupAppearance } from '@/features/wallet/wallet-topup-runtime'
 import type {
   OrganizationEntitlementProjection,
@@ -355,6 +356,8 @@ export function OrganizationPlanPurchase({
             onConfirmed={paymentConfirmed}
           />
         </Elements>
+      ) : redirectUrl && method?.qr_enabled && method.provider === 'epay' && method.payment_method !== 'card' ? (
+        <EpayQrPayment url={redirectUrl} paymentMethod={method.payment_method} refreshing={factsRefreshing} onRefresh={() => void refreshFacts()} />
       ) : redirectUrl ? (
         <RedirectPayment
           url={redirectUrl}
