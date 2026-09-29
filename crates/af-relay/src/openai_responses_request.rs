@@ -264,6 +264,88 @@ mod tests {
         assert_eq!(value["input"][0]["id"], "rs_public");
     }
 
+    #[tokio::test]
+    async fn codex_finalization_removes_billing_default_and_channel_sampling_overrides() {
+        use af_adapter::{
+            Adaptor as _, AdaptorTarget, Credential, HeaderMap, HttpClientConfig, HttpClientPool,
+            Method, OpenAiAdaptor, RelayContext, ResponseMode, UpstreamRequest,
+        };
+
+        let request = envelope(json!({
+            "model": "public-model",
+            "input": [{"role": "user", "content": [{"type": "input_text", "text": "hello"}]}],
+            "include": ["reasoning.encrypted_content"],
+            "store": false,
+            "stream": true
+        }))
+        .with_default_max_output_tokens(TokenCount::new(8192).unwrap());
+        let adaptor = OpenAiAdaptor::with_protocol_and_supported_models(
+            Protocol::OpenAiResponses,
+            ["upstream-model"],
+        )
+        .unwrap();
+        let context = RelayContext::new(
+            HttpClientPool::default()
+                .get(&HttpClientConfig::default())
+                .unwrap(),
+        )
+        .with_oauth_identity(Some("codex"), Some("account-test"));
+        // 同时覆盖平台缺省上限与渠道显式上限；二者都不能泄漏到 Codex 请求。
+        for limit in [None, Some(128)] {
+            let (_, body) =
+                OpenAiResponsesRequestOverrides::new("upstream-model", Some(0.5), Some(0.9), limit)
+                    .unwrap()
+                    .prepare(request.clone())
+                    .unwrap()
+                    .into_parts();
+            let before: Value = serde_json::from_slice(body.as_ref().unwrap()).unwrap();
+            assert_eq!(before["max_output_tokens"], limit.unwrap_or(8192));
+            let outgoing = UpstreamRequest::new(
+                Method::POST,
+                adaptor
+                    .build_url(
+                        &context,
+                        AdaptorTarget::new(
+                            "upstream-model",
+                            Operation::Responses,
+                            ResponseMode::Stream,
+                        ),
+                    )
+                    .unwrap(),
+                HeaderMap::new(),
+                body,
+            )
+            .unwrap()
+            .with_response_mode(ResponseMode::Stream);
+            let outgoing = adaptor
+                .finalize_request(
+                    outgoing,
+                    &Credential::oauth("oauth-test").unwrap(),
+                    &context,
+                )
+                .await
+                .unwrap();
+            let after: Value = serde_json::from_slice(outgoing.body().unwrap()).unwrap();
+            assert!(after.get("max_output_tokens").is_none());
+            assert!(after.get("temperature").is_none());
+            assert!(after.get("top_p").is_none());
+            assert_eq!(after["model"], "upstream-model");
+            assert_eq!(after["input"], before["input"]);
+            assert_eq!(after["include"], before["include"]);
+            assert_eq!(after["store"], false);
+            assert_eq!(after["stream"], true);
+        }
+        assert_eq!(
+            request
+                .canonical()
+                .sampling
+                .max_output_tokens()
+                .unwrap()
+                .get(),
+            8192
+        );
+    }
+
     #[test]
     fn requested_storage_and_remote_continuation_fail_closed() {
         for request in [
